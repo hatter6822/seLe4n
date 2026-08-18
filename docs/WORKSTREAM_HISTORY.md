@@ -15,6 +15,103 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
+**WS-SM SM9.B — refusal auditing: LANDED.  The trail's blind spot is closed.**
+
+SM8.C's trail records **authorized** downgrades and nothing else, so a
+monitoring system cannot distinguish *"no attempts"* from *"many attempts, all
+denied"*.  That is a detection gap rather than an enforcement one — every
+refusal is already fail-closed — and SM8.C registered it as the rule
+`DeclassificationRuleId.refusalIsUnrecorded`, whose statement SM9.B makes false.
+
+**Why the writer is the FFI seam.**  `Kernel α` is
+`SystemState → Except KernelError (α × SystemState)`, so a transition's `.error`
+arm carries no post-state and no producer can be put on it.  That is what
+`declassifyStoreOnCore_refusal_has_no_post_state` actually proves — the theorem
+is renamed from `declassification_refusal_is_unrecorded`, because the other half
+of the old reading is now false.  One layer up, `syscallDispatchFromAbi` already
+converts every kernel error into a **committed** `(SyscallOutcome, state)` pair,
+and it does so with every field a refusal record needs already in hand: the
+executing core, the resolved subject, the deployment's labeling context, the raw
+syscall number and `x0`, and the `KernelError` itself.  So the refusal audit
+costs no change to the kernel's error discipline, no widening of
+`syscallEntryChecked`'s error type (which would move ~40 theorem statements and
+break the two that bake in *"an error changes nothing"*), and no decode replay.
+
+**The filter is a total function, not a list.**  A draft filtered on the literal
+`.declassify`, which SM9.C silently defeats: it adds a *second* declassifying
+syscall whose refusals would bypass the ledger entirely — the exact gap SM9.B
+exists to close.  A list plus a completeness theorem does not fix that, and this
+is the third taxonomy in the plan fixed the same way (after `ReadableStructure`
+and `ContentFlowSite`): a theorem quantified over a hand-maintained list stays
+true when a new arm joins neither.  So the seam reads
+`refusalSeamClass : SyscallId → RefusalSeamClass`, total with no wildcard, over
+the enumeration the ABI already forces to be complete — SM9.C.8 classifies its
+new syscall because it cannot compile otherwise.
+
+**The bound is the type's.**  `RefusalLedger` is a `Vector` ring of
+`refusalRingSize = 32` slots, two `Fin (maxRefusalCount + 1)` counters and a
+`version`, so unlike the trail there is no 17th `proofLayerInvariantBundle`
+conjunct, no capacity obligation on any writer and no right-nested destructuring
+to re-count — and the bound holds for *every* value rather than only for the
+ones `recordRefusal` produced, which is what an arbitrary frozen-state literal
+or a future boot path needs.  The bundle *carriage* every mounted field owes is
+still there (`proofLayerInvariantBundle_setDeclassificationRefusals`,
+`recordSyscallRefusal_preserves_proofLayerInvariantBundle`) — no field write
+transports the bundle definitionally — but it is **unconditional**, which is
+where the type-level bound is actually paid back.  At the bound the ring **evicts and counts the
+eviction**, the opposite of the trail's fail-closed refusal and deliberately so:
+a fail-closed ledger would make its own occupancy readable from an unprivileged
+syscall's outcome.  What a flood costs is stated rather than implied absent —
+`refusalLedger_eviction_is_counted` says the loss is visible, not silent.
+
+**Three security theorems.**  The ledger is **not** the trail, so no volume of
+refusals can consume the fail-closed capacity an authorized downgrade needs
+(`refusalWrite_declassificationAuditLog_eq`, `refusalWrite_cannot_exhaust_trail`).
+The refused caller's outcome is `Architecture.errorFrame ke`, computed from the
+error alone and bit-identical to what the arm returned before the ledger existed
+(`refusalLedger_write_is_caller_invisible`), and `recordRefusal` is total so the
+ledger contributes no error of its own.  And the record **does** carry
+`.auditLogCapacityExceeded` for the monitor, while
+`authorizeDeclassificationOnCore_denied_before_capacity` still holds for the
+caller-facing error: the occupancy channel is closed by the read gate, not by
+discarding the only durable evidence that an authorized downgrade hit the
+256-entry cliff.
+
+**The reader has no partial class at all.**  Five new `.auditRead`
+sub-operations (opcodes 12–20, count 12 → 21, mirrored in `sele4n-sys`) sit
+behind the same configured monitor clearance the drain uses — and unlike the
+trail there is no filtered *view* below it, because a ring evicts: enough hidden
+refusals wrap it and remove a lower reader's entry.  A caller the gate refuses
+observes **nothing** and cannot even distinguish two arbitrary ledgers.  The
+gate is the **configuration**, never the ring's surviving rows: the ring evicts
+while the counters are cumulative, so a records-derived predicate shrinks while
+the data it guards does not, and `refusalLedger_records_gate_unsound` keeps that
+counterexample refuted.  Reads carry their own **version** bracket, since the
+trail's `status` token does not move on a ledger write and a monitor bracketing
+with it would assemble a hybrid record and never detect it.
+
+**The singleton discipline arrived with the ledger**, as the SM9.A round-7 note
+requires.  Serialization is
+`lockSet_refusalSeam_writer_declares_stateLevel_write`, whose first conjunct
+forces SM9.C.8's second recording syscall to declare its own state-level write.
+Capacity is `refusalLedger_occupancy_is_not_a_covert_channel`: **no ninth
+channel entry is owed**, and that is a theorem rather than an argument, because
+each of CC-8's four carriers is absent here.
+
+**Two supporting moves.**  `KernelError` was extracted to the import-free leaf
+`Model/KernelError.lean` so the record can name it **typed** rather than storing
+a bare discriminant `Nat` — the same extraction SM7.A made for
+`TlbInvalidation`, SM7.D for `CacheInvalidation` and SM8.C.8 for the audit
+record, with namespace and constructors unchanged.  And the *failed hop* field
+§3.1's table lists is **moved rather than dropped**: the resolved receiver is
+resolved inside SM9.C.1's transition, whose error arm carries no post-state, so
+the seam cannot see it and a field no producer could set is the
+unwired-structure shape the project forbids.
+
+Zero sorry/axiom; trace byte-identical; the six `FrozenSystemState` test
+literals updated because the frozen field is **required**, so a silent drop is a
+compile error.
+
 **WS-SM SM9.A — the declassification audit trail's reader: LANDED.  The
 256-entry cliff is gone.**
 

@@ -412,9 +412,9 @@ run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_ok_runnable_membersh
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_ok_not_runnable_membership' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 
 # M4-A step-2 lifecycle transition anchors must remain present.
-run_check "INVARIANT" rg -n '^\s*\| illegalState' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^\s*\| illegalAuthority' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^\s*\| invalidTypeTag' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^\s*\| illegalState' SeLe4n/Model/KernelError.lean
+run_check "INVARIANT" rg -n '^\s*\| illegalAuthority' SeLe4n/Model/KernelError.lean
+run_check "INVARIANT" rg -n '^\s*\| invalidTypeTag' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^def lifecycleRetypeObject' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_error_illegalState' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_error_illegalAuthority' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -425,8 +425,8 @@ run_check "INVARIANT" rg -n '^def storeServiceEntry' SeLe4n/Kernel/Service/Opera
 run_check "INVARIANT" rg -n '^def serviceHasPathTo' SeLe4n/Kernel/Service/Operations.lean
 run_check "INVARIANT" rg -n '^def serviceRegisterDependency' SeLe4n/Kernel/Service/Operations.lean
 run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_error_self_loop' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^\s*\| policyDenied' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^\s*\| dependencyViolation' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^\s*\| policyDenied' SeLe4n/Model/KernelError.lean
+run_check "INVARIANT" rg -n '^\s*\| dependencyViolation' SeLe4n/Model/KernelError.lean
 
 # M5-C policy-surface anchors must remain present.
 run_check "INVARIANT" rg -n '^abbrev ServicePolicyPredicate' SeLe4n/Kernel/Service/Invariant/Policy.lean
@@ -471,7 +471,7 @@ run_check "INVARIANT" rg -n '^def serviceBfsFuel' SeLe4n/Kernel/Service/Operatio
 run_check "INVARIANT" rg -n '^def serviceHasPathTo' SeLe4n/Kernel/Service/Operations.lean
 run_check "INVARIANT" rg -n '^def serviceRegisterDependency' SeLe4n/Kernel/Service/Operations.lean
 run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_error_self_loop' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^\s*\| cyclicDependency' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^\s*\| cyclicDependency' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^def serviceDependencyAcyclic' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
 run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_preserves_acyclicity' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
 
@@ -480,7 +480,7 @@ run_check "INVARIANT" rg -n 'theorem serviceGraphInvariant_of_storeServiceState_
 run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_preserves_serviceGraphInvariant' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
 
 # WS-D4 F-12 double-wait prevention + uniqueness invariant anchors must remain present.
-run_check "INVARIANT" rg -n '^\s*\| alreadyWaiting' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^\s*\| alreadyWaiting' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_error_alreadyWaiting' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_badge_path_notification' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_wait_path_notification' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
@@ -637,10 +637,10 @@ run_check "INVARIANT" rg -n '^def untypedMemoryInvariant' SeLe4n/Kernel/Lifecycl
 run_check "INVARIANT" rg -n '^theorem default_systemState_untypedMemoryInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_preserves_lifecycleMetadataConsistent' SeLe4n/Kernel/Lifecycle/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_preserves_lifecycleInvariantBundle' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^\s*\| untypedRegionExhausted' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^\s*\| untypedTypeMismatch' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^\s*\| untypedDeviceRestriction' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^\s*\| untypedAllocSizeTooSmall' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^\s*\| untypedRegionExhausted' SeLe4n/Model/KernelError.lean
+run_check "INVARIANT" rg -n '^\s*\| untypedTypeMismatch' SeLe4n/Model/KernelError.lean
+run_check "INVARIANT" rg -n '^\s*\| untypedDeviceRestriction' SeLe4n/Model/KernelError.lean
+run_check "INVARIANT" rg -n '^\s*\| untypedAllocSizeTooSmall' SeLe4n/Model/KernelError.lean
 run_check "TRACE" rg -n 'retype-from-untyped success object kind' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'retype-from-untyped type-mismatch branch' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'retype-from-untyped region-exhausted branch' SeLe4n/Testing/MainTraceHarness.lean
@@ -2330,7 +2330,7 @@ run_check "INVARIANT" rg -n 'declassifyObjectFromCore \(liftLegacyContext ctx\)'
 run_check "INVARIANT" rg -n '^theorem recordDeclassification_admits_ill_formed' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^theorem declassificationChainLinked_is_syntactic' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^theorem declassificationSubjectDomain_is_core_selected' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassification_refusal_is_unrecorded' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_refusal_has_no_post_state' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^def declassifyRun' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^theorem declassifyRun_records_each' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^theorem declassifyRun_frame' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
@@ -2878,7 +2878,7 @@ run_check "INVARIANT" rg -n '^def maxAuditFieldChunks' SeLe4n/Kernel/Information
 run_check "INVARIANT" rg -n '^theorem auditReadField_reconstructs' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem auditReadBasis_reconstructs_designation' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem auditFieldBound_unreachable_in_kernel' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n 'auditFieldTooLarge' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n 'auditFieldTooLarge' SeLe4n/Model/KernelError.lean
 # SM9.A.2: `status` is a SINGLE read.  Chunking it traded aliasing for tearing
 # on the first interleaved drain, which is what the negative witness records.
 run_check "INVARIANT" rg -n '^theorem auditReadStatus_atomic' SeLe4n/Kernel/InformationFlow/AuditRead.lean
@@ -3146,6 +3146,193 @@ run_check "INVARIANT" rg -n '10e: NEGATIVE — an unconfigured deployment cannot
 run_check "INVARIANT" rg -n 'audit status .visible length 2, monitor.' tests/fixtures/syscall_return_abi.expected
 run_check "INVARIANT" rg -n 'audit drain of one entry .new visible length 1.' tests/fixtures/syscall_return_abi.expected
 
+# ============================================================================
+# WS-SM SM9.B — refusal auditing
+# (plan SMP_DECLASSIFICATION_COMPLETION_PLAN.md §4 SM9.B.1 … SM9.B.10).
+# ============================================================================
+#
+# SM8.C's trail records authorized downgrades and nothing else, so a monitor
+# could not distinguish "no attempts" from "many attempts, all denied".  A
+# kernel transition's `.error` arm carries no post-state, so the writer had to
+# be the layer that already commits one for every kernel error: the FFI seam.
+
+# SM9.B.1 / SM9.B.2: the record and its ledger, in a leaf below `Model/State`
+# (the §6 mount checklist's step 1).  `KernelError` moved to its own
+# import-free leaf in the same cut so the record can name it typed rather than
+# storing a bare discriminant `Nat`.
+run_check "INVARIANT" rg -n '^structure DeclassificationRefusal' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^structure RefusalLedger' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^def recordRefusal' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^def refusalRingSize' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^def maxRefusalCount' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^inductive KernelError where' SeLe4n/Model/KernelError.lean
+run_check "INVARIANT" rg -n '^import SeLe4n.Model.KernelError' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^import SeLe4n.Kernel.InformationFlow.RefusalRecord' SeLe4n/Model/State.lean
+# The bound is STRUCTURAL — the ring is a `Vector` and the counters are `Fin`s,
+# so there is no 17th `proofLayerInvariantBundle` conjunct and no capacity
+# obligation on any writer.  The pins below say that the ledger never joined the
+# bundle; a cut that adds it there must delete them.
+#
+# Deliberately NOT a blanket `declassificationRefusals` negative over the whole
+# file: the mount owes a *carriage* layer there whatever it holds (no field write
+# transports the bundle definitionally — v0.32.151), and a negative that forbade
+# the identifier outright would forbid the carriage too.  What must stay absent
+# is the field being READ as a conjunct: the `st.declassificationRefusals`
+# projection, and anything conjoined after the bundle's last conjunct — which is
+# how every conjunct from the 12th to the 16th was actually added.
+run_check "INVARIANT" rg -n '^theorem refusalLedger_bounded_structurally' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem refusalCounter_bound_is_structural' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^    auditLogBounded st\.declassificationAuditLog$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_negative_check "INVARIANT" rg -n 'auditLogBounded st\.declassificationAuditLog ' SeLe4n/Kernel/Architecture/Invariant.lean
+run_negative_check "INVARIANT" rg -n 'st\.declassificationRefusals' SeLe4n/Kernel/Architecture/Invariant.lean
+# Saturation, the counted eviction, and the retention window.
+run_check "INVARIANT" rg -n '^theorem recordRefusal_saturates' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem recordRefusal_ring_wraps_counted' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem recordRefusal_no_loss' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+# The ring's own limitation, stated rather than implied absent: a subject can
+# flood the ring, but the eviction is COUNTED, so a monitor knows its view is
+# incomplete rather than reading 32 rows and believing it saw everything.
+run_check "INVARIANT" rg -n '^theorem refusalLedger_eviction_is_counted' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem recordRefusal_never_refuses' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+# The version, and the bracket it exists for — the trail's own `status` token
+# does not move on a ledger write, so a monitor bracketing with it would
+# assemble a hybrid record and never detect it.
+run_check "INVARIANT" rg -n '^@\[simp\] theorem refusalLedger_version_advances_on_record' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem refusalRead_bracketed_detects_overwrite' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem auditStatus_does_not_detect_refusal_write' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalStatus_detects_refusal_write' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+# The seam-resolved source domain: not reconstructible from the rest of the
+# record, and not from the state either — the context is an argument.
+run_check "INVARIANT" rg -n '^theorem refusalRecord_domain_is_seam_resolved' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem refusalRecord_domain_is_seam_resolved_at_seam' SeLe4n/Platform/FFI.lean
+
+# SM9.B.9: the seam's filter is a TOTAL function over `SyscallId`, not a list.
+# The third taxonomy in this plan fixed the same way (after `ReadableStructure`
+# and `ContentFlowSite`): a theorem quantified over a hand-maintained list stays
+# true when SM9.C's second declassifying syscall joins neither.
+run_check "INVARIANT" rg -n '^inductive RefusalSeamClass' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^def refusalSeamClass' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem refusalSeamClass_total' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem refusalSeam_list_gate_insufficient' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem refusalSeamClass_records_iff' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+# NEGATIVE: the seam must not filter on a hardcoded `.declassify` literal — that
+# is precisely the design SM9.C silently defeats.
+run_negative_check "INVARIANT" rg -n 'syscallId.*==.*SyscallId.declassify' SeLe4n/Platform/FFI.lean
+# NEGATIVE: and the classification must stay wildcard-free, or a syscall added
+# tomorrow falls through to `.exempt` with nothing failing to compile.
+run_negative_check "INVARIANT" rg -n '^  \| _ => RefusalSeamClass' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+
+# SM9.B.9: the write itself, and the three security theorems.
+run_check "INVARIANT" rg -n '^def recordSyscallRefusal' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n 'recordSyscallRefusal ctx executingCore syscallId tid ke x0 stRegs' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem refusalWrite_declassificationAuditLog_eq' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem refusalWrite_cannot_exhaust_trail' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem refusalLedger_write_is_caller_invisible' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_records_refusal' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_exempt_refusal_frames_ledger' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_frame' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_readReturnFrame_eq' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_ledger_congr' SeLe4n/Platform/FFI.lean
+
+# SM9.B.3 … SM9.B.8: the §6 mount checklist, run for the third time.  The
+# frozen field is REQUIRED (no default), so a silent drop is a compile error.
+run_check "INVARIANT" rg -n '^  declassificationRefusals : SeLe4n.Kernel.RefusalLedger' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^  declassificationRefusals : SeLe4n.Kernel.RefusalLedger$' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem freeze_preserves_declassificationRefusals' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n 'sst.declassificationRefusals = fst.declassificationRefusals' SeLe4n/Model/FreezeProofs.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem default_declassificationRefusals' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_declassificationRefusals_eq' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n 'declassificationRefusals :$' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n '^theorem applyMachineConfig_declassificationRefusals_eq' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatform_declassificationRefusals_eq' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem declassificationRefusals_write_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem onCore_declassificationRefusals' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+
+# SM9.B.10: the reader joins the fused `ReadableStructure` taxonomy — a read
+# operation cannot exist without naming a structure, and a structure cannot
+# exist without a clause in a TOTAL clause function.
+run_check "INVARIANT" rg -n '\| declassificationRefusalLedger' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '\| .declassificationRefusalLedger =>' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^inductive RefusalReadField' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^def refusalTagsWord' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalTagsWord_roundtrip' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalTagsWord_reason_is_abi_discriminant' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalStatusWord_roundtrip' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalCountersWord_roundtrip' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalSlotField_reconstructs' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+# The gate: full dominance, computed from the CONFIGURATION and never from the
+# ring's surviving rows — the ring evicts while the counters are cumulative.
+run_check "INVARIANT" rg -n '^theorem refusalLedger_requires_full_dominance' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalLedger_partial_reader_learns_nothing' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalLedger_gate_is_configuration_derived' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalLedger_records_gate_unsound' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalRead_requires_monitor_at_entry' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+# The ABI mirror, both sides: 12 trail opcodes + 9 refusal opcodes = 21.
+run_check "INVARIANT" rg -n '^def auditReadOpcodeCount : Nat := 21' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n 'AUDIT_READ_OPCODE_COUNT: u64 = 21' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n 'RefusalStatus = 12' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n 'RefusalRequestedTarget = 20' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n 'REFUSAL_RING_SIZE: u64 = 32' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n 'MAX_REFUSAL_COUNT: u64 = 65535' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n 'REFUSAL_TAG_SLOTS: u64 = 256' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n 'fn refusal_word_decoders_roundtrip' rust/sele4n-sys/src/audit.rs
+
+# SM9.B.10: the retirement.  `refusalIsUnrecorded`'s statement is now FALSE, so
+# the constructor is retired and replaced by the property that survives — and
+# the negative forbids its return, in the SM8.E pattern.
+run_check "INVARIANT" rg -n 'refusalsAreCountedAndAttributed' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationRefusals_are_counted_and_attributed' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_negative_check "INVARIANT" rg -n '\| refusalIsUnrecorded$' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_negative_check "INVARIANT" rg -n '^theorem declassification_refusal_is_unrecorded' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# …and the general congruence now frames EVERY readable structure, so its old
+# trail-only name must not come back.
+run_check "INVARIANT" rg -n '^theorem auditObservationalEquivalence_of_readableFramed' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_negative_check "INVARIANT" rg -n '^theorem auditObservationalEquivalence_of_trailFramed' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_preserves_auditObservationalEquivalence' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_perCore_NI' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# The SM9.A round-7 note, discharged WITH the ledger rather than in a later
+# round: the serialization subject is the state-level lock the recording
+# syscall's footprint already declares (and the first conjunct is the tripwire
+# that forces SM9.C.8's second recording syscall to declare its own), and the
+# occupancy owes no ninth channel entry — a theorem, because each of CC-8's
+# four carriers is absent here.
+run_check "INVARIANT" rg -n '^theorem lockSet_refusalSeam_writer_declares_stateLevel_write' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem refusalLedger_occupancy_is_not_a_covert_channel' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem computeCrossCoreSgis_recordSyscallRefusal_eq' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# SM9.B.3: the bundle carriage the mount owes — unconditional, because the
+# ledger is bounded by its TYPE and no conjunct reads it.  Without this layer a
+# bundle proof for the committed dispatch is blocked exactly where the v0.32.151
+# diagnosis says it is (three conjuncts fail `isDefEq` for structural reasons).
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setDeclassificationRefusals' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_preserves_proofLayerInvariantBundle' SeLe4n/Platform/FFI.lean
+# …and the correction that made it necessary, kept on the record: a
+# conjunct-free mounted field still owes a carriage block, so the plan's step 8
+# must not drift back to "the 17th conjunct also costs the carriage block".
+run_prose_check "INVARIANT" rg -n 'every mounted field owes' docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md
+run_prose_negative_check "INVARIANT" rg -n 'no five-lemma carriage block' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n 'the accepted-channel inventory stays at eight' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'flooding the ring evicts, but the eviction is COUNTED' tests/SmpInformationFlowSuite.lean
+
+# SM9.B tests: the six runtime groups, their load-bearing negatives, and the
+# golden-fixture lines.
+run_check "INVARIANT" rg -n '^  runRefusalLedgerChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runRefusalSeamClassChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runRefusalSeamWriteChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runRefusalReaderChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runRefusalGateChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runRefusalAcceptanceChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: an under-cleared caller reads NOTHING of the ledger' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: yet the cumulative counters still carry the hidden attempt' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a hand-maintained list passes vacuously while missing a recording syscall' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a policy-refused caller learns nothing about trail occupancy' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: an exempt syscall.s refusal leaves the ledger untouched' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'including a field wide enough to need several chunks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=1' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=33 opcodes=21 readableStructures=2' tests/fixtures/smp_information_flow.expected
+
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
 run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^def maxExtraCaps' SeLe4n/Model/Object/Types.lean
@@ -3159,8 +3346,8 @@ run_check "INVARIANT" rg -n '^theorem endpointCall_message_bounded' SeLe4n/Kerne
 run_check "INVARIANT" rg -n '^theorem endpointReply_message_bounded' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_message_bounded' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
 # WS-H12d: KernelError variants for bounds enforcement.
-run_check "INVARIANT" rg -n '^\s*\| ipcMessageTooLarge' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^\s*\| ipcMessageTooManyCaps' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^\s*\| ipcMessageTooLarge' SeLe4n/Model/KernelError.lean
+run_check "INVARIANT" rg -n '^\s*\| ipcMessageTooManyCaps' SeLe4n/Model/KernelError.lean
 # WS-H12d: Trace harness and fixture anchors.
 run_check "INVARIANT" rg -n '^private def runIpcMessageBoundsTrace' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'H12d oversized registers rejected' tests/fixtures/main_trace_smoke.expected

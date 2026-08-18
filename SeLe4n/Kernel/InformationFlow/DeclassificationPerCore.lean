@@ -16,6 +16,14 @@ import SeLe4n.Kernel.InformationFlow.Declassification
 -- Production, and imported here rather than the other way round: the reader must
 -- not pull the SM8.A/SM8.B non-interference layer into the live syscall path.
 import SeLe4n.Kernel.InformationFlow.AuditRead
+-- WS-SM SM9.B.10: the refusal seam.  This module owns the declassification
+-- surface's non-interference theory and its rule inventory, and SM9.B moves
+-- the refusal audit into both: the seam's ledger write needs the per-core
+-- projection (which lives above, in the staged layer) and the retired
+-- `refusalIsUnrecorded` rule needs the theorem that replaces it.  The seam is
+-- production and already in `SeLe4n.lean`'s closure, so importing it here
+-- leaves the staged/production partition unchanged.
+import SeLe4n.Platform.FFI
 
 /-!
 # WS-SM SM8.C — the per-core declassification audit
@@ -1777,38 +1785,37 @@ theorem declassificationSubjectDomain_is_core_selected :
   simp [declassificationSubjectDomainOnCore, bootCoreId,
     SeLe4n.ThreadId.toNat, SecurityDomain.mk.injEq]
 
-/-- WS-SM SM8.C (**the outcome gap**): a *refused* declassification leaves no
-trace, and **cannot** leave one without changing the transition's shape.
+/-- WS-SM SM8.C / SM9.B (**why the seam is the refusal audit's writer**): a
+refused declassification has **no post-state** — the transition's error arm
+carries none, so no producer can be put on it.
 
-The V6-H record has no outcome field, so the trail records authorized downgrades
-and nothing else.  A monitoring system therefore cannot distinguish "no attempts"
-from "many attempts, all denied" — a detection gap, not an enforcement one, since
-every refusal is already fail-closed
-(`declassifyStoreOnCore_denied_no_audit_entry`).
+Up to SM9.B this theorem was cited as *"a refused declassification leaves no
+trace"* and carried the registered rule `refusalIsUnrecorded`.  The second half
+of that reading is still true and is what this theorem proves; the first half
+is now **false**, because SM9.B records refusals — one layer up, at the FFI
+boundary, which already commits a post-state for every kernel error and holds
+every field a record needs (`Platform.FFI.recordSyscallRefusal`).  So the
+theorem is renamed to what it actually establishes, and the rule it carried is
+retired for the property that survives
+(`DeclassificationRuleId.refusalsAreCountedAndAttributed`).
 
-**The closure recipe this docstring used to give was wrong**, and the second
-conjunct is where that shows.  It read
-`st.declassificationAuditLog = st.declassificationAuditLog` — a `rfl` that holds
-of any two syntactically equal terms and therefore says nothing at all — beside
-a sentence promising the gap could be closed with "an outcome field on the
-record and a producer on the error arms".  It cannot: `Kernel α` is
-`SystemState → Except KernelError (α × SystemState)`, so the error arm carries
-**no post-state**, and there is no state for a producer on it to write into.
-The conjunct now says that: the refusal has no success arm, over an arbitrary
-post-state, which is the fact a would-be producer runs into.
+**The closure recipe SM8.C's docstring gave was wrong**, and the second
+conjunct is where that showed.  It read
+`st.declassificationAuditLog = st.declassificationAuditLog` — a `rfl` between
+two identical terms, which says nothing at all — beside a sentence promising
+the gap could be closed with "an outcome field on the record and a producer on
+the error arms".  It cannot: `Kernel α` is
+`SystemState → Except KernelError (α × SystemState)`, so there is no state for
+a producer on the error arm to write into.  The conjunct now says exactly that,
+over an arbitrary post-state, which is the fact a would-be producer runs into
+and the reason SM9.B writes at the seam instead.
 
-Closing the gap therefore needs one of two things, both larger than a field:
-a total transformer (`SystemState → SystemState × Except KernelError α`) for
-this transition, with the dispatch entry committing its state on the error path
-as well; or a separate structure the entry writes by re-deriving the refusal
-from the decoded syscall and the returned discriminant, the way
-`computeCrossCoreSgis` re-derives pokes from the diff.  Either way it is the
-kernel's error discipline that moves, not the audit record — and neither may
-write refusals into *this* trail, whose capacity is fail-closed: an unprivileged
-caller able to append on refusal could exhaust the 256 entries and deny every
-subsequent authorized downgrade.  Re-registered against SM9 with that analysis
-rather than the recipe that does not typecheck. -/
-theorem declassification_refusal_is_unrecorded
+Neither may write refusals into the *trail*, whose capacity is fail-closed: an
+unprivileged caller able to append there could exhaust the
+`maxDeclassificationAuditEntries` entries and deny every subsequent authorized
+downgrade.  `Platform.FFI.refusalWrite_declassificationAuditLog_eq` is the
+theorem that SM9.B's ledger does not. -/
+theorem declassifyStoreOnCore_refusal_has_no_post_state
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
     (c : CoreId) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (targetObj : KernelObject) (st : SystemState)
@@ -1829,6 +1836,86 @@ theorem declassification_refusal_is_unrecorded
   rintro ⟨st', hOk⟩
   rw [hErr] at hOk
   simp at hOk
+
+/-- WS-SM SM9.B.10 (**the property that survives the retirement**): a refused
+declassification is **counted, attributed and version-stamped** in the refusal
+ledger — and creating that evidence costs the audit trail nothing.
+
+The replacement for `DeclassificationRuleId.refusalIsUnrecorded`, whose claim
+SM9.B falsifies.  Both halves are load-bearing and neither implies the other:
+
+* *Counted and attributed* is the detection gap closed — a monitor can now tell
+  "no attempts" from "many attempts, all denied", and can say which subject
+  made them, in which domain, against which capability and why the kernel
+  refused.  The version stamp is what makes a multi-call reconstruction of the
+  record safe (`refusalRead_bracketed_detects_overwrite`).
+* *Costs the trail nothing* is the security half.  The trail's capacity bound
+  is fail-closed, so a caller able to append there on refusal could exhaust the
+  `maxDeclassificationAuditEntries` entries and deny every subsequent
+  **authorized** downgrade.  Refusals go to a different structure, and an
+  authorized downgrade is admitted after any number of them exactly when it was
+  admitted before. -/
+theorem declassificationRefusals_are_counted_and_attributed
+    (ctx : LabelingContext) (c : CoreId) (syscallId : UInt32) (tid : SeLe4n.ThreadId)
+    (ke : KernelError) (x0 : UInt64) (st : SystemState) (sid : SeLe4n.Model.SyscallId)
+    (e : DeclassificationEvent)
+    (hDecode : SeLe4n.Model.SyscallId.ofNat? syscallId.toNat = some sid)
+    (hRecords : refusalSeamClass sid = .records) :
+    (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0
+        st).declassificationRefusals.recent.get st.declassificationRefusals.nextSlot
+      = some { originatingCore := c
+               subject := tid
+               subjectDomain := (liftLegacyContext ctx).threadDomainOf tid
+               syscall := sid
+               reason := ke
+               requestedTarget := SeLe4n.CPtr.ofNat x0.toNat } ∧
+    st.declassificationRefusals.version
+      < (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0
+          st).declassificationRefusals.version ∧
+    (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0
+        st).declassificationAuditLog = st.declassificationAuditLog ∧
+    (recordDeclassificationChecked
+        (SystemState.declassificationAuditLog
+          (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0 st)) e).isSome
+      = (recordDeclassificationChecked st.declassificationAuditLog e).isSome := by
+  have hLedger := SeLe4n.Platform.FFI.recordSyscallRefusal_records ctx c syscallId tid ke x0 st
+    sid hDecode hRecords
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rw [hLedger]; exact recordRefusal_writes_selected_slot _ _
+  · rw [hLedger, refusalLedger_version_advances_on_record]; omega
+  · exact (SeLe4n.Platform.FFI.refusalWrite_declassificationAuditLog_eq ctx c syscallId tid ke
+      x0 st).1
+  · exact SeLe4n.Platform.FFI.refusalWrite_cannot_exhaust_trail ctx c syscallId tid ke x0 st e
+
+/-- WS-SM SM9.B.10: **the seam's refusal write is invisible on every core.**
+
+The composed per-core statement `Platform/FFI.lean` cannot make — the per-core
+projection lives in the staged layer above it — and the one the cross-core
+non-interference inventory consumes: a refused syscall's committed state
+carries a ledger write, and no observer on any core sees it. -/
+theorem recordSyscallRefusal_preserves_projectionOnCore
+    (lctx : LabelingContext) (observer : IfObserver)
+    (ctx : LabelingContext) (c : CoreId) (syscallId : UInt32) (tid : SeLe4n.ThreadId)
+    (ke : KernelError) (x0 : UInt64) (st : SystemState) (viewCore : CoreId) :
+    projectStateOnCore lctx observer
+        (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0 st) viewCore
+      = projectStateOnCore lctx observer st viewCore := by
+  obtain ⟨L, hEq⟩ :=
+    SeLe4n.Platform.FFI.recordSyscallRefusal_frame ctx c syscallId tid ke x0 st
+  rw [hEq]
+  rfl
+
+/-- WS-SM SM9.B.10: the ∀-core aggregate — the refusal write is invisible to
+every per-core observer. -/
+theorem recordSyscallRefusal_perCore_NI
+    (lctx : LabelingContext) (observer : IfObserver)
+    (ctx : LabelingContext) (c : CoreId) (syscallId : UInt32) (tid : SeLe4n.ThreadId)
+    (ke : KernelError) (x0 : UInt64) (st : SystemState) :
+    lowEquivalent_smp lctx observer st
+      (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0 st) :=
+  fun viewCore =>
+    (recordSyscallRefusal_preserves_projectionOnCore lctx observer ctx c syscallId tid ke x0
+      st viewCore).symm
 
 -- ============================================================================
 -- §12  SM8.C — run-level completeness
@@ -2079,10 +2166,14 @@ inductive DeclassificationRuleId where
   /-- WS-SM SM8.C.2 (§11): chain linkage is **syntactic** — matching domains and
   increasing timestamps, with no data-dependency relation behind them. -/
   | chainLinkageIsSyntactic
-  /-- WS-SM SM8.C (§11): a **refused** declassification leaves no trace, so the
-  trail cannot distinguish "no attempts" from "all denied" — and the refusal has
-  no success arm, so no producer *on* the error arm could leave one. -/
-  | refusalIsUnrecorded
+  /-- WS-SM SM9.B (§11, **replacing the retired `refusalIsUnrecorded`**):
+  refused declassifications are **counted and attributed** in the refusal
+  ledger, and still cannot displace an authorized-downgrade entry in the trail.
+
+  The rule this replaces claimed a refusal leaves no trace, which SM9.B makes
+  false.  What survives — and what an audit consumer actually needs to know —
+  is the pair: the evidence exists, and creating it costs the trail nothing. -/
+  | refusalsAreCountedAndAttributed
   /-- WS-SM SM8.C.9: the live declassification writes **only** the audit trail —
   it authorizes and records, and moves no data. -/
   | liveDeclassificationWritesOnlyTheTrail
@@ -2094,7 +2185,8 @@ def DeclassificationRuleId.all : List DeclassificationRuleId :=
   [ .compositionSoundness, .hopAuthorizationDoesNotCompose, .endpointOverrideIsNotABasis
   , .coreDimensionIsAuditOnly, .perCorePartition, .crossCoreChainNeedsGlobalLog
   , .attributionFromRunningSubject, .auditIsNotObservable
-  , .timestampOrderIsCheckable, .chainLinkageIsSyntactic, .refusalIsUnrecorded
+  , .timestampOrderIsCheckable, .chainLinkageIsSyntactic
+  , .refusalsAreCountedAndAttributed
   , .liveDeclassificationWritesOnlyTheTrail ]
 
 theorem DeclassificationRuleId.mem_all (id : DeclassificationRuleId) :
@@ -2166,16 +2258,29 @@ def DeclassificationRuleId.evidenceProp : DeclassificationRuleId → Prop
         declassificationChainLinked [e₁, e₂] = true ∧
           e₁.targetObject ≠ e₂.targetObject ∧
           e₁.originatingCore = e₂.originatingCore
-  | .refusalIsUnrecorded =>
-      ∀ (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy) (c : CoreId)
-        (srcDomain dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId)
-        (targetObj : KernelObject) (st : SystemState),
-        declPolicy.canDeclassify srcDomain dstDomain = false →
-        ctx.policy.canFlow srcDomain dstDomain = false →
-        declassifyStoreOnCore ctx declPolicy c srcDomain dstDomain targetId targetObj st =
-          .error .declassificationDenied ∧
-        ¬ ∃ st', declassifyStoreOnCore ctx declPolicy c srcDomain dstDomain targetId targetObj st =
-          .ok ((), st')
+  | .refusalsAreCountedAndAttributed =>
+      ∀ (ctx : LabelingContext) (c : CoreId) (syscallId : UInt32) (tid : SeLe4n.ThreadId)
+        (ke : KernelError) (x0 : UInt64) (st : SystemState) (sid : SeLe4n.Model.SyscallId)
+        (e : DeclassificationEvent),
+        SeLe4n.Model.SyscallId.ofNat? syscallId.toNat = some sid →
+        refusalSeamClass sid = .records →
+        (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0
+            st).declassificationRefusals.recent.get st.declassificationRefusals.nextSlot
+          = some { originatingCore := c
+                   subject := tid
+                   subjectDomain := (liftLegacyContext ctx).threadDomainOf tid
+                   syscall := sid
+                   reason := ke
+                   requestedTarget := SeLe4n.CPtr.ofNat x0.toNat } ∧
+        st.declassificationRefusals.version
+          < (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0
+              st).declassificationRefusals.version ∧
+        (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0
+            st).declassificationAuditLog = st.declassificationAuditLog ∧
+        (recordDeclassificationChecked
+            (SystemState.declassificationAuditLog
+              (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0 st)) e).isSome
+          = (recordDeclassificationChecked st.declassificationAuditLog e).isSome
   | .liveDeclassificationWritesOnlyTheTrail =>
       ∀ (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy) (c : CoreId)
         (srcDomain dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId)
@@ -2215,10 +2320,10 @@ def declassificationRuleEvidence : (id : DeclassificationRuleId) → id.evidence
           obj logA logB st stA stB hStepA hStepB
   | .timestampOrderIsCheckable => recordDeclassification_admits_ill_formed
   | .chainLinkageIsSyntactic => declassificationChainLinked_is_syntactic
-  | .refusalIsUnrecorded =>
-      fun ctx declPolicy c srcDomain dstDomain targetId targetObj st hDenied hNotFlow =>
-        declassification_refusal_is_unrecorded ctx declPolicy c srcDomain dstDomain targetId
-          targetObj st hDenied hNotFlow
+  | .refusalsAreCountedAndAttributed =>
+      fun ctx c syscallId tid ke x0 st sid e hDecode hRecords =>
+        declassificationRefusals_are_counted_and_attributed ctx c syscallId tid ke x0 st sid e
+          hDecode hRecords
   | .liveDeclassificationWritesOnlyTheTrail =>
       fun ctx declPolicy c srcDomain dstDomain targetId st st' hStep =>
         authorizeDeclassificationOnCore_frame ctx declPolicy c srcDomain dstDomain targetId
@@ -2239,7 +2344,8 @@ def declassificationRuleEvidenceName : DeclassificationRuleId → String
   | .auditIsNotObservable => niName! declassifyStoreOnCore_state_trail_independent
   | .timestampOrderIsCheckable => niName! recordDeclassification_admits_ill_formed
   | .chainLinkageIsSyntactic => niName! declassificationChainLinked_is_syntactic
-  | .refusalIsUnrecorded => niName! declassification_refusal_is_unrecorded
+  | .refusalsAreCountedAndAttributed =>
+      niName! declassificationRefusals_are_counted_and_attributed
   | .liveDeclassificationWritesOnlyTheTrail =>
       niName! authorizeDeclassificationOnCore_frame
 
@@ -2266,8 +2372,8 @@ def declassificationRuleStatement : DeclassificationRuleId → String
       "the trail's total order is a checkable predicate, not a type invariant"
   | .chainLinkageIsSyntactic =>
       "chain linkage is syntactic: matching domains and increasing timestamps"
-  | .refusalIsUnrecorded =>
-      "a refused declassification leaves no trace, and has no post-state to leave one in"
+  | .refusalsAreCountedAndAttributed =>
+      "refusals are counted and attributed, and cannot displace an authorized entry"
   | .liveDeclassificationWritesOnlyTheTrail =>
       "the live declassification writes only the audit trail; it moves no data"
 
@@ -2353,6 +2459,18 @@ def readableStructureAgrees (ctx : GenericLabelingContext)
         = auditLogVisibleTo ctx reader s₂.declassificationAuditLog ∧
       (auditMonitorAuthorized ctx monitorClearance reader = true →
         s₁.declassificationAuditEpoch = s₂.declassificationAuditEpoch)
+  | .declassificationRefusalLedger =>
+      -- WS-SM SM9.B.10: the ledger's clause is **conditional and whole**, where
+      -- the trail's is unconditional and filtered — because the two structures
+      -- expose different things to a partial reader.  A trail has a
+      -- clearance-filtered view; a ledger has none (its ring evicts, so a
+      -- hidden write would remove a lower reader's entry), so a caller below
+      -- the configured monitor clearance observes *nothing* of it
+      -- (`refusalLedger_requires_full_dominance`) and the clause is vacuous for
+      -- exactly that caller.  For the monitor it is whole-ledger agreement,
+      -- which is what the reads it is served actually depend on.
+      auditMonitorAuthorized ctx monitorClearance reader = true →
+        s₁.declassificationRefusals = s₂.declassificationRefusals
 
 /-- WS-SM SM9.A.4a: the totality anchor.  The *mechanism* is the definition —
 an exhaustive match with no wildcard, so a new `ReadableStructure` constructor
@@ -2382,7 +2500,10 @@ def auditObservationalEquivalence (ctx : LabelingContext) (observer : IfObserver
 theorem auditObservationalEquivalence_refl (ctx : LabelingContext) (observer : IfObserver)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain) (s : SystemState) :
     auditObservationalEquivalence ctx observer monitorClearance reader s s :=
-  ⟨rfl, fun str => by cases str; exact ⟨rfl, fun _ => rfl⟩⟩
+  ⟨rfl, fun str => by
+    cases str
+    · exact ⟨rfl, fun _ => rfl⟩
+    · exact fun _ => rfl⟩
 
 /-- WS-SM SM9.A.4a: symmetry. -/
 theorem auditObservationalEquivalence_symm (ctx : LabelingContext) (observer : IfObserver)
@@ -2392,8 +2513,9 @@ theorem auditObservationalEquivalence_symm (ctx : LabelingContext) (observer : I
     auditObservationalEquivalence ctx observer monitorClearance reader s₂ s₁ := by
   refine ⟨h.1.symm, fun str => ?_⟩
   cases str
-  obtain ⟨hView, hEpoch⟩ := h.2 .declassificationAuditTrail
-  exact ⟨hView.symm, fun hMon => (hEpoch hMon).symm⟩
+  · obtain ⟨hView, hEpoch⟩ := h.2 .declassificationAuditTrail
+    exact ⟨hView.symm, fun hMon => (hEpoch hMon).symm⟩
+  · exact fun hMon => (h.2 .declassificationRefusalLedger hMon).symm
 
 /-- WS-SM SM9.A.4a: transitivity. -/
 theorem auditObservationalEquivalence_trans (ctx : LabelingContext) (observer : IfObserver)
@@ -2404,18 +2526,28 @@ theorem auditObservationalEquivalence_trans (ctx : LabelingContext) (observer : 
     auditObservationalEquivalence ctx observer monitorClearance reader s₁ s₃ := by
   refine ⟨h₁.1.trans h₂.1, fun str => ?_⟩
   cases str
-  obtain ⟨hView₁, hEpoch₁⟩ := h₁.2 .declassificationAuditTrail
-  obtain ⟨hView₂, hEpoch₂⟩ := h₂.2 .declassificationAuditTrail
-  exact ⟨hView₁.trans hView₂, fun hMon => (hEpoch₁ hMon).trans (hEpoch₂ hMon)⟩
+  · obtain ⟨hView₁, hEpoch₁⟩ := h₁.2 .declassificationAuditTrail
+    obtain ⟨hView₂, hEpoch₂⟩ := h₂.2 .declassificationAuditTrail
+    exact ⟨hView₁.trans hView₂, fun hMon => (hEpoch₁ hMon).trans (hEpoch₂ hMon)⟩
+  · exact fun hMon =>
+      (h₁.2 .declassificationRefusalLedger hMon).trans
+        (h₂.2 .declassificationRefusalLedger hMon)
 
-/-- WS-SM SM9.A.4a (**the general congruence**): a transition that frames the
-trail and the epoch on both sides, and preserves the projection, preserves the
+/-- WS-SM SM9.A.4a (**the general congruence**): a transition that frames every
+readable structure on both sides, and preserves the projection, preserves the
 relation.
 
 This is the congruence that covers *most* of the kernel: every transition that
-is not an audit writer frames both fields, so the relation rides them for free.
-The two that do write are handled below. -/
-theorem auditObservationalEquivalence_of_trailFramed (ctx : LabelingContext)
+is neither an audit writer nor a refusal writer frames all three fields, so the
+relation rides them for free.  The writers are handled below.
+
+**WS-SM SM9.B.10**: the ledger's two hypotheses joined the trail's four when
+the refusal ledger became readable.  They are not optional — a transition that
+framed the trail but moved the ledger would leave a monitor's ledger reads
+free to differ, which is precisely what the relation exists to exclude.  The
+name kept `trailFramed` through SM9.A; it now means *every readable structure
+framed*, and `readableFramed` is what it says. -/
+theorem auditObservationalEquivalence_of_readableFramed (ctx : LabelingContext)
     (observer : IfObserver) (monitorClearance : Option SecurityDomain)
     (reader : SecurityDomain) {s₁ s₂ s₁' s₂' : SystemState}
     (h : auditObservationalEquivalence ctx observer monitorClearance reader s₁ s₂)
@@ -2423,14 +2555,19 @@ theorem auditObservationalEquivalence_of_trailFramed (ctx : LabelingContext)
     (hTrail₁ : s₁'.declassificationAuditLog = s₁.declassificationAuditLog)
     (hTrail₂ : s₂'.declassificationAuditLog = s₂.declassificationAuditLog)
     (hEpoch₁ : s₁'.declassificationAuditEpoch = s₁.declassificationAuditEpoch)
-    (hEpoch₂ : s₂'.declassificationAuditEpoch = s₂.declassificationAuditEpoch) :
+    (hEpoch₂ : s₂'.declassificationAuditEpoch = s₂.declassificationAuditEpoch)
+    (hLedger₁ : s₁'.declassificationRefusals = s₁.declassificationRefusals)
+    (hLedger₂ : s₂'.declassificationRefusals = s₂.declassificationRefusals) :
     auditObservationalEquivalence ctx observer monitorClearance reader s₁' s₂' := by
   refine ⟨hProj, fun str => ?_⟩
   cases str
-  obtain ⟨hView, hEp⟩ := h.2 .declassificationAuditTrail
-  refine ⟨?_, fun hMon => ?_⟩
-  · rw [hTrail₁, hTrail₂]; exact hView
-  · rw [hEpoch₁, hEpoch₂]; exact hEp hMon
+  · obtain ⟨hView, hEp⟩ := h.2 .declassificationAuditTrail
+    refine ⟨?_, fun hMon => ?_⟩
+    · rw [hTrail₁, hTrail₂]; exact hView
+    · rw [hEpoch₁, hEpoch₂]; exact hEp hMon
+  · intro hMon
+    rw [hLedger₁, hLedger₂]
+    exact h.2 .declassificationRefusalLedger hMon
 
 /-- WS-SM SM9.A.4a: **the declassification's congruence.**
 
@@ -2465,6 +2602,10 @@ theorem authorizeDeclassificationOnCore_preserves_auditObservationalEquivalence
   subst hSt₁; subst hSt₂
   refine ⟨hProj, fun str => ?_⟩
   cases str
+  case declassificationRefusalLedger =>
+    -- WS-SM SM9.B.10: the declassification writes the trail, never the ledger,
+    -- so the ledger's clause rides the pre-state's unchanged.
+    exact h.2 .declassificationRefusalLedger
   obtain ⟨hView, hEp⟩ := h.2 .declassificationAuditTrail
   refine ⟨?_, fun hMon => hEp hMon⟩
   show auditLogVisibleTo (liftLegacyContext ctx) reader
@@ -2507,6 +2648,10 @@ theorem auditDrain_preserves_auditObservationalEquivalence
   subst hSt₁; subst hSt₂
   refine ⟨hProj, fun str => ?_⟩
   cases str
+  case declassificationRefusalLedger =>
+    -- WS-SM SM9.B.10: the drain writes the trail and the epoch, never the
+    -- ledger, so the ledger's clause rides the pre-state's unchanged.
+    exact h.2 .declassificationRefusalLedger
   refine ⟨?_, fun _ => ?_⟩
   · show auditLogVisibleTo (liftLegacyContext ctx) reader
         (s₁.declassificationAuditLog.drop (min count s₁.declassificationAuditLog.length)) =
@@ -2516,6 +2661,47 @@ theorem auditDrain_preserves_auditObservationalEquivalence
   · show s₁.declassificationAuditEpoch + min count s₁.declassificationAuditLog.length =
       s₂.declassificationAuditEpoch + min count s₂.declassificationAuditLog.length
     rw [hTrail, hEpoch]
+
+/-- WS-SM SM9.B.10 (**the refusal seam's congruence**): two equivalent states
+whose seams record the *same* refusal stay equivalent.
+
+The §3.7 discipline says every writer of a readable structure owes a
+congruence, and the refusal ledger has exactly one writer.  The `hSameRefusal`
+premise is the ledger's analogue of the declassification's `hSameEvent`, and it
+is what a shared subject, core, syscall, error and operand give: the seam
+constructs the record from its arguments alone, so two states reached by the
+same refused call record identical rows.
+
+`hLedger` is the ledger's own pre-agreement, extracted from the relation rather
+than assumed — for a monitor the clause is whole-ledger equality, so recording
+the same refusal on both sides preserves it; for a partial reader the clause is
+vacuous and so is the conclusion. -/
+theorem recordSyscallRefusal_preserves_auditObservationalEquivalence
+    (ctx : LabelingContext) (observer : IfObserver)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (sctx : LabelingContext) (c : CoreId) (syscallId : UInt32) (tid : SeLe4n.ThreadId)
+    (ke : KernelError) (x0 : UInt64) {s₁ s₂ : SystemState}
+    (h : auditObservationalEquivalence ctx observer monitorClearance reader s₁ s₂) :
+    auditObservationalEquivalence ctx observer monitorClearance reader
+      (SeLe4n.Platform.FFI.recordSyscallRefusal sctx c syscallId tid ke x0 s₁)
+      (SeLe4n.Platform.FFI.recordSyscallRefusal sctx c syscallId tid ke x0 s₂) := by
+  obtain ⟨L₁, hEq₁⟩ :=
+    SeLe4n.Platform.FFI.recordSyscallRefusal_frame sctx c syscallId tid ke x0 s₁
+  obtain ⟨L₂, hEq₂⟩ :=
+    SeLe4n.Platform.FFI.recordSyscallRefusal_frame sctx c syscallId tid ke x0 s₂
+  refine ⟨?_, fun str => ?_⟩
+  · rw [hEq₁, hEq₂]
+    show projectState ctx observer _ = projectState ctx observer _
+    rw [declassificationRefusals_write_preserves_projection ctx observer s₁ L₁,
+        declassificationRefusals_write_preserves_projection ctx observer s₂ L₂]
+    exact h.1
+  · cases str
+    · obtain ⟨hView, hEp⟩ := h.2 .declassificationAuditTrail
+      rw [hEq₁, hEq₂]
+      exact ⟨hView, fun hMon => hEp hMon⟩
+    · intro hMon
+      exact SeLe4n.Platform.FFI.recordSyscallRefusal_ledger_congr sctx c syscallId tid ke x0
+        s₁ s₂ (h.2 .declassificationRefusalLedger hMon)
 
 /-- WS-SM SM9.A.4a (**the load-bearing negative**): plain `lowEquivalent` does
 **not** imply equal visible views.
@@ -2553,10 +2739,11 @@ theorem lowEquivalent_does_not_determine_visible_view :
 observation relation — two states an audit reader cannot distinguish return the
 same word for **every** sub-operation.
 
-Substantive rather than definitional: the relation compares the *visible view*
-and (conditionally) the epoch, and this theorem is what establishes that no arm
-reads anything else — not the hidden entries, not the trail's length, not the
-epoch when the caller is not entitled to it. -/
+Substantive rather than definitional: the relation compares the *visible view*,
+and (conditionally) the epoch and the refusal ledger, and this theorem is what
+establishes that no arm reads anything else — not the hidden entries, not the
+trail's length, and neither the epoch nor the ledger when the caller is not
+entitled to them. -/
 theorem auditRead_no_channel (ctx : LabelingContext) (observer : IfObserver)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
     (s₁ s₂ : SystemState) (op : AuditReadOp)
@@ -2565,7 +2752,7 @@ theorem auditRead_no_channel (ctx : LabelingContext) (observer : IfObserver)
       auditReadWord (liftLegacyContext ctx) monitorClearance reader s₂ op := by
   obtain ⟨hView, hEpoch⟩ := h.2 .declassificationAuditTrail
   exact auditRead_determined_by_view (liftLegacyContext ctx) monitorClearance reader s₁ s₂ op
-    hView hEpoch
+    hView hEpoch (h.2 .declassificationRefusalLedger)
 
 /-- WS-SM SM9.A.4b: the same for the live entry point.
 
@@ -2690,6 +2877,84 @@ theorem acceptedCovertChannel_auditOccupancy_bounded :
         auditLogBounded st.declassificationAuditLog →
         st.declassificationAuditLog.length < maxDeclassificationAuditEntries + 1) :=
   ⟨rfl, rfl, rfl, rfl, fun st hBounded => auditOccupancy_alphabet_bounded st hBounded⟩
+
+/-- WS-SM SM9.B.10 (**why the refusal ledger owes no ninth covert-channel
+entry**): the ledger is a bounded shared singleton like the trail, and yet its
+occupancy has **no unprivileged carrier** — because it behaves the opposite way
+at its bound.
+
+PR #870 round 7 registered the trail's occupancy as CC-8 for a precise reason:
+the trail is bounded **and fail-closed**, so every policy-authorized
+declassifier reads full/not-full off its own syscall outcome
+(`declassify_capacity_refusal_of_full`), and a monitor's drain flips that bit
+for lower-domain subjects.  The plan requires SM9.B to answer the same question
+for the ledger *with* the ledger rather than in a later round, and the answer is
+that each of the four carriers CC-8 has is absent here:
+
+1. **No capacity refusal.**  `recordRefusal` is total: at a full ring it evicts
+   and counts the eviction rather than refusing, so no syscall outcome depends
+   on the ledger's fill level (the first conjunct, stated at a *full* ring
+   against `recordDeclassificationChecked`'s refusal at a full trail — the two
+   halves of the contrast in one statement).
+2. **No outcome dependence.**  The seam's returned outcome on the refusal path
+   is the error frame computed from `ke` alone, so a refused caller learns
+   exactly what it learned before the ledger existed.
+3. **No projection.**  The ledger is outside `ObservableState`, so a ledger
+   write moves no observer's view on any core.
+4. **No unprivileged read.**  A caller the configured monitor gate refuses
+   reads nothing of it, and cannot even distinguish two arbitrary ledgers.
+
+What remains — a subject flooding the ring to evict another's records — is a
+flow *into* the monitor, which dominates every subject domain, and it is
+visible rather than silent (`refusalLedger_eviction_is_counted`). -/
+theorem refusalLedger_occupancy_is_not_a_covert_channel
+    (ctx : LabelingContext) (observer : IfObserver)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (executingCore : CoreId) (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (tid : SeLe4n.ThreadId) (ke : KernelError) (st : SystemState)
+    (L : RefusalLedger) (r : DeclassificationRefusal)
+    (log : DeclassificationAuditLog) (e : DeclassificationEvent)
+    (op : AuditReadOp) (L₁ L₂ : RefusalLedger)
+    (hFullTrail : maxDeclassificationAuditEntries ≤ log.length)
+    (hLedgerOp : op.readsStructure = .declassificationRefusalLedger)
+    (hPartial : auditMonitorAuthorized (liftLegacyContext ctx) monitorClearance reader = false)
+    (hMsg : msgInfo = x1)
+    (hCur : st.scheduler.currentOnCore executingCore = some tid)
+    (hSyscall :
+      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+          (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        = Except.error ke) :
+    -- (1) the ledger has no capacity refusal, where the trail does
+    ((recordRefusal L r).recent.get L.nextSlot = some r ∧
+      recordDeclassificationChecked log e = none) ∧
+    -- (2) the outcome the boundary hands the refused caller is the error frame
+    -- computed from `ke` alone — it names no component of the ledger
+    ((SeLe4n.Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId msgInfo
+        x0 x1 x2 x3 x4 x5 ipcBufferAddr st).map (·.1)
+      = Except.ok (.returns (Architecture.errorFrame ke))) ∧
+    -- (3) the ledger write is invisible to the projection
+    (projectState ctx observer
+        (SeLe4n.Platform.FFI.recordSyscallRefusal ctx executingCore syscallId tid ke x0 st)
+      = projectState ctx observer st) ∧
+    -- (4) an under-cleared caller reads nothing, and cannot tell two ledgers apart
+    (auditReadWord (liftLegacyContext ctx) monitorClearance reader
+        { st with declassificationRefusals := L₁ } op = .error .illegalAuthority ∧
+      auditReadWord (liftLegacyContext ctx) monitorClearance reader
+          { st with declassificationRefusals := L₁ } op
+        = auditReadWord (liftLegacyContext ctx) monitorClearance reader
+            { st with declassificationRefusals := L₂ } op) := by
+  refine ⟨recordRefusal_never_refuses L r log e hFullTrail, ?_, ?_, ?_, ?_⟩
+  · exact SeLe4n.Platform.FFI.refusalLedger_write_is_caller_invisible ctx executingCore
+      syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st tid ke hMsg hCur hSyscall
+  · obtain ⟨L', hEq⟩ :=
+      SeLe4n.Platform.FFI.recordSyscallRefusal_frame ctx executingCore syscallId tid ke x0 st
+    rw [hEq]
+    exact declassificationRefusals_write_preserves_projection ctx observer st L'
+  · exact refusalLedger_requires_full_dominance (liftLegacyContext ctx) monitorClearance reader
+      _ op hLedgerOp hPartial
+  · exact refusalLedger_partial_reader_learns_nothing (liftLegacyContext ctx) monitorClearance
+      reader st L₁ L₂ op hLedgerOp hPartial
 
 /-- WS-SM SM9.A.4b: the drain's own per-core non-interference — it writes the
 trail and the epoch, and no observer on any core reads either. -/

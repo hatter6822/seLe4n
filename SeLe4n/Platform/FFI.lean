@@ -1135,6 +1135,313 @@ def syscallReturnOutcome (syscallId : UInt32) (st : SystemState)
       ((SyscallId.ofNat? syscallId.toNat).map Architecture.syscallReturnShape).getD .unit
     .returns (Architecture.frameForShape shape (Architecture.readReturnFrame st tid))
 
+-- ============================================================================
+-- WS-SM SM9.B.9 — the refusal seam
+-- ============================================================================
+
+/-! ## Why the refusal audit is written here and nowhere else
+
+`Kernel α = SystemState → Except KernelError (α × SystemState)`, so a kernel
+transition's `.error` arm carries **no post-state** and no producer can be put
+on it — which is what SM8.C's `declassification_refusal_is_unrecorded`
+recorded, and why closing the gap needed either a total transformer for the
+transition or a structure written one layer up.
+
+One layer up is here.  `syscallDispatchFromAbi` already converts every kernel
+error into a **committed** `(SyscallOutcome, state)` pair, and it does so with
+every field a refusal record needs already in hand: the executing core, the
+resolved subject, the deployment's labeling context, the raw syscall number and
+`x0`, and the `KernelError` itself.  So the refusal audit costs no change to
+the kernel's error discipline, no widening of `syscallEntryChecked`'s error
+type (which would move ~40 theorem statements and break the two that bake in
+*"an error changes nothing"*), and no decode replay.
+
+**What the caller learns is unchanged.**  The outcome this arm returns is
+`Architecture.errorFrame ke` — computed from the error alone, exactly as before
+the ledger existed (`refusalLedger_write_is_caller_invisible`).  And
+`recordRefusal` is **total**: a full ring evicts and counts the eviction rather
+than refusing, so the ledger has no failure mode that could surface to the
+caller.  That matters more than it looks: a fail-closed ledger would make its
+own occupancy readable from an unprivileged syscall's outcome, which is exactly
+the CC-8 channel the trail's fail-closed bound already forces and which the
+plan requires SM9.B not to duplicate. -/
+
+/-- WS-SM SM9.B.9: **record a refused syscall in the ledger**, if its
+classification says to.
+
+Fail-closed on an unrecognised syscall number: an ABI number the kernel cannot
+decode cannot be classified either, and such a call never reached a
+declassification path — `syscallEntryChecked` rejects it with
+`.invalidSyscallNumber` before any transition runs.
+
+The subject's domain is resolved **here**, from the dispatch's own context, and
+stored: `(liftLegacyContext ctx).threadDomainOf tid` is definitionally the
+domain the live declassification path assigns that subject, so a refusal and a
+success name the same subject the same way.  Recomputing it later is not
+available — `LabelingContext` is an argument to this function, not persistent
+state (`refusalRecord_domain_is_seam_resolved_at_seam`). -/
+def recordSyscallRefusal
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (st : SystemState) : SystemState :=
+  match SyscallId.ofNat? syscallId.toNat with
+  | none => st
+  | some sid =>
+      match refusalSeamClass sid with
+      | .exempt => st
+      | .records =>
+          { st with
+            declassificationRefusals :=
+              recordRefusal st.declassificationRefusals
+                { originatingCore := executingCore
+                  subject := tid
+                  subjectDomain := (liftLegacyContext ctx).threadDomainOf tid
+                  syscall := sid
+                  reason := ke
+                  requestedTarget := SeLe4n.CPtr.ofNat x0.toNat } }
+
+/-- WS-SM SM9.B.9: an exempt syscall's refusal is not recorded — the ledger is
+a declassification audit, not a general syscall-failure log. -/
+theorem recordSyscallRefusal_exempt
+    (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (st : SystemState) (sid : SyscallId)
+    (hDecode : SyscallId.ofNat? syscallId.toNat = some sid)
+    (hExempt : refusalSeamClass sid = .exempt) :
+    recordSyscallRefusal ctx executingCore syscallId tid ke x0 st = st := by
+  simp only [recordSyscallRefusal, hDecode, hExempt]
+
+/-- WS-SM SM9.B.9 (**fail-closed**): a syscall number the kernel cannot decode
+records nothing.  There is no classification to consult, and no declassification
+was attempted — `syscallEntryChecked` rejects such a call outright. -/
+theorem recordSyscallRefusal_undecodable
+    (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (st : SystemState)
+    (hDecode : SyscallId.ofNat? syscallId.toNat = none) :
+    recordSyscallRefusal ctx executingCore syscallId tid ke x0 st = st := by
+  unfold recordSyscallRefusal
+  rw [hDecode]
+
+/-- WS-SM SM9.B.9: a recorded syscall's refusal lands in the ledger's selected
+slot, attributed — the positive half of the classification. -/
+theorem recordSyscallRefusal_records
+    (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (st : SystemState) (sid : SyscallId)
+    (hDecode : SyscallId.ofNat? syscallId.toNat = some sid)
+    (hRecords : refusalSeamClass sid = .records) :
+    (recordSyscallRefusal ctx executingCore syscallId tid ke x0 st).declassificationRefusals
+      = recordRefusal st.declassificationRefusals
+          { originatingCore := executingCore
+            subject := tid
+            subjectDomain := (liftLegacyContext ctx).threadDomainOf tid
+            syscall := sid
+            reason := ke
+            requestedTarget := SeLe4n.CPtr.ofNat x0.toNat } := by
+  simp only [recordSyscallRefusal, hDecode, hRecords]
+
+/-- WS-SM SM9.B.9 (**the frame**): recording a refusal writes the ledger and
+**nothing else**.
+
+Stated over the whole state rather than field by field: the post-state is the
+pre-state with exactly one field replaced, so every other component — the
+object store, the scheduler, the machine, and in particular the audit trail —
+is carried through by construction. -/
+theorem recordSyscallRefusal_frame
+    (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (st : SystemState) :
+    ∃ L : RefusalLedger,
+      recordSyscallRefusal ctx executingCore syscallId tid ke x0 st =
+        { st with declassificationRefusals := L } := by
+  unfold recordSyscallRefusal
+  split
+  · exact ⟨st.declassificationRefusals, rfl⟩
+  · split
+    · exact ⟨st.declassificationRefusals, rfl⟩
+    · exact ⟨_, rfl⟩
+
+/-- WS-SM SM9.B.9 (**the bundle survives the refusal write**): every
+`proofLayerInvariantBundle` conjunct holds of the committed post-state.
+
+**Unconditional**, and that is the content: the ledger is bounded by its
+*type* — a `Vector` ring and two `Fin` counters — so no conjunct reads it and
+the writer owes nothing.  A `List` ring with `Nat` counters would have needed a
+seventeenth conjunct and a capacity obligation at *every* writer, and this
+theorem is where that cost would have been paid — the carriage block behind it
+is owed either way, since no field write transports the bundle definitionally.
+
+Not definitional: three conjuncts fail `isDefEq` outright for structural
+reasons (v0.32.151), which is why the write is routed through
+`Architecture.proofLayerInvariantBundle_setDeclassificationRefusals` rather than
+closed by `rfl`. -/
+theorem recordSyscallRefusal_preserves_proofLayerInvariantBundle
+    (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (st : SystemState)
+    (hInv : SeLe4n.Kernel.Architecture.proofLayerInvariantBundle st) :
+    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle
+      (recordSyscallRefusal ctx executingCore syscallId tid ke x0 st) := by
+  obtain ⟨L, hEq⟩ :=
+    recordSyscallRefusal_frame ctx executingCore syscallId tid ke x0 st
+  rw [hEq]
+  exact SeLe4n.Kernel.Architecture.proofLayerInvariantBundle_setDeclassificationRefusals st L hInv
+
+/-- WS-SM SM9.B.9: the object store is untouched by a refusal write — the
+frame the "an error stages no return frame" statement rides. -/
+theorem recordSyscallRefusal_objects_eq
+    (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (st : SystemState) :
+    (recordSyscallRefusal ctx executingCore syscallId tid ke x0 st).objects = st.objects := by
+  unfold recordSyscallRefusal
+  split
+  · rfl
+  · split <;> rfl
+
+/-- WS-SM SM9.B.9: the scheduler is untouched by a refusal write. -/
+theorem recordSyscallRefusal_scheduler_eq
+    (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (st : SystemState) :
+    (recordSyscallRefusal ctx executingCore syscallId tid ke x0 st).scheduler = st.scheduler := by
+  unfold recordSyscallRefusal
+  split
+  · rfl
+  · split <;> rfl
+
+/-- WS-SM SM9.B.9: the machine is untouched by a refusal write. -/
+theorem recordSyscallRefusal_machine_eq
+    (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (st : SystemState) :
+    (recordSyscallRefusal ctx executingCore syscallId tid ke x0 st).machine = st.machine := by
+  unfold recordSyscallRefusal
+  split
+  · rfl
+  · split <;> rfl
+
+/-- WS-SM SM9.B.9: **the refusal write stages no return frame.**
+
+`readReturnFrame` reads the caller's TCB register file, and the refusal write
+does not touch the object store — so the frame the boundary would hand back is
+exactly the one the argument spill left, which is what keeps WS-RA's RA.B.4
+contract ("an error stages nothing") true of the committed state. -/
+theorem recordSyscallRefusal_readReturnFrame_eq
+    (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (st : SystemState) (t : SeLe4n.ThreadId) :
+    Architecture.readReturnFrame
+        (recordSyscallRefusal ctx executingCore syscallId tid ke x0 st) t
+      = Architecture.readReturnFrame st t := by
+  unfold Architecture.readReturnFrame SystemState.getTcb?
+  rw [recordSyscallRefusal_objects_eq]
+
+/-- WS-SM SM9.B.9 (**the subject's domain is resolved by the dispatch's own
+context**): two deployments that label the same subject differently record
+different source domains for the identical refusal.
+
+The seam-level half of `refusalRecord_domain_is_seam_resolved`.  Together they
+are the argument for storing the domain rather than the subject id alone: the
+context is an *argument* to this function, not persistent state, so nothing a
+later reader can consult determines which domain the subject held when it was
+refused. -/
+theorem refusalRecord_domain_is_seam_resolved_at_seam
+    (ctx₁ ctx₂ : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (st : SystemState) (sid : SyscallId)
+    (hDecode : SyscallId.ofNat? syscallId.toNat = some sid)
+    (hRecords : refusalSeamClass sid = .records)
+    (hDiffer : ctx₁.threadLabelOf tid ≠ ctx₂.threadLabelOf tid)
+    (r₁ r₂ : DeclassificationRefusal)
+    (hRec₁ : (recordSyscallRefusal ctx₁ executingCore syscallId tid ke x0 st).declassificationRefusals.recent.get
+      st.declassificationRefusals.nextSlot = some r₁)
+    (hRec₂ : (recordSyscallRefusal ctx₂ executingCore syscallId tid ke x0 st).declassificationRefusals.recent.get
+      st.declassificationRefusals.nextSlot = some r₂) :
+    r₁.subjectDomain ≠ r₂.subjectDomain := by
+  rw [recordSyscallRefusal_records ctx₁ executingCore syscallId tid ke x0 st sid hDecode hRecords,
+      recordRefusal_writes_selected_slot] at hRec₁
+  rw [recordSyscallRefusal_records ctx₂ executingCore syscallId tid ke x0 st sid hDecode hRecords,
+      recordRefusal_writes_selected_slot] at hRec₂
+  obtain rfl := Option.some.inj hRec₁
+  obtain rfl := Option.some.inj hRec₂
+  intro hEq
+  apply hDiffer
+  have h : unembedLegacyDomain (embedLegacyLabel (ctx₁.threadLabelOf tid))
+      = unembedLegacyDomain (embedLegacyLabel (ctx₂.threadLabelOf tid)) :=
+    congrArg unembedLegacyDomain hEq
+  simpa using h
+
+/-- WS-SM SM9.B.10 (**the ledger congruence**): the recorded ledger depends on
+the pre-state only through the ledger.
+
+Every other component of the record is built from this function's own
+arguments, so two states whose ledgers agree record identical rows and their
+post-ledgers agree.  This is what makes the refusal write a congruence for
+SM9.A.4a's observation relation — the §3.7 obligation every writer of a
+readable structure owes. -/
+theorem recordSyscallRefusal_ledger_congr
+    (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (s₁ s₂ : SystemState)
+    (h : s₁.declassificationRefusals = s₂.declassificationRefusals) :
+    (recordSyscallRefusal ctx executingCore syscallId tid ke x0 s₁).declassificationRefusals
+      = (recordSyscallRefusal ctx executingCore syscallId tid ke x0 s₂).declassificationRefusals := by
+  cases hD : SyscallId.ofNat? syscallId.toNat with
+  | none =>
+      simp only [recordSyscallRefusal, hD]
+      exact h
+  | some sid =>
+      cases hC : refusalSeamClass sid with
+      | exempt =>
+          simp only [recordSyscallRefusal, hD, hC]
+          exact h
+      | records =>
+          rw [recordSyscallRefusal_records ctx executingCore syscallId tid ke x0 s₁ sid hD hC,
+              recordSyscallRefusal_records ctx executingCore syscallId tid ke x0 s₂ sid hD hC, h]
+
+/-- WS-SM SM9.B.9 (**the security theorem the plan names**): a refusal write
+leaves the declassification **audit trail** and its epoch untouched.
+
+The ledger is not the trail, and this is what stops an unprivileged caller from
+turning refusals into a denial of service against authorized downgrades: the
+trail's bound is fail-closed at `maxDeclassificationAuditEntries`, so a caller
+able to append to it on refusal could exhaust those entries and deny every
+subsequent *authorized* declassification.  It cannot, because refusals go to a
+different structure. -/
+theorem refusalWrite_declassificationAuditLog_eq
+    (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (st : SystemState) :
+    (recordSyscallRefusal ctx executingCore syscallId tid ke x0 st).declassificationAuditLog
+      = st.declassificationAuditLog ∧
+    (recordSyscallRefusal ctx executingCore syscallId tid ke x0 st).declassificationAuditEpoch
+      = st.declassificationAuditEpoch := by
+  unfold recordSyscallRefusal
+  split
+  · exact ⟨rfl, rfl⟩
+  · split <;> exact ⟨rfl, rfl⟩
+
+/-- WS-SM SM9.B.9 (**the trail's capacity is untouched, operationally**): after
+any refusal write, an authorized downgrade is admitted exactly when it was
+admitted before.
+
+The consequence of `refusalWrite_declassificationAuditLog_eq` that a monitor
+and an operator actually care about: refusals cannot consume the trail's
+capacity, so no volume of refused attempts can push an authorized downgrade
+into `.auditLogCapacityExceeded`. -/
+theorem refusalWrite_cannot_exhaust_trail
+    (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (st : SystemState) (e : DeclassificationEvent) :
+    (recordDeclassificationChecked
+        (SystemState.declassificationAuditLog
+          (recordSyscallRefusal ctx executingCore syscallId tid ke x0 st)) e).isSome
+      = (recordDeclassificationChecked st.declassificationAuditLog e).isSome := by
+  rw [(refusalWrite_declassificationAuditLog_eq ctx executingCore syscallId tid ke x0 st).1]
+
 /-- WS-RC R2.B.1 (restated at the WS-RA type): the pure typed-ABI entry
     point behind the `lean_syscall_dispatch_cross_core` export
     (`Kernel/SyscallDispatchEntry.lean`).
@@ -1154,9 +1461,15 @@ Pipeline:
      `syscallReturnOutcome` decides `blocks` from the caller's post-state
      or composes the shape-driven return frame; on failure a **computed**
      error frame carries the offset label on `x1`
-     (`Architecture.errorFrame`), with the state exactly as the error
-     arm left it — never a staged write
+     (`Architecture.errorFrame`), staged into no TCB
      (`syscallDispatchFromAbi_error_stages_no_frame`).
+  6. WS-SM SM9.B.9: on failure, additionally record the attributed refusal
+     for the syscalls `refusalSeamClass` admits.  This is the *only* way the
+     committed error state differs from the argument-spilled one, it is
+     invisible to the caller and to every observer
+     (`refusalLedger_write_is_caller_invisible`, `recordSyscallRefusal_frame`),
+     and it preserves the bundle
+     (`recordSyscallRefusal_preserves_proofLayerInvariantBundle`).
 
 `ipcBufferAddr` is passed for parity with the seL4 ABI; the verified
 kernel reads the IPC buffer from `tcb.ipcBuffer` (set by
@@ -1175,9 +1488,11 @@ def syscallDispatchFromAbi
     -- `SyscallArgs` struct.  If the Lean side observes a mismatch,
     -- the FFI boundary has been violated and we reject before
     -- touching kernel state.  Errors ride the x1 label as frames computed
-    -- HERE, never staged into any TCB — which is what keeps every error
-    -- arm state-preserving (WS-RA RA.B.4,
-    -- `syscallDispatchFromAbi_error_stages_no_frame`).
+    -- HERE, never staged into any TCB (WS-RA RA.B.4,
+    -- `syscallDispatchFromAbi_error_stages_no_frame`).  The two pre-dispatch
+    -- rejections below return the pre-state itself; the entry rejection
+    -- returns the argument-spilled state plus the SM9.B refusal record,
+    -- which is projection-invisible and bundle-preserving.
     if msgInfo != x1 then
       .ok (.returns (Architecture.errorFrame .invalidSyscallArgument), st)
     else
@@ -1191,7 +1506,19 @@ def syscallDispatchFromAbi
         let stRegs := writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
         let layout := SeLe4n.arm64DefaultLayout
         match syscallEntryChecked ctx layout executingCore 32 stRegs with
-        | .error ke => .ok (.returns (Architecture.errorFrame ke), stRegs)
+        | .error ke =>
+            -- WS-SM SM9.B.9: the refusal seam.  The outcome is the error frame
+            -- computed from `ke` alone — bit-identical to what this arm
+            -- returned before the ledger existed — and the committed state
+            -- additionally carries the attributed refusal record, for the
+            -- syscalls the total `refusalSeamClass` admits.  `recordRefusal`
+            -- is total, so this adds no failure mode the caller could observe
+            -- (`refusalLedger_write_is_caller_invisible`), and it writes a
+            -- different structure from the trail, so refusals can never
+            -- exhaust the trail's fail-closed capacity
+            -- (`refusalWrite_declassificationAuditLog_eq`).
+            .ok (.returns (Architecture.errorFrame ke),
+                 recordSyscallRefusal ctx executingCore syscallId tid ke x0 stRegs)
         | .ok ((), st') => .ok (syscallReturnOutcome syscallId st' tid, st')
 
 -- ============================================================================
@@ -1462,7 +1789,8 @@ theorem syscallDispatchFromAbi_total
                 (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
         | error ke =>
             exact ⟨.returns (Architecture.errorFrame ke),
-                   writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5,
+                   recordSyscallRefusal ctx executingCore syscallId tid ke x0
+                     (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5),
                    by simp [hMsg, hSyscall]⟩
         | ok r =>
             obtain ⟨_, st'⟩ := r
@@ -1495,15 +1823,20 @@ theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
   unfold syscallDispatchFromAbi
   simp [hMsg, hCur, hSyscall]
 
-/-- WS-RC R2.B.5 (restated at the WS-RA type): When `syscallEntryChecked`
-    rejects on the register-spilled state, `syscallDispatchFromAbi`
-    propagates the error as a **computed** error frame — the offset label
-    on `x1` — while returning exactly the post-spill `SystemState`.  The
-    state identity in the conclusion is WS-RA RA.B.4's content: an error
-    stages nothing into any TCB, which is what keeps
-    `syscallEntry_error_perCore_NI` and
-    `syscallEntry_error_preserves_proofLayerInvariantBundle` trivially
-    true. -/
+/-- WS-RC R2.B.5 (restated at the WS-RA type, and again at SM9.B.9): when
+    `syscallEntryChecked` rejects on the register-spilled state,
+    `syscallDispatchFromAbi` propagates the error as a **computed** error
+    frame — the offset label on `x1` — over the post-spill `SystemState`
+    **with the SM9.B refusal record applied**.
+
+WS-RA RA.B.4's content survives the ledger: an error still stages nothing into
+any TCB (`syscallDispatchFromAbi_error_stages_no_frame`, whose second conjunct
+is exactly that), which is what keeps `syscallEntry_error_perCore_NI` and
+`syscallEntry_error_preserves_proofLayerInvariantBundle` trivially true — both
+are statements about `syscallEntryChecked`, whose error arm carries no
+post-state at all.  What the ledger adds is confined to one `SystemState`
+field: `recordSyscallRefusal_frame` names it, and the projection, machine,
+scheduler, object-store and bundle frames say what it costs (nothing). -/
 theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
@@ -1518,16 +1851,24 @@ theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error
         = Except.error ke) :
     syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
       = Except.ok (.returns (Architecture.errorFrame ke),
-                   writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+                   recordSyscallRefusal ctx executingCore syscallId tid ke x0
+                     (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) := by
   unfold syscallDispatchFromAbi
   simp [hMsg, hCur, hSyscall]
 
 /-- WS-RA RA.B.4 (`syscallDispatchFromAbi_error_stages_no_frame`): on
-every error arm the returned state carries **no return-frame write** —
-the two pre-dispatch rejections return the pre-state itself, and an
-entry rejection returns exactly the argument-spilled state.  The error
-frame exists only in the returned *outcome*, computed at the boundary
-from the `KernelError` (`Architecture.errorFrame`), never staged. -/
+every error arm the returned state carries **no return-frame write**.  The
+error frame exists only in the returned *outcome*, computed at the boundary
+from the `KernelError` (`Architecture.errorFrame`), never staged.
+
+**Restated at SM9.B.9, and deliberately not weakened.**  The two pre-dispatch
+rejections still return the pre-state itself; an entry rejection now returns
+the argument-spilled state *plus* the attributed refusal record, so "returns
+exactly the spilled state" would be false.  The property that mattered is not
+state identity but that no TCB's return frame moved, and that is now the second
+conjunct — `readReturnFrame` at the caller is literally unchanged across the
+ledger write.  Stating it that way keeps the theorem true of the transition the
+boundary actually runs, rather than of one it no longer performs. -/
 theorem syscallDispatchFromAbi_error_stages_no_frame
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
@@ -1542,9 +1883,119 @@ theorem syscallDispatchFromAbi_error_stages_no_frame
         = Except.error ke) :
     (syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5
         ipcBufferAddr st).map (·.2)
-      = Except.ok (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      = Except.ok (recordSyscallRefusal ctx executingCore syscallId tid ke x0
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+    Architecture.readReturnFrame
+        (recordSyscallRefusal ctx executingCore syscallId tid ke x0
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid
+      = Architecture.readReturnFrame
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid := by
+  refine ⟨?_, recordSyscallRefusal_readReturnFrame_eq ctx executingCore syscallId tid ke x0 _ tid⟩
   rw [syscallDispatchFromAbi_error_of_syscallEntryChecked_error ctx executingCore
     syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st tid ke hMsg hCur hSyscall]
+  rfl
+
+/-- WS-SM SM9.B.9 (**the caller learns exactly what it learned before**): on
+the refusal arm the outcome handed back is the error frame computed from `ke`
+alone — it mentions neither the ledger nor its occupancy.
+
+This is the acceptance item the plan states as *"no distinguishable record of
+the `auditLogCapacityExceeded` reason"* for the caller.  The record **does**
+carry that reason, because it is the only durable evidence that an authorized
+downgrade hit the trail's capacity bound and a monitor needs it; what must not
+happen is that the *refused caller* can resolve it, and it cannot: the outcome
+is `Architecture.errorFrame ke`, exactly as before the ledger existed, and
+`recordRefusal` is total so the ledger contributes no error of its own.  The
+occupancy channel is therefore closed by the ledger's read gate rather than by
+discarding the evidence. -/
+theorem refusalLedger_write_is_caller_invisible
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError)
+    (hMsg : msgInfo = x1)
+    (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
+    (hSyscall :
+      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        = Except.error ke) :
+    (syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+        ipcBufferAddr st).map (·.1)
+      = Except.ok (.returns (Architecture.errorFrame ke)) := by
+  rw [syscallDispatchFromAbi_error_of_syscallEntryChecked_error ctx executingCore
+    syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st tid ke hMsg hCur hSyscall]
+  rfl
+
+/-- WS-SM SM9.B.9 (**the seam records, end to end**): a refused declassification
+lands an attributed record in the committed state's ledger.
+
+Stated at the boundary rather than at `recordSyscallRefusal`, because the
+boundary is what the hardware calls: the composition of "the error arm commits a
+state" with "that state carries the record" is the property SM8.C's registered
+gap said could not be had. -/
+theorem syscallDispatchFromAbi_records_refusal
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (sid : SyscallId)
+    (hMsg : msgInfo = x1)
+    (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
+    (hDecode : SyscallId.ofNat? syscallId.toNat = some sid)
+    (hRecords : refusalSeamClass sid = .records)
+    (hSyscall :
+      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        = Except.error ke) :
+    ∃ post : SystemState,
+      (syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+        ipcBufferAddr st).map (·.2) = Except.ok post ∧
+      post.declassificationRefusals.recent.get
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4
+            x5).declassificationRefusals.nextSlot
+        = some { originatingCore := executingCore
+                 subject := tid
+                 subjectDomain := (liftLegacyContext ctx).threadDomainOf tid
+                 syscall := sid
+                 reason := ke
+                 requestedTarget := SeLe4n.CPtr.ofNat x0.toNat } := by
+  refine ⟨recordSyscallRefusal ctx executingCore syscallId tid ke x0
+      (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5), ?_, ?_⟩
+  · rw [syscallDispatchFromAbi_error_of_syscallEntryChecked_error ctx executingCore
+      syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st tid ke hMsg hCur hSyscall]
+    rfl
+  · rw [recordSyscallRefusal_records ctx executingCore syscallId tid ke x0 _ sid hDecode hRecords]
+    exact recordRefusal_writes_selected_slot _ _
+
+/-- WS-SM SM9.B.9 (**the load-bearing negative**): a refused *exempt* syscall
+leaves the ledger exactly as it was.
+
+Without it the ledger would be a general syscall-failure log, which is not what
+the plan scopes and not what the ring is sized for: ordinary refusals — a
+`.send` to a full endpoint queue, a bad capability — would evict the policy
+exceptions a monitor is looking for, and any subject could clear the evidence
+by issuing 32 failing syscalls. -/
+theorem syscallDispatchFromAbi_exempt_refusal_frames_ledger
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (sid : SyscallId)
+    (hMsg : msgInfo = x1)
+    (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
+    (hDecode : SyscallId.ofNat? syscallId.toNat = some sid)
+    (hExempt : refusalSeamClass sid = .exempt)
+    (hSyscall :
+      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        = Except.error ke) :
+    (syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+        ipcBufferAddr st).map (·.2)
+      = Except.ok (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+  rw [syscallDispatchFromAbi_error_of_syscallEntryChecked_error ctx executingCore
+    syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st tid ke hMsg hCur hSyscall,
+    recordSyscallRefusal_exempt ctx executingCore syscallId tid ke x0 _ sid hDecode hExempt]
   rfl
 
 /-- WS-RC R2.B.5: When the scheduler has no current thread, the FFI

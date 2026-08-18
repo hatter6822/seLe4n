@@ -13,6 +13,10 @@ import SeLe4n.Kernel.InformationFlow.NonInterferenceCrossCore
 import SeLe4n.Kernel.InformationFlow.DeclassificationPerCore
 import SeLe4n.Kernel.InformationFlow.FineLockFlow
 import SeLe4n.Testing.StateBuilder
+-- WS-SM SM9.B.9: the refusal seam.  §10 exercises `recordSyscallRefusal` and
+-- the boundary that calls it, which is where a refused declassification's
+-- attributed record is written.
+import SeLe4n.Platform.FFI
 
 /-!
 # WS-SM SM8.A / SM8.B / SM8.C / SM8.D — per-core observable state, non-interference, declassification audit and fine-lock information flow
@@ -1041,7 +1045,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @recordDeclassification_admits_ill_formed
 #check @declassificationChainLinked_is_syntactic
 #check @declassificationSubjectDomain_is_core_selected
-#check @declassification_refusal_is_unrecorded
+#check @declassifyStoreOnCore_refusal_has_no_post_state
 
 -- SM8.C §12 — run-level completeness
 #check DeclassificationRequest
@@ -1467,7 +1471,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @auditObservationalEquivalence_refl
 #check @auditObservationalEquivalence_symm
 #check @auditObservationalEquivalence_trans
-#check @auditObservationalEquivalence_of_trailFramed
+#check @auditObservationalEquivalence_of_readableFramed
 #check @authorizeDeclassificationOnCore_preserves_auditObservationalEquivalence
 #check @auditDrain_preserves_auditObservationalEquivalence
 #check @lowEquivalent_does_not_determine_visible_view
@@ -1577,6 +1581,160 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @declassify_capacity_refusal_of_full
 #check @auditDrain_flips_declassify_outcome
 #check @acceptedCovertChannel_auditOccupancy_bounded
+
+-- ============================================================================
+-- §1.11  WS-SM SM9.B — refusal auditing
+-- ============================================================================
+--
+-- SM8.C's trail records authorized downgrades and nothing else, so a monitor
+-- could not tell "no attempts" from "many attempts, all denied".  SM9.B closes
+-- that at the FFI seam — the one layer that already commits a post-state for
+-- every kernel error — and reads the result back under the same configured
+-- monitor gate the trail's drain uses.
+
+-- SM9.B.1 / SM9.B.2 — the record and its bounded ledger (`RefusalRecord.lean`).
+#check @DeclassificationRefusal
+#check @DeclassificationRefusal.originatingCore
+#check @DeclassificationRefusal.subject
+#check @DeclassificationRefusal.subjectDomain
+#check @DeclassificationRefusal.syscall
+#check @DeclassificationRefusal.reason
+#check @DeclassificationRefusal.requestedTarget
+#check @refusalRecord_domain_is_seam_resolved
+#check @refusalRingSize
+#check @refusalRingSize_pos
+#check @maxRefusalCount
+#check @saturatingSucc
+#check @saturatingSucc_le
+#check @saturatingSucc_of_lt
+#check @saturatingSucc_at_ceiling
+#check @saturatingSucc_monotone
+#check @refusalSlotSucc
+#check @refusalSlotSucc_val
+#check @RefusalLedger
+#check @RefusalLedger.initial
+#check @RefusalLedger.initial_recent_get
+#check @RefusalLedger.initial_counters
+#check @recordRefusal
+#check @recordRefusal_writes_selected_slot
+#check @recordRefusal_frames_other_slots
+#check @recordRefusal_nextSlot
+#check @refusalLedger_version_advances_on_record
+#check @recordRefusal_saturates
+#check @recordRefusal_attemptCount_monotone
+#check @recordRefusal_ring_wraps_counted
+#check @recordRefusal_never_refuses
+#check @refusalLedger_bounded_structurally
+#check @refusalCounter_bound_is_structural
+#check @foldl_recordRefusal_version
+#check @foldl_recordRefusal_nextSlot
+#check @foldl_recordRefusal_frames_slot
+#check @recordRefusal_no_loss
+#check @refusalRead_bracketed_detects_overwrite
+#check @recordRefusal_droppedCount_monotone
+#check @foldl_recordRefusal_droppedCount_monotone
+#check @refusalLedger_eviction_is_counted
+
+-- SM9.B.9 — the seam's classification is a TOTAL function over `SyscallId`,
+-- not a list: a hand-maintained "declassifying syscalls" list stays true when
+-- SM9.C's second declassifying syscall joins neither it nor the gate.
+#check @RefusalSeamClass
+#check @refusalSeamClass
+#check @refusalSeamClass_total
+#check @refusalSeamClass_declassify
+#check @refusalSeamClass_records_iff
+#check @refusalSeamClass_records_count
+#check @refusalSeam_list_gate_insufficient
+
+-- SM9.B.3 … SM9.B.8 — the §6 mount checklist, run for the third time.
+#check @SystemState.declassificationRefusals
+#check @default_declassificationRefusals
+#check @default_declassificationRefusals_counters
+#check @storeObject_declassificationRefusals_eq
+#check @FrozenSystemState.declassificationRefusals
+#check @freeze_preserves_declassificationRefusals
+#check @OffSchedulerAgrees.declassificationRefusals
+#check @Platform.Boot.applyMachineConfig_declassificationRefusals_eq
+#check @Platform.Boot.bootFromPlatform_declassificationRefusals_eq
+#check @declassificationRefusals_write_preserves_projection
+#check @onCore_declassificationRefusals
+
+-- SM9.B.9 — the seam write itself, and the three security theorems.  The
+-- ledger is not the trail: refusals cannot consume the fail-closed capacity
+-- an authorized downgrade needs, and the caller's outcome is the error frame
+-- computed from `ke` alone, exactly as before the ledger existed.
+#check @Platform.FFI.recordSyscallRefusal
+#check @Platform.FFI.recordSyscallRefusal_exempt
+#check @Platform.FFI.recordSyscallRefusal_undecodable
+#check @Platform.FFI.recordSyscallRefusal_records
+#check @Platform.FFI.recordSyscallRefusal_frame
+#check @Platform.FFI.recordSyscallRefusal_preserves_proofLayerInvariantBundle
+#check @SeLe4n.Kernel.Architecture.proofLayerInvariantBundle_setDeclassificationRefusals
+#check @Platform.FFI.recordSyscallRefusal_objects_eq
+#check @Platform.FFI.recordSyscallRefusal_scheduler_eq
+#check @Platform.FFI.recordSyscallRefusal_machine_eq
+#check @Platform.FFI.recordSyscallRefusal_readReturnFrame_eq
+#check @Platform.FFI.recordSyscallRefusal_ledger_congr
+#check @Platform.FFI.refusalRecord_domain_is_seam_resolved_at_seam
+#check @Platform.FFI.refusalWrite_declassificationAuditLog_eq
+#check @Platform.FFI.refusalWrite_cannot_exhaust_trail
+#check @Platform.FFI.refusalLedger_write_is_caller_invisible
+#check @Platform.FFI.syscallDispatchFromAbi_records_refusal
+#check @Platform.FFI.syscallDispatchFromAbi_exempt_refusal_frames_ledger
+
+-- SM9.B.10 — the ledger's reader, under the SAME configured monitor gate the
+-- drain uses, and its export encoding.
+#check @ReadableStructure.declassificationRefusalLedger
+#check @RefusalReadField
+#check @RefusalReadField.all
+#check @RefusalReadField.mem_all
+#check @RefusalReadField.all_nodup
+#check @refusalTagSlots
+#check @refusalTagSlots_bounds_core
+#check @refusalTagSlots_bounds_syscall
+#check @refusalTagSlots_bounds_reason
+#check @refusalTagsWord
+#check @refusalTagsWord_roundtrip
+#check @refusalTagsWord_reason_is_abi_discriminant
+#check @refusalTagsWord_fits
+#check @refusalStatusWord
+#check @refusalStatusSlot
+#check @refusalStatusVersion
+#check @refusalStatusWord_roundtrip
+#check @refusalStatusWord_fits
+#check @refusalCountersWord
+#check @refusalCountersAttempts
+#check @refusalCountersDropped
+#check @refusalCountersWord_roundtrip
+#check @refusalCountersWord_fits
+#check @refusalExportedFieldValue
+#check @refusalLedger_requires_full_dominance
+#check @refusalLedger_partial_reader_learns_nothing
+#check @refusalLedger_gate_is_configuration_derived
+#check @refusalWitnessRecord
+#check @refusalEvictionWitness
+#check @refusalLedger_records_gate_unsound
+#check @auditStatus_does_not_detect_refusal_write
+#check @refusalStatus_detects_refusal_write
+#check @refusalSlotField_reconstructs
+#check @refusalRead_requires_monitor_at_entry
+
+-- SM9.B.10 — the rule retirement, and the per-core carriage the seam owes.
+#check @declassifyStoreOnCore_refusal_has_no_post_state
+#check @declassificationRefusals_are_counted_and_attributed
+#check @recordSyscallRefusal_preserves_projectionOnCore
+#check @recordSyscallRefusal_perCore_NI
+#check @recordSyscallRefusal_preserves_auditObservationalEquivalence
+#check DeclassificationRuleId.refusalsAreCountedAndAttributed
+
+-- SM9.B.10 — the singleton discipline's two halves, delivered WITH the ledger
+-- rather than in a later round (the SM9.A round-7 note).  The serialization
+-- subject is the state-level lock the recording syscall's footprint already
+-- declares; the occupancy owes no ninth channel entry, and that is a theorem
+-- rather than an argument, because each of CC-8's four carriers is absent.
+#check @Concurrency.lockSet_refusalSeam_writer_declares_stateLevel_write
+#check @refusalLedger_occupancy_is_not_a_covert_channel
+#check @computeCrossCoreSgis_recordSyscallRefusal_eq
 
 -- ============================================================================
 -- §2  Elaboration-time examples: each headline theorem applied
@@ -1960,8 +2118,8 @@ example : DeclassificationRuleId.timestampOrderIsCheckable.evidenceProp :=
   declassificationRuleEvidence .timestampOrderIsCheckable
 example : DeclassificationRuleId.chainLinkageIsSyntactic.evidenceProp :=
   declassificationRuleEvidence .chainLinkageIsSyntactic
-example : DeclassificationRuleId.refusalIsUnrecorded.evidenceProp :=
-  declassificationRuleEvidence .refusalIsUnrecorded
+example : DeclassificationRuleId.refusalsAreCountedAndAttributed.evidenceProp :=
+  declassificationRuleEvidence .refusalsAreCountedAndAttributed
 example : DeclassificationRuleId.liveDeclassificationWritesOnlyTheTrail.evidenceProp :=
   declassificationRuleEvidence .liveDeclassificationWritesOnlyTheTrail
 example : DeclassificationRuleId.auditIsNotObservable.evidenceProp :=
@@ -2330,6 +2488,19 @@ example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomai
     (hStep : auditReadFromCore gctx monitorClearance c op st = .ok (w, st')) :
     w.toUInt64.toNat = w :=
   auditReadFromCore_toUInt64_lossless gctx monitorClearance c op st w st' hStep
+
+/-- WS-SM SM9.B.3: the ledger's bundle carriage, **applied**.  The premise is
+the pre-state's bundle and nothing else — no capacity obligation, because the
+ledger is bounded by its type, which is what "no seventeenth conjunct" costs a
+writer.  A `Prop`, so this is an elaboration witness rather than a runtime
+assertion; §10.3's runtime group checks the field-level frames it rides. -/
+example (ctx : LabelingContext) (executingCore : CoreId) (syscallId : UInt32)
+    (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64) (st : SystemState)
+    (hInv : SeLe4n.Kernel.Architecture.proofLayerInvariantBundle st) :
+    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle
+      (Platform.FFI.recordSyscallRefusal ctx executingCore syscallId tid ke x0 st) :=
+  Platform.FFI.recordSyscallRefusal_preserves_proofLayerInvariantBundle
+    ctx executingCore syscallId tid ke x0 st hInv
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the four-thread / four-core IF fixture
@@ -7462,8 +7633,469 @@ model view len={(auditLogVisibleTo auditGenericCtx auditPartialReader auditMixed
 auditDrain={SyscallId.auditDrain.toNat} syscalls={SyscallId.count} \
 opcodes={auditReadOpcodeCount} readableStructures={ReadableStructure.all.length}" ]
 
+
+-- ============================================================================
+-- §10  WS-SM SM9.B — refusal auditing
+-- ============================================================================
+--
+-- SM8.C's trail records authorized downgrades and nothing else, so a monitor
+-- could not distinguish "no attempts" from "many attempts, all denied".  That
+-- is a detection gap rather than an enforcement one — every refusal is already
+-- fail-closed — and closing it needed a writer on a path that has a
+-- post-state.  A kernel transition's `.error` arm has none; the FFI boundary
+-- one layer up already commits one for every kernel error, and holds every
+-- field a record needs.  §10 is that seam, its ledger, and the monitor-only
+-- reader they are read back through.
+
+/-- §10 fixtures — every ring slot, so the ledger's frames and the eviction
+counterexample can quantify over the whole ring rather than over a sample. -/
+private def allSlots : List (Fin refusalRingSize) := List.finRange refusalRingSize
+
+/-- §10 fixtures — a refusal record sourced at a chosen domain. -/
+private def refusalAt (d : SecurityDomain) (ke : KernelError) : DeclassificationRefusal :=
+  { originatingCore := c1, subject := highCurrent, subjectDomain := d,
+    syscall := .declassify, reason := ke,
+    requestedTarget := SeLe4n.CPtr.ofNat 5 }
+
+/-- A denied attempt by the high subject, and a capacity-refused one — the two
+reasons a monitor most needs to tell apart. -/
+private def refusalDenied : DeclassificationRefusal :=
+  refusalAt (embedLegacyLabel highLabel) .declassificationDenied
+
+private def refusalAtCapacity : DeclassificationRefusal :=
+  refusalAt (embedLegacyLabel highLabel) .auditLogCapacityExceeded
+
+/-- A ledger holding one recorded refusal — the smallest non-boot state. -/
+private def refusalLedgerOne : RefusalLedger :=
+  recordRefusal RefusalLedger.initial refusalDenied
+
+/-- A state carrying it. -/
+private def refusalStateOne : SystemState :=
+  { niState with declassificationRefusals := refusalLedgerOne }
+
+/-- §10.1  SM9.B.1 / SM9.B.2 — the record and the ledger's algebra. -/
+private def runRefusalLedgerChecks : IO Unit := do
+  IO.println "--- §10.1 SM9.B.2 the bounded refusal ledger ---"
+  assertBool "the boot ledger is empty: no attempts, no drops, version zero"
+    (decide (RefusalLedger.initial.attemptCount.val = 0) &&
+     decide (RefusalLedger.initial.droppedCount.val = 0) &&
+     decide (RefusalLedger.initial.version = 0) &&
+     allSlots.all (fun i => decide (RefusalLedger.initial.recent.get i = none)))
+  assertBool "recording lands the record in the selected slot and advances the version"
+    (decide (refusalLedgerOne.recent.get RefusalLedger.initial.nextSlot = some refusalDenied) &&
+     decide (refusalLedgerOne.version = 1) &&
+     decide (refusalLedgerOne.attemptCount.val = 1) &&
+     decide (refusalLedgerOne.nextSlot.val = 1))
+  -- Eviction is COUNTED.  A ring that overwrote silently would report a clean
+  -- history to a monitor that had simply not polled often enough.
+  assertBool "overwriting an occupied slot advances the drop count; an empty one does not"
+    (let full := (List.replicate refusalRingSize refusalDenied).foldl recordRefusal
+       RefusalLedger.initial
+     decide (full.droppedCount.val = 0) &&
+     decide (full.nextSlot.val = 0) &&
+     decide ((recordRefusal full refusalDenied).droppedCount.val = 1))
+  -- The retention window, computed: a record survives the next
+  -- `refusalRingSize - 1` refusals and is evicted by the one after.
+  assertBool "a recorded refusal survives exactly the ring's width of further refusals"
+    (let evictor := refusalAt (embedLegacyLabel lowLabel) .declassificationDenied
+     let afterShort := (List.replicate (refusalRingSize - 1) evictor).foldl recordRefusal
+       refusalLedgerOne
+     let afterFull := (List.replicate refusalRingSize evictor).foldl recordRefusal
+       refusalLedgerOne
+     decide (afterShort.recent.get RefusalLedger.initial.nextSlot = some refusalDenied) &&
+     decide (afterFull.recent.get RefusalLedger.initial.nextSlot = some evictor))
+  -- The saturation is the TYPE's, not the updater's: at the ceiling the counter
+  -- stands still rather than wrapping to a small number.
+  assertBool "the attempt counter saturates at maxRefusalCount rather than wrapping"
+    (let atCeiling : RefusalLedger :=
+       { refusalLedgerOne with attemptCount := ⟨maxRefusalCount, by decide⟩ }
+     decide ((recordRefusal atCeiling refusalDenied).attemptCount.val = maxRefusalCount) &&
+     decide (maxRefusalCount ≠ 0))
+  assertBool "NEGATIVE: the ledger's bounds hold for EVERY value, not only recorded ones"
+    (let arbitrary : RefusalLedger :=
+       { attemptCount := ⟨maxRefusalCount, by decide⟩
+         recent := Vector.replicate refusalRingSize (some refusalAtCapacity)
+         nextSlot := ⟨7, by decide⟩
+         droppedCount := ⟨maxRefusalCount, by decide⟩
+         version := 999999 }
+     decide (arbitrary.recent.toList.length = refusalRingSize) &&
+     decide (arbitrary.attemptCount.val ≤ maxRefusalCount) &&
+     decide (arbitrary.droppedCount.val ≤ maxRefusalCount))
+  -- The read bracket: the version is what tells a monitor its multi-call
+  -- reconstruction came from ONE attempt.
+  assertBool "an unchanged version means no refusal was recorded in between"
+    (let rs := [refusalDenied, refusalAtCapacity]
+     decide ((rs.foldl recordRefusal refusalLedgerOne).version = refusalLedgerOne.version + 2) &&
+     decide ((([] : List DeclassificationRefusal).foldl recordRefusal refusalLedgerOne).version
+       = refusalLedgerOne.version))
+  assertBool "NEGATIVE: the source domain is NOT recoverable from the rest of the record"
+    (let sameButLow : DeclassificationRefusal :=
+       { refusalDenied with subjectDomain := embedLegacyLabel lowLabel }
+     decide (sameButLow.originatingCore = refusalDenied.originatingCore) &&
+     decide (sameButLow.subject = refusalDenied.subject) &&
+     decide (sameButLow.syscall = refusalDenied.syscall) &&
+     decide (sameButLow.reason = refusalDenied.reason) &&
+     decide (sameButLow.requestedTarget = refusalDenied.requestedTarget) &&
+     decide (sameButLow.subjectDomain ≠ refusalDenied.subjectDomain))
+
+/-- §10.2  SM9.B.9 — the seam's classification is total, not a list. -/
+private def runRefusalSeamClassChecks : IO Unit := do
+  IO.println "--- §10.2 SM9.B.9 the total refusal-seam classification ---"
+  assertBool "the declassifying syscall records; exactly one syscall does today"
+    (decide (refusalSeamClass .declassify = .records) &&
+     decide ((SyscallId.all.filter (fun s => refusalSeamClass s == .records)).length = 1))
+  -- The ledger is deliberately NOT a general syscall-failure log: a refused
+  -- `.send` is ordinary kernel behaviour, and recording every one of them would
+  -- let any subject evict the policy exceptions a monitor is looking for.
+  assertBool "NEGATIVE: ordinary syscalls are exempt — the audit reader's own included"
+    (decide (refusalSeamClass .send = .exempt) &&
+     decide (refusalSeamClass .call = .exempt) &&
+     decide (refusalSeamClass .tcbSuspend = .exempt) &&
+     decide (refusalSeamClass .auditRead = .exempt) &&
+     decide (refusalSeamClass .auditDrain = .exempt))
+  assertBool "every syscall in the ABI is classified — the function is total over SyscallId"
+    (decide (SyscallId.all.length = SyscallId.count) &&
+     SyscallId.all.all (fun s =>
+       decide (refusalSeamClass s = .records || refusalSeamClass s = .exempt)))
+  -- The list-gate negative: membership cannot force a new member to join, which
+  -- is why the seam reads a total function over a taxonomy the ABI already
+  -- forces to be complete.
+  assertBool "NEGATIVE: a hand-maintained list passes vacuously while missing a recording syscall"
+    (let emptyList : List SyscallId := []
+     decide (emptyList.all (fun s => refusalSeamClass s == .records) = true) &&
+     decide (refusalSeamClass .declassify = .records) &&
+     decide (SyscallId.declassify ∉ emptyList))
+
+/-- §10.3  SM9.B.9 — the seam write, and the security theorems it rests on. -/
+private def runRefusalSeamWriteChecks : IO Unit := do
+  IO.println "--- §10.3 SM9.B.9 the refusal seam ---"
+  let ctx := liveDeclassLabeling
+  let declassId : UInt32 := SyscallId.declassify.toNat.toUInt32
+  let sendId : UInt32 := SyscallId.send.toNat.toUInt32
+  let post := Platform.FFI.recordSyscallRefusal ctx c1 declassId highCurrent
+    .declassificationDenied 5 niState
+  assertBool "a refused declassification is recorded, attributed to the running subject"
+    (match post.declassificationRefusals.recent.get niState.declassificationRefusals.nextSlot with
+     | none => false
+     | some r =>
+         decide (r.originatingCore = c1) &&
+         decide (r.subject = highCurrent) &&
+         decide (r.subjectDomain = (liftLegacyContext ctx).threadDomainOf highCurrent) &&
+         decide (r.syscall = SyscallId.declassify) &&
+         decide (r.reason = KernelError.declassificationDenied) &&
+         decide (r.requestedTarget = SeLe4n.CPtr.ofNat 5))
+  -- The capacity reason is RECORDED — it is the only durable evidence that an
+  -- authorized downgrade hit the trail's bound, and the monitor is who needs it.
+  assertBool "the capacity refusal is recorded, with its own discriminant"
+    (let capPost := Platform.FFI.recordSyscallRefusal ctx c1 declassId highCurrent
+       .auditLogCapacityExceeded 5 niState
+     match capPost.declassificationRefusals.recent.get niState.declassificationRefusals.nextSlot with
+     | none => false
+     | some r => decide (r.reason = KernelError.auditLogCapacityExceeded))
+  assertBool "NEGATIVE: an exempt syscall's refusal leaves the ledger untouched"
+    (decide ((Platform.FFI.recordSyscallRefusal ctx c1 sendId highCurrent
+        .invalidCapability 5 niState).declassificationRefusals
+      = niState.declassificationRefusals))
+  assertBool "NEGATIVE: an undecodable syscall number records nothing — fail-closed"
+    (decide ((Platform.FFI.recordSyscallRefusal ctx c1 9999 highCurrent
+        .invalidSyscallNumber 5 niState).declassificationRefusals
+      = niState.declassificationRefusals))
+  -- The security theorem: the ledger is NOT the trail, so no volume of refusals
+  -- can consume the fail-closed capacity an authorized downgrade needs.
+  assertBool "a refusal write leaves the audit trail and its epoch untouched"
+    (decide (post.declassificationAuditLog = niState.declassificationAuditLog) &&
+     decide (post.declassificationAuditEpoch = niState.declassificationAuditEpoch))
+  assertBool "…and every other component of the state, so the error path stays state-preserving"
+    (decide (post.objects.toList.length = niState.objects.toList.length) &&
+     decide (post.scheduler.currentOnCore c1 = niState.scheduler.currentOnCore c1) &&
+     decide (post.machine.timer = niState.machine.timer) &&
+     decide (post.objectIndex = niState.objectIndex))
+  -- End to end through the boundary the hardware calls.  The outcome is the
+  -- error frame computed from `ke` alone — bit-identical to what this arm
+  -- returned before the ledger existed — and the committed state carries the
+  -- record.
+  assertBool "END TO END: the boundary commits the record and returns the plain error frame"
+    (match Platform.FFI.syscallDispatchFromAbi ctx c1 declassId 0 5 0 0 0 0 0 0 niState with
+     | .error _ => false
+     | .ok (outcome, committed) =>
+         (match outcome with
+          | .returns _ => true
+          | .blocks => false) &&
+         decide (committed.declassificationRefusals.version = 1) &&
+         decide (committed.declassificationRefusals.attemptCount.val = 1) &&
+         decide (committed.declassificationAuditLog = niState.declassificationAuditLog))
+  assertBool "NEGATIVE: the same boundary call for an EXEMPT syscall records nothing"
+    (match Platform.FFI.syscallDispatchFromAbi ctx c1 sendId 0 5 0 0 0 0 0 0 niState with
+     | .error _ => false
+     | .ok (_, committed) =>
+         decide (committed.declassificationRefusals = niState.declassificationRefusals))
+
+/-- §10.4  SM9.B.10 — the ledger's monitor-only reader. -/
+private def runRefusalReaderChecks : IO Unit := do
+  IO.println "--- §10.4 SM9.B.10 the refusal ledger's reader ---"
+  let mc := auditMonitorLabeling.auditMonitorClearance
+  assertBool "the monitor reads the write position and the version in ONE word"
+    (match auditReadWord auditGenericCtx mc auditMonitorReader refusalStateOne .refusalStatus with
+     | .error _ => false
+     | .ok w =>
+         decide (refusalStatusSlot w = 1) && decide (refusalStatusVersion w = 1))
+  assertBool "…and the two cumulative counters in one word"
+    (match auditReadWord auditGenericCtx mc auditMonitorReader refusalStateOne .refusalCounters with
+     | .error _ => false
+     | .ok w =>
+         decide (refusalCountersAttempts w = 1) && decide (refusalCountersDropped w = 0))
+  -- The tags word: core, syscall and reason, all structurally bounded, and the
+  -- reason is WS-RA's own discriminant so a monitor and the refused caller name
+  -- the same error.
+  assertBool "a ring slot's tags decode to the core, the syscall and the ABI error discriminant"
+    (match auditReadWord auditGenericCtx mc auditMonitorReader refusalStateOne
+        (.refusalSlotTags 0) with
+     | .error _ => false
+     | .ok w =>
+         decide (w % refusalTagSlots = c1.val) &&
+         decide (w / refusalTagSlots % refusalTagSlots = SyscallId.declassify.toNat) &&
+         decide (KernelError.ofDiscriminant? (w / refusalTagSlots / refusalTagSlots)
+           = some KernelError.declassificationDenied))
+  -- The chunk protocol, computed: folding recovers the field exactly.
+  assertBool "folding a record field's chunks recovers the value exactly"
+    (RefusalReadField.all.all (fun f =>
+      match auditReadWord auditGenericCtx mc auditMonitorReader refusalStateOne
+          (.refusalSlotFieldChunkCount 0 f) with
+      | .error _ => false
+      | .ok n =>
+          decide (auditFoldChunks n (fun i =>
+            match auditReadWord auditGenericCtx mc auditMonitorReader refusalStateOne
+                (.refusalSlotField 0 f i) with
+            | .error _ => 0
+            | .ok c => c) = refusalExportedFieldValue refusalDenied f)))
+  -- …and the same fold over a value that genuinely needs more than one chunk, so
+  -- the reconstruction claim is not carried by single-chunk arithmetic.
+  assertBool "…including a field wide enough to need several chunks"
+    (let wide : DeclassificationRefusal :=
+       { refusalDenied with requestedTarget := SeLe4n.CPtr.ofNat (2 ^ 70 + 12345) }
+     let wideLedger := recordRefusal RefusalLedger.initial wide
+     let wideState : SystemState := { niState with declassificationRefusals := wideLedger }
+     (match auditReadWord auditGenericCtx mc auditMonitorReader wideState
+        (.refusalSlotFieldChunkCount 0 .requestedTarget) with
+      | .error _ => false
+      | .ok n =>
+          decide (n = 3) &&
+          decide (auditFoldChunks n (fun i =>
+            match auditReadWord auditGenericCtx mc auditMonitorReader wideState
+                (.refusalSlotField 0 .requestedTarget i) with
+            | .error _ => 0
+            | .ok c => c) = 2 ^ 70 + 12345)))
+  assertBool "an empty ring slot reads as absent, and a slot past the ring is refused"
+    ((match auditReadWord auditGenericCtx mc auditMonitorReader refusalStateOne
+        (.refusalSlotTags 1) with
+      | .error e => decide (e = KernelError.invalidArgument)
+      | .ok _ => false) &&
+     (match auditReadWord auditGenericCtx mc auditMonitorReader refusalStateOne
+        (.refusalSlotTags refusalRingSize) with
+      | .error e => decide (e = KernelError.invalidArgument)
+      | .ok _ => false))
+  -- The gate.  Unlike the trail there is no filtered view to fall back to: a
+  -- ring evicts, so a hidden refusal would remove a lower reader's entry.
+  assertBool "NEGATIVE: an under-cleared caller reads NOTHING of the ledger"
+    (let ops : List AuditReadOp :=
+       [.refusalStatus, .refusalCounters, .refusalSlotTags 0,
+        .refusalSlotFieldChunkCount 0 .subject, .refusalSlotField 0 .subject 0]
+     ops.all (fun op =>
+       match auditReadWord auditGenericCtx mc auditPartialReader refusalStateOne op with
+       | .error e => decide (e = KernelError.illegalAuthority)
+       | .ok _ => false))
+  assertBool "…and its reads cannot even distinguish two arbitrary ledgers"
+    (let otherLedger := (List.replicate 5 refusalAtCapacity).foldl recordRefusal refusalLedgerOne
+     let other : SystemState := { niState with declassificationRefusals := otherLedger }
+     -- The two ledgers genuinely differ — five further recorded refusals — and
+     -- the partial reader's word is the same refusal on both.
+     decide (otherLedger.attemptCount.val ≠ refusalLedgerOne.attemptCount.val) &&
+     (match auditReadWord auditGenericCtx mc auditPartialReader refusalStateOne .refusalCounters,
+            auditReadWord auditGenericCtx mc auditPartialReader other .refusalCounters with
+      | .error e₁, .error e₂ => decide (e₁ = e₂)
+      | _, _ => false))
+  -- The ledger's own bracket token, and why the trail's does not serve.
+  assertBool "the ledger's status word MOVES on a refusal write; the trail's status word does not"
+    (let afterLedger := recordRefusal refusalLedgerOne refusalAtCapacity
+     let after : SystemState := { refusalStateOne with declassificationRefusals := afterLedger }
+     (match auditReadWord auditGenericCtx mc auditMonitorReader after .refusalStatus,
+            auditReadWord auditGenericCtx mc auditMonitorReader refusalStateOne .refusalStatus with
+      | .ok w₁, .ok w₂ => decide (w₁ ≠ w₂)
+      | _, _ => false) &&
+     (match auditReadWord auditGenericCtx mc auditMonitorReader after .status,
+            auditReadWord auditGenericCtx mc auditMonitorReader refusalStateOne .status with
+      | .ok w₁, .ok w₂ => decide (w₁ = w₂)
+      | _, _ => false))
+  -- Every refusal sub-operation is reachable through the three-word ABI.
+  assertBool "every refusal sub-operation round-trips through the operand encoding"
+    (let ops : List AuditReadOp :=
+       [.refusalStatus, .refusalCounters, .refusalSlotTags 3,
+        .refusalSlotFieldChunkCount 3 .subject, .refusalSlotFieldChunkCount 3 .subjectDomain,
+        .refusalSlotFieldChunkCount 3 .requestedTarget,
+        .refusalSlotField 3 .subject 1, .refusalSlotField 3 .subjectDomain 1,
+        .refusalSlotField 3 .requestedTarget 1]
+     decide (auditReadOpcodeCount = 21) &&
+     ops.all (fun op =>
+       let (a, b, k) := encodeAuditReadOp op
+       decide (decodeAuditReadOp a b k = some op)) &&
+     ops.all (fun op => decide (op.readsStructure = .declassificationRefusalLedger)))
+
+/-- §10.5  SM9.B.10 — the gate is configuration, not the ring's surviving rows.
+
+The eviction counterexample, computed rather than argued: the ring evicts while
+the counters are cumulative, so a predicate over the rows a ledger *currently*
+holds shrinks while the data it guards does not. -/
+private def runRefusalGateChecks : IO Unit := do
+  IO.println "--- §10.5 SM9.B.10 the ledger's gate is configuration-derived ---"
+  -- A high-sourced refusal, then a ringful of low ones: every surviving row is
+  -- now visible to a low reader, and the counters still carry the hidden one.
+  let highRefusal := refusalAt (embedLegacyLabel highLabel) .declassificationDenied
+  let lowRefusal := refusalAt (embedLegacyLabel lowLabel) .declassificationDenied
+  let before := recordRefusal RefusalLedger.initial highRefusal
+  let after := (List.replicate refusalRingSize lowRefusal).foldl recordRefusal before
+  assertBool "before: the ring holds a refusal a low reader is not cleared for"
+    (allSlots.any (fun i =>
+      (before.recent.get i).any (fun r =>
+        !DomainFlowPolicy.legacyLattice.canFlow r.subjectDomain (embedLegacyLabel lowLabel))))
+  assertBool "after a ringful of low refusals: EVERY surviving row is one it dominates"
+    (allSlots.all (fun i =>
+      (after.recent.get i).all (fun r =>
+        DomainFlowPolicy.legacyLattice.canFlow r.subjectDomain (embedLegacyLabel lowLabel))))
+  assertBool "NEGATIVE: yet the cumulative counters still carry the hidden attempt"
+    (decide (after.attemptCount.val = refusalRingSize + 1) &&
+     decide (0 < after.droppedCount.val))
+  -- The configured gate refuses that reader throughout, because it never looked
+  -- at the rows.
+  assertBool "the CONFIGURED gate refuses the low reader before and after"
+    (decide (auditMonitorAuthorized auditGenericCtx
+       auditMonitorLabeling.auditMonitorClearance auditPartialReader = false) &&
+     decide (auditMonitorAuthorized auditGenericCtx
+       auditMonitorLabeling.auditMonitorClearance auditMonitorReader = true))
+  -- The ring's own limitation, stated rather than implied absent: a subject can
+  -- flood the ring, but it cannot hide that it did — the monitor reads a
+  -- nonzero drop count and knows its view is incomplete.  Not a channel in
+  -- either direction: the reader dominates every subject domain, and nothing
+  -- about the ledger reaches the flooding subject at all.
+  assertBool "flooding the ring evicts, but the eviction is COUNTED"
+    (decide (0 < after.droppedCount.val) &&
+     decide (after.droppedCount.val = 1) &&
+     allSlots.all (fun i => decide ((after.recent.get i).isSome = true)))
+  -- The ledger owes no ninth covert-channel entry, and the reason is the
+  -- contrast with the trail: bounded and shared, but NOT fail-closed, so its
+  -- occupancy has no unprivileged carrier.
+  assertBool "the accepted-channel inventory stays at eight — the ledger adds no ninth"
+    (decide (acceptedCovertChannelsPerCore.length = 8) &&
+     decide (CovertChannelId.all.length = 8))
+  assertBool "NEGATIVE: the TRAIL's occupancy does reach an unprivileged caller — the ledger's does not"
+    (let fullLog := List.replicate maxDeclassificationAuditEntries
+       (auditEntry auditPartialReader auditPartialReader lowNotification 0 c0)
+     -- the trail refuses at capacity (CC-8's carrier)…
+     decide (recordDeclassificationChecked fullLog
+       (auditEntry auditPartialReader auditPartialReader lowNotification 0 c0) = none) &&
+     -- …while the ledger, at a full ring, still records.
+     decide ((recordRefusal after lowRefusal).recent.get after.nextSlot = some lowRefusal))
+  assertBool "…and moving the ledger — by any amount — does not move the gate's verdict"
+    (allCores.all (fun c =>
+      decide (auditMonitorGate auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+          { refusalStateOne with declassificationRefusals := after } c
+        = auditMonitorGate auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+            refusalStateOne c)))
+
+/-- §10.6  The SM9.B acceptance items — the two the plan states explicitly.
+
+The refusal record carries `.auditLogCapacityExceeded` **for the monitor**,
+while the refused caller still learns nothing about trail occupancy: the
+occupancy channel is closed by the ledger's read gate rather than by discarding
+the only durable evidence that an authorized downgrade hit the 256-entry
+cliff. -/
+private def runRefusalAcceptanceChecks : IO Unit := do
+  IO.println "--- §10.6 SM9.B acceptance: recorded for the monitor, invisible to the caller ---"
+  let ctx := liftLegacyContext auditMonitorLabeling
+  let policy := auditMonitorLabeling.declassificationPolicy
+  -- The policy decision runs BEFORE the capacity check, so a policy-refused
+  -- caller's result is identical on a full trail and an empty one.
+  let fullEntries :=
+    List.replicate maxDeclassificationAuditEntries
+      (auditEntry auditPartialReader auditPartialReader lowNotification 0 c0)
+  let fullTrail : SystemState := { niState with declassificationAuditLog := fullEntries }
+  assertBool "a POLICY-refused caller's result is identical on a full trail and an empty one"
+    (match declassifyObjectFromCore ctx policy c2 lowNotification fullTrail,
+           declassifyObjectFromCore ctx policy c2 lowNotification niState with
+     | .error e₁, .error e₂ => decide (e₁ = e₂)
+     | _, _ => false)
+  assertBool "NEGATIVE: a policy-refused caller learns nothing about trail occupancy"
+    (match declassifyObjectFromCore ctx policy c2 lowNotification fullTrail with
+     | .error e => decide (e ≠ KernelError.auditLogCapacityExceeded)
+     | .ok _ => false)
+  -- …and the capacity refusal, when it is genuinely reached, is recorded for a
+  -- monitor to read.
+  assertBool "the capacity refusal IS recorded, and a monitor reads its reason back"
+    (let capState := Platform.FFI.recordSyscallRefusal auditMonitorLabeling c1
+       (SyscallId.declassify.toNat.toUInt32) highCurrent .auditLogCapacityExceeded 5 niState
+     match auditReadWord (liftLegacyContext auditMonitorLabeling)
+         auditMonitorLabeling.auditMonitorClearance auditMonitorReader capState
+         (.refusalSlotTags 0) with
+     | .error _ => false
+     | .ok w =>
+         decide (KernelError.ofDiscriminant? (w / refusalTagSlots / refusalTagSlots)
+           = some KernelError.auditLogCapacityExceeded))
+  assertBool "NEGATIVE: and an under-cleared caller cannot read that reason at all"
+    (let capState := Platform.FFI.recordSyscallRefusal auditMonitorLabeling c1
+       (SyscallId.declassify.toNat.toUInt32) highCurrent .auditLogCapacityExceeded 5 niState
+     match auditReadWord (liftLegacyContext auditMonitorLabeling)
+         auditMonitorLabeling.auditMonitorClearance auditPartialReader capState
+         (.refusalSlotTags 0) with
+     | .error e => decide (e = KernelError.illegalAuthority)
+     | .ok _ => false)
+  -- The retired rule, and what replaced it.
+  assertBool "the rule inventory still has 12 entries, with the retirement's replacement in it"
+    (decide (DeclassificationRuleId.all.length = 12) &&
+     decide (DeclassificationRuleId.refusalsAreCountedAndAttributed
+       ∈ DeclassificationRuleId.all) &&
+     decide ((declassificationRuleEvidenceName
+       .refusalsAreCountedAndAttributed).length > 0))
+
+/-- The SM9.B half: what the **refusal** ledger holds and who may read it.  The
+trail's lines report what a reader sees of authorized downgrades; these report
+the attempts that were refused — the half a monitor could not see at all before
+SM9.B, and the one whose read gate is full dominance rather than a filter. -/
+private def refusalLedgerTraceLines : List String :=
+  let ctx := liftLegacyContext auditMonitorLabeling
+  let mc := auditMonitorLabeling.auditMonitorClearance
+  let seamPost := Platform.FFI.recordSyscallRefusal liveDeclassLabeling c1
+    (SyscallId.declassify.toNat.toUInt32) highCurrent .declassificationDenied 5 niState
+  let exemptPost := Platform.FFI.recordSyscallRefusal liveDeclassLabeling c1
+    (SyscallId.send.toNat.toUInt32) highCurrent .invalidCapability 5 niState
+  [ s!"[smp-information-flow] refusal ledger: ring={refusalRingSize} \
+ceiling={maxRefusalCount} bootAttempts={RefusalLedger.initial.attemptCount.val} \
+bootVersion={RefusalLedger.initial.version}"
+  , s!"[smp-information-flow] refusal seam: recordingSyscalls=\
+{(SyscallId.all.filter (fun x => refusalSeamClass x == .records)).length} \
+declassify={reprStr (refusalSeamClass .declassify)} \
+send={reprStr (refusalSeamClass .send)}"
+  , s!"[smp-information-flow] refusal write: attempts=\
+{seamPost.declassificationRefusals.attemptCount.val} \
+version={seamPost.declassificationRefusals.version} \
+trailMoved={decide (seamPost.declassificationAuditLog ≠ niState.declassificationAuditLog)} \
+exemptRecorded={decide (exemptPost.declassificationRefusals.version ≠ 0)}"
+  , s!"[smp-information-flow] refusal read (monitor): \
+status={match auditReadWord ctx mc auditMonitorReader refusalStateOne .refusalStatus with
+  | .ok w => s!"slot{refusalStatusSlot w}/v{refusalStatusVersion w}"
+  | .error e => s!"{reprStr e}"} \
+counters={match auditReadWord ctx mc auditMonitorReader refusalStateOne .refusalCounters with
+  | .ok w => s!"{refusalCountersAttempts w}/{refusalCountersDropped w}"
+  | .error e => s!"{reprStr e}"}"
+  , s!"[smp-information-flow] refusal read (partial): \
+status={match auditReadWord ctx mc auditPartialReader refusalStateOne .refusalStatus with
+  | .ok _ => "ok"
+  | .error e => s!"{reprStr e}"} \
+tags={match auditReadWord ctx mc auditPartialReader refusalStateOne (.refusalSlotTags 0) with
+  | .ok _ => "ok"
+  | .error e => s!"{reprStr e}"}" ]
+
 private def informationFlowTraceLines : List String :=
-  observerTraceLines ++ nonInterferenceTraceLines ++ auditReaderTraceLines
+  observerTraceLines ++ nonInterferenceTraceLines ++ auditReaderTraceLines ++
+    refusalLedgerTraceLines
 
 /-- §8.2: print the deterministic phase-level information-flow trace and verify
 it byte-for-byte against the golden fixture.  The lines print before the
@@ -7906,16 +8538,22 @@ private def runAuditLiveArmChecks : IO Unit := do
      decide (Capability.auditTrailRead.hasRight .write = false) &&
      decide (Capability.auditTrailManage.hasRight .write = true))
   -- The operand encoding round-trips, so every sub-operation is reachable.
-  assertBool "every sub-operation round-trips through the three-word operand encoding"
+  -- WS-SM SM9.B.10: the opcode space now spans two readable structures — the
+  -- trail's twelve sub-operations and the refusal ledger's nine (§10.4) — so
+  -- the completeness claim is the sum, and each half names the structure it
+  -- reads.
+  assertBool "every trail sub-operation round-trips through the three-word operand encoding"
     (let ops : List AuditReadOp :=
        [.status, .fieldChunkCount 3 .srcDomain, .fieldChunkCount 3 .dstDomain,
         .fieldChunkCount 3 .targetObject, .fieldChunkCount 3 .timestamp,
         .field 3 .srcDomain 1, .field 3 .dstDomain 1, .field 3 .targetObject 1,
         .field 3 .timestamp 1, .coreAndTrust 3, .basisByteCount 3, .basisChunk 3 2]
-     decide (ops.length = auditReadOpcodeCount) &&
+     decide (ops.length = 12) &&
+     decide (ops.length + 9 = auditReadOpcodeCount) &&
      ops.all (fun op =>
        let (a, b, k) := encodeAuditReadOp op
-       decide (decodeAuditReadOp a b k = some op)))
+       decide (decodeAuditReadOp a b k = some op)) &&
+     ops.all (fun op => decide (op.readsStructure = .declassificationAuditTrail)))
   assertBool "NEGATIVE: an opcode outside the table is refused, never guessed at"
     (decide (decodeAuditReadOp auditReadOpcodeCount 0 0 = none) &&
      decide (decodeAuditReadOp 9999 0 0 = none))
@@ -8197,8 +8835,9 @@ private def runAuditDrainSignalChecks : IO Unit := do
      | .error _ => false)
 
 def runSmpInformationFlowChecks : IO Unit := do
-  IO.println "WS-SM SM8.A / SM8.B / SM8.C / SM8.D / SM8.E — per-core observable state, \
-non-interference, declassification audit, fine-lock information flow and phase closure"
+  IO.println "WS-SM SM8.A / SM8.B / SM8.C / SM8.D / SM8.E / SM9.A / SM9.B — per-core \
+observable state, non-interference, declassification audit, fine-lock information flow, \
+phase closure, the audit-trail reader and refusal auditing"
   IO.println "===================================="
   runFixtureChecks
   runObserverChecks
@@ -8278,11 +8917,17 @@ non-interference, declassification audit, fine-lock information flow and phase c
   runAuditLiveArmChecks
   runAuditCapacityCliffChecks
   runAuditDrainSignalChecks
+  runRefusalLedgerChecks
+  runRefusalSeamClassChecks
+  runRefusalSeamWriteChecks
+  runRefusalReaderChecks
+  runRefusalGateChecks
+  runRefusalAcceptanceChecks
   runInformationFlowTraceFixtureCheck
   IO.println "===================================="
   IO.println ("All SM8.A per-core observable-state, SM8.B non-interference, " ++
     "SM8.C declassification-audit, SM8.D fine-lock information-flow, " ++
-    "SM8.E phase-closure and SM9.A audit-reader checks PASS.")
+    "SM8.E phase-closure, SM9.A audit-reader and SM9.B refusal-auditing checks PASS.")
 
 end SeLe4n.Testing.SmpInformationFlow
 

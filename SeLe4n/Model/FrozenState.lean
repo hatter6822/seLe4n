@@ -467,6 +467,15 @@ structure FrozenSystemState where
       the identities would silently be lies.  Complemented by the
       `freeze_preserves_declassificationAuditEpoch := rfl` value-level guard. -/
   declassificationAuditEpoch : Nat
+  /-- WS-SM SM9.B.4: the declassification refusal ledger, transferred from
+      `SystemState.declassificationRefusals` during freeze.  **Required** (no
+      default), like the trail and its epoch, and for a reason of its own: a
+      snapshot that dropped the ledger would report a system in which no
+      declassification was ever *attempted* — which is exactly what a system
+      whose attempts were all refused looks like, and telling those two apart
+      is the entire purpose of the ledger.  Complemented by the
+      `freeze_preserves_declassificationRefusals := rfl` value-level guard. -/
+  declassificationRefusals : SeLe4n.Kernel.RefusalLedger
 
 -- ============================================================================
 -- Q5-C: Freeze Functions
@@ -609,7 +618,11 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     declassificationAuditLog := st.declassificationAuditLog
     -- WS-SM SM9.A.1a: forward the audit epoch unchanged, so the frozen trail's
     -- timestamps keep the identities the running system gave them.
-    declassificationAuditEpoch := st.declassificationAuditEpoch }
+    declassificationAuditEpoch := st.declassificationAuditEpoch
+    -- WS-SM SM9.B.4: forward the refusal ledger unchanged, so a frozen
+    -- snapshot distinguishes "no attempts" from "attempts, all refused"
+    -- exactly as the running system does.
+    declassificationRefusals := st.declassificationRefusals }
 
 -- ============================================================================
 -- Q5-C Proofs
@@ -672,6 +685,13 @@ running system, which is the whole content of "a timestamp identifies an
 event". -/
 theorem freeze_preserves_declassificationAuditEpoch (ist : IntermediateState) :
     (freeze ist).declassificationAuditEpoch = ist.state.declassificationAuditEpoch := rfl
+
+/-- WS-SM SM9.B.4: `freeze` preserves the declassification refusal ledger — the
+frozen `declassificationRefusals` is identical to the pre-freeze
+`SystemState.declassificationRefusals`.  The value-level guard complementing
+the required frozen field. -/
+theorem freeze_preserves_declassificationRefusals (ist : IntermediateState) :
+    (freeze ist).declassificationRefusals = ist.state.declassificationRefusals := rfl
 
 /-- Q5-C: `freeze` preserves the scheduler current thread. -/
 theorem freeze_preserves_current (ist : IntermediateState) :

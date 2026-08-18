@@ -558,10 +558,13 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _n := @SeLe4n.Kernel.declassifyStoreOnCore_perCore_NI
      have _t := @SeLe4n.Kernel.declassifyStoreOnCore_state_trail_independent
      have _e := @SeLe4n.Kernel.declassifyRun_records_each
-     -- The registered gap, as a theorem rather than a caveat: a *refused*
-     -- declassification leaves no trace (fail-closed, so a detection gap and
-     -- not an enforcement one).
-     have _g := @SeLe4n.Kernel.declassification_refusal_is_unrecorded
+     -- WS-SM SM9.B: the registered gap, CLOSED.  What survives as a theorem is
+     -- that the *transition's* refusal has no post-state — which is why the
+     -- refusal audit is written one layer up, at the FFI seam — and what
+     -- replaces the retired `refusalIsUnrecorded` rule is that refusals are
+     -- counted, attributed, and cannot displace an authorized-downgrade entry.
+     have _g := @SeLe4n.Kernel.declassifyStoreOnCore_refusal_has_no_post_state
+     have _gr := @SeLe4n.Kernel.declassificationRefusals_are_counted_and_attributed
      have _z := @SeLe4n.Kernel.declassifyStoreOnCore_denied_no_audit_entry
      -- …and the faithful lift of the legacy 2x2 lattice, which is what lets a
      -- deployment configure a downgrade along the one pair `linearOrder`
@@ -794,8 +797,104 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
        ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .auditRead = .word
        ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .auditDrain = .word))
 
+
+  -- ------------------------------------------------------------------
+  -- §10  WS-SM SM9.B — refusal auditing
+  -- ------------------------------------------------------------------
+  --
+  -- SM8.C recorded authorized downgrades and nothing else, so a monitor could
+  -- not tell "no attempts" from "many attempts, all denied".  A kernel
+  -- transition's `.error` arm has no post-state to write a record into; the FFI
+  -- boundary one layer up already commits one for every kernel error, and holds
+  -- every field a record needs.
+
+  assertBool "SM9.B.1/.B.2: the record, and a ledger bounded by its TYPE rather than by an invariant"
+    (have _r := @SeLe4n.Kernel.DeclassificationRefusal
+     have _l := @SeLe4n.Kernel.RefusalLedger
+     have _i := @SeLe4n.Kernel.RefusalLedger.initial
+     have _w := @SeLe4n.Kernel.recordRefusal
+     -- The bound holds for EVERY ledger value, not only recorded ones — which
+     -- is what buys the absence of a 17th `proofLayerInvariantBundle` conjunct
+     -- and of any capacity obligation on a writer.  (The carriage block itself
+     -- is owed either way — see the SM9.B.3 anchors below.)
+     have _b := @SeLe4n.Kernel.refusalLedger_bounded_structurally
+     have _s := @SeLe4n.Kernel.refusalCounter_bound_is_structural
+     -- Saturation, no-loss and the counted eviction: a ring that overwrote
+     -- silently would report a clean history to a monitor that had simply not
+     -- polled often enough.
+     have _sa := @SeLe4n.Kernel.recordRefusal_saturates
+     have _nl := @SeLe4n.Kernel.recordRefusal_no_loss
+     have _rw := @SeLe4n.Kernel.recordRefusal_ring_wraps_counted
+     -- The version, and the bracket it exists for.
+     have _v := @SeLe4n.Kernel.refusalLedger_version_advances_on_record
+     have _bk := @SeLe4n.Kernel.refusalRead_bracketed_detects_overwrite
+     -- The seam-resolved domain, which no later reader can reconstruct.
+     have _sd := @SeLe4n.Kernel.refusalRecord_domain_is_seam_resolved
+     true)
+  assertBool "SM9.B.9: the seam records, filtered by a TOTAL classification, and cannot touch the trail"
+    (have _c := @SeLe4n.Kernel.refusalSeamClass
+     have _t := @SeLe4n.Kernel.refusalSeamClass_total
+     -- The refuted design, kept refuted: a hand-maintained "declassifying
+     -- syscalls" list stays true when SM9.C's second one joins neither it nor
+     -- the gate.  Totality over `SyscallId` is what makes the omission a
+     -- compile error.
+     have _lg := @SeLe4n.Kernel.refusalSeam_list_gate_insufficient
+     have _w := @SeLe4n.Platform.FFI.recordSyscallRefusal
+     have _e2 := @SeLe4n.Platform.FFI.syscallDispatchFromAbi_records_refusal
+     have _x := @SeLe4n.Platform.FFI.syscallDispatchFromAbi_exempt_refusal_frames_ledger
+     -- The security theorems: the ledger is NOT the trail (so refusals cannot
+     -- exhaust the fail-closed capacity an authorized downgrade needs), and the
+     -- caller's outcome is the error frame computed from `ke` alone.
+     have _tr := @SeLe4n.Platform.FFI.refusalWrite_declassificationAuditLog_eq
+     have _ex := @SeLe4n.Platform.FFI.refusalWrite_cannot_exhaust_trail
+     have _ci := @SeLe4n.Platform.FFI.refusalLedger_write_is_caller_invisible
+     have _sq := @SeLe4n.Platform.FFI.refusalRecord_domain_is_seam_resolved_at_seam
+     -- …and it is invisible to the projection, on every core.
+     have _p := @SeLe4n.Kernel.declassificationRefusals_write_preserves_projection
+     have _o := @SeLe4n.Kernel.onCore_declassificationRefusals
+     -- SM9.B.3: and the bundle survives it, UNCONDITIONALLY — the writer owes
+     -- no capacity obligation, which is precisely what a type-level bound buys
+     -- and a `List`-plus-invariant ledger would have charged at every writer.
+     have _bc := @SeLe4n.Kernel.Architecture.proofLayerInvariantBundle_setDeclassificationRefusals
+     have _bs := @SeLe4n.Platform.FFI.recordSyscallRefusal_preserves_proofLayerInvariantBundle
+     true)
+  assertBool "SM9.B.10: the ledger is readable ONLY under the configured monitor gate"
+    (have _g := @SeLe4n.Kernel.refusalLedger_requires_full_dominance
+     -- Unlike the trail there is no filtered view to fall back to: a ring
+     -- evicts, so a hidden refusal would remove a lower reader's entry.  A
+     -- partial reader observes nothing, which discharges the obligation rather
+     -- than dodging it.
+     have _n := @SeLe4n.Kernel.refusalLedger_partial_reader_learns_nothing
+     have _cd := @SeLe4n.Kernel.refusalLedger_gate_is_configuration_derived
+     -- The eviction counterexample: the ring evicts while the counters are
+     -- cumulative, so a rows-derived gate shrinks while the data it guards
+     -- does not.
+     have _ru := @SeLe4n.Kernel.refusalLedger_records_gate_unsound
+     -- The trail's own token does not detect a ledger write, which is why the
+     -- ledger carries its own version.
+     have _nt := @SeLe4n.Kernel.auditStatus_does_not_detect_refusal_write
+     have _dt := @SeLe4n.Kernel.refusalStatus_detects_refusal_write
+     have _rc := @SeLe4n.Kernel.refusalSlotField_reconstructs
+     have _ab := @SeLe4n.Kernel.refusalTagsWord_reason_is_abi_discriminant
+     true)
+  assertBool "SM9.B.10: the retired rule, and the property that survives it"
+    (-- What the renamed theorem actually proves: the TRANSITION's refusal has
+     -- no post-state, which is why the audit is written at the seam.
+     have _np := @SeLe4n.Kernel.declassifyStoreOnCore_refusal_has_no_post_state
+     -- …and what replaces the retired `refusalIsUnrecorded` rule.
+     have _rp := @SeLe4n.Kernel.declassificationRefusals_are_counted_and_attributed
+     have _pc := @SeLe4n.Kernel.recordSyscallRefusal_preserves_projectionOnCore
+     have _ni := @SeLe4n.Kernel.recordSyscallRefusal_perCore_NI
+     have _cg := @SeLe4n.Kernel.recordSyscallRefusal_preserves_auditObservationalEquivalence
+     -- The inventory still has twelve rules, with the replacement in it.
+     decide (SeLe4n.Kernel.DeclassificationRuleId.all.length = 12
+       ∧ SeLe4n.Kernel.DeclassificationRuleId.refusalsAreCountedAndAttributed
+           ∈ SeLe4n.Kernel.DeclassificationRuleId.all
+       ∧ SeLe4n.Kernel.refusalSeamClass .declassify = .records
+       ∧ SeLe4n.Kernel.refusalSeamClass .send = .exempt))
+
   IO.println "============================================================"
-  IO.println "All SM2.D + SM3.E.8 + SM8.A + SM8.B + SM8.C + SM8.D + SM8.E + SM9.A \
+  IO.println "All SM2.D + SM3.E.8 + SM8.A + SM8.B + SM8.C + SM8.D + SM8.E + SM9.A + SM9.B \
 surface anchor checks PASS."
 
 end SeLe4n.Testing.SmpSurfaceAnchors

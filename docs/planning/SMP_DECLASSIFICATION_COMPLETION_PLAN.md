@@ -8,7 +8,7 @@
 > **Target releases**: v0.33.24 → v0.34.x
 > **Calendar estimate**: 12-16 weeks
 > **Sub-task count**: 61 across ~21-26 PRs
-> **Status**: PENDING
+> **Status**: IN FLIGHT — SM9.A LANDED (v0.33.37 → v0.33.50), SM9.B LANDED
 
 ## 1. Phase goal
 
@@ -111,7 +111,7 @@ every field a refusal record needs is already an argument there:
 |---|---|
 | executing core | `executingCore` parameter |
 | subject thread | `st.scheduler.currentOnCore executingCore` (already matched on) |
-| **failed hop** | which authorization was refused — `callerToNotification` or `notificationToReceiver` (§3.5) — plus the **resolved receiver** when it is the second.  Without it a refusal reduces to the original capability operand and a generic reason, so a monitor cannot identify the bound waiter an attempted downgrade actually targeted — while the *success* path is required to audit exactly that destination.  `refusalRecord_names_failed_hop` |
+| **failed hop** (SM9.C.1's obligation, not the seam's — see the SM9.B landing record) | which authorization was refused — `callerToNotification` or `notificationToReceiver` (§3.5) — plus the **resolved receiver** when it is the second.  Without it a refusal reduces to the original capability operand and a generic reason, so a monitor cannot identify the bound waiter an attempted downgrade actually targeted — while the *success* path is required to audit exactly that destination.  `refusalRecord_names_failed_hop` |
 | **source domain** | `ctx.threadLabelOf` of that subject, **resolved at the seam** — `LabelingContext` is an *argument* to `syscallDispatchFromAbi`, not persistent state, so a later reader cannot reconstruct the domain from the subject id (the context may differ, or the id may have been reused).  The authorized-event trail already stores its domains for the same reason |
 | syscall | `syscallId : UInt32`, via the pure total `SyscallId.ofNat?` |
 | refusal reason | `ke : KernelError` |
@@ -169,9 +169,13 @@ structure RefusalLedger where
 ```
 
 A `Vector` cannot exceed its size, so there is **no 17th bundle conjunct, no
-five-lemma carriage block, and no `refine ⟨?_,…⟩` arity re-count** — which
-matters, because those destructurings are right-nested and a trailing
-under-listing elaborates *silently*.  `default_perCoreICache`
+capacity obligation on any writer, and no `refine ⟨?_,…⟩` arity re-count** —
+which matters, because those destructurings are right-nested and a trailing
+under-listing elaborates *silently*.  It does **not** avoid the carriage block:
+no field write transports `proofLayerInvariantBundle` definitionally (v0.32.151
+— three conjuncts fail `isDefEq` for structural reasons), so the mount owes one
+regardless, and what the type-level bound buys is that it comes out
+*unconditional*.  See step 8 below, corrected at landing.  `default_perCoreICache`
 (`Model/State.lean`) is the precedent for the `default_*` discharge shape.
 
 **The two counters are `Fin`, not `Nat`.**  An earlier draft made them `Nat`
@@ -1116,7 +1120,94 @@ inventory is checked once rather than field-by-field.
 **Acceptance**: a monitor reads every entry it is cleared for and drains the
 trail; the 256-entry cliff is gone.
 
-### SM9.B — Refusal auditing (10 sub-tasks)
+### SM9.B — Refusal auditing (10 sub-tasks) — **LANDED**
+
+**Landing record.**  All ten sub-tasks landed in one cut.  The payload is the
+production leaf `InformationFlow/RefusalRecord.lean` (axiom-clean); the writer
+is `Platform.FFI.recordSyscallRefusal`, called from `syscallDispatchFromAbi`'s
+entry-error arm; the reader is five new `AuditReadOp` constructors in
+`AuditRead.lean` behind the same configured monitor gate the drain uses.  Five
+design points moved during implementation, each because the drafted form was
+not available or not honest:
+
+1. **`KernelError` was extracted to its own import-free leaf**
+   (`Model/KernelError.lean`).  §6's step 1 requires a mounted field's payload
+   to sit *below* `Model/State.lean`, and the refusal record names the error
+   that refused the syscall — an inductive defined **in** `Model/State.lean`,
+   immediately above `SystemState`.  Storing a bare discriminant `Nat` instead
+   was rejected for §3.2's own reason: a `Nat` constrained only by its producer
+   leaves every other way of building the structure free to carry a "reason"
+   that is no kernel error at all.  Namespace and constructors are unchanged
+   and `Model/State.lean` imports the leaf, so every reference resolves as
+   before; the fourteen Tier-3 anchors that grepped `KernelError` variants in
+   `State.lean` were re-pointed at the file the code is now in.
+2. **The record does not carry a failed-hop field.**  §3.1's table lists one,
+   and §11 attributes `refusalRecord_names_failed_hop` to SM9.B.1 — but the
+   *resolved receiver* it names is resolved **inside** SM9.C.1's transition,
+   whose error arm carries no post-state, so the seam cannot see it.  *Which*
+   hop failed can ride the `reason` discriminant SM9.C.1 chooses (the record
+   already carries it); the receiver identity cannot, and adding a field no
+   producer could set is the unwired-structure shape CLAUDE.md forbids.  The
+   obligation moves to **SM9.C.1**, which owns the transition whose shape has
+   to surface it, and the record's docstring records the analysis.
+3. **`status` is two words, not one.**  §3.2 asks for a version; the ledger
+   also has a *write position* a monitor needs in order to interpret the ring
+   at all, and a `nextSlot` read at one version against slots read at another
+   describes a ledger that never existed.  So `refusalStatus` pairs
+   `nextSlot` with `version` atomically (the tearing argument that keeps the
+   trail's `status` a single call), and `refusalCounters` is a second atomic
+   pair — attempts and evictions, both `Fin`-bounded, meaningful only together
+   and bracketed by the version.
+4. **The singleton discipline arrived with the ledger**, as the SM9.A round-7
+   note requires — and its *capacity* half has the opposite answer to the
+   trail's, for a reason worth recording.  CC-8 exists because the trail is
+   bounded **and fail-closed**, so every authorized declassifier reads
+   full/not-full off its own syscall outcome.  `recordRefusal` is **total**: at
+   a full ring it evicts and counts the eviction rather than refusing, so no
+   syscall outcome depends on the ledger's fill level, the committed outcome is
+   the error frame computed from `ke` alone, the ledger is outside the
+   projection, and an under-cleared caller reads nothing of it.
+   `refusalLedger_occupancy_is_not_a_covert_channel` states those four as one
+   theorem, so **no ninth channel entry is owed** — and that is a checked fact
+   rather than an argument.  The *serialization* half is
+   `lockSet_refusalSeam_writer_declares_stateLevel_write`, whose first conjunct
+   is the tripwire that forces SM9.C.8's second recording syscall to declare
+   its own state-level write.
+
+5. **The mount owes a bundle-carriage layer even with no conjunct of its
+   own.**  SM9.B.3 as drafted stops at field, `Inhabited`, `default_*` and
+   `storeObject_*_eq` — but v0.32.151 established that
+   `proofLayerInvariantBundle` does **not** transport across an arbitrary field
+   write by `rfl`: three conjuncts fail `isDefEq` outright for structural
+   reasons (a `match` stuck on a symbolic `Nat` in `blockingChain` and
+   `dualQueueSystemInvariant`, and `serviceNontrivialPath`, an inductive family
+   parameterised by the state).  Without the layer, any later proof that the
+   committed dispatch preserves the bundle is blocked exactly there.  So the
+   ledger gets the same five-lemma block its mounted peers have
+   (`proofLayerInvariantBundle_setDeclassificationRefusals`,
+   `Architecture/Invariant.lean`) with the seam-level consequence
+   `recordSyscallRefusal_preserves_proofLayerInvariantBundle` — and the
+   carriage is **unconditional**, no capacity obligation on the writer, which
+   is exactly what the type-level bound buys and what a `List` ring with `Nat`
+   counters would have charged at every writer instead.
+
+**What the ring does not promise, stated rather than implied absent.**  A
+subject can flood the ring and evict every other subject's record — inherent to
+a bounded ring, and per-domain partitioning is not constructible over an
+unbounded domain space (`observerScopedGeneration_not_mountable`, again).  What
+is guaranteed is that the eviction is *visible*:
+`refusalLedger_eviction_is_counted` says a monitor reading a nonzero
+`droppedCount` knows its view is incomplete rather than reading 32 rows and
+believing it saw everything.  It is a flow *into* the monitor, which dominates
+every subject domain, so it is authorized rather than covert.
+
+**Acceptance discharged**: the two items §9 states explicitly.
+`authorizeDeclassificationOnCore_denied_before_capacity` still holds for the
+caller-facing error and the suite's `NEGATIVE: a policy-refused caller learns
+nothing about trail occupancy` assertion still passes (§10.6 runs both), while
+the refusal record **does** carry `.auditLogCapacityExceeded` for the monitor —
+the occupancy channel is closed by the read gate rather than by discarding the
+only durable evidence that an authorized downgrade hit the 256-entry cliff.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
@@ -1129,7 +1220,7 @@ trail; the 256-entry cliff is gone.
 | SM9.B.7 | Boot frames ×4 (`applyMachineConfig`, `foldIrqs`, `foldObjects`, `bootFromPlatform`) | `Platform/Boot.lean` | S |
 | SM9.B.8 | Information flow: `declassificationRefusals_write_preserves_projection := rfl` **and** `onCore_declassificationRefusals` as the tenth read-set corollary | `InformationFlow/Invariant/Operations.lean`, `ObservableStatePerCore.lean` | S |
 | SM9.B.9 | Write at the seam, filtered by the **total** `SyscallId → RefusalSeamClass` classification (§3.1) rather than a hardcoded `.declassify` or a hand-maintained list; `refusalSeamClass_total` + `refusalSeam_list_gate_insufficient`; re-shape `syscallDispatchFromAbi_error_of_syscallEntryChecked_error`; re-prove `_total`; the three security theorems (below) | `Platform/FFI.lean` | L |
-| SM9.B.10 | Extend `.auditRead` with refusal sub-operations, gated on the **configured** `LabelingContext.auditClearance` (§3.2) — ring *and* counters, and deliberately **not** on the domains present in the current records, since the ring evicts while the counters are cumulative (`refusalLedger_gate_is_configuration_derived`, with `refusalLedger_records_gate_unsound` keeping the eviction counterexample refuted); the `ReadableStructure` clause + congruences this adds to SM9.A.4a's relation; the negative that an under-cleared caller reads nothing of the ledger; **retire `DeclassificationRuleId.refusalIsUnrecorded`** | `InformationFlow/AuditRead.lean`, `DeclassificationPerCore.lean`, `InformationFlow/Policy.lean` | XL |
+| SM9.B.10 | Extend `.auditRead` with refusal sub-operations, gated on the **configured** `LabelingContext.auditMonitorClearance` (§3.2 — the field SM9.A landed under that name; earlier drafts of this row called it `auditClearance`) — ring *and* counters, and deliberately **not** on the domains present in the current records, since the ring evicts while the counters are cumulative (`refusalLedger_gate_is_configuration_derived`, with `refusalLedger_records_gate_unsound` keeping the eviction counterexample refuted); the `ReadableStructure` clause + congruences this adds to SM9.A.4a's relation; the negative that an under-cleared caller reads nothing of the ledger; **retire `DeclassificationRuleId.refusalIsUnrecorded`** | `InformationFlow/AuditRead.lean`, `DeclassificationPerCore.lean`, `InformationFlow/Policy.lean` | XL |
 
 **SM9.B.10 retires a registered claim, and must do so properly.**
 `DeclassificationRuleId.refusalIsUnrecorded` is data, not prose: arms in `all`,
@@ -1161,7 +1252,7 @@ cannot displace an authorized-downgrade entry*.
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM9.C.0 | **Prerequisite — the wait path drops the badge.**  `notificationWaitOnCore`'s pending-badge arm clears `pendingBadge`, marks the waiter `.ready` with plain `storeTcbIpcState` (no message), and returns `.ok (some badge)`; both live `.notificationWait` arms in `API.lean` match `(st', .ok _)` and discard it, and the wrapper's type is `Kernel Unit`.  So in the ordinary signal-before-wait ordering the badge is consumed and delivered nowhere — while the waiter-present path delivers via `storeTcbIpcStateAndMessage`.  `FFI.lean`'s own ABI note says `x0` carries *"a badge for `notificationWait`"*, so this is a documented contract the code does not meet.  **SM9.C cannot ship a data-carrying declassification over a path that loses data in one of its two orderings.**  **Closed by WS-RA, not here**: [`SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md) establishes that the kernel writes *no* return register except a status word, so `tcb.pendingMessage` — where the signal path stores the badge — has no register path either and a local mirror-the-signal-path patch would not deliver anything.  SM9.C is blocked on RA.B.5 | `IPC/CrossCore/NotificationSignal.lean`, `Kernel/API.lean` | L |
-| SM9.C.1 | `notificationSignalDeclassified` — the SM6.B signal gated by `declassificationDecision` **and by the resolved destination's own authorization**, emitting **one event per authorized hop** (`declassifiedSignal_audits_each_hop`, `declassifiedSignal_no_invented_edge` — a single record would collapse two domain pairs into a direct edge no policy authorized) (§3.5): the live `notificationSignalBoundCrossCoreDispatchChecked` gates `signaler → notification` *and* `notification → receiver`, the second added at v0.31.73 to stop a badge leak into a low bound TCB, so a declassifying variant gated only on the notification would re-open it with stronger authority behind it.  `declassifiedSignal_gates_resolved_receiver` + `declassifiedSignal_audits_actual_destination` + `footprint_does_not_authorize`; badge delivered, event recording the **actual destination**; error arms fail closed | `IPC/CrossCore/NotificationSignal.lean` | XL |
+| SM9.C.1 | `notificationSignalDeclassified` — the SM6.B signal gated by `declassificationDecision` **and by the resolved destination's own authorization**, emitting **one event per authorized hop** (`declassifiedSignal_audits_each_hop`, `declassifiedSignal_no_invented_edge` — a single record would collapse two domain pairs into a direct edge no policy authorized) (§3.5): the live `notificationSignalBoundCrossCoreDispatchChecked` gates `signaler → notification` *and* `notification → receiver`, the second added at v0.31.73 to stop a badge leak into a low bound TCB, so a declassifying variant gated only on the notification would re-open it with stronger authority behind it.  `declassifiedSignal_gates_resolved_receiver` + `declassifiedSignal_audits_actual_destination` + `footprint_does_not_authorize`; badge delivered, event recording the **actual destination**; error arms fail closed.  **Plus the failed-hop obligation SM9.B could not take** (`refusalRecord_names_failed_hop`, §3.1): the resolved receiver is resolved *inside* this transition, whose error arm carries no post-state, so the seam cannot see it — *which* hop failed can ride the `reason` discriminant this sub-task chooses, and surfacing the receiver identity needs a shape change here, not a field on the record | `IPC/CrossCore/NotificationSignal.lean` | XL |
 | SM9.C.2 | Per-core + cross-core forms (`…OnCore`, `…CrossCoreDispatchChecked`), SGI emission, home-core wake | same | L |
 | SM9.C.3 | `ipcInvariantFull{,_perCore}` preservation — rides `notificationSignal_preserves_*` plus the audit frame | `IPC/Invariant/PerCoreBundlePreservation.lean` | L |
 | SM9.C.4 | `proofLayerInvariantBundle` preservation + `auditLogBounded` carriage | `InformationFlow/Declassification.lean` | M |
@@ -1255,9 +1346,18 @@ and the SM9.D **taint side table**.  Verified against the
 8. **No** `proofLayerInvariantBundle` conjunct for any of the three — the ledger's
    `Vector` ring and the taint set are bounded by their types (§3.2, §3.6), and
    the epoch is a monotone counter with nothing to bound.  If that decision is
-   ever reversed, the 17th conjunct also costs the five-lemma carriage block in
-   `Architecture/Invariant.lean` and a hand re-count of every
-   `refine ⟨?_,…⟩` / `obtain ⟨…⟩` over the bundle, which under-list **silently**.
+   ever reversed, the 17th conjunct additionally costs a *capacity obligation at
+   every writer* and a hand re-count of every `refine ⟨?_,…⟩` / `obtain ⟨…⟩` over
+   the bundle, which under-list **silently**.
+   **Corrected at the SM9.B landing**: this step used to read "the 17th conjunct
+   also costs the five-lemma carriage block", implying a conjunct-free field
+   needs none.  It does — `proofLayerInvariantBundle` does not transport across
+   a field write by `rfl` (v0.32.151: a `match` stuck on a symbolic `Nat`, an
+   `inductive` family parameterised by the state), so **every mounted field owes
+   a carriage block**, and the type-level bound decides only whether it carries
+   an obligation.  SM9.B's does not
+   (`proofLayerInvariantBundle_setDeclassificationRefusals`); SM8.C.8's takes
+   `hBounded`.  SM9.D.2's taint table owes one too.
 8a. **§3.7 check.**  For each mounted structure, decide whether any syscall can
    read it, and record the answer in the §3.7 inventory: the trail and the ledger
    are readable and owe both obligations; the taint table is not readable and
@@ -1356,13 +1456,14 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
       and it is the operator's to know about.
 - [ ] `drainGeneration` is observer-scoped; the global-counter form is refuted
       by a negative rather than merely avoided.
-- [ ] Refusals are counted and attributed, and provably cannot displace an
-      authorized-downgrade entry.
-- [ ] `authorizeDeclassificationOnCore_denied_before_capacity` still holds for the
+- [x] Refusals are counted and attributed, and provably cannot displace an
+      authorized-downgrade entry (SM9.B: `declassificationRefusals_are_counted_and_attributed`,
+      `refusalWrite_declassificationAuditLog_eq`, `refusalWrite_cannot_exhaust_trail`).
+- [x] `authorizeDeclassificationOnCore_denied_before_capacity` still holds for the
       **caller-facing** error, and the refusal record still carries
       `.auditLogCapacityExceeded` for the monitor — the occupancy channel is
       closed by the read gate, not by discarding the only durable evidence that
-      an authorized downgrade hit the 256-entry cliff.
+      an authorized downgrade hit the 256-entry cliff (SM9.B, suite §10.6).
 - [ ] A data-carrying declassification exists, with
       `declassificationRelativeNonInterference` in both halves.
 - [ ] Timestamps survive drains: after a drain, a fresh event's timestamp
@@ -1372,9 +1473,11 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
       reconstructible from its chunks, not merely small enough to fit one
       return word; and a partial reader cannot infer hidden-entry counts from
       an exported index.
-- [ ] Every visibility gate is computed from something that does not age out
+- [x] Every visibility gate is computed from something that does not age out
       from under it: the refusal ledger's gate is configuration, not the ring's
-      surviving rows.
+      surviving rows (SM9.B: `refusalLedger_gate_is_configuration_derived`,
+      with `refusalLedger_records_gate_unsound` keeping the eviction
+      counterexample refuted).
 - [ ] A retyped object carries no taint from its predecessor, with a lifecycle
       test rather than a frame lemma.
 - [ ] The causal verdict on a fixed pair of events is stable under later
@@ -1401,8 +1504,11 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
       second-hop record never asserts that a high subject is mid.
 - [ ] A refused second hop names the **resolved receiver**, not the original
       capability operand.
-- [ ] A refusal read that races a `recordRefusal` is **detected**, not silently
-      assembled from two attempts.
+- [x] A refusal read that races a `recordRefusal` is **detected**, not silently
+      assembled from two attempts (SM9.B:
+      `refusalRead_bracketed_detects_overwrite`, with
+      `auditStatus_does_not_detect_refusal_write` the negative that the trail's
+      own token does not serve).
 - [ ] `.auditRead` and `.auditDrain` return their computed word to the caller —
       verified end to end through `syscallDispatchFromAbi`, not just at the
       transition — which requires WS-RA to have landed.

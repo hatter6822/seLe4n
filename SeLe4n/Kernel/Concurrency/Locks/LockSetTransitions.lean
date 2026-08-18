@@ -689,8 +689,9 @@ caller's TCB via `writeReturnFrameToTcb` — a genuine TCB write the committed
 dispatch performs on every success (`lockSet_auditRead_staging_write_mem` ties
 it to the footprint by name).  CNode **read** for capability resolution.
 State-level lock **read** (PR #870 round 7): the query inspects the shared
-trail and epoch, and a concurrent drain's read-modify-write must exclude
-against it. -/
+trail and epoch — and, since WS-SM SM9.B.10, the refusal ledger, which the
+seam read-modify-writes on every recorded refusal — so a concurrent drain's or
+refusal's write must exclude against it. -/
 def lockSet_auditRead (callerTid : ThreadId) (cnodeRootObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .write),
@@ -793,6 +794,37 @@ theorem auditState_footprints_share_serialization :
     ⟨lockSet_declassify_stateLevel_write_mem callerA rootA,
      lockSet_auditDrain_stateLevel_write_mem callerB rootB,
      lockSet_auditRead_stateLevel_read_mem callerC rootC⟩
+
+/-- WS-SM SM9.B.9 (**the refusal ledger's serialization subject**): the syscall
+whose refusals the seam records declares the state-level lock in **write** mode.
+
+The ledger is a `SystemState` field, like the audit trail, and it is written on
+the *error* path of the very syscall whose footprint this is — so under
+SM3.C.9's fine locks two concurrent refused declassifications would otherwise
+hold provably disjoint sets while read-modify-writing the same ring, losing a
+record.  `lockSet_declassify` already carries `(stateLevelLock, .write)` for its
+trail append, and the same member covers the ledger.
+
+The first conjunct is what makes this a *gate* rather than a coincidence: it
+pins that `.declassify` is the only syscall the seam records today, so SM9.C.8's
+`.declassifySignal` — which the total `refusalSeamClass` forces it to classify —
+breaks this theorem and has to declare its own state-level write here.
+
+**Which bracket this assumes, stated rather than left implicit.**  The refusal
+write happens at the FFI boundary, *after* `syscallEntryChecked` returns its
+error — so this member covers it only if SM3.C.9 installs `withLockSet` around
+the **committed dispatch** (the `@[export]` body) rather than around the inner
+transition alone.  That is already the rule PR #870 rounds 4 and 6 established
+for the audit pair — a declared footprint covers what the dispatch commits, not
+what the transition writes — and it is the constraint this footprint places on
+SM3.C.9's installation point. -/
+theorem lockSet_refusalSeam_writer_declares_stateLevel_write
+    (callerTid : ThreadId) (cnodeRootObjId : ObjId) :
+    (∀ sid : SeLe4n.Model.SyscallId,
+      SeLe4n.Kernel.refusalSeamClass sid = .records → sid = .declassify) ∧
+    (stateLevelLock, AccessMode.write) ∈ (lockSet_declassify callerTid cnodeRootObjId).pairs :=
+  ⟨fun sid h => (SeLe4n.Kernel.refusalSeamClass_records_iff sid).mp h,
+   lockSet_declassify_stateLevel_write_mem callerTid cnodeRootObjId⟩
 
 /-! ## Service syscalls (3 transitions)
 

@@ -790,4 +790,37 @@ def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
   Concurrency.fireCrossCoreSgis result.2
   pure result.1
 
+-- ============================================================================
+-- WS-SM SM9.B.9 — the refusal write does not disturb the runtime seam
+-- ============================================================================
+
+/-- WS-SM SM9.B.9: **the diff-recovered cross-core SGIs are unchanged by a
+refusal write.**
+
+The runtime seam commits the dispatch's post-state and then fires the SGIs
+`computeCrossCoreSgis` re-derives from the `(pre, post)` diff.  SM9.B adds a
+field to that post-state on the error path, and this is the statement that the
+addition is invisible to the re-derivation: the SGI rule reads the object
+index, the object store and the scheduler slots, all of which the refusal write
+frames, so the pokes the runtime sends are exactly the pokes it sent before the
+ledger existed.
+
+Stated here rather than at the seam because this is where the two meet — and
+worth stating rather than assuming, since "the write only touches one field" is
+a property of `recordSyscallRefusal`, while "the seam reads no other field" is a
+property of `computeCrossCoreSgis`, and only their conjunction says the runtime
+is unaffected. -/
+theorem computeCrossCoreSgis_recordSyscallRefusal_eq
+    (ctx : LabelingContext) (executingCore : CoreId) (syscallId : UInt32)
+    (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
+    (pre post : SystemState) (execCore : CoreId) :
+    PriorityInheritance.computeCrossCoreSgis pre
+        (Platform.FFI.recordSyscallRefusal ctx executingCore syscallId tid ke x0 post)
+        execCore
+      = PriorityInheritance.computeCrossCoreSgis pre post execCore := by
+  obtain ⟨L, hEq⟩ :=
+    Platform.FFI.recordSyscallRefusal_frame ctx executingCore syscallId tid ke x0 post
+  rw [hEq]
+  rfl
+
 end SeLe4n.Kernel
