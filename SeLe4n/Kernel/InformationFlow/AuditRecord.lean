@@ -462,4 +462,233 @@ theorem recordDeclassificationChecked_records
            recordDeclassification_length log event⟩
   · exact absurd hStep (by simp)
 
+-- ============================================================================
+-- WS-SM SM8.C / SM9.A.1a: the trail as a totally ordered record
+-- ============================================================================
+
+/-! ## The timestamp discipline, and why it lives here
+
+`DeclassificationEvent.timestamp` is documented as a monotonic counter.  Left as
+a free `Nat` that is a *caller convention* — any producer could write any number,
+and two producers on two cores would write the same one.  The audited operations
+derive it from the trail's own shape, which makes "a timestamp identifies an
+event" an invariant this section states, checks and preserves.
+
+**SM8.C stated it 0-anchored; SM9.A.1a generalises the anchor.**  While the
+trail only ever grew, an entry's position *was* its identity, and
+`declassificationAuditLogWellFormed` (timestamps = indices) was the whole story.
+Drain removes a prefix, so the surviving entries' timestamps start at `k` rather
+than `0` — and, sharper, the shortened trail's `length` is `k` smaller, so a
+producer stamping `log.length` **reuses a timestamp still present in the trail**
+(`preEpochTimestamp_reused_after_drain`).  The general predicate
+`auditTimestampsFrom start` was already the one the proofs used; SM9.A.1a makes
+`start` the mounted `SystemState.declassificationAuditEpoch` and keeps the
+0-anchored form as the boot instance.
+
+**Why this layer sits in `AuditRecord.lean` rather than in the staged per-core
+module where SM8.C put it.**  The SM9.A drain is a *production* transition — a
+live syscall arm — and it owes `auditTimestampsFrom`-preservation, so the
+predicate has to be visible from production code.  Namespace and names are
+unchanged (`SeLe4n.Kernel`), so every existing reference resolves exactly as
+before; this is the same relocation SM7.A performed for `TlbInvalidation` and
+SM8.C.8 for the record type itself. -/
+
+/-- WS-SM SM8.C: the audit log's timestamps run consecutively from `start`.
+
+Written as a `Bool` recursion rather than an indexed `Prop` so an audit consumer
+can *decide* it on a concrete log; `auditTimestampsFrom_iff` is the indexed
+characterisation the proofs use. -/
+def auditTimestampsFrom (start : Nat) : DeclassificationAuditLog → Bool
+  | [] => true
+  | e :: rest => (e.timestamp == start) && auditTimestampsFrom (start + 1) rest
+
+/-- WS-SM SM8.C: **the audit log is well-formed** — every event's timestamp is
+its own position in the log.
+
+V6-H called for a "monotonic event counter"; making the timestamp the log
+position is how the kernel's own producers supply one, since the position is
+what they compute it from (`declassificationEventOnCore_timestamp`).
+
+**It is a checkable property of a log, not a type invariant**, and the
+distinction is load-bearing: `recordDeclassification` — the V6-H primitive,
+still exported — takes an arbitrary event and appends it, so a caller that hands
+it a wrong timestamp produces a log this predicate rejects
+(`recordDeclassification_admits_ill_formed`).  That is exactly why the predicate
+exists rather than a comment saying the ordering holds.
+
+**WS-SM SM9.A.1a — scope, corrected.**  SM8.C's contract read "every *kernel*
+path preserves it from the empty trail at boot, so a running system's trail is
+well-formed throughout".  With drain that is **false as written**: a drained
+trail's timestamps start at the epoch, not at `0`, and this predicate rejects
+it.  What is true, and what the tree now proves, is the epoch-relative form —
+`declassificationTrailWellFormed` (`InformationFlow/Declassification.lean`),
+which is `auditTimestampsFrom st.declassificationAuditEpoch`.  This 0-anchored
+predicate is its **boot instance**, and remains the right statement about any
+trail that has never been drained. -/
+def declassificationAuditLogWellFormed (log : DeclassificationAuditLog) : Bool :=
+  auditTimestampsFrom 0 log
+
+/-- WS-SM SM8.C: the indexed characterisation — the `Bool` check holds exactly
+when every entry's timestamp is `start` plus its index. -/
+theorem auditTimestampsFrom_iff (start : Nat) (log : DeclassificationAuditLog) :
+    auditTimestampsFrom start log = true ↔
+      ∀ (i : Nat) (h : i < log.length), (log[i]'h).timestamp = start + i := by
+  induction log generalizing start with
+  | nil => simp [auditTimestampsFrom]
+  | cons e rest ih =>
+    simp only [auditTimestampsFrom, Bool.and_eq_true, beq_iff_eq, ih]
+    constructor
+    · rintro ⟨hHead, hTail⟩ i hi
+      cases i with
+      | zero => simpa using hHead
+      | succ n =>
+        have hn : n < rest.length := by
+          simp only [List.length_cons] at hi; omega
+        have hRest := hTail n hn
+        rw [List.getElem_cons_succ]
+        omega
+    · intro h
+      refine ⟨?_, ?_⟩
+      · have h0 := h 0 (by simp)
+        simpa using h0
+      · intro i hi
+        have hi' : i + 1 < (e :: rest).length := by
+          simp only [List.length_cons]; omega
+        have hs := h (i + 1) hi'
+        rw [List.getElem_cons_succ] at hs
+        omega
+
+/-- WS-SM SM8.C: the well-formed log's timestamps are exactly its indices. -/
+theorem declassificationAuditLogWellFormed_iff (log : DeclassificationAuditLog) :
+    declassificationAuditLogWellFormed log = true ↔
+      ∀ (i : Nat) (h : i < log.length), (log[i]'h).timestamp = i := by
+  simp [declassificationAuditLogWellFormed, auditTimestampsFrom_iff]
+
+/-- WS-SM SM8.C: the empty log is well-formed — the boot witness every audited
+run starts from. -/
+theorem declassificationAuditLogWellFormed_nil :
+    declassificationAuditLogWellFormed [] = true := rfl
+
+/-- WS-SM SM9.A.1a: the empty log is well-formed at **any** epoch — the witness
+a fully-drained trail needs, which the 0-anchored form above cannot give. -/
+@[simp] theorem auditTimestampsFrom_nil (start : Nat) :
+    auditTimestampsFrom start ([] : DeclassificationAuditLog) = true := rfl
+
+/-- WS-SM SM8.C: appending distributes — the check on `log ++ [e]` is the check
+on `log` conjoined with `e`'s timestamp landing at `log`'s end. -/
+theorem auditTimestampsFrom_append (start : Nat) (log : DeclassificationAuditLog)
+    (e : DeclassificationEvent) :
+    auditTimestampsFrom start (log ++ [e]) =
+      (auditTimestampsFrom start log && (e.timestamp == start + log.length)) := by
+  induction log generalizing start with
+  | nil => simp [auditTimestampsFrom]
+  | cons a rest ih =>
+    have hArith : start + 1 + rest.length = start + (rest.length + 1) := by omega
+    simp only [List.cons_append, auditTimestampsFrom, ih, Bool.and_assoc,
+      List.length_cons, hArith]
+
+/-- WS-SM SM9.A.1a: **dropping a prefix shifts the anchor by exactly what it
+removed.**  The drain's half of the timestamp discipline, dual to
+`auditTimestampsFrom_append`: removing `d` entries from a trail anchored at
+`start` leaves one anchored at `start + d`, which is why
+`auditDrainVisiblePrefix` advances the epoch by the number of entries it
+removes rather than by one, or not at all. -/
+theorem auditTimestampsFrom_drop (start d : Nat) (log : DeclassificationAuditLog)
+    (hWF : auditTimestampsFrom start log = true) :
+    auditTimestampsFrom (start + d) (log.drop d) = true := by
+  rw [auditTimestampsFrom_iff] at hWF ⊢
+  intro i hi
+  rw [List.length_drop] at hi
+  have hlen : d + i < log.length := by omega
+  have hget : (log.drop d)[i]'(by rw [List.length_drop]; omega) = log[d + i]'hlen := by
+    simp [List.getElem_drop]
+  rw [hget, hWF (d + i) hlen]
+  omega
+
+/-- WS-SM SM9.A.1a: **recording preserves the timestamp discipline at any
+anchor** exactly when the recorded event's timestamp is the anchor plus the
+pre-log's length.  The audited producers compute it that way
+(`declassificationEventOnCore`), so the invariant rides every audited
+declassification whether or not the trail has been drained. -/
+theorem recordDeclassification_preserves_timestampsFrom (start : Nat)
+    (log : DeclassificationAuditLog) (e : DeclassificationEvent)
+    (hWF : auditTimestampsFrom start log = true)
+    (hTs : e.timestamp = start + log.length) :
+    auditTimestampsFrom start (recordDeclassification log e) = true := by
+  simp only [recordDeclassification, auditTimestampsFrom_append, Bool.and_eq_true,
+    beq_iff_eq]
+  exact ⟨hWF, hTs⟩
+
+/-- WS-SM SM8.C: **recording preserves well-formedness** exactly when the
+recorded event's timestamp is the pre-log's length.  The 0-anchored instance of
+`recordDeclassification_preserves_timestampsFrom`, retained because it is the
+statement about a never-drained trail. -/
+theorem recordDeclassification_preserves_wellFormed (log : DeclassificationAuditLog)
+    (e : DeclassificationEvent)
+    (hWF : declassificationAuditLogWellFormed log = true)
+    (hTs : e.timestamp = log.length) :
+    declassificationAuditLogWellFormed (recordDeclassification log e) = true :=
+  recordDeclassification_preserves_timestampsFrom 0 log e hWF (by omega)
+
+/-- WS-SM SM8.C.2 (the ordering result the cross-core chain reconstruction
+rests on): **in a trail with a consistent anchor a timestamp identifies an
+event**, whichever cores the events came from.
+
+This is why the audited producers derive the timestamp from the length of the
+whole trail rather than from a per-core counter.  A per-core counter would make
+two events on two cores share a timestamp, and the interleaving of a chain that
+crosses cores would be unrecoverable from the record.
+
+**WS-SM SM9.A.1a**: stated over an arbitrary anchor rather than over `0`.  The
+generalisation is what keeps the theorem true of a *drained* trail — whose
+timestamps are its indices offset by the epoch — and it is the reason the epoch
+had to land before drain rather than with it. -/
+theorem declassificationAuditLog_timestamp_identifies_event
+    (start : Nat) (log : DeclassificationAuditLog)
+    (hWF : auditTimestampsFrom start log = true)
+    {e₁ e₂ : DeclassificationEvent} (h₁ : e₁ ∈ log) (h₂ : e₂ ∈ log)
+    (hTs : e₁.timestamp = e₂.timestamp) : e₁ = e₂ := by
+  rw [auditTimestampsFrom_iff] at hWF
+  obtain ⟨i₁, hi₁, hEq₁⟩ := List.getElem_of_mem h₁
+  obtain ⟨i₂, hi₂, hEq₂⟩ := List.getElem_of_mem h₂
+  have hT₁ : e₁.timestamp = start + i₁ := by rw [← hEq₁]; exact hWF i₁ hi₁
+  have hT₂ : e₂.timestamp = start + i₂ := by rw [← hEq₂]; exact hWF i₂ hi₂
+  have hIdx : i₁ = i₂ := by omega
+  subst hIdx
+  rw [← hEq₁, ← hEq₂]
+
+/-- WS-SM SM9.A.1a: a minimal event stamped at `t`, used to exhibit concrete
+trails in the timestamp negatives below.  Every field but the timestamp is the
+neutral choice, because the timestamp is the only one the statements read. -/
+def auditTimestampWitness (t : Nat) : DeclassificationEvent :=
+  { srcDomain := SecurityDomain.lowest
+    dstDomain := SecurityDomain.lowest
+    targetObject := SeLe4n.ObjId.ofNat 0
+    authorizationBasis := .policyRule
+    timestamp := t
+    originatingCore := Concurrency.bootCoreId }
+
+/-- WS-SM SM9.A.1a (**the load-bearing negative**): the pre-epoch producer
+**reuses a timestamp after a drain**.
+
+The witness is the smallest one: a three-entry trail stamped `0, 1, 2`, one
+entry drained.  The pre-epoch rule `timestamp := log.length` stamps the next
+event `2` — which the surviving third entry already carries, so
+`declassificationAuditLog_timestamp_identifies_event` becomes false in substance
+rather than merely losing its hypothesis, and `declassificationChainLinked`'s
+strictly-increasing conjunct goes with it.  The epoch rule
+`timestamp := epoch + log.length` stamps it `3`, which no surviving entry
+carries.
+
+Stated as a theorem rather than left in the plan because it is the entire
+justification for mounting a counter: without it there is a cheaper-looking
+design (stamp the length, drain freely) that is simply wrong. -/
+theorem preEpochTimestamp_reused_after_drain :
+    ∃ (log : DeclassificationAuditLog) (d : Nat),
+      auditTimestampsFrom 0 log = true ∧
+      (∃ e ∈ log.drop d, e.timestamp = (log.drop d).length) ∧
+      (∀ e ∈ log.drop d, e.timestamp ≠ d + (log.drop d).length) := by
+  refine ⟨[auditTimestampWitness 0, auditTimestampWitness 1, auditTimestampWitness 2], 1,
+    by decide, ⟨auditTimestampWitness 2, by decide, by decide⟩, by decide⟩
+
 end SeLe4n.Kernel

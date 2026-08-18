@@ -49,6 +49,7 @@
 #[cfg(feature = "std")]
 extern crate std;
 
+pub mod audit;
 pub mod cap;
 pub mod cspace;
 pub mod declassify;

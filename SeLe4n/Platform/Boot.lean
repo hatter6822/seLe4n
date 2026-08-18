@@ -349,6 +349,13 @@ theorem applyMachineConfig_declassificationAuditLog_eq (ist : IntermediateState)
     (applyMachineConfig ist config).state.declassificationAuditLog =
       ist.state.declassificationAuditLog := rfl
 
+/-- WS-SM SM9.A.1a: `applyMachineConfig` preserves the declassification audit
+epoch — boot drains nothing, so no timestamp offset moves. -/
+theorem applyMachineConfig_declassificationAuditEpoch_eq (ist : IntermediateState)
+    (config : MachineConfig) :
+    (applyMachineConfig ist config).state.declassificationAuditEpoch =
+      ist.state.declassificationAuditEpoch := rfl
+
 /-- AH2-F: `applyMachineConfig` preserves lifecycle metadata. -/
 theorem applyMachineConfig_lifecycle_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.lifecycle = ist.state.lifecycle := rfl
@@ -1686,6 +1693,14 @@ private theorem foldIrqs_declassificationAuditLog (irqs : List IrqEntry)
   | nil => rfl
   | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
 
+private theorem foldIrqs_declassificationAuditEpoch (irqs : List IrqEntry)
+    (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.declassificationAuditEpoch =
+      ist.state.declassificationAuditEpoch := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
 private theorem foldIrqs_machine (irqs : List IrqEntry) (ist : IntermediateState) :
     (foldIrqs irqs ist).state.machine = ist.state.machine := by
   induction irqs generalizing ist with
@@ -1789,6 +1804,14 @@ private theorem foldObjects_declassificationAuditLog (objs : List ObjectEntry)
     (ist : IntermediateState) :
     (foldObjects objs ist).state.declassificationAuditLog =
       ist.state.declassificationAuditLog := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_declassificationAuditEpoch (objs : List ObjectEntry)
+    (ist : IntermediateState) :
+    (foldObjects objs ist).state.declassificationAuditEpoch =
+      ist.state.declassificationAuditEpoch := by
   induction objs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
@@ -2435,6 +2458,19 @@ theorem bootFromPlatform_declassificationAuditLog_eq (config : PlatformConfig) :
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_declassificationAuditLog_eq,
       foldObjects_declassificationAuditLog, foldIrqs_declassificationAuditLog,
+      mkEmpty_state_eq_default]
+
+/-- WS-SM SM9.A.1a: boot drains nothing, so the audit epoch after boot is the
+zero default.  Together with `bootFromPlatform_declassificationAuditLog_eq`
+this is what makes a platform-booted trail well-formed *at its epoch* — the
+0-anchored SM8.C predicate is the boot instance rather than an invariant that
+happens to hold. -/
+theorem bootFromPlatform_declassificationAuditEpoch_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.declassificationAuditEpoch =
+    (default : SystemState).declassificationAuditEpoch := by
+  show _ = _; unfold bootFromPlatform
+  rw [applyMachineConfig_declassificationAuditEpoch_eq,
+      foldObjects_declassificationAuditEpoch, foldIrqs_declassificationAuditEpoch,
       mkEmpty_state_eq_default]
 
 /-- AH2-F: After boot, machine config-set fields come from `config.machineConfig`.

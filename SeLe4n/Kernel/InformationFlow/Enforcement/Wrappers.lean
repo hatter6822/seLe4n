@@ -289,6 +289,31 @@ def enforcementBoundary : List EnforcementClass :=
   -- admitted.  Classifying it capability-only would say the capability alone
   -- authorizes the downgrade, which is exactly what it does not.
   , .policyGated "declassifyObjectFromCore"
+  -- WS-SM SM9.A.11: the declassification audit trail's reader and drain.
+  -- **Capability-only**, and the classification is the honest one rather than
+  -- the flattering one.  Neither consults an information-flow *policy* the way
+  -- `declassifyObjectFromCore` does: what they consult is the caller's own
+  -- clearance, and they use it to *filter* what is returned rather than to
+  -- admit or deny a flow the lattice forbids.  A `.policyGated` classification
+  -- would claim a policy decision they do not make; `.readOnly` would claim the
+  -- drain changes nothing, which is false of a transition that removes entries
+  -- and advances the epoch.
+  --
+  -- The authority is a dedicated `CapTarget.auditTrail` capability
+  -- (`extractAuditAuthority`), *not* a right on an arbitrary capability — the
+  -- v0.32.97 confused-deputy class — with `.read` and `.write` as the second
+  -- gate so a monitoring deployment can hand out a reader that cannot drain.
+  --
+  -- PR #870 review (P2): the reader's entry is `auditReadFromCore` — the LIVE
+  -- entry point the `.auditRead` arm calls, whose subject-resolution seam
+  -- (the reader's clearance read off the running thread, never off an operand)
+  -- is precisely what the boundary exists to audit.  Its first cut named the
+  -- inner query `auditReadWord`, which takes a caller-supplied reader domain —
+  -- so the coverage checks would have stayed green had the live seam drifted
+  -- onto exactly the confused-clearance shape the entry point exists to
+  -- prevent.  The drain's label was the live entry from the start.
+  , .capabilityOnly "auditReadFromCore"
+  , .capabilityOnly "auditDrainVisiblePrefix"
   -- WS-SM SM8.E.3: the SM3 two-phase-locking bracket, promoted here from the
   -- separate per-core list SM8.B introduced.  **Capability-only**, and for the
   -- same reason as `storeObject`'s and `lifecycleRetypeObject`'s: it is an
@@ -350,6 +375,8 @@ def syscallIdToEnforcementName : SyscallId → String
   | .mintReplyCap          => "mintReplyCapWithCdt"
   | .vspaceUnifyInstruction => "vspaceUnifyInstructionPage"
   | .declassify            => "declassifyObjectFromCore"
+  | .auditRead             => "auditReadFromCore"
+  | .auditDrain            => "auditDrainVisiblePrefix"
 
 /-- AC4-D: Check whether every SyscallId maps to an operation name present in
     the enforcement boundary list. Returns `true` iff every syscall is covered. -/

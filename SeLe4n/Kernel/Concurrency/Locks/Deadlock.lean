@@ -799,6 +799,22 @@ theorem lockSet_declassify_size_le (a : ThreadId) (b : ObjId) :
   unfold lockSet_declassify maxLockSetSize
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
+/-- WS-SM SM9.A.12 (PR #870 round 6): the audit reader's two-lock footprint is
+within the bound.  Registered late — the SM9.A landing declared the sets but
+left them out of the §6b family and the §6c aggregate, which the plan's
+SM9.A.12 row already claimed. -/
+theorem lockSet_auditRead_size_le (a : ThreadId) (b : ObjId) :
+    (lockSet_auditRead a b).size ≤ maxLockSetSize := by
+  unfold lockSet_auditRead maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+/-- WS-SM SM9.A.12 (PR #870 round 6): the drain's two-lock footprint is within
+the bound. -/
+theorem lockSet_auditDrain_size_le (a : ThreadId) (b : ObjId) :
+    (lockSet_auditDrain a b).size ≤ maxLockSetSize := by
+  unfold lockSet_auditDrain maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
 theorem lockSet_serviceRegister_size_le (a : ThreadId) (b c : ObjId) :
     (lockSet_serviceRegister a b c).size ≤ maxLockSetSize := by
   unfold lockSet_serviceRegister maxLockSetSize
@@ -862,11 +878,13 @@ theorem lockSet_tcbSetIPCBuffer_size_le (a : ThreadId) (b : ObjId) (c : ThreadId
   unfold lockSet_tcbSetIPCBuffer maxLockSetSize
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
-/-- WS-SM SM3.D.6b (aggregate): **every** one of the 26 SM3.B per-transition
-`lockSet_<τ>` declarations has size `≤ maxLockSetSize`, for all arguments.
-This discharges, once and for all, the size premise of
+/-- WS-SM SM3.D.6b (aggregate): **every** one of the 29 per-transition
+`lockSet_<τ>` declarations enumerated here has size `≤ maxLockSetSize`, for
+all arguments.  This discharges, once and for all, the size premise of
 `boundedWait_under_2pl` / the `KernelOperation` invariant for the real
-kernel transition surface — the bound is never vacuous. -/
+kernel transition surface — the bound is never vacuous.  (The audit pair
+joined at PR #870 round 6; the count named here was also corrected then —
+it had read "26" across two syscall additions.) -/
 theorem lockSetTransitions_within_bound :
     (∀ a b c d, (lockSet_endpointSend a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_endpointReceive a b c d).size ≤ maxLockSetSize) ∧
@@ -884,6 +902,8 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c, (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnifyInstruction a b c).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_declassify a b).size ≤ maxLockSetSize) ∧
+    (∀ a b, (lockSet_auditRead a b).size ≤ maxLockSetSize) ∧
+    (∀ a b, (lockSet_auditDrain a b).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_serviceRegister a b c).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_serviceRevoke a b).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_serviceQuery a b).size ≤ maxLockSetSize) ∧
@@ -903,6 +923,7 @@ theorem lockSetTransitions_within_bound :
    lockSet_cspaceDelete_size_le, lockSet_lifecycleRetype_size_le,
    lockSet_vspaceMap_size_le, lockSet_vspaceUnmap_size_le,
    lockSet_vspaceUnifyInstruction_size_le, lockSet_declassify_size_le,
+   lockSet_auditRead_size_le, lockSet_auditDrain_size_le,
    lockSet_serviceRegister_size_le, lockSet_serviceRevoke_size_le,
    lockSet_serviceQuery_size_le, lockSet_schedContextConfigure_size_le,
    lockSet_schedContextBind_size_le, lockSet_schedContextUnbind_size_le,

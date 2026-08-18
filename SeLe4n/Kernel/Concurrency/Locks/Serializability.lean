@@ -969,8 +969,13 @@ theorem serializability_under_2pl_of_conflicts_ordered
 /-! ### §7a — Read-only (identity-action) transitions commute (structural) -/
 
 /-- WS-SM SM3.E.5: a read-only transition instance — its business action is the
-identity (it inspects state, e.g. a `cspaceRead` / `serviceQuery` lookup, but
-mutates nothing).  Used to witness that reads commute with everything. -/
+identity (it inspects state, e.g. a `cspaceRead` or the `serviceQuery`
+*lookup*, but mutates nothing).  Note the qualification (PR #870 round 6): the
+`.serviceQuery` *dispatch* is not read-only — its arm stages the resolved
+`ServiceId` into the caller's TCB via WS-RA's `writeReturnFrameToTcb`, which
+is why `lockSet_serviceQuery` carries the caller TCB in write mode; the
+read-only example here is the inner registry lookup.  Used to witness that
+reads commute with everything. -/
 def readOnlyInstance (S : LockSet) (core : CoreId) (commitTime : Nat)
     (acquireTime : LockId → Nat) : KernelTransitionInstance :=
   { lockSet := S, core := core, commitTime := commitTime,

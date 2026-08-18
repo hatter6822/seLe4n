@@ -351,12 +351,15 @@ theorem enforcementSoundness_registerServiceChecked
 abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundary
 
 /-- V6-L/Z8-M/D2/D3/AC4-D (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
-    has exactly 40 entries, matching the canonical `enforcementBoundary`.
+    has exactly 42 entries, matching the canonical `enforcementBoundary`.
+
+    WS-SM SM9.A.11 added the two audit-trail entries (`auditReadWord`,
+    `auditDrainVisiblePrefix`), both capability-only.
 
     This theorem is the authority for the entry count; `enforcementBoundary`'s
     own docstring deliberately does not restate it. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 40 := by rfl
+    enforcementBoundaryExtended.length = 42 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

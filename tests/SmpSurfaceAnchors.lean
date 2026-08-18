@@ -486,7 +486,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   assertBool "lock-set non-interference + the covert-channel inventory resolve"
     (have _w := @SeLe4n.Kernel.withLockSet_preserves_projection
      have _u := @SeLe4n.Kernel.nonInterference_perCore_underLockSet
-     have _e : SeLe4n.Kernel.enforcementBoundaryPerCore.length = 55 :=
+     have _e : SeLe4n.Kernel.enforcementBoundaryPerCore.length = 57 :=
        SeLe4n.Kernel.enforcementBoundaryPerCore_count
      -- PR #861 review round 4: the boundary now also classifies the live
      -- cross-core wrappers, and the SMP completeness half audits them.  Rounds
@@ -499,7 +499,8 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- the canonical list and re-routed per-core like the rest.
      have _x := @SeLe4n.Kernel.syscallIdToEnforcementNamePerCore
      have _c := SeLe4n.Kernel.enforcementBoundaryPerCore_is_complete_crossCore
-     have _i : SeLe4n.Kernel.acceptedCovertChannelsPerCore.length = 7 :=
+     -- (Eight since PR #870 round 7: SM9.A's CC-8, the audit-trail occupancy.)
+     have _i : SeLe4n.Kernel.acceptedCovertChannelsPerCore.length = 8 :=
        SeLe4n.Kernel.acceptedCovertChannel_perCoreCount
      have _l := SeLe4n.Kernel.acceptedCovertChannel_lockContention
      have _r := @SeLe4n.Kernel.endpointPolicyRestricted_perCore
@@ -618,20 +619,183 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   -- that silently reverted — or a second entry added without reconciling the
   -- per-core list — fails the anchor file too, not only the dedicated suite.
   assertBool "the canonical enforcement boundary carries the two-phase-locking bracket"
-    (have _e : SeLe4n.Kernel.enforcementBoundaryExtended.length = 40 :=
+    (have _e : SeLe4n.Kernel.enforcementBoundaryExtended.length = 42 :=
        SeLe4n.Kernel.enforcementBoundaryExtended_count
      have _c := SeLe4n.Kernel.enforcementBoundary_classifies_withLockSet
      have _o := SeLe4n.Kernel.enforcementBoundaryPerCore_classifies_withLockSet_once
      have _x := SeLe4n.Kernel.crossCoreEnforcementEntries_omits_withLockSet
      have _p := @SeLe4n.Kernel.enforcementBoundary_prefix_of_perCore
      -- The promotion is count-neutral for the per-core list, which is the whole
-     -- reason the entry was appended last: 40 + 15 is the 55 it already was.
+     -- reason the entry was appended last: the extension is the plain
+     -- `canonical ++ crossCore`, so the canonical count is the only thing that
+     -- moves when a syscall joins (SM9.A took it 40 → 42).
      decide (SeLe4n.Kernel.enforcementBoundaryPerCore.length
        = SeLe4n.Kernel.enforcementBoundaryExtended.length
          + SeLe4n.Kernel.crossCoreEnforcementEntries.length))
 
+  -- ==========================================================================
+  -- §9  WS-SM SM9.A — the declassification audit trail's READER
+  -- ==========================================================================
+  --
+  -- SM8.C shipped a durable, bounded, fail-closed trail that nothing could
+  -- read, so a deployment performing `maxDeclassificationAuditEntries`
+  -- authorized downgrades stopped being able to declassify at all.  These are
+  -- the headline names of the read side; the full 117-symbol surface is
+  -- anchored in `tests/SmpInformationFlowSuite.lean` §1.10.
+  assertBool "SM9.A: the clearance-filtered view, the chunk protocol and the atomic status word"
+    (have _v := @SeLe4n.Kernel.auditLogVisibleTo
+     -- The no-gap-leak property: the view is a function of the reader's
+     -- clearance alone, so a hidden entry shifts no index the reader can see.
+     have _g := @SeLe4n.Kernel.auditLogVisibleTo_hidden_insert
+     have _dc := @SeLe4n.Kernel.auditLogVisibleTo_determined_by_clearance
+     have _sl := @SeLe4n.Kernel.auditLogVisibleTo_sublist
+     -- The arbitrary-length chunk protocol: every exported field is an
+     -- unbounded `Nat`, so a fixed low/high pair would only move the
+     -- truncation point to `2^64`.
+     have _rf := @SeLe4n.Kernel.auditReadField_reconstructs
+     have _rb := @SeLe4n.Kernel.auditReadBasis_reconstructs_designation
+     have _fb := @SeLe4n.Kernel.auditFieldBound_unreachable_in_kernel
+     -- One read for both status components: chunking `status` would have
+     -- traded aliasing for tearing on the first interleaved drain.
+     have _sa := @SeLe4n.Kernel.auditReadStatus_atomic
+     have _st := @SeLe4n.Kernel.auditStatusSplitRead_tears
+     true)
+  assertBool "SM9.A: the two reader classes, and what a partial reader cannot learn"
+    (have _vl := @SeLe4n.Kernel.auditReadIndex_is_view_local
+     have _gi := @SeLe4n.Kernel.dominatingReader_sees_global_identity
+     have _hp := @SeLe4n.Kernel.auditRead_hides_global_position
+     have _pg := @SeLe4n.Kernel.auditReadStatus_partial_hides_generation
+     -- Why the generation is global rather than per-observer: labels are an
+     -- unbounded `Nat`, so there is no finite family to key state by.
+     have _nm := @SeLe4n.Kernel.observerScopedGeneration_not_mountable
+     true)
+  assertBool "SM9.A (PR #870 round 6): the live facility is monitor-only — the drain-signal channel is receiver-free"
+    (-- The channel that forced the exclusion, kept exhibited at the model
+     -- reader: a monitor's drain moves a non-monitor clearance's status word,
+     -- one bit per drain, and hiding the generation leaves the length as a
+     -- second carrier of the same bit.
+     have _ch := @SeLe4n.Kernel.auditDrain_moves_partial_readers_status
+     -- The exclusion at the live entry, its success characterisation, and the
+     -- flow closure: every surviving reader dominates every subject domain,
+     -- so an observed drain is an authorized flow.
+     have _pd := @SeLe4n.Kernel.auditReadFromCore_partial_reader_denied
+     have _om := @SeLe4n.Kernel.auditReadFromCore_ok_is_monitor
+     have _od := @SeLe4n.Kernel.auditReadFromCore_observer_dominates_subjects
+     -- The committed dispatch's caller-TCB staging write is a declared
+     -- `.write` member of every word-returning footprint, by name.
+     have _wr := @SeLe4n.Kernel.Concurrency.lockSet_auditRead_staging_write_mem
+     have _wd := @SeLe4n.Kernel.Concurrency.lockSet_auditDrain_staging_write_mem
+     have _wq := @SeLe4n.Kernel.Concurrency.lockSet_serviceQuery_staging_write_mem
+     true)
+  assertBool "SM9.A (PR #870 round 7): the trail's singleton discipline — CC-8 registered, mutation serialized"
+    (-- (P1) The occupancy channel: bounded + fail-closed + drainable makes the
+     -- fill level an irreducible inter-domain observable, registered as CC-8
+     -- with its bound, its carrier and the drain-controlled flip.
+     have _cc := @SeLe4n.Kernel.acceptedCovertChannel_auditOccupancy
+     have _cg := @SeLe4n.Kernel.acceptedCovertChannel_auditOccupancy_capacity_gates
+     have _ab := @SeLe4n.Kernel.auditOccupancy_alphabet_bounded
+     have _cr := @SeLe4n.Kernel.declassify_capacity_refusal_of_full
+     have _fl := @SeLe4n.Kernel.auditDrain_flips_declassify_outcome
+     have _bd := @SeLe4n.Kernel.acceptedCovertChannel_auditOccupancy_bounded
+     -- (P2) The state-level serialization subject: the SM3.A.10 `.objStore`
+     -- singleton convention made structural — one canonical spelling, declared
+     -- in all three audit-state footprints, non-disjoint by theorem.
+     have _sl := @SeLe4n.Kernel.Concurrency.stateLevelLock
+     have _md := @SeLe4n.Kernel.Concurrency.lockSet_declassify_stateLevel_write_mem
+     have _mr := @SeLe4n.Kernel.Concurrency.lockSet_auditRead_stateLevel_read_mem
+     have _mw := @SeLe4n.Kernel.Concurrency.lockSet_auditDrain_stateLevel_write_mem
+     have _cp := @SeLe4n.Kernel.Concurrency.auditState_footprints_share_serialization
+     have _oi := @SeLe4n.Kernel.Concurrency.stateLevelLock_objId_irrelevant
+     true)
+  assertBool "SM9.A: drain under the configuration-derived dominance gate"
+    (have _d := @SeLe4n.Kernel.auditDrainVisiblePrefix
+     have _fd := @SeLe4n.Kernel.auditDrain_requires_full_dominance_of_labeling
+     -- PR #870 round 3: visibility filters on BOTH disclosed domains, so an
+     -- audit reader can never recover an object identity its projection
+     -- redacts; the destination is the target object's own domain.
+     have _dv := @SeLe4n.Kernel.auditEntryVisibleTo
+     have _dh := @SeLe4n.Kernel.auditLogVisibleTo_hides_undominated_destination
+     have _di := @SeLe4n.Kernel.incomparableDowngrade_hidden_from_source_reader
+     have _dt := @SeLe4n.Kernel.auditVisibleEntry_target_domain_flows
+     -- PR #870 round 4: the cross-core inventory's audit entries map to the
+     -- DISPATCH-level composition (transition plus return-frame staging);
+     -- those theorems live in `NonInterferenceCrossCore`, outside this file's
+     -- import set, and are anchored in `SmpInformationFlowSuite` §1.10 with
+     -- Tier-3 pinning the `niName!` mappings both positively and negatively.
+     have _pr := @SeLe4n.Kernel.auditDrain_partial_reader_drains_nothing
+     have _cl := @SeLe4n.Kernel.auditDrain_fully_clears_for_dominating_reader
+     -- The gate is derived from the CONFIGURATION, never from the rows the
+     -- trail currently holds: drain a trail to `[]` and a rows-derived
+     -- predicate goes vacuously true exactly where it matters.
+     have _cd := @SeLe4n.Kernel.auditMonitorGate_is_configuration_derived
+     have _ru := @SeLe4n.Kernel.auditMonitorGate_records_derived_unsound
+     have _ud := @SeLe4n.Kernel.auditDrain_unconfigured_denied
+     true)
+  assertBool "SM9.A.1a: the persistent epoch — a drain never frees a timestamp for reuse"
+    (have _e := @SeLe4n.Kernel.declassificationTrailWellFormed
+     have _wf := @SeLe4n.Kernel.auditDrain_preserves_wellFormed_at_epoch
+     have _fr := @SeLe4n.Kernel.auditDrain_next_timestamp_fresh
+     have _id := @SeLe4n.Kernel.declassificationTrail_timestamp_identifies_event
+     have _me := @SeLe4n.Kernel.auditDrain_monotone_epoch
+     -- The witness that the pre-epoch producer is genuinely unsound once drain
+     -- exists — a theorem, so a regression to `timestamp := log.length` fails
+     -- to build rather than quietly reintroducing the collision.
+     have _pe := @SeLe4n.Kernel.preEpochTimestamp_reused_after_drain
+     -- …and the 16th bundle conjunct rides the drain.
+     have _b := @SeLe4n.Kernel.auditDrain_preserves_proofLayerInvariantBundle
+     true)
+  assertBool "SM9.A.4a/.4b: the reader-visibility discipline as a TOTAL function, and the flow argument"
+    (have _c := @SeLe4n.Kernel.readableStructureAgrees
+     have _t := @SeLe4n.Kernel.auditReadOp_structure_total
+     -- The refuted design, kept refuted: a `mem_all` list plus an
+     -- "everything listed is readable" gate cannot force a NEW structure to
+     -- join it, whereas a missing case in a total function is a build error.
+     have _lg := @SeLe4n.Kernel.readableStructure_list_gate_insufficient
+     have _oe := @SeLe4n.Kernel.auditObservationalEquivalence
+     -- The lemma `lowEquivalent` cannot supply: the trail is deliberately not
+     -- in `ObservableState`, so "low-equivalent states give identical visible
+     -- views" is FALSE and cannot be the flow argument.
+     have _nd := @SeLe4n.Kernel.lowEquivalent_does_not_determine_visible_view
+     have _nc := @SeLe4n.Kernel.auditRead_no_channel
+     have _fc := @SeLe4n.Kernel.auditReadFromCore_no_channel
+     have _ni := @SeLe4n.Kernel.auditReadFromCore_perCore_NI
+     have _dn := @SeLe4n.Kernel.auditDrain_perCore_NI
+     true)
+  assertBool "SM9.A.9/.10: authority is a CapTarget, and the live arms return the SELECTED word"
+    (-- The v0.32.97 confused-deputy class: `syscallLookupCap` never constrains
+     -- `cap.target`, so a rights-only gate would repeat it exactly.
+     have _x := @SeLe4n.Kernel.extractAuditAuthority
+     have _r := @SeLe4n.Kernel.extractAuditAuthority_rejects_non_audit_capability
+     have _cd := @SeLe4n.Model.Capability.auditTrailRead_cannot_drain
+     have _cm := @SeLe4n.Model.Capability.auditTrailManage_can_drain
+     -- The WS-RA half: without a staged return frame the reader computes
+     -- correctly and hands back the caller's own preloaded `x0`.
+     have _sr := @SeLe4n.Kernel.dispatchArm_auditRead_matches_returnShape
+     have _sd := @SeLe4n.Kernel.dispatchArm_auditDrain_matches_returnShape
+     have _lr := @SeLe4n.Kernel.syscallDelegates_auditRead
+     have _ld := @SeLe4n.Kernel.syscallDelegates_auditDrain
+     have _ll := @SeLe4n.Kernel.auditReadFromCore_toUInt64_lossless
+     -- Fail-closed by default: an unconfigured deployment has NO audit reader,
+     -- which keeps the 256-entry cliff as the conservative default.  PR #870
+     -- round 2 made this hold against capability provisioning too: the read
+     -- transition's own configuration gate refuses every caller when no
+     -- validated monitor clearance is configured, and the acceptance witness
+     -- carries the universal no-success conjunct over ANY capability.
+     have _u := @SeLe4n.Kernel.unconfiguredDeployment_has_no_audit_reader
+     have _ur := @SeLe4n.Kernel.auditRead_unconfigured_denied
+     have _mr := @SeLe4n.Kernel.misconfiguredDeployment_cannot_read
+     have _rd := @SeLe4n.Kernel.dispatchWithCapChecked_auditRead_default_denied
+     have _ns := @SeLe4n.Kernel.unconfiguredDeployment_audit_never_succeeds
+     have _n := @SeLe4n.Kernel.dispatchWithCap_auditRead_denied
+     -- Both syscalls are in the ABI and value-returning.
+     decide (SeLe4n.Model.SyscallId.auditRead.toNat = 31
+       ∧ SeLe4n.Model.SyscallId.auditDrain.toNat = 32
+       ∧ SeLe4n.Model.SyscallId.count = 33
+       ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .auditRead = .word
+       ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .auditDrain = .word))
+
   IO.println "============================================================"
-  IO.println "All SM2.D + SM3.E.8 + SM8.A + SM8.B + SM8.C + SM8.D + SM8.E \
+  IO.println "All SM2.D + SM3.E.8 + SM8.A + SM8.B + SM8.C + SM8.D + SM8.E + SM9.A \
 surface anchor checks PASS."
 
 end SeLe4n.Testing.SmpSurfaceAnchors

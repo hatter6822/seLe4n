@@ -185,7 +185,7 @@ Delivered anchors (WS-E5 closeout):
 - `enforcementBoundary` — canonical operation classification table, 17 entries
   (3 policy-gated) **as M-07 delivered it**; it has grown with every later
   phase and the live count is pinned by `enforcementBoundaryExtended_count`
-  (40 entries / 12 policy-gated / 24 capability-only at WS-SM SM8.E.3),
+  (42 entries / 12 policy-gated / 26 capability-only at WS-SM SM9.A.11),
 - denial-preserves-state theorems for all 3 base checked operations (7 in extended boundary),
   since completed to all 12 policy-gated entries by WS-SM SM8.C,
 - `enforcement_sufficiency_*` — gateway equivalence theorems for all checked operations.

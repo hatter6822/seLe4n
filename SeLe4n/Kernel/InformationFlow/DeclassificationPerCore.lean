@@ -12,6 +12,10 @@
 
 import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
 import SeLe4n.Kernel.InformationFlow.Declassification
+-- WS-SM SM9.A.4a: the reader whose observations the equivalence below describes.
+-- Production, and imported here rather than the other way round: the reader must
+-- not pull the SM8.A/SM8.B non-interference layer into the live syscall path.
+import SeLe4n.Kernel.InformationFlow.AuditRead
 
 /-!
 # WS-SM SM8.C — the per-core declassification audit
@@ -94,121 +98,17 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 -- operation in §2 derives it from the length of the *whole* log, which makes
 -- "timestamp = position" an invariant this section states, checks and preserves.
 
-/-- WS-SM SM8.C: the audit log's timestamps run consecutively from `start`.
-
-Written as a `Bool` recursion rather than an indexed `Prop` so an audit consumer
-can *decide* it on a concrete log; `auditTimestampsFrom_iff` is the indexed
-characterisation the proofs use. -/
-def auditTimestampsFrom (start : Nat) : DeclassificationAuditLog → Bool
-  | [] => true
-  | e :: rest => (e.timestamp == start) && auditTimestampsFrom (start + 1) rest
-
-/-- WS-SM SM8.C: **the audit log is well-formed** — every event's timestamp is
-its own position in the log.
-
-V6-H called for a "monotonic event counter"; making the timestamp the log
-position is how the kernel's own producers supply one, since the position is
-what they compute it from (`declassificationEventOnCore_timestamp`).
-
-**It is a checkable property of a log, not a type invariant**, and the
-distinction is load-bearing: `recordDeclassification` — the V6-H primitive,
-still exported — takes an arbitrary event and appends it, so a caller that hands
-it a wrong timestamp produces a log this predicate rejects
-(`recordDeclassification_admits_ill_formed`).  That is exactly why the predicate
-exists rather than a comment saying the ordering holds.  Every *kernel* path
-preserves it (`declassifyStoreOnCore_preserves_wellFormed`,
-`declassifyObjectFromCore_preserves_wellFormed`) from the empty trail at boot,
-so a running system's trail is well-formed throughout. -/
-def declassificationAuditLogWellFormed (log : DeclassificationAuditLog) : Bool :=
-  auditTimestampsFrom 0 log
-
-/-- WS-SM SM8.C: the indexed characterisation — the `Bool` check holds exactly
-when every entry's timestamp is `start` plus its index. -/
-theorem auditTimestampsFrom_iff (start : Nat) (log : DeclassificationAuditLog) :
-    auditTimestampsFrom start log = true ↔
-      ∀ (i : Nat) (h : i < log.length), (log[i]'h).timestamp = start + i := by
-  induction log generalizing start with
-  | nil => simp [auditTimestampsFrom]
-  | cons e rest ih =>
-    simp only [auditTimestampsFrom, Bool.and_eq_true, beq_iff_eq, ih]
-    constructor
-    · rintro ⟨hHead, hTail⟩ i hi
-      cases i with
-      | zero => simpa using hHead
-      | succ n =>
-        have hn : n < rest.length := by
-          simp only [List.length_cons] at hi; omega
-        have hRest := hTail n hn
-        rw [List.getElem_cons_succ]
-        omega
-    · intro h
-      refine ⟨?_, ?_⟩
-      · have h0 := h 0 (by simp)
-        simpa using h0
-      · intro i hi
-        have hi' : i + 1 < (e :: rest).length := by
-          simp only [List.length_cons]; omega
-        have hs := h (i + 1) hi'
-        rw [List.getElem_cons_succ] at hs
-        omega
-
-/-- WS-SM SM8.C: the well-formed log's timestamps are exactly its indices. -/
-theorem declassificationAuditLogWellFormed_iff (log : DeclassificationAuditLog) :
-    declassificationAuditLogWellFormed log = true ↔
-      ∀ (i : Nat) (h : i < log.length), (log[i]'h).timestamp = i := by
-  simp [declassificationAuditLogWellFormed, auditTimestampsFrom_iff]
-
-/-- WS-SM SM8.C: the empty log is well-formed — the boot witness every audited
-run starts from. -/
-theorem declassificationAuditLogWellFormed_nil :
-    declassificationAuditLogWellFormed [] = true := rfl
-
-/-- WS-SM SM8.C: appending distributes — the check on `log ++ [e]` is the check
-on `log` conjoined with `e`'s timestamp landing at `log`'s end. -/
-theorem auditTimestampsFrom_append (start : Nat) (log : DeclassificationAuditLog)
-    (e : DeclassificationEvent) :
-    auditTimestampsFrom start (log ++ [e]) =
-      (auditTimestampsFrom start log && (e.timestamp == start + log.length)) := by
-  induction log generalizing start with
-  | nil => simp [auditTimestampsFrom]
-  | cons a rest ih =>
-    have hArith : start + 1 + rest.length = start + (rest.length + 1) := by omega
-    simp only [List.cons_append, auditTimestampsFrom, ih, Bool.and_assoc,
-      List.length_cons, hArith]
-
-/-- WS-SM SM8.C: **recording preserves well-formedness** exactly when the
-recorded event's timestamp is the pre-log's length.  §2's producer computes it
-that way, so the invariant rides every audited declassification. -/
-theorem recordDeclassification_preserves_wellFormed (log : DeclassificationAuditLog)
-    (e : DeclassificationEvent)
-    (hWF : declassificationAuditLogWellFormed log = true)
-    (hTs : e.timestamp = log.length) :
-    declassificationAuditLogWellFormed (recordDeclassification log e) = true := by
-  simp only [declassificationAuditLogWellFormed, recordDeclassification,
-    auditTimestampsFrom_append, Bool.and_eq_true, beq_iff_eq]
-  exact ⟨hWF, by omega⟩
-
-/-- WS-SM SM8.C.2 (the ordering result the cross-core chain reconstruction
-rests on): **in a well-formed log a timestamp identifies an event**, whichever
-cores the events came from.
-
-This is why `declassifyStoreOnCore` derives the timestamp from the length of the
-whole log rather than from a per-core counter.  A per-core counter would make
-two events on two cores share a timestamp, and the interleaving of a chain that
-crosses cores would be unrecoverable from the record. -/
-theorem declassificationAuditLog_timestamp_identifies_event
-    (log : DeclassificationAuditLog)
-    (hWF : declassificationAuditLogWellFormed log = true)
-    {e₁ e₂ : DeclassificationEvent} (h₁ : e₁ ∈ log) (h₂ : e₂ ∈ log)
-    (hTs : e₁.timestamp = e₂.timestamp) : e₁ = e₂ := by
-  rw [declassificationAuditLogWellFormed_iff] at hWF
-  obtain ⟨i₁, hi₁, hEq₁⟩ := List.getElem_of_mem h₁
-  obtain ⟨i₂, hi₂, hEq₂⟩ := List.getElem_of_mem h₂
-  have hT₁ : e₁.timestamp = i₁ := by rw [← hEq₁]; exact hWF i₁ hi₁
-  have hT₂ : e₂.timestamp = i₂ := by rw [← hEq₂]; exact hWF i₂ hi₂
-  have hIdx : i₁ = i₂ := by omega
-  subst hIdx
-  rw [← hEq₁, ← hEq₂]
+-- `auditTimestampsFrom`, `declassificationAuditLogWellFormed`, their indexed
+-- characterisations, the append/drop algebra and
+-- `declassificationAuditLog_timestamp_identifies_event` live in
+-- `SeLe4n.Kernel.InformationFlow.AuditRecord`, below `Model.State`.
+--
+-- WS-SM SM9.A.1a moved them: the SM9.A drain is a *production* transition (a
+-- live syscall arm) and owes `auditTimestampsFrom`-preservation, so the
+-- predicate has to be visible from production code — the same extraction
+-- SM8.C.8 performed for the record type itself.  Same namespace, so every
+-- reference below resolves unchanged.  What stays here is the per-core theory
+-- built on top of them (§4's views, §5's chains).
 
 -- ============================================================================
 -- §2  SM8.C.1 — the audited per-core declassification (the producer)
@@ -256,7 +156,7 @@ def declassifyStoreOnCore
     | .ok () =>
         match recordDeclassificationChecked st.declassificationAuditLog
             (declassificationEventOnCore c srcDomain dstDomain targetId
-              st.declassificationAuditLog) with
+              st.declassificationAuditEpoch st.declassificationAuditLog) with
         | none => .error .auditLogCapacityExceeded
         | some log' =>
             match declassifyStore ctx declPolicy srcDomain dstDomain targetId obj st with
@@ -358,7 +258,7 @@ theorem declassifyStoreOnCore_ok_inv
   cases u
   obtain ⟨rec, hRec⟩ : ∃ r, recordDeclassificationChecked st.declassificationAuditLog
       (declassificationEventOnCore c srcDomain dstDomain targetId
-        st.declassificationAuditLog) = r := ⟨_, rfl⟩
+        st.declassificationAuditEpoch st.declassificationAuditLog) = r := ⟨_, rfl⟩
   rw [hRec] at hStep
   cases rec with
   | none => simp at hStep
@@ -455,22 +355,52 @@ theorem declassifyStoreOnCore_preserves_existing
   rw [hLog]
   exact List.mem_append_left _ hMem
 
-/-- WS-SM SM8.C: the audited operation preserves trail well-formedness, so §1's
-total order holds of every trail an audited run can produce (starting, by
-`declassificationAuditLogWellFormed_nil` and `default_declassificationAuditLog`,
-from the empty one at boot). -/
+/-- WS-SM SM9.A.1a: the audited operation leaves the audit **epoch** alone — it
+records, it does not drain.  The frame that lets its well-formedness
+preservation be stated against the mounted epoch rather than against a
+0-anchored predicate that a drain makes false. -/
+theorem declassifyStoreOnCore_declassificationAuditEpoch_eq
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (targetId : SeLe4n.ObjId) (obj : KernelObject) (st st' : SystemState)
+    (hStep : declassifyStoreOnCore ctx declPolicy c srcDomain dstDomain targetId obj st =
+      .ok ((), st')) :
+    st'.declassificationAuditEpoch = st.declassificationAuditEpoch := by
+  obtain ⟨_, stGate, hGate, hSt'⟩ := declassifyStoreOnCore_ok_inv ctx declPolicy c srcDomain
+    dstDomain targetId obj st st' hStep
+  subst hSt'
+  obtain ⟨hDenied, hAuth⟩ := enforcementSoundness_declassifyStore ctx declPolicy srcDomain
+    dstDomain targetId obj st stGate hGate
+  rw [declassifyStore_eq_storeObject_when_authorized ctx declPolicy srcDomain dstDomain
+    targetId obj st hDenied hAuth] at hGate
+  exact storeObject_declassificationAuditEpoch_eq st targetId obj _ hGate
+
+/-- WS-SM SM8.C / SM9.A.1a: the audited operation preserves the trail's
+timestamp discipline **at the mounted epoch**, so the total order holds of every
+trail an audited run can produce — starting, by
+`default_declassificationTrailWellFormed`, from the empty one at boot, and
+surviving every drain because the predicate names the epoch rather than
+anchoring at `0`.
+
+SM8.C stated this against `declassificationAuditLogWellFormed`, which was the
+right statement while nothing could shorten the trail.  With SM9.A's drain that
+form is not merely weaker but *false* of a drained trail, so it is restated
+here rather than kept alongside. -/
 theorem declassifyStoreOnCore_preserves_wellFormed
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
     (c : CoreId) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (obj : KernelObject) (st st' : SystemState)
-    (hWF : declassificationAuditLogWellFormed st.declassificationAuditLog = true)
+    (hWF : declassificationTrailWellFormed st = true)
     (hStep : declassifyStoreOnCore ctx declPolicy c srcDomain dstDomain targetId obj st =
       .ok ((), st')) :
-    declassificationAuditLogWellFormed st'.declassificationAuditLog = true := by
+    declassificationTrailWellFormed st' = true := by
   obtain ⟨hLog, _⟩ := declassifyStoreOnCore_records_one ctx declPolicy c srcDomain dstDomain
     targetId obj st st' hStep
-  rw [hLog]
-  exact recordDeclassification_preserves_wellFormed st.declassificationAuditLog _ hWF rfl
+  have hEpoch := declassifyStoreOnCore_declassificationAuditEpoch_eq ctx declPolicy c srcDomain
+    dstDomain targetId obj st st' hStep
+  unfold declassificationTrailWellFormed at hWF ⊢
+  rw [hLog, hEpoch]
+  exact recordDeclassification_preserves_timestampsFrom _ st.declassificationAuditLog _ hWF rfl
 
 /-- WS-SM SM8.C.5 (**audit soundness**): a recorded event's basis is not a
 claim, it is a check that ran.  Both halves of `isDeclassificationAuthorized`
@@ -857,12 +787,13 @@ Stated as identification rather than as an ordering: what an auditor reading a
 single core's history needs is that two of its entries with the same timestamp
 are the same entry, which is what lets the view be ordered by timestamp without
 consulting the global log. -/
-theorem auditLogOnCore_timestamp_identifies_event (log : DeclassificationAuditLog)
-    (c : CoreId) (hWF : declassificationAuditLogWellFormed log = true)
+theorem auditLogOnCore_timestamp_identifies_event (start : Nat)
+    (log : DeclassificationAuditLog)
+    (c : CoreId) (hWF : auditTimestampsFrom start log = true)
     {e₁ e₂ : DeclassificationEvent}
     (h₁ : e₁ ∈ auditLogOnCore log c) (h₂ : e₂ ∈ auditLogOnCore log c)
     (hTs : e₁.timestamp = e₂.timestamp) : e₁ = e₂ :=
-  declassificationAuditLog_timestamp_identifies_event log hWF
+  declassificationAuditLog_timestamp_identifies_event start log hWF
     ((mem_auditLogOnCore_iff log c e₁).mp h₁).1
     ((mem_auditLogOnCore_iff log c e₂).mp h₂).1 hTs
 
@@ -1039,11 +970,17 @@ theorem declassificationChain_recorded_across_cores
     st st₁ hStep₁
   obtain ⟨hLog₂, _⟩ := declassifyStoreOnCore_records_one ctx declPolicy c₂ b d target₂ obj₂
     st₁ st₂ hStep₂
+  -- WS-SM SM9.A.1a: recording does not drain, so the second hop is stamped from
+  -- the same epoch as the first — which is what keeps the chain's timestamps
+  -- strictly increasing now that a timestamp is `epoch + index` rather than an
+  -- index.
+  have hEpoch₁ := declassifyStoreOnCore_declassificationAuditEpoch_eq ctx declPolicy c₁ a b
+    target₁ obj₁ st st₁ hStep₁
   refine ⟨declassifyStoreEvent c₁ a b target₁ st,
           declassifyStoreEvent c₂ b d target₂ st₁, ?_, ?_, ?_, ?_, rfl, rfl, rfl, rfl⟩
   · rw [hLog₂, hLog₁]; simp [List.append_assoc]
   · -- the hops compose (`b` is both), and the second timestamp is the first plus one
-    simp [declassificationChainLinked, declassificationEventOnCore, hLen₁]
+    simp [declassificationChainLinked, declassificationEventOnCore, hLen₁, hEpoch₁]
   · refine (chainRecordedIn_iff _ _).mpr ?_
     intro e hMem
     rw [hLog₂, hLog₁]
@@ -1724,19 +1661,23 @@ theorem declassifyObjectFromCore_recorded_in_own_view
     targetId st
   exact recordDeclassification_contains_new _ _
 
-/-- WS-SM SM8.C.9: the live declassification preserves trail well-formedness, so
-§1's total order holds of every trail a running system can produce — starting,
-by `default_declassificationAuditLog`, from the empty one at boot. -/
+/-- WS-SM SM8.C.9 / SM9.A.1a: the live declassification preserves the trail's
+timestamp discipline **at the mounted epoch**, so the total order holds of every
+trail a running system can produce — starting, by
+`default_declassificationTrailWellFormed`, from the empty one at boot, and
+surviving the drain SM9.A.3 adds.
+
+The staged surface for the production theorem
+`declassifyObjectFromCore_preserves_trailWellFormed`: the per-core theory's
+consumers (`declassifyRun_preserves_wellFormed` below) fold it, so it is named
+here as well as proved there. -/
 theorem declassifyObjectFromCore_preserves_wellFormed
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (targetId : SeLe4n.ObjId) (st st' : SystemState) (tid : SeLe4n.ThreadId)
-    (hCur : st.scheduler.currentOnCore c = some tid)
-    (hWF : declassificationAuditLogWellFormed st.declassificationAuditLog = true)
+    (c : CoreId) (targetId : SeLe4n.ObjId) (st st' : SystemState)
+    (hWF : declassificationTrailWellFormed st = true)
     (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
-    declassificationAuditLogWellFormed st'.declassificationAuditLog = true := by
-  have hSt' := declassifyObjectFromCore_frame ctx declPolicy c targetId st st' tid hCur hStep
-  subst hSt'
-  exact recordDeclassification_preserves_wellFormed st.declassificationAuditLog _ hWF rfl
+    declassificationTrailWellFormed st' = true :=
+  declassifyObjectFromCore_preserves_trailWellFormed ctx declPolicy c targetId st st' hWF hStep
 
 /-- WS-SM SM8.C.5: **`authorizationBasis_perCore` at the live entry point.**  If
 every event recorded so far passes the kernel's own check, then after any live
@@ -1990,15 +1931,16 @@ theorem declassifyRun_preserves_existing (ctx : GenericLabelingContext)
       rw [hSt]
       exact List.mem_append_left _ hMem
 
-/-- WS-SM SM8.C: **a run's trail stays well-formed**, so §1's total order — and
-with it `declassificationAuditLog_timestamp_identifies_event` — holds of every
-trail a running system can reach from boot. -/
+/-- WS-SM SM8.C / SM9.A.1a: **a run's trail stays well-formed at its epoch**, so
+the total order — and with it
+`declassificationAuditLog_timestamp_identifies_event` — holds of every trail a
+running system can reach from boot, drains included. -/
 theorem declassifyRun_preserves_wellFormed (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) :
     ∀ (reqs : List DeclassificationRequest) (st st' : SystemState),
-      declassificationAuditLogWellFormed st.declassificationAuditLog = true →
+      declassificationTrailWellFormed st = true →
       declassifyRun ctx declPolicy reqs st = .ok ((), st') →
-      declassificationAuditLogWellFormed st'.declassificationAuditLog = true := by
+      declassificationTrailWellFormed st' = true := by
   intro reqs
   induction reqs with
   | nil => intro st st' hWF h; cases h; exact hWF
@@ -2013,10 +1955,8 @@ theorem declassifyRun_preserves_wellFormed (ctx : GenericLabelingContext)
     | ok pair =>
       obtain ⟨u, stMid⟩ := pair
       cases u
-      obtain ⟨⟨tid, hCur⟩, -⟩ := declassifyObjectFromCore_ok_resolved ctx declPolicy r.core
-        r.targetId st stMid hRes
       exact ih stMid st' (declassifyObjectFromCore_preserves_wellFormed ctx declPolicy r.core
-        r.targetId st stMid tid hCur hWF hRes) h
+        r.targetId st stMid hWF hRes) h
 
 /-- WS-SM SM8.C.8: **a run stays within capacity.**  Unconditional: every step
 is fail-closed at the bound, so a run that got this far never crossed it. -/
@@ -2354,6 +2294,436 @@ theorem declassificationRuleEvidence_distinct :
 theorem declassificationRuleStatement_nonempty :
     ∀ id : DeclassificationRuleId, (declassificationRuleStatement id).length > 0 := by
   intro id; cases id <;> decide
+
+-- ============================================================================
+-- §14  SM9.A.4a — the observation relation an audit reader is described by
+-- ============================================================================
+
+/-! ## Adding a reader changes what is observable
+
+SM8.C could keep the audit trail out of `ObservableState` for a reason it stated
+plainly: nothing could read it, so
+`declassificationAuditLog_write_preserves_projection` is `rfl`.  **SM9.A makes it
+readable, and that changes the observation relation.**
+
+The consequence is concrete and easy to miss.  The naive lemma —
+*"two states low-equivalent at `L` give identical visible views"* — is **false**:
+`lowEquivalent` compares `ObservableState`, which does not contain the trail, so
+two low-equivalent states can differ by an audit entry whose `srcDomain` flows to
+`L`, and their `auditLogVisibleTo` results then differ
+(`lowEquivalent_does_not_determine_visible_view`).
+
+Two ways to make the relation match the reader:
+
+* **Extend `ObservableState`** with the clearance-filtered trail as a fourteenth
+  component.  Honest — it *is* now observable — but the SM8.A field partition is
+  a bijection with `ObservableState.ofFragments_eta`, deliberately built so a
+  fourteenth field is a compile error, and every SM8.B non-interference theorem
+  moves with it.
+* **A separate relation** conjoining `lowEquivalent` with agreement on what the
+  reader can see.  Contained; every SM8 theorem stands unchanged; and the flow
+  argument is stated in the relation that actually describes an audit reader's
+  observations rather than in one that describes a subject with no reader.
+
+**Decision: the second.**  `ObservableState` stays a thirteen-component
+partition and its tripwire keeps working.  The first becomes the right move only
+if a later phase adds a *second* readable-but-unprojected structure — at that
+point one relation per reader stops scaling and the partition should absorb them.
+Recorded here so that decision is made on evidence rather than rediscovered. -/
+
+/-- WS-SM SM9.A.4a (plan §3.7): **the clause set, as a total function.**
+
+Not a list with a `mem_all` completeness theorem, and the difference is the
+whole mechanism.  `mem_all` proves every constructor of a hand-maintained type
+appears in `all`, and nothing forces a newly mounted readable field to add a
+constructor at all (`readableStructure_list_gate_insufficient`).  A **missing
+case in a total function is a compile error**, and `AuditReadOp` is fused with
+`ReadableStructure` so a read operation cannot exist without naming a structure
+— which is what makes the constructor unavoidable in the first place.
+
+The trail's clause has two halves because the reader exports two things: the
+entries its clearance admits, and — only under the configured monitor gate — the
+epoch.  The epoch is conditional rather than always present because it *counts*
+entries, including entries a partial reader may not see. -/
+def readableStructureAgrees (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (s₁ s₂ : SystemState) : ReadableStructure → Prop
+  | .declassificationAuditTrail =>
+      auditLogVisibleTo ctx reader s₁.declassificationAuditLog
+        = auditLogVisibleTo ctx reader s₂.declassificationAuditLog ∧
+      (auditMonitorAuthorized ctx monitorClearance reader = true →
+        s₁.declassificationAuditEpoch = s₂.declassificationAuditEpoch)
+
+/-- WS-SM SM9.A.4a: the totality anchor.  The *mechanism* is the definition —
+an exhaustive match with no wildcard, so a new `ReadableStructure` constructor
+does not elaborate until it has a clause; this theorem is the named surface for
+that fact. -/
+theorem auditObservationalEquivalence_clause_total (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (s₁ s₂ : SystemState) (str : ReadableStructure) :
+    ∃ p : Prop, readableStructureAgrees ctx monitorClearance reader s₁ s₂ str = p :=
+  ⟨_, rfl⟩
+
+/-- WS-SM SM9.A.4a: **the relation an audit reader is described by** —
+`lowEquivalent` conjoined with agreement on every readable structure.
+
+Stated over a `LabelingContext` and lifted internally, because that is the shape
+the live arm runs in (`liftLegacyContext ctx`): a relation stated over a
+different context than the dispatch uses would describe a reader the kernel does
+not have. -/
+def auditObservationalEquivalence (ctx : LabelingContext) (observer : IfObserver)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (s₁ s₂ : SystemState) : Prop :=
+  lowEquivalent ctx observer s₁ s₂ ∧
+  ∀ str : ReadableStructure,
+    readableStructureAgrees (liftLegacyContext ctx) monitorClearance reader s₁ s₂ str
+
+/-- WS-SM SM9.A.4a: reflexivity. -/
+theorem auditObservationalEquivalence_refl (ctx : LabelingContext) (observer : IfObserver)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain) (s : SystemState) :
+    auditObservationalEquivalence ctx observer monitorClearance reader s s :=
+  ⟨rfl, fun str => by cases str; exact ⟨rfl, fun _ => rfl⟩⟩
+
+/-- WS-SM SM9.A.4a: symmetry. -/
+theorem auditObservationalEquivalence_symm (ctx : LabelingContext) (observer : IfObserver)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    {s₁ s₂ : SystemState}
+    (h : auditObservationalEquivalence ctx observer monitorClearance reader s₁ s₂) :
+    auditObservationalEquivalence ctx observer monitorClearance reader s₂ s₁ := by
+  refine ⟨h.1.symm, fun str => ?_⟩
+  cases str
+  obtain ⟨hView, hEpoch⟩ := h.2 .declassificationAuditTrail
+  exact ⟨hView.symm, fun hMon => (hEpoch hMon).symm⟩
+
+/-- WS-SM SM9.A.4a: transitivity. -/
+theorem auditObservationalEquivalence_trans (ctx : LabelingContext) (observer : IfObserver)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    {s₁ s₂ s₃ : SystemState}
+    (h₁ : auditObservationalEquivalence ctx observer monitorClearance reader s₁ s₂)
+    (h₂ : auditObservationalEquivalence ctx observer monitorClearance reader s₂ s₃) :
+    auditObservationalEquivalence ctx observer monitorClearance reader s₁ s₃ := by
+  refine ⟨h₁.1.trans h₂.1, fun str => ?_⟩
+  cases str
+  obtain ⟨hView₁, hEpoch₁⟩ := h₁.2 .declassificationAuditTrail
+  obtain ⟨hView₂, hEpoch₂⟩ := h₂.2 .declassificationAuditTrail
+  exact ⟨hView₁.trans hView₂, fun hMon => (hEpoch₁ hMon).trans (hEpoch₂ hMon)⟩
+
+/-- WS-SM SM9.A.4a (**the general congruence**): a transition that frames the
+trail and the epoch on both sides, and preserves the projection, preserves the
+relation.
+
+This is the congruence that covers *most* of the kernel: every transition that
+is not an audit writer frames both fields, so the relation rides them for free.
+The two that do write are handled below. -/
+theorem auditObservationalEquivalence_of_trailFramed (ctx : LabelingContext)
+    (observer : IfObserver) (monitorClearance : Option SecurityDomain)
+    (reader : SecurityDomain) {s₁ s₂ s₁' s₂' : SystemState}
+    (h : auditObservationalEquivalence ctx observer monitorClearance reader s₁ s₂)
+    (hProj : lowEquivalent ctx observer s₁' s₂')
+    (hTrail₁ : s₁'.declassificationAuditLog = s₁.declassificationAuditLog)
+    (hTrail₂ : s₂'.declassificationAuditLog = s₂.declassificationAuditLog)
+    (hEpoch₁ : s₁'.declassificationAuditEpoch = s₁.declassificationAuditEpoch)
+    (hEpoch₂ : s₂'.declassificationAuditEpoch = s₂.declassificationAuditEpoch) :
+    auditObservationalEquivalence ctx observer monitorClearance reader s₁' s₂' := by
+  refine ⟨hProj, fun str => ?_⟩
+  cases str
+  obtain ⟨hView, hEp⟩ := h.2 .declassificationAuditTrail
+  refine ⟨?_, fun hMon => ?_⟩
+  · rw [hTrail₁, hTrail₂]; exact hView
+  · rw [hEpoch₁, hEpoch₂]; exact hEp hMon
+
+/-- WS-SM SM9.A.4a: **the declassification's congruence.**
+
+Two equivalent states that record the *same* event stay equivalent.  The
+premise is not a formality: the recorded timestamp is `epoch + length`, which is
+a **global** quantity, so two states with different hidden histories append
+events that differ in that field even when everything the reader can export
+agrees.  That is the relation being finer than the reader's discrimination
+rather than a leak — `auditRead_hides_global_position` is the statement that a
+partial reader cannot tell — and stating the premise is the honest way to say
+so.  For a monitor the premise is discharged, since its view is the whole trail
+and its epoch agrees. -/
+theorem authorizeDeclassificationOnCore_preserves_auditObservationalEquivalence
+    (ctx : LabelingContext) (observer : IfObserver)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (gctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy) (c : CoreId)
+    (srcDomain dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId)
+    {s₁ s₂ s₁' s₂' : SystemState}
+    (h : auditObservationalEquivalence ctx observer monitorClearance reader s₁ s₂)
+    (hProj : lowEquivalent ctx observer s₁' s₂')
+    (hSameEvent : declassifyStoreEvent c srcDomain dstDomain targetId s₁ =
+      declassifyStoreEvent c srcDomain dstDomain targetId s₂)
+    (hStep₁ : authorizeDeclassificationOnCore gctx declPolicy c srcDomain dstDomain targetId s₁
+      = .ok ((), s₁'))
+    (hStep₂ : authorizeDeclassificationOnCore gctx declPolicy c srcDomain dstDomain targetId s₂
+      = .ok ((), s₂')) :
+    auditObservationalEquivalence ctx observer monitorClearance reader s₁' s₂' := by
+  obtain ⟨hSt₁, -, -⟩ := authorizeDeclassificationOnCore_frame gctx declPolicy c srcDomain
+    dstDomain targetId s₁ s₁' hStep₁
+  obtain ⟨hSt₂, -, -⟩ := authorizeDeclassificationOnCore_frame gctx declPolicy c srcDomain
+    dstDomain targetId s₂ s₂' hStep₂
+  subst hSt₁; subst hSt₂
+  refine ⟨hProj, fun str => ?_⟩
+  cases str
+  obtain ⟨hView, hEp⟩ := h.2 .declassificationAuditTrail
+  refine ⟨?_, fun hMon => hEp hMon⟩
+  show auditLogVisibleTo (liftLegacyContext ctx) reader
+      (declassifyStoreTrail c srcDomain dstDomain targetId s₁) =
+    auditLogVisibleTo (liftLegacyContext ctx) reader
+      (declassifyStoreTrail c srcDomain dstDomain targetId s₂)
+  simp only [declassifyStoreTrail, recordDeclassification, auditLogVisibleTo_append, hView,
+    hSameEvent]
+
+/-- WS-SM SM9.A.4a: **the drain's congruence**, for the caller that can perform
+one.
+
+A monitor's view is the whole trail and its epoch agrees, so two equivalent
+states drained by the same count stay equivalent — and this is the congruence
+that matters, because the drain is the reader's *own* write. -/
+theorem auditDrain_preserves_auditObservationalEquivalence
+    (ctx : LabelingContext) (observer : IfObserver)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (c : CoreId) (count : Nat) {s₁ s₂ : SystemState} {n₁ n₂ : Nat} {s₁' s₂' : SystemState}
+    (h : auditObservationalEquivalence ctx observer monitorClearance reader s₁ s₂)
+    (hProj : lowEquivalent ctx observer s₁' s₂')
+    (hMonitor : auditMonitorAuthorized (liftLegacyContext ctx) monitorClearance reader = true)
+    (hFull₁ : auditLogVisibleTo (liftLegacyContext ctx) reader s₁.declassificationAuditLog
+      = s₁.declassificationAuditLog)
+    (hFull₂ : auditLogVisibleTo (liftLegacyContext ctx) reader s₂.declassificationAuditLog
+      = s₂.declassificationAuditLog)
+    (hStep₁ : auditDrainVisiblePrefix (liftLegacyContext ctx) monitorClearance c count s₁
+      = .ok (n₁, s₁'))
+    (hStep₂ : auditDrainVisiblePrefix (liftLegacyContext ctx) monitorClearance c count s₂
+      = .ok (n₂, s₂')) :
+    auditObservationalEquivalence ctx observer monitorClearance reader s₁' s₂' := by
+  obtain ⟨hView, hEp⟩ := h.2 .declassificationAuditTrail
+  have hTrail : s₁.declassificationAuditLog = s₂.declassificationAuditLog := by
+    rw [← hFull₁, ← hFull₂]; exact hView
+  have hEpoch := hEp hMonitor
+  obtain ⟨hSt₁, -, -⟩ := auditDrain_frame (liftLegacyContext ctx) monitorClearance c count
+    s₁ n₁ s₁' hStep₁
+  obtain ⟨hSt₂, -, -⟩ := auditDrain_frame (liftLegacyContext ctx) monitorClearance c count
+    s₂ n₂ s₂' hStep₂
+  subst hSt₁; subst hSt₂
+  refine ⟨hProj, fun str => ?_⟩
+  cases str
+  refine ⟨?_, fun _ => ?_⟩
+  · show auditLogVisibleTo (liftLegacyContext ctx) reader
+        (s₁.declassificationAuditLog.drop (min count s₁.declassificationAuditLog.length)) =
+      auditLogVisibleTo (liftLegacyContext ctx) reader
+        (s₂.declassificationAuditLog.drop (min count s₂.declassificationAuditLog.length))
+    rw [hTrail]
+  · show s₁.declassificationAuditEpoch + min count s₁.declassificationAuditLog.length =
+      s₂.declassificationAuditEpoch + min count s₂.declassificationAuditLog.length
+    rw [hTrail, hEpoch]
+
+/-- WS-SM SM9.A.4a (**the load-bearing negative**): plain `lowEquivalent` does
+**not** imply equal visible views.
+
+The lemma an earlier draft of this sub-task specified — "two states
+low-equivalent at `L` give identical visible views" — is not merely
+unproven, it is **false**, and shipping it would have surfaced
+mid-implementation.  `lowEquivalent` compares `ObservableState`, which by design
+does not contain the trail; the witness is the smallest instance of that gap, a
+state that differs from the boot state by exactly one audit entry the reader is
+cleared to see. -/
+theorem lowEquivalent_does_not_determine_visible_view :
+    ∃ (ctx : LabelingContext) (observer : IfObserver) (gctx : GenericLabelingContext)
+      (reader : SecurityDomain) (s₁ s₂ : SystemState),
+      lowEquivalent ctx observer s₁ s₂ ∧
+      auditLogVisibleTo gctx reader s₁.declassificationAuditLog ≠
+        auditLogVisibleTo gctx reader s₂.declassificationAuditLog := by
+  refine ⟨defaultLabelingContext, IfObserver.ofLabel SecurityLabel.publicLabel,
+    { policy := DomainFlowPolicy.allowAll
+      objectDomainOf := fun _ => SecurityDomain.lowest
+      threadDomainOf := fun _ => SecurityDomain.lowest
+      endpointDomainOf := fun _ => SecurityDomain.lowest
+      serviceDomainOf := fun _ => SecurityDomain.lowest },
+    SecurityDomain.lowest, default,
+    { (default : SystemState) with
+      declassificationAuditLog := [auditTimestampWitness 0] }, ?_, ?_⟩
+  · exact (declassificationAuditLog_write_preserves_projection _ _ default _).symm
+  · simp [auditLogVisibleTo, auditEntryVisibleTo, DomainFlowPolicy.allowAll]
+
+-- ============================================================================
+-- §15  SM9.A.4b — the reader opens no channel
+-- ============================================================================
+
+/-- WS-SM SM9.A.4b (**the flow argument**): the reader is a function of the
+observation relation — two states an audit reader cannot distinguish return the
+same word for **every** sub-operation.
+
+Substantive rather than definitional: the relation compares the *visible view*
+and (conditionally) the epoch, and this theorem is what establishes that no arm
+reads anything else — not the hidden entries, not the trail's length, not the
+epoch when the caller is not entitled to it. -/
+theorem auditRead_no_channel (ctx : LabelingContext) (observer : IfObserver)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (s₁ s₂ : SystemState) (op : AuditReadOp)
+    (h : auditObservationalEquivalence ctx observer monitorClearance reader s₁ s₂) :
+    auditReadWord (liftLegacyContext ctx) monitorClearance reader s₁ op =
+      auditReadWord (liftLegacyContext ctx) monitorClearance reader s₂ op := by
+  obtain ⟨hView, hEpoch⟩ := h.2 .declassificationAuditTrail
+  exact auditRead_determined_by_view (liftLegacyContext ctx) monitorClearance reader s₁ s₂ op
+    hView hEpoch
+
+/-- WS-SM SM9.A.4b: the same for the live entry point.
+
+The equal reader resolution (`hReader₁`/`hReader₂`) is a **hypothesis**, not a
+consequence of the equivalence: `auditObservationalEquivalence` carries
+`lowEquivalent`, which compares *projections*, and a projection does not
+determine the domain of a current thread the observer cannot see — so two
+equivalent states can genuinely resolve different readers on a core running a
+subject above the observer's clearance.  The theorem says what is true: at
+whatever clearance the state resolves, the returned word is a function of that
+clearance's visible view alone. -/
+theorem auditReadFromCore_no_channel (ctx : LabelingContext) (observer : IfObserver)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (c : CoreId) (s₁ s₂ : SystemState) (op : AuditReadOp)
+    (w₁ w₂ : Nat) (r₁ r₂ : SystemState)
+    (h : auditObservationalEquivalence ctx observer monitorClearance reader s₁ s₂)
+    (hReader₁ : auditReaderDomain (liftLegacyContext ctx) s₁ c = some reader)
+    (hReader₂ : auditReaderDomain (liftLegacyContext ctx) s₂ c = some reader)
+    (hStep₁ : auditReadFromCore (liftLegacyContext ctx) monitorClearance c op s₁
+      = .ok (w₁, r₁))
+    (hStep₂ : auditReadFromCore (liftLegacyContext ctx) monitorClearance c op s₂
+      = .ok (w₂, r₂)) :
+    w₁ = w₂ := by
+  have hv₁ := auditReadFromCore_value (liftLegacyContext ctx) monitorClearance c op s₁ reader
+    w₁ r₁ hReader₁ hStep₁
+  have hv₂ := auditReadFromCore_value (liftLegacyContext ctx) monitorClearance c op s₂ reader
+    w₂ r₂ hReader₂ hStep₂
+  rw [auditRead_no_channel ctx observer monitorClearance reader s₁ s₂ op h] at hv₁
+  exact Except.ok.inj (hv₁.symm.trans hv₂)
+
+/-- WS-SM SM9.A.4b (**the reader is not a covert channel; the trail's occupancy
+is, and is registered**): the reader is capability-gated, right-gated,
+monitor-gated and clearance-filtered — an *authorized, audited* read rather
+than an unauthorized information path.  What the reader is owed is an
+observation relation describing what it can see, which §14 supplies and
+`auditRead_no_channel` is stated over.  PR #870 round 6 is what makes the
+"without authorization" clause exhaustive for the *reader*: a *partial* live
+reader would have received the monitor's drains through its own visible
+length — a monitor-to-subject bit per drain no policy authorized
+(`auditDrain_moves_partial_readers_status` keeps it exhibited) — so the live
+entry now serves only callers for whom every subject's activity is an
+authorized flow (`auditReadFromCore_observer_dominates_subjects`).
+
+The reader's authorization does **not** cover the trail's *occupancy*, and an
+earlier revision of this docstring used the reader argument to conclude that
+no eighth channel entry was owed at all — reasoning about the wrong
+observable.  The trail is a bounded (`auditLogBounded`, the 16th bundle
+conjunct), fail-closed (`declassifyStoreOnCore_never_unaudited`), drainable
+(SM9.A.3) shared singleton, and those three properties — each individually
+non-negotiable — make its occupancy an irreducible inter-domain signal: every
+*authorized declassifier* observes the full/not-full bit through its own
+syscall outcome (`declassify_capacity_refusal_of_full` /
+`auditDrain_flips_declassify_outcome`, `AuditRead.lean` §5c), so subjects in
+unrelated domains share one observable no per-domain partition can split
+(domains are unbounded, the `observerScopedGeneration_not_mountable`
+argument).  PR #870 round 7 registers it as **CC-8**
+(`acceptedCovertChannel_auditOccupancy`, `CovertChannelPerCore.lean`) with the
+alphabet bound `auditOccupancy_alphabet_bounded`;
+`acceptedCovertChannel_auditOccupancy_bounded` below ties the inventory
+literals to this module's import of both halves, the way SM8.D's
+`acceptedCovertChannel_lockContention_bounded` ties CC-5 to its bound.
+
+The five gates, as one checkable statement: a capability that does not target
+the audit trail is rejected outright; an unconfigured deployment has no reader
+— the live entry refuses every operation before resolving a subject (PR #870
+round 2, `auditRead_unconfigured_denied`); an unconfigured deployment has no
+monitor, so no caller may drain; a caller that is not the monitor sees no
+epoch; and — PR #870 round 6 — a resolved subject the monitor gate refuses is
+not a live reader at all.  The fourth conjunct's `auditReadWord … none` is the
+*model query* at a non-monitor clearance — deliberately ungated, which is why
+the second and fifth conjuncts are stated at the live entry rather than the
+word. -/
+theorem auditRead_gates_are_five (ctx : LabelingContext) (oid : SeLe4n.ObjId)
+    (reader : SecurityDomain) (c : CoreId) (count : Nat) (op : AuditReadOp)
+    (st : SystemState) (epoch : Nat) :
+    extractAuditAuthority
+        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all,
+          badge := none } = .error .invalidCapability ∧
+    auditReadFromCore (liftLegacyContext ctx) none c op st = .error .illegalAuthority ∧
+    auditDrainVisiblePrefix (liftLegacyContext ctx) none c count st = .error .illegalAuthority ∧
+    (auditReadWord (liftLegacyContext ctx) none reader
+        { st with declassificationAuditEpoch := epoch } .status =
+      auditReadWord (liftLegacyContext ctx) none reader st .status) ∧
+    (∀ (m : SecurityDomain) (st' : SystemState),
+      auditReaderDomain (liftLegacyContext ctx) st' c = some reader →
+      auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = false →
+      auditReadFromCore (liftLegacyContext ctx) (some m) c op st'
+        = .error .illegalAuthority) :=
+  ⟨extractAuditAuthority_rejects_non_audit_capability oid,
+   auditRead_unconfigured_denied (liftLegacyContext ctx) c op st,
+   auditDrain_unconfigured_denied (liftLegacyContext ctx) c count st,
+   auditReadStatus_partial_hides_generation (liftLegacyContext ctx) none reader st epoch rfl,
+   fun m st' hReader hPartial =>
+     auditReadFromCore_partial_reader_denied (liftLegacyContext ctx) m c op st' reader
+       hReader hPartial⟩
+
+/-- PR #870 round 7 (**the CC-8 inventory tie-in**): CC-8 is registered
+`modelVisible := true` with `severity := .low`, and this module — the only one
+importing both the inventory (`CovertChannelPerCore`) and the bound's home
+(`AuditRead`) — ties the entry's literals to the quantity the severity
+judgement rests on, the way SM8.D's
+`acceptedCovertChannel_lockContention_bounded` ties CC-5 to its delay bound.
+
+The literal conjuncts are the entry's own fields, stated together with the
+alphabet bound so a reclassification of CC-8 that is not matched by a change
+to the bound breaks this theorem rather than passing silently: under the
+mounted 16th bundle conjunct (`auditLogBounded`, held by every reachable
+state) the occupancy observable takes at most
+`maxDeclassificationAuditEntries + 1` values — and the practical alphabet is
+the single full/not-full bit, since `declassify_capacity_refusal_of_full` is
+the only occupancy-dependent branch an unprivileged subject can read.
+`CovertChannelId.evidenceProp`'s `.auditOccupancy` arm carries the capacity
+gate itself (`recordDeclassificationChecked_isSome_iff`), which lives below
+`Model/State` and is therefore visible to the inventory; the bound proven
+*of the mounted state* is what only this module can conjoin. -/
+theorem acceptedCovertChannel_auditOccupancy_bounded :
+    acceptedCovertChannel_auditOccupancy.channelId = 8 ∧
+      acceptedCovertChannel_auditOccupancy.severity = .low ∧
+      acceptedCovertChannel_auditOccupancy.modelVisible = true ∧
+      acceptedCovertChannel_auditOccupancy.perCoreInstance = false ∧
+      (∀ (st : SystemState),
+        auditLogBounded st.declassificationAuditLog →
+        st.declassificationAuditLog.length < maxDeclassificationAuditEntries + 1) :=
+  ⟨rfl, rfl, rfl, rfl, fun st hBounded => auditOccupancy_alphabet_bounded st hBounded⟩
+
+/-- WS-SM SM9.A.4b: the drain's own per-core non-interference — it writes the
+trail and the epoch, and no observer on any core reads either. -/
+theorem auditDrain_preserves_projectionOnCore (ctx : LabelingContext) (observer : IfObserver)
+    (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+    (c : CoreId) (count : Nat) (st : SystemState) (n : Nat) (st' : SystemState)
+    (viewCore : CoreId)
+    (hStep : auditDrainVisiblePrefix gctx monitorClearance c count st = .ok (n, st')) :
+    projectStateOnCore ctx observer st' viewCore = projectStateOnCore ctx observer st viewCore := by
+  obtain ⟨hSt', -, -⟩ := auditDrain_frame gctx monitorClearance c count st n st' hStep
+  subst hSt'
+  rfl
+
+/-- WS-SM SM9.A.4b: and the ∀-core aggregate — a drain is invisible to every
+per-core observer. -/
+theorem auditDrain_perCore_NI (ctx : LabelingContext) (observer : IfObserver)
+    (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+    (c : CoreId) (count : Nat) (st : SystemState) (n : Nat) (st' : SystemState)
+    (hStep : auditDrainVisiblePrefix gctx monitorClearance c count st = .ok (n, st')) :
+    lowEquivalent_smp ctx observer st st' :=
+  fun viewCore =>
+    (auditDrain_preserves_projectionOnCore ctx observer gctx monitorClearance c count st n st'
+      viewCore hStep).symm
+
+/-- WS-SM SM9.A.4b: the read writes nothing, so it is invisible on every core
+for the strongest possible reason — there is no post-state to compare. -/
+theorem auditReadFromCore_perCore_NI (ctx : LabelingContext) (observer : IfObserver)
+    (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+    (c : CoreId) (op : AuditReadOp) (st : SystemState) (w : Nat) (st' : SystemState)
+    (hStep : auditReadFromCore gctx monitorClearance c op st = .ok (w, st')) :
+    lowEquivalent_smp ctx observer st st' := by
+  have hEq := auditReadFromCore_frame gctx monitorClearance c op st w st' hStep
+  subst hEq
+  exact fun _ => rfl
 
 
 end SeLe4n.Kernel

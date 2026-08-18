@@ -15,6 +15,336 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
+**WS-SM SM9.A — the declassification audit trail's reader: LANDED.  The
+256-entry cliff is gone.**
+
+SM8.C.8 mounted a durable, bounded, **fail-closed** declassification trail and
+nothing in the tree could read it.  The two properties compose badly: a
+deployment that performs `maxDeclassificationAuditEntries = 256` authorized
+downgrades stops being able to declassify at all until reboot, because the
+capacity refusal is the correct behaviour (a downgrade the kernel authorized
+and did not record is the exact failure SM8.C exists to exclude) and nothing
+can drain the trail to make room.  A write-only trail with a hard cap is a
+feature that disables itself.  SM9.A is the read side.
+
+**Why it needed WS-RA first.**  The reader is a *value-returning* syscall, and
+before WS-RA landed `dispatchWithCapChecked` was `Kernel Unit` over a return
+register nothing wrote — so an audit read would have gated correctly, computed
+correctly, and handed the caller back its own preloaded `x0`.  Both arms are
+`.word`-shaped and stage through `Architecture.writeReturnFrameToTcb`.
+
+**What the design turns on.**
+
+- **The visible view is a function of the reader's clearance alone.**
+  `auditLogVisibleTo` filters and *re-indexes*; the theorem that matters is
+  `auditLogVisibleTo_hidden_insert` — inserting an entry the reader cannot see
+  leaves its view literally identical.  Under a sparse global index the
+  reader's own indices would shift around a hidden entry, telling it both that
+  one exists and exactly where.
+- **Two reader classes, deliberately.**  A partial reader gets **view-local**
+  indices and no retry promise (`auditRead_hides_global_position`); a
+  fully-dominating monitor gets **global** identities so it can still correlate
+  across drains (`dominatingReader_sees_global_identity`).  The per-observer
+  drain token the first design specified is unbuildable and now says so:
+  security labels are an unbounded `Nat`, so there is no finite family to key
+  state by (`observerScopedGeneration_not_mountable`).
+- **The chunk protocol, because every exported field is unbounded.**
+  `SecurityDomain.id`, `ObjId.val` and the timestamp are `Nat`s, and
+  `frame.set_x0` carries 63 usable bits, so a fixed low/high pair would only
+  move the truncation point to `2^64`.  The reader exports arbitrary-length
+  values through 32-bit chunks with exact reconstruction
+  (`auditReadField_reconstructs`) and fails closed above `maxAuditFieldChunks`
+  with the new `KernelError.auditFieldTooLarge` — the *chunk coordinates* are
+  themselves single words, so "total for any `Nat`" was never available.  The
+  basis **designation** ships through the same protocol, since exporting the
+  trust bit alone collapses every `integratorOverride` to one value.
+- **`status` is a single read.**  Chunking it traded aliasing for tearing on
+  the first interleaved drain; `auditReadStatus_atomic` is the property and
+  `auditStatusSplitRead_tears` is the witness for the rejected design.
+- **Drain requires full dominance.**  A partial-visibility prefix drain reveals
+  the *positions* of the entries the caller cannot see, and repeated drains
+  enumerate the hidden layout.  So the deployment shape that fixes the cliff is
+  one fully-cleared monitor, and a deployment without one keeps the cliff —
+  the conservative default, recorded rather than buried.
+- **The gate is configuration-derived, never records-derived.**  A predicate
+  computed from the rows the trail currently holds goes **vacuously true**
+  exactly where it matters: drain a trail to `[]` and a low reader is
+  reclassified as a fully-dominating monitor and handed the global epoch that
+  counts the entries the drain removed.  `auditMonitorGate_records_derived_unsound`
+  keeps that counterexample as a theorem.
+
+**SM9.A.1a — the persistent epoch, sequenced before drain because drain is
+unsound without it.**  `timestamp := log.length` reuses a timestamp after any
+prefix removal (drain 1 from `[0,1,2]`, append, and the new entry collides with
+the surviving `2`), which would falsify
+`declassificationAuditLog_timestamp_identifies_event` and the chain detector's
+ordering conjunct.  `SystemState.declassificationAuditEpoch` makes the stamp
+`epoch + log.length`, with well-formedness generalised to the
+already-`start`-parameterised `auditTimestampsFrom`.  The counterexample is
+kept as `preEpochTimestamp_reused_after_drain`, so a regression to the
+pre-epoch producer fails to build rather than quietly reintroducing the
+collision, and a Tier-3 negative anchor forbids the old form.  The timestamp
+layer moved **down** to the production `AuditRecord.lean` so the drain can
+state its preservation — the same extraction SM7.A performed for
+`TlbInvalidation` and SM8.C.8 for the record types.
+
+**SM9.A.9 — authority is a `CapTarget`, not a right.**  `syscallLookupCap`
+never constrains `cap.target`, so gating the audit syscalls on `.read`/`.write`
+alone would repeat the v0.32.97 confused-deputy class exactly: a thread holding
+a writable capability to its own TCB would drain the audit trail.
+`CapTarget.auditTrail` is fieldless (the trail is a singleton `SystemState`
+component, not an object in the store), `extractAuditAuthority` is the gate,
+and `Capability.auditTrailRead` / `auditTrailManage` separate reading from
+draining as a theorem.
+
+**SM9.A.4a — the reader-visibility discipline.**  Adding a reader changes what
+is observable, so the flow argument cannot be stated over `lowEquivalent`:
+that relation compares `ObservableState`, which does **not** contain the trail
+(deliberately — projecting `(srcDomain, dstDomain, targetObject)` triples would
+be a content channel out of the boundary the audit polices), so
+"low-equivalent states give identical visible views" is false and
+`lowEquivalent_does_not_determine_visible_view` says so.
+`auditObservationalEquivalence` is the relation, and its clause set is a
+**total function** on `ReadableStructure` rather than a list, because a
+`mem_all` over a hand-maintained type cannot force a newly mounted readable
+field to add a constructor at all — `readableStructure_list_gate_insufficient`
+refutes the list design, and `AuditReadOp` is *fused* with `ReadableStructure`
+so a read operation cannot exist without naming the structure it reads.
+
+**Registries.**  Enforcement boundary 40 → 42 canonical and 55 → 57 per-core
+(both entries capability-only, since the authority check is the `CapTarget`);
+lock sets two universal reads each; cross-core inventory 26 → 28 with an
+**empty** write set for both, which the confinement theorems prove; the
+per-core routing gate passes with **zero** allowlisted exceptions.
+
+**Evidence.**  `tests/SmpInformationFlowSuite.lean` §9.1–§9.9 (629 assertions /
+79 groups overall), every group with a load-bearing negative, and §9.8 is the
+plan's own acceptance gate run for effect on the live transition: fill the
+trail to 256 through real authorized downgrades, observe
+`.auditLogCapacityExceeded`, read the status word and a field, drain, declassify
+again — with the post-drain timestamp provably fresh and the pre-epoch
+collision exhibited as the load-bearing negative.  §1.10 anchors all 145
+`AuditRead.lean` declarations by set difference.  `tests/SyscallReturnAbiSuite.lean`
+§10 is the end-to-end ABI witness that the returned word is the *selected* one.
+
+**The audit cut.**  A code-first audit of the landing (documentation
+distrusted by instruction) found **no security defect in any reachable state
+and no false theorem**, and closed seven findings, each by code where code was
+the honest direction: the drain's boundary-narrowing witnesses; the retry
+bracket lifted to the `UInt64` words a caller actually holds
+(`auditReadFromCore_bracketed_detects_drain_u64` — the composition from
+register equality to the model conclusion had lived in a docstring's argument);
+the acceptance witness strengthened to the four-fact conjunction its docstring
+promised; a genuine `u128` overflow in `sele4n-sys`'s `audit_fold_chunks` on
+malformed input (panic in debug, silent wrap in release — in the monitor's own
+toolkit), closed by a radix guard; the RA.D.1 wrapper sweep given a
+completeness tripwire over `SyscallId::COUNT`; the reader's fail-closed arms
+witnessed at runtime; and two docstrings corrected in the direction the
+mathematics forces (one described claim was *false* rather than unproven —
+`lowEquivalent` cannot determine an invisible current thread's domain — and no
+code change can implement a false statement).
+
+**The PR #870 review cut.**  Codex raised three findings, all valid.  The P1
+is the substantive one: the monitor gate checked that the caller dominates the
+configured clearance and nothing ever checked that the clearance dominates the
+subjects — the dominance obligation existed only as an unused hypothesis, so a
+deployment configuring embedded `low` as its clearance minted "monitors" with
+blind spots.  Closed at both layers: the live arms now consume
+`validatedAuditMonitorClearance` (decidable on the live path, because every
+subject domain `liftLegacyContext` can assign is one of the four embedded
+labels; a non-dominating clearance validates to `none`, so a misconfigured
+deployment IS the unconfigured one), and the drain gains the destruction guard
+`auditDrainViewComplete` — the caller must see every entry it is about to
+delete, which is the direction a records-derived predicate is *sound* in, and
+which makes `auditDrain_returned_length_is_visible` unconditional on success.
+The two P2s: `audit_basis_byte_of_chunk` returns `Option<u8>` (the masked
+shift made `k = 8` alias `k = 0` in release builds), and the enforcement
+boundary's `.auditRead` entry names `auditReadFromCore` — the live entry point
+whose subject-resolution seam the boundary exists to audit — rather than the
+inner query that takes a caller-supplied reader domain.
+
+**The PR #870 round-2 cut (v0.33.44).**  One further finding, valid: the
+"no audit reader by default" claim was silent about capability provisioning —
+an axis the labeling context cannot see.  With `auditMonitorClearance = none`
+but a boot-provisioned readable `.auditTrail` capability, the live
+`.auditRead` served that capability a partial-reader view (the acceptance
+witness's capability conjunct covered only an ordinary `.object` shape), so
+the claim was false in exactly the deployment shape that provisions one.
+Closed by making the claim true rather than narrowing it: `auditReadFromCore`
+opens with a configuration gate — no validated monitor clearance ⇒
+`.illegalAuthority` before any subject is resolved
+(`auditRead_unconfigured_denied`, for every caller, operation and state;
+`misconfiguredDeployment_cannot_read` the validated composition) — the same
+error as the drain's monitor gate, so refusal causes stay indistinguishable,
+and partial readers are unchanged in *configured* deployments (`auditReadWord`
+keys monitor mode on the caller, not the gate).  The validated clearance is
+thereby the facility's single on/off switch, the SM9.B direction realised on
+the read side.  At the arm: `dispatchWithCapChecked_auditRead_default_denied`
+(the reviewer's exact scenario) and the universal
+`unconfiguredDeployment_audit_never_succeeds` — no capability whatsoever makes
+an audit syscall succeed in an unconfigured deployment — now the acceptance
+witness's first conjunct, quantified over the capability.
+`auditRead_gates_are_three` becomes `auditRead_gates_are_four`.  Suite 618 →
+620 assertions; module 129 → 131 declarations, all anchored;
+`SyscallReturnAbiSuite` §10f is the full-ABI witness (the same provisioned
+capability and trusted subject §10a serves, refused unconfigured with the
+trail untouched); the phase fixture's unconfigured line now reports the read
+refusal beside the drain's.
+
+**The PR #870 round-3 cut (v0.33.45).**  One further P1 finding, valid:
+`auditLogVisibleTo` filtered on the source alone, while an entry also exports
+`dstDomain` — the target object's own domain — and `targetObject`, an identity
+the projection classifies by exactly that domain.  For a policy-authorized
+downgrade between incomparable labels ({low, trusted} → {high, untrusted}, the
+one base flow the legacy lattice denies and hence exactly the pair a
+declassification policy exists to authorize), a partial reader at the source
+label passed the filter reflexively and was served the destination domain and
+an object identity its own projection redacts.  Closed by making the filter
+the conjunction `auditEntryVisibleTo` (source AND destination flow to the
+reader), with `auditLogVisibleTo_hides_undominated_destination` the refutation
+at every position, `incomparableDowngrade_hidden_from_source_reader` the
+reviewer's scenario as a theorem, and `auditVisibleEntry_target_domain_flows`
+the capstone: under the new producer-established invariant
+`auditTrailDestinationsAreTargetDomains`, a visible entry's target object is
+one whose own domain flows to the reader — the same condition
+`capTargetObservable` applies before revealing an object identity anywhere
+else in the model.  The dominance chain gains its object half
+(`auditMonitorDominatesObjects`, `validatedAuditMonitorClearance_dominates_objects`)
+discharged by the same four-label validation, and
+`auditDrain_requires_full_dominance_of_subjects` becomes `_of_labeling` with
+both halves consumed.  Monitor views, the drain guard and all fixtures are
+unchanged.  Suite 620 → 622 assertions; module 131 → 145 declarations, all
+anchored.
+
+**The PR #870 round-4 cut (v0.33.46).**  One further P2 finding, valid: the
+cross-core inventory mapped its two audit entries to NI theorems for the
+inner transitions, while the checked dispatch continues past them and stages
+the returned word into the caller's TCB — the inventory's only word-returning
+arms, so a citation stopping at the transition would stay green if the
+staging seam drifted onto something an observer reads.  Closed by the
+dispatch-level composition theorems
+(`auditReadDispatch_crossCoreNonInterference`,
+`auditDrainDispatch_crossCoreNonInterference`, with their `_confinedToCores`
+halves riding the WS-RA `writeReturnFrameToTcb_{scheduler,machine}_eq`
+frames), stated over exactly the post-state the delegates equations exhibit;
+the `niName!` mappings are re-pointed and Tier-3 forbids the transition-only
+mappings' return.
+
+**The PR #870 round-5 cut (v0.33.47).**  One further P2 finding, valid: the
+documented target-first order held only inside the arm — `syscallLookupCap`'s
+rights gate ran first, so a capability wrong on both axes was answered
+`.illegalAuthority` where the contract promises `.invalidCapability` for
+every non-audit target.  Closed by making the order real: resolution split
+from the rights gate (`syscallResolveCap`; the full lookup is DEFINED as
+resolve-then-rights so the two cannot drift), the audit ids routed through
+the resolve-only combinator via the total no-wildcard classifier
+`syscallChecksTargetFirst`, and the arms owning both gates in the documented
+order.  `dispatchSyscallChecked_audit_target_first` (no `hasRight`
+hypothesis — the point) and `dispatchSyscallChecked_audit_right_checked_second`
+are the composed-path witnesses; the delegates/default-denied/return-shape
+families gain the `hRight` premise; `SyscallReturnAbiSuite` §10g/§10h pin the
+exact error frames at the ABI seam, with the pre-round `.illegalAuthority`
+answer as the load-bearing negative.
+
+**The PR #870 round-6 cut (v0.33.49).**  Two further findings, both valid.
+**(P1) The drain signalled to partial readers** — the round that closes the
+reader-class design.  Round 2 had left partial readers live in *configured*
+deployments, and that coexists with the drain only by opening the very
+channel the module's §4c forbids: a monitor's drain removes entries a partial
+reader can see, so that reader's **visible length** moves at the monitor's
+choice — one bit per drain, from the fully-dominating monitor to a lower
+subject, with the length riding both the `status` word and the
+`.invalidArgument` boundary of every indexed read.  Hiding the drain
+generation (the §4c design) narrowed the alphabet, not the channel.  No drain
+preserves every partial view (deletion is its purpose; per-observer state is
+unbuildable; universally-invisible-prefix drains re-open the capacity cliff),
+so the closure is exclusion: **the live facility is monitor-only** —
+`auditReadFromCore` gains the monitor gate after subject resolution and
+refuses a non-monitor with the same `.illegalAuthority` as every other
+authority refusal (`auditReadFromCore_partial_reader_denied`;
+`_ok_is_monitor` the success characterisation).  The partial class survives
+as the model layer (its §4b/§4c theorems record what such a reader *would*
+learn), the channel stays exhibited
+(`auditDrain_moves_partial_readers_status`), and
+`auditReadFromCore_observer_dominates_subjects` is the flow closure: a
+surviving live reader dominates every subject domain, so an observed drain is
+an authorized flow.  `auditRead_gates_are_four` → `auditRead_gates_are_five`;
+suite §9.9 runs the channel, the exclusion, the refusal-class
+indistinguishability and the flow closure for effect; the golden trace gains
+the monitor-only observable.  **(P2) The audit lock sets under-declared the
+committed dispatch** — the round-4 rule transposed to the lock domain.  Both
+audit arms stage their returned word into the caller's TCB
+(`writeReturnFrameToTcb`), so declaring the caller lock `.read` — with a
+docstring arguing `.write` would over-declare — under-declared exactly the
+write SM3.C.9's future consumers must exclude against.  Caller TCB is now
+`.write` in `lockSet_auditRead` / `lockSet_auditDrain` and in
+`lockSet_serviceQuery` (the same staging-write class, live since WS-RA
+v0.33.37; a sweep of every staging site found every other target already
+`.write`), each tied to its footprint by name
+(`lockSet_*_staging_write_mem`); the audit pair join the §6b size family and
+the §6c aggregate (`lockSetTransitions_within_bound`, 27 → 29 conjuncts with
+its stale "26" corrected) — which the plan's SM9.A.12 row had recorded as
+done at landing without the code existing.
+
+**The PR #870 round-7 cut (v0.33.50).**  Two further findings, both valid —
+and both halves of one underlying gap, which is why the cut supplies
+discipline rather than a third receiver-surface patch: SM8.C.8 mounted the
+trail as a `SystemState` **shared singleton** without the treatment the
+codebase already gives its peers (the shootdown state got a dedicated lock
+domain at SM7.B; the scheduler slots got CC-1's covert-channel registration
+at SM8.B).  **(P1) The trail's occupancy is an inter-domain observable,
+registered as CC-8.**  Bounded (`auditLogBounded`, the 16th bundle conjunct)
++ fail-closed (`declassifyStoreOnCore_never_unaudited`) + drainable (SM9.A.3)
+— each individually non-negotiable — make the fill level **irreducible**:
+every policy-authorized declassifier reads full/not-full off its own syscall
+outcome (`declassify_capacity_refusal_of_full`), a monitor-controlled drain
+flips lower-domain declassification results
+(`auditDrain_flips_declassify_outcome`), and per-domain partitions are
+unbuildable over unbounded domains (the
+`observerScopedGeneration_not_mountable` argument a third time).  Registered
+as `acceptedCovertChannel_auditOccupancy` (CC-8: `.low`, model-visible,
+deliberately **not** per-core — a shared observable is the channel's point)
+with the typed evidence arm, the alphabet bound
+(`auditOccupancy_alphabet_bounded`), and the binding theorem
+`acceptedCovertChannel_auditOccupancy_bounded` in `DeclassificationPerCore`
+— the only module importing both the inventory and the bound's home — tying
+the entry's literals to the bound the way SM8.D tied CC-5.  The round-6
+docstring sentence deriving "no eighth entry owed" from the *reader's*
+authorization reasoned about the wrong observable and is retracted (Tier-3
+pins the sentence out).  Inventory 7 → 8 entries (4 model-visible, per-core
+stays 5); suite §4.8 re-runs over the eight with a record-layer flip witness.
+**(P2) The trail's mutation had no declared serialization subject.**  The
+three audit-state footprints (`lockSet_declassify` / `lockSet_auditRead` /
+`lockSet_auditDrain`) named object-domain locks only, while their transitions
+read and write `SystemState.declassificationAuditLog` — state no `LockId`
+names — so under SM3.C.9's fine locks two `.declassify` commits would hold
+provably disjoint lock sets while racing on the append: a lost recorded
+downgrade, the exact failure the fail-closed bound exists to exclude.  The
+SM3.A.10 "state-level fields ride `objStoreLock`" prose convention is made
+structural: `stateLevelLock` is the one canonical spelling of the `.objStore`
+singleton (`stateLevelLock_objId_irrelevant` proves the objId coordinate
+ignored — `acquireLockOnObject` dispatches on the kind), declared `.write`
+for the two mutators and `.read` for the reader, tied by name
+(`lockSet_declassify_stateLevel_write_mem` /
+`lockSet_auditRead_stateLevel_read_mem` /
+`lockSet_auditDrain_stateLevel_write_mem`) with the non-disjointness capstone
+`auditState_footprints_share_serialization`; `permittedKinds` gains
+`.objStore` for the three ids.  The identical service-registry gap
+(`serviceRegister` / `serviceRevoke` / `serviceQuery` plus the retype sweep
+`cleanupEndpointServiceRegistrations`) is registered as named debt rather
+than half-fixed — closure is the same declared member after a
+writer-inventory audit of the remaining state-level fields — and SM9.B's
+refusal ledger is now on record as owing its capacity channel and
+serialization subject from day one.  Suite 629 → 632 assertions; the phase
+fixture gains the channel-8 line (34 → 35).
+
+**What SM9.A does not do** (SM9.B/SM9.C/SM9.D, per the plan): refused
+declassifications are still unrecorded, there is no data-carrying
+declassification on the notification path, and the laundering detector is still
+syntactic rather than causal.
+
+Plan: [`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md) §4 SM9.A.
+
 **WS-RA Syscall Return ABI — core LANDED (v0.33.37); SM9 unblocked.**  The
 kernel had no syscall return path: it wrote one register on exit and the value
 it wrote was the caller's own capability pointer, which userspace's

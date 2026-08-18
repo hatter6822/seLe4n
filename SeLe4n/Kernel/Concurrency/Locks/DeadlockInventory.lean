@@ -188,7 +188,7 @@ def deadlockTheorems : List DeadlockTheorem :=
       size_le_3 .sizeBound,
     dlt! "size_le_4 — four optional extensions over a base list"
       size_le_4 .sizeBound,
-    dlt! "lockSetTransitions_within_bound — all 26 lockSet_<τ> sizes ≤ maxLockSetSize"
+    dlt! "lockSetTransitions_within_bound — all 29 lockSet_<τ> sizes ≤ maxLockSetSize"
       lockSetTransitions_within_bound .sizeBound,
     -- §6/§6c/§6d boundedWait (16)
     dlt! "maxLockSetSize — static worst-case lock-set size bound (=8)"

@@ -13,9 +13,9 @@
 [smp-information-flow] rendezvous call write set: [2, 0], send write set: [2]
 [smp-information-flow] lock acquired on an object low can see: raw writer true, projected unheld on every core true
 [smp-information-flow] non-interference coverage: 35 per-core lifts, 31 with derived confinement, 4 catch-all
-[smp-information-flow] cross-core inventory: 26 transitions, 19 live arms, 22 remote writers
-[smp-information-flow] enforcement boundary: canonical 40 = 12 policy-gated + 24 capability-only + 4 read-only
-[smp-information-flow] enforcement boundary: per-core 55 = canonical + 15 cross-core wrappers; re-routed syscalls 15
+[smp-information-flow] cross-core inventory: 28 transitions, 21 live arms, 22 remote writers
+[smp-information-flow] enforcement boundary: canonical 42 = 12 policy-gated + 26 capability-only + 4 read-only
+[smp-information-flow] enforcement boundary: per-core 57 = canonical + 15 cross-core wrappers; re-routed syscalls 15
 [smp-information-flow] channel 1 (scheduling state): severity=medium modelVisible=true perCoreInstance=true
 [smp-information-flow] channel 2 (machine timer): severity=medium modelVisible=false perCoreInstance=true
 [smp-information-flow] channel 3 (TCB metadata): severity=low modelVisible=true perCoreInstance=false
@@ -23,4 +23,13 @@
 [smp-information-flow] channel 5 (lock-contention timing): severity=medium modelVisible=false perCoreInstance=true
 [smp-information-flow] channel 6 (per-core TLB residency): severity=medium modelVisible=false perCoreInstance=true
 [smp-information-flow] channel 7 (per-core instruction-cache residency): severity=medium modelVisible=false perCoreInstance=true
-[smp-information-flow] channels: 7 accepted, 3 model-visible, 5 per-core
+[smp-information-flow] channel 8 (audit-trail occupancy): severity=low modelVisible=true perCoreInstance=false
+[smp-information-flow] channels: 8 accepted, 4 model-visible, 5 per-core
+[smp-information-flow] audit view: trail 3 entries, monitor sees 3, partial reader sees 2
+[smp-information-flow] audit timestamp of view index 1: monitor=2 partial=1
+[smp-information-flow] audit status word: monitor=len=3 gen=0 partial=len=2 gen=0
+[smp-information-flow] audit chunk protocol: modulus=4294967296 maxChunks=4 chunks(0)=(some 1) chunks(2^96)=(some 4) chunks(2^128)=none
+[smp-information-flow] audit drain by monitor: remaining=0 epoch=3; by partial reader: error=SeLe4n.Model.KernelError.illegalAuthority
+[smp-information-flow] audit gate unconfigured: authorized=false read=SeLe4n.Model.KernelError.illegalAuthority drain=SeLe4n.Model.KernelError.illegalAuthority
+[smp-information-flow] audit live partial reader (round 6): read=SeLe4n.Model.KernelError.illegalAuthority model view len=2
+[smp-information-flow] audit ABI: auditRead=31 auditDrain=32 syscalls=33 opcodes=12 readableStructures=1

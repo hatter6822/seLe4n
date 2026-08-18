@@ -156,19 +156,20 @@ are live and both must be classified. -/
 def enforcementBoundaryPerCore : List EnforcementClass :=
   enforcementBoundaryExtended ++ crossCoreEnforcementEntries
 
-/-- SM8.B.6: the per-core boundary has 55 entries — the live canonical 40 (39
-plus the 2PL bracket SM8.E.3 promoted into it) and the fifteen cross-core
-wrappers.  Re-anchored at the SM8.A cut, in the fourth review round, again in
-rounds 10 and 12 as the `.send`, resume and architecture arms joined the
-cross-core surface, and in round 37 as the routing gate found `.tcbSetAffinity`.
+/-- SM8.B.6: the per-core boundary has 57 entries — the live canonical 42 (39
+plus the 2PL bracket SM8.E.3 promoted into it, plus WS-SM SM9.A.11's two
+audit-trail entries) and the fifteen cross-core wrappers.  Re-anchored at the
+SM8.A cut, in the fourth review round, again in rounds 10 and 12 as the `.send`,
+resume and architecture arms joined the cross-core surface, in round 37 as the
+routing gate found `.tcbSetAffinity`, and at SM9.A.11.
 `enforcementBoundaryExtended_count` is the authority for the base figure and
 this theorem for the total; the sentence above is worth what they are worth, and
 round 38 caught it stale at 53 one commit after the theorem moved.
 
-The total is **unchanged** by the SM8.E.3 promotion, which is the point of
-appending the bracket last in the canonical list: the entry moved between two
-definitions and this list is the identical 55 it already was. -/
-theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 55 := by rfl
+The SM8.E.3 promotion left the total **unchanged**, which is the point of
+appending the bracket last in the canonical list; SM9.A.11 moves it, because the
+two audit entries are genuinely new operations rather than a reclassification. -/
+theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 57 := by rfl
 
 /-- SM8.B.7 (completeness, part 1): the per-core boundary **extends** the
 canonical one — it is the canonical list followed by the fifteen live cross-core
@@ -539,10 +540,74 @@ def acceptedCovertChannel_icacheResidency : CovertChannel :=
     modelVisible := false
     perCoreInstance := true }
 
-/-- SM8.B.10: the accepted covert channels under SMP, in the plan's §3.5 order.
+/-- WS-SM SM9.A / PR #870 round 7: **CC-8 — audit-trail occupancy.**
+
+The declassification audit trail is bounded (`auditLogBounded`, the 16th
+`proofLayerInvariantBundle` conjunct) and **fail-closed** at the bound: an
+authorized downgrade against a full trail is refused with
+`.auditLogCapacityExceeded` rather than left unrecorded
+(`recordDeclassificationChecked_isSome_iff`).  Those two deliberate security
+decisions make the trail's **fill level** an observable that every
+policy-authorized declassifier reads through its own syscall outcome — and
+everyone who moves the fill level transmits: other declassifiers by
+appending, and the SM9.A monitor by draining
+(`auditDrain_flips_declassify_outcome` in `AuditRead.lean` is the flip
+witness — the same authorized request refused at the full trail succeeds
+after a monitor's drain).
+
+The channel is **functionally forced**, not an implementation slip.  The
+impossibility triangle: removing it means an unbounded trail (rejected —
+`auditLogBounded` is a mounted invariant), or dropping records instead of
+refusing (rejected — an unrecorded authorized downgrade is the exact failure
+`declassifyStoreOnCore_never_unaudited` excludes), or a trail nobody can
+drain (the pre-SM9.A 256-entry cliff the phase exists to close).  Per-domain
+capacity partitioning would shrink the declassifier-to-declassifier half but
+cannot remove the monitor half — freeing capacity a subject can
+consume-and-observe *is* transmitting to that subject — and per-domain
+quotas are unbuildable over an unbounded domain space, the
+`observerScopedGeneration_not_mountable` argument again.  Round 6 closed the
+occupancy's *gratuitous* receiver surface (the audit reader, now
+monitor-only); the capacity refusal is the irreducible one, so it is
+registered and bounded rather than half-closed a third time.
+
+`modelVisible := true` with a caveat the other `true` entries do not need:
+the carrier is not `ObservableState` but the caller's **own syscall
+outcome** (WS-RA's error frame) — still the honest side of the split, since
+the model alone transmits and no hardware instrument is involved. -/
+def acceptedCovertChannel_auditOccupancy : CovertChannel :=
+  { channelId := 8
+    name := "audit-trail occupancy"
+    description :=
+      "The bounded, fail-closed declassification audit trail refuses an \
+       authorized downgrade at capacity (.auditLogCapacityExceeded), so its \
+       fill level is observable to every policy-authorized declassifier \
+       through its own syscall outcome; appends (other declassifiers) and \
+       drains (the SM9.A monitor) both move it, so a monitor-controlled \
+       drain changes lower-domain declassification results."
+    mitigation :=
+      "Functionally forced by bounded + fail-closed + drainable; every \
+       removal route is rejected by design (unbounded trail; dropped \
+       records; a permanent capacity cliff). Bounds: the receiver set is \
+       the policy-authorized declassifiers — empty under the deny-all \
+       default; one observation is one bit; the fill level ranges over \
+       maxDeclassificationAuditEntries + 1 = 257 values \
+       (auditOccupancy_alphabet_bounded), so one drain transmits at most \
+       the freed count plus its timing (about 8 bits); a SUCCESSFUL probe \
+       appends an attributed record to the very trail the monitor reads \
+       (declassifyObjectFromCore_never_unaudited), and refused probes are \
+       unrecorded until SM9.B's refusal ledger — already in plan, which is \
+       the channel's monitoring half. The drain-flip witness is \
+       auditDrain_flips_declassify_outcome."
+    severity := .low
+    modelVisible := true
+    perCoreInstance := false }
+
+/-- SM8.B.10: the accepted covert channels, in the plan's §3.5 order.
 CC-1 … CC-4 are the pre-SMP inventory; CC-5 is SM8.B.8's lock-contention
 channel; CC-6 and CC-7 were registered at the SM8.A cut when SM7.C and SM7.D
-mounted the per-core TLB and instruction-cache views. -/
+mounted the per-core TLB and instruction-cache views; CC-8 was registered at
+the SM9.A PR #870 round-7 cut, when the audit trail's capacity refusal was
+recognised as the occupancy channel's irreducible receiver surface. -/
 def acceptedCovertChannelsPerCore : List CovertChannel :=
   [ acceptedCovertChannel_scheduling_perCore
   , acceptedCovertChannel_machineTimer
@@ -550,36 +615,40 @@ def acceptedCovertChannelsPerCore : List CovertChannel :=
   , acceptedCovertChannel_objectStoreMetadata
   , acceptedCovertChannel_lockContention
   , acceptedCovertChannel_tlbResidency
-  , acceptedCovertChannel_icacheResidency ]
+  , acceptedCovertChannel_icacheResidency
+  , acceptedCovertChannel_auditOccupancy ]
 
-/-- SM8.B.10: **seven** accepted covert channels under SMP.
+/-- SM8.B.10: **eight** accepted covert channels.
 
 The plan's sub-task line reads "= 5", written before CC-6 and CC-7 existed: the
 SM8.A cut registered them when SM7.C mounted `SystemState.perCoreTlb` and SM7.D
-mounted `SystemState.perCoreICache`, and the plan's §3.5 inventory lists all
-seven.  Asserting 5 here would produce a *false* count, so the figure is
+mounted `SystemState.perCoreICache`; CC-8 joined at the SM9.A PR #870 round-7
+cut.  Asserting a stale figure here would produce a *false* count, so it is
 re-anchored against the inventory — the same correction the plan applies to its
 own 32→35 constructor and 22→38 boundary figures. -/
-theorem acceptedCovertChannel_perCoreCount : acceptedCovertChannelsPerCore.length = 7 := by rfl
+theorem acceptedCovertChannel_perCoreCount : acceptedCovertChannelsPerCore.length = 8 := by rfl
 
 /-- SM8.B.10: the inventory carries the plan's §3.5 numbering, in order and
-without repetition — CC-1 … CC-7.  Distinctness of the entries follows, so the
+without repetition — CC-1 … CC-8.  Distinctness of the entries follows, so the
 count above counts channels rather than list cells, and a re-ordering or a
 duplicated entry is a build failure. -/
 theorem acceptedCovertChannel_perCore_ids :
-    acceptedCovertChannelsPerCore.map CovertChannel.channelId = [1, 2, 3, 4, 5, 6, 7] := rfl
+    acceptedCovertChannelsPerCore.map CovertChannel.channelId = [1, 2, 3, 4, 5, 6, 7, 8] := rfl
 
-/-- SM8.B.10: exactly three of the seven are carried by the model
-(`ObservableState`); the other four exist only through hardware the projection
-excludes.  The split is what the `modelVisible` field exists to record, and
-pinning it means a future channel cannot be filed on the wrong side by
-accident. -/
+/-- SM8.B.10: exactly four of the eight are carried by the model; the other
+four exist only through hardware the projection excludes.  Three of the four
+model-carried channels flow through `ObservableState`; the fourth (CC-8) flows
+through the caller's own syscall outcome — model-level either way, no
+instrument required.  The split is what the `modelVisible` field exists to
+record, and pinning it means a future channel cannot be filed on the wrong
+side by accident. -/
 theorem acceptedCovertChannel_modelVisible_count :
-    (acceptedCovertChannelsPerCore.filter CovertChannel.modelVisible).length = 3 := rfl
+    (acceptedCovertChannelsPerCore.filter CovertChannel.modelVisible).length = 4 := rfl
 
-/-- SM8.B.10: five of the seven have one instance **per core** under SMP, so
-their aggregate capacity scales with `numCores`.  The two that do not are the
-label-filtered metadata channels, which read shared state. -/
+/-- SM8.B.10: five of the eight have one instance **per core** under SMP, so
+their aggregate capacity scales with `numCores`.  The three that do not — the
+two label-filtered metadata channels and CC-8's shared trail — read shared
+state. -/
 theorem acceptedCovertChannel_perCoreInstance_count :
     (acceptedCovertChannelsPerCore.filter CovertChannel.perCoreInstance).length = 5 := rfl
 
@@ -599,15 +668,19 @@ theorem acceptedCovertChannel_hardwareChannels_are_not_modelVisible :
       acceptedCovertChannel_icacheResidency.modelVisible = false ∧
       acceptedCovertChannel_scheduling_perCore.modelVisible = true ∧
       acceptedCovertChannel_tcbMetadata.modelVisible = true ∧
-      acceptedCovertChannel_objectStoreMetadata.modelVisible = true :=
-  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      acceptedCovertChannel_objectStoreMetadata.modelVisible = true ∧
+      acceptedCovertChannel_auditOccupancy.modelVisible = true :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- SM8.B.10 (the SMP delta): CC-5, CC-6 and CC-7 are the three channels SMP
 adds, and all three are per-core hardware channels.  The pre-SMP inventory
 (CC-1 … CC-4) is unchanged — SM8 widens the inventory, it does not reclassify
-what was already in it. -/
+what was already in it.  (The filter's upper bound exists because CC-8 is
+SM9.A's addition, not SMP's — a plain `≥ 5` would silently absorb it into the
+SMP delta.) -/
 theorem acceptedCovertChannel_smp_additions :
-    (acceptedCovertChannelsPerCore.filter (fun ch => decide (ch.channelId ≥ 5))).length = 3 ∧
+    (acceptedCovertChannelsPerCore.filter
+      (fun ch => decide (ch.channelId ≥ 5) && decide (ch.channelId ≤ 7))).length = 3 ∧
       acceptedCovertChannel_lockContention.perCoreInstance = true ∧
       acceptedCovertChannel_tlbResidency.perCoreInstance = true ∧
       acceptedCovertChannel_icacheResidency.perCoreInstance = true :=
@@ -1265,11 +1338,12 @@ inductive CovertChannelId where
   | lockContention
   | tlbResidency
   | icacheResidency
+  | auditOccupancy
   deriving DecidableEq, Repr
 
 def CovertChannelId.all : List CovertChannelId :=
   [.schedulingState, .machineTimer, .tcbMetadata, .objectStoreMetadata, .lockContention,
-   .tlbResidency, .icacheResidency]
+   .tlbResidency, .icacheResidency, .auditOccupancy]
 
 /-- SM8.B.8: **`all` really is all of them.**
 
@@ -1299,6 +1373,7 @@ def covertChannelEntry : CovertChannelId → CovertChannel
   | .lockContention => acceptedCovertChannel_lockContention
   | .tlbResidency => acceptedCovertChannel_tlbResidency
   | .icacheResidency => acceptedCovertChannel_icacheResidency
+  | .auditOccupancy => acceptedCovertChannel_auditOccupancy
 
 /-- SM8.B.8 (PR #861 review round 17): **the property each channel's evidence
 must establish**, stated through `covertChannelEntry id` rather than through a
@@ -1365,6 +1440,27 @@ def CovertChannelId.evidenceProp : CovertChannelId → Prop
         (covertChannelEntry .icacheResidency).modelVisible = false ∧
           ObservableState.onCore ctx c L { s with perCoreICache := vIcache }
             = ObservableState.onCore ctx c L s
+  | .auditOccupancy =>
+      ∀ (log : DeclassificationAuditLog) (e : DeclassificationEvent),
+        (covertChannelEntry .auditOccupancy).modelVisible = true ∧
+          ((recordDeclassificationChecked log e).isSome = true ↔
+            log.length < maxDeclassificationAuditEntries)
+
+/-- WS-SM SM9.A / PR #870 round 7 (the CC-8 witness): the entry's
+`modelVisible := true` conjoined with the **capacity gate** that carries the
+channel — the checked recorder succeeds exactly below the bound, so an
+authorized caller's outcome is a function of the fill level.  The richer
+witnesses — the drain-flip (`auditDrain_flips_declassify_outcome`) and the
+occupancy alphabet (`auditOccupancy_alphabet_bounded`) — live in
+`AuditRead.lean`, below this module's import reach the other way; the binding
+theorem `acceptedCovertChannel_auditOccupancy_bounded` in
+`DeclassificationPerCore.lean` ties this entry's literals to them. -/
+theorem acceptedCovertChannel_auditOccupancy_capacity_gates :
+    ∀ (log : DeclassificationAuditLog) (e : DeclassificationEvent),
+      (covertChannelEntry .auditOccupancy).modelVisible = true ∧
+        ((recordDeclassificationChecked log e).isSome = true ↔
+          log.length < maxDeclassificationAuditEntries) :=
+  fun log e => ⟨rfl, recordDeclassificationChecked_isSome_iff log e⟩
 
 /-- SM8.B.8 (review round 17): **the evidence itself**, as a dependently-typed
 total function — the load-bearing obligation the string table below only names.
@@ -1398,6 +1494,7 @@ def covertChannelEvidence : (id : CovertChannelId) → id.evidenceProp
       let ⟨_, hIcache, _, hViewIcache⟩ :=
         acceptedCovertChannel_residency_excluded_from_view ctx L s c default vIcache
       ⟨hIcache, hViewIcache⟩
+  | .auditOccupancy => acceptedCovertChannel_auditOccupancy_capacity_gates
 
 /-- SM8.B.8: **the projection theorem that justifies each entry's
 `modelVisible`**, compile-time-validated through `niName!`.
@@ -1418,6 +1515,7 @@ def covertChannelEvidenceName : CovertChannelId → String
   | .lockContention => niName! acceptedCovertChannel_lockContention_is_timing_only
   | .tlbResidency => niName! acceptedCovertChannel_residency_excluded_from_view
   | .icacheResidency => niName! acceptedCovertChannel_residency_excluded_from_view
+  | .auditOccupancy => niName! acceptedCovertChannel_auditOccupancy_capacity_gates
 
 /-- SM8.B.8: the id-indexed inventory **is** the list one, entry for entry and in
 order.  Without this the enum would be a second inventory that could drift from
@@ -1434,10 +1532,11 @@ theorem covertChannelEvidence_nonempty :
   intro id; cases id <;> decide
 
 /-- SM8.B.8: the two residency channels share a witness (it proves both
-exclusions at once) and every other channel has its own.  Pinned so a reader
-knows the sharing is intentional rather than a copy-paste. -/
+exclusions at once) and every other channel — CC-8 included since PR #870
+round 7 — has its own.  Pinned so a reader knows the sharing is intentional
+rather than a copy-paste. -/
 theorem covertChannelEvidence_shared_only_for_residency :
-    (CovertChannelId.all.map covertChannelEvidenceName).eraseDups.length = 6 := by decide
+    (CovertChannelId.all.map covertChannelEvidenceName).eraseDups.length = 7 := by decide
 
 
 -- ============================================================================

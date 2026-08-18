@@ -457,6 +457,16 @@ structure FrozenSystemState where
       *unrecorded* downgrades looks like.  Complemented by the
       `freeze_preserves_declassificationAuditLog := rfl` value-level guard. -/
   declassificationAuditLog : SeLe4n.Kernel.DeclassificationAuditLog
+  /-- WS-SM SM9.A.1a: the declassification audit epoch, transferred from
+      `SystemState.declassificationAuditEpoch` during freeze.  **Required** (no
+      default), like the trail it indexes, and for a reason the trail's own
+      requirement does not cover: a snapshot that dropped the epoch to `0`
+      would re-anchor every surviving timestamp at the trail's indices, so two
+      snapshots taken either side of a drain would report *the same
+      identities* for different events.  The trail would still be intact and
+      the identities would silently be lies.  Complemented by the
+      `freeze_preserves_declassificationAuditEpoch := rfl` value-level guard. -/
+  declassificationAuditEpoch : Nat
 
 -- ============================================================================
 -- Q5-C: Freeze Functions
@@ -596,7 +606,10 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     pendingIcacheMaintenance := st.pendingIcacheMaintenance
     -- WS-SM SM8.C.8: forward the declassification audit trail unchanged — a
     -- frozen snapshot records every downgrade the running system recorded.
-    declassificationAuditLog := st.declassificationAuditLog }
+    declassificationAuditLog := st.declassificationAuditLog
+    -- WS-SM SM9.A.1a: forward the audit epoch unchanged, so the frozen trail's
+    -- timestamps keep the identities the running system gave them.
+    declassificationAuditEpoch := st.declassificationAuditEpoch }
 
 -- ============================================================================
 -- Q5-C Proofs
@@ -649,6 +662,16 @@ required field: an audit trail that a snapshot silently truncated would be
 indistinguishable from one the kernel never wrote. -/
 theorem freeze_preserves_declassificationAuditLog (ist : IntermediateState) :
     (freeze ist).declassificationAuditLog = ist.state.declassificationAuditLog := rfl
+
+/-- WS-SM SM9.A.1a: freeze carries the declassification audit epoch intact.
+
+The value-level guard complementing the required field.  Load-bearing together
+with the trail's own guard rather than in addition to it: the pair is what
+makes a frozen snapshot's timestamps mean the same thing they meant in the
+running system, which is the whole content of "a timestamp identifies an
+event". -/
+theorem freeze_preserves_declassificationAuditEpoch (ist : IntermediateState) :
+    (freeze ist).declassificationAuditEpoch = ist.state.declassificationAuditEpoch := rfl
 
 /-- Q5-C: `freeze` preserves the scheduler current thread. -/
 theorem freeze_preserves_current (ist : IntermediateState) :

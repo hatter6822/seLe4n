@@ -50,24 +50,38 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 /-- WS-SM SM8.C.1: the event an authorized downgrade on core `c` records.
 
 Three of the six fields are not free choices: the basis is `.policyRule`
-(the only gate the kernel runs), the timestamp is the log position, and the core
-is the core the operation ran on.  Only the two domains and the target come from
-the caller — and the attributed entry points below remove both domains from that
-list too. -/
+(the only gate the kernel runs), the timestamp is the event's **global**
+position, and the core is the core the operation ran on.  Only the two domains
+and the target come from the caller — and the attributed entry points below
+remove both domains from that list too.
+
+**WS-SM SM9.A.1a — the timestamp is `epoch + log.length`, not `log.length`.**
+Up to SM9.A the trail only ever grew, so a position in it *was* a global
+identity.  Drain removes a prefix, and with the pre-epoch producer the very
+next append reuses a timestamp that is still in the trail: drain one entry from
+a three-entry trail and the new entry lands at `2` alongside the survivor that
+already carries `2` (`preEpochTimestamp_reused_after_drain`).  That falsifies
+`declassificationAuditLog_timestamp_identifies_event` in substance — not merely
+in its hypothesis — and breaks `declassificationChainLinked`'s
+strictly-increasing conjunct with it.  Offsetting by the epoch, which counts
+exactly the entries drained so far, makes a timestamp name an event for the
+lifetime of the system: it is never reused and never decreases. -/
 def declassificationEventOnCore (c : CoreId) (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (log : DeclassificationAuditLog) : DeclassificationEvent :=
+    (targetId : SeLe4n.ObjId) (epoch : Nat)
+    (log : DeclassificationAuditLog) : DeclassificationEvent :=
   { srcDomain := srcDomain
     dstDomain := dstDomain
     targetObject := targetId
     authorizationBasis := .policyRule
-    timestamp := log.length
+    timestamp := epoch + log.length
     originatingCore := c }
 
 /-- WS-SM SM8.C.1: the event a given pre-state records, named once so the
 theorems below do not each recompute it. -/
 abbrev declassifyStoreEvent (c : CoreId) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st : SystemState) : DeclassificationEvent :=
-  declassificationEventOnCore c srcDomain dstDomain targetId st.declassificationAuditLog
+  declassificationEventOnCore c srcDomain dstDomain targetId
+    st.declassificationAuditEpoch st.declassificationAuditLog
 
 /-- WS-SM SM8.C.1: the trail a successful audited step leaves — the pre-state's
 trail with this step's event appended. -/
@@ -85,23 +99,26 @@ make this theorem false for every secondary core while still compiling
 everywhere. -/
 theorem declassificationEventOnCore_originatingCore
     (c : CoreId) (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (log : DeclassificationAuditLog) :
-    (declassificationEventOnCore c srcDomain dstDomain targetId log).originatingCore = c := rfl
+    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog) :
+    (declassificationEventOnCore c srcDomain dstDomain targetId epoch
+      log).originatingCore = c := rfl
 
 /-- WS-SM SM8.C.5: the kernel records its own basis, never an integrator
 override — so `kernelVerifiable` is `true` on everything the kernel writes. -/
 theorem declassificationEventOnCore_basis_is_policyRule
     (c : CoreId) (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (log : DeclassificationAuditLog) :
-    (declassificationEventOnCore c srcDomain dstDomain targetId log).authorizationBasis =
-      .policyRule := rfl
+    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog) :
+    (declassificationEventOnCore c srcDomain dstDomain targetId epoch
+      log).authorizationBasis = .policyRule := rfl
 
-/-- WS-SM SM8.C: the recorded timestamp is the position the event lands at. -/
+/-- WS-SM SM8.C / SM9.A.1a: the recorded timestamp is the event's **global**
+position — the number of entries drained so far plus its index in the current
+trail. -/
 theorem declassificationEventOnCore_timestamp
     (c : CoreId) (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (log : DeclassificationAuditLog) :
-    (declassificationEventOnCore c srcDomain dstDomain targetId log).timestamp =
-      log.length := rfl
+    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog) :
+    (declassificationEventOnCore c srcDomain dstDomain targetId epoch log).timestamp =
+      epoch + log.length := rfl
 
 -- ============================================================================
 -- §2  Attribution: the subject the executing core is running
@@ -606,6 +623,90 @@ theorem declassifyObjectFromCore_audit_log_full
   rw [declassifyObjectFromCore_eq_onCore ctx declPolicy c targetId st tid ty hCur hPresent]
   exact authorizeDeclassificationOnCore_audit_log_full ctx declPolicy c (ctx.threadDomainOf tid)
     (ctx.objectDomainOf targetId) targetId st hAuthorized hFull
+
+-- ============================================================================
+-- §5  WS-SM SM9.A.1a — the trail's timestamp discipline, at the mounted epoch
+-- ============================================================================
+
+/-- WS-SM SM9.A.1a: **the mounted trail is well-formed at its epoch** — entry
+`i` carries timestamp `epoch + i`.
+
+The epoch-relative correction of SM8.C's `declassificationAuditLogWellFormed`,
+which anchored at `0` and is therefore *false* of any trail a drain has
+shortened.  Everything that predicate bought — a timestamp identifies an event,
+a chain's timestamps strictly increase — is bought by this one for the lifetime
+of the system rather than only until the first drain.
+
+Boot is the 0-anchored instance (`default_declassificationTrailWellFormed`), and
+the two writers preserve it: recording stamps `epoch + length` and leaves the
+epoch alone; draining removes `d` entries and advances the epoch by exactly `d`
+(`auditTimestampsFrom_append` / `auditTimestampsFrom_drop` are the two halves). -/
+def declassificationTrailWellFormed (st : SystemState) : Bool :=
+  auditTimestampsFrom st.declassificationAuditEpoch st.declassificationAuditLog
+
+/-- WS-SM SM9.A.1a: decidable, like the predicate it generalises — an audit
+consumer can check a concrete snapshot. -/
+instance (st : SystemState) : Decidable (declassificationTrailWellFormed st = true) :=
+  inferInstanceAs (Decidable (_ = true))
+
+/-- WS-SM SM9.A.1a: at boot the epoch is `0` and the trail is empty, so the
+epoch-relative predicate reduces to SM8.C's 0-anchored one. -/
+@[simp] theorem default_declassificationTrailWellFormed :
+    declassificationTrailWellFormed (default : SystemState) = true := rfl
+
+/-- WS-SM SM9.A.1a: a never-drained trail's epoch-relative well-formedness *is*
+SM8.C's 0-anchored predicate — so nothing proved before drain existed has to be
+re-derived, it is this theorem's `epoch = 0` instance. -/
+theorem declassificationTrailWellFormed_of_epoch_zero (st : SystemState)
+    (hEpoch : st.declassificationAuditEpoch = 0) :
+    declassificationTrailWellFormed st =
+      declassificationAuditLogWellFormed st.declassificationAuditLog := by
+  simp [declassificationTrailWellFormed, declassificationAuditLogWellFormed, hEpoch]
+
+/-- WS-SM SM9.A.1a: **the live declassification preserves the trail's timestamp
+discipline at the epoch.**
+
+The producer's half.  It stamps `epoch + length` and writes no other field, so
+`auditTimestampsFrom_append` discharges it directly — which is the point of
+computing the timestamp from the state rather than accepting it as an argument. -/
+theorem authorizeDeclassificationOnCore_preserves_trailWellFormed
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (targetId : SeLe4n.ObjId) (st st' : SystemState)
+    (hWF : declassificationTrailWellFormed st = true)
+    (hStep : authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+      .ok ((), st')) :
+    declassificationTrailWellFormed st' = true := by
+  obtain ⟨hSt', _, _⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c srcDomain
+    dstDomain targetId st st' hStep
+  subst hSt'
+  exact recordDeclassification_preserves_timestampsFrom _ _ _ hWF rfl
+
+/-- WS-SM SM9.A.1a: the live entry point's half — the obligation the
+`.declassify` dispatch arm owes about the trail's ordering. -/
+theorem declassifyObjectFromCore_preserves_trailWellFormed
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (c : CoreId) (targetId : SeLe4n.ObjId) (st st' : SystemState)
+    (hWF : declassificationTrailWellFormed st = true)
+    (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
+    declassificationTrailWellFormed st' = true := by
+  obtain ⟨tid, _, hSt'⟩ :=
+    declassifyObjectFromCore_frame_of_ok ctx declPolicy c targetId st st' hStep
+  subst hSt'
+  exact recordDeclassification_preserves_timestampsFrom _ _ _ hWF rfl
+
+/-- WS-SM SM9.A.1a: **a recorded event's timestamp is unique in the trail it
+lands in**, at the mounted epoch.
+
+The consumer-facing form: an auditor holding a well-formed snapshot may use a
+timestamp as an event's name.  Restating SM8.C's identification result against
+`declassificationTrailWellFormed` is what keeps that true after a drain. -/
+theorem declassificationTrail_timestamp_identifies_event (st : SystemState)
+    (hWF : declassificationTrailWellFormed st = true)
+    {e₁ e₂ : DeclassificationEvent}
+    (h₁ : e₁ ∈ st.declassificationAuditLog) (h₂ : e₂ ∈ st.declassificationAuditLog)
+    (hTs : e₁.timestamp = e₂.timestamp) : e₁ = e₂ :=
+  declassificationAuditLog_timestamp_identifies_event _ _ hWF h₁ h₂ hTs
 
 -- ============================================================================
 -- WS-SM SM8.C: the declassification's members of the enforcement families

@@ -222,6 +222,24 @@ ObjId. -/
 @[inline] def untypedLock (oid : ObjId) : LockId :=
   ⟨.untyped, oid⟩
 
+/-- WS-SM SM3.A.10 / PR #870 round 7: **the SystemState-level lock**, as a
+declarable footprint member.
+
+`.objStore` is the one `LockKind` whose lock word lives on `SystemState`
+itself (`objStoreLock`, hierarchy level 0) rather than on an object —
+`acquireLockOnObject` and `lockHeld` dispatch on the kind and read/advance
+that field directly, ignoring the `objId`
+(`stateLevelLock_objId_irrelevant`).  It guards the RobinHood table's
+structure and, by the SM3.A.10 convention this cut makes **structural**, the
+SystemState-level auxiliary structures: the declassification audit trail and
+its epoch, whose three accessors (`.declassify` append, `.auditRead` read,
+`.auditDrain` read-modify-write) now declare it instead of citing the
+convention in prose.  One canonical spelling, `ObjId 0`, so two footprints can
+never alias the singleton under different ids. -/
+@[inline] def stateLevelLock : LockId :=
+  ⟨.objStore, ObjId.ofNat 0⟩
+
+
 -- ============================================================================
 -- SM3.B helpers — LockSet builders
 -- ============================================================================
@@ -608,32 +626,195 @@ here covers only the two universal reads. -/
 
 /-- WS-SM SM8.C.9: `lockSet` for `declassify`.
 
-Both locks are **read** mode: the caller TCB is read to resolve the running
-subject's domain, the CNode to resolve the target capability, and neither is
-written.  The audit-trail append is the transition's only write and is not an
-object.
+Caller TCB and CNode are **read** mode (subject-domain resolution and
+capability resolution).  The transition's only write is the audit-trail
+append — a `SystemState` field, not an object — and since PR #870 round 7
+that write is declared through the **state-level lock** in write mode:
+`stateLevelLock` is SM3.A.10's `objStoreLock` singleton, whose acquire
+advances `SystemState.objStoreLock` directly, and it is the serialization
+subject for the SystemState-level auxiliary structures.  Without it, two
+declassifications — or a declassification and an `.auditDrain` — from
+different callers had provably disjoint footprints while read-modify-writing
+the same trail, so SM3.C.9's fine locks would have admitted a lost append
+(the exact failure `declassifyStoreOnCore_never_unaudited` excludes; the
+SM5.I kernel-entry lock masks it today).
+`auditState_footprints_share_serialization` is the non-disjointness capstone.
 
-The target object is read once, for its kind tag, with no field access — that
-read rides the table-level `objStoreLock` (SM3.A.10), the same way the service
-syscalls' registry reads do.  Either direction of a concurrent race on it is
-benign: a target created concurrently makes the check fail and the syscall
-return `.objectNotFound`, and a target destroyed concurrently leaves an audit
-entry naming an id that no longer resolves — a fidelity artefact, not an
-authority one, since the authority came from the capability.  (Under the SM5.I
-kernel-entry lock there is no such race today.) -/
+The target object is read once, for its kind tag, with no field access — a
+read the same state-level member covers.  Either direction of a concurrent
+race on it is benign: a target created concurrently makes the check fail and
+the syscall return `.objectNotFound`, and a target destroyed concurrently
+leaves an audit entry naming an id that no longer resolves — a fidelity
+artefact, not an authority one, since the authority came from the
+capability. -/
 def lockSet_declassify (callerTid : ThreadId) (cnodeRootObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read)]
+     (cnodeLock cnodeRootObjId, .read),
+     (stateLevelLock, .write)]
+
+/-! ## Audit-trail access (2 transitions)
+
+WS-SM SM9.A.12.  The *transitions'* whole state effect is on `SystemState`
+fields — the trail and its epoch — exactly like `.declassify`'s.  But a
+declared footprint covers the **committed dispatch**, not the inner transition
+alone (PR #870 round 6, the round-4 rule applied to the lock domain): both
+audit syscalls are `.word`-shaped, so on success their arms continue into
+WS-RA's `writeReturnFrameToTcb`, which **writes the caller's TCB**
+(`registerContext` — the staged return frame).  The caller lock is therefore
+`.write`; declaring it `.read` would let another TCB writer run concurrently
+with the staging write once SM3.C.9 starts consuming these footprints.  The
+CNode stays `.read` (capability resolution only).
+
+**And the shared trail itself is a declared subject** (PR #870 round 7): the
+reader inspects — and the drain read-modify-writes — the same
+`declassificationAuditLog` / `declassificationAuditEpoch` pair that
+`.declassify` appends to, so all three footprints carry `stateLevelLock`
+(SM3.A.10's SystemState-level singleton): read mode for the reader, write
+mode for the drain and the append.  A drain computed from a stale trail
+could otherwise discard a concurrently appended record under fine locks —
+breaking the exactly-one-record guarantee — with every pairwise footprint
+provably disjoint.
+
+The drain additionally requires the `.write` *right* on the audit capability —
+a separate gate (`syscallRequiredRight`) and deliberately so: rights bound what
+a capability holder may do, lock sets bound what the committed dispatch
+touches, and conflating them is how a footprint stops being honest. -/
+
+/-- WS-SM SM9.A.12: `lockSet` for `auditRead`.
+
+Caller TCB **write** (PR #870 round 6): the transition is a pure query over
+`declassificationAuditLog`, but the arm stages the returned word into the
+caller's TCB via `writeReturnFrameToTcb` — a genuine TCB write the committed
+dispatch performs on every success (`lockSet_auditRead_staging_write_mem` ties
+it to the footprint by name).  CNode **read** for capability resolution.
+State-level lock **read** (PR #870 round 7): the query inspects the shared
+trail and epoch, and a concurrent drain's read-modify-write must exclude
+against it. -/
+def lockSet_auditRead (callerTid : ThreadId) (cnodeRootObjId : ObjId) : LockSet :=
+  lockSetOfList
+    [(tcbLock callerTid, .write),
+     (cnodeLock cnodeRootObjId, .read),
+     (stateLevelLock, .read)]
+
+/-- WS-SM SM9.A.12: `lockSet` for `auditDrain`.
+
+The reader's caller/CNode pair — the arm stages the returned length into the
+caller's TCB (`writeReturnFrameToTcb`), the caller-TCB write the `.write`
+mode declares (PR #870 round 6; `lockSet_auditDrain_staging_write_mem`) —
+plus the state-level lock in **write** mode (PR #870 round 7): the drain
+read-modify-writes `declassificationAuditLog` and
+`declassificationAuditEpoch`, and computing the drop from a stale trail while
+`.declassify` appends would silently discard the appended record
+(`lockSet_auditDrain_stateLevel_write_mem` ties the member to the footprint
+by name). -/
+def lockSet_auditDrain (callerTid : ThreadId) (cnodeRootObjId : ObjId) : LockSet :=
+  lockSetOfList
+    [(tcbLock callerTid, .write),
+     (cnodeLock cnodeRootObjId, .read),
+     (stateLevelLock, .write)]
+
+/-- WS-SM SM9.A.12 (PR #870 round 6): the staging write is **in** the declared
+footprint — `(tcbLock callerTid, .write)` is a member of the reader's lock set,
+by name, so a cut that reverts the caller lock to `.read` stops elaborating
+here rather than silently under-declaring the committed dispatch's writes. -/
+theorem lockSet_auditRead_staging_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_auditRead callerTid cnodeRootObjId).pairs := by
+  unfold lockSet_auditRead lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+    (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+      (by simp [LockSet.insertOrMerge]))
+
+/-- WS-SM SM9.A.12 (PR #870 round 6): the drain's staging write is in its
+declared footprint. -/
+theorem lockSet_auditDrain_staging_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_auditDrain callerTid cnodeRootObjId).pairs := by
+  unfold lockSet_auditDrain lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+    (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+      (by simp [LockSet.insertOrMerge]))
+
+/-- WS-SM SM9.A.12 (PR #870 round 7): the drain's trail read-modify-write is a
+declared **write** on the state-level lock. -/
+theorem lockSet_auditDrain_stateLevel_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_auditDrain callerTid cnodeRootObjId).pairs := by
+  unfold lockSet_auditDrain lockSetOfList
+  simp only [List.foldl]
+  exact List.mem_cons_self ..
+
+/-- WS-SM SM9.A.12 (PR #870 round 7): the reader's trail inspection is a
+declared **read** on the state-level lock, so a concurrent drain's write
+excludes against it. -/
+theorem lockSet_auditRead_stateLevel_read_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) :
+    (stateLevelLock, AccessMode.read)
+      ∈ (lockSet_auditRead callerTid cnodeRootObjId).pairs := by
+  unfold lockSet_auditRead lockSetOfList
+  simp only [List.foldl]
+  exact List.mem_cons_self ..
+
+/-- WS-SM SM8.C.9 (PR #870 round 7): the declassification's trail append is a
+declared **write** on the state-level lock. -/
+theorem lockSet_declassify_stateLevel_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_declassify callerTid cnodeRootObjId).pairs := by
+  unfold lockSet_declassify lockSetOfList
+  simp only [List.foldl]
+  exact List.mem_cons_self ..
+
+/-- WS-SM SM9.A.12 (PR #870 round 7, **the non-disjointness capstone**): the
+three audit-state footprints share the state-level lock — write mode at both
+writers, read mode at the reader — for **every** combination of caller TCBs
+and CSpace roots.
+
+This is the fact the round-7 finding said was missing: with only per-object
+members, `.declassify` from one caller and `.auditDrain` from another had
+provably disjoint footprints while read-modify-writing the same trail, so a
+2PL consumer of the declared sets would have admitted a lost append.  With
+the shared member, any pair among {append, drain} × {append, drain, read} on
+distinct callers has a write-mode intersection on `stateLevelLock`, which is
+exactly what two-phase locking serializes. -/
+theorem auditState_footprints_share_serialization :
+    ∀ (callerA : ThreadId) (rootA : ObjId) (callerB : ThreadId) (rootB : ObjId)
+      (callerC : ThreadId) (rootC : ObjId),
+      (stateLevelLock, AccessMode.write) ∈ (lockSet_declassify callerA rootA).pairs ∧
+      (stateLevelLock, AccessMode.write) ∈ (lockSet_auditDrain callerB rootB).pairs ∧
+      (stateLevelLock, AccessMode.read) ∈ (lockSet_auditRead callerC rootC).pairs :=
+  fun callerA rootA callerB rootB callerC rootC =>
+    ⟨lockSet_declassify_stateLevel_write_mem callerA rootA,
+     lockSet_auditDrain_stateLevel_write_mem callerB rootB,
+     lockSet_auditRead_stateLevel_read_mem callerC rootC⟩
 
 /-! ## Service syscalls (3 transitions)
 
 Services are tracked at the SystemState level (not as per-object
-RHTable entries).  Their registry table reads/writes serialise
-implicitly via the table-level `objStoreLock` (SM3.A.10).  At SM3.B
-per-object level, the caller TCB and the relevant CNode are the
-universal locks; `serviceRegister` additionally takes a read lock
-on the endpoint capability target (audit-pass-6 closure). -/
+RHTable entries).  At SM3.B per-object level, the caller TCB and the
+relevant CNode are the universal locks; `serviceRegister` additionally
+takes a read lock on the endpoint capability target (audit-pass-6
+closure).
+
+**Registered debt (PR #870 round 7)**: this header used to claim the registry
+reads/writes were covered by the table-level `objStoreLock` "implicitly" — a
+convention, not a declared footprint member, so under SM3.C.9's fine locks
+nothing would have acquired it and two concurrent `serviceRegister`s had
+provably disjoint sets while writing the same `serviceRegistry` map.  The
+same defect class the round-7 finding closed for the audit trail (whose
+three accessors now declare `stateLevelLock`); the registry trio — plus the
+retype cleanup path, which also sweeps the registry
+(`cleanupEndpointServiceRegistrations`) — is tracked in
+`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` §4 (the round-7
+cut), closure being the same declared member once the registry's writer
+inventory is audited.  Under the SM5.I kernel-entry lock there is no live
+race today. -/
 
 /-- WS-SM SM3.B.3: `lockSet` for `serviceRegister`.
 
@@ -670,13 +851,30 @@ def lockSet_serviceRevoke (callerTid : ThreadId)
 
 `lookupServiceByCap epId` folds over `serviceRegistry`; it does NOT
 read `st.objects[epId]?` (the lookup is by cap-target ObjId match
-within the registry, not by object dereference).  Per-object lock
-footprint: caller TCB + CNode. -/
+within the registry, not by object dereference).
+
+Caller TCB **write** (PR #870 round 6): `.serviceQuery` is `.word`-shaped, so
+on success its arm stages the resolved `ServiceId` into the caller's TCB via
+WS-RA's `writeReturnFrameToTcb` — the same committed-dispatch caller write the
+audit pair declares, present since the WS-RA staging landed (v0.33.37) and
+fixed with them (`lockSet_serviceQuery_staging_write_mem`).  CNode **read**
+for capability resolution. -/
 def lockSet_serviceQuery (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) : LockSet :=
   lockSetOfList
-    [(tcbLock callerTid, .read),
+    [(tcbLock callerTid, .write),
      (cnodeLock cnodeRootObjId, .read)]
+
+/-- WS-SM SM3.B.3 (PR #870 round 6): `.serviceQuery`'s staging write is in its
+declared footprint — the sibling of `lockSet_auditRead_staging_write_mem`. -/
+theorem lockSet_serviceQuery_staging_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_serviceQuery callerTid cnodeRootObjId).pairs := by
+  unfold lockSet_serviceQuery lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+    (by simp [LockSet.insertOrMerge])
 
 /-! ## SchedContext syscalls (3 transitions) -/
 
@@ -1152,14 +1350,23 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
       [.tcb, .cnode, .vspaceRoot]
   -- WS-SM SM8.C.9: `.declassify` reads the caller TCB (to resolve the running
   -- subject's domain) and the caller's CNode (capability resolution), and its
-  -- only write is `SystemState.declassificationAuditLog` — a state-level field,
-  -- not a per-object lock subject, exactly as `tlbShootdown` is.  The target
-  -- object is touched by a single kind-tag lookup with no field access, which
-  -- rides the table-level `objStoreLock` (SM3.A.10) the way the service-registry
-  -- reads do; `.serviceRegister` takes an `.endpoint` lock because it inspects
-  -- the object's *contents*, which this does not.
+  -- only write is `SystemState.declassificationAuditLog` — a state-level
+  -- field, declared since PR #870 round 7 through the `.objStore` singleton
+  -- (`stateLevelLock`, write mode): the trail append must exclude against a
+  -- concurrent `.auditDrain`'s read-modify-write.  The target object is
+  -- touched by a single kind-tag lookup with no field access, which the same
+  -- state-level member covers; `.serviceRegister` takes an `.endpoint` lock
+  -- because it inspects the object's *contents*, which this does not.
   | .declassify =>
-      [.tcb, .cnode]
+      [.tcb, .cnode, .objStore]
+  -- WS-SM SM9.A.12: the audit reader and the drain read the caller TCB (for the
+  -- reader's clearance) and the caller's CNode (capability resolution), and
+  -- touch only `SystemState` fields — the trail and its epoch — which is
+  -- exactly why they carry the `.objStore` singleton (PR #870 round 7): read
+  -- mode at the reader, write mode at the drain, the shared-state
+  -- serialization no per-object kind can express.
+  | .auditRead | .auditDrain =>
+      [.tcb, .cnode, .objStore]
   -- Service syscalls.  `.serviceRegister` reads `st.objects[epId]?`
   -- (audit-pass-6 extension); the other two only touch `serviceRegistry`.
   | .serviceRegister =>
@@ -1828,6 +2035,38 @@ theorem lockSet_consistent_declassify (callerTid : ThreadId)
       p.fst.kind ∈ permittedKinds .declassify :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+
+/-- WS-SM SM3.B.4 for `.auditRead` (SM9.A.12). -/
+theorem lockSet_consistent_auditRead (callerTid : ThreadId)
+    (cnRoot : ObjId) :
+    ∀ p ∈ (lockSet_auditRead callerTid cnRoot).pairs,
+      p.fst.kind ∈ permittedKinds .auditRead :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+
+/-- WS-SM SM3.B.4 for `.auditDrain` (SM9.A.12). -/
+theorem lockSet_consistent_auditDrain (callerTid : ThreadId)
+    (cnRoot : ObjId) :
+    ∀ p ∈ (lockSet_auditDrain callerTid cnRoot).pairs,
+      p.fst.kind ∈ permittedKinds .auditDrain :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem

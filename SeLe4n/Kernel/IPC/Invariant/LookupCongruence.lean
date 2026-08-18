@@ -464,13 +464,20 @@ structure OffSchedulerAgrees (s1 s2 : SystemState) : Prop where
       substitution must not silently forge or drop a recorded downgrade. -/
   declassificationAuditLog :
     s2.declassificationAuditLog = s1.declassificationAuditLog
+  /-- WS-SM SM9.A.1a: the declassification audit epoch agrees.  The trail's own
+      clause says a scheduler-only substitution forges no downgrade; this one
+      says it does not silently *renumber* the downgrades that are there —
+      which, once drain exists, is a distinct way to falsify
+      `declassificationAuditLog_timestamp_identifies_event`. -/
+  declassificationAuditEpoch :
+    s2.declassificationAuditEpoch = s1.declassificationAuditEpoch
 
 namespace OffSchedulerAgrees
 
 /-- Reflexivity. -/
 theorem refl (st : SystemState) : OffSchedulerAgrees st st :=
   ⟨fun _ => rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
-   rfl, rfl, rfl, rfl⟩
+   rfl, rfl, rfl, rfl, rfl⟩
 
 /-- Symmetry. -/
 theorem symm {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
@@ -480,7 +487,8 @@ theorem symm {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
    h.asidTable.symm, h.interfaceRegistry.symm, h.serviceRegistry.symm, h.cdt.symm,
    h.cdtSlotNode.symm, h.cdtNodeSlot.symm, h.cdtNextNode.symm, h.scThreadIndex.symm,
    h.tlb.symm, h.objStoreLock.symm, h.perCoreTlb.symm, h.perCoreICache.symm,
-   h.pendingIcacheMaintenance.symm, h.declassificationAuditLog.symm⟩
+   h.pendingIcacheMaintenance.symm, h.declassificationAuditLog.symm,
+   h.declassificationAuditEpoch.symm⟩
 
 /-- Transitivity. -/
 theorem trans {s1 s2 s3 : SystemState}
@@ -497,7 +505,8 @@ theorem trans {s1 s2 s3 : SystemState}
    hSecond.tlb.trans hFirst.tlb, hSecond.objStoreLock.trans hFirst.objStoreLock,
    hSecond.perCoreTlb.trans hFirst.perCoreTlb, hSecond.perCoreICache.trans hFirst.perCoreICache,
    hSecond.pendingIcacheMaintenance.trans hFirst.pendingIcacheMaintenance,
-   hSecond.declassificationAuditLog.trans hFirst.declassificationAuditLog⟩
+   hSecond.declassificationAuditLog.trans hFirst.declassificationAuditLog,
+   hSecond.declassificationAuditEpoch.trans hFirst.declassificationAuditEpoch⟩
 
 end OffSchedulerAgrees
 
@@ -510,7 +519,7 @@ off-scheduler. -/
 theorem offSchedulerAgrees_scheduler_update (st : SystemState) (σ : SchedulerState) :
     OffSchedulerAgrees st { st with scheduler := σ } :=
   ⟨fun _ => rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
-   rfl, rfl, rfl, rfl⟩
+   rfl, rfl, rfl, rfl, rfl⟩
 
 /-- SM6.D: `ensureRunnable` (the single-core boot enqueue) agrees with its
 input off-scheduler. -/
@@ -546,7 +555,7 @@ theorem enqueueRunnableOnCore_offSchedulerAgrees_of_ready
     (hInv : st.objects.invExt) :
     OffSchedulerAgrees st (enqueueRunnableOnCore st c tid) := by
   refine ⟨fun oid => enqueueRunnableOnCore_objects_getElem_eq_of_ready st c tid tcb hTcb hReady hInv oid,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   all_goals simp only [enqueueRunnableOnCore, hTcb]
   all_goals split <;> rfl
 
@@ -589,7 +598,7 @@ theorem storeObject_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
     hRel.interfaceRegistry, hRel.serviceRegistry, hRel.cdt, hRel.cdtSlotNode,
     hRel.cdtNodeSlot, hRel.cdtNextNode, hRel.scThreadIndex, hRel.tlb, hRel.objStoreLock,
     hRel.perCoreTlb, hRel.perCoreICache, hRel.pendingIcacheMaintenance,
-    hRel.declassificationAuditLog⟩
+    hRel.declassificationAuditLog, hRel.declassificationAuditEpoch⟩
   · simp only [hRel.objectIndexSet, hRel.objectIndex]
   · simp only [hRel.objectIndexSet]
   · simp only [hRel.lifecycle]

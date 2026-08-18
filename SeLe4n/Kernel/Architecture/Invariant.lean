@@ -1000,25 +1000,32 @@ not — `dualQueueSystemInvariant` recurses on a fuel that stays symbolic,
 budget; each needs its own congruence, which the tree already has. -/
 
 private theorem ipcInvariantFull_setDeclassificationAuditLog {st : SystemState}
-    {log : SeLe4n.Kernel.DeclassificationAuditLog} (h : ipcInvariantFull st) :
-    ipcInvariantFull { st with declassificationAuditLog := log } := by
+    {log : SeLe4n.Kernel.DeclassificationAuditLog} {epoch : Nat} (h : ipcInvariantFull st) :
+    ipcInvariantFull
+      { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } := by
   obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
           c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
   exact ⟨c1, dualQueueSystemInvariant_of_getElem_eq (s1 := st)
-           (s2 := { st with declassificationAuditLog := log }) (fun _ => rfl) c2,
+           (s2 := { st with declassificationAuditLog := log,
+                            declassificationAuditEpoch := epoch }) (fun _ => rfl) c2,
          c3, c4, c5, c6, c7, c8, c9, c10,
          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
 
 private theorem serviceGraphInvariant_setDeclassificationAuditLog {st : SystemState}
-    {log : SeLe4n.Kernel.DeclassificationAuditLog} (h : serviceGraphInvariant st) :
-    serviceGraphInvariant { st with declassificationAuditLog := log } :=
+    {log : SeLe4n.Kernel.DeclassificationAuditLog} {epoch : Nat}
+    (h : serviceGraphInvariant st) :
+    serviceGraphInvariant
+      { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } :=
   ⟨fun sid hp =>
      h.1 sid (serviceNontrivialPath_of_services_eq (st := st)
-                (st' := { st with declassificationAuditLog := log }) rfl hp), h.2⟩
+                (st' := { st with declassificationAuditLog := log,
+                                  declassificationAuditEpoch := epoch }) rfl hp), h.2⟩
 
 private theorem crossSubsystemInvariant_setDeclassificationAuditLog {st : SystemState}
-    {log : SeLe4n.Kernel.DeclassificationAuditLog} (h : crossSubsystemInvariant st) :
-    crossSubsystemInvariant { st with declassificationAuditLog := log } := by
+    {log : SeLe4n.Kernel.DeclassificationAuditLog} {epoch : Nat}
+    (h : crossSubsystemInvariant st) :
+    crossSubsystemInvariant
+      { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } := by
   obtain ⟨d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12⟩ := h
   exact ⟨d1, d2, d3, d4, d5, serviceGraphInvariant_setDeclassificationAuditLog d6, d7, d8, d9,
          PriorityInheritance.blockingAcyclic_frame st _ d10
@@ -1026,14 +1033,17 @@ private theorem crossSubsystemInvariant_setDeclassificationAuditLog {st : System
          d11, d12⟩
 
 private theorem coreIpcInvariantBundle_setDeclassificationAuditLog {st : SystemState}
-    {log : SeLe4n.Kernel.DeclassificationAuditLog} (h : coreIpcInvariantBundle st) :
-    coreIpcInvariantBundle { st with declassificationAuditLog := log } :=
+    {log : SeLe4n.Kernel.DeclassificationAuditLog} {epoch : Nat}
+    (h : coreIpcInvariantBundle st) :
+    coreIpcInvariantBundle
+      { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } :=
   ⟨h.1, h.2.1, ipcInvariantFull_setDeclassificationAuditLog h.2.2⟩
 
 private theorem ipcSchedulerCouplingInvariantBundle_setDeclassificationAuditLog
-    {st : SystemState} {log : SeLe4n.Kernel.DeclassificationAuditLog}
+    {st : SystemState} {log : SeLe4n.Kernel.DeclassificationAuditLog} {epoch : Nat}
     (h : ipcSchedulerCouplingInvariantBundle st) :
-    ipcSchedulerCouplingInvariantBundle { st with declassificationAuditLog := log } :=
+    ipcSchedulerCouplingInvariantBundle
+      { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } :=
   ⟨coreIpcInvariantBundle_setDeclassificationAuditLog h.1, h.2.1, h.2.2.1, h.2.2.2⟩
 
 /-- **WS-SM SM8.C.8**: `proofLayerInvariantBundle` carriage across a write to
@@ -1046,12 +1056,19 @@ trail, so the writer has to supply it — and that obligation is load-bearing,
 since substituting the pre-state's own bound does not typecheck.
 
 Stated once for *any* trail writer, so the live `.declassify` syscall and the
-model primitive discharge it the same way. -/
-theorem proofLayerInvariantBundle_setDeclassificationAuditLog (st : SystemState)
-    (log : SeLe4n.Kernel.DeclassificationAuditLog)
+model primitive discharge it the same way.
+
+**WS-SM SM9.A.1a generalises it to the epoch.**  The only writer that moves the
+audit *epoch* is the drain, which moves the trail in the same step, so the
+carriage is stated over the simultaneous write rather than duplicating the
+five-lemma block for a field no conjunct reads.  The trail-only form below is
+this theorem at the pre-state's own epoch. -/
+theorem proofLayerInvariantBundle_setDeclassificationAuditTrail (st : SystemState)
+    (log : SeLe4n.Kernel.DeclassificationAuditLog) (epoch : Nat)
     (h : proofLayerInvariantBundle st)
     (hBounded : SeLe4n.Kernel.auditLogBounded log) :
-    proofLayerInvariantBundle { st with declassificationAuditLog := log } := by
+    proofLayerInvariantBundle
+      { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
           bIcache, bAck, _bAuditPre⟩ := h
@@ -1061,6 +1078,16 @@ theorem proofLayerInvariantBundle_setDeclassificationAuditLog (st : SystemState)
          crossSubsystemInvariant_setDeclassificationAuditLog bCross,
          bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
          bIcache, bAck, hBounded⟩
+
+/-- **WS-SM SM8.C.8**: the trail-only instance — an append leaves the epoch
+where it was, so a recording writer owes nothing about it. -/
+theorem proofLayerInvariantBundle_setDeclassificationAuditLog (st : SystemState)
+    (log : SeLe4n.Kernel.DeclassificationAuditLog)
+    (h : proofLayerInvariantBundle st)
+    (hBounded : SeLe4n.Kernel.auditLogBounded log) :
+    proofLayerInvariantBundle { st with declassificationAuditLog := log } :=
+  proofLayerInvariantBundle_setDeclassificationAuditTrail st log
+    st.declassificationAuditEpoch h hBounded
 
 /-- **WS-SM SM7.F.5**: `proofLayerInvariantBundle` carriage across a write to
 `perCoreTlb`.
