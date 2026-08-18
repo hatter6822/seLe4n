@@ -7939,6 +7939,33 @@ private def runRefusalReaderChecks : IO Unit := do
        let (a, b, k) := encodeAuditReadOp op
        decide (decodeAuditReadOp a b k = some op)) &&
      ops.all (fun op => decide (op.readsStructure = .declassificationRefusalLedger)))
+  -- The LIVE entry point, exercised for effect on the refusal opcodes.  The
+  -- §9 groups drive `auditReadFromCore` for trail reads; the ledger's arms
+  -- carry one further gate — the arm-level monitor check inside
+  -- `auditReadWord` — and until here only theorems pinned the composition of
+  -- the two.  Core 1 runs the monitor under `auditMonitorLabeling`, core 0 a
+  -- partial reader (the same occupancy §9 relies on).
+  assertBool "LIVE ENTRY: the monitor's core reads the refusal status, losslessly"
+    (match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c1
+        .refusalStatus refusalStateOne with
+     | .error _ => false
+     | .ok (w, _) =>
+         decide (refusalStatusSlot w = 1) && decide (refusalStatusVersion w = 1) &&
+         decide (w.toUInt64.toNat = w))
+  assertBool "NEGATIVE: the live entry refuses a partial reader's core for every refusal op"
+    (let ops : List AuditReadOp :=
+       [.refusalStatus, .refusalCounters, .refusalSlotTags 0,
+        .refusalSlotFieldChunkCount 0 .subject, .refusalSlotField 0 .subject 0]
+     ops.all (fun op =>
+       match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c0
+           op refusalStateOne with
+       | .error e => decide (e = KernelError.illegalAuthority)
+       | .ok _ => false))
+  assertBool "NEGATIVE: an unconfigured deployment has no refusal reader either"
+    (match auditReadFromCore (liftLegacyContext auditUnmonitoredLabeling)
+        auditUnmonitoredLabeling.auditMonitorClearance c1 .refusalStatus refusalStateOne with
+     | .error e => decide (e = KernelError.illegalAuthority)
+     | .ok _ => false)
 
 /-- §10.5  SM9.B.10 — the gate is configuration, not the ring's surviving rows.
 
@@ -8047,6 +8074,36 @@ private def runRefusalAcceptanceChecks : IO Unit := do
          (.refusalSlotTags 0) with
      | .error e => decide (e = KernelError.illegalAuthority)
      | .ok _ => false)
+  -- The acceptance composition, run at the boundary the hardware calls and the
+  -- entry the monitor calls, under ONE deployment context: the kernel refuses
+  -- the downgrade, commits the attributed record, hands the caller exactly the
+  -- error frame its reason computes — and the monitor's core reads that same
+  -- reason back through the live entry.  The frame equality is the load-bearing
+  -- half: the caller's whole return frame is `errorFrame` of the recorded
+  -- reason, so nothing about the ledger rides it.
+  assertBool "END TO END: the committed refusal reads back live, and the caller's frame is exactly its reason's"
+    (match Platform.FFI.syscallDispatchFromAbi auditMonitorLabeling c1
+        (SyscallId.declassify.toNat.toUInt32) 0 5 0 0 0 0 0 0 auditMixedState with
+     | .error _ => false
+     | .ok (outcome, committed) =>
+         match committed.declassificationRefusals.recent.get
+             auditMixedState.declassificationRefusals.nextSlot with
+         | none => false
+         | some recorded =>
+             (match outcome with
+              | .returns f => decide (f = Architecture.errorFrame recorded.reason)
+              | .blocks => false) &&
+             decide (recorded.syscall = SyscallId.declassify) &&
+             decide (recorded.subject = highCurrent) &&
+             (match auditReadFromCore auditGenericCtx
+                 auditMonitorLabeling.auditMonitorClearance c1
+                 (.refusalSlotTags 0) committed with
+              | .error _ => false
+              | .ok (w, _) =>
+                  decide (KernelError.ofDiscriminant? (w / refusalTagSlots / refusalTagSlots)
+                    = some recorded.reason) &&
+                  decide (w / refusalTagSlots % refusalTagSlots
+                    = SyscallId.declassify.toNat)))
   -- The retired rule, and what replaced it.
   assertBool "the rule inventory still has 12 entries, with the retirement's replacement in it"
     (decide (DeclassificationRuleId.all.length = 12) &&

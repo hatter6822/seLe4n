@@ -2666,16 +2666,18 @@ theorem auditDrain_preserves_auditObservationalEquivalence
 whose seams record the *same* refusal stay equivalent.
 
 The §3.7 discipline says every writer of a readable structure owes a
-congruence, and the refusal ledger has exactly one writer.  The `hSameRefusal`
-premise is the ledger's analogue of the declassification's `hSameEvent`, and it
-is what a shared subject, core, syscall, error and operand give: the seam
-constructs the record from its arguments alone, so two states reached by the
-same refused call record identical rows.
+congruence, and the refusal ledger has exactly one writer.  Where the
+declassification's congruence needs an explicit `hSameEvent` premise — its
+event reads the state's epoch and trail length — this one needs no analogue:
+the seam constructs the record from this theorem's own shared arguments
+(subject, core, syscall, error, operand, context) and from nothing in the
+state, so "both sides record the same row" holds by construction
+(`recordSyscallRefusal_ledger_congr` is the underlying congruence).
 
-`hLedger` is the ledger's own pre-agreement, extracted from the relation rather
-than assumed — for a monitor the clause is whole-ledger equality, so recording
-the same refusal on both sides preserves it; for a partial reader the clause is
-vacuous and so is the conclusion. -/
+The ledger's pre-agreement is extracted from the relation rather than assumed —
+for a monitor the clause is whole-ledger equality, so recording the same
+refusal on both sides preserves it; for a partial reader the clause is vacuous
+and so is the conclusion. -/
 theorem recordSyscallRefusal_preserves_auditObservationalEquivalence
     (ctx : LabelingContext) (observer : IfObserver)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)

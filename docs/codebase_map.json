@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm9b-refusal-auditing-c0rdls",
-      "commit_sha": "0687ac6c5dce34a5a5fc7613d47651d0bf87df19",
-      "tree_sha": "2625db14b0d5ba3de97fff881e183bb5fe9c8e23",
-      "committed_at_utc": "2026-08-18T08:24:50-04:00"
+      "commit_sha": "0e8b6b979795c8e63bb436f386e2f6d118d7438f",
+      "tree_sha": "d2f12f4a536599c262875ed7d1dc80b20f7e0f7f",
+      "committed_at_utc": "2026-08-18T19:24:33+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5c4e50b018d107547f52a2a0b1db7825504f164936df1023085e4464bed75156"
+    "source_digest": "8eb9e3e30701247388bf54394db2c71332810149a6f35b350f3318de8ce8415b"
   },
   "summary": {
     "module_count": 351,
@@ -27,9 +27,9 @@
     "version": "0.33.51",
     "lean_toolchain": "v4.28.0",
     "production_files": 282,
-    "production_loc": 274285,
+    "production_loc": 274287,
     "test_files": 69,
-    "test_loc": 59267,
+    "test_loc": 59324,
     "proved_theorem_lemma_decls": 9225,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -97740,7 +97740,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_preserves_auditObservationalEquivalence",
-          "line": 2679,
+          "line": 2681,
           "called": [
             "CoreId",
             "IfObserver",
@@ -97760,7 +97760,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalent_does_not_determine_visible_view",
-          "line": 2716,
+          "line": 2718,
           "called": [
             "GenericLabelingContext",
             "IfObserver",
@@ -97784,7 +97784,7 @@
         {
           "kind": "theorem",
           "name": "auditRead_no_channel",
-          "line": 2747,
+          "line": 2749,
           "called": [
             "AuditReadOp",
             "IfObserver",
@@ -97800,7 +97800,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_no_channel",
-          "line": 2767,
+          "line": 2769,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -97820,7 +97820,7 @@
         {
           "kind": "theorem",
           "name": "auditRead_gates_are_five",
-          "line": 2828,
+          "line": 2830,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -97851,7 +97851,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_auditOccupancy_bounded",
-          "line": 2871,
+          "line": 2873,
           "called": [
             "SystemState",
             "auditLogBounded",
@@ -97864,7 +97864,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_occupancy_is_not_a_covert_channel",
-          "line": 2910,
+          "line": 2912,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -97908,7 +97908,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_preserves_projectionOnCore",
-          "line": 2961,
+          "line": 2963,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -97926,7 +97926,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_perCore_NI",
-          "line": 2973,
+          "line": 2975,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -97945,7 +97945,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_perCore_NI",
-          "line": 2984,
+          "line": 2986,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -227373,11 +227373,16 @@
             "auditGenericCtx",
             "auditMonitorReader",
             "auditPartialReader",
+            "auditReadFromCore",
             "auditReadOpcodeCount",
             "auditReadWord",
+            "auditUnmonitoredLabeling",
+            "c0",
+            "c1",
             "decodeAuditReadOp",
             "encodeAuditReadOp",
             "initial",
+            "liftLegacyContext",
             "niState",
             "ofDiscriminant",
             "ofNat",
@@ -227400,7 +227405,7 @@
         {
           "kind": "def",
           "name": "runRefusalGateChecks",
-          "line": 7948,
+          "line": 7975,
           "called": [
             "all",
             "any",
@@ -227431,37 +227436,46 @@
         {
           "kind": "def",
           "name": "runRefusalAcceptanceChecks",
-          "line": 8011,
+          "line": 8038,
           "called": [
             "DeclassificationRuleId.all",
             "SystemState",
             "assertBool",
             "auditEntry",
+            "auditGenericCtx",
+            "auditMixedState",
             "auditMonitorLabeling",
             "auditMonitorReader",
             "auditPartialReader",
+            "auditReadFromCore",
             "auditReadWord",
             "c0",
             "c1",
             "c2",
             "declassificationRuleEvidenceName",
             "declassifyObjectFromCore",
+            "errorFrame",
+            "get",
             "highCurrent",
             "length",
             "liftLegacyContext",
             "lowNotification",
             "maxDeclassificationAuditEntries",
             "niState",
+            "none",
             "ofDiscriminant",
             "recordSyscallRefusal",
             "refusalTagSlots",
+            "syscall",
+            "syscallDispatchFromAbi",
+            "toNat",
             "toUInt32"
           ]
         },
         {
           "kind": "def",
           "name": "refusalLedgerTraceLines",
-          "line": 8062,
+          "line": 8119,
           "called": [
             "auditMonitorLabeling",
             "auditMonitorReader",
@@ -227489,7 +227503,7 @@
         {
           "kind": "def",
           "name": "informationFlowTraceLines",
-          "line": 8096,
+          "line": 8153,
           "called": [
             "auditReaderTraceLines",
             "nonInterferenceTraceLines",
@@ -227500,7 +227514,7 @@
         {
           "kind": "def",
           "name": "runInformationFlowTraceFixtureCheck",
-          "line": 8105,
+          "line": 8162,
           "called": [
             "informationFlowTraceFixturePath",
             "informationFlowTraceLines",
@@ -227510,7 +227524,7 @@
         {
           "kind": "def",
           "name": "runAuditVisibleViewChecks",
-          "line": 8128,
+          "line": 8185,
           "called": [
             "DeclassificationEvent",
             "SecurityDomain",
@@ -227534,7 +227548,7 @@
         {
           "kind": "def",
           "name": "runAuditChunkProtocolChecks",
-          "line": 8180,
+          "line": 8237,
           "called": [
             "DeclassificationEvent",
             "all",
@@ -227562,7 +227576,7 @@
         {
           "kind": "def",
           "name": "runAuditReaderClassChecks",
-          "line": 8234,
+          "line": 8291,
           "called": [
             "SystemState",
             "assertBool",
@@ -227582,7 +227596,7 @@
         {
           "kind": "def",
           "name": "runAuditMonitorGateChecks",
-          "line": 8335,
+          "line": 8392,
           "called": [
             "DeclassificationEvent",
             "all",
@@ -227605,7 +227619,7 @@
         {
           "kind": "def",
           "name": "runAuditDrainChecks",
-          "line": 8392,
+          "line": 8449,
           "called": [
             "assertBool",
             "auditDrainViewComplete",
@@ -227632,7 +227646,7 @@
         {
           "kind": "def",
           "name": "runAuditEpochChecks",
-          "line": 8482,
+          "line": 8539,
           "called": [
             "SystemState",
             "all",
@@ -227651,7 +227665,7 @@
         {
           "kind": "def",
           "name": "runAuditLiveArmChecks",
-          "line": 8514,
+          "line": 8571,
           "called": [
             "AuditReadOp",
             "LabelingContext",
@@ -227693,7 +227707,7 @@
         {
           "kind": "def",
           "name": "runAuditCapacityCliffChecks",
-          "line": 8650,
+          "line": 8707,
           "called": [
             "DeclassificationRequest",
             "all",
@@ -227722,7 +227736,7 @@
         {
           "kind": "def",
           "name": "runAuditDrainSignalChecks",
-          "line": 8764,
+          "line": 8821,
           "called": [
             "all",
             "assertBool",
@@ -227743,7 +227757,7 @@
         {
           "kind": "def",
           "name": "runSmpInformationFlowChecks",
-          "line": 8837,
+          "line": 8894,
           "called": [
             "runAuditCapacityCliffChecks",
             "runAuditChunkProtocolChecks",
@@ -227835,7 +227849,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 8934,
+          "line": 8991,
           "called": [
             "runSmpInformationFlowChecks"
           ]

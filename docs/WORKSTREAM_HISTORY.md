@@ -112,6 +112,18 @@ Zero sorry/axiom; trace byte-identical; the six `FrozenSystemState` test
 literals updated because the frozen field is **required**, so a silent drop is a
 compile error.
 
+**Audit cut (same branch).**  A code-first audit found no security defect and
+no false or vacuous theorem, and closed three findings: the refusal opcodes
+gained live-entry runtime coverage (`auditReadFromCore` — monitor positive,
+partial-reader refusal on every op, unconfigured refusal) plus the acceptance
+composition in which the refused caller's whole return frame equals
+`Architecture.errorFrame` of the recorded reason while the monitor's live read
+decodes that reason back (suite 675 → 679 assertions); the Rust `audit_read`
+contract now covers the ledger (a `Refusal*` opcode's `index` is a ring slot,
+not a view index); and a docstring naming a nonexistent `hSameRefusal` premise
+was corrected to say the congruence holds by construction from shared
+arguments.
+
 **WS-SM SM9.A — the declassification audit trail's reader: LANDED.  The
 256-entry cliff is gone.**
 

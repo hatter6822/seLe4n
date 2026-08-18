@@ -3100,7 +3100,7 @@ both sides of the ABI and `ReadableStructure` grows to two members, which is
 what forces the observation relation's clause function to gain an arm.
 
 Runtime coverage: §10.1–§10.6 of `tests/SmpInformationFlowSuite.lean` (632 →
-675 assertions across eighty-five groups), every group with a load-bearing
+679 assertions across eighty-five groups), every group with a load-bearing
 negative.  §10.6 runs the plan's two explicit acceptance items for effect: a
 policy-refused caller's result is identical on a full trail and an empty one,
 and the capacity refusal *is* recorded and read back by the monitor while an

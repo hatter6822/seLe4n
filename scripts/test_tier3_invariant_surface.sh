@@ -3327,6 +3327,16 @@ run_check "INVARIANT" rg -n 'NEGATIVE: a hand-maintained list passes vacuously w
 run_check "INVARIANT" rg -n 'NEGATIVE: a policy-refused caller learns nothing about trail occupancy' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: an exempt syscall.s refusal leaves the ledger untouched' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'including a field wide enough to need several chunks' tests/SmpInformationFlowSuite.lean
+# Audit cut: the refusal opcodes exercised through the LIVE entry point
+# (`auditReadFromCore`), not only through the model reader — the positive at
+# the monitor's core, the refusal at a partial reader's core, the unconfigured
+# refusal, and the boundary-to-live-read acceptance composition whose
+# load-bearing half is that the caller's whole return frame is `errorFrame` of
+# the recorded reason.
+run_check "INVARIANT" rg -n 'LIVE ENTRY: the monitor.s core reads the refusal status, losslessly' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the live entry refuses a partial reader.s core for every refusal op' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment has no refusal reader either' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'END TO END: the committed refusal reads back live' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=1' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected

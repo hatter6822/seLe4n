@@ -1247,6 +1247,30 @@ cannot displace an authorized-downgrade entry*.
 - Outside `ObservableState`, with the clearance gate of SM9.A applying to the
   ledger too.
 
+**Audit cut (same branch).**  A code-first audit of the landed cut —
+documentation distrusted by instruction — returned **no security defect, no
+false theorem, no vacuous theorem**: the seam classification verified total
+with 33 explicit arms and no wildcard, the extracted `KernelError` inductive
+byte-identical to the block removed from `Model/State.lean`, the ring/counter
+algebra re-derived by hand (the wrap arithmetic, the no-loss window's modular
+bound, the version-bracket contradiction), and all 117 added public
+declarations anchored, verified by set difference.  Three findings, all
+closed in the audit commit: (1) **the refusal opcodes had runtime coverage
+only through the model reader** (`auditReadWord`) — nothing drove them
+through the live entry or composed the seam's write with a live read; four
+assertions close it (675 → 679), the last being the acceptance composition
+under one deployment context, whose load-bearing half is that the refused
+caller's whole return frame equals `Architecture.errorFrame` of the recorded
+reason while the monitor's live read decodes that same reason and syscall
+back out of the tags word; (2) the Rust `audit_read` wrapper's contract
+described only the trail — for the `Refusal*` opcodes `index` is a **ring
+slot**, not a view index — corrected; (3)
+`recordSyscallRefusal_preserves_auditObservationalEquivalence`'s docstring
+named an `hSameRefusal` premise the theorem does not have; it needs none
+(the record is constructed from the theorem's own shared arguments,
+`recordSyscallRefusal_ledger_congr`), and the docstring now says why the
+declassification's congruence *does* need its `hSameEvent`.
+
 ### SM9.C — Data-carrying declassification (10 sub-tasks)
 
 | Sub | Description | Files | Est |

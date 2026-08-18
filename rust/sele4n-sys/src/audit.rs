@@ -196,14 +196,20 @@ pub const fn refusal_slot_tags_decode(word: u64) -> (u64, u64, u64) {
     )
 }
 
-/// Read one word of the declassification audit trail.
+/// Read one word of the declassification audit trail — or, with the
+/// `Refusal*` opcodes (WS-SM SM9.B.10), of the refusal ledger.
 ///
 /// # Arguments
 ///
 /// * `audit_cap` — a capability whose target is the audit trail, carrying the
-///   `read` right.
+///   `read` right.  The refusal ledger rides the same capability: one audit
+///   authority, two readable structures.
 /// * `opcode` — which sub-operation, and for the field operations which field.
-/// * `index` — the entry's index **in the caller's own filtered view**.
+/// * `index` — for the trail opcodes, the entry's index **in the caller's own
+///   filtered view**; for the `Refusal*` slot opcodes, a **ring slot** in
+///   `0..REFUSAL_RING_SIZE` — the ledger has no clearance-filtered view,
+///   because a caller that is not the configured monitor is refused outright
+///   (Lean's `refusalLedger_requires_full_dominance`).
 /// * `chunk` — the chunk index, for the chunked field and basis operations;
 ///   ignored otherwise.
 ///
@@ -220,9 +226,11 @@ pub const fn refusal_slot_tags_decode(word: u64) -> (u64, u64, u64) {
 ///   caller cannot tell "feature off" from "not a monitor".
 /// * `IllegalState` — the executing core is running no thread, so there is no
 ///   subject whose clearance would select a view.
-/// * `InvalidArgument` — the index is past the end of the caller's own view, or
-///   the chunk index is past the field's width.  An entry the caller cannot see
-///   is indistinguishable from one that does not exist.
+/// * `InvalidArgument` — the index is past the end of the caller's own view
+///   (for a `Refusal*` slot opcode: an empty ring slot, or a slot at or past
+///   `REFUSAL_RING_SIZE`), or the chunk index is past the field's width.  An
+///   entry the caller cannot see is indistinguishable from one that does not
+///   exist.
 /// * `InvalidSyscallArgument` — the opcode is not one this ABI defines.
 /// * `AuditFieldTooLarge` — the value needs more than `MAX_AUDIT_FIELD_CHUNKS`
 ///   chunks (or the designation exceeds the exported byte width), so the kernel

@@ -168,7 +168,7 @@ resolved receiver is resolved inside that transition, whose error arm carries no
 post-state, so the seam cannot see it — and a field no producer could set is the
 unwired-structure shape CLAUDE.md forbids.
 
-**Evidence.**  `tests/SmpInformationFlowSuite.lean` §10.1–§10.6 (632 → 675
+**Evidence.**  `tests/SmpInformationFlowSuite.lean` §10.1–§10.6 (632 → 679
 assertions across 85 groups), every group with a load-bearing negative; §10.6
 runs the plan's two explicit acceptance items for effect.  §1.11 anchors every
 new declaration; `tests/SmpSurfaceAnchors.lean` §10 pins the headline surface;
@@ -179,6 +179,43 @@ and a negative forbidding a hardcoded `.declassify` seam filter.  Rust 1136 →
 environment constants swept across the information-flow surface, plus the seam
 and the state layer); trace byte-identical; no new syscall, so the enforcement
 boundary and `SyscallId.count` are unchanged.
+
+**Audit cut (same branch)** — a code-first audit of the whole cut,
+documentation distrusted by instruction; verdict: **no security defect, no
+false theorem, no vacuous theorem** (the seam classification is genuinely
+total with 33 explicit arms; the extracted `KernelError` inductive is
+byte-identical to the block removed from `Model/State.lean`; the ring/counter
+algebra was re-derived by hand — the §10.5 wrap arithmetic, the no-loss
+window's modular bound and the version-bracket contradiction all check; all
+117 added public declarations are anchored, verified by set difference).
+Three findings, all closed in the audit commit:
+
+1. **The refusal opcodes were exercised only through the model reader.**
+   Every §10.4 runtime check drove `auditReadWord`; nothing drove a refusal
+   opcode through the live entry (`auditReadFromCore` — the configuration
+   gate, the subject resolution, the round-6 monitor gate and the `2^64`
+   guard) or composed the seam's write with a live read.  Four new
+   assertions close it (679 total): the monitor's core reads `refusalStatus`
+   losslessly through the live entry; a partial reader's core is refused for
+   **every** refusal op; an unconfigured deployment is refused; and the
+   acceptance composition — one deployment context refuses a `.declassify`
+   at the boundary, commits the record, and the **caller's whole return
+   frame equals `Architecture.errorFrame` of the recorded reason** while the
+   monitor's live read decodes that same reason and syscall back out of the
+   tags word.
+2. **The Rust `audit_read` docstring had drifted**: it described only the
+   trail, and its `index` line said "the caller's own filtered view" — for
+   the `Refusal*` opcodes the index is a **ring slot**, the ledger having no
+   filtered view.  The wrapper's contract now covers both structures and the
+   ledger's `InvalidArgument` causes.
+3. **A docstring named a premise that does not exist**:
+   `recordSyscallRefusal_preserves_auditObservationalEquivalence` described
+   an `hSameRefusal` hypothesis, but the theorem needs none — the seam
+   constructs the record from the theorem's own shared arguments and from
+   nothing in the state, so "both sides record the same row" holds by
+   construction (`recordSyscallRefusal_ledger_congr`).  The docstring now
+   says that, and says why the declassification's congruence *does* need
+   its `hSameEvent` (its event reads the state's epoch and trail length).
 
 ## v0.33.50 — PR #870 round 7: the audit trail's singleton discipline — occupancy registered as CC-8, mutation serialized by `stateLevelLock`
 
