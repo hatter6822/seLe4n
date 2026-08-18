@@ -1490,6 +1490,18 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @extractAuditAuthority
 #check @extractAuditAuthority_eq_ok_iff
 #check @extractAuditAuthority_rejects_non_audit_capability
+-- PR #870 round 5: target-first for the audit pair — the checked dispatch
+-- routes them through the resolve-only lookup, so no rights verdict front-runs
+-- the target check and the refusal class depends on the target first.
+#check @syscallResolveCap
+#check @syscallResolveCap_implies_capability_at_slot
+#check @syscallResolveCap_of_lookup
+#check @syscallInvokeResolved
+#check @syscallChecksTargetFirst
+#check @syscallChecksTargetFirst_iff
+#check @dispatchWithCapChecked_audit_insufficient_right_denied
+#check @dispatchSyscallChecked_audit_target_first
+#check @dispatchSyscallChecked_audit_right_checked_second
 #check @Capability.auditTrailRead
 #check @Capability.auditTrailManage
 #check @Capability.auditTrailRead_cannot_drain

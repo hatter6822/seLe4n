@@ -254,6 +254,26 @@ structure SyscallGate where
   requiredRight : AccessRight
   deriving Repr, DecidableEq
 
+/-- WS-SM SM9.A.9 (PR #870 round 5): **capability resolution without the
+rights gate** — steps 1–2 of the syscall capability-checking sequence.
+
+Extracted from `syscallLookupCap` so an arm can validate the capability's
+*target* before its rights.  The full lookup answers a missing right with
+`.illegalAuthority` before any arm runs, which made the audit syscalls'
+documented contract — target first, right second — false for a capability
+wrong on both axes: the caller learned `.illegalAuthority` where the contract
+promises `.invalidCapability` for every non-audit target.  `syscallLookupCap`
+is now *defined as* this resolution followed by the rights gate, so the two
+share one resolution and cannot drift.  Read-only, like the full lookup. -/
+def syscallResolveCap (gate : SyscallGate) : Kernel Capability :=
+  fun st =>
+    match resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st with
+    | .error e => .error e
+    | .ok ref =>
+      match SystemState.lookupSlotCap st ref with
+      | none => .error .invalidCapability
+      | some cap => .ok (cap, st)
+
 /-- WS-H15c/A-42: Resolve and validate a capability from a syscall gate.
 
 Performs the full seL4 syscall capability-checking sequence:
@@ -262,24 +282,36 @@ Performs the full seL4 syscall capability-checking sequence:
 3. Verifies the capability grants the required access right.
 
 Returns the resolved capability if all checks pass; an error otherwise.
-The state is unchanged (capability lookup is read-only). -/
+The state is unchanged (capability lookup is read-only).  Since PR #870
+round 5 the resolution half is the shared `syscallResolveCap`; the syscalls
+that check the target first (`syscallChecksTargetFirst`) take that half alone
+and own both authority checks in their arms. -/
 def syscallLookupCap (gate : SyscallGate) : Kernel Capability :=
   fun st =>
-    match resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st with
+    match syscallResolveCap gate st with
     | .error e => .error e
-    | .ok ref =>
-      match SystemState.lookupSlotCap st ref with
-      | none => .error .invalidCapability
-      | some cap =>
-        if cap.hasRight gate.requiredRight
-        then .ok (cap, st)
-        else .error .illegalAuthority
+    | .ok (cap, st') =>
+      if cap.hasRight gate.requiredRight
+      then .ok (cap, st')
+      else .error .illegalAuthority
 
 /-- WS-H15c/A-42: Gated operation combinator. Resolves and validates a
 capability, then invokes the operation with the resolved capability. -/
 def syscallInvoke (gate : SyscallGate) (op : Capability → Kernel α) : Kernel α :=
   fun st =>
     match syscallLookupCap gate st with
+    | .error e => .error e
+    | .ok (cap, st') => op cap st'
+
+/-- PR #870 round 5: gated operation combinator over the **resolve-only**
+lookup — for arms that own *both* authority checks themselves, target first.
+The audit arms are the consumers: their authority is a dedicated `CapTarget`,
+so the informative refusal for a wrong-kind capability is `.invalidCapability`
+regardless of what rights it happens to carry, and only an arm that sees the
+capability before any rights verdict can promise that. -/
+def syscallInvokeResolved (gate : SyscallGate) (op : Capability → Kernel α) : Kernel α :=
+  fun st =>
+    match syscallResolveCap gate st with
     | .error e => .error e
     | .ok (cap, st') => op cap st'
 
@@ -324,8 +356,13 @@ executable page in a different address space; the fix there was
 `vspaceCapAuthorizesAsid`, and the fix here is the same shape and cheaper,
 because the trail is a singleton with no operand to bind against.
 
-Written in the shape `extractReplyId` already uses, so the audit arms gate the
-way the reply arms do: the target is checked first, the right second. -/
+Written in the shape `extractReplyId` already uses.  Unlike the reply arms —
+whose full lookup answers a missing right before `extractReplyId` runs — the
+audit arms really are target-first on the composed path: since PR #870
+round 5 the checked dispatch routes them through the resolve-only lookup
+(`syscallChecksTargetFirst` → `syscallInvokeResolved`), so the target is
+checked first and the right second, with
+`dispatchSyscallChecked_audit_target_first` the composed witness. -/
 def extractAuditAuthority (cap : Capability) : Except KernelError Unit :=
   match cap.target with
   | .auditTrail => .ok ()
@@ -597,6 +634,41 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
 /-- WS-H15c/A-42: If `syscallLookupCap` succeeds, the caller's CSpace root
 contains a valid capability at the specified address with the required right,
 and the state is unchanged (lookup is read-only). -/
+theorem syscallResolveCap_implies_capability_at_slot
+    (gate : SyscallGate) (st : SystemState) (cap : Capability) (st' : SystemState)
+    (hOk : syscallResolveCap gate st = .ok (cap, st')) :
+    ∃ ref, resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref ∧
+           SystemState.lookupSlotCap st ref = some cap ∧
+           st' = st := by
+  unfold syscallResolveCap at hOk
+  split at hOk
+  · simp at hOk
+  next ref hResolve =>
+    split at hOk
+    · simp at hOk
+    next cap' hLookup =>
+      simp at hOk
+      obtain ⟨hCap, hSt⟩ := hOk
+      exact ⟨ref, hResolve, by rw [hCap.symm]; exact hLookup, hSt.symm⟩
+
+/-- PR #870 round 5: a full-lookup success is a resolve success — the rights
+gate only filters, never resolves.  What lets `syscallResolveCap`-based
+hypotheses cover the classic lookup branch too. -/
+theorem syscallResolveCap_of_lookup
+    (gate : SyscallGate) (st : SystemState) (cap : Capability) (st' : SystemState)
+    (hOk : syscallLookupCap gate st = .ok (cap, st')) :
+    syscallResolveCap gate st = .ok (cap, st') := by
+  unfold syscallLookupCap at hOk
+  split at hOk
+  · simp at hOk
+  next cap' st'' hRes =>
+    split at hOk
+    · simp at hOk
+      obtain ⟨hCap, hSt⟩ := hOk
+      rw [← hCap, ← hSt]
+      exact hRes
+    · simp at hOk
+
 theorem syscallLookupCap_implies_capability_held
     (gate : SyscallGate) (st : SystemState) (cap : Capability) (st' : SystemState)
     (hOk : syscallLookupCap gate st = .ok (cap, st')) :
@@ -604,19 +676,16 @@ theorem syscallLookupCap_implies_capability_held
            SystemState.lookupSlotCap st ref = some cap ∧
            cap.hasRight gate.requiredRight = true ∧
            st' = st := by
-  unfold syscallLookupCap at hOk
-  split at hOk
-  · simp at hOk
-  next ref hResolve =>
-    split at hOk
-    · simp at hOk
-    next cap' hLookup =>
-      split at hOk
-      · next hRight =>
-        simp at hOk
-        obtain ⟨hCap, hSt⟩ := hOk
-        exact ⟨ref, hResolve, by rw [hCap.symm]; exact hLookup, by rw [hCap.symm]; exact hRight, hSt.symm⟩
-      · simp at hOk
+  have hRes := syscallResolveCap_of_lookup gate st cap st' hOk
+  obtain ⟨ref, hResolve, hLookup, hSt⟩ :=
+    syscallResolveCap_implies_capability_at_slot gate st cap st' hRes
+  refine ⟨ref, hResolve, hLookup, ?_, hSt⟩
+  by_cases hR : cap.hasRight gate.requiredRight
+  · exact hR
+  · exfalso
+    unfold syscallLookupCap at hOk
+    rw [hRes] at hOk
+    simp [hR] at hOk
 
 /-- WS-H15c/A-42: If `syscallInvoke` succeeds, the caller held the required
 capability. -/
@@ -747,6 +816,60 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- PR #822 Phase H: deriving a reply cap from the object cap to a Reply requires
   -- grant authority on that object cap (consistent with the cspaceMint/Copy/Move family).
   | .mintReplyCap          => .grant
+
+/-- PR #870 round 5: **which syscalls validate the capability's target before
+its rights.**
+
+Exactly the audit pair.  Their authority is a dedicated `CapTarget`
+(`extractAuditAuthority`), so the informative refusal for a wrong-kind
+capability is `.invalidCapability` regardless of what rights it happens to
+carry — and the only way to promise that is to route them through the
+resolve-only lookup (`syscallInvokeResolved`) and let the arm check target
+first, right second.  Every other syscall keeps the classic order: the full
+lookup's rights gate, then whatever operand binding its arm performs.
+
+No wildcard, matching `syscallRequiredRight`: a new syscall is a missing case
+at elaboration and must state its choice. -/
+def syscallChecksTargetFirst : SyscallId → Bool
+  | .send            => false
+  | .receive         => false
+  | .call            => false
+  | .reply           => false
+  | .cspaceMint      => false
+  | .cspaceCopy      => false
+  | .cspaceMove      => false
+  | .cspaceDelete    => false
+  | .lifecycleRetype => false
+  | .vspaceMap       => false
+  | .vspaceUnmap     => false
+  | .vspaceUnifyInstruction => false
+  | .declassify         => false
+  | .auditRead          => true
+  | .auditDrain         => true
+  | .serviceRegister    => false
+  | .serviceRevoke      => false
+  | .serviceQuery       => false
+  | .notificationSignal => false
+  | .notificationWait   => false
+  | .replyRecv          => false
+  | .schedContextConfigure => false
+  | .schedContextBind      => false
+  | .schedContextUnbind    => false
+  | .tcbSuspend            => false
+  | .tcbResume             => false
+  | .tcbSetPriority        => false
+  | .tcbSetMCPriority      => false
+  | .tcbSetIPCBuffer       => false
+  | .tcbSetAffinity        => false
+  | .tcbBindNotification   => false
+  | .tcbUnbindNotification => false
+  | .mintReplyCap          => false
+
+/-- PR #870 round 5: the classifier's semantics, pinned — target-first is
+exactly the audit pair. -/
+theorem syscallChecksTargetFirst_iff (id : SyscallId) :
+    syscallChecksTargetFirst id = true ↔ id = .auditRead ∨ id = .auditDrain := by
+  cases id <;> simp [syscallChecksTargetFirst]
 
 /-- M-D01: Resolve extra capability addresses from the sender's CSpace
 into actual capabilities for IPC message transfer.
@@ -2208,10 +2331,14 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
   -- WS-SM SM9.A.10: **the live audit read.**
   --
   -- The authority is `extractAuditAuthority` — the capability must *target* the
-  -- audit trail — checked before anything else, because `syscallLookupCap` has
-  -- already checked only the `.read` right and a right-only gate is reachable by
-  -- any thread holding any readable capability (the v0.32.97 confused-deputy
-  -- class).  The right is the second gate, not the only one.
+  -- audit trail — checked before anything else, and since PR #870 round 5 that
+  -- is true of the whole path, not just this arm: the checked dispatch routes
+  -- the audit ids through the resolve-only lookup (`syscallChecksTargetFirst`
+  -- → `syscallInvokeResolved`), so no rights verdict front-runs the target
+  -- check and a wrong-kind capability is `.invalidCapability` whatever rights
+  -- it carries (the v0.32.97 confused-deputy class is the reason the target
+  -- gate exists at all).  The right is the second gate, checked HERE rather
+  -- than in the lookup.
   --
   -- The reader's clearance is not an operand: `auditReadFromCore` reads it off
   -- the subject the executing core is running.  A caller that could name its own
@@ -2227,6 +2354,7 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       match extractAuditAuthority cap with
       | .error e => .error e
       | .ok () =>
+        if cap.hasRight gate.requiredRight then
           match decodeAuditReadArgs decoded with
           | .error e => .error e
           | .ok args =>
@@ -2250,16 +2378,18 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
                   | .ok (w, st') =>
                       .ok ((), Architecture.writeReturnFrameToTcb st' tid
                         (Architecture.returnFrameOfWord w.toUInt64))
+        else .error .illegalAuthority
   -- WS-SM SM9.A.10: **the live audit drain**, which is what makes the
   -- fail-closed 256-entry capacity bound survivable rather than a feature that
   -- disables itself.
   --
   -- Same first gate (`extractAuditAuthority`), a stronger second one: the
-  -- `.write` right, so a monitoring deployment can mint a read-only audit
-  -- capability that provably cannot drain.  The third gate is inside the
-  -- transition — the configured `auditMonitorClearance` — and it is *not*
-  -- computed from the trail's current rows, because a rows-derived dominance
-  -- predicate goes vacuously true on a trail drained to empty.
+  -- `.write` right — checked here in the arm since PR #870 round 5, after the
+  -- target — so a monitoring deployment can mint a read-only audit capability
+  -- that provably cannot drain.  The third gate is inside the transition — the
+  -- configured `auditMonitorClearance` — and it is *not* computed from the
+  -- trail's current rows, because a rows-derived dominance predicate goes
+  -- vacuously true on a trail drained to empty.
   --
   -- Returns the new visible length, staged into the caller's return register.
   | .auditDrain =>
@@ -2267,6 +2397,7 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       match extractAuditAuthority cap with
       | .error e => .error e
       | .ok () =>
+        if cap.hasRight gate.requiredRight then
           match decodeAuditDrainArgs decoded with
           | .error e => .error e
           | .ok args =>
@@ -2282,6 +2413,7 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
               | .ok (n, st') =>
                   .ok ((), Architecture.writeReturnFrameToTcb st' tid
                     (Architecture.returnFrameOfWord n.toUInt64))
+        else .error .illegalAuthority
   -- AE1-A/AE1-B/AE1-C: All remaining capability-only arms (tcbSetPriority,
   -- tcbSetMCPriority, tcbSetIPCBuffer, cspaceDelete, lifecycleRetype, vspaceMap,
   -- vspaceUnmap, serviceRevoke, serviceQuery, schedContextConfigure,
@@ -2306,7 +2438,16 @@ def dispatchSyscallChecked (ctx : LabelingContext)
           capDepth     := rootCn.depth
           requiredRight := syscallRequiredRight decoded.syscallId
         }
-        (syscallInvoke gate (dispatchWithCapChecked ctx decoded tid gate)) st
+        -- PR #870 round 5: the target-first syscalls (the audit pair) take the
+        -- resolve-only lookup, so their arms see the capability BEFORE any
+        -- rights verdict and can honour the documented order — target first
+        -- (`.invalidCapability` for every non-audit target, whatever its
+        -- rights), right second.  Everything else keeps the classic
+        -- rights-gated lookup.
+        (if syscallChecksTargetFirst decoded.syscallId then
+           syscallInvokeResolved gate (dispatchWithCapChecked ctx decoded tid gate)
+         else
+           syscallInvoke gate (dispatchWithCapChecked ctx decoded tid gate)) st
       | some _ => .error .invalidCapability
       | none   => .error .objectNotFound
     | some _ => .error .illegalState
@@ -3379,6 +3520,7 @@ theorem dispatchArm_auditRead_matches_returnShape
     (st st' : SystemState) (w : Nat) (tcb : TCB)
     (hSyscall : decoded.syscallId = .auditRead)
     (hTarget : cap.target = .auditTrail)
+    (hRight : cap.hasRight gate.requiredRight = true)
     (hArgs : Architecture.SyscallArgDecode.decodeAuditReadArgs decoded = .ok args)
     (hOp : decodeAuditReadOp args.opcode args.index args.chunk = some op)
     (hRead : auditReadFromCore (liftLegacyContext ctx) (validatedAuditMonitorClearance ctx)
@@ -3394,7 +3536,7 @@ theorem dispatchArm_auditRead_matches_returnShape
     ?_, ?_⟩
   · unfold dispatchWithCapChecked dispatchCapabilityOnly
     rw [hSyscall]
-    simp only [extractAuditAuthority, hTarget, hArgs, hOp, hRead]
+    simp only [extractAuditAuthority, hTarget, hRight, hArgs, hOp, hRead, if_true]
   · exact Architecture.readReturnFrame_writeReturnFrame st' tid _ tcb hTcb hObjInv
 
 /-- RA.B.8 / WS-SM SM9.A.10, `.auditDrain` (`.word`): the arm stages the **new
@@ -3407,6 +3549,7 @@ theorem dispatchArm_auditDrain_matches_returnShape
     (st st' : SystemState) (n : Nat) (tcb : TCB)
     (hSyscall : decoded.syscallId = .auditDrain)
     (hTarget : cap.target = .auditTrail)
+    (hRight : cap.hasRight gate.requiredRight = true)
     (hArgs : Architecture.SyscallArgDecode.decodeAuditDrainArgs decoded = .ok args)
     (hDrain : auditDrainVisiblePrefix (liftLegacyContext ctx)
       (validatedAuditMonitorClearance ctx)
@@ -3422,7 +3565,7 @@ theorem dispatchArm_auditDrain_matches_returnShape
     ?_, ?_⟩
   · unfold dispatchWithCapChecked dispatchCapabilityOnly
     rw [hSyscall]
-    simp only [extractAuditAuthority, hTarget, hArgs, hDrain]
+    simp only [extractAuditAuthority, hTarget, hRight, hArgs, hDrain, if_true]
   · exact Architecture.readReturnFrame_writeReturnFrame st' tid _ tcb hTcb hObjInv
 
 /-- RA.B.8, `.receive` (`.message`): the arm's non-blocking consume stages
@@ -3928,30 +4071,44 @@ theorem dispatchSyscallChecked_preserves_projection
     (st st' : SystemState)
     (_hTidHigh : threadObservable ctx observer tid = false)
     (hInnerProj : ∀ (gate : SyscallGate) (cap : Capability),
-        syscallLookupCap gate st = .ok (cap, st) →
+        syscallResolveCap gate st = .ok (cap, st) →
         ∀ stOut, dispatchWithCapChecked ctx decoded tid gate cap st = .ok ((), stOut) →
         projectState ctx observer stOut = projectState ctx observer st)
     (hStep : dispatchSyscallChecked ctx decoded tid st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  simp only [dispatchSyscallChecked, syscallInvoke] at hStep
+  simp only [dispatchSyscallChecked] at hStep
   -- Layer 1: TCB lookup (read-only)
   split at hStep
   · -- some (.tcb tcb)
     -- Layer 1b: CNode lookup (read-only)
     split at hStep
     · -- some (.cnode rootCn)
-      -- Layer 2: Capability resolution (read-only)
+      -- PR #870 round 5: the target-first syscalls take the resolve-only
+      -- lookup, everything else the classic rights-gated one.  The inner-NI
+      -- hypothesis is stated over the resolve (the weaker premise, so the
+      -- stronger hypothesis) and covers both branches — a full-lookup success
+      -- is a resolve success (`syscallResolveCap_of_lookup`).
       split at hStep
-      · -- syscallLookupCap returned error
-        simp at hStep
-      · -- syscallLookupCap returned .ok (cap, stCap)
-        rename_i cap stCap hCap
-        -- By syscallLookupCap_implies_capability_held, the state is unchanged
-        have ⟨_, _, _, _, hStEq⟩ :=
-          syscallLookupCap_implies_capability_held _ st cap stCap hCap
-        -- Layer 3: Inner dispatch on original state (since stCap = st)
-        rw [hStEq] at hStep hCap
-        exact hInnerProj _ cap hCap st' hStep
+      · -- target-first branch: resolve-only lookup
+        unfold syscallInvokeResolved at hStep
+        split at hStep
+        · -- syscallResolveCap returned error
+          simp at hStep
+        · rename_i cap stCap hCap
+          have ⟨_, _, _, hStEq⟩ :=
+            syscallResolveCap_implies_capability_at_slot _ st cap stCap hCap
+          rw [hStEq] at hStep hCap
+          exact hInnerProj _ cap hCap st' hStep
+      · -- classic branch: full lookup
+        unfold syscallInvoke at hStep
+        split at hStep
+        · -- syscallLookupCap returned error
+          simp at hStep
+        · rename_i cap stCap hCap
+          have ⟨_, _, _, _, hStEq⟩ :=
+            syscallLookupCap_implies_capability_held _ st cap stCap hCap
+          rw [hStEq] at hStep hCap
+          exact hInnerProj _ cap (syscallResolveCap_of_lookup _ st cap st hCap) st' hStep
     · -- some (not .cnode): error
       simp at hStep
     · -- none: error
@@ -4070,6 +4227,7 @@ theorem dispatchWithCapChecked_auditRead_delegates
     (st : SystemState)
     (hSyscall : decoded.syscallId = .auditRead)
     (hTarget : cap.target = .auditTrail)
+    (hRight : cap.hasRight gate.requiredRight = true)
     (hArgs : Architecture.SyscallArgDecode.decodeAuditReadArgs decoded = .ok args)
     (hOp : decodeAuditReadOp args.opcode args.index args.chunk = some op) :
     dispatchWithCapChecked ctx decoded tid gate cap st =
@@ -4081,7 +4239,7 @@ theorem dispatchWithCapChecked_auditRead_delegates
              (Architecture.returnFrameOfWord w.toUInt64))) := by
   unfold dispatchWithCapChecked dispatchCapabilityOnly
   rw [hSyscall]
-  simp only [extractAuditAuthority, hTarget, hArgs, hOp]
+  simp only [extractAuditAuthority, hTarget, hRight, hArgs, hOp, if_true]
 
 /-- **WS-SM SM9.A.10: the live `.auditDrain` arm routes to
 `auditDrainVisiblePrefix`, and writes the new visible length back.** -/
@@ -4091,6 +4249,7 @@ theorem dispatchWithCapChecked_auditDrain_delegates
     (args : Architecture.SyscallArgDecode.AuditDrainArgs) (st : SystemState)
     (hSyscall : decoded.syscallId = .auditDrain)
     (hTarget : cap.target = .auditTrail)
+    (hRight : cap.hasRight gate.requiredRight = true)
     (hArgs : Architecture.SyscallArgDecode.decodeAuditDrainArgs decoded = .ok args) :
     dispatchWithCapChecked ctx decoded tid gate cap st =
       (match auditDrainVisiblePrefix (liftLegacyContext ctx)
@@ -4102,7 +4261,7 @@ theorem dispatchWithCapChecked_auditDrain_delegates
              (Architecture.returnFrameOfWord n.toUInt64))) := by
   unfold dispatchWithCapChecked dispatchCapabilityOnly
   rw [hSyscall]
-  simp only [extractAuditAuthority, hTarget, hArgs]
+  simp only [extractAuditAuthority, hTarget, hRight, hArgs, if_true]
 
 /-- **WS-SM SM9.A.9 (the confused-deputy gate, at the arm)**: a capability that
 carries the required right but does **not** target the audit trail is rejected,
@@ -4120,6 +4279,83 @@ theorem dispatchWithCapChecked_audit_rejects_non_audit_capability
     dispatchWithCapChecked ctx decoded tid gate cap st = .error .invalidCapability := by
   unfold dispatchWithCapChecked dispatchCapabilityOnly
   rcases hSyscall with h | h <;> rw [h] <;> simp only [extractAuditAuthority, hTarget]
+
+/-- **WS-SM SM9.A.9 (PR #870 round 5, the second gate at the arm)**: an audit
+capability that lacks the required right is refused `.illegalAuthority` — by
+the ARM, after the target check, which is what "target first, right second"
+means now that the checked dispatch routes the audit ids through the
+resolve-only lookup. -/
+theorem dispatchWithCapChecked_audit_insufficient_right_denied
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability) (st : SystemState)
+    (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
+    (hTarget : cap.target = .auditTrail)
+    (hRight : cap.hasRight gate.requiredRight = false) :
+    dispatchWithCapChecked ctx decoded tid gate cap st = .error .illegalAuthority := by
+  unfold dispatchWithCapChecked dispatchCapabilityOnly
+  rcases hSyscall with h | h <;> rw [h] <;>
+    simp only [extractAuditAuthority, hTarget, hRight, if_false, Bool.false_eq_true]
+
+/-- **WS-SM SM9.A.9 (PR #870 round 5, THE ordering contract, at the dispatch
+the syscall actually takes)**: a resolvable capability that does not target
+the audit trail is refused `.invalidCapability` on the audit syscalls
+**whatever rights it carries** — there is no `hasRight` hypothesis, which is
+the theorem's point.
+
+Before this round the full lookup's rights gate front-ran the arm, so a
+capability wrong on *both* axes was answered `.illegalAuthority` — the
+documented target-first order held only for rights-bearing capabilities.  The
+checked dispatch now routes the audit ids through the resolve-only lookup
+(`syscallChecksTargetFirst` → `syscallInvokeResolved`), and this theorem is
+the composed path's witness. -/
+theorem dispatchSyscallChecked_audit_target_first
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (rootCn : CNode) (ref : SlotRef) (cap : Capability)
+    (oid : SeLe4n.ObjId) (st : SystemState)
+    (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hRoot : st.objects[tcb.cspaceRoot]? = some (.cnode rootCn))
+    (hResolve : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref)
+    (hLookup : SystemState.lookupSlotCap st ref = some cap)
+    (hTarget : cap.target = .object oid) :
+    dispatchSyscallChecked ctx decoded tid st = .error .invalidCapability := by
+  rcases hSyscall with h | h
+  · simp only [dispatchSyscallChecked, hTcb, hRoot, h, syscallChecksTargetFirst, if_true,
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
+    exact dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid _ cap oid st
+      (Or.inl h) hTarget
+  · simp only [dispatchSyscallChecked, hTcb, hRoot, h, syscallChecksTargetFirst, if_true,
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
+    exact dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid _ cap oid st
+      (Or.inr h) hTarget
+
+/-- **WS-SM SM9.A.9 (PR #870 round 5, the order's other half)**: an audit-target
+capability lacking the required right is refused `.illegalAuthority` — after
+the target check, from the arm.  Together with
+`dispatchSyscallChecked_audit_target_first` this pins the composed order: the
+refusal class depends on the *target* first, and on the rights only once the
+target is the audit trail. -/
+theorem dispatchSyscallChecked_audit_right_checked_second
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (rootCn : CNode) (ref : SlotRef) (cap : Capability)
+    (st : SystemState)
+    (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hRoot : st.objects[tcb.cspaceRoot]? = some (.cnode rootCn))
+    (hResolve : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref)
+    (hLookup : SystemState.lookupSlotCap st ref = some cap)
+    (hTarget : cap.target = .auditTrail)
+    (hRight : cap.hasRight (syscallRequiredRight decoded.syscallId) = false) :
+    dispatchSyscallChecked ctx decoded tid st = .error .illegalAuthority := by
+  rcases hSyscall with h | h
+  · simp only [dispatchSyscallChecked, hTcb, hRoot, h, syscallChecksTargetFirst, if_true,
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
+    exact dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid _ cap st
+      (Or.inl h) hTarget (by simpa [h] using hRight)
+  · simp only [dispatchSyscallChecked, hTcb, hRoot, h, syscallChecksTargetFirst, if_true,
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
+    exact dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid _ cap st
+      (Or.inr h) hTarget (by simpa [h] using hRight)
 
 /-- **WS-SM SM9.A.10: there is no unchecked audit read.**
 
@@ -4148,11 +4384,12 @@ theorem dispatchWithCapChecked_auditDrain_default_denied
     (args : Architecture.SyscallArgDecode.AuditDrainArgs) (st : SystemState)
     (hSyscall : decoded.syscallId = .auditDrain)
     (hTarget : cap.target = .auditTrail)
+    (hRight : cap.hasRight gate.requiredRight = true)
     (hArgs : Architecture.SyscallArgDecode.decodeAuditDrainArgs decoded = .ok args)
     (hDefault : ctx.auditMonitorClearance = none) :
     dispatchWithCapChecked ctx decoded tid gate cap st = .error .illegalAuthority := by
   rw [dispatchWithCapChecked_auditDrain_delegates ctx decoded tid gate cap args st
-    hSyscall hTarget hArgs,
+    hSyscall hTarget hRight hArgs,
     validatedAuditMonitorClearance_none ctx hDefault,
     auditDrain_unconfigured_denied (liftLegacyContext ctx) (determineExecutingCore st tid)
       args.count st]
@@ -4171,12 +4408,13 @@ theorem dispatchWithCapChecked_auditRead_default_denied
     (st : SystemState)
     (hSyscall : decoded.syscallId = .auditRead)
     (hTarget : cap.target = .auditTrail)
+    (hRight : cap.hasRight gate.requiredRight = true)
     (hArgs : Architecture.SyscallArgDecode.decodeAuditReadArgs decoded = .ok args)
     (hOp : decodeAuditReadOp args.opcode args.index args.chunk = some op)
     (hDefault : ctx.auditMonitorClearance = none) :
     dispatchWithCapChecked ctx decoded tid gate cap st = .error .illegalAuthority := by
   rw [dispatchWithCapChecked_auditRead_delegates ctx decoded tid gate cap args op st
-    hSyscall hTarget hArgs hOp,
+    hSyscall hTarget hRight hArgs hOp,
     validatedAuditMonitorClearance_none ctx hDefault,
     auditRead_unconfigured_denied (liftLegacyContext ctx) (determineExecutingCore st tid)
       op st]
@@ -4203,15 +4441,19 @@ theorem unconfiguredDeployment_audit_never_succeeds
     split at hOk
     · exact absurd hOk (by simp)
     · split at hOk
-      · exact absurd hOk (by simp)
       · split at hOk
         · exact absurd hOk (by simp)
-        · exact absurd hOk (by simp)
+        · split at hOk
+          · exact absurd hOk (by simp)
+          · exact absurd hOk (by simp)
+      · exact absurd hOk (by simp)
   · simp only [auditDrain_unconfigured_denied] at hOk
     split at hOk
     · exact absurd hOk (by simp)
     · split at hOk
-      · exact absurd hOk (by simp)
+      · split at hOk
+        · exact absurd hOk (by simp)
+        · exact absurd hOk (by simp)
       · exact absurd hOk (by simp)
 
 /-- **WS-SM SM9.A.9 (the acceptance witness): an unconfigured deployment has no
@@ -4660,6 +4902,7 @@ def syscallDelegates : SyscallId → Prop
         (st : SystemState),
         decoded.syscallId = .auditRead →
         cap.target = .auditTrail →
+        cap.hasRight gate.requiredRight = true →
         Architecture.SyscallArgDecode.decodeAuditReadArgs decoded = .ok args →
         decodeAuditReadOp args.opcode args.index args.chunk = some op →
         dispatchWithCapChecked ctx decoded tid gate cap st =
@@ -4675,6 +4918,7 @@ def syscallDelegates : SyscallId → Prop
         (args : Architecture.SyscallArgDecode.AuditDrainArgs) (st : SystemState),
         decoded.syscallId = .auditDrain →
         cap.target = .auditTrail →
+        cap.hasRight gate.requiredRight = true →
         Architecture.SyscallArgDecode.decodeAuditDrainArgs decoded = .ok args →
         dispatchWithCapChecked ctx decoded tid gate cap st =
           (match auditDrainVisiblePrefix (liftLegacyContext ctx)
@@ -4729,15 +4973,15 @@ theorem syscallDelegates_declassify : syscallDelegates .declassify := by
 
 /-- WS-SM SM9.A.10: the `.auditRead` obligation, discharged. -/
 theorem syscallDelegates_auditRead : syscallDelegates .auditRead := by
-  intro ctx decoded tid gate cap args op st hSyscall hTarget hArgs hOp
+  intro ctx decoded tid gate cap args op st hSyscall hTarget hRight hArgs hOp
   exact dispatchWithCapChecked_auditRead_delegates ctx decoded tid gate cap args op st
-    hSyscall hTarget hArgs hOp
+    hSyscall hTarget hRight hArgs hOp
 
 /-- WS-SM SM9.A.10: the `.auditDrain` obligation, discharged. -/
 theorem syscallDelegates_auditDrain : syscallDelegates .auditDrain := by
-  intro ctx decoded tid gate cap args st hSyscall hTarget hArgs
+  intro ctx decoded tid gate cap args st hSyscall hTarget hRight hArgs
   exact dispatchWithCapChecked_auditDrain_delegates ctx decoded tid gate cap args st
-    hSyscall hTarget hArgs
+    hSyscall hTarget hRight hArgs
 
 /-- WS-SM SM8.B: the `.vspaceUnmap` obligation, discharged. -/
 theorem syscallDelegates_vspaceUnmap : syscallDelegates .vspaceUnmap := by

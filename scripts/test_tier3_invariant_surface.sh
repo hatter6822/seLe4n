@@ -3008,6 +3008,18 @@ run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_has_no_audit_reader
 # in an unconfigured deployment.
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_auditRead_default_denied' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_audit_never_succeeds' SeLe4n/Kernel/API.lean
+# PR #870 round 5: the audit pair validates the capability's TARGET before its
+# rights — the checked dispatch routes them through the resolve-only lookup
+# (one shared resolution, so lookup and resolve cannot drift), and the arms
+# own both gates in the documented order.  The composed-path witnesses are the
+# two dispatchSyscallChecked-level theorems.
+run_check "INVARIANT" rg -n '^def syscallResolveCap' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallChecksTargetFirst' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'syscallChecksTargetFirst decoded.syscallId' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallResolveCap_of_lookup' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_audit_insufficient_right_denied' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_audit_target_first' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_audit_right_checked_second' SeLe4n/Kernel/API.lean
 # PR #870 round 4: the cross-core inventory's audit entries map to the
 # DISPATCH-level composition — transition plus WS-RA return-frame staging,
 # the state the checked dispatch actually commits.  The transition-only

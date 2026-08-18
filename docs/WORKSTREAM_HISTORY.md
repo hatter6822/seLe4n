@@ -230,6 +230,22 @@ frames), stated over exactly the post-state the delegates equations exhibit;
 the `niName!` mappings are re-pointed and Tier-3 forbids the transition-only
 mappings' return.
 
+**The PR #870 round-5 cut (v0.33.47).**  One further P2 finding, valid: the
+documented target-first order held only inside the arm — `syscallLookupCap`'s
+rights gate ran first, so a capability wrong on both axes was answered
+`.illegalAuthority` where the contract promises `.invalidCapability` for
+every non-audit target.  Closed by making the order real: resolution split
+from the rights gate (`syscallResolveCap`; the full lookup is DEFINED as
+resolve-then-rights so the two cannot drift), the audit ids routed through
+the resolve-only combinator via the total no-wildcard classifier
+`syscallChecksTargetFirst`, and the arms owning both gates in the documented
+order.  `dispatchSyscallChecked_audit_target_first` (no `hasRight`
+hypothesis — the point) and `dispatchSyscallChecked_audit_right_checked_second`
+are the composed-path witnesses; the delegates/default-denied/return-shape
+families gain the `hRight` premise; `SyscallReturnAbiSuite` §10g/§10h pin the
+exact error frames at the ABI seam, with the pre-round `.illegalAuthority`
+answer as the load-bearing negative.
+
 **What SM9.A does not do** (SM9.B/SM9.C/SM9.D, per the plan): refused
 declassifications are still unrecorded, there is no data-carrying
 declassification on the notification path, and the laundering detector is still

@@ -985,6 +985,16 @@ only word-returning arms).  Closed by the dispatch-level composition
 delegates equations exhibit, `niName!` re-pointed, Tier-3 forbidding the
 transition-only mappings' return.
 
+**PR #870 round-5 cut (v0.33.47).**  One further P2 finding, valid: the
+target-first contract held only inside the arm (the full lookup's rights gate
+front-ran it).  Closed by splitting resolution from the rights gate
+(`syscallResolveCap`), routing the audit ids through the resolve-only
+combinator (`syscallChecksTargetFirst` → `syscallInvokeResolved`), and moving
+the rights check into the arms after the target check;
+`dispatchSyscallChecked_audit_target_first` /
+`dispatchSyscallChecked_audit_right_checked_second` are the composed-path
+witnesses and `SyscallReturnAbiSuite` §10g/§10h the exact-error ABI probes.
+
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM9.A.1 | `auditLogVisibleTo ctx L` + `_sublist` / `_reindexed` / `_length_le`; the no-gap-leak theorem (the visible view is a function of the reader's clearance alone) | new production leaf `InformationFlow/AuditRead.lean` | M |

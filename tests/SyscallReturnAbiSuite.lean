@@ -598,6 +598,18 @@ thread holds to its own TCB.  The confused-deputy negative: it must be rejected
 on the audit syscalls even though it carries `read` and `write`. -/
 private def ordinaryCapPtr : Nat := 8
 
+/-- PR #870 round 5: an ordinary-object capability with **no rights at all** —
+wrong on both axes.  The ordering witness: before round 5 the full lookup's
+rights gate answered this `.illegalAuthority` before the arm could inspect the
+target; the target-first contract answers `.invalidCapability`, whatever the
+rights. -/
+private def rightlessCapPtr : Nat := 9
+
+/-- PR #870 round 5: an audit-trail capability carrying only `.read` — right
+kind, insufficient right for a drain.  The second gate's witness: the target
+check passes, the ARM's rights check refuses `.illegalAuthority`. -/
+private def readOnlyAuditCapPtr : Nat := 10
+
 /-- The deployment that names an audit monitor.  `trustedLabeling` puts every
 subject at `kernelTrusted`, which embeds to domain 3, so the caller dominates the
 configured clearance and qualifies. -/
@@ -631,7 +643,13 @@ private def auditWitnessState : SystemState :=
                (SeLe4n.Slot.ofNat auditCapPtr, auditCap),
                (SeLe4n.Slot.ofNat ordinaryCapPtr,
                  { target := .object ntfnId,
-                   rights := AccessRightSet.ofList AccessRight.all })] })
+                   rights := AccessRightSet.ofList AccessRight.all }),
+               (SeLe4n.Slot.ofNat rightlessCapPtr,
+                 { target := .object ntfnId,
+                   rights := AccessRightSet.ofList [] }),
+               (SeLe4n.Slot.ofNat readOnlyAuditCapPtr,
+                 { target := .auditTrail,
+                   rights := AccessRightSet.ofList [.read] })] })
       |>.withObject ntfnId (.notification
           { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
             pendingBadge := none, boundTCB := none })
@@ -959,6 +977,29 @@ private def runAuditReadEndToEnd : IO Unit := do
      | .ok (.returns f, st) =>
          f.x1 != 0 && st.declassificationAuditLog.length == 2 &&
          st.declassificationAuditEpoch == 0
+     | _ => false)
+  -- 10g — PR #870 round 5: **the ordering contract at the full ABI seam.**  A
+  -- capability wrong on BOTH axes — ordinary target, no rights at all — is
+  -- refused for its TARGET (`.invalidCapability`), not for its rights.  Before
+  -- round 5 the full lookup's rights gate front-ran the arm and this exact
+  -- call answered `.illegalAuthority`; the load-bearing negative pins that
+  -- error out.
+  assertBool "10g: a both-axes-wrong capability is refused for its TARGET — invalidCapability, not illegalAuthority"
+    (match dispatchAudit auditLabeling SyscallId.auditRead.toNat rightlessCapPtr 3
+        (Kernel.encodeAuditReadOp .status).1 0 0 auditWitnessState with
+     | .ok (.returns f, _) =>
+         f.x1 == (Kernel.Architecture.errorFrame KernelError.invalidCapability).x1 &&
+         f.x1 != (Kernel.Architecture.errorFrame KernelError.illegalAuthority).x1
+     | _ => false)
+  -- 10h — the order's other half: an AUDIT capability carrying only `.read`
+  -- passes the target gate and is refused by the ARM's rights check on a
+  -- drain — `.illegalAuthority`, from the second gate, with the trail intact.
+  assertBool "10h: a read-only audit capability passes the target gate and fails the drain's rights gate"
+    (match dispatchAudit auditLabeling SyscallId.auditDrain.toNat readOnlyAuditCapPtr 1
+        1 0 0 auditWitnessState with
+     | .ok (.returns f, st) =>
+         f.x1 == (Kernel.Architecture.errorFrame KernelError.illegalAuthority).x1 &&
+         st.declassificationAuditLog.length == 2
      | _ => false)
 
 -- ============================================================================

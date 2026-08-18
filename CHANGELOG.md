@@ -1,3 +1,52 @@
+## v0.33.47 — PR #870 round 5: the audit target validated before its rights
+
+One further Codex finding, P2, valid.  The documented order for the audit
+syscalls — target first, right second — held only *inside* the arm:
+`syscallLookupCap`'s rights gate ran before the arm, so a capability wrong
+on **both** axes (ordinary target, missing right) was answered
+`.illegalAuthority` where the contract promises `.invalidCapability` for
+every non-audit target.  Closed by making the documented order the
+composed path's real order:
+
+- **Resolution split from the rights gate.**  `syscallResolveCap` is
+  steps 1–2 of the capability-checking sequence (resolution + slot
+  lookup, no rights), and `syscallLookupCap` is now *defined as*
+  resolve-then-rights — one shared resolution, so the two cannot drift;
+  `syscallResolveCap_of_lookup` bridges a full-lookup success back to a
+  resolve success.
+- **The audit ids take the resolve-only path.**  `syscallChecksTargetFirst`
+  is a total, no-wildcard classifier over `SyscallId` (exactly the audit
+  pair; `syscallChecksTargetFirst_iff` pins the semantics), and
+  `dispatchSyscallChecked` routes classified ids through
+  `syscallInvokeResolved`.  The arms own **both** gates in the documented
+  order: `extractAuditAuthority` (target), then
+  `cap.hasRight gate.requiredRight` (right).
+- **The composed-path witnesses.**
+  `dispatchSyscallChecked_audit_target_first`: a resolvable capability
+  that does not target the audit trail is `.invalidCapability` on the
+  audit syscalls with **no `hasRight` hypothesis** — which is the
+  theorem's point.  `dispatchSyscallChecked_audit_right_checked_second`:
+  an audit-target capability lacking the required right is
+  `.illegalAuthority`, from the arm.
+  `dispatchWithCapChecked_audit_insufficient_right_denied` is the arm
+  half; the delegates / default-denied / RA.B.8 return-shape /
+  `syscallDelegates` families gain the `hRight` premise, and
+  `dispatchSyscallChecked_preserves_projection`'s inner-NI hypothesis is
+  restated over the resolve — the weaker premise, hence the stronger
+  hypothesis, covering both lookup branches.
+- **ABI witnesses with exact error frames** (`SyscallReturnAbiSuite`
+  §10g/§10h): a both-axes-wrong capability answers
+  `errorFrame .invalidCapability`, with the pre-round
+  `.illegalAuthority` answer pinned out as the load-bearing negative;
+  a read-only audit capability passes the target gate and fails the
+  drain's rights gate with the trail intact.
+
+Semantics change only where the contract said it should: a capability
+failing both checks now reports the target failure.  Every capability
+that previously succeeded still succeeds; every one that failed still
+fails.  Golden traces byte-identical; Tier-3 pins the new symbols and
+the classifier's consumption at the dispatch seam.
+
 ## v0.33.46 — PR #870 round 4: the inventory's audit entries cover the committed state
 
 One further Codex finding, P2, valid.  The cross-core inventory mapped
