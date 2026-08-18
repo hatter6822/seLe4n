@@ -1,3 +1,22 @@
+## v0.33.48 — CI fix: the round-5 ordering theorems state their resolution through the typed accessors
+
+The v0.33.47 push failed the Tier-0 AK7 cascade monotonicity gate:
+`RAW_LOOKUP_TID` 1287 → 1289, the two new dispatch-level ordering
+theorems' `hTcb` / `hRoot` hypotheses spelling the raw
+`objects[tid.toObjId]?` lookups that `dispatchSyscallChecked` itself
+scrutinizes.  The gate offers restore-or-re-anchor and prefers restore —
+and restore is genuinely available here, so no re-anchor: the hypotheses
+are restated over the typed accessors (`st.getTcb? tid = some tcb`,
+`st.getCNode? tcb.cspaceRoot = some rootCn`) and the proofs bridge to
+the raw scrutinee through the existing characterisation lemmas
+(`SystemState.getTcb?_eq_some_iff` / `getCNode?_eq_some_iff`) *inside
+the proof term*, where no raw occurrence is spelled.  Strictly better on
+both axes: `RAW_LOOKUP_TID` back at 1287, `GETTCB_ADOPTION` /
+`GETCNODE_ADOPTION` each up one, and the theorems' statements are now in
+the accessor vocabulary the AL2-A/AN10-B discipline prescribes.
+Statement-strengthening only — no behaviour, no new theorem; Tier 0
+hygiene green end to end locally.
+
 ## v0.33.47 — PR #870 round 5: the audit target validated before its rights
 
 One further Codex finding, P2, valid.  The documented order for the audit

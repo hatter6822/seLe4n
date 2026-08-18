@@ -4313,18 +4313,24 @@ theorem dispatchSyscallChecked_audit_target_first
     (tcb : TCB) (rootCn : CNode) (ref : SlotRef) (cap : Capability)
     (oid : SeLe4n.ObjId) (st : SystemState)
     (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
-    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
-    (hRoot : st.objects[tcb.cspaceRoot]? = some (.cnode rootCn))
+    (hTcb : st.getTcb? tid = some tcb)
+    (hRoot : st.getCNode? tcb.cspaceRoot = some rootCn)
     (hResolve : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref)
     (hLookup : SystemState.lookupSlotCap st ref = some cap)
     (hTarget : cap.target = .object oid) :
     dispatchSyscallChecked ctx decoded tid st = .error .invalidCapability := by
   rcases hSyscall with h | h
-  · simp only [dispatchSyscallChecked, hTcb, hRoot, h, syscallChecksTargetFirst, if_true,
+  · simp only [dispatchSyscallChecked,
+      (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
+      (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
+      h, syscallChecksTargetFirst, if_true,
       syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
     exact dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid _ cap oid st
       (Or.inl h) hTarget
-  · simp only [dispatchSyscallChecked, hTcb, hRoot, h, syscallChecksTargetFirst, if_true,
+  · simp only [dispatchSyscallChecked,
+      (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
+      (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
+      h, syscallChecksTargetFirst, if_true,
       syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
     exact dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid _ cap oid st
       (Or.inr h) hTarget
@@ -4340,19 +4346,25 @@ theorem dispatchSyscallChecked_audit_right_checked_second
     (tcb : TCB) (rootCn : CNode) (ref : SlotRef) (cap : Capability)
     (st : SystemState)
     (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
-    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
-    (hRoot : st.objects[tcb.cspaceRoot]? = some (.cnode rootCn))
+    (hTcb : st.getTcb? tid = some tcb)
+    (hRoot : st.getCNode? tcb.cspaceRoot = some rootCn)
     (hResolve : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref)
     (hLookup : SystemState.lookupSlotCap st ref = some cap)
     (hTarget : cap.target = .auditTrail)
     (hRight : cap.hasRight (syscallRequiredRight decoded.syscallId) = false) :
     dispatchSyscallChecked ctx decoded tid st = .error .illegalAuthority := by
   rcases hSyscall with h | h
-  · simp only [dispatchSyscallChecked, hTcb, hRoot, h, syscallChecksTargetFirst, if_true,
+  · simp only [dispatchSyscallChecked,
+      (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
+      (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
+      h, syscallChecksTargetFirst, if_true,
       syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
     exact dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid _ cap st
       (Or.inl h) hTarget (by simpa [h] using hRight)
-  · simp only [dispatchSyscallChecked, hTcb, hRoot, h, syscallChecksTargetFirst, if_true,
+  · simp only [dispatchSyscallChecked,
+      (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
+      (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
+      h, syscallChecksTargetFirst, if_true,
       syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
     exact dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid _ cap st
       (Or.inr h) hTarget (by simpa [h] using hRight)

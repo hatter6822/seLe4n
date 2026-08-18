@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-trail-reader-or6aln",
-      "commit_sha": "93e28fcd053d05f2a0385f4220be503cd6769b0e",
-      "tree_sha": "f2c67de0d039e1975f4c36ea9dde645e2728ffc0",
-      "committed_at_utc": "2026-08-17T23:47:09+00:00"
+      "commit_sha": "7df4ca5b768385824e4c00a513d9389928fb8395",
+      "tree_sha": "9459a699963f959a77ff4dfb54a9227dbe038669",
+      "committed_at_utc": "2026-08-18T00:35:02+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "3bbe848ea45c2b3a208481831292576d7cd63803175292c0530e3c27ac5470d4"
+    "source_digest": "5345f4b167b7c8688e3081880b739dbb8c172af524da8c57fde79437dd7aa522"
   },
   "summary": {
     "module_count": 349,
     "declaration_count": 16143
   },
   "readme_sync": {
-    "version": "0.33.47",
+    "version": "0.33.48",
     "lean_toolchain": "v4.28.0",
     "production_files": 280,
-    "production_loc": 271247,
+    "production_loc": 271259,
     "test_files": 69,
     "test_loc": 58262,
     "proved_theorem_lemma_decls": 9111,
@@ -2378,19 +2378,20 @@
             "ThreadId",
             "dispatchSyscallChecked",
             "dispatchWithCapChecked_audit_rejects_non_audit_capability",
+            "getCNode",
+            "getTcb",
             "lookupSlotCap",
             "resolveCapAddress",
             "st",
             "syscallChecksTargetFirst",
             "syscallInvokeResolved",
-            "syscallResolveCap",
-            "toObjId"
+            "syscallResolveCap"
           ]
         },
         {
           "kind": "theorem",
           "name": "dispatchSyscallChecked_audit_right_checked_second",
-          "line": 4338,
+          "line": 4344,
           "called": [
             "CNode",
             "Capability",
@@ -2402,6 +2403,8 @@
             "ThreadId",
             "dispatchSyscallChecked",
             "dispatchWithCapChecked_audit_insufficient_right_denied",
+            "getCNode",
+            "getTcb",
             "hasRight",
             "lookupSlotCap",
             "resolveCapAddress",
@@ -2409,14 +2412,13 @@
             "syscallChecksTargetFirst",
             "syscallInvokeResolved",
             "syscallRequiredRight",
-            "syscallResolveCap",
-            "toObjId"
+            "syscallResolveCap"
           ]
         },
         {
           "kind": "theorem",
           "name": "dispatchWithCap_auditRead_denied",
-          "line": 4367,
+          "line": 4379,
           "called": [
             "Capability",
             "SyscallDecodeResult",
@@ -2431,7 +2433,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_auditDrain_default_denied",
-          "line": 4381,
+          "line": 4393,
           "called": [
             "AuditDrainArgs",
             "Capability",
@@ -2456,7 +2458,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_auditRead_default_denied",
-          "line": 4404,
+          "line": 4416,
           "called": [
             "AuditReadArgs",
             "AuditReadOp",
@@ -2482,7 +2484,7 @@
         {
           "kind": "theorem",
           "name": "unconfiguredDeployment_audit_never_succeeds",
-          "line": 4431,
+          "line": 4443,
           "called": [
             "Capability",
             "LabelingContext",
@@ -2502,7 +2504,7 @@
         {
           "kind": "theorem",
           "name": "unconfiguredDeployment_has_no_audit_reader",
-          "line": 4487,
+          "line": 4499,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -2537,7 +2539,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_tcbSuspend_delegates",
-          "line": 4520,
+          "line": 4532,
           "called": [
             "Capability",
             "ObjId",
@@ -2560,7 +2562,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_tcbResume_delegates",
-          "line": 4543,
+          "line": 4555,
           "called": [
             "Capability",
             "ObjId",
@@ -2583,7 +2585,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_receive_delegates",
-          "line": 4566,
+          "line": 4578,
           "called": [
             "Capability",
             "LabelingContext",
@@ -2613,7 +2615,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_send_delegates",
-          "line": 4597,
+          "line": 4609,
           "called": [
             "Capability",
             "ObjId",
@@ -2642,7 +2644,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_send_delegates",
-          "line": 4624,
+          "line": 4636,
           "called": [
             "Capability",
             "LabelingContext",
@@ -2672,7 +2674,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_tcbSetPriority_delegates",
-          "line": 4654,
+          "line": 4666,
           "called": [
             "Capability",
             "ObjId",
@@ -2696,7 +2698,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_schedContextUnbind_delegates",
-          "line": 4680,
+          "line": 4692,
           "called": [
             "Capability",
             "ObjId",
@@ -2719,7 +2721,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_tcbSetMCPriority_delegates",
-          "line": 4698,
+          "line": 4710,
           "called": [
             "Capability",
             "ObjId",
@@ -2743,7 +2745,7 @@
         {
           "kind": "def",
           "name": "syscallDelegates",
-          "line": 4729,
+          "line": 4741,
           "called": [
             "AuditDrainArgs",
             "AuditReadArgs",
@@ -2829,7 +2831,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_receive",
-          "line": 4934,
+          "line": 4946,
           "called": [
             "dispatchWithCapChecked_receive_delegates",
             "epId",
@@ -2840,7 +2842,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_tcbResume",
-          "line": 4940,
+          "line": 4952,
           "called": [
             "dispatchWithCap_tcbResume_delegates",
             "st",
@@ -2850,7 +2852,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_tcbSuspend",
-          "line": 4946,
+          "line": 4958,
           "called": [
             "dispatchWithCap_tcbSuspend_delegates",
             "st",
@@ -2860,7 +2862,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_lifecycleRetype",
-          "line": 4957,
+          "line": 4969,
           "called": [
             "dispatchWithCap_lifecycleRetype_delegates",
             "syscallDelegates"
@@ -2869,7 +2871,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_vspaceMap",
-          "line": 4963,
+          "line": 4975,
           "called": [
             "dispatchWithCap_vspaceMap_delegates",
             "st",
@@ -2879,7 +2881,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_declassify",
-          "line": 4969,
+          "line": 4981,
           "called": [
             "dispatchWithCapChecked_declassify_delegates",
             "st",
@@ -2889,7 +2891,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_auditRead",
-          "line": 4975,
+          "line": 4987,
           "called": [
             "dispatchWithCapChecked_auditRead_delegates",
             "st",
@@ -2899,7 +2901,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_auditDrain",
-          "line": 4981,
+          "line": 4993,
           "called": [
             "dispatchWithCapChecked_auditDrain_delegates",
             "st",
@@ -2909,7 +2911,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_vspaceUnmap",
-          "line": 4987,
+          "line": 4999,
           "called": [
             "dispatchWithCap_vspaceUnmap_delegates",
             "st",
@@ -2919,7 +2921,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_send",
-          "line": 4993,
+          "line": 5005,
           "called": [
             "dispatchWithCap_send_delegates",
             "epId",
@@ -2930,7 +2932,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_tcbSetPriority",
-          "line": 4998,
+          "line": 5010,
           "called": [
             "dispatchWithCap_tcbSetPriority_delegates",
             "st",
@@ -2940,7 +2942,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_tcbSetMCPriority",
-          "line": 5005,
+          "line": 5017,
           "called": [
             "dispatchWithCap_tcbSetMCPriority_delegates",
             "st",
@@ -2950,7 +2952,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_schedContextUnbind",
-          "line": 5012,
+          "line": 5024,
           "called": [
             "Kernel",
             "dispatchWithCap_schedContextUnbind_delegates",
