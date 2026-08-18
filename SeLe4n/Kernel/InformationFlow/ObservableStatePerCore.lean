@@ -1057,6 +1057,22 @@ theorem onCore_declassificationAuditEpoch (ctx : LabelingContext) (L : SecurityL
       = ObservableState.onCore ctx c L s :=
   onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
+/-- SM9.B.8: the mounted declassification **refusal ledger** is invisible on
+every core.
+
+The read-set half of `declassificationRefusals_write_preserves_projection`.
+Both halves are needed and neither implies the other: being outside the
+projection says the seam's refusal write moves no observer's view, and being
+outside the per-core read set says the same on a core other than the one the
+refused syscall executed on — which is the statement the cross-core
+non-interference inventory consumes for a syscall that can be refused on any
+core. -/
+theorem onCore_declassificationRefusals (ctx : LabelingContext) (L : SecurityLabel)
+    (s : SystemState) (c : CoreId) (v : SeLe4n.Kernel.RefusalLedger) :
+    ObservableState.onCore ctx c L { s with declassificationRefusals := v }
+      = ObservableState.onCore ctx c L s :=
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
 /-- SM8.A.4: the pre-SMP scalar TLB view (the 9th `proofLayerInvariantBundle`
 conjunct's subject) is invisible on every core, completing the sweep over the
 memory-subsystem state the SM7 phases mounted. -/

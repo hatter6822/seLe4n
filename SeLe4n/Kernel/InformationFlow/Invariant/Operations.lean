@@ -3884,6 +3884,29 @@ theorem declassificationAuditEpoch_write_preserves_projection
     projectState ctx observer { st with declassificationAuditEpoch := epoch } =
       projectState ctx observer st := rfl
 
+/-- WS-SM SM9.B.8 (non-interference): a write to the mounted declassification
+**refusal ledger** is invisible to the information-flow projection.
+
+The ledger is outside the projection for a reason one step sharper than the
+trail's.  The trail records downgrades the kernel *performed*; the ledger
+records attempts it *refused*, attributed to the subject that made them — so a
+projected ledger would tell every observer that a particular thread tried to
+declassify, against what capability, and why it was refused.  That is a channel
+out of the boundary the audit exists to police, and it would carry the
+information whether or not any capability was held.
+
+This theorem is what makes the seam's write safe to perform on the error path:
+a refused syscall commits a post-state (the WS-RA error frame's), and this says
+the ledger write in that post-state moves no observer's view.  The ledger's
+own read gate is the other half — it is readable only by the deployment's
+configured audit monitor (`refusalLedger_requires_full_dominance`), which
+`auditObservationalEquivalence`'s ledger clause is stated over. -/
+theorem declassificationRefusals_write_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (ledger : SeLe4n.Kernel.RefusalLedger) :
+    projectState ctx observer { st with declassificationRefusals := ledger } =
+      projectState ctx observer st := rfl
+
 -- ============================================================================
 -- AK6-F Step 1: RunQueue modification frame lemmas (at high thread)
 -- ============================================================================

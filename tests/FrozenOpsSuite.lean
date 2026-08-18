@@ -63,6 +63,11 @@ private def emptyFrozenState : FrozenSystemState := {
   -- WS-SM SM9.A.1a: nothing drained, so the audit epoch is zero and the
   -- (empty) trail's timestamps are its indices.
   declassificationAuditEpoch := 0
+  -- WS-SM SM9.B.5: nothing has been refused, so the refusal ledger is the
+  -- empty ring.  A required frozen field (no default), so a silent drop is
+  -- a compile error here rather than a snapshot reporting a system in
+  -- which no declassification was ever attempted.
+  declassificationRefusals := SeLe4n.Kernel.RefusalLedger.initial
   -- WS-SM SM7.D.1: required frozen field (no default).
   perCoreICache :=
     _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty

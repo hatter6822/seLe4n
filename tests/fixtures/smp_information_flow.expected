@@ -32,4 +32,9 @@
 [smp-information-flow] audit drain by monitor: remaining=0 epoch=3; by partial reader: error=SeLe4n.Model.KernelError.illegalAuthority
 [smp-information-flow] audit gate unconfigured: authorized=false read=SeLe4n.Model.KernelError.illegalAuthority drain=SeLe4n.Model.KernelError.illegalAuthority
 [smp-information-flow] audit live partial reader (round 6): read=SeLe4n.Model.KernelError.illegalAuthority model view len=2
-[smp-information-flow] audit ABI: auditRead=31 auditDrain=32 syscalls=33 opcodes=12 readableStructures=1
+[smp-information-flow] audit ABI: auditRead=31 auditDrain=32 syscalls=33 opcodes=21 readableStructures=2
+[smp-information-flow] refusal ledger: ring=32 ceiling=65535 bootAttempts=0 bootVersion=0
+[smp-information-flow] refusal seam: recordingSyscalls=1 declassify=SeLe4n.Kernel.RefusalSeamClass.records send=SeLe4n.Kernel.RefusalSeamClass.exempt
+[smp-information-flow] refusal write: attempts=1 version=1 trailMoved=false exemptRecorded=false
+[smp-information-flow] refusal read (monitor): status=slot1/v1 counters=1/0
+[smp-information-flow] refusal read (partial): status=SeLe4n.Model.KernelError.illegalAuthority tags=SeLe4n.Model.KernelError.illegalAuthority

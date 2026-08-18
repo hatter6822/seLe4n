@@ -356,6 +356,13 @@ theorem applyMachineConfig_declassificationAuditEpoch_eq (ist : IntermediateStat
     (applyMachineConfig ist config).state.declassificationAuditEpoch =
       ist.state.declassificationAuditEpoch := rfl
 
+/-- WS-SM SM9.B.7: `applyMachineConfig` preserves the declassification refusal
+ledger — boot issues no syscalls, so nothing is refused. -/
+theorem applyMachineConfig_declassificationRefusals_eq (ist : IntermediateState)
+    (config : MachineConfig) :
+    (applyMachineConfig ist config).state.declassificationRefusals =
+      ist.state.declassificationRefusals := rfl
+
 /-- AH2-F: `applyMachineConfig` preserves lifecycle metadata. -/
 theorem applyMachineConfig_lifecycle_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.lifecycle = ist.state.lifecycle := rfl
@@ -1701,6 +1708,14 @@ private theorem foldIrqs_declassificationAuditEpoch (irqs : List IrqEntry)
   | nil => rfl
   | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
 
+private theorem foldIrqs_declassificationRefusals (irqs : List IrqEntry)
+    (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.declassificationRefusals =
+      ist.state.declassificationRefusals := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
 private theorem foldIrqs_machine (irqs : List IrqEntry) (ist : IntermediateState) :
     (foldIrqs irqs ist).state.machine = ist.state.machine := by
   induction irqs generalizing ist with
@@ -1812,6 +1827,14 @@ private theorem foldObjects_declassificationAuditEpoch (objs : List ObjectEntry)
     (ist : IntermediateState) :
     (foldObjects objs ist).state.declassificationAuditEpoch =
       ist.state.declassificationAuditEpoch := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_declassificationRefusals (objs : List ObjectEntry)
+    (ist : IntermediateState) :
+    (foldObjects objs ist).state.declassificationRefusals =
+      ist.state.declassificationRefusals := by
   induction objs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
@@ -2471,6 +2494,19 @@ theorem bootFromPlatform_declassificationAuditEpoch_eq (config : PlatformConfig)
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_declassificationAuditEpoch_eq,
       foldObjects_declassificationAuditEpoch, foldIrqs_declassificationAuditEpoch,
+      mkEmpty_state_eq_default]
+
+/-- WS-SM SM9.B.7: boot refuses nothing, so the refusal ledger after boot is the
+empty default.  The general bridge that makes "a platform-booted system has
+recorded no declassification attempt" a fact about *any* configuration rather
+than only about the default state — which is what a monitor's first read
+depends on to distinguish a quiet system from an unexamined one. -/
+theorem bootFromPlatform_declassificationRefusals_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.declassificationRefusals =
+    (default : SystemState).declassificationRefusals := by
+  show _ = _; unfold bootFromPlatform
+  rw [applyMachineConfig_declassificationRefusals_eq,
+      foldObjects_declassificationRefusals, foldIrqs_declassificationRefusals,
       mkEmpty_state_eq_default]
 
 /-- AH2-F: After boot, machine config-set fields come from `config.machineConfig`.

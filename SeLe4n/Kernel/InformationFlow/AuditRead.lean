@@ -2,7 +2,8 @@
 Copyright (c) 2025 seLe4n contributors. All rights reserved.
 Released under GPL-3.0-or-later license.
 
-WS-SM SM9.A: the declassification audit trail's **reader**.
+WS-SM SM9.A: the declassification audit trail's **reader** — and, since
+WS-SM SM9.B, the refusal ledger's (see "The second readable structure" below).
 
 SM8.C mounted a durable, bounded, fail-closed audit trail and shipped the live
 `.declassify` syscall that writes it.  Nothing read it.  That is not merely an
@@ -69,12 +70,13 @@ exclusion exhibited.
 
 ## Why the reader chunks
 
-Four exported fields are unbounded `Nat` in the model (`SecurityDomain.id`,
-`ObjId.val`, the timestamp) and the fifth is a string, while a syscall returns
-one word.  Each is therefore read through a fixed-width chunk protocol whose
-theorem is **reconstruction** — folding the chunks recovers the value exactly —
-rather than "each fragment fits", which says nothing about whether the record
-can be rebuilt from the fragments.
+Four exported trail fields are unbounded `Nat` in the model
+(`SecurityDomain.id`, `ObjId.val`, the timestamp) and the fifth is a string;
+the ledger adds three more (`ThreadId.val`, a `SecurityDomain.id`, a `CPtr`).
+A syscall returns one word.  Each such field is therefore read through a
+fixed-width chunk protocol whose theorem is **reconstruction** — folding the
+chunks recovers the value exactly — rather than "each fragment fits", which
+says nothing about whether the record can be rebuilt from the fragments.
 
 The chunk *coordinates* are themselves single words, so "total for any `Nat`"
 was never available: a value needing 2^64 chunks cannot have its own count
@@ -96,6 +98,32 @@ place: `auditStatusWord_fits` carries the explicit `generation < 2^55` premise
 premise that is written down is the honest form of a bound that cannot be made
 unconditional.
 
+## The second readable structure (WS-SM SM9.B)
+
+The refusal ledger is read from here too, and its arms are shaped by the ways it
+is *unlike* the trail rather than by symmetry with it:
+
+- **No filtered view, so no partial reader.**  A trail can hand a lower reader
+  the sublist its clearance admits; a ledger cannot, because the ring **evicts**
+  — a refusal that reader may not see removes one it could.  So every ledger arm
+  opens with the configured monitor gate and an under-cleared caller learns
+  nothing at all, not even how two arbitrary ledgers differ
+  (`refusalLedger_requires_full_dominance`,
+  `refusalLedger_partial_reader_learns_nothing`).
+- **Its own bracket token.**  A ledger write does not move the trail's `status`
+  word, so a monitor bracketing a multi-call record reconstruction with the
+  trail's generation would assemble a hybrid record and never detect it
+  (`auditStatus_does_not_detect_refusal_write`).  `refusalStatus` carries the
+  ledger's own `version`, which advances on **every** recorded refusal
+  (`refusalStatus_detects_refusal_write`, `refusalRead_bracketed_detects_overwrite`).
+- **The gate is the configuration, never the rows.**  The ring evicts while the
+  counters are cumulative, so a records-derived gate shrinks while the data it
+  guards does not (`refusalLedger_gate_is_configuration_derived`, with
+  `refusalLedger_records_gate_unsound` keeping the counterexample refuted).
+- **The reason is WS-RA's own discriminant**, so a monitor's decoded reason and
+  the refused caller's `x1` label name the same error without a second table
+  (`refusalTagsWord_reason_is_abi_discriminant`).
+
 ## What this module deliberately does not do
 
 It adds **no kernel→user memory write path**.  A write mirror of `ipcBufferReadMr`
@@ -105,6 +133,14 @@ not.  A monitor draining a 256-entry trail does not need the throughput.
 Recorded as a deliberate non-goal, revisitable if throughput ever demands it.
 -/
 import SeLe4n.Kernel.InformationFlow.Declassification
+-- WS-SM SM9.B.10: the canonical `KernelError` numbering (WS-RA's
+-- `toDiscriminant` / `ofDiscriminant?` pair).  The refusal ledger exports a
+-- record's reason, and a second numbering would be a second source of truth —
+-- so the reader reuses the one the ABI already puts on `x1`, which is also
+-- what makes a monitor's decoded reason the very discriminant the refused
+-- caller received.  The module imports only `Model.State`, so this adds
+-- nothing to the reader's own import closure beyond what it already carries.
+import SeLe4n.Kernel.Architecture.SyscallReturn
 
 namespace SeLe4n.Kernel
 
@@ -842,12 +878,26 @@ inductive ReadableStructure where
   /-- The declassification audit trail (`SystemState.declassificationAuditLog`)
       together with the epoch that gives its entries global identities. -/
   | declassificationAuditTrail
+  /-- WS-SM SM9.B.10: the declassification **refusal ledger**
+      (`SystemState.declassificationRefusals`) — the counters, the ring and the
+      version a monitor brackets its reads with.
+
+      It joins by adding this constructor, which is what the fusion above makes
+      unavoidable: the refusal read operations cannot exist without naming a
+      structure, and this constructor cannot exist without a clause in
+      SM9.A.4a's total clause function.  Its obligation (b) is discharged
+      differently from the trail's: there is no clearance-filtered *view* of a
+      ledger, so a partial reader observes **nothing** of it
+      (`refusalLedger_requires_full_dominance`) and no hidden write can move
+      what such a reader sees. -/
+  | declassificationRefusalLedger
   deriving Repr, DecidableEq, Inhabited
 
 namespace ReadableStructure
 
 /-- WS-SM SM9.A.2: the enumeration. -/
-def all : List ReadableStructure := [.declassificationAuditTrail]
+def all : List ReadableStructure :=
+  [.declassificationAuditTrail, .declassificationRefusalLedger]
 
 /-- WS-SM SM9.A.2: every structure is enumerated. -/
 theorem mem_all (s : ReadableStructure) : s ∈ all := by cases s <;> decide
@@ -885,6 +935,35 @@ theorem all_nodup : all.Nodup := by decide
 
 end AuditReadField
 
+/-- WS-SM SM9.B.10: the three unbounded fields of a `DeclassificationRefusal`,
+exported through the chunk protocol.
+
+`originatingCore`, `syscall` and `reason` are **not** here: all three are
+structurally bounded (a `Fin numCores`, one of `SyscallId.count` variants, and
+one of the `KernelError` discriminants), so they ride one word together
+(`AuditReadOp.refusalSlotTags`) exactly as the trail's core and trust bit do. -/
+inductive RefusalReadField where
+  /-- The refused subject's thread id. -/
+  | subject
+  /-- The subject's seam-resolved security domain. -/
+  | subjectDomain
+  /-- The capability pointer the caller supplied, verbatim. -/
+  | requestedTarget
+  deriving Repr, DecidableEq, Inhabited
+
+namespace RefusalReadField
+
+/-- WS-SM SM9.B.10: the enumeration. -/
+def all : List RefusalReadField := [.subject, .subjectDomain, .requestedTarget]
+
+/-- WS-SM SM9.B.10: every field is enumerated. -/
+theorem mem_all (f : RefusalReadField) : f ∈ all := by cases f <;> decide
+
+/-- WS-SM SM9.B.10: no duplicates. -/
+theorem all_nodup : all.Nodup := by decide
+
+end RefusalReadField
+
 /-- WS-SM SM9.A.2: the reader's sub-operations.  Every index is an index into
 the **caller's own view**, never into the global trail. -/
 inductive AuditReadOp where
@@ -902,6 +981,26 @@ inductive AuditReadOp where
   | basisByteCount (index : Nat)
   /-- Chunk `chunk` (four bytes) of visible entry `index`'s basis designation. -/
   | basisChunk (index : Nat) (chunk : Nat)
+  /-- WS-SM SM9.B.10: the refusal ledger's write position paired with its
+      **version** — the token a monitor brackets a multi-call reconstruction
+      with.  One call, for the reason `status` is one call: a split read could
+      pair a slot index with a version from a different state, and the pair
+      would then describe no ledger that ever existed. -/
+  | refusalStatus
+  /-- WS-SM SM9.B.10: the ledger's two cumulative counters — attempts and
+      evictions — in one word.  Both are `Fin`-bounded, so no chunking is
+      owed; reading them together is what lets a monitor tell "I have seen
+      every refusal" from "records were dropped before I polled". -/
+  | refusalCounters
+  /-- WS-SM SM9.B.10: ring slot `slot`'s bounded fields — the originating
+      core, the syscall and the refusal reason — in one word. -/
+  | refusalSlotTags (slot : Nat)
+  /-- WS-SM SM9.B.10: how many chunks unbounded field `field` of ring slot
+      `slot` needs. -/
+  | refusalSlotFieldChunkCount (slot : Nat) (field : RefusalReadField)
+  /-- WS-SM SM9.B.10: chunk `chunk` of unbounded field `field` of ring slot
+      `slot`. -/
+  | refusalSlotField (slot : Nat) (field : RefusalReadField) (chunk : Nat)
   deriving Repr, DecidableEq, Inhabited
 
 /-- WS-SM SM9.A.2 (plan §3.7, **the fusion**): every read operation names the
@@ -918,6 +1017,11 @@ def AuditReadOp.readsStructure : AuditReadOp → ReadableStructure
   | .coreAndTrust _ => .declassificationAuditTrail
   | .basisByteCount _ => .declassificationAuditTrail
   | .basisChunk _ _ => .declassificationAuditTrail
+  | .refusalStatus => .declassificationRefusalLedger
+  | .refusalCounters => .declassificationRefusalLedger
+  | .refusalSlotTags _ => .declassificationRefusalLedger
+  | .refusalSlotFieldChunkCount _ _ => .declassificationRefusalLedger
+  | .refusalSlotField _ _ _ => .declassificationRefusalLedger
 
 /-- WS-SM SM9.A.2: the totality anchor.  The *mechanism* is the definition
 itself — an exhaustive match with no wildcard; this theorem is the named surface
@@ -1011,6 +1115,166 @@ theorem auditCoreAndTrustWord_trust_bit (e : DeclassificationEvent) :
   cases h : e.authorizationBasis.kernelVerifiable <;> simp
 
 -- ============================================================================
+-- §4d  SM9.B.10 — the refusal ledger's export encoding
+-- ============================================================================
+
+/-! ## Two words for four bounded values, and a chunk protocol for three
+
+The ledger's shape decides the encoding.  `nextSlot` and the two counters are
+`Fin`-bounded, so they need no chunking; `version` is an unbounded monotone
+counter and rides the same stated-premise treatment the trail's epoch does.  A
+record's `subject`, `subjectDomain` and `requestedTarget` are unbounded `Nat`
+in the model and go through the §3 chunk protocol unchanged, while its core,
+syscall and reason are all structurally bounded and share one word.
+
+**`refusalStatus` pairs the write position with the version deliberately.**  A
+monitor cannot interpret the ring without knowing where the next write lands,
+and a `nextSlot` read at one version against slots read at another describes a
+ledger that never existed — the same tearing argument that keeps the trail's
+`status` a single call.  The counters are a second atomic pair for the same
+reason: "how many attempts" and "how many were dropped" are only meaningful
+together, and both are bracketed by the version. -/
+
+/-- WS-SM SM9.B.10: the slot width of each bounded tag in a ring record's
+packed word — one byte each, which every tag fits with room to spare. -/
+def refusalTagSlots : Nat := 256
+
+/-- WS-SM SM9.B.10: a core id fits a tag slot. -/
+theorem refusalTagSlots_bounds_core (c : CoreId) : c.val < refusalTagSlots := by
+  have h := c.isLt
+  have : SeLe4n.Kernel.Concurrency.numCores ≤ refusalTagSlots := by decide
+  omega
+
+/-- WS-SM SM9.B.10: a syscall id fits a tag slot — checked over the whole ABI
+rather than over the syscalls the seam records today, so SM9.C.8's second
+declassifying syscall needs no new bound. -/
+theorem refusalTagSlots_bounds_syscall (sid : SeLe4n.Model.SyscallId) :
+    sid.toNat < refusalTagSlots := by
+  cases sid <;> decide
+
+/-- WS-SM SM9.B.10: a kernel-error discriminant fits a tag slot.  Rides WS-RA's
+own bound, so the reader inherits the ABI's numbering rather than inventing a
+second one. -/
+theorem refusalTagSlots_bounds_reason (e : KernelError) :
+    e.toDiscriminant < refusalTagSlots := by
+  have h := KernelError.toDiscriminant_lt e
+  unfold refusalTagSlots
+  omega
+
+/-- WS-SM SM9.B.10: a ring record's three bounded tags, packed into one word. -/
+def refusalTagsWord (r : DeclassificationRefusal) : Nat :=
+  r.originatingCore.val +
+    refusalTagSlots * (r.syscall.toNat + refusalTagSlots * r.reason.toDiscriminant)
+
+/-- WS-SM SM9.B.10: **the packing is lossless** — all three tags decode. -/
+theorem refusalTagsWord_roundtrip (r : DeclassificationRefusal) :
+    refusalTagsWord r % refusalTagSlots = r.originatingCore.val ∧
+    refusalTagsWord r / refusalTagSlots % refusalTagSlots = r.syscall.toNat ∧
+    refusalTagsWord r / refusalTagSlots / refusalTagSlots = r.reason.toDiscriminant := by
+  have hCore := refusalTagSlots_bounds_core r.originatingCore
+  have hSid := refusalTagSlots_bounds_syscall r.syscall
+  unfold refusalTagsWord refusalTagSlots at *
+  refine ⟨by omega, by omega, by omega⟩
+
+/-- WS-SM SM9.B.10: **the recorded reason is the discriminant the refused
+caller received.**
+
+The reader reuses WS-RA's numbering, so a monitor decoding a record's reason
+and the caller reading its own `x1` label are reading the same number — which
+is what lets an operator correlate a user-space report with the kernel's own
+record without a second table to keep in step. -/
+theorem refusalTagsWord_reason_is_abi_discriminant (r : DeclassificationRefusal) :
+    KernelError.ofDiscriminant? (refusalTagsWord r / refusalTagSlots / refusalTagSlots)
+      = some r.reason := by
+  rw [(refusalTagsWord_roundtrip r).2.2]
+  exact KernelError.ofDiscriminant?_toDiscriminant r.reason
+
+/-- WS-SM SM9.B.10: the tags word fits the return register — three byte-wide
+fields, so it is below `2^24` and the bound needs no premise. -/
+theorem refusalTagsWord_fits (r : DeclassificationRefusal) :
+    refusalTagsWord r < 2 ^ 64 := by
+  have hCore := refusalTagSlots_bounds_core r.originatingCore
+  have hSid := refusalTagSlots_bounds_syscall r.syscall
+  have hReason := refusalTagSlots_bounds_reason r.reason
+  unfold refusalTagsWord refusalTagSlots at *
+  omega
+
+/-- WS-SM SM9.B.10: the status word — the ring's next write position in the low
+field, the ledger's version above it. -/
+def refusalStatusWord (nextSlot version : Nat) : Nat :=
+  nextSlot + version * refusalRingSize
+
+/-- WS-SM SM9.B.10: decode the write position. -/
+def refusalStatusSlot (w : Nat) : Nat := w % refusalRingSize
+
+/-- WS-SM SM9.B.10: decode the version. -/
+def refusalStatusVersion (w : Nat) : Nat := w / refusalRingSize
+
+/-- WS-SM SM9.B.10: the status word determines both components — one word, one
+ledger state. -/
+theorem refusalStatusWord_roundtrip (nextSlot version : Nat)
+    (hSlot : nextSlot < refusalRingSize) :
+    refusalStatusSlot (refusalStatusWord nextSlot version) = nextSlot ∧
+    refusalStatusVersion (refusalStatusWord nextSlot version) = version := by
+  unfold refusalStatusSlot refusalStatusVersion refusalStatusWord refusalRingSize
+  unfold refusalRingSize at hSlot
+  omega
+
+/-- WS-SM SM9.B.10 (**the stated bound**): with the write position within the
+ring and the version below `2^59`, the status word fits the 64-bit return
+register.
+
+A premise rather than a theorem, for the reason the trail's epoch bound is one:
+the version is an unbounded monotone counter and the model's words are `Nat`.
+The live boundary **refuses** above `2^64` rather than wrapping
+(`auditReadFromCore_word_fits`), so the worst case is a refused read and never
+a version a monitor mistakes for a smaller one. -/
+theorem refusalStatusWord_fits (nextSlot version : Nat)
+    (hSlot : nextSlot < refusalRingSize) (hVersion : version < 2 ^ 59) :
+    refusalStatusWord nextSlot version < 2 ^ 64 := by
+  unfold refusalStatusWord refusalRingSize
+  unfold refusalRingSize at hSlot
+  omega
+
+/-- WS-SM SM9.B.10: the counters word — attempts in the low field, evictions
+above it.  Both components are `Fin`-bounded, so this word needs no premise at
+all. -/
+def refusalCountersWord (attempts dropped : Nat) : Nat :=
+  attempts + dropped * (maxRefusalCount + 1)
+
+/-- WS-SM SM9.B.10: decode the attempt count. -/
+def refusalCountersAttempts (w : Nat) : Nat := w % (maxRefusalCount + 1)
+
+/-- WS-SM SM9.B.10: decode the drop count. -/
+def refusalCountersDropped (w : Nat) : Nat := w / (maxRefusalCount + 1)
+
+/-- WS-SM SM9.B.10: the counters word determines both components. -/
+theorem refusalCountersWord_roundtrip (attempts dropped : Nat)
+    (hAttempts : attempts ≤ maxRefusalCount) :
+    refusalCountersAttempts (refusalCountersWord attempts dropped) = attempts ∧
+    refusalCountersDropped (refusalCountersWord attempts dropped) = dropped := by
+  unfold refusalCountersAttempts refusalCountersDropped refusalCountersWord maxRefusalCount
+  unfold maxRefusalCount at hAttempts
+  omega
+
+/-- WS-SM SM9.B.10: the counters word fits the return register
+**unconditionally** — sixteen bits each, so below `2^32`.  The contrast with
+`refusalStatusWord_fits` is the structural-bound argument doing its work: the
+counters are `Fin`s and the version is not. -/
+theorem refusalCountersWord_fits (attempts dropped : Nat)
+    (hAttempts : attempts ≤ maxRefusalCount) (hDropped : dropped ≤ maxRefusalCount) :
+    refusalCountersWord attempts dropped < 2 ^ 64 := by
+  unfold refusalCountersWord maxRefusalCount
+  unfold maxRefusalCount at hAttempts hDropped
+  omega
+
+/-- WS-SM SM9.B.10: the value of an unbounded field of a ring record. -/
+def refusalExportedFieldValue (r : DeclassificationRefusal) : RefusalReadField → Nat
+  | .subject => r.subject.val
+  | .subjectDomain => r.subjectDomain.id
+  | .requestedTarget => r.requestedTarget.val
+
+-- ============================================================================
 -- §4c  SM9.A.2 — the reader
 -- ============================================================================
 
@@ -1064,36 +1328,96 @@ def auditReadWord (ctx : GenericLabelingContext)
             (if chunk < auditBasisChunkCount bs.length then .ok (auditBasisChunkValue bs chunk)
              else .error .invalidArgument)
           else .error .auditFieldTooLarge
+  -- WS-SM SM9.B.10: the refusal ledger's arms.  Every one of them opens with
+  -- the **configured** monitor gate, and refuses a caller it does not admit —
+  -- there is no clearance-filtered *view* of a ledger to hand a partial reader
+  -- instead.  A single global ring evicts, so a hidden refusal can remove an
+  -- entry a lower reader could see, and the cumulative counters move on hidden
+  -- activity independently of the ring; requiring full dominance discharges
+  -- both halves of the §3.7 obligation rather than dodging either
+  -- (`refusalLedger_requires_full_dominance`,
+  -- `refusalLedger_partial_reader_learns_nothing`).
+  | .refusalStatus =>
+      if isMonitor then
+        .ok (refusalStatusWord st.declassificationRefusals.nextSlot.val
+              st.declassificationRefusals.version)
+      else .error .illegalAuthority
+  | .refusalCounters =>
+      if isMonitor then
+        .ok (refusalCountersWord st.declassificationRefusals.attemptCount.val
+              st.declassificationRefusals.droppedCount.val)
+      else .error .illegalAuthority
+  | .refusalSlotTags slot =>
+      if isMonitor then
+        (if h : slot < refusalRingSize then
+          match st.declassificationRefusals.recent.get ⟨slot, h⟩ with
+          | none => .error .invalidArgument
+          | some r => .ok (refusalTagsWord r)
+         else .error .invalidArgument)
+      else .error .illegalAuthority
+  | .refusalSlotFieldChunkCount slot f =>
+      if isMonitor then
+        (if h : slot < refusalRingSize then
+          match st.declassificationRefusals.recent.get ⟨slot, h⟩ with
+          | none => .error .invalidArgument
+          | some r =>
+              match auditFieldChunkCount? (refusalExportedFieldValue r f) with
+              | none => .error .auditFieldTooLarge
+              | some n => .ok n
+         else .error .invalidArgument)
+      else .error .illegalAuthority
+  | .refusalSlotField slot f chunk =>
+      if isMonitor then
+        (if h : slot < refusalRingSize then
+          match st.declassificationRefusals.recent.get ⟨slot, h⟩ with
+          | none => .error .invalidArgument
+          | some r =>
+              let v := refusalExportedFieldValue r f
+              match auditFieldChunkCount? v with
+              | none => .error .auditFieldTooLarge
+              | some n =>
+                  if chunk < n then .ok (auditFieldChunk v chunk) else .error .invalidArgument
+         else .error .invalidArgument)
+      else .error .illegalAuthority
 
-/-- WS-SM SM9.A.2: **the reader is a function of the visible view and the
-exported generation alone.**
+/-- WS-SM SM9.A.2: **the reader is a function of the readable structures it is
+entitled to, and of nothing else.**
 
 The keystone the flow argument (SM9.A.4b) is built on, and the reason the
 reader can be shown to open no channel without inspecting each arm: two states
-whose visible views agree, and whose epochs agree *when the caller is entitled
-to the epoch at all*, are indistinguishable to this reader. -/
+whose visible views agree, and whose epochs and refusal ledgers agree *when the
+caller is entitled to those at all*, are indistinguishable to this reader.
+
+One hypothesis per `ReadableStructure` clause, in the same shape
+(`readableStructureAgrees`) — the trail's filtered view unconditionally, its
+epoch under the monitor gate, and the ledger whole under the same gate.  WS-SM
+SM9.B.10 added the third; a fourth readable structure adds a fourth, and the
+`cases op` here stops elaborating until it does. -/
 theorem auditRead_determined_by_view (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
     (st₁ st₂ : SystemState) (op : AuditReadOp)
     (hView : auditLogVisibleTo ctx reader st₁.declassificationAuditLog
       = auditLogVisibleTo ctx reader st₂.declassificationAuditLog)
     (hEpoch : auditMonitorAuthorized ctx monitorClearance reader = true →
-      st₁.declassificationAuditEpoch = st₂.declassificationAuditEpoch) :
+      st₁.declassificationAuditEpoch = st₂.declassificationAuditEpoch)
+    (hLedger : auditMonitorAuthorized ctx monitorClearance reader = true →
+      st₁.declassificationRefusals = st₂.declassificationRefusals) :
     auditReadWord ctx monitorClearance reader st₁ op =
       auditReadWord ctx monitorClearance reader st₂ op := by
   unfold auditReadWord
   cases hMon : auditMonitorAuthorized ctx monitorClearance reader with
   | false => cases op <;> simp only [hView, Bool.false_eq_true, if_false]
   | true =>
-    rw [hEpoch hMon]
+    rw [hEpoch hMon, hLedger hMon]
     cases op <;> simp only [hView]
 
 /-- WS-SM SM9.A.2 (**a partial reader cannot count hidden entries**): its every
 read is determined by its visible view — the epoch, which counts entries it may
-not see, reaches it through no arm.
+not see, reaches it through no arm, and neither does the refusal ledger, which
+has no partial view at all (WS-SM SM9.B.10).
 
 Stated over an arbitrary pair of states, so the two may differ by any number of
-hidden entries and by any epoch whatsoever. -/
+hidden entries, by any epoch whatsoever, and by any two refusal ledgers. -/
 theorem auditRead_hides_global_position (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
     (st₁ st₂ : SystemState) (op : AuditReadOp)
@@ -1103,6 +1427,7 @@ theorem auditRead_hides_global_position (ctx : GenericLabelingContext)
     auditReadWord ctx monitorClearance reader st₁ op =
       auditReadWord ctx monitorClearance reader st₂ op :=
   auditRead_determined_by_view ctx monitorClearance reader st₁ st₂ op hView
+    (fun h => absurd h (by simp [hPartial]))
     (fun h => absurd h (by simp [hPartial]))
 
 /-- WS-SM SM9.A.2: **`status` is atomic** — one call, and both components come
@@ -2154,6 +2479,14 @@ theorem auditRead_stable_under_append (ctx : GenericLabelingContext)
     simp only [hEntry i (hIndex i .srcDomain 0 (Or.inr (Or.inr (Or.inr (Or.inl rfl)))))]
   | basisChunk i k =>
     simp only [hEntry i (hIndex i .srcDomain k (Or.inr (Or.inr (Or.inr (Or.inr rfl)))))]
+  -- WS-SM SM9.B.10: the refusal arms read the ledger and never the trail, so an
+  -- append leaves them untouched for a reason the trail's arms do not have —
+  -- there is nothing in them for the append to move.
+  | refusalStatus => rfl
+  | refusalCounters => rfl
+  | refusalSlotTags slot => rfl
+  | refusalSlotFieldChunkCount slot f => rfl
+  | refusalSlotField slot f k => rfl
 
 /-- WS-SM SM9.A.5 (**the bracket**): for a monitor, an unchanged status word
 means an unchanged epoch and an unchanged visible length — so no drain
@@ -2227,6 +2560,197 @@ theorem auditReadWord_state_preserving (ctx : GenericLabelingContext)
   ⟨_, rfl⟩
 
 -- ============================================================================
+-- §7b  SM9.B.10 — what the refusal ledger's reader promises, and to whom
+-- ============================================================================
+
+/-! ## One gate, and no view at all below it
+
+The trail gives a partially-cleared reader a *filtered view*: entries whose
+disclosed domains it dominates, re-indexed so the hidden ones leave no gap.
+There is no analogue for a ledger, and the reason is structural rather than a
+choice.
+
+A single global ring **evicts**.  Once a low-visible refusal occupies a slot,
+enough higher-domain refusals *the reader cannot see* wrap the ring and
+overwrite it — so a hidden write removes an entry from that reader's view,
+which is §3.7's obligation (b) violated directly.  The counters carry the same
+defect independently: a saturating global `attemptCount` moves on hidden
+activity, so returning it to a partial reader leaks the same bit even with the
+ring fixed.  Partitioning by domain does not type — `SecurityDomain.id` is an
+unbounded `Nat`, so there is no finite family of domains to give a ring each
+(`observerScopedGeneration_not_mountable`, again).
+
+So the ledger is readable **only** under the configured monitor clearance, and
+a caller below it observes *nothing* of it — which discharges obligation (b)
+rather than dodging it, because there is no view for a hidden write to move.
+
+**And the gate is the configuration, not the ring's surviving rows.**  The two
+halves age differently: the ring evicts while the counters are cumulative.  Let
+a run of hidden high-domain refusals bump `attemptCount` and `droppedCount`,
+then let a ringful of low-domain refusals overwrite every high entry.  A low
+reader now dominates every *surviving* row — so a records-derived gate admits
+it — and reads counters that still carry the hidden history.
+`refusalLedger_records_gate_unsound` keeps that counterexample refuted. -/
+
+/-- WS-SM SM9.B.10 (**the gate**): a caller the configured monitor gate refuses
+reads **nothing** of the refusal ledger — every one of its sub-operations fails
+closed with `.illegalAuthority`, the same error every other authority refusal
+returns. -/
+theorem refusalLedger_requires_full_dominance (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (st : SystemState) (op : AuditReadOp)
+    (hLedgerOp : op.readsStructure = .declassificationRefusalLedger)
+    (hPartial : auditMonitorAuthorized ctx monitorClearance reader = false) :
+    auditReadWord ctx monitorClearance reader st op = .error .illegalAuthority := by
+  cases op <;> simp_all [auditReadWord, AuditReadOp.readsStructure]
+
+/-- WS-SM SM9.B.10 (**the load-bearing negative**): an under-cleared caller
+learns nothing of the ledger — its refusal reads are identical across states
+that differ by an **arbitrary** ledger.
+
+Stronger than "it is refused": a refusal that depended on the ledger's contents
+would still be a channel.  Here the two states may differ by any number of
+recorded attempts, any drop count and any version, and the caller cannot tell
+them apart. -/
+theorem refusalLedger_partial_reader_learns_nothing (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (st : SystemState) (L₁ L₂ : RefusalLedger) (op : AuditReadOp)
+    (hLedgerOp : op.readsStructure = .declassificationRefusalLedger)
+    (hPartial : auditMonitorAuthorized ctx monitorClearance reader = false) :
+    auditReadWord ctx monitorClearance reader
+        { st with declassificationRefusals := L₁ } op =
+      auditReadWord ctx monitorClearance reader
+        { st with declassificationRefusals := L₂ } op := by
+  rw [refusalLedger_requires_full_dominance ctx monitorClearance reader _ op hLedgerOp hPartial,
+      refusalLedger_requires_full_dominance ctx monitorClearance reader _ op hLedgerOp hPartial]
+
+/-- WS-SM SM9.B.10 (**the gate is configuration-derived**): moving the ledger —
+by any amount, in any component — does not move the gate's verdict.
+
+The ledger's instance of `auditMonitorGate_is_configuration_derived`, stated
+over exactly the field the seam writes.  It is what lets the ledger share the
+trail's single privileged-reader gate without inheriting a predicate that ages
+out from under it. -/
+theorem refusalLedger_gate_is_configuration_derived (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (st : SystemState) (c : CoreId)
+    (L : RefusalLedger) :
+    auditMonitorGate ctx monitorClearance
+        { st with declassificationRefusals := L } c =
+      auditMonitorGate ctx monitorClearance st c := rfl
+
+/-- WS-SM SM9.B.10: a minimal refusal record at a chosen domain, used to exhibit
+concrete ledgers in the negatives below. -/
+def refusalWitnessRecord (d : SecurityDomain) : DeclassificationRefusal :=
+  { originatingCore := bootCoreId
+    subject := ⟨0⟩
+    subjectDomain := d
+    syscall := .declassify
+    reason := .declassificationDenied
+    requestedTarget := SeLe4n.CPtr.ofNat 1 }
+
+/-- WS-SM SM9.B.10: a ledger whose ring is all-low except for one high-domain
+record sitting exactly where the next write lands — the state one further
+refusal turns into "every surviving row is visible to a low reader". -/
+def refusalEvictionWitness : RefusalLedger :=
+  { attemptCount := ⟨5, by decide⟩
+    recent :=
+      (Vector.replicate refusalRingSize (some (refusalWitnessRecord ⟨0⟩))).set 0
+        (some (refusalWitnessRecord ⟨3⟩)) (by decide)
+    nextSlot := ⟨0, by decide⟩
+    droppedCount := ⟨0, by decide⟩
+    version := 7 }
+
+/-- WS-SM SM9.B.10 (**the load-bearing negative the gate exists for**): a gate
+computed from the domains present in the ledger's **current** rows is unsound,
+because the ring evicts while the counters do not.
+
+The witness runs the whole story in one step.  Before: the ring holds a
+`high`-sourced refusal a `low` reader cannot see, so a rows-derived predicate
+refuses that reader.  One further low refusal overwrites it — and now **every
+surviving row** is one the low reader dominates, so the rows-derived predicate
+admits it, while `attemptCount` and `droppedCount` still count the hidden
+attempt.  The reader would be handed counters describing activity it was never
+cleared for, and the drop count would tell it exactly how much.
+
+The configured gate refuses that reader throughout, because it never looked at
+the rows.  Kept as a theorem so a later cut cannot quietly revert to the
+cheaper gate: doing so makes this statement unprovable. -/
+theorem refusalLedger_records_gate_unsound :
+    ∃ (ctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+      (reader : SecurityDomain) (Lbefore : RefusalLedger) (r : DeclassificationRefusal),
+      (∃ i : Fin refusalRingSize,
+        ((Lbefore.recent.get i).any
+          (fun rec => !ctx.policy.canFlow rec.subjectDomain reader)) = true) ∧
+      (∀ i : Fin refusalRingSize,
+        (((recordRefusal Lbefore r).recent.get i).all
+          (fun rec => ctx.policy.canFlow rec.subjectDomain reader)) = true) ∧
+      0 < (recordRefusal Lbefore r).droppedCount.val ∧
+      Lbefore.attemptCount.val < (recordRefusal Lbefore r).attemptCount.val ∧
+      auditMonitorAuthorized ctx monitorClearance reader = false := by
+  refine ⟨{ policy := DomainFlowPolicy.linearOrder
+            objectDomainOf := fun _ => SecurityDomain.lowest
+            threadDomainOf := fun _ => SecurityDomain.lowest
+            endpointDomainOf := fun _ => SecurityDomain.lowest
+            serviceDomainOf := fun _ => SecurityDomain.lowest },
+          some ⟨3⟩, ⟨0⟩, refusalEvictionWitness, refusalWitnessRecord ⟨0⟩,
+          ⟨⟨0, by decide⟩, by decide⟩, by decide, by decide, by decide, by decide⟩
+
+/-- WS-SM SM9.B.10 (**why the ledger needs its own version**): the trail's
+`status` token does **not** move when a refusal is recorded.
+
+A monitor that bracketed a multi-call ledger read with the trail's status would
+therefore assemble a **hybrid record** — fields from two different attempts —
+and never detect it.  This is the negative that makes
+`refusalLedger_version_advances_on_record` load-bearing rather than
+decorative. -/
+theorem auditStatus_does_not_detect_refusal_write (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (st : SystemState) (L : RefusalLedger) :
+    auditReadWord ctx monitorClearance reader
+        { st with declassificationRefusals := L } .status =
+      auditReadWord ctx monitorClearance reader st .status := rfl
+
+/-- WS-SM SM9.B.10 (**and the ledger's own token does**): recording a refusal
+moves the refusal status word a monitor reads, so an unchanged word between two
+reads means no refusal intervened.
+
+The positive dual of the negative above, and the reader-level half of
+`refusalRead_bracketed_detects_overwrite`. -/
+theorem refusalStatus_detects_refusal_write (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (st : SystemState) (L : RefusalLedger) (r : DeclassificationRefusal)
+    (hMonitor : auditMonitorAuthorized ctx monitorClearance reader = true) :
+    auditReadWord ctx monitorClearance reader
+        { st with declassificationRefusals := recordRefusal L r } .refusalStatus ≠
+      auditReadWord ctx monitorClearance reader
+        { st with declassificationRefusals := L } .refusalStatus := by
+  simp only [auditReadWord, hMonitor, if_true, ne_eq, Except.ok.injEq]
+  have hSlot : L.nextSlot.val < refusalRingSize := L.nextSlot.isLt
+  have hSlot' : (recordRefusal L r).nextSlot.val < refusalRingSize :=
+    (recordRefusal L r).nextSlot.isLt
+  intro hEq
+  have hVer := congrArg refusalStatusVersion hEq
+  rw [(refusalStatusWord_roundtrip _ _ hSlot').2,
+      (refusalStatusWord_roundtrip _ _ hSlot).2] at hVer
+  simp only [refusalLedger_version_advances_on_record] at hVer
+  omega
+
+/-- WS-SM SM9.B.10: **the chunk protocol reconstructs a ring record's unbounded
+fields exactly**, over the domain the export accepts.
+
+The ledger's instance of `auditReadField_reconstructs`: folding the chunks a
+monitor reads recovers the field's value on the nose, so a reconstructed
+`subject`, `subjectDomain` or `requestedTarget` is the one the seam recorded
+and never a truncation of it. -/
+theorem refusalSlotField_reconstructs (r : DeclassificationRefusal)
+    (f : RefusalReadField) (n : Nat)
+    (hCount : auditFieldChunkCount? (refusalExportedFieldValue r f) = some n) :
+    auditFoldChunks n
+        (fun i => auditFieldChunk (refusalExportedFieldValue r f) i)
+      = refusalExportedFieldValue r f :=
+  auditReadField_reconstructs (refusalExportedFieldValue r f) n hCount
+
+-- ============================================================================
 -- §8  SM9.A.10 — the operand encoding
 -- ============================================================================
 
@@ -2256,12 +2780,25 @@ def decodeAuditReadOp (opcode index chunk : Nat) : Option AuditReadOp :=
   | 9  => some (.coreAndTrust index)
   | 10 => some (.basisByteCount index)
   | 11 => some (.basisChunk index chunk)
+  -- WS-SM SM9.B.10: the refusal ledger's opcodes.  `index` names a **ring
+  -- slot** here rather than a view index — the ledger has no clearance-filtered
+  -- view, because a caller that is not the configured monitor is refused
+  -- outright.
+  | 12 => some .refusalStatus
+  | 13 => some .refusalCounters
+  | 14 => some (.refusalSlotTags index)
+  | 15 => some (.refusalSlotFieldChunkCount index .subject)
+  | 16 => some (.refusalSlotFieldChunkCount index .subjectDomain)
+  | 17 => some (.refusalSlotFieldChunkCount index .requestedTarget)
+  | 18 => some (.refusalSlotField index .subject chunk)
+  | 19 => some (.refusalSlotField index .subjectDomain chunk)
+  | 20 => some (.refusalSlotField index .requestedTarget chunk)
   | _  => none
 
 /-- WS-SM SM9.A.10: the number of `.auditRead` opcodes.  Pinned in the Rust
 mirror, so a divergence is a conformance failure rather than a silent
 `.invalidSyscallArgument` on a valid request. -/
-def auditReadOpcodeCount : Nat := 12
+def auditReadOpcodeCount : Nat := 21
 
 /-- WS-SM SM9.A.10: encode a sub-operation back to its operand triple. -/
 def encodeAuditReadOp : AuditReadOp → Nat × Nat × Nat
@@ -2277,6 +2814,15 @@ def encodeAuditReadOp : AuditReadOp → Nat × Nat × Nat
   | .coreAndTrust i => (9, i, 0)
   | .basisByteCount i => (10, i, 0)
   | .basisChunk i k => (11, i, k)
+  | .refusalStatus => (12, 0, 0)
+  | .refusalCounters => (13, 0, 0)
+  | .refusalSlotTags i => (14, i, 0)
+  | .refusalSlotFieldChunkCount i .subject => (15, i, 0)
+  | .refusalSlotFieldChunkCount i .subjectDomain => (16, i, 0)
+  | .refusalSlotFieldChunkCount i .requestedTarget => (17, i, 0)
+  | .refusalSlotField i .subject k => (18, i, k)
+  | .refusalSlotField i .subjectDomain k => (19, i, k)
+  | .refusalSlotField i .requestedTarget k => (20, i, k)
 
 /-- WS-SM SM9.A.10: **the operand encoding round-trips.**  Every sub-operation
 is reachable through the ABI, and reaches the arm it names. -/
@@ -2290,6 +2836,11 @@ theorem decodeAuditReadOp_encode (op : AuditReadOp) :
   | coreAndTrust i => rfl
   | basisByteCount i => rfl
   | basisChunk i k => rfl
+  | refusalStatus => rfl
+  | refusalCounters => rfl
+  | refusalSlotTags i => rfl
+  | refusalSlotFieldChunkCount i f => cases f <;> rfl
+  | refusalSlotField i f k => cases f <;> rfl
 
 /-- WS-SM SM9.A.10 (**fail-closed**): an opcode outside the table is refused. -/
 theorem decodeAuditReadOp_out_of_range (opcode index chunk : Nat)
@@ -2298,8 +2849,9 @@ theorem decodeAuditReadOp_out_of_range (opcode index chunk : Nat)
   unfold auditReadOpcodeCount at hRange
   match opcode, hRange with
   | 0, h | 1, h | 2, h | 3, h | 4, h | 5, h | 6, h | 7, h | 8, h | 9, h
-  | 10, h | 11, h => omega
-  | n + 12, _ => rfl
+  | 10, h | 11, h | 12, h | 13, h | 14, h | 15, h | 16, h | 17, h | 18, h
+  | 19, h | 20, h => omega
+  | n + 21, _ => rfl
 
 /-- WS-SM SM9.A.10: every opcode the table admits is below the count — the
 other half of the range pin. -/
@@ -2367,10 +2919,17 @@ width is `.invalidArgument`, and a value too wide to export is
 `.auditFieldTooLarge`.
 
 **The `2 ^ 64` guard is not decoration.**  The boundary hands the word back
-through a 64-bit register, and `Nat.toUInt64` *truncates*.  Every arm but
-`status` is structurally below that bound; `status` carries the epoch, an
-unbounded monotone counter, so the guard is what turns "would silently wrap
-after 2^55 drains" into a refused read (`auditReadFromCore_word_fits`). -/
+through a 64-bit register, and `Nat.toUInt64` *truncates*.  Exactly two arms can
+exceed that bound, and for the same reason: each pairs a structurally bounded
+component with an **unbounded monotone counter** — `status` with the trail's
+epoch (`auditStatusWord_fits`, premise `generation < 2^55`) and `refusalStatus`
+with the ledger's version (`refusalStatusWord_fits`, premise `version < 2^59`).
+Every other arm is structurally below the bound: the chunk arms return a single
+base-`2^32` digit, and the ledger's counters and tags are `Fin`s
+(`refusalCountersWord_fits`, `refusalTagsWord_fits`).  So the guard is what
+turns "would silently wrap after 2^55 drains, or after 2^59 refusals" into a
+refused read (`auditReadFromCore_word_fits`) — one guard covering both, because
+it is applied to the word rather than to the arm that produced it. -/
 def auditReadFromCore (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (c : CoreId)
     (op : AuditReadOp) : Kernel Nat :=
@@ -2654,6 +3213,22 @@ theorem auditReadFromCore_bracketed_detects_drain_u64 (ctx : GenericLabelingCont
     hReader₂ hStep₂
   exact auditRead_bracketed_detects_drain ctx monitorClearance reader st₁ st₂
     hBounded₁ hBounded₂ (by rw [hv₁, hv₂, hEq])
+
+/-- WS-SM SM9.B.10: **the ledger's reads reach only the deployment's monitor**,
+at the live entry point.
+
+The entry refuses every non-monitor before any sub-operation runs (PR #870
+round 6), so the ledger's model-level gate and the live gate agree — the ledger
+never had a partial-reader class to lose.  Stated so a cut that re-admits
+partial readers to the live entry has to confront the ledger's own eviction
+channel rather than inheriting an exemption. -/
+theorem refusalRead_requires_monitor_at_entry (ctx : GenericLabelingContext)
+    (m : SecurityDomain) (c : CoreId) (op : AuditReadOp) (st : SystemState)
+    (reader : SecurityDomain)
+    (hReader : auditReaderDomain ctx st c = some reader)
+    (hPartial : auditMonitorAuthorized ctx (some m) reader = false) :
+    auditReadFromCore ctx (some m) c op st = .error .illegalAuthority :=
+  auditReadFromCore_partial_reader_denied ctx m c op st reader hReader hPartial
 
 
 end SeLe4n.Kernel

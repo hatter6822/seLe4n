@@ -75,6 +75,10 @@ SMP_INFORMATION_FLOW = [
     # is not in this list, so a new module that forgets the registration is
     # swept by nothing and reports clean.
     "SeLe4n.Kernel.InformationFlow.AuditRead",
+    # WS-SM SM9.B: the refusal record and its bounded ledger.  Registered here
+    # as part of landing it, for the same reason `AuditRead` was — a module
+    # missing from this list is swept by nothing and reports clean.
+    "SeLe4n.Kernel.InformationFlow.RefusalRecord",
 ]
 
 PROBE_TEMPLATE = """@IMPORTS@

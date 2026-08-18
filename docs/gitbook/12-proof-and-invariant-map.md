@@ -2980,6 +2980,132 @@ trail to 256 through real authorized downgrades, observe
 `.auditLogCapacityExceeded`, read, drain, declassify again — with the post-drain
 timestamp provably fresh and the pre-epoch collision exhibited as the negative.
 
+### Layer 3 under SMP — refusal auditing (WS-SM SM9.B)
+
+SM8.C's trail records **authorized** downgrades and nothing else, so a
+monitoring system cannot distinguish *"no attempts"* from *"many attempts, all
+denied"*.  That is a detection gap rather than an enforcement one — every
+refusal is already fail-closed — and closing it needed a writer on a path that
+has a post-state.
+
+* **Why the seam, and not the transition** (SM9.B.9).  `Kernel α` is
+  `SystemState → Except KernelError (α × SystemState)`, so a transition's
+  `.error` arm carries no post-state and no producer can be put on it —
+  `declassifyStoreOnCore_refusal_has_no_post_state` is what that theorem
+  actually proves, and it is renamed from `declassification_refusal_is_unrecorded`
+  because the *other* half of the old reading is now false.  One layer up,
+  `syscallDispatchFromAbi` already converts every kernel error into a
+  **committed** `(SyscallOutcome, state)` pair, with the executing core, the
+  resolved subject, the labeling context, the syscall number, `x0` and the
+  error all in hand.  So the audit costs no change to the kernel's error
+  discipline and no widening of `syscallEntryChecked`'s error type.
+
+* **The filter is a total function, not a list.**  A draft filtered on the
+  literal `.declassify`, which SM9.C silently defeats: it adds a *second*
+  declassifying syscall whose refusals would bypass the ledger entirely.  A
+  list plus a completeness theorem does not fix that — this is the third
+  taxonomy in the plan fixed the same way — so the seam reads
+  `refusalSeamClass : SyscallId → RefusalSeamClass`, total with no wildcard,
+  over the enumeration the ABI already forces to be complete
+  (`refusalSeamClass_total`, `refusalSeam_list_gate_insufficient`).
+
+* **The bound is structural** (SM9.B.2).  `RefusalLedger` is a `Vector` ring of
+  `refusalRingSize = 32` slots with two `Fin (maxRefusalCount + 1)` counters and
+  a `version`, so there is no 17th `proofLayerInvariantBundle` conjunct, no
+  capacity obligation on any writer, and no right-nested destructuring to
+  re-count — and the bound holds for *every* value rather than only for recorded
+  ones (`refusalLedger_bounded_structurally`,
+  `refusalCounter_bound_is_structural`).  The bundle *carriage* is still owed —
+  no field write transports the bundle definitionally — and is supplied
+  **unconditionally** by
+  `proofLayerInvariantBundle_setDeclassificationRefusals` with the seam-level
+  `recordSyscallRefusal_preserves_proofLayerInvariantBundle`.
+  At the bound the ring **evicts and counts the eviction**, the opposite of the
+  trail's fail-closed refusal and deliberately so: a fail-closed ledger would
+  make its own occupancy readable from an unprivileged syscall's outcome.
+  `refusalLedger_eviction_is_counted` is the honest statement of what a flood
+  costs — visibility of the loss, not silence.
+
+* **Three security theorems.**  The ledger is **not** the trail, so no volume of
+  refusals can consume the fail-closed capacity an authorized downgrade needs
+  (`refusalWrite_declassificationAuditLog_eq`,
+  `refusalWrite_cannot_exhaust_trail`).  The refused caller's outcome is
+  `Architecture.errorFrame ke` — computed from the error alone, bit-identical to
+  what the arm returned before the ledger existed
+  (`refusalLedger_write_is_caller_invisible`) — and `recordRefusal` is total, so
+  the ledger contributes no error of its own.  And the record **does** carry
+  `.auditLogCapacityExceeded` for the monitor, while
+  `authorizeDeclassificationOnCore_denied_before_capacity` still holds for the
+  caller-facing error: the occupancy channel is closed by the read gate, not by
+  discarding the only durable evidence that an authorized downgrade hit the
+  256-entry cliff.
+
+* **The reader has no partial class at all** (SM9.B.10).  Five new `.auditRead`
+  sub-operations (opcodes 12–20, count 12 → 21) sit behind the same configured
+  monitor clearance the drain uses — and unlike the trail there is no filtered
+  *view* below it, because a ring evicts: enough hidden refusals wrap it and
+  remove a lower reader's entry, which is §3.7's obligation (b) violated
+  directly.  A caller the gate refuses observes **nothing**, and cannot even
+  distinguish two arbitrary ledgers
+  (`refusalLedger_requires_full_dominance`,
+  `refusalLedger_partial_reader_learns_nothing`).
+
+* **The gate is configuration, never the surviving rows.**  The ledger's two
+  halves age differently — the ring evicts while the counters are cumulative —
+  so a records-derived predicate shrinks while the data it guards does not:
+  a run of hidden high-domain refusals bumps the counters, a ringful of
+  low-domain ones overwrites every high row, and the low reader then dominates
+  every *surviving* row while the counters still carry the hidden history.
+  `refusalLedger_records_gate_unsound` keeps that counterexample refuted;
+  `refusalLedger_gate_is_configuration_derived` is the property it lacks.
+
+* **Reads carry their own version bracket.**  A record takes several calls to
+  reconstruct, and any denied syscall in between can overwrite the selected ring
+  slot.  The trail's `status` token does not help — it moves on trail *drains*,
+  not on ledger writes — so a monitor bracketing with it would assemble a hybrid
+  record and never detect it (`auditStatus_does_not_detect_refusal_write`).  The
+  ledger's `version` advances on **every** `recordRefusal`
+  (`refusalLedger_version_advances_on_record`), and an unchanged version means
+  no refusal intervened (`refusalRead_bracketed_detects_overwrite`).
+
+* **The singleton discipline arrives with the ledger**, as the SM9.A round-7
+  note requires.  Serialization:
+  `lockSet_refusalSeam_writer_declares_stateLevel_write` — the recording
+  syscall's footprint already declares the `.objStore` state-level singleton in
+  write mode, and the theorem's first conjunct forces SM9.C.8's second recording
+  syscall to declare its own.  Capacity: **no ninth covert-channel entry is
+  owed**, and that is a theorem rather than an argument
+  (`refusalLedger_occupancy_is_not_a_covert_channel`) — CC-8 exists because the
+  trail is bounded *and fail-closed*, and each of its four carriers is absent
+  here (no capacity refusal, no outcome dependence, no projection, no
+  unprivileged read).
+
+* **The retirement.**  `DeclassificationRuleId.refusalIsUnrecorded`'s statement
+  is now false, so the constructor is retired — with a Tier-3 negative anchor
+  forbidding its return — in favour of `.refusalsAreCountedAndAttributed`, whose
+  evidence `declassificationRefusals_are_counted_and_attributed` is the property
+  that survives: refusals are counted, attributed and version-stamped, and
+  creating that evidence costs the trail nothing.
+
+* **Deliberately deferred, and moved rather than dropped.**  The record carries
+  no *failed hop* field.  The resolved receiver a second-hop refusal should name
+  is resolved **inside** SM9.C.1's transition, whose error arm carries no
+  post-state, so the seam cannot see it; *which* hop failed can ride the `reason`
+  discriminant SM9.C.1 chooses.  Adding a field no producer could set is the
+  unwired-structure shape the project forbids, so the obligation is SM9.C.1's.
+
+Registries: no new syscall, so the enforcement boundary and the syscall count
+are unchanged at 42 / 57 and 33; the `.auditRead` opcode space grows 12 → 21 on
+both sides of the ABI and `ReadableStructure` grows to two members, which is
+what forces the observation relation's clause function to gain an arm.
+
+Runtime coverage: §10.1–§10.6 of `tests/SmpInformationFlowSuite.lean` (632 →
+679 assertions across eighty-five groups), every group with a load-bearing
+negative.  §10.6 runs the plan's two explicit acceptance items for effect: a
+policy-refused caller's result is identical on a full trail and an empty one,
+and the capacity refusal *is* recorded and read back by the monitor while an
+under-cleared caller cannot read its reason at all.
+
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 
 WS-Q3 introduces the builder-phase state model: a dependently-typed wrapper

@@ -1089,6 +1089,79 @@ theorem proofLayerInvariantBundle_setDeclassificationAuditLog (st : SystemState)
   proofLayerInvariantBundle_setDeclassificationAuditTrail st log
     st.declassificationAuditEpoch h hBounded
 
+/-! ### WS-SM SM9.B.3 — `proofLayerInvariantBundle` carriage across a refusal-ledger write
+
+The same five-lemma shape again, for the same three conjuncts that do not
+transport definitionally.  What is *different* here is the conclusion's shape:
+the refusal ledger is bounded by its **type** — a `Vector` ring and two `Fin`
+counters — so no bundle conjunct reads it and there is no sixteenth-style
+obligation for the writer to discharge.  The carriage is therefore
+**unconditional**, and that is the whole content of "the ledger needed no
+seventeenth conjunct": not merely that none was added, but that a writer owes
+nothing to the fifteen that were already there. -/
+
+private theorem ipcInvariantFull_setDeclassificationRefusals {st : SystemState}
+    {L : SeLe4n.Kernel.RefusalLedger} (h : ipcInvariantFull st) :
+    ipcInvariantFull { st with declassificationRefusals := L } := by
+  obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
+          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
+  exact ⟨c1, dualQueueSystemInvariant_of_getElem_eq (s1 := st)
+           (s2 := { st with declassificationRefusals := L }) (fun _ => rfl) c2,
+         c3, c4, c5, c6, c7, c8, c9, c10,
+         c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
+
+private theorem serviceGraphInvariant_setDeclassificationRefusals {st : SystemState}
+    {L : SeLe4n.Kernel.RefusalLedger} (h : serviceGraphInvariant st) :
+    serviceGraphInvariant { st with declassificationRefusals := L } :=
+  ⟨fun sid hp =>
+     h.1 sid (serviceNontrivialPath_of_services_eq (st := st)
+                (st' := { st with declassificationRefusals := L }) rfl hp), h.2⟩
+
+private theorem crossSubsystemInvariant_setDeclassificationRefusals {st : SystemState}
+    {L : SeLe4n.Kernel.RefusalLedger} (h : crossSubsystemInvariant st) :
+    crossSubsystemInvariant { st with declassificationRefusals := L } := by
+  obtain ⟨d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12⟩ := h
+  exact ⟨d1, d2, d3, d4, d5, serviceGraphInvariant_setDeclassificationRefusals d6, d7, d8, d9,
+         PriorityInheritance.blockingAcyclic_frame st _ d10
+           (fun tid => PriorityInheritance.blockingServer_congr_objects _ _ tid rfl) rfl,
+         d11, d12⟩
+
+private theorem coreIpcInvariantBundle_setDeclassificationRefusals {st : SystemState}
+    {L : SeLe4n.Kernel.RefusalLedger} (h : coreIpcInvariantBundle st) :
+    coreIpcInvariantBundle { st with declassificationRefusals := L } :=
+  ⟨h.1, h.2.1, ipcInvariantFull_setDeclassificationRefusals h.2.2⟩
+
+private theorem ipcSchedulerCouplingInvariantBundle_setDeclassificationRefusals
+    {st : SystemState} {L : SeLe4n.Kernel.RefusalLedger}
+    (h : ipcSchedulerCouplingInvariantBundle st) :
+    ipcSchedulerCouplingInvariantBundle { st with declassificationRefusals := L } :=
+  ⟨coreIpcInvariantBundle_setDeclassificationRefusals h.1, h.2.1, h.2.2.1, h.2.2.2⟩
+
+/-- **WS-SM SM9.B.3**: `proofLayerInvariantBundle` carriage across a write to
+`declassificationRefusals` — **unconditional**, because no conjunct reads the
+field.
+
+Stated once for *any* ledger writer, so the FFI refusal seam
+(`Platform.FFI.recordSyscallRefusal`) and any future one discharge it the same
+way.  Without this layer a bundle-preservation proof for the committed dispatch
+would be blocked exactly where the v0.32.151 diagnosis says it would: three
+conjuncts fail `isDefEq` outright, for reasons that are structural (a `match`
+stuck on a symbolic `Nat`, an `inductive` family parameterised by the state) and
+not about proof budget. -/
+theorem proofLayerInvariantBundle_setDeclassificationRefusals (st : SystemState)
+    (L : SeLe4n.Kernel.RefusalLedger)
+    (h : proofLayerInvariantBundle st) :
+    proofLayerInvariantBundle { st with declassificationRefusals := L } := by
+  obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
+          bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
+          bIcache, bAck, bAudit⟩ := h
+  exact ⟨bSched, bCap, coreIpcInvariantBundle_setDeclassificationRefusals bCoreIpc,
+         ipcSchedulerCouplingInvariantBundle_setDeclassificationRefusals bCoupling,
+         bLifecycle, bService, bVSpace,
+         crossSubsystemInvariant_setDeclassificationRefusals bCross,
+         bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
+         bIcache, bAck, bAudit⟩
+
 /-- **WS-SM SM7.F.5**: `proofLayerInvariantBundle` carriage across a write to
 `perCoreTlb`.
 

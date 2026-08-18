@@ -25,146 +25,23 @@ import SeLe4n.Kernel.Architecture.CacheInvalidation
 -- must not pull the information-flow policy layer's import closure (which
 -- imports this module).
 import SeLe4n.Kernel.InformationFlow.AuditRecord
+-- WS-SM SM9.B.3: the pure declassification refusal record and its bounded
+-- ledger — the payload of the `declassificationRefusals` field mounted below.
+-- `RefusalRecord.lean` names `KernelError`, which is why that inductive now
+-- lives in the import-free leaf imported on the next line rather than here.
+import SeLe4n.Kernel.InformationFlow.RefusalRecord
 
 namespace SeLe4n.Model
 
 open SeLe4n.Kernel.RobinHood
 open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId)
 
-/-- F-04: Kernel error codes. This inductive has 49 variants.
-**Coding convention**: Prefer explicit match arms over `| _ =>` catch-all
-patterns when matching on `KernelError`. Lean's exhaustiveness checker will
-flag missing arms at compile time, but catch-all patterns silently swallow
-new variants added in future workstreams, masking potential error-handling
-bugs. Use `| _ =>` only for genuinely uniform error handling (e.g., converting
-any error to a user-facing string) where variant-specific behavior is not needed.
-
-**AC5-D audit result**: Codebase-wide audit of `| _ =>` patterns confirmed zero
-catch-alls on `KernelError` in production code. All `.error _` catch-alls found
-are in: (a) test harness code (MainTraceHarness.lean), (b) intentional uniform
-error handling in donation/lifecycle wrappers (documented by AC3-A/I-02 atomicity
-contract), or (c) seL4-compatible `resolveExtraCaps` silent-drop (documented by
-AC3-D/API-01). -/
-inductive KernelError where
-  | invalidCapability
-  | objectNotFound
-  | illegalState
-  | illegalAuthority
-  | policyDenied
-  | dependencyViolation
-  | schedulerInvariantViolation
-  | endpointStateMismatch
-  | endpointQueueEmpty
-  | asidNotBound
-  | vspaceRootInvalid
-  | mappingConflict
-  | translationFault
-  | flowDenied
-  | declassificationDenied  -- WS-I3/R-08: declassification policy denied downgrade
-  | alreadyWaiting
-  | cyclicDependency
-  | notImplemented
-  | targetSlotOccupied   -- WS-E4/H-02: insert into occupied slot
-  | replyCapInvalid      -- WS-E4/M-12: reply target not in blockedOnReply state, or replier not authorized (WS-H1/M-02)
-  | untypedRegionExhausted   -- WS-F2: not enough space in untyped region
-  | untypedTypeMismatch      -- WS-F2: source object is not an UntypedObject
-  | untypedDeviceRestriction -- WS-F2: device untyped cannot back kernel objects
-  | untypedAllocSizeTooSmall -- WS-F2: allocSize smaller than minimum for object type
-  | childIdSelfOverwrite    -- WS-H2/H-06: childId = untypedId in retypeFromUntyped
-  | childIdCollision        -- WS-H2/A-26: childId collides with existing object or untyped child
-  | addressOutOfBounds      -- WS-H11/A-05: physical address exceeds machine address width
-  | ipcMessageTooLarge      -- WS-H12d/A-09: IPC message registers exceed maxMessageRegisters (120)
-  | ipcMessageTooManyCaps   -- WS-H12d/A-09: IPC message caps exceed maxExtraCaps (3)
-  | backingObjectMissing    -- WS-H13/A-29: service backing object not in object store
-  | invalidRegister         -- WS-J1-B: register index out of architectural bounds
-  | invalidSyscallNumber    -- WS-J1-B: syscall number register value not in modeled set
-  | invalidMessageInfo      -- WS-J1-B: malformed message-info word (length/caps out of bounds)
-  | invalidTypeTag          -- WS-K-D: retype type tag not in modeled object set (0–5)
-  | resourceExhausted       -- WS-R2/M-05: fuel exhaustion in streaming BFS revocation
-  | invalidCapPtr           -- S4-K: capability pointer exceeds word64 bounds
-  | objectStoreCapacityExceeded  -- S4-B: object count exceeds maxObjects capacity
-  | allocationMisaligned  -- S5-G: allocation base not page-aligned for VSpace-bound objects
-  | revocationRequired    -- U-H03: delete attempted on slot with CDT children (must revoke first)
-  | invalidArgument      -- U5-E/U-M07: syscall argument decode failed (e.g., invalid permission bits)
-  | mmioUnaligned        -- V4-B/M-HW-1: MMIO access at unaligned address (4-byte for 32-bit, 8-byte for 64-bit)
-  | invalidSyscallArgument  -- X5-E/M-11: syscall-specific argument decode failure (distinct from generic invalidArgument)
-  | ipcTimeout             -- WS-Z/Z6: IPC blocked thread timed out due to SchedContext budget expiry
-  | alignmentError         -- D3-B: IPC buffer address not aligned to ipcBufferAlignment (512 bytes)
-  | vmFault                -- AG3-C: virtual memory fault (data abort or instruction abort)
-  | userException          -- AG3-C: unclassified synchronous exception from user mode
-  | hardwareFault          -- AG3-C: SError (asynchronous external abort / hardware error)
-  | notSupported           -- AG3-C: unsupported exception type (e.g., FIQ)
-  | invalidIrq             -- AG3-D: interrupt ID not mapped in IRQ handler table
-  | invalidObjectType      -- AL6 (WS-AL / AK7-F.cascade): storeObjectKindChecked
-                           -- rejects cross-variant overwrite (e.g., storing a
-                           -- SchedContext at an ObjId that already holds a TCB).
-  | nullCapability         -- AL1b (WS-AL / AK7-I.cascade): capability operation
-                           -- rejected the `Capability.null` sentinel. Distinct
-                           -- from `invalidCapability` (which can mean "slot
-                           -- empty" or "cap target is not .object"); this
-                           -- specifically signals the seL4_CapNull convention
-                           -- (`.object` target with reserved ObjId AND empty
-                           -- rights). Produced by the `NonNullCap.ofCap?`
-                           -- type-level promotion failure path; the type
-                           -- system enforces the discipline at call sites
-                           -- that demand `NonNullCap` arguments.
-  | partialResolution      -- AN7-E (API-M01): `resolveExtraCaps` encountered
-                           -- an unresolvable capability address in the extra-
-                           -- cap list AND the `sele4n.debug.noisyResolution`
-                           -- option was enabled.  By default seL4-compatible
-                           -- semantics silently drop the unresolvable entries;
-                           -- under the noisy option the kernel surfaces this
-                           -- variant so callers can distinguish a *partial*
-                           -- resolution from a *complete* success.
-  | missingSchedContext    -- R5.E (DEEP-SCH-04): a bound-budget scheduler
-                           -- path lost track of its bound `SchedContext`
-                           -- (object not found in `objects` table).  Pre-R5,
-                           -- the timer-tick budget branch silently fell back
-                           -- to a no-preempt path on this case; under the
-                           -- runtime-checked `crossSubsystemInvariant`
-                           -- (specifically `schedContextStoreConsistent`) the
-                           -- branch is unreachable, but exposing it as a
-                           -- distinct discriminant lets observability layers
-                           -- surface the invariant violation instead of
-                           -- absorbing it.
-  | threadOnDifferentCore  -- WS-SM SM5.B.4 (plan §3.2, Theorem 3.2.3): a
-                           -- per-core context switch (`switchToThreadOnCore`)
-                           -- was asked to dispatch a thread on a core other
-                           -- than the core its `cpuAffinity` binds it to.
-                           -- Migration of a thread between cores is a
-                           -- separate, explicit operation; a context switch
-                           -- never implicitly migrates.  Surfacing this as a
-                           -- distinct discriminant lets the per-core
-                           -- scheduler (SM5.C+) and userspace distinguish a
-                           -- genuine wrong-core dispatch from an unrelated
-                           -- scheduler fault (`schedulerInvariantViolation`).
-  | auditLogCapacityExceeded -- WS-SM SM8.C.8: the declassification audit trail
-                           -- is at `maxDeclassificationAuditEntries`, so the
-                           -- downgrade was refused rather than performed
-                           -- unrecorded.  A distinct discriminant, not
-                           -- `resourceExhausted` or `declassificationDenied`,
-                           -- because the three mean different things to an
-                           -- operator: policy refused the downgrade / the
-                           -- kernel ran out of an unrelated resource / the
-                           -- kernel could not *audit* the downgrade.  Only the
-                           -- last one says "drain the trail"; collapsing it
-                           -- into either sibling would hide a system that has
-                           -- stopped being able to declassify at all.
-  | auditFieldTooLarge     -- WS-SM SM9.A.2: an audit-trail field the reader was
-                           -- asked to export needs more than
-                           -- `maxAuditFieldChunks` chunks, so the kernel
-                           -- **refuses the read** rather than returning a
-                           -- truncated value.  The chunk *coordinates* are
-                           -- themselves single words, so "any `Nat` can be
-                           -- exported" was never true; the honest shape is a
-                           -- bounded domain the reconstruction theorem holds
-                           -- unconditionally on, plus a fail-closed refusal
-                           -- above it.  A distinct discriminant, not
-                           -- `invalidArgument`, because the caller's argument
-                           -- was well-formed — it is the *value* that does not
-                           -- fit, which is a statement about the kernel's
-                           -- export width and not about the request.
-  deriving Repr, DecidableEq
+/- WS-SM SM9.B.1: `KernelError` moved to the import-free leaf
+`SeLe4n/Model/KernelError.lean` so the refusal ledger's payload
+(`InformationFlow/RefusalRecord.lean`) can name it *below* this module.  The
+namespace and every constructor are unchanged and this module imports it, so
+every existing reference resolves exactly as before — the extraction SM7.A,
+SM7.D and SM8.C.8 each performed for a mounted field's payload type. -/
 
 /-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard
 string interpolation (`s!"{x}"`) for all types with `Repr` instances.
@@ -1095,6 +972,49 @@ structure SystemState where
       `auditReadStatus_partial_hides_generation`). -/
   declassificationAuditEpoch : Nat := 0
 
+  /-- WS-SM SM9.B.3: the **declassification refusal ledger** — a saturating
+      count of refused declassification attempts and a bounded ring of the most
+      recent ones, attributed.
+
+      **Algebra**: a `RefusalLedger` (`InformationFlow/RefusalRecord.lean`) —
+      two `Fin`-bounded cumulative counters, a `Vector` ring of
+      `refusalRingSize` slots, the slot the next record occupies, and a
+      `version` advanced by every write.
+
+      **Lifecycle**: empty at boot; written **only** at the FFI seam
+      (`Platform.FFI.syscallDispatchFromAbi`'s error arm) and only for syscalls
+      the total `refusalSeamClass` classifies as `.records`; never written by a
+      kernel transition, and `storeObject` frames it
+      (`storeObject_declassificationRefusals_eq`).  The seam is the right
+      writer because `Kernel α`'s `.error` arm carries no post-state, while one
+      layer up the boundary already commits a state for every refusal and holds
+      every field a record needs.
+
+      **Capacity**: bounded **structurally**, not by an invariant conjunct — a
+      `Vector` cannot exceed its size and a `Fin` cannot exceed its ceiling
+      (`refusalLedger_bounded_structurally`).  So, unlike the trail, this field
+      carries no `proofLayerInvariantBundle` conjunct: there is nothing for a
+      transition to preserve that the type does not already guarantee.  At the
+      bound the ring **evicts and counts the eviction** (`droppedCount`) rather
+      than refusing, which is the opposite of the trail's fail-closed
+      behaviour and deliberately so: an authorized downgrade the kernel did not
+      record is a soundness failure, an evicted refusal is a monitoring loss —
+      and refusing to record would have to be reported to the caller, handing
+      an unprivileged subject the ledger's occupancy.
+
+      **Information flow**: outside the IF projection surface, like the trail
+      and for a sharper reason — a record names `(subject, subjectDomain,
+      syscall, reason, requestedTarget)`, so projecting it would tell a low
+      observer that a downgrade was attempted, by whom and against what
+      (`declassificationRefusals_write_preserves_projection`).  It is readable
+      only by the deployment's configured audit monitor
+      (`refusalLedger_requires_full_dominance`), which is a full-dominance gate
+      computed from configuration rather than from the ring's surviving rows —
+      the ring evicts while its counters are cumulative, so a records-derived
+      gate would shrink while the data it guards does not
+      (`refusalLedger_records_gate_unsound`). -/
+  declassificationRefusals : SeLe4n.Kernel.RefusalLedger := SeLe4n.Kernel.RefusalLedger.initial
+
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
 
@@ -1177,6 +1097,10 @@ instance : Inhabited SystemState where
     -- `declassificationAuditLogWellFormed` the boot instance of the
     -- epoch-parameterised predicate.
     declassificationAuditEpoch := 0
+    -- WS-SM SM9.B.3: no declassification has been refused at boot, so the
+    -- refusal ledger is the empty ring with zero counters.  Explicit listing
+    -- pins `default_declassificationRefusals`.
+    declassificationRefusals := SeLe4n.Kernel.RefusalLedger.initial
   }
 
 /-- X2-B/H-2: Checked domain schedule setter — validates that all entries have
@@ -1409,6 +1333,22 @@ zero and the trail's timestamps are exactly its indices.  This is what makes
 the boot instance of the epoch-parameterised `auditTimestampsFrom`. -/
 @[simp] theorem default_declassificationAuditEpoch :
     (default : SystemState).declassificationAuditEpoch = 0 := rfl
+
+/-- WS-SM SM9.B.3: nothing has been refused at boot, so the refusal ledger is
+the empty ring — the base case every refusal-audit statement starts from, and
+the reason a boot-state monitor read reports "no attempts" rather than an
+unexamined ring. -/
+@[simp] theorem default_declassificationRefusals :
+    (default : SystemState).declassificationRefusals =
+      SeLe4n.Kernel.RefusalLedger.initial := rfl
+
+/-- WS-SM SM9.B.3: and the boot ledger's own components are zero — the form
+the suite's "no attempts" assertions read, without unfolding `initial`. -/
+@[simp] theorem default_declassificationRefusals_counters :
+    (default : SystemState).declassificationRefusals.attemptCount.val = 0 ∧
+      (default : SystemState).declassificationRefusals.droppedCount.val = 0 ∧
+      (default : SystemState).declassificationRefusals.version = 0 :=
+  ⟨rfl, rfl, rfl⟩
 
 /-- WS-SM SM8.C.8: boot witness for the 16th `proofLayerInvariantBundle`
 conjunct — the empty trail is within capacity. -/
@@ -2462,6 +2402,21 @@ theorem storeObject_declassificationAuditEpoch_eq
     (pair : Unit × SystemState)
     (hStore : storeObject id obj st = .ok pair) :
     pair.2.declassificationAuditEpoch = st.declassificationAuditEpoch := by
+  unfold storeObject at hStore; cases hStore; rfl
+
+/-- WS-SM SM9.B.3: **an object write does not touch the refusal ledger.**
+
+The frame that makes the seam the ledger's only writer a checkable fact rather
+than a reading of the call graph: every kernel transition commits through
+`storeObject`, and none of them can move a counter, a ring slot or the version
+a monitor brackets its reads with. -/
+theorem storeObject_declassificationRefusals_eq
+    (st : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (pair : Unit × SystemState)
+    (hStore : storeObject id obj st = .ok pair) :
+    pair.2.declassificationRefusals = st.declassificationRefusals := by
   unfold storeObject at hStore; cases hStore; rfl
 
 theorem storeObject_objects_eq

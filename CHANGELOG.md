@@ -1,3 +1,222 @@
+## v0.33.51 — WS-SM SM9.B: refusal auditing — the declassification trail's blind spot, closed
+
+SM8.C's audit trail records **authorized** downgrades and nothing else, so a
+monitoring system cannot distinguish *"no attempts"* from *"many attempts, all
+denied"*.  That is a detection gap rather than an enforcement one — every
+refusal is already fail-closed — and SM8.C registered it as the rule
+`DeclassificationRuleId.refusalIsUnrecorded`, whose statement this cut makes
+false.  All ten SM9.B sub-tasks land here.
+
+**Why the writer is the FFI seam.**  `Kernel α` is
+`SystemState → Except KernelError (α × SystemState)`, so a transition's
+`.error` arm carries no post-state and no producer can be put on it — which is
+what `declassifyStoreOnCore_refusal_has_no_post_state` actually proves.  (The
+theorem is renamed from `declassification_refusal_is_unrecorded`, because the
+other half of that name's reading is now false.)  One layer up,
+`syscallDispatchFromAbi` already converts every kernel error into a
+**committed** `(SyscallOutcome, state)` pair, and it does so with every field a
+refusal record needs already in hand: the executing core, the resolved subject,
+the deployment's labeling context, the raw syscall number and `x0`, and the
+`KernelError`.  So the refusal audit costs no change to the kernel's error
+discipline, no widening of `syscallEntryChecked`'s error type (~40 theorem
+statements, two of which bake in *"an error changes nothing"*), and no decode
+replay.
+
+**SM9.B.1 / SM9.B.2 — the record and its ledger** (new production leaf
+`SeLe4n/Kernel/InformationFlow/RefusalRecord.lean`, axiom-clean):
+
+- `DeclassificationRefusal` — core, subject, **seam-resolved** source domain,
+  syscall, `KernelError` reason, raw `CPtr`.  The domain is stored rather than
+  recomputed because `LabelingContext` is an *argument* to the dispatch, not
+  persistent state: `refusalRecord_domain_is_seam_resolved` (it is not a
+  function of the record's other fields) and
+  `refusalRecord_domain_is_seam_resolved_at_seam` (two deployments labelling
+  the same subject differently record different domains).
+- `RefusalLedger` — a `Vector` ring of `refusalRingSize = 32` slots, two
+  saturating `Fin (maxRefusalCount + 1)` counters and a `version`.  The bound is
+  the **type's**, so there is no 17th `proofLayerInvariantBundle` conjunct, no
+  capacity obligation on any writer and no right-nested destructuring to
+  re-count — and it holds for *every* value rather than only for recorded ones
+  (`refusalLedger_bounded_structurally`, `refusalCounter_bound_is_structural`).
+  The carriage block every mounted field needs is still owed and is supplied
+  **unconditionally** (see SM9.B.3 below); the type-level bound shows up in that
+  theorem's shape, not in its absence.
+- At the bound the ring **evicts and counts the eviction**
+  (`recordRefusal_ring_wraps_counted`), the opposite of the trail's fail-closed
+  refusal and deliberately so: a fail-closed ledger would make its own
+  occupancy readable from an unprivileged syscall's outcome.
+  `recordRefusal_no_loss` is the retention window (a record survives the next
+  `refusalRingSize - 1` refusals) and `refusalLedger_eviction_is_counted` states
+  what a flood costs — the loss is visible, not silent.
+- `recordRefusal_saturates` / `_attemptCount_monotone` /
+  `recordRefusal_never_refuses` (the totality contrast with
+  `recordDeclassificationChecked` at a full trail, in one statement).
+
+**SM9.B.9 — the seam, filtered by a total classification.**  A draft filtered on
+the literal `.declassify`, which SM9.C silently defeats by adding a second
+declassifying syscall.  A list plus a completeness theorem does not fix that —
+the third taxonomy in this plan fixed the same way — so the seam reads
+`refusalSeamClass : SyscallId → RefusalSeamClass`, total with no wildcard, over
+the enumeration the ABI already forces to be complete:
+
+- `refusalSeamClass_total`, `refusalSeam_list_gate_insufficient`,
+  `refusalSeamClass_records_iff` (pinning today's single recording syscall, so
+  SM9.C.8 must move it), `refusalSeamClass_records_count`.
+- `Platform.FFI.recordSyscallRefusal` + the frame family
+  (`_frame`, `_objects_eq`, `_scheduler_eq`, `_machine_eq`,
+  `_readReturnFrame_eq`, `_ledger_congr`) and the fail-closed arms
+  (`_exempt`, `_undecodable`).
+- `syscallDispatchFromAbi`'s entry-error arm now commits the record;
+  `syscallDispatchFromAbi_error_of_syscallEntryChecked_error` and `_total` are
+  re-shaped, and `_error_stages_no_frame` restated as a conjunction whose
+  second half is the property its name claims (`readReturnFrame` unchanged).
+- **Three security theorems**: `refusalWrite_declassificationAuditLog_eq` and
+  `refusalWrite_cannot_exhaust_trail` (the ledger is not the trail, so refusals
+  can never consume the fail-closed capacity an authorized downgrade needs);
+  `refusalLedger_write_is_caller_invisible` (the refused caller's outcome is
+  `Architecture.errorFrame ke`, bit-identical to what the arm returned before
+  the ledger existed); and the record **does** carry
+  `.auditLogCapacityExceeded` for the monitor while
+  `authorizeDeclassificationOnCore_denied_before_capacity` still holds for the
+  caller-facing error — the occupancy channel is closed by the read gate, not
+  by discarding the only durable evidence that an authorized downgrade hit the
+  256-entry cliff.
+- `computeCrossCoreSgis_recordSyscallRefusal_eq` — the runtime seam's
+  diff-recovered SGIs are unchanged, so the pokes the kernel sends are exactly
+  the pokes it sent before.
+
+**SM9.B.3 – SM9.B.8 — the §6 mount checklist, run for the third time.**
+`SystemState.declassificationRefusals` with its `Inhabited` listing,
+`default_declassificationRefusals` and `storeObject_declassificationRefusals_eq`
+(the frame that makes the seam the ledger's only writer a checkable fact); the
+**required** `FrozenSystemState` field (a silent drop is a compile error — the
+six frozen test literals updated) with `freeze_preserves_declassificationRefusals`
+and the `apiInvariantBundle_frozenDirectFull` conjunct; the `OffSchedulerAgrees`
+clause and all six builders; four boot frames; and the projection pair
+`declassificationRefusals_write_preserves_projection` /
+`onCore_declassificationRefusals`.
+
+The checklist also owes a **bundle-carriage layer**, which the drafted row did
+not name and v0.32.151 shows is not optional: `proofLayerInvariantBundle` does
+not transport across an arbitrary field write by `rfl`, because three conjuncts
+fail `isDefEq` outright for structural reasons — a `match` stuck on a symbolic
+`Nat` (`blockingChain`, `dualQueueSystemInvariant`) and an inductive family
+parameterised by the state (`serviceNontrivialPath`).  So the ledger gets the
+same five-lemma block its mounted peers have,
+`proofLayerInvariantBundle_setDeclassificationRefusals`
+(`Kernel/Architecture/Invariant.lean`), with the seam-level consequence
+`recordSyscallRefusal_preserves_proofLayerInvariantBundle`.  The carriage is
+**unconditional** — no capacity obligation on the writer — and that is the
+type-level bound being paid back: a `List` ring with `Nat` counters would have
+needed a seventeenth conjunct here and an obligation at every writer.
+
+**SM9.B.10 — the reader, the gate, and the retirement.**
+
+- Five new `.auditRead` sub-operations (`refusalStatus`, `refusalCounters`,
+  `refusalSlotTags`, `refusalSlotFieldChunkCount`, `refusalSlotField`), opcodes
+  12–20, count 12 → 21, mirrored in `rust/sele4n-sys/src/audit.rs` with the
+  ledger's constants and word decoders.  `refusalStatus` pairs the ring's write
+  position with the version **atomically** (the tearing argument that keeps the
+  trail's `status` a single call); `refusalCounters` is a second atomic pair.
+  The reason exports through WS-RA's own `KernelError` numbering, so a monitor's
+  decoded reason is the discriminant the refused caller received
+  (`refusalTagsWord_reason_is_abi_discriminant`).
+- **No partial reader class at all.**  Unlike the trail there is no filtered
+  *view* below the gate, because a ring evicts: enough hidden refusals wrap it
+  and remove a lower reader's entry.  `refusalLedger_requires_full_dominance`
+  and `refusalLedger_partial_reader_learns_nothing` (an under-cleared caller
+  cannot even distinguish two arbitrary ledgers).
+- **The gate is the configuration**, never the ring's surviving rows — the ring
+  evicts while the counters are cumulative, so a records-derived predicate
+  shrinks while the data it guards does not
+  (`refusalLedger_gate_is_configuration_derived`, with
+  `refusalLedger_records_gate_unsound` keeping the eviction counterexample
+  refuted).
+- **Reads carry their own version bracket**, since the trail's `status` token
+  does not move on a ledger write and a monitor bracketing with it would
+  assemble a hybrid record (`refusalRead_bracketed_detects_overwrite`,
+  `auditStatus_does_not_detect_refusal_write`, with
+  `refusalStatus_detects_refusal_write` the positive dual).
+- `ReadableStructure` gains its second member, which forces SM9.A.4a's **total**
+  clause function to gain an arm; refl/symm/trans, the renamed general
+  congruence `auditObservationalEquivalence_of_readableFramed` (it now frames
+  *every* readable structure), and the seam's own congruence
+  `recordSyscallRefusal_preserves_auditObservationalEquivalence`.
+- **The singleton discipline arrives with the ledger** (the SM9.A round-7 note):
+  `lockSet_refusalSeam_writer_declares_stateLevel_write` is the serialization
+  subject — its first conjunct forcing SM9.C.8's second recording syscall to
+  declare its own — and `refusalLedger_occupancy_is_not_a_covert_channel` is why
+  **no ninth channel entry is owed**, each of CC-8's four carriers being absent
+  (no capacity refusal, no outcome dependence, no projection, no unprivileged
+  read).
+- **The retirement**, on the SM8.E pattern: `refusalIsUnrecorded` retired with a
+  Tier-3 negative anchor forbidding its return, replaced 1:1 by
+  `.refusalsAreCountedAndAttributed` (count stays 12) whose evidence
+  `declassificationRefusals_are_counted_and_attributed` is the property that
+  survives — refusals are counted, attributed and version-stamped, and creating
+  that evidence costs the trail nothing.
+
+**Two supporting moves.**  `KernelError` was extracted to the import-free leaf
+`SeLe4n/Model/KernelError.lean` so the record can name it **typed** rather than
+storing a bare discriminant `Nat` — the same extraction SM7.A made for
+`TlbInvalidation`, SM7.D for `CacheInvalidation` and SM8.C.8 for the audit
+record; namespace and constructors are unchanged and `Model/State.lean` imports
+the leaf, so every reference resolves as before (fourteen Tier-3 anchors
+re-pointed at the file the code is now in).  And the *failed hop* field the
+plan's §3.1 table lists is **moved to SM9.C.1 rather than dropped**: the
+resolved receiver is resolved inside that transition, whose error arm carries no
+post-state, so the seam cannot see it — and a field no producer could set is the
+unwired-structure shape CLAUDE.md forbids.
+
+**Evidence.**  `tests/SmpInformationFlowSuite.lean` §10.1–§10.6 (632 → 679
+assertions across 85 groups), every group with a load-bearing negative; §10.6
+runs the plan's two explicit acceptance items for effect.  §1.11 anchors every
+new declaration; `tests/SmpSurfaceAnchors.lean` §10 pins the headline surface;
+`tests/fixtures/smp_information_flow.expected` gains five `refusal` lines (hash
+regenerated).  A Tier-3 SM9.B anchor block, including the retirement negatives
+and a negative forbidding a hardcoded `.declassify` seam filter.  Rust 1136 →
+1137 unit tests, 108 conformance, clippy clean.  Zero sorry/axiom (3569
+environment constants swept across the information-flow surface, plus the seam
+and the state layer); trace byte-identical; no new syscall, so the enforcement
+boundary and `SyscallId.count` are unchanged.
+
+**Audit cut (same branch)** — a code-first audit of the whole cut,
+documentation distrusted by instruction; verdict: **no security defect, no
+false theorem, no vacuous theorem** (the seam classification is genuinely
+total with 33 explicit arms; the extracted `KernelError` inductive is
+byte-identical to the block removed from `Model/State.lean`; the ring/counter
+algebra was re-derived by hand — the §10.5 wrap arithmetic, the no-loss
+window's modular bound and the version-bracket contradiction all check; all
+117 added public declarations are anchored, verified by set difference).
+Three findings, all closed in the audit commit:
+
+1. **The refusal opcodes were exercised only through the model reader.**
+   Every §10.4 runtime check drove `auditReadWord`; nothing drove a refusal
+   opcode through the live entry (`auditReadFromCore` — the configuration
+   gate, the subject resolution, the round-6 monitor gate and the `2^64`
+   guard) or composed the seam's write with a live read.  Four new
+   assertions close it (679 total): the monitor's core reads `refusalStatus`
+   losslessly through the live entry; a partial reader's core is refused for
+   **every** refusal op; an unconfigured deployment is refused; and the
+   acceptance composition — one deployment context refuses a `.declassify`
+   at the boundary, commits the record, and the **caller's whole return
+   frame equals `Architecture.errorFrame` of the recorded reason** while the
+   monitor's live read decodes that same reason and syscall back out of the
+   tags word.
+2. **The Rust `audit_read` docstring had drifted**: it described only the
+   trail, and its `index` line said "the caller's own filtered view" — for
+   the `Refusal*` opcodes the index is a **ring slot**, the ledger having no
+   filtered view.  The wrapper's contract now covers both structures and the
+   ledger's `InvalidArgument` causes.
+3. **A docstring named a premise that does not exist**:
+   `recordSyscallRefusal_preserves_auditObservationalEquivalence` described
+   an `hSameRefusal` hypothesis, but the theorem needs none — the seam
+   constructs the record from the theorem's own shared arguments and from
+   nothing in the state, so "both sides record the same row" holds by
+   construction (`recordSyscallRefusal_ledger_congr`).  The docstring now
+   says that, and says why the declassification's congruence *does* need
+   its `hSameEvent` (its event reads the state's epoch and trail length).
+
 ## v0.33.50 — PR #870 round 7: the audit trail's singleton discipline — occupancy registered as CC-8, mutation serialized by `stateLevelLock`
 
 Two further Codex findings, one P1 and one P2, both valid — and both halves

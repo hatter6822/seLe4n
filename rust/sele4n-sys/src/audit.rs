@@ -46,7 +46,7 @@ use sele4n_types::{CPtr, KernelResult, SyscallId};
 /// Number of `audit_read` sub-operation opcodes.  Mirrors Lean's
 /// `auditReadOpcodeCount`; a divergence would surface as
 /// `InvalidSyscallArgument` on a valid request rather than as a decode bug.
-pub const AUDIT_READ_OPCODE_COUNT: u64 = 12;
+pub const AUDIT_READ_OPCODE_COUNT: u64 = 21;
 
 /// The `audit_read` sub-operations, mirroring Lean's `AuditReadOp`.
 ///
@@ -86,6 +86,35 @@ pub enum AuditReadOpcode {
     BasisByteCount = 10,
     /// One four-byte chunk of the entry's basis designation.
     BasisChunk = 11,
+    // WS-SM SM9.B.10: the declassification **refusal ledger**.  The `index`
+    // operand names a **ring slot** for these opcodes, not a view index: the
+    // ledger has no clearance-filtered view, because a caller that is not the
+    // deployment's configured audit monitor is refused outright.
+    /// The ledger's next write position paired with its version — the token a
+    /// monitor brackets a multi-call record reconstruction with.  One call,
+    /// because a split read could pair a slot with a version from a different
+    /// state.
+    RefusalStatus = 12,
+    /// The ledger's cumulative attempt and eviction counts, in one word.  A
+    /// nonzero eviction count means records were dropped before the monitor
+    /// polled.
+    RefusalCounters = 13,
+    /// Ring slot's originating core, syscall and refusal reason, in one word.
+    /// The reason is WS-RA's `KernelError` discriminant — the same number the
+    /// refused caller received on `x1`.
+    RefusalSlotTags = 14,
+    /// Chunk count for the ring slot's refused subject thread id.
+    RefusalSubjectChunks = 15,
+    /// Chunk count for the ring slot's seam-resolved subject domain.
+    RefusalSubjectDomainChunks = 16,
+    /// Chunk count for the ring slot's requested capability pointer.
+    RefusalRequestedTargetChunks = 17,
+    /// One chunk of the ring slot's refused subject thread id.
+    RefusalSubject = 18,
+    /// One chunk of the ring slot's seam-resolved subject domain.
+    RefusalSubjectDomain = 19,
+    /// One chunk of the ring slot's requested capability pointer.
+    RefusalRequestedTarget = 20,
 }
 
 impl AuditReadOpcode {
@@ -111,14 +140,76 @@ pub const MAX_AUDIT_FIELD_CHUNKS: u64 = 4;
 /// the drain generation the rest.
 pub const AUDIT_STATUS_LENGTH_SLOTS: u64 = 512;
 
-/// Read one word of the declassification audit trail.
+/// WS-SM SM9.B.10: the declassification refusal ledger's ring capacity.
+/// Mirrors Lean's `refusalRingSize`.  Ring slots are addressed directly by the
+/// `Refusal*` opcodes — the ledger has no clearance-filtered view, because a
+/// caller that is not the configured audit monitor reads nothing of it.
+pub const REFUSAL_RING_SIZE: u64 = 32;
+
+/// WS-SM SM9.B.10: the ceiling the ledger's two cumulative counters saturate
+/// at.  Mirrors Lean's `maxRefusalCount`; a counter reading this value means
+/// "at least this many", never a wrapped smaller number.
+pub const MAX_REFUSAL_COUNT: u64 = 65535;
+
+/// WS-SM SM9.B.10: the slot width of each bounded tag in a ring record's packed
+/// word.  Mirrors Lean's `refusalTagSlots`.
+pub const REFUSAL_TAG_SLOTS: u64 = 256;
+
+/// WS-SM SM9.B.10: decode a `RefusalStatus` word into `(next_slot, version)`.
+///
+/// The pair is atomic — both components come from one read of one ledger state
+/// — which is why `RefusalStatus` is a single call.  `version` advances on
+/// **every** recorded refusal, so a monitor that reads it before and after a
+/// multi-call record reconstruction and sees the same value knows no refusal
+/// intervened.
+#[inline]
+#[must_use]
+pub const fn refusal_status_decode(word: u64) -> (u64, u64) {
+    (word % REFUSAL_RING_SIZE, word / REFUSAL_RING_SIZE)
+}
+
+/// WS-SM SM9.B.10: decode a `RefusalCounters` word into
+/// `(attempt_count, dropped_count)`.
+#[inline]
+#[must_use]
+pub const fn refusal_counters_decode(word: u64) -> (u64, u64) {
+    (
+        word % (MAX_REFUSAL_COUNT + 1),
+        word / (MAX_REFUSAL_COUNT + 1),
+    )
+}
+
+/// WS-SM SM9.B.10: decode a `RefusalSlotTags` word into
+/// `(core, syscall_id, error_discriminant)`.
+///
+/// The error discriminant is WS-RA's `KernelError` numbering — the same value
+/// the refused caller received in its return frame's `x1` label, offset by one
+/// there — so a user-space report and the kernel's own record name the same
+/// error without a second table to keep in step.
+#[inline]
+#[must_use]
+pub const fn refusal_slot_tags_decode(word: u64) -> (u64, u64, u64) {
+    (
+        word % REFUSAL_TAG_SLOTS,
+        (word / REFUSAL_TAG_SLOTS) % REFUSAL_TAG_SLOTS,
+        word / REFUSAL_TAG_SLOTS / REFUSAL_TAG_SLOTS,
+    )
+}
+
+/// Read one word of the declassification audit trail — or, with the
+/// `Refusal*` opcodes (WS-SM SM9.B.10), of the refusal ledger.
 ///
 /// # Arguments
 ///
 /// * `audit_cap` — a capability whose target is the audit trail, carrying the
-///   `read` right.
+///   `read` right.  The refusal ledger rides the same capability: one audit
+///   authority, two readable structures.
 /// * `opcode` — which sub-operation, and for the field operations which field.
-/// * `index` — the entry's index **in the caller's own filtered view**.
+/// * `index` — for the trail opcodes, the entry's index **in the caller's own
+///   filtered view**; for the `Refusal*` slot opcodes, a **ring slot** in
+///   `0..REFUSAL_RING_SIZE` — the ledger has no clearance-filtered view,
+///   because a caller that is not the configured monitor is refused outright
+///   (Lean's `refusalLedger_requires_full_dominance`).
 /// * `chunk` — the chunk index, for the chunked field and basis operations;
 ///   ignored otherwise.
 ///
@@ -135,9 +226,11 @@ pub const AUDIT_STATUS_LENGTH_SLOTS: u64 = 512;
 ///   caller cannot tell "feature off" from "not a monitor".
 /// * `IllegalState` — the executing core is running no thread, so there is no
 ///   subject whose clearance would select a view.
-/// * `InvalidArgument` — the index is past the end of the caller's own view, or
-///   the chunk index is past the field's width.  An entry the caller cannot see
-///   is indistinguishable from one that does not exist.
+/// * `InvalidArgument` — the index is past the end of the caller's own view
+///   (for a `Refusal*` slot opcode: an empty ring slot, or a slot at or past
+///   `REFUSAL_RING_SIZE`), or the chunk index is past the field's width.  An
+///   entry the caller cannot see is indistinguishable from one that does not
+///   exist.
 /// * `InvalidSyscallArgument` — the opcode is not one this ABI defines.
 /// * `AuditFieldTooLarge` — the value needs more than `MAX_AUDIT_FIELD_CHUNKS`
 ///   chunks (or the designation exceeds the exported byte width), so the kernel
@@ -305,11 +398,53 @@ mod tests {
         assert_eq!(AuditReadOpcode::CoreAndTrust.to_u64(), 9);
         assert_eq!(AuditReadOpcode::BasisByteCount.to_u64(), 10);
         assert_eq!(AuditReadOpcode::BasisChunk.to_u64(), 11);
+        // WS-SM SM9.B.10: the refusal ledger's opcodes.
+        assert_eq!(AuditReadOpcode::RefusalStatus.to_u64(), 12);
+        assert_eq!(AuditReadOpcode::RefusalCounters.to_u64(), 13);
+        assert_eq!(AuditReadOpcode::RefusalSlotTags.to_u64(), 14);
+        assert_eq!(AuditReadOpcode::RefusalSubjectChunks.to_u64(), 15);
+        assert_eq!(AuditReadOpcode::RefusalSubjectDomainChunks.to_u64(), 16);
+        assert_eq!(AuditReadOpcode::RefusalRequestedTargetChunks.to_u64(), 17);
+        assert_eq!(AuditReadOpcode::RefusalSubject.to_u64(), 18);
+        assert_eq!(AuditReadOpcode::RefusalSubjectDomain.to_u64(), 19);
+        assert_eq!(AuditReadOpcode::RefusalRequestedTarget.to_u64(), 20);
         // Every opcode is below the count, and the count is the first value the
         // kernel refuses.
         assert_eq!(
-            AuditReadOpcode::BasisChunk.to_u64() + 1,
+            AuditReadOpcode::RefusalRequestedTarget.to_u64() + 1,
             AUDIT_READ_OPCODE_COUNT
+        );
+    }
+
+    /// WS-SM SM9.B.10: the refusal ledger's word decoders round-trip, matching
+    /// Lean's `refusalStatusWord_roundtrip`, `refusalCountersWord_roundtrip`
+    /// and `refusalTagsWord_roundtrip`.
+    #[test]
+    fn refusal_word_decoders_roundtrip() {
+        // Status: the write position is bounded by the ring, the version is not.
+        for slot in 0..REFUSAL_RING_SIZE {
+            let word = slot + 7 * REFUSAL_RING_SIZE;
+            assert_eq!(refusal_status_decode(word), (slot, 7));
+        }
+        // Counters: both components are Fin-bounded, so the word is below 2^32.
+        let counters = 5 + 3 * (MAX_REFUSAL_COUNT + 1);
+        assert_eq!(refusal_counters_decode(counters), (5, 3));
+        assert!(counters < (1u64 << 32));
+        // Tags: three byte-wide fields, so the word is below 2^24.
+        let tags = 2 + REFUSAL_TAG_SLOTS * (30 + REFUSAL_TAG_SLOTS * 14);
+        assert_eq!(refusal_slot_tags_decode(tags), (2, 30, 14));
+        assert!(tags < (1u64 << 24));
+        // The saturating counter reads "at least MAX_REFUSAL_COUNT" rather than
+        // wrapping: the maximal attempt count still decodes to itself, and it
+        // still separates cleanly from a nonzero drop count in the high field.
+        assert_eq!(
+            refusal_counters_decode(MAX_REFUSAL_COUNT),
+            (MAX_REFUSAL_COUNT, 0)
+        );
+        let both_saturated = MAX_REFUSAL_COUNT + MAX_REFUSAL_COUNT * (MAX_REFUSAL_COUNT + 1);
+        assert_eq!(
+            refusal_counters_decode(both_saturated),
+            (MAX_REFUSAL_COUNT, MAX_REFUSAL_COUNT)
         );
     }
 
