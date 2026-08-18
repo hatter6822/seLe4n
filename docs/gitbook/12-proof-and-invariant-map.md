@@ -2918,7 +2918,15 @@ to exclude — so the fix is a reader and a drain, not a softer bound.
   (`auditReadFromCore_partial_reader_denied`), the channel stays exhibited
   (`auditDrain_moves_partial_readers_status`), and every surviving reader
   dominates every subject domain
-  (`auditReadFromCore_observer_dominates_subjects`).
+  (`auditReadFromCore_observer_dominates_subjects`).  Round 7 completes the
+  trail's singleton discipline: the occupancy observable — irreducible under
+  bounded + fail-closed + drainable — is registered as CC-8
+  (`acceptedCovertChannel_auditOccupancy`, with
+  `declassify_capacity_refusal_of_full` / `auditDrain_flips_declassify_outcome`
+  the carrier and `acceptedCovertChannel_auditOccupancy_bounded` the CC-5-style
+  binding theorem), and the three audit-state footprints declare
+  `stateLevelLock` — the `.objStore` state-level singleton — as their
+  serialization subject (`auditState_footprints_share_serialization`).
 * **Drain requires full dominance** (SM9.A.3).  A partial-visibility prefix
   drain reveals the *positions* of hidden entries and repeated drains enumerate
   the hidden layout.  The gate is derived from the **configuration**, never from
@@ -2959,11 +2967,13 @@ Registries: enforcement boundary 40 → 42 canonical and 55 → 57 per-core (bot
 capability-only); lock sets caller-TCB **write** + CNode read each (PR #870
 round 6 — the arms' `writeReturnFrameToTcb` staging is a committed-dispatch
 caller write, tied to each footprint by `lockSet_*_staging_write_mem`, with
-`.serviceQuery` fixed alongside); cross-core inventory
+`.serviceQuery` fixed alongside; round 7 adds `stateLevelLock` — write/write/read
+across the three audit-state footprints, `permittedKinds` gaining `.objStore`);
+cross-core inventory
 26 → 28 with an **empty** write set for both, proven rather than asserted; the
 per-core routing gate passes with zero allowlisted exceptions.
 
-Runtime coverage: §9.1–§9.9 of the same suite (554 → 629 assertions across
+Runtime coverage: §9.1–§9.9 of the same suite (554 → 632 assertions across
 seventy-nine groups), every group with a load-bearing negative.  §9.8 is the
 plan's own acceptance gate, run for effect on the live transition: fill the
 trail to 256 through real authorized downgrades, observe

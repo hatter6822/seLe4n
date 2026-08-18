@@ -1971,6 +1971,118 @@ theorem auditDrain_preserves_proofLayerInvariantBundle (ctx : GenericLabelingCon
   exact Architecture.proofLayerInvariantBundle_setDeclassificationAuditTrail st _ _ hInv hBounded'
 
 -- ============================================================================
+-- §5c  PR #870 round 7 — the occupancy channel (CC-8), witnessed
+-- ============================================================================
+
+/-! ## The channel the capacity refusal carries — and why it is registered, not closed
+
+Round 6 closed the occupancy's *gratuitous* receiver surface: the audit reader
+is monitor-only, so no partial reader observes the trail through `.auditRead`.
+The round-7 finding is that the **capacity refusal is a second receiver
+surface**: `.declassify` is fail-closed at the bound, so a policy-authorized
+subject reads the fill level off its own syscall outcome
+(`.auditLogCapacityExceeded` vs success) — and a monitor's drain, which frees
+capacity, thereby changes a lower subject's outcome.
+
+This surface is **irreducible** under the trail's other commitments, each a
+deliberate security decision with its own theorem: the trail is bounded
+(`auditLogBounded`, the 16th bundle conjunct), refusal is fail-closed rather
+than record-dropping (`declassifyStoreOnCore_never_unaudited` — an authorized
+downgrade is recorded or does not happen), and the bound is recoverable (the
+SM9.A drain — the 256-entry cliff is the phase's own subject).  Any actor who
+can free a fail-closed bounded resource transmits to every consumer that can
+observe its refusals; making the drain invisible to a subject means never
+freeing that subject's capacity, which is the cliff again.  So the channel
+gets the CC treatment rather than a third receiver-surface patch:
+`acceptedCovertChannel_auditOccupancy` (CC-8) registers it with its receiver
+set, alphabet and self-disclosure bounds, and the theorems here are its
+witnesses. -/
+
+/-- PR #870 round 7 (CC-8, **the alphabet**): under the mounted capacity bound
+the fill level ranges over `maxDeclassificationAuditEntries + 1 = 257` values —
+what one full occupancy observation can carry, and the figure the CC-8 entry's
+per-drain bound (freed count ≤ 256, about 8 bits) is computed from. -/
+theorem auditOccupancy_alphabet_bounded (st : SystemState)
+    (hBounded : auditLogBounded st.declassificationAuditLog) :
+    st.declassificationAuditLog.length < maxDeclassificationAuditEntries + 1 := by
+  unfold auditLogBounded at hBounded
+  omega
+
+/-- PR #870 round 7 (CC-8, **the receiver's read**): at a full trail, a
+policy-authorized declassification with a resolved subject and a present
+target is refused with `.auditLogCapacityExceeded` — the outcome through which
+an authorized declassifier observes occupancy.  The forward half of the flip
+witness below. -/
+theorem declassify_capacity_refusal_of_full
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (c : CoreId) (targetId : SeLe4n.ObjId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (ty : SeLe4n.Model.KernelObjectType)
+    (hCur : st.scheduler.currentOnCore c = some tid)
+    (hType : st.getObjectType? targetId = some ty)
+    (hDec : declassificationDecision ctx declPolicy (ctx.threadDomainOf tid)
+      (ctx.objectDomainOf targetId) = .ok ())
+    (hFull : maxDeclassificationAuditEntries ≤ st.declassificationAuditLog.length) :
+    declassifyObjectFromCore ctx declPolicy c targetId st
+      = .error .auditLogCapacityExceeded := by
+  rw [declassifyObjectFromCore_eq_onCore ctx declPolicy c targetId st tid ty hCur hType]
+  unfold authorizeDeclassificationOnCore
+  rw [hDec]
+  have hNone : recordDeclassificationChecked st.declassificationAuditLog
+      (declassifyStoreEvent c (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
+        targetId st) = none := by
+    unfold recordDeclassificationChecked
+    rw [if_neg (by omega)]
+  rw [hNone]
+
+/-- PR #870 round 7 (CC-8, **the flip witness**): a monitor's drain changes a
+lower subject's declassification outcome.
+
+If the same authorized request that succeeds after the drain is replayed
+against the pre-drain full trail, it is refused with
+`.auditLogCapacityExceeded` — so the drain transmitted at least one bit to
+that subject.  Stated with the post-drain success as a premise, which is the
+strongest honest shape: it quantifies over every way the request can be
+well-formed rather than reconstructing the success conditions by hand, and the
+drain's own frame supplies that nothing but the trail and its epoch moved.
+This is the theorem the CC-8 inventory entry cites, and the reason the channel
+cannot be closed by excluding another reader: the receiver here is the
+subject's *own* syscall. -/
+theorem auditDrain_flips_declassify_outcome
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (monitorClearance : Option SecurityDomain) (cDrain cObs : CoreId)
+    (count : Nat) (targetId : SeLe4n.ObjId) (st : SystemState)
+    (n : Nat) (st' st'' : SystemState)
+    (hFull : maxDeclassificationAuditEntries ≤ st.declassificationAuditLog.length)
+    (hStep : auditDrainVisiblePrefix ctx monitorClearance cDrain count st = .ok (n, st'))
+    (hOk : declassifyObjectFromCore ctx declPolicy cObs targetId st' = .ok ((), st'')) :
+    declassifyObjectFromCore ctx declPolicy cObs targetId st
+      = .error .auditLogCapacityExceeded := by
+  obtain ⟨hSt', -, -⟩ := auditDrain_frame ctx monitorClearance cDrain count st n st' hStep
+  have hCurEq : st'.scheduler.currentOnCore cObs = st.scheduler.currentOnCore cObs := by
+    rw [hSt']
+  have hTypeEq : st'.getObjectType? targetId = st.getObjectType? targetId := by
+    rw [hSt']; rfl
+  obtain ⟨tid, hCur', -⟩ :=
+    declassifyObjectFromCore_frame_of_ok ctx declPolicy cObs targetId st' st'' hOk
+  have hCur : st.scheduler.currentOnCore cObs = some tid := by
+    rw [← hCurEq]; exact hCur'
+  cases hType : st.getObjectType? targetId with
+  | none =>
+      exfalso
+      have hType' : st'.getObjectType? targetId = none := by rw [hTypeEq]; exact hType
+      rw [declassifyObjectFromCore_absent_target ctx declPolicy cObs targetId st' tid
+        hCur' hType'] at hOk
+      exact absurd hOk (by simp)
+  | some ty =>
+      have hType' : st'.getObjectType? targetId = some ty := by rw [hTypeEq]; exact hType
+      rw [declassifyObjectFromCore_eq_onCore ctx declPolicy cObs targetId st' tid ty
+        hCur' hType'] at hOk
+      obtain ⟨-, -, hDec⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy cObs
+        (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId) targetId st' st'' hOk
+      exact declassify_capacity_refusal_of_full ctx declPolicy cObs targetId st tid ty
+        hCur hType hDec hFull
+
+-- ============================================================================
 -- §6  SM9.A.5 — stability under append, and the retry protocol
 -- ============================================================================
 

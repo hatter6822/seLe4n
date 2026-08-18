@@ -2596,22 +2596,37 @@ theorem auditReadFromCore_no_channel (ctx : LabelingContext) (observer : IfObser
   rw [auditRead_no_channel ctx observer monitorClearance reader s₁ s₂ op h] at hv₁
   exact Except.ok.inj (hv₁.symm.trans hv₂)
 
-/-- WS-SM SM9.A.4b (**why this is not an eighth covert channel**): the reader is
-capability-gated, right-gated, monitor-gated and clearance-filtered — an
-*authorized, audited* read rather than an unauthorized information path.
-
-Registering a CC-8 would cost a `CovertChannelId` constructor, four total-match
-tables, a witness theorem, five numeric theorems, Tier-3 anchors and a
-golden-fixture line, and it is **not owed**: a covert channel is a path that
-carries information *without* authorization.  What the reader *is* owed is an
+/-- WS-SM SM9.A.4b (**the reader is not a covert channel; the trail's occupancy
+is, and is registered**): the reader is capability-gated, right-gated,
+monitor-gated and clearance-filtered — an *authorized, audited* read rather
+than an unauthorized information path.  What the reader is owed is an
 observation relation describing what it can see, which §14 supplies and
 `auditRead_no_channel` is stated over.  PR #870 round 6 is what makes the
-"without authorization" clause exhaustive: a *partial* live reader would have
-received the monitor's drains through its own visible length — a
-monitor-to-subject bit per drain no policy authorized
+"without authorization" clause exhaustive for the *reader*: a *partial* live
+reader would have received the monitor's drains through its own visible
+length — a monitor-to-subject bit per drain no policy authorized
 (`auditDrain_moves_partial_readers_status` keeps it exhibited) — so the live
 entry now serves only callers for whom every subject's activity is an
 authorized flow (`auditReadFromCore_observer_dominates_subjects`).
+
+The reader's authorization does **not** cover the trail's *occupancy*, and an
+earlier revision of this docstring used the reader argument to conclude that
+no eighth channel entry was owed at all — reasoning about the wrong
+observable.  The trail is a bounded (`auditLogBounded`, the 16th bundle
+conjunct), fail-closed (`declassifyStoreOnCore_never_unaudited`), drainable
+(SM9.A.3) shared singleton, and those three properties — each individually
+non-negotiable — make its occupancy an irreducible inter-domain signal: every
+*authorized declassifier* observes the full/not-full bit through its own
+syscall outcome (`declassify_capacity_refusal_of_full` /
+`auditDrain_flips_declassify_outcome`, `AuditRead.lean` §5c), so subjects in
+unrelated domains share one observable no per-domain partition can split
+(domains are unbounded, the `observerScopedGeneration_not_mountable`
+argument).  PR #870 round 7 registers it as **CC-8**
+(`acceptedCovertChannel_auditOccupancy`, `CovertChannelPerCore.lean`) with the
+alphabet bound `auditOccupancy_alphabet_bounded`;
+`acceptedCovertChannel_auditOccupancy_bounded` below ties the inventory
+literals to this module's import of both halves, the way SM8.D's
+`acceptedCovertChannel_lockContention_bounded` ties CC-5 to its bound.
 
 The five gates, as one checkable statement: a capability that does not target
 the audit trail is rejected outright; an unconfigured deployment has no reader
@@ -2646,6 +2661,35 @@ theorem auditRead_gates_are_five (ctx : LabelingContext) (oid : SeLe4n.ObjId)
    fun m st' hReader hPartial =>
      auditReadFromCore_partial_reader_denied (liftLegacyContext ctx) m c op st' reader
        hReader hPartial⟩
+
+/-- PR #870 round 7 (**the CC-8 inventory tie-in**): CC-8 is registered
+`modelVisible := true` with `severity := .low`, and this module — the only one
+importing both the inventory (`CovertChannelPerCore`) and the bound's home
+(`AuditRead`) — ties the entry's literals to the quantity the severity
+judgement rests on, the way SM8.D's
+`acceptedCovertChannel_lockContention_bounded` ties CC-5 to its delay bound.
+
+The literal conjuncts are the entry's own fields, stated together with the
+alphabet bound so a reclassification of CC-8 that is not matched by a change
+to the bound breaks this theorem rather than passing silently: under the
+mounted 16th bundle conjunct (`auditLogBounded`, held by every reachable
+state) the occupancy observable takes at most
+`maxDeclassificationAuditEntries + 1` values — and the practical alphabet is
+the single full/not-full bit, since `declassify_capacity_refusal_of_full` is
+the only occupancy-dependent branch an unprivileged subject can read.
+`CovertChannelId.evidenceProp`'s `.auditOccupancy` arm carries the capacity
+gate itself (`recordDeclassificationChecked_isSome_iff`), which lives below
+`Model/State` and is therefore visible to the inventory; the bound proven
+*of the mounted state* is what only this module can conjoin. -/
+theorem acceptedCovertChannel_auditOccupancy_bounded :
+    acceptedCovertChannel_auditOccupancy.channelId = 8 ∧
+      acceptedCovertChannel_auditOccupancy.severity = .low ∧
+      acceptedCovertChannel_auditOccupancy.modelVisible = true ∧
+      acceptedCovertChannel_auditOccupancy.perCoreInstance = false ∧
+      (∀ (st : SystemState),
+        auditLogBounded st.declassificationAuditLog →
+        st.declassificationAuditLog.length < maxDeclassificationAuditEntries + 1) :=
+  ⟨rfl, rfl, rfl, rfl, fun st hBounded => auditOccupancy_alphabet_bounded st hBounded⟩
 
 /-- WS-SM SM9.A.4b: the drain's own per-core non-interference — it writes the
 trail and the epoch, and no observer on any core reads either. -/

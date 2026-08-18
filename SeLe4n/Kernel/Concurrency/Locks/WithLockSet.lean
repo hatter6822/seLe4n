@@ -352,6 +352,19 @@ def releaseLockOnObject (s : SystemState) (core : CoreId)
   | .vspaceRoot | .untyped | .schedContext | .reply =>
       updateObjectLockAt s l (mode.toReleaseOp core)
 
+/-- WS-SM SM3.A.10 / PR #870 round 7: the SystemState-level singleton's
+`objId` is decorative — the `.objStore` arms of `acquireLockOnObject` and
+`releaseLockOnObject` dispatch on the kind alone and advance
+`SystemState.objStoreLock` directly, so every `.objStore`-kinded `LockId`
+names the same lock word.  Recorded as a theorem so `stateLevelLock`'s
+one-canonical-spelling rule is a convenience, not a soundness requirement:
+two footprints spelling the singleton with different ids still exclude each
+other. -/
+theorem stateLevelLock_objId_irrelevant (s : SystemState) (core : CoreId)
+    (o₁ o₂ : SeLe4n.ObjId) (m : AccessMode) :
+    acquireLockOnObject s core ⟨.objStore, o₁⟩ m
+      = acquireLockOnObject s core ⟨.objStore, o₂⟩ m := rfl
+
 /-- WS-SM SM6.D: `acquireLockOnObject` on a `.reply` LockId routes through
 `updateObjectLockAt` — Reply is now a first-class kernel object (hierarchy
 level 6), so its per-object lock is acquired like any modeled kind (was an

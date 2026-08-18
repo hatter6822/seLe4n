@@ -23,7 +23,8 @@
 [smp-information-flow] channel 5 (lock-contention timing): severity=medium modelVisible=false perCoreInstance=true
 [smp-information-flow] channel 6 (per-core TLB residency): severity=medium modelVisible=false perCoreInstance=true
 [smp-information-flow] channel 7 (per-core instruction-cache residency): severity=medium modelVisible=false perCoreInstance=true
-[smp-information-flow] channels: 7 accepted, 3 model-visible, 5 per-core
+[smp-information-flow] channel 8 (audit-trail occupancy): severity=low modelVisible=true perCoreInstance=false
+[smp-information-flow] channels: 8 accepted, 4 model-visible, 5 per-core
 [smp-information-flow] audit view: trail 3 entries, monitor sees 3, partial reader sees 2
 [smp-information-flow] audit timestamp of view index 1: monitor=2 partial=1
 [smp-information-flow] audit status word: monitor=len=3 gen=0 partial=len=2 gen=0

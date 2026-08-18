@@ -499,7 +499,8 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- the canonical list and re-routed per-core like the rest.
      have _x := @SeLe4n.Kernel.syscallIdToEnforcementNamePerCore
      have _c := SeLe4n.Kernel.enforcementBoundaryPerCore_is_complete_crossCore
-     have _i : SeLe4n.Kernel.acceptedCovertChannelsPerCore.length = 7 :=
+     -- (Eight since PR #870 round 7: SM9.A's CC-8, the audit-trail occupancy.)
+     have _i : SeLe4n.Kernel.acceptedCovertChannelsPerCore.length = 8 :=
        SeLe4n.Kernel.acceptedCovertChannel_perCoreCount
      have _l := SeLe4n.Kernel.acceptedCovertChannel_lockContention
      have _r := @SeLe4n.Kernel.endpointPolicyRestricted_perCore
@@ -685,6 +686,26 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _wr := @SeLe4n.Kernel.Concurrency.lockSet_auditRead_staging_write_mem
      have _wd := @SeLe4n.Kernel.Concurrency.lockSet_auditDrain_staging_write_mem
      have _wq := @SeLe4n.Kernel.Concurrency.lockSet_serviceQuery_staging_write_mem
+     true)
+  assertBool "SM9.A (PR #870 round 7): the trail's singleton discipline — CC-8 registered, mutation serialized"
+    (-- (P1) The occupancy channel: bounded + fail-closed + drainable makes the
+     -- fill level an irreducible inter-domain observable, registered as CC-8
+     -- with its bound, its carrier and the drain-controlled flip.
+     have _cc := @SeLe4n.Kernel.acceptedCovertChannel_auditOccupancy
+     have _cg := @SeLe4n.Kernel.acceptedCovertChannel_auditOccupancy_capacity_gates
+     have _ab := @SeLe4n.Kernel.auditOccupancy_alphabet_bounded
+     have _cr := @SeLe4n.Kernel.declassify_capacity_refusal_of_full
+     have _fl := @SeLe4n.Kernel.auditDrain_flips_declassify_outcome
+     have _bd := @SeLe4n.Kernel.acceptedCovertChannel_auditOccupancy_bounded
+     -- (P2) The state-level serialization subject: the SM3.A.10 `.objStore`
+     -- singleton convention made structural — one canonical spelling, declared
+     -- in all three audit-state footprints, non-disjoint by theorem.
+     have _sl := @SeLe4n.Kernel.Concurrency.stateLevelLock
+     have _md := @SeLe4n.Kernel.Concurrency.lockSet_declassify_stateLevel_write_mem
+     have _mr := @SeLe4n.Kernel.Concurrency.lockSet_auditRead_stateLevel_read_mem
+     have _mw := @SeLe4n.Kernel.Concurrency.lockSet_auditDrain_stateLevel_write_mem
+     have _cp := @SeLe4n.Kernel.Concurrency.auditState_footprints_share_serialization
+     have _oi := @SeLe4n.Kernel.Concurrency.stateLevelLock_objId_irrelevant
      true)
   assertBool "SM9.A: drain under the configuration-derived dominance gate"
     (have _d := @SeLe4n.Kernel.auditDrainVisiblePrefix

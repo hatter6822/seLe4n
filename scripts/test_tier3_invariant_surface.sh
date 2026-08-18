@@ -3090,6 +3090,34 @@ run_check "INVARIANT" rg -n 'auditReadDispatch' SeLe4n/Kernel/InformationFlow/No
 run_check "INVARIANT" rg -n 'auditDrainDispatch' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem auditReadFromCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
+# PR #870 round 7: the trail's SINGLETON DISCIPLINE, both halves.
+# (P1) The occupancy channel is registered as CC-8 rather than patched a third
+# time at the receiver surface: bounded + fail-closed + drainable makes the
+# fill level an irreducible inter-domain observable — every policy-authorized
+# declassifier reads full/not-full off its own syscall outcome, and a
+# monitor-controlled drain flips lower-domain declassification results.
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_auditOccupancy' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_auditOccupancy_capacity_gates' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem auditOccupancy_alphabet_bounded' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem declassify_capacity_refusal_of_full' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_flips_declassify_outcome' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_auditOccupancy_bounded' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# The retracted round-6 sentence — the reader's authorization used to conclude
+# no eighth channel entry was owed — must not return in that docstring.
+run_prose_negative_check "INVARIANT" rg -n 'is \*\*not owed\*\*' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# (P2) The state-level serialization subject: the SM3.A.10 `.objStore`
+# singleton convention made structural — one canonical spelling, declared in
+# all three audit-state footprints, non-disjoint by theorem.  The retracted
+# claim that the service registry's writes serialise implicitly via the
+# table-level lock must not return; that gap is registered debt, not covered.
+run_check "INVARIANT" rg -n '^@\[inline\] def stateLevelLock' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_declassify_stateLevel_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_auditRead_stateLevel_read_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_auditDrain_stateLevel_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem auditState_footprints_share_serialization' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem stateLevelLock_objId_irrelevant' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_prose_negative_check "INVARIANT" rg -n 'serialise implicitly via the table-level' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+
 # SM9.A tests: the anchors, the elaboration examples, the seven runtime groups
 # and the acceptance gate.  §9.8 is the plan's own acceptance criterion run for
 # effect on the live transition: fill -> refuse -> read -> drain -> declassify

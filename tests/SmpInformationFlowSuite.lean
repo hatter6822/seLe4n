@@ -44,7 +44,7 @@ the same fixture — cross-core invisibility of real transitions, the derived
 boot-core confinement of each operation, the two-phase-locking bracket's
 transparency (including on an object the observer *can* see, which is the
 SM8.B.4 `lock`-erasure result), the leakage bound, the enforcement boundary,
-and the seven-entry covert-channel inventory.  Its load-bearing negatives are
+and the eight-entry covert-channel inventory.  Its load-bearing negatives are
 §4.1 (the same transition on the observer's own core *is* visible), §4.5 (the
 raw lock field really did change — so the invisibility is the projection's
 doing, not a no-op), and §4.9 (the confinement premise of the four catch-all
@@ -544,6 +544,9 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @acceptedCovertChannel_lockContention
 #check @acceptedCovertChannel_tlbResidency
 #check @acceptedCovertChannel_icacheResidency
+-- PR #870 round 7: CC-8, the audit-trail occupancy channel (SM9.A).
+#check @acceptedCovertChannel_auditOccupancy
+#check @acceptedCovertChannel_auditOccupancy_capacity_gates
 #check @acceptedCovertChannelsPerCore
 #check @acceptedCovertChannel_perCoreCount
 #check @acceptedCovertChannel_perCore_ids
@@ -1287,8 +1290,10 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 -- ============================================================================
 --
 -- `InformationFlow/AuditRead.lean` (production).  Every one of the module's
--- 145 declarations is anchored, on SM8.A's set-difference discipline: a symbol
+-- 148 declarations is anchored, on SM8.A's set-difference discipline: a symbol
 -- renamed or deleted fails Tier 3 rather than quietly leaving the surface.
+-- (The three PR #870 round-7 §5c declarations are anchored in the round-7
+-- block at the end of this section, beside the CC-8 inventory names.)
 #check @auditEntryVisibleTo
 #check @auditLogVisibleTo
 #check @auditLogVisibleTo_nil
@@ -1551,6 +1556,27 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @Concurrency.lockSet_serviceQuery_staging_write_mem
 -- (`lockSet_auditRead_size_le` / `_auditDrain_size_le` are anchored in
 -- `DeadlockFreedomSuite`, whose import set carries the §6b size family.)
+-- PR #870 round 7 — the audit trail's singleton discipline, both halves.
+-- (P2) the state-level serialization subject: one canonical spelling of the
+-- `.objStore` singleton, declared in all three audit-state footprints, with
+-- the non-disjointness capstone and the objId-irrelevance fact.
+#check @Concurrency.stateLevelLock
+#check @Concurrency.lockSet_declassify_stateLevel_write_mem
+#check @Concurrency.lockSet_auditRead_stateLevel_read_mem
+#check @Concurrency.lockSet_auditDrain_stateLevel_write_mem
+#check @Concurrency.auditState_footprints_share_serialization
+#check @Concurrency.stateLevelLock_objId_irrelevant
+-- (P1) the occupancy channel: CC-8's inventory entry and witness live in
+-- `CovertChannelPerCore` (§4.8 runs the literals and the record-layer flip);
+-- the bound and the live flip witness live in `AuditRead` §5c; the binding
+-- theorem tying inventory literals to the bound lives in
+-- `DeclassificationPerCore`.
+#check @acceptedCovertChannel_auditOccupancy
+#check @acceptedCovertChannel_auditOccupancy_capacity_gates
+#check @auditOccupancy_alphabet_bounded
+#check @declassify_capacity_refusal_of_full
+#check @auditDrain_flips_declassify_outcome
+#check @acceptedCovertChannel_auditOccupancy_bounded
 
 -- ============================================================================
 -- §2  Elaboration-time examples: each headline theorem applied
@@ -4755,18 +4781,31 @@ private def runEnforcementBoundaryChecks : IO Unit := do
      decide (enforcementBoundaryPerCore.length
        = enforcementBoundaryExtended.length + crossCoreEnforcementEntries.length))
 
-/-- §4.8  The accepted covert-channel inventory (SM8.B.8 / SM8.B.9 / SM8.B.10). -/
+/-- A minimal event for the CC-8 record-layer flip witness below: the capacity
+gate reads only the log's *length*, so the event's content is irrelevant —
+which is itself part of the channel's shape (occupancy, not content). -/
+private def auditOccupancyProbeEvent : DeclassificationEvent :=
+  { srcDomain := ⟨0⟩, dstDomain := ⟨0⟩, targetObject := SeLe4n.ObjId.ofNat 0,
+    authorizationBasis := .integratorOverride "cc8-occupancy-probe",
+    timestamp := 0, originatingCore := c0 }
+
+/-- §4.8  The accepted covert-channel inventory (SM8.B.8 / SM8.B.9 / SM8.B.10;
+CC-8 added by SM9.A, PR #870 round 7). -/
 private def runCovertChannelInventoryChecks : IO Unit := do
-  IO.println "--- §4.8 the seven accepted covert channels ---"
-  assertBool "seven channels, numbered CC-1 .. CC-7 in order"
-    (decide (acceptedCovertChannelsPerCore.length = 7) &&
-     decide (acceptedCovertChannelsPerCore.map CovertChannel.channelId = [1, 2, 3, 4, 5, 6, 7]))
-  assertBool "three are carried by the model; four are hardware-only"
-    (decide ((acceptedCovertChannelsPerCore.filter CovertChannel.modelVisible).length = 3) &&
+  IO.println "--- §4.8 the eight accepted covert channels ---"
+  assertBool "eight channels, numbered CC-1 .. CC-8 in order"
+    (decide (acceptedCovertChannelsPerCore.length = 8) &&
+     decide (acceptedCovertChannelsPerCore.map CovertChannel.channelId
+       = [1, 2, 3, 4, 5, 6, 7, 8]))
+  assertBool "four are carried by the model; four are hardware-only"
+    (decide ((acceptedCovertChannelsPerCore.filter CovertChannel.modelVisible).length = 4) &&
      decide ((acceptedCovertChannelsPerCore.filter
         (fun ch => !ch.modelVisible)).length = 4))
-  assertBool "five have one instance per core under SMP"
-    (decide ((acceptedCovertChannelsPerCore.filter CovertChannel.perCoreInstance).length = 5))
+  -- CC-8 is deliberately NOT per-core: the trail is one SystemState singleton,
+  -- and a shared observable is the channel's whole point.
+  assertBool "five have one instance per core under SMP — CC-8 is not among them"
+    (decide ((acceptedCovertChannelsPerCore.filter CovertChannel.perCoreInstance).length = 5) &&
+     decide (acceptedCovertChannel_auditOccupancy.perCoreInstance = false))
   assertBool "CC-5 (lock contention) is registered as timing-only, not model-visible"
     (decide (acceptedCovertChannel_lockContention.channelId = 5) &&
      decide (acceptedCovertChannel_lockContention.modelVisible = false) &&
@@ -4804,11 +4843,11 @@ private def runCovertChannelInventoryChecks : IO Unit := do
   -- without deciding what proves its classification.
   assertBool "the id-indexed inventory IS the list one, entry for entry"
     (decide (CovertChannelId.all.map covertChannelEntry = acceptedCovertChannelsPerCore) &&
-     decide (CovertChannelId.all.length = 7))
+     decide (CovertChannelId.all.length = 8))
   assertBool "every channel cites a projection theorem (no empty citation)"
     (CovertChannelId.all.all (fun id => decide ((covertChannelEvidenceName id).length > 0)))
-  assertBool "six distinct witnesses — the two residency channels share one"
-    (decide ((CovertChannelId.all.map covertChannelEvidenceName).eraseDups.length = 6))
+  assertBool "seven distinct witnesses — the two residency channels share one"
+    (decide ((CovertChannelId.all.map covertChannelEvidenceName).eraseDups.length = 7))
   -- The load-bearing negative for the evidence table: the citations are not all
   -- the same string, i.e. the table really does discriminate between channels.
   assertBool "NEGATIVE: the machine-timer and scheduling citations differ"
@@ -4817,7 +4856,7 @@ private def runCovertChannelInventoryChecks : IO Unit := do
   -- dependently-typed `covertChannelEvidence`, whose arms are checked against
   -- `covertChannelEntry id` — so a misattributed proof is a type error rather
   -- than a wrong string.  Elaborating each arm at its own id is the check;
-  -- the assertion records that all seven do.
+  -- the assertion records that all eight do.
   assertBool "every channel supplies a proof of ITS OWN evidenceProp"
     (have _s := covertChannelEvidence .schedulingState
      have _m := covertChannelEvidence .machineTimer
@@ -4826,6 +4865,7 @@ private def runCovertChannelInventoryChecks : IO Unit := do
      have _l := covertChannelEvidence .lockContention
      have _v := covertChannelEvidence .tlbResidency
      have _i := covertChannelEvidence .icacheResidency
+     have _a := covertChannelEvidence .auditOccupancy
      true)
   -- The load-bearing negative for the *typed* table: the two classifications
   -- are genuinely different propositions, so the arms are not interchangeable.
@@ -4834,6 +4874,31 @@ private def runCovertChannelInventoryChecks : IO Unit := do
   assertBool "NEGATIVE: the two classifications are opposite, so arms cannot swap"
     (decide ((covertChannelEntry .schedulingState).modelVisible = true) &&
      decide ((covertChannelEntry .machineTimer).modelVisible = false))
+  -- PR #870 round 7: CC-8, the audit-trail occupancy channel.  The trail is
+  -- bounded (`auditLogBounded`), fail-closed (`…never_unaudited`) and
+  -- drainable (SM9.A.3), and those three — each individually non-negotiable —
+  -- make the fill level an irreducible inter-domain observable: every
+  -- policy-authorized declassifier reads full/not-full off its own syscall
+  -- outcome, so a monitor-controlled drain flips lower-domain results
+  -- (`auditDrain_flips_declassify_outcome`; §9.8 runs the live flip).
+  assertBool "CC-8 (audit occupancy) is registered model-visible, LOW, shared"
+    (decide (acceptedCovertChannel_auditOccupancy.channelId = 8) &&
+     decide (acceptedCovertChannel_auditOccupancy.modelVisible = true) &&
+     decide (acceptedCovertChannel_auditOccupancy.perCoreInstance = false) &&
+     decide (acceptedCovertChannel_auditOccupancy.severity = CovertChannelSeverity.low))
+  -- The carrier at the record layer, run for effect: a full trail refuses the
+  -- append and the drained trail admits it — the flip IS the channel.
+  assertBool "CC-8 carrier: append refused exactly at capacity, admitted after a drop"
+    (let fullLog := List.replicate maxDeclassificationAuditEntries auditOccupancyProbeEvent
+     (recordDeclassificationChecked fullLog auditOccupancyProbeEvent).isNone &&
+       (recordDeclassificationChecked (fullLog.drop 1) auditOccupancyProbeEvent).isSome)
+  -- The load-bearing negative: the alphabet is the occupancy count, and it is
+  -- bounded — a 257th resident entry cannot exist under the mounted bound.
+  assertBool "NEGATIVE: occupancy above the bound is not constructible via the producer"
+    (decide (maxDeclassificationAuditEntries = 256) &&
+     (recordDeclassificationChecked
+       (List.replicate (maxDeclassificationAuditEntries + 3) auditOccupancyProbeEvent)
+       auditOccupancyProbeEvent).isNone)
 
 /-- §4.8a  CC-1's capacity claim: what is bounded, and what is not
 (SM8.B.9, fourth review round). -/

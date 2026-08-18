@@ -286,6 +286,58 @@ the §6c aggregate (`lockSetTransitions_within_bound`, 27 → 29 conjuncts with
 its stale "26" corrected) — which the plan's SM9.A.12 row had recorded as
 done at landing without the code existing.
 
+**The PR #870 round-7 cut (v0.33.50).**  Two further findings, both valid —
+and both halves of one underlying gap, which is why the cut supplies
+discipline rather than a third receiver-surface patch: SM8.C.8 mounted the
+trail as a `SystemState` **shared singleton** without the treatment the
+codebase already gives its peers (the shootdown state got a dedicated lock
+domain at SM7.B; the scheduler slots got CC-1's covert-channel registration
+at SM8.B).  **(P1) The trail's occupancy is an inter-domain observable,
+registered as CC-8.**  Bounded (`auditLogBounded`, the 16th bundle conjunct)
++ fail-closed (`declassifyStoreOnCore_never_unaudited`) + drainable (SM9.A.3)
+— each individually non-negotiable — make the fill level **irreducible**:
+every policy-authorized declassifier reads full/not-full off its own syscall
+outcome (`declassify_capacity_refusal_of_full`), a monitor-controlled drain
+flips lower-domain declassification results
+(`auditDrain_flips_declassify_outcome`), and per-domain partitions are
+unbuildable over unbounded domains (the
+`observerScopedGeneration_not_mountable` argument a third time).  Registered
+as `acceptedCovertChannel_auditOccupancy` (CC-8: `.low`, model-visible,
+deliberately **not** per-core — a shared observable is the channel's point)
+with the typed evidence arm, the alphabet bound
+(`auditOccupancy_alphabet_bounded`), and the binding theorem
+`acceptedCovertChannel_auditOccupancy_bounded` in `DeclassificationPerCore`
+— the only module importing both the inventory and the bound's home — tying
+the entry's literals to the bound the way SM8.D tied CC-5.  The round-6
+docstring sentence deriving "no eighth entry owed" from the *reader's*
+authorization reasoned about the wrong observable and is retracted (Tier-3
+pins the sentence out).  Inventory 7 → 8 entries (4 model-visible, per-core
+stays 5); suite §4.8 re-runs over the eight with a record-layer flip witness.
+**(P2) The trail's mutation had no declared serialization subject.**  The
+three audit-state footprints (`lockSet_declassify` / `lockSet_auditRead` /
+`lockSet_auditDrain`) named object-domain locks only, while their transitions
+read and write `SystemState.declassificationAuditLog` — state no `LockId`
+names — so under SM3.C.9's fine locks two `.declassify` commits would hold
+provably disjoint lock sets while racing on the append: a lost recorded
+downgrade, the exact failure the fail-closed bound exists to exclude.  The
+SM3.A.10 "state-level fields ride `objStoreLock`" prose convention is made
+structural: `stateLevelLock` is the one canonical spelling of the `.objStore`
+singleton (`stateLevelLock_objId_irrelevant` proves the objId coordinate
+ignored — `acquireLockOnObject` dispatches on the kind), declared `.write`
+for the two mutators and `.read` for the reader, tied by name
+(`lockSet_declassify_stateLevel_write_mem` /
+`lockSet_auditRead_stateLevel_read_mem` /
+`lockSet_auditDrain_stateLevel_write_mem`) with the non-disjointness capstone
+`auditState_footprints_share_serialization`; `permittedKinds` gains
+`.objStore` for the three ids.  The identical service-registry gap
+(`serviceRegister` / `serviceRevoke` / `serviceQuery` plus the retype sweep
+`cleanupEndpointServiceRegistrations`) is registered as named debt rather
+than half-fixed — closure is the same declared member after a
+writer-inventory audit of the remaining state-level fields — and SM9.B's
+refusal ledger is now on record as owing its capacity channel and
+serialization subject from day one.  Suite 629 → 632 assertions; the phase
+fixture gains the channel-8 line (34 → 35).
+
 **What SM9.A does not do** (SM9.B/SM9.C/SM9.D, per the plan): refused
 declassifications are still unrecorded, there is no data-carrying
 declassification on the notification path, and the laundering detector is still

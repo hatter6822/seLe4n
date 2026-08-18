@@ -1038,6 +1038,63 @@ The audit pair also join the §6b size family and the §6c aggregate
 corrected), which the SM9.A.12 row below had claimed at landing without the
 code existing.
 
+**PR #870 round-7 cut (v0.33.50).**  Two further findings, both valid — and
+both halves of one underlying gap: the audit trail was mounted as a
+`SystemState` **shared singleton** (SM8.C.8) without the full singleton
+discipline the codebase already applies elsewhere (the shootdown state got a
+dedicated lock domain at SM7.B; the scheduler slots got the CC-1
+covert-channel treatment at SM8.B).  Rather than a third receiver-surface
+patch, the cut supplies the two missing discipline halves.  **(P1) The
+trail's occupancy is an inter-domain observable, now registered as CC-8.**
+Bounded (`auditLogBounded`, the 16th bundle conjunct) + fail-closed
+(`declassifyStoreOnCore_never_unaudited`) + drainable (SM9.A.3) — each
+individually non-negotiable — make the fill level an **irreducible**
+inter-domain signal: every policy-authorized declassifier reads full/not-full
+off its own syscall outcome (`declassify_capacity_refusal_of_full`), so a
+monitor-controlled drain flips lower-domain declassification results
+(`auditDrain_flips_declassify_outcome`), and subjects in unrelated domains
+share one observable no per-domain partition can split (domains are
+unbounded — the `observerScopedGeneration_not_mountable` argument again).
+Every removal route is rejected by design: an unbounded trail (unbounded
+kernel memory), record-dropping (the exact failure `never_unaudited`
+excludes), a permanent cliff (SM9.A's purpose).  Registered as
+`acceptedCovertChannel_auditOccupancy` (CC-8, `.low`, model-visible, **not**
+per-core — a shared observable is the channel's point), with the typed
+evidence arm (`CovertChannelId.evidenceProp`), the alphabet bound
+(`auditOccupancy_alphabet_bounded` — occupancy takes ≤ 257 values under the
+mounted bound), and the binding theorem
+`acceptedCovertChannel_auditOccupancy_bounded` (`DeclassificationPerCore`,
+the only module importing both the inventory and the bound's home) tying the
+entry's literals to the bound the way SM8.D tied CC-5.  The round-6 docstring
+sentence concluding from the *reader's* authorization that no eighth entry
+was owed reasoned about the wrong observable and is retracted (Tier-3 pins it
+out).  SM9.B note: the refusal ledger is the same shape — its capacity
+observable and its serialization subject must arrive **with** the ledger, not
+in a later round.  **(P2) The trail's mutation had no declared serialization
+subject.**  `lockSet_declassify` / `lockSet_auditRead` / `lockSet_auditDrain`
+declared object-domain locks only, while their transitions read and write
+`SystemState.declassificationAuditLog` — state no `LockId` names — so under
+SM3.C.9's fine locks two `.declassify` commits would hold provably disjoint
+sets and race on the append (lost-append ⇒ a recorded-downgrade loss, the
+exact failure the fail-closed bound exists to exclude).  The SM3.A.10
+"state-level fields ride `objStoreLock`" prose convention is made
+**structural**: `stateLevelLock` (`LockSetTransitions.lean`) is the one
+canonical spelling of the `.objStore` singleton (`stateLevelLock_objId_irrelevant`
+proves the objId coordinate irrelevant — `acquireLockOnObject` dispatches on
+the kind), declared in all three footprints (`.write` for the two mutators,
+`.read` for the reader), tied by name
+(`lockSet_declassify_stateLevel_write_mem` / `_auditRead_stateLevel_read_mem`
+/ `_auditDrain_stateLevel_write_mem`) with the non-disjointness capstone
+`auditState_footprints_share_serialization`; `permittedKinds` for the three
+ids gains `.objStore`.  **Registered debt (same defect class, deliberately
+not half-fixed here)**: the service-registry trio (`serviceRegister` /
+`serviceRevoke` / `serviceQuery`) and the retype cleanup path
+(`cleanupEndpointServiceRegistrations`) write `SystemState.serviceRegistry`
+under the same undeclared convention; closure is the same declared member
+after a writer-inventory audit of the remaining `SystemState`-level fields
+(interfaceRegistry, asidTable, cdt maps), scoped to one coherent cut so the
+inventory is checked once rather than field-by-field.
+
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM9.A.1 | `auditLogVisibleTo ctx L` + `_sublist` / `_reindexed` / `_length_le`; the no-gap-leak theorem (the visible view is a function of the reader's clearance alone) | new production leaf `InformationFlow/AuditRead.lean` | M |
@@ -1053,7 +1110,7 @@ code existing.
 | SM9.A.9 | **`CapTarget.auditTrail`** constructor + `extractAuditAuthority` (§3.3): the total-match consequences across `Capability`'s `Repr`/`DecidableEq`/well-formedness, the frozen mirror, and every existing `CapTarget` match; the mint path (which boot/CSpace layer creates one); the negative that a non-`.auditTrail` capability carrying `.read` is rejected, and the acceptance witness that an unconfigured deployment has **no** audit reader | `Model/Object/{Types,Structures}.lean`, `Model/FrozenState.lean`, `Platform/Boot.lean` | XL |
 | SM9.A.10 | Live arms in `dispatchWithCapChecked` gated on `extractAuditAuthority` **then** `syscallRequiredRight`; **each arm writes its result into the caller's return register** (the selected word for `.auditRead`, the new visible length for `.auditDrain`) via WS-RA's `writeReturnFrameToTcb` — without which the reader computes correctly and hands back the caller's own preloaded `x0`; unchecked arms fail closed; `syscallDelegates_auditRead` / `_auditDrain` + an end-to-end `syscallDispatchFromAbi` assertion that the returned word is the *selected* one | `Kernel/API.lean` | XL |
 | SM9.A.11 | Enforcement boundary 40→42 canonical, 55→57 per-core; `syscallIdToEnforcementName{,PerCore}`; completeness + class-match re-decided | `Enforcement/Wrappers.lean`, `CovertChannelPerCore.lean` | M |
-| SM9.A.12 | Lock sets: `lockSet_auditRead` / `lockSet_auditDrain` (caller TCB **write** since round 6 — the arm's `writeReturnFrameToTcb` staging is a committed-dispatch caller write; CNode read); `permittedKinds`; inventory counts 103→105; `_size_le` + deadlock aggregate (delivered at round 6, with the staging-write membership witnesses) | `Concurrency/Locks/{LockSetTransitions,LockSetForSyscall,LockSetInventory,Deadlock,DeadlockInventory}.lean` | M |
+| SM9.A.12 | Lock sets: `lockSet_auditRead` / `lockSet_auditDrain` (caller TCB **write** since round 6 — the arm's `writeReturnFrameToTcb` staging is a committed-dispatch caller write; CNode read); `permittedKinds`; inventory counts 103→105; `_size_le` + deadlock aggregate (delivered at round 6, with the staging-write membership witnesses); `stateLevelLock` — the `.objStore` state-level singleton — declared in all three audit-state footprints (round 7: write/read/write, `permittedKinds` += `.objStore`, membership by name, non-disjointness capstone) | `Concurrency/Locks/{LockSetTransitions,LockSetForSyscall,LockSetInventory,Deadlock,DeadlockInventory}.lean` | M |
 | SM9.A.13 | Frozen-ops classifier arm + count; per-core routing gate registration | `Kernel/FrozenOps/Operations.lean`, `scripts/per_core_routing_aliases.json` | S |
 
 **Acceptance**: a monitor reads every entry it is cleared for and drains the

@@ -152,7 +152,9 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
     the single-read `status` word, the two reader classes (view-local indices
     for a partial reader, global identities for a fully-dominating monitor;
     the partial class is model-level — the live entry is monitor-only since
-    PR #870 round 6, closing the drain-signal channel),
+    PR #870 round 6, closing the drain-signal channel; round 7
+    registers the trail's occupancy as CC-8 and gives its mutation the
+    `stateLevelLock` serialization subject),
     `auditDrainVisiblePrefix` under the configuration-derived dominance gate,
     and the live entry point `auditReadFromCore`.  Production, and below the
     projection layer so the live syscall arms consume it without pulling the
