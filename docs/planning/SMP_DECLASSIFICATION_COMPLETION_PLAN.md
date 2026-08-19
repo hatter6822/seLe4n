@@ -1512,6 +1512,38 @@ every new declaration, `SmpSurfaceAnchors` §11's audit-cut block,
 the prose negative forbidding the retired deferral premise's return, and
 `sele4n-sys` 22 unit tests with the opcode table extended.
 
+**PR #872 review (Codex, two findings — both valid).**  (P2) The SM9.C.8 cut
+edited `enforcementBoundaryPerCore_count`'s docstring clause list without
+bumping its figures — "57 entries — the live canonical 42" beside a theorem
+proving 58 — and the Tier-3 prose anchor pinned the stale sentence, so CI
+preserved the inconsistency instead of catching it (the docstring's own last
+sentence records the same failure recurring at round 38); both corrected to
+58/43.  (P1) The declassifying signal's second hop gates the **plain waiter**
+where the ordinary checked signal gates the bound path only and trusts
+wait-time admission — a real asymmetry, and a real one-bit disclosure: a
+hop-1-authorized writer distinguishes "denied-domain plain waiter present"
+(refusal) from "no waiter" (success).  **Deliberately kept**, with the
+analysis landed as theorems rather than prose: on any waiter the base policy
+admits — the checked wait gate's own admission condition — the receiver
+refusal is unreachable and the gate is a no-op
+(`declassifiedSignalPlan_admitted_receiver_error_is_first_hop`), so the
+disclosure is confined to states built outside the checked discipline (an
+unchecked-wait admission, or post-admission relabeling); there, every
+alternative is worse — the review's "symmetric handling" delivers a
+freshly-downgraded badge ungated to a receiver no policy authorized (the
+v0.31.73 leak with declassification authority behind it, demonstrated live in
+§11.8's negative: the ordinary checked signal on the same state hands the
+public waiter the badge), collapsing the discriminant leaves the
+refusal-vs-success bit intact while degrading the ledger and legitimate-caller
+retry semantics, and parking past a queued waiter invents notification states
+the ordinary machinery never produces, breaking the frame equality the
+invariant transfer rests on.  The disclosure itself is exhibited
+(`declassifiedSignalPlan_outcome_depends_on_receiver`) — the same class the
+ordinary checked path has disclosed for *bound* receivers since v0.31.73 —
+and the plan docstring records the reasoning.  Suite §11.8 (719 → **722**
+assertions: the no-op, the disclosure pair, and the load-bearing negative
+that the symmetric alternative delivers).
+
 ### SM9.D — Causal declassification provenance (19 sub-tasks)
 
 The phase's largest sub-phase, and the reason the calendar estimate moved.  §3.6

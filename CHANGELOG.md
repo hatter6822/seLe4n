@@ -197,6 +197,22 @@ load-bearing negatives), the failed-hop golden-fixture line, §1.12 +
 anchors including the prose negative forbidding the retired premise's return,
 `sele4n-sys` 22 unit tests with the extended opcode table mutation-verified.
 
+**PR #872 review (same version, two findings, both valid).**  (P2) the
+per-core boundary docstring's figures lagged its own clause list (57/42 beside
+a theorem proving 58) and the Tier-3 prose anchor pinned the stale sentence —
+both corrected to 58/43.  (P1) the declassifying signal's second hop gates the
+plain waiter where the ordinary checked signal trusts wait-time admission;
+the asymmetry is deliberate and now proven rather than argued:
+`declassifiedSignalPlan_admitted_receiver_error_is_first_hop` (on any
+base-admitted waiter — the checked wait gate's own admission condition — the
+receiver refusal is unreachable, so the gate is a no-op in checked
+deployments) and `declassifiedSignalPlan_outcome_depends_on_receiver` (the
+one-bit disclosure a hop-1-authorized writer gets from refusal-vs-success,
+exhibited rather than hidden — the class the ordinary checked path has
+disclosed for bound receivers since v0.31.73).  Suite §11.8 (719 → **722**)
+includes the load-bearing negative that the review's symmetric alternative
+DELIVERS the freshly-downgraded badge to the denied receiver.
+
 ## v0.33.51 — WS-SM SM9.B: refusal auditing — the declassification trail's blind spot, closed
 
 SM8.C's audit trail records **authorized** downgrades and nothing else, so a

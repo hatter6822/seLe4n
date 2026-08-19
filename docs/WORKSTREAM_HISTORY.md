@@ -191,6 +191,19 @@ three load-bearing negatives); the failed-hop golden-fixture line; twenty new
 Tier-3 anchors including the prose negative forbidding the retired premise's
 return; `sele4n-sys` opcode table extended, density test mutation-verified.
 
+**PR #872 review (same version, two Codex findings, both valid).**  The
+per-core boundary docstring's figures lagged its own clause list (57/42 beside
+a theorem proving 58; the Tier-3 prose anchor pinned the stale sentence) —
+corrected to 58/43.  And the declassifying signal's plain-waiter gate — absent
+from the ordinary checked signal, which trusts wait-time admission — is
+deliberate and now proven: on any base-admitted waiter the receiver refusal is
+unreachable (`declassifiedSignalPlan_admitted_receiver_error_is_first_hop`),
+and the one-bit presence disclosure its refusal carries in mixed-admission
+states is exhibited (`declassifiedSignalPlan_outcome_depends_on_receiver`)
+beside the load-bearing negative that the symmetric alternative delivers the
+freshly-downgraded badge to the denied receiver (suite §11.8, 719 → **722**
+assertions).
+
 Plan: [`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md)
 §SM9.C.  Next: SM9.D causal declassification provenance.
 

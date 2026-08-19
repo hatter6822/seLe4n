@@ -3257,6 +3257,17 @@ first-hop refusal records no receiver, the discriminant alone does not
 trigger the resolution, and a receiver-less slot answers chunk count 0 with
 its chunk read refused).
 
+**PR #872 review** (same version): the per-core boundary docstring's stale
+57/42 figures (and the Tier-3 prose anchor pinning them) corrected to 58/43;
+and the plain-waiter gate — deliberately asymmetric with the ordinary checked
+signal, which gates the bound path only and trusts wait-time admission —
+proven a no-op on any base-admitted waiter
+(`declassifiedSignalPlan_admitted_receiver_error_is_first_hop`), with the
+one-bit presence disclosure its refusal carries in mixed-admission states
+exhibited as `declassifiedSignalPlan_outcome_depends_on_receiver` beside the
+load-bearing negative that the symmetric alternative delivers the
+freshly-downgraded badge to the denied receiver (§11.8, 719 → 722).
+
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 
 WS-Q3 introduces the builder-phase state model: a dependently-typed wrapper

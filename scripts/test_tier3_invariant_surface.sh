@@ -1690,7 +1690,7 @@ run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count' SeLe4n/K
 # repeating a `decide` drifted from it.  Anchoring the PAIR couples them: bump
 # the theorem without the sentence and this fails, which is the only mechanism
 # that has actually held.
-run_prose_check "INVARIANT" rg -n 'per-core boundary has 57 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_prose_check "INVARIANT" rg -n 'per-core boundary has 58 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 58' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -3544,6 +3544,17 @@ run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_denie
 # The retired deferral premise must not return: the record's docstring no
 # longer claims the seam cannot see the resolved receiver.
 run_prose_negative_check "INVARIANT" rg -n 'so the seam cannot see it; .which. hop failed can ride' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+
+# WS-SM SM9.C (PR #872 review) — the plain-waiter gate.  Deliberately
+# asymmetric with the ordinary checked signal (which gates the receiver on the
+# bound path only and trusts wait-time admission): provably a no-op on
+# checked-admitted waiters, and its one-bit refusal disclosure exhibited as a
+# theorem rather than hidden.
+run_check "INVARIANT" rg -n '^theorem declassifiedSignalPlan_admitted_receiver_error_is_first_hop' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignalPlan_outcome_depends_on_receiver' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n 'a checked-admitted plain waiter never triggers the receiver refusal' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'DISCLOSURE: refusal-vs-success reveals the denied plain waiter' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the symmetric alternative delivers the badge to the denied receiver' tests/SmpInformationFlowSuite.lean
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
 run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean

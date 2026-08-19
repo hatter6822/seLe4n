@@ -1898,6 +1898,11 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @AuditReadOp.refusalReceiverChunkCount
 #check @AuditReadOp.refusalReceiverChunk
 
+-- SM9.C.1 (PR #872 review) — the plain-waiter gate: provably a no-op on
+-- checked-admitted waiters, its disclosure exhibited rather than hidden.
+#check @declassifiedSignalPlan_admitted_receiver_error_is_first_hop
+#check @declassifiedSignalPlan_outcome_depends_on_receiver
+
 -- ============================================================================
 -- §2  Elaboration-time examples: each headline theorem applied
 -- ============================================================================
@@ -9542,6 +9547,75 @@ private def runDeclassifiedSignalFailedHopChecks : IO Unit := do
      decide (auditReadOpcodeCount = 27) &&
      decide (decodeAuditReadOp 27 0 0 = none))
 
+/-- §11.8 fixture — the no-waiter twin of `declassSignalState`, so the
+disclosure pair below compares two states differing ONLY in the queue. -/
+private def declassNoWaiterState : SystemState :=
+  { declassSignalState with
+      objects := declassSignalState.objects.insert highNotification
+        (.notification { state := .idle, waitingThreads := ⟨[], by simp⟩,
+                         pendingBadge := none, boundTCB := none }) }
+
+/-- §11.8  SM9.C.1 (PR #872 review) — the plain-waiter gate: a no-op on
+checked-admitted waiters, honest about what its refusal discloses, and
+strictly safer than the symmetric alternative. -/
+private def runDeclassifiedSignalWaiterGateChecks : IO Unit := do
+  IO.println "--- §11.8 SM9.C.1 the plain-waiter gate, and what its refusal discloses ---"
+  -- The checked-deployment case: a waiter the base policy admits (the wait
+  -- gate's own admission condition) can never trigger the receiver refusal —
+  -- the hop is ordinary, the plan succeeds with hop 1's single record, and
+  -- the gate is a provable no-op.
+  assertBool "a checked-admitted plain waiter never triggers the receiver refusal"
+    (let admittedCtx : GenericLabelingContext :=
+       { signalDeclassContext with
+           policy := { canFlow := fun a b =>
+             (decide (a = declassMiddle) && decide (b = declassPublic)) ||
+               signalDeclassContext.policy.canFlow a b } }
+     decide (admittedCtx.policy.canFlow declassMiddle declassPublic = true) &&
+     (match declassifiedSignalPlan admittedCtx receiverOnlyDeniedPolicy highNotification
+         declassSecret declassSignalState with
+      | .ok records => decide (records.length = 1)
+      | .error _ => false) &&
+     decide (declassifiedSignalReceiver? declassSignalState highNotification
+       = some crossCoreWaiter))
+  -- DISCLOSURE, exhibited: with the caller's own hop authorized, the verdict
+  -- depends on the resolved receiver — one bit of queue state readable off
+  -- the ABI outcome by a hop-1-authorized writer.  The same class of refusal
+  -- has disclosed BOUND-receiver state on the ordinary checked path since
+  -- v0.31.73; this widens it to plain waiters exactly where the protected
+  -- data is a freshly-downgraded badge.
+  assertBool "DISCLOSURE: refusal-vs-success reveals the denied plain waiter's presence"
+    (decide (declassifiedSignalReceiver? declassNoWaiterState highNotification = none) &&
+     (match declassifiedSignalPlan signalDeclassContext receiverOnlyDeniedPolicy
+         highNotification declassSecret declassNoWaiterState with
+      | .ok records => decide (records.length = 1)
+      | .error _ => false) &&
+     (match declassifiedSignalPlan signalDeclassContext receiverOnlyDeniedPolicy
+         highNotification declassSecret declassSignalState with
+      | .error e => decide (e = KernelError.declassificationDeniedAtReceiver)
+      | .ok _ => false))
+  -- WHY fail-closed wins: on the SAME denied-waiter state the ordinary
+  -- checked signal DELIVERS — the badge lands in the public waiter's TCB,
+  -- ungated, because that path trusts wait-time admission.  The declassified
+  -- path refuses and the waiter provably keeps waiting: the data never moves.
+  assertBool "NEGATIVE: the symmetric alternative delivers the badge to the denied receiver"
+    (decide (securityFlowsTo (niLabeling.threadLabelOf highCurrent)
+        (niLabeling.objectLabelOf highNotification) = true) &&
+     (match SeLe4n.Kernel.notificationSignalBoundCrossCoreDispatchChecked niLabeling
+         highNotification highCurrent (SeLe4n.Badge.ofNatMasked 0x5C) declassSignalState with
+      | (st', .ok _) =>
+          (match st'.getTcb? crossCoreWaiter with
+           | some tcb =>
+               decide ((tcb.pendingMessage.bind (·.badge))
+                 = some (SeLe4n.Badge.ofNatMasked 0x5C)) &&
+               decide (tcb.ipcState = ThreadIpcState.ready)
+           | none => false)
+      | (_, .error _) => false) &&
+     (match declassSignalReceiverDenied.1.getTcb? crossCoreWaiter with
+      | some tcb =>
+          decide (tcb.ipcState = ThreadIpcState.blockedOnNotification highNotification) &&
+          decide (tcb.pendingMessage = none)
+      | none => false))
+
 /-- The SM9.C half: what a **data-carrying** declassification does, reported as
 observables.  The three lines above report views, authorized downgrades and
 refused attempts; these report the one operation in the tree that deliberately
@@ -9710,6 +9784,7 @@ phase closure, the audit-trail reader, refusal auditing and the data-carrying de
   runDeclassifiedSignalDefaultChecks
   runDeclassifiedSignalAbiChecks
   runDeclassifiedSignalFailedHopChecks
+  runDeclassifiedSignalWaiterGateChecks
   runInformationFlowTraceFixtureCheck
   IO.println "===================================="
   IO.println ("All SM8.A per-core observable-state, SM8.B non-interference, " ++

@@ -1002,6 +1002,10 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _nf := @SeLe4n.Platform.FFI.refusalRecord_names_failed_hop
      have _dp := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_denied_preserves_state
      have _es := @SeLe4n.Kernel.enforcement_sufficiency_declassifySignal
+     -- PR #872 review: the plain-waiter gate — a no-op on checked-admitted
+     -- waiters, its disclosure exhibited.
+     have _aw := @SeLe4n.Kernel.declassifiedSignalPlan_admitted_receiver_error_is_first_hop
+     have _od := @SeLe4n.Kernel.declassifiedSignalPlan_outcome_depends_on_receiver
      decide (SeLe4n.Kernel.auditReadOpcodeCount = 27
        ∧ SeLe4n.Kernel.decodeAuditReadOp 25 0 0
            = some (.refusalReceiverChunkCount 0)

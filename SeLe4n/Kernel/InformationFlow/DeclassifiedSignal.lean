@@ -702,7 +702,26 @@ is authorized at all — resolved entirely from the **pre**-state.
 Factored out of the transition so the gate and the audit are one computation
 read twice (the §3.5 "defined once" discipline): the commit below folds exactly
 this list, and `declassifiedSignal_audits_each_hop` reads it too, so a record
-the gate authorized and the commit did not write is not expressible. -/
+the gate authorized and the commit did not write is not expressible.
+
+**The second hop gates the plain waiter too — deliberately, where the ordinary
+checked signal does not** (PR #872 review).  The ordinary
+`notificationSignalBoundCrossCoreDispatchChecked` gates `notification →
+receiver` only on the *bound-delivery* path and trusts the waiter queue,
+because the checked *wait* gate admits a plain waiter only when that flow
+already holds — so for a waiter admitted under the checked discipline this
+hop's base verdict is `true`, the hop is `.ordinary`, and the gate is provably
+a no-op (`declassifiedSignalPlan_admitted_receiver_error_is_first_hop`).  The
+gate bites exactly on states the checked discipline does not produce — a
+waiter admitted through the *unchecked* `.notificationWait` arm, or relabeled
+after admission — and there the symmetric alternative would deliver a
+freshly-downgraded badge to a receiver no policy authorized: the v0.31.73
+badge-leak class with declassification authority behind it.  The honest cost
+is a one-bit disclosure: a caller authorized at hop 1 can distinguish
+"denied-domain plain waiter present" (refusal) from "no waiter" (success),
+which the same class of refusal already disclosed for *bound* receivers on the
+ordinary checked path since v0.31.73.  Exhibited rather than hidden:
+`declassifiedSignalPlan_outcome_depends_on_receiver`. -/
 def declassifiedSignalPlan (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
     (actorDomain : SecurityDomain) (st : SystemState) :
@@ -2270,5 +2289,102 @@ theorem enforcement_sufficiency_declassifySignal
           refine Or.inr (Or.inr (Or.inr (Or.inr
             ⟨signaler, records, sgi, st2, hCur, hPlan, hSnd, ?_, hEq⟩)))
           rw [hFst]; exact hRec
+
+
+-- ============================================================================
+-- §14  WS-SM SM9.C.1 — the plain-waiter gate: no-op when admitted, honest
+--       about what its refusal discloses (PR #872 review)
+-- ============================================================================
+
+/-- WS-SM SM9.C.1 (PR #872 review): **for a receiver the base policy admits,
+the receiver refusal is unreachable** — an error out of the plan is the
+*caller's* hop, never the receiver's.
+
+This is the checked-deployment case: the checked wait gate admits a plain
+waiter only when `notification → waiter` already flows, so on every state that
+discipline produces the second hop is `.ordinary` and this transition's
+receiver gate is a no-op.  The refusal — and the one-bit disclosure it carries
+— is confined to states built outside the checked discipline (an
+unchecked-wait admission, or a post-admission relabeling), where the
+alternative to refusing is delivering a freshly-downgraded badge to a receiver
+no policy authorized. -/
+theorem declassifiedSignalPlan_admitted_receiver_error_is_first_hop
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (notificationId : SeLe4n.ObjId) (actorDomain : SecurityDomain) (st : SystemState)
+    (receiver : SeLe4n.ThreadId) (e : KernelError)
+    (hRecv : declassifiedSignalReceiver? st notificationId = some receiver)
+    (hFlow : ctx.policy.canFlow (ctx.objectDomainOf notificationId)
+      (ctx.threadDomainOf receiver) = true)
+    (hErr : declassifiedSignalPlan ctx declPolicy notificationId actorDomain st = .error e) :
+    e = KernelError.declassificationDenied := by
+  unfold declassifiedSignalPlan at hErr
+  obtain ⟨a1, hA1⟩ : ∃ a, declassifiedSignalHopAuthorization ctx declPolicy .callerToNotification
+      actorDomain (ctx.objectDomainOf notificationId) = a := ⟨_, rfl⟩
+  rw [hA1] at hErr
+  cases a1 with
+  | error e' =>
+    have hE : e' = DeclassifiedSignalHop.callerToNotification.refusal :=
+      declassifiedSignalHopAuthorization_error_refusal ctx declPolicy .callerToNotification
+        actorDomain (ctx.objectDomainOf notificationId) e' hA1
+    have : e = e' := (Except.error.inj hErr).symm
+    rw [this, hE]; rfl
+  | ok hop1 =>
+    simp only at hErr
+    rw [hRecv] at hErr
+    simp only at hErr
+    rw [declassifiedSignalHopAuthorization_ordinary ctx declPolicy .notificationToReceiver
+      (ctx.objectDomainOf notificationId) (ctx.threadDomainOf receiver) hFlow] at hErr
+    exact absurd hErr (by simp)
+
+/-- WS-SM SM9.C.1 (PR #872 review, **the disclosure, exhibited**): with the
+caller's own hop authorized, the plan's verdict depends on the resolved
+receiver — success with one record when nobody is waiting, the receiver's
+refusal when a denied-domain plain waiter is.
+
+A caller holding a write capability on the notification therefore reads one
+bit of queue state off the ABI outcome.  Kept, and stated rather than hidden,
+because every alternative is worse: delivering ungated re-opens the v0.31.73
+badge leak with downgrade authority behind it; parking the badge past a queued
+waiter invents notification states the ordinary machinery never produces and
+breaks the frame equality the whole invariant transfer rests on; and refusing
+both ways kills the delivery the phase exists to perform.  The same class of
+refusal has disclosed *bound*-receiver state on the ordinary checked path
+since v0.31.73 — this widens it to plain waiters exactly where the data it
+protects is a freshly-downgraded badge, and only on states the checked wait
+discipline does not produce
+(`declassifiedSignalPlan_admitted_receiver_error_is_first_hop`). -/
+theorem declassifiedSignalPlan_outcome_depends_on_receiver
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (notificationId : SeLe4n.ObjId) (actorDomain : SecurityDomain)
+    (s₁ s₂ : SystemState) (receiver : SeLe4n.ThreadId)
+    (hRecv₁ : declassifiedSignalReceiver? s₁ notificationId = none)
+    (hRecv₂ : declassifiedSignalReceiver? s₂ notificationId = some receiver)
+    (hDeny₁ : ctx.policy.canFlow actorDomain (ctx.objectDomainOf notificationId) = false)
+    (hDecl₁ : declPolicy.canDeclassify actorDomain (ctx.objectDomainOf notificationId) = true)
+    (hDeny₂ : ctx.policy.canFlow (ctx.objectDomainOf notificationId)
+      (ctx.threadDomainOf receiver) = false)
+    (hNoDecl₂ : declPolicy.canDeclassify (ctx.objectDomainOf notificationId)
+      (ctx.threadDomainOf receiver) = false) :
+    declassifiedSignalPlan ctx declPolicy notificationId actorDomain s₁ =
+      .ok [{ srcDomain := actorDomain, dstDomain := ctx.objectDomainOf notificationId,
+             target := notificationId }] ∧
+    declassifiedSignalPlan ctx declPolicy notificationId actorDomain s₂ =
+      .error .declassificationDeniedAtReceiver := by
+  constructor
+  · unfold declassifiedSignalPlan
+    rw [declassifiedSignalHopAuthorization_declassified ctx declPolicy .callerToNotification
+      actorDomain (ctx.objectDomainOf notificationId) hDeny₁ hDecl₁]
+    simp only
+    rw [hRecv₁]
+    rfl
+  · unfold declassifiedSignalPlan
+    rw [declassifiedSignalHopAuthorization_declassified ctx declPolicy .callerToNotification
+      actorDomain (ctx.objectDomainOf notificationId) hDeny₁ hDecl₁]
+    simp only
+    rw [hRecv₂]
+    simp only
+    rw [declassifiedSignalHopAuthorization_refused ctx declPolicy .notificationToReceiver
+      (ctx.objectDomainOf notificationId) (ctx.threadDomainOf receiver) hDeny₂ hNoDecl₂]
+    rfl
 
 end SeLe4n.Kernel

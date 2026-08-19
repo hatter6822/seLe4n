@@ -156,7 +156,7 @@ are live and both must be classified. -/
 def enforcementBoundaryPerCore : List EnforcementClass :=
   enforcementBoundaryExtended ++ crossCoreEnforcementEntries
 
-/-- SM8.B.6: the per-core boundary has 57 entries — the live canonical 42 (39
+/-- SM8.B.6: the per-core boundary has 58 entries — the live canonical 43 (39
 plus the 2PL bracket SM8.E.3 promoted into it, plus WS-SM SM9.A.11's two
 audit-trail entries, plus WS-SM SM9.C.8's data-carrying declassification) and
 the fifteen cross-core wrappers.  Re-anchored at the
