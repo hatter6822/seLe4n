@@ -151,11 +151,24 @@ mod tests {
 
     #[test]
     fn decode_unknown_error_label() {
-        // WS-SM SM9.A.2: 55 is AuditFieldTooLarge.  The first unrecognized
-        // discriminant is 56 (label 57) → UnknownKernelError, still an Err —
-        // fail-closed.
-        let regs = [0, error_x1(56), 0, 0, 0, 0, 0];
+        // WS-SM SM9.C.1: 56 is DeclassificationDeniedAtReceiver.  The first
+        // unrecognized discriminant is 57 (label 58) → UnknownKernelError,
+        // still an Err — fail-closed.
+        let regs = [0, error_x1(57), 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
+    }
+
+    #[test]
+    fn decode_declassification_denied_at_receiver_error() {
+        // WS-SM SM9.C.1: discriminant 56 survives the label round trip.  The
+        // distinction it carries is the whole reason it is not folded into
+        // DeclassificationDenied: an unauthorized caller and an authorized
+        // caller aimed at an unauthorized sink call for opposite responses.
+        let regs = [0, error_x1(56), 0, 0, 0, 0, 0];
+        assert_eq!(
+            decode_response(regs),
+            Err(KernelError::DeclassificationDeniedAtReceiver)
+        );
     }
 
     #[test]

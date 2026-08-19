@@ -167,10 +167,32 @@ object its own projection redacts.  So visibility is the **conjunction**: the
 reader must be cleared to receive from the source *and* from the destination.
 `incomparableDowngrade_hidden_from_source_reader` keeps the leak refuted, and
 `auditVisibleEntry_target_domain_flows` is the capstone aligning the audit view
-with the projection's own object-identity discipline. -/
+with the projection's own object-identity discipline.
+
+**WS-SM SM9.C.1 — four conjuncts, and why the last two are not redundant.**
+SM9.C adds two things an entry discloses.  The `actor` pair (§3.5) is a *third*
+domain: on the second hop of a two-hop delivery the actor is the signalling
+subject while the source is the intermediate object, so a reader cleared for the
+source and destination could otherwise read off the domain of a subject it
+dominates neither.  And the round-3 argument for `targetObject` stopped being
+*derivable*: it went through the producer invariant "`dstDomain` is the target
+object's own domain", which a second-hop event falsifies by design (its
+destination is the receiving *thread's* domain, and the labeling scores a
+thread and an object independently).  So the object-identity conjunct is stated
+**directly** here rather than derived, which makes
+`auditVisibleEntry_target_domain_flows` unconditional — strictly stronger than
+the form it replaces.
+
+The actor's *identity* needs no conjunct of its own: `actor.domain` is that
+subject's own domain by construction at every producer
+(`auditTrailActorsFromLabeling`), so the third conjunct gates it.  That
+indirection is sound here precisely where the target's was not — SM9.C
+maintains the actor invariant at both hops and breaks the destination one. -/
 def auditEntryVisibleTo (ctx : GenericLabelingContext) (reader : SecurityDomain)
     (e : DeclassificationEvent) : Bool :=
-  ctx.policy.canFlow e.srcDomain reader && ctx.policy.canFlow e.dstDomain reader
+  ctx.policy.canFlow e.srcDomain reader && ctx.policy.canFlow e.dstDomain reader &&
+    ctx.policy.canFlow e.actor.domain reader &&
+    ctx.policy.canFlow (ctx.objectDomainOf e.targetObject) reader
 
 /-- WS-SM SM9.A.1: **what a reader at domain `reader` may see of a trail.**
 
@@ -217,8 +239,8 @@ theorem mem_auditLogVisibleTo_iff (ctx : GenericLabelingContext)
       e ∈ log ∧ auditEntryVisibleTo ctx reader e = true := by
   simp [auditLogVisibleTo, List.mem_filter]
 
-/-- WS-SM SM9.A.1: a visible entry is one the reader is cleared for — both
-disclosed domains at once. -/
+/-- WS-SM SM9.A.1: a visible entry is one the reader is cleared for — every
+disclosed domain, and the domain of the object identity it discloses, at once. -/
 theorem auditLogVisibleTo_cleared (ctx : GenericLabelingContext)
     (reader : SecurityDomain) (log : DeclassificationAuditLog)
     {e : DeclassificationEvent} (h : e ∈ auditLogVisibleTo ctx reader log) :
@@ -230,8 +252,11 @@ reader. -/
 theorem auditLogVisibleTo_cleared_src (ctx : GenericLabelingContext)
     (reader : SecurityDomain) (log : DeclassificationAuditLog)
     {e : DeclassificationEvent} (h : e ∈ auditLogVisibleTo ctx reader log) :
-    ctx.policy.canFlow e.srcDomain reader = true :=
-  (Bool.and_eq_true_iff.mp (auditLogVisibleTo_cleared ctx reader log h)).1
+    ctx.policy.canFlow e.srcDomain reader = true := by
+  have h4 := auditLogVisibleTo_cleared ctx reader log h
+  unfold auditEntryVisibleTo at h4
+  simp only [Bool.and_eq_true] at h4
+  exact h4.1.1.1
 
 /-- WS-SM SM9.A.1 (PR #870 round 3, **the destination projection**): a visible
 entry's destination flows to the reader too — the half a source-only filter did
@@ -240,8 +265,40 @@ identity its projection redacts. -/
 theorem auditLogVisibleTo_cleared_dst (ctx : GenericLabelingContext)
     (reader : SecurityDomain) (log : DeclassificationAuditLog)
     {e : DeclassificationEvent} (h : e ∈ auditLogVisibleTo ctx reader log) :
-    ctx.policy.canFlow e.dstDomain reader = true :=
-  (Bool.and_eq_true_iff.mp (auditLogVisibleTo_cleared ctx reader log h)).2
+    ctx.policy.canFlow e.dstDomain reader = true := by
+  have h4 := auditLogVisibleTo_cleared ctx reader log h
+  unfold auditEntryVisibleTo at h4
+  simp only [Bool.and_eq_true] at h4
+  exact h4.1.1.2
+
+/-- WS-SM SM9.C.1 (**the actor projection**): a visible entry's *actor* domain
+flows to the reader — the conjunct the two-hop design owes, since a second-hop
+event's source is the intermediate object's domain and says nothing about the
+subject that performed the downgrade. -/
+theorem auditLogVisibleTo_cleared_actor (ctx : GenericLabelingContext)
+    (reader : SecurityDomain) (log : DeclassificationAuditLog)
+    {e : DeclassificationEvent} (h : e ∈ auditLogVisibleTo ctx reader log) :
+    ctx.policy.canFlow e.actor.domain reader = true := by
+  have h4 := auditLogVisibleTo_cleared ctx reader log h
+  unfold auditEntryVisibleTo at h4
+  simp only [Bool.and_eq_true] at h4
+  exact h4.1.2
+
+/-- WS-SM SM9.C.1 (**the object-identity projection**): a visible entry's target
+object is one whose **own** domain flows to the reader.
+
+Stated directly rather than derived through the destination, because SM9.C's
+second-hop event's destination is a *thread's* domain: the derivation round 3
+used holds only while `dstDomain = objectDomainOf targetObject`, which two-hop
+delivery falsifies by design. -/
+theorem auditLogVisibleTo_cleared_target (ctx : GenericLabelingContext)
+    (reader : SecurityDomain) (log : DeclassificationAuditLog)
+    {e : DeclassificationEvent} (h : e ∈ auditLogVisibleTo ctx reader log) :
+    ctx.policy.canFlow (ctx.objectDomainOf e.targetObject) reader = true := by
+  have h4 := auditLogVisibleTo_cleared ctx reader log h
+  unfold auditEntryVisibleTo at h4
+  simp only [Bool.and_eq_true] at h4
+  exact h4.2
 
 /-- WS-SM SM9.A.1 (PR #870 round 3, **the leak refuted, negatively**): an entry
 whose destination does not flow to the reader is in **no** position of that
@@ -907,25 +964,37 @@ theorem all_nodup : all.Nodup := by decide
 
 end ReadableStructure
 
-/-- WS-SM SM9.A.2: the four numeric fields of a `DeclassificationEvent` the
-reader exports through the chunk protocol.
+/-- WS-SM SM9.A.2: the numeric fields of a `DeclassificationEvent` the reader
+exports through the chunk protocol.
 
 `originatingCore` and the basis's trust bit are **not** here: both are
 structurally bounded (`CoreId` is a `Fin numCores`, the bit is a `Bool`), so
 they ride one word together (`AuditReadOp.coreAndTrust`).  The basis's
 designation is not here either — it is a string, and gets the byte protocol of
-§3b. -/
+§3b.
+
+**WS-SM SM9.C.1 adds the actor pair.**  A record a monitor cannot read is a
+record that does not exist for the purpose it was added for, and the actor is
+exactly what a monitor most needs on a second-hop event: its `srcDomain` is the
+intermediate object's, so without the actor the trail names *what* crossed and
+not *who* crossed it.  Both components are unbounded `Nat` in the model
+(`ThreadId.toNat`, `SecurityDomain.id`), so both ride the chunk protocol. -/
 inductive AuditReadField where
   | srcDomain
   | dstDomain
   | targetObject
   | timestamp
+  /-- WS-SM SM9.C.1: the acting subject's thread id. -/
+  | actorSubject
+  /-- WS-SM SM9.C.1: the acting subject's security domain. -/
+  | actorDomain
   deriving Repr, DecidableEq, Inhabited
 
 namespace AuditReadField
 
 /-- WS-SM SM9.A.2: the enumeration. -/
-def all : List AuditReadField := [.srcDomain, .dstDomain, .targetObject, .timestamp]
+def all : List AuditReadField :=
+  [.srcDomain, .dstDomain, .targetObject, .timestamp, .actorSubject, .actorDomain]
 
 /-- WS-SM SM9.A.2: every field is enumerated. -/
 theorem mem_all (f : AuditReadField) : f ∈ all := by cases f <;> decide
@@ -1001,6 +1070,17 @@ inductive AuditReadOp where
   /-- WS-SM SM9.B.10: chunk `chunk` of unbounded field `field` of ring slot
       `slot`. -/
   | refusalSlotField (slot : Nat) (field : RefusalReadField) (chunk : Nat)
+  /-- WS-SM SM9.C.1 (`refusalRecord_names_failed_hop`): how many chunks ring
+      slot `slot`'s **refused receiver** needs — `0` when the refusal named no
+      receiver, which is unambiguous because a present value always needs at
+      least one chunk (`auditFieldChunkCount?` of `0` is `some 1`).  Its own
+      pair of constructors rather than a fourth `RefusalReadField`, because the
+      field is the ledger's one *optional* export and the absent case needs an
+      in-band encoding the total-field protocol deliberately does not have. -/
+  | refusalReceiverChunkCount (slot : Nat)
+  /-- WS-SM SM9.C.1: chunk `chunk` of ring slot `slot`'s refused receiver;
+      `.invalidArgument` when the refusal named none. -/
+  | refusalReceiverChunk (slot : Nat) (chunk : Nat)
   deriving Repr, DecidableEq, Inhabited
 
 /-- WS-SM SM9.A.2 (plan §3.7, **the fusion**): every read operation names the
@@ -1022,6 +1102,8 @@ def AuditReadOp.readsStructure : AuditReadOp → ReadableStructure
   | .refusalSlotTags _ => .declassificationRefusalLedger
   | .refusalSlotFieldChunkCount _ _ => .declassificationRefusalLedger
   | .refusalSlotField _ _ _ => .declassificationRefusalLedger
+  | .refusalReceiverChunkCount _ => .declassificationRefusalLedger
+  | .refusalReceiverChunk _ _ => .declassificationRefusalLedger
 
 /-- WS-SM SM9.A.2: the totality anchor.  The *mechanism* is the definition
 itself — an exhaustive match with no wildcard; this theorem is the named surface
@@ -1070,6 +1152,11 @@ def auditExportedFieldValue (isMonitor : Bool) (index : Nat)
   | .dstDomain => e.dstDomain.id
   | .targetObject => e.targetObject.val
   | .timestamp => if isMonitor then e.timestamp else index
+  -- WS-SM SM9.C.1: the actor pair is the entry's own content, exported
+  -- verbatim like the two flow domains.  It carries no *global* position, so it
+  -- needs none of the timestamp's two-class treatment.
+  | .actorSubject => e.actor.subject.toNat
+  | .actorDomain => e.actor.domain.id
 
 /-- WS-SM SM9.A.2: **a partial reader's entry identity is its own index.**  It
 learns nothing about the trail's global shape from it. -/
@@ -1377,6 +1464,39 @@ def auditReadWord (ctx : GenericLabelingContext)
               | none => .error .auditFieldTooLarge
               | some n =>
                   if chunk < n then .ok (auditFieldChunk v chunk) else .error .invalidArgument
+         else .error .invalidArgument)
+      else .error .illegalAuthority
+  -- WS-SM SM9.C.1: the refused receiver — the ledger's one optional export.
+  -- Absence is in-band: chunk count 0 means "no receiver named", which no
+  -- present value can produce (`auditFieldChunkCount?` of any Nat is ≥ 1).
+  | .refusalReceiverChunkCount slot =>
+      if isMonitor then
+        (if h : slot < refusalRingSize then
+          match st.declassificationRefusals.recent.get ⟨slot, h⟩ with
+          | none => .error .invalidArgument
+          | some r =>
+              match r.refusedReceiver with
+              | none => .ok 0
+              | some receiver =>
+                  match auditFieldChunkCount? receiver.val with
+                  | none => .error .auditFieldTooLarge
+                  | some n => .ok n
+         else .error .invalidArgument)
+      else .error .illegalAuthority
+  | .refusalReceiverChunk slot chunk =>
+      if isMonitor then
+        (if h : slot < refusalRingSize then
+          match st.declassificationRefusals.recent.get ⟨slot, h⟩ with
+          | none => .error .invalidArgument
+          | some r =>
+              match r.refusedReceiver with
+              | none => .error .invalidArgument
+              | some receiver =>
+                  match auditFieldChunkCount? receiver.val with
+                  | none => .error .auditFieldTooLarge
+                  | some n =>
+                      if chunk < n then .ok (auditFieldChunk receiver.val chunk)
+                      else .error .invalidArgument
          else .error .invalidArgument)
       else .error .illegalAuthority
 
@@ -1723,14 +1843,40 @@ theorem auditDrain_requires_full_dominance (ctx : GenericLabelingContext)
     (fun e _ => by
       have hAll := auditMonitorAuthorized_dominates_all ctx monitorClearance reader hTop
         hTrans hGate
-      simp [auditEntryVisibleTo, hAll e.srcDomain, hAll e.dstDomain])
+      simp [auditEntryVisibleTo, hAll e.srcDomain, hAll e.dstDomain, hAll e.actor.domain,
+        hAll (ctx.objectDomainOf e.targetObject)])
 
-/-- WS-SM SM9.A.3: **every entry's source is a domain the labeling assigns to
-some subject.**
+/-- WS-SM SM9.C.1: **a domain the labeling assigns to some entity** — a subject
+or an object.
+
+The generalisation SM9.C forces.  While `.declassify` was the only producer,
+every recorded source was a *subject's* domain and every recorded destination an
+*object's*, and the two invariants below could say so.  A two-hop delivery
+records a hop whose source is the intermediate notification's domain and whose
+destination is the receiving thread's, so neither of those sharper statements
+survives; what does survive — and is all the drain's dominance argument needs —
+is that a recorded domain is one the labeling gives to *something*, since the
+configured monitor is validated to dominate both families. -/
+def labelingAssignedDomain (ctx : GenericLabelingContext) (d : SecurityDomain) : Prop :=
+  (∃ tid : SeLe4n.ThreadId, d = ctx.threadDomainOf tid) ∨
+    (∃ oid : SeLe4n.ObjId, d = ctx.objectDomainOf oid)
+
+/-- WS-SM SM9.C.1: a subject's domain is labeling-assigned. -/
+theorem labelingAssignedDomain_thread (ctx : GenericLabelingContext)
+    (tid : SeLe4n.ThreadId) : labelingAssignedDomain ctx (ctx.threadDomainOf tid) :=
+  Or.inl ⟨tid, rfl⟩
+
+/-- WS-SM SM9.C.1: an object's domain is labeling-assigned. -/
+theorem labelingAssignedDomain_object (ctx : GenericLabelingContext)
+    (oid : SeLe4n.ObjId) : labelingAssignedDomain ctx (ctx.objectDomainOf oid) :=
+  Or.inr ⟨oid, rfl⟩
+
+/-- WS-SM SM9.A.3: **every entry's source is a domain the labeling assigns.**
 
 A property of kernel-produced trails rather than a gate: the audited producer
 records `srcDomain := ctx.threadDomainOf tid` for the subject the executing core
-is running, so every entry it writes satisfies this by construction.
+is running, and SM9.C's second hop records the intermediate object's domain, so
+every entry either writes satisfies this by construction.
 
 It is *not* the visibility gate, and it does not age the way a records-derived
 gate would.  A records-derived gate becomes **more permissive** as entries
@@ -1739,7 +1885,7 @@ it is a soundness hypothesis on the trail rather than the thing that decides who
 may drain. -/
 def auditTrailSourcesFromLabeling (ctx : GenericLabelingContext)
     (log : DeclassificationAuditLog) : Prop :=
-  ∀ e ∈ log, ∃ tid : SeLe4n.ThreadId, e.srcDomain = ctx.threadDomainOf tid
+  ∀ e ∈ log, labelingAssignedDomain ctx e.srcDomain
 
 /-- WS-SM SM9.A.3: removing entries preserves it — the direction that matters,
 since a drain is the operation this is used to justify. -/
@@ -1773,59 +1919,116 @@ theorem declassifyObjectFromCore_preserves_trailSources
   subst hSt'
   intro e hMem
   have hMem' : e ∈ st.declassificationAuditLog ++
-      [declassifyStoreEvent c (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
+      [declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
         targetId st] := hMem
   rcases List.mem_append.mp hMem' with hOld | hNew
   · exact hSources e hOld
   · rcases List.mem_singleton.mp hNew with rfl
-    exact ⟨tid, rfl⟩
+    exact labelingAssignedDomain_thread ctx tid
 
-/-- WS-SM SM9.A.3 (PR #870 round 3): **every entry's destination is its own
-target object's domain.**
+/-! ### The destination invariant, generalised (WS-SM SM9.C.1)
 
-The destination sibling of `auditTrailSourcesFromLabeling`, and strictly
-sharper: the producer records `dstDomain := ctx.objectDomainOf targetId` for
-the very `targetId` it stores in `targetObject`, so the two fields are not
-merely related — the destination *is* the target's domain.  This is what ties
-the visibility filter's destination conjunct to the projection layer's
-object-identity discipline (`auditVisibleEntry_target_domain_flows`): a reader
-cleared for `dstDomain` is cleared for the disclosed object's own domain, which
-is exactly the condition `capTargetObservable` applies before revealing an
-object identity anywhere else in the model. -/
-def auditTrailDestinationsAreTargetDomains (ctx : GenericLabelingContext)
+PR #870 round 3 stated the destination sibling of `auditTrailSourcesFromLabeling`
+in its **sharp** form — `dstDomain = ctx.objectDomainOf targetObject`, so a
+reader cleared for the destination was cleared for the disclosed object's own
+domain — and built the capstone `auditVisibleEntry_target_domain_flows` on it.
+
+SM9.C's second-hop event makes that statement **false**: its destination is the
+receiving *thread's* domain while its target names that thread's TCB, and the
+labeling scores a thread and an object independently.  Retiring it is therefore
+the honest move, and the two things it bought are both kept, each by something
+stronger or equal:
+
+* the object-identity discipline moves **into the filter** as its own conjunct,
+  so the capstone holds with no trail hypothesis at all;
+* the drain's dominance argument keeps the general form below, which every
+  producer establishes and which the validated monitor clearance discharges.
+
+A Tier-3 negative anchor forbids the retired name's return, in the SM8.E
+retirement pattern. -/
+
+/-- WS-SM SM9.C.1: **every entry's destination is a domain the labeling
+assigns** — the surviving generalisation of the retired
+`auditTrailDestinationsAreTargetDomains`. -/
+def auditTrailDestinationsFromLabeling (ctx : GenericLabelingContext)
     (log : DeclassificationAuditLog) : Prop :=
-  ∀ e ∈ log, e.dstDomain = ctx.objectDomainOf e.targetObject
+  ∀ e ∈ log, labelingAssignedDomain ctx e.dstDomain
 
 /-- WS-SM SM9.A.3: removing entries preserves it — the drain direction. -/
-theorem auditTrailDestinationsAreTargetDomains_drop (ctx : GenericLabelingContext)
+theorem auditTrailDestinationsFromLabeling_drop (ctx : GenericLabelingContext)
     (log : DeclassificationAuditLog) (d : Nat)
-    (h : auditTrailDestinationsAreTargetDomains ctx log) :
-    auditTrailDestinationsAreTargetDomains ctx (log.drop d) :=
+    (h : auditTrailDestinationsFromLabeling ctx log) :
+    auditTrailDestinationsFromLabeling ctx (log.drop d) :=
   fun e hMem => h e (List.mem_of_mem_drop hMem)
 
 /-- WS-SM SM9.A.3: the empty trail satisfies it — the boot witness. -/
-@[simp] theorem auditTrailDestinationsAreTargetDomains_nil (ctx : GenericLabelingContext) :
-    auditTrailDestinationsAreTargetDomains ctx [] := by
+@[simp] theorem auditTrailDestinationsFromLabeling_nil (ctx : GenericLabelingContext) :
+    auditTrailDestinationsFromLabeling ctx [] := by
   intro e hMem; simp at hMem
 
-/-- WS-SM SM9.A.3: **the live declassification establishes it** — the appended
-event's destination is `ctx.objectDomainOf targetId` for the `targetId` it
-records, by construction. -/
+/-- WS-SM SM9.C.1: **every entry's recorded actor domain is that actor's own
+domain.**
+
+The third trail invariant, and the one that lets the visibility filter gate the
+disclosed *subject identity* through the `actor.domain` conjunct rather than
+through a fifth conjunct of its own.  Unlike the destination invariant this one
+**survives** SM9.C: both hops of a two-hop delivery share one actor, read off
+the state by the same `declassificationActorOf` the single-hop producer uses. -/
+def auditTrailActorsFromLabeling (ctx : GenericLabelingContext)
+    (log : DeclassificationAuditLog) : Prop :=
+  ∀ e ∈ log, e.actor.domain = ctx.threadDomainOf e.actor.subject
+
+/-- WS-SM SM9.C.1: removing entries preserves it — the drain direction. -/
+theorem auditTrailActorsFromLabeling_drop (ctx : GenericLabelingContext)
+    (log : DeclassificationAuditLog) (d : Nat)
+    (h : auditTrailActorsFromLabeling ctx log) :
+    auditTrailActorsFromLabeling ctx (log.drop d) :=
+  fun e hMem => h e (List.mem_of_mem_drop hMem)
+
+/-- WS-SM SM9.C.1: the empty trail satisfies it — the boot witness. -/
+@[simp] theorem auditTrailActorsFromLabeling_nil (ctx : GenericLabelingContext) :
+    auditTrailActorsFromLabeling ctx [] := by
+  intro e hMem; simp at hMem
+
+/-- WS-SM SM9.A.3 / SM9.C.1: **the live declassification establishes it** — the
+appended event's destination is `ctx.objectDomainOf targetId`, hence
+labeling-assigned. -/
 theorem declassifyObjectFromCore_preserves_trailDestinations
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
     (c : CoreId) (targetId : SeLe4n.ObjId) (st st' : SystemState)
-    (hDests : auditTrailDestinationsAreTargetDomains ctx st.declassificationAuditLog)
+    (hDests : auditTrailDestinationsFromLabeling ctx st.declassificationAuditLog)
     (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
-    auditTrailDestinationsAreTargetDomains ctx st'.declassificationAuditLog := by
+    auditTrailDestinationsFromLabeling ctx st'.declassificationAuditLog := by
   obtain ⟨tid, -, hSt'⟩ :=
     declassifyObjectFromCore_frame_of_ok ctx declPolicy c targetId st st' hStep
   subst hSt'
   intro e hMem
   have hMem' : e ∈ st.declassificationAuditLog ++
-      [declassifyStoreEvent c (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
-        targetId st] := hMem
+      [declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
+        (ctx.objectDomainOf targetId) targetId st] := hMem
   rcases List.mem_append.mp hMem' with hOld | hNew
   · exact hDests e hOld
+  · rcases List.mem_singleton.mp hNew with rfl
+    exact labelingAssignedDomain_object ctx targetId
+
+/-- WS-SM SM9.C.1: the live single-hop declassification establishes the actor
+invariant — its actor is `declassificationActorOf ctx tid`, whose domain is that
+thread's by definition. -/
+theorem declassifyObjectFromCore_preserves_trailActors
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (c : CoreId) (targetId : SeLe4n.ObjId) (st st' : SystemState)
+    (hActors : auditTrailActorsFromLabeling ctx st.declassificationAuditLog)
+    (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
+    auditTrailActorsFromLabeling ctx st'.declassificationAuditLog := by
+  obtain ⟨tid, -, hSt'⟩ :=
+    declassifyObjectFromCore_frame_of_ok ctx declPolicy c targetId st st' hStep
+  subst hSt'
+  intro e hMem
+  have hMem' : e ∈ st.declassificationAuditLog ++
+      [declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
+        (ctx.objectDomainOf targetId) targetId st] := hMem
+  rcases List.mem_append.mp hMem' with hOld | hNew
+  · exact hActors e hOld
   · rcases List.mem_singleton.mp hNew with rfl
     rfl
 
@@ -1835,18 +2038,20 @@ flows to the reader** — the same condition `capTargetObservable` applies befor
 revealing an object identity in the projected state.
 
 This is the "structurally establish every exported field is classified by a
-dominated domain" closure: with the destination conjunct in the filter and the
-producer's destination-is-target-domain invariant, an audit reader can never
-use the trail to recover an object identity its own projection redacts. -/
+dominated domain" closure: an audit reader can never use the trail to recover an
+object identity its own projection redacts.
+
+**WS-SM SM9.C.1 — now unconditional.**  Round 3 derived it from the destination
+conjunct plus the producer invariant `dstDomain = objectDomainOf targetObject`,
+which SM9.C's second-hop event falsifies (its destination is the receiving
+*thread's* domain).  The object-identity conjunct is in the filter itself, so
+the capstone needs no hypothesis about the trail at all — a strengthening, and
+the reason the retired invariant is not merely weakened but replaced. -/
 theorem auditVisibleEntry_target_domain_flows (ctx : GenericLabelingContext)
     (reader : SecurityDomain) (log : DeclassificationAuditLog)
-    (hDests : auditTrailDestinationsAreTargetDomains ctx log)
     {e : DeclassificationEvent} (h : e ∈ auditLogVisibleTo ctx reader log) :
-    ctx.policy.canFlow (ctx.objectDomainOf e.targetObject) reader = true := by
-  have hMem := ((mem_auditLogVisibleTo_iff ctx reader log e).mp h).1
-  have hDst := auditLogVisibleTo_cleared_dst ctx reader log h
-  rw [← hDests e hMem]
-  exact hDst
+    ctx.policy.canFlow (ctx.objectDomainOf e.targetObject) reader = true :=
+  auditLogVisibleTo_cleared_target ctx reader log h
 
 /-- WS-SM SM9.A.3 (**the practically satisfiable dominance obligation**): the
 configured monitor clearance dominates every domain the *labeling* can assign to
@@ -1883,9 +2088,14 @@ theorem auditMonitorAuthorized_dominates_subjects (ctx : GenericLabelingContext)
 obligation — the configured clearance dominates every domain the labeling can
 assign to an object.
 
-Owed since the visibility filter gained its destination conjunct: an entry's
-`dstDomain` is an *object* domain (`auditTrailDestinationsAreTargetDomains`),
-so subject dominance alone no longer implies the monitor sees the whole trail.
+Owed since the visibility filter gained its destination conjunct, and owed
+independently since the fourth conjunct disclosed `objectDomainOf targetObject`
+for every entry: a first-hop entry's `dstDomain` is an *object* domain (the
+producer sets it to the target object's own), so subject dominance alone does
+not imply the monitor sees the whole trail.  A second-hop entry's `dstDomain`
+is a *thread* domain instead (WS-SM SM9.C.1 — the reason
+`auditTrailDestinationsAreTargetDomains` was retired), and that side rides the
+subject half; both halves together cover every conjunct the filter checks.
 Configuration-derived exactly as the subject half is. -/
 def auditMonitorDominatesObjects (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) : Prop :=
@@ -1923,20 +2133,25 @@ theorem auditDrain_requires_full_dominance_of_labeling (ctx : GenericLabelingCon
     (hDomObj : auditMonitorDominatesObjects ctx monitorClearance)
     (hTrans : ctx.policy.isTransitive)
     (hSources : auditTrailSourcesFromLabeling ctx log)
-    (hDests : auditTrailDestinationsAreTargetDomains ctx log)
+    (hDests : auditTrailDestinationsFromLabeling ctx log)
+    (hActors : auditTrailActorsFromLabeling ctx log)
     (hGate : auditMonitorAuthorized ctx monitorClearance reader = true) :
     auditLogVisibleTo ctx reader log = log := by
+  have hAssigned : ∀ d, labelingAssignedDomain ctx d → ctx.policy.canFlow d reader = true := by
+    rintro d (⟨tid, rfl⟩ | ⟨oid, rfl⟩)
+    · exact auditMonitorAuthorized_dominates_subjects ctx monitorClearance reader hDom hTrans
+        hGate tid
+    · exact auditMonitorAuthorized_dominates_objects ctx monitorClearance reader hDomObj hTrans
+        hGate oid
   refine auditLogVisibleTo_eq_self ctx reader log (fun e hMem => ?_)
-  obtain ⟨tid, hTid⟩ := hSources e hMem
-  have hSrc : ctx.policy.canFlow e.srcDomain reader = true := by
-    rw [hTid]
+  have hSrc := hAssigned _ (hSources e hMem)
+  have hDst := hAssigned _ (hDests e hMem)
+  have hActor : ctx.policy.canFlow e.actor.domain reader = true := by
+    rw [hActors e hMem]
     exact auditMonitorAuthorized_dominates_subjects ctx monitorClearance reader hDom hTrans
-      hGate tid
-  have hDst : ctx.policy.canFlow e.dstDomain reader = true := by
-    rw [hDests e hMem]
-    exact auditMonitorAuthorized_dominates_objects ctx monitorClearance reader hDomObj hTrans
-      hGate e.targetObject
-  simp [auditEntryVisibleTo, hSrc, hDst]
+      hGate e.actor.subject
+  have hTarget := hAssigned _ (labelingAssignedDomain_object ctx e.targetObject)
+  simp [auditEntryVisibleTo, hSrc, hDst, hActor, hTarget]
 
 
 -- ============================================================================
@@ -2088,13 +2303,14 @@ theorem auditDrain_validated_view_complete (ctx : LabelingContext)
     (m reader : SecurityDomain) (log : DeclassificationAuditLog)
     (hVal : validatedAuditMonitorClearance ctx = some m)
     (hSources : auditTrailSourcesFromLabeling (liftLegacyContext ctx) log)
-    (hDests : auditTrailDestinationsAreTargetDomains (liftLegacyContext ctx) log)
+    (hDests : auditTrailDestinationsFromLabeling (liftLegacyContext ctx) log)
+    (hActors : auditTrailActorsFromLabeling (liftLegacyContext ctx) log)
     (hGate : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true) :
     auditLogVisibleTo (liftLegacyContext ctx) reader log = log :=
   auditDrain_requires_full_dominance_of_labeling (liftLegacyContext ctx) (some m) reader log
     (validatedAuditMonitorClearance_dominates_subjects ctx m hVal)
     (validatedAuditMonitorClearance_dominates_objects ctx m hVal)
-    DomainFlowPolicy.legacyLattice_wellFormed.2 hSources hDests hGate
+    DomainFlowPolicy.legacyLattice_wellFormed.2 hSources hDests hActors hGate
 
 /-- WS-SM SM9.A.3 (PR #870 review, **the misconfiguration witness**): a
 deployment that names embedded `low` as its monitor clearance validates to
@@ -2353,7 +2569,7 @@ theorem declassify_capacity_refusal_of_full
   unfold authorizeDeclassificationOnCore
   rw [hDec]
   have hNone : recordDeclassificationChecked st.declassificationAuditLog
-      (declassifyStoreEvent c (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
+      (declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
         targetId st) = none := by
     unfold recordDeclassificationChecked
     rw [if_neg (by omega)]
@@ -2403,7 +2619,8 @@ theorem auditDrain_flips_declassify_outcome
       rw [declassifyObjectFromCore_eq_onCore ctx declPolicy cObs targetId st' tid ty
         hCur' hType'] at hOk
       obtain ⟨-, -, hDec⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy cObs
-        (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId) targetId st' st'' hOk
+        (declassificationActorOf ctx tid) (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
+        targetId st' st'' hOk
       exact declassify_capacity_refusal_of_full ctx declPolicy cObs targetId st tid ty
         hCur hType hDec hFull
 
@@ -2487,6 +2704,8 @@ theorem auditRead_stable_under_append (ctx : GenericLabelingContext)
   | refusalSlotTags slot => rfl
   | refusalSlotFieldChunkCount slot f => rfl
   | refusalSlotField slot f k => rfl
+  | refusalReceiverChunkCount slot => rfl
+  | refusalReceiverChunk slot k => rfl
 
 /-- WS-SM SM9.A.5 (**the bracket**): for a monitor, an unchanged status word
 means an unchanged epoch and an unchanged visible length — so no drain
@@ -2646,7 +2865,8 @@ def refusalWitnessRecord (d : SecurityDomain) : DeclassificationRefusal :=
     subjectDomain := d
     syscall := .declassify
     reason := .declassificationDenied
-    requestedTarget := SeLe4n.CPtr.ofNat 1 }
+    requestedTarget := SeLe4n.CPtr.ofNat 1
+    refusedReceiver := none }
 
 /-- WS-SM SM9.B.10: a ledger whose ring is all-low except for one high-domain
 record sitting exactly where the next write lands — the state one further
@@ -2793,12 +3013,23 @@ def decodeAuditReadOp (opcode index chunk : Nat) : Option AuditReadOp :=
   | 18 => some (.refusalSlotField index .subject chunk)
   | 19 => some (.refusalSlotField index .subjectDomain chunk)
   | 20 => some (.refusalSlotField index .requestedTarget chunk)
+  -- WS-SM SM9.C.1: the actor pair, appended so every opcode below stays where
+  -- it was — an ABI number is a contract, and renumbering to keep the field
+  -- opcodes contiguous would break every already-compiled monitor.
+  | 21 => some (.fieldChunkCount index .actorSubject)
+  | 22 => some (.fieldChunkCount index .actorDomain)
+  | 23 => some (.field index .actorSubject chunk)
+  | 24 => some (.field index .actorDomain chunk)
+  -- WS-SM SM9.C.1: the refused receiver, appended after the actor pair so
+  -- every earlier opcode keeps its value.
+  | 25 => some (.refusalReceiverChunkCount index)
+  | 26 => some (.refusalReceiverChunk index chunk)
   | _  => none
 
 /-- WS-SM SM9.A.10: the number of `.auditRead` opcodes.  Pinned in the Rust
 mirror, so a divergence is a conformance failure rather than a silent
 `.invalidSyscallArgument` on a valid request. -/
-def auditReadOpcodeCount : Nat := 21
+def auditReadOpcodeCount : Nat := 27
 
 /-- WS-SM SM9.A.10: encode a sub-operation back to its operand triple. -/
 def encodeAuditReadOp : AuditReadOp → Nat × Nat × Nat
@@ -2823,6 +3054,12 @@ def encodeAuditReadOp : AuditReadOp → Nat × Nat × Nat
   | .refusalSlotField i .subject k => (18, i, k)
   | .refusalSlotField i .subjectDomain k => (19, i, k)
   | .refusalSlotField i .requestedTarget k => (20, i, k)
+  | .fieldChunkCount i .actorSubject => (21, i, 0)
+  | .fieldChunkCount i .actorDomain => (22, i, 0)
+  | .field i .actorSubject k => (23, i, k)
+  | .field i .actorDomain k => (24, i, k)
+  | .refusalReceiverChunkCount i => (25, i, 0)
+  | .refusalReceiverChunk i k => (26, i, k)
 
 /-- WS-SM SM9.A.10: **the operand encoding round-trips.**  Every sub-operation
 is reachable through the ABI, and reaches the arm it names. -/
@@ -2841,6 +3078,8 @@ theorem decodeAuditReadOp_encode (op : AuditReadOp) :
   | refusalSlotTags i => rfl
   | refusalSlotFieldChunkCount i f => cases f <;> rfl
   | refusalSlotField i f k => cases f <;> rfl
+  | refusalReceiverChunkCount i => rfl
+  | refusalReceiverChunk i k => rfl
 
 /-- WS-SM SM9.A.10 (**fail-closed**): an opcode outside the table is refused. -/
 theorem decodeAuditReadOp_out_of_range (opcode index chunk : Nat)
@@ -2850,8 +3089,8 @@ theorem decodeAuditReadOp_out_of_range (opcode index chunk : Nat)
   match opcode, hRange with
   | 0, h | 1, h | 2, h | 3, h | 4, h | 5, h | 6, h | 7, h | 8, h | 9, h
   | 10, h | 11, h | 12, h | 13, h | 14, h | 15, h | 16, h | 17, h | 18, h
-  | 19, h | 20, h => omega
-  | n + 21, _ => rfl
+  | 19, h | 20, h | 21, h | 22, h | 23, h | 24, h | 25, h | 26, h => omega
+  | n + 27, _ => rfl
 
 /-- WS-SM SM9.A.10: every opcode the table admits is below the count — the
 other half of the range pin. -/

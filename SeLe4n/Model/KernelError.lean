@@ -170,6 +170,23 @@ inductive KernelError where
                            -- was well-formed — it is the *value* that does not
                            -- fit, which is a statement about the kernel's
                            -- export width and not about the request.
+  | declassificationDeniedAtReceiver
+                           -- WS-SM SM9.C.1: a data-carrying declassification
+                           -- gates **two** hops — the caller into the
+                           -- notification, and the notification onward into the
+                           -- resolved receiver — and this is the second one
+                           -- refusing.  A distinct discriminant, not
+                           -- `declassificationDenied`, because the refusal
+                           -- ledger stores exactly this field and a monitor
+                           -- reading "denied" with no idea *which*
+                           -- authorization failed cannot tell an unauthorized
+                           -- caller from an authorized caller aimed at an
+                           -- unauthorized sink — the two call for opposite
+                           -- responses.  It discloses nothing the caller could
+                           -- not already learn: the ordinary checked
+                           -- `.notificationSignal` on the same capability
+                           -- already answers `.flowDenied` exactly when a bound
+                           -- receiver is present and the flow to it is refused.
   deriving Repr, DecidableEq
 
 end SeLe4n.Model

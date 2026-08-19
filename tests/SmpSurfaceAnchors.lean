@@ -486,7 +486,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   assertBool "lock-set non-interference + the covert-channel inventory resolve"
     (have _w := @SeLe4n.Kernel.withLockSet_preserves_projection
      have _u := @SeLe4n.Kernel.nonInterference_perCore_underLockSet
-     have _e : SeLe4n.Kernel.enforcementBoundaryPerCore.length = 57 :=
+     have _e : SeLe4n.Kernel.enforcementBoundaryPerCore.length = 58 :=
        SeLe4n.Kernel.enforcementBoundaryPerCore_count
      -- PR #861 review round 4: the boundary now also classifies the live
      -- cross-core wrappers, and the SMP completeness half audits them.  Rounds
@@ -622,7 +622,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   -- that silently reverted — or a second entry added without reconciling the
   -- per-core list — fails the anchor file too, not only the dedicated suite.
   assertBool "the canonical enforcement boundary carries the two-phase-locking bracket"
-    (have _e : SeLe4n.Kernel.enforcementBoundaryExtended.length = 42 :=
+    (have _e : SeLe4n.Kernel.enforcementBoundaryExtended.length = 43 :=
        SeLe4n.Kernel.enforcementBoundaryExtended_count
      have _c := SeLe4n.Kernel.enforcementBoundary_classifies_withLockSet
      have _o := SeLe4n.Kernel.enforcementBoundaryPerCore_classifies_withLockSet_once
@@ -793,7 +793,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- Both syscalls are in the ABI and value-returning.
      decide (SeLe4n.Model.SyscallId.auditRead.toNat = 31
        ∧ SeLe4n.Model.SyscallId.auditDrain.toNat = 32
-       ∧ SeLe4n.Model.SyscallId.count = 33
+       ∧ SeLe4n.Model.SyscallId.count = 34
        ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .auditRead = .word
        ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .auditDrain = .word))
 
@@ -893,9 +893,132 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
        ∧ SeLe4n.Kernel.refusalSeamClass .declassify = .records
        ∧ SeLe4n.Kernel.refusalSeamClass .send = .exempt))
 
+
+  -- ==========================================================================
+  -- §11  WS-SM SM9.C — the data-carrying declassification
+  -- ==========================================================================
+  --
+  -- SM8.C's `.declassify` authorizes a downgrade and moves no data; SM9.C's
+  -- `.declassifySignal` performs the real delivery.  It is the tree's first
+  -- deliberately *visible* flow, so what is anchored here is a bound plus a
+  -- recording obligation rather than an equality of projections.
+
+  assertBool "SM9.C.1: two gated hops, one record per authorized downgrade, no invented edge"
+    (-- The resolved receiver — the second hop's destination, read off the
+     -- pre-state exactly as the delivery reads it.
+     have _r := @SeLe4n.Kernel.declassifiedSignalReceiver?
+     have _hb := @SeLe4n.Kernel.declassifiedSignalReceiver?_bound
+     -- The per-hop authorization, and the injectivity that keeps the two
+     -- refusals distinguishable at the ABI.
+     have _ha := @SeLe4n.Kernel.declassifiedSignalHopAuthorization
+     have _hi := @SeLe4n.Kernel.DeclassifiedSignalHop.refusal_injective
+     have _hs := @SeLe4n.Kernel.declassifiedSignalHopAuthorization_declassified_authorized
+     -- The transition, its cross-core dispatch, and the frame everything rides.
+     have _t := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore
+     have _d := @SeLe4n.Kernel.notificationSignalDeclassifiedCrossCoreDispatch
+     have _f := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_frame
+     -- The headline properties: the badge really crosses, the resolved receiver
+     -- is gated, every hop is recorded, and no entry names an edge no policy
+     -- authorized.
+     have _bd := @SeLe4n.Kernel.declassifiedSignal_delivers_badge
+     have _gr := @SeLe4n.Kernel.declassifiedSignal_gates_resolved_receiver
+     have _na := @SeLe4n.Kernel.declassifiedSignal_never_unaudited
+     have _ie := @SeLe4n.Kernel.declassifiedSignal_no_invented_edge
+     have _ah := @SeLe4n.Kernel.declassifiedSignal_audits_each_hop
+     have _ad := @SeLe4n.Kernel.declassifiedSignal_audits_actual_destination
+     -- Attribution: the actor is the running subject, and on the second hop its
+     -- domain is provably NOT the recorded source — which is why the actor is a
+     -- field rather than something recoverable from `srcDomain`.
+     have _at := @SeLe4n.Kernel.attributionFromRunningSubject_over_actor
+     have _sd := @SeLe4n.Kernel.secondHop_actor_differs_from_flowSource
+     have _sn := @SeLe4n.Kernel.secondHopEvent_names_firstHop
+     -- The degenerate case, and the unconfigured deployment.
+     have _oe := @SeLe4n.Kernel.declassifiedSignal_ordinary_eq_signal
+     have _dn := @SeLe4n.Kernel.declassifiedSignal_default_policy_never_downgrades
+     have _de := @SeLe4n.Kernel.declassifiedSignal_default_policy_eq_signal
+     -- And the capacity ordering the occupancy channel turns on.
+     have _bc := @SeLe4n.Kernel.declassifiedSignal_denied_before_capacity
+     true)
+
+  assertBool "SM9.C.3/.C.4: the delivery preserves the invariant surface it inherits"
+    (-- The 16th `proofLayerInvariantBundle` conjunct rides the writer layer, and
+     -- the trail's own bound and well-formedness ride the recorder.
+     have _pb := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_proofLayerInvariantBundle
+     have _ab := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_auditLogBounded
+     have _wf := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_trailWellFormed
+     -- The IPC surface it inherits from SM6.B, transferred through the frame.
+     have _ie := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_objects_invExt
+     have _ii := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_ipcInvariant
+     have _tf := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer
+     have _ft := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthrough
+     have _pt := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_ipcInvariantFull_perCore_transfer
+     -- The three trail invariants SM9.A's reader gate depends on.
+     have _ta := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_trailActors
+     have _ts := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_trailSources
+     have _td := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_trailDestinations
+     true)
+
+  -- SM9.C.5/.C.6 — the effect footprint, `footprint_does_not_authorize` and
+  -- `declassificationRelativeNonInterference` live in `NonInterferenceCrossCore`
+  -- (with the live arm's dispatch-level bound), outside this file's import set
+  -- for the same reason the SM9.A round-4 audit entries are: that module sits
+  -- above `API.lean`.  They are anchored in `SmpInformationFlowSuite` §1.12,
+  -- exercised for effect in §11.2/§11.4, and pinned by Tier-3.
+
+  assertBool "SM9.C.8/.C.9: the syscall, its registries, and the tie to the live arm"
+    (-- The arm is tied to the dispatch by a theorem, not by a reading of the arm.
+     have _dl := @SeLe4n.Kernel.dispatchWithCapChecked_declassifySignal_delegates
+     have _sd := @SeLe4n.Kernel.syscallDelegates_declassifySignal
+     -- There is no unchecked declassifying signal, and an unconfigured
+     -- deployment performs no downgrade through the checked one.
+     have _un := @SeLe4n.Kernel.dispatchWithCap_declassifySignal_denied
+     have _df := @SeLe4n.Kernel.dispatchWithCapChecked_declassifySignal_default_no_downgrade
+     -- The lock-set footprint: the ordinary signal's, plus the state-level write
+     -- the trail append needs, tied to the signal's set by name.
+     have _ls := @SeLe4n.Kernel.Concurrency.lockSet_declassifySignal
+     have _lw := @SeLe4n.Kernel.Concurrency.lockSet_declassifySignal_stateLevel_write_mem
+     have _le := @SeLe4n.Kernel.Concurrency.lockSet_declassifySignal_extends_notificationSignal
+     have _lc := @SeLe4n.Kernel.Concurrency.lockSet_consistent_declassifySignal
+     -- And the seam's total classification, which forced this syscall to say
+     -- whether its refusals are recorded.
+     -- (The cross-core inventory's own entry — live arm, remote writer,
+     -- delegation-backed — lives in `NonInterferenceCrossCore`, outside this
+     -- file's import set; `SmpInformationFlowSuite` §11.6 checks it.)
+     decide (SeLe4n.Kernel.refusalSeamClass .declassifySignal = .records
+       ∧ SeLe4n.Model.SyscallId.declassifySignal.toNat = 33
+       ∧ SeLe4n.Model.SyscallId.count = 34
+       ∧ SeLe4n.Kernel.syscallRequiredRight .declassifySignal = .write
+       ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .declassifySignal = .unit))
+
+  assertBool "SM9.C.1 (audit cut): a refused second hop names the resolved receiver"
+    (-- The transition half: a plan refused with the receiver's discriminant
+     -- had resolved a receiver, so the seam's re-resolution has something to
+     -- name; the seam half: the two resolutions are the same function on the
+     -- same pre-state; and the family members the thirteenth policy-gated
+     -- entry owes.
+     have _pr := @SeLe4n.Kernel.declassifiedSignalPlan_deniedAtReceiver_resolves
+     have _er := @SeLe4n.Kernel.declassifiedSignalHopAuthorization_error_refusal
+     have _rr := @SeLe4n.Platform.FFI.refusedSignalReceiver?_resolves
+     have _nf := @SeLe4n.Platform.FFI.refusalRecord_names_failed_hop
+     have _dp := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_denied_preserves_state
+     have _es := @SeLe4n.Kernel.enforcement_sufficiency_declassifySignal
+     -- PR #872 review: the plain-waiter gate — a no-op on checked-admitted
+     -- waiters, its disclosure exhibited.
+     have _aw := @SeLe4n.Kernel.declassifiedSignalPlan_admitted_receiver_error_is_first_hop
+     have _od := @SeLe4n.Kernel.declassifiedSignalPlan_outcome_depends_on_receiver
+     -- PR #872 review round 2: the target gate ahead of every policy read —
+     -- an invalid target is never a policy oracle.
+     have _wk := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_wrong_kind
+     have _ab := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_absent_target
+     have _pb := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_invalid_target_policy_blind
+     decide (SeLe4n.Kernel.auditReadOpcodeCount = 27
+       ∧ SeLe4n.Kernel.decodeAuditReadOp 25 0 0
+           = some (.refusalReceiverChunkCount 0)
+       ∧ SeLe4n.Kernel.decodeAuditReadOp 26 0 0 = some (.refusalReceiverChunk 0 0)))
+
   IO.println "============================================================"
-  IO.println "All SM2.D + SM3.E.8 + SM8.A + SM8.B + SM8.C + SM8.D + SM8.E + SM9.A + SM9.B \
-surface anchor checks PASS."
+  IO.println "All SM2.D + SM3.E.8 + SM8.A + SM8.B + SM8.C + SM8.D + SM8.E + SM9.A + SM9.B + \
+SM9.C surface anchor checks PASS."
 
 end SeLe4n.Testing.SmpSurfaceAnchors
 

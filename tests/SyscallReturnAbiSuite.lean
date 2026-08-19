@@ -625,11 +625,14 @@ private def auditTrailFixture : SeLe4n.Kernel.DeclassificationAuditLog :=
   [ { srcDomain := embedLegacyLabel SecurityLabel.kernelTrusted
       dstDomain := embedLegacyLabel SecurityLabel.publicLabel
       targetObject := ntfnId, authorizationBasis := .policyRule
-      timestamp := 0, originatingCore := SeLe4n.Kernel.Concurrency.bootCoreId }
+      timestamp := 0, originatingCore := SeLe4n.Kernel.Concurrency.bootCoreId
+      actor := { subject := callerTid, domain := embedLegacyLabel SecurityLabel.kernelTrusted } }
   , { srcDomain := embedLegacyLabel SecurityLabel.kernelTrusted
       dstDomain := embedLegacyLabel SecurityLabel.publicLabel
       targetObject := callerVsp, authorizationBasis := .policyRule
-      timestamp := 1, originatingCore := SeLe4n.Kernel.Concurrency.bootCoreId } ]
+      timestamp := 1, originatingCore := SeLe4n.Kernel.Concurrency.bootCoreId
+      actor := { subject := callerTid,
+                 domain := embedLegacyLabel SecurityLabel.kernelTrusted } } ]
 
 /-- `witnessState` with the audit capability minted, an ordinary all-rights
 capability alongside it, and a two-entry trail already recorded. -/

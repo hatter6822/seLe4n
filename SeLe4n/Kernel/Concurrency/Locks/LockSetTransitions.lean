@@ -616,13 +616,24 @@ def lockSet_vspaceUnifyInstruction (callerTid : ThreadId)
      (cnodeLock cnodeRootObjId, .read),
      (vspaceRootLock vspaceRootObjId, .read)]
 
-/-! ## Declassification (1 transition)
+/-! ## Declassification (2 transitions)
 
-The one syscall whose entire state effect is on a `SystemState` field rather
-than on an object: `.declassify` appends to `declassificationAuditLog`.  That
-field is no more a per-object lock subject than `tlbShootdown` is (SM7.B gave
-that one its own cross-domain `TlbShootdownLockId`), so the per-object footprint
-here covers only the two universal reads. -/
+`.declassify` is the one syscall whose entire state effect is on a
+`SystemState` field rather than on an object: it appends to
+`declassificationAuditLog`.  That field is no more a per-object lock subject
+than `tlbShootdown` is (SM7.B gave that one its own cross-domain
+`TlbShootdownLockId`), so the per-object footprint here covers only the two
+universal reads plus the state-level singleton.
+
+WS-SM SM9.C.8's `.declassifySignal` is the *data-carrying* declassification:
+it does everything the ordinary `.notificationSignal` does — badge delivery,
+waiter wake, the seL4 bound-delivery path — **and** appends one audit entry
+per authorized hop.  Its footprint is therefore the union of the two:
+`.notificationSignal`'s object-level set, plus the state-level write the
+trail append needs.  Stating it as a union rather than as a fresh list is
+deliberate: the notification half must never drift from the syscall it wraps
+(`lockSet_declassifySignal_extends_notificationSignal` is the tie), and the
+state-level half must never be dropped (`lockSet_declassifySignal_stateLevel_write_mem`). -/
 
 /-- WS-SM SM8.C.9: `lockSet` for `declassify`.
 
@@ -652,6 +663,44 @@ def lockSet_declassify (callerTid : ThreadId) (cnodeRootObjId : ObjId) : LockSet
     [(tcbLock callerTid, .read),
      (cnodeLock cnodeRootObjId, .read),
      (stateLevelLock, .write)]
+
+/-- WS-SM SM9.C.8: `lockSet` for `declassifySignal` — the data-carrying
+declassification.
+
+**Defined as** `lockSet_notificationSignal` extended with the state-level
+write, rather than as a fresh list.  The transition *is* the ordinary signal
+plus an audit append (`declassifiedSignal_ordinary_eq_signal` proves the
+unauthorized-hop-free case is literally `notificationSignalOnCore`), so its
+object-level footprint must be exactly the signal's: the caller TCB read, the
+CSpace root read, the notification write, the woken waiter's TCB write, and —
+on the seL4 bound-delivery path — the bound TCB's endpoint write and the bound
+TCB's own write.  Writing those out again here would let the two drift the
+moment SM6.B's footprint changes; composing them cannot.
+
+The state-level write is the trail append, declared exactly as `.declassify`
+declares it (PR #870 round 7): two concurrent declassifying signals, or one
+against an `.auditDrain`, read-modify-write the same
+`declassificationAuditLog`, and with only per-object members their footprints
+are provably disjoint whenever they name different notifications — so a 2PL
+consumer would admit a lost append, the failure
+`declassifiedSignal_never_unaudited` excludes.  Unlike `.declassify`, this
+syscall genuinely writes objects too, so the state-level member is an
+*addition* to a non-trivial footprint rather than the whole of it.
+
+The caller TCB stays **read**: the syscall is `.unit`-shaped
+(`syscallReturnShape .declassifySignal = .unit`), so unlike the audit pair
+there is no `writeReturnFrameToTcb` staging write at the committed dispatch —
+the badge this transition moves is delivered to the *receiver*, not returned
+to the signaller. -/
+def lockSet_declassifySignal (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (notificationObjId : ObjId)
+    (waiterTid : Option ThreadId)
+    (boundEndpoint : Option ObjId := none)
+    (boundTcb : Option ThreadId := none) : LockSet :=
+  lockSetExtendOpt
+    (lockSet_notificationSignal callerTid cnodeRootObjId notificationObjId
+      waiterTid boundEndpoint boundTcb)
+    (some (stateLevelLock, .write))
 
 /-! ## Audit-trail access (2 transitions)
 
@@ -772,28 +821,82 @@ theorem lockSet_declassify_stateLevel_write_mem (callerTid : ThreadId)
   simp only [List.foldl]
   exact List.mem_cons_self ..
 
-/-- WS-SM SM9.A.12 (PR #870 round 7, **the non-disjointness capstone**): the
-three audit-state footprints share the state-level lock — write mode at both
-writers, read mode at the reader — for **every** combination of caller TCBs
-and CSpace roots.
+/-- WS-SM SM9.C.8: the declassifying signal's trail append is a declared
+**write** on the state-level lock.
+
+The half of `lockSet_declassifySignal` that `lockSet_notificationSignal` does
+not supply.  A cut that drops the extension — reverting the footprint to the
+plain signal's — stops elaborating here rather than silently letting two
+concurrent declassifying signals race on the trail. -/
+theorem lockSet_declassifySignal_stateLevel_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (notificationObjId : ObjId)
+    (waiterTid : Option ThreadId) (boundEndpoint : Option ObjId)
+    (boundTcb : Option ThreadId) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_declassifySignal callerTid cnodeRootObjId notificationObjId
+          waiterTid boundEndpoint boundTcb).pairs := by
+  unfold lockSet_declassifySignal lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- WS-SM SM9.C.8: the declassifying signal's footprint **contains** the
+ordinary signal's — every write mode member of the wrapped syscall's set is a
+member here.
+
+The other half of the composition, and the one that keeps the two from
+drifting: the transition really does perform the ordinary signal's writes
+(`declassifiedSignal_ordinary_eq_signal` proves the no-downgrade case is
+literally `notificationSignalOnCore`), so under-declaring them would let a
+concurrent IPC writer run against a badge delivery.  Stated over write-mode
+members because those are the ones exclusion is about; the read members ride
+`mem_insertOrMerge_of_mem_of_ne` on the same argument (`stateLevelLock` is
+distinct from every per-object key). -/
+theorem lockSet_declassifySignal_extends_notificationSignal
+    (callerTid : ThreadId) (cnodeRootObjId : ObjId) (notificationObjId : ObjId)
+    (waiterTid : Option ThreadId) (boundEndpoint : Option ObjId)
+    (boundTcb : Option ThreadId) (l : LockId)
+    (hMem : (l, AccessMode.write)
+      ∈ (lockSet_notificationSignal callerTid cnodeRootObjId notificationObjId
+          waiterTid boundEndpoint boundTcb).pairs) :
+    (l, AccessMode.write)
+      ∈ (lockSet_declassifySignal callerTid cnodeRootObjId notificationObjId
+          waiterTid boundEndpoint boundTcb).pairs := by
+  unfold lockSet_declassifySignal lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _ hMem
+
+/-- WS-SM SM9.A.12 (PR #870 round 7, **the non-disjointness capstone**;
+extended by SM9.C.8): every footprint that touches the audit trail shares the
+state-level lock — write mode at all three writers, read mode at the reader —
+for **every** combination of caller TCBs, CSpace roots and notification ids.
 
 This is the fact the round-7 finding said was missing: with only per-object
 members, `.declassify` from one caller and `.auditDrain` from another had
 provably disjoint footprints while read-modify-writing the same trail, so a
 2PL consumer of the declared sets would have admitted a lost append.  With
-the shared member, any pair among {append, drain} × {append, drain, read} on
-distinct callers has a write-mode intersection on `stateLevelLock`, which is
-exactly what two-phase locking serializes. -/
+the shared member, any pair among {append, signal-append, drain} × {append,
+signal-append, drain, read} on distinct callers has a write-mode intersection
+on `stateLevelLock`, which is exactly what two-phase locking serializes.
+
+`.declassifySignal` is the fourth conjunct and the one whose omission would be
+easiest to miss: its footprint is *dominated* by object-level members (a
+notification write, a waiter TCB write, possibly an endpoint and a bound TCB),
+so unlike the other three it looks like an ordinary IPC syscall — and two
+declassifying signals on *different* notifications would then have disjoint
+sets while appending to the same trail. -/
 theorem auditState_footprints_share_serialization :
     ∀ (callerA : ThreadId) (rootA : ObjId) (callerB : ThreadId) (rootB : ObjId)
-      (callerC : ThreadId) (rootC : ObjId),
+      (callerC : ThreadId) (rootC : ObjId)
+      (callerD : ThreadId) (rootD : ObjId) (ntfnD : ObjId)
+      (waiterD : Option ThreadId) (epD : Option ObjId) (boundD : Option ThreadId),
       (stateLevelLock, AccessMode.write) ∈ (lockSet_declassify callerA rootA).pairs ∧
       (stateLevelLock, AccessMode.write) ∈ (lockSet_auditDrain callerB rootB).pairs ∧
-      (stateLevelLock, AccessMode.read) ∈ (lockSet_auditRead callerC rootC).pairs :=
-  fun callerA rootA callerB rootB callerC rootC =>
+      (stateLevelLock, AccessMode.read) ∈ (lockSet_auditRead callerC rootC).pairs ∧
+      (stateLevelLock, AccessMode.write)
+        ∈ (lockSet_declassifySignal callerD rootD ntfnD waiterD epD boundD).pairs :=
+  fun callerA rootA callerB rootB callerC rootC callerD rootD ntfnD waiterD epD boundD =>
     ⟨lockSet_declassify_stateLevel_write_mem callerA rootA,
      lockSet_auditDrain_stateLevel_write_mem callerB rootB,
-     lockSet_auditRead_stateLevel_read_mem callerC rootC⟩
+     lockSet_auditRead_stateLevel_read_mem callerC rootC,
+     lockSet_declassifySignal_stateLevel_write_mem callerD rootD ntfnD waiterD epD boundD⟩
 
 /-- WS-SM SM9.B.9 (**the refusal ledger's serialization subject**): the syscall
 whose refusals the seam records declares the state-level lock in **write** mode.
@@ -806,9 +909,12 @@ record.  `lockSet_declassify` already carries `(stateLevelLock, .write)` for its
 trail append, and the same member covers the ledger.
 
 The first conjunct is what makes this a *gate* rather than a coincidence: it
-pins that `.declassify` is the only syscall the seam records today, so SM9.C.8's
-`.declassifySignal` — which the total `refusalSeamClass` forces it to classify —
-breaks this theorem and has to declare its own state-level write here.
+enumerates **every** syscall the seam records, so a new recording syscall — one
+the total `refusalSeamClass` forces its author to classify — breaks this
+theorem and has to declare its own state-level write here before it can be
+added.  It did exactly that at SM9.C.8: `.declassifySignal` joined the recorded
+class, this conjunct stopped being a singleton, and the second and third
+conjuncts are the two footprints that now carry the member.
 
 **Which bracket this assumes, stated rather than left implicit.**  The refusal
 write happens at the FFI boundary, *after* `syscallEntryChecked` returns its
@@ -819,12 +925,20 @@ for the audit pair — a declared footprint covers what the dispatch commits, no
 what the transition writes — and it is the constraint this footprint places on
 SM3.C.9's installation point. -/
 theorem lockSet_refusalSeam_writer_declares_stateLevel_write
-    (callerTid : ThreadId) (cnodeRootObjId : ObjId) :
+    (callerTid : ThreadId) (cnodeRootObjId : ObjId) (notificationObjId : ObjId)
+    (waiterTid : Option ThreadId) (boundEndpoint : Option ObjId)
+    (boundTcb : Option ThreadId) :
     (∀ sid : SeLe4n.Model.SyscallId,
-      SeLe4n.Kernel.refusalSeamClass sid = .records → sid = .declassify) ∧
-    (stateLevelLock, AccessMode.write) ∈ (lockSet_declassify callerTid cnodeRootObjId).pairs :=
+      SeLe4n.Kernel.refusalSeamClass sid = .records →
+        sid = .declassify ∨ sid = .declassifySignal) ∧
+    (stateLevelLock, AccessMode.write) ∈ (lockSet_declassify callerTid cnodeRootObjId).pairs ∧
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_declassifySignal callerTid cnodeRootObjId notificationObjId
+          waiterTid boundEndpoint boundTcb).pairs :=
   ⟨fun sid h => (SeLe4n.Kernel.refusalSeamClass_records_iff sid).mp h,
-   lockSet_declassify_stateLevel_write_mem callerTid cnodeRootObjId⟩
+   lockSet_declassify_stateLevel_write_mem callerTid cnodeRootObjId,
+   lockSet_declassifySignal_stateLevel_write_mem callerTid cnodeRootObjId
+     notificationObjId waiterTid boundEndpoint boundTcb⟩
 
 /-! ## Service syscalls (3 transitions)
 
@@ -1391,6 +1505,14 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- because it inspects the object's *contents*, which this does not.
   | .declassify =>
       [.tcb, .cnode, .objStore]
+  -- WS-SM SM9.C.8: `.declassifySignal` is the *data-carrying* declassification —
+  -- the ordinary `.notificationSignal` (whose kinds it inherits wholesale,
+  -- bound-delivery `.endpoint` included) plus the trail append `.declassify`
+  -- performs, hence the `.objStore` singleton.  The union is deliberate rather
+  -- than a fresh list: the transition really does both, so listing fewer kinds
+  -- than either half would under-declare a write the dispatch commits.
+  | .declassifySignal =>
+      [.tcb, .cnode, .notification, .endpoint, .objStore]
   -- WS-SM SM9.A.12: the audit reader and the drain read the caller TCB (for the
   -- reader's clearance) and the caller's CNode (capability resolution), and
   -- touch only `SystemState` fields — the trail and its epoch — which is
@@ -1861,6 +1983,44 @@ theorem lockSet_consistent_notificationSignal (callerTid : ThreadId)
         cases boundTcb with
         | none => simp at hpp
         | some bt => simp at hpp; rw [← hpp]; simp; decide)
+
+/-- WS-SM SM3.B.4 for `.declassifySignal` (SM9.C.8).
+
+The notification-signal proof with a fourth optional extension — the
+state-level write — because `lockSet_declassifySignal` **is** the signal's set
+plus that member.  Deliberately re-derived rather than transported from
+`lockSet_consistent_notificationSignal`: the permitted-kinds lists differ (this
+one additionally carries `.objStore`), so a transport would need a
+monotonicity step whose hypothesis is exactly what a drifted list would
+falsify silently. -/
+theorem lockSet_consistent_declassifySignal (callerTid : ThreadId)
+    (cnRoot nId : ObjId) (wTid : Option ThreadId)
+    (boundEndpoint : Option ObjId := none) (boundTcb : Option ThreadId := none) :
+    ∀ p ∈ (lockSet_declassifySignal callerTid cnRoot nId wTid boundEndpoint boundTcb).pairs,
+      p.fst.kind ∈ permittedKinds .declassifySignal :=
+  lockSet_consistent_base_plus_four_opts _ _ _ _ _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+    (by intro pp hpp
+        cases wTid with
+        | none => simp at hpp
+        | some wt => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases boundEndpoint with
+        | none => simp at hpp
+        | some ep => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases boundTcb with
+        | none => simp at hpp
+        | some bt => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.notificationWait`. -/
 theorem lockSet_consistent_notificationWait (callerTid : ThreadId)

@@ -74,8 +74,10 @@ in Projection.lean) is intentionally retained.
 
 - `checkedDispatch_flowDenied_preserves_state` — proves that the 3 wrappers it
   names preserve state on flow denial (M-IF-1).  The per-wrapper family
-  `*_denied_preserves_state` is the exhaustive one, and since WS-SM SM8.C it
-  covers all 12 policy-gated entries.
+  `*_denied_preserves_state` is the exhaustive one; WS-SM SM8.C brought it to
+  all 12 then-policy-gated entries, and the SM9.C audit cut added the
+  thirteenth (`notificationSignalDeclassifiedOnCore_denied_preserves_state` —
+  one equation covering every refusal mode, since the transition is total).
 - `mmioRead`/`mmioWrite` with 4 correctness theorems (M-NEW-7/8).
 - `mmioWrite32`/`mmioWrite64`/`mmioWrite32W1C` with full byte-range validation (AF3-B); `_rejects_range_overflow` theorems for end-of-range rejection.
 - `MmioReadOutcome` inductive encoding volatile/ram/w1c/fifo read-kind constraints (X1-D).
@@ -1438,8 +1440,8 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 - `syscallIdToEnforcementName` — SyscallId → String bridge mapping to enforcement boundary names (AC4-D),
 - `enforcementBoundaryComplete` — Bool check that every SyscallId maps to a boundary entry (AC4-D),
 - `enforcementBoundary_is_complete` — `decide` compile-time completeness theorem (AC4-D/IF-01; AF4-A: upgraded from `native_decide` to kernel-checked `decide`),
-- `*_denied_preserves_state` — denial preservation for all 12 policy-gated operations, in 13 declarations (the declassification contributes two: `declassifyObjectFromCore`, the boundary's named entry, and `authorizeDeclassificationOnCore`, the gate it wraps).  WS-SM SM8.C completed the family: it had covered 7 while the text claimed all of them, so the four IPC/notification wrappers that landed after it was written joined it, together with the declassification,
-- `enforcement_sufficiency_*` — complete-disjunction coverage proofs for the same 12 operations; the declassification's arm (`enforcement_sufficiency_declassify`) is a *trichotomy*, since a fail-closed audit-capacity refusal is a third outcome beyond delegate-or-deny.
+- `*_denied_preserves_state` — denial preservation for all 13 policy-gated operations, in 14 declarations (the declassification contributes two: `declassifyObjectFromCore`, the boundary's named entry, and `authorizeDeclassificationOnCore`, the gate it wraps).  WS-SM SM8.C completed the family at 12: it had covered 7 while the text claimed all of them, so the four IPC/notification wrappers that landed after it was written joined it, together with the declassification.  The SM9.C audit cut caught the same defect recurring one phase on — the data-carrying declassification landed as the thirteenth policy-gated entry without joining either family — and added `notificationSignalDeclassifiedOnCore_denied_preserves_state`, an *equation on the returned state* (the transition is total, so denial preservation is stronger than the `Kernel`-monad members can state),
+- `enforcement_sufficiency_*` — complete-disjunction coverage proofs for the same 13 operations; the declassification's arm (`enforcement_sufficiency_declassify`) is a *trichotomy*, since a fail-closed audit-capacity refusal is a third outcome beyond delegate-or-deny, and the data-carrying declassification's (`enforcement_sufficiency_declassifySignal`) is a **six-arm** characterization — the delivery is real, so it adds its own pass-through failure mode; the actor is state-resolved, which adds the idle-core refusal; and the operand is validated as a live notification before any policy read (PR #872 round 2), which adds the target-invalid dichotomy.
 
 **WS-H8/A-36 — Projection hardening:**
 
@@ -3087,12 +3089,16 @@ has a post-state.
   that survives: refusals are counted, attributed and version-stamped, and
   creating that evidence costs the trail nothing.
 
-* **Deliberately deferred, and moved rather than dropped.**  The record carries
-  no *failed hop* field.  The resolved receiver a second-hop refusal should name
-  is resolved **inside** SM9.C.1's transition, whose error arm carries no
-  post-state, so the seam cannot see it; *which* hop failed can ride the `reason`
-  discriminant SM9.C.1 chooses.  Adding a field no producer could set is the
-  unwired-structure shape the project forbids, so the obligation is SM9.C.1's.
+* **Deliberately deferred, moved — and then closed.**  At this phase the record
+  carried no *failed hop* field, on the ground that the resolved receiver is
+  resolved inside SM9.C.1's transition, whose error arm carries no post-state,
+  "so the seam cannot see it".  The SM9.C audit cut found the premise wrong —
+  the seam holds the **pre-state** and the caller's `x0`, and the transition's
+  resolution is a deterministic function of that same pre-state — so the record
+  now carries `refusedReceiver`, the seam re-resolves it
+  (`Platform.FFI.refusedSignalReceiver?`), and `refusalRecord_names_failed_hop`
+  pins the recorded identity to the receiver the second-hop gate refused.
+  *Which* hop failed rides the `reason` discriminant, as planned here.
 
 Registries: no new syscall, so the enforcement boundary and the syscall count
 are unchanged at 42 / 57 and 33; the `.auditRead` opcode space grows 12 → 21 on
@@ -3105,6 +3111,182 @@ negative.  §10.6 runs the plan's two explicit acceptance items for effect: a
 policy-refused caller's result is identical on a full trail and an empty one,
 and the capacity refusal *is* recorded and read back by the monitor while an
 under-cleared caller cannot read its reason at all.
+
+### Layer 3 under SMP — the data-carrying declassification (WS-SM SM9.C)
+
+SM8.C's `.declassify` authorizes a downgrade and records it while moving no user
+data: the store it performs is the model's *simulation* of a transfer, and
+performing one from userspace would let a caller install a chosen `KernelObject`
+at a chosen id.  SM9.C is the syscall that moves the data.
+
+`notificationSignalDeclassifiedOnCore` (`InformationFlow/DeclassifiedSignal.lean`,
+**production** — the live arm calls it) is a real SM6.B bound signal: the badge
+lands where the ordinary signal would put it, a waiter or the notification's
+bound TCB is woken on its **own** home core, and the committed post-state is
+literally SM6.B's with `declassificationAuditLog` replaced
+(`notificationSignalDeclassifiedOnCore_frame`).  That frame is what lets the
+whole IPC invariant surface transfer rather than be re-proven.
+
+* **Two hops, not one** (SM9.C.1).  The live checked `.notificationSignal`
+  already gates `notification → receiver` as well as `signaler → notification`
+  — added at v0.31.73 to stop a badge leak into a low bound TCB — so a
+  declassifying variant gated only on the notification would have been strictly
+  *weaker* than the syscall it wraps while carrying stronger authority.
+  `declassifiedSignalHopAuthorization` runs per hop against the base lattice
+  first and the configured declassification policy second, and each hop carries
+  its **own** refusal discriminant (`DeclassifiedSignalHop.refusal_injective`).
+  The second is the new `KernelError.declassificationDeniedAtReceiver` (56): a
+  monitor reading a bare "denied" cannot tell an unauthorized caller from an
+  authorized caller aimed at an unauthorized sink, and those call for opposite
+  responses.
+
+* **One event per authorized downgrade, and no invented edge.**
+  `declassifiedSignal_audits_each_hop` records the two hops in order, the first
+  naming the notification and the second the receiver's own TCB;
+  `declassifiedSignal_no_invented_edge` is the property a *single* record could
+  not have — collapsing `high → mid` and `mid → low` into one entry would put a
+  direct `high → low` edge in the trail that no run of
+  `declassificationDecision` ever returned `.ok` for.  And
+  `declassifiedSignal_never_unaudited` is the fail-closed half: a delivery that
+  cannot record **all** of its downgrades performs none of them.
+
+* **The actor field.**  A second-hop event's `srcDomain` is the *notification's*
+  domain, which is nobody's subject domain — so SM8.C's attributability rule,
+  which read `srcDomain`, could not be stated of it.  `DeclassificationEvent`
+  gains a **required** `actor : DeclassificationActor` (a default would
+  attribute every event to whatever it names while compiling everywhere), and
+  `attributionFromRunningSubject_over_actor` is SM8.C's rule restated over it.
+  `secondHop_actor_differs_from_flowSource` is what makes the field necessary
+  rather than redundant.  The visibility filter reads it
+  (`auditLogVisibleTo_cleared_actor`), so a third exported domain is disclosed
+  only to a reader that dominates it.
+
+* **A retired trail invariant.**  `auditTrailDestinationsAreTargetDomains`
+  (SM9.A round 5) is **false** of a second-hop event: its destination is a
+  *thread* domain while its target is that thread's TCB.  Retired, with the
+  object-identity discipline moved into `auditEntryVisibleTo` itself — strictly
+  stronger, since `auditVisibleEntry_target_domain_flows` becomes unconditional.
+
+* **A footprint is not an authorization** (SM9.C.5).
+  `declassifiedSignalEffectFootprint` is defined **once** (notification ⊕
+  resolved receiver ⊕ SM6.B's own `notificationSignalBoundWriteSet`) and read by
+  both the confinement proof and the non-interference theorem, so the two cannot
+  name different cores.  It takes **no policy**, which is what makes
+  `footprint_does_not_authorize` provable rather than plausible: a receiver
+  squarely inside the footprint is still refused when the policy refuses it.
+  Reading a footprint as a permission would be the SM6.B badge-leak class one
+  abstraction up.
+
+* **Declassification-relative non-interference** (SM9.C.6).  This is the tree's
+  first deliberately *visible* flow, so its bound is a write set **plus** a
+  recording obligation rather than an equality of projections.
+  `declassificationRelativeNonInterference` has three conjuncts: confinement on
+  every core outside the footprint, every visible difference recorded with a
+  domain pair `declassificationDecision` authorized, and the object effect
+  bounded to the ordinary signal's.  The sharpest negative is that this
+  transition is **not** plain non-interference at all — the footprint's core
+  really changes — which is exactly why the statement is relative to a
+  footprint.
+
+* **The NI taxonomy that deliberately did not grow** (SM9.C.7).  Every
+  `NonInterferenceStep` constructor concludes the projection is *unchanged*
+  (`step_preserves_projection`, uniformly on the exhaustive match), so an
+  operation whose defining property is an authorized visible flow cannot
+  correspond to one; the only constructor it could carry is the case where the
+  flow happens to be invisible, which is coverage of the uninteresting half
+  reported as coverage of the whole.  SM8.C set the precedent —
+  `declassifyObjectFromCore` is likewise absent from `KernelOperation` — so the
+  inventory that grew is `CrossCoreTransition` (28 → 29, live arms 21 → 22,
+  remote writers 22 → 23, delegation-backed 13 → 14), and `KernelOperation`'s
+  docstring records the exclusion with a Tier-3 negative pinning it.
+
+Registries: `SyscallId.declassifySignal = 33`, count 33 → **34**; the
+enforcement boundary 42 → **43** canonical / 57 → **58** per-core,
+**policy-gated** and naming the live arm; the lock-set inventory 107 → **109**,
+with `lockSet_declassifySignal` *composed* from `lockSet_notificationSignal`
+plus the state-level write its trail append needs
+(`…_extends_notificationSignal` is the tie, so the notification half cannot
+drift from the syscall it wraps) and `auditState_footprints_share_serialization`
+gaining a fourth conjunct — this is the one trail writer whose footprint is
+*dominated* by object-level members and would otherwise look like an ordinary
+IPC syscall.  Three total-match tables each forced a recorded decision as part
+of adding the syscall: `refusalSeamClass` → `.records` (so its refusals reach
+the SM9.B ledger rather than bypassing it, exactly as that phase's docstring
+predicted), `syscallReturnShape` → `.unit`, `syscallChecksTargetFirst` →
+`false`.  The per-core routing gate passes with **zero** allowlisted exceptions.
+
+Two pre-existing gaps closed on the way past:
+`lockSet_notificationSignal_size_le` fixed the SM6.B bound-delivery optionals at
+their `none` defaults, so the one footprint shape that can reach five members
+had no size bound at all and the WCRT reasoning built on `maxLockSetSize` did not
+cover the path SM6.B added (now general — `3 + 3 = 6 ≤ 8`, constant untouched);
+and `endpointQueueRemoveDual_machine_eq`'s ~120-line duplicated branch walk is
+re-derived from a new generic `endpointQueueRemoveDual_frame`.
+
+Runtime coverage: §11.1–§11.6 of `tests/SmpInformationFlowSuite.lean` (679 →
+712 assertions), every group with a load-bearing negative, on a fixture where
+the notification sits *between* the two subject domains — so both hops are
+genuine downgrades — and the receiver is homed on a remote core.
+
+**The audit cut** (same version): a code-first audit of the landing closed four
+findings.  (1) The plan-named `refusalRecord_names_failed_hop` had not landed —
+a refused second hop reduced to a raw operand and a discriminant.  The SM9.B
+deferral premise ("the seam cannot see the resolved receiver") was wrong: the
+seam holds the pre-state and `x0`, so `DeclassificationRefusal` gains a
+non-defaulted `refusedReceiver`, the seam re-resolves it with
+`Platform.FFI.refusedSignalReceiver?` (keyed on **both** the syscall and the
+discriminant, so a future second producer of the discriminant must decide its
+own resolution semantics), `refusedSignalReceiver?_resolves` pins the seam's
+resolution to the transition's, and
+`declassifiedSignalPlan_deniedAtReceiver_resolves` supplies the receiver's
+existence from the refusal itself.  The monitor reads the field back through
+two appended opcodes (25/26; `auditReadOpcodeCount` 25 → **27** on both sides
+of the ABI, with chunk-count `0` the in-band "no receiver named" — unambiguous
+because a present value always needs at least one chunk).  The ledger
+congruence honestly gains the premise this costs
+(`recordSyscallRefusal_ledger_congr`'s `hRecv`, the exact analogue of the
+declassification congruence's `hSameEvent`, and the premise its docstring once
+wrongly claimed — now with the resolution as its subject).  (2) The SM8.E
+defect class had recurred: the thirteenth policy-gated entry had joined
+neither enforcement family — closed with the two members described above.
+(3) `auditMonitorDominatesObjects`'s docstring cited the retired
+`auditTrailDestinationsAreTargetDomains` as a live fact.  (4) CC-8's
+mitigation text still described SM9.B's ledger as "already in plan".
+Runtime: §11.7 (712 → 719 assertions, three load-bearing negatives — a
+first-hop refusal records no receiver, the discriminant alone does not
+trigger the resolution, and a receiver-less slot answers chunk count 0 with
+its chunk read refused).
+
+**PR #872 review** (same version): the per-core boundary docstring's stale
+57/42 figures (and the Tier-3 prose anchor pinning them) corrected to 58/43;
+and the plain-waiter gate — deliberately asymmetric with the ordinary checked
+signal, which gates the bound path only and trusts wait-time admission —
+proven a no-op on any base-admitted waiter
+(`declassifiedSignalPlan_admitted_receiver_error_is_first_hop`), with the
+one-bit presence disclosure its refusal carries in mixed-admission states
+exhibited as `declassifiedSignalPlan_outcome_depends_on_receiver` beside the
+load-bearing negative that the symmetric alternative delivers the
+freshly-downgraded badge to the denied receiver (§11.8, 719 → 722).
+
+**PR #872 review round 2** (same version): the transition consulted the
+declassification plan before the delivery's typed lookup, so a writable
+capability to a non-notification object read policy state off the error
+discriminant (`.declassificationDenied` vs `.invalidCapability`) — an invalid
+capability as a policy oracle, and an inconsistency with the sibling
+`.declassify`, which validates its target before
+`authorizeDeclassificationOnCore`.  The transition now validates the operand
+as a live notification ahead of every policy read, answering the ordinary
+signal's own recovery errors (`.invalidCapability` wrong-kind /
+`.objectNotFound` absent);
+`notificationSignalDeclassifiedOnCore_invalid_target_policy_blind` pins the
+invalid-target outcome as a function of the object store alone — identical
+under every pair of contexts and policies —
+`enforcement_sufficiency_declassifySignal` grows to six arms (the
+target-invalid dichotomy second), and `declassifiedSignal_ordinary_eq_signal`
+is strengthened to hold *through* the gate (junk targets answer the same
+errors on both paths).  Runtime: §11.9 (722 → 726), the load-bearing negative
+being that the caller's hop-1 verdict is no longer readable off a junk
+operand.
 
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 

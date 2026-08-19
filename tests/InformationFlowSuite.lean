@@ -273,6 +273,15 @@ def test_schedContext_yield_self_returns_state_unchanged : IO Bool := do
 -- fail-closed audit-capacity refusal is a third outcome beyond delegate-or-deny.
 #check @SeLe4n.Kernel.declassifyObjectFromCore_denied_preserves_state
 #check @SeLe4n.Kernel.authorizeDeclassificationOnCore_denied_preserves_state
+-- WS-SM SM9.C.8 (audit cut): the thirteenth policy-gated entry's members —
+-- found missing by exactly the review this comment describes, one phase on.
+-- The data-carrying declassification's sufficiency is a FIVE-arm
+-- characterization (the delivery is real, so it adds its own failure mode,
+-- and the actor is state-resolved, which adds the idle-core refusal), and its
+-- denial preservation is an equation on the returned state, since the
+-- transition is total.
+#check @SeLe4n.Kernel.enforcement_sufficiency_declassifySignal
+#check @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_denied_preserves_state
 #check @SeLe4n.Kernel.enforcement_sufficiency_declassify
 
 /-- AK6-E (NI-H01): `niStepConstructorCoverage` is the constructor-level
@@ -727,14 +736,17 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-E5/M-07: Enforcement boundary classification checks
   -- =========================================================================
 
-  -- 12 policy-gated ops: 9 original + notificationWaitChecked + endpointReplyRecvChecked
+  -- 13 policy-gated ops: 9 original + notificationWaitChecked + endpointReplyRecvChecked
   -- + declassifyObjectFromCore (WS-SM SM8.C — the live declassification entry
   -- point; policy-gated because it consults the declassification policy after
   -- the ordinary flow check refuses, which is the only path that may lower a
-  -- label).
-  expect "enforcement boundary: 12 policy-gated operations defined"
+  -- label) + notificationSignalDeclassifiedCrossCoreDispatch (WS-SM SM9.C — the
+  -- *data-carrying* declassification, policy-gated for the same reason and
+  -- consulting the policy at **two** hops, so an authorized signaller aimed at
+  -- an unauthorized receiver is refused at the second).
+  expect "enforcement boundary: 13 policy-gated operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
-      match c with | .policyGated _ => true | _ => false)).length == 12)
+      match c with | .policyGated _ => true | _ => false)).length == 13)
 
   expect "enforcement boundary: capability-only operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
@@ -744,7 +756,9 @@ def runInformationFlowChecks : IO Unit := do
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
       match c with | .readOnly _ => true | _ => false)).length > 0)
 
-  -- 42 classified ops: 40 prior + auditReadFromCore and auditDrainVisiblePrefix
+  -- 43 classified ops: 42 prior + notificationSignalDeclassifiedCrossCoreDispatch
+  -- (WS-SM SM9.C — the data-carrying declassification, policy-gated), on top of
+  -- auditReadFromCore and auditDrainVisiblePrefix
   -- (WS-SM SM9.A.11 — the declassification trail's reader and drain, both
   -- capability-only because the authority they check is the dedicated
   -- `CapTarget.auditTrail`, never a right), on top of withLockSet (WS-SM
@@ -755,8 +769,8 @@ def runInformationFlowChecks : IO Unit := do
   -- path, capability-only) and mintReplyCapWithCdt (WS-SM SM6.D / PR #822
   -- Phase H, capability-only — derives a reply cap from an object cap to a
   -- retyped Reply).
-  expect "enforcement boundary: total 42 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 42)
+  expect "enforcement boundary: total 43 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 43)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default default publicEndpointState
@@ -1177,8 +1191,8 @@ def runInformationFlowChecks : IO Unit := do
   let extendedBoundary := SeLe4n.Kernel.enforcementBoundaryExtended
   let policyGatedCount := extendedBoundary.filter (fun e => match e with
     | .policyGated _ => true | _ => false) |>.length
-  expect "enforcement boundary has 12 policy-gated ops"
-    (policyGatedCount = 12)
+  expect "enforcement boundary has 13 policy-gated ops"
+    (policyGatedCount = 13)
 
   IO.println "enforcement boundary classification verified"
 
@@ -1313,8 +1327,8 @@ def runInformationFlowChecks : IO Unit := do
   let pgCount := boundary.filter (fun c => match c with | .policyGated _ => true | _ => false) |>.length
   let coCount := boundary.filter (fun c => match c with | .capabilityOnly _ => true | _ => false) |>.length
   let roCount := boundary.filter (fun c => match c with | .readOnly _ => true | _ => false) |>.length
-  expect "enforcement boundary has 12 policy-gated"
-    (pgCount = 12)
+  expect "enforcement boundary has 13 policy-gated"
+    (pgCount = 13)
   -- WS-SM SM8.E.3: 23 → 24 with the 2PL bracket (`withLockSet`), classified
   -- capability-only for the same reason as `storeObject` — an internal building
   -- block used under an already-capability-guarded context, consulting no
@@ -1326,8 +1340,8 @@ def runInformationFlowChecks : IO Unit := do
     (coCount = 26)
   expect "enforcement boundary has 4 read-only"
     (roCount = 4)
-  expect "enforcement boundary total is 42"
-    (boundary.length = 42)
+  expect "enforcement boundary total is 43"
+    (boundary.length = 43)
 
   IO.println "enforcement boundary completeness verified"
 
@@ -1339,7 +1353,8 @@ def runInformationFlowChecks : IO Unit := do
   let event : SeLe4n.Kernel.DeclassificationEvent :=
     { srcDomain := ⟨2⟩, dstDomain := ⟨0⟩, targetObject := ⟨902⟩,
       authorizationBasis := .policyRule,
-      timestamp := 0, originatingCore := bootCoreId }
+      timestamp := 0, originatingCore := bootCoreId,
+      actor := { subject := ⟨1⟩, domain := ⟨2⟩ } }
   let emptyLog : SeLe4n.Kernel.DeclassificationAuditLog := []
   let log1 := SeLe4n.Kernel.recordDeclassification emptyLog event
   expect "recording to empty log yields length 1"
@@ -1349,7 +1364,8 @@ def runInformationFlowChecks : IO Unit := do
   let event2 : SeLe4n.Kernel.DeclassificationEvent :=
     { srcDomain := ⟨3⟩, dstDomain := ⟨1⟩, targetObject := ⟨903⟩,
       authorizationBasis := .integratorOverride "system-integrator-override",
-      timestamp := 1, originatingCore := bootCoreId }
+      timestamp := 1, originatingCore := bootCoreId,
+      actor := { subject := ⟨2⟩, domain := ⟨3⟩ } }
   let log2 := SeLe4n.Kernel.recordDeclassification log1 event2
   expect "second record yields length 2"
     (log2.length = 2)
@@ -1404,8 +1420,8 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical
-  expect "enforcementBoundaryExtended has 42 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 42)
+  expect "enforcementBoundaryExtended has 43 entries"
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 43)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

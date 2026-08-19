@@ -66,7 +66,8 @@ in its hypothesis — and breaks `declassificationChainLinked`'s
 strictly-increasing conjunct with it.  Offsetting by the epoch, which counts
 exactly the entries drained so far, makes a timestamp name an event for the
 lifetime of the system: it is never reused and never decreases. -/
-def declassificationEventOnCore (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+def declassificationEventOnCore (c : CoreId) (actor : DeclassificationActor)
+    (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (epoch : Nat)
     (log : DeclassificationAuditLog) : DeclassificationEvent :=
   { srcDomain := srcDomain
@@ -74,21 +75,24 @@ def declassificationEventOnCore (c : CoreId) (srcDomain dstDomain : SecurityDoma
     targetObject := targetId
     authorizationBasis := .policyRule
     timestamp := epoch + log.length
-    originatingCore := c }
+    originatingCore := c
+    actor := actor }
 
 /-- WS-SM SM8.C.1: the event a given pre-state records, named once so the
 theorems below do not each recompute it. -/
-abbrev declassifyStoreEvent (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+abbrev declassifyStoreEvent (c : CoreId) (actor : DeclassificationActor)
+    (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st : SystemState) : DeclassificationEvent :=
-  declassificationEventOnCore c srcDomain dstDomain targetId
+  declassificationEventOnCore c actor srcDomain dstDomain targetId
     st.declassificationAuditEpoch st.declassificationAuditLog
 
 /-- WS-SM SM8.C.1: the trail a successful audited step leaves — the pre-state's
 trail with this step's event appended. -/
-abbrev declassifyStoreTrail (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+abbrev declassifyStoreTrail (c : CoreId) (actor : DeclassificationActor)
+    (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st : SystemState) : DeclassificationAuditLog :=
   recordDeclassification st.declassificationAuditLog
-    (declassifyStoreEvent c srcDomain dstDomain targetId st)
+    (declassifyStoreEvent c actor srcDomain dstDomain targetId st)
 
 /-- WS-SM SM8.C.1 (**the field the phase exists for**): the recorded core is the
 core the operation ran on.
@@ -98,27 +102,40 @@ core at all, and the tempting way to add one — default it to `bootCoreId` — 
 make this theorem false for every secondary core while still compiling
 everywhere. -/
 theorem declassificationEventOnCore_originatingCore
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog) :
-    (declassificationEventOnCore c srcDomain dstDomain targetId epoch
+    (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch
       log).originatingCore = c := rfl
 
 /-- WS-SM SM8.C.5: the kernel records its own basis, never an integrator
 override — so `kernelVerifiable` is `true` on everything the kernel writes. -/
 theorem declassificationEventOnCore_basis_is_policyRule
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog) :
-    (declassificationEventOnCore c srcDomain dstDomain targetId epoch
+    (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch
       log).authorizationBasis = .policyRule := rfl
 
 /-- WS-SM SM8.C / SM9.A.1a: the recorded timestamp is the event's **global**
 position — the number of entries drained so far plus its index in the current
 trail. -/
 theorem declassificationEventOnCore_timestamp
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog) :
-    (declassificationEventOnCore c srcDomain dstDomain targetId epoch log).timestamp =
+    (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch log).timestamp =
       epoch + log.length := rfl
+
+/-- WS-SM SM9.C.1: the recorded actor is the one the producer resolved — the
+field is carried, never derived from the flow endpoints.
+
+Load-bearing for the same reason `declassificationEventOnCore_originatingCore`
+is: the tempting way to add the field is to default it to the source domain,
+which would compile everywhere and be silently wrong for exactly the second-hop
+events it exists to attribute. -/
+theorem declassificationEventOnCore_actor
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
+    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog) :
+    (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch log).actor =
+      actor := rfl
 
 -- ============================================================================
 -- §2  Attribution: the subject the executing core is running
@@ -133,15 +150,61 @@ def declassificationSubjectDomainOnCore (ctx : GenericLabelingContext) (st : Sys
     (c : CoreId) : Option SecurityDomain :=
   (st.scheduler.currentOnCore c).map ctx.threadDomainOf
 
+/-- WS-SM SM9.C.1: the actor a **single-subject** downgrade attributes to — the
+thread and the domain the labeling gives it, bundled once so the `.declassify`
+entry point does not spell the pair out at every site.
+
+Named rather than inlined because SM9.C's two-hop signal builds the *same*
+actor for both of its events while their flow endpoints differ; having one
+constructor for "who is acting" is what keeps `attributionFromRunningSubject`
+one rule rather than one per producer. -/
+abbrev declassificationActorOf (ctx : GenericLabelingContext) (tid : SeLe4n.ThreadId) :
+    DeclassificationActor :=
+  { subject := tid, domain := ctx.threadDomainOf tid }
+
+/-- WS-SM SM9.C.1: **for a single-hop downgrade the actor and the flow source
+coincide** — which is why the conflation SM8.C carried went unnoticed.
+
+Stated over `declassificationActorOf`, the constructor the `.declassify` entry
+point uses, so it is a fact about that producer rather than an assumption about
+producers in general: SM9.C's second-hop event is exactly the case where the two
+separate (`secondHop_actor_differs_from_flowSource`). -/
+theorem declassifyStoreEvent_singleHop_actor_domain_eq_src
+    (c : CoreId) (ctx : GenericLabelingContext) (tid : SeLe4n.ThreadId)
+    (dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId) (st : SystemState) :
+    (declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
+      dstDomain targetId st).actor.domain =
+      (declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
+        dstDomain targetId st).srcDomain := rfl
+
+/-- WS-SM SM8.C.3: the subject core `c` is running, if any — the identity half
+of the attribution the domain reader above resolves. -/
+def declassificationSubjectOnCore (st : SystemState) (c : CoreId) :
+    Option SeLe4n.ThreadId :=
+  st.scheduler.currentOnCore c
+
 /-- WS-SM SM8.C.3: **the event is attributable** — the core it names was running
-a subject, and that subject's domain is the source domain the event records.
+a subject, and that subject *is* the actor the event records, at the domain the
+event records for it.
 
 An unattributable event is not a forged one (the kernel does not forge); it is
-an event whose `srcDomain` cannot be checked against anything, which is what an
-auditor needs to be able to rule out. -/
+an event whose attribution cannot be checked against anything, which is what an
+auditor needs to be able to rule out.
+
+**WS-SM SM9.C.1 — stated over the actor, not over `srcDomain`.**  SM8.C read the
+source domain, which was right while one event described one subject's own
+downgrade.  A transition that emits one event per authorized *hop* separates the
+two: the second hop of a two-hop delivery has the intermediate object's domain
+as its source while the *same* subject performed it, so reading `srcDomain` here
+would make this predicate assert that a high subject is mid.  Reading the actor
+makes attributability true of **every** recorded event rather than only of
+single-hop ones (`attributionFromRunningSubject_over_actor`), and for a
+single-hop event the two readings coincide
+(`declassifyStoreEvent_actor_domain_eq_src_of_subject_source`). -/
 def declassificationEventAttributable (ctx : GenericLabelingContext) (st : SystemState)
     (e : DeclassificationEvent) : Prop :=
-  declassificationSubjectDomainOnCore ctx st e.originatingCore = some e.srcDomain
+  declassificationSubjectOnCore st e.originatingCore = some e.actor.subject ∧
+    ctx.threadDomainOf e.actor.subject = e.actor.domain
 
 -- ============================================================================
 -- §3  The live transition
@@ -169,14 +232,14 @@ The only state this writes is the trail
 obligations a one-conjunct affair. -/
 def authorizeDeclassificationOnCore
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) : Kernel Unit :=
   fun st =>
     match declassificationDecision ctx declPolicy srcDomain dstDomain with
     | .error err => .error err
     | .ok () =>
         match recordDeclassificationChecked st.declassificationAuditLog
-            (declassifyStoreEvent c srcDomain dstDomain targetId st) with
+            (declassifyStoreEvent c actor srcDomain dstDomain targetId st) with
         | none => .error .auditLogCapacityExceeded
         | some log' => .ok ((), { st with declassificationAuditLog := log' })
 
@@ -188,12 +251,12 @@ scheduler, the machine, every SM7 memory-model field and every lock are
 untouched, so `.declassify` is not a write primitive by any route. -/
 theorem authorizeDeclassificationOnCore_frame
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st st' : SystemState)
-    (hStep : authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+    (hStep : authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
       .ok ((), st')) :
     st' = { st with
-      declassificationAuditLog := declassifyStoreTrail c srcDomain dstDomain targetId st } ∧
+      declassificationAuditLog := declassifyStoreTrail c actor srcDomain dstDomain targetId st } ∧
     st.declassificationAuditLog.length < maxDeclassificationAuditEntries ∧
     declassificationDecision ctx declPolicy srcDomain dstDomain = .ok () := by
   unfold authorizeDeclassificationOnCore at hStep
@@ -205,14 +268,14 @@ theorem authorizeDeclassificationOnCore_frame
   | ok u =>
     cases u
     obtain ⟨rec, hRec⟩ : ∃ r, recordDeclassificationChecked st.declassificationAuditLog
-        (declassifyStoreEvent c srcDomain dstDomain targetId st) = r := ⟨_, rfl⟩
+        (declassifyStoreEvent c actor srcDomain dstDomain targetId st) = r := ⟨_, rfl⟩
     rw [hRec] at hStep
     cases rec with
     | none => simp at hStep
     | some log' =>
       have hRoom : st.declassificationAuditLog.length < maxDeclassificationAuditEntries :=
         (recordDeclassificationChecked_isSome_iff _ _).mp (by rw [hRec]; rfl)
-      have hLog' : log' = declassifyStoreTrail c srcDomain dstDomain targetId st := by
+      have hLog' : log' = declassifyStoreTrail c actor srcDomain dstDomain targetId st := by
         rw [recordDeclassificationChecked_eq_record _ _ hRoom] at hRec
         exact (Option.some.inj hRec).symm
       simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -222,20 +285,20 @@ theorem authorizeDeclassificationOnCore_frame
 in the trail and the downgrade is authorized. -/
 theorem authorizeDeclassificationOnCore_ok_iff
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st : SystemState) :
-    (∃ st', authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+    (∃ st', authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
       .ok ((), st')) ↔
       (st.declassificationAuditLog.length < maxDeclassificationAuditEntries ∧
         declassificationDecision ctx declPolicy srcDomain dstDomain = .ok ()) := by
   constructor
   · rintro ⟨st', hStep⟩
-    obtain ⟨_, hRoom, hDec⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c srcDomain
+    obtain ⟨_, hRoom, hDec⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c actor srcDomain
       dstDomain targetId st st' hStep
     exact ⟨hRoom, hDec⟩
   · rintro ⟨hRoom, hDec⟩
     refine ⟨{ st with
-      declassificationAuditLog := declassifyStoreTrail c srcDomain dstDomain targetId st }, ?_⟩
+      declassificationAuditLog := declassifyStoreTrail c actor srcDomain dstDomain targetId st }, ?_⟩
     unfold authorizeDeclassificationOnCore
     rw [hDec, recordDeclassificationChecked_eq_record _ _ hRoom]
 
@@ -252,11 +315,11 @@ policy refuses gets `.declassificationDenied` and learns nothing about the
 trail's occupancy (`authorizeDeclassificationOnCore_denied_before_capacity`). -/
 theorem authorizeDeclassificationOnCore_audit_log_full
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st : SystemState)
     (hAuthorized : declassificationDecision ctx declPolicy srcDomain dstDomain = .ok ())
     (hFull : maxDeclassificationAuditEntries ≤ st.declassificationAuditLog.length) :
-    authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+    authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
       .error .auditLogCapacityExceeded := by
   unfold authorizeDeclassificationOnCore
   rw [hAuthorized, recordDeclassificationChecked_eq_none _ _ hFull]
@@ -273,12 +336,12 @@ channel from every declassifying subject to every subject that can call
 statement may differ in trail length by any amount. -/
 theorem authorizeDeclassificationOnCore_denied_before_capacity
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st st' : SystemState) (err : KernelError)
     (hDenied : declassificationDecision ctx declPolicy srcDomain dstDomain = .error err) :
-    authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
-      authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st' ∧
-    authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+    authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
+      authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st' ∧
+    authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
       .error err := by
   constructor <;> · unfold authorizeDeclassificationOnCore; rw [hDenied]
 
@@ -288,13 +351,13 @@ held at the moment the event was written: the base policy denied the flow (so
 this genuinely was a downgrade) and the declassification policy permitted it. -/
 theorem authorizeDeclassificationOnCore_authorized
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st st' : SystemState)
-    (hStep : authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+    (hStep : authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
       .ok ((), st')) :
     ctx.policy.canFlow srcDomain dstDomain = false ∧
       declPolicy.canDeclassify srcDomain dstDomain = true := by
-  obtain ⟨_, _, hDec⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c srcDomain
+  obtain ⟨_, _, hDec⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c actor srcDomain
     dstDomain targetId st st' hStep
   exact (declassificationDecision_ok_iff ctx declPolicy srcDomain dstDomain).mp hDec
 
@@ -302,14 +365,14 @@ theorem authorizeDeclassificationOnCore_authorized
 the trail the pre-state carried. -/
 theorem authorizeDeclassificationOnCore_records_one
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st st' : SystemState)
-    (hStep : authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+    (hStep : authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
       .ok ((), st')) :
     st'.declassificationAuditLog =
-      st.declassificationAuditLog ++ [declassifyStoreEvent c srcDomain dstDomain targetId st] ∧
+      st.declassificationAuditLog ++ [declassifyStoreEvent c actor srcDomain dstDomain targetId st] ∧
       st'.declassificationAuditLog.length = st.declassificationAuditLog.length + 1 := by
-  obtain ⟨hSt', _, _⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c srcDomain
+  obtain ⟨hSt', _, _⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c actor srcDomain
     dstDomain targetId st st' hStep
   subst hSt'
   exact ⟨rfl, recordDeclassification_length _ _⟩
@@ -323,16 +386,16 @@ trail — is an error arm.  The property the mount (SM8.C.8) and the fail-closed
 capacity bound exist for. -/
 theorem authorizeDeclassificationOnCore_never_unaudited
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st st' : SystemState)
-    (hStep : authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+    (hStep : authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
       .ok ((), st')) :
     ∃ e ∈ st'.declassificationAuditLog,
       e.originatingCore = c ∧ e.srcDomain = srcDomain ∧ e.dstDomain = dstDomain ∧
       e.targetObject = targetId ∧ e.authorizationBasis = .policyRule := by
-  obtain ⟨hLog, _⟩ := authorizeDeclassificationOnCore_records_one ctx declPolicy c srcDomain
+  obtain ⟨hLog, _⟩ := authorizeDeclassificationOnCore_records_one ctx declPolicy c actor srcDomain
     dstDomain targetId st st' hStep
-  refine ⟨declassifyStoreEvent c srcDomain dstDomain targetId st, ?_, rfl, rfl, rfl, rfl, rfl⟩
+  refine ⟨declassifyStoreEvent c actor srcDomain dstDomain targetId st, ?_, rfl, rfl, rfl, rfl, rfl⟩
   rw [hLog]
   exact List.mem_append_right _ (by simp)
 
@@ -340,14 +403,14 @@ theorem authorizeDeclassificationOnCore_never_unaudited
 `proofLayerInvariantBundle` conjunct. -/
 theorem authorizeDeclassificationOnCore_preserves_auditLogBounded
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st st' : SystemState)
-    (hStep : authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+    (hStep : authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
       .ok ((), st')) :
     auditLogBounded st'.declassificationAuditLog := by
-  obtain ⟨_, hLen⟩ := authorizeDeclassificationOnCore_records_one ctx declPolicy c srcDomain
+  obtain ⟨_, hLen⟩ := authorizeDeclassificationOnCore_records_one ctx declPolicy c actor srcDomain
     dstDomain targetId st st' hStep
-  obtain ⟨_, hRoom, _⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c srcDomain
+  obtain ⟨_, hRoom, _⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c actor srcDomain
     dstDomain targetId st st' hStep
   unfold auditLogBounded
   omega
@@ -361,15 +424,15 @@ sixteenth is the capacity bound above.  This is the obligation a dispatch arm
 owes, discharged once. -/
 theorem authorizeDeclassificationOnCore_preserves_proofLayerInvariantBundle
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st st' : SystemState)
     (hInv : Architecture.proofLayerInvariantBundle st)
-    (hStep : authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+    (hStep : authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
       .ok ((), st')) :
     Architecture.proofLayerInvariantBundle st' := by
-  obtain ⟨hSt', _, _⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c srcDomain
+  obtain ⟨hSt', _, _⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c actor srcDomain
     dstDomain targetId st st' hStep
-  have hBounded := authorizeDeclassificationOnCore_preserves_auditLogBounded ctx declPolicy c
+  have hBounded := authorizeDeclassificationOnCore_preserves_auditLogBounded ctx declPolicy c actor
     srcDomain dstDomain targetId st st' hStep
   rw [hSt'] at hBounded ⊢
   exact Architecture.proofLayerInvariantBundle_setDeclassificationAuditLog st _ hInv hBounded
@@ -401,7 +464,7 @@ def declassifyObjectFromCore
         match st.getObjectType? targetId with
         | none => .error .objectNotFound
         | some _ =>
-            authorizeDeclassificationOnCore ctx declPolicy c
+            authorizeDeclassificationOnCore ctx declPolicy c (declassificationActorOf ctx tid)
               (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId) targetId st
 
 /-- WS-SM SM8.C.3: an idle core cannot declassify — there is no subject to
@@ -440,7 +503,7 @@ theorem declassifyObjectFromCore_eq_onCore
     (hCur : st.scheduler.currentOnCore c = some tid)
     (hPresent : st.getObjectType? targetId = some ty) :
     declassifyObjectFromCore ctx declPolicy c targetId st =
-      authorizeDeclassificationOnCore ctx declPolicy c
+      authorizeDeclassificationOnCore ctx declPolicy c (declassificationActorOf ctx tid)
         (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId) targetId st := by
   simp [declassifyObjectFromCore, hCur, hPresent]
 
@@ -454,7 +517,7 @@ theorem declassifyObjectFromCore_frame
     st' =
       { st with
         declassificationAuditLog :=
-          declassifyStoreTrail c (ctx.threadDomainOf tid)
+          declassifyStoreTrail c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
             (ctx.objectDomainOf targetId) targetId st } := by
   unfold declassifyObjectFromCore at hStep
   rw [hCur] at hStep
@@ -463,7 +526,7 @@ theorem declassifyObjectFromCore_frame
   cases ty with
   | none => simp at hStep
   | some _ =>
-    exact (authorizeDeclassificationOnCore_frame ctx declPolicy c (ctx.threadDomainOf tid)
+    exact (authorizeDeclassificationOnCore_frame ctx declPolicy c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
       (ctx.objectDomainOf targetId) targetId st st' hStep).1
 
 /-- WS-SM SM8.C.9: a successful live declassification implies the executing core
@@ -498,7 +561,7 @@ theorem declassifyObjectFromCore_frame_of_ok
     ∃ tid, st.scheduler.currentOnCore c = some tid ∧
       st' = { st with
         declassificationAuditLog :=
-          declassifyStoreTrail c (ctx.threadDomainOf tid)
+          declassifyStoreTrail c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
             (ctx.objectDomainOf targetId) targetId st } := by
   obtain ⟨⟨tid, hCur⟩, -⟩ := declassifyObjectFromCore_ok_resolved ctx declPolicy c targetId
     st st' hStep
@@ -518,12 +581,12 @@ theorem declassifyObjectFromCore_event_attributable
     (hCur : st.scheduler.currentOnCore c = some tid)
     (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
     declassificationEventAttributable ctx st'
-      (declassifyStoreEvent c (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
-        targetId st) := by
+      (declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
+        (ctx.objectDomainOf targetId) targetId st) := by
   have hSt' := declassifyObjectFromCore_frame ctx declPolicy c targetId st st' tid hCur hStep
   subst hSt'
-  simp [declassificationEventAttributable, declassificationSubjectDomainOnCore,
-    declassificationEventOnCore, hCur]
+  simp [declassificationEventAttributable, declassificationSubjectOnCore,
+    declassificationEventOnCore, declassificationActorOf, hCur]
 
 /-- WS-SM SM8.C.9 (**the caller cannot name the destination**): the recorded
 destination domain is the one the labeling context assigns the *target object*.
@@ -543,10 +606,10 @@ theorem declassifyObjectFromCore_destination_is_target_domain
       e.originatingCore = c := by
   have hSt' := declassifyObjectFromCore_frame ctx declPolicy c targetId st st' tid hCur hStep
   subst hSt'
-  refine ⟨declassifyStoreEvent c (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
-    targetId st, ?_, rfl, rfl, rfl⟩
-  show _ ∈ declassifyStoreTrail c (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
-    targetId st
+  refine ⟨declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
+    (ctx.objectDomainOf targetId) targetId st, ?_, rfl, rfl, rfl⟩
+  show _ ∈ declassifyStoreTrail c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
+    (ctx.objectDomainOf targetId) targetId st
   exact recordDeclassification_contains_new _ _
 
 /-- WS-SM SM8.C.9: the live entry point carries the whole invariant bundle —
@@ -569,7 +632,8 @@ theorem declassifyObjectFromCore_preserves_proofLayerInvariantBundle
     | none => simp at hStep
     | some _ =>
       exact authorizeDeclassificationOnCore_preserves_proofLayerInvariantBundle ctx declPolicy c
-        (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId) targetId st st' hInv hStep
+        (declassificationActorOf ctx tid) (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
+        targetId st st' hInv hStep
 
 /-- WS-SM SM8.C.9: **the headline, at the live entry point** — an authorized
 downgrade performed by the syscall is either recorded or does not happen. -/
@@ -584,9 +648,9 @@ theorem declassifyObjectFromCore_never_unaudited
       e.authorizationBasis = .policyRule := by
   have hSt' := declassifyObjectFromCore_frame ctx declPolicy c targetId st st' tid hCur hStep
   subst hSt'
-  refine ⟨declassifyStoreEvent c (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
+  refine ⟨declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
     targetId st, ?_, rfl, rfl, rfl, rfl, rfl⟩
-  show _ ∈ declassifyStoreTrail c (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
+  show _ ∈ declassifyStoreTrail c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
     targetId st
   exact recordDeclassification_contains_new _ _
 
@@ -604,7 +668,7 @@ theorem declassifyObjectFromCore_authorized
       declPolicy.canDeclassify (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId) = true := by
   rw [declassifyObjectFromCore_eq_onCore ctx declPolicy c targetId st tid ty hCur hPresent]
     at hStep
-  exact authorizeDeclassificationOnCore_authorized ctx declPolicy c (ctx.threadDomainOf tid)
+  exact authorizeDeclassificationOnCore_authorized ctx declPolicy c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
     (ctx.objectDomainOf targetId) targetId st st' hStep
 
 /-- WS-SM SM8.C.8: the live entry point refuses at capacity, with the
@@ -621,7 +685,7 @@ theorem declassifyObjectFromCore_audit_log_full
     declassifyObjectFromCore ctx declPolicy c targetId st =
       .error .auditLogCapacityExceeded := by
   rw [declassifyObjectFromCore_eq_onCore ctx declPolicy c targetId st tid ty hCur hPresent]
-  exact authorizeDeclassificationOnCore_audit_log_full ctx declPolicy c (ctx.threadDomainOf tid)
+  exact authorizeDeclassificationOnCore_audit_log_full ctx declPolicy c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
     (ctx.objectDomainOf targetId) targetId st hAuthorized hFull
 
 -- ============================================================================
@@ -671,13 +735,13 @@ The producer's half.  It stamps `epoch + length` and writes no other field, so
 computing the timestamp from the state rather than accepting it as an argument. -/
 theorem authorizeDeclassificationOnCore_preserves_trailWellFormed
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st st' : SystemState)
     (hWF : declassificationTrailWellFormed st = true)
-    (hStep : authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+    (hStep : authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
       .ok ((), st')) :
     declassificationTrailWellFormed st' = true := by
-  obtain ⟨hSt', _, _⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c srcDomain
+  obtain ⟨hSt', _, _⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c actor srcDomain
     dstDomain targetId st st' hStep
   subst hSt'
   exact recordDeclassification_preserves_timestampsFrom _ _ _ hWF rfl
@@ -728,14 +792,14 @@ before it reads the trail's occupancy, so a refused caller neither writes an
 entry nor consumes capacity. -/
 theorem authorizeDeclassificationOnCore_denied_preserves_state
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st : SystemState) (err : KernelError)
     (hDeny : declassificationDecision ctx declPolicy srcDomain dstDomain = .error err) :
-    ¬∃ st', authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st
+    ¬∃ st', authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st
       = .ok ((), st') := by
   rintro ⟨st', h⟩
   obtain ⟨_, hDec⟩ :=
-    (authorizeDeclassificationOnCore_ok_iff ctx declPolicy c srcDomain dstDomain
+    (authorizeDeclassificationOnCore_ok_iff ctx declPolicy c actor srcDomain dstDomain
       targetId st).mp ⟨st', h⟩
   rw [hDeny] at hDec
   simp at hDec
@@ -758,19 +822,19 @@ two discriminants, so that a future decision arm cannot be silently remapped
 onto an existing code. -/
 theorem enforcement_sufficiency_declassify
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st : SystemState) :
     (declassificationDecision ctx declPolicy srcDomain dstDomain = .ok () ∧
        st.declassificationAuditLog.length < maxDeclassificationAuditEntries ∧
-       authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+       authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
          .ok ((), { st with declassificationAuditLog :=
-           declassifyStoreTrail c srcDomain dstDomain targetId st })) ∨
+           declassifyStoreTrail c actor srcDomain dstDomain targetId st })) ∨
     (declassificationDecision ctx declPolicy srcDomain dstDomain = .ok () ∧
        maxDeclassificationAuditEntries ≤ st.declassificationAuditLog.length ∧
-       authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+       authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
          .error .auditLogCapacityExceeded) ∨
     (∃ err, declassificationDecision ctx declPolicy srcDomain dstDomain = .error err ∧
-       authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+       authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
          .error err) := by
   cases hDec : declassificationDecision ctx declPolicy srcDomain dstDomain with
   | error err =>
@@ -813,6 +877,7 @@ theorem declassifyObjectFromCore_denied_preserves_state
   obtain ⟨err, hErr⟩ := hDeny tid hCur
   rw [declassifyObjectFromCore_eq_onCore ctx declPolicy c targetId st tid ty hCur hTy] at hStep
   exact authorizeDeclassificationOnCore_denied_preserves_state ctx declPolicy c
-    (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId) targetId st err hErr ⟨st', hStep⟩
+    (declassificationActorOf ctx tid) (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
+    targetId st err hErr ⟨st', hStep⟩
 
 end SeLe4n.Kernel

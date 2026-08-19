@@ -4591,6 +4591,281 @@ theorem wakeThread_crossCoreNonInterference_of_visible_thread (ctx : LabelingCon
     (wakeThread_confinedToCores st tid executingCore) hShared
 
 -- ============================================================================
+-- §6b  WS-SM SM9.C.5 / SM9.C.6 — the data-carrying declassification
+-- ============================================================================
+
+/-! ## The authorized effect footprint, and what it does **not** say
+
+WS-SM SM9.C is the tree's first deliberately *visible* flow: every other
+transition in this module is proven invisible to observers, and this one is
+proven to make a difference the observer may see — bounded, and recorded.
+
+That changes what a bound has to be.  For an invisible transition a write set is
+a *safety* statement ("nothing outside this moved").  Here it is that **and** a
+scope statement: it says which parts of the state the syscall is permitted to
+change, so an auditor can check that a downgrade the policy authorized landed
+where the policy expected it to land and nowhere else.
+
+The distinction the sub-phase turns on, and the one `footprint_does_not_authorize`
+below makes a theorem rather than a remark: **naming a sink in the footprint
+says where writes land, not that they are permitted.**  The footprint is
+computed from the *state* — which notification, which receiver, which home core
+— and consults no policy at all.  Authorization is a separate, per-hop decision,
+and a receiver that is squarely inside the footprint is refused when the policy
+refuses it.  Conflating the two would be exactly the SM6.B badge-leak class one
+abstraction up: "the delivery targets this TCB" read as "the delivery to this
+TCB is allowed". -/
+
+/-- WS-SM SM9.C.5: **the authorized effect footprint of a declassifying signal.**
+
+Three components, because a data-carrying declassification touches three kinds
+of thing and an auditor needs all three:
+
+* `notification` — the object the badge is written into.  Always present: it is
+  the capability's own target.
+* `receiver` — the thread the badge is delivered onward to, resolved from the
+  *pre-state* by `declassifiedSignalReceiver?` (the bound TCB, else the head
+  waiter).  `none` when the signal only accumulates a badge with nobody to
+  deliver it to, which is also exactly when the second hop needs no
+  authorization.
+* `cores` — the scheduler slots and register banks the delivery may write,
+  which is SM6.B's own `notificationSignalBoundWriteSet`.  Sharing that
+  definition rather than restating it is deliberate: the transition *is* the
+  ordinary bound signal plus a trail append
+  (`notificationSignalDeclassifiedOnCore_frame`), so a footprint naming
+  different cores than SM6.B's write set would be describing a transition the
+  kernel does not run.
+
+The audit trail is **not** a component.  It is written on every authorized
+downgrade, and it is deliberately outside `ObservableState` — so it is not part
+of what the footprint bounds for an observer, and the property that covers it is
+recording (`declassifiedSignal_never_unaudited`), not confinement. -/
+structure DeclassificationEffectFootprint where
+  /-- The notification object the badge is written into. -/
+  notification : SeLe4n.ObjId
+  /-- The thread the badge is delivered onward to, if any. -/
+  receiver : Option SeLe4n.ThreadId
+  /-- The cores whose scheduler slots and register banks the delivery may
+  write. -/
+  cores : List CoreId
+  deriving Repr
+
+/-- WS-SM SM9.C.5: the footprint of a declassifying signal, computed from the
+pre-state alone.
+
+**Takes no `DeclassificationPolicy` and no `LabelingContext`** — which is the
+content of `footprint_does_not_authorize` stated at the level of the type
+signature, and the reason that theorem is provable rather than merely
+plausible. -/
+def declassifiedSignalEffectFootprint (st : SystemState) (notificationId : SeLe4n.ObjId) :
+    DeclassificationEffectFootprint :=
+  { notification := notificationId
+    receiver := declassifiedSignalReceiver? st notificationId
+    cores := notificationSignalBoundWriteSet st notificationId }
+
+/-- WS-SM SM9.C.5: the footprint's receiver is the transition's own pre-state
+resolution — the same function the *authorization* consults for its second hop.
+
+Load-bearing rather than a restatement: the two must name the same thread, or a
+footprint could bound the writes to one TCB while the policy check ran against
+another.  That is the confused-deputy shape one level up from the v0.32.97
+capability-target finding, and this is where it is excluded. -/
+@[simp] theorem declassifiedSignalEffectFootprint_receiver (st : SystemState)
+    (notificationId : SeLe4n.ObjId) :
+    (declassifiedSignalEffectFootprint st notificationId).receiver =
+      declassifiedSignalReceiver? st notificationId := rfl
+
+/-- WS-SM SM9.C.5: the footprint's cores are SM6.B's write set, so the
+information-flow bound and the delivery's own scheduling effects cannot name
+different cores. -/
+@[simp] theorem declassifiedSignalEffectFootprint_cores (st : SystemState)
+    (notificationId : SeLe4n.ObjId) :
+    (declassifiedSignalEffectFootprint st notificationId).cores =
+      notificationSignalBoundWriteSet st notificationId := rfl
+
+/-- WS-SM SM9.C.6 (**`footprint_does_not_authorize`**): a receiver inside the
+authorized effect footprint is **still refused** when the policy refuses it.
+
+The theorem the sub-phase exists to make checkable.  Its hypotheses are the
+receiver's own two denials — the base lattice says no and the declassification
+policy says no — and its conclusion is that the plan errors at the *second* hop,
+with the second hop's own discriminant, even though the first hop was
+authorized and even though the receiver is exactly the thread the footprint
+names.
+
+Read the other way: `receiver ∈ footprint` carries no authorization content
+whatsoever.  A reader who took the footprint as a permission — "the delivery may
+write this TCB, therefore the delivery to it is allowed" — would have re-opened
+the badge leak SM6.B closed at v0.31.73, with stronger authority behind it. -/
+theorem footprint_does_not_authorize (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
+    (actorDomain : SecurityDomain) (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hIn : (declassifiedSignalEffectFootprint st notificationId).receiver = some receiver)
+    (hFirst : ctx.policy.canFlow actorDomain (ctx.objectDomainOf notificationId) = true)
+    (hDeny : ctx.policy.canFlow (ctx.objectDomainOf notificationId)
+      (ctx.threadDomainOf receiver) = false)
+    (hNoDecl : declPolicy.canDeclassify (ctx.objectDomainOf notificationId)
+      (ctx.threadDomainOf receiver) = false) :
+    declassifiedSignalPlan ctx declPolicy notificationId actorDomain st =
+      .error .declassificationDeniedAtReceiver :=
+  declassifiedSignalPlan_receiver_refused ctx declPolicy notificationId actorDomain st receiver
+    hFirst (by simpa using hIn) hDeny hNoDecl
+
+/-- WS-SM SM9.C.6: and the converse half — **authorization does not widen the
+footprint.**
+
+Whatever the policy decides, a successful declassifying signal writes no
+scheduler slot and no register bank outside `footprint.cores`.  The two halves
+together are the independence the sub-phase claims: policy decides *whether*,
+the footprint decides *where*, and neither leaks into the other.
+
+Rides `notificationSignalDeclassifiedOnCore_frame` — the post-state is SM6.B's
+with `declassificationAuditLog` replaced, and that field is neither a scheduler
+slot nor a register bank — so SM6.B's own confinement carries verbatim. -/
+theorem notificationSignalDeclassifiedOnCore_confinedToCores
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
+    (st st' : SystemState) (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge
+      executingCore st = (st', .ok sgi)) :
+    observableSlotsConfinedToCores st st'
+      (declassifiedSignalEffectFootprint st notificationId).cores := by
+  rw [declassifiedSignalEffectFootprint_cores]
+  refine observableSlotsConfinedToCores_of_framed_suffix ?_ ?_
+    (notificationSignalBoundOnCore_confinedToCores notificationId badge executingCore st hObjInv)
+  · rw [notificationSignalDeclassifiedOnCore_frame ctx declPolicy notificationId badge
+      executingCore st st' sgi hStep]
+  · rw [notificationSignalDeclassifiedOnCore_frame ctx declPolicy notificationId badge
+      executingCore st st' sgi hStep]
+
+/-- WS-SM SM9.C.6 (**`declassificationRelativeNonInterference`**): the phase's
+headline, and the first theorem in the tree that bounds a flow instead of
+forbidding one.
+
+Three conjuncts, and each is doing separate work:
+
+1. **Confinement.**  On every core outside the footprint, the observer's
+   per-core view is literally unchanged.  This is ordinary non-interference,
+   restricted to the complement of the authorized footprint — the "relative" in
+   the name.
+2. **Recording.**  Every difference the observer *may* see beyond an ordinary
+   flow was authorized by `declassificationDecision` and appended to the trail,
+   with the originating core and the policy basis on each entry.  A downgrade
+   that happened without a record is excluded, which is what makes the bound
+   auditable rather than merely stated.
+3. **No widening of the object effect.**  The object store is exactly the
+   ordinary bound signal's, so the visible difference in the shared half is the
+   *delivery* and nothing more — the syscall does not take the opportunity to
+   write anything else while it holds the authority to write something.
+
+The `hShared` premise is the same division of labour every theorem in this
+module uses: labels govern the shared half, core identity governs the per-core
+half.  It is *not* vacuous here — the delivery genuinely changes the shared half
+for an observer cleared to see the receiver, which is the point of the phase —
+and conjunct 3 is what bounds that change. -/
+theorem declassificationRelativeNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (gctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (executingCore : CoreId) (st st' : SystemState)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationSignalDeclassifiedOnCore gctx declPolicy notificationId badge
+      executingCore st = (st', .ok sgi))
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    (∀ c, c ∉ (declassifiedSignalEffectFootprint st notificationId).cores →
+      projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c) ∧
+    (∃ appended : DeclassificationAuditLog,
+      st'.declassificationAuditLog = st.declassificationAuditLog ++ appended ∧
+      ∀ e ∈ appended,
+        declassificationDecision gctx declPolicy e.srcDomain e.dstDomain = .ok () ∧
+        e.originatingCore = executingCore ∧ e.authorizationBasis = .policyRule) ∧
+    st'.objects = (notificationSignalBoundOnCore notificationId badge executingCore st).1.objects := by
+  refine ⟨fun c hne => crossCoreNonInterference_ofCores ctx observer hne
+      (notificationSignalDeclassifiedOnCore_confinedToCores gctx declPolicy notificationId badge
+        executingCore st st' sgi hObjInv hStep) hShared,
+    declassifiedSignal_no_invented_edge gctx declPolicy notificationId badge executingCore
+      st st' sgi hStep,
+    ?_⟩
+  rw [notificationSignalDeclassifiedOnCore_frame gctx declPolicy notificationId badge
+    executingCore st st' sgi hStep]
+
+/-- WS-SM SM9.C.6 (**the live `.declassifySignal` arm's post-state**): the
+confinement of the state the checked dispatch actually commits — transition,
+stash clear, and both WS-RA stagers.
+
+The PR #870 round-4 rule applied to this arm: an inventory entry citing only the
+transition would stay green if the post-processing drifted onto something an
+observer reads.  Neither the stash clear (one `storeObject`) nor either stager
+(`writeReturnFrameToTcb`, which touches `registerContext` only) writes a
+scheduler slot or a register bank, so the composed step is confined to exactly
+the footprint the transition alone is. -/
+theorem declassifiedSignalDispatch_confinedToCores
+    (gctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
+    (st stT stS : SystemState) (sgi : Option (CoreId × Concurrency.SgiKind))
+    (woken? plainWaiter? : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationSignalDeclassifiedOnCore gctx declPolicy notificationId badge
+      executingCore st = (stT, .ok sgi))
+    (hStash : clearWokenReceiverStash woken? stT = .ok ((), stS)) :
+    observableSlotsConfinedToCores st
+      (Architecture.stageWokenDelivery
+        (Architecture.stageWokenDelivery stS woken? 0) plainWaiter? 0)
+      (declassifiedSignalEffectFootprint st notificationId).cores := by
+  -- Step 1: the transition.
+  have h1 := notificationSignalDeclassifiedOnCore_confinedToCores gctx declPolicy notificationId
+    badge executingCore st stT sgi hObjInv hStep
+  -- Step 2: the stash clear — one `storeObject`, scheduler- and machine-silent.
+  have h2 : observableSlotsConfinedToCores st stS
+      (declassifiedSignalEffectFootprint st notificationId).cores :=
+    observableSlotsConfinedToCores_of_framed_suffix
+      (clearWokenReceiverStash_scheduler_eq woken? stT ((), stS) hStash)
+      (clearWokenReceiverStash_machine_eq woken? stT ((), stS) hStash) h1
+  -- Step 3: the bound receiver's stager.
+  have h3 : observableSlotsConfinedToCores st
+      (Architecture.stageWokenDelivery stS woken? 0)
+      (declassifiedSignalEffectFootprint st notificationId).cores :=
+    observableSlotsConfinedToCores_of_framed_suffix
+      (Architecture.stageWokenDelivery_scheduler_eq stS woken? 0)
+      (Architecture.stageWokenDelivery_machine_eq stS woken? 0) h2
+  -- Step 4: the plain waiter's stager.
+  exact observableSlotsConfinedToCores_of_framed_suffix
+    (Architecture.stageWokenDelivery_scheduler_eq _ plainWaiter? 0)
+    (Architecture.stageWokenDelivery_machine_eq _ plainWaiter? 0) h3
+
+/-- WS-SM SM9.C.6 (**the inventory's citation**): the live `.declassifySignal`
+arm's committed post-state is invisible on every core outside the authorized
+effect footprint.
+
+This is the theorem `crossCoreNiTheorem` maps `.declassifySignalDispatch` to.
+It names the *whole arm*, not the transition, for the round-4 reason; and it is
+the one entry in the inventory whose write set is genuinely a *permission*
+boundary rather than only a safety one, which is why the footprint it quantifies
+over is `declassifiedSignalEffectFootprint` rather than a bare `List CoreId`. -/
+theorem declassifiedSignalDispatch_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (gctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (executingCore : CoreId)
+    (st stT stS : SystemState) (sgi : Option (CoreId × Concurrency.SgiKind))
+    (woken? plainWaiter? : Option SeLe4n.ThreadId) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationSignalDeclassifiedOnCore gctx declPolicy notificationId badge
+      executingCore st = (stT, .ok sgi))
+    (hStash : clearWokenReceiverStash woken? stT = .ok ((), stS))
+    (hne : c ∉ (declassifiedSignalEffectFootprint st notificationId).cores)
+    (hShared : sharedViewUnchanged ctx observer st
+      (Architecture.stageWokenDelivery
+        (Architecture.stageWokenDelivery stS woken? 0) plainWaiter? 0)) :
+    projectStateOnCore ctx observer
+        (Architecture.stageWokenDelivery
+          (Architecture.stageWokenDelivery stS woken? 0) plainWaiter? 0) c
+      = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (declassifiedSignalDispatch_confinedToCores gctx declPolicy notificationId badge
+      executingCore st stT stS sgi woken? plainWaiter? hObjInv hStep hStash) hShared
+
+-- ============================================================================
 -- §7  Coverage
 -- ============================================================================
 
@@ -4620,7 +4895,8 @@ theorem declassifyObjectFromCore_confinedToCores
     | none => exact absurd hStep (by simp)
     | some _ =>
       obtain ⟨hSt', -, -⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c
-        (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId) targetId st st' hStep
+        (declassificationActorOf ctx tid) (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
+        targetId st st' hStep
       subst hSt'
       exact ⟨rfl, rfl⟩
 
@@ -4885,6 +5161,13 @@ inductive CrossCoreTransition where
   writes **no** core: its whole state effect is one entry appended to the
   declassification audit trail, which is not a per-core field at all. -/
   | declassifyDispatch
+  /-- SM9.C.8 — the **live** `.declassifySignal` arm: the data-carrying
+  declassification.  The inventory's **only** entry whose write set is a
+  permission boundary as well as a safety one — every other transition here is
+  proven invisible, and this one is proven visible-but-bounded-and-recorded.
+  Its cores are SM6.B's own `notificationSignalBoundWriteSet`, because the
+  transition *is* the ordinary bound signal plus a trail append. -/
+  | declassifySignalDispatch
   /-- SM9.A.10 — the **live** `.auditRead` arm.  Takes an executing core (to
   resolve the *reader's* clearance from the running subject) and writes **no**
   core — in fact writes nothing at all.  Present because the routing gate
@@ -4907,7 +5190,8 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .suspendThreadDispatch, .resumeThreadDispatch,
    .setPriorityDispatch, .setMCPriorityDispatch,
    .vspaceMapDispatch, .vspaceUnmapDispatch, .lifecycleRetypeDispatch,
-   .declassifyDispatch, .auditReadDispatch, .auditDrainDispatch]
+   .declassifyDispatch, .declassifySignalDispatch,
+   .auditReadDispatch, .auditDrainDispatch]
 
 /-- SM8.B.2: **`all` really is all of them.**
 
@@ -4968,6 +5252,12 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference
   | .declassifyDispatch =>
       niName! declassifyObjectFromCore_crossCoreNonInterference
+  -- SM9.C.6: the DISPATCH-level composition, for the round-4 reason and one
+  -- more: this arm's post-processing (the stash clear and both WS-RA stagers)
+  -- runs on threads the delivery just woke, so a citation stopping at the
+  -- transition would leave the arm's most delivery-adjacent writes unbounded.
+  | .declassifySignalDispatch =>
+      niName! declassifiedSignalDispatch_crossCoreNonInterference
   -- PR #870 round 4: the two audit entries map to the DISPATCH-level
   -- composition — transition PLUS return-frame staging — because these are
   -- the inventory's only word-returning arms: the checked dispatch continues
@@ -4979,7 +5269,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .auditDrainDispatch =>
       niName! auditDrainDispatch_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 28 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 29 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -5039,12 +5329,13 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .vspaceMapDispatch => true
   | .vspaceUnmapDispatch => true
   | .declassifyDispatch => true
+  | .declassifySignalDispatch => true
   | .auditReadDispatch => true
   | .auditDrainDispatch => true
   | .lifecycleRetypeDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 21 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 22 := by decide
 
 -- The check is quadratic in the inventory and linear in each theorem name, and
 -- round 35's three entries (one of them 76 characters) pushed it past the
@@ -5134,6 +5425,7 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .vspaceMapDispatch => some .vspaceMap
   | .vspaceUnmapDispatch => some .vspaceUnmap
   | .declassifyDispatch => some .declassify
+  | .declassifySignalDispatch => some .declassifySignal
   | .auditReadDispatch => some .auditRead
   | .auditDrainDispatch => some .auditDrain
   | .lifecycleRetypeDispatch => some .lifecycleRetype
@@ -5176,6 +5468,8 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
   | .vspaceMapDispatch => .delegationProof .vspaceMap syscallDelegates_vspaceMap
   | .vspaceUnmapDispatch => .delegationProof .vspaceUnmap syscallDelegates_vspaceUnmap
   | .declassifyDispatch => .delegationProof .declassify syscallDelegates_declassify
+  | .declassifySignalDispatch =>
+      .delegationProof .declassifySignal syscallDelegates_declassifySignal
   | .auditReadDispatch => .delegationProof .auditRead syscallDelegates_auditRead
   | .auditDrainDispatch => .delegationProof .auditDrain syscallDelegates_auditDrain
   | .lifecycleRetypeDispatch =>
@@ -5214,7 +5508,7 @@ def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
     crossCoreTransitionIsLiveArm t && (crossCoreLiveArmEvidence t).isDelegationBacked)
 
 theorem crossCoreLiveArmDelegationBacked_count :
-    crossCoreLiveArmDelegationBacked.length = 13 := by decide
+    crossCoreLiveArmDelegationBacked.length = 14 := by decide
 
 /-- SM8.B.2: and the residual — the live arms still resting on a human reading
 of `API.lean`, which is the state every one of the three drifts occurred in. -/
@@ -5259,10 +5553,15 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   -- SM8.C.9: and the declassification, for a different reason — the only field
   -- it writes is not per-core at all
   | .declassifyDispatch => false
+  -- SM9.C.8: and the data-carrying declassification DOES write remotely — it
+  -- wakes the receiver on its own home core, exactly as the ordinary bound
+  -- signal it wraps.  The one entry here whose remote write is a *deliberately
+  -- visible* flow rather than an invisible one.
+  | .declassifySignalDispatch => true
   | .auditReadDispatch => false
   | .auditDrainDispatch => false
 
 theorem crossCoreTransitionWritesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 22 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 23 := by decide
 
 end SeLe4n.Kernel

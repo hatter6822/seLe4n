@@ -156,12 +156,13 @@ are live and both must be classified. -/
 def enforcementBoundaryPerCore : List EnforcementClass :=
   enforcementBoundaryExtended ++ crossCoreEnforcementEntries
 
-/-- SM8.B.6: the per-core boundary has 57 entries — the live canonical 42 (39
+/-- SM8.B.6: the per-core boundary has 58 entries — the live canonical 43 (39
 plus the 2PL bracket SM8.E.3 promoted into it, plus WS-SM SM9.A.11's two
-audit-trail entries) and the fifteen cross-core wrappers.  Re-anchored at the
+audit-trail entries, plus WS-SM SM9.C.8's data-carrying declassification) and
+the fifteen cross-core wrappers.  Re-anchored at the
 SM8.A cut, in the fourth review round, again in rounds 10 and 12 as the `.send`,
 resume and architecture arms joined the cross-core surface, in round 37 as the
-routing gate found `.tcbSetAffinity`, and at SM9.A.11.
+routing gate found `.tcbSetAffinity`, at SM9.A.11, and at SM9.C.8.
 `enforcementBoundaryExtended_count` is the authority for the base figure and
 this theorem for the total; the sentence above is worth what they are worth, and
 round 38 caught it stale at 53 one commit after the theorem moved.
@@ -169,7 +170,7 @@ round 38 caught it stale at 53 one commit after the theorem moved.
 The SM8.E.3 promotion left the total **unchanged**, which is the point of
 appending the bracket last in the canonical list; SM9.A.11 moves it, because the
 two audit entries are genuinely new operations rather than a reclassification. -/
-theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 57 := by rfl
+theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 58 := by rfl
 
 /-- SM8.B.7 (completeness, part 1): the per-core boundary **extends** the
 canonical one — it is the canonical list followed by the fifteen live cross-core
@@ -595,7 +596,7 @@ def acceptedCovertChannel_auditOccupancy : CovertChannel :=
        the freed count plus its timing (about 8 bits); a SUCCESSFUL probe \
        appends an attributed record to the very trail the monitor reads \
        (declassifyObjectFromCore_never_unaudited), and refused probes are \
-       unrecorded until SM9.B's refusal ledger — already in plan, which is \
+       counted and attributed in SM9.B's refusal ledger — landed, which is \
        the channel's monitoring half. The drain-flip witness is \
        auditDrain_flips_declassify_outcome."
     severity := .low

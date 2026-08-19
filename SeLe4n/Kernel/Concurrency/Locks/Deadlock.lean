@@ -738,10 +738,33 @@ theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
   unfold lockSet_replyRecv maxLockSetSize
   exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
 
-theorem lockSet_notificationSignal_size_le (a : ThreadId) (b c : ObjId) (d : Option ThreadId) :
-    (lockSet_notificationSignal a b c d).size ≤ maxLockSetSize := by
+-- WS-SM SM9.C.8: stated over **all six** arguments, including the SM6.B
+-- bound-delivery optionals.  Before this cut the theorem fixed those two at
+-- their `none` defaults, so the one footprint shape that can actually reach
+-- five members — a signal whose bound TCB is `BlockedOnReceive`, which
+-- additionally locks that TCB's endpoint and the TCB itself — had no size
+-- bound at all, and the WCRT reasoning built on `maxLockSetSize` did not cover
+-- the path SM6.B added.  The general form is `3 + 3 = 6 ≤ 8`, so nothing about
+-- the constant changes; what changes is that the bound now holds for the
+-- footprint the transition really declares.
+theorem lockSet_notificationSignal_size_le (a : ThreadId) (b c : ObjId)
+    (d : Option ThreadId) (e : Option ObjId) (f : Option ThreadId) :
+    (lockSet_notificationSignal a b c d e f).size ≤ maxLockSetSize := by
   unfold lockSet_notificationSignal maxLockSetSize
-  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
+
+/-- WS-SM SM9.C.8: the data-carrying declassification's footprint is within the
+static bound — the ordinary signal's three-optional shape plus the state-level
+write, so `3 + 4 = 7 ≤ 8`.
+
+One member of slack remains, which is the honest reading: this is the largest
+notification-side footprint the kernel declares, and it is *not* at the bound
+the way `lockSet_tcbSuspend` is (8 exactly). -/
+theorem lockSet_declassifySignal_size_le (a : ThreadId) (b c : ObjId)
+    (d : Option ThreadId) (e : Option ObjId) (f : Option ThreadId) :
+    (lockSet_declassifySignal a b c d e f).size ≤ maxLockSetSize := by
+  unfold lockSet_declassifySignal lockSet_notificationSignal maxLockSetSize
+  exact Nat.le_trans (size_le_4 _ _ _ _ _) (by size_bound)
 
 theorem lockSet_notificationWait_size_le (a : ThreadId) (b c : ObjId) :
     (lockSet_notificationWait a b c).size ≤ maxLockSetSize := by
@@ -878,20 +901,24 @@ theorem lockSet_tcbSetIPCBuffer_size_le (a : ThreadId) (b : ObjId) (c : ThreadId
   unfold lockSet_tcbSetIPCBuffer maxLockSetSize
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
-/-- WS-SM SM3.D.6b (aggregate): **every** one of the 29 per-transition
+/-- WS-SM SM3.D.6b (aggregate): **every** one of the 30 per-transition
 `lockSet_<τ>` declarations enumerated here has size `≤ maxLockSetSize`, for
 all arguments.  This discharges, once and for all, the size premise of
 `boundedWait_under_2pl` / the `KernelOperation` invariant for the real
 kernel transition surface — the bound is never vacuous.  (The audit pair
 joined at PR #870 round 6; the count named here was also corrected then —
-it had read "26" across two syscall additions.) -/
+it had read "26" across two syscall additions.  WS-SM SM9.C.8's
+`declassifySignal` is the thirtieth, and the same cut generalised the
+`notificationSignal` conjunct over its SM6.B bound-delivery optionals, which
+had been fixed at their `none` defaults and so left the five-member
+bound-delivery footprint unbounded.) -/
 theorem lockSetTransitions_within_bound :
     (∀ a b c d, (lockSet_endpointSend a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_endpointReceive a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d e, (lockSet_endpointCall a b c d e).size ≤ maxLockSetSize) ∧
     (∀ a b c d e, (lockSet_endpointReply a b c d e).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f g, (lockSet_replyRecv a b c d e f g).size ≤ maxLockSetSize) ∧
-    (∀ a b c d, (lockSet_notificationSignal a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f, (lockSet_notificationSignal a b c d e f).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_notificationWait a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceMint a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceCopy a b c).size ≤ maxLockSetSize) ∧
@@ -902,6 +929,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c, (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnifyInstruction a b c).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_declassify a b).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f, (lockSet_declassifySignal a b c d e f).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_auditRead a b).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_auditDrain a b).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_serviceRegister a b c).size ≤ maxLockSetSize) ∧
@@ -923,6 +951,7 @@ theorem lockSetTransitions_within_bound :
    lockSet_cspaceDelete_size_le, lockSet_lifecycleRetype_size_le,
    lockSet_vspaceMap_size_le, lockSet_vspaceUnmap_size_le,
    lockSet_vspaceUnifyInstruction_size_le, lockSet_declassify_size_le,
+   lockSet_declassifySignal_size_le,
    lockSet_auditRead_size_le, lockSet_auditDrain_size_le,
    lockSet_serviceRegister_size_le, lockSet_serviceRevoke_size_le,
    lockSet_serviceQuery_size_le, lockSet_schedContextConfigure_size_le,

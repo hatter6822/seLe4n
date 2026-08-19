@@ -217,6 +217,32 @@ theorem renderTagged_kernelIssued_iff_policyRule (b : DeclassificationBasis) :
 end DeclassificationBasis
 
 -- ============================================================================
+-- WS-SM SM9.C.1: the acting subject
+-- ============================================================================
+
+/-- WS-SM SM9.C.1: **who performed a downgrade** — the acting subject and the
+    domain the labeling assigns it, resolved together at production time.
+
+    Bundled rather than carried as two loose fields because the two are only
+    ever meaningful together: an identity without its domain cannot be checked
+    against the flow the event records, and a domain without its identity cannot
+    be attributed to a thread.  `declassificationEventAttributable` reads both.
+
+    The domain is stored, not recomputed: `GenericLabelingContext` is an
+    argument to the producers, not persistent state, so a later reader has no
+    labeling to resolve the subject against — the same reason
+    `DeclassificationEvent` stores its two flow domains rather than deriving
+    them (`refusalRecord_domain_is_seam_resolved` makes the identical point for
+    the refusal ledger). -/
+structure DeclassificationActor where
+  /-- The thread that performed the downgrade. -/
+  subject : SeLe4n.ThreadId
+  /-- That thread's security domain, resolved from the labeling at production
+      time. -/
+  domain : SecurityDomain
+  deriving Repr, DecidableEq, Inhabited
+
+-- ============================================================================
 -- V6-H (M-IF-6): the declassification event and the audit log
 -- ============================================================================
 
@@ -240,7 +266,13 @@ end DeclassificationBasis
     audit trail was a type with no writer.  Per the implement-the-improvement
     rule the producer was built rather than the claim weakened. -/
 structure DeclassificationEvent where
-  /-- Source domain initiating the declassification. -/
+  /-- Source domain of the **flow** this event authorized.
+
+      For a single-hop downgrade this is the acting subject's own domain and
+      coincides with `actorDomain`.  For the second hop of a two-hop delivery
+      (WS-SM SM9.C.1) it is the *intermediate object's* domain — the badge
+      leaves the notification and enters the receiver — which is why the actor
+      is a separate pair of fields below. -/
   srcDomain : SecurityDomain
   /-- Destination domain receiving the declassified information. -/
   dstDomain : SecurityDomain
@@ -269,6 +301,21 @@ structure DeclassificationEvent where
       would silently attribute every event to the boot core, which is the exact
       failure the field exists to prevent. -/
   originatingCore : Concurrency.CoreId
+  /-- WS-SM SM9.C.1: **who performed the downgrade**, as opposed to where the
+      flow came from.
+
+      The two stopped coinciding when a single transition began emitting one
+      event per authorized hop.  On a `high → mid` notification followed by a
+      `mid → low` delivery both events are performed by the same **high**
+      subject, so recording the second event's source as `mid` under SM8.C's
+      `attributionFromRunningSubject` rule would assert that the high subject
+      *is* mid — a false attribution written into the trail by the very fix
+      meant to make it honest.
+
+      Deliberately **not** defaulted, for the reason `originatingCore` is not: a
+      default (the source domain, say) would silently misattribute exactly the
+      events this field exists to attribute, while compiling everywhere. -/
+  actor : DeclassificationActor
   deriving Repr, DecidableEq
 
 /-- V6-H: An audit log is a list of declassification events, ordered by
@@ -666,7 +713,8 @@ def auditTimestampWitness (t : Nat) : DeclassificationEvent :=
     targetObject := SeLe4n.ObjId.ofNat 0
     authorizationBasis := .policyRule
     timestamp := t
-    originatingCore := Concurrency.bootCoreId }
+    originatingCore := Concurrency.bootCoreId
+    actor := { subject := SeLe4n.ThreadId.ofNat 0, domain := SecurityDomain.lowest } }
 
 /-- WS-SM SM9.A.1a (**the load-bearing negative**): the pre-epoch producer
 **reuses a timestamp after a drain**.

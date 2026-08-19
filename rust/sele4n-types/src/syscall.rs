@@ -5,7 +5,7 @@
 
 use crate::rights::AccessRight;
 
-/// Syscall identifier. 25 variants matching the Lean `SyscallId` inductive.
+/// Syscall identifier. 34 variants matching the Lean `SyscallId` inductive.
 ///
 /// The `toNat` encoding from Lean is reflected in the `#[repr(u64)]` discriminants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -78,11 +78,24 @@ pub enum SyscallId {
     // capability.
     AuditRead = 31,
     AuditDrain = 32,
+    // Data-carrying declassification (WS-SM, SM9.C.8): signal a notification
+    // whose badge may cross a boundary the base lattice denies.
+    //
+    // Unlike `Declassify`, which authorizes a downgrade and records it without
+    // moving any user data, this one performs the real delivery — the badge
+    // lands where an ordinary `NotificationSignal` would put it — and gates
+    // **two** hops: the signaller into the notification, and the notification
+    // onward into the *resolved receiver*.  An authorized signaller aimed at a
+    // sink the policy never authorized is refused at the second, with its own
+    // discriminant (`DeclassificationDeniedAtReceiver`), because a monitor
+    // reading a bare "denied" cannot tell an unauthorized caller from an
+    // authorized caller aimed at an unauthorized sink.
+    DeclassifySignal = 33,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 33;
+    pub const COUNT: usize = 34;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -121,6 +134,7 @@ impl SyscallId {
             30 => Some(Self::Declassify),
             31 => Some(Self::AuditRead),
             32 => Some(Self::AuditDrain),
+            33 => Some(Self::DeclassifySignal),
             _ => None,
         }
     }
@@ -171,6 +185,13 @@ impl SyscallId {
             // deployment mint a reader that cannot remove evidence.
             Self::AuditRead => AccessRight::Read,
             Self::AuditDrain => AccessRight::Write,
+            // WS-SM SM9.C.8: the data-carrying declassification signals a
+            // notification, so its authority is the same write right the
+            // ordinary signal requires.  The declassification is an
+            // *additional* gate on top of that authority, never a substitute:
+            // a read-only notification cap cannot signal, and so cannot
+            // declassify through a signal either, whatever the policy says.
+            Self::DeclassifySignal => AccessRight::Write,
         }
     }
 }

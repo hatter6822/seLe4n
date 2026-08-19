@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Kernel error enumeration — mirrors `SeLe4n.Model.KernelError`.
 //!
-//! Lean source: `SeLe4n/Model/State.lean` lines 19–97.
-//! Discriminants 0–55 are a 1:1 mapping from the Lean inductive (56 variants
-//! after WS-SM SM9.A.2's `AuditFieldTooLarge` at 55, WS-SM SM8.C.9's
+//! Lean source: `SeLe4n/Model/KernelError.lean`.
+//! Discriminants 0–56 are a 1:1 mapping from the Lean inductive (57 variants
+//! after WS-SM SM9.C.1's `DeclassificationDeniedAtReceiver` at 56,
+//! WS-SM SM9.A.2's `AuditFieldTooLarge` at 55, WS-SM SM8.C.9's
 //! `AuditLogCapacityExceeded` at 54 and WS-SM SM5.B's
 //! `ThreadOnDifferentCore` at 53, extending R5.E's
 //! `MissingSchedContext` at 52 and AN7-E's `PartialResolution` at 51).
@@ -135,8 +136,16 @@ pub enum KernelError {
     /// the *value* that does not fit, which is a statement about the kernel's
     /// export width and not about the request.
     AuditFieldTooLarge = 55,
+    /// WS-SM SM9.C.1: a data-carrying declassification gates **two** hops — the
+    /// caller into the notification, and the notification onward into the
+    /// resolved receiver — and this is the second one refusing.  Distinct from
+    /// `DeclassificationDenied` because the refusal ledger stores exactly this
+    /// field, and a monitor reading a bare "denied" cannot tell an unauthorized
+    /// caller from an authorized caller aimed at an unauthorized sink; the two
+    /// call for opposite responses.
+    DeclassificationDeniedAtReceiver = 56,
     /// AF6-A: Kernel returned an error code not recognized by this ABI version.
-    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–55.
+    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–56.
     UnknownKernelError = 255,
 }
 
@@ -200,6 +209,7 @@ impl KernelError {
             53 => Some(Self::ThreadOnDifferentCore),
             54 => Some(Self::AuditLogCapacityExceeded),
             55 => Some(Self::AuditFieldTooLarge),
+            56 => Some(Self::DeclassificationDeniedAtReceiver),
             255 => Some(Self::UnknownKernelError),
             _ => None,
         }
@@ -266,6 +276,7 @@ impl std::fmt::Display for KernelError {
             Self::ThreadOnDifferentCore => write!(f, "thread bound to a different core (context switch never migrates)"),
             Self::AuditLogCapacityExceeded => write!(f, "declassification audit trail full (downgrade refused rather than left unrecorded)"),
             Self::AuditFieldTooLarge => write!(f, "audit field too wide to export (read refused rather than truncated)"),
+            Self::DeclassificationDeniedAtReceiver => write!(f, "declassification denied at the resolved receiver (the second hop, not the caller's)"),
             Self::UnknownKernelError => write!(f, "unknown kernel error"),
         }
     }
@@ -285,7 +296,8 @@ mod tests {
         // WS-SM SM5.B.4: ThreadOnDifferentCore added at discriminant 53.
         // WS-SM SM8.C.9: AuditLogCapacityExceeded added at discriminant 54.
         // WS-SM SM9.A.2: AuditFieldTooLarge added at discriminant 55.
-        for i in 0..=55u32 {
+        // WS-SM SM9.C.1: DeclassificationDeniedAtReceiver added at discriminant 56.
+        for i in 0..=56u32 {
             let e = KernelError::from_u32(i).unwrap();
             assert_eq!(e as u32, i);
         }
@@ -294,7 +306,7 @@ mod tests {
     #[test]
     fn from_u32_out_of_range() {
         // T1-G: Discriminants in gaps and beyond range must return None
-        assert!(KernelError::from_u32(56).is_none());
+        assert!(KernelError::from_u32(57).is_none());
         assert!(KernelError::from_u32(254).is_none());
         // 255 is now UnknownKernelError (AF6-A sentinel)
         assert_eq!(
@@ -344,23 +356,23 @@ mod tests {
     ///   | allocationMisaligned    (37)
     #[test]
     fn lean_rust_correspondence() {
-        // WS-SM SM9.A.2: 56 variants (0-55) — verify total variant count
-        // matches Lean (extends SM8.C.9's range of 0..=54).
-        let max_valid = 55u32;
+        // WS-SM SM9.C.1: 57 variants (0-56) — verify total variant count
+        // matches Lean (extends SM9.A.2's range of 0..=55).
+        let max_valid = 56u32;
         assert!(KernelError::from_u32(max_valid).is_some());
         assert!(KernelError::from_u32(max_valid + 1).is_none());
 
-        // Verify from_u32: unknown discriminants in the gap (56–254) return None
+        // Verify from_u32: unknown discriminants in the gap (57–254) return None
         assert!(KernelError::from_u32(100).is_none());
     }
 
-    /// T1-H: Discriminant ordering — kernel variants 0–55 are sequential.
-    /// WS-SM SM9.A.2 extended the range with AuditFieldTooLarge at 55;
-    /// WS-SM SM8.C.9 previously extended it with AuditLogCapacityExceeded at 54.
+    /// T1-H: Discriminant ordering — kernel variants 0–56 are sequential.
+    /// WS-SM SM9.C.1 extended the range with DeclassificationDeniedAtReceiver
+    /// at 56; WS-SM SM9.A.2 previously extended it with AuditFieldTooLarge at 55.
     #[test]
     fn discriminant_ordering() {
         let mut prev = None;
-        for i in 0..=55u32 {
+        for i in 0..=56u32 {
             let e = KernelError::from_u32(i);
             assert!(e.is_some(), "gap at discriminant {i}");
             if let Some(p) = prev {
@@ -371,7 +383,7 @@ mod tests {
     }
 
     /// AF6-A: UnknownKernelError sentinel at discriminant 255.
-    /// WS-SM SM9.A.2: the 55 gap closed, so the None range starts at 56.
+    /// WS-SM SM9.C.1: the 56 gap closed, so the None range starts at 57.
     #[test]
     fn unknown_kernel_error_sentinel() {
         assert_eq!(KernelError::UnknownKernelError as u32, 255);
@@ -379,8 +391,8 @@ mod tests {
             KernelError::from_u32(255),
             Some(KernelError::UnknownKernelError)
         );
-        // Gap between 55 and 255 is all None
-        for i in 56..255u32 {
+        // Gap between 56 and 255 is all None
+        for i in 57..255u32 {
             assert!(
                 KernelError::from_u32(i).is_none(),
                 "unexpected variant at {i}"
