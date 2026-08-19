@@ -143,6 +143,12 @@ def lockSetForSyscall (sid : SyscallId) (callerTid targetTid : ThreadId)
   | .tcbSetIPCBuffer | .tcbSetAffinity
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify
+  -- WS-SM SM9.C.8: `.declassifySignal` is undeclared here for the same reason,
+  -- and its per-object footprint (`lockSet_declassifySignal`) is the ordinary
+  -- signal's set plus the state-level write its trail append needs.  The
+  -- caller TCB stays `.read` — the syscall is `.unit`-shaped, so unlike the
+  -- audit pair the committed dispatch stages nothing into the caller's TCB.
+  | .declassifySignal
   -- WS-SM SM9.A.12: the audit reader and the drain are undeclared here for the
   -- same reason as every other arm — the declared-footprint bracket is SM3.C.9
   -- work, not SM9.A work.  Their per-object footprints (`lockSet_auditRead` /

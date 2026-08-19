@@ -289,6 +289,23 @@ def enforcementBoundary : List EnforcementClass :=
   -- admitted.  Classifying it capability-only would say the capability alone
   -- authorizes the downgrade, which is exactly what it does not.
   , .policyGated "declassifyObjectFromCore"
+  -- WS-SM SM9.C.8: the *data-carrying* declassification.  **Policy-gated**, and
+  -- for the same reason as its sibling above — it runs
+  -- `declassificationDecision` at each hop, so a flow the lattice forbids is
+  -- admitted only where the declassification policy says so.
+  --
+  -- What makes this entry different from `declassifyObjectFromCore` is that it
+  -- gates **two** hops: the signaller into the notification, and the
+  -- notification onward into the *resolved receiver*.  A classification naming
+  -- only the first would be the badge-leak class SM6.B closed at v0.31.73 —
+  -- an authorized signaller aimed at a sink the policy never authorized — so
+  -- the boundary entry names the transition that performs both checks, not the
+  -- ordinary `notificationSignalBoundOnCore` it wraps.
+  --
+  -- The label is the LIVE entry the `.declassifySignal` arm calls (the PR #870
+  -- round-5 rule): the executing core, and hence both the actor identity the
+  -- audit records and the wake target, are read from the state inside it.
+  , .policyGated "notificationSignalDeclassifiedCrossCoreDispatch"
   -- WS-SM SM9.A.11: the declassification audit trail's reader and drain.
   -- **Capability-only**, and the classification is the honest one rather than
   -- the flattering one.  Neither consults an information-flow *policy* the way
@@ -375,6 +392,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .mintReplyCap          => "mintReplyCapWithCdt"
   | .vspaceUnifyInstruction => "vspaceUnifyInstructionPage"
   | .declassify            => "declassifyObjectFromCore"
+  | .declassifySignal      => "notificationSignalDeclassifiedCrossCoreDispatch"
   | .auditRead             => "auditReadFromCore"
   | .auditDrain            => "auditDrainVisiblePrefix"
 

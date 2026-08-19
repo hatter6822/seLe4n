@@ -174,13 +174,13 @@ private def sd002_errorLabelCarriage : IO Unit := do
           (frame.x0 == 0 && frame.x2 == 0 && frame.x3 == 0 &&
            frame.x4 == 0 && frame.x5 == 0)
           "errorFrame carries nothing outside x1"
-  -- The boundary, both ways: 55 is the last discriminant, 56 is rejected.
-  expect "sd002e_last_discriminant_55"
-    ((SeLe4n.Model.KernelError.ofDiscriminant? 55).isSome)
-    "discriminant 55 (auditFieldTooLarge) must resolve"
-  expect "sd002f_boundary_56_rejected"
-    ((SeLe4n.Model.KernelError.ofDiscriminant? 56).isNone)
-    "discriminant 56 must not resolve (fail-closed)"
+  -- The boundary, both ways: 56 is the last discriminant, 57 is rejected.
+  expect "sd002e_last_discriminant_56"
+    ((SeLe4n.Model.KernelError.ofDiscriminant? 56).isSome)
+    "discriminant 56 (declassificationDeniedAtReceiver) must resolve"
+  expect "sd002f_boundary_57_rejected"
+    ((SeLe4n.Model.KernelError.ofDiscriminant? 57).isNone)
+    "discriminant 57 must not resolve (fail-closed)"
 
 /-- SD-003 (WS-RA shape): the label round trip and its non-aliasing — no
 error's label is the success label `0`, every label decodes back to its

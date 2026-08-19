@@ -46,7 +46,7 @@ use sele4n_types::{CPtr, KernelResult, SyscallId};
 /// Number of `audit_read` sub-operation opcodes.  Mirrors Lean's
 /// `auditReadOpcodeCount`; a divergence would surface as
 /// `InvalidSyscallArgument` on a valid request rather than as a decode bug.
-pub const AUDIT_READ_OPCODE_COUNT: u64 = 21;
+pub const AUDIT_READ_OPCODE_COUNT: u64 = 25;
 
 /// The `audit_read` sub-operations, mirroring Lean's `AuditReadOp`.
 ///
@@ -115,6 +115,20 @@ pub enum AuditReadOpcode {
     RefusalSubjectDomain = 19,
     /// One chunk of the ring slot's requested capability pointer.
     RefusalRequestedTarget = 20,
+    // WS-SM SM9.C.1: the **actor** — the subject the originating core was
+    // running when the downgrade was performed, and the domain the labeling
+    // gave it.  A separate field from `SrcDomain` because a two-hop delivery's
+    // second event has a source domain that is nobody's subject domain: the
+    // notification's.  Appended after the refusal opcodes, so every earlier
+    // opcode keeps its value.
+    /// Chunk count for the entry's actor thread id.
+    ActorSubjectChunks = 21,
+    /// Chunk count for the entry's actor domain.
+    ActorDomainChunks = 22,
+    /// One chunk of the entry's actor thread id.
+    ActorSubject = 23,
+    /// One chunk of the entry's actor domain.
+    ActorDomain = 24,
 }
 
 impl AuditReadOpcode {
@@ -122,6 +136,49 @@ impl AuditReadOpcode {
     #[inline]
     pub const fn to_u64(self) -> u64 {
         self as u64
+    }
+
+    /// Decode a raw operand, mirroring Lean's `decodeAuditReadOp` boundary:
+    /// `None` for anything the ABI does not define, which the kernel answers
+    /// with `InvalidSyscallArgument`.
+    ///
+    /// WS-SM SM9.C.1: added because `AUDIT_READ_OPCODE_COUNT` was previously a
+    /// bare constant checked only against this enum's own last variant — which
+    /// stays self-consistent however far the Lean side moves, and did: the four
+    /// actor opcodes landed in Lean while this mirror sat at 21, so a monitor
+    /// using the wrapper could not read the field the kernel had started
+    /// recording.  With this decoder the count is the *boundary* rather than a
+    /// restatement, so `opcode_density` below fails if a variant is missing.
+    #[inline]
+    pub const fn from_u64(v: u64) -> Option<Self> {
+        match v {
+            0 => Some(Self::Status),
+            1 => Some(Self::SrcDomainChunks),
+            2 => Some(Self::DstDomainChunks),
+            3 => Some(Self::TargetObjectChunks),
+            4 => Some(Self::TimestampChunks),
+            5 => Some(Self::SrcDomain),
+            6 => Some(Self::DstDomain),
+            7 => Some(Self::TargetObject),
+            8 => Some(Self::Timestamp),
+            9 => Some(Self::CoreAndTrust),
+            10 => Some(Self::BasisByteCount),
+            11 => Some(Self::BasisChunk),
+            12 => Some(Self::RefusalStatus),
+            13 => Some(Self::RefusalCounters),
+            14 => Some(Self::RefusalSlotTags),
+            15 => Some(Self::RefusalSubjectChunks),
+            16 => Some(Self::RefusalSubjectDomainChunks),
+            17 => Some(Self::RefusalRequestedTargetChunks),
+            18 => Some(Self::RefusalSubject),
+            19 => Some(Self::RefusalSubjectDomain),
+            20 => Some(Self::RefusalRequestedTarget),
+            21 => Some(Self::ActorSubjectChunks),
+            22 => Some(Self::ActorDomainChunks),
+            23 => Some(Self::ActorSubject),
+            24 => Some(Self::ActorDomain),
+            _ => None,
+        }
     }
 }
 
@@ -408,12 +465,44 @@ mod tests {
         assert_eq!(AuditReadOpcode::RefusalSubject.to_u64(), 18);
         assert_eq!(AuditReadOpcode::RefusalSubjectDomain.to_u64(), 19);
         assert_eq!(AuditReadOpcode::RefusalRequestedTarget.to_u64(), 20);
+        // WS-SM SM9.C.1: the actor pair, appended so the refusal opcodes above
+        // and the trail opcodes below them are unmoved.
+        assert_eq!(AuditReadOpcode::ActorSubjectChunks.to_u64(), 21);
+        assert_eq!(AuditReadOpcode::ActorDomainChunks.to_u64(), 22);
+        assert_eq!(AuditReadOpcode::ActorSubject.to_u64(), 23);
+        assert_eq!(AuditReadOpcode::ActorDomain.to_u64(), 24);
         // Every opcode is below the count, and the count is the first value the
         // kernel refuses.
         assert_eq!(
-            AuditReadOpcode::RefusalRequestedTarget.to_u64() + 1,
+            AuditReadOpcode::ActorDomain.to_u64() + 1,
             AUDIT_READ_OPCODE_COUNT
         );
+    }
+
+    /// WS-SM SM9.C.1: **the count is the decoder's boundary, not a
+    /// restatement.**
+    ///
+    /// The assertion above compares `AUDIT_READ_OPCODE_COUNT` against this
+    /// enum's own last variant, so it stays green however far the Lean side
+    /// moves — and it did: SM9.C.1 added four actor opcodes in Lean while this
+    /// mirror sat at 21, and no Rust test could see it.  What is checked here
+    /// instead is *density*: every value below the count decodes to a variant
+    /// and round-trips, and the count itself is the first refusal.  Bumping the
+    /// constant to follow Lean without adding the variants now fails here
+    /// rather than silently widening the accepted range, and the Tier-3 anchor
+    /// pinning the literal in both files is what ties the count to Lean's.
+    #[test]
+    fn opcode_density_makes_the_count_meaningful() {
+        for v in 0..AUDIT_READ_OPCODE_COUNT {
+            let op = AuditReadOpcode::from_u64(v)
+                .unwrap_or_else(|| panic!("opcode {v} is below the count but decodes to nothing"));
+            assert_eq!(op.to_u64(), v, "opcode {v} does not round-trip");
+        }
+        assert!(
+            AuditReadOpcode::from_u64(AUDIT_READ_OPCODE_COUNT).is_none(),
+            "the count must be the first value the ABI refuses"
+        );
+        assert!(AuditReadOpcode::from_u64(u64::MAX).is_none());
     }
 
     /// WS-SM SM9.B.10: the refusal ledger's word decoders round-trip, matching

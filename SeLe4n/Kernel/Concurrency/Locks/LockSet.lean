@@ -443,6 +443,32 @@ theorem mem_insertOrMerge_write_of_mem_write (S : LockSet) (l : LockId)
   · -- Prepend branch.
     exact List.mem_cons_of_mem _ hMem
 
+/-- WS-SM SM9.C.8: inserting a **write**-mode pair makes it a member,
+unconditionally on whether the key was already present.
+
+The mode-specific companion of `mem_insertOrMerge_write_of_mem_write` (which
+carries an *existing* write member through an insertion): this one is about the
+inserted pair itself.  Both branches land on `(l, .write)` — the prepend branch
+literally, and the merge branch because `AccessMode.lub` has `.write` as its
+top, so an existing `(l, m)` becomes `(l, m.lub .write) = (l, .write)`.
+
+Needed because a footprint built as "an existing set, plus a state-level write"
+(`lockSet_declassifySignal`) must be able to name that write as a declared
+member without first proving the inner set does not already carry the key —
+which is the whole point of composing footprints rather than rewriting them. -/
+theorem mem_insertOrMerge_write_self (S : LockSet) (l : LockId) :
+    (l, AccessMode.write) ∈ (S.insertOrMerge l AccessMode.write).pairs := by
+  unfold LockSet.insertOrMerge
+  split
+  case h_1 hContains =>
+    -- Merge branch: the key is present, so some `(l, m)` is in `S.pairs` and
+    -- its image under the map is `(l, m.lub .write) = (l, .write)`.
+    obtain ⟨m, hMem⟩ := (LockSet.containsKey_iff l S).mp hContains
+    exact List.mem_map.mpr ⟨(l, m), hMem, by simp [AccessMode.lub_write_right]⟩
+  case h_2 _ =>
+    -- Prepend branch.
+    exact List.mem_cons_self ..
+
 /-- WS-SM SM3.B: every element of `S₁.union S₂` traces back to an
 element of `S₁` or has its `fst` key matching some element's `fst`
 in `S₂`.

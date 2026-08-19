@@ -546,17 +546,17 @@ fn syscall_id_exhaustive_roundtrip() {
     assert!(SyscallId::from_u64(SyscallId::COUNT as u64).is_none());
 }
 
-/// Verify KernelError roundtrip for all 56 variants.
-/// WS-SM SM9.A.2: AuditFieldTooLarge at 55 extends SM8.C.9's range of 0..=54
-/// (which extended SM5.B.4's range of 0..=53).
+/// Verify KernelError roundtrip for all 57 variants.
+/// WS-SM SM9.C.1: DeclassificationDeniedAtReceiver at 56 extends SM9.A.2's
+/// range of 0..=55 (which extended SM8.C.9's range of 0..=54).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    for i in 0..=55u32 {
+    for i in 0..=56u32 {
         let err =
             KernelError::from_u32(i).unwrap_or_else(|| panic!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
-    assert!(KernelError::from_u32(56).is_none());
+    assert!(KernelError::from_u32(57).is_none());
 }
 
 /// Verify TypeTag roundtrip for all 8 variants (0–7, including SchedContext + Reply).
@@ -856,14 +856,14 @@ fn access_rights_ops_preserve_validity() {
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
 fn kernel_error_non_exhaustive() {
-    // WS-SM SM9.A.2: 56 variants (0–55) roundtrip
-    // (SM8.C.9 previously stood at 54 with AuditLogCapacityExceeded).
-    for i in 0..=55u32 {
+    // WS-SM SM9.C.1: 57 variants (0–56) roundtrip
+    // (SM9.A.2 previously stood at 55 with AuditFieldTooLarge).
+    for i in 0..=56u32 {
         let e = KernelError::from_u32(i).unwrap();
         assert_eq!(e as u32, i);
     }
     // Future discriminants return None
-    assert!(KernelError::from_u32(56).is_none());
+    assert!(KernelError::from_u32(57).is_none());
     assert!(KernelError::from_u32(100).is_none());
     assert!(KernelError::from_u32(u32::MAX).is_none());
 }
@@ -930,9 +930,9 @@ fn unknown_kernel_error_fallback() {
     use sele4n_abi::decode_response;
 
     // WS-RA: errors ride the x1 label offset by one — label d+1 names
-    // discriminant d.  Discriminant 56 — first unrecognized after
-    // AuditFieldTooLarge (55).
-    let regs = [0, 57u64 << 9, 0, 0, 0, 0, 0];
+    // discriminant d.  Discriminant 57 — first unrecognized after
+    // DeclassificationDeniedAtReceiver (56).
+    let regs = [0, 58u64 << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
     // Discriminant 100 — arbitrary unrecognized code
@@ -1100,13 +1100,13 @@ fn identifier_validation() {
 // ============================================================================
 
 /// W1-H / AA1 / AG3 / AL6 / AL1b / AN7-E / R5.E / WS-SM SM5.B: KernelError
-/// variant count matches Lean (56 variants, 0-55 after SM9.A.2 added
-/// AuditFieldTooLarge at 55; SM8.C.9 previously added
-/// AuditLogCapacityExceeded at 54).  Detects Lean-Rust enum divergence
+/// variant count matches Lean (57 variants, 0-56 after SM9.C.1 added
+/// DeclassificationDeniedAtReceiver at 56; SM9.A.2 previously added
+/// AuditFieldTooLarge at 55).  Detects Lean-Rust enum divergence
 /// automatically.
 #[test]
 fn kernel_error_variant_count() {
-    const KERNEL_ERROR_COUNT: u32 = 56;
+    const KERNEL_ERROR_COUNT: u32 = 57;
     // All expected variants exist
     for i in 0..KERNEL_ERROR_COUNT {
         assert!(
@@ -1121,14 +1121,14 @@ fn kernel_error_variant_count() {
     );
 }
 
-/// W1-H / AA1 / D6: SyscallId variant count matches Lean (33 variants, 0-32;
-/// WS-SM SM6.B added Tcb{Bind,Unbind}Notification at 26/27; PR #822 Phase H added
-/// MintReplyCap at 28; WS-SM SM7.D added VSpaceUnifyInstruction at 29; WS-SM
-/// SM8.C.9 added Declassify at 30; WS-SM SM9.A.6 added AuditRead at 31 and
-/// AuditDrain at 32).
+/// W1-H / AA1 / D6: SyscallId variant count matches Lean (34 variants, 0-33;
+/// PR #822 Phase H added MintReplyCap at 28; WS-SM SM7.D added
+/// VSpaceUnifyInstruction at 29; WS-SM SM8.C.9 added Declassify at 30; WS-SM
+/// SM9.A.6 added AuditRead at 31 and AuditDrain at 32; WS-SM SM9.C.8 added
+/// DeclassifySignal at 33).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 33;
+    const SYSCALL_COUNT: u64 = 34;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
         assert!(
@@ -1273,13 +1273,12 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is updated to 33 (WS-SM SM9.A.6 added AuditRead and
-/// AuditDrain, on top of WS-SM SM8.C.9's Declassify, WS-SM SM7.D's
-/// VSpaceUnifyInstruction, PR #822 Phase H's MintReplyCap and WS-SM SM6.B's
-/// Tcb{Bind,Unbind}Notification).
+/// AA1-B-5: COUNT is updated to 34 (WS-SM SM9.C.8 added DeclassifySignal, on
+/// top of WS-SM SM9.A.6's AuditRead/AuditDrain, WS-SM SM8.C.9's Declassify,
+/// WS-SM SM7.D's VSpaceUnifyInstruction and PR #822 Phase H's MintReplyCap).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 33);
+    assert_eq!(SyscallId::COUNT, 34);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1489,7 +1488,8 @@ fn error_boundary_after_invalid_irq() {
     assert!(KernelError::from_u32(53).is_some()); // ThreadOnDifferentCore (SM5.B)
     assert!(KernelError::from_u32(54).is_some()); // AuditLogCapacityExceeded (SM8.C.9)
     assert!(KernelError::from_u32(55).is_some()); // AuditFieldTooLarge (SM9.A.2)
-    assert!(KernelError::from_u32(56).is_none());
+    assert!(KernelError::from_u32(56).is_some()); // DeclassificationDeniedAtReceiver (SM9.C.1)
+    assert!(KernelError::from_u32(57).is_none());
 }
 
 // --- D6: TCB operation conformance ---
@@ -1601,14 +1601,13 @@ fn declassify_roundtrip() {
     assert_eq!(sid.required_right(), AccessRight::Write);
 }
 
-/// D6-D5: Boundary — discriminant 33 is out of range for SyscallId
-/// (WS-SM SM9.A.6 added the two audit accessors, moving the boundary from 30
-/// to 32).
+/// D6-D5: Boundary — discriminant 34 is out of range for SyscallId
+/// (WS-SM SM9.C.8 added DeclassifySignal, moving the boundary from 32 to 33).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(32).is_some()); // Last valid
-    assert!(SyscallId::from_u64(33).is_none()); // First invalid
-    assert_eq!(SyscallId::COUNT, 33);
+    assert!(SyscallId::from_u64(33).is_some()); // Last valid
+    assert!(SyscallId::from_u64(34).is_none()); // First invalid
+    assert_eq!(SyscallId::COUNT, 34);
 }
 
 /// WS-SM SM9.A.6: AuditRead roundtrip (discriminant 31).
@@ -2127,6 +2126,8 @@ fn wrapper_lengths_clear_prefilter_minimums() {
 
     let _ = sele4n_sys::declassify::declassify(cap);
     assert_clears("declassify", SyscallId::Declassify);
+    let _ = sele4n_sys::declassify::declassify_signal(cap, Badge::from(0x2bu64));
+    assert_clears("declassify_signal", SyscallId::DeclassifySignal);
 
     let _ = sele4n_sys::audit::audit_read(cap, sele4n_sys::audit::AuditReadOpcode::Status, 0, 0);
     assert_clears("audit_read", SyscallId::AuditRead);

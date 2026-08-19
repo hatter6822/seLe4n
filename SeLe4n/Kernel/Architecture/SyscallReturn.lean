@@ -99,6 +99,7 @@ def toDiscriminant : KernelError → Nat
   | .threadOnDifferentCore         => 53
   | .auditLogCapacityExceeded      => 54
   | .auditFieldTooLarge            => 55
+  | .declassificationDeniedAtReceiver => 56
 
 /-- The inverse the tree never had: `Platform.FFI.KernelError.toUInt32` is
 one-directional, and the Rust side decodes with its own
@@ -162,25 +163,26 @@ def ofDiscriminant? : Nat → Option KernelError
   | 53 => some .threadOnDifferentCore
   | 54 => some .auditLogCapacityExceeded
   | 55 => some .auditFieldTooLarge
+  | 56 => some .declassificationDeniedAtReceiver
   | _  => none
 
 /-- The discriminant map is a section of its inverse: every `KernelError`
 survives the numeric round trip.  With `toDiscriminant_lt` this pins the
-map as a bijection onto `0..55`. -/
+map as a bijection onto `0..56`. -/
 theorem ofDiscriminant?_toDiscriminant (e : KernelError) :
     ofDiscriminant? (toDiscriminant e) = some e := by
   cases e <;> rfl
 
-/-- Every discriminant is inside the 56-entry table. -/
-theorem toDiscriminant_lt (e : KernelError) : toDiscriminant e < 56 := by
+/-- Every discriminant is inside the 57-entry table. -/
+theorem toDiscriminant_lt (e : KernelError) : toDiscriminant e < 57 := by
   cases e <;> decide
 
 /-- The other direction of the round trip, over the whole in-range domain:
-below 56 the inverse hits and maps back to the same discriminant; 56 itself
+below 57 the inverse hits and maps back to the same discriminant; 57 itself
 (the first out-of-range value) is rejected. -/
 theorem toDiscriminant_ofDiscriminant? :
-    (∀ n, n < 56 → ((ofDiscriminant? n).map toDiscriminant) = some n) ∧
-      ofDiscriminant? 56 = none := by
+    (∀ n, n < 57 → ((ofDiscriminant? n).map toDiscriminant) = some n) ∧
+      ofDiscriminant? 57 = none := by
   constructor
   · decide
   · rfl
@@ -266,6 +268,11 @@ def syscallReturnShape : SyscallId → ReturnShape
   -- audit word is a scalar the kernel computed, not a badge a sender chose.
   | .auditRead             => .word
   | .auditDrain            => .word
+  -- WS-SM SM9.C.8: a declassifying signal returns nothing, exactly like the
+  -- ordinary `.notificationSignal` it wraps — the badge it moves is delivered
+  -- to the *receiver*, not returned to the signaller, so there is no value at
+  -- this boundary to shape.
+  | .declassifySignal      => .unit
 
 /-- Totality anchor (RA.A.2).  The *mechanism* is the definition itself —
 an exhaustive match with no wildcard, so elaboration rejects a tree where a
@@ -597,6 +604,24 @@ theorem writeReturnFrameToTcb_machine_eq
   | none => rfl
   | some tcb => rfl
 
+/-- WS-SM SM9.C.8 frame lemma: the declassification audit trail is untouched.
+
+Needed because a *dispatch arm* that stages a return frame after a
+declassifying transition must be shown not to grow the trail — the transition's
+own trail statement covers the transition only, and an arm that appended in its
+post-processing would falsify the arm-level property while leaving the
+transition's theorem true.  The staging writes one TCB, so the trail rides the
+`with` reconstruction definitionally. -/
+theorem writeReturnFrameToTcb_declassificationAuditLog_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : SyscallReturnFrame) :
+    (writeReturnFrameToTcb st tid frame).declassificationAuditLog =
+      st.declassificationAuditLog := by
+  unfold writeReturnFrameToTcb
+  cases h : st.getTcb? tid with
+  | none => rfl
+  | some tcb => rfl
+
 /-- WS-RA RA.B.1: staging a frame for a target that is not a TCB is the
 identity — the totality witness, mirroring
 `writeFfiRegistersToTcb_id_when_not_tcb`. -/
@@ -670,6 +695,24 @@ theorem stageDeliveredMessage_machine_eq
         cases tcb.pendingMessage with
         | none => rfl
         | some msg => exact writeReturnFrameToTcb_machine_eq st tid _
+      · simp [hReady]
+
+/-- WS-SM SM9.C.8 frame lemma: delivery staging never touches the
+declassification audit trail (the lift of
+`writeReturnFrameToTcb_declassificationAuditLog_eq`). -/
+theorem stageDeliveredMessage_declassificationAuditLog_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat) :
+    (stageDeliveredMessage st tid installedCaps).declassificationAuditLog =
+      st.declassificationAuditLog := by
+  unfold stageDeliveredMessage
+  cases st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+      by_cases hReady : tcb.ipcState = .ready
+      · simp only [hReady, if_pos]
+        cases tcb.pendingMessage with
+        | none => rfl
+        | some msg => exact writeReturnFrameToTcb_declassificationAuditLog_eq st tid _
       · simp [hReady]
 
 /-- A blocked caller stages nothing — `stageDeliveredMessage` is the
@@ -810,6 +853,16 @@ theorem stageWokenDelivery_machine_eq (st : SystemState)
   | none => rfl
   | some tid => exact stageDeliveredMessage_machine_eq st tid installedCaps
 
+/-- WS-SM SM9.C.8 frame lemma: the delivery stager never touches the
+declassification audit trail. -/
+theorem stageWokenDelivery_declassificationAuditLog_eq (st : SystemState)
+    (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat) :
+    (stageWokenDelivery st woken? installedCaps).declassificationAuditLog =
+      st.declassificationAuditLog := by
+  cases woken? with
+  | none => rfl
+  | some tid => exact stageDeliveredMessage_declassificationAuditLog_eq st tid installedCaps
+
 /-- RA.B.5b frame lemma: the completion stager never touches the
 scheduler. -/
 theorem stageWokenSendCompletion_scheduler_eq (st : SystemState)
@@ -912,18 +965,18 @@ theorem errorLabel_roundtrip (e : KernelError) :
   KernelError.ofDiscriminant?_toDiscriminant e
 
 /-- The decode side over the whole in-range domain: label `0` is success,
-labels `1..56` hit their errors and re-encode to themselves, label `57`
+labels `1..57` hit their errors and re-encode to themselves, label `58`
 (the first out-of-range value) is rejected — so label `0` decodes as
 success and *only* label `0` does, on the entire inhabited label space. -/
 theorem errorLabel_zero_iff_success :
     ofErrorLabel? 0 = none ∧
-      (∀ n, n < 56 →
+      (∀ n, n < 57 →
         ((ofErrorLabel? (n + 1)).map errorLabel) = some (n + 1)) ∧
-      ofErrorLabel? 57 = none := by
+      ofErrorLabel? 58 = none := by
   refine ⟨rfl, ?_, rfl⟩
   decide
 
-/-- RA.A.6 — all 56 offset labels (1..56) fit the 20-bit `MessageInfo`
+/-- RA.A.6 — all 57 offset labels (1..57) fit the 20-bit `MessageInfo`
 label field, so the error carriage never needs a wider register. -/
 theorem kernelErrorFitsLabel (e : KernelError) :
     errorLabel e ≤ MessageInfo.maxLabel := by

@@ -940,7 +940,29 @@ theorem syscallNI_coverage_witness
 
     This provides compile-time enforcement that the `NonInterferenceStep`
     inductive covers every operation — adding a new operation without a
-    corresponding NI constructor is a type error, not a silent omission. -/
+    corresponding NI constructor is a type error, not a silent omission.
+
+    **What this taxonomy deliberately does not hold** (WS-SM SM9.C.7).  Every
+    `NonInterferenceStep` constructor concludes that the observer's projection
+    is *unchanged* — that is what `step_preserves_projection` proves, uniformly,
+    on the exhaustive match.  So an operation whose defining property is that it
+    **does** change a low observer's view cannot correspond to a constructor
+    here, and adding one would assert a correspondence that cannot honestly
+    exist: the only constructor it could carry is the case where the flow
+    happens to be invisible, which is coverage of the uninteresting half
+    reported as coverage of the whole.
+
+    That is why neither declassifying operation appears below.  SM8.C's
+    `declassifyObjectFromCore` and SM9.C's `notificationSignalDeclassifiedOnCore`
+    are per-core transitions whose whole purpose is an *authorized visible*
+    flow; both are inventoried in `CrossCoreTransition`
+    (`InformationFlow/NonInterferenceCrossCore.lean`), where the bound is a
+    write set plus a recording obligation — `declassificationRelativeNonInterference`
+    — rather than an equality of projections.  The two inventories are not
+    alternatives: this one is the pre-SMP single-core taxonomy of
+    projection-preserving operations, that one is the per-core taxonomy of
+    operations that name a core, and a transition belongs to whichever
+    describes what it actually does. -/
 inductive KernelOperation where
   | chooseThread
   | endpointSendDual

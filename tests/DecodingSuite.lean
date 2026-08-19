@@ -82,25 +82,28 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
   expect "auditRead=31" (isOkEq r31 .auditRead)
   let r32 := decodeSyscallId ⟨32⟩
   expect "auditDrain=32" (isOkEq r32 .auditDrain)
+  let r33 := decodeSyscallId ⟨33⟩
+  expect "declassifySignal=33" (isOkEq r33 .declassifySignal)
 
 /-- RD-002: decodeSyscallId — invalid values. -/
 private def rd002_decodeSyscallIdInvalid : IO Unit := do
-  -- First invalid: 33 (WS-SM SM9.A added auditRead at 31 and auditDrain at 32,
-  -- on top of WS-SM SM8.C's declassify at 30, SM7.D's vspaceUnifyInstruction at
-  -- 29 and PR #822 Phase H's mintReplyCap at 28)
-  let r33 := decodeSyscallId ⟨33⟩
-  expect "invalid=33" (isErrEq r33 .invalidSyscallNumber)
+  -- First invalid: 34 (WS-SM SM9.C added declassifySignal at 33, on top of
+  -- SM9.A's auditRead at 31 and auditDrain at 32, SM8.C's declassify at 30,
+  -- SM7.D's vspaceUnifyInstruction at 29 and PR #822 Phase H's mintReplyCap
+  -- at 28)
+  let r34 := decodeSyscallId ⟨34⟩
+  expect "invalid=34" (isErrEq r34 .invalidSyscallNumber)
   -- Large value
   let rLarge := decodeSyscallId ⟨999999⟩
   expect "invalid=999999" (isErrEq rLarge .invalidSyscallNumber)
 
-/-- RD-003: decodeSyscallId — boundary edge 32/33 (WS-SM SM9.A:
-auditDrain=32 is the last valid). -/
+/-- RD-003: decodeSyscallId — boundary edge 33/34 (WS-SM SM9.C:
+declassifySignal=33 is the last valid). -/
 private def rd003_decodeSyscallIdBoundary : IO Unit := do
-  let r32 := decodeSyscallId ⟨32⟩
   let r33 := decodeSyscallId ⟨33⟩
-  expect "boundary=32 ok (auditDrain)" (isOkEq r32 .auditDrain)
-  expect "boundary=33 err" (!r33.isOk)
+  let r34 := decodeSyscallId ⟨34⟩
+  expect "boundary=33 ok (declassifySignal)" (isOkEq r33 .declassifySignal)
+  expect "boundary=34 err" (!r34.isOk)
 
 /-- RD-004: decodeMsgInfo — valid round-trip. -/
 private def rd004_decodeMsgInfoValid : IO Unit := do

@@ -1250,18 +1250,24 @@ theorem endpointQueueRemoveDual_scheduler_eq
                           ((storeObject_scheduler_eq _ _ endpointId _ hStore2).trans
                             ((storeTcbQueueLinks_scheduler_eq _ _ nextTid _ _ _ hLink1).trans
                               (storeTcbQueueLinks_scheduler_eq _ _ prevTid _ _ _ hLink0)))
+/-- WS-SM SM9.C.1: **`endpointQueueRemoveDual` frames every field its two
+building blocks frame.**
 
-
-
-/-- WS-SM SM8.B.2: `endpointQueueRemoveDual` does not modify the machine either,
-so no core's banked `RegisterFile` moves.  Same branch walk as the scheduler
-companion above -- the transition composes only `storeObject` and
-`storeTcbQueueLinks`, and both leave the machine alone. -/
-theorem endpointQueueRemoveDual_machine_eq
+The generic form of `endpointQueueRemoveDual_machine_eq` below, which is now its
+instance: the transition composes only `storeObject` and `storeTcbQueueLinks`,
+so any observation both of those preserve survives the whole branch walk.  Added
+because SM9.C needs the same walk for the declassification audit trail, and one
+copy of a hundred-line case analysis is the right number.  -/
+theorem endpointQueueRemoveDual_frame {α : Type} (f : SystemState → α)
+    (hStoreF : ∀ (s s' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject),
+      storeObject oid obj s = .ok ((), s') → f s' = f s)
+    (hLinksF : ∀ (s s' : SystemState) (t : SeLe4n.ThreadId)
+      (qp : Option SeLe4n.ThreadId) (qpp : Option QueuePPrev) (qn : Option SeLe4n.ThreadId),
+      storeTcbQueueLinks s t qp qpp qn = .ok s' → f s' = f s)
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
-    st'.machine = st.machine := by
+    f st' = f st := by
   unfold endpointQueueRemoveDual at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
@@ -1299,9 +1305,9 @@ theorem endpointQueueRemoveDual_machine_eq
                   | ok st4 =>
                     simp only [Except.ok.injEq, Prod.mk.injEq]
                     intro ⟨_, hEq⟩; subst hEq
-                    exact (storeTcbQueueLinks_machine_eq _ _ tid _ _ _ hFinal).trans
-                      ((storeObject_machine_eq _ _ endpointId _ hStore2).trans
-                        (storeObject_machine_eq _ _ endpointId _ hStore1))
+                    exact (hLinksF _ _ _ _ _ _ hFinal).trans
+                      ((hStoreF _ _ _ _ hStore2).trans
+                        (hStoreF _ _ _ _ hStore1))
                 | some nextTid =>
                   simp only []
                   cases hLookupN : lookupTcb pair1.2 nextTid with
@@ -1318,10 +1324,10 @@ theorem endpointQueueRemoveDual_machine_eq
                   | ok st4 =>
                     simp only [Except.ok.injEq, Prod.mk.injEq]
                     intro ⟨_, hEq⟩; subst hEq
-                    exact (storeTcbQueueLinks_machine_eq _ _ tid _ _ _ hFinal).trans
-                      ((storeObject_machine_eq _ _ endpointId _ hStore2).trans
-                        ((storeTcbQueueLinks_machine_eq _ _ nextTid _ _ _ hLink).trans
-                          (storeObject_machine_eq _ _ endpointId _ hStore1)))
+                    exact (hLinksF _ _ _ _ _ _ hFinal).trans
+                      ((hStoreF _ _ _ _ hStore2).trans
+                        ((hLinksF _ _ _ _ _ _ hLink).trans
+                          (hStoreF _ _ _ _ hStore1)))
             | tcbNext prevTid =>
               dsimp only
               split
@@ -1352,9 +1358,9 @@ theorem endpointQueueRemoveDual_machine_eq
                       | ok st4 =>
                         simp only [Except.ok.injEq, Prod.mk.injEq]
                         intro ⟨_, hEq⟩; subst hEq
-                        exact (storeTcbQueueLinks_machine_eq _ _ tid _ _ _ hFinal).trans
-                          ((storeObject_machine_eq _ _ endpointId _ hStore2).trans
-                            (storeTcbQueueLinks_machine_eq _ _ prevTid _ _ _ hLink0))
+                        exact (hLinksF _ _ _ _ _ _ hFinal).trans
+                          ((hStoreF _ _ _ _ hStore2).trans
+                            (hLinksF _ _ _ _ _ _ hLink0))
                     | some nextTid =>
                       dsimp only [hNext]
                       cases hLookupN : lookupTcb stPrev nextTid with
@@ -1371,10 +1377,25 @@ theorem endpointQueueRemoveDual_machine_eq
                       | ok st4 =>
                         simp only [Except.ok.injEq, Prod.mk.injEq]
                         intro ⟨_, hEq⟩; subst hEq
-                        exact (storeTcbQueueLinks_machine_eq _ _ tid _ _ _ hFinal).trans
-                          ((storeObject_machine_eq _ _ endpointId _ hStore2).trans
-                            ((storeTcbQueueLinks_machine_eq _ _ nextTid _ _ _ hLink1).trans
-                              (storeTcbQueueLinks_machine_eq _ _ prevTid _ _ _ hLink0)))
+                        exact (hLinksF _ _ _ _ _ _ hFinal).trans
+                          ((hStoreF _ _ _ _ hStore2).trans
+                            ((hLinksF _ _ _ _ _ _ hLink1).trans
+                              (hLinksF _ _ _ _ _ _ hLink0)))
+
+
+/-- WS-SM SM8.B.2: `endpointQueueRemoveDual` does not modify the machine either,
+so no core's banked `RegisterFile` moves.  The `endpointQueueRemoveDual_frame`
+instance at `SystemState.machine` — the branch walk it used to spell out lives
+in that generic lemma since WS-SM SM9.C.1. -/
+theorem endpointQueueRemoveDual_machine_eq
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    st'.machine = st.machine :=
+  endpointQueueRemoveDual_frame (fun s => s.machine)
+    (fun s s' oid obj h => storeObject_machine_eq s s' oid obj h)
+    (fun s s' t qp qpp qn h => storeTcbQueueLinks_machine_eq s s' t qp qpp qn h)
+    st st' endpointId isReceiveQ tid hStep
 
 
 /-- WS-F1: Forward TCB transport for endpointQueueRemoveDual.

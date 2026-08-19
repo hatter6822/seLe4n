@@ -1606,6 +1606,8 @@ inductive SyscallId where
   | declassify             -- WS-SM SM8.C.9: authorize and audit a cross-domain downgrade
   | auditRead              -- WS-SM SM9.A.6: read one word of the declassification audit trail
   | auditDrain             -- WS-SM SM9.A.6: drain a prefix of the declassification audit trail
+  | declassifySignal       -- WS-SM SM9.C.8: a notification signal whose badge crosses a
+                           -- label boundary the base policy denies, audited per hop
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -1646,9 +1648,10 @@ namespace SyscallId
   | .declassify            => 30
   | .auditRead             => 31
   | .auditDrain            => 32
+  | .declassifySignal      => 33
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 33
+def count : Nat := 34
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -1686,6 +1689,7 @@ def count : Nat := 33
   | 30 => some .declassify
   | 31 => some .auditRead
   | 32 => some .auditDrain
+  | 33 => some .declassifySignal
   | _  => none
 
 instance : ToString SyscallId where
@@ -1723,6 +1727,7 @@ instance : ToString SyscallId where
     | .declassify            => "declassify"
     | .auditRead             => "auditRead"
     | .auditDrain            => "auditDrain"
+    | .declassifySignal      => "declassifySignal"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -1739,7 +1744,7 @@ def all : List SyscallId :=
   , .tcbSetIPCBuffer, .tcbSetAffinity
   , .tcbBindNotification, .tcbUnbindNotification
   , .mintReplyCap, .vspaceUnifyInstruction, .declassify
-  , .auditRead, .auditDrain ]
+  , .auditRead, .auditDrain, .declassifySignal ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -1771,9 +1776,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 14 | 15 | 16 | 17 | 18 | 19
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
-  | 31 | 32 =>
+  | 31 | 32 | 33 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 33 => intro s h; simp [ofNat?] at h
+  | n + 34 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by

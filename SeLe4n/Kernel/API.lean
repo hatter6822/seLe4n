@@ -39,6 +39,11 @@ import SeLe4n.Kernel.InformationFlow.Declassification
 -- transition it reads: the live `.auditRead` / `.auditDrain` arms import it, so
 -- staging it would break the production/staged partition gate.
 import SeLe4n.Kernel.InformationFlow.AuditRead
+-- WS-SM SM9.C: the data-carrying declassification.  Production for the same
+-- reason: the live `.declassifySignal` arm calls it, and it is deliberately the
+-- transition module rather than the staged `NonInterferenceCrossCore` that
+-- carries its declassification-relative non-interference on top.
+import SeLe4n.Kernel.InformationFlow.DeclassifiedSignal
 
 import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Kernel.Architecture.RegisterDecode
@@ -460,6 +465,81 @@ def clearWokenReceiverStash (receiver? : Option SeLe4n.ThreadId) : Kernel Unit :
             | none => .ok ((), st)
         | none => .ok ((), st)
 
+/-- WS-SM SM9.C.8 frame lemma: clearing a woken receiver's stash never touches
+the declassification audit trail.
+
+Every arm is either the identity or a single `storeObject`, whose own trail
+frame this lifts.  Needed at the dispatch level rather than the transition
+level: the `.declassifySignal` arm runs this *after* the declassifying
+transition, and an arm-level statement about the trail has to cover the whole
+arm — a post-processing step that appended would falsify the arm property while
+leaving the transition's own theorem true. -/
+theorem clearWokenReceiverStash_declassificationAuditLog_eq
+    (receiver? : Option SeLe4n.ThreadId) (st : SystemState) (pair : Unit × SystemState)
+    (hStep : clearWokenReceiverStash receiver? st = .ok pair) :
+    pair.2.declassificationAuditLog = st.declassificationAuditLog := by
+  unfold clearWokenReceiverStash at hStep
+  cases receiver? with
+  | none => cases hStep; rfl
+  | some receiver =>
+    simp only at hStep
+    cases hTcb : st.getTcb? receiver with
+    | none => rw [hTcb] at hStep; cases hStep; rfl
+    | some rTcb =>
+      rw [hTcb] at hStep
+      simp only at hStep
+      cases hStash : rTcb.pendingReceiveReply with
+      | none => rw [hStash] at hStep; cases hStep; rfl
+      | some rid =>
+        rw [hStash] at hStep
+        exact storeObject_declassificationAuditLog_eq st _ _ pair hStep
+
+/-- WS-SM SM9.C.6 frame lemma: clearing a woken receiver's stash never touches
+the scheduler.  Every arm is the identity or one `storeObject`. -/
+theorem clearWokenReceiverStash_scheduler_eq
+    (receiver? : Option SeLe4n.ThreadId) (st : SystemState) (pair : Unit × SystemState)
+    (hStep : clearWokenReceiverStash receiver? st = .ok pair) :
+    pair.2.scheduler = st.scheduler := by
+  unfold clearWokenReceiverStash at hStep
+  cases receiver? with
+  | none => cases hStep; rfl
+  | some receiver =>
+    simp only at hStep
+    cases hTcb : st.getTcb? receiver with
+    | none => rw [hTcb] at hStep; cases hStep; rfl
+    | some rTcb =>
+      rw [hTcb] at hStep
+      simp only at hStep
+      cases hStash : rTcb.pendingReceiveReply with
+      | none => rw [hStash] at hStep; cases hStep; rfl
+      | some rid =>
+        rw [hStash] at hStep
+        exact storeObject_scheduler_eq st pair.2 _ _ (by
+          obtain ⟨u, st2⟩ := pair; cases u; exact hStep)
+
+/-- WS-SM SM9.C.6 frame lemma: clearing a woken receiver's stash never touches
+the machine. -/
+theorem clearWokenReceiverStash_machine_eq
+    (receiver? : Option SeLe4n.ThreadId) (st : SystemState) (pair : Unit × SystemState)
+    (hStep : clearWokenReceiverStash receiver? st = .ok pair) :
+    pair.2.machine = st.machine := by
+  unfold clearWokenReceiverStash at hStep
+  cases receiver? with
+  | none => cases hStep; rfl
+  | some receiver =>
+    simp only at hStep
+    cases hTcb : st.getTcb? receiver with
+    | none => rw [hTcb] at hStep; cases hStep; rfl
+    | some rTcb =>
+      rw [hTcb] at hStep
+      simp only at hStep
+      cases hStash : rTcb.pendingReceiveReply with
+      | none => rw [hStash] at hStep; cases hStep; rfl
+      | some rid =>
+        rw [hStash] at hStep
+        exact storeObject_machine_eq st pair.2 _ _ (by
+          obtain ⟨u, st2⟩ := pair; cases u; exact hStep)
+
 /-- WS-SM SM6.D (faithful seL4-MCS `ReplyRecv`): resolve the server-supplied reply
 capability named in `ReplyRecvArgs.replyCPtr` to the `(ReplyId, prevCaller)` pair
 it authorizes — `prevCaller` is the reply object's `caller`, the previous caller
@@ -789,6 +869,13 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- holder can observe the object; it cannot make the kernel record that its
   -- own domain was downgraded into that object's.
   | .declassify         => .write
+  -- WS-SM SM9.C.8: the data-carrying declassification signals a notification,
+  -- so its authority is the same **write** right the ordinary
+  -- `.notificationSignal` requires on the notification's capability — the
+  -- declassification is an *additional* gate on top of that authority, never a
+  -- substitute for it.  A read-only notification cap holder cannot signal, and
+  -- so cannot declassify through a signal either, whatever the policy says.
+  | .declassifySignal   => .write
   -- WS-SM SM9.A.10: the audit reader needs the **read** right and the drain the
   -- **write** right, on an audit capability (`extractAuditAuthority` is the
   -- first gate; this is the second).  Two rights on one target rather than one
@@ -844,6 +931,10 @@ def syscallChecksTargetFirst : SyscallId → Bool
   | .vspaceUnmap     => false
   | .vspaceUnifyInstruction => false
   | .declassify         => false
+  -- WS-SM SM9.C.8: classic order.  The authority is an ordinary notification
+  -- capability, not a dedicated `CapTarget`, so there is no wrong-kind refusal
+  -- to sequence ahead of the rights gate.
+  | .declassifySignal   => false
   | .auditRead          => true
   | .auditDrain         => true
   | .serviceRegister    => false
@@ -1930,6 +2021,17 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
   -- deployment that wants declassification enters through `dispatchSyscallChecked`
   -- with a configured `LabelingContext.declassificationPolicy`.
   | .declassify => fun _ => .error .declassificationDenied
+  -- WS-SM SM9.C.8: **and there is no unchecked declassifying signal**, for the
+  -- same reason one step over — and one more.
+  --
+  -- Its authority is a policy at *two* hops, so an unchecked arm would mean
+  -- "every downgrade into this notification, and every onward delivery out of
+  -- it, is authorized".  The second half is the sharper one: the ordinary
+  -- checked `.notificationSignal` already gates notification → receiver (the
+  -- v0.31.73 badge-leak closure), so an unchecked declassifying variant would
+  -- be strictly *weaker* than the syscall it wraps while carrying stronger
+  -- authority — a downgrade path that skips a gate the ordinary path enforces.
+  | .declassifySignal => fun _ => .error .declassificationDenied
   -- WS-SM SM9.A.10: **there is no unchecked audit read either**, and the reason
   -- is the same shape one step over.
   --
@@ -2327,6 +2429,45 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         fun st =>
           declassifyObjectFromCore (liftLegacyContext ctx) ctx.declassificationPolicy
             (determineExecutingCore st tid) targetId st
+    | _ => fun _ => .error .invalidCapability
+  -- WS-SM SM9.C.8: **the live data-carrying declassification.**
+  --
+  -- Structurally the `.notificationSignal` arm — same capability target, same
+  -- badge decode, same woken-stash clear, same WS-RA staging — with the
+  -- bound-aware cross-core dispatch replaced by the declassifying one.  Keeping
+  -- the surrounding shape identical is deliberate: the transition really does
+  -- perform the ordinary signal's writes
+  -- (`declassifiedSignal_ordinary_eq_signal`), so any post-processing the
+  -- ordinary arm owes its woken threads, this arm owes them too.  Dropping the
+  -- stash clear would leave a woken bound receiver holding a server-first reply
+  -- stash the ordinary path clears; dropping the stagers would leave the woken
+  -- thread's badge undeliverable at the SM10.E context restore.
+  --
+  -- Neither domain is an operand.  The source is the *actor's* — read off the
+  -- subject the executing core is running — and the two destinations are the
+  -- notification's own domain and the **resolved receiver's**, so a signaller
+  -- authorized into the notification but not onward to the thread that will
+  -- receive the badge is refused at the second hop
+  -- (`.declassificationDeniedAtReceiver`).
+  | .declassifySignal =>
+    match cap.target with
+    | .object notifId =>
+      fun st => match decodeNotificationSignalArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+          let woken? := (boundDeliveryTarget? st notifId).map (·.1)
+          let plainWaiter? := notificationSignalWaiter? st notifId
+          match notificationSignalDeclassifiedCrossCoreDispatch (liftLegacyContext ctx)
+                  ctx.declassificationPolicy notifId tid args.badge st with
+          | (st', .ok _) =>
+              match clearWokenReceiverStash woken? st' with
+              | .error e => .error e
+              | .ok ((), st'') =>
+                  -- Installed count 0 for both stagers: badge-only deliveries.
+                  .ok ((), Architecture.stageWokenDelivery
+                            (Architecture.stageWokenDelivery st'' woken? 0)
+                            plainWaiter? 0)
+          | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-SM SM9.A.10: **the live audit read.**
   --
@@ -2873,7 +3014,7 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .tcbSetPriority, .tcbSetMCPriority,
             .tcbSetIPCBuffer, .tcbSetAffinity,
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
-            .vspaceUnifyInstruction, .declassify,
+            .vspaceUnifyInstruction, .declassify, .declassifySignal,
             .auditRead, .auditDrain] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
@@ -2894,7 +3035,7 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .tcbSetPriority, .tcbSetMCPriority,
             .tcbSetIPCBuffer, .tcbSetAffinity,
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
-            .vspaceUnifyInstruction, .declassify,
+            .vspaceUnifyInstruction, .declassify, .declassifySignal,
             .auditRead, .auditDrain] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
@@ -4213,6 +4354,117 @@ theorem dispatchWithCapChecked_declassify_default_denied
       rw [hDefault] at hDecl
       exact Bool.noConfusion hDecl
 
+/-- **WS-SM SM9.C.8/SM9.C.9: the live `.declassifySignal` arm routes to
+`notificationSignalDeclassifiedCrossCoreDispatch`.**
+
+Checked dispatch only, like `.declassify` (`dispatchWithCap_declassifySignal_denied`
+is its dual).
+
+The conclusion names the **whole arm**, not just the transition: the woken
+bound receiver's server-first reply stash is cleared and both WS-RA stagers
+run, exactly as on the ordinary `.notificationSignal` path.  Stating it that
+way is the point — an arm that ran the right transition and then skipped the
+post-processing its woken threads are owed would not satisfy this, and the
+per-core routing gate and the cross-core inventory both consume this equation
+as their tie to the dispatch. -/
+theorem dispatchWithCapChecked_declassifySignal_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability) (notifId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.NotificationSignalArgs) (st : SystemState)
+    (hSyscall : decoded.syscallId = .declassifySignal)
+    (hTarget : cap.target = .object notifId)
+    (hDecode : decodeNotificationSignalArgs decoded = .ok args) :
+    dispatchWithCapChecked ctx decoded tid gate cap st =
+      (match notificationSignalDeclassifiedCrossCoreDispatch (liftLegacyContext ctx)
+              ctx.declassificationPolicy notifId tid args.badge st with
+       | (st', .ok _) =>
+           (match clearWokenReceiverStash ((boundDeliveryTarget? st notifId).map (·.1)) st' with
+            | .error e => .error e
+            | .ok ((), st'') =>
+                .ok ((), Architecture.stageWokenDelivery
+                          (Architecture.stageWokenDelivery st''
+                            ((boundDeliveryTarget? st notifId).map (·.1)) 0)
+                          (notificationSignalWaiter? st notifId) 0))
+       | (_, .error e) => .error e) := by
+  unfold dispatchWithCapChecked dispatchCapabilityOnly
+  rw [hSyscall]
+  simp only [hTarget, hDecode]
+
+/-- **WS-SM SM9.C.8: there is no unchecked declassifying signal.**
+
+The dual of `dispatchWithCapChecked_declassifySignal_delegates`, and the
+stronger of the pair to state explicitly: the unchecked path is the one an arm
+author would be tempted to fill in by analogy with `.notificationSignal`, and
+doing so would produce a signal that skips *both* declassification gates while
+carrying the authority to cross a boundary the lattice denies. -/
+theorem dispatchWithCap_declassifySignal_denied
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability) (st : SystemState)
+    (hSyscall : decoded.syscallId = .declassifySignal) :
+    dispatchWithCap decoded tid gate cap st = .error .declassificationDenied := by
+  unfold dispatchWithCap dispatchCapabilityOnly
+  rw [hSyscall]
+
+/-- **WS-SM SM9.C.8**: an unconfigured deployment performs no downgrade through
+a signal.
+
+`LabelingContext.declassificationPolicy` defaults to deny-all, and the honest
+statement of what that buys is *not* "the syscall fails".  A declassifying
+signal whose hops the base lattice already permits is an ordinary signal, and
+refusing it under the default would be a usability decision dressed up as a
+security one.  What the default guarantees is that the **audit trail cannot
+grow** — and since an entry is appended exactly when a downgrade is authorized
+(`declassifiedSignal_never_unaudited`), that is precisely "no downgrade
+happened".
+
+Stated at the dispatch, over the committed post-state of the whole arm, because
+the post-processing after the transition (the stash clear and both WS-RA
+stagers) must not touch the trail either — an arm that appended there would
+falsify this while the transition's own theorem stayed true. -/
+theorem dispatchWithCapChecked_declassifySignal_default_no_downgrade
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability) (notifId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.NotificationSignalArgs)
+    (st st' : SystemState)
+    (hSyscall : decoded.syscallId = .declassifySignal)
+    (hTarget : cap.target = .object notifId)
+    (hDecode : decodeNotificationSignalArgs decoded = .ok args)
+    (hDefault : ctx.declassificationPolicy.canDeclassify = fun _ _ => false)
+    (hStep : dispatchWithCapChecked ctx decoded tid gate cap st = .ok ((), st')) :
+    st'.declassificationAuditLog = st.declassificationAuditLog := by
+  rw [dispatchWithCapChecked_declassifySignal_delegates ctx decoded tid gate cap notifId
+    args st hSyscall hTarget hDecode] at hStep
+  unfold notificationSignalDeclassifiedCrossCoreDispatch at hStep
+  obtain ⟨pair, hPair⟩ : ∃ p, notificationSignalDeclassifiedOnCore (liftLegacyContext ctx)
+      ctx.declassificationPolicy notifId args.badge (determineExecutingCore st tid) st = p :=
+    ⟨_, rfl⟩
+  rw [hPair] at hStep
+  obtain ⟨stT, res⟩ := pair
+  cases res with
+  | error e => exact absurd hStep (by simp)
+  | ok sgi =>
+    simp only at hStep
+    -- The transition's own trail statement, then the arm's post-processing —
+    -- neither the stash clear nor either stager touches the trail.
+    have hTrail := declassifiedSignal_default_policy_never_downgrades (liftLegacyContext ctx)
+      ctx.declassificationPolicy notifId args.badge (determineExecutingCore st tid) st stT
+      sgi hDefault hPair
+    obtain ⟨stash, hStash⟩ : ∃ r, clearWokenReceiverStash
+        ((boundDeliveryTarget? st notifId).map (·.1)) stT = r := ⟨_, rfl⟩
+    rw [hStash] at hStep
+    cases stash with
+    | error e => exact absurd hStep (by simp)
+    | ok pr =>
+      obtain ⟨u, st2⟩ := pr
+      cases u
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨-, hSt'⟩ := hStep
+      rw [← hSt']
+      rw [Architecture.stageWokenDelivery_declassificationAuditLog_eq,
+        Architecture.stageWokenDelivery_declassificationAuditLog_eq,
+        clearWokenReceiverStash_declassificationAuditLog_eq _ _ _ hStash]
+      exact hTrail
+
 /-- **WS-SM SM9.A.10: the live `.auditRead` arm routes to `auditReadFromCore`,
 and writes the selected word into the caller's return register.**
 
@@ -4907,6 +5159,29 @@ def syscallDelegates : SyscallId → Prop
         dispatchWithCapChecked ctx decoded tid gate cap st =
           declassifyObjectFromCore (liftLegacyContext ctx) ctx.declassificationPolicy
             (determineExecutingCore st tid) targetId st
+  -- WS-SM SM9.C.9: the live data-carrying declassification.  Checked dispatch
+  -- only, like `.declassify` — and the conclusion names the *whole arm*, so an
+  -- arm that ran the transition and skipped the stash clear or either stager
+  -- would not satisfy this.
+  | .declassifySignal =>
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+        (gate : SyscallGate) (cap : Capability) (notifId : SeLe4n.ObjId)
+        (args : Architecture.SyscallArgDecode.NotificationSignalArgs) (st : SystemState),
+        decoded.syscallId = .declassifySignal →
+        cap.target = .object notifId →
+        decodeNotificationSignalArgs decoded = .ok args →
+        dispatchWithCapChecked ctx decoded tid gate cap st =
+          (match notificationSignalDeclassifiedCrossCoreDispatch (liftLegacyContext ctx)
+                  ctx.declassificationPolicy notifId tid args.badge st with
+           | (st', .ok _) =>
+               (match clearWokenReceiverStash ((boundDeliveryTarget? st notifId).map (·.1)) st' with
+                | .error e => .error e
+                | .ok ((), st'') =>
+                    .ok ((), Architecture.stageWokenDelivery
+                              (Architecture.stageWokenDelivery st''
+                                ((boundDeliveryTarget? st notifId).map (·.1)) 0)
+                              (notificationSignalWaiter? st notifId) 0))
+           | (_, .error e) => .error e)
   -- WS-SM SM9.A.10: the live audit arms.  Stated over the *checked* dispatch,
   -- like `.declassify`, because that is the only path they have — and the
   -- conclusion names the return-frame write, so an arm that computed the right
@@ -4986,6 +5261,12 @@ theorem syscallDelegates_declassify : syscallDelegates .declassify := by
   intro ctx decoded tid gate cap targetId st hSyscall hTarget
   exact dispatchWithCapChecked_declassify_delegates ctx decoded tid gate cap targetId st
     hSyscall hTarget
+
+/-- WS-SM SM9.C.9: the `.declassifySignal` obligation, discharged. -/
+theorem syscallDelegates_declassifySignal : syscallDelegates .declassifySignal := by
+  intro ctx decoded tid gate cap notifId args st hSyscall hTarget hDecode
+  exact dispatchWithCapChecked_declassifySignal_delegates ctx decoded tid gate cap notifId
+    args st hSyscall hTarget hDecode
 
 /-- WS-SM SM9.A.10: the `.auditRead` obligation, discharged. -/
 theorem syscallDelegates_auditRead : syscallDelegates .auditRead := by

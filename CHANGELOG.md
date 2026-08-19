@@ -1,3 +1,163 @@
+## v0.33.52 — WS-SM SM9.C: data-carrying declassification — the first deliberately visible flow
+
+SM8.C shipped a live `.declassify` that authorizes a downgrade and records it
+while moving **no user data**: the store it performs is the model's *simulation*
+of a transfer, and performing one from userspace would let a caller install a
+chosen `KernelObject` at a chosen id.  This cut ships the syscall that moves the
+data.  All ten SM9.C sub-tasks land here — nine executed, one (SM9.C.7) resolved
+in the opposite direction for a reason recorded below.
+
+**The transition.**  `notificationSignalDeclassifiedOnCore`
+(`SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean`, **production** — the
+live arm calls it, so staging it would break the partition gate) is a real SM6.B
+bound signal: the badge lands where the ordinary signal would put it, a waiter
+or the notification's bound TCB is woken on its **own** home core, and the
+committed post-state is literally SM6.B's with `declassificationAuditLog`
+replaced (`notificationSignalDeclassifiedOnCore_frame`).  That frame is why the
+whole IPC invariant surface transfers rather than being re-proven, and why
+`declassifiedSignal_delivers_badge` can state the delivery as an *equation*
+against the syscall it wraps.
+
+**Two hops, because the delivery has a second endpoint.**  The live checked
+`.notificationSignal` already gates `notification → receiver` as well as
+`signaler → notification` — added at v0.31.73 to stop a badge leak into a low
+bound TCB — so a declassifying variant gated only on the notification would have
+been strictly *weaker* than the syscall it wraps while carrying stronger
+authority.  `declassifiedSignalHopAuthorization` runs per hop (base lattice
+first, configured declassification policy second) and each hop carries its own
+refusal discriminant (`DeclassifiedSignalHop.refusal_injective`).  The second is
+the new `KernelError.declassificationDeniedAtReceiver` (56), and the distinction
+is not decoration: a monitor reading a bare "denied" cannot tell an unauthorized
+caller from an authorized caller aimed at an unauthorized sink, and the two call
+for opposite responses.
+
+**One event per authorized hop, never one collapsed record.**
+`declassifiedSignal_audits_each_hop` records both in order — the first naming
+the notification, the second the receiver's own TCB — and
+`declassifiedSignal_no_invented_edge` is the property a single record could not
+have: collapsing `high → mid` and `mid → low` puts a direct `high → low` edge in
+the trail that no run of `declassificationDecision` ever returned `.ok` for.
+`declassifiedSignal_never_unaudited` is the fail-closed half — a delivery that
+cannot record **all** of its downgrades performs none of them.
+
+**The actor field, and a retired trail invariant.**  A second-hop event's
+`srcDomain` is the *notification's* domain — nobody's subject domain — so
+SM8.C's attributability rule, which read `srcDomain`, could not be stated of it.
+`DeclassificationEvent` gains a **required** `actor : DeclassificationActor` (a
+default would attribute every event to whatever it names while compiling
+everywhere), `attributionFromRunningSubject_over_actor` restates SM8.C's rule
+over it, and `secondHop_actor_differs_from_flowSource` is what makes the field
+necessary rather than redundant.  The visibility filter reads it
+(`auditLogVisibleTo_cleared_actor`), so this third exported domain is disclosed
+only to a reader that dominates it.  In the same cut
+`auditTrailDestinationsAreTargetDomains` (SM9.A round 5) is **retired**: it is
+false of a second-hop event, whose destination is a *thread* domain while its
+target is that thread's TCB.  The object-identity discipline moves into
+`auditEntryVisibleTo` itself, which is strictly stronger — it makes
+`auditVisibleEntry_target_domain_flows` unconditional.
+
+**A footprint is not an authorization** (SM9.C.5).
+`declassifiedSignalEffectFootprint` is defined **once** (notification ⊕ resolved
+receiver ⊕ SM6.B's own `notificationSignalBoundWriteSet`) and read by both the
+confinement proof and the non-interference theorem, so the two cannot name
+different cores.  It takes **no policy** — which is what makes
+`footprint_does_not_authorize` provable rather than plausible: a receiver
+squarely inside the footprint is still refused when the policy refuses it.
+Reading a footprint as a permission would be the SM6.B badge-leak class one
+abstraction up.
+
+**Declassification-relative non-interference** (SM9.C.6).  This is the tree's
+first deliberately *visible* flow, so its bound is a write set **plus** a
+recording obligation rather than an equality of projections.
+`declassificationRelativeNonInterference` has three conjuncts — confinement on
+every core outside the footprint, every visible difference recorded with a
+domain pair the decision authorized, and the object effect bounded to the
+ordinary signal's.  The sharpest of the runtime negatives is that this
+transition is **not** plain non-interference at all: the footprint's core really
+changes, so a theorem asserting an unchanged view everywhere would be *false* of
+it.
+
+**SM9.C.7 resolved rather than executed.**  The plan asked for
+`KernelOperation.all` 35 → 36.  Carrying that out would have been wrong: every
+`NonInterferenceStep` constructor concludes that the observer's projection is
+*unchanged* (`step_preserves_projection`, uniformly on the exhaustive match), so
+an operation whose defining property is an authorized *visible* flow cannot
+correspond to one — the only constructor it could carry is the case where the
+flow happens to be invisible, which is coverage of the uninteresting half
+reported as coverage of the whole.  SM8.C had already set the precedent:
+`declassifyObjectFromCore` is likewise absent from `KernelOperation` and present
+in `CrossCoreTransition`.  So the inventory that grew is `CrossCoreTransition`
+(28 → **29**, live arms 21 → **22**, remote writers 22 → **23**,
+delegation-backed 13 → **14**), and `KernelOperation`'s docstring now records
+the exclusion with a Tier-3 negative pinning it, so a later cut that adds one has
+to delete the note first.
+
+**The ABI, and what three total-match tables forced.**
+`SyscallId.declassifySignal = 33` (count 33 → **34**), both Rust mirrors,
+conformance round-trips, and a `sele4n-sys` safe wrapper.  Each total match
+demanded a design decision as part of adding the syscall, and each is recorded
+where it was made: `refusalSeamClass` → `.records`, so a refused downgrade
+through a signal reaches the SM9.B ledger rather than bypassing it — that seam's
+own tripwire fired exactly as its docstring predicted it would, and
+`refusalSeamClass_records_iff` became a disjunction; `syscallReturnShape` →
+`.unit` (the badge goes to the receiver, not back to the signaller); and
+`syscallChecksTargetFirst` → `false` (the authority is an ordinary notification
+capability, so there is no wrong-kind refusal to sequence ahead of the rights
+gate).  Enforcement boundary 42 → **43** canonical / 57 → **58** per-core,
+**policy-gated** and naming the live arm.  `lockSet_declassifySignal` is
+*composed* — `lockSet_notificationSignal` extended with the state-level write its
+trail append needs — rather than rewritten, so the notification half cannot drift
+(`lockSet_declassifySignal_extends_notificationSignal` is the tie); the lock-set
+inventory goes 107 → **109**, and `auditState_footprints_share_serialization`
+grows a fourth conjunct because this is the one trail writer whose footprint is
+*dominated* by object-level members and would otherwise look like an ordinary
+IPC syscall.  The arm is delegation-backed (`syscallDelegates_declassifySignal`)
+and the per-core routing gate passes with **zero** allowlisted exceptions, its
+unchecked arm declared `#inert` and verified as such.
+
+**Two pre-existing gaps closed on the way past.**
+`lockSet_notificationSignal_size_le` fixed the SM6.B bound-delivery optionals at
+their `none` defaults, so the one footprint shape that can actually reach five
+members — a signal to a `BlockedOnReceive` bound TCB — had **no** size bound at
+all, and the WCRT reasoning built on `maxLockSetSize` did not cover the path
+SM6.B added; the general form is `3 + 3 = 6 ≤ 8`, so the constant is untouched
+and what changes is that the bound now holds for the footprint the transition
+really declares.  And `endpointQueueRemoveDual_machine_eq`'s ~120-line
+duplicated branch walk is re-derived from a new generic
+`endpointQueueRemoveDual_frame` — which the audit-trail frame this cut needed
+would otherwise have duplicated a third time.
+
+**A mirror gap the anchors caught, the check that would not have, and the check
+that now would.**  Adding the actor field extended `AuditReadOp` with four
+opcodes (21–24), and the `sele4n-sys` mirror was left at 21 with
+`AUDIT_READ_OPCODE_COUNT = 21` — so a monitor using the safe wrapper could not
+read the actor at all, and the constant whose docstring promises "a divergence
+would surface as `InvalidSyscallArgument` on a valid request rather than as a
+decode bug" was itself the divergence.  Its Rust test could not see it: it
+compares the count against *its own* last enum value, which stays
+self-consistent however far Lean moves.  What caught it was the Tier-3 anchor
+pinning the literal in both files — the mechanism that reads two languages
+rather than one.  Both sides are now 25, with the four opcodes appended so
+every earlier one is unmoved.  And the Rust check is repaired at the class
+rather than at the instance: `AuditReadOpcode::from_u64` makes the count the
+**decoder's boundary** instead of a restatement, and
+`opcode_density_makes_the_count_meaningful` requires every value below it to
+decode and round-trip — so bumping the constant to follow Lean without adding
+the variants now fails in Rust, where before it passed.
+
+**Evidence.**  `tests/SmpInformationFlowSuite.lean` §11.1–§11.6 (679 → **712**
+runtime assertions), every group with a load-bearing negative, on a fixture
+where the notification sits *between* the two subject domains so both hops are
+genuine downgrades and the receiver is homed on a remote core; §1.12 anchors all
+82 declarations of the new module by set difference plus the SM9.C.5/.C.6 and
+SM9.C.8/.C.9 surfaces; `tests/SmpSurfaceAnchors.lean` §11; four
+`declassifying signal` lines in `tests/fixtures/smp_information_flow.expected`;
+a Tier-3 SM9.C block with nine negatives; Rust 1138 unit + 108 conformance
+tests, clippy clean.  Zero sorry/axiom.  `main_trace_smoke` moves by exactly one
+line (`[XVAL-002]` 33 → 34 variants).
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.C
+
 ## v0.33.51 — WS-SM SM9.B: refusal auditing — the declassification trail's blind spot, closed
 
 SM8.C's audit trail records **authorized** downgrades and nothing else, so a

@@ -649,7 +649,13 @@ would fall through to `.exempt` and its refusals would never reach the ledger,
 with nothing failing to compile.  Written out arm by arm for exactly that
 reason — the same discipline `Architecture.syscallReturnShape` follows. -/
 def refusalSeamClass : SeLe4n.Model.SyscallId → RefusalSeamClass
-  | .declassify => .records
+  -- WS-SM SM9.C.8: the data-carrying declassification records too, and this
+  -- arm is what the total classification *forced* the cut that added the
+  -- syscall to write.  Exactly the drift §3.1 exists to prevent: a second
+  -- declassifying syscall whose refusals bypassed the seam would leave a
+  -- monitor unable to distinguish "no data-carrying downgrade attempts" from
+  -- "many, all denied".
+  | .declassify | .declassifySignal => .records
   | .send | .receive | .call | .reply => .exempt
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete => .exempt
   | .lifecycleRetype => .exempt
@@ -675,22 +681,26 @@ theorem refusalSeamClass_total (sid : SeLe4n.Model.SyscallId) :
 @[simp] theorem refusalSeamClass_declassify :
     refusalSeamClass .declassify = .records := rfl
 
-/-- WS-SM SM9.B.9 (**the current classification, pinned**): exactly one syscall
-records today.
+/-- WS-SM SM9.B.9 / SM9.C.8 (**the current classification, pinned**): the two
+declassifying syscalls record, and nothing else does.
 
-Deliberately a theorem that a second `.records` syscall **breaks**: SM9.C.8
-adds `.declassifySignal`, and moving this statement is how that cut records the
+Deliberately a theorem a third `.records` syscall **breaks**: SM9.B stated it of
+`.declassify` alone and SM9.C.8 moved it, which is how a cut records the
 decision rather than discovering it.  Decided over `SyscallId.all`, which
 `all_complete` makes exhaustive, so the pin is over the whole ABI rather than
 over a list of interest. -/
 theorem refusalSeamClass_records_iff (sid : SeLe4n.Model.SyscallId) :
-    refusalSeamClass sid = .records ↔ sid = .declassify := by
+    refusalSeamClass sid = .records ↔ (sid = .declassify ∨ sid = .declassifySignal) := by
   cases sid <;> simp [refusalSeamClass]
 
-/-- WS-SM SM9.B.9: the count form — exactly one of the ABI's syscalls is
-recorded by the seam. -/
+/-- WS-SM SM9.C.8: **the data-carrying declassification records too.** -/
+@[simp] theorem refusalSeamClass_declassifySignal :
+    refusalSeamClass .declassifySignal = .records := rfl
+
+/-- WS-SM SM9.B.9 / SM9.C.8: the count form — exactly the two declassifying
+syscalls of the ABI are recorded by the seam. -/
 theorem refusalSeamClass_records_count :
-    (SeLe4n.Model.SyscallId.all.filter (fun s => refusalSeamClass s == .records)).length = 1 := by
+    (SeLe4n.Model.SyscallId.all.filter (fun s => refusalSeamClass s == .records)).length = 2 := by
   decide
 
 /-- WS-SM SM9.B.9 (plan §3.1, **the refuted design, kept refuted**): a

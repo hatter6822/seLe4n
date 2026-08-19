@@ -79,6 +79,8 @@ SMP_INFORMATION_FLOW = [
     # as part of landing it, for the same reason `AuditRead` was — a module
     # missing from this list is swept by nothing and reports clean.
     "SeLe4n.Kernel.InformationFlow.RefusalRecord",
+    # WS-SM SM9.C: the data-carrying declassification.  Same reason again.
+    "SeLe4n.Kernel.InformationFlow.DeclassifiedSignal",
 ]
 
 PROBE_TEMPLATE = """@IMPORTS@

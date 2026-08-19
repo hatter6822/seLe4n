@@ -2103,19 +2103,22 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨31⟩ 32)
 
   -- J1-NEG-04: decodeSyscallId with value beyond modeled set → invalidSyscallNumber
-  -- WS-SM SM9.A.6: SyscallId now covers 0..32 (count=33, +auditRead +auditDrain,
-  -- on top of SM8.C.9's +declassify, SM7.D's +vspaceUnifyInstruction and PR #822
-  -- Phase H's +mintReplyCap); value 33 is the first invalid number.  The three
-  -- most recent additions are each checked as VALID, so the boundary is pinned
-  -- from both sides and a future off-by-one in `ofNat?` cannot pass silently.
+  -- WS-SM SM9.C.8: SyscallId now covers 0..33 (count=34, +declassifySignal, on
+  -- top of SM9.A.6's +auditRead/+auditDrain, SM8.C.9's +declassify, SM7.D's
+  -- +vspaceUnifyInstruction and PR #822 Phase H's +mintReplyCap); value 34 is
+  -- the first invalid number.  The four most recent additions are each checked
+  -- as VALID, so the boundary is pinned from both sides and a future off-by-one
+  -- in `ofNat?` cannot pass silently.
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (30 = declassify)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨30⟩)
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (31 = auditRead)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨31⟩)
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (32 = auditDrain)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨32⟩)
-  expectErr "J1 decodeSyscallId invalid (33)"
+  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (33 = declassifySignal)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨33⟩)
+  expectErr "J1 decodeSyscallId invalid (34)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨34⟩)
     .invalidSyscallNumber
 
   -- J1-NEG-05: decodeSyscallId with large invalid number → invalidSyscallNumber
