@@ -3269,8 +3269,8 @@ run_check "INVARIANT" rg -n '^theorem refusalLedger_records_gate_unsound' SeLe4n
 run_check "INVARIANT" rg -n '^theorem refusalRead_requires_monitor_at_entry' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 # The ABI mirror, both sides: 12 trail opcodes + 9 refusal opcodes + WS-SM
 # SM9.C.1's 4 actor opcodes = 25.
-run_check "INVARIANT" rg -n '^def auditReadOpcodeCount : Nat := 25' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n 'AUDIT_READ_OPCODE_COUNT: u64 = 25' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n '^def auditReadOpcodeCount : Nat := 27' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n 'AUDIT_READ_OPCODE_COUNT: u64 = 27' rust/sele4n-sys/src/audit.rs
 # WS-SM SM9.C.1: and the count is the DECODER's boundary on the Rust side, not
 # a restatement of the enum's own last variant — which is what let this mirror
 # sit at 21 while Lean moved to 25, invisible to every Rust test.
@@ -3347,7 +3347,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines' tests/SmpInfo
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=34 opcodes=25 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=34 opcodes=27 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification
@@ -3512,6 +3512,38 @@ run_check "INVARIANT" rg -n 'declassifying signal: hops=2 actorDomain=2 notifica
 run_check "INVARIANT" rg -n 'declassifying signal footprint: notification=1016 receiver=1021 cores=\[2\]' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'declassifying signal run: ok records=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'declassifying signal ABI: id=33' tests/fixtures/smp_information_flow.expected
+
+# WS-SM SM9.C.1 (audit cut) — the failed hop reaches the monitor.  The refusal
+# record names the resolved receiver of a refused second hop, the seam
+# re-resolves it from the pre-state (the "seam cannot see it" premise the
+# SM9.B landing recorded was wrong — the seam holds the pre-state and x0), a
+# theorem pins the two resolutions equal, and the monitor reads the field back
+# through its own opcode pair.
+run_check "INVARIANT" rg -n 'refusedReceiver : Option SeLe4n.ThreadId' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^def refusedSignalReceiver\?' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem refusedSignalReceiver\?_resolves' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def refusalReceiverFor' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem refusalReceiverFor_other' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem refusalRecord_names_failed_hop' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignalPlan_deniedAtReceiver_resolves' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignalHopAuthorization_error_refusal' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n 'refusalReceiverChunkCount \(slot : Nat\)' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n 'RefusalReceiverChunks = 25' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n 'RefusalReceiver = 26' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n 'a refused second hop names the resolved receiver' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a first-hop refusal records no receiver' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the discriminant alone does not trigger the resolution' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'declassifying signal failed hop: reason=56 recordedReceiver=1021' tests/fixtures/smp_information_flow.expected
+# The record-level fill is keyed on BOTH coordinates — a reason-only key would
+# run the notification resolver against a future syscall's unrelated operand.
+run_check "INVARIANT" rg -n 'sid = SyscallId.declassifySignal ∧ ke = KernelError.declassificationDeniedAtReceiver' SeLe4n/Platform/FFI.lean
+# The SM8.E defect class stays closed: the thirteenth policy-gated entry's
+# members of BOTH enforcement families exist.
+run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_declassifySignal' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_denied_preserves_state' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+# The retired deferral premise must not return: the record's docstring no
+# longer claims the seam cannot see the resolved receiver.
+run_prose_negative_check "INVARIANT" rg -n 'so the seam cannot see it; .which. hop failed can ride' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
 run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean

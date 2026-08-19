@@ -2075,4 +2075,200 @@ with `c := determineExecutingCore st signaler`. -/
       notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge
         (determineExecutingCore st signaler) st := rfl
 
+
+-- ============================================================================
+-- §13  WS-SM SM9.C.1 / SM9.C.8 — the failed hop, and the enforcement families
+-- ============================================================================
+
+/-- WS-SM SM9.C.1: a hop authorization's error is always **that hop's own**
+discriminant — the gate discards the decision's error and reports the hop, so
+the two hops stay distinguishable at the refusal ledger whatever the decision
+returned. -/
+theorem declassifiedSignalHopAuthorization_error_refusal (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (hop : DeclassifiedSignalHop)
+    (srcDomain dstDomain : SecurityDomain) (e : KernelError)
+    (h : declassifiedSignalHopAuthorization ctx declPolicy hop srcDomain dstDomain =
+      .error e) :
+    e = hop.refusal := by
+  unfold declassifiedSignalHopAuthorization at h
+  split at h
+  · exact absurd h (by simp)
+  · obtain ⟨dec, hDec⟩ : ∃ d, declassificationDecision ctx declPolicy srcDomain dstDomain = d :=
+      ⟨_, rfl⟩
+    rw [hDec] at h
+    cases dec with
+    | error e' => exact (Except.error.inj h).symm
+    | ok u => cases u; exact absurd h (by simp)
+
+/-- WS-SM SM9.C.1 (**`refusalRecord_names_failed_hop`, the transition half**): a
+plan refused with the *receiver's* discriminant had **resolved a receiver** —
+the second-hop gate is the only producer of `.declassificationDeniedAtReceiver`,
+and it runs only under `declassifiedSignalReceiver? st notificationId = some r`.
+
+This is what makes the seam's re-resolution meaningful: the receiver a hop-2
+refusal is about exists in the pre-state, by the same function the seam
+re-runs. -/
+theorem declassifiedSignalPlan_deniedAtReceiver_resolves (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
+    (actorDomain : SecurityDomain) (st : SystemState)
+    (hPlan : declassifiedSignalPlan ctx declPolicy notificationId actorDomain st =
+      .error .declassificationDeniedAtReceiver) :
+    ∃ receiver, declassifiedSignalReceiver? st notificationId = some receiver := by
+  unfold declassifiedSignalPlan at hPlan
+  obtain ⟨a1, hA1⟩ : ∃ a, declassifiedSignalHopAuthorization ctx declPolicy .callerToNotification
+      actorDomain (ctx.objectDomainOf notificationId) = a := ⟨_, rfl⟩
+  rw [hA1] at hPlan
+  cases a1 with
+  | error e =>
+    have hE : e = DeclassifiedSignalHop.callerToNotification.refusal :=
+      declassifiedSignalHopAuthorization_error_refusal ctx declPolicy .callerToNotification
+        actorDomain (ctx.objectDomainOf notificationId) e hA1
+    subst hE
+    exact absurd (Except.error.inj hPlan) (by decide)
+  | ok hop1 =>
+    simp only at hPlan
+    obtain ⟨recv, hRecv⟩ : ∃ x, declassifiedSignalReceiver? st notificationId = x := ⟨_, rfl⟩
+    rw [hRecv] at hPlan
+    cases recv with
+    | none => exact absurd hPlan (by simp)
+    | some receiver => exact ⟨receiver, hRecv⟩
+
+/-- WS-SM SM9.C.8 (**the `_denied_preserves_state` family member**): every
+refusal of the declassifying signal returns the **pre-state exactly** — the
+idle-core arm, both hop gates, the delivery's own failure, and the fail-closed
+capacity refusal alike.
+
+One statement rather than one per refusal mode, and stronger than the family's
+`Kernel`-monad members can be: the transition is total, so "changes nothing" is
+an equation on the returned state rather than the absence of a committed one. -/
+theorem notificationSignalDeclassifiedOnCore_denied_preserves_state
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
+    (st st' : SystemState) (e : KernelError)
+    (hStep : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
+      (st', .error e)) :
+    st' = st := by
+  unfold notificationSignalDeclassifiedOnCore at hStep
+  obtain ⟨cur, hCur⟩ : ∃ x, st.scheduler.currentOnCore c = x := ⟨_, rfl⟩
+  rw [hCur] at hStep
+  cases cur with
+  | none => exact (congrArg Prod.fst hStep).symm
+  | some signaler =>
+    simp only at hStep
+    obtain ⟨plan, hPlan⟩ : ∃ p, declassifiedSignalPlan ctx declPolicy notificationId
+        (declassificationActorOf ctx signaler).domain st = p := ⟨_, rfl⟩
+    rw [hPlan] at hStep
+    cases plan with
+    | error e' => exact (congrArg Prod.fst hStep).symm
+    | ok records =>
+      simp only at hStep
+      obtain ⟨pair, hPair⟩ : ∃ p, notificationSignalBoundOnCore notificationId badge c st = p :=
+        ⟨_, rfl⟩
+      rw [hPair] at hStep
+      obtain ⟨st1, res⟩ := pair
+      cases res with
+      | error e' => exact (congrArg Prod.fst hStep).symm
+      | ok sgi =>
+        simp only at hStep
+        obtain ⟨rec, hRec⟩ : ∃ r, recordDeclassifiedHops c
+            (declassificationActorOf ctx signaler) records st1 = r := ⟨_, rfl⟩
+        rw [hRec] at hStep
+        cases rec with
+        | none => exact (congrArg Prod.fst hStep).symm
+        | some st2 => exact absurd (congrArg Prod.snd hStep) (by simp)
+
+/-- WS-SM SM9.C.8 (**the `enforcement_sufficiency_*` family member**): the
+declassifying signal does exactly one of **five** things, and nothing else.
+
+`enforcement_sufficiency_declassify` is a trichotomy because `.declassify`'s
+transfer is simulated; here the delivery is *real*, which adds its own failure
+mode, and the actor is state-resolved, which adds the idle-core refusal:
+
+1. an idle core cannot attribute a downgrade, so it refuses (`.illegalState`);
+2. a plan either hop's gate refuses is returned verbatim, with that hop's own
+   discriminant, the state untouched;
+3. a delivery failure of the underlying bound signal is returned verbatim —
+   this transition invents no discriminant for it and performs no partial
+   commit;
+4. an authorized plan whose records do not all fit refuses fail-closed with
+   `.auditLogCapacityExceeded`, delivering nothing — recording one hop of a
+   two-hop delivery is not among the outcomes;
+5. otherwise the delivery commits with exactly the planned records appended.
+
+Arms 2 and 3 are stated as "the error, verbatim" so a future refusal cannot be
+silently remapped onto an existing discriminant. -/
+theorem enforcement_sufficiency_declassifySignal
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) :
+    (st.scheduler.currentOnCore c = none ∧
+       notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
+         (st, .error .illegalState)) ∨
+    (∃ signaler e, st.scheduler.currentOnCore c = some signaler ∧
+       declassifiedSignalPlan ctx declPolicy notificationId
+         (declassificationActorOf ctx signaler).domain st = .error e ∧
+       notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
+         (st, .error e)) ∨
+    (∃ signaler records e, st.scheduler.currentOnCore c = some signaler ∧
+       declassifiedSignalPlan ctx declPolicy notificationId
+         (declassificationActorOf ctx signaler).domain st = .ok records ∧
+       (notificationSignalBoundOnCore notificationId badge c st).2 = .error e ∧
+       notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
+         (st, .error e)) ∨
+    (∃ signaler records sgi, st.scheduler.currentOnCore c = some signaler ∧
+       declassifiedSignalPlan ctx declPolicy notificationId
+         (declassificationActorOf ctx signaler).domain st = .ok records ∧
+       (notificationSignalBoundOnCore notificationId badge c st).2 = .ok sgi ∧
+       recordDeclassifiedHops c (declassificationActorOf ctx signaler) records
+         (notificationSignalBoundOnCore notificationId badge c st).1 = none ∧
+       notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
+         (st, .error .auditLogCapacityExceeded)) ∨
+    (∃ signaler records sgi st2, st.scheduler.currentOnCore c = some signaler ∧
+       declassifiedSignalPlan ctx declPolicy notificationId
+         (declassificationActorOf ctx signaler).domain st = .ok records ∧
+       (notificationSignalBoundOnCore notificationId badge c st).2 = .ok sgi ∧
+       recordDeclassifiedHops c (declassificationActorOf ctx signaler) records
+         (notificationSignalBoundOnCore notificationId badge c st).1 = some st2 ∧
+       notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
+         (st2, .ok sgi)) := by
+  obtain ⟨cur, hCur⟩ : ∃ x, st.scheduler.currentOnCore c = x := ⟨_, rfl⟩
+  cases cur with
+  | none =>
+    exact Or.inl ⟨hCur, notificationSignalDeclassifiedOnCore_no_subject ctx declPolicy
+      notificationId badge c st hCur⟩
+  | some signaler =>
+    have hEq := notificationSignalDeclassifiedOnCore_eq_of_subject ctx declPolicy
+      notificationId badge c st signaler hCur
+    obtain ⟨plan, hPlan⟩ : ∃ p, declassifiedSignalPlan ctx declPolicy notificationId
+        (declassificationActorOf ctx signaler).domain st = p := ⟨_, rfl⟩
+    rw [hPlan] at hEq
+    cases plan with
+    | error e => exact Or.inr (Or.inl ⟨signaler, e, hCur, hPlan, hEq⟩)
+    | ok records =>
+      simp only at hEq
+      obtain ⟨pair, hPair⟩ : ∃ p, notificationSignalBoundOnCore notificationId badge c st = p :=
+        ⟨_, rfl⟩
+      rw [hPair] at hEq
+      obtain ⟨st1, res⟩ := pair
+      have hFst : (notificationSignalBoundOnCore notificationId badge c st).1 = st1 :=
+        congrArg Prod.fst hPair
+      have hSnd : (notificationSignalBoundOnCore notificationId badge c st).2 = res :=
+        congrArg Prod.snd hPair
+      cases res with
+      | error e =>
+        exact Or.inr (Or.inr (Or.inl ⟨signaler, records, e, hCur, hPlan, hSnd, hEq⟩))
+      | ok sgi =>
+        simp only at hEq
+        obtain ⟨rec, hRec⟩ : ∃ r, recordDeclassifiedHops c
+            (declassificationActorOf ctx signaler) records st1 = r := ⟨_, rfl⟩
+        rw [hRec] at hEq
+        cases rec with
+        | none =>
+          refine Or.inr (Or.inr (Or.inr (Or.inl
+            ⟨signaler, records, sgi, hCur, hPlan, hSnd, ?_, hEq⟩)))
+          rw [hFst]; exact hRec
+        | some st2 =>
+          refine Or.inr (Or.inr (Or.inr (Or.inr
+            ⟨signaler, records, sgi, st2, hCur, hPlan, hSnd, ?_, hEq⟩)))
+          rw [hFst]; exact hRec
+
 end SeLe4n.Kernel

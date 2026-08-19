@@ -596,7 +596,7 @@ def acceptedCovertChannel_auditOccupancy : CovertChannel :=
        the freed count plus its timing (about 8 bits); a SUCCESSFUL probe \
        appends an attributed record to the very trail the monitor reads \
        (declassifyObjectFromCore_never_unaudited), and refused probes are \
-       unrecorded until SM9.B's refusal ledger — already in plan, which is \
+       counted and attributed in SM9.B's refusal ledger — landed, which is \
        the channel's monitoring half. The drain-flip witness is \
        auditDrain_flips_declassify_outcome."
     severity := .low

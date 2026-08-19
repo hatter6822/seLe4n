@@ -1070,6 +1070,17 @@ inductive AuditReadOp where
   /-- WS-SM SM9.B.10: chunk `chunk` of unbounded field `field` of ring slot
       `slot`. -/
   | refusalSlotField (slot : Nat) (field : RefusalReadField) (chunk : Nat)
+  /-- WS-SM SM9.C.1 (`refusalRecord_names_failed_hop`): how many chunks ring
+      slot `slot`'s **refused receiver** needs — `0` when the refusal named no
+      receiver, which is unambiguous because a present value always needs at
+      least one chunk (`auditFieldChunkCount?` of `0` is `some 1`).  Its own
+      pair of constructors rather than a fourth `RefusalReadField`, because the
+      field is the ledger's one *optional* export and the absent case needs an
+      in-band encoding the total-field protocol deliberately does not have. -/
+  | refusalReceiverChunkCount (slot : Nat)
+  /-- WS-SM SM9.C.1: chunk `chunk` of ring slot `slot`'s refused receiver;
+      `.invalidArgument` when the refusal named none. -/
+  | refusalReceiverChunk (slot : Nat) (chunk : Nat)
   deriving Repr, DecidableEq, Inhabited
 
 /-- WS-SM SM9.A.2 (plan §3.7, **the fusion**): every read operation names the
@@ -1091,6 +1102,8 @@ def AuditReadOp.readsStructure : AuditReadOp → ReadableStructure
   | .refusalSlotTags _ => .declassificationRefusalLedger
   | .refusalSlotFieldChunkCount _ _ => .declassificationRefusalLedger
   | .refusalSlotField _ _ _ => .declassificationRefusalLedger
+  | .refusalReceiverChunkCount _ => .declassificationRefusalLedger
+  | .refusalReceiverChunk _ _ => .declassificationRefusalLedger
 
 /-- WS-SM SM9.A.2: the totality anchor.  The *mechanism* is the definition
 itself — an exhaustive match with no wildcard; this theorem is the named surface
@@ -1451,6 +1464,39 @@ def auditReadWord (ctx : GenericLabelingContext)
               | none => .error .auditFieldTooLarge
               | some n =>
                   if chunk < n then .ok (auditFieldChunk v chunk) else .error .invalidArgument
+         else .error .invalidArgument)
+      else .error .illegalAuthority
+  -- WS-SM SM9.C.1: the refused receiver — the ledger's one optional export.
+  -- Absence is in-band: chunk count 0 means "no receiver named", which no
+  -- present value can produce (`auditFieldChunkCount?` of any Nat is ≥ 1).
+  | .refusalReceiverChunkCount slot =>
+      if isMonitor then
+        (if h : slot < refusalRingSize then
+          match st.declassificationRefusals.recent.get ⟨slot, h⟩ with
+          | none => .error .invalidArgument
+          | some r =>
+              match r.refusedReceiver with
+              | none => .ok 0
+              | some receiver =>
+                  match auditFieldChunkCount? receiver.val with
+                  | none => .error .auditFieldTooLarge
+                  | some n => .ok n
+         else .error .invalidArgument)
+      else .error .illegalAuthority
+  | .refusalReceiverChunk slot chunk =>
+      if isMonitor then
+        (if h : slot < refusalRingSize then
+          match st.declassificationRefusals.recent.get ⟨slot, h⟩ with
+          | none => .error .invalidArgument
+          | some r =>
+              match r.refusedReceiver with
+              | none => .error .invalidArgument
+              | some receiver =>
+                  match auditFieldChunkCount? receiver.val with
+                  | none => .error .auditFieldTooLarge
+                  | some n =>
+                      if chunk < n then .ok (auditFieldChunk receiver.val chunk)
+                      else .error .invalidArgument
          else .error .invalidArgument)
       else .error .illegalAuthority
 
@@ -2042,9 +2088,14 @@ theorem auditMonitorAuthorized_dominates_subjects (ctx : GenericLabelingContext)
 obligation — the configured clearance dominates every domain the labeling can
 assign to an object.
 
-Owed since the visibility filter gained its destination conjunct: an entry's
-`dstDomain` is an *object* domain (`auditTrailDestinationsAreTargetDomains`),
-so subject dominance alone no longer implies the monitor sees the whole trail.
+Owed since the visibility filter gained its destination conjunct, and owed
+independently since the fourth conjunct disclosed `objectDomainOf targetObject`
+for every entry: a first-hop entry's `dstDomain` is an *object* domain (the
+producer sets it to the target object's own), so subject dominance alone does
+not imply the monitor sees the whole trail.  A second-hop entry's `dstDomain`
+is a *thread* domain instead (WS-SM SM9.C.1 — the reason
+`auditTrailDestinationsAreTargetDomains` was retired), and that side rides the
+subject half; both halves together cover every conjunct the filter checks.
 Configuration-derived exactly as the subject half is. -/
 def auditMonitorDominatesObjects (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) : Prop :=
@@ -2653,6 +2704,8 @@ theorem auditRead_stable_under_append (ctx : GenericLabelingContext)
   | refusalSlotTags slot => rfl
   | refusalSlotFieldChunkCount slot f => rfl
   | refusalSlotField slot f k => rfl
+  | refusalReceiverChunkCount slot => rfl
+  | refusalReceiverChunk slot k => rfl
 
 /-- WS-SM SM9.A.5 (**the bracket**): for a monitor, an unchanged status word
 means an unchanged epoch and an unchanged visible length — so no drain
@@ -2812,7 +2865,8 @@ def refusalWitnessRecord (d : SecurityDomain) : DeclassificationRefusal :=
     subjectDomain := d
     syscall := .declassify
     reason := .declassificationDenied
-    requestedTarget := SeLe4n.CPtr.ofNat 1 }
+    requestedTarget := SeLe4n.CPtr.ofNat 1
+    refusedReceiver := none }
 
 /-- WS-SM SM9.B.10: a ledger whose ring is all-low except for one high-domain
 record sitting exactly where the next write lands — the state one further
@@ -2966,12 +3020,16 @@ def decodeAuditReadOp (opcode index chunk : Nat) : Option AuditReadOp :=
   | 22 => some (.fieldChunkCount index .actorDomain)
   | 23 => some (.field index .actorSubject chunk)
   | 24 => some (.field index .actorDomain chunk)
+  -- WS-SM SM9.C.1: the refused receiver, appended after the actor pair so
+  -- every earlier opcode keeps its value.
+  | 25 => some (.refusalReceiverChunkCount index)
+  | 26 => some (.refusalReceiverChunk index chunk)
   | _  => none
 
 /-- WS-SM SM9.A.10: the number of `.auditRead` opcodes.  Pinned in the Rust
 mirror, so a divergence is a conformance failure rather than a silent
 `.invalidSyscallArgument` on a valid request. -/
-def auditReadOpcodeCount : Nat := 25
+def auditReadOpcodeCount : Nat := 27
 
 /-- WS-SM SM9.A.10: encode a sub-operation back to its operand triple. -/
 def encodeAuditReadOp : AuditReadOp → Nat × Nat × Nat
@@ -3000,6 +3058,8 @@ def encodeAuditReadOp : AuditReadOp → Nat × Nat × Nat
   | .fieldChunkCount i .actorDomain => (22, i, 0)
   | .field i .actorSubject k => (23, i, k)
   | .field i .actorDomain k => (24, i, k)
+  | .refusalReceiverChunkCount i => (25, i, 0)
+  | .refusalReceiverChunk i k => (26, i, k)
 
 /-- WS-SM SM9.A.10: **the operand encoding round-trips.**  Every sub-operation
 is reachable through the ABI, and reaches the arm it names. -/
@@ -3018,6 +3078,8 @@ theorem decodeAuditReadOp_encode (op : AuditReadOp) :
   | refusalSlotTags i => rfl
   | refusalSlotFieldChunkCount i f => cases f <;> rfl
   | refusalSlotField i f k => cases f <;> rfl
+  | refusalReceiverChunkCount i => rfl
+  | refusalReceiverChunk i k => rfl
 
 /-- WS-SM SM9.A.10 (**fail-closed**): an opcode outside the table is refused. -/
 theorem decodeAuditReadOp_out_of_range (opcode index chunk : Nat)
@@ -3027,8 +3089,8 @@ theorem decodeAuditReadOp_out_of_range (opcode index chunk : Nat)
   match opcode, hRange with
   | 0, h | 1, h | 2, h | 3, h | 4, h | 5, h | 6, h | 7, h | 8, h | 9, h
   | 10, h | 11, h | 12, h | 13, h | 14, h | 15, h | 16, h | 17, h | 18, h
-  | 19, h | 20, h | 21, h | 22, h | 23, h | 24, h => omega
-  | n + 25, _ => rfl
+  | 19, h | 20, h | 21, h | 22, h | 23, h | 24, h | 25, h | 26, h => omega
+  | n + 27, _ => rfl
 
 /-- WS-SM SM9.A.10: every opcode the table admits is below the count — the
 other half of the range pin. -/

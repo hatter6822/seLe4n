@@ -990,6 +990,23 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
        ∧ SeLe4n.Kernel.syscallRequiredRight .declassifySignal = .write
        ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .declassifySignal = .unit))
 
+  assertBool "SM9.C.1 (audit cut): a refused second hop names the resolved receiver"
+    (-- The transition half: a plan refused with the receiver's discriminant
+     -- had resolved a receiver, so the seam's re-resolution has something to
+     -- name; the seam half: the two resolutions are the same function on the
+     -- same pre-state; and the family members the thirteenth policy-gated
+     -- entry owes.
+     have _pr := @SeLe4n.Kernel.declassifiedSignalPlan_deniedAtReceiver_resolves
+     have _er := @SeLe4n.Kernel.declassifiedSignalHopAuthorization_error_refusal
+     have _rr := @SeLe4n.Platform.FFI.refusedSignalReceiver?_resolves
+     have _nf := @SeLe4n.Platform.FFI.refusalRecord_names_failed_hop
+     have _dp := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_denied_preserves_state
+     have _es := @SeLe4n.Kernel.enforcement_sufficiency_declassifySignal
+     decide (SeLe4n.Kernel.auditReadOpcodeCount = 27
+       ∧ SeLe4n.Kernel.decodeAuditReadOp 25 0 0
+           = some (.refusalReceiverChunkCount 0)
+       ∧ SeLe4n.Kernel.decodeAuditReadOp 26 0 0 = some (.refusalReceiverChunk 0 0)))
+
   IO.println "============================================================"
   IO.println "All SM2.D + SM3.E.8 + SM8.A + SM8.B + SM8.C + SM8.D + SM8.E + SM9.A + SM9.B + \
 SM9.C surface anchor checks PASS."

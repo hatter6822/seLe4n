@@ -166,6 +166,31 @@ lines in the phase golden fixture; a Tier-3 SM9.C block with nine negatives;
 Rust 1138 unit + 108 conformance tests, clippy clean.  The `main_trace_smoke`
 fixture moves by exactly one line (`[XVAL-002]` 33 → 34 variants).
 
+**Audit cut (same version).**  A code-first audit of the landing — no false
+theorem, no live security defect — closed four findings.  The plan-named
+`refusalRecord_names_failed_hop` had not landed and its SM9.B deferral premise
+("the seam cannot see the resolved receiver") was wrong — the seam holds the
+pre-state and `x0` — so the obligation is discharged end to end:
+`DeclassificationRefusal.refusedReceiver` (non-defaulted), the seam
+re-resolution `Platform.FFI.refusedSignalReceiver?` (fill keyed on both the
+syscall and the discriminant), the tie `refusedSignalReceiver?_resolves`, the
+existence half `declassifiedSignalPlan_deniedAtReceiver_resolves`, the
+composed theorem, and the monitor's read through appended opcodes 25/26
+(`auditReadOpcodeCount` 25 → **27** both sides; chunk-count `0` is the in-band
+"no receiver named").  The honest cost: the ledger congruence and the §3.7
+preservation gain the `hRecv` premise — the exact analogue of the
+declassification congruence's `hSameEvent`.  The SM8.E defect class had
+recurred (the thirteenth policy-gated entry joined neither enforcement
+family): closed with `notificationSignalDeclassifiedOnCore_denied_preserves_state`
+(one equation on the returned state, the transition being total) and the
+five-arm `enforcement_sufficiency_declassifySignal`.  Two documentation
+corrections: `auditMonitorDominatesObjects` cited the retired
+`auditTrailDestinationsAreTargetDomains` as a live fact, and CC-8's mitigation
+still called SM9.B "already in plan".  Suite §11.7 (712 → **719** assertions,
+three load-bearing negatives); the failed-hop golden-fixture line; twenty new
+Tier-3 anchors including the prose negative forbidding the retired premise's
+return; `sele4n-sys` opcode table extended, density test mutation-verified.
+
 Plan: [`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md)
 §SM9.C.  Next: SM9.D causal declassification provenance.
 

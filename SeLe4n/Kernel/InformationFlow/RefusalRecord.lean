@@ -115,15 +115,19 @@ record-level half of that argument and
 `Platform.FFI.refusalRecord_domain_is_seam_resolved_at_seam` the seam-level
 one.
 
-**What a two-hop refusal owes, and why it is not here.**  Plan §3.5's
+**What a two-hop refusal owes — and the premise that moved.**  Plan §3.5's
 declassifying signal (SM9.C.1) authorizes two hops, and a refusal of the second
-should name the *resolved receiver* rather than the operand.  That receiver is
-resolved **inside** the transition, whose error arm carries no post-state, so
-the seam cannot see it; *which* hop failed can ride the `reason` discriminant
-SM9.C.1 chooses, but the receiver identity cannot.  Surfacing it is therefore a
-SM9.C.1 obligation on that transition's shape — recorded here rather than
-pre-empted with a field no producer could set, which is the unwired-structure
-shape CLAUDE.md forbids. -/
+names the *resolved receiver* as well as the operand (`refusedReceiver` below;
+`Platform.FFI.refusalRecord_names_failed_hop`).  The SM9.B landing deferred the
+field on the ground that the receiver is resolved inside the transition, whose
+error arm carries no post-state, "so the seam cannot see it" — but the seam
+holds the **pre-state** and the caller's `x0`, and the transition resolves its
+receiver from that same pre-state deterministically
+(`declassifiedSignalReceiver?`), so the seam can re-resolve it and a theorem can
+pin the two resolutions equal (`Platform.FFI.refusedSignalReceiver?_resolves`).
+With a producer that provably sets it, the field stops being the
+unwired-structure shape CLAUDE.md forbids and becomes the §3.1 obligation
+discharged.  *Which* hop failed still rides the `reason` discriminant. -/
 structure DeclassificationRefusal where
   /-- The core the refused syscall was executing on. -/
   originatingCore : CoreId
@@ -149,6 +153,22 @@ structure DeclassificationRefusal where
   /-- The capability pointer the caller supplied in `x0` — what it asked for,
       verbatim. -/
   requestedTarget : SeLe4n.CPtr
+  /-- WS-SM SM9.C.1 (`refusalRecord_names_failed_hop`): the receiver a refused
+      **second hop** had resolved — the thread the badge would have been
+      delivered onward to — and `none` for every other refusal.
+
+      Seam-resolved like `subjectDomain`: the producer re-runs the transition's
+      own pre-state resolution (`Platform.FFI.refusedSignalReceiver?`), which a
+      theorem pins to the receiver the second-hop gate refused.  Without it a
+      hop-2 refusal reduces to the original capability operand and a
+      discriminant, and a monitor cannot identify the bound waiter an attempted
+      downgrade actually targeted — while the *success* path is required to
+      audit exactly that destination (`declassifiedSignal_audits_actual_destination`).
+
+      Deliberately **not** defaulted, for the reason `DeclassificationEvent.actor`
+      is not: a `:= none` default would let a future second producer compile
+      while silently never naming the receiver its refusals resolved. -/
+  refusedReceiver : Option SeLe4n.ThreadId
   deriving Repr, DecidableEq
 
 /-- WS-SM SM9.B.1: **the subject's domain is not a function of the rest of the
@@ -175,10 +195,12 @@ theorem refusalRecord_domain_is_seam_resolved :
       r₁.subjectDomain ≠ r₂.subjectDomain := by
   refine ⟨{ originatingCore := Concurrency.bootCoreId, subject := ⟨0⟩,
             subjectDomain := ⟨0⟩, syscall := .declassify,
-            reason := .declassificationDenied, requestedTarget := SeLe4n.CPtr.ofNat 1 },
+            reason := .declassificationDenied, requestedTarget := SeLe4n.CPtr.ofNat 1,
+            refusedReceiver := none },
           { originatingCore := Concurrency.bootCoreId, subject := ⟨0⟩,
             subjectDomain := ⟨1⟩, syscall := .declassify,
-            reason := .declassificationDenied, requestedTarget := SeLe4n.CPtr.ofNat 1 },
+            reason := .declassificationDenied, requestedTarget := SeLe4n.CPtr.ofNat 1,
+            refusedReceiver := none },
           rfl, rfl, rfl, rfl, rfl, by decide⟩
 
 

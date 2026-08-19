@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm9c-data-declassification-imnrue",
-      "commit_sha": "7f3f4b0f4dbc36033c046a0e0e5d771e49329605",
-      "tree_sha": "356dda2c2a22fb7e5d122a6f7f90e25e49684194",
-      "committed_at_utc": "2026-08-18T18:06:49-04:00"
+      "commit_sha": "1c2764b1829cab89e5b40fb0cc807e4d9ec3a7ba",
+      "tree_sha": "2ff6b8dd558b44e728135543432ad909ea493e6c",
+      "committed_at_utc": "2026-08-19T04:35:20+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1beb13eb54c5c089f4535caeff490ecd6ead169385adce832cf3d21f641d9fef"
+    "source_digest": "8c13c8ce21ff871b396edd4ce11adafd57eb4f07a8e7c8ddaf83edbd24b54881"
   },
   "summary": {
     "module_count": 352,
-    "declaration_count": 16439
+    "declaration_count": 16456
   },
   "readme_sync": {
     "version": "0.33.52",
     "lean_toolchain": "v4.28.0",
     "production_files": 283,
-    "production_loc": 277642,
+    "production_loc": 278091,
     "test_files": 69,
-    "test_loc": 60038,
-    "proved_theorem_lemma_decls": 9330,
+    "test_loc": 60194,
+    "proved_theorem_lemma_decls": 9339,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -92062,7 +92062,7 @@
         {
           "kind": "def",
           "name": "AuditReadOp.readsStructure",
-          "line": 1082,
+          "line": 1093,
           "called": [
             "AuditReadOp",
             "ReadableStructure"
@@ -92071,7 +92071,7 @@
         {
           "kind": "theorem",
           "name": "auditReadOp_structure_total",
-          "line": 1098,
+          "line": 1111,
           "called": [
             "AuditReadOp",
             "readsStructure"
@@ -92080,7 +92080,7 @@
         {
           "kind": "theorem",
           "name": "readableStructure_list_gate_insufficient",
-          "line": 1110,
+          "line": 1123,
           "called": [
             "AuditReadOp",
             "ReadableStructure",
@@ -92090,7 +92090,7 @@
         {
           "kind": "def",
           "name": "auditExportedFieldValue",
-          "line": 1136,
+          "line": 1149,
           "called": [
             "AuditReadField",
             "DeclassificationEvent",
@@ -92100,7 +92100,7 @@
         {
           "kind": "theorem",
           "name": "auditReadIndex_is_view_local",
-          "line": 1150,
+          "line": 1163,
           "called": [
             "DeclassificationEvent",
             "auditExportedFieldValue"
@@ -92109,7 +92109,7 @@
         {
           "kind": "theorem",
           "name": "dominatingReader_sees_global_identity",
-          "line": 1155,
+          "line": 1168,
           "called": [
             "DeclassificationEvent",
             "auditExportedFieldValue"
@@ -92118,7 +92118,7 @@
         {
           "kind": "def",
           "name": "auditCoreAndTrustWord",
-          "line": 1160,
+          "line": 1173,
           "called": [
             "DeclassificationEvent",
             "auditFieldChunkModulus",
@@ -92128,7 +92128,7 @@
         {
           "kind": "theorem",
           "name": "auditCoreAndTrustWord_core_fits",
-          "line": 1166,
+          "line": 1179,
           "called": [
             "DeclassificationEvent",
             "auditFieldChunkModulus",
@@ -92138,7 +92138,7 @@
         {
           "kind": "theorem",
           "name": "auditCoreAndTrustWord_roundtrip",
-          "line": 1173,
+          "line": 1186,
           "called": [
             "DeclassificationEvent",
             "auditCoreAndTrustWord",
@@ -92150,7 +92150,7 @@
         {
           "kind": "theorem",
           "name": "auditCoreAndTrustWord_trust_bit",
-          "line": 1184,
+          "line": 1197,
           "called": [
             "DeclassificationEvent",
             "auditCoreAndTrustWord",
@@ -92163,13 +92163,13 @@
         {
           "kind": "def",
           "name": "refusalTagSlots",
-          "line": 1214,
+          "line": 1227,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "refusalTagSlots_bounds_core",
-          "line": 1217,
+          "line": 1230,
           "called": [
             "CoreId",
             "numCores",
@@ -92179,7 +92179,7 @@
         {
           "kind": "theorem",
           "name": "refusalTagSlots_bounds_syscall",
-          "line": 1225,
+          "line": 1238,
           "called": [
             "SyscallId",
             "refusalTagSlots",
@@ -92189,7 +92189,7 @@
         {
           "kind": "theorem",
           "name": "refusalTagSlots_bounds_reason",
-          "line": 1232,
+          "line": 1245,
           "called": [
             "KernelError",
             "refusalTagSlots",
@@ -92200,7 +92200,7 @@
         {
           "kind": "def",
           "name": "refusalTagsWord",
-          "line": 1239,
+          "line": 1252,
           "called": [
             "DeclassificationRefusal",
             "refusalTagSlots",
@@ -92211,7 +92211,7 @@
         {
           "kind": "theorem",
           "name": "refusalTagsWord_roundtrip",
-          "line": 1244,
+          "line": 1257,
           "called": [
             "DeclassificationRefusal",
             "refusalTagSlots",
@@ -92226,7 +92226,7 @@
         {
           "kind": "theorem",
           "name": "refusalTagsWord_reason_is_abi_discriminant",
-          "line": 1260,
+          "line": 1273,
           "called": [
             "DeclassificationRefusal",
             "ofDiscriminant",
@@ -92238,7 +92238,7 @@
         {
           "kind": "theorem",
           "name": "refusalTagsWord_fits",
-          "line": 1268,
+          "line": 1281,
           "called": [
             "DeclassificationRefusal",
             "refusalTagSlots",
@@ -92252,7 +92252,7 @@
         {
           "kind": "def",
           "name": "refusalStatusWord",
-          "line": 1278,
+          "line": 1291,
           "called": [
             "refusalRingSize"
           ]
@@ -92260,7 +92260,7 @@
         {
           "kind": "def",
           "name": "refusalStatusSlot",
-          "line": 1282,
+          "line": 1295,
           "called": [
             "refusalRingSize"
           ]
@@ -92268,7 +92268,7 @@
         {
           "kind": "def",
           "name": "refusalStatusVersion",
-          "line": 1285,
+          "line": 1298,
           "called": [
             "refusalRingSize"
           ]
@@ -92276,7 +92276,7 @@
         {
           "kind": "theorem",
           "name": "refusalStatusWord_roundtrip",
-          "line": 1289,
+          "line": 1302,
           "called": [
             "refusalRingSize",
             "refusalStatusSlot",
@@ -92287,7 +92287,7 @@
         {
           "kind": "theorem",
           "name": "refusalStatusWord_fits",
-          "line": 1306,
+          "line": 1319,
           "called": [
             "refusalRingSize",
             "refusalStatusWord"
@@ -92296,7 +92296,7 @@
         {
           "kind": "def",
           "name": "refusalCountersWord",
-          "line": 1316,
+          "line": 1329,
           "called": [
             "maxRefusalCount"
           ]
@@ -92304,7 +92304,7 @@
         {
           "kind": "def",
           "name": "refusalCountersAttempts",
-          "line": 1320,
+          "line": 1333,
           "called": [
             "maxRefusalCount"
           ]
@@ -92312,7 +92312,7 @@
         {
           "kind": "def",
           "name": "refusalCountersDropped",
-          "line": 1323,
+          "line": 1336,
           "called": [
             "maxRefusalCount"
           ]
@@ -92320,7 +92320,7 @@
         {
           "kind": "theorem",
           "name": "refusalCountersWord_roundtrip",
-          "line": 1326,
+          "line": 1339,
           "called": [
             "maxRefusalCount",
             "refusalCountersAttempts",
@@ -92331,7 +92331,7 @@
         {
           "kind": "theorem",
           "name": "refusalCountersWord_fits",
-          "line": 1338,
+          "line": 1351,
           "called": [
             "maxRefusalCount",
             "refusalCountersWord"
@@ -92340,7 +92340,7 @@
         {
           "kind": "def",
           "name": "refusalExportedFieldValue",
-          "line": 1346,
+          "line": 1359,
           "called": [
             "DeclassificationRefusal",
             "RefusalReadField"
@@ -92349,7 +92349,7 @@
         {
           "kind": "def",
           "name": "auditReadWord",
-          "line": 1363,
+          "line": 1376,
           "called": [
             "AuditReadOp",
             "GenericLabelingContext",
@@ -92382,7 +92382,7 @@
         {
           "kind": "theorem",
           "name": "auditRead_determined_by_view",
-          "line": 1470,
+          "line": 1516,
           "called": [
             "AuditReadOp",
             "GenericLabelingContext",
@@ -92397,7 +92397,7 @@
         {
           "kind": "theorem",
           "name": "auditRead_hides_global_position",
-          "line": 1495,
+          "line": 1541,
           "called": [
             "AuditReadOp",
             "GenericLabelingContext",
@@ -92413,7 +92413,7 @@
         {
           "kind": "theorem",
           "name": "auditReadStatus_atomic",
-          "line": 1513,
+          "line": 1559,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -92435,7 +92435,7 @@
         {
           "kind": "theorem",
           "name": "auditReadStatus_partial_hides_generation",
-          "line": 1544,
+          "line": 1590,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -92449,7 +92449,7 @@
         {
           "kind": "theorem",
           "name": "auditReadStatus_global_generation_leaks",
-          "line": 1562,
+          "line": 1608,
           "called": [
             "auditStatusLengthSlots",
             "auditStatusWord"
@@ -92458,7 +92458,7 @@
         {
           "kind": "theorem",
           "name": "observerScopedGeneration_not_mountable",
-          "line": 1579,
+          "line": 1625,
           "called": [
             "SecurityDomain",
             "cons",
@@ -92469,7 +92469,7 @@
         {
           "kind": "def",
           "name": "auditDrainViewComplete",
-          "line": 1646,
+          "line": 1692,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -92483,7 +92483,7 @@
         {
           "kind": "def",
           "name": "auditDrainVisiblePrefix",
-          "line": 1671,
+          "line": 1717,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -92499,7 +92499,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_denied_for_unauthorized",
-          "line": 1685,
+          "line": 1731,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -92514,7 +92514,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_unconfigured_denied",
-          "line": 1694,
+          "line": 1740,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -92531,7 +92531,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_frame",
-          "line": 1705,
+          "line": 1751,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -92549,7 +92549,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_denied_for_incomplete_view",
-          "line": 1733,
+          "line": 1779,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -92564,7 +92564,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_returned_length_is_visible",
-          "line": 1750,
+          "line": 1796,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -92585,7 +92585,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_requires_full_dominance",
-          "line": 1789,
+          "line": 1835,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -92602,7 +92602,7 @@
         {
           "kind": "def",
           "name": "labelingAssignedDomain",
-          "line": 1814,
+          "line": 1860,
           "called": [
             "GenericLabelingContext",
             "ObjId",
@@ -92613,7 +92613,7 @@
         {
           "kind": "theorem",
           "name": "labelingAssignedDomain_thread",
-          "line": 1819,
+          "line": 1865,
           "called": [
             "GenericLabelingContext",
             "ThreadId",
@@ -92623,7 +92623,7 @@
         {
           "kind": "theorem",
           "name": "labelingAssignedDomain_object",
-          "line": 1824,
+          "line": 1870,
           "called": [
             "GenericLabelingContext",
             "ObjId",
@@ -92633,7 +92633,7 @@
         {
           "kind": "def",
           "name": "auditTrailSourcesFromLabeling",
-          "line": 1840,
+          "line": 1886,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -92643,7 +92643,7 @@
         {
           "kind": "theorem",
           "name": "auditTrailSourcesFromLabeling_drop",
-          "line": 1846,
+          "line": 1892,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -92653,7 +92653,7 @@
         {
           "kind": "theorem",
           "name": "auditTrailSourcesFromLabeling_nil",
-          "line": 1853,
+          "line": 1899,
           "called": [
             "GenericLabelingContext",
             "auditTrailSourcesFromLabeling"
@@ -92662,7 +92662,7 @@
         {
           "kind": "theorem",
           "name": "declassifyObjectFromCore_preserves_trailSources",
-          "line": 1865,
+          "line": 1911,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -92681,7 +92681,7 @@
         {
           "kind": "def",
           "name": "auditTrailDestinationsFromLabeling",
-          "line": 1907,
+          "line": 1953,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -92691,7 +92691,7 @@
         {
           "kind": "theorem",
           "name": "auditTrailDestinationsFromLabeling_drop",
-          "line": 1912,
+          "line": 1958,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -92701,7 +92701,7 @@
         {
           "kind": "theorem",
           "name": "auditTrailDestinationsFromLabeling_nil",
-          "line": 1919,
+          "line": 1965,
           "called": [
             "GenericLabelingContext",
             "auditTrailDestinationsFromLabeling"
@@ -92710,7 +92710,7 @@
         {
           "kind": "def",
           "name": "auditTrailActorsFromLabeling",
-          "line": 1931,
+          "line": 1977,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext"
@@ -92719,7 +92719,7 @@
         {
           "kind": "theorem",
           "name": "auditTrailActorsFromLabeling_drop",
-          "line": 1936,
+          "line": 1982,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -92729,7 +92729,7 @@
         {
           "kind": "theorem",
           "name": "auditTrailActorsFromLabeling_nil",
-          "line": 1943,
+          "line": 1989,
           "called": [
             "GenericLabelingContext",
             "auditTrailActorsFromLabeling"
@@ -92738,7 +92738,7 @@
         {
           "kind": "theorem",
           "name": "declassifyObjectFromCore_preserves_trailDestinations",
-          "line": 1950,
+          "line": 1996,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -92757,7 +92757,7 @@
         {
           "kind": "theorem",
           "name": "declassifyObjectFromCore_preserves_trailActors",
-          "line": 1971,
+          "line": 2017,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -92775,7 +92775,7 @@
         {
           "kind": "theorem",
           "name": "auditVisibleEntry_target_domain_flows",
-          "line": 2004,
+          "line": 2050,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -92788,7 +92788,7 @@
         {
           "kind": "def",
           "name": "auditMonitorDominatesSubjects",
-          "line": 2023,
+          "line": 2069,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -92798,7 +92798,7 @@
         {
           "kind": "theorem",
           "name": "auditMonitorAuthorized_dominates_subjects",
-          "line": 2030,
+          "line": 2076,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -92811,7 +92811,7 @@
         {
           "kind": "def",
           "name": "auditMonitorDominatesObjects",
-          "line": 2049,
+          "line": 2100,
           "called": [
             "GenericLabelingContext",
             "ObjId",
@@ -92821,7 +92821,7 @@
         {
           "kind": "theorem",
           "name": "auditMonitorAuthorized_dominates_objects",
-          "line": 2056,
+          "line": 2107,
           "called": [
             "GenericLabelingContext",
             "ObjId",
@@ -92834,7 +92834,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_requires_full_dominance_of_labeling",
-          "line": 2078,
+          "line": 2129,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -92858,7 +92858,7 @@
         {
           "kind": "def",
           "name": "legacySubjectLabels",
-          "line": 2145,
+          "line": 2196,
           "called": [
             "SecurityLabel"
           ]
@@ -92866,7 +92866,7 @@
         {
           "kind": "theorem",
           "name": "mem_legacySubjectLabels",
-          "line": 2153,
+          "line": 2204,
           "called": [
             "SecurityLabel",
             "legacySubjectLabels"
@@ -92875,7 +92875,7 @@
         {
           "kind": "theorem",
           "name": "liftLegacyContext_threadDomain_embedded",
-          "line": 2160,
+          "line": 2211,
           "called": [
             "LabelingContext",
             "ThreadId",
@@ -92888,7 +92888,7 @@
         {
           "kind": "theorem",
           "name": "liftLegacyContext_objectDomain_embedded",
-          "line": 2171,
+          "line": 2222,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -92901,7 +92901,7 @@
         {
           "kind": "def",
           "name": "validatedAuditMonitorClearance",
-          "line": 2186,
+          "line": 2237,
           "called": [
             "LabelingContext",
             "SecurityDomain",
@@ -92913,7 +92913,7 @@
         {
           "kind": "theorem",
           "name": "validatedAuditMonitorClearance_none",
-          "line": 2197,
+          "line": 2248,
           "called": [
             "LabelingContext",
             "none",
@@ -92923,7 +92923,7 @@
         {
           "kind": "theorem",
           "name": "validatedAuditMonitorClearance_dominates_subjects",
-          "line": 2208,
+          "line": 2259,
           "called": [
             "LabelingContext",
             "SecurityDomain",
@@ -92936,7 +92936,7 @@
         {
           "kind": "theorem",
           "name": "validatedAuditMonitorClearance_dominates_objects",
-          "line": 2229,
+          "line": 2280,
           "called": [
             "LabelingContext",
             "SecurityDomain",
@@ -92949,7 +92949,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_validated_view_complete",
-          "line": 2251,
+          "line": 2302,
           "called": [
             "DeclassificationAuditLog",
             "LabelingContext",
@@ -92969,7 +92969,7 @@
         {
           "kind": "theorem",
           "name": "validatedAuditMonitorClearance_misconfigured_low",
-          "line": 2271,
+          "line": 2322,
           "called": [
             "LabelingContext",
             "embedLegacyLabel",
@@ -92981,7 +92981,7 @@
         {
           "kind": "theorem",
           "name": "misconfiguredDeployment_cannot_drain",
-          "line": 2281,
+          "line": 2332,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -92998,7 +92998,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_preserves_auditLogBounded",
-          "line": 2291,
+          "line": 2342,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -93014,7 +93014,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_preserves_wellFormed_at_epoch",
-          "line": 2310,
+          "line": 2361,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -93031,7 +93031,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_monotone_epoch",
-          "line": 2323,
+          "line": 2374,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -93047,7 +93047,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_next_timestamp_fresh",
-          "line": 2341,
+          "line": 2392,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -93065,7 +93065,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_fully_clears_for_dominating_reader",
-          "line": 2361,
+          "line": 2412,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -93081,7 +93081,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_returned_length_le",
-          "line": 2385,
+          "line": 2436,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -93097,7 +93097,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_returned_length_fits",
-          "line": 2402,
+          "line": 2453,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -93114,7 +93114,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_returned_length_toUInt64_lossless",
-          "line": 2414,
+          "line": 2465,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -93131,7 +93131,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_partial_reader_drains_nothing",
-          "line": 2430,
+          "line": 2481,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -93149,7 +93149,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_preserves_proofLayerInvariantBundle",
-          "line": 2450,
+          "line": 2501,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -93168,7 +93168,7 @@
         {
           "kind": "theorem",
           "name": "auditOccupancy_alphabet_bounded",
-          "line": 2495,
+          "line": 2546,
           "called": [
             "SystemState",
             "auditLogBounded",
@@ -93180,7 +93180,7 @@
         {
           "kind": "theorem",
           "name": "declassify_capacity_refusal_of_full",
-          "line": 2506,
+          "line": 2557,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -93207,7 +93207,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_flips_declassify_outcome",
-          "line": 2540,
+          "line": 2591,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -93236,7 +93236,7 @@
         {
           "kind": "theorem",
           "name": "auditVisibleEntry",
-          "line": 2601,
+          "line": 2652,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -93250,7 +93250,7 @@
         {
           "kind": "theorem",
           "name": "auditRead_stable_under_append",
-          "line": 2619,
+          "line": 2670,
           "called": [
             "AuditReadOp",
             "DeclassificationAuditLog",
@@ -93268,7 +93268,7 @@
         {
           "kind": "theorem",
           "name": "auditRead_bracketed_detects_drain",
-          "line": 2667,
+          "line": 2720,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -93286,13 +93286,13 @@
         {
           "kind": "theorem",
           "name": "auditStatusSplitRead_tears",
-          "line": 2701,
+          "line": 2754,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "auditReadWord_state_preserving",
-          "line": 2722,
+          "line": 2775,
           "called": [
             "AuditReadOp",
             "GenericLabelingContext",
@@ -93306,7 +93306,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_requires_full_dominance",
-          "line": 2765,
+          "line": 2818,
           "called": [
             "AuditReadOp",
             "AuditReadOp.readsStructure",
@@ -93322,7 +93322,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_partial_reader_learns_nothing",
-          "line": 2781,
+          "line": 2834,
           "called": [
             "AuditReadOp",
             "GenericLabelingContext",
@@ -93339,7 +93339,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_gate_is_configuration_derived",
-          "line": 2800,
+          "line": 2853,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -93353,11 +93353,12 @@
         {
           "kind": "def",
           "name": "refusalWitnessRecord",
-          "line": 2809,
+          "line": 2862,
           "called": [
             "DeclassificationRefusal",
             "SecurityDomain",
             "bootCoreId",
+            "none",
             "ofNat",
             "syscall"
           ]
@@ -93365,7 +93366,7 @@
         {
           "kind": "def",
           "name": "refusalEvictionWitness",
-          "line": 2820,
+          "line": 2874,
           "called": [
             "RefusalLedger",
             "refusalRingSize",
@@ -93376,7 +93377,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_records_gate_unsound",
-          "line": 2844,
+          "line": 2898,
           "called": [
             "DeclassificationRefusal",
             "GenericLabelingContext",
@@ -93397,7 +93398,7 @@
         {
           "kind": "theorem",
           "name": "auditStatus_does_not_detect_refusal_write",
-          "line": 2872,
+          "line": 2926,
           "called": [
             "GenericLabelingContext",
             "RefusalLedger",
@@ -93410,7 +93411,7 @@
         {
           "kind": "theorem",
           "name": "refusalStatus_detects_refusal_write",
-          "line": 2885,
+          "line": 2939,
           "called": [
             "DeclassificationRefusal",
             "GenericLabelingContext",
@@ -93430,7 +93431,7 @@
         {
           "kind": "theorem",
           "name": "refusalSlotField_reconstructs",
-          "line": 2911,
+          "line": 2965,
           "called": [
             "DeclassificationRefusal",
             "RefusalReadField",
@@ -93444,7 +93445,7 @@
         {
           "kind": "def",
           "name": "decodeAuditReadOp",
-          "line": 2935,
+          "line": 2989,
           "called": [
             "AuditReadOp",
             "none"
@@ -93453,13 +93454,13 @@
         {
           "kind": "def",
           "name": "auditReadOpcodeCount",
-          "line": 2974,
+          "line": 3032,
           "called": []
         },
         {
           "kind": "def",
           "name": "encodeAuditReadOp",
-          "line": 2977,
+          "line": 3035,
           "called": [
             "AuditReadOp"
           ]
@@ -93467,7 +93468,7 @@
         {
           "kind": "theorem",
           "name": "decodeAuditReadOp_encode",
-          "line": 3006,
+          "line": 3066,
           "called": [
             "AuditReadOp",
             "decodeAuditReadOp",
@@ -93477,7 +93478,7 @@
         {
           "kind": "theorem",
           "name": "decodeAuditReadOp_out_of_range",
-          "line": 3023,
+          "line": 3085,
           "called": [
             "auditReadOpcodeCount",
             "decodeAuditReadOp",
@@ -93487,7 +93488,7 @@
         {
           "kind": "theorem",
           "name": "decodeAuditReadOp_isSome_lt",
-          "line": 3035,
+          "line": 3097,
           "called": [
             "auditReadOpcodeCount",
             "decodeAuditReadOp",
@@ -93497,7 +93498,7 @@
         {
           "kind": "def",
           "name": "auditReadFromCore",
-          "line": 3110,
+          "line": 3172,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -93514,7 +93515,7 @@
         {
           "kind": "theorem",
           "name": "auditRead_unconfigured_denied",
-          "line": 3133,
+          "line": 3195,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -93528,7 +93529,7 @@
         {
           "kind": "theorem",
           "name": "misconfiguredDeployment_cannot_read",
-          "line": 3143,
+          "line": 3205,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -93545,7 +93546,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_no_subject",
-          "line": 3156,
+          "line": 3218,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -93562,7 +93563,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_frame",
-          "line": 3164,
+          "line": 3226,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -93577,7 +93578,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_word_fits",
-          "line": 3188,
+          "line": 3250,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -93591,7 +93592,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_toUInt64_lossless",
-          "line": 3211,
+          "line": 3273,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -93607,7 +93608,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_value",
-          "line": 3225,
+          "line": 3287,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -93625,7 +93626,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_partial_reader_denied",
-          "line": 3258,
+          "line": 3320,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -93641,7 +93642,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_ok_is_monitor",
-          "line": 3269,
+          "line": 3331,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -93659,7 +93660,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_moves_partial_readers_status",
-          "line": 3299,
+          "line": 3361,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -93676,7 +93677,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_observer_dominates_subjects",
-          "line": 3333,
+          "line": 3395,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -93699,7 +93700,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_bracketed_detects_drain_u64",
-          "line": 3368,
+          "line": 3430,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -93720,7 +93721,7 @@
         {
           "kind": "theorem",
           "name": "refusalRead_requires_monitor_at_entry",
-          "line": 3402,
+          "line": 3464,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -97762,6 +97763,7 @@
             "recordSyscallRefusal",
             "recordSyscallRefusal_records",
             "refusalLedger_version_advances_on_record",
+            "refusalReceiverFor",
             "refusalSeamClass",
             "refusalWrite_cannot_exhaust_trail",
             "refusalWrite_declassificationAuditLog_eq",
@@ -97773,7 +97775,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_preserves_projectionOnCore",
-          "line": 1912,
+          "line": 1914,
           "called": [
             "CoreId",
             "IfObserver",
@@ -97790,7 +97792,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_perCore_NI",
-          "line": 1926,
+          "line": 1928,
           "called": [
             "CoreId",
             "IfObserver",
@@ -97808,7 +97810,7 @@
         {
           "kind": "structure",
           "name": "DeclassificationRequest",
-          "line": 1948,
+          "line": 1950,
           "called": [
             "CoreId",
             "ObjId"
@@ -97817,7 +97819,7 @@
         {
           "kind": "def",
           "name": "declassifyRun",
-          "line": 1960,
+          "line": 1962,
           "called": [
             "DeclassificationPolicy",
             "DeclassificationRequest",
@@ -97830,7 +97832,7 @@
         {
           "kind": "theorem",
           "name": "declassifyRun_nil",
-          "line": 1968,
+          "line": 1970,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -97842,7 +97844,7 @@
         {
           "kind": "theorem",
           "name": "declassifyRun_records_each",
-          "line": 1977,
+          "line": 1979,
           "called": [
             "DeclassificationPolicy",
             "DeclassificationRequest",
@@ -97862,7 +97864,7 @@
         {
           "kind": "theorem",
           "name": "declassifyRun_preserves_existing",
-          "line": 2011,
+          "line": 2013,
           "called": [
             "DeclassificationPolicy",
             "DeclassificationRequest",
@@ -97878,7 +97880,7 @@
         {
           "kind": "theorem",
           "name": "declassifyRun_preserves_wellFormed",
-          "line": 2041,
+          "line": 2043,
           "called": [
             "DeclassificationPolicy",
             "DeclassificationRequest",
@@ -97895,7 +97897,7 @@
         {
           "kind": "theorem",
           "name": "declassifyRun_preserves_auditLogBounded",
-          "line": 2066,
+          "line": 2068,
           "called": [
             "DeclassificationPolicy",
             "DeclassificationRequest",
@@ -97915,7 +97917,7 @@
         {
           "kind": "theorem",
           "name": "declassifyRun_frame",
-          "line": 2100,
+          "line": 2102,
           "called": [
             "DeclassificationPolicy",
             "DeclassificationRequest",
@@ -97931,7 +97933,7 @@
         {
           "kind": "theorem",
           "name": "declassifyRun_preserves_projectionOnCore",
-          "line": 2126,
+          "line": 2128,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -97952,13 +97954,13 @@
         {
           "kind": "inductive",
           "name": "DeclassificationRuleId",
-          "line": 2162,
+          "line": 2164,
           "called": []
         },
         {
           "kind": "def",
           "name": "DeclassificationRuleId.all",
-          "line": 2200,
+          "line": 2202,
           "called": [
             "DeclassificationRuleId"
           ]
@@ -97966,7 +97968,7 @@
         {
           "kind": "theorem",
           "name": "DeclassificationRuleId.mem_all",
-          "line": 2208,
+          "line": 2210,
           "called": [
             "DeclassificationRuleId",
             "DeclassificationRuleId.all"
@@ -97975,13 +97977,13 @@
         {
           "kind": "theorem",
           "name": "DeclassificationRuleId.all_nodup",
-          "line": 2211,
+          "line": 2213,
           "called": []
         },
         {
           "kind": "def",
           "name": "DeclassificationRuleId.evidenceProp",
-          "line": 2215,
+          "line": 2217,
           "called": [
             "CoreId",
             "DeclassificationActor",
@@ -98029,6 +98031,7 @@
             "recordDeclassification",
             "recordDeclassificationChecked",
             "recordSyscallRefusal",
+            "refusalReceiverFor",
             "refusalSeamClass",
             "st",
             "syscall",
@@ -98039,7 +98042,7 @@
         {
           "kind": "def",
           "name": "declassificationRuleEvidence",
-          "line": 2318,
+          "line": 2322,
           "called": [
             "DeclassificationRuleId",
             "authorizeDeclassificationOnCore_frame",
@@ -98062,7 +98065,7 @@
         {
           "kind": "def",
           "name": "declassificationRuleEvidenceName",
-          "line": 2355,
+          "line": 2359,
           "called": [
             "DeclassificationRuleId",
             "authorizeDeclassificationOnCore_frame",
@@ -98082,7 +98085,7 @@
         {
           "kind": "def",
           "name": "declassificationRuleStatement",
-          "line": 2374,
+          "line": 2378,
           "called": [
             "DeclassificationRuleId"
           ]
@@ -98090,7 +98093,7 @@
         {
           "kind": "theorem",
           "name": "declassificationRules_count",
-          "line": 2400,
+          "line": 2404,
           "called": [
             "length"
           ]
@@ -98098,7 +98101,7 @@
         {
           "kind": "theorem",
           "name": "declassificationRuleEvidence_nonempty",
-          "line": 2404,
+          "line": 2408,
           "called": [
             "DeclassificationRuleId",
             "declassificationRuleEvidenceName",
@@ -98108,7 +98111,7 @@
         {
           "kind": "theorem",
           "name": "declassificationRuleEvidence_distinct",
-          "line": 2410,
+          "line": 2414,
           "called": [
             "DeclassificationRuleId",
             "declassificationRuleEvidenceName",
@@ -98118,7 +98121,7 @@
         {
           "kind": "theorem",
           "name": "declassificationRuleStatement_nonempty",
-          "line": 2420,
+          "line": 2424,
           "called": [
             "DeclassificationRuleId",
             "declassificationRuleStatement",
@@ -98128,7 +98131,7 @@
         {
           "kind": "def",
           "name": "readableStructureAgrees",
-          "line": 2474,
+          "line": 2478,
           "called": [
             "GenericLabelingContext",
             "ReadableStructure",
@@ -98141,7 +98144,7 @@
         {
           "kind": "theorem",
           "name": "auditObservationalEquivalence_clause_total",
-          "line": 2499,
+          "line": 2503,
           "called": [
             "GenericLabelingContext",
             "ReadableStructure",
@@ -98153,7 +98156,7 @@
         {
           "kind": "def",
           "name": "auditObservationalEquivalence",
-          "line": 2512,
+          "line": 2516,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -98168,7 +98171,7 @@
         {
           "kind": "theorem",
           "name": "auditObservationalEquivalence_refl",
-          "line": 2520,
+          "line": 2524,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -98180,7 +98183,7 @@
         {
           "kind": "theorem",
           "name": "auditObservationalEquivalence_symm",
-          "line": 2529,
+          "line": 2533,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -98193,7 +98196,7 @@
         {
           "kind": "theorem",
           "name": "auditObservationalEquivalence_trans",
-          "line": 2541,
+          "line": 2545,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -98206,7 +98209,7 @@
         {
           "kind": "theorem",
           "name": "auditObservationalEquivalence_of_readableFramed",
-          "line": 2570,
+          "line": 2574,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -98219,7 +98222,7 @@
         {
           "kind": "theorem",
           "name": "authorizeDeclassificationOnCore_preserves_auditObservationalEquivalence",
-          "line": 2603,
+          "line": 2607,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -98244,7 +98247,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_preserves_auditObservationalEquivalence",
-          "line": 2644,
+          "line": 2648,
           "called": [
             "CoreId",
             "IfObserver",
@@ -98265,7 +98268,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_preserves_auditObservationalEquivalence",
-          "line": 2701,
+          "line": 2710,
           "called": [
             "CoreId",
             "IfObserver",
@@ -98276,16 +98279,19 @@
             "ThreadId",
             "auditObservationalEquivalence",
             "declassificationRefusals_write_preserves_projection",
+            "ofNat",
             "projectState",
             "recordSyscallRefusal",
             "recordSyscallRefusal_frame",
-            "recordSyscallRefusal_ledger_congr"
+            "recordSyscallRefusal_ledger_congr",
+            "refusedSignalReceiver",
+            "toNat"
           ]
         },
         {
           "kind": "theorem",
           "name": "lowEquivalent_does_not_determine_visible_view",
-          "line": 2738,
+          "line": 2750,
           "called": [
             "GenericLabelingContext",
             "IfObserver",
@@ -98309,7 +98315,7 @@
         {
           "kind": "theorem",
           "name": "auditRead_no_channel",
-          "line": 2769,
+          "line": 2781,
           "called": [
             "AuditReadOp",
             "IfObserver",
@@ -98325,7 +98331,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_no_channel",
-          "line": 2789,
+          "line": 2801,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -98345,7 +98351,7 @@
         {
           "kind": "theorem",
           "name": "auditRead_gates_are_five",
-          "line": 2850,
+          "line": 2862,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -98376,7 +98382,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_auditOccupancy_bounded",
-          "line": 2893,
+          "line": 2905,
           "called": [
             "SystemState",
             "auditLogBounded",
@@ -98389,7 +98395,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_occupancy_is_not_a_covert_channel",
-          "line": 2932,
+          "line": 2944,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -98433,7 +98439,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_preserves_projectionOnCore",
-          "line": 2983,
+          "line": 2995,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -98451,7 +98457,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_perCore_NI",
-          "line": 2995,
+          "line": 3007,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -98470,7 +98476,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_perCore_NI",
-          "line": 3006,
+          "line": 3018,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -98491,7 +98497,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.DeclassifiedSignal",
       "path": "SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean",
-      "declaration_count": 83,
+      "declaration_count": 87,
       "declarations": [
         {
           "kind": "namespace",
@@ -100070,7 +100076,6 @@
             "Badge",
             "DeclassificationPolicy",
             "GenericLabelingContext",
-            "Kernel",
             "ObjId",
             "SystemState",
             "ThreadId",
@@ -100079,6 +100084,93 @@
             "notificationId",
             "notificationSignalDeclassifiedCrossCoreDispatch",
             "notificationSignalDeclassifiedOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "declassifiedSignalHopAuthorization_error_refusal",
+          "line": 2087,
+          "called": [
+            "DeclassificationPolicy",
+            "DeclassifiedSignalHop",
+            "GenericLabelingContext",
+            "KernelError",
+            "SecurityDomain",
+            "declassificationDecision",
+            "declassifiedSignalHopAuthorization",
+            "refusal",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "declassifiedSignalPlan_deniedAtReceiver_resolves",
+          "line": 2111,
+          "called": [
+            "DeclassificationPolicy",
+            "GenericLabelingContext",
+            "ObjId",
+            "SecurityDomain",
+            "SystemState",
+            "declassifiedSignalHopAuthorization",
+            "declassifiedSignalHopAuthorization_error_refusal",
+            "declassifiedSignalPlan",
+            "declassifiedSignalReceiver",
+            "none",
+            "notificationId",
+            "refusal",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalDeclassifiedOnCore_denied_preserves_state",
+          "line": 2144,
+          "called": [
+            "Badge",
+            "CoreId",
+            "DeclassificationPolicy",
+            "GenericLabelingContext",
+            "KernelError",
+            "ObjId",
+            "SystemState",
+            "badge",
+            "currentOnCore",
+            "declassificationActorOf",
+            "declassifiedSignalPlan",
+            "none",
+            "notificationId",
+            "notificationSignalBoundOnCore",
+            "notificationSignalDeclassifiedOnCore",
+            "recordDeclassifiedHops",
+            "st",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enforcement_sufficiency_declassifySignal",
+          "line": 2200,
+          "called": [
+            "Badge",
+            "CoreId",
+            "DeclassificationPolicy",
+            "GenericLabelingContext",
+            "Kernel",
+            "ObjId",
+            "SystemState",
+            "badge",
+            "currentOnCore",
+            "declassificationActorOf",
+            "declassifiedSignalPlan",
+            "none",
+            "notificationId",
+            "notificationSignalBoundOnCore",
+            "notificationSignalDeclassifiedOnCore",
+            "notificationSignalDeclassifiedOnCore_eq_of_subject",
+            "notificationSignalDeclassifiedOnCore_no_subject",
+            "recordDeclassifiedHops",
             "st"
           ]
         }
@@ -120012,7 +120104,7 @@
         {
           "kind": "structure",
           "name": "DeclassificationRefusal",
-          "line": 127,
+          "line": 131,
           "called": [
             "CPtr",
             "CoreId",
@@ -120026,10 +120118,11 @@
         {
           "kind": "theorem",
           "name": "refusalRecord_domain_is_seam_resolved",
-          "line": 168,
+          "line": 188,
           "called": [
             "DeclassificationRefusal",
             "bootCoreId",
+            "none",
             "ofNat",
             "syscall"
           ]
@@ -120037,13 +120130,13 @@
         {
           "kind": "def",
           "name": "refusalRingSize",
-          "line": 202,
+          "line": 224,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "refusalRingSize_pos",
-          "line": 206,
+          "line": 228,
           "called": [
             "refusalRingSize"
           ]
@@ -120051,19 +120144,19 @@
         {
           "kind": "def",
           "name": "maxRefusalCount",
-          "line": 215,
+          "line": 237,
           "called": []
         },
         {
           "kind": "def",
           "name": "saturatingSucc",
-          "line": 223,
+          "line": 245,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "saturatingSucc_le",
-          "line": 228,
+          "line": 250,
           "called": [
             "saturatingSucc"
           ]
@@ -120071,7 +120164,7 @@
         {
           "kind": "theorem",
           "name": "saturatingSucc_of_lt",
-          "line": 235,
+          "line": 257,
           "called": [
             "saturatingSucc"
           ]
@@ -120079,7 +120172,7 @@
         {
           "kind": "theorem",
           "name": "saturatingSucc_at_ceiling",
-          "line": 242,
+          "line": 264,
           "called": [
             "saturatingSucc"
           ]
@@ -120087,7 +120180,7 @@
         {
           "kind": "theorem",
           "name": "saturatingSucc_monotone",
-          "line": 250,
+          "line": 272,
           "called": [
             "saturatingSucc"
           ]
@@ -120095,7 +120188,7 @@
         {
           "kind": "def",
           "name": "refusalSlotSucc",
-          "line": 257,
+          "line": 279,
           "called": [
             "refusalRingSize",
             "refusalRingSize_pos"
@@ -120104,7 +120197,7 @@
         {
           "kind": "theorem",
           "name": "refusalSlotSucc_val",
-          "line": 262,
+          "line": 284,
           "called": [
             "refusalRingSize",
             "refusalSlotSucc"
@@ -120113,7 +120206,7 @@
         {
           "kind": "structure",
           "name": "RefusalLedger",
-          "line": 283,
+          "line": 305,
           "called": [
             "DeclassificationRefusal",
             "maxRefusalCount",
@@ -120123,13 +120216,13 @@
         {
           "kind": "namespace",
           "name": "RefusalLedger",
-          "line": 301,
+          "line": 323,
           "called": []
         },
         {
           "kind": "def",
           "name": "initial",
-          "line": 305,
+          "line": 327,
           "called": [
             "RefusalLedger",
             "none",
@@ -120139,8 +120232,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:312>",
-          "line": 312,
+          "name": "<anonymous:instance:334>",
+          "line": 334,
           "called": [
             "RefusalLedger",
             "initial"
@@ -120149,7 +120242,7 @@
         {
           "kind": "theorem",
           "name": "initial_recent_get",
-          "line": 315,
+          "line": 337,
           "called": [
             "get",
             "initial",
@@ -120160,7 +120253,7 @@
         {
           "kind": "theorem",
           "name": "initial_counters",
-          "line": 320,
+          "line": 342,
           "called": [
             "RefusalLedger"
           ]
@@ -120168,7 +120261,7 @@
         {
           "kind": "def",
           "name": "recordRefusal",
-          "line": 343,
+          "line": 365,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120181,7 +120274,7 @@
         {
           "kind": "theorem",
           "name": "recordRefusal_writes_selected_slot",
-          "line": 357,
+          "line": 379,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120192,7 +120285,7 @@
         {
           "kind": "theorem",
           "name": "recordRefusal_frames_other_slots",
-          "line": 364,
+          "line": 386,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120205,7 +120298,7 @@
         {
           "kind": "theorem",
           "name": "recordRefusal_nextSlot",
-          "line": 370,
+          "line": 392,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120216,7 +120309,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_version_advances_on_record",
-          "line": 382,
+          "line": 404,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120226,7 +120319,7 @@
         {
           "kind": "theorem",
           "name": "recordRefusal_saturates",
-          "line": 389,
+          "line": 411,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120238,7 +120331,7 @@
         {
           "kind": "theorem",
           "name": "recordRefusal_attemptCount_monotone",
-          "line": 396,
+          "line": 418,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120249,7 +120342,7 @@
         {
           "kind": "theorem",
           "name": "recordRefusal_ring_wraps_counted",
-          "line": 408,
+          "line": 430,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120261,7 +120354,7 @@
         {
           "kind": "theorem",
           "name": "recordRefusal_never_refuses",
-          "line": 428,
+          "line": 450,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -120280,7 +120373,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_bounded_structurally",
-          "line": 445,
+          "line": 467,
           "called": [
             "RefusalLedger",
             "length",
@@ -120292,7 +120385,7 @@
         {
           "kind": "theorem",
           "name": "refusalCounter_bound_is_structural",
-          "line": 463,
+          "line": 485,
           "called": [
             "maxRefusalCount"
           ]
@@ -120300,7 +120393,7 @@
         {
           "kind": "theorem",
           "name": "foldl_recordRefusal_version",
-          "line": 473,
+          "line": 495,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120313,7 +120406,7 @@
         {
           "kind": "theorem",
           "name": "foldl_recordRefusal_nextSlot",
-          "line": 483,
+          "line": 505,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120330,7 +120423,7 @@
         {
           "kind": "theorem",
           "name": "foldl_recordRefusal_frames_slot",
-          "line": 497,
+          "line": 519,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120348,7 +120441,7 @@
         {
           "kind": "theorem",
           "name": "recordRefusal_no_loss",
-          "line": 527,
+          "line": 549,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120366,7 +120459,7 @@
         {
           "kind": "theorem",
           "name": "recordRefusal_droppedCount_monotone",
-          "line": 540,
+          "line": 562,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120378,7 +120471,7 @@
         {
           "kind": "theorem",
           "name": "foldl_recordRefusal_droppedCount_monotone",
-          "line": 550,
+          "line": 572,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120392,7 +120485,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_eviction_is_counted",
-          "line": 574,
+          "line": 596,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120407,7 +120500,7 @@
         {
           "kind": "theorem",
           "name": "refusalRead_bracketed_detects_overwrite",
-          "line": 598,
+          "line": 620,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -120419,13 +120512,13 @@
         {
           "kind": "inductive",
           "name": "RefusalSeamClass",
-          "line": 634,
+          "line": 656,
           "called": []
         },
         {
           "kind": "def",
           "name": "refusalSeamClass",
-          "line": 651,
+          "line": 673,
           "called": [
             "RefusalSeamClass",
             "SyscallId",
@@ -120443,7 +120536,7 @@
         {
           "kind": "theorem",
           "name": "refusalSeamClass_total",
-          "line": 677,
+          "line": 699,
           "called": [
             "SyscallId",
             "refusalSeamClass"
@@ -120452,7 +120545,7 @@
         {
           "kind": "theorem",
           "name": "refusalSeamClass_declassify",
-          "line": 681,
+          "line": 703,
           "called": [
             "refusalSeamClass"
           ]
@@ -120460,7 +120553,7 @@
         {
           "kind": "theorem",
           "name": "refusalSeamClass_records_iff",
-          "line": 692,
+          "line": 714,
           "called": [
             "SyscallId",
             "refusalSeamClass"
@@ -120469,7 +120562,7 @@
         {
           "kind": "theorem",
           "name": "refusalSeamClass_declassifySignal",
-          "line": 697,
+          "line": 719,
           "called": [
             "refusalSeamClass"
           ]
@@ -120477,7 +120570,7 @@
         {
           "kind": "theorem",
           "name": "refusalSeamClass_records_count",
-          "line": 702,
+          "line": 724,
           "called": [
             "filter",
             "length",
@@ -120487,7 +120580,7 @@
         {
           "kind": "theorem",
           "name": "refusalSeam_list_gate_insufficient",
-          "line": 714,
+          "line": 736,
           "called": [
             "Kernel",
             "SyscallId",
@@ -185395,7 +185488,7 @@
     {
       "module": "SeLe4n.Platform.FFI",
       "path": "SeLe4n/Platform/FFI.lean",
-      "declaration_count": 114,
+      "declaration_count": 120,
       "declarations": [
         {
           "kind": "namespace",
@@ -185949,8 +186042,90 @@
         },
         {
           "kind": "def",
+          "name": "refusedSignalReceiver",
+          "line": 1186,
+          "called": [
+            "CPtr",
+            "SystemState",
+            "ThreadId",
+            "declassifiedSignalReceiver",
+            "getCNode",
+            "getTcb",
+            "lookupSlotCap",
+            "none",
+            "resolveCapAddress",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "refusedSignalReceiver",
+          "line": 1208,
+          "called": [
+            "CNode",
+            "CPtr",
+            "Capability",
+            "ObjId",
+            "SlotRef",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "declassifiedSignalReceiver",
+            "getCNode",
+            "getTcb",
+            "lookupSlotCap",
+            "resolveCapAddress",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "refusalReceiverFor",
+          "line": 1228,
+          "called": [
+            "KernelError",
+            "SyscallId",
+            "SystemState",
+            "ThreadId",
+            "none",
+            "ofNat",
+            "refusedSignalReceiver",
+            "st",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "refusalReceiverFor_receiver_hop",
+          "line": 1235,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "ofNat",
+            "refusalReceiverFor",
+            "refusedSignalReceiver",
+            "st",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "refusalReceiverFor_other",
+          "line": 1242,
+          "called": [
+            "KernelError",
+            "SyscallId",
+            "SystemState",
+            "ThreadId",
+            "none",
+            "refusalReceiverFor",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "recordSyscallRefusal",
-          "line": 1183,
+          "line": 1263,
           "called": [
             "CoreId",
             "KernelError",
@@ -185961,6 +186136,7 @@
             "none",
             "ofNat",
             "recordRefusal",
+            "refusalReceiverFor",
             "refusalSeamClass",
             "st",
             "syscall",
@@ -185970,7 +186146,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_exempt",
-          "line": 1206,
+          "line": 1287,
           "called": [
             "CoreId",
             "KernelError",
@@ -185988,7 +186164,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_undecodable",
-          "line": 1218,
+          "line": 1299,
           "called": [
             "CoreId",
             "KernelError",
@@ -186005,7 +186181,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_records",
-          "line": 1229,
+          "line": 1310,
           "called": [
             "CoreId",
             "KernelError",
@@ -186017,6 +186193,7 @@
             "ofNat",
             "recordRefusal",
             "recordSyscallRefusal",
+            "refusalReceiverFor",
             "refusalSeamClass",
             "st",
             "syscall",
@@ -186025,8 +186202,44 @@
         },
         {
           "kind": "theorem",
+          "name": "refusalRecord_names_failed_hop",
+          "line": 1347,
+          "called": [
+            "CNode",
+            "Capability",
+            "CoreId",
+            "LabelingContext",
+            "ObjId",
+            "SecurityDomain",
+            "SlotRef",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "declassifiedSignalPlan",
+            "declassifiedSignalPlan_deniedAtReceiver_resolves",
+            "declassifiedSignalReceiver",
+            "getCNode",
+            "getTcb",
+            "liftLegacyContext",
+            "lookupSlotCap",
+            "ofNat",
+            "recordRefusal",
+            "recordSyscallRefusal",
+            "recordSyscallRefusal_records",
+            "refusalReceiverFor",
+            "refusalReceiverFor_receiver_hop",
+            "refusalSeamClass_declassifySignal",
+            "refusedSignalReceiver",
+            "resolveCapAddress",
+            "st",
+            "syscall",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "recordSyscallRefusal_frame",
-          "line": 1252,
+          "line": 1393,
           "called": [
             "CoreId",
             "KernelError",
@@ -186041,7 +186254,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_preserves_proofLayerInvariantBundle",
-          "line": 1280,
+          "line": 1421,
           "called": [
             "CoreId",
             "KernelError",
@@ -186058,7 +186271,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_objects_eq",
-          "line": 1294,
+          "line": 1435,
           "called": [
             "CoreId",
             "KernelError",
@@ -186072,7 +186285,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_scheduler_eq",
-          "line": 1305,
+          "line": 1446,
           "called": [
             "CoreId",
             "KernelError",
@@ -186086,7 +186299,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_machine_eq",
-          "line": 1316,
+          "line": 1457,
           "called": [
             "CoreId",
             "KernelError",
@@ -186100,7 +186313,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_readReturnFrame_eq",
-          "line": 1332,
+          "line": 1473,
           "called": [
             "CoreId",
             "KernelError",
@@ -186117,7 +186330,7 @@
         {
           "kind": "theorem",
           "name": "refusalRecord_domain_is_seam_resolved_at_seam",
-          "line": 1351,
+          "line": 1492,
           "called": [
             "CoreId",
             "DeclassificationRefusal",
@@ -186141,7 +186354,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_ledger_congr",
-          "line": 1385,
+          "line": 1531,
           "called": [
             "CoreId",
             "KernelError",
@@ -186152,14 +186365,16 @@
             "ofNat",
             "recordSyscallRefusal",
             "recordSyscallRefusal_records",
+            "refusalReceiverFor",
             "refusalSeamClass",
+            "refusedSignalReceiver",
             "toNat"
           ]
         },
         {
           "kind": "theorem",
           "name": "refusalWrite_declassificationAuditLog_eq",
-          "line": 1414,
+          "line": 1568,
           "called": [
             "CoreId",
             "KernelError",
@@ -186173,7 +186388,7 @@
         {
           "kind": "theorem",
           "name": "refusalWrite_cannot_exhaust_trail",
-          "line": 1435,
+          "line": 1589,
           "called": [
             "CoreId",
             "DeclassificationEvent",
@@ -186190,7 +186405,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchFromAbi",
-          "line": 1479,
+          "line": 1633,
           "called": [
             "CoreId",
             "Kernel",
@@ -186210,13 +186425,13 @@
         {
           "kind": "opaque",
           "name": "ffiSuspendThread",
-          "line": 1538,
+          "line": 1692,
           "called": []
         },
         {
           "kind": "def",
           "name": "suspendThreadInner",
-          "line": 1575,
+          "line": 1729,
           "called": [
             "KernelError.toUInt32",
             "getKernelState",
@@ -186233,19 +186448,19 @@
         {
           "kind": "opaque",
           "name": "ffiIcIalluIs",
-          "line": 1610,
+          "line": 1764,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcMaintenance",
-          "line": 1646,
+          "line": 1800,
           "called": []
         },
         {
           "kind": "def",
           "name": "icMaintenanceBroadcast",
-          "line": 1681,
+          "line": 1835,
           "called": [
             "ICacheInvalidation",
             "ffiIcMaintenance",
@@ -186257,7 +186472,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_iallu_encoding",
-          "line": 1686,
+          "line": 1840,
           "called": [
             "toOpTag",
             "toPaddr"
@@ -186266,7 +186481,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_ivauPage_encoding",
-          "line": 1693,
+          "line": 1847,
           "called": [
             "PAddr",
             "ofNat",
@@ -186278,7 +186493,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_cleanRangeIallu_encoding",
-          "line": 1702,
+          "line": 1856,
           "called": [
             "PAddr",
             "ofNat",
@@ -186291,19 +186506,19 @@
         {
           "kind": "opaque",
           "name": "ffiCacheCleanPagetableRange",
-          "line": 1737,
+          "line": 1891,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcIallu",
-          "line": 1750,
+          "line": 1904,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_total",
-          "line": 1766,
+          "line": 1920,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -186324,7 +186539,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok",
-          "line": 1809,
+          "line": 1963,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -186342,7 +186557,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_of_syscallEntryChecked_error",
-          "line": 1840,
+          "line": 1994,
           "called": [
             "CoreId",
             "KernelError",
@@ -186362,7 +186577,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_stages_no_frame",
-          "line": 1872,
+          "line": 2026,
           "called": [
             "CoreId",
             "KernelError",
@@ -186384,7 +186599,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_write_is_caller_invisible",
-          "line": 1911,
+          "line": 2065,
           "called": [
             "CoreId",
             "KernelError",
@@ -186404,7 +186619,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_records_refusal",
-          "line": 1937,
+          "line": 2091,
           "called": [
             "CoreId",
             "KernelError",
@@ -186420,6 +186635,7 @@
             "recordRefusal_writes_selected_slot",
             "recordSyscallRefusal",
             "recordSyscallRefusal_records",
+            "refusalReceiverFor",
             "refusalSeamClass",
             "st",
             "syscall",
@@ -186433,7 +186649,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_exempt_refusal_frames_ledger",
-          "line": 1979,
+          "line": 2136,
           "called": [
             "CoreId",
             "KernelError",
@@ -186457,7 +186673,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_illegalState_when_no_current",
-          "line": 2007,
+          "line": 2164,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -186472,7 +186688,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_abiMismatch_rejected",
-          "line": 2030,
+          "line": 2187,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -186485,7 +186701,7 @@
         {
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_id_when_not_tcb",
-          "line": 2052,
+          "line": 2209,
           "called": [
             "SystemState",
             "TCB",
@@ -186499,7 +186715,7 @@
         {
           "kind": "theorem",
           "name": "readReturnValue_zero_when_not_tcb",
-          "line": 2077,
+          "line": 2234,
           "called": [
             "SystemState",
             "TCB",
@@ -200732,6 +200948,7 @@
             "endpointReplyChecked_denied_preserves_state",
             "endpointReplyRecvChecked_denied_preserves_state",
             "enforcement_sufficiency_declassify",
+            "enforcement_sufficiency_declassifySignal",
             "enforcement_sufficiency_endpointCall",
             "enforcement_sufficiency_endpointReply",
             "enforcement_sufficiency_endpointReplyRecv",
@@ -200741,6 +200958,7 @@
             "migrateSchedContextReplenishment_preserves_projection",
             "niStepConstructorCoverage",
             "none",
+            "notificationSignalDeclassifiedOnCore_denied_preserves_state",
             "notificationWaitChecked_denied_preserves_state",
             "objects_insert_preserves_projection_of_proj_eq",
             "ofNat",
@@ -200758,7 +200976,7 @@
         {
           "kind": "def",
           "name": "test_niStepConstructorCoverage_witness_is_state_identity",
-          "line": 287,
+          "line": 296,
           "called": [
             "SystemState",
             "default",
@@ -200771,7 +200989,7 @@
         {
           "kind": "def",
           "name": "test_dispatchCapabilityOnly_projection_invariant",
-          "line": 327,
+          "line": 336,
           "called": [
             "KernelObject",
             "ObjId",
@@ -200789,7 +201007,7 @@
         {
           "kind": "def",
           "name": "test_projectKernelObject_strips_tcb_signals",
-          "line": 363,
+          "line": 372,
           "called": [
             "IpcMessage",
             "TCB",
@@ -200804,7 +201022,7 @@
         {
           "kind": "def",
           "name": "test_defaultLabelingContext_runtime_rejection",
-          "line": 388,
+          "line": 397,
           "called": [
             "defaultLabelingContext",
             "isInsecureDefaultContext"
@@ -200813,13 +201031,13 @@
         {
           "kind": "def",
           "name": "test_cbs_bandwidth_bounded_tight_arithmetic",
-          "line": 396,
+          "line": 405,
           "called": []
         },
         {
           "kind": "def",
           "name": "ak6Tests",
-          "line": 406,
+          "line": 415,
           "called": [
             "test_applyConfigureParamsFull_post_state_shape",
             "test_cbs_bandwidth_bounded_tight_arithmetic",
@@ -200835,7 +201053,7 @@
         {
           "kind": "def",
           "name": "runAk6Suite",
-          "line": 420,
+          "line": 429,
           "called": [
             "ak6Tests"
           ]
@@ -200843,7 +201061,7 @@
         {
           "kind": "def",
           "name": "runInformationFlowChecks",
-          "line": 440,
+          "line": 449,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -200962,7 +201180,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1753,
+          "line": 1762,
           "called": [
             "runAk6Suite",
             "runInformationFlowChecks",
@@ -222368,7 +222586,7 @@
     {
       "module": "tests.SmpInformationFlowSuite",
       "path": "tests/SmpInformationFlowSuite.lean",
-      "declaration_count": 422,
+      "declaration_count": 429,
       "declarations": [
         {
           "kind": "namespace",
@@ -222847,11 +223065,13 @@
             "declassifiedSignalHopAuthorization_declassified",
             "declassifiedSignalHopAuthorization_declassified_authorized",
             "declassifiedSignalHopAuthorization_default_ordinary",
+            "declassifiedSignalHopAuthorization_error_refusal",
             "declassifiedSignalHopAuthorization_ordinary",
             "declassifiedSignalHopAuthorization_ordinary_flows",
             "declassifiedSignalHopAuthorization_refused",
             "declassifiedSignalPlan",
             "declassifiedSignalPlan_default_empty",
+            "declassifiedSignalPlan_deniedAtReceiver_resolves",
             "declassifiedSignalPlan_ordinary",
             "declassifiedSignalPlan_receiver_refused",
             "declassifiedSignalPlan_record_destinations",
@@ -223082,6 +223302,7 @@
             "enforcementSoundness_endpointReceiveDualChecked_gate",
             "enforcementSoundness_endpointSendDualChecked_gate",
             "enforcement_sufficiency_declassify",
+            "enforcement_sufficiency_declassifySignal",
             "enqueueRunnableOnCore_confinedToCores",
             "enqueueRunnableOnCore_declassificationAuditLog_eq",
             "ensureCdtNodeForSlot_confinedToCore",
@@ -223318,6 +223539,7 @@
             "notificationSignalDeclassifiedCrossCoreDispatch_eq",
             "notificationSignalDeclassifiedOnCore",
             "notificationSignalDeclassifiedOnCore_confinedToCores",
+            "notificationSignalDeclassifiedOnCore_denied_preserves_state",
             "notificationSignalDeclassifiedOnCore_eq_of_subject",
             "notificationSignalDeclassifiedOnCore_frame",
             "notificationSignalDeclassifiedOnCore_ipcInvariantFull_perCore_transfer",
@@ -223532,8 +223754,12 @@
             "refusalLedger_write_is_caller_invisible",
             "refusalRead_bracketed_detects_overwrite",
             "refusalRead_requires_monitor_at_entry",
+            "refusalReceiverFor",
+            "refusalReceiverFor_other",
+            "refusalReceiverFor_receiver_hop",
             "refusalRecord_domain_is_seam_resolved",
             "refusalRecord_domain_is_seam_resolved_at_seam",
+            "refusalRecord_names_failed_hop",
             "refusalRingSize",
             "refusalRingSize_pos",
             "refusalSeamClass",
@@ -223562,6 +223788,7 @@
             "refusalWitnessRecord",
             "refusalWrite_cannot_exhaust_trail",
             "refusalWrite_declassificationAuditLog_eq",
+            "refusedSignalReceiver",
             "registerServiceChecked_confinedToCore",
             "registerService_confinedToCore",
             "releaseAll_confinedToCore",
@@ -223863,8 +224090,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1891>",
-          "line": 1891,
+          "name": "<anonymous:example:1906>",
+          "line": 1906,
           "called": [
             "IfObserver.ofLabel",
             "LabelingContext",
@@ -223878,8 +224105,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1896>",
-          "line": 1896,
+          "name": "<anonymous:example:1911>",
+          "line": 1911,
           "called": [
             "IfObserver.ofLabel",
             "LabelingContext",
@@ -223893,8 +224120,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1902>",
-          "line": 1902,
+          "name": "<anonymous:example:1917>",
+          "line": 1917,
           "called": [
             "ObservableState",
             "ObservableState.ext_fragments",
@@ -223904,8 +224131,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1907>",
-          "line": 1907,
+          "name": "<anonymous:example:1922>",
+          "line": 1922,
           "called": [
             "CoreId",
             "IfObserver.ofLabel",
@@ -223920,8 +224147,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1915>",
-          "line": 1915,
+          "name": "<anonymous:example:1930>",
+          "line": 1930,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -223934,8 +224161,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1921>",
-          "line": 1921,
+          "name": "<anonymous:example:1936>",
+          "line": 1936,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -223948,8 +224175,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1927>",
-          "line": 1927,
+          "name": "<anonymous:example:1942>",
+          "line": 1942,
           "called": [
             "ObservableState",
             "ObservableState.ofFragments",
@@ -223960,8 +224187,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1932>",
-          "line": 1932,
+          "name": "<anonymous:example:1947>",
+          "line": 1947,
           "called": [
             "CoreId",
             "IfObserver.ofLabel",
@@ -223981,8 +224208,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1945>",
-          "line": 1945,
+          "name": "<anonymous:example:1960>",
+          "line": 1960,
           "called": [
             "CoreId",
             "IfObserver.ofLabel",
@@ -223996,8 +224223,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1951>",
-          "line": 1951,
+          "name": "<anonymous:example:1966>",
+          "line": 1966,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -224015,8 +224242,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1967>",
-          "line": 1967,
+          "name": "<anonymous:example:1982>",
+          "line": 1982,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -224030,8 +224257,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1974>",
-          "line": 1974,
+          "name": "<anonymous:example:1989>",
+          "line": 1989,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -224045,8 +224272,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1981>",
-          "line": 1981,
+          "name": "<anonymous:example:1996>",
+          "line": 1996,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -224058,8 +224285,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1987>",
-          "line": 1987,
+          "name": "<anonymous:example:2002>",
+          "line": 2002,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -224073,8 +224300,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1994>",
-          "line": 1994,
+          "name": "<anonymous:example:2009>",
+          "line": 2009,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -224089,8 +224316,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2004>",
-          "line": 2004,
+          "name": "<anonymous:example:2019>",
+          "line": 2019,
           "called": [
             "CoreId",
             "Endpoint",
@@ -224106,8 +224333,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2014>",
-          "line": 2014,
+          "name": "<anonymous:example:2029>",
+          "line": 2029,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -224120,8 +224347,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2022>",
-          "line": 2022,
+          "name": "<anonymous:example:2037>",
+          "line": 2037,
           "called": [
             "ObservableState",
             "ObservableState.eq_of_visibilityLe_antisymm",
@@ -224130,8 +224357,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2027>",
-          "line": 2027,
+          "name": "<anonymous:example:2042>",
+          "line": 2042,
           "called": [
             "CNode",
             "Capability",
@@ -224147,8 +224374,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2035>",
-          "line": 2035,
+          "name": "<anonymous:example:2050>",
+          "line": 2050,
           "called": [
             "CoreId",
             "KernelObject",
@@ -224163,8 +224390,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2046>",
-          "line": 2046,
+          "name": "<anonymous:example:2061>",
+          "line": 2061,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -224177,8 +224404,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2051>",
-          "line": 2051,
+          "name": "<anonymous:example:2066>",
+          "line": 2066,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -224190,8 +224417,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2057>",
-          "line": 2057,
+          "name": "<anonymous:example:2072>",
+          "line": 2072,
           "called": [
             "LabelingContext",
             "SecurityLabel",
@@ -224203,8 +224430,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2064>",
-          "line": 2064,
+          "name": "<anonymous:example:2079>",
+          "line": 2079,
           "called": [
             "CNode",
             "Capability",
@@ -224224,8 +224451,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2078>",
-          "line": 2078,
+          "name": "<anonymous:example:2093>",
+          "line": 2093,
           "called": [
             "CoreId",
             "DeclassificationActor",
@@ -224246,8 +224473,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2092>",
-          "line": 2092,
+          "name": "<anonymous:example:2107>",
+          "line": 2107,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -224263,8 +224490,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2104>",
-          "line": 2104,
+          "name": "<anonymous:example:2119>",
+          "line": 2119,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -224279,8 +224506,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2113>",
-          "line": 2113,
+          "name": "<anonymous:example:2128>",
+          "line": 2128,
           "called": [
             "DeclassificationPolicy",
             "DeclassificationRequest",
@@ -224294,8 +224521,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2122>",
-          "line": 2122,
+          "name": "<anonymous:example:2137>",
+          "line": 2137,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -224306,8 +224533,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2129>",
-          "line": 2129,
+          "name": "<anonymous:example:2144>",
+          "line": 2144,
           "called": [
             "DeclassificationEvent",
             "DeclassificationPolicy",
@@ -224321,8 +224548,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2139>",
-          "line": 2139,
+          "name": "<anonymous:example:2154>",
+          "line": 2154,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -224332,8 +224559,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2147>",
-          "line": 2147,
+          "name": "<anonymous:example:2162>",
+          "line": 2162,
           "called": [
             "DeclassificationEvent",
             "GenericLabelingContext",
@@ -224345,8 +224572,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2154>",
-          "line": 2154,
+          "name": "<anonymous:example:2169>",
+          "line": 2169,
           "called": [
             "LabelingContext",
             "endpointGateRestricted",
@@ -224355,8 +224582,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2159>",
-          "line": 2159,
+          "name": "<anonymous:example:2174>",
+          "line": 2174,
           "called": [
             "CoreId",
             "DeclassificationActor",
@@ -224370,8 +224597,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2172>",
-          "line": 2172,
+          "name": "<anonymous:example:2187>",
+          "line": 2187,
           "called": [
             "CoreId",
             "DeclassificationActor",
@@ -224385,8 +224612,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2181>",
-          "line": 2181,
+          "name": "<anonymous:example:2196>",
+          "line": 2196,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -224407,8 +224634,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2193>",
-          "line": 2193,
+          "name": "<anonymous:example:2208>",
+          "line": 2208,
           "called": [
             "DeclassificationAuditLog",
             "auditLogOnCore",
@@ -224418,8 +224645,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2198>",
-          "line": 2198,
+          "name": "<anonymous:example:2213>",
+          "line": 2213,
           "called": [
             "CoreId",
             "DeclassificationAuditLog",
@@ -224431,8 +224658,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2205>",
-          "line": 2205,
+          "name": "<anonymous:example:2220>",
+          "line": 2220,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -224452,8 +224679,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2218>",
-          "line": 2218,
+          "name": "<anonymous:example:2233>",
+          "line": 2233,
           "called": [
             "CoreId",
             "DeclassificationActor",
@@ -224471,8 +224698,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2229>",
-          "line": 2229,
+          "name": "<anonymous:example:2244>",
+          "line": 2244,
           "called": [
             "CoreId",
             "DeclassificationActor",
@@ -224493,8 +224720,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2248>",
-          "line": 2248,
+          "name": "<anonymous:example:2263>",
+          "line": 2263,
           "called": [
             "DeclassificationPolicy",
             "LabelingContext",
@@ -224510,8 +224737,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2258>",
-          "line": 2258,
+          "name": "<anonymous:example:2273>",
+          "line": 2273,
           "called": [
             "declassificationRuleEvidence",
             "evidenceProp"
@@ -224519,8 +224746,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2260>",
-          "line": 2260,
+          "name": "<anonymous:example:2275>",
+          "line": 2275,
           "called": [
             "declassificationRuleEvidence",
             "evidenceProp"
@@ -224528,8 +224755,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2262>",
-          "line": 2262,
+          "name": "<anonymous:example:2277>",
+          "line": 2277,
           "called": [
             "declassificationRuleEvidence",
             "evidenceProp"
@@ -224537,8 +224764,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2264>",
-          "line": 2264,
+          "name": "<anonymous:example:2279>",
+          "line": 2279,
           "called": [
             "declassificationRuleEvidence",
             "evidenceProp"
@@ -224546,8 +224773,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2266>",
-          "line": 2266,
+          "name": "<anonymous:example:2281>",
+          "line": 2281,
           "called": [
             "declassificationRuleEvidence",
             "evidenceProp"
@@ -224555,8 +224782,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2268>",
-          "line": 2268,
+          "name": "<anonymous:example:2283>",
+          "line": 2283,
           "called": [
             "declassificationRuleEvidence",
             "evidenceProp"
@@ -224564,53 +224791,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2270>",
-          "line": 2270,
-          "called": [
-            "declassificationRuleEvidence",
-            "evidenceProp"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:2272>",
-          "line": 2272,
-          "called": [
-            "declassificationRuleEvidence",
-            "evidenceProp"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:2274>",
-          "line": 2274,
-          "called": [
-            "declassificationRuleEvidence",
-            "evidenceProp"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:2276>",
-          "line": 2276,
-          "called": [
-            "declassificationRuleEvidence",
-            "evidenceProp"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:2278>",
-          "line": 2278,
-          "called": [
-            "declassificationRuleEvidence",
-            "evidenceProp"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:2280>",
-          "line": 2280,
+          "name": "<anonymous:example:2285>",
+          "line": 2285,
           "called": [
             "declassificationRuleEvidence",
             "evidenceProp"
@@ -224620,6 +224802,51 @@
           "kind": "example",
           "name": "<anonymous:example:2287>",
           "line": 2287,
+          "called": [
+            "declassificationRuleEvidence",
+            "evidenceProp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:2289>",
+          "line": 2289,
+          "called": [
+            "declassificationRuleEvidence",
+            "evidenceProp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:2291>",
+          "line": 2291,
+          "called": [
+            "declassificationRuleEvidence",
+            "evidenceProp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:2293>",
+          "line": 2293,
+          "called": [
+            "declassificationRuleEvidence",
+            "evidenceProp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:2295>",
+          "line": 2295,
+          "called": [
+            "declassificationRuleEvidence",
+            "evidenceProp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:2302>",
+          "line": 2302,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -224632,8 +224859,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2294>",
-          "line": 2294,
+          "name": "<anonymous:example:2309>",
+          "line": 2309,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -224646,8 +224873,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2300>",
-          "line": 2300,
+          "name": "<anonymous:example:2315>",
+          "line": 2315,
           "called": [
             "CoreId",
             "LockSet",
@@ -224660,8 +224887,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2308>",
-          "line": 2308,
+          "name": "<anonymous:example:2323>",
+          "line": 2323,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -224677,8 +224904,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2320>",
-          "line": 2320,
+          "name": "<anonymous:example:2335>",
+          "line": 2335,
           "called": [
             "CoreId",
             "RwLockExecution",
@@ -224690,8 +224917,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2328>",
-          "line": 2328,
+          "name": "<anonymous:example:2343>",
+          "line": 2343,
           "called": [
             "AccessMode",
             "CoreId",
@@ -224708,8 +224935,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2340>",
-          "line": 2340,
+          "name": "<anonymous:example:2355>",
+          "line": 2355,
           "called": [
             "CoreId",
             "FairTrace",
@@ -224725,8 +224952,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2351>",
-          "line": 2351,
+          "name": "<anonymous:example:2366>",
+          "line": 2366,
           "called": [
             "CoreId",
             "RwLockState",
@@ -224738,8 +224965,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2358>",
-          "line": 2358,
+          "name": "<anonymous:example:2373>",
+          "line": 2373,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -224755,8 +224982,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2370>",
-          "line": 2370,
+          "name": "<anonymous:example:2385>",
+          "line": 2385,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -224772,8 +224999,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2382>",
-          "line": 2382,
+          "name": "<anonymous:example:2397>",
+          "line": 2397,
           "called": [
             "CoreId",
             "KernelError",
@@ -224791,8 +225018,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2396>",
-          "line": 2396,
+          "name": "<anonymous:example:2411>",
+          "line": 2411,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -224808,8 +225035,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2407>",
-          "line": 2407,
+          "name": "<anonymous:example:2422>",
+          "line": 2422,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -224823,8 +225050,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2419>",
-          "line": 2419,
+          "name": "<anonymous:example:2434>",
+          "line": 2434,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -224835,8 +225062,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2429>",
-          "line": 2429,
+          "name": "<anonymous:example:2444>",
+          "line": 2444,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -224849,8 +225076,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2440>",
-          "line": 2440,
+          "name": "<anonymous:example:2455>",
+          "line": 2455,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -224862,8 +225089,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2449>",
-          "line": 2449,
+          "name": "<anonymous:example:2464>",
+          "line": 2464,
           "called": [
             "auditFieldChunk",
             "auditFieldChunkCount",
@@ -224873,8 +225100,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2456>",
-          "line": 2456,
+          "name": "<anonymous:example:2471>",
+          "line": 2471,
           "called": [
             "auditBasisByteOfChunk",
             "auditBasisChunkValue",
@@ -224884,8 +225111,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2462>",
-          "line": 2462,
+          "name": "<anonymous:example:2477>",
+          "line": 2477,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -224903,8 +225130,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2476>",
-          "line": 2476,
+          "name": "<anonymous:example:2491>",
+          "line": 2491,
           "called": [
             "AuditReadOp",
             "GenericLabelingContext",
@@ -224919,8 +225146,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2490>",
-          "line": 2490,
+          "name": "<anonymous:example:2505>",
+          "line": 2505,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -224938,8 +225165,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2506>",
-          "line": 2506,
+          "name": "<anonymous:example:2521>",
+          "line": 2521,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -224955,8 +225182,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2515>",
-          "line": 2515,
+          "name": "<anonymous:example:2530>",
+          "line": 2530,
           "called": [
             "DeclassificationEvent",
             "SystemState",
@@ -224967,8 +225194,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2523>",
-          "line": 2523,
+          "name": "<anonymous:example:2538>",
+          "line": 2538,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -224983,8 +225210,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2533>",
-          "line": 2533,
+          "name": "<anonymous:example:2548>",
+          "line": 2548,
           "called": [
             "AuditReadOp",
             "DeclassificationAuditLog",
@@ -225000,8 +225227,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2549>",
-          "line": 2549,
+          "name": "<anonymous:example:2564>",
+          "line": 2564,
           "called": [
             "AuditReadOp",
             "IfObserver",
@@ -225016,8 +225243,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2559>",
-          "line": 2559,
+          "name": "<anonymous:example:2574>",
+          "line": 2574,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -225034,8 +225261,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2570>",
-          "line": 2570,
+          "name": "<anonymous:example:2585>",
+          "line": 2585,
           "called": [
             "ObjId",
             "all",
@@ -225048,8 +225275,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2580>",
-          "line": 2580,
+          "name": "<anonymous:example:2595>",
+          "line": 2595,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -225065,8 +225292,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2590>",
-          "line": 2590,
+          "name": "<anonymous:example:2605>",
+          "line": 2605,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -225080,8 +225307,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2609>",
-          "line": 2609,
+          "name": "<anonymous:example:2624>",
+          "line": 2624,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -225102,8 +225329,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2625>",
-          "line": 2625,
+          "name": "<anonymous:example:2640>",
+          "line": 2640,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -225124,8 +225351,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2642>",
-          "line": 2642,
+          "name": "<anonymous:example:2657>",
+          "line": 2657,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -225140,8 +225367,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:2653>",
-          "line": 2653,
+          "name": "<anonymous:example:2668>",
+          "line": 2668,
           "called": [
             "CoreId",
             "KernelError",
@@ -225157,7 +225384,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 2665,
+          "line": 2680,
           "called": [
             "throw"
           ]
@@ -225165,7 +225392,7 @@
         {
           "kind": "def",
           "name": "c0",
-          "line": 2672,
+          "line": 2687,
           "called": [
             "CoreId",
             "bootCoreId"
@@ -225174,7 +225401,7 @@
         {
           "kind": "def",
           "name": "c1",
-          "line": 2673,
+          "line": 2688,
           "called": [
             "CoreId"
           ]
@@ -225182,7 +225409,7 @@
         {
           "kind": "def",
           "name": "c2",
-          "line": 2674,
+          "line": 2689,
           "called": [
             "CoreId"
           ]
@@ -225190,7 +225417,7 @@
         {
           "kind": "def",
           "name": "lowLabel",
-          "line": 2687,
+          "line": 2702,
           "called": [
             "SecurityLabel",
             "publicLabel"
@@ -225199,7 +225426,7 @@
         {
           "kind": "def",
           "name": "midLabel",
-          "line": 2688,
+          "line": 2703,
           "called": [
             "SecurityLabel"
           ]
@@ -225207,7 +225434,7 @@
         {
           "kind": "def",
           "name": "highLabel",
-          "line": 2689,
+          "line": 2704,
           "called": [
             "SecurityLabel",
             "kernelTrusted"
@@ -225216,7 +225443,7 @@
         {
           "kind": "theorem",
           "name": "lowLabel_flowsTo_highLabel",
-          "line": 2695,
+          "line": 2710,
           "called": [
             "highLabel",
             "lowLabel",
@@ -225226,7 +225453,7 @@
         {
           "kind": "theorem",
           "name": "lowLabel_flowsTo_midLabel",
-          "line": 2698,
+          "line": 2713,
           "called": [
             "lowLabel",
             "midLabel",
@@ -225236,7 +225463,7 @@
         {
           "kind": "theorem",
           "name": "midLabel_flowsTo_highLabel",
-          "line": 2701,
+          "line": 2716,
           "called": [
             "highLabel",
             "midLabel",
@@ -225246,7 +225473,7 @@
         {
           "kind": "def",
           "name": "cnRoot",
-          "line": 2705,
+          "line": 2720,
           "called": [
             "ObjId"
           ]
@@ -225254,7 +225481,7 @@
         {
           "kind": "def",
           "name": "vsRoot",
-          "line": 2706,
+          "line": 2721,
           "called": [
             "ObjId"
           ]
@@ -225262,7 +225489,7 @@
         {
           "kind": "def",
           "name": "lowEndpoint",
-          "line": 2707,
+          "line": 2722,
           "called": [
             "ObjId"
           ]
@@ -225270,86 +225497,6 @@
         {
           "kind": "def",
           "name": "highEndpoint",
-          "line": 2708,
-          "called": [
-            "ObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "lowService",
-          "line": 2709,
-          "called": [
-            "ServiceId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "highService",
-          "line": 2710,
-          "called": [
-            "ServiceId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "lowIrq",
-          "line": 2711,
-          "called": [
-            "Irq"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "highIrq",
-          "line": 2712,
-          "called": [
-            "Irq"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "lowCurrent",
-          "line": 2713,
-          "called": [
-            "ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "highCurrent",
-          "line": 2714,
-          "called": [
-            "ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "lowQueued",
-          "line": 2715,
-          "called": [
-            "ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "highQueued",
-          "line": 2716,
-          "called": [
-            "ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "midEndpoint",
-          "line": 2719,
-          "called": [
-            "ObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "probeCNode",
           "line": 2723,
           "called": [
             "ObjId"
@@ -225357,8 +225504,88 @@
         },
         {
           "kind": "def",
-          "name": "lowSlot",
+          "name": "lowService",
           "line": 2724,
+          "called": [
+            "ServiceId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highService",
+          "line": 2725,
+          "called": [
+            "ServiceId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowIrq",
+          "line": 2726,
+          "called": [
+            "Irq"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highIrq",
+          "line": 2727,
+          "called": [
+            "Irq"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowCurrent",
+          "line": 2728,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highCurrent",
+          "line": 2729,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowQueued",
+          "line": 2730,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highQueued",
+          "line": 2731,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "midEndpoint",
+          "line": 2734,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "probeCNode",
+          "line": 2738,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowSlot",
+          "line": 2739,
           "called": [
             "Slot",
             "ofNat"
@@ -225367,7 +225594,7 @@
         {
           "kind": "def",
           "name": "highSlot",
-          "line": 2725,
+          "line": 2740,
           "called": [
             "Slot",
             "ofNat"
@@ -225376,7 +225603,7 @@
         {
           "kind": "def",
           "name": "lowSlotCap",
-          "line": 2726,
+          "line": 2741,
           "called": [
             "Capability",
             "lowEndpoint",
@@ -225386,7 +225613,7 @@
         {
           "kind": "def",
           "name": "highSlotCap",
-          "line": 2728,
+          "line": 2743,
           "called": [
             "Capability",
             "highEndpoint",
@@ -225396,7 +225623,7 @@
         {
           "kind": "def",
           "name": "probeCNodeValue",
-          "line": 2731,
+          "line": 2746,
           "called": [
             "CNode",
             "highSlot",
@@ -225409,7 +225636,7 @@
         {
           "kind": "def",
           "name": "rootCNodeValue",
-          "line": 2744,
+          "line": 2759,
           "called": [
             "CNode",
             "ofListWF"
@@ -225418,7 +225645,7 @@
         {
           "kind": "def",
           "name": "rootVSpaceValue",
-          "line": 2751,
+          "line": 2766,
           "called": [
             "RHTable.empty",
             "VSpaceRoot"
@@ -225427,7 +225654,7 @@
         {
           "kind": "def",
           "name": "lowPage",
-          "line": 2754,
+          "line": 2769,
           "called": [
             "PAddr",
             "ofNat"
@@ -225436,7 +225663,7 @@
         {
           "kind": "def",
           "name": "highPage",
-          "line": 2755,
+          "line": 2770,
           "called": [
             "PAddr",
             "ofNat"
@@ -225445,7 +225672,7 @@
         {
           "kind": "def",
           "name": "unownedPage",
-          "line": 2756,
+          "line": 2771,
           "called": [
             "PAddr",
             "ofNat"
@@ -225454,7 +225681,7 @@
         {
           "kind": "def",
           "name": "lowDomain",
-          "line": 2757,
+          "line": 2772,
           "called": [
             "DomainId"
           ]
@@ -225462,7 +225689,7 @@
         {
           "kind": "def",
           "name": "highDomain",
-          "line": 2758,
+          "line": 2773,
           "called": [
             "DomainId"
           ]
@@ -225470,7 +225697,7 @@
         {
           "kind": "def",
           "name": "probeLabeling",
-          "line": 2767,
+          "line": 2782,
           "called": [
             "LabelingContext",
             "highCurrent",
@@ -225487,7 +225714,7 @@
         {
           "kind": "def",
           "name": "probeLabelingWithMemory",
-          "line": 2788,
+          "line": 2803,
           "called": [
             "LabelingContext",
             "highDomain",
@@ -225503,7 +225730,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 2797,
+          "line": 2812,
           "called": [
             "CoreId",
             "TCB",
@@ -225515,7 +225742,7 @@
         {
           "kind": "def",
           "name": "mkServiceEntry",
-          "line": 2802,
+          "line": 2817,
           "called": [
             "ObjId",
             "ServiceGraphEntry",
@@ -225525,7 +225752,7 @@
         {
           "kind": "def",
           "name": "probeState",
-          "line": 2820,
+          "line": 2835,
           "called": [
             "SystemState",
             "build",
@@ -225564,7 +225791,7 @@
         {
           "kind": "def",
           "name": "lowObserver",
-          "line": 2844,
+          "line": 2859,
           "called": [
             "IfObserver",
             "IfObserver.ofLabel",
@@ -225574,7 +225801,7 @@
         {
           "kind": "def",
           "name": "midObserver",
-          "line": 2845,
+          "line": 2860,
           "called": [
             "IfObserver",
             "IfObserver.ofLabel",
@@ -225584,7 +225811,7 @@
         {
           "kind": "def",
           "name": "highObserver",
-          "line": 2846,
+          "line": 2861,
           "called": [
             "IfObserver",
             "IfObserver.ofLabel",
@@ -225594,7 +225821,7 @@
         {
           "kind": "theorem",
           "name": "probeState_holds_probeCNode",
-          "line": 2852,
+          "line": 2867,
           "called": [
             "probeCNode",
             "probeCNodeValue"
@@ -225603,7 +225830,7 @@
         {
           "kind": "theorem",
           "name": "lowEndpoint_mem_lowObjectIndex",
-          "line": 2859,
+          "line": 2874,
           "called": [
             "IfObserver.ofLabel",
             "lowEndpoint",
@@ -225616,7 +225843,7 @@
         {
           "kind": "def",
           "name": "cnodeSlotThroughView",
-          "line": 2867,
+          "line": 2882,
           "called": [
             "Capability",
             "CoreId",
@@ -225633,7 +225860,7 @@
         {
           "kind": "theorem",
           "name": "lowEndpoint_view_low",
-          "line": 2875,
+          "line": 2890,
           "called": [
             "ObservableState.onCore",
             "c0",
@@ -225646,7 +225873,7 @@
         {
           "kind": "theorem",
           "name": "lowEndpoint_view_high",
-          "line": 2882,
+          "line": 2897,
           "called": [
             "ObservableState.onCore",
             "ObservableState.visibilityLe_objects_eq_of_not_cnode",
@@ -225663,7 +225890,7 @@
         {
           "kind": "theorem",
           "name": "endpoint_not_visibilityLe_notification",
-          "line": 2890,
+          "line": 2905,
           "called": [
             "Endpoint",
             "Notification",
@@ -225673,7 +225900,7 @@
         {
           "kind": "theorem",
           "name": "cnode_not_visibilityLe_endpoint",
-          "line": 2896,
+          "line": 2911,
           "called": [
             "CNode",
             "Endpoint",
@@ -225683,7 +225910,7 @@
         {
           "kind": "def",
           "name": "domainShiftedView",
-          "line": 2905,
+          "line": 2920,
           "called": [
             "ObservableState",
             "ObservableState.onCore",
@@ -225696,7 +225923,7 @@
         {
           "kind": "def",
           "name": "runFixtureChecks",
-          "line": 2913,
+          "line": 2928,
           "called": [
             "assertBool",
             "c0",
@@ -225732,7 +225959,7 @@
         {
           "kind": "def",
           "name": "runObserverChecks",
-          "line": 2982,
+          "line": 2997,
           "called": [
             "CoreId",
             "ObservableState.onCore",
@@ -225757,7 +225984,7 @@
         {
           "kind": "def",
           "name": "runPartitionChecks",
-          "line": 3011,
+          "line": 3026,
           "called": [
             "ObservableState.ext_fragments",
             "ObservableState.onCore",
@@ -225787,7 +226014,7 @@
         {
           "kind": "def",
           "name": "runDecidableSliceChecks",
-          "line": 3077,
+          "line": 3092,
           "called": [
             "ObservableState",
             "ObservableState.sliceOnCore",
@@ -225814,7 +226041,7 @@
         {
           "kind": "def",
           "name": "runIndependenceChecks",
-          "line": 3122,
+          "line": 3137,
           "called": [
             "ObservableState.onCore",
             "ObservableState.sliceOnCore",
@@ -225846,7 +226073,7 @@
         {
           "kind": "def",
           "name": "runMonotonicityChecks",
-          "line": 3226,
+          "line": 3241,
           "called": [
             "ObservableState.onCore",
             "PerCoreObserver",
@@ -225886,7 +226113,7 @@
         {
           "kind": "def",
           "name": "runSchedulingTransparencyChecks",
-          "line": 3299,
+          "line": 3314,
           "called": [
             "ObservableState.onCore",
             "SystemState",
@@ -225914,7 +226141,7 @@
         {
           "kind": "def",
           "name": "runCrossCoreInvisibilityChecks",
-          "line": 3367,
+          "line": 3382,
           "called": [
             "ObservableState.onCore",
             "ObservableState.sliceOnCore",
@@ -225938,7 +226165,7 @@
         {
           "kind": "def",
           "name": "runCNodeRedactionChecks",
-          "line": 3401,
+          "line": 3416,
           "called": [
             "IfObserver.ofLabel",
             "ObservableState.onCore",
@@ -225977,7 +226204,7 @@
         {
           "kind": "def",
           "name": "runMemoryProjectionChecks",
-          "line": 3490,
+          "line": 3505,
           "called": [
             "ObservableState.onCore",
             "all",
@@ -226003,7 +226230,7 @@
         {
           "kind": "def",
           "name": "runServiceRegistryChecks",
-          "line": 3533,
+          "line": 3548,
           "called": [
             "ObservableState.onCore",
             "all",
@@ -226023,7 +226250,7 @@
         {
           "kind": "def",
           "name": "runClearanceChainChecks",
-          "line": 3566,
+          "line": 3581,
           "called": [
             "ObservableState.onCore",
             "ObservableState.visibilityLe_mem_objectIndex",
@@ -226060,7 +226287,7 @@
         {
           "kind": "def",
           "name": "runFinerCheckChecks",
-          "line": 3625,
+          "line": 3640,
           "called": [
             "ObservableState.sliceOnCore",
             "RegisterFile",
@@ -226084,7 +226311,7 @@
         {
           "kind": "def",
           "name": "runObjectContentOrderChecks",
-          "line": 3658,
+          "line": 3673,
           "called": [
             "CNode",
             "Endpoint",
@@ -226125,7 +226352,7 @@
         {
           "kind": "def",
           "name": "highNotification",
-          "line": 3732,
+          "line": 3747,
           "called": [
             "ObjId"
           ]
@@ -226133,7 +226360,7 @@
         {
           "kind": "def",
           "name": "lowNotification",
-          "line": 3736,
+          "line": 3751,
           "called": [
             "ObjId"
           ]
@@ -226141,7 +226368,7 @@
         {
           "kind": "def",
           "name": "idleNotification",
-          "line": 3740,
+          "line": 3755,
           "called": [
             "Notification",
             "empty",
@@ -226151,7 +226378,7 @@
         {
           "kind": "def",
           "name": "niState",
-          "line": 3743,
+          "line": 3758,
           "called": [
             "SystemState",
             "highNotification",
@@ -226164,7 +226391,7 @@
         {
           "kind": "def",
           "name": "niLabeling",
-          "line": 3751,
+          "line": 3766,
           "called": [
             "LabelingContext",
             "highLabel",
@@ -226175,7 +226402,7 @@
         {
           "kind": "def",
           "name": "niLowObserver",
-          "line": 3756,
+          "line": 3771,
           "called": [
             "IfObserver",
             "IfObserver.ofLabel",
@@ -226185,7 +226412,7 @@
         {
           "kind": "def",
           "name": "highSignalPost",
-          "line": 3759,
+          "line": 3774,
           "called": [
             "SystemState",
             "highNotification",
@@ -226199,7 +226426,7 @@
         {
           "kind": "def",
           "name": "lowSignalPost",
-          "line": 3765,
+          "line": 3780,
           "called": [
             "SystemState",
             "lowNotification",
@@ -226213,7 +226440,7 @@
         {
           "kind": "def",
           "name": "projectedBadge",
-          "line": 3773,
+          "line": 3788,
           "called": [
             "Badge",
             "CoreId",
@@ -226229,7 +226456,7 @@
         {
           "kind": "def",
           "name": "projectedLock",
-          "line": 3782,
+          "line": 3797,
           "called": [
             "CoreId",
             "ObjId",
@@ -226247,7 +226474,7 @@
         {
           "kind": "def",
           "name": "rawLock",
-          "line": 3790,
+          "line": 3805,
           "called": [
             "ObjId",
             "RwLockState",
@@ -226261,7 +226488,7 @@
         {
           "kind": "def",
           "name": "lowEndpointLock",
-          "line": 3798,
+          "line": 3813,
           "called": [
             "LockId",
             "lowEndpoint"
@@ -226270,7 +226497,7 @@
         {
           "kind": "def",
           "name": "lockedState",
-          "line": 3801,
+          "line": 3816,
           "called": [
             "SystemState",
             "acquireLockOnObject",
@@ -226282,7 +226509,7 @@
         {
           "kind": "def",
           "name": "unlockedState",
-          "line": 3804,
+          "line": 3819,
           "called": [
             "SystemState",
             "c1",
@@ -226294,7 +226521,7 @@
         {
           "kind": "def",
           "name": "lockPairs",
-          "line": 3808,
+          "line": 3823,
           "called": [
             "AccessMode",
             "LockId",
@@ -226305,7 +226532,7 @@
         {
           "kind": "def",
           "name": "foldedLockState",
-          "line": 3812,
+          "line": 3827,
           "called": [
             "SystemState",
             "acquireAll",
@@ -226317,7 +226544,7 @@
         {
           "kind": "def",
           "name": "remoteCoreWriteState",
-          "line": 3818,
+          "line": 3833,
           "called": [
             "SystemState",
             "c1",
@@ -226329,7 +226556,7 @@
         {
           "kind": "def",
           "name": "c3",
-          "line": 3822,
+          "line": 3837,
           "called": [
             "CoreId"
           ]
@@ -226337,7 +226564,7 @@
         {
           "kind": "theorem",
           "name": "c0_ne_c1",
-          "line": 3828,
+          "line": 3843,
           "called": [
             "c0",
             "c1"
@@ -226346,7 +226573,7 @@
         {
           "kind": "theorem",
           "name": "c2_ne_c1",
-          "line": 3829,
+          "line": 3844,
           "called": [
             "c1",
             "c2"
@@ -226355,7 +226582,7 @@
         {
           "kind": "theorem",
           "name": "c3_ne_c1",
-          "line": 3830,
+          "line": 3845,
           "called": [
             "c1",
             "c3"
@@ -226364,7 +226591,7 @@
         {
           "kind": "theorem",
           "name": "remoteCoreWrite_confined",
-          "line": 3835,
+          "line": 3850,
           "called": [
             "c1",
             "niState",
@@ -226378,7 +226605,7 @@
         {
           "kind": "theorem",
           "name": "remoteCoreWrite_sharedUnchanged",
-          "line": 3842,
+          "line": 3857,
           "called": [
             "niLabeling",
             "niLowObserver",
@@ -226391,7 +226618,7 @@
         {
           "kind": "theorem",
           "name": "remoteCoreWrite_invisible_on_c0",
-          "line": 3848,
+          "line": 3863,
           "called": [
             "c0",
             "c0_ne_c1",
@@ -226408,7 +226635,7 @@
         {
           "kind": "theorem",
           "name": "remoteCoreWrite_invisible_on_c2",
-          "line": 3854,
+          "line": 3869,
           "called": [
             "c2",
             "c2_ne_c1",
@@ -226425,7 +226652,7 @@
         {
           "kind": "theorem",
           "name": "remoteCoreWrite_invisible_on_c3",
-          "line": 3860,
+          "line": 3875,
           "called": [
             "c3",
             "c3_ne_c1",
@@ -226442,7 +226669,7 @@
         {
           "kind": "theorem",
           "name": "remoteCoreWrite_leakage_bounded_on_c0",
-          "line": 3868,
+          "line": 3883,
           "called": [
             "c0",
             "c0_ne_c1",
@@ -226459,7 +226686,7 @@
         {
           "kind": "theorem",
           "name": "remoteCoreWrite_reconstruction_on_c0",
-          "line": 3873,
+          "line": 3888,
           "called": [
             "ObservableState.ofFragments",
             "c0",
@@ -226478,7 +226705,7 @@
         {
           "kind": "def",
           "name": "regsAgreeOn",
-          "line": 3889,
+          "line": 3904,
           "called": [
             "CoreId",
             "SystemState",
@@ -226491,7 +226718,7 @@
         {
           "kind": "def",
           "name": "runQueueAgreeOn",
-          "line": 3917,
+          "line": 3932,
           "called": [
             "CoreId",
             "SystemState",
@@ -226504,7 +226731,7 @@
         {
           "kind": "def",
           "name": "slotsAgreeCheck",
-          "line": 3940,
+          "line": 3955,
           "called": [
             "CoreId",
             "SystemState",
@@ -226520,7 +226747,7 @@
         {
           "kind": "def",
           "name": "confinedCheck",
-          "line": 3950,
+          "line": 3965,
           "called": [
             "CoreId",
             "SystemState",
@@ -226532,7 +226759,7 @@
         {
           "kind": "def",
           "name": "confinedToSetCheck",
-          "line": 3955,
+          "line": 3970,
           "called": [
             "CoreId",
             "SystemState",
@@ -226545,7 +226772,7 @@
         {
           "kind": "def",
           "name": "remoteHomedThread",
-          "line": 3965,
+          "line": 3980,
           "called": [
             "ThreadId"
           ]
@@ -226553,7 +226780,7 @@
         {
           "kind": "def",
           "name": "crossCoreState",
-          "line": 3967,
+          "line": 3982,
           "called": [
             "SystemState",
             "c2",
@@ -226566,7 +226793,7 @@
         {
           "kind": "def",
           "name": "remoteWakePost",
-          "line": 3974,
+          "line": 3989,
           "called": [
             "SystemState",
             "c0",
@@ -226578,7 +226805,7 @@
         {
           "kind": "def",
           "name": "remoteDeschedulePost",
-          "line": 3978,
+          "line": 3993,
           "called": [
             "SystemState",
             "c0",
@@ -226590,7 +226817,7 @@
         {
           "kind": "def",
           "name": "crossCoreEndpoint",
-          "line": 3985,
+          "line": 4000,
           "called": [
             "ObjId"
           ]
@@ -226598,7 +226825,7 @@
         {
           "kind": "def",
           "name": "crossCoreReceiver",
-          "line": 3986,
+          "line": 4001,
           "called": [
             "ThreadId"
           ]
@@ -226606,7 +226833,7 @@
         {
           "kind": "def",
           "name": "crossCoreWaiter",
-          "line": 3987,
+          "line": 4002,
           "called": [
             "ThreadId"
           ]
@@ -226614,7 +226841,7 @@
         {
           "kind": "def",
           "name": "rendezvousState",
-          "line": 3989,
+          "line": 4004,
           "called": [
             "SystemState",
             "c2",
@@ -226632,7 +226859,7 @@
         {
           "kind": "def",
           "name": "waitingNotificationState",
-          "line": 4004,
+          "line": 4019,
           "called": [
             "SystemState",
             "c2",
@@ -226648,7 +226875,7 @@
         {
           "kind": "def",
           "name": "core1RegWriteState",
-          "line": 4021,
+          "line": 4036,
           "called": [
             "SystemState",
             "c1",
@@ -226660,7 +226887,7 @@
         {
           "kind": "def",
           "name": "runTwoCoreWriteSetChecks",
-          "line": 4027,
+          "line": 4042,
           "called": [
             "assertBool",
             "c0",
@@ -226684,7 +226911,7 @@
         {
           "kind": "def",
           "name": "runCrossCoreWriteSetChecks",
-          "line": 4069,
+          "line": 4084,
           "called": [
             "assertBool",
             "c0",
@@ -226709,7 +226936,7 @@
         {
           "kind": "def",
           "name": "runVisibleRemoteWakeChecks",
-          "line": 4095,
+          "line": 4110,
           "called": [
             "all",
             "assertBool",
@@ -226726,7 +226953,7 @@
         {
           "kind": "def",
           "name": "cancelledVictimTcb",
-          "line": 4118,
+          "line": 4133,
           "called": [
             "TCB",
             "c2",
@@ -226737,7 +226964,7 @@
         {
           "kind": "def",
           "name": "cancelPost",
-          "line": 4121,
+          "line": 4136,
           "called": [
             "SystemState",
             "c0",
@@ -226750,7 +226977,7 @@
         {
           "kind": "def",
           "name": "runComposedCancellationChecks",
-          "line": 4126,
+          "line": 4141,
           "called": [
             "assertBool",
             "c0",
@@ -226769,7 +226996,7 @@
         {
           "kind": "def",
           "name": "crossCoreSender",
-          "line": 4155,
+          "line": 4170,
           "called": [
             "ThreadId"
           ]
@@ -226777,7 +227004,7 @@
         {
           "kind": "def",
           "name": "blockedSenderState",
-          "line": 4157,
+          "line": 4172,
           "called": [
             "SystemState",
             "c2",
@@ -226794,7 +227021,7 @@
         {
           "kind": "def",
           "name": "receiveDualPost",
-          "line": 4167,
+          "line": 4182,
           "called": [
             "SystemState",
             "blockedSenderState",
@@ -226808,7 +227035,7 @@
         {
           "kind": "def",
           "name": "boundTcbThread",
-          "line": 4174,
+          "line": 4189,
           "called": [
             "ThreadId"
           ]
@@ -226816,7 +227043,7 @@
         {
           "kind": "def",
           "name": "boundNotificationState",
-          "line": 4176,
+          "line": 4191,
           "called": [
             "SystemState",
             "boundTcbThread",
@@ -226835,7 +227062,7 @@
         {
           "kind": "def",
           "name": "boundSignalPost",
-          "line": 4199,
+          "line": 4214,
           "called": [
             "SystemState",
             "boundNotificationState",
@@ -226848,7 +227075,7 @@
         {
           "kind": "def",
           "name": "replyBlockedCaller",
-          "line": 4208,
+          "line": 4223,
           "called": [
             "ThreadId"
           ]
@@ -226856,7 +227083,7 @@
         {
           "kind": "def",
           "name": "replyRecvState",
-          "line": 4210,
+          "line": 4225,
           "called": [
             "SystemState",
             "blockedSenderState",
@@ -226872,7 +227099,7 @@
         {
           "kind": "def",
           "name": "replyRecvMsg",
-          "line": 4217,
+          "line": 4232,
           "called": [
             "IpcMessage",
             "badge",
@@ -226882,7 +227109,7 @@
         {
           "kind": "def",
           "name": "runLiveCrossCoreArmChecks",
-          "line": 4221,
+          "line": 4236,
           "called": [
             "assertBool",
             "blockedSenderState",
@@ -226918,7 +227145,7 @@
         {
           "kind": "def",
           "name": "oneQueuedOnCore2",
-          "line": 4294,
+          "line": 4309,
           "called": [
             "SystemState",
             "c2",
@@ -226930,7 +227157,7 @@
         {
           "kind": "def",
           "name": "reBucketedOnCore2",
-          "line": 4301,
+          "line": 4316,
           "called": [
             "SystemState",
             "c2",
@@ -226945,7 +227172,7 @@
         {
           "kind": "def",
           "name": "runRunQueueComparisonChecks",
-          "line": 4314,
+          "line": 4329,
           "called": [
             "assertBool",
             "c0",
@@ -226964,7 +227191,7 @@
         {
           "kind": "def",
           "name": "runCoreSetAlgebraChecks",
-          "line": 4341,
+          "line": 4356,
           "called": [
             "CrossCoreTransition.all",
             "all",
@@ -226999,7 +227226,7 @@
         {
           "kind": "def",
           "name": "niGenericCtx",
-          "line": 4456,
+          "line": 4471,
           "called": [
             "GenericLabelingContext"
           ]
@@ -227007,7 +227234,7 @@
         {
           "kind": "def",
           "name": "niEpPolicy",
-          "line": 4461,
+          "line": 4476,
           "called": [
             "EndpointFlowPolicy",
             "none"
@@ -227016,7 +227243,7 @@
         {
           "kind": "def",
           "name": "gateAt",
-          "line": 4463,
+          "line": 4478,
           "called": [
             "CoreId",
             "SystemState",
@@ -227030,7 +227257,7 @@
         {
           "kind": "def",
           "name": "runResolvedFlowGateChecks",
-          "line": 4467,
+          "line": 4482,
           "called": [
             "assertBool",
             "c0",
@@ -227047,7 +227274,7 @@
         {
           "kind": "def",
           "name": "vacatingSendMsg",
-          "line": 4491,
+          "line": 4506,
           "called": [
             "IpcMessage",
             "badge",
@@ -227057,7 +227284,7 @@
         {
           "kind": "def",
           "name": "vacatedPost",
-          "line": 4496,
+          "line": 4511,
           "called": [
             "SystemState",
             "c0",
@@ -227071,7 +227298,7 @@
         {
           "kind": "def",
           "name": "vacatedRescheduled",
-          "line": 4500,
+          "line": 4515,
           "called": [
             "SystemState",
             "c0",
@@ -227083,7 +227310,7 @@
         {
           "kind": "def",
           "name": "runVacatedCoreChecks",
-          "line": 4509,
+          "line": 4524,
           "called": [
             "all",
             "assertBool",
@@ -227113,7 +227340,7 @@
         {
           "kind": "def",
           "name": "replenishSc",
-          "line": 4590,
+          "line": 4605,
           "called": [
             "ObjId"
           ]
@@ -227121,7 +227348,7 @@
         {
           "kind": "def",
           "name": "replenishScId",
-          "line": 4591,
+          "line": 4606,
           "called": [
             "SchedContextId"
           ]
@@ -227129,7 +227356,7 @@
         {
           "kind": "def",
           "name": "replenishScValue",
-          "line": 4593,
+          "line": 4608,
           "called": [
             "SchedContext",
             "remoteHomedThread",
@@ -227140,7 +227367,7 @@
         {
           "kind": "def",
           "name": "replenishState",
-          "line": 4603,
+          "line": 4618,
           "called": [
             "SystemState",
             "c2",
@@ -227157,7 +227384,7 @@
         {
           "kind": "def",
           "name": "replenishScValidId",
-          "line": 4613,
+          "line": 4628,
           "called": [
             "ValidObjId",
             "replenishSc"
@@ -227166,7 +227393,7 @@
         {
           "kind": "def",
           "name": "unboundState",
-          "line": 4616,
+          "line": 4631,
           "called": [
             "SystemState",
             "none",
@@ -227178,7 +227405,7 @@
         {
           "kind": "def",
           "name": "unboundAffinityRunningRemoteState",
-          "line": 4629,
+          "line": 4644,
           "called": [
             "SystemState",
             "c2",
@@ -227197,7 +227424,7 @@
         {
           "kind": "def",
           "name": "unboundDivergentPost",
-          "line": 4638,
+          "line": 4653,
           "called": [
             "SystemState",
             "none",
@@ -227209,7 +227436,7 @@
         {
           "kind": "def",
           "name": "runReplenishHomeCoreChecks",
-          "line": 4650,
+          "line": 4665,
           "called": [
             "all",
             "assertBool",
@@ -227232,7 +227459,7 @@
         {
           "kind": "def",
           "name": "runUnbindCoreAgreementChecks",
-          "line": 4695,
+          "line": 4710,
           "called": [
             "assertBool",
             "c0",
@@ -227252,7 +227479,7 @@
         {
           "kind": "def",
           "name": "retypeVictimState",
-          "line": 4740,
+          "line": 4755,
           "called": [
             "SystemState",
             "remoteWakePost"
@@ -227261,7 +227488,7 @@
         {
           "kind": "def",
           "name": "retypeVictimTwoCoreState",
-          "line": 4745,
+          "line": 4760,
           "called": [
             "SystemState",
             "c3",
@@ -227273,7 +227500,7 @@
         {
           "kind": "def",
           "name": "runRetypeWriteSetChecks",
-          "line": 4757,
+          "line": 4772,
           "called": [
             "allCores",
             "any",
@@ -227303,7 +227530,7 @@
         {
           "kind": "def",
           "name": "runCrossCoreNonInterferenceChecks",
-          "line": 4842,
+          "line": 4857,
           "called": [
             "ObservableState.onCore",
             "assertBool",
@@ -227325,7 +227552,7 @@
         {
           "kind": "def",
           "name": "runPerCoreNonInterferenceChecks",
-          "line": 4860,
+          "line": 4875,
           "called": [
             "all",
             "assertBool",
@@ -227348,7 +227575,7 @@
         {
           "kind": "def",
           "name": "runConfinementChecks",
-          "line": 4888,
+          "line": 4903,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -227369,7 +227596,7 @@
         {
           "kind": "def",
           "name": "runLockSetNonInterferenceChecks",
-          "line": 4908,
+          "line": 4923,
           "called": [
             "CoreId",
             "LockSet",
@@ -227414,7 +227641,7 @@
         {
           "kind": "def",
           "name": "runLeakageBoundChecks",
-          "line": 4982,
+          "line": 4997,
           "called": [
             "assertBool",
             "remoteCoreWrite_leakage_bounded_on_c0",
@@ -227424,7 +227651,7 @@
         {
           "kind": "def",
           "name": "runPerCoreCoverageChecks",
-          "line": 4992,
+          "line": 5007,
           "called": [
             "assertBool",
             "chooseThread",
@@ -227457,7 +227684,7 @@
         {
           "kind": "def",
           "name": "runEnforcementBoundaryChecks",
-          "line": 5026,
+          "line": 5041,
           "called": [
             "all",
             "any",
@@ -227479,7 +227706,7 @@
         {
           "kind": "def",
           "name": "auditOccupancyProbeEvent",
-          "line": 5114,
+          "line": 5129,
           "called": [
             "DeclassificationEvent",
             "c0",
@@ -227490,7 +227717,7 @@
         {
           "kind": "def",
           "name": "runCovertChannelInventoryChecks",
-          "line": 5122,
+          "line": 5137,
           "called": [
             "ObservableState.onCore",
             "acceptedCovertChannelsPerCore",
@@ -227515,7 +227742,7 @@
         {
           "kind": "def",
           "name": "runSchedulingChannelBoundChecks",
-          "line": 5233,
+          "line": 5248,
           "called": [
             "ObservableState.onCore",
             "SystemState",
@@ -227531,7 +227758,7 @@
         {
           "kind": "def",
           "name": "runCatchAllPremiseChecks",
-          "line": 5265,
+          "line": 5280,
           "called": [
             "ObservableState.onCore",
             "assertBool",
@@ -227552,7 +227779,7 @@
         {
           "kind": "def",
           "name": "runPolicyAndReleaseBridgeChecks",
-          "line": 5286,
+          "line": 5301,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -227581,7 +227808,7 @@
         {
           "kind": "def",
           "name": "declassSecret",
-          "line": 5324,
+          "line": 5339,
           "called": [
             "SecurityDomain"
           ]
@@ -227589,7 +227816,7 @@
         {
           "kind": "def",
           "name": "declassMiddle",
-          "line": 5325,
+          "line": 5340,
           "called": [
             "SecurityDomain"
           ]
@@ -227597,7 +227824,7 @@
         {
           "kind": "def",
           "name": "declassPublic",
-          "line": 5326,
+          "line": 5341,
           "called": [
             "SecurityDomain"
           ]
@@ -227605,7 +227832,7 @@
         {
           "kind": "def",
           "name": "declassContext",
-          "line": 5335,
+          "line": 5350,
           "called": [
             "GenericLabelingContext",
             "declassMiddle",
@@ -227620,7 +227847,7 @@
         {
           "kind": "def",
           "name": "launderingDeclPolicy",
-          "line": 5346,
+          "line": 5361,
           "called": [
             "DeclassificationPolicy"
           ]
@@ -227628,7 +227855,7 @@
         {
           "kind": "def",
           "name": "compositeAuthorizedDeclPolicy",
-          "line": 5353,
+          "line": 5368,
           "called": [
             "DeclassificationPolicy"
           ]
@@ -227636,7 +227863,7 @@
         {
           "kind": "def",
           "name": "declassTargetA",
-          "line": 5359,
+          "line": 5374,
           "called": [
             "ObjId"
           ]
@@ -227644,7 +227871,7 @@
         {
           "kind": "def",
           "name": "declassTargetB",
-          "line": 5360,
+          "line": 5375,
           "called": [
             "ObjId"
           ]
@@ -227652,7 +227879,7 @@
         {
           "kind": "def",
           "name": "declassPayload",
-          "line": 5362,
+          "line": 5377,
           "called": [
             "KernelObject",
             "badge",
@@ -227663,7 +227890,7 @@
         {
           "kind": "def",
           "name": "declassHop1",
-          "line": 5368,
+          "line": 5383,
           "called": [
             "DeclassificationAuditLog",
             "SystemState",
@@ -227682,7 +227909,7 @@
         {
           "kind": "def",
           "name": "declassHop2",
-          "line": 5376,
+          "line": 5391,
           "called": [
             "DeclassificationAuditLog",
             "SystemState",
@@ -227701,7 +227928,7 @@
         {
           "kind": "def",
           "name": "declassForged",
-          "line": 5394,
+          "line": 5409,
           "called": [
             "DeclassificationAuditLog",
             "SystemState",
@@ -227723,7 +227950,7 @@
         {
           "kind": "def",
           "name": "attributableCheck",
-          "line": 5407,
+          "line": 5422,
           "called": [
             "DeclassificationEvent",
             "SystemState",
@@ -227734,7 +227961,7 @@
         {
           "kind": "def",
           "name": "integratorEvent",
-          "line": 5412,
+          "line": 5427,
           "called": [
             "DeclassificationEvent",
             "c2",
@@ -227747,7 +227974,7 @@
         {
           "kind": "def",
           "name": "declassIntoHigh",
-          "line": 5421,
+          "line": 5436,
           "called": [
             "SystemState",
             "c1",
@@ -227765,7 +227992,7 @@
         {
           "kind": "def",
           "name": "declassIntoLow",
-          "line": 5429,
+          "line": 5444,
           "called": [
             "SystemState",
             "c1",
@@ -227783,7 +228010,7 @@
         {
           "kind": "def",
           "name": "runDeclassificationProducerChecks",
-          "line": 5437,
+          "line": 5452,
           "called": [
             "assertBool",
             "c0",
@@ -227811,7 +228038,7 @@
         {
           "kind": "def",
           "name": "runDeclassificationAttributionChecks",
-          "line": 5480,
+          "line": 5495,
           "called": [
             "all",
             "assertBool",
@@ -227838,7 +228065,7 @@
         {
           "kind": "def",
           "name": "runDeclassificationPartitionChecks",
-          "line": 5523,
+          "line": 5538,
           "called": [
             "all",
             "assertBool",
@@ -227856,7 +228083,7 @@
         {
           "kind": "def",
           "name": "runDeclassificationChainChecks",
-          "line": 5551,
+          "line": 5566,
           "called": [
             "all",
             "assertBool",
@@ -227880,7 +228107,7 @@
         {
           "kind": "def",
           "name": "runDeclassificationRuleChecks",
-          "line": 5583,
+          "line": 5598,
           "called": [
             "all",
             "assertBool",
@@ -227900,7 +228127,7 @@
         {
           "kind": "def",
           "name": "runDeclassificationBasisChecks",
-          "line": 5615,
+          "line": 5630,
           "called": [
             "all",
             "assertBool",
@@ -227919,7 +228146,7 @@
         {
           "kind": "def",
           "name": "runDeclassificationNonInterferenceChecks",
-          "line": 5646,
+          "line": 5661,
           "called": [
             "all",
             "assertBool",
@@ -227953,7 +228180,7 @@
         {
           "kind": "def",
           "name": "narrowingOverrideLabeling",
-          "line": 5691,
+          "line": 5706,
           "called": [
             "LabelingContext",
             "lowEndpoint",
@@ -227964,7 +228191,7 @@
         {
           "kind": "def",
           "name": "wideningOverrideLabeling",
-          "line": 5696,
+          "line": 5711,
           "called": [
             "LabelingContext",
             "niLabeling"
@@ -227973,7 +228200,7 @@
         {
           "kind": "def",
           "name": "crossCoreSendUnder",
-          "line": 5701,
+          "line": 5716,
           "called": [
             "CapTransferSummary",
             "CoreId",
@@ -227996,7 +228223,7 @@
         {
           "kind": "def",
           "name": "runEndpointPolicyGateChecks",
-          "line": 5709,
+          "line": 5724,
           "called": [
             "DeclassificationPolicy",
             "LabelingContext",
@@ -228026,7 +228253,7 @@
         {
           "kind": "def",
           "name": "liveDeclassLabeling",
-          "line": 5765,
+          "line": 5780,
           "called": [
             "LabelingContext",
             "embedLegacyLabel",
@@ -228038,7 +228265,7 @@
         {
           "kind": "def",
           "name": "unconfiguredDeclassLabeling",
-          "line": 5774,
+          "line": 5789,
           "called": [
             "LabelingContext",
             "niLabeling"
@@ -228047,7 +228274,7 @@
         {
           "kind": "def",
           "name": "liveDeclassRun",
-          "line": 5778,
+          "line": 5793,
           "called": [
             "LabelingContext",
             "SystemState",
@@ -228063,7 +228290,7 @@
         {
           "kind": "def",
           "name": "runLiveDeclassifyChecks",
-          "line": 5785,
+          "line": 5800,
           "called": [
             "SystemState",
             "all",
@@ -228095,7 +228322,7 @@
         {
           "kind": "def",
           "name": "runDeclassifyCapacityChecks",
-          "line": 5848,
+          "line": 5863,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -228123,7 +228350,7 @@
         {
           "kind": "def",
           "name": "runDeclassifyRunChecks",
-          "line": 5895,
+          "line": 5910,
           "called": [
             "DeclassificationRequest",
             "all",
@@ -228151,7 +228378,7 @@
         {
           "kind": "def",
           "name": "runDeclassifyRenderingChecks",
-          "line": 5948,
+          "line": 5963,
           "called": [
             "DeclassificationBasis",
             "all",
@@ -228168,7 +228395,7 @@
         {
           "kind": "def",
           "name": "runDeclassifyChainTopologyChecks",
-          "line": 5973,
+          "line": 5988,
           "called": [
             "CoreId",
             "DeclassificationEvent",
@@ -228195,7 +228422,7 @@
         {
           "kind": "def",
           "name": "declassTraceLines",
-          "line": 6027,
+          "line": 6042,
           "called": [
             "DeclassificationRequest",
             "all",
@@ -228234,7 +228461,7 @@
         {
           "kind": "def",
           "name": "legacySrcLabel",
-          "line": 6093,
+          "line": 6108,
           "called": [
             "SecurityLabel"
           ]
@@ -228242,7 +228469,7 @@
         {
           "kind": "def",
           "name": "legacyDstLabel",
-          "line": 6096,
+          "line": 6111,
           "called": [
             "SecurityLabel"
           ]
@@ -228250,7 +228477,7 @@
         {
           "kind": "def",
           "name": "legacyPairDeclPolicy",
-          "line": 6100,
+          "line": 6115,
           "called": [
             "DeclassificationPolicy",
             "embedLegacyLabel",
@@ -228261,7 +228488,7 @@
         {
           "kind": "def",
           "name": "legacyPairLabeling",
-          "line": 6104,
+          "line": 6119,
           "called": [
             "LabelingContext",
             "legacyDstLabel",
@@ -228271,7 +228498,7 @@
         {
           "kind": "def",
           "name": "runFaithfulLegacyLiftChecks",
-          "line": 6110,
+          "line": 6125,
           "called": [
             "SecurityLabel",
             "all",
@@ -228292,13 +228519,13 @@
         {
           "kind": "def",
           "name": "declassTraceFixturePath",
-          "line": 6170,
+          "line": 6185,
           "called": []
         },
         {
           "kind": "def",
           "name": "runDeclassTraceFixtureCheck",
-          "line": 6178,
+          "line": 6193,
           "called": [
             "declassTraceFixturePath",
             "declassTraceLines",
@@ -228308,7 +228535,7 @@
         {
           "kind": "def",
           "name": "freeLock",
-          "line": 6210,
+          "line": 6225,
           "called": [
             "RwLockState",
             "RwLockState.unheld"
@@ -228317,7 +228544,7 @@
         {
           "kind": "def",
           "name": "sharedLock",
-          "line": 6213,
+          "line": 6228,
           "called": [
             "RwLockState",
             "c0",
@@ -228329,7 +228556,7 @@
         {
           "kind": "def",
           "name": "singleReaderLock",
-          "line": 6216,
+          "line": 6231,
           "called": [
             "RwLockState",
             "c1",
@@ -228339,7 +228566,7 @@
         {
           "kind": "def",
           "name": "blockedObserverLock",
-          "line": 6221,
+          "line": 6236,
           "called": [
             "RwLockState",
             "c0",
@@ -228349,7 +228576,7 @@
         {
           "kind": "def",
           "name": "lockProbeStates",
-          "line": 6224,
+          "line": 6239,
           "called": [
             "RwLockState",
             "blockedObserverLock",
@@ -228361,7 +228588,7 @@
         {
           "kind": "def",
           "name": "projectedEndpoint",
-          "line": 6230,
+          "line": 6245,
           "called": [
             "CoreId",
             "KernelObject",
@@ -228376,7 +228603,7 @@
         {
           "kind": "def",
           "name": "runFineLockInvisibilityChecks",
-          "line": 6235,
+          "line": 6250,
           "called": [
             "CoreId",
             "ObservableState.onCore",
@@ -228411,7 +228638,7 @@
         {
           "kind": "def",
           "name": "runReaderMultiplicityChecks",
-          "line": 6288,
+          "line": 6303,
           "called": [
             "CoreId",
             "ObservableState.onCore",
@@ -228443,7 +228670,7 @@
         {
           "kind": "def",
           "name": "runWriterExclusionChecks",
-          "line": 6326,
+          "line": 6341,
           "called": [
             "CoreId",
             "ObservableState.onCore",
@@ -228471,7 +228698,7 @@
         {
           "kind": "def",
           "name": "contendedExecution",
-          "line": 6366,
+          "line": 6381,
           "called": [
             "RwLockExecution",
             "RwLockState.unheld",
@@ -228484,13 +228711,13 @@
         {
           "kind": "def",
           "name": "contendedMaxDelay",
-          "line": 6375,
+          "line": 6390,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "contendedExecution_fair",
-          "line": 6377,
+          "line": 6392,
           "called": [
             "FairTrace",
             "contendedExecution",
@@ -228501,7 +228728,7 @@
         {
           "kind": "theorem",
           "name": "contendedExecution_queued",
-          "line": 6382,
+          "line": 6397,
           "called": [
             "c1",
             "stateAt"
@@ -228510,7 +228737,7 @@
         {
           "kind": "theorem",
           "name": "contendedExecution_within",
-          "line": 6386,
+          "line": 6401,
           "called": [
             "contendedMaxDelay",
             "length",
@@ -228520,7 +228747,7 @@
         {
           "kind": "def",
           "name": "runLockContentionBoundChecks",
-          "line": 6390,
+          "line": 6405,
           "called": [
             "MAX_RELEASE_DELAY",
             "admissionStep",
@@ -228552,7 +228779,7 @@
         {
           "kind": "def",
           "name": "repeatAcquirerExecution",
-          "line": 6451,
+          "line": 6466,
           "called": [
             "RwLockExecution",
             "RwLockState.unheld",
@@ -228564,7 +228791,7 @@
         {
           "kind": "def",
           "name": "runRepeatAcquirerChecks",
-          "line": 6458,
+          "line": 6473,
           "called": [
             "admissionStep",
             "admissionStepAfter",
@@ -228580,7 +228807,7 @@
         {
           "kind": "def",
           "name": "runFairnessPremiseChecks",
-          "line": 6477,
+          "line": 6492,
           "called": [
             "admissionStepAfter",
             "assertBool",
@@ -228599,7 +228826,7 @@
         {
           "kind": "def",
           "name": "runContentionRateChecks",
-          "line": 6497,
+          "line": 6512,
           "called": [
             "assertBool",
             "boundedCodeTraces",
@@ -228616,7 +228843,7 @@
         {
           "kind": "def",
           "name": "runBlockedReaderChecks",
-          "line": 6528,
+          "line": 6543,
           "called": [
             "RwLockState",
             "applyOp",
@@ -228633,7 +228860,7 @@
         {
           "kind": "def",
           "name": "readerContendedExecution",
-          "line": 6560,
+          "line": 6575,
           "called": [
             "RwLockExecution",
             "RwLockState.unheld",
@@ -228646,7 +228873,7 @@
         {
           "kind": "theorem",
           "name": "readerContendedExecution_fair",
-          "line": 6567,
+          "line": 6582,
           "called": [
             "FairTrace",
             "contendedMaxDelay",
@@ -228657,7 +228884,7 @@
         {
           "kind": "theorem",
           "name": "readerContendedExecution_queued",
-          "line": 6572,
+          "line": 6587,
           "called": [
             "c1",
             "stateAt"
@@ -228666,7 +228893,7 @@
         {
           "kind": "theorem",
           "name": "readerContendedExecution_within",
-          "line": 6576,
+          "line": 6591,
           "called": [
             "contendedMaxDelay",
             "length",
@@ -228676,7 +228903,7 @@
         {
           "kind": "def",
           "name": "runBlockedReaderTemporalChecks",
-          "line": 6582,
+          "line": 6597,
           "called": [
             "admissionStepAfter",
             "assertBool",
@@ -228702,7 +228929,7 @@
         {
           "kind": "def",
           "name": "runContentionFigureChecks",
-          "line": 6621,
+          "line": 6636,
           "called": [
             "MAX_RELEASE_DELAY",
             "acceptedCovertChannel_lockContention_severity_basis",
@@ -228722,7 +228949,7 @@
         {
           "kind": "def",
           "name": "fineLockLabeling",
-          "line": 6664,
+          "line": 6679,
           "called": [
             "LabelingContext",
             "kernelTrusted",
@@ -228733,7 +228960,7 @@
         {
           "kind": "def",
           "name": "untrustedSubject",
-          "line": 6670,
+          "line": 6685,
           "called": [
             "SecurityLabel",
             "publicLabel"
@@ -228742,7 +228969,7 @@
         {
           "kind": "def",
           "name": "runFineLockIntegrityChecks",
-          "line": 6673,
+          "line": 6688,
           "called": [
             "CoreId",
             "LockSet",
@@ -228775,7 +229002,7 @@
         {
           "kind": "def",
           "name": "fineLockSet",
-          "line": 6743,
+          "line": 6758,
           "called": [
             "LockSet",
             "lockPairs"
@@ -228784,7 +229011,7 @@
         {
           "kind": "def",
           "name": "fineLockEntryLabeling",
-          "line": 6753,
+          "line": 6768,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -228795,7 +229022,7 @@
         {
           "kind": "def",
           "name": "bracketAcquiredState",
-          "line": 6759,
+          "line": 6774,
           "called": [
             "SystemState",
             "c1",
@@ -228807,7 +229034,7 @@
         {
           "kind": "def",
           "name": "bracketedEntryResult",
-          "line": 6762,
+          "line": 6777,
           "called": [
             "KernelError",
             "SystemState",
@@ -228823,7 +229050,7 @@
         {
           "kind": "def",
           "name": "entryProjectedEndpoint",
-          "line": 6767,
+          "line": 6782,
           "called": [
             "CoreId",
             "KernelObject",
@@ -228838,7 +229065,7 @@
         {
           "kind": "def",
           "name": "runFineLockEntryChecks",
-          "line": 6772,
+          "line": 6787,
           "called": [
             "CoreId",
             "KernelError",
@@ -228883,7 +229110,7 @@
         {
           "kind": "def",
           "name": "hiCallerTcb",
-          "line": 6861,
+          "line": 6876,
           "called": [
             "TCB",
             "c1",
@@ -228894,7 +229121,7 @@
         {
           "kind": "def",
           "name": "successEntryState",
-          "line": 6868,
+          "line": 6883,
           "called": [
             "SystemState",
             "hiCallerTcb",
@@ -228906,7 +229133,7 @@
         {
           "kind": "def",
           "name": "successAcquiredState",
-          "line": 6875,
+          "line": 6890,
           "called": [
             "SystemState",
             "c1",
@@ -228918,7 +229145,7 @@
         {
           "kind": "def",
           "name": "successEntryResult",
-          "line": 6878,
+          "line": 6893,
           "called": [
             "KernelError",
             "SystemState",
@@ -228933,7 +229160,7 @@
         {
           "kind": "def",
           "name": "successGuardedOutcome",
-          "line": 6884,
+          "line": 6899,
           "called": [
             "KernelError",
             "SystemState",
@@ -228947,7 +229174,7 @@
         {
           "kind": "def",
           "name": "runFineLockSuccessPathChecks",
-          "line": 6888,
+          "line": 6903,
           "called": [
             "ObservableState.onCore",
             "SystemState",
@@ -228990,7 +229217,7 @@
         {
           "kind": "def",
           "name": "runFineLockClaimInventoryChecks",
-          "line": 6964,
+          "line": 6979,
           "called": [
             "FineLockClaimId.subTask",
             "all",
@@ -229010,7 +229237,7 @@
         {
           "kind": "def",
           "name": "traceBlockedReaderLock",
-          "line": 7011,
+          "line": 7026,
           "called": [
             "RwLockState",
             "c0",
@@ -229020,7 +229247,7 @@
         {
           "kind": "def",
           "name": "traceClaimSubTaskCount",
-          "line": 7021,
+          "line": 7036,
           "called": [
             "FineLockClaimId.subTask",
             "length"
@@ -229029,19 +229256,19 @@
         {
           "kind": "def",
           "name": "traceRefusedOutcome",
-          "line": 7025,
+          "line": 7040,
           "called": []
         },
         {
           "kind": "def",
           "name": "traceSuccessOutcome",
-          "line": 7030,
+          "line": 7045,
           "called": []
         },
         {
           "kind": "def",
           "name": "fineLockTraceLines",
-          "line": 7035,
+          "line": 7050,
           "called": [
             "CoreId",
             "MAX_RELEASE_DELAY",
@@ -229096,7 +229323,7 @@
         {
           "kind": "def",
           "name": "distinctRootVictim",
-          "line": 7094,
+          "line": 7109,
           "called": [
             "TCB",
             "c1",
@@ -229107,7 +229334,7 @@
         {
           "kind": "def",
           "name": "suspendCNode",
-          "line": 7108,
+          "line": 7123,
           "called": [
             "ObjId"
           ]
@@ -229115,7 +229342,7 @@
         {
           "kind": "def",
           "name": "suspendSlot",
-          "line": 7109,
+          "line": 7124,
           "called": [
             "Slot",
             "ofNat"
@@ -229124,7 +229351,7 @@
         {
           "kind": "def",
           "name": "suspendSlotCap",
-          "line": 7112,
+          "line": 7127,
           "called": [
             "Capability",
             "ofList",
@@ -229134,7 +229361,7 @@
         {
           "kind": "def",
           "name": "suspendSlotCapReplaced",
-          "line": 7119,
+          "line": 7134,
           "called": [
             "Capability",
             "ofList",
@@ -229144,7 +229371,7 @@
         {
           "kind": "def",
           "name": "suspendCNodeValue",
-          "line": 7125,
+          "line": 7140,
           "called": [
             "CNode",
             "ofListWF",
@@ -229155,7 +229382,7 @@
         {
           "kind": "def",
           "name": "suspendCNodeValueReplaced",
-          "line": 7129,
+          "line": 7144,
           "called": [
             "CNode",
             "ofListWF",
@@ -229166,7 +229393,7 @@
         {
           "kind": "def",
           "name": "suspendCallerTcb",
-          "line": 7133,
+          "line": 7148,
           "called": [
             "TCB",
             "c1",
@@ -229177,7 +229404,7 @@
         {
           "kind": "def",
           "name": "suspendEntryState",
-          "line": 7140,
+          "line": 7155,
           "called": [
             "SystemState",
             "insert",
@@ -229191,7 +229418,7 @@
         {
           "kind": "def",
           "name": "suspendDeclaredFootprint",
-          "line": 7146,
+          "line": 7161,
           "called": [
             "LockSet",
             "arm64DefaultLayout",
@@ -229204,7 +229431,7 @@
         {
           "kind": "def",
           "name": "suspendAcquiredState",
-          "line": 7158,
+          "line": 7173,
           "called": [
             "SystemState",
             "c1",
@@ -229217,7 +229444,7 @@
         {
           "kind": "def",
           "name": "suspendObservedReplaced",
-          "line": 7171,
+          "line": 7186,
           "called": [
             "SystemState",
             "getCNode",
@@ -229231,7 +229458,7 @@
         {
           "kind": "def",
           "name": "distinctRootState",
-          "line": 7179,
+          "line": 7194,
           "called": [
             "SystemState",
             "distinctRootVictim",
@@ -229243,7 +229470,7 @@
         {
           "kind": "def",
           "name": "runDeclaredFootprintChecks",
-          "line": 7189,
+          "line": 7204,
           "called": [
             "all",
             "arm64DefaultLayout",
@@ -229306,13 +229533,13 @@
         {
           "kind": "def",
           "name": "fineLockTraceFixturePath",
-          "line": 7387,
+          "line": 7402,
           "called": []
         },
         {
           "kind": "def",
           "name": "runFineLockTraceFixtureCheck",
-          "line": 7395,
+          "line": 7410,
           "called": [
             "fineLockTraceFixturePath",
             "fineLockTraceLines",
@@ -229322,13 +229549,13 @@
         {
           "kind": "def",
           "name": "informationFlowTraceFixturePath",
-          "line": 7437,
+          "line": 7452,
           "called": []
         },
         {
           "kind": "def",
           "name": "covertChannelSeverityName",
-          "line": 7443,
+          "line": 7458,
           "called": [
             "CovertChannelSeverity"
           ]
@@ -229336,7 +229563,7 @@
         {
           "kind": "def",
           "name": "lowViewOnCore",
-          "line": 7450,
+          "line": 7465,
           "called": [
             "CoreId",
             "ObservableState",
@@ -229349,7 +229576,7 @@
         {
           "kind": "def",
           "name": "visibleObjectCount",
-          "line": 7455,
+          "line": 7470,
           "called": [
             "ObservableState.onCore",
             "SecurityLabel",
@@ -229362,7 +229589,7 @@
         {
           "kind": "def",
           "name": "lowSlotsInvisibleEverywhere",
-          "line": 7466,
+          "line": 7481,
           "called": [
             "SystemState",
             "all",
@@ -229375,7 +229602,7 @@
         {
           "kind": "def",
           "name": "lowBadgeUnchangedEverywhere",
-          "line": 7473,
+          "line": 7488,
           "called": [
             "ObjId",
             "SystemState",
@@ -229388,7 +229615,7 @@
         {
           "kind": "def",
           "name": "visibleCoreWriteState",
-          "line": 7485,
+          "line": 7500,
           "called": [
             "SystemState",
             "c0",
@@ -229400,7 +229627,7 @@
         {
           "kind": "def",
           "name": "independenceInvisibleCores",
-          "line": 7490,
+          "line": 7505,
           "called": [
             "CoreId",
             "filter",
@@ -229414,7 +229641,7 @@
         {
           "kind": "def",
           "name": "observerTraceLines",
-          "line": 7495,
+          "line": 7510,
           "called": [
             "CNode",
             "all",
@@ -229439,7 +229666,7 @@
         {
           "kind": "def",
           "name": "nonInterferenceTraceLines",
-          "line": 7534,
+          "line": 7549,
           "called": [
             "RwLockState.unheld",
             "all",
@@ -229488,7 +229715,7 @@
         {
           "kind": "def",
           "name": "runPhaseSurfaceChecks",
-          "line": 7603,
+          "line": 7618,
           "called": [
             "KernelOperation.all_nodup",
             "KernelOperation.mem_all",
@@ -229528,7 +229755,7 @@
         {
           "kind": "def",
           "name": "auditMonitorDomain",
-          "line": 7695,
+          "line": 7710,
           "called": [
             "SecurityDomain",
             "embedLegacyLabel",
@@ -229538,7 +229765,7 @@
         {
           "kind": "def",
           "name": "auditMonitorLabeling",
-          "line": 7699,
+          "line": 7714,
           "called": [
             "LabelingContext",
             "auditMonitorDomain",
@@ -229548,7 +229775,7 @@
         {
           "kind": "def",
           "name": "auditUnmonitoredLabeling",
-          "line": 7704,
+          "line": 7719,
           "called": [
             "LabelingContext",
             "liveDeclassLabeling"
@@ -229557,7 +229784,7 @@
         {
           "kind": "def",
           "name": "auditGenericCtx",
-          "line": 7707,
+          "line": 7722,
           "called": [
             "GenericLabelingContext",
             "auditMonitorLabeling",
@@ -229567,7 +229794,7 @@
         {
           "kind": "def",
           "name": "auditMonitorReader",
-          "line": 7710,
+          "line": 7725,
           "called": [
             "SecurityDomain",
             "auditMonitorDomain"
@@ -229576,7 +229803,7 @@
         {
           "kind": "def",
           "name": "auditPartialReader",
-          "line": 7714,
+          "line": 7729,
           "called": [
             "SecurityDomain",
             "embedLegacyLabel",
@@ -229586,7 +229813,7 @@
         {
           "kind": "def",
           "name": "auditEntry",
-          "line": 7717,
+          "line": 7732,
           "called": [
             "CoreId",
             "DeclassificationEvent",
@@ -229598,7 +229825,7 @@
         {
           "kind": "def",
           "name": "auditVisibleEntryFirst",
-          "line": 7727,
+          "line": 7742,
           "called": [
             "DeclassificationEvent",
             "auditEntry",
@@ -229610,7 +229837,7 @@
         {
           "kind": "def",
           "name": "auditHiddenEntry",
-          "line": 7730,
+          "line": 7745,
           "called": [
             "DeclassificationEvent",
             "auditEntry",
@@ -229623,7 +229850,7 @@
         {
           "kind": "def",
           "name": "auditVisibleEntryLast",
-          "line": 7733,
+          "line": 7748,
           "called": [
             "DeclassificationEvent",
             "auditEntry",
@@ -229635,7 +229862,7 @@
         {
           "kind": "def",
           "name": "auditMixedTrail",
-          "line": 7739,
+          "line": 7754,
           "called": [
             "DeclassificationAuditLog",
             "auditHiddenEntry",
@@ -229646,7 +229873,7 @@
         {
           "kind": "def",
           "name": "auditMixedState",
-          "line": 7742,
+          "line": 7757,
           "called": [
             "SystemState",
             "auditMixedTrail",
@@ -229656,7 +229883,7 @@
         {
           "kind": "def",
           "name": "auditReaderTraceLines",
-          "line": 7748,
+          "line": 7763,
           "called": [
             "auditDrainVisiblePrefix",
             "auditExportedFieldValue",
@@ -229689,7 +229916,7 @@
         {
           "kind": "def",
           "name": "allSlots",
-          "line": 7827,
+          "line": 7842,
           "called": [
             "refusalRingSize"
           ]
@@ -229697,13 +229924,14 @@
         {
           "kind": "def",
           "name": "refusalAt",
-          "line": 7830,
+          "line": 7845,
           "called": [
             "DeclassificationRefusal",
             "KernelError",
             "SecurityDomain",
             "c1",
             "highCurrent",
+            "none",
             "ofNat",
             "syscall"
           ]
@@ -229711,7 +229939,7 @@
         {
           "kind": "def",
           "name": "refusalDenied",
-          "line": 7837,
+          "line": 7852,
           "called": [
             "DeclassificationRefusal",
             "embedLegacyLabel",
@@ -229722,7 +229950,7 @@
         {
           "kind": "def",
           "name": "refusalAtCapacity",
-          "line": 7840,
+          "line": 7855,
           "called": [
             "DeclassificationRefusal",
             "embedLegacyLabel",
@@ -229733,7 +229961,7 @@
         {
           "kind": "def",
           "name": "refusalLedgerOne",
-          "line": 7844,
+          "line": 7859,
           "called": [
             "RefusalLedger",
             "initial",
@@ -229744,7 +229972,7 @@
         {
           "kind": "def",
           "name": "refusalStateOne",
-          "line": 7848,
+          "line": 7863,
           "called": [
             "SystemState",
             "niState",
@@ -229754,7 +229982,7 @@
         {
           "kind": "def",
           "name": "runRefusalLedgerChecks",
-          "line": 7852,
+          "line": 7867,
           "called": [
             "DeclassificationRefusal",
             "RefusalLedger",
@@ -229779,7 +230007,7 @@
         {
           "kind": "def",
           "name": "runRefusalSeamClassChecks",
-          "line": 7917,
+          "line": 7932,
           "called": [
             "SyscallId",
             "all",
@@ -229793,7 +230021,7 @@
         {
           "kind": "def",
           "name": "runRefusalSeamWriteChecks",
-          "line": 7951,
+          "line": 7966,
           "called": [
             "assertBool",
             "c1",
@@ -229815,7 +230043,7 @@
         {
           "kind": "def",
           "name": "runRefusalReaderChecks",
-          "line": 8015,
+          "line": 8030,
           "called": [
             "AuditReadOp",
             "DeclassificationRefusal",
@@ -229858,7 +230086,7 @@
         {
           "kind": "def",
           "name": "runRefusalGateChecks",
-          "line": 8156,
+          "line": 8174,
           "called": [
             "all",
             "any",
@@ -229889,7 +230117,7 @@
         {
           "kind": "def",
           "name": "runRefusalAcceptanceChecks",
-          "line": 8219,
+          "line": 8237,
           "called": [
             "DeclassificationRuleId.all",
             "SystemState",
@@ -229928,7 +230156,7 @@
         {
           "kind": "def",
           "name": "refusalLedgerTraceLines",
-          "line": 8300,
+          "line": 8318,
           "called": [
             "auditMonitorLabeling",
             "auditMonitorReader",
@@ -229957,7 +230185,7 @@
         {
           "kind": "def",
           "name": "runAuditVisibleViewChecks",
-          "line": 8336,
+          "line": 8354,
           "called": [
             "DeclassificationEvent",
             "SecurityDomain",
@@ -229981,7 +230209,7 @@
         {
           "kind": "def",
           "name": "runAuditChunkProtocolChecks",
-          "line": 8388,
+          "line": 8406,
           "called": [
             "DeclassificationEvent",
             "all",
@@ -230009,7 +230237,7 @@
         {
           "kind": "def",
           "name": "runAuditReaderClassChecks",
-          "line": 8442,
+          "line": 8460,
           "called": [
             "SystemState",
             "assertBool",
@@ -230029,7 +230257,7 @@
         {
           "kind": "def",
           "name": "runAuditMonitorGateChecks",
-          "line": 8543,
+          "line": 8561,
           "called": [
             "DeclassificationEvent",
             "all",
@@ -230052,7 +230280,7 @@
         {
           "kind": "def",
           "name": "runAuditDrainChecks",
-          "line": 8600,
+          "line": 8618,
           "called": [
             "assertBool",
             "auditDrainViewComplete",
@@ -230079,7 +230307,7 @@
         {
           "kind": "def",
           "name": "runAuditEpochChecks",
-          "line": 8690,
+          "line": 8708,
           "called": [
             "SystemState",
             "all",
@@ -230098,7 +230326,7 @@
         {
           "kind": "def",
           "name": "runAuditLiveArmChecks",
-          "line": 8722,
+          "line": 8740,
           "called": [
             "AuditReadOp",
             "LabelingContext",
@@ -230140,7 +230368,7 @@
         {
           "kind": "def",
           "name": "runAuditCapacityCliffChecks",
-          "line": 8862,
+          "line": 8880,
           "called": [
             "DeclassificationRequest",
             "all",
@@ -230169,7 +230397,7 @@
         {
           "kind": "def",
           "name": "runAuditDrainSignalChecks",
-          "line": 8976,
+          "line": 8994,
           "called": [
             "all",
             "assertBool",
@@ -230190,7 +230418,7 @@
         {
           "kind": "def",
           "name": "signalDeclassContext",
-          "line": 9072,
+          "line": 9090,
           "called": [
             "GenericLabelingContext",
             "declassContext",
@@ -230202,7 +230430,7 @@
         {
           "kind": "def",
           "name": "signalCore",
-          "line": 9080,
+          "line": 9098,
           "called": [
             "CoreId",
             "c1"
@@ -230211,7 +230439,7 @@
         {
           "kind": "def",
           "name": "declassSignalState",
-          "line": 9095,
+          "line": 9113,
           "called": [
             "SystemState",
             "c2",
@@ -230223,7 +230451,7 @@
         {
           "kind": "def",
           "name": "declassSignalRun",
-          "line": 9100,
+          "line": 9118,
           "called": [
             "CoreId",
             "KernelError",
@@ -230241,7 +230469,7 @@
         {
           "kind": "def",
           "name": "receiverOnlyDeniedPolicy",
-          "line": 9107,
+          "line": 9125,
           "called": [
             "DeclassificationPolicy"
           ]
@@ -230249,7 +230477,7 @@
         {
           "kind": "def",
           "name": "declassSignalReceiverDenied",
-          "line": 9110,
+          "line": 9128,
           "called": [
             "CoreId",
             "KernelError",
@@ -230267,7 +230495,7 @@
         {
           "kind": "def",
           "name": "denyAllDeclPolicy",
-          "line": 9121,
+          "line": 9139,
           "called": [
             "DeclassificationPolicy"
           ]
@@ -230275,7 +230503,7 @@
         {
           "kind": "def",
           "name": "declassSignalDefault",
-          "line": 9125,
+          "line": 9143,
           "called": [
             "CoreId",
             "KernelError",
@@ -230293,7 +230521,7 @@
         {
           "kind": "def",
           "name": "runDeclassifiedSignalHopChecks",
-          "line": 9131,
+          "line": 9149,
           "called": [
             "all",
             "assertBool",
@@ -230315,7 +230543,7 @@
         {
           "kind": "def",
           "name": "runDeclassifiedSignalReceiverGateChecks",
-          "line": 9177,
+          "line": 9195,
           "called": [
             "assertBool",
             "c2",
@@ -230336,7 +230564,7 @@
         {
           "kind": "def",
           "name": "runDeclassifiedSignalDeliveryChecks",
-          "line": 9230,
+          "line": 9248,
           "called": [
             "SystemState",
             "assertBool",
@@ -230364,7 +230592,7 @@
         {
           "kind": "def",
           "name": "runDeclassifiedSignalRelativeNiChecks",
-          "line": 9268,
+          "line": 9286,
           "called": [
             "all",
             "assertBool",
@@ -230384,7 +230612,7 @@
         {
           "kind": "def",
           "name": "runDeclassifiedSignalDefaultChecks",
-          "line": 9305,
+          "line": 9323,
           "called": [
             "GenericLabelingContext",
             "assertBool",
@@ -230411,7 +230639,7 @@
         {
           "kind": "def",
           "name": "runDeclassifiedSignalAbiChecks",
-          "line": 9345,
+          "line": 9363,
           "called": [
             "CrossCoreTransition.all",
             "any",
@@ -230445,13 +230673,112 @@
         },
         {
           "kind": "def",
+          "name": "declassCapCNode",
+          "line": 9447,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "declassNotifSlot",
+          "line": 9448,
+          "called": [
+            "Slot",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "declassNotifCap",
+          "line": 9449,
+          "called": [
+            "Capability",
+            "highNotification",
+            "ofList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "declassCapCNodeValue",
+          "line": 9451,
+          "called": [
+            "CNode",
+            "declassNotifCap",
+            "declassNotifSlot",
+            "ofListWF"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "declassSeamState",
+          "line": 9454,
+          "called": [
+            "SystemState",
+            "c1",
+            "declassCapCNode",
+            "declassCapCNodeValue",
+            "declassSignalState",
+            "insert",
+            "mkTcb",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "declassSeamRefusalState",
+          "line": 9463,
+          "called": [
+            "SystemState",
+            "c1",
+            "declassSeamState",
+            "highCurrent",
+            "niLabeling",
+            "recordSyscallRefusal"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runDeclassifiedSignalFailedHopChecks",
+          "line": 9470,
+          "called": [
+            "SystemState",
+            "assertBool",
+            "auditGenericCtx",
+            "auditMonitorReader",
+            "auditReadOpcodeCount",
+            "auditReadWord",
+            "c1",
+            "crossCoreWaiter",
+            "declassSeamRefusalState",
+            "declassSeamState",
+            "declassSecret",
+            "declassifiedSignalPlan",
+            "declassifiedSignalReceiver",
+            "decodeAuditReadOp",
+            "get",
+            "highCurrent",
+            "highNotification",
+            "niLabeling",
+            "none",
+            "ofNat",
+            "receiverOnlyDeniedPolicy",
+            "recordSyscallRefusal",
+            "refusedSignalReceiver",
+            "signalDeclassContext",
+            "syscall"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "declassifiedSignalTraceLines",
-          "line": 9430,
+          "line": 9550,
           "called": [
             "cores",
             "declassSignalState",
             "declassifiedSignalEffectFootprint",
             "declassifiedSignalReceiver",
+            "get",
             "highCurrent",
             "highNotification",
             "length",
@@ -230465,7 +230792,7 @@
         {
           "kind": "def",
           "name": "informationFlowTraceLines",
-          "line": 9457,
+          "line": 9586,
           "called": [
             "auditReaderTraceLines",
             "declassifiedSignalTraceLines",
@@ -230477,7 +230804,7 @@
         {
           "kind": "def",
           "name": "runInformationFlowTraceFixtureCheck",
-          "line": 9466,
+          "line": 9595,
           "called": [
             "informationFlowTraceFixturePath",
             "informationFlowTraceLines",
@@ -230487,7 +230814,7 @@
         {
           "kind": "def",
           "name": "runSmpInformationFlowChecks",
-          "line": 9488,
+          "line": 9617,
           "called": [
             "refusal",
             "runAuditCapacityCliffChecks",
@@ -230526,6 +230853,7 @@
             "runDeclassifiedSignalAbiChecks",
             "runDeclassifiedSignalDefaultChecks",
             "runDeclassifiedSignalDeliveryChecks",
+            "runDeclassifiedSignalFailedHopChecks",
             "runDeclassifiedSignalHopChecks",
             "runDeclassifiedSignalReceiverGateChecks",
             "runDeclassifiedSignalRelativeNiChecks",
@@ -230586,7 +230914,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 9592,
+          "line": 9722,
           "called": [
             "runSmpInformationFlowChecks"
           ]
@@ -235636,6 +235964,7 @@
             "auditReadFromCore_toUInt64_lossless",
             "auditReadIndex_is_view_local",
             "auditReadOp_structure_total",
+            "auditReadOpcodeCount",
             "auditReadStatus_atomic",
             "auditReadStatus_partial_hides_generation",
             "auditRead_hides_global_position",
@@ -235673,6 +236002,8 @@
             "declassificationTrail_timestamp_identifies_event",
             "declassifiedSignalHopAuthorization",
             "declassifiedSignalHopAuthorization_declassified_authorized",
+            "declassifiedSignalHopAuthorization_error_refusal",
+            "declassifiedSignalPlan_deniedAtReceiver_resolves",
             "declassifiedSignalReceiver",
             "declassifiedSignal_audits_actual_destination",
             "declassifiedSignal_audits_each_hop",
@@ -235699,6 +236030,7 @@
             "declassifyStoreOnCore_refusal_has_no_post_state",
             "declassifyStoreOnCore_state_trail_independent",
             "declassify_capacity_refusal_of_full",
+            "decodeAuditReadOp",
             "dispatchArm_auditDrain_matches_returnShape",
             "dispatchArm_auditRead_matches_returnShape",
             "dispatchWithCapChecked_auditRead_default_denied",
@@ -235717,6 +236049,7 @@
             "enforcementBoundaryPerCore_is_complete_crossCore",
             "enforcementBoundary_classifies_withLockSet",
             "enforcementBoundary_prefix_of_perCore",
+            "enforcement_sufficiency_declassifySignal",
             "extractAuditAuthority",
             "extractAuditAuthority_rejects_non_audit_capability",
             "filter",
@@ -235759,6 +236092,7 @@
             "nonInterference_perCore_underLockSet",
             "notificationSignalDeclassifiedCrossCoreDispatch",
             "notificationSignalDeclassifiedOnCore",
+            "notificationSignalDeclassifiedOnCore_denied_preserves_state",
             "notificationSignalDeclassifiedOnCore_frame",
             "notificationSignalDeclassifiedOnCore_ipcInvariantFull_perCore_transfer",
             "notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer",
@@ -235815,6 +236149,7 @@
             "refusalRead_bracketed_detects_overwrite",
             "refusalRecord_domain_is_seam_resolved",
             "refusalRecord_domain_is_seam_resolved_at_seam",
+            "refusalRecord_names_failed_hop",
             "refusalSeamClass",
             "refusalSeamClass_total",
             "refusalSeam_list_gate_insufficient",
@@ -235823,6 +236158,7 @@
             "refusalTagsWord_reason_is_abi_discriminant",
             "refusalWrite_cannot_exhaust_trail",
             "refusalWrite_declassificationAuditLog_eq",
+            "refusedSignalReceiver",
             "releaseReadLock_eq_ffi",
             "releaseTicketLock_eq_ffi",
             "releaseWriteLock_eq_ffi",
@@ -235861,7 +236197,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 999,
+          "line": 1016,
           "called": [
             "runSmpSurfaceAnchorChecks"
           ]

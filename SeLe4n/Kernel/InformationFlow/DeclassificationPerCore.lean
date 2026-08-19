@@ -1884,7 +1884,9 @@ theorem declassificationRefusals_are_counted_and_attributed
                subjectDomain := (liftLegacyContext ctx).threadDomainOf tid
                syscall := sid
                reason := ke
-               requestedTarget := SeLe4n.CPtr.ofNat x0.toNat } ∧
+               requestedTarget := SeLe4n.CPtr.ofNat x0.toNat
+               refusedReceiver :=
+                 SeLe4n.Platform.FFI.refusalReceiverFor st tid sid ke x0 } ∧
     st.declassificationRefusals.version
       < (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0
           st).declassificationRefusals.version ∧
@@ -2289,7 +2291,9 @@ def DeclassificationRuleId.evidenceProp : DeclassificationRuleId → Prop
                    subjectDomain := (liftLegacyContext ctx).threadDomainOf tid
                    syscall := sid
                    reason := ke
-                   requestedTarget := SeLe4n.CPtr.ofNat x0.toNat } ∧
+                   requestedTarget := SeLe4n.CPtr.ofNat x0.toNat
+                   refusedReceiver :=
+                     SeLe4n.Platform.FFI.refusalReceiverFor st tid sid ke x0 } ∧
         st.declassificationRefusals.version
           < (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0
               st).declassificationRefusals.version ∧
@@ -2688,11 +2692,16 @@ whose seams record the *same* refusal stay equivalent.
 The §3.7 discipline says every writer of a readable structure owes a
 congruence, and the refusal ledger has exactly one writer.  Where the
 declassification's congruence needs an explicit `hSameEvent` premise — its
-event reads the state's epoch and trail length — this one needs no analogue:
-the seam constructs the record from this theorem's own shared arguments
-(subject, core, syscall, error, operand, context) and from nothing in the
-state, so "both sides record the same row" holds by construction
-(`recordSyscallRefusal_ledger_congr` is the underlying congruence).
+event reads the state's epoch and trail length — this one needs the exact
+analogue since WS-SM SM9.C.1: the record's `refusedReceiver` is re-resolved
+from the pre-state (`Platform.FFI.refusedSignalReceiver?`), so the two sides
+must agree on that resolution (`hSameReceiver`) for their recorded rows to
+agree; every other field is built from this theorem's own shared arguments
+(`recordSyscallRefusal_ledger_congr` is the underlying congruence).  The SM9.B
+audit cut removed a phantom `hSameRefusal` premise from this docstring; SM9.C
+then made the record state-reading in one field, so the premise the docstring
+once wrongly claimed now genuinely exists — with the resolution, not the whole
+refusal, as its subject.
 
 The ledger's pre-agreement is extracted from the relation rather than assumed —
 for a monitor the clause is whole-ledger equality, so recording the same
@@ -2703,7 +2712,10 @@ theorem recordSyscallRefusal_preserves_auditObservationalEquivalence
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
     (sctx : LabelingContext) (c : CoreId) (syscallId : UInt32) (tid : SeLe4n.ThreadId)
     (ke : KernelError) (x0 : UInt64) {s₁ s₂ : SystemState}
-    (h : auditObservationalEquivalence ctx observer monitorClearance reader s₁ s₂) :
+    (h : auditObservationalEquivalence ctx observer monitorClearance reader s₁ s₂)
+    (hSameReceiver : SeLe4n.Platform.FFI.refusedSignalReceiver? s₁ tid
+        (SeLe4n.CPtr.ofNat x0.toNat)
+      = SeLe4n.Platform.FFI.refusedSignalReceiver? s₂ tid (SeLe4n.CPtr.ofNat x0.toNat)) :
     auditObservationalEquivalence ctx observer monitorClearance reader
       (SeLe4n.Platform.FFI.recordSyscallRefusal sctx c syscallId tid ke x0 s₁)
       (SeLe4n.Platform.FFI.recordSyscallRefusal sctx c syscallId tid ke x0 s₂) := by
@@ -2723,7 +2735,7 @@ theorem recordSyscallRefusal_preserves_auditObservationalEquivalence
       exact ⟨hView, fun hMon => hEp hMon⟩
     · intro hMon
       exact SeLe4n.Platform.FFI.recordSyscallRefusal_ledger_congr sctx c syscallId tid ke x0
-        s₁ s₂ (h.2 .declassificationRefusalLedger hMon)
+        s₁ s₂ (h.2 .declassificationRefusalLedger hMon) hSameReceiver
 
 /-- WS-SM SM9.A.4a (**the load-bearing negative**): plain `lowEquivalent` does
 **not** imply equal visible views.

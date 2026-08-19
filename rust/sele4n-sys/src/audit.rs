@@ -46,7 +46,7 @@ use sele4n_types::{CPtr, KernelResult, SyscallId};
 /// Number of `audit_read` sub-operation opcodes.  Mirrors Lean's
 /// `auditReadOpcodeCount`; a divergence would surface as
 /// `InvalidSyscallArgument` on a valid request rather than as a decode bug.
-pub const AUDIT_READ_OPCODE_COUNT: u64 = 25;
+pub const AUDIT_READ_OPCODE_COUNT: u64 = 27;
 
 /// The `audit_read` sub-operations, mirroring Lean's `AuditReadOp`.
 ///
@@ -129,6 +129,13 @@ pub enum AuditReadOpcode {
     ActorSubject = 23,
     /// One chunk of the entry's actor domain.
     ActorDomain = 24,
+    /// WS-SM SM9.C.1 (`refusalRecord_names_failed_hop`): chunk count of ring
+    /// slot `index`'s refused receiver — `0` means the refusal named no
+    /// receiver (a present value always needs at least one chunk).
+    RefusalReceiverChunks = 25,
+    /// One chunk of ring slot `index`'s refused receiver;
+    /// `InvalidArgument` when the refusal named none.
+    RefusalReceiver = 26,
 }
 
 impl AuditReadOpcode {
@@ -177,6 +184,8 @@ impl AuditReadOpcode {
             22 => Some(Self::ActorDomainChunks),
             23 => Some(Self::ActorSubject),
             24 => Some(Self::ActorDomain),
+            25 => Some(Self::RefusalReceiverChunks),
+            26 => Some(Self::RefusalReceiver),
             _ => None,
         }
     }
@@ -471,10 +480,14 @@ mod tests {
         assert_eq!(AuditReadOpcode::ActorDomainChunks.to_u64(), 22);
         assert_eq!(AuditReadOpcode::ActorSubject.to_u64(), 23);
         assert_eq!(AuditReadOpcode::ActorDomain.to_u64(), 24);
+        // WS-SM SM9.C.1 (`refusalRecord_names_failed_hop`): the refused
+        // receiver, appended after the actor pair.
+        assert_eq!(AuditReadOpcode::RefusalReceiverChunks.to_u64(), 25);
+        assert_eq!(AuditReadOpcode::RefusalReceiver.to_u64(), 26);
         // Every opcode is below the count, and the count is the first value the
         // kernel refuses.
         assert_eq!(
-            AuditReadOpcode::ActorDomain.to_u64() + 1,
+            AuditReadOpcode::RefusalReceiver.to_u64() + 1,
             AUDIT_READ_OPCODE_COUNT
         );
     }

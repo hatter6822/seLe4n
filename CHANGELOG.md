@@ -158,6 +158,45 @@ line (`[XVAL-002]` 33 → 34 variants).
 
 Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.C
 
+**Audit cut (same version).**  A code-first audit of the landed sub-phase —
+documentation distrusted by instruction — confirmed no false theorem and no
+live security defect (the gated receiver and the delivered receiver agree
+structurally in every case; every error arm returns the pre-state; the two-hop
+capacity refusal is all-or-nothing) and closed four findings.  (1) The
+plan-named **`refusalRecord_names_failed_hop` had not landed**: a refused
+second hop reduced to a raw operand and a discriminant, and the SM9.B deferral
+premise — "the seam cannot see the resolved receiver" — was wrong, since the
+seam holds the pre-state and the caller's `x0` while the transition resolves
+its receiver from that same pre-state deterministically.  Closed end to end:
+`DeclassificationRefusal.refusedReceiver` (non-defaulted), the seam
+re-resolution `Platform.FFI.refusedSignalReceiver?` with the tie
+`refusedSignalReceiver?_resolves`, the fill keyed on **both** the syscall and
+the discriminant (`refusalReceiverFor` — a future second producer of
+`.declassificationDeniedAtReceiver` must decide its own resolution semantics),
+the existence half `declassifiedSignalPlan_deniedAtReceiver_resolves`, the
+composed `refusalRecord_names_failed_hop`, and the monitor's read of the field
+through two appended opcodes (25/26; `auditReadOpcodeCount` 25 → **27** both
+sides, chunk-count `0` the in-band "no receiver named").  The honest cost is a
+congruence premise: `recordSyscallRefusal_ledger_congr` (and the §3.7
+preservation on it) gains `hRecv`, the exact analogue of the declassification
+congruence's `hSameEvent` — the premise whose phantom the SM9.B audit cut
+removed from a docstring now genuinely exists, with the resolution as its
+subject.  (2) **The SM8.E defect class recurred**: the thirteenth policy-gated
+entry had joined neither enforcement family — closed with
+`notificationSignalDeclassifiedOnCore_denied_preserves_state` (one equation on
+the returned state, covering every refusal mode, since the transition is
+total) and `enforcement_sufficiency_declassifySignal` (a five-arm complete
+characterization; arms 2 and 3 return the refusing step's error verbatim).
+(3) `auditMonitorDominatesObjects`'s docstring cited the retired
+`auditTrailDestinationsAreTargetDomains` as a live fact — false of a
+second-hop event by this phase's own design; reworded.  (4) CC-8's mitigation
+text still described SM9.B's refusal ledger as "already in plan"; corrected.
+Evidence: `SmpInformationFlowSuite` §11.7 (712 → **719** assertions, three
+load-bearing negatives), the failed-hop golden-fixture line, §1.12 +
+`SmpSurfaceAnchors` + `InformationFlowSuite` anchors, twenty new Tier-3
+anchors including the prose negative forbidding the retired premise's return,
+`sele4n-sys` 22 unit tests with the extended opcode table mutation-verified.
+
 ## v0.33.51 — WS-SM SM9.B: refusal auditing — the declassification trail's blind spot, closed
 
 SM8.C's audit trail records **authorized** downgrades and nothing else, so a

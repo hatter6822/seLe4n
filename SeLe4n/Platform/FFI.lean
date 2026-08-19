@@ -1166,6 +1166,86 @@ own occupancy readable from an unprivileged syscall's outcome, which is exactly
 the CC-8 channel the trail's fail-closed bound already forces and which the
 plan requires SM9.B not to duplicate. -/
 
+/-- WS-SM SM9.C.1 (`refusalRecord_names_failed_hop`): **re-resolve the receiver
+a refused second hop was about**, from the pre-state the seam already holds.
+
+Mirrors the dispatch's own resolution exactly — the caller's TCB, its CSpace
+root's depth, `resolveCapAddress` on the supplied pointer, the slot's
+capability, and the notification the capability targets — and then runs the
+*same* `declassifiedSignalReceiver?` the transition's second-hop gate ran on
+the *same* pre-state, so the two resolutions cannot disagree
+(`refusedSignalReceiver?_resolves`).  `none` on any resolution failure: a
+refusal whose capability never resolved has no second hop to name.
+
+The SM9.B landing deferred this on the ground that "the seam cannot see" the
+resolved receiver.  The premise was wrong: the transition resolves its receiver
+from the pre-state deterministically, and the seam holds that pre-state and the
+caller's `x0`, so the receiver is a pure re-computation — the SM8.D
+`entryDecode` replay pattern, with the tie stated as a theorem rather than
+assumed. -/
+def refusedSignalReceiver? (st : SystemState) (tid : SeLe4n.ThreadId)
+    (capPtr : SeLe4n.CPtr) : Option SeLe4n.ThreadId :=
+  match st.getTcb? tid with
+  | none => none
+  | some tcb =>
+    match st.getCNode? tcb.cspaceRoot with
+    | none => none
+    | some rootCn =>
+      match resolveCapAddress tcb.cspaceRoot capPtr rootCn.depth st with
+      | .error _ => none
+      | .ok ref =>
+        match SystemState.lookupSlotCap st ref with
+        | none => none
+        | some cap =>
+          match cap.target with
+          | .object nid => declassifiedSignalReceiver? st nid
+          | _ => none
+
+/-- WS-SM SM9.C.1: on the resolution path the dispatch itself took, the seam's
+re-resolution **is** the transition's — both are `declassifiedSignalReceiver?`
+at the same state and the same notification, so the record below names exactly
+the thread the second-hop gate refused. -/
+theorem refusedSignalReceiver?_resolves (st : SystemState) (tid : SeLe4n.ThreadId)
+    (capPtr : SeLe4n.CPtr) (tcb : TCB) (rootCn : CNode)
+    (ref : SlotRef) (cap : Capability) (nid : SeLe4n.ObjId)
+    (hTcb : st.getTcb? tid = some tcb)
+    (hRoot : st.getCNode? tcb.cspaceRoot = some rootCn)
+    (hRef : resolveCapAddress tcb.cspaceRoot capPtr rootCn.depth st = .ok ref)
+    (hSlot : SystemState.lookupSlotCap st ref = some cap)
+    (hTarget : cap.target = .object nid) :
+    refusedSignalReceiver? st tid capPtr = declassifiedSignalReceiver? st nid := by
+  simp only [refusedSignalReceiver?, hTcb, hRoot, hRef, hSlot, hTarget]
+
+/-- WS-SM SM9.C.1: the ledger record's `refusedReceiver` fill — the re-resolved
+receiver **exactly when** the refusal is the declassifying signal's second hop,
+and `none` for every other `(syscall, reason)` pair.
+
+Keyed on both coordinates deliberately: a future second producer of
+`.declassificationDeniedAtReceiver` would have its own resolution semantics,
+and blindly running the notification resolver against its operand would record
+a wrong attribution — so adding one forces a decision here, exactly as the
+total `refusalSeamClass` forces one at the seam. -/
+def refusalReceiverFor (st : SystemState) (tid : SeLe4n.ThreadId)
+    (sid : SyscallId) (ke : KernelError) (x0 : UInt64) : Option SeLe4n.ThreadId :=
+  if sid = SyscallId.declassifySignal ∧ ke = KernelError.declassificationDeniedAtReceiver then
+    refusedSignalReceiver? st tid (SeLe4n.CPtr.ofNat x0.toNat)
+  else none
+
+/-- WS-SM SM9.C.1: the fill on the second-hop refusal. -/
+@[simp] theorem refusalReceiverFor_receiver_hop (st : SystemState) (tid : SeLe4n.ThreadId)
+    (x0 : UInt64) :
+    refusalReceiverFor st tid .declassifySignal .declassificationDeniedAtReceiver x0 =
+      refusedSignalReceiver? st tid (SeLe4n.CPtr.ofNat x0.toNat) := by
+  simp [refusalReceiverFor]
+
+/-- WS-SM SM9.C.1: every other refusal names no receiver. -/
+theorem refusalReceiverFor_other (st : SystemState) (tid : SeLe4n.ThreadId)
+    (sid : SyscallId) (ke : KernelError) (x0 : UInt64)
+    (h : ¬(sid = SyscallId.declassifySignal ∧
+      ke = KernelError.declassificationDeniedAtReceiver)) :
+    refusalReceiverFor st tid sid ke x0 = none := by
+  simp [refusalReceiverFor, h]
+
 /-- WS-SM SM9.B.9: **record a refused syscall in the ledger**, if its
 classification says to.
 
@@ -1199,7 +1279,8 @@ def recordSyscallRefusal
                   subjectDomain := (liftLegacyContext ctx).threadDomainOf tid
                   syscall := sid
                   reason := ke
-                  requestedTarget := SeLe4n.CPtr.ofNat x0.toNat } }
+                  requestedTarget := SeLe4n.CPtr.ofNat x0.toNat
+                  refusedReceiver := refusalReceiverFor st tid sid ke x0 } }
 
 /-- WS-SM SM9.B.9: an exempt syscall's refusal is not recorded — the ledger is
 a declassification audit, not a general syscall-failure log. -/
@@ -1239,8 +1320,68 @@ theorem recordSyscallRefusal_records
             subjectDomain := (liftLegacyContext ctx).threadDomainOf tid
             syscall := sid
             reason := ke
-            requestedTarget := SeLe4n.CPtr.ofNat x0.toNat } := by
+            requestedTarget := SeLe4n.CPtr.ofNat x0.toNat
+            refusedReceiver := refusalReceiverFor st tid sid ke x0 } := by
   simp only [recordSyscallRefusal, hDecode, hRecords]
+
+/-- WS-SM SM9.C.1 (**`refusalRecord_names_failed_hop`**): a refusal of the
+declassifying signal's **second hop** is recorded naming the resolved
+receiver — the thread the badge would have been delivered onward to — not
+merely the original capability operand.
+
+The two halves compose: the plan refuses with the receiver's discriminant only
+when a receiver **was** resolved
+(`declassifiedSignalPlan_deniedAtReceiver_resolves`), and the seam's
+re-resolution runs the same `declassifiedSignalReceiver?` on the same pre-state
+the transition's gate read (`refusedSignalReceiver?_resolves`), so the recorded
+identity is exactly the one the gate refused.  The resolution premises are the
+dispatch's own — the caller's TCB, its CSpace root, the capability at the
+supplied pointer targeting the notification — which is what holds whenever the
+dispatch produced this discriminant in the first place.
+
+This closes the §3.1 obligation the SM9.B landing moved here: without it a
+monitor reading `.declassificationDeniedAtReceiver` beside a raw `CPtr` could
+not identify the bound waiter an attempted downgrade actually targeted, while
+the *success* path is required to audit exactly that destination
+(`declassifiedSignal_audits_actual_destination`). -/
+theorem refusalRecord_names_failed_hop
+    (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (tid : SeLe4n.ThreadId) (x0 : UInt64) (st : SystemState)
+    (tcb : TCB) (rootCn : CNode) (ref : SlotRef) (cap : Capability)
+    (notifId : SeLe4n.ObjId) (actorDomain : SecurityDomain)
+    (hDecode : SyscallId.ofNat? syscallId.toNat = some .declassifySignal)
+    (hTcb : st.getTcb? tid = some tcb)
+    (hRoot : st.getCNode? tcb.cspaceRoot = some rootCn)
+    (hRef : resolveCapAddress tcb.cspaceRoot (SeLe4n.CPtr.ofNat x0.toNat) rootCn.depth st
+      = .ok ref)
+    (hSlot : SystemState.lookupSlotCap st ref = some cap)
+    (hTarget : cap.target = .object notifId)
+    (hPlan : declassifiedSignalPlan (liftLegacyContext ctx) ctx.declassificationPolicy
+      notifId actorDomain st = .error .declassificationDeniedAtReceiver) :
+    ∃ receiver,
+      declassifiedSignalReceiver? st notifId = some receiver ∧
+      (recordSyscallRefusal ctx executingCore syscallId tid
+          .declassificationDeniedAtReceiver x0 st).declassificationRefusals
+        = recordRefusal st.declassificationRefusals
+            { originatingCore := executingCore
+              subject := tid
+              subjectDomain := (liftLegacyContext ctx).threadDomainOf tid
+              syscall := .declassifySignal
+              reason := .declassificationDeniedAtReceiver
+              requestedTarget := SeLe4n.CPtr.ofNat x0.toNat
+              refusedReceiver := some receiver } := by
+  obtain ⟨receiver, hRecv⟩ := declassifiedSignalPlan_deniedAtReceiver_resolves
+    (liftLegacyContext ctx) ctx.declassificationPolicy notifId actorDomain st hPlan
+  refine ⟨receiver, hRecv, ?_⟩
+  rw [recordSyscallRefusal_records ctx executingCore syscallId tid
+    .declassificationDeniedAtReceiver x0 st .declassifySignal hDecode
+    refusalSeamClass_declassifySignal]
+  have hSeam : refusalReceiverFor st tid .declassifySignal
+      .declassificationDeniedAtReceiver x0 = some receiver := by
+    rw [refusalReceiverFor_receiver_hop,
+      refusedSignalReceiver?_resolves st tid (SeLe4n.CPtr.ofNat x0.toNat) tcb rootCn ref cap
+        notifId hTcb hRoot hRef hSlot hTarget, hRecv]
+  rw [hSeam]
 
 /-- WS-SM SM9.B.9 (**the frame**): recording a refusal writes the ledger and
 **nothing else**.
@@ -1375,18 +1516,25 @@ theorem refusalRecord_domain_is_seam_resolved_at_seam
   simpa using h
 
 /-- WS-SM SM9.B.10 (**the ledger congruence**): the recorded ledger depends on
-the pre-state only through the ledger.
+the pre-state through the ledger **and** — since WS-SM SM9.C.1 — through the
+second-hop receiver resolution, and through nothing else.
 
 Every other component of the record is built from this function's own
-arguments, so two states whose ledgers agree record identical rows and their
-post-ledgers agree.  This is what makes the refusal write a congruence for
-SM9.A.4a's observation relation — the §3.7 obligation every writer of a
-readable structure owes. -/
+arguments.  The `hRecv` premise is the SM9.C.1 cost of naming the failed hop's
+receiver: `refusedReceiver` is re-resolved from the pre-state
+(`refusedSignalReceiver?`), so two states must agree on that resolution for
+their recorded rows to agree — exactly the shape the declassification's own
+event congruence carries as `hSameEvent`, and for the same reason (a recorded
+field that reads the state is a field the congruence must constrain).  This is
+what makes the refusal write a congruence for SM9.A.4a's observation relation —
+the §3.7 obligation every writer of a readable structure owes. -/
 theorem recordSyscallRefusal_ledger_congr
     (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
     (s₁ s₂ : SystemState)
-    (h : s₁.declassificationRefusals = s₂.declassificationRefusals) :
+    (h : s₁.declassificationRefusals = s₂.declassificationRefusals)
+    (hRecv : refusedSignalReceiver? s₁ tid (SeLe4n.CPtr.ofNat x0.toNat)
+      = refusedSignalReceiver? s₂ tid (SeLe4n.CPtr.ofNat x0.toNat)) :
     (recordSyscallRefusal ctx executingCore syscallId tid ke x0 s₁).declassificationRefusals
       = (recordSyscallRefusal ctx executingCore syscallId tid ke x0 s₂).declassificationRefusals := by
   cases hD : SyscallId.ofNat? syscallId.toNat with
@@ -1394,13 +1542,19 @@ theorem recordSyscallRefusal_ledger_congr
       simp only [recordSyscallRefusal, hD]
       exact h
   | some sid =>
+      have hFor : refusalReceiverFor s₁ tid sid ke x0 = refusalReceiverFor s₂ tid sid ke x0 := by
+        unfold refusalReceiverFor
+        split
+        · exact hRecv
+        · rfl
       cases hC : refusalSeamClass sid with
       | exempt =>
           simp only [recordSyscallRefusal, hD, hC]
           exact h
       | records =>
           rw [recordSyscallRefusal_records ctx executingCore syscallId tid ke x0 s₁ sid hD hC,
-              recordSyscallRefusal_records ctx executingCore syscallId tid ke x0 s₂ sid hD hC, h]
+              recordSyscallRefusal_records ctx executingCore syscallId tid ke x0 s₂ sid hD hC,
+              h, hFor]
 
 /-- WS-SM SM9.B.9 (**the security theorem the plan names**): a refusal write
 leaves the declassification **audit trail** and its epoch untouched.
@@ -1959,7 +2113,10 @@ theorem syscallDispatchFromAbi_records_refusal
                  subjectDomain := (liftLegacyContext ctx).threadDomainOf tid
                  syscall := sid
                  reason := ke
-                 requestedTarget := SeLe4n.CPtr.ofNat x0.toNat } := by
+                 requestedTarget := SeLe4n.CPtr.ofNat x0.toNat
+                 refusedReceiver := refusalReceiverFor
+                   (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+                   tid sid ke x0 } := by
   refine ⟨recordSyscallRefusal ctx executingCore syscallId tid ke x0
       (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5), ?_, ?_⟩
   · rw [syscallDispatchFromAbi_error_of_syscallEntryChecked_error ctx executingCore

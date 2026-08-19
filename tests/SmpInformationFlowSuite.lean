@@ -1883,6 +1883,21 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @Concurrency.LockSet.mem_insertOrMerge_write_self
 #check @endpointQueueRemoveDual_frame
 
+-- SM9.C.1 (audit cut) — the failed hop reaches the monitor, and the two
+-- enforcement families gain the thirteenth policy-gated entry's members.
+#check @declassifiedSignalHopAuthorization_error_refusal
+#check @declassifiedSignalPlan_deniedAtReceiver_resolves
+#check @notificationSignalDeclassifiedOnCore_denied_preserves_state
+#check @enforcement_sufficiency_declassifySignal
+#check @Platform.FFI.refusedSignalReceiver?
+#check @Platform.FFI.refusedSignalReceiver?_resolves
+#check @Platform.FFI.refusalReceiverFor
+#check @Platform.FFI.refusalReceiverFor_receiver_hop
+#check @Platform.FFI.refusalReceiverFor_other
+#check @Platform.FFI.refusalRecord_names_failed_hop
+#check @AuditReadOp.refusalReceiverChunkCount
+#check @AuditReadOp.refusalReceiverChunk
+
 -- ============================================================================
 -- §2  Elaboration-time examples: each headline theorem applied
 -- ============================================================================
@@ -7830,7 +7845,7 @@ private def allSlots : List (Fin refusalRingSize) := List.finRange refusalRingSi
 private def refusalAt (d : SecurityDomain) (ke : KernelError) : DeclassificationRefusal :=
   { originatingCore := c1, subject := highCurrent, subjectDomain := d,
     syscall := .declassify, reason := ke,
-    requestedTarget := SeLe4n.CPtr.ofNat 5 }
+    requestedTarget := SeLe4n.CPtr.ofNat 5, refusedReceiver := none }
 
 /-- A denied attempt by the high subject, and a capacity-refused one — the two
 reasons a monitor most needs to tell apart. -/
@@ -8114,8 +8129,11 @@ private def runRefusalReaderChecks : IO Unit := do
         .refusalSlotFieldChunkCount 3 .subject, .refusalSlotFieldChunkCount 3 .subjectDomain,
         .refusalSlotFieldChunkCount 3 .requestedTarget,
         .refusalSlotField 3 .subject 1, .refusalSlotField 3 .subjectDomain 1,
-        .refusalSlotField 3 .requestedTarget 1]
-     decide (auditReadOpcodeCount = 25) &&
+        .refusalSlotField 3 .requestedTarget 1,
+        -- WS-SM SM9.C.1: the refused receiver's pair, appended after the
+        -- actor opcodes (§11.7 exercises their read semantics).
+        .refusalReceiverChunkCount 3, .refusalReceiverChunk 3 1]
+     decide (auditReadOpcodeCount = 27) &&
      ops.all (fun op =>
        let (a, b, k) := encodeAuditReadOp op
        decide (decodeAuditReadOp a b k = some op)) &&
@@ -8747,9 +8765,9 @@ private def runAuditLiveArmChecks : IO Unit := do
      decide (Capability.auditTrailManage.hasRight .write = true))
   -- The operand encoding round-trips, so every sub-operation is reachable.
   -- WS-SM SM9.B.10: the opcode space now spans two readable structures — the
-  -- trail's twelve sub-operations and the refusal ledger's nine (§10.4) — so
-  -- the completeness claim is the sum, and each half names the structure it
-  -- reads.
+  -- trail's sixteen sub-operations and the refusal ledger's eleven (§10.4,
+  -- §11.7) — so the completeness claim is the sum, and each half names the
+  -- structure it reads.
   assertBool "every trail sub-operation round-trips through the three-word operand encoding"
     (let ops : List AuditReadOp :=
        [.status, .fieldChunkCount 3 .srcDomain, .fieldChunkCount 3 .dstDomain,
@@ -8761,7 +8779,7 @@ private def runAuditLiveArmChecks : IO Unit := do
         .fieldChunkCount 3 .actorSubject, .fieldChunkCount 3 .actorDomain,
         .field 3 .actorSubject 1, .field 3 .actorDomain 1]
      decide (ops.length = 16) &&
-     decide (ops.length + 9 = auditReadOpcodeCount) &&
+     decide (ops.length + 11 = auditReadOpcodeCount) &&
      ops.all (fun op =>
        let (a, b, k) := encodeAuditReadOp op
        decide (decodeAuditReadOp a b k = some op)) &&
@@ -9422,6 +9440,108 @@ private def runDeclassifiedSignalAbiChecks : IO Unit := do
        | .capabilityOnly n => n == "notificationSignalDeclassifiedCrossCoreDispatch"
        | _ => false))
 
+/-- §11.7 fixtures — a CSpace through which the seam can re-resolve the refused
+receiver.  Slot 2 of a single-level CNode (depth 4 = radixWidth, the §7.9
+shape) carries a write capability to `highNotification`, and `highCurrent`'s
+TCB is re-rooted at it; nothing the plan or the delivery reads changes. -/
+private def declassCapCNode : SeLe4n.ObjId := ⟨1032⟩
+private def declassNotifSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 2
+private def declassNotifCap : Capability :=
+  { target := .object highNotification, rights := AccessRightSet.ofList [.write] }
+private def declassCapCNodeValue : CNode :=
+  { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := SeLe4n.UniqueSlotMap.ofListWF [(declassNotifSlot, declassNotifCap)] }
+private def declassSeamState : SystemState :=
+  { declassSignalState with
+      objects := (declassSignalState.objects.insert declassCapCNode
+                    (.cnode declassCapCNodeValue)).insert
+                  highCurrent.toObjId
+                    (.tcb { mkTcb 1011 50 (some c1) with cspaceRoot := declassCapCNode }) }
+
+/-- The seam run on a hop-2 refusal: syscall 33, reason 56, `x0 = 2` (the slot
+the capability sits in). -/
+private def declassSeamRefusalState : SystemState :=
+  Platform.FFI.recordSyscallRefusal niLabeling c1 (33 : UInt32) highCurrent
+    .declassificationDeniedAtReceiver (2 : UInt64) declassSeamState
+
+/-- §11.7  SM9.C.1 — `refusalRecord_names_failed_hop`: a refused second hop
+names the resolved receiver, end to end — transition resolution, seam
+re-resolution, the recorded field, and the monitor's read of it. -/
+private def runDeclassifiedSignalFailedHopChecks : IO Unit := do
+  IO.println "--- §11.7 SM9.C.1 a refused second hop names the resolved receiver ---"
+  -- The premise chain is real on this fixture: the capability at x0 = 2
+  -- resolves to the notification, and the plan under the first-hop-only policy
+  -- refuses with the receiver's own discriminant.
+  assertBool "the seam's re-resolution names exactly the receiver the gate refused"
+    (decide (Platform.FFI.refusedSignalReceiver? declassSeamState highCurrent
+        (SeLe4n.CPtr.ofNat 2) = some crossCoreWaiter) &&
+     decide (declassifiedSignalReceiver? declassSeamState highNotification
+        = some crossCoreWaiter) &&
+     (match declassifiedSignalPlan signalDeclassContext receiverOnlyDeniedPolicy
+         highNotification declassSecret declassSeamState with
+      | .error e => decide (e = KernelError.declassificationDeniedAtReceiver)
+      | .ok _ => false))
+  assertBool "the recorded refusal carries the receiver, beside the raw operand"
+    (match declassSeamRefusalState.declassificationRefusals.recent.get
+        declassSeamState.declassificationRefusals.nextSlot with
+     | some r =>
+         decide (r.refusedReceiver = some crossCoreWaiter) &&
+         decide (r.reason = KernelError.declassificationDeniedAtReceiver) &&
+         decide (r.syscall = SyscallId.declassifySignal) &&
+         decide (r.requestedTarget = SeLe4n.CPtr.ofNat 2)
+     | none => false)
+  -- NEGATIVE: a FIRST-hop refusal of the same syscall names no receiver — the
+  -- fill is keyed on the reason, not on the syscall alone.
+  assertBool "NEGATIVE: a first-hop refusal records no receiver"
+    (match (Platform.FFI.recordSyscallRefusal niLabeling c1 (33 : UInt32) highCurrent
+        .declassificationDenied (2 : UInt64)
+        declassSeamState).declassificationRefusals.recent.get
+        declassSeamState.declassificationRefusals.nextSlot with
+     | some r => decide (r.refusedReceiver = none) &&
+                 decide (r.reason = KernelError.declassificationDenied)
+     | none => false)
+  -- NEGATIVE: the same discriminant from a DIFFERENT syscall names no receiver
+  -- either — the fill is keyed on both coordinates, so a future second
+  -- producer of the discriminant must decide its own resolution semantics.
+  assertBool "NEGATIVE: the discriminant alone does not trigger the resolution — the syscall is a key too"
+    (match (Platform.FFI.recordSyscallRefusal niLabeling c1 (30 : UInt32) highCurrent
+        .declassificationDeniedAtReceiver (2 : UInt64)
+        declassSeamState).declassificationRefusals.recent.get
+        declassSeamState.declassificationRefusals.nextSlot with
+     | some r => decide (r.refusedReceiver = none) &&
+                 decide (r.syscall = SyscallId.declassify)
+     | none => false)
+  -- The monitor reads the receiver back: chunk count, then the chunk — and the
+  -- receiver-less record answers count 0, the in-band "none".
+  assertBool "the monitor reads the receiver back through opcodes 25 and 26"
+    (let mc := auditMonitorLabeling.auditMonitorClearance
+     (match auditReadWord auditGenericCtx mc auditMonitorReader declassSeamRefusalState
+        (.refusalReceiverChunkCount 0) with
+      | .ok n => decide (n = 1)
+      | .error _ => false) &&
+     (match auditReadWord auditGenericCtx mc auditMonitorReader declassSeamRefusalState
+        (.refusalReceiverChunk 0 0) with
+      | .ok w => decide (w = crossCoreWaiter.val)
+      | .error _ => false))
+  assertBool "NEGATIVE: a receiver-less slot answers chunk count 0, and its chunk read refuses"
+    (let mc := auditMonitorLabeling.auditMonitorClearance
+     let hopOneState : SystemState :=
+       Platform.FFI.recordSyscallRefusal niLabeling c1 (33 : UInt32) highCurrent
+         .declassificationDenied (2 : UInt64) declassSeamState
+     (match auditReadWord auditGenericCtx mc auditMonitorReader hopOneState
+        (.refusalReceiverChunkCount 0) with
+      | .ok n => decide (n = 0)
+      | .error _ => false) &&
+     (match auditReadWord auditGenericCtx mc auditMonitorReader hopOneState
+        (.refusalReceiverChunk 0 0) with
+      | .error e => decide (e = KernelError.invalidArgument)
+      | .ok _ => false))
+  assertBool "the two opcodes are in the ABI at 25 and 26, and the count is 27"
+    (decide (decodeAuditReadOp 25 0 0 = some (.refusalReceiverChunkCount 0)) &&
+     decide (decodeAuditReadOp 26 0 0 = some (.refusalReceiverChunk 0 0)) &&
+     decide (auditReadOpcodeCount = 27) &&
+     decide (decodeAuditReadOp 27 0 0 = none))
+
 /-- The SM9.C half: what a **data-carrying** declassification does, reported as
 observables.  The three lines above report views, authorized downgrades and
 refused attempts; these report the one operation in the tree that deliberately
@@ -9452,7 +9572,16 @@ unconfigured={match declassSignalDefault.2 with
   , s!"[smp-information-flow] declassifying signal ABI: id={SyscallId.declassifySignal.toNat} \
 right={reprStr (syscallRequiredRight .declassifySignal)} \
 shape={reprStr (Architecture.syscallReturnShape .declassifySignal)} \
-receiverRefusal={SeLe4n.Model.KernelError.toDiscriminant .declassificationDeniedAtReceiver}" ]
+receiverRefusal={SeLe4n.Model.KernelError.toDiscriminant .declassificationDeniedAtReceiver}"
+  , s!"[smp-information-flow] declassifying signal failed hop: \
+reason={SeLe4n.Model.KernelError.toDiscriminant .declassificationDeniedAtReceiver} \
+recordedReceiver={match declassSeamRefusalState.declassificationRefusals.recent.get
+    declassSeamState.declassificationRefusals.nextSlot with
+  | some r => match r.refusedReceiver with
+    | some t => toString t.toNat
+    | none => "none"
+  | none => "no-record"} \
+receiverOpcodes=25/26" ]
 
 private def informationFlowTraceLines : List String :=
   observerTraceLines ++ nonInterferenceTraceLines ++ auditReaderTraceLines ++
@@ -9580,6 +9709,7 @@ phase closure, the audit-trail reader, refusal auditing and the data-carrying de
   runDeclassifiedSignalRelativeNiChecks
   runDeclassifiedSignalDefaultChecks
   runDeclassifiedSignalAbiChecks
+  runDeclassifiedSignalFailedHopChecks
   runInformationFlowTraceFixtureCheck
   IO.println "===================================="
   IO.println ("All SM8.A per-core observable-state, SM8.B non-interference, " ++

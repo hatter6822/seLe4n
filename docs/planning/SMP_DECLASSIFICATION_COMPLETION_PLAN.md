@@ -1151,6 +1151,13 @@ not available or not honest:
    producer could set is the unwired-structure shape CLAUDE.md forbids.  The
    obligation moves to **SM9.C.1**, which owns the transition whose shape has
    to surface it, and the record's docstring records the analysis.
+   **Closed at the SM9.C audit cut**, which found the premise wrong: the seam
+   holds the *pre-state* and the caller's `x0`, and the transition resolves its
+   receiver from that same pre-state deterministically — so the field exists
+   (`DeclassificationRefusal.refusedReceiver`, non-defaulted), the seam
+   re-resolves it (`Platform.FFI.refusedSignalReceiver?`, keyed on both the
+   syscall and the discriminant), and `refusalRecord_names_failed_hop` pins the
+   recorded identity to the receiver the second-hop gate refused.
 3. **`status` is two words, not one.**  §3.2 asks for a version; the ledger
    also has a *write position* a monitor needs in order to interpret the ring
    at all, and a `nextSlot` read at one version against slots read at another
@@ -1409,7 +1416,9 @@ audit-trail frame this phase needed was going to duplicate a third time.
 **The reader grows with the record.**  A field the audit records is a field the
 monitor must be able to read, so `AuditReadOp` gains four opcodes (21–24, the
 actor's thread id and domain, each with its chunk-count companion) and
-`auditReadOpcodeCount` goes 21 → **25** on both sides of the ABI.  Appended
+`auditReadOpcodeCount` goes 21 → **25** on both sides of the ABI (and 25 →
+**27** at the audit cut below, when the refused receiver gained its own
+pair).  Appended
 after the SM9.B refusal opcodes so every earlier opcode keeps its value.  The
 `sele4n-sys` mirror was the one place this cut left behind, and the Tier-3
 anchor pinning the literal on both sides is what caught it — the Rust unit test
@@ -1429,6 +1438,79 @@ one line (`[XVAL-002]` 33 → 34 variants).
 **Not in scope** (SM9.D/SM9.E): the laundering detector is still syntactic, so
 the two-hop chain this phase produces is exactly the shape SM9.D's causal
 provenance exists to link across an *ordinary* delivery in between.
+
+#### SM9.C audit cut
+
+A code-first audit of the landed sub-phase — documentation distrusted by
+instruction — confirmed the transition, gates, records and inventories sound
+(no false theorem; the resolver and the delivery branch on the same
+`boundDeliveryTarget?` discriminee and the same list head, so the gated
+receiver and the delivered receiver agree structurally in every case; every
+error arm returns the pre-state; the two-hop capacity refusal is
+all-or-nothing) and closed four findings:
+
+1. **`refusalRecord_names_failed_hop` had not landed** — the obligation the
+   SM9.B landing moved to SM9.C.1, which the SM9.C landing record then
+   silently omitted.  Its deferral premise ("the resolved receiver is resolved
+   inside the transition, whose error arm carries no post-state, so the seam
+   cannot see it") is **wrong**: the seam holds the pre-state and the caller's
+   `x0`, and `declassifiedSignalReceiver?` is a deterministic function of that
+   pre-state.  Closed as the §3.1 table always demanded:
+   `DeclassificationRefusal.refusedReceiver` (non-defaulted — a `:= none`
+   default would let a future second producer compile while silently never
+   naming its receivers), the seam re-resolution
+   `Platform.FFI.refusedSignalReceiver?` mirroring the dispatch's own
+   resolution chain, the fill `refusalReceiverFor` keyed on **both** the
+   syscall and the discriminant (a future second producer of
+   `.declassificationDeniedAtReceiver` has its own resolution semantics and
+   must decide them, exactly as the total `refusalSeamClass` forces at the
+   seam), the tie `refusedSignalReceiver?_resolves`, the existence half
+   `declassifiedSignalPlan_deniedAtReceiver_resolves` (a plan refused with the
+   receiver's discriminant had resolved a receiver — the second-hop gate is
+   that discriminant's only producer, via
+   `declassifiedSignalHopAuthorization_error_refusal`), and the composed
+   `refusalRecord_names_failed_hop`.  The monitor reads the field back through
+   two appended opcodes — 25 (`refusalReceiverChunkCount`, with `0` the
+   in-band "no receiver named", unambiguous because a present value always
+   needs at least one chunk) and 26 (`refusalReceiverChunk`) —
+   `auditReadOpcodeCount` 25 → **27** on both sides of the ABI, mirrored in
+   `sele4n-sys` with the density test mutation-verified at the new count.
+   **The honest cost is a congruence premise**:
+   `recordSyscallRefusal_ledger_congr` (and the §3.7 preservation built on it)
+   gains `hRecv` — two states must agree on the seam's receiver resolution for
+   their recorded rows to agree — the exact analogue of the declassification
+   congruence's `hSameEvent`, and the premise whose phantom the SM9.B audit
+   cut removed from a docstring: SM9.C then made the record state-reading in
+   one field, so the premise now genuinely exists, with the resolution rather
+   than the whole refusal as its subject.
+2. **The SM8.E defect class recurred**: the thirteenth policy-gated
+   enforcement-boundary entry joined neither enforcement family.  Closed with
+   `notificationSignalDeclassifiedOnCore_denied_preserves_state` (one
+   *equation on the returned state* covering every refusal mode — idle core,
+   either hop's gate, the delivery's own failure, capacity — stronger than the
+   `Kernel`-monad members can state, because the transition is total) and
+   `enforcement_sufficiency_declassifySignal` (a **five-arm** complete
+   characterization: `.declassify`'s trichotomy plus the real delivery's
+   pass-through failure mode and the state-resolved actor's idle-core
+   refusal; arms 2 and 3 return the refusing step's error verbatim so a future
+   refusal cannot be silently remapped).
+3. **A stale citation**: `auditMonitorDominatesObjects`'s docstring cited the
+   retired `auditTrailDestinationsAreTargetDomains` as a live fact — false of
+   a second-hop event by this phase's own design; reworded to the two-halves
+   argument that actually holds.
+4. **A stale mitigation**: CC-8's inventory text still described SM9.B's
+   refusal ledger as "already in plan"; it has landed, and refused probes are
+   counted and attributed.
+
+Evidence: `tests/SmpInformationFlowSuite.lean` §11.7 (712 → **719**
+assertions; three load-bearing negatives — a first-hop refusal records no
+receiver, the discriminant alone does not trigger the resolution, a
+receiver-less slot answers chunk count `0` and its chunk read refuses), the
+failed-hop golden-fixture line (`recordedReceiver=1021`), §1.12 anchors for
+every new declaration, `SmpSurfaceAnchors` §11's audit-cut block,
+`InformationFlowSuite`'s family anchors, twenty new Tier-3 anchors including
+the prose negative forbidding the retired deferral premise's return, and
+`sele4n-sys` 22 unit tests with the opcode table extended.
 
 ### SM9.D — Causal declassification provenance (19 sub-tasks)
 
@@ -1758,7 +1840,7 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 - `refusalWrite_declassificationAuditLog_eq` (SM9.B.9)
 - `declassificationRefusals_write_preserves_projection` +
   `onCore_declassificationRefusals` (SM9.B.8)
-- `notificationSignalDeclassified_preserves_ipcInvariantFull{,_perCore}` (SM9.C.3)
+- `notificationSignalDeclassified_preserves_ipcInvariantFull{,_perCore}` (SM9.C.3; landed as the honest transfer forms `notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer` / `_perCore_transfer` plus the unconditional `_preserves_ipcInvariantFull_fallthrough` instance — the bound-delivery path's premise is SM6.D's registered debt, stated rather than silently inherited)
 - **`declassificationRelativeNonInterference`** (SM9.C.6) — the phase headline
 - `contentFlowClass_total` + `contentFlowSite_list_gate_insufficient` — the
   taint-propagation soundness keystone, classified from an exhaustive taxonomy
@@ -1772,7 +1854,9 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
   `secondHop_actor_differs_from_flowSource` — who performed a downgrade and
   where the flow came from are two identities (§3.5)
 - `refusalRecord_names_failed_hop` — a denied second hop names the resolved
-  receiver, not the original operand (SM9.B.1)
+  receiver, not the original operand (SM9.B.1 as listed; moved to SM9.C.1 by
+  the SM9.B landing and **landed at the SM9.C audit cut**, in
+  `Platform/FFI.lean`)
 - `refusalLedger_version_advances_on_record` +
   `refusalRead_bracketed_detects_overwrite` — the ledger's reads need a version
   for the same reason the trail's do (SM9.B.2, §3.2)

@@ -273,6 +273,15 @@ def test_schedContext_yield_self_returns_state_unchanged : IO Bool := do
 -- fail-closed audit-capacity refusal is a third outcome beyond delegate-or-deny.
 #check @SeLe4n.Kernel.declassifyObjectFromCore_denied_preserves_state
 #check @SeLe4n.Kernel.authorizeDeclassificationOnCore_denied_preserves_state
+-- WS-SM SM9.C.8 (audit cut): the thirteenth policy-gated entry's members —
+-- found missing by exactly the review this comment describes, one phase on.
+-- The data-carrying declassification's sufficiency is a FIVE-arm
+-- characterization (the delivery is real, so it adds its own failure mode,
+-- and the actor is state-resolved, which adds the idle-core refusal), and its
+-- denial preservation is an equation on the returned state, since the
+-- transition is total.
+#check @SeLe4n.Kernel.enforcement_sufficiency_declassifySignal
+#check @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_denied_preserves_state
 #check @SeLe4n.Kernel.enforcement_sufficiency_declassify
 
 /-- AK6-E (NI-H01): `niStepConstructorCoverage` is the constructor-level
