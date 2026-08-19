@@ -3439,7 +3439,7 @@ run_check "INVARIANT" rg -n '^theorem declassifiedSignalDispatch_confinedToCores
 run_check "INVARIANT" rg -n '^theorem declassifiedSignalDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # The footprint's cores ARE SM6.B's write set — one definition, not two that can
 # drift (the failure mode v0.32.101 and v0.33.16 both caught).
-run_check "INVARIANT" rg -n 'cores := notificationSignalBoundWriteSet notificationId' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'cores := notificationSignalBoundWriteSet st notificationId' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # NEGATIVE: the footprint must take no policy — that is what makes
 # `footprint_does_not_authorize` provable rather than merely plausible.
 run_negative_check "INVARIANT" rg -n 'def declassifiedSignalEffectFootprint.*DeclassificationPolicy' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -3448,7 +3448,7 @@ run_negative_check "INVARIANT" rg -n 'def declassifiedSignalEffectFootprint.*Dec
 # `NonInterferenceStep` constructor concludes the projection is *unchanged*, so
 # an operation whose purpose is an authorized visible flow cannot correspond to
 # one; both declassifying operations live in `CrossCoreTransition` instead.
-run_check "INVARIANT" rg -n 'What this taxonomy deliberately does not hold' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_prose_check "INVARIANT" rg -n 'What this taxonomy deliberately does not hold' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n '^theorem kernelOperation_count : KernelOperation.all.length = 35' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 
@@ -3476,7 +3476,7 @@ run_check "INVARIANT" rg -n 'lockSet_declassifySignal a b c d e f' SeLe4n/Kernel
 run_check "INVARIANT" rg -n 'sid = \.declassify ∨ sid = \.declassifySignal' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # NEGATIVE: the footprint must be composed, not a fresh list — a rewritten one
 # stops tracking `lockSet_notificationSignal` the moment SM6.B's changes.
-run_negative_check "INVARIANT" rg -n 'def lockSet_declassifySignal.*\n.*lockSetOfList' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_negative_check "INVARIANT" rg -Un 'def lockSet_declassifySignal(.*\n){1,8}.*lockSetOfList' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 
 # SM9.C.9: the arm is tied to the dispatch by a THEOREM, and the per-core
 # routing gate passes with zero allowlisted exceptions.
@@ -3555,6 +3555,20 @@ run_check "INVARIANT" rg -n '^theorem declassifiedSignalPlan_outcome_depends_on_
 run_check "INVARIANT" rg -n 'a checked-admitted plain waiter never triggers the receiver refusal' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'DISCLOSURE: refusal-vs-success reveals the denied plain waiter' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the symmetric alternative delivers the badge to the denied receiver' tests/SmpInformationFlowSuite.lean
+
+# WS-SM SM9.C (PR #872 review, round 2) — the target gate: the operand must be
+# a live notification BEFORE any policy is consulted (the sibling
+# `.declassify` discipline), so an invalid capability is never a policy
+# oracle; wrong-kind/absent answer the ordinary signal's own errors.
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_wrong_kind' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_absent_target' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_invalid_target_policy_blind' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignalReceiver\?_some_notification' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n 'a wrong-kind target answers invalidCapability under every policy' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a wrong-kind target no longer reports the caller' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'an absent target answers objectNotFound, policy-blind' tests/SmpInformationFlowSuite.lean
+# The gate lives in the transition, ahead of the plan — pin the match order.
+run_check "INVARIANT" rg -n 'match st.getNotification\? notificationId with' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
 run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean

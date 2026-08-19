@@ -1544,6 +1544,51 @@ and the plan docstring records the reasoning.  Suite §11.8 (719 → **722**
 assertions: the no-op, the disclosure pair, and the load-bearing negative
 that the symmetric alternative delivers).
 
+**PR #872 review round 2 (one further Codex finding, P2, valid — the target
+gate).**  The `.declassifySignal` arm accepted any `.object` capability target
+and ran `declassifiedSignalPlan` **before** the delivery's typed lookup, so a
+caller holding a writable capability to an existing *non-notification* object
+read policy state off the error discriminant: `.declassificationDenied` when
+its hop-1 flow was denied, `.invalidCapability` when the policies admitted the
+flow far enough to reach the typed lookup — an invalid capability as a policy
+oracle.  The sibling has always done this right (`declassifyObjectFromCore`
+reads `getObjectType?` **before** `authorizeDeclassificationOnCore`), so the
+fix is the shared discipline: the transition now validates the operand as a
+live notification ahead of every policy read, answering the ordinary signal's
+own recovery — `.invalidCapability` present-but-wrong-kind, `.objectNotFound`
+absent, decided through the typed kind-agnostic accessor
+(`getObjectType?_isSome_eq_raw` is the bridge that makes the distinction
+definitionally the ordinary signal's).  The finding's own theorem is
+`notificationSignalDeclassifiedOnCore_invalid_target_policy_blind`: on an
+invalid target the outcome is a function of the object store alone, identical
+under every pair of contexts and policies (with `_wrong_kind` /
+`_absent_target` the per-error forms, and
+`declassifiedSignalReceiver?_some_notification` the fact that a resolved
+receiver always implies a live notification, so the gate never refuses a state
+a receiver exists in).  `declassifiedSignal_ordinary_eq_signal` now holds
+through the gate — on junk targets both sides answer the same errors — and
+`enforcement_sufficiency_declassifySignal` grows to **six** arms with the
+target refusal second.  `declassifiedSignal_denied_before_capacity` gains the
+two live-notification premises its statement now needs (the plan is consulted
+only for real targets).  Suite §11.9 (722 → **726** assertions: the
+policy-equal wrong-kind error with the trail untouched, the load-bearing
+negative that the caller's hop-1 verdict is no longer readable off a junk
+operand, the policy-blind absent-target pair, and the case-for-case agreement
+with the ordinary bound signal's errors).  Committed alongside: the first
+**completed** Tier-3 run — CI on the round-1 head; every earlier run was
+superseded or interrupted before Tier 3 — surfaced three SM9.C anchors born
+broken in the landing and audit cuts, none guarding a live defect: the
+effect-footprint anchor omitted the write set's `st` argument (pattern
+corrected), the SM9.C.7 exclusion anchor pinned a docstring sentence through
+the comment-free code view where it can never match (now `run_prose_check`,
+the carve-out that reads real text), and the composed-footprint negative used
+a literal newline without ripgrep's multiline flag — the fail-closed
+infrastructure error doing its job (now `rg -U`, window widened across the
+signature).  CI stops at the first Tier-3 failure, so the second and third
+were reachable only by replaying the full anchor surface offline; all 142
+anchors added since the SM9.B merge now pass a faithful replay (overlay for
+code checks, real tree for prose).
+
 ### SM9.D — Causal declassification provenance (19 sub-tasks)
 
 The phase's largest sub-phase, and the reason the calendar estimate moved.  §3.6

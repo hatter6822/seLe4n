@@ -1441,7 +1441,7 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 - `enforcementBoundaryComplete` — Bool check that every SyscallId maps to a boundary entry (AC4-D),
 - `enforcementBoundary_is_complete` — `decide` compile-time completeness theorem (AC4-D/IF-01; AF4-A: upgraded from `native_decide` to kernel-checked `decide`),
 - `*_denied_preserves_state` — denial preservation for all 13 policy-gated operations, in 14 declarations (the declassification contributes two: `declassifyObjectFromCore`, the boundary's named entry, and `authorizeDeclassificationOnCore`, the gate it wraps).  WS-SM SM8.C completed the family at 12: it had covered 7 while the text claimed all of them, so the four IPC/notification wrappers that landed after it was written joined it, together with the declassification.  The SM9.C audit cut caught the same defect recurring one phase on — the data-carrying declassification landed as the thirteenth policy-gated entry without joining either family — and added `notificationSignalDeclassifiedOnCore_denied_preserves_state`, an *equation on the returned state* (the transition is total, so denial preservation is stronger than the `Kernel`-monad members can state),
-- `enforcement_sufficiency_*` — complete-disjunction coverage proofs for the same 13 operations; the declassification's arm (`enforcement_sufficiency_declassify`) is a *trichotomy*, since a fail-closed audit-capacity refusal is a third outcome beyond delegate-or-deny, and the data-carrying declassification's (`enforcement_sufficiency_declassifySignal`) is a **five-arm** characterization — the delivery is real, so it adds its own pass-through failure mode, and the actor is state-resolved, which adds the idle-core refusal.
+- `enforcement_sufficiency_*` — complete-disjunction coverage proofs for the same 13 operations; the declassification's arm (`enforcement_sufficiency_declassify`) is a *trichotomy*, since a fail-closed audit-capacity refusal is a third outcome beyond delegate-or-deny, and the data-carrying declassification's (`enforcement_sufficiency_declassifySignal`) is a **six-arm** characterization — the delivery is real, so it adds its own pass-through failure mode; the actor is state-resolved, which adds the idle-core refusal; and the operand is validated as a live notification before any policy read (PR #872 round 2), which adds the target-invalid dichotomy.
 
 **WS-H8/A-36 — Projection hardening:**
 
@@ -3267,6 +3267,26 @@ one-bit presence disclosure its refusal carries in mixed-admission states
 exhibited as `declassifiedSignalPlan_outcome_depends_on_receiver` beside the
 load-bearing negative that the symmetric alternative delivers the
 freshly-downgraded badge to the denied receiver (§11.8, 719 → 722).
+
+**PR #872 review round 2** (same version): the transition consulted the
+declassification plan before the delivery's typed lookup, so a writable
+capability to a non-notification object read policy state off the error
+discriminant (`.declassificationDenied` vs `.invalidCapability`) — an invalid
+capability as a policy oracle, and an inconsistency with the sibling
+`.declassify`, which validates its target before
+`authorizeDeclassificationOnCore`.  The transition now validates the operand
+as a live notification ahead of every policy read, answering the ordinary
+signal's own recovery errors (`.invalidCapability` wrong-kind /
+`.objectNotFound` absent);
+`notificationSignalDeclassifiedOnCore_invalid_target_policy_blind` pins the
+invalid-target outcome as a function of the object store alone — identical
+under every pair of contexts and policies —
+`enforcement_sufficiency_declassifySignal` grows to six arms (the
+target-invalid dichotomy second), and `declassifiedSignal_ordinary_eq_signal`
+is strengthened to hold *through* the gate (junk targets answer the same
+errors on both paths).  Runtime: §11.9 (722 → 726), the load-bearing negative
+being that the caller's hop-1 verdict is no longer readable off a junk
+operand.
 
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 

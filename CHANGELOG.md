@@ -191,6 +191,23 @@ characterization; arms 2 and 3 return the refusing step's error verbatim).
 `auditTrailDestinationsAreTargetDomains` as a live fact — false of a
 second-hop event by this phase's own design; reworded.  (4) CC-8's mitigation
 text still described SM9.B's refusal ledger as "already in plan"; corrected.
+
+**PR #872 review round 2 (one further finding, P2, valid): the target gate.**
+The `.declassifySignal` transition consulted the declassification plan before
+the delivery's typed lookup, so a writable capability to a non-notification
+object read policy state off the error discriminant (`.declassificationDenied`
+vs `.invalidCapability`) — an invalid capability as a policy oracle, and an
+inconsistency with the sibling `.declassify`, which has always validated its
+target first.  The transition now validates the operand as a live notification
+ahead of every policy read, answering the ordinary signal's own recovery
+(`.invalidCapability` wrong-kind / `.objectNotFound` absent);
+`notificationSignalDeclassifiedOnCore_invalid_target_policy_blind` pins the
+outcome as a function of the object store alone, identical under every pair of
+contexts and policies.  `enforcement_sufficiency_declassifySignal` grows to six
+arms; `declassifiedSignal_ordinary_eq_signal` now holds through the gate (junk
+targets answer the same errors on both sides).  Suite §11.9 (722 → **726**
+assertions, with the load-bearing negative that the caller's hop-1 verdict is
+no longer readable off a junk operand).  Also in this cut: the first **completed** Tier-3 run — CI on the round-1 head; every earlier run was superseded or interrupted before Tier 3 — surfaced three SM9.C anchors born broken in the landing and audit cuts, none guarding a live defect: the effect-footprint anchor omitted the write set's `st` argument (pattern corrected), the SM9.C.7 exclusion anchor pinned a docstring sentence through the comment-free code view where it can never match (now `run_prose_check`, the carve-out that reads real text), and the composed-footprint negative used a literal newline without ripgrep's multiline flag — the fail-closed infrastructure error, exactly as the PR #861 review designed it (now `rg -U`, window widened across the signature).  CI stops at the first Tier-3 failure, so the second and third were reachable only by replaying the full anchor surface offline; all 142 anchors added since the SM9.B merge now pass a faithful replay (overlay for code checks, real tree for prose).
 Evidence: `SmpInformationFlowSuite` §11.7 (712 → **719** assertions, three
 load-bearing negatives), the failed-hop golden-fixture line, §1.12 +
 `SmpSurfaceAnchors` + `InformationFlowSuite` anchors, twenty new Tier-3

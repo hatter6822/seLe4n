@@ -1006,6 +1006,11 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- waiters, its disclosure exhibited.
      have _aw := @SeLe4n.Kernel.declassifiedSignalPlan_admitted_receiver_error_is_first_hop
      have _od := @SeLe4n.Kernel.declassifiedSignalPlan_outcome_depends_on_receiver
+     -- PR #872 review round 2: the target gate ahead of every policy read —
+     -- an invalid target is never a policy oracle.
+     have _wk := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_wrong_kind
+     have _ab := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_absent_target
+     have _pb := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_invalid_target_policy_blind
      decide (SeLe4n.Kernel.auditReadOpcodeCount = 27
        ∧ SeLe4n.Kernel.decodeAuditReadOp 25 0 0
            = some (.refusalReceiverChunkCount 0)

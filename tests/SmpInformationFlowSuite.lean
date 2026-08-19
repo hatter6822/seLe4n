@@ -1903,6 +1903,14 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @declassifiedSignalPlan_admitted_receiver_error_is_first_hop
 #check @declassifiedSignalPlan_outcome_depends_on_receiver
 
+-- SM9.C.1 (PR #872 review, round 2) — the target gate ahead of every policy
+-- read, and the theorem that an invalid target is never a policy oracle.
+#check @declassifiedSignalReceiver?_some_notification
+#check @getObjectType?_isSome_eq_raw
+#check @notificationSignalDeclassifiedOnCore_wrong_kind
+#check @notificationSignalDeclassifiedOnCore_absent_target
+#check @notificationSignalDeclassifiedOnCore_invalid_target_policy_blind
+
 -- ============================================================================
 -- §2  Elaboration-time examples: each headline theorem applied
 -- ============================================================================
@@ -9616,6 +9624,70 @@ private def runDeclassifiedSignalWaiterGateChecks : IO Unit := do
           decide (tcb.pendingMessage = none)
       | none => false))
 
+/-- §11.9  SM9.C.1 (PR #872 review, round 2) — the target gate: a wrong-kind or
+absent operand answers the ordinary signal's own errors before any policy is
+consulted, so an invalid capability is never a policy oracle. -/
+private def runDeclassifiedSignalTargetGateChecks : IO Unit := do
+  IO.println "--- §11.9 SM9.C.1 the target gate runs before every policy read ---"
+  -- A writable capability to an EXISTING NON-NOTIFICATION object (the low
+  -- endpoint): the ordinary signal's wrong-kind error, under BOTH an
+  -- authorizing and a deny-all policy — the outcomes are equal, so the error
+  -- carries no policy bit.
+  assertBool "a wrong-kind target answers invalidCapability under every policy — equally"
+    (let runAuth := notificationSignalDeclassifiedOnCore signalDeclassContext
+       launderingDeclPolicy lowEndpoint (SeLe4n.Badge.ofNatMasked 0x5C) signalCore
+       declassSignalState
+     let runDeny := notificationSignalDeclassifiedOnCore signalDeclassContext
+       denyAllDeclPolicy lowEndpoint (SeLe4n.Badge.ofNatMasked 0x5C) signalCore
+       declassSignalState
+     decide (declassSignalState.getNotification? lowEndpoint = none) &&
+     decide ((declassSignalState.getObjectType? lowEndpoint).isSome = true) &&
+     (match runAuth.2, runDeny.2 with
+      | .error e₁, .error e₂ =>
+          decide (e₁ = KernelError.invalidCapability) && decide (e₁ = e₂)
+      | _, _ => false) &&
+     decide (runAuth.1.declassificationAuditLog
+       = declassSignalState.declassificationAuditLog))
+  -- NEGATIVE: the pre-fix behaviour is gone.  Under a policy that denies the
+  -- caller's hop, the wrong-kind target used to answer `.declassificationDenied`
+  -- — the caller's own hop-1 verdict read off a junk operand.
+  assertBool "NEGATIVE: a wrong-kind target no longer reports the caller's hop-1 verdict"
+    (match (notificationSignalDeclassifiedOnCore signalDeclassContext denyAllDeclPolicy
+        lowEndpoint (SeLe4n.Badge.ofNatMasked 0x5C) signalCore declassSignalState).2 with
+     | .error e => decide (e ≠ KernelError.declassificationDenied)
+     | .ok _ => false)
+  -- An absent target: the ordinary signal's objectNotFound, again policy-blind.
+  assertBool "an absent target answers objectNotFound, policy-blind"
+    (let ghost : SeLe4n.ObjId := ⟨1099⟩
+     decide (declassSignalState.getObjectType? ghost = none) &&
+     (match (notificationSignalDeclassifiedOnCore signalDeclassContext launderingDeclPolicy
+         ghost (SeLe4n.Badge.ofNatMasked 0x5C) signalCore declassSignalState).2 with
+      | .error e => decide (e = KernelError.objectNotFound)
+      | .ok _ => false) &&
+     -- Runtime slice of the policy-blind theorem: outcome and trail agree
+     -- across two entirely different (context, policy) pairs.  Whole-state
+     -- equality is the theorem's job
+     -- (`notificationSignalDeclassifiedOnCore_invalid_target_policy_blind`);
+     -- `SystemState` equality is not decidable.
+     (let r₁ := notificationSignalDeclassifiedOnCore signalDeclassContext launderingDeclPolicy
+        ghost (SeLe4n.Badge.ofNatMasked 0x5C) signalCore declassSignalState
+      let r₂ := notificationSignalDeclassifiedOnCore declassContext denyAllDeclPolicy
+        ghost (SeLe4n.Badge.ofNatMasked 0x5C) signalCore declassSignalState
+      (match r₁.2, r₂.2 with
+       | .error e₁, .error e₂ => decide (e₁ = e₂)
+       | _, _ => false) &&
+      decide (r₁.1.declassificationAuditLog = r₂.1.declassificationAuditLog)))
+  -- The sibling discipline: `.declassify` has always validated its target
+  -- first; the two entry points now agree, and the declassified signal's
+  -- errors on junk targets are exactly the ordinary bound signal's.
+  assertBool "the target gate's errors ARE the ordinary bound signal's, case for case"
+    ((match (notificationSignalDeclassifiedOnCore signalDeclassContext launderingDeclPolicy
+         lowEndpoint (SeLe4n.Badge.ofNatMasked 0x5C) signalCore declassSignalState).2,
+       (SeLe4n.Kernel.notificationSignalBoundOnCore lowEndpoint
+         (SeLe4n.Badge.ofNatMasked 0x5C) signalCore declassSignalState).2 with
+      | .error e₁, .error e₂ => decide (e₁ = e₂)
+      | _, _ => false))
+
 /-- The SM9.C half: what a **data-carrying** declassification does, reported as
 observables.  The three lines above report views, authorized downgrades and
 refused attempts; these report the one operation in the tree that deliberately
@@ -9785,6 +9857,7 @@ phase closure, the audit-trail reader, refusal auditing and the data-carrying de
   runDeclassifiedSignalAbiChecks
   runDeclassifiedSignalFailedHopChecks
   runDeclassifiedSignalWaiterGateChecks
+  runDeclassifiedSignalTargetGateChecks
   runInformationFlowTraceFixtureCheck
   IO.println "===================================="
   IO.println ("All SM8.A per-core observable-state, SM8.B non-interference, " ++

@@ -386,6 +386,30 @@ thread the SM6.B lock set takes a write lock on. -/
       notificationSignalWaiter? st notificationId := by
   simp [declassifiedSignalReceiver?, hNone]
 
+/-- WS-SM SM9.C.1 (PR #872 review): a resolved receiver implies a **live
+notification** — both resolution routes open on `getNotification?`, so the
+target gate below never refuses a state in which a receiver exists. -/
+theorem declassifiedSignalReceiver?_some_notification (st : SystemState)
+    (notificationId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (h : declassifiedSignalReceiver? st notificationId = some receiver) :
+    ∃ ntfn, st.getNotification? notificationId = some ntfn := by
+  cases hN : st.getNotification? notificationId with
+  | some ntfn => exact ⟨ntfn, rfl⟩
+  | none =>
+    exfalso
+    unfold declassifiedSignalReceiver? boundDeliveryTarget?
+      notificationSignalWaiter? at h
+    rw [hN] at h
+    simp at h
+
+/-- WS-SM SM9.C.1 (PR #872 review): the typed kind-agnostic accessor answers
+`isSome` exactly when the raw store does — the bridge that makes the target
+gate's error distinction *definitionally* the ordinary signal's. -/
+theorem getObjectType?_isSome_eq_raw (st : SystemState) (id : SeLe4n.ObjId) :
+    (st.getObjectType? id).isSome = (st.objects[id]?).isSome := by
+  unfold SystemState.getObjectType?
+  cases st.objects[id]? <;> rfl
+
 -- ============================================================================
 -- §2  WS-SM SM9.C.1 — per-hop authorization
 -- ============================================================================
@@ -752,14 +776,25 @@ The shape, in the order the steps run and for the reasons SM8.C.9 established:
 1. **Resolve the actor** from the state (`currentOnCore c`), never from an
    argument — an audit trail whose subject a caller can name is not an audit
    trail.  An idle core has no subject, so it fails closed.
-2. **Decide both hops**, before any capacity check.  Deciding first confines the
+2. **Validate the target** (PR #872 review): the operand must be a live
+   notification *before* any policy is consulted, exactly as the sibling
+   `.declassify` validates its target (`declassifyObjectFromCore` reads
+   `getObjectType?` before `authorizeDeclassificationOnCore`).  A wrong-kind
+   or absent target answers the ordinary signal's own errors —
+   `.invalidCapability` / `.objectNotFound`, the AK7 recovery distinction —
+   **independently of every policy and labeling**
+   (`notificationSignalDeclassifiedOnCore_invalid_target_policy_blind`), so an
+   invalid capability is never a policy oracle: before this step ran first, a
+   caller holding a writable capability to a non-notification object read its
+   own hop-1 verdict off the error discriminant.
+3. **Decide both hops**, before any capacity check.  Deciding first confines the
    observation of trail occupancy to a caller whose downgrade *is* authorized
    (`declassifiedSignal_denied_before_capacity`), which is the SM8.C.9 ordering
    and the reason CC-8 is bounded to declassifying subjects.
-3. **Run the signal** — the same `notificationSignalBoundOnCore` the ordinary
+4. **Run the signal** — the same `notificationSignalBoundOnCore` the ordinary
    `.notificationSignal` arm runs, so the delivery semantics, the cross-core
    wake and the SGI are not a second implementation of anything.
-4. **Record**, fail-closed on capacity, returning the **pre-state** on any
+5. **Record**, fail-closed on capacity, returning the **pre-state** on any
    refusal so a partially-audited delivery is not expressible.
 
 Returns the post-state paired with the optional cross-core `.reschedule` SGI,
@@ -772,16 +807,25 @@ def notificationSignalDeclassifiedOnCore (ctx : GenericLabelingContext)
   match st.scheduler.currentOnCore c with
   | none => (st, .error .illegalState)
   | some signaler =>
-      let actor := declassificationActorOf ctx signaler
-      match declassifiedSignalPlan ctx declPolicy notificationId actor.domain st with
-      | .error e => (st, .error e)
-      | .ok records =>
-          match notificationSignalBoundOnCore notificationId badge c st with
-          | (_, .error e) => (st, .error e)
-          | (st1, .ok sgi) =>
-              match recordDeclassifiedHops c actor records st1 with
-              | none => (st, .error .auditLogCapacityExceeded)
-              | some st2 => (st2, .ok sgi)
+      match st.getNotification? notificationId with
+      | none =>
+          -- PR #872 review: the target gate, ahead of every policy read.  The
+          -- error distinction is the ordinary signal's own (AK7 recovery:
+          -- present-but-wrong-kind vs genuinely absent), decided through the
+          -- typed kind-agnostic accessor.
+          if (st.getObjectType? notificationId).isSome then (st, .error .invalidCapability)
+          else (st, .error .objectNotFound)
+      | some _ =>
+          let actor := declassificationActorOf ctx signaler
+          match declassifiedSignalPlan ctx declPolicy notificationId actor.domain st with
+          | .error e => (st, .error e)
+          | .ok records =>
+              match notificationSignalBoundOnCore notificationId badge c st with
+              | (_, .error e) => (st, .error e)
+              | (st1, .ok sgi) =>
+                  match recordDeclassifiedHops c actor records st1 with
+                  | none => (st, .error .auditLogCapacityExceeded)
+                  | some st2 => (st2, .ok sgi)
 
 /-- WS-SM SM9.C.2: the cross-core dispatch the live arm calls — the transition
 with the executing core read from the state, exactly as SM6.B's
@@ -818,7 +862,9 @@ composition — the reduction every theorem below travels along. -/
 theorem notificationSignalDeclassifiedOnCore_eq_of_subject (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
     (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) (signaler : SeLe4n.ThreadId)
-    (hCur : st.scheduler.currentOnCore c = some signaler) :
+    (ntfn : Notification)
+    (hCur : st.scheduler.currentOnCore c = some signaler)
+    (hNtfn : st.getNotification? notificationId = some ntfn) :
     notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
       (match declassifiedSignalPlan ctx declPolicy notificationId
               (declassificationActorOf ctx signaler).domain st with
@@ -831,21 +877,22 @@ theorem notificationSignalDeclassifiedOnCore_eq_of_subject (ctx : GenericLabelin
                    records st1 with
                | none => (st, .error .auditLogCapacityExceeded)
                | some st2 => (st2, .ok sgi)) := by
-  simp [notificationSignalDeclassifiedOnCore, hCur]
+  simp [notificationSignalDeclassifiedOnCore, hCur, hNtfn]
 
 /-- WS-SM SM9.C.1: a refused plan refuses the transition, with the state
 untouched and the plan's own error. -/
 theorem notificationSignalDeclassifiedOnCore_plan_refused (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
     (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) (signaler : SeLe4n.ThreadId)
-    (e : KernelError)
+    (ntfn : Notification) (e : KernelError)
     (hCur : st.scheduler.currentOnCore c = some signaler)
+    (hNtfn : st.getNotification? notificationId = some ntfn)
     (hPlan : declassifiedSignalPlan ctx declPolicy notificationId
       (declassificationActorOf ctx signaler).domain st = .error e) :
     notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
       (st, .error e) := by
   rw [notificationSignalDeclassifiedOnCore_eq_of_subject ctx declPolicy notificationId badge c
-    st signaler hCur, hPlan]
+    st signaler ntfn hCur hNtfn, hPlan]
 
 /-- WS-SM SM9.C.1 (**success decomposes**): a successful declassifying signal
 ran the ordinary bound signal and then appended exactly the planned records.
@@ -874,33 +921,43 @@ theorem notificationSignalDeclassifiedOnCore_ok_inv (ctx : GenericLabelingContex
   | none => exact absurd hStep (by simp)
   | some signaler =>
     simp only at hStep
-    obtain ⟨plan, hPlan⟩ : ∃ p, declassifiedSignalPlan ctx declPolicy notificationId
-        (declassificationActorOf ctx signaler).domain st = p := ⟨_, rfl⟩
-    rw [hPlan] at hStep
-    cases plan with
-    | error e => exact absurd hStep (by simp)
-    | ok records =>
+    obtain ⟨ntfn?, hNtfn⟩ : ∃ x, st.getNotification? notificationId = x := ⟨_, rfl⟩
+    rw [hNtfn] at hStep
+    cases ntfn? with
+    | none =>
+      -- PR #872 review: the target gate refuses before any policy read, so an
+      -- `.ok` outcome is impossible on this arm.
       simp only at hStep
-      obtain ⟨pair, hPair⟩ : ∃ p, notificationSignalBoundOnCore notificationId badge c st = p :=
-        ⟨_, rfl⟩
-      rw [hPair] at hStep
-      obtain ⟨st1, res⟩ := pair
-      cases res with
+      split at hStep <;> exact absurd (congrArg Prod.snd hStep) (by simp)
+    | some ntfn =>
+      simp only at hStep
+      obtain ⟨plan, hPlan⟩ : ∃ p, declassifiedSignalPlan ctx declPolicy notificationId
+          (declassificationActorOf ctx signaler).domain st = p := ⟨_, rfl⟩
+      rw [hPlan] at hStep
+      cases plan with
       | error e => exact absurd hStep (by simp)
-      | ok sgi' =>
+      | ok records =>
         simp only at hStep
-        obtain ⟨rec, hRec⟩ : ∃ r, recordDeclassifiedHops c
-            (declassificationActorOf ctx signaler) records st1 = r := ⟨_, rfl⟩
-        rw [hRec] at hStep
-        cases rec with
-        | none => exact absurd hStep (by simp)
-        | some st2 =>
-          simp only [Prod.mk.injEq, Except.ok.injEq] at hStep
-          obtain ⟨hSt2, hSgi⟩ := hStep
-          subst hSt2; subst hSgi
-          refine ⟨signaler, records, hCur, hPlan, ?_, ?_⟩
-          · rw [hPair]
-          · rw [hPair]; exact hRec
+        obtain ⟨pair, hPair⟩ : ∃ p, notificationSignalBoundOnCore notificationId badge c st = p :=
+          ⟨_, rfl⟩
+        rw [hPair] at hStep
+        obtain ⟨st1, res⟩ := pair
+        cases res with
+        | error e => exact absurd hStep (by simp)
+        | ok sgi' =>
+          simp only at hStep
+          obtain ⟨rec, hRec⟩ : ∃ r, recordDeclassifiedHops c
+              (declassificationActorOf ctx signaler) records st1 = r := ⟨_, rfl⟩
+          rw [hRec] at hStep
+          cases rec with
+          | none => exact absurd hStep (by simp)
+          | some st2 =>
+            simp only [Prod.mk.injEq, Except.ok.injEq] at hStep
+            obtain ⟨hSt2, hSgi⟩ := hStep
+            subst hSt2; subst hSgi
+            refine ⟨signaler, records, hCur, hPlan, ?_, ?_⟩
+            · rw [hPair]
+            · rw [hPair]; exact hRec
 
 -- ============================================================================
 -- §6  WS-SM SM9.C.1 — what the records become
@@ -1305,9 +1362,11 @@ theorem declassifiedSignal_gates_resolved_receiver (ctx : GenericLabelingContext
     (hNoDecl : declPolicy.canDeclassify (ctx.objectDomainOf notificationId)
       (ctx.threadDomainOf receiver) = false) :
     notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
-      (st, .error .declassificationDeniedAtReceiver) :=
-  notificationSignalDeclassifiedOnCore_plan_refused ctx declPolicy notificationId badge c st
-    signaler _ hCur
+      (st, .error .declassificationDeniedAtReceiver) := by
+  obtain ⟨ntfn, hNtfn⟩ :=
+    declassifiedSignalReceiver?_some_notification st notificationId receiver hRecv
+  exact notificationSignalDeclassifiedOnCore_plan_refused ctx declPolicy notificationId badge c
+    st signaler ntfn _ hCur hNtfn
     (declassifiedSignalPlan_receiver_refused ctx declPolicy notificationId
       (declassificationActorOf ctx signaler).domain st receiver hFirst hRecv hDeny hNoDecl)
 
@@ -1531,8 +1590,25 @@ theorem declassifiedSignal_ordinary_eq_signal (ctx : GenericLabelingContext)
         (ctx.threadDomainOf receiver) = true) :
     notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
       notificationSignalBoundOnCore notificationId badge c st := by
+  cases hN : st.getNotification? notificationId with
+  | none =>
+    -- PR #872 review: on a wrong-kind or absent target BOTH sides answer the
+    -- ordinary signal's own recovery — the target gate is the ordinary
+    -- signal's none-arm, decided through the typed accessor.
+    have hL : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
+        (if (st.objects[notificationId]?).isSome then (st, .error .invalidCapability)
+         else (st, .error .objectNotFound)) := by
+      rw [← getObjectType?_isSome_eq_raw]
+      simp [notificationSignalDeclassifiedOnCore, hCur, hN]
+    have hR : notificationSignalBoundOnCore notificationId badge c st =
+        (if (st.objects[notificationId]?).isSome then (st, .error .invalidCapability)
+         else (st, .error .objectNotFound)) := by
+      unfold notificationSignalBoundOnCore boundDeliveryTarget? notificationSignalOnCore
+      rw [hN]
+    rw [hL, hR]
+  | some ntfn =>
   rw [notificationSignalDeclassifiedOnCore_eq_of_subject ctx declPolicy notificationId badge c
-    st signaler hCur,
+    st signaler ntfn hCur hN,
     declassifiedSignalPlan_ordinary ctx declPolicy notificationId
       (declassificationActorOf ctx signaler).domain st hFirst hSecond]
   simp only
@@ -1976,9 +2052,11 @@ which is CC-8 widened from declassifying subjects to all of them. -/
 theorem declassifiedSignal_denied_before_capacity (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
     (badge : SeLe4n.Badge) (c : CoreId) (st₁ st₂ : SystemState) (signaler : SeLe4n.ThreadId)
-    (e : KernelError)
+    (ntfn₁ ntfn₂ : Notification) (e : KernelError)
     (hCur₁ : st₁.scheduler.currentOnCore c = some signaler)
     (hCur₂ : st₂.scheduler.currentOnCore c = some signaler)
+    (hNtfn₁ : st₁.getNotification? notificationId = some ntfn₁)
+    (hNtfn₂ : st₂.getNotification? notificationId = some ntfn₂)
     (hSameRecv : declassifiedSignalReceiver? st₁ notificationId =
       declassifiedSignalReceiver? st₂ notificationId)
     (hPlan : declassifiedSignalPlan ctx declPolicy notificationId
@@ -1993,9 +2071,9 @@ theorem declassifiedSignal_denied_before_capacity (ctx : GenericLabelingContext)
     rw [← hSameRecv]
     exact hPlan
   exact ⟨notificationSignalDeclassifiedOnCore_plan_refused ctx declPolicy notificationId badge c
-      st₁ signaler e hCur₁ hPlan,
+      st₁ signaler ntfn₁ e hCur₁ hNtfn₁ hPlan,
     notificationSignalDeclassifiedOnCore_plan_refused ctx declPolicy notificationId badge c
-      st₂ signaler e hCur₂ hPlan₂⟩
+      st₂ signaler ntfn₂ e hCur₂ hNtfn₂ hPlan₂⟩
 
 /-- WS-SM SM9.C.1: the transition establishes the trail's **actor** invariant —
 both hops share one actor, read off the state, so every entry it writes carries
@@ -2174,47 +2252,64 @@ theorem notificationSignalDeclassifiedOnCore_denied_preserves_state
   | none => exact (congrArg Prod.fst hStep).symm
   | some signaler =>
     simp only at hStep
-    obtain ⟨plan, hPlan⟩ : ∃ p, declassifiedSignalPlan ctx declPolicy notificationId
-        (declassificationActorOf ctx signaler).domain st = p := ⟨_, rfl⟩
-    rw [hPlan] at hStep
-    cases plan with
-    | error e' => exact (congrArg Prod.fst hStep).symm
-    | ok records =>
+    obtain ⟨ntfn?, hNtfn⟩ : ∃ x, st.getNotification? notificationId = x := ⟨_, rfl⟩
+    rw [hNtfn] at hStep
+    cases ntfn? with
+    | none =>
+      -- PR #872 review: the target gate's two refusals return the pre-state
+      -- like every other arm.
       simp only at hStep
-      obtain ⟨pair, hPair⟩ : ∃ p, notificationSignalBoundOnCore notificationId badge c st = p :=
-        ⟨_, rfl⟩
-      rw [hPair] at hStep
-      obtain ⟨st1, res⟩ := pair
-      cases res with
+      split at hStep <;> exact (congrArg Prod.fst hStep).symm
+    | some ntfn =>
+      simp only at hStep
+      obtain ⟨plan, hPlan⟩ : ∃ p, declassifiedSignalPlan ctx declPolicy notificationId
+          (declassificationActorOf ctx signaler).domain st = p := ⟨_, rfl⟩
+      rw [hPlan] at hStep
+      cases plan with
       | error e' => exact (congrArg Prod.fst hStep).symm
-      | ok sgi =>
+      | ok records =>
         simp only at hStep
-        obtain ⟨rec, hRec⟩ : ∃ r, recordDeclassifiedHops c
-            (declassificationActorOf ctx signaler) records st1 = r := ⟨_, rfl⟩
-        rw [hRec] at hStep
-        cases rec with
-        | none => exact (congrArg Prod.fst hStep).symm
-        | some st2 => exact absurd (congrArg Prod.snd hStep) (by simp)
+        obtain ⟨pair, hPair⟩ : ∃ p, notificationSignalBoundOnCore notificationId badge c st = p :=
+          ⟨_, rfl⟩
+        rw [hPair] at hStep
+        obtain ⟨st1, res⟩ := pair
+        cases res with
+        | error e' => exact (congrArg Prod.fst hStep).symm
+        | ok sgi =>
+          simp only at hStep
+          obtain ⟨rec, hRec⟩ : ∃ r, recordDeclassifiedHops c
+              (declassificationActorOf ctx signaler) records st1 = r := ⟨_, rfl⟩
+          rw [hRec] at hStep
+          cases rec with
+          | none => exact (congrArg Prod.fst hStep).symm
+          | some st2 => exact absurd (congrArg Prod.snd hStep) (by simp)
 
 /-- WS-SM SM9.C.8 (**the `enforcement_sufficiency_*` family member**): the
-declassifying signal does exactly one of **five** things, and nothing else.
+declassifying signal does exactly one of **six** things, and nothing else.
 
 `enforcement_sufficiency_declassify` is a trichotomy because `.declassify`'s
 transfer is simulated; here the delivery is *real*, which adds its own failure
-mode, and the actor is state-resolved, which adds the idle-core refusal:
+mode, the actor is state-resolved, which adds the idle-core refusal, and — PR
+#872 review — the target is validated before any policy read, which adds the
+wrong-kind/absent refusal:
 
 1. an idle core cannot attribute a downgrade, so it refuses (`.illegalState`);
-2. a plan either hop's gate refuses is returned verbatim, with that hop's own
+2. a target that is not a live notification refuses with the ordinary
+   signal's own recovery — `.invalidCapability` present-but-wrong-kind,
+   `.objectNotFound` absent — before any policy is consulted, so an invalid
+   capability is never a policy oracle
+   (`notificationSignalDeclassifiedOnCore_invalid_target_policy_blind`);
+3. a plan either hop's gate refuses is returned verbatim, with that hop's own
    discriminant, the state untouched;
-3. a delivery failure of the underlying bound signal is returned verbatim —
+4. a delivery failure of the underlying bound signal is returned verbatim —
    this transition invents no discriminant for it and performs no partial
    commit;
-4. an authorized plan whose records do not all fit refuses fail-closed with
+5. an authorized plan whose records do not all fit refuses fail-closed with
    `.auditLogCapacityExceeded`, delivering nothing — recording one hop of a
    two-hop delivery is not among the outcomes;
-5. otherwise the delivery commits with exactly the planned records appended.
+6. otherwise the delivery commits with exactly the planned records appended.
 
-Arms 2 and 3 are stated as "the error, verbatim" so a future refusal cannot be
+Arms 3 and 4 are stated as "the error, verbatim" so a future refusal cannot be
 silently remapped onto an existing discriminant. -/
 theorem enforcement_sufficiency_declassifySignal
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
@@ -2222,6 +2317,14 @@ theorem enforcement_sufficiency_declassifySignal
     (st.scheduler.currentOnCore c = none ∧
        notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
          (st, .error .illegalState)) ∨
+    (∃ signaler, st.scheduler.currentOnCore c = some signaler ∧
+       st.getNotification? notificationId = none ∧
+       (((st.getObjectType? notificationId).isSome ∧
+           notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
+             (st, .error .invalidCapability)) ∨
+        (st.getObjectType? notificationId = none ∧
+           notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
+             (st, .error .objectNotFound)))) ∨
     (∃ signaler e, st.scheduler.currentOnCore c = some signaler ∧
        declassifiedSignalPlan ctx declPolicy notificationId
          (declassificationActorOf ctx signaler).domain st = .error e ∧
@@ -2255,40 +2358,50 @@ theorem enforcement_sufficiency_declassifySignal
     exact Or.inl ⟨hCur, notificationSignalDeclassifiedOnCore_no_subject ctx declPolicy
       notificationId badge c st hCur⟩
   | some signaler =>
-    have hEq := notificationSignalDeclassifiedOnCore_eq_of_subject ctx declPolicy
-      notificationId badge c st signaler hCur
-    obtain ⟨plan, hPlan⟩ : ∃ p, declassifiedSignalPlan ctx declPolicy notificationId
-        (declassificationActorOf ctx signaler).domain st = p := ⟨_, rfl⟩
-    rw [hPlan] at hEq
-    cases plan with
-    | error e => exact Or.inr (Or.inl ⟨signaler, e, hCur, hPlan, hEq⟩)
-    | ok records =>
-      simp only at hEq
-      obtain ⟨pair, hPair⟩ : ∃ p, notificationSignalBoundOnCore notificationId badge c st = p :=
-        ⟨_, rfl⟩
-      rw [hPair] at hEq
-      obtain ⟨st1, res⟩ := pair
-      have hFst : (notificationSignalBoundOnCore notificationId badge c st).1 = st1 :=
-        congrArg Prod.fst hPair
-      have hSnd : (notificationSignalBoundOnCore notificationId badge c st).2 = res :=
-        congrArg Prod.snd hPair
-      cases res with
-      | error e =>
-        exact Or.inr (Or.inr (Or.inl ⟨signaler, records, e, hCur, hPlan, hSnd, hEq⟩))
-      | ok sgi =>
+    obtain ⟨ntfn?, hN⟩ : ∃ x, st.getNotification? notificationId = x := ⟨_, rfl⟩
+    cases ntfn? with
+    | none =>
+      refine Or.inr (Or.inl ⟨signaler, hCur, hN, ?_⟩)
+      by_cases hTy : (st.getObjectType? notificationId).isSome
+      · refine Or.inl ⟨hTy, ?_⟩
+        simp [notificationSignalDeclassifiedOnCore, hCur, hN, hTy]
+      · refine Or.inr ⟨Option.not_isSome_iff_eq_none.mp hTy, ?_⟩
+        simp [notificationSignalDeclassifiedOnCore, hCur, hN, hTy]
+    | some ntfn =>
+      have hEq := notificationSignalDeclassifiedOnCore_eq_of_subject ctx declPolicy
+        notificationId badge c st signaler ntfn hCur hN
+      obtain ⟨plan, hPlan⟩ : ∃ p, declassifiedSignalPlan ctx declPolicy notificationId
+          (declassificationActorOf ctx signaler).domain st = p := ⟨_, rfl⟩
+      rw [hPlan] at hEq
+      cases plan with
+      | error e => exact Or.inr (Or.inr (Or.inl ⟨signaler, e, hCur, hPlan, hEq⟩))
+      | ok records =>
         simp only at hEq
-        obtain ⟨rec, hRec⟩ : ∃ r, recordDeclassifiedHops c
-            (declassificationActorOf ctx signaler) records st1 = r := ⟨_, rfl⟩
-        rw [hRec] at hEq
-        cases rec with
-        | none =>
-          refine Or.inr (Or.inr (Or.inr (Or.inl
-            ⟨signaler, records, sgi, hCur, hPlan, hSnd, ?_, hEq⟩)))
-          rw [hFst]; exact hRec
-        | some st2 =>
-          refine Or.inr (Or.inr (Or.inr (Or.inr
-            ⟨signaler, records, sgi, st2, hCur, hPlan, hSnd, ?_, hEq⟩)))
-          rw [hFst]; exact hRec
+        obtain ⟨pair, hPair⟩ : ∃ p, notificationSignalBoundOnCore notificationId badge c st = p :=
+          ⟨_, rfl⟩
+        rw [hPair] at hEq
+        obtain ⟨st1, res⟩ := pair
+        have hFst : (notificationSignalBoundOnCore notificationId badge c st).1 = st1 :=
+          congrArg Prod.fst hPair
+        have hSnd : (notificationSignalBoundOnCore notificationId badge c st).2 = res :=
+          congrArg Prod.snd hPair
+        cases res with
+        | error e =>
+          exact Or.inr (Or.inr (Or.inr (Or.inl ⟨signaler, records, e, hCur, hPlan, hSnd, hEq⟩)))
+        | ok sgi =>
+          simp only at hEq
+          obtain ⟨rec, hRec⟩ : ∃ r, recordDeclassifiedHops c
+              (declassificationActorOf ctx signaler) records st1 = r := ⟨_, rfl⟩
+          rw [hRec] at hEq
+          cases rec with
+          | none =>
+            refine Or.inr (Or.inr (Or.inr (Or.inr (Or.inl
+              ⟨signaler, records, sgi, hCur, hPlan, hSnd, ?_, hEq⟩))))
+            rw [hFst]; exact hRec
+          | some st2 =>
+            refine Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
+              ⟨signaler, records, sgi, st2, hCur, hPlan, hSnd, ?_, hEq⟩))))
+            rw [hFst]; exact hRec
 
 
 -- ============================================================================
@@ -2386,5 +2499,66 @@ theorem declassifiedSignalPlan_outcome_depends_on_receiver
     rw [declassifiedSignalHopAuthorization_refused ctx declPolicy .notificationToReceiver
       (ctx.objectDomainOf notificationId) (ctx.threadDomainOf receiver) hDeny₂ hNoDecl₂]
     rfl
+
+
+-- ============================================================================
+-- §15  WS-SM SM9.C.1 — the target gate (PR #872 review, round 2)
+-- ============================================================================
+
+/-- WS-SM SM9.C.1 (PR #872 review): a present-but-wrong-kind target answers the
+ordinary signal's own `.invalidCapability` — before any policy is consulted. -/
+theorem notificationSignalDeclassifiedOnCore_wrong_kind (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) (signaler : SeLe4n.ThreadId)
+    (hCur : st.scheduler.currentOnCore c = some signaler)
+    (hNone : st.getNotification? notificationId = none)
+    (hSome : (st.getObjectType? notificationId).isSome = true) :
+    notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
+      (st, .error .invalidCapability) := by
+  simp [notificationSignalDeclassifiedOnCore, hCur, hNone, hSome]
+
+/-- WS-SM SM9.C.1 (PR #872 review): an absent target answers the ordinary
+signal's own `.objectNotFound` — before any policy is consulted. -/
+theorem notificationSignalDeclassifiedOnCore_absent_target (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) (signaler : SeLe4n.ThreadId)
+    (hCur : st.scheduler.currentOnCore c = some signaler)
+    (hNoType : st.getObjectType? notificationId = none) :
+    notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
+      (st, .error .objectNotFound) := by
+  have hNone : st.getNotification? notificationId = none := by
+    unfold SystemState.getObjectType? at hNoType
+    unfold SystemState.getNotification?
+    cases hRaw : st.objects[notificationId]? with
+    | none => rfl
+    | some obj => rw [hRaw] at hNoType; exact absurd hNoType (by simp)
+  simp [notificationSignalDeclassifiedOnCore, hCur, hNone, hNoType]
+
+/-- WS-SM SM9.C.1 (PR #872 review, **the finding's own theorem — an invalid
+target is never a policy oracle**): on a target that is not a live
+notification, the transition's outcome is a function of the object store
+alone — identical under **every** pair of labeling contexts and declassification
+policies.
+
+Before the target gate ran first, a caller holding a writable capability to a
+non-notification object read its own hop-1 verdict off the error discriminant
+(`.declassificationDenied` when the plan refused, `.invalidCapability` when it
+admitted the flow far enough to reach the delivery's typed lookup) — the
+result for an invalid capability depended on otherwise unrelated label-policy
+state.  Now nothing policy-dependent is evaluated on this path at all: the
+sibling `.declassify` has always validated its target first
+(`declassifyObjectFromCore` reads `getObjectType?` before
+`authorizeDeclassificationOnCore`), and the two entry points now share the
+discipline. -/
+theorem notificationSignalDeclassifiedOnCore_invalid_target_policy_blind
+    (ctx₁ ctx₂ : GenericLabelingContext) (declPolicy₁ declPolicy₂ : DeclassificationPolicy)
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState)
+    (hNone : st.getNotification? notificationId = none) :
+    notificationSignalDeclassifiedOnCore ctx₁ declPolicy₁ notificationId badge c st =
+      notificationSignalDeclassifiedOnCore ctx₂ declPolicy₂ notificationId badge c st := by
+  unfold notificationSignalDeclassifiedOnCore
+  cases hCur : st.scheduler.currentOnCore c with
+  | none => rfl
+  | some signaler => rw [hNone]
 
 end SeLe4n.Kernel
