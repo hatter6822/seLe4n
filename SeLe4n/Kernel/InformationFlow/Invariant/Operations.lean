@@ -3907,6 +3907,29 @@ theorem declassificationRefusals_write_preserves_projection
     projectState ctx observer { st with declassificationRefusals := ledger } =
       projectState ctx observer st := rfl
 
+/-- WS-SM SM9.D.6: **a write to the declassification taint side table is
+invisible to every observer.**
+
+The provenance analogue of the two theorems above, and the one whose exclusion
+points in a third direction.  The trail is excluded because it records
+downgrades that happened; the ledger because it records attempts that were
+refused.  The taint table records *which subjects and objects hold content
+released by which downgrades* — a per-object read of it would tell a low
+observer that a particular endpoint carried content from a particular high→low
+release, which is the boundary crossing itself rather than a fact about it.
+
+Unlike the trail and the ledger this field has **no reader at all**: no syscall
+exports it, so the §3.7 reader-visibility inventory records it as owing neither
+an observational-equivalence clause nor a hidden-write argument *yet*.  What a
+monitor sees of it is the per-event snapshot
+(`DeclassificationEvent.predecessorTags`), gated on the configured monitor
+clearance exactly as the epoch is.  A future reader inherits both obligations. -/
+theorem declassificationTaint_write_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tbl : SeLe4n.Kernel.TaintTable) :
+    projectState ctx observer { st with declassificationTaint := tbl } =
+      projectState ctx observer st := rfl
+
 -- ============================================================================
 -- AK6-F Step 1: RunQueue modification frame lemmas (at high thread)
 -- ============================================================================

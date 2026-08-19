@@ -16,12 +16,15 @@ Names and namespace are unchanged (`SeLe4n.Kernel`), so every existing reference
 resolves exactly as before; `Policy.lean` imports this module and re-exports
 nothing, because nothing needs re-exporting.
 
-Imports are deliberately minimal — `Prelude` for `ObjId` and
-`Concurrency.Types` for `CoreId`.  Nothing here depends on `SystemState`,
-which is what makes the mount possible.
+Imports are deliberately minimal — `Prelude` for `ObjId`, `Concurrency.Types`
+for `CoreId`, and (WS-SM SM9.D.13a) `InformationFlow.Taint` for the causal
+snapshot an event carries.  Nothing here depends on `SystemState`, which is
+what makes the mount possible; `Taint.lean` is a leaf below this module for
+exactly the same reason.
 -/
 import SeLe4n.Prelude
 import SeLe4n.Kernel.Concurrency.Types
+import SeLe4n.Kernel.InformationFlow.Taint
 
 namespace SeLe4n.Kernel
 
@@ -316,7 +319,69 @@ structure DeclassificationEvent where
       default (the source domain, say) would silently misattribute exactly the
       events this field exists to attribute, while compiling everywhere. -/
   actor : DeclassificationActor
+  /-- WS-SM SM9.D.13a: **the causality this event carries** — a bounded snapshot
+      of the acting subject's declassification taint, taken in the same step
+      that records the event.
+
+      This is what makes the laundering detector *causal* rather than
+      syntactic.  `declassificationChainCausal` asks whether a later event's
+      snapshot names an earlier event's `timestamp`; the answer is a property of
+      the **trail**, not of the current store
+      (`chainCausal_is_history_local`).
+
+      **Why a snapshot and not a pointer.**  The obvious cheaper design records
+      the subject's identity and re-reads its taint when the detector runs.
+      That is wrong in both directions: the taint table is mutable, so a tag the
+      subject acquires *after* this event invents a causal link that never
+      existed, and a retype of that TCB — which SM9.D.12 requires to clear its
+      taint — silently loses a real one.  A detector whose verdict on a fixed
+      pair of events changes with unrelated later activity is not a detector
+      (`chainCausal_not_table_derived`).
+
+      **Why it is not exported to every reader.**  The tags are *global*
+      identities, including those of events a partially-cleared reader cannot
+      see, so exporting them would carry a hidden event's global position
+      straight through the reader whose indices SM9.A.2 made view-local.  They
+      reach the configured audit monitor only, and every other reader gets at
+      most an opaque `Bool` verdict (`predecessorTags_dominating_only`,
+      `partialReader_gets_opaque_causality`).
+
+      Deliberately **not** defaulted, for the reason `actor` and
+      `originatingCore` are not — and here the silent failure is the unsafe
+      one: a default of `DeclassificationTaint.empty` would make every event
+      causally unlinked, so the detector would report *no* laundering while
+      compiling everywhere. -/
+  predecessorTags : DeclassificationTaint
   deriving Repr, DecidableEq
+
+/-- WS-SM SM9.D.13a: **the declassifying subject's object identity**, for
+attribution.
+
+The plan lists this as a stored `sourceSubject : ObjId` field.  It is a derived
+accessor instead, because SM9.C.1 had already landed `actor.subject` — the same
+identity, better typed — and storing it twice is the drift the project's
+single-source discipline exists to prevent (the `retypeIcacheOp` /
+`scrubObjectMemory` extent, v0.32.101).  The name the plan and the detector use
+is kept; what it reads is the one field that holds the identity
+(`declassificationEvent_sourceSubject_is_actor`). -/
+abbrev DeclassificationEvent.sourceSubject (e : DeclassificationEvent) : SeLe4n.ObjId :=
+  e.actor.subject.toObjId
+
+/-- WS-SM SM9.D.13a: the identity `sourceSubject` names is the actor's, by
+construction — the tie that makes "one source" a checked fact rather than a
+convention. -/
+theorem declassificationEvent_sourceSubject_is_actor (e : DeclassificationEvent) :
+    e.sourceSubject = e.actor.subject.toObjId := rfl
+
+/-- WS-SM SM9.D.13a: **does `later` name `earlier`?** — the causal primitive the
+detector is built from, stated here beside the field it reads so a consumer of
+the record type can check it without the per-core module.
+
+`true` exactly when the later event's recorded snapshot carries the earlier
+event's identity.  Both operands come from the event list, which is what
+`chainCausal_is_history_local` turns into a property of the trail. -/
+def declassificationEventNames (later earlier : DeclassificationEvent) : Bool :=
+  later.predecessorTags.contains earlier.timestamp
 
 /-- V6-H: An audit log is a list of declassification events, ordered by
     timestamp (most recent last). -/
@@ -714,7 +779,8 @@ def auditTimestampWitness (t : Nat) : DeclassificationEvent :=
     authorizationBasis := .policyRule
     timestamp := t
     originatingCore := Concurrency.bootCoreId
-    actor := { subject := SeLe4n.ThreadId.ofNat 0, domain := SecurityDomain.lowest } }
+    actor := { subject := SeLe4n.ThreadId.ofNat 0, domain := SecurityDomain.lowest }
+    predecessorTags := DeclassificationTaint.empty }
 
 /-- WS-SM SM9.A.1a (**the load-bearing negative**): the pre-epoch producer
 **reuses a timestamp after a drain**.

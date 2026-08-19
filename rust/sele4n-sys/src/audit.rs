@@ -46,7 +46,7 @@ use sele4n_types::{CPtr, KernelResult, SyscallId};
 /// Number of `audit_read` sub-operation opcodes.  Mirrors Lean's
 /// `auditReadOpcodeCount`; a divergence would surface as
 /// `InvalidSyscallArgument` on a valid request rather than as a decode bug.
-pub const AUDIT_READ_OPCODE_COUNT: u64 = 27;
+pub const AUDIT_READ_OPCODE_COUNT: u64 = 28;
 
 /// The `audit_read` sub-operations, mirroring Lean's `AuditReadOp`.
 ///
@@ -136,6 +136,18 @@ pub enum AuditReadOpcode {
     /// One chunk of ring slot `index`'s refused receiver;
     /// `InvalidArgument` when the refusal named none.
     RefusalReceiver = 26,
+    /// WS-SM SM9.D.14: the **causality verdict** — `1` when visible entry
+    /// `index` names visible entry `index - 1` as its predecessor, `0` when it
+    /// does not.
+    ///
+    /// An opaque verdict rather than an export of the recorded predecessor
+    /// tags: those are global declassification identities, and handing them
+    /// out would re-open exactly what the view-local entry indices close.
+    /// Reading it at every index reconstructs Lean's
+    /// `declassificationChainCausal` over the whole view, which is what a
+    /// laundering monitor consumes.  `index == 0` names no predecessor and is
+    /// `InvalidArgument`.
+    ChainNamesPredecessor = 27,
 }
 
 impl AuditReadOpcode {
@@ -186,6 +198,7 @@ impl AuditReadOpcode {
             24 => Some(Self::ActorDomain),
             25 => Some(Self::RefusalReceiverChunks),
             26 => Some(Self::RefusalReceiver),
+            27 => Some(Self::ChainNamesPredecessor),
             _ => None,
         }
     }
@@ -484,10 +497,12 @@ mod tests {
         // receiver, appended after the actor pair.
         assert_eq!(AuditReadOpcode::RefusalReceiverChunks.to_u64(), 25);
         assert_eq!(AuditReadOpcode::RefusalReceiver.to_u64(), 26);
+        // WS-SM SM9.D.14: the causality verdict, appended last.
+        assert_eq!(AuditReadOpcode::ChainNamesPredecessor.to_u64(), 27);
         // Every opcode is below the count, and the count is the first value the
         // kernel refuses.
         assert_eq!(
-            AuditReadOpcode::RefusalReceiver.to_u64() + 1,
+            AuditReadOpcode::ChainNamesPredecessor.to_u64() + 1,
             AUDIT_READ_OPCODE_COUNT
         );
     }

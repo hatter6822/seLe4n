@@ -30,6 +30,11 @@ import SeLe4n.Kernel.InformationFlow.AuditRecord
 -- `RefusalRecord.lean` names `KernelError`, which is why that inductive now
 -- lives in the import-free leaf imported on the next line rather than here.
 import SeLe4n.Kernel.InformationFlow.RefusalRecord
+-- WS-SM SM9.D.1: the bounded declassification taint — the payload of the
+-- `declassificationTaint` side table mounted below, and (via `AuditRecord`) of
+-- the per-event `predecessorTags` snapshot.  A leaf importing only `Prelude`,
+-- so mounting it costs the state layer no closure at all.
+import SeLe4n.Kernel.InformationFlow.Taint
 
 namespace SeLe4n.Model
 
@@ -1015,6 +1020,51 @@ structure SystemState where
       (`refusalLedger_records_gate_unsound`). -/
   declassificationRefusals : SeLe4n.Kernel.RefusalLedger := SeLe4n.Kernel.RefusalLedger.initial
 
+  /-- WS-SM SM9.D.2: the **declassification taint side table** — for each
+      object, the identities of the authorized downgrades whose released content
+      reached it.
+
+      **Algebra**: `ObjId → DeclassificationTaint`, a bounded set of SM9.A.1a
+      global timestamps with a saturating top.  A *side table* rather than a
+      field on each of the seven object kinds, for the audit trail's own reason:
+      provenance is not part of an object's well-formedness, and adding it to
+      `KernelObject` would put it in the frozen mirror, in every object literal
+      and in `projectKernelObject`'s redaction analysis, none of which have
+      anything to say about it.
+
+      **Lifecycle**: empty at boot; written **only** by
+      `InformationFlow.applySyscallTaint` at the per-core syscall entry
+      (`API.syscallEntryChecked`), which is the SM7.F.5 seam one step later —
+      the plan computes the content-flow edges from the pre-state and the
+      decoded syscall, and the origination edges from the audit trail's own
+      diff, so a new declassifying syscall originates tags without a new
+      planner.  `storeObject` frames it
+      (`storeObject_declassificationTaint_eq`), which is what makes that single
+      writer a checkable fact rather than a reading of the call graph.
+
+      **Capacity**: none is owed.  Each entry is bounded by its **type**
+      (`DeclassificationTaint.tags_bounded`), so no writer carries a capacity
+      obligation and no `proofLayerInvariantBundle` conjunct reads the field;
+      overflow **saturates upward** rather than evicting, because for a detector
+      the safe direction is over-approximation
+      (`taintSaturate_over_approximates`).  The table itself is a **total
+      function** on `ObjId` rather than an `RHTable`, because `RHTable`'s
+      lookup-after-insert lemmas take `invExt` as a hypothesis and carrying that
+      would reintroduce exactly the seventeenth conjunct and the per-writer
+      obligation the type-level bound exists to avoid — the same representation
+      choice, for the same recorded reason, as `Machine.Memory` and
+      `RegisterFile.gpr`.
+
+      **Information flow**: outside the IF projection surface, like the trail,
+      the epoch and the refusal ledger
+      (`declassificationTaint_write_preserves_projection`).  It is also
+      **unreadable**: no syscall exports it, which is why the §3.7 reader
+      inventory records that it owes no observational-equivalence clause *yet*
+      and what a future reader would owe.  What a monitor sees of it is the
+      per-event snapshot `DeclassificationEvent.predecessorTags`, which is
+      dominating-reader-only for the same reason the epoch is. -/
+  declassificationTaint : SeLe4n.Kernel.TaintTable := SeLe4n.Kernel.TaintTable.empty
+
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
 
@@ -1101,6 +1151,11 @@ instance : Inhabited SystemState where
     -- refusal ledger is the empty ring with zero counters.  Explicit listing
     -- pins `default_declassificationRefusals`.
     declassificationRefusals := SeLe4n.Kernel.RefusalLedger.initial
+    -- WS-SM SM9.D.2: no object carries provenance at boot.  Explicit listing
+    -- pins `default_declassificationTaint`, which is the witness the taint
+    -- table starts empty rather than merely defaulting to whatever `{}` means
+    -- for an `RHTable`.
+    declassificationTaint := SeLe4n.Kernel.TaintTable.empty
   }
 
 /-- X2-B/H-2: Checked domain schedule setter — validates that all entries have
@@ -1349,6 +1404,12 @@ the suite's "no attempts" assertions read, without unfolding `initial`. -/
       (default : SystemState).declassificationRefusals.droppedCount.val = 0 ∧
       (default : SystemState).declassificationRefusals.version = 0 :=
   ⟨rfl, rfl, rfl⟩
+
+/-- WS-SM SM9.D.2: **no object carries declassification provenance at boot** —
+the witness the taint side table starts empty, and the base case of every
+propagation result. -/
+@[simp] theorem default_declassificationTaint :
+    (default : SystemState).declassificationTaint = SeLe4n.Kernel.TaintTable.empty := rfl
 
 /-- WS-SM SM8.C.8: boot witness for the 16th `proofLayerInvariantBundle`
 conjunct — the empty trail is within capacity. -/
@@ -2417,6 +2478,26 @@ theorem storeObject_declassificationRefusals_eq
     (pair : Unit × SystemState)
     (hStore : storeObject id obj st = .ok pair) :
     pair.2.declassificationRefusals = st.declassificationRefusals := by
+  unfold storeObject at hStore; cases hStore; rfl
+
+/-- WS-SM SM9.D.2: **an object write does not touch the taint side table.**
+
+The frame that makes `applySyscallTaint` the table's only writer a checkable
+fact: every kernel transition commits through `storeObject`, so no transition
+can move an object's provenance as a side effect of moving the object.
+
+Deliberately a *frame* and not a clear.  Ordinary object writes are exactly
+where propagation records taint — a blanket clear-on-store would erase what
+SM9.D.8-.D.11 exist to record — so the one place a store must *forget*
+provenance is a retype, which replaces the object at the same id and therefore
+clears explicitly (`retypeClearsTaint`). -/
+theorem storeObject_declassificationTaint_eq
+    (st : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (pair : Unit × SystemState)
+    (hStore : storeObject id obj st = .ok pair) :
+    pair.2.declassificationTaint = st.declassificationTaint := by
   unfold storeObject at hStore; cases hStore; rfl
 
 theorem storeObject_objects_eq

@@ -1073,6 +1073,23 @@ theorem onCore_declassificationRefusals (ctx : LabelingContext) (L : SecurityLab
       = ObservableState.onCore ctx c L s :=
   onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
+/-- SM9.D.6: the mounted declassification **taint side table** is invisible on
+every core.
+
+The read-set half of `declassificationTaint_write_preserves_projection`.  Both
+halves are needed and neither implies the other: being outside the projection
+says the entry seam's propagation write moves no observer's view, and being
+outside the per-core read set says the same on a core other than the one the
+propagating syscall executed on — which is the statement the cross-core
+non-interference inventory consumes for the content-moving arms, every one of
+which can run on any core. -/
+theorem onCore_declassificationTaint (ctx : LabelingContext) (L : SecurityLabel)
+    (s : SystemState) (c : CoreId)
+    (v : SeLe4n.Kernel.TaintTable) :
+    ObservableState.onCore ctx c L { s with declassificationTaint := v }
+      = ObservableState.onCore ctx c L s :=
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
 /-- SM8.A.4: the pre-SMP scalar TLB view (the 9th `proofLayerInvariantBundle`
 conjunct's subject) is invisible on every core, completing the sweep over the
 memory-subsystem state the SM7 phases mounted. -/

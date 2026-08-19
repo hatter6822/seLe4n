@@ -202,6 +202,7 @@ private def emptyFrozenState : FrozenSystemState :=
     -- a compile error here rather than a snapshot reporting a system in
     -- which no declassification was ever attempted.
     declassificationRefusals := SeLe4n.Kernel.RefusalLedger.initial
+    declassificationTaint := SeLe4n.Kernel.TaintTable.empty
     -- WS-SM SM7.D.1: the per-core instruction caches are a required frozen
     -- field (no default), so a silent drop is a compile error here.
     perCoreICache :=

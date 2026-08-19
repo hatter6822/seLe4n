@@ -2328,7 +2328,10 @@ run_negative_check "INVARIANT" rg -n 'declassifyStoreOnCore|authorizeDeclassific
 run_check "INVARIANT" rg -n 'declassifyObjectFromCore \(liftLegacyContext ctx\)' SeLe4n/Kernel/API.lean
 # SM8.C §11/§12: scope witnesses and run-level completeness.
 run_check "INVARIANT" rg -n '^theorem recordDeclassification_admits_ill_formed' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassificationChainLinked_is_syntactic' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# (SM8.C's `declassificationChainLinked_is_syntactic` was retired by SM9.D,
+# which makes it genuinely false; its successor is anchored — with the
+# retirement negative — in the SM9.D block below.)
+run_check "INVARIANT" rg -n '^theorem declassificationChainLinked_is_causal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^theorem declassificationSubjectDomain_is_core_selected' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_refusal_has_no_post_state' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^def declassifyRun' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
@@ -3269,8 +3272,8 @@ run_check "INVARIANT" rg -n '^theorem refusalLedger_records_gate_unsound' SeLe4n
 run_check "INVARIANT" rg -n '^theorem refusalRead_requires_monitor_at_entry' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 # The ABI mirror, both sides: 12 trail opcodes + 9 refusal opcodes + WS-SM
 # SM9.C.1's 4 actor opcodes = 25.
-run_check "INVARIANT" rg -n '^def auditReadOpcodeCount : Nat := 27' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n 'AUDIT_READ_OPCODE_COUNT: u64 = 27' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n '^def auditReadOpcodeCount : Nat := 28' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n 'AUDIT_READ_OPCODE_COUNT: u64 = 28' rust/sele4n-sys/src/audit.rs
 # WS-SM SM9.C.1: and the count is the DECODER's boundary on the Rust side, not
 # a restatement of the enum's own last variant — which is what let this mirror
 # sit at 21 while Lean moved to 25, invisible to every Rust test.
@@ -3347,7 +3350,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines' tests/SmpInfo
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=34 opcodes=27 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=34 opcodes=28 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification
@@ -3569,6 +3572,183 @@ run_check "INVARIANT" rg -n 'NEGATIVE: a wrong-kind target no longer reports the
 run_check "INVARIANT" rg -n 'an absent target answers objectNotFound, policy-blind' tests/SmpInformationFlowSuite.lean
 # The gate lives in the transition, ahead of the plan — pin the match order.
 run_check "INVARIANT" rg -n 'match st.getNotification\? notificationId with' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+
+# ============================================================================
+# WS-SM SM9.D — causal declassification provenance
+# (plan SMP_DECLASSIFICATION_COMPLETION_PLAN.md §5 SM9.D.1 … SM9.D.18).
+# ============================================================================
+# SM8's laundering detector was SYNTACTIC: it matched domains, so it fired on
+# causally unrelated hops and — scoped to declassification *edges* — missed the
+# real chain, in which an ORDINARY delivery moves the content between two
+# downgrades.  SM9.D replaces domain matching with recorded provenance.
+
+# SM9.D.1: the taint value, in a PRODUCTION leaf below `AuditRecord.lean` (the
+# audit event carries one, and that module sits below `Model/State.lean`).
+run_check "INVARIANT" rg -n '^structure DeclassificationTaint where' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^def maxTaintTags : Nat := 8' SeLe4n/Kernel/InformationFlow/Taint.lean
+# The bound is a REFINEMENT FIELD, so it holds of every value rather than only
+# of recorded ones — which is why there is no seventeenth
+# `proofLayerInvariantBundle` conjunct (the shape SM9.B's ledger established).
+run_check "INVARIANT" rg -n 'tags_bounded : tags.length ≤ maxTaintTags' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem taint_bounded_structurally' SeLe4n/Kernel/InformationFlow/Taint.lean
+# Overflow saturates UPWARD: for a detector, over-approximation is the safe
+# direction — losing a real link is what must not happen.
+run_check "INVARIANT" rg -n '^theorem taintSaturate_over_approximates' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem join_saturated_covers_all' SeLe4n/Kernel/InformationFlow/Taint.lean
+# The side table is a TOTAL FUNCTION, not an `RHTable`: a hash table's
+# lookup-after-insert law needs `invExt`, which would force the bundle conjunct
+# this design avoids.
+run_check "INVARIANT" rg -n '^abbrev TaintTable := SeLe4n.ObjId → DeclassificationTaint' SeLe4n/Kernel/InformationFlow/Taint.lean
+
+# SM9.D.2 – SM9.D.6: the §6 `SystemState` mount checklist, run for the fourth
+# time.  The frozen field is REQUIRED (a silent drop is a compile error) and the
+# bundle carriage is unconditional (v0.32.151: three conjuncts do not transport
+# by `rfl` across an arbitrary field write).
+run_check "INVARIANT" rg -n 'declassificationTaint : SeLe4n.Kernel.TaintTable' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n 'declassificationTaint : SeLe4n.Kernel.TaintTable' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem freeze_preserves_declassificationTaint' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_declassificationTaint_eq' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatform_declassificationTaint_eq' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n 'declassificationTaint :$' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setDeclassificationTaint' SeLe4n/Kernel/Architecture/Invariant.lean
+# Information flow: the table is OUTSIDE `ObservableState`.  Provenance names
+# `(object, declassification identity)` pairs, so projecting it would be a
+# content channel out of exactly the boundary the audit polices.
+run_check "INVARIANT" rg -n '^theorem declassificationTaint_write_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem onCore_declassificationTaint' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+
+# SM9.D.13a: the recorded snapshot on the audit event.  UNDEFAULTED, because a
+# default would attribute an empty history to every event while compiling
+# everywhere; and the tags are GLOBAL identities, so the field is read by the
+# detector and never exported through SM9.A's chunk protocol.
+run_check "INVARIANT" rg -n 'predecessorTags : DeclassificationTaint' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^def declassificationEventNames' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^abbrev declassificationActorTaint' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^abbrev declassifyStoreEventWithTags' SeLe4n/Kernel/InformationFlow/Declassification.lean
+# The multi-hop recorder threads the snapshot, so hop 2 names hop 1 within one
+# transition — the property `recordDeclassifiedHops_two` now carries.
+run_check "INVARIANT" rg -n '^def recordDeclassifiedHopsFrom' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n 'declassificationEventNames e₂ e₁ = true' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+
+# SM9.D.7 – SM9.D.11: the propagation sites, as DATA with a total
+# classification.  Totality over `SyscallId` is necessary and not sufficient —
+# a new syscall must add an arm, but the arm can be wrong — so the
+# COMPLETENESS of the classification is a Tier-1 reach gate over the call
+# graph, not a theorem.
+run_check "INVARIANT" rg -n '^inductive ContentFlowClass where' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def contentFlowClass : SyscallId → ContentFlowClass' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem contentFlowClass_total' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^DECLARED_TAINT_WRITERS = ' scripts/check_content_flow_coverage.py
+run_check "INVARIANT" rg -n '^CONTENT_CHANNELS = ' scripts/check_content_flow_coverage.py
+run_check "BUILD" rg -n 'check_content_flow_coverage.py' scripts/test_tier1_build.sh
+run_check "BUILD" rg -n 'check_content_flow_coverage.py. --self-test' scripts/test_tier1_build.sh
+# Taint follows CONTENT, so it propagates through ordinary IPC delivery — the
+# hop the SM8 edge-scoped design could not see.
+run_check "INVARIANT" rg -n '^theorem taintPropagation_send_to_endpoint' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_send_to_receiver' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_receive_from_endpoint' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_reply_to_caller' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_signal_to_notification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_wait_from_notification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintOrigination_target' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintOrigination_actor' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# The diff recovery is characterised in both directions: a pure append IS the
+# appended suffix, and a commit that advanced the epoch (the drain) originates
+# nothing — so "recovered from the trail's own diff" is checked, not read off
+# `drop`'s behaviour on a shortened list.
+run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_append' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_drained' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# SM9.D.12: the retype CLEARS rather than frames — it commits `storeObject` at
+# the same id, so a framed retype would leave a destroyed object's tags on its
+# replacement.  The two imprecisions must not be conflated.
+run_check "INVARIANT" rg -n '^theorem retypeClearsTaint' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem retypedObject_taint_empty' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem staleTaint_is_not_saturation' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# The one live write site: the per-core entry, applied to the state the
+# dispatch committed.  The boot-pinned `syscallEntry` is deliberately unfilled.
+run_check "INVARIANT" rg -n 'applySyscallTaint' SeLe4n/Kernel/API.lean
+
+# SM9.D.14 – SM9.D.16: the detector.  `declassificationChainLinked` keeps its
+# name and gains the causal conjunct; the TABLE-derived alternative is retained
+# as a REFUTED design, since re-evaluating a historical event against the
+# current table invents links a retype has cleared and loses links acquired
+# after the fact.
+run_check "INVARIANT" rg -n '^def declassificationChainCausal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def chainCausalFromTable' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainCausal_is_history_local' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainCausal_not_table_derived' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainCausal_survives_subject_retype' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainLaunders_sound_under_causal_provenance' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem causalChain_residual_over_approximation' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationChainLinked_is_causal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainLaunders_residual_is_saturation' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# The verdict a monitor reads — one OPAQUE bit per adjacent pair, never the
+# recorded tags (global declassification identities, which the view-local entry
+# indices exist to hide).  Without it the causal detector would be an
+# improvement only the model can see.
+run_check "INVARIANT" rg -n 'chainNamesPredecessor \(index : Nat\)' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainVerdict_ok' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainVerdict_index_zero_refused' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainVerdict_view_local' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainVerdict_reconstructs_causal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n 'ChainNamesPredecessor = 27' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n 'the causality verdict reaches a monitor' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the same domain-composing pair with no snapshot reads 0' tests/SmpInformationFlowSuite.lean
+run_check "TRACE" rg -n 'causality verdict: monitorReads=' tests/fixtures/smp_information_flow.expected
+# SM9.D.11: the capability-transfer sink — a CNode is shared, so tagging the
+# receiver's TCB alone loses the link where the content becomes reachable by a
+# third subject.
+run_check "INVARIANT" rg -n '^def capTransferTaintSinks' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_send_to_receiver_cspace' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# The rule inventory records the NEW claim in place of the retired one; the
+# count is unchanged, so the replacement is 1:1 rather than an addition.
+run_check "INVARIANT" rg -n 'chainLinkageIsCausal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationRules_count : DeclassificationRuleId.all.length = 12' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# The RETIRED claim must not come back: SM8.C's `…_is_syntactic` asserted
+# exactly what SM9.D falsifies, and its rule id with it.
+run_negative_check "INVARIANT" rg -n 'declassificationChainLinked_is_syntactic' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_negative_check "INVARIANT" rg -n 'chainLinkageIsSyntactic' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+
+# SM9.D.17: the SERIALIZATION SUBJECT.  The taint table is keyed by `ObjId`, so
+# — exactly as for `SystemState.objects`, whose per-key writes ride the
+# object's own lock and never `objStoreLock` — the subject is the lock the
+# transition already holds on the key.  Putting the level-0 singleton on the
+# eight content-moving syscalls would serialise every IPC in the system against
+# every other and blow the SM5.J tick budget the IPC fixtures pin, so the
+# absence of that lock on the hot path is pinned NEGATIVELY.
+run_check "INVARIANT" rg -n '^def taintWriteKeys' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_frame_off_writeKeys' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintWriteKeys_disjoint_updates_independent' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintWriteKeys_of_no_events' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# Pinned positively at the send's base list, whose last member is the endpoint:
+# appending the level-0 singleton here is exactly the regression, and it breaks
+# this anchor.  (`stateLevelLock` still appears in the file — on the three
+# footprints that write the audit TRAIL, whose `List` append does not
+# decompose by key — so a file-wide negative would be wrong.)
+run_check "INVARIANT" rg -n '^       \(endpointLock endpointObjId, .write\)\]\)$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem taintWriteKeys_inert' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# SM9.D.18: the propagation is framed to one field and visible to no observer,
+# so every existing invariant argument and every NI result stands unchanged.
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_frame' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_projection' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_confinedToCores_nil' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_onCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+
+# SM9.D tests: the eight runtime groups, their load-bearing negatives, the
+# surface anchors and the golden-fixture lines.
+run_check "INVARIANT" rg -n 'NEGATIVE: a ninth identity saturates, and the top reports one nobody held' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a domain-only detector fires on a causally unrelated pair' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: an object-adjacency detector MISSES the real chain' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'an ORDINARY delivery — no declassification edge — carried it to the next subject' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a framed retype would keep them, and the stale tag is NOT a saturation' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the content-moving footprints do NOT declare the coarse table lock' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a disjoint plan leaves this plan.s keys literally unchanged' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'SCOPE: the residual over-approximation is saturation, and only that' tests/SmpInformationFlowSuite.lean
+run_check "TRACE" rg -n 'taint classification: moving=' tests/fixtures/smp_information_flow.expected
+run_check "TRACE" rg -n 'taint propagation: liveReceiverTagged=' tests/fixtures/smp_information_flow.expected
+run_check "TRACE" rg -n 'causal chain: causal=' tests/fixtures/smp_information_flow.expected
+run_check "TRACE" rg -n 'taint saturation: full=8' tests/fixtures/smp_information_flow.expected
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
 run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean

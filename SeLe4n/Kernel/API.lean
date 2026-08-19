@@ -44,6 +44,7 @@ import SeLe4n.Kernel.InformationFlow.AuditRead
 -- transition module rather than the staged `NonInterferenceCrossCore` that
 -- carries its declassification-relative non-interference on top.
 import SeLe4n.Kernel.InformationFlow.DeclassifiedSignal
+import SeLe4n.Kernel.InformationFlow.TaintPropagation
 
 import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Kernel.Architecture.RegisterDecode
@@ -2643,9 +2644,39 @@ def syscallEntryChecked (ctx : LabelingContext)
           -- established by mapping.  Purely a TLB-model event
           -- (`tlbFillIpcBufferOnCore_frame`), and inert when the syscall
           -- carried no overflow registers.
-          dispatchSyscallChecked ctx decoded tid
-            (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-              st executingCore tid decoded.overflowCount)
+          -- WS-SM SM9.D.7: **the taint propagation seam.**  The plan is
+          -- resolved from the state the dispatch will run on and the decoded
+          -- syscall — never from what the transition happened to do — and
+          -- applied to the committed post-state, in the same step.  On the
+          -- error arm nothing is applied, because nothing moved.
+          --
+          -- One writer, here rather than at the arms, for the SM7.F.5 reason
+          -- one layer on: this is where a projection-invisible model field is
+          -- already maintained around the dispatch, and keeping the write out
+          -- of the transitions leaves every IPC frame, invariant and
+          -- non-interference result untouched
+          -- (`applySyscallTaint_frame`, `storeObject_declassificationTaint_eq`).
+          -- The classification `contentFlowClass` is total on `SyscallId`, so a
+          -- new syscall is a missing case at elaboration; that its *callees* do
+          -- not move content the declared edges miss is checked by reach, in
+          -- `scripts/check_content_flow_coverage.py`.
+          --
+          -- Written without intermediate `let`s so the term the downstream
+          -- proofs case on is a bare `match` on the dispatch: a `have`-bound
+          -- state blocks `split`, and three of this PR's carriage proofs are
+          -- exactly that case analysis.
+          match dispatchSyscallChecked ctx decoded tid
+              (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
+                st executingCore tid decoded.overflowCount) with
+          | .error e => .error e
+          | .ok ((), stPost) =>
+              .ok ((), applySyscallTaint
+                (syscallTaintPlan
+                  (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
+                    st executingCore tid decoded.overflowCount) tid decoded)
+                (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
+                  st executingCore tid decoded.overflowCount)
+                stPost)
 
 -- ============================================================================
 -- U5-A/U5-D: Dispatch structural equivalence theorems

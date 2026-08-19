@@ -43,4 +43,25 @@ run_check "BUILD" lake build SeLe4n.Platform.Staged
 run_check "BUILD" "${SCRIPT_DIR}/check_live_arm_per_core_routing.py" --self-test
 run_check "BUILD" "${SCRIPT_DIR}/check_live_arm_per_core_routing.py"
 
+# WS-SM SM9.D.7: no live syscall arm may move content its taint classification
+# does not admit.  `contentFlowClass` is total on `SyscallId`, which makes a new
+# syscall a missing case at elaboration — necessary, and not sufficient: the
+# propagation sites are *sub-transitions*, and no type enumerates those.  So the
+# classification's completeness is established by reach, exactly as the
+# per-core routing gate above establishes its own.
+#
+# Three properties: an inert arm reaches no content write, a content-moving arm
+# reaches one (or delivers through the WS-RA return frame), and the constants
+# that write `SystemState.declassificationTaint` are exactly the declared
+# propagation surface — the machine-checked form of SM9.D.12's "a frame for
+# every non-content transition".
+#
+# Tier 1 for the same reason as its sibling: detection runs `lake env lean` over
+# a probe that imports both roots, so it needs the builds above.  The self-test
+# runs first, planting a content channel every inert scheduling arm writes and
+# requiring the gate to find it — a gate whose write detector has stopped
+# detecting would otherwise report PASS on everything.
+run_check "BUILD" "${SCRIPT_DIR}/check_content_flow_coverage.py" --self-test
+run_check "BUILD" "${SCRIPT_DIR}/check_content_flow_coverage.py"
+
 finalize_report

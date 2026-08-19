@@ -1354,7 +1354,8 @@ def runInformationFlowChecks : IO Unit := do
     { srcDomain := ⟨2⟩, dstDomain := ⟨0⟩, targetObject := ⟨902⟩,
       authorizationBasis := .policyRule,
       timestamp := 0, originatingCore := bootCoreId,
-      actor := { subject := ⟨1⟩, domain := ⟨2⟩ } }
+      actor := { subject := ⟨1⟩, domain := ⟨2⟩ },
+      predecessorTags := SeLe4n.Kernel.DeclassificationTaint.empty }
   let emptyLog : SeLe4n.Kernel.DeclassificationAuditLog := []
   let log1 := SeLe4n.Kernel.recordDeclassification emptyLog event
   expect "recording to empty log yields length 1"
@@ -1365,7 +1366,8 @@ def runInformationFlowChecks : IO Unit := do
     { srcDomain := ⟨3⟩, dstDomain := ⟨1⟩, targetObject := ⟨903⟩,
       authorizationBasis := .integratorOverride "system-integrator-override",
       timestamp := 1, originatingCore := bootCoreId,
-      actor := { subject := ⟨2⟩, domain := ⟨3⟩ } }
+      actor := { subject := ⟨2⟩, domain := ⟨3⟩ },
+      predecessorTags := SeLe4n.Kernel.DeclassificationTaint.empty }
   let log2 := SeLe4n.Kernel.recordDeclassification log1 event2
   expect "second record yields length 2"
     (log2.length = 2)

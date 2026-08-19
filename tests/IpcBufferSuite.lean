@@ -258,6 +258,7 @@ private def emptyFrozenState : FrozenSystemState := {
   -- a compile error here rather than a snapshot reporting a system in
   -- which no declassification was ever attempted.
   declassificationRefusals := SeLe4n.Kernel.RefusalLedger.initial
+  declassificationTaint := SeLe4n.Kernel.TaintTable.empty
   -- WS-SM SM7.D.1: required frozen field (no default).
   perCoreICache :=
     _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty

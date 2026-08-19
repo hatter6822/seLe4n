@@ -476,6 +476,16 @@ structure FrozenSystemState where
       is the entire purpose of the ledger.  Complemented by the
       `freeze_preserves_declassificationRefusals := rfl` value-level guard. -/
   declassificationRefusals : SeLe4n.Kernel.RefusalLedger
+  /-- WS-SM SM9.D.3: the declassification taint side table, transferred from
+      `SystemState.declassificationTaint` during freeze.  **Required** (no
+      default), like the trail, its epoch and the refusal ledger, and for a
+      reason the others do not have: a snapshot that dropped provenance would
+      report a system in which every recorded downgrade is causally
+      unconnected — the exact shape a laundering chain is *not*, so the
+      analysis a frozen snapshot exists to support would come back clean on a
+      system that is not.  Complemented by the
+      `freeze_preserves_declassificationTaint := rfl` value-level guard. -/
+  declassificationTaint : SeLe4n.Kernel.TaintTable
 
 -- ============================================================================
 -- Q5-C: Freeze Functions
@@ -622,7 +632,10 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     -- WS-SM SM9.B.4: forward the refusal ledger unchanged, so a frozen
     -- snapshot distinguishes "no attempts" from "attempts, all refused"
     -- exactly as the running system does.
-    declassificationRefusals := st.declassificationRefusals }
+    declassificationRefusals := st.declassificationRefusals
+    -- WS-SM SM9.D.3: forward the taint side table unchanged, so a frozen
+    -- snapshot supports the same causal analysis the running system does.
+    declassificationTaint := st.declassificationTaint }
 
 -- ============================================================================
 -- Q5-C Proofs
@@ -692,6 +705,13 @@ frozen `declassificationRefusals` is identical to the pre-freeze
 the required frozen field. -/
 theorem freeze_preserves_declassificationRefusals (ist : IntermediateState) :
     (freeze ist).declassificationRefusals = ist.state.declassificationRefusals := rfl
+
+/-- WS-SM SM9.D.3: `freeze` preserves the declassification taint side table —
+the frozen `declassificationTaint` is identical to the pre-freeze
+`SystemState.declassificationTaint`.  The value-level guard complementing the
+required frozen field. -/
+theorem freeze_preserves_declassificationTaint (ist : IntermediateState) :
+    (freeze ist).declassificationTaint = ist.state.declassificationTaint := rfl
 
 /-- Q5-C: `freeze` preserves the scheduler current thread. -/
 theorem freeze_preserves_current (ist : IntermediateState) :

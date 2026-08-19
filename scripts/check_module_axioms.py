@@ -81,6 +81,10 @@ SMP_INFORMATION_FLOW = [
     "SeLe4n.Kernel.InformationFlow.RefusalRecord",
     # WS-SM SM9.C: the data-carrying declassification.  Same reason again.
     "SeLe4n.Kernel.InformationFlow.DeclassifiedSignal",
+    # WS-SM SM9.D: causal provenance — the taint value and its algebra, and the
+    # propagation the per-core entry runs.  Same reason again.
+    "SeLe4n.Kernel.InformationFlow.Taint",
+    "SeLe4n.Kernel.InformationFlow.TaintPropagation",
 ]
 
 PROBE_TEMPLATE = """@IMPORTS@

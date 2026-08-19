@@ -1819,11 +1819,12 @@ theorem syscallEntryChecked_preserves_projection (ctx : LabelingContext) (observ
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
     (st st' : SystemState)
     (hOk : syscallEntryChecked ctx layout executingCore regCount st = .ok ((), st'))
-    (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId),
+    (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+        (stPost : SystemState),
         dispatchSyscallChecked ctx decoded tid
             (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
-              decoded.overflowCount) = .ok ((), st') →
-        projectState ctx observer st'
+              decoded.overflowCount) = .ok ((), stPost) →
+        projectState ctx observer stPost
           = projectState ctx observer
               (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
                 decoded.overflowCount)) :
@@ -1841,12 +1842,64 @@ theorem syscallEntryChecked_preserves_projection (ctx : LabelingContext) (observ
         split at hOk
         · exact absurd hOk (by simp)
         · next decoded _ =>
-          rw [hDispatchProj decoded tid hOk]
-          obtain ⟨t, hEq⟩ :=
-            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st executingCore tid
-              decoded.overflowCount
-          rw [hEq]
-          exact perCoreTlb_write_preserves_projection ctx observer st t
+          -- WS-SM SM9.D.7: the entry now applies the taint plan to the state
+          -- the dispatch committed.  The write is projection-invisible
+          -- (`applySyscallTaint_preserves_projection`), so the argument is the
+          -- pre-SM9.D one with one rewrite in front of it.
+          split at hOk
+          · exact absurd hOk (by simp)
+          · next stPost hDisp =>
+            simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hOk
+            rw [← hOk, applySyscallTaint_preserves_projection, hDispatchProj decoded tid stPost hDisp]
+            obtain ⟨t, hEq⟩ :=
+              SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st executingCore tid
+                decoded.overflowCount
+            rw [hEq]
+            exact perCoreTlb_write_preserves_projection ctx observer st t
+
+-- ============================================================================
+-- §4b  WS-SM SM9.D.18 — the taint propagation carries the non-interference
+-- ============================================================================
+
+/-- WS-SM SM9.D.18: **the propagation writes no core's observable slots.**
+
+`applySyscallTaint` changes exactly one `SystemState` field, and that field is
+in none of the six per-core components `observableSlotsConfinedToCores` reads —
+no run queue, no current slot, no domain state, no register bank.  So it is
+confined to the **empty** set of cores, which is the sharpest statement
+available and the one the cross-core inventory composes with: a content-moving
+arm's write set is exactly the transition's, unchanged by the propagation the
+entry runs on top of it. -/
+theorem applySyscallTaint_confinedToCores_nil (plan : TaintPlan) (pre post : SystemState) :
+    observableSlotsConfinedToCores post (applySyscallTaint plan pre post) [] :=
+  ⟨fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl,
+   fun _ _ => rfl⟩
+
+/-- WS-SM SM9.D.18 / SM9.D.6: **the propagation is invisible on every core.**
+
+The per-core companion of `applySyscallTaint_preserves_projection`.  Both halves
+are needed and neither implies the other: being outside the projection says the
+write moves no observer's global view, and being outside the per-core read set
+says the same on a core other than the one the propagating syscall executed on —
+which is the statement the cross-core non-interference inventory consumes, since
+every content-moving arm can run on any core. -/
+theorem applySyscallTaint_preserves_onCore (ctx : LabelingContext) (L : SecurityLabel)
+    (c : CoreId) (plan : TaintPlan) (pre post : SystemState) :
+    ObservableState.onCore ctx c L (applySyscallTaint plan pre post)
+      = ObservableState.onCore ctx c L post :=
+  onCore_declassificationTaint ctx L post c _
+
+/-- WS-SM SM9.D.18: **the whole invariant bundle across the propagation.**
+
+Unconditional, because no `proofLayerInvariantBundle` conjunct reads the taint
+table — each entry is bounded by its own type, so a writer owes nothing to the
+sixteen conjuncts that are already there.  This is the carriage the mount
+checklist's step 8 requires of *every* mounted field, and it is what a
+whole-entry bundle-preservation proof for the live path composes with. -/
+theorem applySyscallTaint_preserves_proofLayerInvariantBundle (plan : TaintPlan)
+    (pre post : SystemState) (h : Architecture.proofLayerInvariantBundle post) :
+    Architecture.proofLayerInvariantBundle (applySyscallTaint plan pre post) :=
+  Architecture.proofLayerInvariantBundle_setDeclassificationTaint post _ h
 
 /-- SM8.D.5: the state the guarded entry is actually run in — the pre-state
 after the 2PL growing phase.  Named because every §5 hypothesis is stated
@@ -2040,12 +2093,13 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore (ctx : LabelingConte
     (s st' : SystemState) (hInv : s.objects.invExt) (hOutInv : st'.objects.invExt)
     (hOk : syscallEntryChecked ctx layout executingCore regCount
         (lockSetAcquiredState S lockCore s) = .ok ((), st'))
-    (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId),
+    (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+        (stPost : SystemState),
         dispatchSyscallChecked ctx decoded tid
             (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
               (lockSetAcquiredState S lockCore s) executingCore tid decoded.overflowCount)
-              = .ok ((), st') →
-        projectState ctx observer st'
+              = .ok ((), stPost) →
+        projectState ctx observer stPost
           = projectState ctx observer
               (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
                 (lockSetAcquiredState S lockCore s) executingCore tid decoded.overflowCount))
@@ -2186,12 +2240,13 @@ theorem secureInformationFlow_underFineLocks (ctx : LabelingContext) (L : Securi
     (s st' : SystemState) (hInv : s.objects.invExt) (hOutInv : st'.objects.invExt)
     (hOk : syscallEntryChecked ctx layout executingCore regCount
         (lockSetAcquiredState S lockCore s) = .ok ((), st'))
-    (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId),
+    (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+        (stPost : SystemState),
         dispatchSyscallChecked ctx decoded tid
             (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
               (lockSetAcquiredState S lockCore s) executingCore tid decoded.overflowCount)
-              = .ok ((), st') →
-        projectState ctx (IfObserver.ofLabel L) st'
+              = .ok ((), stPost) →
+        projectState ctx (IfObserver.ofLabel L) stPost
           = projectState ctx (IfObserver.ofLabel L)
               (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
                 (lockSetAcquiredState S lockCore s) executingCore tid decoded.overflowCount))
@@ -2373,15 +2428,31 @@ divergence in either value stops this elaborating.
 Preferred over factoring the shared prefix into one function: that would mean
 reshaping a production entry point to suit a staged module, and it would pin
 less, since a common prefix says nothing about what the entry does with its
-result. -/
+result.
+
+**WS-SM SM9.D.7** — restated, and strictly stronger.  The entry now applies the
+taint plan to the state the dispatch committed, so the equation carries that
+step too: it pins the `tid` and the `decoded` the dispatch runs on **and** the
+plan the propagation runs, all three read off the helper's outputs.  A decode
+normalisation, a new validation step, or a propagation keyed on anything other
+than the entry's own resolution all stop this elaborating. -/
 theorem entryDecode_some_entry_dispatches (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
     (s : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
     (h : entryDecode ctx layout executingCore regCount s = some (tid, decoded)) :
     syscallEntryChecked ctx layout executingCore regCount s
-      = dispatchSyscallChecked ctx decoded tid
-          (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore s executingCore tid
-            decoded.overflowCount) := by
+      = (match dispatchSyscallChecked ctx decoded tid
+              (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore s executingCore tid
+                decoded.overflowCount) with
+         | .error e => .error e
+         | .ok ((), stPost) =>
+             .ok ((), applySyscallTaint
+               (syscallTaintPlan
+                 (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore s executingCore tid
+                   decoded.overflowCount) tid decoded)
+               (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore s executingCore tid
+                 decoded.overflowCount)
+               stPost)) := by
   unfold entryDecode at h
   unfold syscallEntryChecked
   cases hIns : isInsecureDefaultContext ctx with
@@ -2408,7 +2479,8 @@ theorem entryDecode_some_entry_dispatches (ctx : LabelingContext)
           simp only [Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨hTid, hDecoded⟩ := h
           subst hTid; subst hDecoded
-          simp [hRegs, hDec]
+          simp only [hRegs, hDec]
+          rfl
 
 /-- SM8.D.5: the target a capability-addressed syscall names, read the way the
 live `dispatchWithCapChecked` arms read it.

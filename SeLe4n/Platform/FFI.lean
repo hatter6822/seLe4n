@@ -1185,21 +1185,17 @@ caller's `x0`, so the receiver is a pure re-computation — the SM8.D
 assumed. -/
 def refusedSignalReceiver? (st : SystemState) (tid : SeLe4n.ThreadId)
     (capPtr : SeLe4n.CPtr) : Option SeLe4n.ThreadId :=
-  match st.getTcb? tid with
+  -- WS-SM SM9.D.7: the four resolution steps are `syscallOperandCap?`, shared
+  -- with the taint-propagation planner.  They used to be spelled out here; one
+  -- resolver means the seam's re-resolution and the planner's cannot drift
+  -- apart, which matters because both claim to name the object the dispatch
+  -- arm acted on.
+  match syscallOperandCap? st tid capPtr with
   | none => none
-  | some tcb =>
-    match st.getCNode? tcb.cspaceRoot with
-    | none => none
-    | some rootCn =>
-      match resolveCapAddress tcb.cspaceRoot capPtr rootCn.depth st with
-      | .error _ => none
-      | .ok ref =>
-        match SystemState.lookupSlotCap st ref with
-        | none => none
-        | some cap =>
-          match cap.target with
-          | .object nid => declassifiedSignalReceiver? st nid
-          | _ => none
+  | some cap =>
+    match cap.target with
+    | .object nid => declassifiedSignalReceiver? st nid
+    | _ => none
 
 /-- WS-SM SM9.C.1: on the resolution path the dispatch itself took, the seam's
 re-resolution **is** the transition's — both are `declassifiedSignalReceiver?`
@@ -1214,7 +1210,7 @@ theorem refusedSignalReceiver?_resolves (st : SystemState) (tid : SeLe4n.ThreadI
     (hSlot : SystemState.lookupSlotCap st ref = some cap)
     (hTarget : cap.target = .object nid) :
     refusedSignalReceiver? st tid capPtr = declassifiedSignalReceiver? st nid := by
-  simp only [refusedSignalReceiver?, hTcb, hRoot, hRef, hSlot, hTarget]
+  simp only [refusedSignalReceiver?, syscallOperandCap?, hTcb, hRoot, hRef, hSlot, hTarget]
 
 /-- WS-SM SM9.C.1: the ledger record's `refusedReceiver` fill — the re-resolved
 receiver **exactly when** the refusal is the declassifying signal's second hop,

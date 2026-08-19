@@ -3288,6 +3288,154 @@ errors on both paths).  Runtime: §11.9 (722 → 726), the load-bearing negative
 being that the caller's hop-1 verdict is no longer readable off a junk
 operand.
 
+### Layer 3 under SMP — causal declassification provenance (WS-SM SM9.D)
+
+SM8's laundering detector was **syntactic**: `declassificationChainLinked`
+matched domains and increasing timestamps with no data dependency behind it, so
+it fired on causally unrelated hops.  Scoping it to declassification *edges*
+would not have fixed it either — the chain the sub-phase exists to catch is
+*downgrade → **ordinary** delivery → downgrade*, and hop 2's input is related to
+hop 1's target by no declassification edge at all.  Causality follows content,
+so taint propagates through ordinary IPC.
+
+* **The value** (SM9.D.1 / SM9.D.13), `InformationFlow/Taint.lean` — a
+  production leaf importing only `Prelude`, because `AuditRecord.lean` carries a
+  `DeclassificationTaint` and sits below `Model/State.lean`.  The bound is a
+  **refinement field** (`tags_bounded`), so `taint_bounded_structurally` holds
+  of every value rather than only of recorded ones — the shape SM9.B's ledger
+  established, and the reason there is **no seventeenth**
+  `proofLayerInvariantBundle` conjunct and no capacity obligation on any writer.
+  Overflow saturates **upward** (`taintSaturate_over_approximates`): for a
+  detector, losing a real link is the unsafe direction.  Two facts recorded
+  rather than smoothed over — the join is **not** a least upper bound once
+  saturation is in play (the law ships as the disjunctive
+  `covers_join_of_covers` plus `join_saturated_covers_all`, and commutativity /
+  idempotence / associativity hold **up to `taintEquiv`**), and the table is a
+  **total function** `ObjId → DeclassificationTaint` rather than an `RHTable`,
+  because a hash table's lookup-after-insert law needs `invExt` — which would
+  force exactly the bundle conjunct the refinement field avoids.
+
+* **The mount** (SM9.D.2–.D.6).  The §6 checklist run for the fourth time:
+  required frozen field, the `apiInvariantBundle_frozenDirectFull` conjunct, the
+  `OffSchedulerAgrees` clause and all six builders, four boot frames, and the
+  unconditional carriage layer
+  `proofLayerInvariantBundle_setDeclassificationTaint` — owed even with no
+  conjunct of its own, since v0.32.151 established that three conjuncts do not
+  transport by `rfl` across an arbitrary field write.  The table is **outside**
+  `ObservableState` for the reason SM8.C's trail is: provenance names
+  `(object, declassification identity)` pairs, so projecting it would be a
+  content channel out of the boundary the audit polices
+  (`declassificationTaint_write_preserves_projection`,
+  `onCore_declassificationTaint`).
+
+* **Totality is not the completeness argument** (SM9.D.7).
+  `contentFlowClass : SyscallId → ContentFlowClass` is total with no wildcard,
+  so a new syscall is a missing case at elaboration — necessary and **not
+  sufficient**, since the arm can be added and be wrong.  Completeness is a
+  **Tier-1 call-graph reach gate** (`scripts/check_content_flow_coverage.py`)
+  that walks from each live dispatch arm and fails when an `.inert` or
+  `.clearsProvenance` arm reaches an object **content** write, or a
+  `.movesContent` arm reaches none; `--self-test` plants a channel to prove the
+  scan still bites.  Building it found two things worth recording: the first
+  channel list named `Notification.state`, which also holds the waiter queue, so
+  `.tcbSuspend` and `.lifecycleRetype` "reached content" through a queue sweep
+  (the channel is `Notification.pendingBadge`); and `.notificationWait` reaches
+  **no** object content write at all, its badge going to the caller's return
+  register — so the second check admits a `.movesContent` arm whose
+  `syscallReturnShape` is not `.unit`, derived from the ABI rather than waived.
+
+* **One write site, not twelve** (SM9.D.8–.D.11).  The propagation is a single
+  write at the per-core entry (`API.syscallEntryChecked`), applied to the state
+  the dispatch committed and driven by a declared `TaintPlan`.  Every IPC
+  transition is quantified over by roughly 1 900 references, and a field write
+  inside one reopens all of them, while `applySyscallTaint_frame` leaves
+  `authorizeDeclassificationOnCore_frame` and SM8.C's "writes only the trail"
+  rule literally unchanged.  The edges cover sender → endpoint and → rendezvous
+  receiver, receiver ← endpoint and ← blocked sender, replier → the reply
+  object's recorded caller, signaller → notification → resolved receiver
+  (through `declassifiedSignalReceiver?`, the **same** resolver SM9.C's
+  second-hop gate and the SM9.B refusal seam use), and waiter ← notification —
+  not optional, because in the signal-before-wait ordering the tag sits on the
+  notification and the *wait* is what moves the badge.
+  `capTransferTaintSinks` tags the receiver's **CNode**: a CNode is shared, so a
+  second thread rooted at the same CSpace reads what `ipcUnwrapCaps` installed
+  without ever touching the receiver's TCB.
+
+* **The retype clears** (SM9.D.12).  `lifecycleRetype` commits `storeObject` at
+  the same id, so a *framed* retype leaves a destroyed object's tags on its
+  replacement (`retypeClearsTaint`, `retypedObject_taint_empty`, with
+  `staleTaint_is_not_saturation` keeping the residual claim true by exhibiting
+  the two imprecisions as different things).  With the propagation at the entry,
+  the plan's "frames for every non-content transition, ~12 files" is **one**
+  theorem — `applySyscallTaint_inert` covers every inert syscall at once,
+  including ones added later.
+
+* **The detector, and a reader for it** (SM9.D.14–.D.16).
+  `declassificationChainLinked` keeps its name and becomes the conjunction of
+  the syntactic composition it always checked (`declassificationChainComposes`,
+  kept under its own name so the false positive is *exhibited* rather than
+  deleted) and the new `declassificationChainCausal`, which reads the recorded
+  `predecessorTags` snapshots.  The **table**-derived alternative is retained as
+  a refuted design (`chainCausalFromTable`), because re-evaluating a historical
+  event against the *current* table invents links a retype has cleared and loses
+  links acquired after the fact (`chainCausal_is_history_local`,
+  `chainCausal_survives_subject_retype`).
+  `declassificationChainLinked_is_syntactic` is **retired** — SM9.D makes it
+  genuinely false — replaced 1:1 by `declassificationChainLinked_is_causal`,
+  with `DeclassificationRuleId.chainLinkageIsSyntactic → .chainLinkageIsCausal`
+  keeping the rule count at 12.  And the detector is now **reachable**:
+  `AuditReadOp.chainNamesPredecessor` (opcode 27, `auditReadOpcodeCount`
+  27 → **28**, mirrored in `sele4n-sys`) returns one bit — does visible entry
+  `index` name visible entry `index - 1` — so a monitor reading it at every
+  index reconstructs `declassificationChainCausal` over its whole view
+  (`chainVerdict_reconstructs_causal`).  Index `0` is **refused** rather than
+  answered `0`, since a `0` word would be indistinguishable from a genuine
+  "no"; `chainVerdict_view_local` is why it opens no channel — the arm reads two
+  entries the caller already holds and nothing else, in particular not the
+  mutable table the tags were snapshotted from.
+
+* **The serialization subject** (SM9.D.17).  The taint table is keyed by
+  `ObjId`, so — exactly as for `SystemState.objects`, whose per-key writes ride
+  the object's own lock and never `objStoreLock` — the subject is the lock the
+  transition already holds on the key.  `.objStore` is reserved for *structural*
+  table operations, which is why `stateLevelLock` appears in exactly three
+  footprints before this phase, all of them writing the audit **trail**, a
+  `List` whose append genuinely does not decompose by key.  Declaring the
+  level-0 singleton on the eight content-moving syscalls would serialise
+  **every** IPC in the system against every other and would blow the SM5.J tick
+  budget the `smp_ipc_suite` and `smp_notification_suite` fixtures pin
+  (`|lockSet| · 3 · tCs` at `tCs = 60 µs` fits a 1 ms tick only up to five
+  locks).  What makes the key-local declaration checkable rather than asserted
+  is `taintWriteKeys` with `applySyscallTaint_frame_off_writeKeys` — outside its
+  write set a plan leaves the table literally unchanged — and
+  `taintWriteKeys_disjoint_updates_independent`;
+  `taintWriteKeys_of_no_events` closes the one case needing care, since
+  origination writes the *actor's* TCB key and is non-empty only when the commit
+  appended to the trail, which only `.declassify` and `.declassifySignal` do,
+  and both already carry `stateLevelLock` in write mode for that append.
+  Recorded rather than assumed: the model writes the field whole, so the
+  key-local reading is sound only if the runtime realises the table as
+  per-object storage — precisely the obligation `SystemState.objects` already
+  carries for `storeObject`, discharged the same way, at SM10.E.
+
+* **Non-interference carriage** (SM9.D.18).  The propagation writes a field no
+  observer projects, so `applySyscallTaint_confinedToCores_nil` is confinement
+  to **no** core, and `applySyscallTaint_preserves_onCore` /
+  `applySyscallTaint_preserves_proofLayerInvariantBundle` carry the per-core view
+  and the sixteen bundle conjuncts.  No `CrossCoreTransition` entry moves and no
+  inventory count changes.
+
+Runtime coverage: §12.1–§12.9 of `tests/SmpInformationFlowSuite.lean`
+(726 → **776** assertions), every group with a load-bearing negative, including
+the acceptance scenario run for effect — hop 1 originates a tag on the object
+its content reached *and* on the subject that performed it, an **ordinary**
+delivery carries it to the next subject, hop 2's recorded snapshot therefore
+names hop 1, and `chainLaunders` reports laundering — with the three negatives
+the plan names (a domain-only detector fires on a causally unrelated pair, an
+object-adjacency detector *misses* this very chain, and two same-domain second
+hops are distinguished by their snapshots) plus the lifecycle case: retype the
+carrier, and the later downgrade names nothing.
+
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 
 WS-Q3 introduces the builder-phase state model: a dependently-typed wrapper
