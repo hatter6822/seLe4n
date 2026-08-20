@@ -947,6 +947,25 @@ theorem declassificationChainCausal_pairwise :
         have := declassificationChainCausal_pairwise (e₂ :: rest) hCausal.2 n hn
         simpa using this
 
+/-- WS-SM SM9.D.14 (**the converse**): pairwise naming at every adjacent pair
+IS the causal predicate.  `declassificationChainCausal_pairwise` gives the
+forward direction; this is the one the monitor's inference actually runs —
+having read a `1` at every index, it concludes the view is causal — so without
+it "reconstructs" would describe only the direction the monitor does not use. -/
+theorem declassificationChainCausal_of_pairwise :
+    ∀ (chain : List DeclassificationEvent),
+      (∀ (i : Nat) (h : i + 1 < chain.length),
+        declassificationEventNames (chain[i + 1]'h) (chain[i]'(by omega)) = true) →
+      declassificationChainCausal chain = true
+  | [], _ => rfl
+  | [_], _ => rfl
+  | e₁ :: e₂ :: rest, hPair => by
+      simp only [declassificationChainCausal, Bool.and_eq_true]
+      refine ⟨by simpa using hPair 0 (by simp), ?_⟩
+      refine declassificationChainCausal_of_pairwise (e₂ :: rest) (fun i h => ?_)
+      have := hPair (i + 1) (by simp only [List.length_cons] at h ⊢; omega)
+      simpa using this
+
 /-- WS-SM SM8.C.2: the domain the chain starts from. -/
 def chainSourceDomain : List DeclassificationEvent → Option SecurityDomain
   | [] => none
@@ -2102,6 +2121,36 @@ theorem chainVerdict_reconstructs_causal (ctx : GenericLabelingContext)
     simp [List.getElem?_eq_getElem hPrev]
   rw [chainVerdict_ok ctx monitorClearance reader st (n + 1) (by omega) _ _ hLater hEarlier]
   simp [hNames]
+
+/-- WS-SM SM9.D.14 (**the monitor's own inference**): a `1` at every interior
+index means the view IS causal.  The direction `chainVerdict_reconstructs_causal`
+does not carry, and the one a monitor actually runs: it reads the words, then
+concludes the predicate. -/
+theorem chainVerdict_all_ok_causal (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (st : SystemState)
+    (hAll : ∀ i, 0 < i →
+      i < (auditLogVisibleTo ctx reader st.declassificationAuditLog).length →
+      auditReadWord ctx monitorClearance reader st (.chainNamesPredecessor i) = .ok 1) :
+    declassificationChainCausal
+      (auditLogVisibleTo ctx reader st.declassificationAuditLog) = true := by
+  refine declassificationChainCausal_of_pairwise _ (fun i h => ?_)
+  have hPrev : i < (auditLogVisibleTo ctx reader st.declassificationAuditLog).length := by
+    omega
+  have hWord := hAll (i + 1) (by omega) h
+  have hLater : (auditLogVisibleTo ctx reader st.declassificationAuditLog)[i + 1]? =
+      some ((auditLogVisibleTo ctx reader st.declassificationAuditLog)[i + 1]'h) :=
+    List.getElem?_eq_getElem h
+  have hEarlier : (auditLogVisibleTo ctx reader st.declassificationAuditLog)[(i + 1) - 1]? =
+      some ((auditLogVisibleTo ctx reader st.declassificationAuditLog)[i]'hPrev) := by
+    simp [List.getElem?_eq_getElem hPrev]
+  rw [chainVerdict_ok ctx monitorClearance reader st (i + 1) (by omega) _ _ hLater hEarlier]
+    at hWord
+  by_cases hN : declassificationEventNames
+      ((auditLogVisibleTo ctx reader st.declassificationAuditLog)[i + 1]'h)
+      ((auditLogVisibleTo ctx reader st.declassificationAuditLog)[i]'hPrev) = true
+  · exact hN
+  · simp [hN] at hWord
 
 /-- WS-SM SM8.C.5 (**`authorizationBasis_perCore`'s scope**): the *verdict* is
 core-uniform, so the theorem's `∀ c` is a quantifier over a dimension the

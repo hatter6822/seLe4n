@@ -1066,6 +1066,11 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _rt := @SeLe4n.Kernel.retypeClearsTaint
      have _re := @SeLe4n.Kernel.retypedObject_taint_empty
      have _sn2 := @SeLe4n.Kernel.staleTaint_is_not_saturation
+     -- The replyRecv REPLY leg (audit): the steady-state server loop's second
+     -- hop, resolved the way `resolveReplyRecvReply` resolves it and sharing
+     -- `replyTaintEdges` with the `.reply` arm so the two cannot drift.
+     have _rl := @SeLe4n.Kernel.replyRecvReplyLegEdges
+     have _rp := @SeLe4n.Kernel.taintPropagation_replyRecv_reply_to_prevCaller
      -- Origination: the two ends of a recorded downgrade.
      have _ot := @SeLe4n.Kernel.taintOrigination_target
      have _oa := @SeLe4n.Kernel.taintOrigination_actor
@@ -1084,6 +1089,9 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _ro := @SeLe4n.Kernel.causalChain_residual_over_approximation
      have _ic := @SeLe4n.Kernel.declassificationChainLinked_is_causal
      have _rs := @SeLe4n.Kernel.chainLaunders_residual_is_saturation
+     -- The monitor's own inference direction (audit): every read 1 ⇒ causal.
+     have _cp := @SeLe4n.Kernel.declassificationChainCausal_of_pairwise
+     have _ca := @SeLe4n.Kernel.chainVerdict_all_ok_causal
      have _cp := @SeLe4n.Kernel.declassificationChainCausal_pairwise
      decide (SeLe4n.Kernel.declassificationChainCausal [] = true
        ∧ SeLe4n.Kernel.DeclassificationRuleId.all.length = 12))

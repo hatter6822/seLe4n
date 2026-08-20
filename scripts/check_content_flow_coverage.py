@@ -100,6 +100,14 @@ DECLARED_TAINT_CONSUMERS = {
     "SeLe4n.Kernel.TaintTable.empty",
 }
 
+# WS-SM SM9.D.17 (audit): the definitions allowed to write
+# `SystemState.declassificationTaint` DIRECTLY (a `{ st with .. }` update whose
+# taint argument is not the field's own projection).  Exactly the apply step —
+# everything else must route through it or leave the field alone.
+DECLARED_FIELD_WRITERS = {
+    "SeLe4n.Kernel.applySyscallTaint",
+}
+
 CONTENT_CHANNELS = [
     ("SeLe4n.Model.TCB", "pendingMessage"),
     ("SeLe4n.Model.Notification", "pendingBadge"),
@@ -215,11 +223,85 @@ private partial def cfClosureGo (env : Environment) (frontier : List Name) (d : 
 private def cfClosure (env : Environment) (seeds : List Name) (depth : Nat) : NameSet :=
   cfClosureGo env seeds depth (seeds.foldl (fun s n => s.insert n) ({} : NameSet))
 
+/-- Is `e` a projection of *any* field of `structName`?  Both spellings, with
+the projection-function spelling checked against the structure's own field
+list rather than a namespace prefix — `SystemState.getTcb? st` lives in the
+namespace but is not a projection, and reading it as one would let an update
+masquerade as a fresh literal. -/
+private def cfIsAnyProjection (structName : Name) (fields : List Name) (e : Expr) : Bool :=
+  match e with
+  | .proj s _ _ => s == structName
+  | _ =>
+    match e.getAppFn with
+    | .const n _ => fields.any (fun f => n == structName ++ f)
+    | _ => false
+
+/-- A **direct write of one structure field in an update**: the constructor
+applied with (a) at least one *other* argument that is a projection of the same
+structure — which is what distinguishes `{ st with .. }` from a fresh literal —
+and (b) the watched field's argument not a projection.  Open or closed: a
+closed non-projection argument in an update is a silent *clear*, which for a
+provenance table is a laundering enabler and must be as visible as a rewrite. -/
+private partial def cfUpdateWritesField (structName field : Name) (fields : List Name)
+    (idx : Nat) : Expr -> Bool
+  | e@(.app _ _) =>
+      let hit :=
+        match e.getAppFn with
+        | .const n _ =>
+            if n == structName ++ `mk then
+              let args := e.getAppArgs
+              let isUpdate := (List.range args.size).any fun i =>
+                i != idx && match args[i]? with
+                  | some a => cfIsAnyProjection structName fields a
+                  | none => false
+              match args[idx]? with
+              | none => false
+              | some a => isUpdate && !cfIsProjection structName field idx a
+            else false
+        | _ => false
+      hit || e.getAppArgs.any (cfUpdateWritesField structName field fields idx)
+        || cfUpdateWritesField structName field fields idx e.getAppFn
+  | .lam _ t b _ =>
+      cfUpdateWritesField structName field fields idx t
+        || cfUpdateWritesField structName field fields idx b
+  | .forallE _ t b _ =>
+      cfUpdateWritesField structName field fields idx t
+        || cfUpdateWritesField structName field fields idx b
+  | .letE _ t v b _ =>
+      cfUpdateWritesField structName field fields idx t
+        || cfUpdateWritesField structName field fields idx v
+        || cfUpdateWritesField structName field fields idx b
+  | .mdata _ b => cfUpdateWritesField structName field fields idx b
+  | .proj _ _ b => cfUpdateWritesField structName field fields idx b
+  | _ => false
+
 run_cmd do
   let env <- getEnv
   let idxs := cfChannelIdx env
   if idxs.length != cfChannels.length then
     logInfo m!"CF_CHANNEL_UNRESOLVED {cfChannels.length - idxs.length}"
+  -- (C2) every definition that writes `SystemState.declassificationTaint`
+  -- DIRECTLY, in a structure update — the write no API-naming check can see.
+  let stateName := `SeLe4n.Model.SystemState
+  let stateFields := (getStructureFields env stateName).toList
+  match stateFields.findIdx? (· == `declassificationTaint) with
+  | none => logInfo m!"CF_FIELD_UNRESOLVED declassificationTaint"
+  | some fieldIdx =>
+    let fieldWriters : List Name :=
+      env.constants.fold (init := []) fun acc n ci =>
+        if n.isInternal then acc
+        else match ci with
+          | .defnInfo di =>
+              -- Prefilter on the constructor's presence: an Expr that never
+              -- names `SystemState.mk` cannot apply it, and the used-constant
+              -- set is cached where a structural walk is not.
+              if di.value.getUsedConstants.contains (stateName ++ `mk)
+                  && cfUpdateWritesField stateName `declassificationTaint stateFields
+                      fieldIdx di.value then n :: acc
+              else acc
+          | _ => acc
+    for w in fieldWriters do
+      logInfo m!"CF_FIELD_WRITER {w}"
   -- (C) every constant whose value names the taint-writing API.
   -- Only **definitions** are reported: a theorem naming the API states a
   -- property of it, and a property cannot move a field.  `ConstantInfo.defnInfo`
@@ -363,8 +445,10 @@ def parse(out: str):
     for arm, name in re.findall(r"CF_HIT (\S+) (\S+)", out):
         detail.setdefault(arm, []).append(name)
     writers = set(re.findall(r"CF_TAINT_WRITER (\S+)", out))
+    field_writers = set(re.findall(r"CF_FIELD_WRITER (\S+)", out))
+    field_unresolved = bool(re.search(r"CF_FIELD_UNRESOLVED", out))
     noroot = set(re.findall(r"CF_NO_ROOT (\S+)", out))
-    return hits, detail, writers, noroot
+    return hits, detail, writers, field_writers, field_unresolved, noroot
 
 
 def main() -> int:
@@ -387,7 +471,7 @@ def main() -> int:
         channels = channels + [SELF_TEST_CHANNEL]
 
     out = run_probe(roots, args.depth, channels)
-    hits, detail, writers, noroot = parse(out)
+    hits, detail, writers, field_writers, field_unresolved, noroot = parse(out)
 
     failures: list[str] = []
 
@@ -399,12 +483,23 @@ def main() -> int:
     if args.self_test:
         planted = [a for a in roots if cls[a] == "inert" and hits.get(a, 0) > 0]
         if not planted:
-            print("FAIL: --self-test planted `TCB.ipcState` as a content channel and the")
+            print("FAIL: --self-test planted `TCB.priority` as a content channel and the")
             print("      gate flagged no inert arm.  The write detector has stopped")
             print("      detecting: every production finding below would be a false PASS.")
             return 1
+        # The field-writer sweep must detect the one real writer: a sweep that
+        # has gone blind reports zero unexpected writers for the same reason it
+        # would miss a rogue one, so its bite is asserted here rather than
+        # trusted.
+        if "SeLe4n.Kernel.applySyscallTaint" not in field_writers:
+            print("FAIL: --self-test — the direct-field-writer sweep did not detect")
+            print("      `applySyscallTaint`, the one definition that writes")
+            print("      `SystemState.declassificationTaint`.  The sweep is blind:")
+            print("      a rogue writer would pass check (C2) for the same reason.")
+            return 1
         print(f"PASS: --self-test — the planted channel was detected on "
-              f"{len(planted)} inert arm(s).")
+              f"{len(planted)} inert arm(s); the field-writer sweep detected the "
+              f"declared writer.")
         return 0
 
     # (A) no unclassified content movement
@@ -450,6 +545,27 @@ def main() -> int:
         failures.append(
             "  constants outside the declared propagation surface name the taint-writing "
             "API:\n      " + "\n      ".join(unexpected[:12]))
+
+    # (C2) one field writer.  Check (C) sees only constants that NAME the taint
+    # API; a definition writing `SystemState.declassificationTaint` directly in
+    # a `{ st with .. }` update names nothing and would escape it — including a
+    # closed-term write, which for a provenance table is a silent whole-table
+    # clear, a laundering enabler.  The probe therefore scans every definition's
+    # elaborated value for an update whose taint-field argument is not the
+    # field's own projection.  Fresh literals (boot, defaults, test builders)
+    # carry no same-structure projection and are exactly the constructions this
+    # sweep must not flag.
+    if field_unresolved:
+        failures.append(
+            "  the probe could not resolve `SystemState.declassificationTaint`'s field "
+            "index — the direct-write sweep ran on nothing.  Fails closed.")
+    unexpected_field = sorted(w for w in field_writers
+                              if w not in DECLARED_FIELD_WRITERS
+                              and not is_auxiliary(w))
+    if unexpected_field:
+        failures.append(
+            "  constants write `SystemState.declassificationTaint` directly, outside "
+            "the declared writer:\n      " + "\n      ".join(unexpected_field[:12]))
 
     if noroot:
         failures.append(

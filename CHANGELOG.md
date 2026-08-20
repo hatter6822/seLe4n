@@ -1,3 +1,72 @@
+## v0.33.54 — WS-SM SM9.D audit cut: the reply leg, the field-writer sweep, the monitor's inference direction
+
+**Audit cut (v0.33.54)** — a code-first audit of the whole SM9.D landing,
+documentation distrusted by instruction; the live-path wiring, every declared
+edge, the algebra, the gate and the mount were re-derived against the code.
+Verdict: the propagation is genuinely live (extern → `syscallDispatchFromAbi` →
+`syscallEntryChecked` → the one write), every audited edge resolves exactly what
+its transition resolves (`receiveQ.head`, `sendQ.head`, `getReply? → caller`,
+`declassifiedSignalReceiver?`, `lookupCspaceRoot`, and the operand resolver is
+gate-identical to `syscallResolveCap` — same root, same depth, same resolver),
+the `DecidableEq` instance is sound under proof irrelevance, and no theorem was
+false.  Five findings, all closed in this cut.  (1) **The `.replyRecv` reply
+leg moved content with no declared edge** — the arm resolves
+`(rid, prevCaller)` via `resolveReplyRecvReply` and delivers the server's
+message registers to the recorded caller, so the steady-state server loop's
+second hop carried no taint: an under-approximation, the one direction a
+detector must never err in.  Closed by `replyRecvReplyLegEdges` (mirroring the
+resolver step for step — the MR0-present guard, `decodeReplyRecvArgs`, the
+caller's CSpace at the reply CPtr, the `.replyCap` shape — and sharing
+`replyTaintEdges` with the `.reply` arm so the two cannot drift),
+`taintPropagation_replyRecv_reply_to_prevCaller`, and §12.4's plan-level,
+apply-level and load-bearing-negative witnesses (the receive-leg pair alone
+provably misses the recorded caller).  (2) **The gate's one-writer claim was
+stronger than its check**: check (C) polices constants that *name* the taint
+API, so a definition writing `SystemState.declassificationTaint` directly in a
+`{ st with .. }` update — including a closed-term write, which for a provenance
+table is a silent whole-table clear, a laundering enabler — would have escaped
+it.  Closed by check (C2): the probe scans every definition's elaborated value
+for a constructor application that is an *update* (at least one other argument
+projects the same structure — what distinguishes `{ st with .. }` from a fresh
+boot/test literal) whose taint-field argument is not the field's own
+projection; the environment shows exactly one such writer
+(`applySyscallTaint`), `DECLARED_FIELD_WRITERS` pins it, and `--self-test` now
+also asserts the sweep *detects* that writer, so a sweep gone blind fails the
+self-test rather than reporting a clean tree.  (3) The self-test's failure
+diagnostic named the wrong planted channel (`TCB.ipcState` for
+`TCB.priority`).  (4) **The reconstruction theorem covered the direction the
+monitor does not use**: `chainVerdict_reconstructs_causal` proves causal ⇒
+every read is 1, while a monitor infers the other way; closed by
+`declassificationChainCausal_of_pairwise` and `chainVerdict_all_ok_causal`
+(every interior read `.ok 1` ⇒ the view is causal).  Also added:
+`join_comm_equiv_of_saturated`, so the commutativity law's coverage now leaves
+exactly one case unstated (one join saturated, the other not — in fact
+unreachable, recorded in the docstring rather than proven, since it needs a
+fold-symmetry induction the algebra does not otherwise owe).  (5) **A
+pre-existing SM3.B footprint gap, surfaced by the cap-transfer sink and
+reported rather than silently fixed**: on a caps-carrying rendezvous the live
+`.send`/`.call` run `ipcUnwrapCaps`, which writes the *receiver's* CSpace root
+— and `lockSet_endpointSend`/`lockSet_endpointCall` declare no CNode write at
+all (their one CNode member is the caller's root, read mode).  Not a live race
+(SM5.I's global entry lock serialises every commit; `withLockSet` is deferred,
+SM3.C.9), and closing it is an SM3.B decision with real cost (a conditional
+receiver-CNode member moves both signatures, the size bounds, and the
+resolved-footprint WCRT arithmetic the IPC suites pin), so it is registered
+the SM8.D round-11 way: `UncoveredLockDomain.capTransferReceiverCnode`
+(inventory 3 → 4, the `cases`-forced completeness firing as designed), the
+violation as a theorem whose deletion is the closure
+(`capTransfer_receiverCnode_write_undeclared`), and §12.8 recomputed on the
+REAL rendezvous edge list with the honest partition — every taint write key
+except the cap-transfer CNode is write-locked, and the gap is pinned
+positively so closing it breaks the line.  The §3d docstring's blanket
+coverage sentence is corrected to carve the sink out; the taint write at that
+key is exactly as covered as the object write it shadows, so the gap belongs
+to the footprint, not to the taint layer.
+
+Zero sorry/axiom; trace byte-identical; every suite, tier and the Rust workspace green.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
 ## v0.33.53 — WS-SM SM9.D: causal declassification provenance — the laundering detector stops guessing
 
 SM8's laundering detector was **syntactic**: `declassificationChainLinked`

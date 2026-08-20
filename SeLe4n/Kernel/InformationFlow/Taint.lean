@@ -681,6 +681,20 @@ theorem join_comm_equiv {a b : DeclassificationTaint}
   exact ⟨covers_join_of_covers (Or.inr hba) (covers_join_right a b) (covers_join_left a b),
          covers_join_of_covers (Or.inr hab) (covers_join_right b a) (covers_join_left b a)⟩
 
+/-- WS-SM SM9.D.1 (**commutativity's saturated half**): when both joins
+saturate, each is a top and they cover each other — three lines from
+`join_saturated_covers_all`.  With `join_comm_equiv` this leaves exactly one
+case unstated: one join saturated, the other not.  That case is in fact
+unreachable — a saturated operand saturates both orders, and fold overflow is
+a property of the operands' *union*, which does not see the order — but
+stating it needs a fold-symmetry induction this algebra does not otherwise
+owe, so the coverage is recorded here rather than implied complete. -/
+theorem join_comm_equiv_of_saturated {a b : DeclassificationTaint}
+    (hab : (join a b).saturated = true) (hba : (join b a).saturated = true) :
+    taintEquiv (join a b) (join b a) = true := by
+  simp only [taintEquiv, Bool.and_eq_true]
+  exact ⟨join_saturated_covers_all hab _, join_saturated_covers_all hba _⟩
+
 /-- WS-SM SM9.D.1 (**idempotence, up to the order**). -/
 theorem join_idem_equiv {a : DeclassificationTaint} (h : (join a a).saturated = false) :
     taintEquiv (join a a) a = true := by

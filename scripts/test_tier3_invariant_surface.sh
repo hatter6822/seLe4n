@@ -3700,6 +3700,34 @@ run_check "TRACE" rg -n 'causality verdict: monitorReads=' tests/fixtures/smp_in
 # third subject.
 run_check "INVARIANT" rg -n '^def capTransferTaintSinks' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem taintPropagation_send_to_receiver_cspace' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# SM9.D.9 (audit): the replyRecv REPLY leg — the steady-state server loop's
+# second hop, which a receive-leg-only plan under-approximates (the unsafe
+# direction for a detector).  The resolution mirrors `resolveReplyRecvReply`
+# step for step, sharing `replyTaintEdges` with the `.reply` arm so the two
+# cannot drift.
+run_check "INVARIANT" rg -n '^def replyRecvReplyLegEdges' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_replyRecv_reply_to_prevCaller' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'the replyRecv plan names the reply object.s recorded caller as a sink' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the receive-leg edges alone miss the recorded caller' tests/SmpInformationFlowSuite.lean
+# SM9.D.14 (audit): the monitor's own inference direction — every read 1 ⇒ the
+# view is causal — alongside the forward reconstruction.
+run_check "INVARIANT" rg -n '^theorem declassificationChainCausal_of_pairwise' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainVerdict_all_ok_causal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# SM9.D.17 (audit): the pre-existing cap-transfer footprint gap — the receiver's
+# CSpace root, which `ipcUnwrapCaps` writes with no declared CNode write lock —
+# as a registered domain (owner recorded in the inventory itself) with its
+# violation witness and the honest §12.8 partition.
+run_check "INVARIANT" rg -n 'capTransferReceiverCnode' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem capTransfer_receiverCnode_write_undeclared' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'GAP .registered lock-inventory debt.: the receiver.s CSpace root is NOT write-locked' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'every taint write key EXCEPT the cap-transfer CNode is write-locked by the send' tests/SmpInformationFlowSuite.lean
+# SM9.D.7 (audit): the gate's direct-field-writer sweep — check (C) names only
+# constants that USE the taint API; (C2) scans every definition for a direct
+# `{ st with declassificationTaint := .. }` update, and the self-test asserts
+# the sweep detects the one declared writer so blindness cannot pass.
+run_check "BUILD" rg -n 'DECLARED_FIELD_WRITERS' scripts/check_content_flow_coverage.py
+run_check "BUILD" rg -n 'CF_FIELD_WRITER' scripts/check_content_flow_coverage.py
+run_check "BUILD" rg -n 'cfUpdateWritesField' scripts/check_content_flow_coverage.py
 # The rule inventory records the NEW claim in place of the retired one; the
 # count is unchanged, so the replacement is 1:1 rather than an addition.
 run_check "INVARIANT" rg -n 'chainLinkageIsCausal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean

@@ -291,6 +291,39 @@ def replyTaintEdges (st : SystemState) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Rep
   | some caller => [{ sink := caller.toObjId, source := tid.toObjId }]
   | none => []
 
+/-- WS-SM SM9.D.9: **the replyRecv REPLY leg** — the edge the receive-leg pair
+cannot carry.
+
+`.replyRecv` is two deliveries in one commit: the receive leg (endpoint /
+blocked sender → server, `receiverTaintEdges`) and the reply leg — the server's
+message registers delivered to the *previous caller* the reply object records.
+The steady-state server loop is exactly the hop that returns declassified
+content to a client, so omitting this edge would lose hop 2 of the §3.6 chain
+whenever the server replies through `replyRecv` rather than a bare `.reply` —
+an under-approximation, the direction a detector must never err in.
+
+The resolution mirrors `resolveReplyRecvReply` step for step: the MR0-present
+guard, `decodeReplyRecvArgs` for the reply CPtr, the caller's own CSpace at
+that slot (`syscallOperandCap?`, the same root/depth/resolver the dispatch
+gate carries), the `.replyCap` shape, then `getReply? → reply.caller` — which
+is `replyTaintEdges`, so the `.reply` arm and this leg cannot drift apart.
+Rights are deliberately not re-checked (the arm requires `.write` and errors
+before content moves; a spuriously declared edge on a call that fails is the
+safe direction), exactly as `syscallOperandCap?` itself declines to gate. -/
+def replyRecvReplyLegEdges (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) : List TaintFlowEdge :=
+  if decoded.msgInfo.length == 0 then []
+  else
+    match Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded with
+    | .error _ => []
+    | .ok rargs =>
+        match syscallOperandCap? st tid (SeLe4n.CPtr.ofNat rargs.replyCPtr) with
+        | none => []
+        | some rcap =>
+            match rcap.target with
+            | .replyCap rid => replyTaintEdges st tid rid
+            | _ => []
+
 /-- WS-SM SM9.D.10: **a signaller's edges** — `.notificationSignal` and
 `.declassifySignal`.
 
@@ -338,7 +371,8 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
     | .send, .object epId => senderTaintEdges st tid epId
     | .call, .object epId => senderTaintEdges st tid epId
     | .receive, .object epId => receiverTaintEdges st tid epId
-    | .replyRecv, .object epId => receiverTaintEdges st tid epId
+    | .replyRecv, .object epId =>
+        receiverTaintEdges st tid epId ++ replyRecvReplyLegEdges st tid decoded
     | .reply, .replyCap rid => replyTaintEdges st tid rid
     | .notificationSignal, .object nid => signalTaintEdges st tid nid
     | .declassifySignal, .object nid => signalTaintEdges st tid nid
@@ -769,6 +803,34 @@ theorem taintPropagation_reply_to_caller (st post : SystemState) (tid : SeLe4n.T
   obtain ⟨hIn, hClear⟩ := mem_movesContent_edges hClass hMem
   exact taintPropagation_edge _ st post _ hIn hClear hReplier
 
+/-- WS-SM SM9.D.9 (**replyRecv → previous caller**): the reply half of the
+server's steady-state loop carries the server's provenance to the caller the
+reply object records — the hop a receive-leg-only plan would lose. -/
+theorem taintPropagation_replyRecv_reply_to_prevCaller (st post : SystemState)
+    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (cap rcap : Capability)
+    (epId : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (rargs : Architecture.SyscallArgDecode.ReplyRecvArgs)
+    (hClass : contentFlowClass decoded.syscallId = .movesContent)
+    (hSid : decoded.syscallId = .replyRecv)
+    (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
+    (hTarget : cap.target = .object epId)
+    (hLen : (decoded.msgInfo.length == 0) = false)
+    (hArgs : Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded = .ok rargs)
+    (hRCap : syscallOperandCap? st tid (SeLe4n.CPtr.ofNat rargs.replyCPtr) = some rcap)
+    (hRTarget : rcap.target = .replyCap rid)
+    (hCaller : (st.getReply? rid).bind (·.caller) = some prevCaller) {t : Nat}
+    (hServer : (st.declassificationTaint tid.toObjId).contains t = true) :
+    ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
+      prevCaller.toObjId).contains t = true := by
+  have hMem : ({ sink := prevCaller.toObjId, source := tid.toObjId } : TaintFlowEdge) ∈
+      contentFlowEdges st tid decoded := by
+    simp only [contentFlowEdges, hCap, hSid, hTarget, List.mem_append]
+    refine Or.inr ?_
+    simp only [replyRecvReplyLegEdges, hLen, hArgs, hRCap, hRTarget]
+    simp [replyTaintEdges, hCaller]
+  obtain ⟨hIn, hClear⟩ := mem_movesContent_edges hClass hMem
+  exact taintPropagation_edge _ st post _ hIn hClear hServer
+
 /-- WS-SM SM9.D.10 (**signal → notification**): a badge carries the signaller's
 provenance onto the notification, whether or not anyone is waiting. -/
 theorem taintPropagation_signal_to_notification (st post : SystemState)
@@ -1033,11 +1095,18 @@ theorem taintWriteKeys_disjoint_updates_independent
 /-- WS-SM SM9.D.17: **the trail writers are the only originators.**
 
 A syscall that appends no audit event has an empty origination set, so its taint
-write set is confined to the objects its own edges and clears name — every one
-of which the transition writes and therefore already write-locks.  The two
-syscalls that *do* append (`.declassify`, `.declassifySignal`) are exactly the
-two whose footprints already carry `stateLevelLock` in write mode for the
-append, which is what covers their actor-TCB origination key. -/
+write set is confined to the objects its own edges and clears name — each of
+which the transition itself writes.  All but one of those writes ride a
+declared write lock; the exception is the capability-transfer sink, the
+receiver's CSpace root, whose write the send/call footprints have never
+declared — a pre-existing SM3.B gap this phase's audit surfaced and registered
+(`UncoveredLockDomain.capTransferReceiverCnode`,
+`capTransfer_receiverCnode_write_undeclared`), not a property of the taint
+layer: the taint write at that key is exactly as covered as the object write
+it shadows.  The two syscalls that *do* append (`.declassify`,
+`.declassifySignal`) are exactly the two whose footprints already carry
+`stateLevelLock` in write mode for the append, which is what covers their
+actor-TCB origination key. -/
 theorem taintWriteKeys_of_no_events (plan : TaintPlan) (pre post : SystemState)
     (h : newlyRecordedEvents pre post = []) :
     taintWriteKeys plan pre post = taintFlowSinks plan ++ plan.cleared := by

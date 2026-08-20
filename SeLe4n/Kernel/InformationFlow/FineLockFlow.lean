@@ -2813,6 +2813,33 @@ theorem suspendFootprint_respects_queueOwnership (st : SystemState)
   fun _ => (suspendFootprint_splice_neighbors_under_endpoint_lock st callerTid targetTid
     S victim ep hFp hVictim hBlocked hLinks).1
 
+/-- WS-SM SM9.D.17 (audit, **the violation as data**): the send and call
+footprints declare no CNode **write** — in particular not the receiver's CSpace
+root, which `ipcUnwrapCaps` writes on a caps-carrying rendezvous.  Concrete
+witnesses because the honest general statement needs a mode-aware inversion the
+kind-based `omits` pattern cannot supply (the caller's root IS a cnode-kind
+member, in read mode), and a `decide` over closed footprints pins the same
+fact: the fold that builds each set inserts exactly one CNode key, read-mode,
+the caller's.  Closing the gap deletes this theorem — the SM8.D round-11
+discipline, so the debt cannot quietly become a stale comment. -/
+theorem capTransfer_receiverCnode_write_undeclared :
+    ∃ (callerTid receiverTid : SeLe4n.ThreadId) (cnRoot epId recvRoot : SeLe4n.ObjId),
+      cnRoot ≠ recvRoot ∧
+      (SeLe4n.Kernel.Concurrency.cnodeLock recvRoot, AccessMode.write) ∉
+        (SeLe4n.Kernel.Concurrency.lockSet_endpointSend callerTid cnRoot epId
+          (some receiverTid)).pairs ∧
+      (SeLe4n.Kernel.Concurrency.cnodeLock recvRoot, AccessMode.write) ∉
+        (SeLe4n.Kernel.Concurrency.lockSet_endpointCall callerTid cnRoot epId
+          (some receiverTid) none none).pairs ∧
+      -- …and the gap is not an artifact of naming a FOREIGN root: even the
+      -- caller's own root — the one CNode the footprints do name — is held in
+      -- read mode only, so no CNode write is declared anywhere in either set.
+      (SeLe4n.Kernel.Concurrency.cnodeLock cnRoot, AccessMode.write) ∉
+        (SeLe4n.Kernel.Concurrency.lockSet_endpointSend callerTid cnRoot epId
+          (some receiverTid)).pairs := by
+  refine ⟨⟨1⟩, ⟨2⟩, SeLe4n.ObjId.ofNat 3, SeLe4n.ObjId.ofNat 4, SeLe4n.ObjId.ofNat 5,
+    by decide, ?_, ?_, ?_⟩ <;> decide
+
 /-- SM8.D.5: `lockSet_tcbSetPriority` never holds an endpoint lock.
 
 Its four possible members are a caller TCB read, a CNode read, a target TCB write
@@ -2932,19 +2959,36 @@ inductive UncoveredLockDomain where
   `lockSet_tcbSuspend` is at it exactly) so the suspend can name the neighbours,
   which moves the WCRT headline. -/
   | queueOwnershipProtocol
+  /-- WS-SM SM9.D.17 (audit): the **capability-transfer destination CNode**.  On
+  a caps-carrying rendezvous the live `.send` / `.call` run `ipcUnwrapCaps`,
+  which installs the transferred capabilities into the *receiver's* CSpace root
+  — a CNode write — while `lockSet_endpointSend` / `lockSet_endpointCall`
+  declare no CNode **write** at all (their one CNode member is the *caller's*
+  root, in read mode; `capTransfer_receiverCnode_write_undeclared`).  Surfaced
+  by SM9.D's cap-transfer taint sink, which names exactly this object: the taint
+  write at that key has no covering lock because the underlying transition's own
+  footprint predates the WithCaps path.  Not a live race (SM5.I's global entry
+  lock serialises every commit; `withLockSet` is deferred at the export bodies,
+  SM3.C.9), and closing it is an SM3.B inventory decision with a real cost — a
+  conditional receiver-CNode write member moves both signatures, the size
+  bounds, and the resolved-footprint WCRT arithmetic the IPC suites pin (a
+  caps-carrying call's footprint would exceed the 1 ms tick fit that holds for
+  the capless shape). -/
+  | capTransferReceiverCnode
   deriving DecidableEq, Repr
 
 /-- SM8.D.5: the domains this bracket does **not** cover, and the workstream that
 owns composing them. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
   [(.schedulerDomain, "SM3.C.9"), (.dynamicPipChain, "SM3.C.11"),
-   (.queueOwnershipProtocol, "SM3.B")]
+   (.queueOwnershipProtocol, "SM3.B"), (.capTransferReceiverCnode, "SM3.B")]
 
 /-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
 inventory uses — so completeness can be quantified over the *constructors*
 rather than compared against a literal. -/
 def UncoveredLockDomain.all : List UncoveredLockDomain :=
-  [.schedulerDomain, .dynamicPipChain, .queueOwnershipProtocol]
+  [.schedulerDomain, .dynamicPipChain, .queueOwnershipProtocol,
+   .capTransferReceiverCnode]
 
 /-- SM8.D.5: every constructor is listed.  This is the clause a literal
 comparison cannot supply: adding a third domain makes `cases d` non-exhaustive

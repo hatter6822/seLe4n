@@ -1995,6 +1995,7 @@ link is the unsafe direction. -/
 #check @DeclassificationTaint.taintEquiv_symm
 #check @DeclassificationTaint.taintEquiv_trans
 #check @DeclassificationTaint.join_comm_equiv
+#check @DeclassificationTaint.join_comm_equiv_of_saturated
 #check @DeclassificationTaint.join_idem_equiv
 #check @DeclassificationTaint.join_assoc_equiv
 
@@ -2124,6 +2125,8 @@ totality over the wrong domain proves nothing, which is why the
 #check @capTransferTaintSinks
 #check @taintPropagation_send_to_receiver_cspace
 #check @taintPropagation_receive_from_endpoint
+#check @replyRecvReplyLegEdges
+#check @taintPropagation_replyRecv_reply_to_prevCaller
 #check @taintPropagation_reply_to_caller
 #check @taintPropagation_signal_to_notification
 #check @taintPropagation_wait_from_notification
@@ -2171,6 +2174,8 @@ cleared and loses links acquired after the fact. -/
 #check @chainVerdict_index_zero_refused
 #check @chainVerdict_view_local
 #check @chainVerdict_reconstructs_causal
+#check @declassificationChainCausal_of_pairwise
+#check @chainVerdict_all_ok_causal
 
 /-! ### SM9.D.17 / SM9.D.18 — serialization subject and NI carriage.
 
@@ -2195,6 +2200,12 @@ no observer projects, the write is confined to no core at all. -/
 #check @applySyscallTaint_confinedToCores_nil
 #check @applySyscallTaint_preserves_onCore
 #check @applySyscallTaint_preserves_proofLayerInvariantBundle
+
+-- SM9.D audit: the pre-existing SM3.B footprint gap the cap-transfer sink
+-- surfaced, registered as data with its violation witness — closing it deletes
+-- the theorem, so the debt cannot quietly become a stale comment.
+#check @UncoveredLockDomain.capTransferReceiverCnode
+#check @capTransfer_receiverCnode_write_undeclared
 
 -- ============================================================================
 -- §2  Elaboration-time examples: each headline theorem applied
@@ -7706,20 +7717,22 @@ private def runDeclaredFootprintChecks : IO Unit := do
      have _o := @lockSet_tcbSetPriority_omits_endpointLock
      true)
   -- The bracket covers the OBJECT domain only; the scheduler domain, the
-  -- dynamic PIP chain and the queue-ownership protocol are named as data with
-  -- owners rather than left implicit.
-  assertBool "the three uncovered lock domains are registered, each with an owner"
-    (decide (declaredFootprintUncoveredDomains.length = 3) &&
+  -- dynamic PIP chain, the queue-ownership protocol and (SM9.D audit) the
+  -- capability-transfer destination CNode are named as data with owners
+  -- rather than left implicit.
+  assertBool "the four uncovered lock domains are registered, each with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 4) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
        = [UncoveredLockDomain.schedulerDomain, UncoveredLockDomain.dynamicPipChain,
-          UncoveredLockDomain.queueOwnershipProtocol]) &&
+          UncoveredLockDomain.queueOwnershipProtocol,
+          UncoveredLockDomain.capTransferReceiverCnode]) &&
      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
   -- LOAD-BEARING NEGATIVE: completeness is quantified over the *constructors*,
   -- so a domain added without a registration cannot pass.
   assertBool "NEGATIVE: every uncovered-domain constructor is registered"
     (UncoveredLockDomain.all.all
        (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
-     decide (UncoveredLockDomain.all.length = 3))
+     decide (UncoveredLockDomain.all.length = 4))
   assertBool "the confinement core is carried through the declared-footprint witness (theorem)"
     (have _a := @suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore
      true)
@@ -10138,6 +10151,40 @@ private def taintedEndpointState : SystemState :=
 private def taintedEntryOutcome : Except KernelError (Unit × SystemState) :=
   syscallEntryChecked fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32 taintedEndpointState
 
+/-- §12.4b fixtures — the replyRecv REPLY leg (the audit's Finding 1).
+
+The server's CSpace gains a reply capability at slot 3; the reply object
+records `lowCurrent` as the outstanding caller; the SERVER (the high thread)
+carries a declassification identity.  The plan must move that identity to the
+recorded caller — the steady-state server loop's second hop. -/
+private def replyLegReply : SeLe4n.ReplyId := ⟨1040⟩
+
+private def replyLegSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 3
+
+private def replyLegCap : Capability :=
+  { target := .replyCap replyLegReply, rights := AccessRightSet.ofList [.write] }
+
+private def replyLegState : SystemState :=
+  { successEntryState with
+      objects :=
+        (successEntryState.objects.insert probeCNode
+          (.cnode { probeCNodeValue with
+              slots := SeLe4n.UniqueSlotMap.ofListWF
+                [(lowSlot, lowSlotCap), (highSlot, highSlotCap),
+                 (replyLegSlot, replyLegCap)] })).insert replyLegReply.toObjId
+          (.reply { replyId := replyLegReply, caller := some lowCurrent }),
+      declassificationTaint :=
+        SeLe4n.Kernel.TaintTable.empty.joinAt highCurrent.toObjId
+          (DeclassificationTaint.singleton 57) }
+
+/-- A hand-built `replyRecv` decode: primary operand = the endpoint cap at
+slot 2, MR0 = the reply CPtr (slot 3), `msgInfo.length = 1` so the MR0-present
+guard the arm enforces is satisfied here too. -/
+private def replyLegDecoded : SyscallDecodeResult :=
+  { syscallId := .replyRecv, capAddr := SeLe4n.CPtr.ofNat 2,
+    msgInfo := SeLe4n.Model.MessageInfo.mk 1 0 0,
+    msgRegs := #[⟨3⟩] }
+
 /-- §12.4  SM9.D.8-.D.11 — propagation, through the **live** entry. -/
 private def runTaintPropagationChecks : IO Unit := do
   IO.println "--- §12.4 SM9.D.8 propagation on the live syscall path ---"
@@ -10159,6 +10206,24 @@ private def runTaintPropagationChecks : IO Unit := do
     (match taintedEntryOutcome with
      | .ok ((), st) => !((st.declassificationTaint lowCurrent.toObjId).contains 42)
      | .error _ => false)
+  -- The replyRecv REPLY leg (audit Finding 1): the server's provenance reaches
+  -- the caller the reply object records — the steady-state loop's second hop.
+  assertBool "the replyRecv plan names the reply object's recorded caller as a sink"
+    (decide (({ sink := lowCurrent.toObjId, source := highCurrent.toObjId } : TaintFlowEdge)
+       ∈ (syscallTaintPlan replyLegState highCurrent replyLegDecoded).edges))
+  assertBool "…and applying it moves the server's identity to that caller"
+    (let post := applySyscallTaint (syscallTaintPlan replyLegState highCurrent replyLegDecoded)
+                   replyLegState replyLegState
+     (post.declassificationTaint lowCurrent.toObjId).contains 57 &&
+     -- the receive leg still tags the server from the endpoint side
+     decide (({ sink := highCurrent.toObjId, source := highEndpoint } : TaintFlowEdge)
+       ∈ (syscallTaintPlan replyLegState highCurrent replyLegDecoded).edges))
+  -- NEGATIVE (the pre-fix shape): the receive-leg pair alone does NOT name the
+  -- recorded caller, so a plan built from `receiverTaintEdges` misses this hop —
+  -- which is exactly the under-approximation the fix removes.
+  assertBool "NEGATIVE: the receive-leg edges alone miss the recorded caller"
+    (decide (lowCurrent.toObjId
+       ∉ (receiverTaintEdges replyLegState highCurrent highEndpoint).map (·.sink)))
   -- …and the planner's own edges are the ones the arm computes.
   assertBool "an inert syscall's plan is empty, whatever the state"
     (decide (syscallTaintPlan taintedEndpointState highCurrent
@@ -10401,6 +10466,23 @@ private def runCausalReaderChecks : IO Unit := do
             | .ok w => w == 1
             | .error _ => false)))
 
+/-- §12.8 fixture — a REAL rendezvous send: the high endpoint has `lowCurrent`
+queued to receive, so `contentFlowEdges` (not a hand-built plan) resolves the
+receiver AND the capability-transfer sink, and the write-lock coverage claim is
+computed on the edge list the entry actually applies. -/
+private def sendRendezvousState : SystemState :=
+  { successEntryState with
+      objects := successEntryState.objects.insert highEndpoint
+        (.endpoint { receiveQ := { head := some lowCurrent
+                                   tail := some lowCurrent } }) }
+
+private def sendRendezvousDecoded : SyscallDecodeResult :=
+  { syscallId := .send, capAddr := SeLe4n.CPtr.ofNat 2,
+    msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0 }
+
+private def sendRendezvousEdges : List TaintFlowEdge :=
+  contentFlowEdges sendRendezvousState highCurrent sendRendezvousDecoded
+
 /-- §12.8  SM9.D.17 / SM9.D.18 — the footprint and the non-interference. -/
 private def runTaintFootprintChecks : IO Unit := do
   IO.println "--- §12.8 SM9.D.17 the serialization subject and the NI carriage ---"
@@ -10412,17 +10494,39 @@ private def runTaintFootprintChecks : IO Unit := do
                ,{ sink := lowCurrent.toObjId, source := highCurrent.toObjId }] }
   assertBool "a content-moving plan's write set is exactly its declared sinks"
     (decide (taintWriteKeys sendPlan niState niState = [highEndpoint, lowCurrent.toObjId]))
-  -- Every one of those keys is an object the transition itself write-locks:
-  -- the endpoint (W) and the woken receiver's TCB (W) are both in
-  -- `lockSet_endpointSend`'s declared footprint, so the propagation needs no
-  -- lock the send does not already hold.
+  -- The write-lock coverage claim, computed on the REAL edge list a rendezvous
+  -- send declares — not on a hand-built plan, which is how the audit's first
+  -- form of this check missed the capability-transfer sink.  The endpoint (W)
+  -- and the woken receiver's TCB (W) are declared members; the receiver's
+  -- CSpace root — the object `ipcUnwrapCaps` writes — is NOT, a pre-existing
+  -- SM3.B footprint gap now registered as
+  -- `UncoveredLockDomain.capTransferReceiverCnode`
+  -- (`capTransfer_receiverCnode_write_undeclared`).
   let sendSet := SeLe4n.Kernel.Concurrency.lockSet_endpointSend highCurrent probeCNode
                    highEndpoint (some lowCurrent)
   let sendWriteObjects : List SeLe4n.ObjId :=
     (sendSet.pairs.filter (fun p => decide (p.snd = SeLe4n.Kernel.Concurrency.AccessMode.write))).map
       (fun p => p.fst.objId)
-  assertBool "every taint write key is an object the send already write-locks"
-    ((taintWriteKeys sendPlan niState niState).all (fun o => sendWriteObjects.contains o))
+  let recvRoot : SeLe4n.ObjId :=
+    match sendRendezvousState.getTcb? lowCurrent with
+    | some tcb => tcb.cspaceRoot
+    | none => SeLe4n.ObjId.ofNat 0
+  assertBool "the real rendezvous edge list names endpoint, receiver TCB, and receiver CNode"
+    (decide (({ sink := highEndpoint, source := highCurrent.toObjId } : TaintFlowEdge)
+       ∈ sendRendezvousEdges) &&
+     decide (({ sink := lowCurrent.toObjId, source := highCurrent.toObjId } : TaintFlowEdge)
+       ∈ sendRendezvousEdges) &&
+     decide (({ sink := recvRoot, source := highCurrent.toObjId } : TaintFlowEdge)
+       ∈ sendRendezvousEdges))
+  assertBool "every taint write key EXCEPT the cap-transfer CNode is write-locked by the send"
+    ((sendRendezvousEdges.map (·.sink)).all
+      (fun o => sendWriteObjects.contains o || decide (o = recvRoot)))
+  -- The registered gap, pinned positively so closing it breaks this line and
+  -- forces the §12.8 partition above back to a total claim.
+  assertBool "GAP (registered lock-inventory debt): the receiver's CSpace root is NOT write-locked"
+    (!sendWriteObjects.contains recvRoot &&
+     decide ((SeLe4n.Kernel.Concurrency.cnodeLock recvRoot,
+        SeLe4n.Kernel.Concurrency.AccessMode.write) ∉ sendSet.pairs))
   -- The design decision, pinned: the hot IPC path does NOT carry the coarse
   -- `.objStore` singleton.  A keyed table decomposes, so its writes ride the
   -- key's own lock exactly as `storeObject`'s writes ride the object's; putting
