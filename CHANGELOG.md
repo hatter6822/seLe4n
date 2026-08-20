@@ -1,3 +1,42 @@
+## v0.33.57 — CLAUDE.md / AGENTS.md: the workstream section becomes a status index
+
+The agent-guidance files had grown to **1303 lines / 352 KB**, of which the
+"Active workstream context" section alone was **449 lines / 308 KB — 88% of the
+file by character count**.  The phase table carried 214 KB in 22 rows, several of
+them single lines of 20–30 KB: per-sub-task landing notes, audit-pass
+refinements and review-cut narratives, appended cut after cut.
+
+That content is history, and this project already has three canonical places for
+it — `docs/WORKSTREAM_HISTORY.md` (which carries the same material in full,
+including the current "What's next"), `CHANGELOG.md`, and
+`docs/CLAUDE_HISTORY.md`.  The section had even said so itself, closing with
+"per-sub-task landing notes … live in [those files] — **not in this file**"
+while carrying exactly that.  Nothing is lost here: the detail was duplicated,
+not unique.
+
+**What the section is now** (449 → 119 lines; the file 352 KB → 52 KB):
+
+- A stated contract at the top — *status index, not a history* — naming the four
+  canonical sources and the rule that a row growing past one line of summary is
+  a sign the narrative belongs in them.
+- One compact table row per phase, preserving every phase's real status and
+  version range (verified against `CHANGELOG.md`, including the four SM9
+  sub-phases whose rows still read "this cut": SM9.A v0.33.42→50, SM9.B
+  v0.33.51, SM9.C v0.33.52, SM9.D v0.33.53→56).
+- A **standing constraints** subsection for the things that are current facts
+  about the tree rather than history, because those change what new code may
+  assume: the SM5.I global kernel-entry ticket lock and what it means for live
+  WCRT, the SM3.C.9 deferral and its plan, the SM4.C.11 `bootCoreId` pin, the
+  staged-module partition, and a pointer to `UncoveredLockDomain` — which
+  enumerates the registered lock gaps *in Lean*, where a completeness theorem
+  forces a new one to be registered, rather than in prose that goes stale.
+- WS-RA compressed to its ABI contract and its one open SM10.E obligation.
+
+No guidance rule, convention, or gate contract was changed or removed — only
+workstream narrative.  The mechanically-maintained blocks are untouched: the
+version line, the `Known large files` bullets, and the byte-identical
+`CLAUDE.md` / `AGENTS.md` mirroring all still pass their gates.
+
 ## v0.33.56 — WS-SM SM9.D review round 3: both transfer orderings, provenance into subjects, the elided clear, the applied composition
 
 **Review round 3 (v0.33.56)** — five findings on the v0.33.55 cut, every one
