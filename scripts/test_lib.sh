@@ -146,9 +146,27 @@ record_failure() {
 # The default is the code view, deliberately.  Requiring an opt-in would mean a
 # future anchor written the obvious way silently regains the defect, which is
 # the failure mode this closes; prose checks opt *out*, via `run_prose_check`.
-lean_code_view_dir() {
+# Build the overlay at most once per run, and cache it in the SHELL's scope.
+#
+# This used to be a function whose result was read with `$(...)`.  Command
+# substitution runs in a subshell, so the `LEAN_CODE_VIEW_DIR` assignment was
+# discarded the moment it returned and the overlay was rebuilt for **every
+# anchor** — about 0.2s each across ~2500 checks, roughly eight minutes of pure
+# overhead on a Tier 3 run, which is most of what it cost.
+#
+# Setting the variable directly rather than printing it keeps the assignment in
+# the caller's scope, so the second anchor onward reuses the first one's build.
+# Freshness is unaffected: each invocation of a tier script starts with the
+# variable unset and rebuilds once, and nothing mutates the tree mid-run.
+#
+# Deliberately NOT exported.  The cache is sound only for a process that does
+# not change the tree, and `test_code_view_wiring.sh` does exactly that — it
+# plants a fixture and then asserts an anchor finds it.  Inheriting a parent's
+# overlay would hand that child a view built before its fixture existed, so the
+# variable stays shell-local and every child rebuilds (a no-op re-sync once the
+# overlay directory exists, so the cost is a fraction of a second per process).
+_ensure_lean_code_view() {
   if [[ -n "${LEAN_CODE_VIEW_DIR:-}" ]]; then
-    printf '%s' "${LEAN_CODE_VIEW_DIR}"
     return 0
   fi
   local repo view
@@ -156,7 +174,14 @@ lean_code_view_dir() {
   view="${repo}/.lake/build/leancodeview"
   python3 "${repo}/scripts/lean_code_view.py" --overlay "${view}" >/dev/null || return 1
   LEAN_CODE_VIEW_DIR="${view}"
-  printf '%s' "${view}"
+}
+
+# The path form, kept for callers that want the directory as a value.  Building
+# through `_ensure_lean_code_view` first means this is a cache read, not a
+# rebuild, whenever the shell has already produced one.
+lean_code_view_dir() {
+  _ensure_lean_code_view || return 1
+  printf '%s' "${LEAN_CODE_VIEW_DIR}"
 }
 
 # Does this command read Lean source as text?
@@ -183,12 +208,13 @@ _scans_lean_source() {
 # Run a command, in the code view when it scans Lean source.
 _run_with_view() {
   if _scans_lean_source "$@"; then
-    local view
-    if ! view="$(lean_code_view_dir)"; then
+    # `_ensure_lean_code_view`, not `$(lean_code_view_dir)`: the latter would put
+    # the cache assignment in a subshell and rebuild the overlay every call.
+    if ! _ensure_lean_code_view; then
       echo "error: could not build the Lean code view" >&2
       return 125
     fi
-    ( cd "${view}" && "$@" )
+    ( cd "${LEAN_CODE_VIEW_DIR}" && "$@" )
     return $?
   fi
   # Fail closed on the shape the classifier cannot place: a tool invocation

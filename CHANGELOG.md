@@ -1,3 +1,36 @@
+## v0.33.63 — the code view is built once per run, not once per anchor
+
+**Every surface anchor rebuilt the comment-stripped overlay from scratch.**
+`lean_code_view_dir` cached its result in `LEAN_CODE_VIEW_DIR`, and its one
+caller read it as `view="$(lean_code_view_dir)"` — a command substitution, which
+runs in a subshell, so the assignment was discarded the instant the function
+returned.  The cache was written on every call and read on none.
+
+Measured: a warm re-sync of the overlay costs 0.217s, and the Tier 3 anchor
+suite routes 2564 of its 2695 checks through it — **9m16s** per run spent
+rebuilding a directory that had not changed, on top of the same cost paid again
+by every other tier that scans Lean source.  With the cache working, that run is
+3m26s.
+
+`_ensure_lean_code_view` sets the variable in the caller's scope and returns
+only a status, so `_run_with_view` can consult it directly; `lean_code_view_dir`
+remains as a thin path-printing wrapper for callers that want the directory as a
+value, and is now a cache read rather than a rebuild.
+
+**Why it is not exported.**  The cache is sound only for a process that does not
+change the tree, and one caller does exactly that: `test_code_view_wiring.sh` —
+the witness that pins this very mechanism — plants a fixture and then asserts an
+anchor finds it.  Exporting would hand that child a view built before its
+fixture existed, and the failure would present as the routing being broken
+rather than as a stale view.  So the variable stays shell-local, each process
+rebuilds once, and the witness additionally drops any inherited value so it
+cannot be re-broken from outside either.
+
+Evidence: the wiring witness passes all five checks; Tier 3 passes with its
+anchor set unchanged in content and verdict.
+
+Refs: CLAUDE.md §Key conventions ("Gates read code, prose reads prose")
+
 ## v0.33.62 — the delete guard sees transfers in flight, not only children
 
 **A capability slot could be deleted while a transfer from it was still in

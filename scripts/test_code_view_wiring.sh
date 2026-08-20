@@ -27,6 +27,14 @@ cd "${REPO_ROOT}" || exit 1
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/test_lib.sh"
 
+# This witness is the one caller that changes the tree while it runs: it plants
+# a fixture below and then asks an anchor to find it.  A cached overlay would
+# therefore be a view of the tree as it stood *before* the fixture existed, so
+# the cache is dropped here even though `test_lib.sh` keeps it shell-local
+# already — belt and braces, because the failure would present as the wiring
+# being broken rather than as a stale view.
+unset LEAN_CODE_VIEW_DIR
+
 FIXTURE_DIR="SeLe4n/Kernel"
 FIXTURE="${FIXTURE_DIR}/CodeViewWiringWitness.lean"
 # shellcheck disable=SC2317  # invoked by the EXIT trap below, not by name
