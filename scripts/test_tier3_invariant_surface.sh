@@ -3716,6 +3716,21 @@ run_check "INVARIANT" rg -n '^theorem taintPropagation_send_to_receiver_cspace' 
 # written on a root and read by nothing — and a capability forwarded by an
 # untainted courier would drop the chain.
 run_check "INVARIANT" rg -n '^theorem taintPropagation_cspace_provenance_forwarded' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 review round 3: the two orderings of a capability transfer must agree,
+# and the CSpace provenance must reach a SUBJECT or it can never reach an audit
+# event.  A parked sender names no receiver, so the receive declares the CNode
+# sink itself; and consuming a message taints the consumer from its own root.
+run_check "INVARIANT" rg -n '^theorem taintPropagation_queued_receive_to_cspace' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_cspace_taints_consumer' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'the queued receive names the receiver.s CSpace root as a transfer sink' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the parked-sender SEND plan declares no CSpace sink' tests/SmpInformationFlowSuite.lean
+# …and the clear path is elided like the join path: `contentFlowClears` fires on
+# every wait and every direct-to-waiter signal, so an unguarded clear would
+# rebuild the closure chain the join elision removed.
+run_check "INVARIANT" rg -n '^theorem clearAt_eq_of_empty' SeLe4n/Kernel/InformationFlow/Taint.lean
+# …and the disjoint-write-set claim APPLIES both plans rather than restating the
+# frame lemma (the tautology class this workstream has now hit three times).
+run_check "INVARIANT" rg -n '^theorem taintWriteKeys_disjoint_order_independent' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # PR #873 review: the CONTENT-DERIVED transport model.  A transport's taint
 # reflects the content it currently holds: an endpoint is not a sink at all (it
 # buffers no content — the message is in the blocked sender's TCB, and the

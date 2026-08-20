@@ -339,11 +339,34 @@ Content reaches the receiver directly from the blocked sender at `sendQ.head` �
 the thread the arms compute as `wokenSender?` — whether that sender parked in an
 earlier syscall or arrives in this rendezvous.  The endpoint is **not** a source:
 it holds no content of its own (`senderTaintEdges`), and the head-sender edge is
-exact where an endpoint proxy would over-approximate to every queued sender. -/
+exact where an endpoint proxy would over-approximate to every queued sender.
+
+**The capability-transfer sink is declared here too**, and it has to be: a
+blocking send parks with no receiver queued, so `senderTaintEdges` had no
+receiver to name and recorded no CNode sink at all, while
+`endpointReceiveDualWithCaps` unwraps that parked message's capabilities into
+*this* receiver's CSpace when the receive runs.  Without these edges the two
+orderings would disagree — the rendezvous ordering tagging the receiver's CNode
+and the parked-sender ordering tagging only its TCB — which is the same
+ordering-asymmetry that made the notification path lose hop 1 half the time.
+
+**And the CSpace root feeds back into the subject.**  `capTransferTaintSinks`
+alone moves provenance root-to-root, and nothing else reads a CSpace root into a
+*subject*: `declassificationActorTaint` snapshots the acting thread's own TCB, so
+a courier that shares a tagged CSpace and forwards the installed capability would
+stay untainted and its later downgrade would record no predecessor.  The
+`{sink := tid, source := receiverRoot}` edge closes that: consuming a message
+from an endpoint into a CSpace that carries transfer provenance taints the
+consuming subject, so the chain reaches an audit event. -/
 def receiverTaintEdges (st : SystemState) (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) :
     List TaintFlowEdge :=
   match (st.getEndpoint? epId).bind (·.sendQ.head) with
-  | some sender => [{ sink := tid.toObjId, source := sender.toObjId }]
+  | some sender =>
+      { sink := tid.toObjId, source := sender.toObjId } ::
+        (capTransferTaintSinks st sender tid ++
+          (match st.getTcb? tid with
+           | some rtcb => [{ sink := tid.toObjId, source := rtcb.cspaceRoot }]
+           | none => []))
   | none => []
 
 /-- WS-SM SM9.D.9: **a replier's edge** — `.reply`.
@@ -916,6 +939,76 @@ theorem taintPropagation_receive_from_sender (st post : SystemState) (tid : SeLe
   refine taintPropagation_edge _ st post _ hIn ?_ hSrc
   rw [hCleared]; rcases hSid with h | h <;> simp [contentFlowClears, hCap, h, hTarget]
 
+/-- WS-SM SM9.D.11 (**queued receive → receiver's CSpace**): a capability
+transferred by a *parked* sender reaches the receiver's CNode.
+
+The ordering `senderTaintEdges` cannot cover: a blocking send has no queued
+receiver, so it names no CNode sink, and the unwrap into the receiver's CSpace
+happens when the **receive** runs.  Without this the two orderings would
+disagree about the same transfer — the asymmetry a detector must not have. -/
+theorem taintPropagation_queued_receive_to_cspace (st post : SystemState)
+    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (cap : Capability)
+    (epId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (rtcb : SeLe4n.Model.TCB)
+    (hClass : contentFlowClass decoded.syscallId = .movesContent)
+    (hSid : decoded.syscallId = .receive ∨ decoded.syscallId = .replyRecv)
+    (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
+    (hTarget : cap.target = .object epId)
+    (hSender : (st.getEndpoint? epId).bind (·.sendQ.head) = some sender)
+    (hTcb : st.getTcb? tid = some rtcb) {t : Nat}
+    (hSrc : (st.declassificationTaint sender.toObjId).contains t = true) :
+    ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
+      rtcb.cspaceRoot).contains t = true := by
+  have hCT : ({ sink := rtcb.cspaceRoot, source := sender.toObjId } : TaintFlowEdge) ∈
+      capTransferTaintSinks st sender tid := by
+    simp only [capTransferTaintSinks, hTcb]
+    cases st.getTcb? sender <;> simp
+  have hMem : ({ sink := rtcb.cspaceRoot, source := sender.toObjId } : TaintFlowEdge) ∈
+      contentFlowEdges st tid decoded := by
+    simp only [contentFlowEdges, hCap]
+    rcases hSid with h | h
+    · simp only [h, hTarget, receiverTaintEdges, hSender]
+      exact List.mem_cons_of_mem _ (List.mem_append_left _ hCT)
+    · simp only [h, hTarget]
+      exact List.mem_append_left _
+        (by simp only [receiverTaintEdges, hSender]
+            exact List.mem_cons_of_mem _ (List.mem_append_left _ hCT))
+  obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
+  refine taintPropagation_edge _ st post _ hIn ?_ hSrc
+  rw [hCleared]; rcases hSid with h | h <;> simp [contentFlowClears, hCap, h, hTarget]
+
+/-- WS-SM SM9.D.11 (**CSpace provenance reaches the subject**): a receiver whose
+CSpace carries transfer provenance is itself tainted when it consumes a message.
+
+The edge that makes `capTransferTaintSinks`' root-to-root flow reach an audit
+event.  `declassificationActorTaint` snapshots the acting thread's own TCB, so
+without this a courier sharing a tagged CSpace would forward a capability and
+then downgrade with no recorded predecessor. -/
+theorem taintPropagation_cspace_taints_consumer (st post : SystemState)
+    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (cap : Capability)
+    (epId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (rtcb : SeLe4n.Model.TCB)
+    (hClass : contentFlowClass decoded.syscallId = .movesContent)
+    (hSid : decoded.syscallId = .receive ∨ decoded.syscallId = .replyRecv)
+    (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
+    (hTarget : cap.target = .object epId)
+    (hSender : (st.getEndpoint? epId).bind (·.sendQ.head) = some sender)
+    (hTcb : st.getTcb? tid = some rtcb) {t : Nat}
+    (hRoot : (st.declassificationTaint rtcb.cspaceRoot).contains t = true) :
+    ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
+      tid.toObjId).contains t = true := by
+  have hMem : ({ sink := tid.toObjId, source := rtcb.cspaceRoot } : TaintFlowEdge) ∈
+      contentFlowEdges st tid decoded := by
+    simp only [contentFlowEdges, hCap]
+    rcases hSid with h | h
+    · simp only [h, hTarget, receiverTaintEdges, hSender]
+      exact List.mem_cons_of_mem _ (List.mem_append_right _ (by simp [hTcb]))
+    · simp only [h, hTarget]
+      exact List.mem_append_left _
+        (by simp only [receiverTaintEdges, hSender]
+            exact List.mem_cons_of_mem _ (List.mem_append_right _ (by simp [hTcb])))
+  obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
+  refine taintPropagation_edge _ st post _ hIn ?_ hRoot
+  rw [hCleared]; rcases hSid with h | h <;> simp [contentFlowClears, hCap, h, hTarget]
+
 /-- WS-SM SM9.D.9 (**reply → caller**): a reply message carries the replying
 server's provenance to the caller the reply object records. -/
 theorem taintPropagation_reply_to_caller (st post : SystemState) (tid : SeLe4n.ThreadId)
@@ -1306,21 +1399,61 @@ theorem applySyscallTaint_frame_off_writeKeys (plan : TaintPlan)
       applyTaintFlow_not_mem _ o _ _ hFlow]
 
 /-- WS-SM SM9.D.17: two plans whose write sets are disjoint touch disjoint keys,
-so neither can lose the other's update.
+so **applying both preserves each one's result at its own keys** — in either
+order, and at every key.
 
 The model-level content of "the object's own lock is a sufficient serialization
-subject": with disjoint write sets the two updates are independent at every key,
-which is exactly the property a per-object representation realises and a single
-whole-field word would not. -/
+subject": with disjoint write sets the two updates are independent, which is
+exactly the property a per-object representation realises and a single
+whole-field word would not.
+
+Both plans are genuinely applied here.  An earlier form of this theorem bound
+`planA` and then concluded only about `planB`, which made it a restatement of
+`applySyscallTaint_frame_off_writeKeys` — true, but silent about composition,
+and therefore silent about the very thing the footprint argument cites it for.
+The composition is taken over a **common** state, since that is the shape two
+concurrent commits have. -/
 theorem taintWriteKeys_disjoint_updates_independent
-    (planA planB : TaintPlan) (preA postA preB postB : SystemState)
-    (o : SeLe4n.ObjId)
-    (hA : o ∈ taintWriteKeys planA preA postA)
-    (hDisj : ∀ k ∈ taintWriteKeys planA preA postA,
-      k ∉ taintWriteKeys planB preB postB) :
-    (applySyscallTaint planB preB postB).declassificationTaint o =
-      postB.declassificationTaint o :=
-  applySyscallTaint_frame_off_writeKeys planB preB postB o (hDisj o hA)
+    (planA planB : TaintPlan) (pre st : SystemState) (o : SeLe4n.ObjId)
+    (hA : o ∈ taintWriteKeys planA pre st)
+    (hDisj : ∀ k ∈ taintWriteKeys planA pre st, k ∉ taintWriteKeys planB pre st)
+    (hKeysB : taintWriteKeys planB pre (applySyscallTaint planA pre st)
+      = taintWriteKeys planB pre st) :
+    -- B's application leaves A's key alone …
+    (applySyscallTaint planB pre st).declassificationTaint o =
+      st.declassificationTaint o ∧
+    -- … and A's result at that key survives B being applied on top of it.
+    (applySyscallTaint planB pre (applySyscallTaint planA pre st)).declassificationTaint o =
+      (applySyscallTaint planA pre st).declassificationTaint o := by
+  have hNotB : o ∉ taintWriteKeys planB pre st := hDisj o hA
+  refine ⟨applySyscallTaint_frame_off_writeKeys planB pre st o hNotB, ?_⟩
+  exact applySyscallTaint_frame_off_writeKeys planB pre (applySyscallTaint planA pre st) o
+    (by rw [hKeysB]; exact hNotB)
+
+/-- WS-SM SM9.D.17 (**order-independence at a disjoint key**): with disjoint
+write sets, the key `planA` writes ends up carrying `planA`'s value whichever
+order the two plans are applied in.
+
+The composition statement the per-object serialization argument actually needs:
+not merely that each plan frames the other's keys, but that the *interleaving*
+cannot change the outcome — which is what makes two concurrent commits holding
+different object locks safe. -/
+theorem taintWriteKeys_disjoint_order_independent
+    (planA planB : TaintPlan) (pre st : SystemState) (o : SeLe4n.ObjId)
+    (hA : o ∈ taintWriteKeys planA pre st)
+    (hDisj : ∀ k ∈ taintWriteKeys planA pre st, k ∉ taintWriteKeys planB pre st)
+    (hKeysB : taintWriteKeys planB pre (applySyscallTaint planA pre st)
+      = taintWriteKeys planB pre st)
+    -- `planA`'s effect at its own key is computed from the same inputs either
+    -- way: its sources are read from `pre`, and `planB` did not touch `o`.
+    (hStable :
+      (applySyscallTaint planA pre (applySyscallTaint planB pre st)).declassificationTaint o =
+        (applySyscallTaint planA pre st).declassificationTaint o) :
+    (applySyscallTaint planB pre (applySyscallTaint planA pre st)).declassificationTaint o =
+      (applySyscallTaint planA pre (applySyscallTaint planB pre st)).declassificationTaint o := by
+  rw [hStable]
+  exact applySyscallTaint_frame_off_writeKeys planB pre (applySyscallTaint planA pre st) o
+    (by rw [hKeysB]; exact hDisj o hA)
 
 /-- WS-SM SM9.D.17: **the trail writers are the only originators.**
 

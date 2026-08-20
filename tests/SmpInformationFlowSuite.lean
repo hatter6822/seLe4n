@@ -10242,6 +10242,54 @@ private def runTaintPropagationChecks : IO Unit := do
     (match taintedEntryOutcome with
      | .ok ((), st) => !((st.declassificationTaint lowNotification).contains 42)
      | .error _ => false)
+  -- PR #873 round 3: the QUEUED-transfer ordering.  A blocking send parks with
+  -- no receiver queued, so the send plan names no CNode sink and the unwrap into
+  -- the receiver's CSpace happens when the RECEIVE runs — so the receive must
+  -- declare that sink itself, or the two orderings disagree about the same
+  -- transfer.  `taintedEndpointState`'s endpoint has exactly that shape: a
+  -- parked sender, no queued receiver.
+  assertBool "the queued receive names the receiver's CSpace root as a transfer sink"
+    (match taintedEndpointState.getTcb? highCurrent with
+     | none => false
+     | some rtcb =>
+       decide (({ sink := rtcb.cspaceRoot, source := taintedSender.toObjId } : TaintFlowEdge)
+         ∈ receiverTaintEdges taintedEndpointState highCurrent highEndpoint))
+  -- NEGATIVE: the SEND plan on this same state names no CNode sink at all —
+  -- which is the gap the receive-side edge exists to close, not a duplicate of
+  -- a sink the sender already declared.
+  assertBool "NEGATIVE: the parked-sender SEND plan declares no CSpace sink"
+    (match taintedEndpointState.getTcb? highCurrent with
+     | none => false
+     | some rtcb =>
+       decide (rtcb.cspaceRoot
+         ∉ (senderTaintEdges taintedEndpointState taintedSender highEndpoint).map (·.sink)))
+  -- PR #873 round 3: the root→subject feedback.  `capTransferTaintSinks` moves
+  -- provenance root-to-root, and nothing else reads a CSpace root into a
+  -- subject — so a courier sharing a tagged CSpace would forward a capability
+  -- and then downgrade with no predecessor.  Consuming a message taints the
+  -- consumer from its own root.
+  assertBool "a receiver is tainted by its own CSpace root when it consumes"
+    (match taintedEndpointState.getTcb? highCurrent with
+     | none => false
+     | some rtcb =>
+       decide (({ sink := highCurrent.toObjId, source := rtcb.cspaceRoot } : TaintFlowEdge)
+         ∈ receiverTaintEdges taintedEndpointState highCurrent highEndpoint))
+  -- …and it carries through the applied plan, on a state whose CSpace root holds
+  -- an identity the receiver itself never had.
+  assertBool "…and applying the plan moves that root identity onto the subject"
+    (match taintedEndpointState.getTcb? highCurrent with
+     | none => false
+     | some rtcb =>
+       let stRoot : SystemState :=
+         { taintedEndpointState with
+             declassificationTaint :=
+               taintedEndpointState.declassificationTaint.joinAt rtcb.cspaceRoot
+                 (DeclassificationTaint.singleton 71) }
+       let decoded : SyscallDecodeResult :=
+         { capAddr := SeLe4n.CPtr.ofNat 2, msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0,
+           syscallId := .receive }
+       let post := applySyscallTaint (syscallTaintPlan stRoot highCurrent decoded) stRoot stRoot
+       (post.declassificationTaint highCurrent.toObjId).contains 71)
   -- The replyRecv REPLY leg (audit Finding 1): the server's provenance reaches
   -- the caller the reply object records — the steady-state loop's second hop.
   assertBool "the replyRecv plan names the reply object's recorded caller as a sink"

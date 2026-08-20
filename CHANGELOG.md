@@ -1,3 +1,68 @@
+## v0.33.56 — WS-SM SM9.D review round 3: both transfer orderings, provenance into subjects, the elided clear, the applied composition
+
+**Review round 3 (v0.33.56)** — five findings on the v0.33.55 cut, every one
+verified against the code and closed.  Two are consequences of the round-2
+fixes themselves, which is the useful kind of review: the model got sharper and
+the sharpening exposed what the previous shape had been hiding.
+
+**(1) The queued-transfer ordering lost the CNode sink.**  `senderTaintEdges`
+declares `capTransferTaintSinks` only in the branch where a receiver is already
+queued.  A *blocking* send has none — it parks — so it named no CSpace sink at
+all, while `endpointReceiveDualWithCaps` unwraps that parked message's
+capabilities into the receiver's CSpace when the **receive** runs, and the
+receive edge tagged only the receiver's TCB.  The two orderings of one transfer
+therefore disagreed about whether the receiver's CNode carries the provenance —
+the same ordering-asymmetry that would have lost hop 1 on the notification path
+half the time.  Closed by declaring the sink on the receive as well
+(`taintPropagation_queued_receive_to_cspace`), with the load-bearing negative
+that the parked-sender *send* plan declares no CSpace sink, so the new edge is a
+closure rather than a duplicate of one the sender already had.
+
+**(2) CSpace provenance never reached a subject.**  Round 2 made the transfer
+sink a source, so provenance flows root-to-root — but that is where it stopped.
+`declassificationActorTaint` snapshots the acting thread's own TCB, so a courier
+that shares a tagged CSpace could forward the installed capability and then
+downgrade with no recorded predecessor: the tag existed and no audit event could
+ever see it.  Consuming a message from an endpoint now taints the consumer from
+its own CSpace root (`taintPropagation_cspace_taints_consumer`), which closes
+the root→subject step and lets the chain reach the trail.
+
+**(3) The clear path was not elided.**  Round 2 guarded `joinAt` against
+value-preserving writes and left `clearAt` allocating a `set` closure
+unconditionally — and the *same* cut made clears frequent, since
+`contentFlowClears` fires on every `.notificationWait` and every
+direct-to-waiter signal, whose notification entry is empty on ordinary
+untainted traffic.  So the fix for the closure chain rebuilt it one function
+over.  `clearAt` now returns the table unchanged when there is nothing to forget
+(`clearAt_eq_of_empty`); `clearAt_self` / `clearAt_ne` are unaffected.
+
+**(4) The disjoint-write-set claim was a tautology.**
+`taintWriteKeys_disjoint_updates_independent` bound `planA`, used it only to
+feed the disjointness hypothesis, and concluded about `planB` alone — a
+restatement of `applySyscallTaint_frame_off_writeKeys`, presented as the
+model-level justification for declaring the taint write under the key's own
+lock.  It now **applies both plans** from a common state, and
+`taintWriteKeys_disjoint_order_independent` states the interleaving property the
+footprint argument actually needs: with disjoint write sets the outcome at a key
+does not depend on the order the two commits are applied in.  This is the third
+instance of the class in this workstream — after
+`retypeIcacheOp_cleans_scrub_extent` (v0.32.101) and the v0.33.16 splice arm —
+and the pattern is worth naming: a theorem whose hypotheses are richer than its
+conclusion consumes.
+
+**(5) The status row described the removed design.**  The SM9.D row's edge
+inventory still read "sender → endpoint and → rendezvous receiver, receiver ←
+endpoint and ← blocked sender" — the endpoint-proxy model the same row records
+as the stale-taint defect this workstream fixed.  Corrected in both mirrors to
+describe the content-derived edges.
+
+Evidence: four new runtime assertions in `SmpInformationFlowSuite` §12.4 (781 →
+**787**), each with its negative; Tier-3 anchors on the new theorems.  The golden
+fixture is unchanged — the new edges are additive and no reported observable
+moves — and the trace stays byte-identical.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
 ## v0.33.55 — WS-SM SM9.D review cut: content-derived transport taint, the general causality verdict, consumed CSpace provenance
 
 **Review cut (v0.33.55)** — seven findings from two automated review rounds on

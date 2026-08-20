@@ -779,9 +779,20 @@ and the only operation in this module that removes a causal link.
 Retype commits `storeObject target newObj` at the *same* id, so a framed retype
 would leave a destroyed object's tags on its unrelated replacement — a false
 positive with nothing to do with saturation, which is why
-`staleTaint_is_not_saturation` keeps the two apart. -/
+`staleTaint_is_not_saturation` keeps the two apart.
+
+**Value-preserving clears are elided**, for the reason `joinAt` elides
+value-preserving joins and with more force: `contentFlowClears` empties the
+transport on *every* `.notificationWait` and every direct-to-waiter signal, and
+on ordinary untainted traffic that object's entry is already empty — so an
+unguarded clear would extend the table's closure chain on the notification hot
+path exactly where the content-derived model made clears frequent.  The guard
+returns the table itself when there is nothing to forget; `clearAt_eq_of_empty`
+states that case, and `clearAt_self` / `clearAt_ne` are unchanged, because the
+branch it takes is the one where the two tables are already pointwise equal. -/
 def clearAt (tbl : TaintTable) (oid : SeLe4n.ObjId) : TaintTable :=
-  tbl.set oid DeclassificationTaint.empty
+  if tbl oid = DeclassificationTaint.empty then tbl
+  else tbl.set oid DeclassificationTaint.empty
 
 @[simp] theorem empty_apply (oid : SeLe4n.ObjId) : empty oid = DeclassificationTaint.empty := rfl
 
@@ -816,10 +827,28 @@ theorem joinAt_eq_of_join_eq (tbl : TaintTable) (oid : SeLe4n.ObjId)
   simp [h]
 
 @[simp] theorem clearAt_self (tbl : TaintTable) (oid : SeLe4n.ObjId) :
-    tbl.clearAt oid oid = DeclassificationTaint.empty := by simp [clearAt]
+    tbl.clearAt oid oid = DeclassificationTaint.empty := by
+  unfold clearAt
+  split
+  · next hEmpty => exact hEmpty
+  · simp
 
 @[simp] theorem clearAt_ne (tbl : TaintTable) {oid o : SeLe4n.ObjId} (h : o ≠ oid) :
-    tbl.clearAt oid o = tbl o := by simp [clearAt, h]
+    tbl.clearAt oid o = tbl o := by
+  unfold clearAt
+  split
+  · rfl
+  · simp [h]
+
+/-- WS-SM SM9.D.2 (**the clear elision is invisible**): an object that carries no
+provenance is left literally alone, which is pointwise the same table the
+unconditional `set` would have produced.  The `clearAt` counterpart of
+`joinAt_eq_of_join_eq`, and what lets the hot-path guard exist without any
+theorem about `clearAt` having to know it is there. -/
+theorem clearAt_eq_of_empty (tbl : TaintTable) (oid : SeLe4n.ObjId)
+    (h : tbl oid = DeclassificationTaint.empty) : tbl.clearAt oid = tbl := by
+  unfold clearAt
+  simp [h]
 
 /-- WS-SM SM9.D.2: **joining never forgets** — the table-level no-loss property,
 lifted from `DeclassificationTaint.contains_join_of_left`. -/
