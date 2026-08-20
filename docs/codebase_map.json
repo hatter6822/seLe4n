@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm9d-causal-declassification-ppwxud",
-      "commit_sha": "57ed01ece7186827cd9ad02084de874ad8db4656",
-      "tree_sha": "4bfc7215f8679b93924255790ebb019d9a45293d",
-      "committed_at_utc": "2026-08-20T08:10:08+00:00"
+      "commit_sha": "1a9bda7cd9f481781fdb47299f770b8d5927e96a",
+      "tree_sha": "d8a12b651a1ffe0cb0742525609e733dd2197258",
+      "committed_at_utc": "2026-08-20T09:05:20+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a3e1f7dd36408e3cfde7a53e82b353242f8fa6d617b8b8e8ef9b1b380adf202f"
+    "source_digest": "35904de0ca46990ed5cb3951313a4a633bd82f3fdc7e85ba7f9be323b1c8436e"
   },
   "summary": {
     "module_count": 354,
@@ -29,7 +29,7 @@
     "production_files": 285,
     "production_loc": 282266,
     "test_files": 69,
-    "test_loc": 61782,
+    "test_loc": 61783,
     "proved_theorem_lemma_decls": 9510,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -205220,6 +205220,7 @@
             "IpcMessage",
             "KernelErrorRejection",
             "SystemState",
+            "TransferCap.fromSlot",
             "badge",
             "default",
             "endpointSendDual",
@@ -205234,7 +205235,7 @@
         {
           "kind": "def",
           "name": "row_illegalState_no_current",
-          "line": 298,
+          "line": 299,
           "called": [
             "KernelErrorRejection",
             "SystemState",
@@ -205248,7 +205249,7 @@
         {
           "kind": "def",
           "name": "row_policyDenied_insecure_default",
-          "line": 311,
+          "line": 312,
           "called": [
             "KernelErrorRejection",
             "SystemState",
@@ -205264,7 +205265,7 @@
         {
           "kind": "def",
           "name": "row_nullCapability_mint",
-          "line": 326,
+          "line": 327,
           "called": [
             "CNode",
             "KernelErrorRejection",
@@ -205288,7 +205289,7 @@
         {
           "kind": "def",
           "name": "row_revocationRequired_delete_with_children",
-          "line": 357,
+          "line": 358,
           "called": [
             "CNode",
             "Capability",
@@ -205317,7 +205318,7 @@
         {
           "kind": "def",
           "name": "row_asidNotBound_vspaceMap",
-          "line": 390,
+          "line": 391,
           "called": [
             "KernelErrorRejection",
             "decodeVSpaceMapArgs",
@@ -205330,7 +205331,7 @@
         {
           "kind": "def",
           "name": "row_schedulerInvariantViolation",
-          "line": 402,
+          "line": 403,
           "called": [
             "KernelErrorRejection",
             "SystemState",
@@ -205347,7 +205348,7 @@
         {
           "kind": "def",
           "name": "row_alignmentError_security",
-          "line": 420,
+          "line": 421,
           "called": [
             "KernelErrorRejection",
             "SystemState",
@@ -205360,7 +205361,7 @@
         {
           "kind": "def",
           "name": "row_targetSlotOccupied",
-          "line": 434,
+          "line": 435,
           "called": [
             "CNode",
             "Capability",
@@ -205385,7 +205386,7 @@
         {
           "kind": "def",
           "name": "row_cyclicDependency_self_edge",
-          "line": 456,
+          "line": 457,
           "called": [
             "KernelErrorRejection",
             "ServiceGraphEntry",
@@ -205402,7 +205403,7 @@
         {
           "kind": "def",
           "name": "row_objectNotFound_dep_unmet",
-          "line": 479,
+          "line": 480,
           "called": [
             "KernelErrorRejection",
             "ServiceGraphEntry",
@@ -205419,7 +205420,7 @@
         {
           "kind": "def",
           "name": "row_replyCapInvalid_no_target",
-          "line": 501,
+          "line": 502,
           "called": [
             "KernelErrorRejection",
             "ObjId",
@@ -205443,7 +205444,7 @@
         {
           "kind": "def",
           "name": "row_replyCapInvalid_not_blocked",
-          "line": 522,
+          "line": 523,
           "called": [
             "KernelErrorRejection",
             "SystemState",
@@ -205463,7 +205464,7 @@
         {
           "kind": "def",
           "name": "row_invalidCapability_send_to_nonEndpoint",
-          "line": 544,
+          "line": 545,
           "called": [
             "KernelErrorRejection",
             "Notification",
@@ -205483,7 +205484,7 @@
         {
           "kind": "def",
           "name": "row_objectNotFound_send_missing",
-          "line": 561,
+          "line": 562,
           "called": [
             "KernelErrorRejection",
             "SystemState",
@@ -205498,7 +205499,7 @@
         {
           "kind": "def",
           "name": "row_alreadyWaiting_enqueue_blocked",
-          "line": 573,
+          "line": 574,
           "called": [
             "Endpoint",
             "KernelErrorRejection",
@@ -205521,7 +205522,7 @@
         {
           "kind": "def",
           "name": "row_invalidArgument_budget_zero",
-          "line": 593,
+          "line": 594,
           "called": [
             "KernelErrorRejection",
             "syscall",
@@ -205531,7 +205532,7 @@
         {
           "kind": "def",
           "name": "row_invalidArgument_budget_over_period",
-          "line": 607,
+          "line": 608,
           "called": [
             "KernelErrorRejection",
             "syscall",
@@ -205541,7 +205542,7 @@
         {
           "kind": "def",
           "name": "row_invalidArgument_priority_overflow",
-          "line": 620,
+          "line": 621,
           "called": [
             "KernelErrorRejection",
             "syscall",
@@ -205551,7 +205552,7 @@
         {
           "kind": "def",
           "name": "row_invalidArgument_domain_overflow",
-          "line": 632,
+          "line": 633,
           "called": [
             "KernelErrorRejection",
             "syscall",
@@ -205561,7 +205562,7 @@
         {
           "kind": "def",
           "name": "row_illegalAuthority_priority_over_hw",
-          "line": 644,
+          "line": 645,
           "called": [
             "KernelErrorRejection",
             "TCB",
@@ -205573,7 +205574,7 @@
         {
           "kind": "def",
           "name": "row_illegalAuthority_over_mcp",
-          "line": 657,
+          "line": 658,
           "called": [
             "KernelErrorRejection",
             "TCB",
@@ -205585,7 +205586,7 @@
         {
           "kind": "def",
           "name": "row_invalidTypeTag",
-          "line": 670,
+          "line": 671,
           "called": [
             "KernelErrorRejection",
             "decodeLifecycleRetypeArgs",
@@ -205598,7 +205599,7 @@
         {
           "kind": "def",
           "name": "row_addressOutOfBounds_vaddr",
-          "line": 687,
+          "line": 688,
           "called": [
             "KernelErrorRejection",
             "decodeVSpaceMapArgs",
@@ -205611,7 +205612,7 @@
         {
           "kind": "def",
           "name": "row_invalidSyscallArgument_perms",
-          "line": 699,
+          "line": 700,
           "called": [
             "KernelErrorRejection",
             "decodeVSpaceMapArgs",
@@ -205624,7 +205625,7 @@
         {
           "kind": "def",
           "name": "row_addressOutOfBounds_paddr",
-          "line": 711,
+          "line": 712,
           "called": [
             "KernelErrorRejection",
             "decodeVSpaceMapArgsChecked",
@@ -205637,7 +205638,7 @@
         {
           "kind": "def",
           "name": "row_notSupported_fiq",
-          "line": 723,
+          "line": 724,
           "called": [
             "ExceptionContext",
             "KernelErrorRejection",
@@ -205651,7 +205652,7 @@
         {
           "kind": "def",
           "name": "row_hardwareFault_serror",
-          "line": 736,
+          "line": 737,
           "called": [
             "ExceptionContext",
             "KernelErrorRejection",
@@ -205665,7 +205666,7 @@
         {
           "kind": "def",
           "name": "row_vmFault_data_abort",
-          "line": 750,
+          "line": 751,
           "called": [
             "ExceptionContext",
             "KernelErrorRejection",
@@ -205680,7 +205681,7 @@
         {
           "kind": "def",
           "name": "row_userException_pc_alignment",
-          "line": 766,
+          "line": 767,
           "called": [
             "ExceptionContext",
             "KernelErrorRejection",
@@ -205695,7 +205696,7 @@
         {
           "kind": "def",
           "name": "row_objectNotFound_mint_missing_cnode",
-          "line": 779,
+          "line": 780,
           "called": [
             "KernelErrorRejection",
             "SystemState",
@@ -205711,7 +205712,7 @@
         {
           "kind": "def",
           "name": "row_invalidArgument_ipcBuffer_missing_vspaceRoot",
-          "line": 793,
+          "line": 794,
           "called": [
             "KernelErrorRejection",
             "SystemState",
@@ -205730,7 +205731,7 @@
         {
           "kind": "def",
           "name": "row_invalidObjectType_cross_variant",
-          "line": 829,
+          "line": 830,
           "called": [
             "KernelErrorRejection",
             "ObjId",
@@ -205753,7 +205754,7 @@
         {
           "kind": "def",
           "name": "row_translationFault_ipcBuffer_no_write",
-          "line": 853,
+          "line": 854,
           "called": [
             "KernelErrorRejection",
             "ObjId",
@@ -205778,7 +205779,7 @@
         {
           "kind": "def",
           "name": "row_endpointQueueEmpty_pop_empty",
-          "line": 880,
+          "line": 881,
           "called": [
             "Endpoint",
             "KernelErrorRejection",
@@ -205797,7 +205798,7 @@
         {
           "kind": "def",
           "name": "row_untypedTypeMismatch",
-          "line": 897,
+          "line": 898,
           "called": [
             "CNode",
             "Capability",
@@ -205824,7 +205825,7 @@
         {
           "kind": "def",
           "name": "row_childIdSelfOverwrite",
-          "line": 925,
+          "line": 926,
           "called": [
             "CNode",
             "Capability",
@@ -205850,7 +205851,7 @@
         {
           "kind": "def",
           "name": "row_untypedDeviceRestriction",
-          "line": 958,
+          "line": 959,
           "called": [
             "CNode",
             "Capability",
@@ -205876,7 +205877,7 @@
         {
           "kind": "def",
           "name": "errorMatrix",
-          "line": 995,
+          "line": 996,
           "called": [
             "KernelErrorRejection",
             "row_addressOutOfBounds_paddr",
@@ -205931,7 +205932,7 @@
         {
           "kind": "theorem",
           "name": "errorMatrix_covers_at_least_35",
-          "line": 1056,
+          "line": 1057,
           "called": [
             "length"
           ]
@@ -205939,13 +205940,13 @@
         {
           "kind": "def",
           "name": "errorMatrixFloor",
-          "line": 1062,
+          "line": 1063,
           "called": []
         },
         {
           "kind": "def",
           "name": "securityPriorityVariants",
-          "line": 1070,
+          "line": 1071,
           "called": [
             "KernelError"
           ]
@@ -205953,7 +205954,7 @@
         {
           "kind": "def",
           "name": "coveredVariants",
-          "line": 1084,
+          "line": 1085,
           "called": [
             "KernelError",
             "contains",
@@ -205963,7 +205964,7 @@
         {
           "kind": "def",
           "name": "runRow",
-          "line": 1094,
+          "line": 1095,
           "called": [
             "KernelErrorRejection",
             "syscall"
@@ -205972,7 +205973,7 @@
         {
           "kind": "def",
           "name": "runAll",
-          "line": 1112,
+          "line": 1113,
           "called": [
             "KernelError",
             "contains",
@@ -205988,7 +205989,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1132,
+          "line": 1133,
           "called": [
             "runAll"
           ]
