@@ -171,6 +171,18 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/lean_code_view.py" --self-test
 # symbol exists only in a comment.
 run_check "HYGIENE" "${SCRIPT_DIR}/test_code_view_wiring.sh"
 
+# PR #873: the anchor set must be SATISFIABLE.  `run_check` asserts a pattern is
+# present and `run_negative_check` asserts it is absent, and nothing compared the
+# two — so a cut that deleted a theorem, added the negative pin forbidding its
+# return, and left the original positive anchor produced a suite no tree can
+# satisfy.  It surfaced only in the Full lane, several commits later, and read as
+# "the invariant surface regressed" rather than "two anchors disagree".
+#
+# The check is static, so it belongs here in the fast lane rather than beside the
+# anchors it reads: it fires on the PR that introduces the contradiction.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_consistency.py"
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_consistency.py" --self-test
+
 # AN10-D: AK7 cascade monotonicity gate. Reads docs/dev_history/audits/AL0_baseline.txt
 # and rejects regressions on any AK7 cascade metric (raw-match site count,
 # typed-helper adoption, storeObjectKindChecked adoption, sentinel guard

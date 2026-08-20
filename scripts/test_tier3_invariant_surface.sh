@@ -3644,9 +3644,16 @@ run_check "BUILD" rg -n 'check_content_flow_coverage.py' scripts/test_tier1_buil
 run_check "BUILD" rg -n 'check_content_flow_coverage.py. --self-test' scripts/test_tier1_build.sh
 # Taint follows CONTENT, so it propagates through ordinary IPC delivery — the
 # hop the SM8 edge-scoped design could not see.
-run_check "INVARIANT" rg -n '^theorem taintPropagation_send_to_endpoint' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+#
+# The two endpoint-keyed forms are deliberately ABSENT and pinned as such below:
+# an endpoint holds no content of its own, so it is not a taint sink and not a
+# taint source.  Their replacements are the content-derived pair — the sender
+# reaches the rendezvous receiver, and a receiver reads the blocked sender at
+# `sendQ.head` directly.  Keeping a positive anchor on a deleted theorem beside
+# the negative that forbids it makes the tier unsatisfiable, which is how this
+# pair was found.
 run_check "INVARIANT" rg -n '^theorem taintPropagation_send_to_receiver' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem taintPropagation_receive_from_endpoint' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_receive_from_sender' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem taintPropagation_reply_to_caller' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem taintPropagation_signal_to_notification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem taintPropagation_wait_from_notification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
@@ -3731,6 +3738,33 @@ run_check "INVARIANT" rg -n '^theorem clearAt_eq_of_empty' SeLe4n/Kernel/Informa
 # …and the disjoint-write-set claim APPLIES both plans rather than restating the
 # frame lemma (the tautology class this workstream has now hit three times).
 run_check "INVARIANT" rg -n '^theorem taintWriteKeys_disjoint_order_independent' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 review round 4: the flow fold reads every source from the PRE-state, so
+# a transfer's root-to-root edge cannot chain into a root-to-subject edge within
+# one commit.  The receiving subject is therefore sourced from the sender's root
+# directly, or a courier's provenance never reaches a downgrading subject.
+run_check "INVARIANT" rg -n '^theorem taintPropagation_transfer_taints_receiver' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'a transfer taints the receiving subject from the SENDER.s root' tests/SmpInformationFlowSuite.lean
+# …and the CSpace sinks are GATED on capabilities actually crossing.  Ungated,
+# a plain message writes the sender's provenance into a CNode no capability
+# reached, and — since a root now feeds the consuming subject — an unrelated
+# later downgrade could name it as an UNSATURATED predecessor, which is exactly
+# what `staleTaint_is_not_saturation` rules out.
+run_check "INVARIANT" rg -n '^def sendCarriesCaps' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def parkedCarriesCaps' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a capless transfer declares no CSpace sink' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a capless rendezvous declares no CSpace sink' tests/SmpInformationFlowSuite.lean
+# …a clear is FINAL within its commit: the final origination pass skips cleared
+# keys, so a declassifying signal that delivers straight to a waiter cannot
+# re-tag the transport it just emptied.
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_cleared_empty' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'a cleared object stays empty even when the commit recorded a downgrade' tests/SmpInformationFlowSuite.lean
+# …and a BOUND delivery clears NOTHING.  `boundDeliveryTarget?` ignores
+# `pendingBadge` and `notificationSignalBound` never writes the notification, so
+# an unconditional clear discarded the provenance of a badge the object still
+# holds — a MISSED chain, the direction a detector must never err in.
+run_check "INVARIANT" rg -n '^def signalClearedNotification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a bound delivery clears no notification taint' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'a waiter delivery still empties the notification' tests/SmpInformationFlowSuite.lean
 # PR #873 review: the CONTENT-DERIVED transport model.  A transport's taint
 # reflects the content it currently holds: an endpoint is not a sink at all (it
 # buffers no content — the message is in the blocked sender's TCB, and the

@@ -10164,11 +10164,48 @@ private def taintedEndpointTable : SeLe4n.Kernel.TaintTable :=
   SeLe4n.Kernel.TaintTable.empty.joinAt taintedSender.toObjId
     (DeclassificationTaint.singleton 42)
 
+/-- PR #873 round 4: the parked message has to **actually carry a capability**.
+The CSpace sinks are gated on that now — a plain message installs nothing, so
+declaring them for every delivery would write the sender's provenance into a
+CNode no capability reached and, since a root feeds the consuming subject, name
+an unsaturated predecessor for an unrelated later downgrade. -/
+private def transferredCap : Capability :=
+  { target := .object lowNotification, rights := AccessRightSet.ofList [] }
+
+private def transferMessage : IpcMessage :=
+  { registers := #[], caps := #[transferredCap], badge := none }
+
 private def taintedEndpointState : SystemState :=
-  { successEntryState with
-      objects := successEntryState.objects.insert highEndpoint
-        (.endpoint { sendQ := { head := some taintedSender, tail := some taintedSender } }),
-      declassificationTaint := taintedEndpointTable }
+  let base : SystemState :=
+    { successEntryState with
+        objects := successEntryState.objects.insert highEndpoint
+          (.endpoint { sendQ := { head := some taintedSender, tail := some taintedSender } }),
+        declassificationTaint := taintedEndpointTable }
+  match base.getTcb? taintedSender with
+  | none => base
+  | some stcb =>
+      { base with
+          objects := base.objects.insert taintedSender.toObjId
+            (.tcb { stcb with pendingMessage := some transferMessage }) }
+
+/-- PR #873 round 4: the BOUND-delivery ordering.  `boundDeliveryTarget?` checks
+only that the waiter list is empty and that the bound TCB is parked on an
+endpoint — it says nothing about the pending badge — and `notificationSignalBound`
+writes into that TCB's `pendingMessage` without touching the notification.  So a
+notification that already holds a badge keeps it across the signal, and clearing
+its taint there would discard the provenance of content the object still stores:
+a later `.notificationWait` would read that badge from an empty source and the
+downgrade behind it would record no predecessor.
+
+`crossCoreReceiver` is already `.blockedOnReceive crossCoreEndpoint` in
+`rendezvousState`, which is exactly the shape `boundDeliveryTarget?` accepts. -/
+private def boundDeliveryState : SystemState :=
+  { rendezvousState with
+      objects := rendezvousState.objects.insert highNotification
+        (.notification { state := .active
+                         waitingThreads := ⟨[], by simp⟩
+                         pendingBadge := some (SeLe4n.Badge.ofNatMasked 0x7B)
+                         boundTCB := some crossCoreReceiver }) }
 
 /-- The live per-core entry, run on that state: the fixture's high thread issues
 `.receive` against the tainted endpoint. -/
@@ -10262,7 +10299,7 @@ private def runTaintPropagationChecks : IO Unit := do
      | none => false
      | some rtcb =>
        decide (rtcb.cspaceRoot
-         ∉ (senderTaintEdges taintedEndpointState taintedSender highEndpoint).map (·.sink)))
+         ∉ (senderTaintEdges taintedEndpointState taintedSender highEndpoint true).map (·.sink)))
   -- PR #873 round 3: the root→subject feedback.  `capTransferTaintSinks` moves
   -- provenance root-to-root, and nothing else reads a CSpace root into a
   -- subject — so a courier sharing a tagged CSpace would forward a capability
@@ -10290,6 +10327,74 @@ private def runTaintPropagationChecks : IO Unit := do
            syscallId := .receive }
        let post := applySyscallTaint (syscallTaintPlan stRoot highCurrent decoded) stRoot stRoot
        (post.declassificationTaint highCurrent.toObjId).contains 71)
+  -- PR #873 round 4: SIMULTANEITY.  The root→subject edge above reads the
+  -- receiver's root from the PRE-state, so it cannot chain with the root→root
+  -- edge of the same commit.  A courier whose provenance lives only on its OWN
+  -- root would hand over a capability and leave the receiver free to downgrade
+  -- with no predecessor — so the transfer must taint the receiving subject
+  -- directly from the sender's root.
+  assertBool "a transfer taints the receiving subject from the SENDER's root"
+    (match taintedEndpointState.getTcb? taintedSender with
+     | none => false
+     | some stcb =>
+       decide (({ sink := highCurrent.toObjId, source := stcb.cspaceRoot } : TaintFlowEdge)
+         ∈ receiverTaintEdges taintedEndpointState highCurrent highEndpoint))
+  -- …and it carries through the applied plan, on a state where ONLY the sender's
+  -- root holds the identity — the exact shape the pre-state read would lose.
+  assertBool "…and applying the plan moves it onto the receiver in one commit"
+    (match taintedEndpointState.getTcb? taintedSender with
+     | none => false
+     | some stcb =>
+       let stRoot : SystemState :=
+         { taintedEndpointState with
+             declassificationTaint :=
+               taintedEndpointState.declassificationTaint.joinAt stcb.cspaceRoot
+                 (DeclassificationTaint.singleton 83) }
+       let decoded : SyscallDecodeResult :=
+         { capAddr := SeLe4n.CPtr.ofNat 2, msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0,
+           syscallId := .receive }
+       let post := applySyscallTaint (syscallTaintPlan stRoot highCurrent decoded) stRoot stRoot
+       (post.declassificationTaint highCurrent.toObjId).contains 83)
+  -- NEGATIVE (round 4): a CAPLESS delivery declares no CSpace sink at all.  This
+  -- is the load-bearing half of the gate: without it the sender's provenance
+  -- would land in a CNode no capability reached, and the root→subject edge would
+  -- then hand an unrelated later downgrade an unsaturated predecessor — the very
+  -- false positive `staleTaint_is_not_saturation` rules out.
+  assertBool "NEGATIVE: a capless transfer declares no CSpace sink"
+    (decide (capTransferTaintSinks taintedEndpointState taintedSender highCurrent false = []))
+  -- …and the gate reads the real message: the parked sender here carries one
+  -- capability, so the receive-side sinks ARE declared.
+  assertBool "the parked message's capability is what opens the gate"
+    (parkedCarriesCaps taintedEndpointState taintedSender)
+  -- PR #873 round 4: a BOUND delivery leaves the notification holding its badge,
+  -- so it must not be cleared.  `boundDeliveryTarget?` ignores `pendingBadge`
+  -- entirely and `notificationSignalBound` never writes the notification, so the
+  -- old unconditional clear discarded live content's provenance — a MISSED chain.
+  assertBool "NEGATIVE: a bound delivery clears no notification taint"
+    (decide (signalClearedNotification boundDeliveryState highNotification = []))
+  -- …and the fixture really is on that path, so the negative above is not passing
+  -- because the resolution simply failed.
+  assertBool "the bound fixture resolves to the bound-delivery path"
+    (decide (boundDeliveryTarget? boundDeliveryState highNotification
+               = some (crossCoreReceiver, crossCoreEndpoint)))
+  -- …while the WAITER ordering still clears, since that delivery stores nothing.
+  assertBool "a waiter delivery still empties the notification"
+    (decide (signalClearedNotification waitingNotificationState highNotification
+               = [highNotification]))
+  -- PR #873 round 4: a clear is FINAL within its commit.  The final origination
+  -- pass skips cleared keys, so a declassifying signal that hands its badge
+  -- straight to a waiter cannot re-tag the notification it just emptied — which
+  -- would otherwise leave a fresh unsaturated identity on an object holding
+  -- nothing, inheritable by the next unrelated badge through it.
+  assertBool "a cleared object stays empty even when the commit recorded a downgrade"
+    (let plan : TaintPlan := { edges := [], cleared := [highNotification] }
+     let stTagged : SystemState :=
+       { taintedEndpointState with
+           declassificationTaint :=
+             taintedEndpointState.declassificationTaint.joinAt highNotification
+               (DeclassificationTaint.singleton 91) }
+     decide ((applySyscallTaint plan stTagged stTagged).declassificationTaint highNotification
+               = DeclassificationTaint.empty))
   -- The replyRecv REPLY leg (audit Finding 1): the server's provenance reaches
   -- the caller the reply object records — the steady-state loop's second hop.
   assertBool "the replyRecv plan names the reply object's recorded caller as a sink"
@@ -10563,12 +10668,23 @@ private def sendRendezvousState : SystemState :=
         (.endpoint { receiveQ := { head := some lowCurrent
                                    tail := some lowCurrent } }) }
 
+/-- PR #873 round 4: `extraCaps := 1`, because the CSpace sinks are gated on the
+message actually declaring capabilities.  This is the caps-carrying shape, whose
+edge list must name the receiver's CNode; `sendRendezvousCaplessDecoded` below is
+the same rendezvous with a plain message, and must not. -/
 private def sendRendezvousDecoded : SyscallDecodeResult :=
+  { syscallId := .send, capAddr := SeLe4n.CPtr.ofNat 2,
+    msgInfo := SeLe4n.Model.MessageInfo.mk 0 1 0 }
+
+private def sendRendezvousCaplessDecoded : SyscallDecodeResult :=
   { syscallId := .send, capAddr := SeLe4n.CPtr.ofNat 2,
     msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0 }
 
 private def sendRendezvousEdges : List TaintFlowEdge :=
   contentFlowEdges sendRendezvousState highCurrent sendRendezvousDecoded
+
+private def sendRendezvousCaplessEdges : List TaintFlowEdge :=
+  contentFlowEdges sendRendezvousState highCurrent sendRendezvousCaplessDecoded
 
 /-- §12.8  SM9.D.17 / SM9.D.18 — the footprint and the non-interference. -/
 private def runTaintFootprintChecks : IO Unit := do
@@ -10612,6 +10728,18 @@ private def runTaintFootprintChecks : IO Unit := do
   -- a later unrelated message to pick up.
   assertBool "NEGATIVE: the endpoint is not among the declared sinks at all"
     (decide (highEndpoint ∉ sendRendezvousEdges.map (·.sink)))
+  -- NEGATIVE (round 4, the gate): the SAME rendezvous with a plain message names
+  -- no CSpace sink — the receiver's TCB is still a sink, so the delivery is not
+  -- silently dropped, but no CNode is written for a transfer that never happened.
+  assertBool "NEGATIVE: a capless rendezvous declares no CSpace sink"
+    (decide (recvRoot ∉ sendRendezvousCaplessEdges.map (·.sink)) &&
+     decide (({ sink := lowCurrent.toObjId, source := highCurrent.toObjId } : TaintFlowEdge)
+       ∈ sendRendezvousCaplessEdges))
+  -- …and with the gate closed every remaining key IS write-locked, so the
+  -- registered CNode gap below is the whole of what the capless path leaves
+  -- uncovered: nothing.
+  assertBool "a capless rendezvous is fully write-locked by the send footprint"
+    ((sendRendezvousCaplessEdges.map (·.sink)).all (fun o => sendWriteObjects.contains o))
   assertBool "every taint write key EXCEPT the cap-transfer CNode is write-locked by the send"
     ((sendRendezvousEdges.map (·.sink)).all
       (fun o => sendWriteObjects.contains o || decide (o = recvRoot)))

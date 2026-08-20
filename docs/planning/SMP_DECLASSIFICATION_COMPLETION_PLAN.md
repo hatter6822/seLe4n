@@ -1691,20 +1691,44 @@ invariant surface: every IPC transition is quantified over by roughly 1 900
 references, and a field write inside one of them reopens all of them, while
 `applySyscallTaint_frame` (one field, six projections) leaves
 `authorizeDeclassificationOnCore_frame` and SM8.C's "writes only the trail"
-rule literally unchanged.  The plan's edges are all covered — sender → endpoint
-and → rendezvous receiver, receiver ← endpoint and ← blocked sender, replier →
+rule literally unchanged.  The plan's edges are all covered — sender → the
+rendezvous receiver, receiver ← the blocked sender at `sendQ.head`, replier →
 the reply object's recorded caller, signaller → notification → resolved
 receiver (through `declassifiedSignalReceiver?`, the *same* resolver SM9.C's
 second-hop gate and the SM9.B refusal seam use), and waiter ← notification,
 which is not optional: in the signal-before-wait ordering the tag sits on the
 notification and the **wait** is what moves the badge, so omitting it loses hop
-1 in one of the two orderings.  D.11's capability transfer is
-`capTransferTaintSinks`: a transferred capability lands in the *receiver's
-CNode*, a different object from its TCB, and a CNode is shared — a second
-thread rooted at the same CSpace reads what the transfer installed without ever
-touching that TCB.  Declared unconditionally for a resolved receiver rather
-than gated on the message actually carrying caps, per the phase's own
-over-approximation-is-safe principle.
+1 in one of the two orderings.
+
+An **endpoint is not a taint sink at all** (v0.33.55): it buffers no content of
+its own — a parked message lives in the blocked sender's TCB, and a receiver
+reads the head sender directly — so an endpoint proxy would be redundant *and*
+less precise, handing a receiver the taint of every sender that ever queued there
+rather than the one it consumed.  A consumed transport is **cleared** instead
+(`contentFlowClears`), so an object's taint describes the content it currently
+holds; and a clear is **final within its commit** (v0.33.58,
+`applySyscallTaint_cleared_empty`), because the origination pass skips cleared
+keys rather than re-tagging a transport that stored nothing.
+
+D.11's capability transfer is `capTransferTaintSinks`: a transferred capability
+lands in the *receiver's CNode*, a different object from its TCB, and a CNode is
+shared — a second thread rooted at the same CSpace reads what the transfer
+installed without ever touching that TCB.  The helper declares three edges, each
+closing a gap found in review: the receiver's root is tagged with the sender's
+content and with the sender's *root* (so a forwarded capability carries its
+chain, v0.33.55), and the receiving **subject** is tagged from the sender's root
+directly (v0.33.58) — necessary because `applyTaintFlow` reads every source from
+the pre-state, so a root→root edge and a root→subject edge in the same commit do
+not compose.
+
+The sinks are **gated on capabilities actually crossing** (v0.33.58), by the
+signal each ordering has: a send reads its own `MessageInfo.extraCaps`, a receive
+reads the parked message's `caps` array.  The earlier unconditional declaration
+rested on "over-approximation is safe", which stopped being true once a CSpace
+root fed a subject: a plain message would then hand an unrelated later downgrade
+an *unsaturated* predecessor — exactly what `staleTaint_is_not_saturation`
+forbids.  Over-approximation remains safe for an isolated sink; it is not safe
+for one that feeds the detector's subject side.
 
 **D.12 — the retype clears.**  `lifecycleRetype` commits `storeObject` at the
 same id, so a *framed* retype leaves a destroyed object's tags on its

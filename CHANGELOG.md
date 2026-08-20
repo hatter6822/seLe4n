@@ -1,3 +1,96 @@
+## v0.33.58 — WS-SM SM9.D review round 4: simultaneity, the gate, the resurrected clear, the bound badge
+
+**Review round 4 (v0.33.58)** — four findings on the v0.33.57 cut, each verified
+against the code and closed.  Three are consequences of the round-3 fixes, and
+the pattern is now the story of this review series: every sharpening of the
+model exposes what the previous shape was hiding.
+
+**(1) The flow fold is simultaneous, so provenance did not chain.**
+`applyTaintFlow` reads *every* source from the pre-state table.  Round 3 added a
+root→subject edge keyed on the receiver's own CSpace root — but a capability
+transfer writes the sender's provenance to that same root in the *same* commit,
+and the subject edge still reads its pre value.  A courier whose provenance
+lived only on its own CSpace root could therefore hand over a capability and
+leave the receiver free to downgrade with no recorded predecessor: a **missed
+chain**, the direction a detector must never err in.  Closed by sourcing the
+receiving subject straight from the sender's root
+(`taintPropagation_transfer_taints_receiver`), in `capTransferTaintSinks` so
+both rendezvous orderings get it from one place.
+
+**(2) The CSpace sinks fired on messages carrying no capabilities.**  Both
+planners appended the transfer helper for every resolved delivery, so a plain
+message wrote the sender's provenance into a CNode no capability reached — and
+once finding (1)'s edge feeds the consuming subject, that over-approximation
+names an *unsaturated* predecessor for an unrelated later downgrade.  That is
+precisely the false positive `staleTaint_is_not_saturation` rules out, so
+over-approximating here breaks a stated property rather than merely costing
+precision.  The sinks are now gated on capabilities actually crossing, by the
+signal each ordering really has: `sendCarriesCaps` reads the caller's own
+`MessageInfo.extraCaps` (the count `resolveExtraCaps` iterates), and
+`parkedCarriesCaps` reads the parked message's `caps` array — the very array
+`endpointReceiveDualWithCaps` hands to `ipcUnwrapCaps`.
+
+**(3) Origination resurrected the transport it had just cleared.**  The final
+`applyOrigination` ran *after* `applyTaintClears`, and a `.declassifySignal`
+delivering straight to a waiter records the notification as its `targetObject`
+while storing no badge there — so the clear was immediately undone, leaving a
+fresh unsaturated identity on an object holding nothing, inheritable by the next
+unrelated badge through it.  The final pass now skips cleared keys; the *seed*
+keeps the full tag list, which is what carries the fresh event to the receiver
+that actually took the badge.  `taintWriteKeys` is unchanged, since it unions the
+cleared list in anyway.
+
+The new `applySyscallTaint_cleared_empty` is the checkable form, and it made two
+existing theorems **stronger**: `waitClearsNotificationTaint` and
+`retypedObject_taint_empty` both drop their `newlyRecordedEvents = []`
+hypothesis and now hold for an arbitrary pre/post pair.
+
+**(4) A bound delivery cleared a badge it had not delivered.**
+`boundDeliveryTarget?` requires only an empty *waiter list* and a bound TCB
+parked on an endpoint — it says nothing about `pendingBadge` — and
+`notificationSignalBound` writes into that TCB's `pendingMessage` without
+touching the notification at all.  So a notification that already held a badge
+kept it across the signal while its taint was cleared: a later
+`.notificationWait` would read that badge from an empty source and the downgrade
+behind it would record no predecessor.  Another missed chain, and the round-2
+docstring's justification ("a waiter and a pending badge are mutually exclusive")
+was true of the waiter path and false of the bound one.  `signalClearedNotification`
+now clears only where delivery provably empties the object.
+
+**An unsatisfiable anchor set, and the gate that now forbids one.**  Tier 3
+failed on the v0.33.57 head with a positive anchor requiring
+`theorem taintPropagation_send_to_endpoint`.  That theorem was **deleted** at
+v0.33.55 — an endpoint stopped being a taint sink — and the negative pins
+forbidding its return were added in the same cut, but the original positive
+anchors were left in place.  Lines 3647/3649 asserted the two endpoint-keyed
+theorems present while 3776/3777 asserted them absent: an anchor set no tree can
+satisfy.  The positives are removed and the anchors now name the content-derived
+replacements that actually exist (`taintPropagation_send_to_receiver`,
+`taintPropagation_receive_from_sender`).  The deleted names survive only in one
+explanatory comment, which the negative pins cannot see because the anchor
+helpers read the comment-stripped code view.
+
+The class mattered more than the instance: nothing compared the two anchor sets,
+so the contradiction was invisible until the **Full** lane ran, three commits
+downstream, and it presented as "the invariant surface regressed" rather than
+"two anchors disagree".  `scripts/check_anchor_consistency.py` now fails any
+pattern pinned both present and absent, with a `--self-test` that plants a
+contradiction (including the leading-`^` normalisation this failure hinged on),
+asserts a clean set passes, and asserts a commented-out anchor is not counted.
+It is **static**, so it runs in the Tier 0 fast lane and fires on the PR that
+introduces the contradiction.  Run against the failing commit it reports both
+pairs with line numbers; run against the current tree it reports 2472 positive
+and 91 negative anchors with no pattern pinned both ways.
+
+Evidence: ten new runtime assertions in `SmpInformationFlowSuite` §12.4/§12.8
+(787 → **797**), each with its negative — including a capless rendezvous that
+declares no CSpace sink and *is* fully write-locked, which pins the gate from
+both sides; Tier-3 anchors on every new theorem and assertion.  The golden
+fixture is unchanged: the edges are additive to the plan surface and no reported
+observable moves.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
 ## v0.33.57 — CLAUDE.md / AGENTS.md: the workstream section becomes a status index
 
 The agent-guidance files had grown to **1303 lines / 352 KB**, of which the

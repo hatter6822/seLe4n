@@ -1084,6 +1084,22 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- Origination: the two ends of a recorded downgrade.
      have _ot := @SeLe4n.Kernel.taintOrigination_target
      have _oa := @SeLe4n.Kernel.taintOrigination_actor
+     -- PR #873 round 4: the flow fold is SIMULTANEOUS, so a transfer's
+     -- root-to-root edge cannot chain into a root-to-subject edge of the same
+     -- commit — the receiving subject is sourced from the sender's root directly.
+     have _tr := @SeLe4n.Kernel.taintPropagation_transfer_taints_receiver
+     -- …and the CSpace sinks are gated on capabilities actually crossing, so a
+     -- plain message cannot hand a later downgrade an unsaturated predecessor.
+     have _sc := @SeLe4n.Kernel.sendCarriesCaps
+     have _pc := @SeLe4n.Kernel.parkedCarriesCaps
+     have _cl := @SeLe4n.Kernel.capTransferTaintSinks_capless
+     -- A clear is final within its commit: the origination pass skips cleared
+     -- keys, so a delivered-onward transport cannot be re-tagged after emptying.
+     have _ce := @SeLe4n.Kernel.applySyscallTaint_cleared_empty
+     -- …and a BOUND delivery clears nothing, because it leaves the notification
+     -- holding whatever badge it already had.
+     have _sb := @SeLe4n.Kernel.signalClearedNotification_bound
+     have _sw := @SeLe4n.Kernel.signalClearedNotification_waiter
      decide (SeLe4n.Kernel.TaintPlan.inert.edges = []
        ∧ SeLe4n.Kernel.TaintPlan.inert.cleared = []))
 

@@ -3350,16 +3350,30 @@ so taint propagates through ordinary IPC.
   transition is quantified over by roughly 1 900 references, and a field write
   inside one reopens all of them, while `applySyscallTaint_frame` leaves
   `authorizeDeclassificationOnCore_frame` and SM8.C's "writes only the trail"
-  rule literally unchanged.  The edges cover sender → endpoint and → rendezvous
-  receiver, receiver ← endpoint and ← blocked sender, replier → the reply
+  rule literally unchanged.  The edges cover sender → the rendezvous receiver,
+  receiver ← the blocked sender at `sendQ.head`, replier → the reply
   object's recorded caller, signaller → notification → resolved receiver
   (through `declassifiedSignalReceiver?`, the **same** resolver SM9.C's
   second-hop gate and the SM9.B refusal seam use), and waiter ← notification —
   not optional, because in the signal-before-wait ordering the tag sits on the
   notification and the *wait* is what moves the badge.
+
+  An **endpoint is not a taint sink** (v0.33.55): it holds no content of its own,
+  since a parked message lives in the blocked sender's TCB and a receiver reads
+  the head sender directly, so a proxy would be redundant *and* less precise.  A
+  consumed transport is **cleared** instead, and that clear is final within its
+  commit — the origination pass skips cleared keys (v0.33.58), so a downgrade
+  delivered straight to a waiter cannot re-tag the transport it emptied.
+
   `capTransferTaintSinks` tags the receiver's **CNode**: a CNode is shared, so a
   second thread rooted at the same CSpace reads what `ipcUnwrapCaps` installed
-  without ever touching the receiver's TCB.
+  without ever touching the receiver's TCB.  It also tags the receiving
+  **subject** from the sender's CSpace root directly (v0.33.58), because
+  `applyTaintFlow` reads every source from the pre-state and two edges of one
+  commit therefore do not compose.  All of it is gated on capabilities actually
+  crossing: once a CSpace root feeds a subject, declaring the sink for a plain
+  message would name an *unsaturated* predecessor for an unrelated later
+  downgrade, which `staleTaint_is_not_saturation` forbids.
 
 * **The retype clears** (SM9.D.12).  `lifecycleRetype` commits `storeObject` at
   the same id, so a *framed* retype leaves a destroyed object's tags on its

@@ -283,32 +283,78 @@ without ever touching the receiver's TCB, so tagging the TCB alone would lose
 the link at exactly the point where the content becomes reachable by a third
 subject.
 
-**Two edges, so the provenance written here is also consumed.**  The first tags
-the receiver's CSpace root with the *sender's own content* (`tid`).  The second
-tags it with the *sender's CSpace-root* taint (`stcb.cspaceRoot`): a capability
-a prior transfer installed into `tid`'s CSpace carries that transfer's
-provenance on `tid`'s root, and forwarding it must carry the chain forward.
-Without the second edge the taint this function writes would be an unwired
-structure — written on the receiver's root and read by nothing, since no other
-edge sources from a CSpace root — and a cap forwarded by an untainted courier
-would drop the link.
+**Three edges, because provenance has to arrive *and* be consumed.**  The first
+tags the receiver's CSpace root with the *sender's own content* (`tid`).  The
+second tags it with the *sender's CSpace-root* taint (`stcb.cspaceRoot`): a
+capability a prior transfer installed into `tid`'s CSpace carries that
+transfer's provenance on `tid`'s root, and forwarding it must carry the chain
+forward.  Without the second edge the taint this function writes would be an
+unwired structure — written on the receiver's root and read by nothing, since no
+other edge sources from a CSpace root — and a cap forwarded by an untainted
+courier would drop the link.
 
-Declared **unconditionally** for a resolved receiver rather than gated on the
-message actually carrying capabilities.  The plan's own principle decides the
-direction: for a detector, over-approximation is safe and under-approximation
-is not, and the message is not in the decoded operand's hands at this point —
-gating on it would mean re-deriving the sender's `pendingMessage`, which is
-exactly the kind of duplicated computation that drifts.  A resolved receiver
-whose TCB is absent contributes nothing, which is correct: no CSpace, no
-install; an absent sender TCB drops only the CSpace-provenance edge. -/
+The third edge is the one simultaneity makes necessary.  `applyTaintFlow` reads
+**every** source from the pre-state table, so the root-to-root edge above and any
+root-to-subject edge in the same plan do not compose within one commit: the
+receiver's root gets the sender's provenance, but a root-to-subject edge keyed on
+the receiver's root still reads that root's *old* value and the receiver's TCB
+stays untainted.  A courier whose provenance lives only on the sender's CSpace
+root would therefore hand a capability to a receiver who could downgrade
+immediately with no recorded predecessor — a missed chain.  Sourcing the
+receiver's *subject* directly from the sender's root closes that in one hop,
+which is why the edge is here (shared by both rendezvous orderings) rather than
+in either planner.
+
+**Gated on capabilities actually crossing.**  A plain message installs nothing,
+so declaring these sinks for every delivery would write the sender's provenance
+into a CSpace no capability reached — and since a CSpace root now feeds the
+consuming subject, that over-approximation would name an *unsaturated*
+predecessor for an unrelated later downgrade.  That is precisely the false
+positive `staleTaint_is_not_saturation` says must not exist, so over-approximating
+here is not the safe direction it would be for an isolated sink; the gate is the
+caller's, because the two orderings learn about capabilities differently (a send
+from its own `MessageInfo`, a receive from the parked message it is about to
+unwrap).
+
+A resolved receiver whose TCB is absent contributes nothing, which is correct: no
+CSpace, no install.  An absent sender TCB drops both CSpace-provenance edges and
+keeps the content edge. -/
 def capTransferTaintSinks (st : SystemState) (tid : SeLe4n.ThreadId)
-    (receiver : SeLe4n.ThreadId) : List TaintFlowEdge :=
-  match st.getTcb? receiver, st.getTcb? tid with
-  | some rtcb, some stcb =>
-      [ { sink := rtcb.cspaceRoot, source := tid.toObjId }
-      , { sink := rtcb.cspaceRoot, source := stcb.cspaceRoot } ]
-  | some rtcb, none => [{ sink := rtcb.cspaceRoot, source := tid.toObjId }]
-  | none, _ => []
+    (receiver : SeLe4n.ThreadId) (carriesCaps : Bool) : List TaintFlowEdge :=
+  match carriesCaps with
+  | false => []
+  | true =>
+    match st.getTcb? receiver, st.getTcb? tid with
+    | some rtcb, some stcb =>
+        [ { sink := rtcb.cspaceRoot, source := tid.toObjId }
+        , { sink := rtcb.cspaceRoot, source := stcb.cspaceRoot }
+        , { sink := receiver.toObjId, source := stcb.cspaceRoot } ]
+    | some rtcb, none => [{ sink := rtcb.cspaceRoot, source := tid.toObjId }]
+    | none, _ => []
+
+/-- WS-SM SM9.D.11: **does a `.send` / `.call` declare capabilities?**
+
+Read from the caller's own `MessageInfo`, which is what `resolveExtraCaps`
+iterates: the message is still in the sender's registers at this point, so the
+declared count is the only signal available and re-deriving anything else would
+duplicate the dispatch's own decode.  Silent-drop means the resolved count can
+be *lower* than the declared one, so this over-approximates by at most a
+declared-but-unresolvable capability — a sink declared for a transfer that moves
+nothing, which is the harmless direction (the sink's source contributes whatever
+the sender already held, exactly as an ordinary content edge would). -/
+def sendCarriesCaps (decoded : SyscallDecodeResult) : Bool :=
+  decoded.msgInfo.extraCaps > 0
+
+/-- WS-SM SM9.D.11: **does the parked message this receive unwraps carry
+capabilities?**
+
+Exact, unlike the send side: the message is already in the blocked sender's
+`pendingMessage`, and its `caps` array is the very array
+`endpointReceiveDualWithCaps` hands to `ipcUnwrapCaps`. -/
+def parkedCarriesCaps (st : SystemState) (sender : SeLe4n.ThreadId) : Bool :=
+  match (st.getTcb? sender).bind (·.pendingMessage) with
+  | some msg => msg.caps.size > 0
+  | none => false
 
 /-- WS-SM SM9.D.8: **a sender's edges** — `.send` and `.call`.
 
@@ -325,12 +371,12 @@ sender directly (`receiverTaintEdges`), so an endpoint proxy would be redundant
 not just the one it consumes).  Not declaring it is the content-derived model:
 an object's taint reflects the content it currently holds, and an endpoint holds
 none. -/
-def senderTaintEdges (st : SystemState) (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) :
-    List TaintFlowEdge :=
+def senderTaintEdges (st : SystemState) (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (carriesCaps : Bool) : List TaintFlowEdge :=
   match (st.getEndpoint? epId).bind (·.receiveQ.head) with
   | some receiver =>
       { sink := receiver.toObjId, source := tid.toObjId } ::
-        capTransferTaintSinks st tid receiver
+        capTransferTaintSinks st tid receiver carriesCaps
   | none => []
 
 /-- WS-SM SM9.D.8: **a receiver's edges** — `.receive` and `.replyRecv`.
@@ -363,7 +409,7 @@ def receiverTaintEdges (st : SystemState) (tid : SeLe4n.ThreadId) (epId : SeLe4n
   match (st.getEndpoint? epId).bind (·.sendQ.head) with
   | some sender =>
       { sink := tid.toObjId, source := sender.toObjId } ::
-        (capTransferTaintSinks st sender tid ++
+        (capTransferTaintSinks st sender tid (parkedCarriesCaps st sender) ++
           (match st.getTcb? tid with
            | some rtcb => [{ sink := tid.toObjId, source := rtcb.cspaceRoot }]
            | none => []))
@@ -468,8 +514,8 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
   | none => []
   | some cap =>
     match decoded.syscallId, cap.target with
-    | .send, .object epId => senderTaintEdges st tid epId
-    | .call, .object epId => senderTaintEdges st tid epId
+    | .send, .object epId => senderTaintEdges st tid epId (sendCarriesCaps decoded)
+    | .call, .object epId => senderTaintEdges st tid epId (sendCarriesCaps decoded)
     | .receive, .object epId => receiverTaintEdges st tid epId
     | .replyRecv, .object epId =>
         receiverTaintEdges st tid epId ++ replyRecvReplyLegEdges st tid decoded
@@ -479,16 +525,81 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
     | .notificationWait, .object nid => waitTaintEdges tid nid
     | _, _ => []
 
+/-- WS-SM SM9.D.10: **the notification a signal empties**, if any.
+
+A signal has two delivering orderings and they leave the object in different
+states.  Delivery to a queued *waiter* stores nothing, so the notification ends
+the commit holding no badge and its taint must not outlive that content.
+Delivery to a *bound* TCB writes into that thread's `pendingMessage` and leaves
+the notification untouched — so whatever badge it already held is still there,
+and so is that badge's provenance.  Only the first ordering clears. -/
+def signalClearedNotification (st : SystemState) (nid : SeLe4n.ObjId) :
+    List SeLe4n.ObjId :=
+  match boundDeliveryTarget? st nid with
+  | some _ => []
+  | none =>
+    match notificationSignalWaiter? st nid with
+    | some _ => [nid]
+    | none => []
+
+/-- WS-SM SM9.D.10: **a bound delivery clears nothing** — the notification is not
+written by `notificationSignalBound`, so a badge it already held stays, and so
+must that badge's provenance. -/
+@[simp] theorem signalClearedNotification_bound (st : SystemState) (nid : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) (ep : SeLe4n.ObjId)
+    (h : boundDeliveryTarget? st nid = some (t, ep)) :
+    signalClearedNotification st nid = [] := by
+  simp [signalClearedNotification, h]
+
+/-- WS-SM SM9.D.10: **a waiter delivery empties the notification** — nothing is
+stored, so its provenance goes with the content. -/
+theorem signalClearedNotification_waiter (st : SystemState) (nid : SeLe4n.ObjId)
+    (w : SeLe4n.ThreadId) (hb : boundDeliveryTarget? st nid = none)
+    (hw : notificationSignalWaiter? st nid = some w) :
+    signalClearedNotification st nid = [nid] := by
+  simp [signalClearedNotification, hb, hw]
+
+/-- WS-SM SM9.D.10: **no receiver, no clear** — the badge is stored on the
+notification, which is exactly where its taint belongs. -/
+theorem signalClearedNotification_of_no_receiver (st : SystemState) (nid : SeLe4n.ObjId)
+    (h : declassifiedSignalReceiver? st nid = none) :
+    signalClearedNotification st nid = [] := by
+  cases hb : boundDeliveryTarget? st nid with
+  | some p =>
+      obtain ⟨t, ep⟩ := p
+      rw [declassifiedSignalReceiver?_bound st nid t ep hb] at h
+      exact absurd h (by simp)
+  | none =>
+      cases hw : notificationSignalWaiter? st nid with
+      | some w =>
+          rw [declassifiedSignalReceiver?_fallthrough st nid hb, hw] at h
+          exact absurd h (by simp)
+      | none => simp [signalClearedNotification, hb, hw]
+
 /-- WS-SM SM9.D.8 (**content-derived transport**): the transport objects a
 content-moving syscall *empties*, so an object's taint reflects the content it
 currently holds rather than everything that ever passed through it.
 
 A `.notificationWait` consumes the whole pending badge, so the notification is
-cleared once the waiter has read it; a signal delivered directly to a waiter
+cleared once the waiter has read it; a signal delivered directly to a *waiter*
 stores nothing, so its notification is cleared then too.  Endpoints never appear
 here — they hold no content of their own (the message lives in the blocked
 sender's TCB) and are not declared as taint sinks at all (`senderTaintEdges`),
-so there is nothing on them to clear. -/
+so there is nothing on them to clear.
+
+**The bound-delivery path is deliberately not a clear**, and the distinction is
+load-bearing rather than fussy.  `boundDeliveryTarget?` requires only an empty
+*waiter list* and a bound TCB parked on an endpoint — it says nothing about the
+pending badge — and `notificationSignalBound` delivers into that TCB's
+`pendingMessage` without touching the notification at all.  So a notification
+that already holds a badge keeps it across a bound delivery, and clearing there
+would discard the provenance of content the object still stores: a later
+`.notificationWait` would then read that badge from an empty source and a
+downgrade behind it would record no predecessor.  That is a *missed* chain, the
+direction a detector must never err in, so the clear is restricted to the
+ordering where delivery provably empties the object.  On the bound path with no
+badge stored the clear would have been a no-op anyway
+(`TaintTable.clearAt_eq_of_empty`), so nothing is lost by omitting it. -/
 def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) : List SeLe4n.ObjId :=
   match syscallOperandCap? st tid decoded.capAddr with
@@ -496,14 +607,8 @@ def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
   | some cap =>
     match decoded.syscallId, cap.target with
     | .notificationWait, .object nid => [nid]
-    | .notificationSignal, .object nid =>
-        match declassifiedSignalReceiver? st nid with
-        | some _ => [nid]
-        | none => []
-    | .declassifySignal, .object nid =>
-        match declassifiedSignalReceiver? st nid with
-        | some _ => [nid]
-        | none => []
+    | .notificationSignal, .object nid => signalClearedNotification st nid
+    | .declassifySignal, .object nid => signalClearedNotification st nid
     | _, _ => []
 
 /-- WS-SM SM9.D.12: **what a retype destroys.**
@@ -621,11 +726,21 @@ reason:
   delivered directly to a waiter) is emptied to the content it now holds;
 * origination last on the committed table, because a downgrade's identity does
   not exist until the event is recorded, and it must land on the object the
-  delivery reached — which the flows have just re-tainted. -/
+  delivery reached — which the flows have just re-tainted.  **Cleared objects are
+  excluded from this final pass**: a `.declassifySignal` that delivers straight to
+  a waiter records the notification as its `targetObject` while storing no badge
+  there, so tagging it would immediately undo the clear the step before and leave
+  a fresh, *unsaturated* identity on an object holding nothing — inheritable by
+  the next unrelated badge.  The exclusion is only on the final pass; the seed
+  above keeps the full tag list, which is what carries the fresh event to the
+  receiver that actually took the badge.  `taintWriteKeys` is unaffected, since
+  it unions the cleared list in anyway. -/
 def applySyscallTaint (plan : TaintPlan) (pre post : SystemState) : SystemState :=
   { post with
       declassificationTaint :=
-        applyOrigination (originationTags (newlyRecordedEvents pre post))
+        applyOrigination
+          ((originationTags (newlyRecordedEvents pre post)).filter
+            (fun p => !plan.cleared.contains p.1))
           (applyTaintClears plan.cleared
             (applyTaintFlow
               (applyOrigination (originationTags (newlyRecordedEvents pre post))
@@ -643,7 +758,9 @@ theorem applySyscallTaint_frame (plan : TaintPlan) (pre post : SystemState) :
     applySyscallTaint plan pre post =
       { post with
           declassificationTaint :=
-            applyOrigination (originationTags (newlyRecordedEvents pre post))
+            applyOrigination
+              ((originationTags (newlyRecordedEvents pre post)).filter
+                (fun p => !plan.cleared.contains p.1))
               (applyTaintClears plan.cleared
                 (applyTaintFlow
                   (applyOrigination (originationTags (newlyRecordedEvents pre post))
@@ -685,11 +802,125 @@ theorem applySyscallTaint_inert (pre post : SystemState)
     applySyscallTaint TaintPlan.inert pre post = post := by
   show { post with
       declassificationTaint :=
-        applyOrigination (originationTags (newlyRecordedEvents pre post))
-          (applyTaintClears [] (applyTaintFlow pre.declassificationTaint []
+        applyOrigination
+          ((originationTags (newlyRecordedEvents pre post)).filter
+            (fun p => !([] : List SeLe4n.ObjId).contains p.1))
+          (applyTaintClears [] (applyTaintFlow
+            (applyOrigination (originationTags (newlyRecordedEvents pre post))
+              pre.declassificationTaint) []
             post.declassificationTaint)) } = post
   rw [hEvents]
   simp [originationTags, applyOrigination, applyTaintClears, applyTaintFlow]
+
+-- ----------------------------------------------------------------------------
+-- WS-SM SM9.D.17: per-step key frames, stated next to the steps they frame.
+-- Each says the same thing about one fold: a key the step does not name is
+-- carried through untouched.  `applySyscallTaint_frame_off_writeKeys` composes
+-- the three, and `applySyscallTaint_cleared_empty` uses two of them.
+-- ----------------------------------------------------------------------------
+
+private theorem applyTaintFlow_not_mem (pre : TaintTable) (o : SeLe4n.ObjId) :
+    ∀ (edges : List TaintFlowEdge) (tbl : TaintTable),
+      o ∉ edges.map (fun e => e.sink) → applyTaintFlow pre edges tbl o = tbl o := by
+  intro edges
+  induction edges with
+  | nil => intro tbl _; rfl
+  | cons e rest ih =>
+    intro tbl h
+    have hne : o ≠ e.sink := by
+      intro hEq; exact h (by simp [hEq])
+    have hrest : o ∉ rest.map (fun e => e.sink) := by
+      intro hMem; exact h (by simp [hMem])
+    show applyTaintFlow pre rest (tbl.joinAt e.sink (pre e.source)) o = tbl o
+    rw [ih _ hrest]
+    exact TaintTable.joinAt_ne tbl hne _
+
+private theorem applyTaintClears_not_mem (o : SeLe4n.ObjId) :
+    ∀ (cleared : List SeLe4n.ObjId) (tbl : TaintTable),
+      o ∉ cleared → applyTaintClears cleared tbl o = tbl o := by
+  intro cleared
+  induction cleared with
+  | nil => intro tbl _; rfl
+  | cons c rest ih =>
+    intro tbl h
+    have hne : o ≠ c := by intro hEq; exact h (by simp [hEq])
+    have hrest : o ∉ rest := by intro hMem; exact h (by simp [hMem])
+    show applyTaintClears rest (tbl.clearAt c) o = tbl o
+    rw [ih _ hrest]
+    exact TaintTable.clearAt_ne tbl hne
+
+private theorem applyOrigination_not_mem (o : SeLe4n.ObjId) :
+    ∀ (origins : List (SeLe4n.ObjId × Nat)) (tbl : TaintTable),
+      o ∉ origins.map (·.fst) → applyOrigination origins tbl o = tbl o := by
+  intro origins
+  induction origins with
+  | nil => intro tbl _; rfl
+  | cons g rest ih =>
+    intro tbl h
+    have hne : o ≠ g.fst := by intro hEq; exact h (by simp [hEq])
+    have hrest : o ∉ rest.map (·.fst) := by intro hMem; exact h (by simp [hMem])
+    show applyOrigination rest (tbl.joinAt g.fst (DeclassificationTaint.singleton g.snd)) o
+        = tbl o
+    rw [ih _ hrest]
+    exact TaintTable.joinAt_ne tbl hne _
+
+/-- WS-SM SM9.D.12: **a cleared key ends the fold empty** — carried as a
+disjunction so the induction can hand the `o = c` case to its own tail. -/
+private theorem applyTaintClears_empty_of_mem_or_empty (o : SeLe4n.ObjId) :
+    ∀ (cleared : List SeLe4n.ObjId) (tbl : TaintTable),
+      (o ∈ cleared ∨ tbl o = DeclassificationTaint.empty) →
+      applyTaintClears cleared tbl o = DeclassificationTaint.empty := by
+  intro cleared
+  induction cleared with
+  | nil =>
+    intro tbl h
+    rcases h with hm | he
+    · exact absurd hm (by simp)
+    · exact he
+  | cons c rest ih =>
+    intro tbl h
+    show applyTaintClears rest (tbl.clearAt c) o = DeclassificationTaint.empty
+    refine ih (tbl.clearAt c) ?_
+    by_cases hoc : o = c
+    · exact Or.inr (by rw [hoc]; exact TaintTable.clearAt_self tbl c)
+    · rcases h with hm | he
+      · rcases List.mem_cons.mp hm with hEq | hr
+        · exact absurd hEq hoc
+        · exact Or.inl hr
+      · exact Or.inr (by rw [TaintTable.clearAt_ne tbl hoc]; exact he)
+
+/-- WS-SM SM9.D.12 / SM9.D.10 (**a clear is final within its commit**): an object
+the plan empties ends the commit empty — even when the *same* syscall recorded a
+downgrade naming that object.
+
+This is what makes the content-derived model hold for a declassifying signal that
+delivers straight to a waiter: the notification is the event's `targetObject`, but
+it stores no badge, so re-tagging it after the clear would leave a fresh
+unsaturated identity on an object holding nothing, inheritable by the next
+unrelated badge through it.  The final origination pass therefore skips every
+cleared key (`applySyscallTaint`), and this theorem is the checkable form of
+that. -/
+theorem applySyscallTaint_cleared_empty (plan : TaintPlan) (pre post : SystemState)
+    (o : SeLe4n.ObjId) (h : o ∈ plan.cleared) :
+    (applySyscallTaint plan pre post).declassificationTaint o =
+      DeclassificationTaint.empty := by
+  have hOrigF : o ∉ ((originationTags (newlyRecordedEvents pre post)).filter
+      (fun p => !plan.cleared.contains p.1)).map (·.fst) := by
+    intro hm
+    obtain ⟨q, hq, hqo⟩ := List.mem_map.mp hm
+    have hkeep := (List.mem_filter.mp hq).2
+    rw [← hqo] at h
+    simp [h] at hkeep
+  show applyOrigination
+      ((originationTags (newlyRecordedEvents pre post)).filter
+        (fun p => !plan.cleared.contains p.1))
+      (applyTaintClears plan.cleared
+        (applyTaintFlow
+          (applyOrigination (originationTags (newlyRecordedEvents pre post))
+            pre.declassificationTaint)
+          plan.edges post.declassificationTaint)) o = DeclassificationTaint.empty
+  rw [applyOrigination_not_mem o _ _ hOrigF]
+  exact applyTaintClears_empty_of_mem_or_empty o plan.cleared _ (Or.inl h)
 
 -- ============================================================================
 -- §3b  WS-SM SM9.D.8-.D.12 — what propagation establishes
@@ -791,7 +1022,9 @@ theorem taintPropagation_edge (plan : TaintPlan) (pre post : SystemState)
     (e : TaintFlowEdge) (hMem : e ∈ plan.edges) (hClear : e.sink ∉ plan.cleared) {t : Nat}
     (hSrc : (pre.declassificationTaint e.source).contains t = true) :
     ((applySyscallTaint plan pre post).declassificationTaint e.sink).contains t = true := by
-  show ((applyOrigination (originationTags (newlyRecordedEvents pre post))
+  show ((applyOrigination
+      ((originationTags (newlyRecordedEvents pre post)).filter
+        (fun p => !plan.cleared.contains p.1))
       (applyTaintClears plan.cleared
         (applyTaintFlow
           (applyOrigination (originationTags (newlyRecordedEvents pre post))
@@ -809,15 +1042,28 @@ theorem taintPropagation_edge (plan : TaintPlan) (pre post : SystemState)
 the object its content landed in.
 
 Together with `taintPropagation_edge` this is the whole of how a tag gets onto
-an object: a declassification originates it, and ordinary delivery moves it. -/
+an object: a declassification originates it, and ordinary delivery moves it.
+
+**Unless the same commit emptied that object.**  A downgrade whose content was
+handed straight to a waiter records the transport as its `targetObject` while
+storing nothing there, and the content-derived model says an object that holds
+nothing carries no provenance — so the target must not be re-tagged after the
+clear (`applySyscallTaint`).  The hypothesis is discharged at every per-site
+corollary, because the objects a plan clears and the objects a downgrade targets
+coincide only in that delivered-onward case, where
+`taintOrigination_target_cleared` states the opposite and the receiver holds the
+tag instead. -/
 theorem taintOrigination_target (plan : TaintPlan) (pre post : SystemState)
-    (ev : DeclassificationEvent) (hMem : ev ∈ newlyRecordedEvents pre post) :
+    (ev : DeclassificationEvent) (hMem : ev ∈ newlyRecordedEvents pre post)
+    (hClear : ev.targetObject ∉ plan.cleared) :
     ((applySyscallTaint plan pre post).declassificationTaint ev.targetObject).contains
       ev.timestamp = true := by
-  show ((applyOrigination (originationTags (newlyRecordedEvents pre post)) _)
+  show ((applyOrigination
+    ((originationTags (newlyRecordedEvents pre post)).filter
+      (fun p => !plan.cleared.contains p.1)) _)
     ev.targetObject).contains ev.timestamp = true
   exact contains_applyOrigination_of_mem _ _ (ev.targetObject, ev.timestamp)
-    (List.mem_flatMap.mpr ⟨ev, hMem, by simp⟩)
+    (List.mem_filter.mpr ⟨List.mem_flatMap.mpr ⟨ev, hMem, by simp⟩, by simp [hClear]⟩)
 
 /-- WS-SM SM9.D.13a (**origination, actor half**): a downgrade also tags the
 subject that performed it, so a subject that releases content twice carries the
@@ -826,13 +1072,16 @@ first release's identity into the second's snapshot.
 Without this the `.declassify`-then-`.declassify` chain — the simplest laundering
 shape there is — would carry no predecessor and go undetected. -/
 theorem taintOrigination_actor (plan : TaintPlan) (pre post : SystemState)
-    (ev : DeclassificationEvent) (hMem : ev ∈ newlyRecordedEvents pre post) :
+    (ev : DeclassificationEvent) (hMem : ev ∈ newlyRecordedEvents pre post)
+    (hClear : ev.sourceSubject ∉ plan.cleared) :
     ((applySyscallTaint plan pre post).declassificationTaint ev.sourceSubject).contains
       ev.timestamp = true := by
-  show ((applyOrigination (originationTags (newlyRecordedEvents pre post)) _)
+  show ((applyOrigination
+    ((originationTags (newlyRecordedEvents pre post)).filter
+      (fun p => !plan.cleared.contains p.1)) _)
     ev.sourceSubject).contains ev.timestamp = true
   exact contains_applyOrigination_of_mem _ _ (ev.sourceSubject, ev.timestamp)
-    (List.mem_flatMap.mpr ⟨ev, hMem, by simp⟩)
+    (List.mem_filter.mpr ⟨List.mem_flatMap.mpr ⟨ev, hMem, by simp⟩, by simp [hClear]⟩)
 
 /-- WS-SM SM9.D.8: the edge a content-moving syscall's plan carries, named once
 so every per-site corollary below reads the same resolution. -/
@@ -895,13 +1144,14 @@ theorem taintPropagation_send_to_receiver_cspace (st post : SystemState)
     (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
     (hTarget : cap.target = .object epId)
     (hRecv : (st.getEndpoint? epId).bind (·.receiveQ.head) = some receiver)
-    (hTcb : st.getTcb? receiver = some rtcb) {t : Nat}
+    (hTcb : st.getTcb? receiver = some rtcb)
+    (hCaps : sendCarriesCaps decoded = true) {t : Nat}
     (hSender : (st.declassificationTaint tid.toObjId).contains t = true) :
     ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
       rtcb.cspaceRoot).contains t = true := by
   have hCT : ({ sink := rtcb.cspaceRoot, source := tid.toObjId } : TaintFlowEdge) ∈
-      capTransferTaintSinks st tid receiver := by
-    simp only [capTransferTaintSinks, hTcb]
+      capTransferTaintSinks st tid receiver (sendCarriesCaps decoded) := by
+    simp only [capTransferTaintSinks, hCaps, hTcb]
     cases st.getTcb? tid <;> simp
   have hMem : ({ sink := rtcb.cspaceRoot, source := tid.toObjId } : TaintFlowEdge) ∈
       contentFlowEdges st tid decoded := by
@@ -954,13 +1204,14 @@ theorem taintPropagation_queued_receive_to_cspace (st post : SystemState)
     (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
     (hTarget : cap.target = .object epId)
     (hSender : (st.getEndpoint? epId).bind (·.sendQ.head) = some sender)
-    (hTcb : st.getTcb? tid = some rtcb) {t : Nat}
+    (hTcb : st.getTcb? tid = some rtcb)
+    (hCaps : parkedCarriesCaps st sender = true) {t : Nat}
     (hSrc : (st.declassificationTaint sender.toObjId).contains t = true) :
     ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
       rtcb.cspaceRoot).contains t = true := by
   have hCT : ({ sink := rtcb.cspaceRoot, source := sender.toObjId } : TaintFlowEdge) ∈
-      capTransferTaintSinks st sender tid := by
-    simp only [capTransferTaintSinks, hTcb]
+      capTransferTaintSinks st sender tid (parkedCarriesCaps st sender) := by
+    simp only [capTransferTaintSinks, hCaps, hTcb]
     cases st.getTcb? sender <;> simp
   have hMem : ({ sink := rtcb.cspaceRoot, source := sender.toObjId } : TaintFlowEdge) ∈
       contentFlowEdges st tid decoded := by
@@ -1085,7 +1336,8 @@ theorem taintPropagation_signal_to_notification (st post : SystemState)
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
   refine taintPropagation_edge _ st post _ hIn ?_ hSignaller
   rw [hCleared]; rcases hSid with h | h <;>
-    simp [contentFlowClears, hCap, h, hTarget, hNoWaiter]
+    simp [contentFlowClears, hCap, h, hTarget,
+      signalClearedNotification_of_no_receiver st nid hNoWaiter]
 
 /-- WS-SM SM9.D.10 (**wait ← notification**): the *other* ordering.
 
@@ -1122,27 +1374,22 @@ its receiver the previous badge's identity — a specific, unsaturated false
 positive, which is exactly what `staleTaint_is_not_saturation` says must not
 exist.
 
-The trail hypothesis is discharged by the wait itself, which records no
-declassification; it appears because `applySyscallTaint` is total over arbitrary
-pre/post pairs. -/
+No trail hypothesis is needed: the final origination pass skips cleared keys
+(`applySyscallTaint_cleared_empty`), so the notification ends empty whatever the
+commit recorded — which is the property the bound-delivery ordering needed and
+the reason the clear and the origination can no longer fight. -/
 theorem waitClearsNotificationTaint (st post : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (cap : Capability) (nid : SeLe4n.ObjId)
     (hClass : contentFlowClass decoded.syscallId = .movesContent)
     (hSid : decoded.syscallId = .notificationWait)
     (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
-    (hTarget : cap.target = .object nid)
-    (hNoEvents : newlyRecordedEvents st post = []) :
+    (hTarget : cap.target = .object nid) :
     (applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint nid =
       DeclassificationTaint.empty := by
   have hCleared : (syscallTaintPlan st tid decoded).cleared = [nid] := by
     simp only [syscallTaintPlan, hClass]
     simp [contentFlowClears, hCap, hSid, hTarget]
-  show (applyOrigination (originationTags (newlyRecordedEvents st post))
-      (applyTaintClears (syscallTaintPlan st tid decoded).cleared
-        (applyTaintFlow _ (syscallTaintPlan st tid decoded).edges
-          post.declassificationTaint))) nid = DeclassificationTaint.empty
-  rw [hNoEvents, hCleared]
-  simp [originationTags, applyOrigination, applyTaintClears]
+  exact applySyscallTaint_cleared_empty _ st post nid (by rw [hCleared]; simp)
 
 /-- WS-SM SM9.D.11 (**the CSpace provenance is consumed**): a capability
 transfer reads the *sender's* CSpace-root taint into the receiver's root, so a
@@ -1163,13 +1410,14 @@ theorem taintPropagation_cspace_provenance_forwarded (st post : SystemState)
     (hTarget : cap.target = .object epId)
     (hRecv : (st.getEndpoint? epId).bind (·.receiveQ.head) = some receiver)
     (hRTcb : st.getTcb? receiver = some rtcb)
-    (hSTcb : st.getTcb? tid = some stcb) {t : Nat}
+    (hSTcb : st.getTcb? tid = some stcb)
+    (hCaps : sendCarriesCaps decoded = true) {t : Nat}
     (hSenderCSpace : (st.declassificationTaint stcb.cspaceRoot).contains t = true) :
     ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
       rtcb.cspaceRoot).contains t = true := by
   have hCT : ({ sink := rtcb.cspaceRoot, source := stcb.cspaceRoot } : TaintFlowEdge) ∈
-      capTransferTaintSinks st tid receiver := by
-    simp [capTransferTaintSinks, hRTcb, hSTcb]
+      capTransferTaintSinks st tid receiver (sendCarriesCaps decoded) := by
+    simp [capTransferTaintSinks, hCaps, hRTcb, hSTcb]
   have hMem : ({ sink := rtcb.cspaceRoot, source := stcb.cspaceRoot } : TaintFlowEdge) ∈
       contentFlowEdges st tid decoded := by
     simp only [contentFlowEdges, hCap]
@@ -1178,6 +1426,66 @@ theorem taintPropagation_cspace_provenance_forwarded (st post : SystemState)
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
   refine taintPropagation_edge _ st post _ hIn ?_ hSenderCSpace
   rw [hCleared]; rcases hSid with h | h <;> simp [contentFlowClears, hCap, h, hTarget]
+
+/-- WS-SM SM9.D.11 (**the transfer taints the receiving subject**): a capability
+carrying provenance on the *sender's* CSpace root taints the receiver's TCB in
+the same commit that installs it.
+
+The edge simultaneity makes necessary.  `applyTaintFlow` reads every source from
+the pre-state, so the root-to-root edge and the receiver's own root-to-subject
+edge do not chain within one commit: the receiver's root acquires the sender's
+tags, but the root-to-subject edge still reads that root's *pre* value.  A
+courier whose provenance lives only on its own CSpace root would therefore hand
+over a capability and leave the receiver free to downgrade with no recorded
+predecessor — a missed chain.  Sourcing the receiver's subject straight from the
+sender's root closes it in one hop.
+
+Stated for the receive ordering; `senderTaintEdges` gets the same edge from the
+same helper, so the two orderings cannot disagree. -/
+theorem taintPropagation_transfer_taints_receiver (st post : SystemState)
+    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (cap : Capability)
+    (epId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (rtcb stcb : SeLe4n.Model.TCB)
+    (hClass : contentFlowClass decoded.syscallId = .movesContent)
+    (hSid : decoded.syscallId = .receive ∨ decoded.syscallId = .replyRecv)
+    (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
+    (hTarget : cap.target = .object epId)
+    (hSender : (st.getEndpoint? epId).bind (·.sendQ.head) = some sender)
+    (hRTcb : st.getTcb? tid = some rtcb)
+    (hSTcb : st.getTcb? sender = some stcb)
+    (hCaps : parkedCarriesCaps st sender = true) {t : Nat}
+    (hSenderCSpace : (st.declassificationTaint stcb.cspaceRoot).contains t = true) :
+    ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
+      tid.toObjId).contains t = true := by
+  have hCT : ({ sink := tid.toObjId, source := stcb.cspaceRoot } : TaintFlowEdge) ∈
+      capTransferTaintSinks st sender tid (parkedCarriesCaps st sender) := by
+    simp [capTransferTaintSinks, hCaps, hRTcb, hSTcb]
+  have hMem : ({ sink := tid.toObjId, source := stcb.cspaceRoot } : TaintFlowEdge) ∈
+      contentFlowEdges st tid decoded := by
+    simp only [contentFlowEdges, hCap]
+    rcases hSid with h | h
+    · simp only [h, hTarget, receiverTaintEdges, hSender]
+      exact List.mem_cons_of_mem _ (List.mem_append_left _ hCT)
+    · simp only [h, hTarget]
+      exact List.mem_append_left _
+        (by simp only [receiverTaintEdges, hSender]
+            exact List.mem_cons_of_mem _ (List.mem_append_left _ hCT))
+  obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
+  refine taintPropagation_edge _ st post _ hIn ?_ hSenderCSpace
+  rw [hCleared]; rcases hSid with h | h <;> simp [contentFlowClears, hCap, h, hTarget]
+
+/-- WS-SM SM9.D.11 (**a plain message installs nothing**): a delivery carrying no
+capabilities declares no CSpace sink at all.
+
+The load-bearing negative for the gate.  Without it the sender's provenance would
+be written into a CSpace root no capability reached, and — since a root now feeds
+the consuming subject — an unrelated later downgrade could name that as an
+*unsaturated* predecessor.  That is exactly the false positive
+`staleTaint_is_not_saturation` rules out, so over-approximating here would break
+a stated property rather than merely cost precision. -/
+@[simp] theorem capTransferTaintSinks_capless (st : SystemState)
+    (tid receiver : SeLe4n.ThreadId) :
+    capTransferTaintSinks st tid receiver false = [] := rfl
 
 -- ============================================================================
 -- §3c  WS-SM SM9.D.12 — the retype forgets
@@ -1195,22 +1503,15 @@ theorem retypeClearsTaint (st : SystemState) (tid : SeLe4n.ThreadId)
 /-- WS-SM SM9.D.12 (**the property**): after a retype the destroyed object
 carries **no** provenance.
 
-The hypothesis on the trail is discharged by the retype itself: it records no
-declassification, so this commit originates nothing that could re-tag the
-cleared id.  Stated with the hypothesis rather than assumed, because
-`applySyscallTaint` is total over arbitrary pre/post pairs and the retype's own
-trail frame belongs to the lifecycle layer. -/
+No hypothesis on the trail is needed — the final origination pass skips cleared
+keys — so this holds for an arbitrary pre/post pair rather than only for the
+retype's own (event-free) commit, and the lifecycle layer owes nothing here. -/
 theorem retypedObject_taint_empty (plan : TaintPlan) (pre post : SystemState)
-    (oid : SeLe4n.ObjId) (hPlan : plan = { edges := [], cleared := [oid] })
-    (hNoEvents : newlyRecordedEvents pre post = []) :
+    (oid : SeLe4n.ObjId) (hPlan : plan = { edges := [], cleared := [oid] }) :
     (applySyscallTaint plan pre post).declassificationTaint oid =
       DeclassificationTaint.empty := by
   subst hPlan
-  show (applyOrigination (originationTags (newlyRecordedEvents pre post))
-      (applyTaintClears [oid] (applyTaintFlow pre.declassificationTaint []
-        post.declassificationTaint))) oid = DeclassificationTaint.empty
-  rw [hNoEvents]
-  simp [originationTags, applyOrigination, applyTaintClears, applyTaintFlow]
+  exact applySyscallTaint_cleared_empty _ pre post oid (by simp)
 
 /-- WS-SM SM9.D.12 / SM9.D.15 (**the distinction that keeps the residual claim
 true**): stale taint is **not** saturation.
@@ -1325,51 +1626,6 @@ write set is exactly the declared sinks. -/
     taintOriginationKeys pre post = [] := by
   simp [taintOriginationKeys, h, originationTags]
 
-private theorem applyTaintFlow_not_mem (pre : TaintTable) (o : SeLe4n.ObjId) :
-    ∀ (edges : List TaintFlowEdge) (tbl : TaintTable),
-      o ∉ edges.map (fun e => e.sink) → applyTaintFlow pre edges tbl o = tbl o := by
-  intro edges
-  induction edges with
-  | nil => intro tbl _; rfl
-  | cons e rest ih =>
-    intro tbl h
-    have hne : o ≠ e.sink := by
-      intro hEq; exact h (by simp [hEq])
-    have hrest : o ∉ rest.map (fun e => e.sink) := by
-      intro hMem; exact h (by simp [hMem])
-    show applyTaintFlow pre rest (tbl.joinAt e.sink (pre e.source)) o = tbl o
-    rw [ih _ hrest]
-    exact TaintTable.joinAt_ne tbl hne _
-
-private theorem applyTaintClears_not_mem (o : SeLe4n.ObjId) :
-    ∀ (cleared : List SeLe4n.ObjId) (tbl : TaintTable),
-      o ∉ cleared → applyTaintClears cleared tbl o = tbl o := by
-  intro cleared
-  induction cleared with
-  | nil => intro tbl _; rfl
-  | cons c rest ih =>
-    intro tbl h
-    have hne : o ≠ c := by intro hEq; exact h (by simp [hEq])
-    have hrest : o ∉ rest := by intro hMem; exact h (by simp [hMem])
-    show applyTaintClears rest (tbl.clearAt c) o = tbl o
-    rw [ih _ hrest]
-    exact TaintTable.clearAt_ne tbl hne
-
-private theorem applyOrigination_not_mem (o : SeLe4n.ObjId) :
-    ∀ (origins : List (SeLe4n.ObjId × Nat)) (tbl : TaintTable),
-      o ∉ origins.map (·.fst) → applyOrigination origins tbl o = tbl o := by
-  intro origins
-  induction origins with
-  | nil => intro tbl _; rfl
-  | cons g rest ih =>
-    intro tbl h
-    have hne : o ≠ g.fst := by intro hEq; exact h (by simp [hEq])
-    have hrest : o ∉ rest.map (·.fst) := by intro hMem; exact h (by simp [hMem])
-    show applyOrigination rest (tbl.joinAt g.fst (DeclassificationTaint.singleton g.snd)) o
-        = tbl o
-    rw [ih _ hrest]
-    exact TaintTable.joinAt_ne tbl hne _
-
 /-- WS-SM SM9.D.17 (**the key-locality frame**): outside its write set a plan
 leaves the taint table literally unchanged.
 
@@ -1388,13 +1644,20 @@ theorem applySyscallTaint_frame_off_writeKeys (plan : TaintPlan)
     simp only [taintWriteKeys, List.mem_append]; exact Or.inl (Or.inr hm))
   have hOrig : o ∉ taintOriginationKeys pre post := fun hm => h (by
     simp only [taintWriteKeys, List.mem_append]; exact Or.inr hm)
-  show applyOrigination (originationTags (newlyRecordedEvents pre post))
+  have hOrigF : o ∉ ((originationTags (newlyRecordedEvents pre post)).filter
+      (fun p => !plan.cleared.contains p.1)).map (·.fst) := by
+    intro hm
+    obtain ⟨q, hq, hqo⟩ := List.mem_map.mp hm
+    exact hOrig (List.mem_map.mpr ⟨q, (List.mem_filter.mp hq).1, hqo⟩)
+  show applyOrigination
+      ((originationTags (newlyRecordedEvents pre post)).filter
+        (fun p => !plan.cleared.contains p.1))
       (applyTaintClears plan.cleared
         (applyTaintFlow
           (applyOrigination (originationTags (newlyRecordedEvents pre post))
             pre.declassificationTaint)
           plan.edges post.declassificationTaint)) o = post.declassificationTaint o
-  rw [applyOrigination_not_mem o _ _ hOrig,
+  rw [applyOrigination_not_mem o _ _ hOrigF,
       applyTaintClears_not_mem o _ _ hClear,
       applyTaintFlow_not_mem _ o _ _ hFlow]
 
