@@ -1,3 +1,61 @@
+## v0.33.60 — a transferred capability carries its derivation node, not a reusable slot address
+
+**The residual half of the revocation-precision fix.**  v0.33.59 made IPC
+capability transfer record its derivation edge from the real source *slot*
+instead of a synthetic one.  Review round 7 pointed out that a slot address is
+not stable across the window it has to survive, and it is right.
+
+**The window.**  A blocking send parks its message and the unwrap runs in a
+*later* syscall.  In between, any thread sharing the sender's CSpace can change
+what lives at that slot.  A slot address resolved at unwrap time names whatever
+occupies it *then*, so the transferred copy could be recorded as derived from an
+unrelated capability.  The SM5.I global entry lock does not help: it serialises
+each syscall, and the parked window spans syscalls.
+
+So v0.33.59 was strictly better but not complete — before it, *every* transfer
+was misattributed to one synthetic node; after it, only a transfer whose source
+slot changed during the parked window, and onto whatever now sat there.
+
+**The fix, and why it is the design the codebase already specified.**
+`TransferCap` now carries `srcNode : CdtNodeId` instead of `srcRef : SlotRef`.
+`resolveExtraCaps` mints the node at resolution — the moment the capability is
+actually looked up — and returns the state carrying it, so the derivation parent
+the message names exists in the state the transition commits from.
+`ipcTransferSingleCap` takes the node directly, which also removes one
+`ensureCdtNodeForSlot` call from its body.
+
+`CdtNodeId`'s own docstring states the contract this restores: *"nodes are
+stable across CSpace slot moves: slots point to nodes, and edges are between
+nodes (not slot addresses)."*  v0.33.59 contradicted it; this cut complies.
+`CdtNodeId` moves down into `Model/Object/Types.lean` for the same layering
+reason `SlotRef` did — `IpcMessage` sits below `Model/State.lean` and has to name
+it — and the namespace is unchanged, so no reference anywhere needed editing.
+
+**What the regression now pins.**  `chain12b` keeps both original verdicts
+(revoking the real source destroys the copy; revoking an unrelated slot does
+not) and adds the property node identity buys: a capability replaced *in place*
+keeps its slot's node, so a parked transfer stays attached to the identity it
+named and the revoke still reaches it.  The fixture mints its node exactly as
+`resolveExtraCaps` does, so the test measures the identity the revoke walk
+actually looks up rather than a hardcoded number.
+
+**A hazard the rename exposed, worth recording.**  Renaming the binder
+`senderSlot → srcNode` left thirteen theorem *statements* still saying
+`senderSlot`, which Lean silently auto-bound as a fresh implicit: they compiled
+while quantifying over an unrelated variable, with the explicit parameter dead.
+Nothing failed — the only signal was `unused variable`.  A warning was the sole
+evidence that thirteen theorems no longer said what they appeared to say.
+
+**Still open, and newly identified.**  `cspaceDeleteSlotCore` detaches a slot
+from its node, and `cspaceDeleteSlot` refuses a slot that already has CDT
+children — but a *parked* transfer is not yet a child, so a delete during the
+parked window is permitted and orphans the node the message names.  No revoke
+then reaches the copy.  Node identity is still the better position (it can no
+longer destroy an unrelated capability), but the delete guard needs to see
+in-flight transfers.  Recorded as tracked debt in the fine-lock plan.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §3
+
 ## v0.33.59 — IPC capability transfer records its real derivation source (revocation precision)
 
 **A capability transferred over IPC was recorded as derived from the wrong

@@ -90,6 +90,29 @@ commit (Track D) rather than registering it as debt.
 > out of the transfer path by a Tier-3 negative anchor.  The description below is
 > retained as the record of the finding.
 
+> **Residual, closed at v0.33.60**: a slot address is not stable across the
+> parked window a blocking send creates, so `TransferCap` now carries
+> `srcNode : CdtNodeId`, minted at resolution.  This restores `CdtNodeId`'s own
+> stated contract — nodes are stable across slot moves, and edges are between
+> nodes rather than slot addresses.
+>
+> **Still open — the delete guard does not see in-flight transfers.**
+> `cspaceDeleteSlotCore` detaches a slot from its node, and `cspaceDeleteSlot`
+> refuses a slot that already has CDT children.  A *parked* transfer is not yet
+> a child, so deleting the source slot during the parked window is permitted and
+> orphans the node the message names: no revoke reaches the transferred copy.
+> Closure target: make an in-flight transfer visible to `hasCdtChildren`, so
+> such a delete is refused exactly as one with a live child is.  This is a
+> change to the delete guard, not to propagation.
+>
+> **Also owed — route the live `.receive` through `endpointReceiveDualWithCaps`.**
+> The live receive arm runs no capability unwrap (`API.lean` says so in place),
+> so `endpointReceiveDualWithCaps` is a verified function with zero live
+> callers, and the parked-sender ordering transfers nothing.  Until it is wired,
+> the taint model must not declare receive-side CSpace sinks.  Wiring it changes
+> live IPC semantics, the return frame's `extraCaps` count, the golden trace and
+> the invariant surface, so it belongs in its own PR alongside this track.
+
 **Verified against primary sources; reported here per the project's
 vulnerability-reporting rule.**
 

@@ -869,18 +869,18 @@ object (not the endpoint), so it is uniquely identifiable in whichever CSpace it
 lands, letting the test prove it reaches the *receiver's* root and only there. -/
 private def payloadCap : Capability :=
   { target := .object capMarkerObj, rights := AccessRightSet.ofList [.read] }
-/-- The caller's own CSpace slot the payload capability is resolved from.  The
-transfer records its derivation edge against this slot, so revoking here is
+/-- The derivation node the payload capability is resolved from.  The transfer
+records its edge against this node, so revoking the slot that node belongs to is
 what must reach the copy installed in the server's CSpace. -/
 private def payloadSrcSlot : Nat := 2
 private def capMsg : IpcMessage :=
   { registers := #[],
-    caps := #[TransferCap.fromSlot payloadCap capCallerCn payloadSrcSlot],
+    caps := #[TransferCap.fromNode payloadCap payloadSrcSlot],
     badge := none }
 /-- 4 caps > maxExtraCaps (3): rejected at the send boundary. -/
 private def tooManyCapsMsg : IpcMessage :=
   { registers := #[], caps := Array.replicate (maxExtraCaps + 1)
-      (TransferCap.fromSlot Capability.null capCallerCn 0), badge := none }
+      (TransferCap.fromNode Capability.null 0), badge := none }
 
 /-- **Distinct** single-level CNodes (`depth=4, radixWidth=4, guard=0`) for the
 caller (`capCallerCn`) and the server (`capServerCn`), both empty at the receive

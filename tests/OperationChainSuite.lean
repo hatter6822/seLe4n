@@ -709,9 +709,9 @@ private def chain12IpcCapTransfer : IO Unit := do
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none st0)
 
   -- Step 2: Sender sends with caps (immediate rendezvous)
-  let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[TransferCap.fromSlot cap1 senderCNode 0,
-                                          TransferCap.fromSlot cap2 senderCNode 1,
-                                          TransferCap.fromSlot cap3 senderCNode 2],
+  let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[TransferCap.fromNode cap1 0,
+                                          TransferCap.fromNode cap2 1,
+                                          TransferCap.fromNode cap3 2],
                             badge := none }
   let (summary, st2) ← expectOkSt "chain12: send with caps"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)
@@ -785,11 +785,15 @@ private def chain12bIpcCapTransferRevocable : IO Unit := do
   let (_, st1) ← expectOkSt "chain12b: receiver blocks on endpoint"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none st0)
 
-  -- The message names the capability *and the slot it came from* — slot 5.
+  -- Mint the derivation node for the real source slot exactly as
+  -- `resolveExtraCaps` does in production, and thread the resulting state: the
+  -- message carries that NODE, and `cspaceRevokeCdt` later looks the same node
+  -- up from the slot.  Naming a node the state does not bind to slot 5 would
+  -- make the revoke walk miss it, which is what this scenario is measuring.
+  let (srcNode, st1) :=
+    SystemState.ensureCdtNodeForSlot st1 { cnode := senderCNode, slot := srcSlot }
   let msg : IpcMessage :=
-    { registers := #[],
-      caps := #[TransferCap.fromSlot payloadCap senderCNode 5],
-      badge := none }
+    { registers := #[], caps := #[{ cap := payloadCap, srcNode := srcNode }], badge := none }
   let (_, st2) ← expectOkSt "chain12b: send with caps"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode
       (SeLe4n.Slot.ofNat 0) st1)
@@ -815,6 +819,32 @@ private def chain12bIpcCapTransferRevocable : IO Unit := do
     (!receiverSlotFilled stRevokeReal)
 
   assertInvariants "chain12b: revocation reaches IPC-transferred children" stRevokeReal
+
+  -- What the node identity does and does not settle, pinned honestly.
+  --
+  -- A capability replaced *in place* keeps its slot's derivation node, because
+  -- the node belongs to the slot rather than to the capability sitting in it.
+  -- So a parked transfer stays attached to the node it named, and revoking that
+  -- slot still reaches the copy — slot reuse alone cannot redirect provenance
+  -- onto some other node.
+  let stOverwritten : SystemState :=
+    match st1.objects[senderCNode]? with
+    | some (.cnode cn) =>
+        { st1 with objects := st1.objects.insert senderCNode (.cnode (cn.insert srcSlot unrelatedCap)) }
+    | _ => st1
+  let (_, stStale) ← expectOkSt "chain12b: send after the source slot was rewritten"
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode
+      (SeLe4n.Slot.ofNat 0) stOverwritten)
+  let (_, stStaleRevoke) ← expectOkSt "chain12b: revoke the rewritten slot"
+    (SeLe4n.Kernel.cspaceRevokeCdt { cnode := senderCNode, slot := srcSlot } stStale)
+  expect "chain12b: an in-place rewrite keeps the slot's node, so the revoke still reaches"
+    (!receiverSlotFilled stStaleRevoke)
+  -- The delete path is a different question and is NOT settled here:
+  -- `cspaceDeleteSlotCore` detaches the slot from its node, so a delete during
+  -- the parked window orphans the node the message names.  `cspaceDeleteSlot`
+  -- refuses a slot that already has CDT children, but a parked transfer is not
+  -- yet a child, so the refusal does not cover the in-flight window.  Recorded
+  -- as tracked debt rather than asserted either way.
 
 /-- SCN-IPC-CAP-TRANSFER-NO-GRANT: Grant-right gate blocks cap transfer.
 Endpoint lacks Grant right — caps should be silently dropped. -/
@@ -850,7 +880,7 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
   let (_, st1) ← expectOkSt "chain13: receiver blocks"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none st0)
 
-  let msg : IpcMessage := { registers := #[⟨99⟩], caps := #[TransferCap.fromSlot cap1 senderCNode 0], badge := none }
+  let msg : IpcMessage := { registers := #[⟨99⟩], caps := #[TransferCap.fromNode cap1 0], badge := none }
   let (summary, st2) ← expectOkSt "chain13: send without grant right"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg noGrantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)
 
@@ -912,8 +942,8 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
 
   -- Step 2: Sender sends with badge 0xCAFE + 2 caps (immediate rendezvous)
   let badgeVal : SeLe4n.Badge := SeLe4n.Badge.ofNatMasked 0xCAFE
-  let msg : IpcMessage := { registers := #[⟨77⟩], caps := #[TransferCap.fromSlot cap1 senderCNode 0,
-                                          TransferCap.fromSlot cap2 senderCNode 1],
+  let msg : IpcMessage := { registers := #[⟨77⟩], caps := #[TransferCap.fromNode cap1 0,
+                                          TransferCap.fromNode cap2 1],
                             badge := some badgeVal }
   let (summary, st2) ← expectOkSt "chain14: send with badge + caps"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)

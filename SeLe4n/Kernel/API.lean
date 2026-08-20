@@ -993,19 +993,28 @@ Returns the resolved capabilities as an array. -/
    normative specification, including the seL4 reference C kernel equivalence. -/
 private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
-    (st : SystemState) : Array TransferCap :=
+    (st : SystemState) : Array TransferCap × SystemState :=
   capAddrs.foldl (fun acc addr =>
-    match resolveCapAddress cspaceRoot addr depth st with
+    match resolveCapAddress cspaceRoot addr depth acc.2 with
     | .error _ => acc
     | .ok ref =>
-        match SystemState.lookupSlotCap st ref with
+        match SystemState.lookupSlotCap acc.2 ref with
         | none => acc
-        -- `ref` is the real source slot.  It is kept rather than discarded
-        -- because the derivation edge recorded at the unwrap has to name it:
-        -- CDT nodes are keyed by the full `SlotRef`, so a stand-in address
-        -- would put the transferred copy under a node that revoking the true
-        -- source never visits.
-        | some cap => acc.push { cap := cap, srcRef := ref }) #[]
+        -- The derivation node of the real source slot is **minted here**, at
+        -- resolution, and carried in the message.  Two things make that the
+        -- right moment rather than the unwrap:
+        --
+        --   * the unwrap can run in a later syscall (a blocking send parks its
+        --     message), and by then the slot may hold something else entirely —
+        --     a slot address resolved at that point names the new occupant;
+        --   * a node id is stable across slot moves and reuse by construction,
+        --     which is what `CdtNodeId` is for.
+        --
+        -- Minting is idempotent for a slot that already has a node, so this
+        -- costs an allocation only the first time a slot is used as a source.
+        | some cap =>
+            let (node, stNode) := SystemState.ensureCdtNodeForSlot acc.2 ref
+            (acc.1.push { cap := cap, srcNode := node }, stNode)) (#[], st)
 
 /-- AN7-E (API-M01): Debug-noisy variant of `resolveExtraCaps` that surfaces
     partial resolution explicitly.  Returns the resolved array paired with a
@@ -1028,14 +1037,17 @@ private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
     in the consuming module. -/
 private def resolveExtraCapsDetailed (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
-    (st : SystemState) : Array TransferCap × Bool :=
+    (st : SystemState) : (Array TransferCap × Bool) × SystemState :=
   capAddrs.foldl (fun acc addr =>
-    match resolveCapAddress cspaceRoot addr depth st with
-    | .error _ => (acc.1, true)  -- partial: lookup failed
+    match resolveCapAddress cspaceRoot addr depth acc.2 with
+    | .error _ => ((acc.1.1, true), acc.2)   -- partial: lookup failed
     | .ok ref =>
-        match SystemState.lookupSlotCap st ref with
-        | none => (acc.1, true)  -- partial: slot empty
-        | some cap => (acc.1.push { cap := cap, srcRef := ref }, acc.2)) (#[], false)
+        match SystemState.lookupSlotCap acc.2 ref with
+        | none => ((acc.1.1, true), acc.2)   -- partial: slot empty
+        | some cap =>
+            let (node, stNode) := SystemState.ensureCdtNodeForSlot acc.2 ref
+            ((acc.1.1.push { cap := cap, srcNode := node }, acc.1.2), stNode))
+    ((#[], false), st)
 
 /-- AN7-E (API-M01) option declaration: `set_option sele4n.debug.noisyResolution true`
     flips production callers from the silent-drop `resolveExtraCaps` to
@@ -1056,7 +1068,7 @@ register_option sele4n.debug.noisyResolution : Bool := {
     candidate; no currently-active plan file tracks it. -/
 theorem resolveExtraCapsDetailed_empty
     (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (st : SystemState) :
-    resolveExtraCapsDetailed cspaceRoot #[] depth st = (#[], false) := by
+    resolveExtraCapsDetailed cspaceRoot #[] depth st = ((#[], false), st) := by
   rfl
 
 /-- AN7-E (API-M01): the silent-drop variant on the empty input is also
@@ -1064,7 +1076,7 @@ theorem resolveExtraCapsDetailed_empty
     that in the base case both variants agree (vacuously). -/
 theorem resolveExtraCaps_empty
     (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (st : SystemState) :
-    resolveExtraCaps cspaceRoot #[] depth st = #[] := by
+    resolveExtraCaps cspaceRoot #[] depth st = (#[], st) := by
   rfl
 
 /-- AN7-E (API-M01): Gated resolver for production dispatch arms that
@@ -1076,16 +1088,16 @@ theorem resolveExtraCaps_empty
     `sele4n.debug.noisyResolution` documents the project-level policy. -/
 private def resolveExtraCapsGated (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
-    (st : SystemState) : Except KernelError (Array TransferCap) :=
-  let (caps, isPartial) := resolveExtraCapsDetailed cspaceRoot capAddrs depth st
-  if isPartial then .error .partialResolution else .ok caps
+    (st : SystemState) : Except KernelError (Array TransferCap × SystemState) :=
+  let ((caps, isPartial), stNodes) := resolveExtraCapsDetailed cspaceRoot capAddrs depth st
+  if isPartial then .error .partialResolution else .ok (caps, stNodes)
 
 /-- AN7-E (API-M01): The gated resolver returns `.ok #[]` on empty input
     (no addresses to resolve → no partial condition possible).  Base case
     of the gated-resolver contract. -/
 theorem resolveExtraCapsGated_empty
     (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (st : SystemState) :
-    resolveExtraCapsGated cspaceRoot #[] depth st = .ok #[] := by
+    resolveExtraCapsGated cspaceRoot #[] depth st = .ok (#[], st) := by
   unfold resolveExtraCapsGated
   simp [resolveExtraCapsDetailed_empty]
 
@@ -1698,7 +1710,10 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
       fun st =>
         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
         let extraCapAddrs := decodeExtraCapAddrs decoded
-        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        -- Resolution mints a derivation node per source slot, so it returns
+        -- the state carrying them; the transition must run from THAT state,
+        -- or the parents the message names would live only in a discarded copy.
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         -- WS-SM SM6.D (PR #822 review): capture the receive-queue head the send will
         -- wake, so its server-first reply stash is cleared once it leaves
@@ -1789,7 +1804,10 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
       fun st =>
         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
         let extraCapAddrs := decodeExtraCapAddrs decoded
-        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        -- Resolution mints a derivation node per source slot, so it returns
+        -- the state carrying them; the transition must run from THAT state,
+        -- or the parents the message names would live only in a discarded copy.
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         -- WS-SM SM6.A (live cross-core `.call`): route the unchecked `.call`
         -- through the cross-core dispatch (receiver woken on its *home* core,
@@ -2105,7 +2123,10 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       fun st =>
         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
         let extraCapAddrs := decodeExtraCapAddrs decoded
-        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        -- Resolution mints a derivation node per source slot, so it returns
+        -- the state carrying them; the transition must run from THAT state,
+        -- or the parents the message names would live only in a discarded copy.
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         -- AH1-B (H-01 fix): Pass capability transfer params to checked send
         -- WS-SM SM6.D (PR #822 review): clear the woken receiver's server-first reply
@@ -2193,7 +2214,10 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       fun st =>
         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
         let extraCapAddrs := decodeExtraCapAddrs decoded
-        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        -- Resolution mints a derivation node per source slot, so it returns
+        -- the state carrying them; the transition must run from THAT state,
+        -- or the parents the message names would live only in a discarded copy.
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         -- WS-SM SM6.A (live cross-core `.call`): route the checked `.call`
         -- through the cross-core dispatch.  `endpointCallCrossCoreDispatchChecked`
@@ -3536,7 +3560,10 @@ theorem dispatchWithCap_send_uses_withCaps
       fun st =>
         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
         let extraCapAddrs := decodeExtraCapAddrs decoded
-        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        -- Resolution mints a derivation node per source slot, so it returns
+        -- the state carrying them; the transition must run from THAT state,
+        -- or the parents the message names would live only in a discarded copy.
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         let executingCore := determineExecutingCore st tid
@@ -3565,7 +3592,10 @@ theorem dispatchWithCap_call_uses_crossCoreDispatch
       fun st =>
         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
         let extraCapAddrs := decodeExtraCapAddrs decoded
-        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        -- Resolution mints a derivation node per source slot, so it returns
+        -- the state carrying them; the transition must run from THAT state,
+        -- or the parents the message names would live only in a discarded copy.
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         let executingCore := determineExecutingCore st tid
         -- WS-SM SM6.D (#7.3b fold): server-first reply linkage is atomic with the
@@ -4904,10 +4934,11 @@ theorem dispatchWithCap_send_delegates
     (hSyscall : decoded.syscallId = .send)
     (hTarget : cap.target = .object epId) :
     dispatchWithCap decoded tid gate cap st =
-      (match endpointSendDualWithCapsOnCore epId tid
+      (let (resolvedCaps, st) :=
+         resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth st
+       match endpointSendDualWithCapsOnCore epId tid
               { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-                caps := resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-                          gate.capDepth st,
+                caps := resolvedCaps,
                 badge := cap.badge }
               cap.rights gate.cspaceRoot decoded.capRecvSlot
               (determineExecutingCore st tid) st with
@@ -4931,10 +4962,11 @@ theorem dispatchWithCapChecked_send_delegates
     (hSyscall : decoded.syscallId = .send)
     (hTarget : cap.target = .object epId) :
     dispatchWithCapChecked ctx decoded tid gate cap st =
-      (match endpointSendCrossCoreDispatchChecked ctx epId tid
+      (let (resolvedCaps, st) :=
+         resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth st
+       match endpointSendCrossCoreDispatchChecked ctx epId tid
               { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-                caps := resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-                          gate.capDepth st,
+                caps := resolvedCaps,
                 badge := cap.badge }
               cap.rights gate.cspaceRoot decoded.capRecvSlot
               (determineExecutingCore st tid) st with
@@ -5037,10 +5069,11 @@ def syscallDelegates : SyscallId → Prop
         decoded.syscallId = .send →
         cap.target = .object epId →
         dispatchWithCap decoded tid gate cap st =
-          (match endpointSendDualWithCapsOnCore epId tid
+          (let (resolvedCaps, st) :=
+             resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth st
+           match endpointSendDualWithCapsOnCore epId tid
                   { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-                    caps := resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-                              gate.capDepth st,
+                    caps := resolvedCaps,
                     badge := cap.badge }
                   cap.rights gate.cspaceRoot decoded.capRecvSlot
                   (determineExecutingCore st tid) st with

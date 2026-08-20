@@ -606,36 +606,100 @@ def maxMessageRegisters : Nat := 120
 Matches seL4's `seL4_MsgMaxExtraCaps` (3 extra caps). -/
 def maxExtraCaps : Nat := 3
 
-/-- A capability in transit, **with the slot it was resolved from**.
+/-- Stable CDT node identifier.
 
-The source slot travels with the capability because the receiving end is where
-the derivation edge is recorded, and that can be a *later* syscall: a blocking
-send parks its message in the sender's TCB, and the unwrap runs when some
-receiver arrives.  Anything not carried here is unavailable at that point.
+Nodes are stable across CSpace slot moves: slots point to nodes, and edges are
+between nodes (not slot addresses).
+
+WS-J1-F: Typed wrapper replacing `abbrev CdtNodeId := Nat` for consistency
+with all other kernel identifiers. Provides explicit `Hashable`, `LawfulHashable`,
+`EquivBEq`, `LawfulBEq` instances for HashMap/HashSet keying. -/
+structure CdtNodeId where
+  val : Nat
+  deriving DecidableEq, Repr, Inhabited
+
+/-- WS-J1-F: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable CdtNodeId where
+  hash a := hash a.val
+
+namespace CdtNodeId
+
+/-- Constructor helper kept explicit for migration ergonomics. -/
+@[inline] def ofNat (n : Nat) : CdtNodeId := ⟨n⟩
+
+/-- Projection helper kept explicit for migration ergonomics. -/
+@[inline] def toNat (id : CdtNodeId) : Nat := id.val
+
+instance : ToString CdtNodeId where
+  toString id := toString id.toNat
+
+/-- AK7-K (F-L15 / LOW): Sentinel convention for `CdtNodeId`, mirroring
+the `ObjId`/`ThreadId`/`SchedContextId` pattern. Value `0` is reserved
+as the null/unallocated CDT node — `ensureCdtNodeForSlot` starts
+allocation at `0` and increments, so practical usage may or may not
+reserve `0`; callers that want a sentinel-first convention should begin
+`cdtNextNode` at `⟨1⟩`. Provided here as a vocabulary for future
+migration (AJ2-D-style disjointness). -/
+@[inline] def sentinel : CdtNodeId := ⟨0⟩
+
+/-- AK7-K (F-L15): Reserved predicate — `CdtNodeId` is reserved when its
+value is `0` (sentinel). -/
+@[inline] def isReserved (id : CdtNodeId) : Bool := id.val = 0
+
+end CdtNodeId
+
+/-- WS-J1-F: LawfulHashable for CdtNodeId HashMap/HashSet proof support. -/
+instance : LawfulHashable CdtNodeId where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+/-- WS-J1-F: EquivBEq for CdtNodeId HashMap proof support. -/
+instance : EquivBEq CdtNodeId := ⟨⟩
+
+/-- WS-J1-F: LawfulBEq for CdtNodeId HashMap/HashSet proof support. -/
+instance : LawfulBEq CdtNodeId where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+
+/-- A capability in transit, **with the derivation node it came from**.
+
+The source travels with the capability because the receiving end is where the
+derivation edge is recorded, and that can be a *later* syscall: a blocking send
+parks its message in the sender's TCB, and the unwrap runs when some receiver
+arrives.  Anything not carried here is unavailable at that point.
 
 Carrying the pair in one array rather than two parallel ones is deliberate.  A
-`caps` array beside a `capSrcRefs` array would have to be kept the same length
+`caps` array beside a `capSrcNodes` array would have to be kept the same length
 and the same order by every producer, and nothing in the type would say so —
 exactly the implicit invariant this codebase requires to be structural.  A
-transfer capability is therefore a single value that cannot be half-built. -/
+transfer capability cannot be half-built. -/
 structure TransferCap where
   /-- The capability being transferred. -/
   cap : Capability
-  /-- The slot it was resolved from, in the sender's CSpace.  This is the
-      derivation parent the receiving copy is recorded against, so revoking the
-      source reaches the copy. -/
-  srcRef : SlotRef
+  /-- The **derivation node** of the slot it was resolved from — the parent the
+      receiving copy is recorded against, so revoking the source reaches the copy.
+
+      A node identity rather than a slot address, and the difference is
+      load-bearing.  A blocking send parks its message and the unwrap runs in a
+      *later* syscall; in between, any thread sharing the sender's CSpace can
+      delete that slot and install something else there.  A slot address would
+      then resolve to whatever now occupies it, and the copy would be recorded as
+      derived from an unrelated capability — the same misattribution this field
+      exists to prevent, only rarer and harder to see.  Node ids do not have that
+      failure mode, and this is their stated contract: nodes are stable across
+      CSpace slot moves, slots point to nodes, and edges are between nodes rather
+      than slot addresses. -/
+  srcNode : CdtNodeId
   deriving Repr, DecidableEq
 
-/-- A transfer capability with its source slot spelled out.
+/-- A transfer capability with its derivation node spelled out.
 
 For fixtures, which build messages by hand rather than through
-`resolveExtraCaps`.  There is deliberately **no** defaulted slot: a stand-in
-source address is exactly the defect this structure exists to prevent, so a
-caller that has no real slot to name has to say so explicitly. -/
-def TransferCap.fromSlot (cap : Capability) (cnode : SeLe4n.ObjId) (slot : Nat) :
-    TransferCap :=
-  { cap := cap, srcRef := { cnode := cnode, slot := SeLe4n.Slot.ofNat slot } }
+`resolveExtraCaps`.  There is deliberately **no** default: a stand-in derivation
+parent is exactly the defect this structure exists to prevent, so a caller with
+no real node to name has to say so explicitly. -/
+def TransferCap.fromNode (cap : Capability) (node : Nat) : TransferCap :=
+  { cap := cap, srcNode := CdtNodeId.ofNat node }
 
 /-- WS-E4/M-02: Structured IPC message payload for endpoint transfers.
 

@@ -1471,7 +1471,7 @@ def runInformationFlowChecks : IO Unit := do
               slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)] })
         |>.buildChecked)
     let msgWithCaps : IpcMessage :=
-      { registers := #[], caps := #[TransferCap.fromSlot cap1 senderCNode 0], badge := none }
+      { registers := #[], caps := #[TransferCap.fromNode cap1 0], badge := none }
     let result := SeLe4n.Kernel.ipcUnwrapCaps msgWithCaps senderCNode nonCNodeRoot
       (SeLe4n.Slot.ofNat 0) true st
     expect "ipcUnwrapCaps with non-CNode root yields consistent outcome"
@@ -1582,7 +1582,7 @@ def runInformationFlowChecks : IO Unit := do
         -- → `lookupTcb`), the wrapper propagates an error. The wrapper MUST
         -- NOT return `.ok` — that would be the pre-R1 covert-channel shape.
         let msgWithCaps : IpcMessage :=
-          { registers := #[], caps := #[TransferCap.fromSlot cap1 callerCNode 0], badge := none }
+          { registers := #[], caps := #[TransferCap.fromNode cap1 0], badge := none }
         let callResult := SeLe4n.Kernel.endpointCallWithCaps epId callerTid
           msgWithCaps (AccessRightSet.ofList [.write, .grant]) callerCNode
           (SeLe4n.Slot.ofNat 0) stFaulty

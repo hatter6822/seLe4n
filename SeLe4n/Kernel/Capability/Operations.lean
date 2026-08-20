@@ -1584,7 +1584,7 @@ Returns `CapTransferResult.installed cnode slot` on success, `.noSlot` if the
 receiver's CNode has no empty slots in the scan range. -/
 def ipcTransferSingleCap
     (cap : Capability)
-    (senderSlot : CSpaceAddr)
+    (srcNode : CdtNodeId)
     (receiverCspaceRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) : Kernel CapTransferResult :=
@@ -1602,8 +1602,12 @@ def ipcTransferSingleCap
             match cspaceInsertSlot dstAddr cap st with
             | .error e => .error e
             | .ok ((), st') =>
-                let (srcNode, stSrc) := SystemState.ensureCdtNodeForSlot st' senderSlot
-                let (dstNode, stDst) := SystemState.ensureCdtNodeForSlot stSrc dstAddr
+                -- The source node is supplied by the resolver, which minted it
+                -- when the capability was looked up.  Re-deriving it from a slot
+                -- address here would reintroduce the stale-source window: the
+                -- unwrap can run in a later syscall, by which point the slot may
+                -- hold an unrelated capability.
+                let (dstNode, stDst) := SystemState.ensureCdtNodeForSlot st' dstAddr
                 let cdt' := stDst.cdt.addEdge srcNode dstNode .ipcTransfer
                 .ok (.installed receiverCspaceRoot emptySlot,
                      { stDst with cdt := cdt' })
@@ -1625,11 +1629,11 @@ private theorem ensureCdtNodeForSlot_machine_eq (st : SystemState) (ref : SlotRe
   split <;> simp
 
 theorem ipcTransferSingleCap_preserves_scheduler
-    (cap : Capability) (senderSlot : CSpaceAddr)
+    (cap : Capability) (srcNode : CdtNodeId)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) (st st' : SystemState)
     (result : CapTransferResult)
-    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.scheduler = st.scheduler := by
   -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
@@ -1648,9 +1652,7 @@ theorem ipcTransferSingleCap_preserves_scheduler
           simp [hIns] at hStep
           obtain ⟨_, rfl⟩ := hStep
           have h1 := cspaceInsertSlot_preserves_scheduler st pair.2 _ cap (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
-          have h2 := ensureCdtNodeForSlot_scheduler_eq pair.2 senderSlot
-          have h3 := ensureCdtNodeForSlot_scheduler_eq
-            (SystemState.ensureCdtNodeForSlot pair.2 senderSlot).2
+          have h2 := ensureCdtNodeForSlot_scheduler_eq pair.2
             { cnode := receiverRoot, slot := emptySlot }
           simp_all
 
@@ -1661,11 +1663,11 @@ the run queues; together they are what makes an IPC capability transfer
 *per-core silent* — the second half of `observableSlotsConfinedToCores … []`,
 which reads register banks as well as scheduler slots. -/
 theorem ipcTransferSingleCap_preserves_machine
-    (cap : Capability) (senderSlot : CSpaceAddr)
+    (cap : Capability) (srcNode : CdtNodeId)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) (st st' : SystemState)
     (result : CapTransferResult)
-    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.machine = st.machine := by
   simp only [ipcTransferSingleCap] at hStep
@@ -1684,21 +1686,19 @@ theorem ipcTransferSingleCap_preserves_machine
           obtain ⟨_, rfl⟩ := hStep
           have h1 := cspaceInsertSlot_preserves_machine st pair.2 _ cap
             (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
-          have h2 := ensureCdtNodeForSlot_machine_eq pair.2 senderSlot
-          have h3 := ensureCdtNodeForSlot_machine_eq
-            (SystemState.ensureCdtNodeForSlot pair.2 senderSlot).2
+          have h2 := ensureCdtNodeForSlot_machine_eq pair.2
             { cnode := receiverRoot, slot := emptySlot }
           simp_all
 
 /-- ipcTransferSingleCap preserves objects at keys other than the receiver root CNode. -/
 theorem ipcTransferSingleCap_preserves_objects_ne
-    (cap : Capability) (senderSlot : CSpaceAddr)
+    (cap : Capability) (srcNode : CdtNodeId)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) (st st' : SystemState)
     (result : CapTransferResult) (oid : SeLe4n.ObjId)
     (hNe : oid ≠ receiverRoot)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.objects[oid]? = st.objects[oid]? := by
   -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
@@ -1718,18 +1718,16 @@ theorem ipcTransferSingleCap_preserves_objects_ne
           obtain ⟨_, rfl⟩ := hStep
           have hObjIns := cspaceInsertSlot_preserves_objects_ne st pair.2 _ cap oid hNe hObjInv
             (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
-          have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2 senderSlot
-          have hObjDst := SystemState.ensureCdtNodeForSlot_objects_eq
-            (SystemState.ensureCdtNodeForSlot pair.2 senderSlot).2
+          have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2
             { cnode := receiverRoot, slot := emptySlot }
           simp_all
 
 theorem ipcTransferSingleCap_preserves_services
-    (cap : Capability) (senderSlot : CSpaceAddr)
+    (cap : Capability) (srcNode : CdtNodeId)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) (st st' : SystemState)
     (result : CapTransferResult)
-    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.services = st.services := by
   -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
@@ -1748,20 +1746,18 @@ theorem ipcTransferSingleCap_preserves_services
           simp [hIns] at hStep
           obtain ⟨_, rfl⟩ := hStep
           have h1 := cspaceInsertSlot_preserves_services st pair.2 _ cap (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
-          have h2 := ensureCdtNodeForSlot_services_eq pair.2 senderSlot
-          have h3 := ensureCdtNodeForSlot_services_eq
-            (SystemState.ensureCdtNodeForSlot pair.2 senderSlot).2
+          have h2 := ensureCdtNodeForSlot_services_eq pair.2
             { cnode := receiverRoot, slot := emptySlot }
           simp_all
 
 /-- ipcTransferSingleCap preserves `objects.invExt`. -/
 theorem ipcTransferSingleCap_preserves_objects_invExt
-    (cap : Capability) (senderSlot : CSpaceAddr)
+    (cap : Capability) (srcNode : CdtNodeId)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) (st st' : SystemState)
     (result : CapTransferResult)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.objects.invExt := by
   -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
@@ -1781,24 +1777,22 @@ theorem ipcTransferSingleCap_preserves_objects_invExt
           obtain ⟨_, rfl⟩ := hStep
           have hInvMid := cspaceInsertSlot_preserves_objects_invExt st pair.2 _ cap hObjInv
             (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
-          have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2 senderSlot
-          have hObjDst := SystemState.ensureCdtNodeForSlot_objects_eq
-            (SystemState.ensureCdtNodeForSlot pair.2 senderSlot).2
+          have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2
             { cnode := receiverRoot, slot := emptySlot }
-          simp only [hObjDst, hObjSrc]; exact hInvMid
+          simp only [hObjSrc]; exact hInvMid
 
 /-- M3-E4 helper: ipcTransferSingleCap preserves all notification objects.
 When `oid = receiverRoot` and the object is a notification, the function
 returns `.error .objectNotFound` (expects a CNode), contradicting `.ok`.
 When `oid ≠ receiverRoot`, use `ipcTransferSingleCap_preserves_objects_ne`. -/
 theorem ipcTransferSingleCap_preserves_ntfn_objects
-    (cap : Capability) (senderSlot : CSpaceAddr)
+    (cap : Capability) (srcNode : CdtNodeId)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) (st st' : SystemState)
     (result : CapTransferResult) (oid : SeLe4n.ObjId) (ntfn : Notification)
     (hNtfn : st.objects[oid]? = some (.notification ntfn))
     (hObjInv : st.objects.invExt)
-    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.objects[oid]? = some (.notification ntfn) := by
   by_cases hNe : oid = receiverRoot
@@ -1808,7 +1802,7 @@ theorem ipcTransferSingleCap_preserves_ntfn_objects
     have hCnNone : st.getCNode? oid = none := by
       unfold SystemState.getCNode?; rw [hNtfn]
     simp [hCnNone] at hStep
-  · rw [ipcTransferSingleCap_preserves_objects_ne cap senderSlot receiverRoot slotBase
+  · rw [ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
       scanLimit st st' result oid hNe hObjInv hStep]
     exact hNtfn
 
@@ -1817,12 +1811,12 @@ The only success path requires receiverRoot to be a CNode in st. On the noSlot
 path state is unchanged (still a CNode); on the installed path cspaceInsertSlot
 stores an updated CNode back. -/
 theorem ipcTransferSingleCap_receiverRoot_not_ntfn
-    (cap : Capability) (senderSlot : CSpaceAddr)
+    (cap : Capability) (srcNode : CdtNodeId)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) (st st' : SystemState)
     (result : CapTransferResult)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     ∀ ntfn, st'.objects[receiverRoot]? ≠ some (.notification ntfn) := by
   -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`;
@@ -1849,9 +1843,7 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
           -- After ensureCdtNodeForSlot (×2): objects preserved
           -- After { ... with cdt := cdt' }: objects preserved
           -- So final objects[receiverRoot]? = pair.2.objects[receiverRoot]?
-          have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2 senderSlot
-          have hObjDst := SystemState.ensureCdtNodeForSlot_objects_eq
-            (SystemState.ensureCdtNodeForSlot pair.2 senderSlot).2
+          have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2
             { cnode := receiverRoot, slot := emptySlot }
           -- Need: pair.2.objects[receiverRoot]? = some (.cnode _)
           -- cspaceInsertSlot stores via storeObject receiverRoot (.cnode cn')
@@ -1859,7 +1851,7 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
           intro ntfn h
           -- h is about the final state after ensureCdtNodeForSlot and with-cdt
           -- Simplify: final objects = pair.2.objects (ensureCdtNodeForSlot preserves objects)
-          simp only [hObjSrc, hObjDst] at h
+          simp only [hObjSrc] at h
           -- Now h : pair.2.objects[receiverRoot]? = some (.notification ntfn)
           -- But cspaceInsertSlot stored a CNode at receiverRoot via storeObject
           -- then storeCapabilityRef only modifies lifecycle
@@ -1893,13 +1885,13 @@ When `oid = receiverRoot` and the object is an endpoint, the function
 returns `.error .objectNotFound` (expects a CNode), contradicting `.ok`.
 When `oid ≠ receiverRoot`, use `ipcTransferSingleCap_preserves_objects_ne`. -/
 theorem ipcTransferSingleCap_preserves_ep_objects
-    (cap : Capability) (senderSlot : CSpaceAddr)
+    (cap : Capability) (srcNode : CdtNodeId)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) (st st' : SystemState)
     (result : CapTransferResult) (oid : SeLe4n.ObjId) (ep : Endpoint)
     (hEp : st.objects[oid]? = some (.endpoint ep))
     (hObjInv : st.objects.invExt)
-    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.objects[oid]? = some (.endpoint ep) := by
   by_cases hNe : oid = receiverRoot
@@ -1909,7 +1901,7 @@ theorem ipcTransferSingleCap_preserves_ep_objects
     have hCnNone : st.getCNode? oid = none := by
       unfold SystemState.getCNode?; rw [hEp]
     simp [hCnNone] at hStep
-  · rw [ipcTransferSingleCap_preserves_objects_ne cap senderSlot receiverRoot slotBase
+  · rw [ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
       scanLimit st st' result oid hNe hObjInv hStep]
     exact hEp
 
@@ -1917,13 +1909,13 @@ theorem ipcTransferSingleCap_preserves_ep_objects
 Same reasoning as endpoint preservation: TCBs at receiverRoot cause
 `.error .objectNotFound`, contradicting `.ok` hypothesis. -/
 theorem ipcTransferSingleCap_preserves_tcb_objects
-    (cap : Capability) (senderSlot : CSpaceAddr)
+    (cap : Capability) (srcNode : CdtNodeId)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) (st st' : SystemState)
     (result : CapTransferResult) (oid : SeLe4n.ObjId) (tcb : TCB)
     (hTcb : st.objects[oid]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
-    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.objects[oid]? = some (.tcb tcb) := by
   by_cases hNe : oid = receiverRoot
@@ -1936,7 +1928,7 @@ theorem ipcTransferSingleCap_preserves_tcb_objects
     have hCnNone : st.getCNode? oid = none := by
       unfold SystemState.getCNode?; rw [hTcb]
     simp [hCnNone] at hStep
-  · rw [ipcTransferSingleCap_preserves_objects_ne cap senderSlot receiverRoot slotBase
+  · rw [ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
       scanLimit st st' result oid hNe hObjInv hStep]
     exact hTcb
 
@@ -1945,13 +1937,13 @@ Same reasoning as TCB/endpoint preservation: a SchedContext at `receiverRoot` ma
 `getCNode?` return `none`, so the transfer falls into `.error .objectNotFound` — contradicting
 `hStep`'s `.ok`; every other slot is framed by `ipcTransferSingleCap_preserves_objects_ne`. -/
 theorem ipcTransferSingleCap_preserves_schedContext_objects
-    (cap : Capability) (senderSlot : CSpaceAddr)
+    (cap : Capability) (srcNode : CdtNodeId)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) (st st' : SystemState)
     (result : CapTransferResult) (oid : SeLe4n.ObjId) (sc : SchedContext)
     (hSc : st.objects[oid]? = some (.schedContext sc))
     (hObjInv : st.objects.invExt)
-    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.objects[oid]? = some (.schedContext sc) := by
   by_cases hNe : oid = receiverRoot
@@ -1960,7 +1952,7 @@ theorem ipcTransferSingleCap_preserves_schedContext_objects
     have hCnNone : st.getCNode? oid = none := by
       unfold SystemState.getCNode?; rw [hSc]
     simp [hCnNone] at hStep
-  · rw [ipcTransferSingleCap_preserves_objects_ne cap senderSlot receiverRoot slotBase
+  · rw [ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
       scanLimit st st' result oid hNe hObjInv hStep]
     exact hSc
 
@@ -1969,13 +1961,13 @@ Same reasoning as the endpoint/TCB family: a `.reply` at `receiverRoot` makes
 `getCNode?` return `none`, so the function fails closed (`.objectNotFound`),
 contradicting `.ok`; at every other slot use `_preserves_objects_ne`. -/
 theorem ipcTransferSingleCap_preserves_reply_objects
-    (cap : Capability) (senderSlot : CSpaceAddr)
+    (cap : Capability) (srcNode : CdtNodeId)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) (st st' : SystemState)
     (result : CapTransferResult) (oid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
     (hReply : st.objects[oid]? = some (.reply r))
     (hObjInv : st.objects.invExt)
-    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.objects[oid]? = some (.reply r) := by
   by_cases hNe : oid = receiverRoot
@@ -1984,7 +1976,7 @@ theorem ipcTransferSingleCap_preserves_reply_objects
     have hCnNone : st.getCNode? oid = none := by
       unfold SystemState.getCNode?; rw [hReply]
     simp [hCnNone] at hStep
-  · rw [ipcTransferSingleCap_preserves_objects_ne cap senderSlot receiverRoot slotBase
+  · rw [ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
       scanLimit st st' result oid hNe hObjInv hStep]
     exact hReply
 
@@ -1992,10 +1984,10 @@ theorem ipcTransferSingleCap_preserves_reply_objects
 was a CNode — the transfer reads `getCNode? receiverRoot` and fails closed
 (`.objectNotFound`) when it is `none`, so `.ok` rules out a non-CNode root. -/
 theorem ipcTransferSingleCap_ok_implies_cnode_at_root
-    (cap : Capability) (senderSlot : CSpaceAddr)
+    (cap : Capability) (srcNode : CdtNodeId)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) (st st' : SystemState) (result : CapTransferResult)
-    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     ∃ cn, st.objects[receiverRoot]? = some (.cnode cn) := by
   unfold ipcTransferSingleCap at hStep
@@ -2008,13 +2000,13 @@ The function only succeeds when receiverRoot is a CNode. On noSlot the state is
 unchanged. On installed, cspaceInsertSlot stores an updated CNode back via
 storeObject, and ensureCdtNodeForSlot + CDT update leave objects untouched. -/
 theorem ipcTransferSingleCap_receiverRoot_stays_cnode
-    (cap : Capability) (senderSlot : CSpaceAddr)
+    (cap : Capability) (srcNode : CdtNodeId)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) (st st' : SystemState)
     (result : CapTransferResult) (cn : CNode)
     (hCn : st.objects[receiverRoot]? = some (.cnode cn))
     (hObjInv : st.objects.invExt)
-    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     ∃ cn', st'.objects[receiverRoot]? = some (.cnode cn') := by
   -- AN10-B: bridge raw-lookup hypothesis to typed-helper form so the
@@ -2033,9 +2025,7 @@ theorem ipcTransferSingleCap_receiverRoot_stays_cnode
     | error e => simp [hIns] at hStep
     | ok pair =>
       simp [hIns] at hStep; obtain ⟨_, rfl⟩ := hStep
-      have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2 senderSlot
-      have hObjDst := SystemState.ensureCdtNodeForSlot_objects_eq
-        (SystemState.ensureCdtNodeForSlot pair.2 senderSlot).2
+      have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2
         { cnode := receiverRoot, slot := emptySlot }
       -- pair.2.objects[receiverRoot]? is a CNode from cspaceInsertSlot
       unfold cspaceInsertSlot at hIns
@@ -2056,7 +2046,7 @@ theorem ipcTransferSingleCap_receiverRoot_stays_cnode
           unfold storeCapabilityRef at hIns
           cases hIns
           refine ⟨cn.insert emptySlot cap, ?_⟩
-          simp only [hObjDst, hObjSrc]
+          simp only [hObjSrc]
           exact hStoreObj
 
 end SeLe4n.Kernel

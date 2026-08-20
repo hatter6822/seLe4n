@@ -648,10 +648,10 @@ private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
   expectErr "endpointSendDual rejects oversized caps"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 1)
       { registers := #[],
-        caps := #[TransferCap.fromSlot { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 1,
-                  TransferCap.fromSlot { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 2,
-                  TransferCap.fromSlot { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 3,
-                  TransferCap.fromSlot { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 4],
+        caps := #[TransferCap.fromNode { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } 1,
+                  TransferCap.fromNode { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } 2,
+                  TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } 3,
+                  TransferCap.fromNode { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] } 4],
         badge := none } baseState)
     .ipcMessageTooManyCaps
 
@@ -665,10 +665,10 @@ private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
   expectErr "endpointCall rejects oversized caps"
     (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 1)
       { registers := #[],
-        caps := #[TransferCap.fromSlot { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 1,
-                  TransferCap.fromSlot { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 2,
-                  TransferCap.fromSlot { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 3,
-                  TransferCap.fromSlot { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 4],
+        caps := #[TransferCap.fromNode { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } 1,
+                  TransferCap.fromNode { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } 2,
+                  TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } 3,
+                  TransferCap.fromNode { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] } 4],
         badge := none } baseState)
     .ipcMessageTooManyCaps
 
@@ -684,10 +684,10 @@ private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.endpointReply (SeLe4n.ThreadId.ofNat 1)
       (SeLe4n.ThreadId.ofNat 2)
       { registers := #[],
-        caps := #[TransferCap.fromSlot { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 1,
-                  TransferCap.fromSlot { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 2,
-                  TransferCap.fromSlot { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 3,
-                  TransferCap.fromSlot { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 4],
+        caps := #[TransferCap.fromNode { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } 1,
+                  TransferCap.fromNode { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } 2,
+                  TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } 3,
+                  TransferCap.fromNode { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] } 4],
         badge := none } baseState)
     .ipcMessageTooManyCaps
 
@@ -703,10 +703,10 @@ private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 1)
       (SeLe4n.ThreadId.ofNat 2)
       { registers := #[],
-        caps := #[TransferCap.fromSlot { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 1,
-                  TransferCap.fromSlot { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 2,
-                  TransferCap.fromSlot { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 3,
-                  TransferCap.fromSlot { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 4],
+        caps := #[TransferCap.fromNode { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } 1,
+                  TransferCap.fromNode { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } 2,
+                  TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } 3,
+                  TransferCap.fromNode { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] } 4],
         badge := none } none baseState)
     .ipcMessageTooManyCaps
 
@@ -714,9 +714,9 @@ private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
   -- (may still fail due to other reasons like endpoint state)
   let boundaryMsg : SeLe4n.Model.IpcMessage := {
     registers := Array.mk (List.replicate 120 ⟨42⟩),
-    caps := #[TransferCap.fromSlot { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 1,
-              TransferCap.fromSlot { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 2,
-              TransferCap.fromSlot { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 3],
+    caps := #[TransferCap.fromNode { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } 1,
+              TransferCap.fromNode { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } 2,
+              TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } 3],
     badge := none }
   let boundaryResult := SeLe4n.Kernel.endpointSendDual endpointId
     (SeLe4n.ThreadId.ofNat 1) boundaryMsg baseState
@@ -2618,9 +2618,14 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
       |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.buildChecked)
 
-  -- ipcTransferSingleCap with scanLimit covering all 4 slots → should get .noSlot
-  let senderSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
-  let result := SeLe4n.Kernel.ipcTransferSingleCap cap senderSlot receiverRoot (SeLe4n.Slot.ofNat 0) 4 st0
+  -- ipcTransferSingleCap with scanLimit covering all 4 slots → should get .noSlot.
+  -- The derivation parent is a NODE now, minted for the source slot the way
+  -- `resolveExtraCaps` mints it, so the transfer records the same identity the
+  -- revoke walk would later look up.
+  let (srcNode, st0) :=
+    SeLe4n.Model.SystemState.ensureCdtNodeForSlot st0
+      { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+  let result := SeLe4n.Kernel.ipcTransferSingleCap cap srcNode receiverRoot (SeLe4n.Slot.ofNat 0) 4 st0
   match result with
   | .ok (transferResult, st') =>
     let isNoSlot := match transferResult with
@@ -2695,9 +2700,9 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
   -- each capability's own slot, so a fixture that reused one address would
   -- not exercise the per-capability provenance the loop now threads.
   let caps : Array TransferCap :=
-    #[TransferCap.fromSlot cap senderRoot 0,
-      TransferCap.fromSlot cap senderRoot 1,
-      TransferCap.fromSlot cap senderRoot 2]
+    #[TransferCap.fromNode cap 0,
+      TransferCap.fromNode cap 1,
+      TransferCap.fromNode cap 2]
 
   -- L13-01: 3 caps with receiver root = TCB → short-circuit, all .noSlot
   let result := SeLe4n.Kernel.ipcUnwrapCapsLoop caps senderRoot receiverRoot
@@ -2730,7 +2735,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
       |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.buildChecked)
 
-  let result1 := SeLe4n.Kernel.ipcUnwrapCapsLoop #[TransferCap.fromSlot cap senderRoot 0] senderRoot missingRoot
+  let result1 := SeLe4n.Kernel.ipcUnwrapCapsLoop #[TransferCap.fromNode cap 0] senderRoot missingRoot
     0 (SeLe4n.Slot.ofNat 0) #[] 1 st1
   match result1 with
   | .ok (summary1, st1') =>
@@ -3911,7 +3916,7 @@ private def r1Cap : Capability :=
     badge := none }
 
 private def r1MsgWithCaps : IpcMessage :=
-  { registers := #[], caps := #[TransferCap.fromSlot r1Cap r1CallerCNode 0], badge := none }
+  { registers := #[], caps := #[TransferCap.fromNode r1Cap 0], badge := none }
 
 private def r1EndpointRights : AccessRightSet :=
   AccessRightSet.ofList [.write, .grant]

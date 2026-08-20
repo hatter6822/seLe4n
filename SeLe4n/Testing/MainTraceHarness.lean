@@ -997,10 +997,10 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   let oversizedCaps : IpcMessage := {
     registers := #[],
     caps := #[
-      TransferCap.fromSlot { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 1,
-      TransferCap.fromSlot { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 2,
-      TransferCap.fromSlot { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 3,
-      TransferCap.fromSlot { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 4],
+      TransferCap.fromNode { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } 1,
+      TransferCap.fromNode { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } 2,
+      TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } 3,
+      TransferCap.fromNode { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] } 4],
     badge := none }
   match SeLe4n.Kernel.endpointSendDual epId senderId oversizedCaps st1 with
   | .error .ipcMessageTooManyCaps =>
@@ -1014,9 +1014,9 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   let boundaryMsg : IpcMessage := {
     registers := Array.mk (List.replicate 120 ⟨42⟩),
     caps := #[
-      TransferCap.fromSlot { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 1,
-      TransferCap.fromSlot { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 2,
-      TransferCap.fromSlot { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } ⟨900⟩ 3],
+      TransferCap.fromNode { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } 1,
+      TransferCap.fromNode { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } 2,
+      TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } 3],
     badge := some (Badge.ofNatMasked 999) }
   -- Create a fresh endpoint for this test
   let ep0 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
@@ -1311,9 +1311,9 @@ private def runBoundedMessageExtendedTrace (counter : IO.Ref Nat) (st1 : SystemS
   let maxCapsMsg : IpcMessage := {
     registers := #[],
     caps := #[
-      TransferCap.fromSlot { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read] } ⟨900⟩ 1,
-      TransferCap.fromSlot { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.write] } ⟨900⟩ 2,
-      TransferCap.fromSlot { target := .object ⟨3⟩, rights := AccessRightSet.ofList [.grant] } ⟨900⟩ 3],
+      TransferCap.fromNode { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read] } 1,
+      TransferCap.fromNode { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.write] } 2,
+      TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [.grant] } 3],
     badge := some (Badge.ofNatMasked 42) }
   let stFresh3 : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
   match SeLe4n.Kernel.endpointSendDual epId senderId maxCapsMsg stFresh3 with
