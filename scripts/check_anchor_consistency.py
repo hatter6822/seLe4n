@@ -43,11 +43,32 @@ ANCHOR_RE = re.compile(
     r"""run_(?P<prose>prose_)?(?P<neg>negative_)?check\s+   # helper
         "(?P<label>[A-Z-]+)"\s+                             # label
         rg\s+(?:-\S+\s+)*                                   # rg flags
-        '(?P<pattern>[^']*)'\s+                             # the pattern
+        (?:'(?P<sq>[^']*)'                                  # '…' pattern
+          |"(?P<dq>(?:[^"\\]|\\.)*)")\s+                    # or "…" pattern
         (?P<target>\S+)                                     # the file it reads
     """,
     re.VERBOSE,
 )
+
+# Bash keeps a backslash inside double quotes unless it precedes one of these,
+# so `"\s"` reaches `rg` as `\s` while `"\\."` reaches it as `\.`.  Both forms
+# are live in the suites, and a parser that skipped the unescaping would file
+# the same pattern under two spellings and see no contradiction between them.
+_DQ_SPECIAL = set('$`"\\\n')
+
+
+def _unescape_double_quoted(s: str) -> str:
+    """The string bash hands the command for a double-quoted word."""
+    out, i = [], 0
+    while i < len(s):
+        c = s[i]
+        if c == "\\" and i + 1 < len(s) and s[i + 1] in _DQ_SPECIAL:
+            out.append(s[i + 1])
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
 
 
 def parse_anchors(text: str):
@@ -59,9 +80,14 @@ def parse_anchors(text: str):
         m = ANCHOR_RE.search(line)
         if not m:
             continue
+        # Both quoting styles appear in the suites, and an anchor is no less
+        # live for being double-quoted — reduce each to the pattern `rg`
+        # actually receives so the two are comparable.
+        sq = m.group("sq")
+        pattern = sq if sq is not None else _unescape_double_quoted(m.group("dq"))
         # `^` is an anchoring detail of the regex, not part of the symbol the
         # two helpers are talking about, so normalise it away before comparing.
-        pattern = m.group("pattern").lstrip("^")
+        pattern = pattern.lstrip("^")
         yield line_no, bool(m.group("neg")), pattern, m.group("target")
 
 
@@ -175,9 +201,33 @@ def self_test() -> int:
             )
             return 1
 
+        # ... nor by the other quoting style.  The suites use double quotes
+        # wherever the pattern itself contains a single quote or an escaped
+        # dot, so a single-quote-only parser silently drops those anchors and
+        # reports PASS on a tier that cannot be satisfied.  Both halves of this
+        # pair are double-quoted, and the escape spellings differ between them
+        # (`"\\."` vs `"\."`) — bash reduces both to `\.`, so the two must
+        # collide.
+        quoted = (
+            'run_negative_check "INVARIANT" rg -n "^theorem gamma\\\\.removed" Some/File.lean\n'
+            'run_check "INVARIANT" rg -n "theorem gamma\\.removed" Some/File.lean\n'
+        )
+        quoted_p = d / "quoted.sh"
+        quoted_p.write_text(quoted)
+        both, *_ = find_contradictions([str(quoted_p)])
+        if both != [("theorem gamma\\.removed", "Some/File.lean")]:
+            print(
+                f"FAIL: --self-test — a double-quoted contradiction was not "
+                f"detected (got {both}); double-quoted anchors are invisible "
+                f"to the parser.",
+                file=sys.stderr,
+            )
+            return 1
+
     print(
-        "PASS: --self-test — the planted contradiction was detected, the clean "
-        "set passed, and a commented-out anchor was not counted."
+        "PASS: --self-test — planted contradictions were detected in both "
+        "quoting styles, the clean set passed, and a commented-out anchor was "
+        "not counted."
     )
     return 0
 

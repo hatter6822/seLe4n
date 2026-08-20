@@ -1,3 +1,87 @@
+## v0.33.64 — the orphan is closed at the creator, not at each destroyer
+
+**Fourth sighting of one defect, so this cut stops patching where it surfaces.**
+An IPC-transferred capability hangs off the source slot's CDT node, and
+`cspaceRevokeCdt` reaches it by resolving that node back to a slot.  Destroy the
+source slot while a transfer from it is parked and the copy lands beneath a
+parent nothing points at: authority no revoke can reach.
+
+The first three sightings were each patched at the operation that destroyed the
+slot — the transfer naming a synthetic source (v0.33.59 → v0.33.60), the delete
+guard blind to transfers in flight (v0.33.62), and now **retyping the CNode**,
+which destroys every slot it holds and checked nothing at all.  Review then
+found a fourth: the revoke sweep deletes descendant slots, and a transfer parked
+from one of those still lands.
+
+**Why the destroyers were the wrong place.**  Every CDT invariant in the model
+is stated node → slot.  `cdtCompleteness` says a node with a slot mapping points
+at a live object, and its docstring records that it is *"robust through
+`detachSlotFromCdt` because detached nodes lose their mapping (vacuously
+satisfying the condition)"*.  The converse — a node standing as a derivation
+parent must still have a live slot — is stated nowhere, so orphaning **satisfies**
+the invariant surface rather than violating it.  With no invariant to fail, each
+slot-destroying operation had to remember the check on its own, and that set is
+open-ended: three known, and a fourth only as far away as the next transition
+that frees a slot.
+
+**The creator is exactly one function.**  `ipcTransferSingleCap` is the single
+point at which an `.ipcTransfer` edge comes into existence.  It now looks the
+source node back up and, finding no slot, answers the new
+`CapTransferResult.sourceRevoked` and leaves the state untouched — the receiver
+gets one fewer capability, exactly as with `.grantDenied`.
+`ipcTransferSingleCap_installed_implies_live_source` states the guarantee, and
+it holds against every destroyer at once, including ones not yet written;
+`ipcTransferSingleCap_sourceRevoked_preserves_state` pins that the declining
+branch is a no-op.
+
+The check sits *after* the receiver-root and empty-slot resolution rather than
+ahead of it.  Placed first it would short-circuit before the receiver is
+validated, and `.ok` would stop witnessing a CNode at the receiver root —
+`ipcTransferSingleCap_ok_implies_cnode_at_root` and the object-shape frames all
+rest on that.  The check that declines to install belongs next to the install.
+
+**The guards stay, and are deliberately not the guarantee.**  `cspaceDeleteSlot`
+and the new CNode-retype arm both refuse through one shared predicate,
+`slotIsDerivationParent`, because `.revocationRequired` tells a caller to revoke
+first and that is a better answer than a capability that silently fails to
+arrive.  A second call site spelling the disjunction out again would be a second
+place for its two halves to drift.
+
+**Retype also stops branching on the replacement's shape.**  CNode → CNode
+skipped the CDT detach on the grounds that none was needed.  It was:
+`objectOfKernelType` — the only thing the live `.lifecycleRetype` dispatch builds
+a replacement with — yields `slots := UniqueSlotMap.empty`, so no slot survives
+either way, and skipping left mappings pointing into a CNode that no longer held
+the capability they were minted for.  A capability later placed at such a slot
+would inherit a destroyed one's derivation node, and revoking that node's
+ancestor would take the unrelated newcomer with it.  Past the guard the detach
+is unconditionally correct, so the arm no longer reads `newObj`.
+
+**Two fixtures were describing something the kernel now refuses.**  `chain12`
+and `chain14` built their transfer caps from bare node ids that no slot was
+bound to — precisely the orphan shape.  They now mint real derivation nodes via
+`ensureCdtNodeForSlot`, as `resolveExtraCaps` does.  The fixtures were wrong, not
+the check.
+
+**The anchor-satisfiability gate could not see half the anchors.**  Its parser
+accepted only single-quoted `rg` patterns while the suites use double quotes
+wherever the pattern contains a quote or an escaped dot, so those declarations
+were silently absent from both maps and an unsatisfiable tier would still have
+reported PASS.  It now reads both forms, unescaping double-quoted words the way
+bash does so `"\\."` and `"\."` compare equal, and the self-test plants a
+double-quoted contradiction whose two halves are spelled differently.  Visible
+anchors went from 2495 to 2502 positive and 98 to 99 negative on this cut's own
+additions alone.
+
+Evidence: `chain12b` gains the retype refusal plus a four-assertion pair that
+drives the same unwrap over a bound and a detached source — install versus
+`.sourceRevoked`, with the receiver slot and the CDT edge count both pinned;
+Tier-3 anchors on the shared predicate, both call sites, both guarantee
+theorems, and a negative forbidding the shape-branching comment from returning.
+Zero errors and zero warnings across the tree, staged modules and every suite.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §3.1
+
 ## v0.33.63 — the code view is built once per run, not once per anchor
 
 **Every surface anchor rebuilt the comment-stripped overlay from scratch.**

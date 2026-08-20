@@ -869,15 +869,14 @@ object (not the endpoint), so it is uniquely identifiable in whichever CSpace it
 lands, letting the test prove it reaches the *receiver's* root and only there. -/
 private def payloadCap : Capability :=
   { target := .object capMarkerObj, rights := AccessRightSet.ofList [.read] }
-/-- The derivation node the payload capability is resolved from.  The transfer
-records its edge against this node, so revoking the slot that node belongs to is
-what must reach the copy installed in the server's CSpace. -/
-private def payloadSrcSlot : Nat := 2
-private def capMsg : IpcMessage :=
-  { registers := #[],
-    caps := #[TransferCap.fromNode payloadCap payloadSrcSlot],
-    badge := none }
-/-- 4 caps > maxExtraCaps (3): rejected at the send boundary. -/
+/-- The caller's slot the payload capability is resolved from.  The transfer
+records its edge against that slot's derivation node, so revoking the slot is
+what must reach the copy installed in the server's CSpace — and the slot has to
+be a real one, since a node no slot points at is the orphan shape the transfer
+declines. -/
+private def payloadSrcSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 2
+/-- 4 caps > maxExtraCaps (3): rejected at the send boundary, before any source
+is resolved, so a bare node id is the honest fixture here. -/
 private def tooManyCapsMsg : IpcMessage :=
   { registers := #[], caps := Array.replicate (maxExtraCaps + 1)
       (TransferCap.fromNode Capability.null 0), badge := none }
@@ -886,13 +885,17 @@ private def tooManyCapsMsg : IpcMessage :=
 caller (`capCallerCn`) and the server (`capServerCn`), both empty at the receive
 slot.  Separate roots are what let the test prove the transferred cap lands in
 the **server's** CSpace — not a shared/caller root — exercising the receiver-root
-plumbing in `endpointCallWithCapsOnCore` / `ipcUnwrapCaps`. -/
+plumbing in `endpointCallWithCapsOnCore` / `ipcUnwrapCaps`.
+
+The caller holds the payload at `payloadSrcSlot` (2), away from `recvSlot` (1)
+and slot 0, so the no-leak-back assertions still read slots the transfer must
+leave empty. -/
 private def stCapBase : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject capEp (.endpoint {})
     |>.withObject capCallerCn (.cnode
         { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF [] })
+          slots := SeLe4n.UniqueSlotMap.ofListWF [(payloadSrcSlot, payloadCap)] })
     |>.withObject capServerCn (.cnode
         { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [] })
@@ -901,6 +904,18 @@ private def stCapBase : SystemState :=
     |>.withObject capReply.toObjId (.reply { replyId := capReply })
     |>.withRunnable [capCaller]
     |>.build)
+
+/-- Mint the payload slot's derivation node exactly as `resolveExtraCaps` does,
+and keep the state that binding lives in: the message names the NODE, and the
+transfer installs only while some slot still points at it. -/
+private def capSourceMint : SeLe4n.Model.CdtNodeId × SystemState :=
+  SystemState.ensureCdtNodeForSlot stCapBase { cnode := capCallerCn, slot := payloadSrcSlot }
+/-- The base state with the payload slot's derivation node bound. -/
+private def stCapBound : SystemState := capSourceMint.2
+private def capMsg : IpcMessage :=
+  { registers := #[],
+    caps := #[{ cap := payloadCap, srcNode := capSourceMint.1 }],
+    badge := none }
 
 /-- `true` iff a transfer summary reports a cap installed into CNode `cn` — the
 receiver-root check (the `.installed` result carries the *receiver's* CSpace root
@@ -927,7 +942,7 @@ private def slotHoldsPayload (st : SystemState) (cn : SeLe4n.ObjId) (slot : SeLe
 
 private def runCapTransferChecks : IO Unit := do
   IO.println "--- §3.10 capability transfer across cores (ipcUnwrapCaps, receiver-root, grant-gated) ---"
-  match okPair (endpointReceiveDualOnCore capEp capServer (some capReply) c1 stCapBase) with
+  match okPair (endpointReceiveDualOnCore capEp capServer (some capReply) c1 stCapBound) with
   | none => assertBool "cap-transfer setup (server recv) succeeded" false
   | some (stRecv, _) =>
     -- WITH grant: the carried cap is installed into the SERVER's CSpace root.

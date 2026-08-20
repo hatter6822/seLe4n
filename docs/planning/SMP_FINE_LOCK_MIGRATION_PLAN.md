@@ -158,6 +158,52 @@ edge from the real source, and prove
 provably reaches it, with a regression test whose load-bearing negative is that
 the pre-fix state does not.
 
+### 3.1 The class behind the finding, and where it is closed
+
+The §3 finding was the first of four sightings of one defect, each found
+separately and each initially patched where it surfaced:
+
+| # | Where the orphan could be made | Closed at |
+|---|--------------------------------|-----------|
+| 1 | The transfer named a synthetic source slot, so the edge hung off a node the real source's revoke never walks | v0.33.59 → v0.33.60 (stable node id) |
+| 2 | `cspaceDeleteSlot` refused a slot with CDT children, but a parked transfer is not yet a child | v0.33.62 |
+| 3 | Retyping the CNode destroyed every slot it held with no such check at all | this cut |
+| 4 | The revoke sweep deletes a descendant slot, and a transfer parked from it still lands | this cut |
+
+The common cause is structural rather than incidental. Every CDT invariant the
+model carries is stated **node → slot**: `cdtCompleteness` says a node with a
+slot mapping points at a live object, and its own docstring records that it is
+*"robust through `detachSlotFromCdt` because detached nodes lose their mapping
+(vacuously satisfying the condition)"*. Nothing states the converse — that a
+node standing as a derivation parent must still have a live slot — so orphaning
+a node **satisfies** the invariant surface instead of violating it. With no
+invariant to fail, each slot-destroying operation had to remember the check on
+its own, and the set of such operations is open-ended.
+
+Closing it at the destroyers therefore cannot terminate: three are known, a
+fourth is only as far away as the next transition that frees a slot. The fix is
+placed at the **creator** instead. `ipcTransferSingleCap` is the single point at
+which an `.ipcTransfer` edge comes into existence, and it now declines —
+answering `CapTransferResult.sourceRevoked`, leaving the state untouched — when
+`lookupCdtSlotOfNode` finds no slot for the source node.
+`ipcTransferSingleCap_installed_implies_live_source` states the resulting
+guarantee, and it holds against every destroyer at once, including ones not yet
+written.
+
+The two guards remain, and are deliberately not the guarantee.
+`cspaceDeleteSlot` and the CNode retype arm both refuse via the shared
+`slotIsDerivationParent` predicate, because `.revocationRequired` tells a caller
+to revoke first, which is a better answer than a capability that silently fails
+to arrive. They are the ergonomics; the creator-side check is what makes the
+orphan unconstructible.
+
+Still open, and deliberately: an invariant stating parent-liveness directly
+(`∀ node, node is a derivation parent → cdtNodeSlot[node] ≠ none`) would let the
+proof surface reject a future destroyer at elaboration time rather than relying
+on the creator's runtime check. It belongs with the CDT coverage work in PR 5,
+where the four `cspace{Mint,Copy,Move,Delete}` footprints are already being
+opened up, and is recorded here so it is not lost.
+
 ## 4. PR decomposition (12 PRs, four tracks, security-first)
 
 Each PR is one coherent, independently-green slice with its own patch bump +

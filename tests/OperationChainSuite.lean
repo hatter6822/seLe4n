@@ -708,10 +708,19 @@ private def chain12IpcCapTransfer : IO Unit := do
   let (_, st1) ← expectOkSt "chain12: receiver blocks on endpoint"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none st0)
 
-  -- Step 2: Sender sends with caps (immediate rendezvous)
-  let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[TransferCap.fromNode cap1 0,
-                                          TransferCap.fromNode cap2 1,
-                                          TransferCap.fromNode cap3 2],
+  -- Step 2: Sender sends with caps (immediate rendezvous).
+  --
+  -- Each carried capability names the derivation node of the slot it was
+  -- resolved from, minted here exactly as `resolveExtraCaps` mints it in
+  -- production.  Naming a bare node id instead would describe a source no slot
+  -- points at, which the transfer declines — correctly, since an edge under
+  -- such a node is authority no revoke could reach.
+  let (node0, st1) := SystemState.ensureCdtNodeForSlot st1 { cnode := senderCNode, slot := SeLe4n.Slot.ofNat 0 }
+  let (node1, st1) := SystemState.ensureCdtNodeForSlot st1 { cnode := senderCNode, slot := SeLe4n.Slot.ofNat 1 }
+  let (node2, st1) := SystemState.ensureCdtNodeForSlot st1 { cnode := senderCNode, slot := SeLe4n.Slot.ofNat 2 }
+  let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[{ cap := cap1, srcNode := node0 },
+                                          { cap := cap2, srcNode := node1 },
+                                          { cap := cap3, srcNode := node2 }],
                             badge := none }
   let (summary, st2) ← expectOkSt "chain12: send with caps"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)
@@ -878,6 +887,45 @@ private def chain12bIpcCapTransferRevocable : IO Unit := do
     (match SeLe4n.Kernel.cspaceDeleteSlot { cnode := senderCNode, slot := SeLe4n.Slot.ofNat 0 } stParked with
      | .ok _ => true
      | _ => false)
+  -- Retype destroys the whole CNode, so it owes what the delete owes.  Deleting
+  -- the slot is refused above; retyping the CNode that contains it must be too,
+  -- or the same orphan is reachable one level up.
+  expect "chain12b: retyping the CNode holding a parked transfer's source is REFUSED"
+    (match stParked.objects[senderCNode]? with
+     | some (.cnode cn) =>
+         match SeLe4n.Kernel.lifecyclePreRetypeCleanup stParked senderCNode (.cnode cn)
+                 (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }) with
+         | .error .revocationRequired => true
+         | _ => false
+     | _ => false)
+  -- THE GUARANTEE ITSELF, measured where it is made.
+  --
+  -- The two guards above are ergonomics: they answer `.revocationRequired` so a
+  -- caller knows to revoke first.  What makes the orphan impossible is that the
+  -- install — the single place an `.ipcTransfer` edge comes into existence —
+  -- declines when the source node has no slot.  So bypass the guards entirely
+  -- and detach the source directly, standing in for any destroyer that reached
+  -- the slot another way, and drive the unwrap the receive would have driven.
+  let stOrphaned := SystemState.detachSlotFromCdt stParked { cnode := senderCNode, slot := srcSlot }
+  let parkedMsg : IpcMessage :=
+    match stParked.getTcb? sender with
+    | some tcb => tcb.pendingMessage.getD { registers := #[], caps := #[], badge := none }
+    | none => { registers := #[], caps := #[], badge := none }
+  -- The control: with the source still bound, the very same unwrap installs.
+  let (summaryLive, stLive) ← expectOkSt "chain12b: unwrap with the source still bound"
+    (SeLe4n.Kernel.ipcUnwrapCaps parkedMsg senderCNode receiverCNode (SeLe4n.Slot.ofNat 0) true stParked)
+  expect "chain12b: the control unwrap installs the capability"
+    (summaryLive.results == #[.installed receiverCNode (SeLe4n.Slot.ofNat 0)] && receiverSlotFilled stLive)
+  -- The measurement: with the source detached, nothing is installed.
+  let (summaryOrphan, stOrphanRun) ← expectOkSt "chain12b: unwrap after the source was detached"
+    (SeLe4n.Kernel.ipcUnwrapCaps parkedMsg senderCNode receiverCNode (SeLe4n.Slot.ofNat 0) true stOrphaned)
+  expect "chain12b: an install under a source no slot points at is DECLINED"
+    (summaryOrphan.results == #[.sourceRevoked])
+  expect "chain12b: NEGATIVE — the declined transfer installed nothing"
+    (!receiverSlotFilled stOrphanRun)
+  expect "chain12b: the declined transfer left the state untouched"
+    (stOrphanRun.cdt.edges.length == stOrphaned.cdt.edges.length)
+  assertInvariants "chain12b: declining an orphaning transfer keeps the state well-formed" stOrphanRun
 
 /-- SCN-IPC-CAP-TRANSFER-NO-GRANT: Grant-right gate blocks cap transfer.
 Endpoint lacks Grant right — caps should be silently dropped. -/
@@ -973,10 +1021,15 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
   let (_, st1) ← expectOkSt "chain14: receiver blocks on endpoint"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none st0)
 
-  -- Step 2: Sender sends with badge 0xCAFE + 2 caps (immediate rendezvous)
+  -- Step 2: Sender sends with badge 0xCAFE + 2 caps (immediate rendezvous).
+  -- Real derivation nodes for the slots the caps come from, as `resolveExtraCaps`
+  -- mints them — a bare node id names a source no slot points at, which the
+  -- transfer declines.
   let badgeVal : SeLe4n.Badge := SeLe4n.Badge.ofNatMasked 0xCAFE
-  let msg : IpcMessage := { registers := #[⟨77⟩], caps := #[TransferCap.fromNode cap1 0,
-                                          TransferCap.fromNode cap2 1],
+  let (node0, st1) := SystemState.ensureCdtNodeForSlot st1 { cnode := senderCNode, slot := SeLe4n.Slot.ofNat 0 }
+  let (node1, st1) := SystemState.ensureCdtNodeForSlot st1 { cnode := senderCNode, slot := SeLe4n.Slot.ofNat 1 }
+  let msg : IpcMessage := { registers := #[⟨77⟩], caps := #[{ cap := cap1, srcNode := node0 },
+                                          { cap := cap2, srcNode := node1 }],
                             badge := some badgeVal }
   let (summary, st2) ← expectOkSt "chain14: send with badge + caps"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)

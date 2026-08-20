@@ -919,6 +919,31 @@ def hasCdtChildren (st : SystemState) (addr : CSpaceAddr) : Bool :=
   | none => false  -- no CDT node → no children
   | some node => !(st.cdt.childrenOf node).isEmpty
 
+/-- **Is this slot still standing as a derivation parent?**
+
+The two ways a slot can be one: it already has CDT children, or a capability
+resolved from it is in flight and becomes a child when the receiving end runs.
+Destroying such a slot severs `cdtNodeSlot` while the node and its edges
+survive, and `cspaceRevokeCdt` resolves *through* that mapping — so the derived
+capabilities keep their authority with nothing able to revoke them.
+
+Factored out because it has more than one caller and they must test the same
+condition: `cspaceDeleteSlot` destroys one slot, and retyping a CNode destroys
+every slot it contains.  A second call site spelling the disjunction out again
+is a second place for the two halves to drift apart. -/
+def slotIsDerivationParent (st : SystemState) (addr : CSpaceAddr) : Bool :=
+  hasCdtChildren st addr || slotHasPendingTransfer st addr
+
+/-- **Does any slot of this CNode still stand as a derivation parent?**
+
+The CNode-wide form, for retype.  Folds `slotIsDerivationParent` over the
+occupied slots, which is exactly the set whose `cdtSlotNode` entries a retype
+would erase. -/
+def cnodeHasDerivationParentSlot
+    (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) : Bool :=
+  cn.slots.fold false (fun acc slot _cap =>
+    acc || slotIsDerivationParent st { cnode := cnodeId, slot := slot })
+
 /-- Core capability slot deletion without CDT children guard.
 Used by `cspaceDeleteSlot` (which adds the guard) and by internal kernel
 operations (`processRevokeNode`, `cspaceRevokeCdtStrict`, `cspaceMove`) that
@@ -945,11 +970,11 @@ Returns `.revocationRequired` if children are found, enforcing the
 `revokeBeforeDelete` proof obligation as a runtime check. -/
 def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
-    -- Two ways a slot can still be a derivation parent: it already has children,
-    -- or a capability resolved from it is in flight and will become one when the
-    -- receiving end runs.  `hasCdtChildren` keeps its exact meaning; the guard is
-    -- the disjunction, so neither predicate has to lie about what it covers.
-    if hasCdtChildren st addr || slotHasPendingTransfer st addr then
+    -- `slotIsDerivationParent` is the disjunction of the two ways a slot can
+    -- still be one — children already recorded, or a transfer in flight — so
+    -- `hasCdtChildren` keeps its exact meaning and this guard reads the same
+    -- condition the CNode retype guard reads.
+    if slotIsDerivationParent st addr then
       .error .revocationRequired
     else
       cspaceDeleteSlotCore addr st
@@ -967,7 +992,7 @@ directly, so the guard and this theorem read the same predicate. -/
 theorem cspaceDeleteSlot_refuses_pending_transfer (st : SystemState) (addr : CSpaceAddr)
     (h : slotHasPendingTransfer st addr = true) :
     cspaceDeleteSlot addr st = .error .revocationRequired := by
-  simp [cspaceDeleteSlot, h]
+  simp [cspaceDeleteSlot, slotIsDerivationParent, h]
 
 /-- The guard's other half, unchanged: an existing child still forces a revoke
 first.  Kept as its own statement so the disjunction cannot silently collapse to
@@ -975,7 +1000,7 @@ one side. -/
 theorem cspaceDeleteSlot_refuses_existing_children (st : SystemState) (addr : CSpaceAddr)
     (h : hasCdtChildren st addr = true) :
     cspaceDeleteSlot addr st = .error .revocationRequired := by
-  simp [cspaceDeleteSlot, h]
+  simp [cspaceDeleteSlot, slotIsDerivationParent, h]
 
 /-- V5-G (M-DEF-7): **Revocation routing guide.**
 
@@ -1661,6 +1686,39 @@ def ipcTransferSingleCap
         match cn.findFirstEmptySlot slotBase scanLimit with
         | none => .ok (.noSlot, st)
         | some emptySlot =>
+            -- **The source must still be a live slot at the moment the edge is
+            -- made.**
+            --
+            -- This is the one place an `.ipcTransfer` edge comes into existence,
+            -- and it can run a whole syscall after the capability was resolved:
+            -- a blocking send parks its message until a receiver arrives.  In
+            -- between, the source slot can be destroyed — deleted, retyped away
+            -- with its CNode, or swept as a descendant by a revoke.  Each of
+            -- those severs `cdtSlotNode`, and `cspaceRevokeCdt` resolves
+            -- *through* that mapping, so installing anyway would hand the
+            -- receiver authority beneath a parent no slot points at, which
+            -- nothing could subsequently revoke.
+            --
+            -- Checking here rather than at each destroyer is deliberate.  The
+            -- destroyers are open-ended — delete, CNode retype and revoke
+            -- today, and whatever later transition frees a slot — and any one of
+            -- them that forgets to consult the in-flight set reopens the hole
+            -- silently.  The creator is exactly one function.
+            -- `cspaceDeleteSlot` and the CNode retype guard still refuse up
+            -- front, because `.revocationRequired` tells a caller to revoke
+            -- first and that is a better answer than a silently dropped
+            -- capability; but they are the ergonomics, and this is the
+            -- guarantee.
+            --
+            -- Placed after the receiver-root and empty-slot resolution rather
+            -- than before it, so that `.ok` still witnesses a CNode at the
+            -- receiver root (`ipcTransferSingleCap_ok_implies_cnode_at_root`
+            -- and the object-shape frames rest on that) — the check that
+            -- declines to install belongs next to the install, not ahead of the
+            -- checks the install already had.
+            match SystemState.lookupCdtSlotOfNode st srcNode with
+            | none => .ok (.sourceRevoked, st)
+            | some _ =>
             let dstAddr : CSpaceAddr := { cnode := receiverCspaceRoot, slot := emptySlot }
             match cspaceInsertSlot dstAddr cap st with
             | .error e => .error e
@@ -1675,6 +1733,65 @@ def ipcTransferSingleCap
                 .ok (.installed receiverCspaceRoot emptySlot,
                      { stDst with cdt := cdt' })
     | none => .error .objectNotFound
+
+/-- **No capability is ever installed beneath a source that no slot points at.**
+
+The guarantee the whole revocation-precision series rests on, stated where the
+only `.ipcTransfer` edge is made rather than at any of the operations that can
+destroy a slot.  `cspaceRevokeCdt` reaches a transferred capability by walking
+from the source slot's node, so an install under a node with no slot would be
+authority nothing could revoke.  Because the install is the single creator of
+such an edge, this one statement covers every destroyer — the ones that exist
+(delete, CNode retype, the revoke sweep) and the ones a later transition might
+add. -/
+theorem ipcTransferSingleCap_installed_implies_live_source
+    (cap : Capability) (srcNode : CdtNodeId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState)
+    (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot)
+    (hStep : ipcTransferSingleCap cap srcNode receiverCspaceRoot slotBase scanLimit st
+             = .ok (.installed cnode slot, st')) :
+    SystemState.lookupCdtSlotOfNode st srcNode ≠ none := by
+  simp only [ipcTransferSingleCap] at hStep
+  cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
+  | none =>
+    -- The declining branch answers `.sourceRevoked`, never `.installed`.
+    exfalso
+    cases hCn : st.getCNode? receiverCspaceRoot with
+    | none => simp [hCn] at hStep
+    | some cn =>
+      simp only [hCn] at hStep
+      cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+      | none => simp [hSlot] at hStep
+      | some _ => simp [hSlot, hSrc] at hStep
+  -- `cases … with` already rewrote the goal to `some ref ≠ none`.
+  | some ref => simp
+
+/-- The declining branch is a no-op: a transfer that finds its source gone
+leaves the state exactly as it was, so nothing is half-installed. -/
+theorem ipcTransferSingleCap_sourceRevoked_preserves_state
+    (cap : Capability) (srcNode : CdtNodeId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState)
+    (hStep : ipcTransferSingleCap cap srcNode receiverCspaceRoot slotBase scanLimit st
+             = .ok (.sourceRevoked, st')) :
+    st' = st := by
+  simp only [ipcTransferSingleCap] at hStep
+  cases hCn : st.getCNode? receiverCspaceRoot with
+  | none => simp [hCn] at hStep
+  | some cn =>
+    simp only [hCn] at hStep
+    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    | none => simp [hSlot] at hStep
+    | some emptySlot =>
+      simp only [hSlot] at hStep
+      cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
+      | none => simp [hSrc] at hStep; exact hStep.symm
+      | some _ =>
+        simp only [hSrc] at hStep
+        cases hIns : cspaceInsertSlot { cnode := receiverCspaceRoot, slot := emptySlot } cap st with
+        | error e => simp [hIns] at hStep
+        | ok pair => simp [hIns] at hStep
 
 private theorem ensureCdtNodeForSlot_scheduler_eq (st : SystemState) (ref : SlotRef) :
     (SystemState.ensureCdtNodeForSlot st ref).2.scheduler = st.scheduler := by
@@ -1709,6 +1826,12 @@ theorem ipcTransferSingleCap_preserves_scheduler
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some emptySlot =>
         simp [hSlot] at hStep
+        -- A source destroyed since resolution declines the install and leaves
+        -- the state untouched, so this frame holds there by reflexivity.
+        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
+        | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
+        | some _ =>
+        simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
         | ok pair =>
@@ -1742,6 +1865,12 @@ theorem ipcTransferSingleCap_preserves_machine
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some emptySlot =>
         simp [hSlot] at hStep
+        -- A source destroyed since resolution declines the install and leaves
+        -- the state untouched, so this frame holds there by reflexivity.
+        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
+        | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
+        | some _ =>
+        simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
         | ok pair =>
@@ -1774,6 +1903,12 @@ theorem ipcTransferSingleCap_preserves_objects_ne
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some emptySlot =>
         simp [hSlot] at hStep
+        -- A source destroyed since resolution declines the install and leaves
+        -- the state untouched, so this frame holds there by reflexivity.
+        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
+        | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
+        | some _ =>
+        simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
         | ok pair =>
@@ -1803,6 +1938,12 @@ theorem ipcTransferSingleCap_preserves_services
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some emptySlot =>
         simp [hSlot] at hStep
+        -- A source destroyed since resolution declines the install and leaves
+        -- the state untouched, so this frame holds there by reflexivity.
+        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
+        | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
+        | some _ =>
+        simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
         | ok pair =>
@@ -1833,6 +1974,12 @@ theorem ipcTransferSingleCap_preserves_objects_invExt
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hObjInv
     | some emptySlot =>
         simp [hSlot] at hStep
+        -- A source destroyed since resolution declines the install and leaves
+        -- the state untouched, so this frame holds there by reflexivity.
+        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
+        | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
+        | some _ =>
+        simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
         | ok pair =>
@@ -1898,6 +2045,14 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
       intro ntfn h; rw [hObj] at h; exact absurd h (by simp)
     | some emptySlot =>
         simp [hSlot] at hStep
+        -- A source destroyed since resolution declines the install and leaves
+        -- the state untouched, so this frame holds there by reflexivity.
+        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
+        | none =>
+          simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep
+          intro ntfn h; rw [hObj] at h; exact absurd h (by simp)
+        | some _ =>
+        simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
         | ok pair =>
@@ -2084,6 +2239,12 @@ theorem ipcTransferSingleCap_receiverRoot_stays_cnode
     exact ⟨cn, hCn⟩
   | some emptySlot =>
     simp [hSlot] at hStep
+    -- A source destroyed since resolution declines the install and leaves
+    -- the state untouched, so this frame holds there by reflexivity.
+    cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
+    | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; exact ⟨cn, hCn⟩
+    | some _ =>
+    simp only [hSrc] at hStep
     cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
     | error e => simp [hIns] at hStep
     | ok pair =>

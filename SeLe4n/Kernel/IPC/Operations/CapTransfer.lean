@@ -219,6 +219,7 @@ theorem ipcUnwrapCapsLoop_preserves_scheduler
         | installed c s => rw [ih _ _ _ _ hStep, hSched]
         | noSlot => rw [ih _ _ _ _ hStep, hSched]
         | grantDenied => rw [ih _ _ _ _ hStep, hSched]
+        | sourceRevoked => rw [ih _ _ _ _ hStep, hSched]
 
 theorem ipcUnwrapCaps_preserves_scheduler
     (msg : IpcMessage)
@@ -267,6 +268,7 @@ theorem ipcUnwrapCapsLoop_preserves_machine
         | installed c s => rw [ih _ _ _ _ hStep, hMach]
         | noSlot => rw [ih _ _ _ _ hStep, hMach]
         | grantDenied => rw [ih _ _ _ _ hStep, hMach]
+        | sourceRevoked => rw [ih _ _ _ _ hStep, hMach]
 
 /-- WS-SM SM8.B.2: IPC capability transfer is machine-invariant.  Paired with
 `ipcUnwrapCaps_preserves_scheduler`, this is what makes the WithCaps leg of the
@@ -315,6 +317,7 @@ theorem ipcUnwrapCapsLoop_preserves_services
         | installed c s => rw [ih _ _ _ _ hStep, hSvc]
         | noSlot => rw [ih _ _ _ _ hStep, hSvc]
         | grantDenied => rw [ih _ _ _ _ hStep, hSvc]
+        | sourceRevoked => rw [ih _ _ _ _ hStep, hSvc]
 
 theorem ipcUnwrapCaps_preserves_services
     (msg : IpcMessage)
@@ -364,6 +367,7 @@ theorem ipcUnwrapCapsLoop_preserves_objects_ne
         | installed c s => rw [ih _ _ _ _ hObjInvNext hStep, hObj]
         | noSlot => rw [ih _ _ _ _ hObjInvNext hStep, hObj]
         | grantDenied => rw [ih _ _ _ _ hObjInvNext hStep, hObj]
+        | sourceRevoked => rw [ih _ _ _ _ hObjInvNext hStep, hObj]
 
 /-- ipcUnwrapCaps preserves objects at keys other than the receiver root CNode. -/
 theorem ipcUnwrapCaps_preserves_objects_ne
@@ -416,6 +420,7 @@ theorem ipcUnwrapCapsLoop_preserves_ntfn_objects
         | installed c s => exact ih _ _ _ _ hNtfnNext hObjInvNext hStep
         | noSlot => exact ih _ _ _ _ hNtfnNext hObjInvNext hStep
         | grantDenied => exact ih _ _ _ _ hNtfnNext hObjInvNext hStep
+        | sourceRevoked => exact ih _ _ _ _ hNtfnNext hObjInvNext hStep
 
 /-- M3-E4: ipcUnwrapCaps preserves all notification objects. Any notification
 in st survives unchanged in st' because ipcUnwrapCaps only modifies CNode
@@ -474,6 +479,7 @@ theorem ipcUnwrapCapsLoop_preserves_reply_objects
         | installed c s => exact ih _ _ _ _ hReplyNext hObjInvNext hStep
         | noSlot => exact ih _ _ _ _ hReplyNext hObjInvNext hStep
         | grantDenied => exact ih _ _ _ _ hReplyNext hObjInvNext hStep
+        | sourceRevoked => exact ih _ _ _ _ hReplyNext hObjInvNext hStep
 
 /-- IPC de-threading D3: `ipcUnwrapCaps` preserves all `.reply` objects.  Any reply
 in `st` survives unchanged in `st'` because cap transfer only writes CNodes (via
@@ -528,6 +534,7 @@ theorem ipcUnwrapCapsLoop_receiverRoot_not_ntfn
         | installed c s => exact ih _ _ _ _ hNextNotNtfn hObjInvNext hStep
         | noSlot => exact ih _ _ _ _ hNextNotNtfn hObjInvNext hStep
         | grantDenied => exact ih _ _ _ _ hNextNotNtfn hObjInvNext hStep
+        | sourceRevoked => exact ih _ _ _ _ hNextNotNtfn hObjInvNext hStep
 
 theorem ipcUnwrapCapsLoop_preserves_ep_objects
     (caps : Array TransferCap) (senderRoot receiverRoot : SeLe4n.ObjId)
@@ -565,6 +572,7 @@ theorem ipcUnwrapCapsLoop_preserves_ep_objects
         | installed c s => exact ih _ _ _ _ hEpNext hObjInvNext hStep
         | noSlot => exact ih _ _ _ _ hEpNext hObjInvNext hStep
         | grantDenied => exact ih _ _ _ _ hEpNext hObjInvNext hStep
+        | sourceRevoked => exact ih _ _ _ _ hEpNext hObjInvNext hStep
 
 /-- ipcUnwrapCaps preserves all endpoint objects. -/
 theorem ipcUnwrapCaps_preserves_ep_objects
@@ -618,6 +626,7 @@ theorem ipcUnwrapCapsLoop_preserves_tcb_objects
         | installed c s => exact ih _ _ _ _ hTcbNext hObjInvNext hStep
         | noSlot => exact ih _ _ _ _ hTcbNext hObjInvNext hStep
         | grantDenied => exact ih _ _ _ _ hTcbNext hObjInvNext hStep
+        | sourceRevoked => exact ih _ _ _ _ hTcbNext hObjInvNext hStep
 
 /-- IPC de-threading D6 helper: each step of `ipcUnwrapCapsLoop` preserves a SchedContext at
 `oid` — mirror of `ipcUnwrapCapsLoop_preserves_tcb_objects`. -/
@@ -657,6 +666,7 @@ theorem ipcUnwrapCapsLoop_preserves_schedContext_objects
         | installed c s => exact ih _ _ _ _ hScNext hObjInvNext hStep
         | noSlot => exact ih _ _ _ _ hScNext hObjInvNext hStep
         | grantDenied => exact ih _ _ _ _ hScNext hObjInvNext hStep
+        | sourceRevoked => exact ih _ _ _ _ hScNext hObjInvNext hStep
 
 /-- IPC de-threading D6 helper: `ipcUnwrapCaps` preserves all SchedContext objects. -/
 theorem ipcUnwrapCaps_preserves_schedContext_objects
@@ -732,6 +742,7 @@ theorem ipcUnwrapCapsLoop_objects_at_root_orig_or_cnode
           | installed c s => exact ih _ _ _ stNext hObjInvNext hStep
           | noSlot => exact ih _ _ _ stNext hObjInvNext hStep
           | grantDenied => exact ih _ _ _ stNext hObjInvNext hStep
+          | sourceRevoked => exact ih _ _ _ stNext hObjInvNext hStep
         rcases key with h | h
         · exact Or.inr ⟨cnNext, h.trans hCnNext⟩
         · exact Or.inr h
@@ -775,6 +786,7 @@ theorem ipcUnwrapCapsLoop_preserves_cnode_at_root
         | installed c s => exact ih _ _ _ _ _ hCn' hObjInvNext hStep
         | noSlot => exact ih _ _ _ _ _ hCn' hObjInvNext hStep
         | grantDenied => exact ih _ _ _ _ _ hCn' hObjInvNext hStep
+        | sourceRevoked => exact ih _ _ _ _ _ hCn' hObjInvNext hStep
 
 /-- M3-E4: ipcUnwrapCaps preserves CNode type at receiverRoot. -/
 theorem ipcUnwrapCaps_preserves_cnode_at_root

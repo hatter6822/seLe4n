@@ -319,6 +319,32 @@ coverage sentence is corrected to carve the sink out; the taint write at that
 key is exactly as covered as the object write it shadows, so the gap belongs
 to the footprint, not to the taint layer.
 
+**Revocation precision — one defect, four sightings, closed at the creator
+(v0.33.59 → v0.33.64).**  Review of the SM9.D cut surfaced an IPC-transferred
+capability whose CDT parent was a synthetic slot, and each subsequent round
+found another operation that could leave a transferred copy hanging beneath a
+node no slot points at — where `cspaceRevokeCdt`, which resolves through
+`cdtNodeSlot`, can never reach it.  The transfer naming a synthetic source
+closed at v0.33.59→60 (the message carries the real derivation node); the
+delete guard blind to transfers in flight closed at v0.33.62; CNode retype,
+which destroys every slot it holds and checked nothing, and the revoke sweep,
+which deletes descendant slots a transfer may still be parked from, closed at
+v0.33.64.
+
+The root is that every CDT invariant is stated node → slot — `cdtCompleteness`
+is explicitly *"robust through `detachSlotFromCdt`"* — so orphaning satisfies
+the invariant surface instead of violating it, leaving each slot-destroying
+operation to remember the check on its own.  v0.33.64 therefore moves the
+guarantee to the single creator of an `.ipcTransfer` edge:
+`ipcTransferSingleCap` declines with `CapTransferResult.sourceRevoked` when the
+source node has no slot, which covers every destroyer at once
+(`ipcTransferSingleCap_installed_implies_live_source`).  The per-operation
+guards remain as ergonomics, reading one shared `slotIsDerivationParent`.  An
+invariant stating parent-liveness directly — so a future destroyer fails at
+elaboration rather than at runtime — is recorded against PR 5 in
+[`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`](planning/SMP_FINE_LOCK_MIGRATION_PLAN.md)
+§3.1.
+
 Plan: [`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md)
 §SM9.D.  Next: SM9.E tests and phase closure.
 

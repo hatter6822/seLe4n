@@ -756,6 +756,12 @@ inductive CapTransferResult where
   | noSlot
   /-- The endpoint capability lacks the Grant right — transfer silently skipped. -/
   | grantDenied
+  /-- The source slot was destroyed between resolution and unwrap — deleted,
+  retyped away, or swept by a revoke — so installing would attach the copy
+  beneath a derivation node no slot points at, where no revoke could reach it.
+  The transfer is cancelled instead; the receiver simply gets one fewer
+  capability, exactly as with `.grantDenied`. -/
+  | sourceRevoked
   deriving Repr, DecidableEq
 
 /-- M-D01: Aggregated results of unwrapping all extra capabilities in an

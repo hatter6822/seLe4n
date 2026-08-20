@@ -288,6 +288,12 @@ theorem ipcTransferSingleCap_preserves_badgeWellFormed
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
     | some emptySlot =>
         simp [hSlot] at hStep
+        -- A source destroyed since resolution declines the install and leaves
+        -- the state untouched, so the claim holds there unchanged.
+        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
+        | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
+        | some _ =>
+        simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
         | ok pair =>
@@ -338,6 +344,7 @@ theorem ipcUnwrapCapsLoop_preserves_badgeWellFormed
         | installed c s => exact ih _ _ _ _ hInvNext hObjInvNext hStep
         | noSlot => exact ih _ _ _ _ hInvNext hObjInvNext hStep
         | grantDenied => exact ih _ _ _ _ hInvNext hObjInvNext hStep
+        | sourceRevoked => exact ih _ _ _ _ hInvNext hObjInvNext hStep
 
 /-- IPC de-threading D8: `ipcUnwrapCaps` preserves `badgeWellFormed` when every message
 cap carries a valid badge. Grant-denied path leaves state unchanged. -/
@@ -392,6 +399,12 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
         simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
       | some emptySlot =>
         simp [hSlot] at hStep
+        -- A source destroyed since resolution declines the install and leaves
+        -- the state untouched, so the claim holds there unchanged.
+        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
+        | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
+        | some _ =>
+        simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
         | ok pair2 =>
@@ -486,6 +499,7 @@ theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
         | installed c s => exact ih _ _ _ _ hInvNext hStep
         | noSlot => exact ih _ _ _ _ hInvNext hStep
         | grantDenied => exact ih _ _ _ _ hInvNext hStep
+        | sourceRevoked => exact ih _ _ _ _ hInvNext hStep
 
 /-- V3-E / M3-D3b: `ipcUnwrapCaps` preserves `capabilityInvariantBundle`
 when the endpoint has Grant right (grantRight = true). Delegates to

@@ -581,21 +581,33 @@ def main() -> int:
                 f"{hits[arm]} content write(s): {', '.join(detail.get(arm, [])[:4])}")
 
     # (B) no vacuous classification.  A content-moving arm must either write a
-    # content channel or deliver through the WS-RA return frame — `syscallReturnShape`
-    # is total, so "this syscall hands the caller a value drawn from kernel state"
-    # is a derived fact rather than an exception list.  `.notificationWait` is the
-    # case: it clears the notification's `pendingBadge` (a closed write) and the
-    # badge reaches the waiter in `x0`, so no *object* carries it.  The disjunct can
-    # only make the gate more permissive about a `.movesContent` claim, never less
-    # strict about an `.inert` one, which is the safe direction.
+    # content channel or deliver through the WS-RA return frame.
+    #
+    # The excuse used to be derived from `syscallReturnShape` — any arm whose
+    # shape was not `.unit` was taken to move content.  That reads the ABI, not
+    # the implementation: the shape says a value comes back, never that the value
+    # is still drawn from kernel state.  Delete the `pendingMessage` delivery from
+    # `.receive` and its `.message` shape is untouched, so the arm would reach
+    # zero content writes and still pass — which is exactly the lost-plumbing
+    # regression (B) exists to catch.  A constant or empty return frame passes for
+    # the same reason.
+    #
+    # So the excuse is now a named set, and membership is a claim about the
+    # implementation.  An arm joins it only when the delivery is established:
+    # `.notificationWait` clears the notification's `pendingBadge` — a closed
+    # write — and the badge reaches the waiter in `x0`, so no *object* carries it.
+    # Adding an arm without that evidence reopens the hole this closes.
+    RETURN_FRAME_DELIVERY = {"notificationWait"}
     shapes = return_shapes()
     for arm in sorted(roots):
         if cls[arm] == "movesContent" and hits.get(arm, 0) == 0:
-            if shapes.get(arm, "unit") == "unit":
+            if arm not in RETURN_FRAME_DELIVERY:
+                shape = shapes.get(arm, "unit")
                 failures.append(
-                    f"  `.{arm}` is classified `.movesContent`, returns `.unit`, and reaches "
-                    f"no content write — either the classification is wrong or the reach "
-                    f"has been lost")
+                    f"  `.{arm}` is classified `.movesContent`, reaches no content write, "
+                    f"and is not an established return-frame delivery (return shape "
+                    f"`.{shape}`) — either the classification is wrong or the reach has "
+                    f"been lost")
 
     # (C) one taint writer
     # A *theorem* naming the API states a property of it; only a **definition**

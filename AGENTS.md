@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.33.63.
+Lean 4.28.0 toolchain, Lake build system, version 0.33.64.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -826,8 +826,15 @@ code may assume:
   `withLockSet`, so the per-object fine locks are a model-level discipline.  The
   migration plus commit partitioning is planned in
   [`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`](docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md),
-  whose High-severity revocation-precision finding is **closed** at v0.33.59
-  (IPC transfer now records its derivation edge from the real source slot).
+  whose High-severity revocation-precision finding is **closed** at v0.33.64
+  (§3.1).  It took four cuts because the first three patched the operation that
+  destroyed the slot — synthetic source (v0.33.59→60), delete guard
+  (v0.33.62), CNode retype and the revoke sweep (v0.33.64) — and the set of
+  slot-destroying operations is open-ended.  The guarantee now sits at the
+  single creator of an `.ipcTransfer` edge: `ipcTransferSingleCap` declines
+  (`CapTransferResult.sourceRevoked`) when the source node has no live slot, so
+  it holds against destroyers not yet written.  New code must not assume a
+  carried `TransferCap` will install.
 - **SM4.C.11**: per-core Liveness forms (`Scheduler/Liveness/*.lean`) remain
   `bootCoreId`-pinned; migration is Scheduler-subsystem scope, not SM4.D.
 - **Registered uncovered lock domains** are enumerated in Lean, not in prose:

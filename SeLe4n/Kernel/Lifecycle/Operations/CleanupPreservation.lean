@@ -951,10 +951,14 @@ theorem detachCNodeSlots_lifecycle_eq
     - If the current object is a TCB: clean up scheduler + IPC references.
     - If the current object is an endpoint: revoke service registrations
       backed by this endpoint to preserve `registryEndpointValid`.
-    - If the current object is a CNode being replaced by a non-CNode: detach
-      CDT slot mappings to prevent orphaned derivation tree references. -/
+    - If the current object is a CNode: refuse when any slot is still a
+      derivation parent, and otherwise detach that CNode's CDT slot mappings.
+      Retype destroys every slot the CNode holds, so it owes what
+      `cspaceDeleteSlot` owes for one — see the arm for why the refusal is not
+      optional and why the detach no longer depends on the replacement's
+      shape. -/
 def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
-    (currentObj newObj : KernelObject) : Except KernelError SystemState :=
+    (currentObj _newObj : KernelObject) : Except KernelError SystemState :=
   -- Z7-P / AJ1-A (M-14): Return donated SchedContext before destroying TCB.
   -- Error propagated — failed cleanup would leave dangling SchedContext refs.
   match (match currentObj with
@@ -996,9 +1000,34 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     | _ => st
   match currentObj with
   | .cnode cn =>
-    match newObj with
-    | .cnode _ => .ok st  -- CNode → CNode: no CDT cleanup needed
-    | _ => .ok (detachCNodeSlots st target cn)
+    -- **Retype destroys every slot this CNode holds, so it owes what
+    -- `cspaceDeleteSlot` owes — for all of them at once.**
+    --
+    -- A slot that is still a derivation parent cannot be destroyed: severing
+    -- `cdtSlotNode` leaves the node and its edges behind, and `cspaceRevokeCdt`
+    -- resolves *through* that mapping, so the derived capabilities keep their
+    -- authority with nothing able to reach them.  `cspaceDeleteSlot` refuses one
+    -- such slot; this refuses a CNode containing any, reading the same
+    -- `slotIsDerivationParent` predicate so the two cannot diverge.
+    -- `.revocationRequired` is the error both use: revoke the derived
+    -- capabilities first, then retype.
+    --
+    -- Both target shapes then detach, which is why this arm no longer reads
+    -- `newObj`.  CNode → CNode used to skip the detach on the grounds that no
+    -- CDT cleanup was needed; that is wrong, because retype replaces the object
+    -- wholesale and `objectOfKernelType` — the only thing the live
+    -- `.lifecycleRetype` dispatch builds a replacement with — yields
+    -- `slots := UniqueSlotMap.empty` for `.cnode`.  No slot survives, so
+    -- skipping left every mapping pointing into a CNode that no longer holds
+    -- the capability it was minted for: a capability later placed at such a
+    -- slot inherits a destroyed one's derivation node, and revoking *that*
+    -- node's ancestor takes the unrelated newcomer with it.  Past the guard the
+    -- detach is unconditionally correct — every mapping it erases belongs to a
+    -- node with no descendants and no transfer in flight.
+    if cnodeHasDerivationParentSlot st target cn then
+      .error .revocationRequired
+    else
+      .ok (detachCNodeSlots st target cn)
   | .reply r =>
     -- WS-SM SM6.D (PR #822 review): reject retyping/deleting a Reply object that
     -- is still in use.  Two in-use forms: (1) a caller is blocked awaiting its
@@ -1206,13 +1235,15 @@ theorem lifecyclePreRetypeCleanup_flat_subset
       exact hSub
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup] at hOk
-    cases newObj <;> (simp only [] at hOk; first
-      | (injection hOk with hOk; subst hOk; exact h)
-      | (injection hOk with hOk; subst hOk;
-         have hSched := detachCNodeSlots_scheduler_eq st target cn;
-         rw [show ((detachCNodeSlots st target cn).scheduler.runQueueOnCore bootCoreId).flat =
-               (st.scheduler.runQueueOnCore bootCoreId).flat from by rw [hSched]] at h;
-         exact h))
+    -- The guard rejects (vacuous on the `.ok` path); past it the state is the
+    -- detached one, whose scheduler is framed.
+    split at hOk
+    · exact absurd hOk (by simp)
+    · injection hOk with hOk; subst hOk
+      have hSched := detachCNodeSlots_scheduler_eq st target cn
+      rw [show ((detachCNodeSlots st target cn).scheduler.runQueueOnCore bootCoreId).flat =
+            (st.scheduler.runQueueOnCore bootCoreId).flat from by rw [hSched]] at h
+      exact h
   | endpoint _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk
@@ -1270,10 +1301,12 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
       exact hDonShoot
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup] at hOk
-    cases newObj <;> (simp only [] at hOk; first
-      | (injection hOk with hOk; subst hOk; rfl)
-      | (injection hOk with hOk; subst hOk;
-         exact detachCNodeSlots_tlbShootdown_eq st target cn))
+    -- Same shape as the scheduler frame: the guard's reject is vacuous here,
+    -- and the detach frames the shootdown state.
+    split at hOk
+    · exact absurd hOk (by simp)
+    · injection hOk with hOk; subst hOk
+      exact detachCNodeSlots_tlbShootdown_eq st target cn
   | endpoint _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk

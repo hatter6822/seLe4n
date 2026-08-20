@@ -3789,6 +3789,24 @@ run_check "INVARIANT" rg -n '^def slotHasPendingTransfer' SeLe4n/Kernel/Capabili
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_refuses_pending_transfer' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_refuses_existing_children' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n 'hasCdtChildren st addr \|\| slotHasPendingTransfer st addr' SeLe4n/Kernel/Capability/Operations.lean
+
+# The derivation-parent predicate has two callers — the slot delete and the
+# CNode retype — and they must read the same one, so both the factored
+# predicate and each caller's use of it are pinned.
+run_check "INVARIANT" rg -n '^def slotIsDerivationParent' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def cnodeHasDerivationParentSlot' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n 'if slotIsDerivationParent st addr then' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n 'if cnodeHasDerivationParentSlot st target cn then' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+
+# The guarantee those guards are the ergonomics for: the single creator of an
+# `.ipcTransfer` edge declines when the source node has no slot, so no
+# destroyer — present or future — can leave an unrevokable child behind.
+run_check "INVARIANT" rg -n '^  \| sourceRevoked$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_installed_implies_live_source' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_sourceRevoked_preserves_state' SeLe4n/Kernel/Capability/Operations.lean
+# NEGATIVE: the CNode retype arm must not go back to branching on the
+# replacement's shape — both shapes destroy the old slots, so both must detach.
+run_negative_check "INVARIANT" rg -n 'CNode → CNode: no CDT cleanup needed' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 # The load-bearing negative: the parked source provably has NO CDT child, so the
 # old guard would have permitted the delete and the new predicate is doing the work.
 run_check "INVARIANT" rg -n 'chain12b: NEGATIVE . the parked source has no CDT child yet' tests/OperationChainSuite.lean
