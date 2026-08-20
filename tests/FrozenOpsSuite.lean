@@ -315,7 +315,7 @@ private def fo013_cspaceDelete : IO Unit := do
 private def fo014_notificationSignal : IO Unit := do
   let ntfn : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
   let fst := mkFrozenState [(⟨5⟩, .notification ntfn)]
-  match frozenNotificationSignal ⟨5⟩ (Badge.ofNatMasked 0xFF) fst with
+  match frozenNotificationSignal ⟨5⟩ ⟨3⟩ (Badge.ofNatMasked 0xFF) fst with
   | .ok ((), fst') =>
       match fst'.objects.get? ⟨5⟩ with
       | some (.notification ntfn') =>
@@ -498,6 +498,60 @@ private def fo021_popThenPushRegression : IO Unit := do
       expect "sender has queuePPrev after re-enqueue" (tcb.queuePPrev.isSome)
   IO.println "frozen-ops check passed [FO-021: U-H01 pop-then-push regression]"
 
+/-- FO-022: provenance follows content through the frozen operations.
+
+`FrozenSystemState.declassificationTaint` is required precisely so a snapshot
+can be analysed for laundering chains, and preserving it across `freeze` buys
+that only for the instant of the freeze.  These assertions are the ones that
+fail if the frozen operations go back to carrying the table through unchanged:
+each measures a *specific* identity reaching a thread that never held it, plus
+the negative that says the transport does not keep what it handed on. -/
+private def fo022_frozenProvenanceFollowsContent : IO Unit := do
+  let senderTcb := mkTcb 3
+  let receiverTcb := mkTcb 4
+  let ep : Endpoint := { sendQ := {}, receiveQ := {} }
+  let ntfn : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+                               pendingBadge := none }
+  let base := mkFrozenState [
+    (⟨3⟩, .tcb senderTcb), (⟨4⟩, .tcb receiverTcb),
+    (⟨10⟩, .endpoint ep), (⟨5⟩, .notification ntfn)
+  ]
+  -- Tag the sender with one identity, so the assertions below name a tag that
+  -- exists nowhere else in the snapshot.
+  let tagged : FrozenSystemState :=
+    { base with declassificationTaint :=
+        base.declassificationTaint.joinAt ⟨3⟩ (SeLe4n.Kernel.DeclassificationTaint.singleton 77) }
+  expect "FO-022: the receiver starts untainted"
+    (!((tagged.declassificationTaint ⟨4⟩).contains 77))
+  -- A parked send followed by a receive moves the message; the provenance must
+  -- move with it.
+  let msg : IpcMessage := { registers := #[⟨7⟩], caps := #[], badge := Badge.ofNatMasked 0 }
+  match frozenEndpointSend ⟨10⟩ ⟨3⟩ msg tagged with
+  | .error e => throw <| IO.userError s!"FO-022 send failed: {reprStr e}"
+  | .ok ((), fstSend) =>
+  expect "FO-022: a parked send leaves the message in the sender, so nothing propagates"
+    (!((fstSend.declassificationTaint ⟨4⟩).contains 77))
+  match frozenEndpointReceive ⟨10⟩ ⟨4⟩ fstSend with
+  | .error e => throw <| IO.userError s!"FO-022 receive failed: {reprStr e}"
+  | .ok (_, fstRecv) =>
+  expect "FO-022: the receiver inherits the sender's provenance with the message"
+    ((fstRecv.declassificationTaint ⟨4⟩).contains 77)
+  -- A notification stores the signaller's provenance, and a wait moves it to the
+  -- waiter and leaves the transport carrying none.
+  match frozenNotificationSignal ⟨5⟩ ⟨3⟩ (Badge.ofNatMasked 0xFF) tagged with
+  | .error e => throw <| IO.userError s!"FO-022 signal failed: {reprStr e}"
+  | .ok ((), fstSig) =>
+  expect "FO-022: a stored badge carries the signaller's provenance"
+    ((fstSig.declassificationTaint ⟨5⟩).contains 77)
+  match frozenNotificationWait ⟨5⟩ ⟨4⟩ fstSig with
+  | .error e => throw <| IO.userError s!"FO-022 wait failed: {reprStr e}"
+  | .ok (_, fstWait) =>
+  expect "FO-022: the waiter inherits the badge's provenance"
+    ((fstWait.declassificationTaint ⟨4⟩).contains 77)
+  expect "FO-022: NEGATIVE — the consumed notification keeps none of it"
+    (!((fstWait.declassificationTaint ⟨5⟩).contains 77))
+  IO.println "frozen-ops check passed [FO-022: provenance follows frozen content]"
+
 end SeLe4n.Testing.FrozenOpsSuite
 
 open SeLe4n.Testing.FrozenOpsSuite in
@@ -537,4 +591,5 @@ def main : IO Unit := do
   fo020_frozenCspaceMint
   IO.println "--- U-H01: Multi-round IPC Regression ---"
   fo021_popThenPushRegression
+  fo022_frozenProvenanceFollowsContent
   IO.println "=== All Q7 frozen ops tests passed (22 scenarios) ==="

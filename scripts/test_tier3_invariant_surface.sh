@@ -3915,6 +3915,26 @@ run_negative_check "INVARIANT" rg -n 'chainLinkageIsSyntactic' SeLe4n/Kernel/Inf
 # absence of that lock on the hot path is pinned NEGATIVELY.
 run_check "INVARIANT" rg -n '^def taintWriteKeys' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem applySyscallTaint_frame_off_writeKeys' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+
+# The origination keys are serialised by their own object locks, not by the
+# trail's state-level lock: `stateLevelLock` orders this transition against
+# other state-level writers only, while an ordinary IPC writing the same taint
+# key holds that key's lock and no state-level lock at all.
+run_check "INVARIANT" rg -n '^theorem lockSet_declassify_originationKeys_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n 'targetLock : Option LockId' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# The aggregate bound must quantify over the new member, or the resolved shape
+# is silently unbounded at the defaulted `none` — the SM9.C notificationSignal defect.
+run_check "INVARIANT" rg -n 'lockSet_declassify a b t\).size' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+
+# Provenance follows content through the frozen operations, not only across the
+# freeze itself — a snapshot that stopped propagating one operation later would
+# report every recorded downgrade as causally unconnected.
+run_check "INVARIANT" rg -n '^private def frozenTaintFlow' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^private def frozenTaintClear' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n 'signaller : SeLe4n\.ThreadId' SeLe4n/Kernel/FrozenOps/Operations.lean
+# NEGATIVE: the replier is the content source of a frozen reply, so it must not
+# go back to being an unused parameter.
+run_negative_check "INVARIANT" rg -n 'frozenEndpointReply \(_replierId' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n '^theorem taintWriteKeys_disjoint_updates_independent' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem taintWriteKeys_of_no_events' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # Pinned positively at the send's base list, whose last member is the endpoint:

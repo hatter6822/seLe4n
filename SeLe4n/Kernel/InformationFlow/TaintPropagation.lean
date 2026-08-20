@@ -1659,10 +1659,23 @@ def taintFlowSinks (plan : TaintPlan) : List SeLe4n.ObjId :=
 
 An audit event tags its target and its actor's TCB.  This list is empty unless
 the commit appended to the trail, which only `.declassify` and
-`.declassifySignal` do — and both already declare `stateLevelLock` in write
-mode for that append, so the actor-TCB key (which their footprints hold only in
-*read* mode) is covered.  `taintOriginationKeys_nil_of_no_events` is that
-premise made checkable. -/
+`.declassifySignal` do — `taintOriginationKeys_nil_of_no_events` is that premise
+made checkable.
+
+**Both keys ride their own object locks.**  The earlier reading of this — that
+`stateLevelLock`, which those two footprints declare for the trail append,
+covered the origination keys as well — does not hold, and the reason is the
+decision made immediately above.  `stateLevelLock` serialises a transition
+against other *state-level* writers and against nothing else; an ordinary IPC
+writing the same object's taint holds only that object's lock and, by that
+decision, no state-level lock at all.  Two such commits would have provably
+disjoint footprints while both writing one taint key, and 2PL would admit them
+concurrently with one update lost.
+
+So `lockSet_declassify` holds the actor TCB in **write** mode and carries the
+resolved target's own lock, and `lockSet_declassifySignal` inherits the
+notification write from the signal it wraps.
+`lockSet_declassify_originationKeys_write_mem` is the checkable form. -/
 def taintOriginationKeys (pre post : SystemState) : List SeLe4n.ObjId :=
   (originationTags (newlyRecordedEvents pre post)).map (·.fst)
 

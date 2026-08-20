@@ -814,13 +814,16 @@ theorem lockSet_vspaceUnifyInstruction_size_le (a : ThreadId) (b c : ObjId) :
   unfold lockSet_vspaceUnifyInstruction maxLockSetSize
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
-/-- **WS-SM SM8.C.9**: `.declassify` is within the deadlock bound.  Two read
-locks, the smallest declared footprint in the inventory — its only write is a
-`SystemState` field, not an object. -/
-theorem lockSet_declassify_size_le (a : ThreadId) (b : ObjId) :
-    (lockSet_declassify a b).size ≤ maxLockSetSize := by
+/-- **WS-SM SM8.C.9**: `.declassify` is within the deadlock bound.
+
+Quantified over the target member too.  Stating it at partial application would
+leave the optional defaulted to `none` and the *resolved* shape — the one the
+dispatch builds — silently unbounded: the same defect the `notificationSignal`
+conjunct carried before SM9.C. -/
+theorem lockSet_declassify_size_le (a : ThreadId) (b : ObjId) (t : Option LockId) :
+    (lockSet_declassify a b t).size ≤ maxLockSetSize := by
   unfold lockSet_declassify maxLockSetSize
-  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
 /-- WS-SM SM9.A.12 (PR #870 round 6): the audit reader's two-lock footprint is
 within the bound.  Registered late — the SM9.A landing declared the sets but
@@ -928,7 +931,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c, (lockSet_vspaceMap a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnifyInstruction a b c).size ≤ maxLockSetSize) ∧
-    (∀ a b, (lockSet_declassify a b).size ≤ maxLockSetSize) ∧
+    (∀ a b t, (lockSet_declassify a b t).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f, (lockSet_declassifySignal a b c d e f).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_auditRead a b).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_auditDrain a b).size ≤ maxLockSetSize) ∧

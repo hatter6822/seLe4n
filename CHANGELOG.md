@@ -1,3 +1,75 @@
+## v0.33.65 — a taint write is serialised by its own key's lock, and provenance survives the frozen operations
+
+Two coverage gaps in the SM9.D taint surface, both from review round 5, both
+where the model *declared* something it did not carry.
+
+**The declassify footprint could not lock the keys it writes.**  An authorized
+`.declassify` appends an audit event, and origination writes that event's
+identity into the taint table at two keys — the event's `targetObject` and the
+actor's TCB.  `lockSet_declassify` held the caller TCB in *read* mode, named no
+target at all, and the docstring justified both by pointing at the
+`stateLevelLock` write the trail append needs.
+
+That argument does not hold, and it is undone by the decision immediately above
+it: §3d of `TaintPropagation.lean` deliberately keeps `stateLevelLock` off the
+eight content-moving syscalls, because a globally contended lock on the IPC path
+is a design regression rather than a footprint refinement.  So `stateLevelLock`
+orders a declassification against other *state-level* writers and against
+nothing else, while an ordinary IPC writing the same object's taint holds only
+that object's lock.  Two such commits have provably disjoint footprints while
+both writing one taint key — 2PL admits them concurrently and one update is
+lost.
+
+`lockSet_declassify` now holds the caller TCB in **write** mode and carries the
+resolved target's own lock as a defaulted optional, so every pin taken before
+the member existed survives by `rfl`.  The target's lock is supplied by the
+caller because a `LockId` is `⟨kind, objId⟩` and the kind is a property of the
+state — the capability names `.object targetId` of any kind.
+`lockSet_declassify_originationKeys_write_mem` states both halves separately so
+the pair cannot collapse to one.
+
+`lockSet_declassify_size_le` is quantified over the new member and the
+`lockSetTransitions_within_bound` conjunct widened to match.  Left at partial
+application it would have bounded only the defaulted `none` shape while the
+resolved one — the shape the dispatch builds — went unbounded: exactly the
+defect the `notificationSignal` conjunct carried before SM9.C.
+
+**Frozen operations moved content and left provenance behind.**
+`FrozenSystemState.declassificationTaint` is a *required* field, and its
+docstring says why in the strongest terms available: a snapshot that dropped
+provenance would report a system in which every recorded downgrade is causally
+unconnected — the shape a laundering chain is precisely not — so the analysis a
+frozen snapshot exists to support would come back clean on a system that is not.
+Preserving the table across `freeze` bought that for the instant of the freeze
+only; the frozen IPC operations then wrote `pendingMessage` and `pendingBadge`
+while carrying the table through untouched, reproducing the same blind snapshot
+one operation later.
+
+All six content-moving frozen operations now propagate, mirroring the live
+content-derived model because they are the same transitions on the same
+channels: a sink joins its source's provenance (`frozenTaintFlow`) and a
+transport that hands its content on is cleared (`frozenTaintClear`).  A parked
+send propagates nothing — the message is still in the sender's own TCB, whose
+provenance is already the sender's — and the receive that collects it does.
+
+Two signatures changed to make that expressible.  `frozenNotificationSignal`
+gains the signaller, as the live `notificationSignal` has always had it: without
+naming the subject, the operation could not say where the content it introduces
+came from, and the frozen op is supposed to mirror its live counterpart.
+`frozenEndpointReply`'s replier stops being `_replierId`: authority still comes
+from the presented reply capability, but the *content* comes from the thread
+that composed it, which is what the parameter is now for.
+
+Evidence: FO-022 drives a tagged sender through send → receive and signal →
+wait, asserting a specific identity reaches a thread that never held it, that a
+parked send propagates nothing, and — the negative — that the consumed
+notification keeps none of it.  Tier-3 anchors on both guarantee theorems, the
+widened bound arity, the two frozen helpers, and a negative forbidding the
+replier from going back to unused.  Zero errors and zero warnings across the
+tree, staged modules and every suite.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
 ## v0.33.64 — the orphan is closed at the creator, not at each destroyer
 
 **Fourth sighting of one defect, so this cut stops patching where it surfaces.**

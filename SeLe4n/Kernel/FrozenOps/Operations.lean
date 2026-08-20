@@ -207,15 +207,50 @@ def frozenTimerTick : FrozenKernel Unit :=
 -- Q7-C2: IPC Frozen Operations
 -- ============================================================================
 
+/-! ### WS-SM SM9.D: provenance follows content here too.
+
+`FrozenSystemState.declassificationTaint` is **required**, with the reason
+stated on the field: a snapshot that dropped provenance would report a system in
+which every recorded downgrade is causally unconnected — the shape a laundering
+chain is precisely *not* — so the analysis a frozen snapshot exists to support
+would come back clean on a system that is not.  Preserving the table across
+`freeze` buys that only for the instant of the freeze: the frozen operations
+below move content between objects, and carrying the table through unchanged
+would reproduce the same blind snapshot one operation later.
+
+The moves mirror the live content-derived model exactly, because they are the
+same transitions on the same content channels (`TCB.pendingMessage`,
+`Notification.pendingBadge`): a sink joins its source's provenance, and a
+transport that hands its content on is cleared, since its taint reflects what it
+currently holds rather than everything it ever held. -/
+
+/-- WS-SM SM9.D: a frozen content move — the sink joins the source's
+provenance.  `joinAt` accumulates, so a propagation step cannot lose a link. -/
+private def frozenTaintFlow (st : FrozenSystemState)
+    (sink source : SeLe4n.ObjId) : FrozenSystemState :=
+  { st with declassificationTaint :=
+      st.declassificationTaint.joinAt sink (st.declassificationTaint source) }
+
+/-- WS-SM SM9.D: a frozen content consumption — the transport holds nothing
+afterwards, so it carries no provenance either. -/
+private def frozenTaintClear (st : FrozenSystemState)
+    (oid : SeLe4n.ObjId) : FrozenSystemState :=
+  { st with declassificationTaint := st.declassificationTaint.clearAt oid }
+
 /-- Q7-C2: Frozen notification signal — wake waiter or accumulate badge.
 Mirrors `notificationSignal` using frozen state lookups and mutations.
+
+**The signaller is an operand**, as it is in the live `notificationSignal`: the
+badge's provenance is the signalling subject's, and without naming that subject
+this operation could not say where the content it introduces came from.
 
 **`ensureRunnable` equivalent**: The builder phase calls `ensureRunnable` to
 insert the woken thread into the run queue. In the frozen phase, the woken
 thread is already in the `membership` FrozenSet (pre-allocated at freeze time).
 Setting `ipcState := .ready` via `frozenStoreTcbIpcState` makes the thread
 eligible for selection by `frozenChooseThread`, which checks `.ready` state. -/
-def frozenNotificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
+    (signaller : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
     : FrozenKernel Unit :=
   fun st =>
     match st.objects.get? notificationId with
@@ -231,7 +266,13 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Bad
                 let st' := { st with objects := objects' }
                 match frozenStoreTcbIpcState st' waiter .ready with
                 | .error e => .error e
-                | .ok st'' => .ok ((), st'')
+                | .ok st'' =>
+                    -- Delivered straight to the waiter: the badge reaches that
+                    -- thread and the notification is left holding none, so the
+                    -- transport's provenance goes with the content.
+                    .ok ((), frozenTaintClear
+                            (frozenTaintFlow st'' waiter.toObjId signaller.toObjId)
+                            notificationId)
             | none => .error .objectNotFound
         | none =>
             let mergedBadge : SeLe4n.Badge :=
@@ -242,7 +283,11 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Bad
               state := .active, waitingThreads := SeLe4n.NoDupList.empty,
               pendingBadge := some mergedBadge }
             match st.objects.set notificationId (.notification ntfn') with
-            | some objects' => .ok ((), { st with objects := objects' })
+            | some objects' =>
+                -- Stored on the notification: it now holds the badge, so it
+                -- carries the signaller's provenance until something takes it.
+                .ok ((), frozenTaintFlow { st with objects := objects' }
+                          notificationId signaller.toObjId)
             | none => .error .objectNotFound
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
@@ -269,7 +314,13 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
                 let st' := { st with objects := objects' }
                 match frozenStoreTcbIpcState st' waiter .ready with
                 | .error e => .error e
-                | .ok st'' => .ok (some badge, st'')
+                | .ok st'' =>
+                    -- The wait takes the whole stored badge, so the waiter
+                    -- inherits the notification's provenance and the
+                    -- notification is left carrying none.
+                    .ok (some badge, frozenTaintClear
+                            (frozenTaintFlow st'' waiter.toObjId notificationId)
+                            notificationId)
             | none => .error .objectNotFound
         | none =>
             match frozenLookupTcb st waiter with
@@ -368,10 +419,15 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                     let recvTcb' := { recvTcb with ipcState := ThreadIpcState.ready, pendingMessage := some msg }
                     match frozenStoreTcb receiver recvTcb' st' with
                     | .error e => .error e
-                    | .ok ((), st'') => .ok ((), st'')
+                    | .ok ((), st'') =>
+                        -- Rendezvous: the message reaches the receiver, so the
+                        -- receiver joins the sender's provenance.
+                        .ok ((), frozenTaintFlow st'' receiver.toObjId sender.toObjId)
                 | none => .error .objectNotFound
         | none =>
-            -- No receiver: block sender with message, then enqueue into sendQ (T1-B/M-FRZ-1)
+            -- No receiver: block sender with message, then enqueue into sendQ (T1-B/M-FRZ-1).
+            -- The message stays in the sender's own TCB, whose provenance is
+            -- already the sender's, so there is nothing to propagate here.
             match frozenLookupTcb st sender with
             | some senderTcb =>
                 let senderTcb' := { senderTcb with
@@ -415,7 +471,14 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
                             let recvTcb' := { recvTcb with pendingMessage := senderMsg }
                             match frozenStoreTcb receiver recvTcb' st'' with
                             | .error e => .error e
-                            | .ok ((), st''') => .ok (sender, st''')
+                            | .ok ((), st''') =>
+                                -- The parked message moves from the sender's TCB
+                                -- into the receiver's: the receiver joins the
+                                -- sender's provenance, and the sender's own
+                                -- taint is left alone (it still describes the
+                                -- content that thread holds).
+                                .ok (sender,
+                                     frozenTaintFlow st''' receiver.toObjId sender.toObjId)
                         | none => .error .objectNotFound
                 | none => .error .objectNotFound
         | none =>
@@ -463,7 +526,10 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                               ipcState := .blockedOnReply endpointId (some receiver) }
                             match frozenStoreTcb caller callerTcb' st'' with
                             | .error e => .error e
-                            | .ok ((), st''') => .ok ((), st''')
+                            | .ok ((), st''') =>
+                                -- Same content move as the send half of a call:
+                                -- the message reaches the receiver.
+                                .ok ((), frozenTaintFlow st''' receiver.toObjId caller.toObjId)
                         | none => .error .objectNotFound
                 | none => .error .objectNotFound
         | none =>
@@ -486,7 +552,7 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
 
 /-- Q7-C2: Frozen endpoint reply — reply to a blocked caller.
 Mirrors `endpointReply`. -/
-def frozenEndpointReply (_replierId : SeLe4n.ThreadId)
+def frozenEndpointReply (replierId : SeLe4n.ThreadId)
     (targetId : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (msg : IpcMessage) :
     FrozenKernel Unit :=
   fun st =>
@@ -521,7 +587,17 @@ def frozenEndpointReply (_replierId : SeLe4n.ThreadId)
                         match frozenStoreTcb targetId targetTcb' st with
                         | .error e => .error e
                         | .ok ((), st') =>
-                            frozenStoreObject replyId.toObjId (.reply { r with caller := none }) st'
+                            match frozenStoreObject replyId.toObjId
+                                    (.reply { r with caller := none }) st' with
+                            | .error e => .error e
+                            | .ok ((), st'') =>
+                                -- The reply message lands in the caller's TCB, so
+                                -- the caller joins the replier's provenance.  This
+                                -- is what `replierId` is *for* — authority still
+                                -- comes from the presented cap, but the content
+                                -- comes from the thread that composed it.
+                                .ok ((), frozenTaintFlow st'' targetId.toObjId
+                                          replierId.toObjId)
                       else .error .replyCapInvalid
                   | _ => .error .replyCapInvalid
                 else .error .replyCapInvalid

@@ -637,9 +637,34 @@ state-level half must never be dropped (`lockSet_declassifySignal_stateLevel_wri
 
 /-- WS-SM SM8.C.9: `lockSet` for `declassify`.
 
-Caller TCB and CNode are **read** mode (subject-domain resolution and
-capability resolution).  The transition's only write is the audit-trail
-append — a `SystemState` field, not an object — and since PR #870 round 7
+**The caller TCB is write mode, and the resolved target carries its own lock.**
+An authorized hop appends an audit event, and SM9.D's origination writes that
+event's identity into the taint table at two keys — the event's `targetObject`
+and the actor's TCB (`taintOriginationKeys`).  Those are taint writes, and the
+serialization subject for a taint write is the **key's own object lock**: that is
+the whole point of §3d in `TaintPropagation.lean`, which declines to put
+`stateLevelLock` on the eight content-moving syscalls because a globally
+contended lock on the IPC path is a design regression.
+
+So `stateLevelLock` cannot stand in for those two keys.  It serialises this
+transition against other *state-level* writers — another declassification, an
+`.auditDrain` — and against nothing else; an ordinary IPC updating the same
+object's taint holds only that object's lock and, by that same decision, no
+state-level lock at all.  Two such commits would have provably disjoint
+footprints while both writing one taint key, and 2PL would admit them
+concurrently with one update lost.  Declaring the keys under their own locks is
+what makes the two sides meet on the same subject.
+
+The target's lock is supplied by the caller rather than derived here, because a
+`LockId` is `⟨kind, objId⟩` and the kind is a property of the *state* — the
+declassify capability names `.object targetId` of any kind.  `none` is the
+capless/unresolved shape and is definitionally the identity, so every pin taken
+before this member existed survives by `rfl`.
+
+Caller CNode stays **read**: capability resolution reads it and nothing keys a
+taint write at a CSpace root on this path.  The transition's other write is the
+audit-trail append — a `SystemState` field, not an object — and since PR #870
+round 7
 that write is declared through the **state-level lock** in write mode:
 `stateLevelLock` is SM3.A.10's `objStoreLock` singleton, whose acquire
 advances `SystemState.objStoreLock` directly, and it is the serialization
@@ -658,11 +683,14 @@ the syscall return `.objectNotFound`, and a target destroyed concurrently
 leaves an audit entry naming an id that no longer resolves — a fidelity
 artefact, not an authority one, since the authority came from the
 capability. -/
-def lockSet_declassify (callerTid : ThreadId) (cnodeRootObjId : ObjId) : LockSet :=
-  lockSetOfList
-    [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read),
-     (stateLevelLock, .write)]
+def lockSet_declassify (callerTid : ThreadId) (cnodeRootObjId : ObjId)
+    (targetLock : Option LockId := none) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .write),
+       (cnodeLock cnodeRootObjId, .read),
+       (stateLevelLock, .write)])
+    (targetLock.map (fun l => (l, AccessMode.write)))
 
 /-- WS-SM SM9.C.8: `lockSet` for `declassifySignal` — the data-carrying
 declassification.
@@ -789,6 +817,38 @@ theorem lockSet_auditDrain_staging_write_mem (callerTid : ThreadId)
   exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
     (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
       (by simp [LockSet.insertOrMerge]))
+
+/-- **WS-SM SM9.D: the origination keys ride their own locks, not the trail's.**
+
+An authorized `.declassify` appends an audit event, and the SM9.D origination
+writes that event's identity into the taint table at two keys: the event's
+`targetObject` and the actor's TCB.  A taint write is serialised by the key's
+own object lock — §3d of `TaintPropagation.lean` declines to put
+`stateLevelLock` on the content-moving syscalls precisely so the IPC path is not
+globally contended — so `stateLevelLock` cannot stand in for either key: it
+serialises this transition against other state-level writers and against nothing
+else, while an ordinary IPC writing the same key holds only that key's lock.
+
+Both halves are stated separately so the pair cannot silently collapse to one,
+and the target half is stated at `some` because that is the shape the resolved
+dispatch builds — `none` is the unresolved footprint, which writes no
+origination because it names no target. -/
+theorem lockSet_declassify_originationKeys_write_mem
+    (callerTid : ThreadId) (cnodeRootObjId : ObjId) (targetLock : LockId) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_declassify callerTid cnodeRootObjId (some targetLock)).pairs ∧
+    (targetLock, AccessMode.write)
+      ∈ (lockSet_declassify callerTid cnodeRootObjId (some targetLock)).pairs := by
+  constructor
+  · unfold lockSet_declassify lockSetExtendOpt lockSetOfList
+    simp only [List.foldl, Option.map]
+    exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+      (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+        (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+          (by simp [LockSet.insertOrMerge])))
+  · unfold lockSet_declassify lockSetExtendOpt
+    simp only [Option.map]
+    exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- WS-SM SM9.A.12 (PR #870 round 7): the drain's trail read-modify-write is a
 declared **write** on the state-level lock. -/

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm9d-causal-declassification-ppwxud",
-      "commit_sha": "4fd1c2dcf49049e6ba8584ebb2b1baad05781ddd",
-      "tree_sha": "9a1b9bec40d9c296405b40a0dc5c6f3f14dc99ea",
-      "committed_at_utc": "2026-08-20T18:36:54+00:00"
+      "commit_sha": "b97cc6df54d36b34fb0f3e9936e07c5d1117d4ee",
+      "tree_sha": "2ba8c344f758ded8c97df6b1dc97efdcf25c2294",
+      "committed_at_utc": "2026-08-20T20:31:17+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d7d04eee28602a2bfab665b367b0891d9eeea99eb6c0c7c9238dcfd6bbfff43d"
+    "source_digest": "8d526e4986208bb42c0e0d9f5b1e3068eef1ae182607a637448a18c82f878896"
   },
   "summary": {
     "module_count": 354,
-    "declaration_count": 16755
+    "declaration_count": 16759
   },
   "readme_sync": {
-    "version": "0.33.64",
+    "version": "0.33.65",
     "lean_toolchain": "v4.28.0",
     "production_files": 285,
-    "production_loc": 282646,
+    "production_loc": 282798,
     "test_files": 69,
-    "test_loc": 61893,
-    "proved_theorem_lemma_decls": 9516,
+    "test_loc": 61948,
+    "proved_theorem_lemma_decls": 9517,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -32218,21 +32218,22 @@
         {
           "kind": "theorem",
           "name": "lockSet_declassify_size_le",
-          "line": 820,
+          "line": 823,
           "called": [
+            "LockId",
             "ObjId",
             "ThreadId",
             "le_trans",
-            "lockSetOfList_size_le",
             "lockSet_declassify",
             "maxLockSetSize",
-            "size"
+            "size",
+            "size_le_1"
           ]
         },
         {
           "kind": "theorem",
           "name": "lockSet_auditRead_size_le",
-          "line": 829,
+          "line": 832,
           "called": [
             "ObjId",
             "ThreadId",
@@ -32246,7 +32247,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_auditDrain_size_le",
-          "line": 836,
+          "line": 839,
           "called": [
             "ObjId",
             "ThreadId",
@@ -32260,7 +32261,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_serviceRegister_size_le",
-          "line": 841,
+          "line": 844,
           "called": [
             "ObjId",
             "ThreadId",
@@ -32274,7 +32275,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_serviceRevoke_size_le",
-          "line": 846,
+          "line": 849,
           "called": [
             "ObjId",
             "ThreadId",
@@ -32288,7 +32289,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_serviceQuery_size_le",
-          "line": 851,
+          "line": 854,
           "called": [
             "ObjId",
             "ThreadId",
@@ -32302,7 +32303,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_schedContextConfigure_size_le",
-          "line": 856,
+          "line": 859,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -32317,7 +32318,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_schedContextBind_size_le",
-          "line": 862,
+          "line": 865,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -32332,7 +32333,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_schedContextUnbind_size_le",
-          "line": 868,
+          "line": 871,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -32347,7 +32348,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_tcbSuspend_size_le",
-          "line": 874,
+          "line": 877,
           "called": [
             "ObjId",
             "ReplyId",
@@ -32364,7 +32365,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_tcbResume_size_le",
-          "line": 881,
+          "line": 884,
           "called": [
             "ObjId",
             "ThreadId",
@@ -32378,7 +32379,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_tcbSetPriority_size_le",
-          "line": 886,
+          "line": 889,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -32393,7 +32394,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_tcbSetMCPriority_size_le",
-          "line": 892,
+          "line": 895,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -32408,7 +32409,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_tcbSetIPCBuffer_size_le",
-          "line": 898,
+          "line": 901,
           "called": [
             "ObjId",
             "ThreadId",
@@ -32422,7 +32423,7 @@
         {
           "kind": "theorem",
           "name": "lockSetTransitions_within_bound",
-          "line": 915,
+          "line": 918,
           "called": [
             "lockSet_auditDrain",
             "lockSet_auditDrain_size_le",
@@ -32491,7 +32492,7 @@
         {
           "kind": "structure",
           "name": "KernelOperation",
-          "line": 974,
+          "line": 977,
           "called": [
             "LockSet",
             "maxLockSetSize",
@@ -32501,7 +32502,7 @@
         {
           "kind": "def",
           "name": "KernelOperation.ofEndpointCall",
-          "line": 985,
+          "line": 988,
           "called": [
             "KernelOperation",
             "ObjId",
@@ -32516,7 +32517,7 @@
         {
           "kind": "def",
           "name": "KernelOperation.ofReplyRecv",
-          "line": 992,
+          "line": 995,
           "called": [
             "KernelOperation",
             "ObjId",
@@ -32529,7 +32530,7 @@
         {
           "kind": "def",
           "name": "KernelOperation.ofTcbSuspend",
-          "line": 1000,
+          "line": 1003,
           "called": [
             "KernelOperation",
             "ObjId",
@@ -32544,7 +32545,7 @@
         {
           "kind": "def",
           "name": "otherCores",
-          "line": 1012,
+          "line": 1015,
           "called": [
             "CoreId",
             "filter"
@@ -32553,7 +32554,7 @@
         {
           "kind": "theorem",
           "name": "otherCores_length_eq",
-          "line": 1016,
+          "line": 1019,
           "called": [
             "CoreId",
             "length",
@@ -32564,7 +32565,7 @@
         {
           "kind": "def",
           "name": "contendersAhead",
-          "line": 1022,
+          "line": 1025,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -32576,7 +32577,7 @@
         {
           "kind": "theorem",
           "name": "contendersAhead_le",
-          "line": 1027,
+          "line": 1030,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -32589,7 +32590,7 @@
         {
           "kind": "theorem",
           "name": "sum_le_length_mul",
-          "line": 1035,
+          "line": 1038,
           "called": [
             "cons",
             "length"
@@ -32598,7 +32599,7 @@
         {
           "kind": "theorem",
           "name": "sum_map_le_sum_map",
-          "line": 1046,
+          "line": 1049,
           "called": [
             "cons"
           ]
@@ -32606,7 +32607,7 @@
         {
           "kind": "def",
           "name": "WCRT",
-          "line": 1062,
+          "line": 1065,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -32617,7 +32618,7 @@
         {
           "kind": "theorem",
           "name": "boundedWait_under_2pl",
-          "line": 1078,
+          "line": 1081,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -32640,7 +32641,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_le_totalWaitCost",
-          "line": 1097,
+          "line": 1100,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -32655,7 +32656,7 @@
         {
           "kind": "theorem",
           "name": "acquireOrder_nodup",
-          "line": 1122,
+          "line": 1125,
           "called": [
             "LockSet",
             "acquireOrder",
@@ -32665,7 +32666,7 @@
         {
           "kind": "def",
           "name": "CorePrefixOf",
-          "line": 1134,
+          "line": 1137,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -32677,7 +32678,7 @@
         {
           "kind": "theorem",
           "name": "coreFollows2PL_of_prefix",
-          "line": 1143,
+          "line": 1146,
           "called": [
             "CoreId",
             "CorePrefixOf",
@@ -32690,7 +32691,7 @@
         {
           "kind": "theorem",
           "name": "coreAcquiresInOrder_of_prefix",
-          "line": 1159,
+          "line": 1162,
           "called": [
             "CoreId",
             "CorePrefixOf",
@@ -32703,7 +32704,7 @@
         {
           "kind": "theorem",
           "name": "execution_satisfies_hypotheses_of_all_prefix",
-          "line": 1180,
+          "line": 1183,
           "called": [
             "CoreId",
             "CorePrefixOf",
@@ -32720,7 +32721,7 @@
         {
           "kind": "def",
           "name": "executionOfHeld",
-          "line": 1216,
+          "line": 1219,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -32733,7 +32734,7 @@
         {
           "kind": "theorem",
           "name": "executionOfHeld_heldBy",
-          "line": 1222,
+          "line": 1225,
           "called": [
             "CoreId",
             "LockId",
@@ -32746,7 +32747,7 @@
         {
           "kind": "theorem",
           "name": "lockSetHeld_realizes_heldBy",
-          "line": 1239,
+          "line": 1242,
           "called": [
             "CoreId",
             "LockId",
@@ -32765,7 +32766,7 @@
         {
           "kind": "def",
           "name": "twoCorePathScenario",
-          "line": 1262,
+          "line": 1265,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -32774,8 +32775,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1268>",
-          "line": 1268,
+          "name": "<anonymous:instance:1271>",
+          "line": 1271,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -36101,7 +36102,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions",
       "path": "SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean",
-      "declaration_count": 115,
+      "declaration_count": 116,
       "declarations": [
         {
           "kind": "namespace",
@@ -36497,14 +36498,17 @@
         {
           "kind": "def",
           "name": "lockSet_declassify",
-          "line": 661,
+          "line": 686,
           "called": [
+            "LockId",
             "LockSet",
             "ObjId",
             "ThreadId",
             "callerTid",
             "cnodeLock",
+            "lockSetExtendOpt",
             "lockSetOfList",
+            "none",
             "stateLevelLock",
             "tcbLock"
           ]
@@ -36512,7 +36516,7 @@
         {
           "kind": "def",
           "name": "lockSet_declassifySignal",
-          "line": 695,
+          "line": 723,
           "called": [
             "LockSet",
             "ObjId",
@@ -36527,7 +36531,7 @@
         {
           "kind": "def",
           "name": "lockSet_auditRead",
-          "line": 744,
+          "line": 772,
           "called": [
             "LockSet",
             "ObjId",
@@ -36542,7 +36546,7 @@
         {
           "kind": "def",
           "name": "lockSet_auditDrain",
-          "line": 761,
+          "line": 789,
           "called": [
             "LockSet",
             "ObjId",
@@ -36557,7 +36561,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_auditRead_staging_write_mem",
-          "line": 771,
+          "line": 799,
           "called": [
             "ObjId",
             "ThreadId",
@@ -36572,7 +36576,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_auditDrain_staging_write_mem",
-          "line": 783,
+          "line": 811,
           "called": [
             "ObjId",
             "ThreadId",
@@ -36586,8 +36590,26 @@
         },
         {
           "kind": "theorem",
+          "name": "lockSet_declassify_originationKeys_write_mem",
+          "line": 836,
+          "called": [
+            "LockId",
+            "ObjId",
+            "ThreadId",
+            "callerTid",
+            "insertOrMerge",
+            "lockSetExtendOpt",
+            "lockSetOfList",
+            "lockSet_declassify",
+            "mem_insertOrMerge_write_of_mem_write",
+            "mem_insertOrMerge_write_self",
+            "tcbLock"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "lockSet_auditDrain_stateLevel_write_mem",
-          "line": 795,
+          "line": 855,
           "called": [
             "ObjId",
             "ThreadId",
@@ -36600,7 +36622,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_auditRead_stateLevel_read_mem",
-          "line": 806,
+          "line": 866,
           "called": [
             "ObjId",
             "ThreadId",
@@ -36613,7 +36635,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_declassify_stateLevel_write_mem",
-          "line": 816,
+          "line": 876,
           "called": [
             "ObjId",
             "ThreadId",
@@ -36626,7 +36648,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_declassifySignal_stateLevel_write_mem",
-          "line": 831,
+          "line": 891,
           "called": [
             "ObjId",
             "ThreadId",
@@ -36640,7 +36662,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_declassifySignal_extends_notificationSignal",
-          "line": 853,
+          "line": 913,
           "called": [
             "LockId",
             "ObjId",
@@ -36655,7 +36677,7 @@
         {
           "kind": "theorem",
           "name": "auditState_footprints_share_serialization",
-          "line": 885,
+          "line": 945,
           "called": [
             "ObjId",
             "ThreadId",
@@ -36673,7 +36695,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_refusalSeam_writer_declares_stateLevel_write",
-          "line": 927,
+          "line": 987,
           "called": [
             "ObjId",
             "SyscallId",
@@ -36691,7 +36713,7 @@
         {
           "kind": "def",
           "name": "lockSet_serviceRegister",
-          "line": 977,
+          "line": 1037,
           "called": [
             "LockSet",
             "ObjId",
@@ -36706,7 +36728,7 @@
         {
           "kind": "def",
           "name": "lockSet_serviceRevoke",
-          "line": 990,
+          "line": 1050,
           "called": [
             "LockSet",
             "ObjId",
@@ -36720,7 +36742,7 @@
         {
           "kind": "def",
           "name": "lockSet_serviceQuery",
-          "line": 1008,
+          "line": 1068,
           "called": [
             "LockSet",
             "ObjId",
@@ -36734,7 +36756,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_serviceQuery_staging_write_mem",
-          "line": 1016,
+          "line": 1076,
           "called": [
             "ObjId",
             "ThreadId",
@@ -36749,7 +36771,7 @@
         {
           "kind": "def",
           "name": "lockSet_schedContextConfigure",
-          "line": 1032,
+          "line": 1092,
           "called": [
             "LockSet",
             "ObjId",
@@ -36766,7 +36788,7 @@
         {
           "kind": "def",
           "name": "lockSet_schedContextBind",
-          "line": 1043,
+          "line": 1103,
           "called": [
             "LockSet",
             "ObjId",
@@ -36782,7 +36804,7 @@
         {
           "kind": "def",
           "name": "lockSet_schedContextUnbind",
-          "line": 1053,
+          "line": 1113,
           "called": [
             "LockSet",
             "ObjId",
@@ -36798,7 +36820,7 @@
         {
           "kind": "def",
           "name": "lockSet_tcbBindNotification",
-          "line": 1065,
+          "line": 1125,
           "called": [
             "LockSet",
             "ObjId",
@@ -36813,7 +36835,7 @@
         {
           "kind": "def",
           "name": "lockSet_tcbUnbindNotification",
-          "line": 1075,
+          "line": 1135,
           "called": [
             "LockSet",
             "ObjId",
@@ -36828,7 +36850,7 @@
         {
           "kind": "def",
           "name": "lockSet_tcbSuspend",
-          "line": 1142,
+          "line": 1202,
           "called": [
             "LockSet",
             "ObjId",
@@ -36850,7 +36872,7 @@
         {
           "kind": "def",
           "name": "lockSet_tcbResume",
-          "line": 1169,
+          "line": 1229,
           "called": [
             "LockSet",
             "ObjId",
@@ -36864,7 +36886,7 @@
         {
           "kind": "def",
           "name": "lockSet_tcbSetPriority",
-          "line": 1200,
+          "line": 1260,
           "called": [
             "LockSet",
             "ObjId",
@@ -36881,7 +36903,7 @@
         {
           "kind": "def",
           "name": "lockSet_tcbSetMCPriority",
-          "line": 1223,
+          "line": 1283,
           "called": [
             "LockSet",
             "ObjId",
@@ -36898,7 +36920,7 @@
         {
           "kind": "def",
           "name": "lockSet_tcbSetIPCBuffer",
-          "line": 1259,
+          "line": 1319,
           "called": [
             "LockSet",
             "ObjId",
@@ -36914,7 +36936,7 @@
         {
           "kind": "def",
           "name": "lockSet_tcbSetAffinity",
-          "line": 1282,
+          "line": 1342,
           "called": [
             "LockSet",
             "ObjId",
@@ -36931,7 +36953,7 @@
         {
           "kind": "def",
           "name": "pipChainStart_endpointCall",
-          "line": 1389,
+          "line": 1449,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -36941,7 +36963,7 @@
         {
           "kind": "def",
           "name": "pipChainStart_endpointReply",
-          "line": 1405,
+          "line": 1465,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -36952,7 +36974,7 @@
         {
           "kind": "def",
           "name": "pipChainStart_replyRecv",
-          "line": 1418,
+          "line": 1478,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -36963,7 +36985,7 @@
         {
           "kind": "def",
           "name": "pipChainStart_tcbSuspend",
-          "line": 1438,
+          "line": 1498,
           "called": [
             "ThreadId"
           ]
@@ -36971,7 +36993,7 @@
         {
           "kind": "def",
           "name": "permittedKinds",
-          "line": 1456,
+          "line": 1516,
           "called": [
             "LockKind",
             "SyscallId",
@@ -36988,8 +37010,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1567>",
-          "line": 1567,
+          "name": "<anonymous:instance:1627>",
+          "line": 1627,
           "called": [
             "LockKind",
             "SyscallId",
@@ -36999,7 +37021,7 @@
         {
           "kind": "theorem",
           "name": "lockSetOfList_mem_inv",
-          "line": 1587,
+          "line": 1647,
           "called": [
             "AccessMode",
             "LockId",
@@ -37013,7 +37035,7 @@
         {
           "kind": "theorem",
           "name": "lockSetExtendOpt_none",
-          "line": 1629,
+          "line": 1689,
           "called": [
             "LockSet",
             "lockSetExtendOpt",
@@ -37023,7 +37045,7 @@
         {
           "kind": "theorem",
           "name": "lockSetExtendOpt_mem_inv",
-          "line": 1634,
+          "line": 1694,
           "called": [
             "AccessMode",
             "LockId",
@@ -37036,7 +37058,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_of_extended_base",
-          "line": 1660,
+          "line": 1720,
           "called": [
             "AccessMode",
             "LockId",
@@ -37048,7 +37070,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_extendOpt",
-          "line": 1674,
+          "line": 1734,
           "called": [
             "AccessMode",
             "LockId",
@@ -37061,7 +37083,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_base_plus_opt",
-          "line": 1688,
+          "line": 1748,
           "called": [
             "AccessMode",
             "LockId",
@@ -37075,7 +37097,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_base_plus_two_opts",
-          "line": 1700,
+          "line": 1760,
           "called": [
             "AccessMode",
             "LockId",
@@ -37089,7 +37111,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_base_plus_three_opts",
-          "line": 1716,
+          "line": 1776,
           "called": [
             "AccessMode",
             "LockId",
@@ -37103,7 +37125,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_base_plus_four_opts",
-          "line": 1735,
+          "line": 1795,
           "called": [
             "AccessMode",
             "LockId",
@@ -37117,7 +37139,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_base_plus_five_opts",
-          "line": 1754,
+          "line": 1814,
           "called": [
             "AccessMode",
             "LockId",
@@ -37131,7 +37153,7 @@
         {
           "kind": "theorem",
           "name": "tcbLock_kind",
-          "line": 1776,
+          "line": 1836,
           "called": [
             "ThreadId",
             "tcbLock"
@@ -37140,7 +37162,7 @@
         {
           "kind": "theorem",
           "name": "cnodeLock_kind",
-          "line": 1779,
+          "line": 1839,
           "called": [
             "ObjId",
             "cnodeLock"
@@ -37149,7 +37171,7 @@
         {
           "kind": "theorem",
           "name": "endpointLock_kind",
-          "line": 1782,
+          "line": 1842,
           "called": [
             "ObjId",
             "endpointLock"
@@ -37158,7 +37180,7 @@
         {
           "kind": "theorem",
           "name": "notificationLock_kind",
-          "line": 1786,
+          "line": 1846,
           "called": [
             "ObjId",
             "notificationLock"
@@ -37167,7 +37189,7 @@
         {
           "kind": "theorem",
           "name": "schedContextLock_kind",
-          "line": 1790,
+          "line": 1850,
           "called": [
             "SchedContextId",
             "schedContextLock"
@@ -37176,7 +37198,7 @@
         {
           "kind": "theorem",
           "name": "replyLock_kind",
-          "line": 1794,
+          "line": 1854,
           "called": [
             "ReplyId",
             "replyLock"
@@ -37185,7 +37207,7 @@
         {
           "kind": "theorem",
           "name": "vspaceRootLock_kind",
-          "line": 1798,
+          "line": 1858,
           "called": [
             "ObjId",
             "vspaceRootLock"
@@ -37194,7 +37216,7 @@
         {
           "kind": "theorem",
           "name": "untypedLock_kind",
-          "line": 1802,
+          "line": 1862,
           "called": [
             "ObjId",
             "untypedLock"
@@ -37203,7 +37225,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_send",
-          "line": 1816,
+          "line": 1876,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37219,7 +37241,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_receive",
-          "line": 1835,
+          "line": 1895,
           "called": [
             "ObjId",
             "ReplyId",
@@ -37238,7 +37260,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_call",
-          "line": 1859,
+          "line": 1919,
           "called": [
             "ObjId",
             "ReplyId",
@@ -37257,7 +37279,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_reply",
-          "line": 1889,
+          "line": 1949,
           "called": [
             "ObjId",
             "ReplyId",
@@ -37275,7 +37297,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_replyRecv",
-          "line": 1922,
+          "line": 1982,
           "called": [
             "ObjId",
             "ReplyId",
@@ -37295,7 +37317,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_notificationSignal",
-          "line": 1960,
+          "line": 2020,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37312,7 +37334,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_declassifySignal",
-          "line": 1996,
+          "line": 2056,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37328,7 +37350,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_notificationWait",
-          "line": 2026,
+          "line": 2086,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37344,7 +37366,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_cspaceMint",
-          "line": 2041,
+          "line": 2101,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37358,7 +37380,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_cspaceCopy",
-          "line": 2056,
+          "line": 2116,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37372,7 +37394,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_mintReplyCap",
-          "line": 2073,
+          "line": 2133,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37386,7 +37408,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_cspaceMove",
-          "line": 2088,
+          "line": 2148,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37400,7 +37422,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_cspaceDelete",
-          "line": 2103,
+          "line": 2163,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37414,7 +37436,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_lifecycleRetype",
-          "line": 2118,
+          "line": 2178,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37428,7 +37450,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_vspaceMap",
-          "line": 2135,
+          "line": 2195,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37442,7 +37464,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_vspaceUnifyInstruction",
-          "line": 2150,
+          "line": 2210,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37456,7 +37478,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_vspaceUnmap",
-          "line": 2165,
+          "line": 2225,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37470,7 +37492,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_serviceRegister",
-          "line": 2183,
+          "line": 2243,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37485,7 +37507,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_serviceRevoke",
-          "line": 2198,
+          "line": 2258,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37499,7 +37521,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_serviceQuery",
-          "line": 2211,
+          "line": 2271,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37513,7 +37535,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_declassify",
-          "line": 2224,
+          "line": 2284,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37527,7 +37549,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_auditRead",
-          "line": 2239,
+          "line": 2299,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37541,7 +37563,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_auditDrain",
-          "line": 2254,
+          "line": 2314,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37555,7 +37577,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_schedContextConfigure",
-          "line": 2269,
+          "line": 2329,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -37572,7 +37594,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_schedContextBind",
-          "line": 2288,
+          "line": 2348,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -37588,7 +37610,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_schedContextUnbind",
-          "line": 2305,
+          "line": 2365,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -37604,7 +37626,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_tcbBindNotification",
-          "line": 2322,
+          "line": 2382,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37619,7 +37641,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_tcbUnbindNotification",
-          "line": 2339,
+          "line": 2399,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37634,7 +37656,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_tcbSuspend",
-          "line": 2358,
+          "line": 2418,
           "called": [
             "ObjId",
             "ReplyId",
@@ -37651,7 +37673,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_tcbResume",
-          "line": 2398,
+          "line": 2458,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37665,7 +37687,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_tcbSetPriority",
-          "line": 2416,
+          "line": 2476,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -37681,7 +37703,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_tcbSetMCPriority",
-          "line": 2437,
+          "line": 2497,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -37697,7 +37719,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_tcbSetIPCBuffer",
-          "line": 2460,
+          "line": 2520,
           "called": [
             "ObjId",
             "ThreadId",
@@ -37712,7 +37734,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_consistent_tcbSetAffinity",
-          "line": 2482,
+          "line": 2542,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -50937,7 +50959,7 @@
     {
       "module": "SeLe4n.Kernel.FrozenOps.Operations",
       "path": "SeLe4n/Kernel/FrozenOps/Operations.lean",
-      "declaration_count": 31,
+      "declaration_count": 33,
       "declarations": [
         {
           "kind": "namespace",
@@ -51010,18 +51032,43 @@
         },
         {
           "kind": "def",
+          "name": "frozenTaintFlow",
+          "line": 229,
+          "called": [
+            "FrozenSystemState",
+            "ObjId",
+            "joinAt",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenTaintClear",
+          "line": 236,
+          "called": [
+            "FrozenSystemState",
+            "ObjId",
+            "clearAt",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "frozenNotificationSignal",
-          "line": 218,
+          "line": 252,
           "called": [
             "Badge",
             "FrozenKernel",
             "Notification",
             "NotificationState",
             "ObjId",
+            "ThreadId",
             "badge",
             "bor",
             "empty",
             "frozenStoreTcbIpcState",
+            "frozenTaintClear",
+            "frozenTaintFlow",
             "get",
             "isEmpty",
             "none",
@@ -51030,13 +51077,14 @@
             "set",
             "st",
             "tail",
-            "toNat"
+            "toNat",
+            "toObjId"
           ]
         },
         {
           "kind": "def",
           "name": "frozenNotificationWait",
-          "line": 257,
+          "line": 302,
           "called": [
             "Badge",
             "FrozenKernel",
@@ -51048,17 +51096,20 @@
             "empty",
             "frozenLookupTcb",
             "frozenStoreTcbIpcState",
+            "frozenTaintClear",
+            "frozenTaintFlow",
             "get",
             "none",
             "notificationId",
             "set",
-            "st"
+            "st",
+            "toObjId"
           ]
         },
         {
           "kind": "def",
           "name": "frozenQueuePopHead",
-          "line": 307,
+          "line": 358,
           "called": [
             "FrozenSystemState",
             "IntrusiveQueue",
@@ -51081,7 +51132,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointSend",
-          "line": 352,
+          "line": 403,
           "called": [
             "FrozenKernel",
             "IpcMessage",
@@ -51092,19 +51143,21 @@
             "frozenQueuePopHead",
             "frozenQueuePushTail",
             "frozenStoreTcb",
+            "frozenTaintFlow",
             "get",
             "head",
             "maxExtraCaps",
             "maxMessageRegisters",
             "none",
             "size",
-            "st"
+            "st",
+            "toObjId"
           ]
         },
         {
           "kind": "def",
           "name": "frozenEndpointReceive",
-          "line": 393,
+          "line": 449,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -51114,16 +51167,18 @@
             "frozenQueuePopHead",
             "frozenQueuePushTail",
             "frozenStoreTcb",
+            "frozenTaintFlow",
             "get",
             "head",
             "none",
-            "st"
+            "st",
+            "toObjId"
           ]
         },
         {
           "kind": "def",
           "name": "frozenEndpointCall",
-          "line": 439,
+          "line": 502,
           "called": [
             "FrozenKernel",
             "IpcMessage",
@@ -51134,19 +51189,21 @@
             "frozenQueuePopHead",
             "frozenQueuePushTail",
             "frozenStoreTcb",
+            "frozenTaintFlow",
             "get",
             "head",
             "maxExtraCaps",
             "maxMessageRegisters",
             "none",
             "size",
-            "st"
+            "st",
+            "toObjId"
           ]
         },
         {
           "kind": "def",
           "name": "frozenEndpointReply",
-          "line": 489,
+          "line": 555,
           "called": [
             "FrozenKernel",
             "IpcMessage",
@@ -51155,6 +51212,7 @@
             "frozenLookupTcb",
             "frozenStoreObject",
             "frozenStoreTcb",
+            "frozenTaintFlow",
             "get",
             "none",
             "replyId",
@@ -51165,7 +51223,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceLookup",
-          "line": 537,
+          "line": 613,
           "called": [
             "CPtr",
             "Capability",
@@ -51184,7 +51242,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceLookupSlot",
-          "line": 549,
+          "line": 625,
           "called": [
             "CPtr",
             "Capability",
@@ -51197,7 +51255,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceMint",
-          "line": 563,
+          "line": 639,
           "called": [
             "Capability",
             "FrozenCNode",
@@ -51215,7 +51273,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceDelete",
-          "line": 581,
+          "line": 657,
           "called": [
             "FrozenCNode",
             "FrozenKernel",
@@ -51231,7 +51289,7 @@
         {
           "kind": "def",
           "name": "frozenVspaceLookup",
-          "line": 600,
+          "line": 676,
           "called": [
             "ASID",
             "FrozenKernel",
@@ -51246,7 +51304,7 @@
         {
           "kind": "def",
           "name": "frozenLookupServiceByCap",
-          "line": 621,
+          "line": 697,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -51260,7 +51318,7 @@
         {
           "kind": "def",
           "name": "frozenSchedContextConfigure",
-          "line": 643,
+          "line": 719,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -51278,7 +51336,7 @@
         {
           "kind": "def",
           "name": "frozenSchedContextBind",
-          "line": 689,
+          "line": 765,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -51296,7 +51354,7 @@
         {
           "kind": "def",
           "name": "frozenSchedContextUnbind",
-          "line": 732,
+          "line": 808,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -51311,7 +51369,7 @@
         {
           "kind": "def",
           "name": "frozenTimerTickBudget",
-          "line": 769,
+          "line": 845,
           "called": [
             "FrozenKernel",
             "cbsBudgetCheck",
@@ -51328,7 +51386,7 @@
         {
           "kind": "def",
           "name": "frozenSuspendThread",
-          "line": 818,
+          "line": 894,
           "called": [
             "FrozenKernel",
             "ThreadId",
@@ -51342,7 +51400,7 @@
         {
           "kind": "def",
           "name": "frozenResumeThread",
-          "line": 841,
+          "line": 917,
           "called": [
             "FrozenKernel",
             "ThreadId",
@@ -51357,7 +51415,7 @@
         {
           "kind": "def",
           "name": "frozenSetPriority",
-          "line": 871,
+          "line": 947,
           "called": [
             "FrozenKernel",
             "Priority",
@@ -51375,7 +51433,7 @@
         {
           "kind": "def",
           "name": "frozenSetMCPriority",
-          "line": 900,
+          "line": 976,
           "called": [
             "FrozenKernel",
             "Priority",
@@ -51391,7 +51449,7 @@
         {
           "kind": "def",
           "name": "frozenSetIPCBuffer",
-          "line": 931,
+          "line": 1007,
           "called": [
             "FrozenKernel",
             "ThreadId",
@@ -51410,7 +51468,7 @@
         {
           "kind": "def",
           "name": "frozenOpCoverage",
-          "line": 980,
+          "line": 1056,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -51427,7 +51485,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_count",
-          "line": 1028,
+          "line": 1104,
           "called": [
             "cspaceCopy",
             "cspaceMint",
@@ -51446,7 +51504,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_exhaustive",
-          "line": 1043,
+          "line": 1119,
           "called": [
             "SyscallId",
             "frozenOpCoverage"
@@ -123720,7 +123778,7 @@
         {
           "kind": "def",
           "name": "taintOriginationKeys",
-          "line": 1666,
+          "line": 1679,
           "called": [
             "ObjId",
             "SystemState",
@@ -123731,7 +123789,7 @@
         {
           "kind": "def",
           "name": "taintWriteKeys",
-          "line": 1671,
+          "line": 1684,
           "called": [
             "ObjId",
             "SystemState",
@@ -123743,7 +123801,7 @@
         {
           "kind": "theorem",
           "name": "taintOriginationKeys_nil_of_no_events",
-          "line": 1677,
+          "line": 1690,
           "called": [
             "SystemState",
             "newlyRecordedEvents",
@@ -123754,7 +123812,7 @@
         {
           "kind": "theorem",
           "name": "applySyscallTaint_frame_off_writeKeys",
-          "line": 1689,
+          "line": 1702,
           "called": [
             "ObjId",
             "SystemState",
@@ -123778,7 +123836,7 @@
         {
           "kind": "theorem",
           "name": "taintWriteKeys_disjoint_updates_independent",
-          "line": 1732,
+          "line": 1745,
           "called": [
             "ObjId",
             "SystemState",
@@ -123792,7 +123850,7 @@
         {
           "kind": "theorem",
           "name": "taintWriteKeys_disjoint_order_independent",
-          "line": 1757,
+          "line": 1770,
           "called": [
             "ObjId",
             "SystemState",
@@ -123806,7 +123864,7 @@
         {
           "kind": "theorem",
           "name": "taintWriteKeys_of_no_events",
-          "line": 1789,
+          "line": 1802,
           "called": [
             "SystemState",
             "TaintPlan",
@@ -123819,7 +123877,7 @@
         {
           "kind": "theorem",
           "name": "taintWriteKeys_inert",
-          "line": 1795,
+          "line": 1808,
           "called": [
             "SystemState",
             "TaintPlan.inert",
@@ -123832,7 +123890,7 @@
         {
           "kind": "theorem",
           "name": "applySyscallTaint_preserves_projection",
-          "line": 1810,
+          "line": 1823,
           "called": [
             "IfObserver",
             "Kernel",
@@ -203396,7 +203454,7 @@
     {
       "module": "tests.FrozenOpsSuite",
       "path": "tests/FrozenOpsSuite.lean",
-      "declaration_count": 29,
+      "declaration_count": 30,
       "declarations": [
         {
           "kind": "namespace",
@@ -203858,8 +203916,34 @@
         },
         {
           "kind": "def",
+          "name": "fo022_frozenProvenanceFollowsContent",
+          "line": 509,
+          "called": [
+            "Endpoint",
+            "FrozenSystemState",
+            "IpcMessage",
+            "Notification",
+            "badge",
+            "contains",
+            "empty",
+            "expect",
+            "frozenEndpointReceive",
+            "frozenEndpointSend",
+            "frozenNotificationSignal",
+            "frozenNotificationWait",
+            "joinAt",
+            "mkFrozenState",
+            "mkTcb",
+            "none",
+            "ofNatMasked",
+            "singleton",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 504,
+          "line": 558,
           "called": [
             "fo001_lookupExisting",
             "fo002_lookupMissing",
@@ -203883,7 +203967,8 @@
             "fo018_callEnqueuesCaller",
             "fo019_frozenSchedule",
             "fo020_frozenCspaceMint",
-            "fo021_popThenPushRegression"
+            "fo021_popThenPushRegression",
+            "fo022_frozenProvenanceFollowsContent"
           ]
         }
       ]
