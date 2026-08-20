@@ -3727,10 +3727,6 @@ run_check "INVARIANT" rg -n '^theorem taintPropagation_cspace_provenance_forward
 # and the CSpace provenance must reach a SUBJECT or it can never reach an audit
 # event.  A parked sender names no receiver, so the receive declares the CNode
 # sink itself; and consuming a message taints the consumer from its own root.
-run_check "INVARIANT" rg -n '^theorem taintPropagation_queued_receive_to_cspace' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem taintPropagation_cspace_taints_consumer' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n 'the queued receive names the receiver.s CSpace root as a transfer sink' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'NEGATIVE: the parked-sender SEND plan declares no CSpace sink' tests/SmpInformationFlowSuite.lean
 # …and the clear path is elided like the join path: `contentFlowClears` fires on
 # every wait and every direct-to-waiter signal, so an unguarded clear would
 # rebuild the closure chain the join elision removed.
@@ -3745,9 +3741,12 @@ run_check "INVARIANT" rg -n '^theorem taintWriteKeys_disjoint_order_independent'
 # copy survived a revoke meant to destroy it, and an unrelated capability at the
 # stand-in address was destroyed by a revoke that had nothing to do with it.
 run_check "INVARIANT" rg -n '^structure TransferCap' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'srcRef : SlotRef' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'srcNode : CdtNodeId' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'caps : Array TransferCap' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'ipcTransferSingleCap tc.cap tc.srcRef' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+run_check "INVARIANT" rg -n 'ipcTransferSingleCap tc.cap tc.srcNode' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+# …and a reusable slot ADDRESS must not come back as the carried identity: a
+# parked send outlives the slot, so an address names whatever occupies it later.
+run_negative_check "INVARIANT" rg -n 'srcRef : SlotRef' SeLe4n/Model/Object/Types.lean
 # The synthetic parent must not come back.  The type change makes it awkward
 # rather than impossible — a caller could still synthesise a SlotRef — so the
 # address itself is pinned out of the transfer path.
@@ -3758,19 +3757,38 @@ run_negative_check "INVARIANT" rg -n 'cnode := senderRoot, slot := SeLe4n.Slot.o
 # verdicts swap under the defect, which is what makes the pair load-bearing.
 run_check "INVARIANT" rg -n 'chain12b: revoking the real source destroys the transferred cap' tests/OperationChainSuite.lean
 run_check "INVARIANT" rg -n 'chain12b: revoking an unrelated slot leaves the transferred cap alone' tests/OperationChainSuite.lean
+# PR #873 review rounds 4-7: bound delivery is ONE classification, not three
+# re-derivations.  The clear, the declared edges and the origination filter each
+# used to re-read `declassifiedSignalReceiver?` — which cannot tell a bound
+# target from a waiter — and disagreed three times in three rounds.
+run_check "INVARIANT" rg -n '^inductive SignalDelivery where' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def signalDelivery ' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def signalBypassedNotification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem signalDelivery_bound_leaves_notification_alone' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem signalDelivery_waiter_empties_notification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# A bypass is NOT a clear: the notification keeps a stored badge and its
+# provenance, but the fresh event is not originated onto it.
+run_check "INVARIANT" rg -n 'bypassed : List SeLe4n.ObjId' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem bypassedObject_not_originated' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# The live `.receive` runs NO capability unwrap, so the receive declares no
+# CSpace sink.  These three theorems asserted provenance on a path that installs
+# nothing and are pinned OUT until the WithCaps path is wired.
+run_negative_check "INVARIANT" rg -n 'theorem taintPropagation_queued_receive_to_cspace' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_negative_check "INVARIANT" rg -n 'theorem taintPropagation_cspace_taints_consumer' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_negative_check "INVARIANT" rg -n 'def parkedCarriesCaps' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# …and the send gate requires Grant, since an endpoint without it installs
+# nothing however many capabilities the message declares.
+run_check "INVARIANT" rg -n 'cap.hasRight .grant' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # PR #873 review round 4: the flow fold reads every source from the PRE-state, so
 # a transfer's root-to-root edge cannot chain into a root-to-subject edge within
 # one commit.  The receiving subject is therefore sourced from the sender's root
 # directly, or a courier's provenance never reaches a downgrading subject.
-run_check "INVARIANT" rg -n '^theorem taintPropagation_transfer_taints_receiver' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n 'a transfer taints the receiving subject from the SENDER.s root' tests/SmpInformationFlowSuite.lean
 # …and the CSpace sinks are GATED on capabilities actually crossing.  Ungated,
 # a plain message writes the sender's provenance into a CNode no capability
 # reached, and — since a root now feeds the consuming subject — an unrelated
 # later downgrade could name it as an UNSATURATED predecessor, which is exactly
 # what `staleTaint_is_not_saturation` rules out.
 run_check "INVARIANT" rg -n '^def sendCarriesCaps' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^def parkedCarriesCaps' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a capless transfer declares no CSpace sink' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a capless rendezvous declares no CSpace sink' tests/SmpInformationFlowSuite.lean
 # …a clear is FINAL within its commit: the final origination pass skips cleared

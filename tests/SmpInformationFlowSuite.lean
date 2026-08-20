@@ -10279,93 +10279,49 @@ private def runTaintPropagationChecks : IO Unit := do
     (match taintedEntryOutcome with
      | .ok ((), st) => !((st.declassificationTaint lowNotification).contains 42)
      | .error _ => false)
-  -- PR #873 round 3: the QUEUED-transfer ordering.  A blocking send parks with
-  -- no receiver queued, so the send plan names no CNode sink and the unwrap into
-  -- the receiver's CSpace happens when the RECEIVE runs — so the receive must
-  -- declare that sink itself, or the two orderings disagree about the same
-  -- transfer.  `taintedEndpointState`'s endpoint has exactly that shape: a
-  -- parked sender, no queued receiver.
-  assertBool "the queued receive names the receiver's CSpace root as a transfer sink"
+  -- PR #873 rounds 5-7: the live `.receive` runs NO capability unwrap
+  -- (`endpointReceiveDualOnCore` delivers the parked message wholesale and
+  -- reports an installed count of zero).  So the receive declares its content
+  -- edge and NOTHING about CSpace: a sink here would write the sender's
+  -- provenance into a CNode no capability reached, and — since a root feeds the
+  -- consuming subject — hand an unrelated later downgrade an unsaturated
+  -- predecessor.  The send ordering keeps the transfer sinks, because the live
+  -- send really does unwrap.
+  assertBool "the receive declares the content edge from the blocked sender"
+    (decide (({ sink := highCurrent.toObjId, source := taintedSender.toObjId } : TaintFlowEdge)
+       ∈ receiverTaintEdges taintedEndpointState highCurrent highEndpoint))
+  assertBool "NEGATIVE: and declares no CSpace sink at all, on either root"
+    (match taintedEndpointState.getTcb? highCurrent,
+           taintedEndpointState.getTcb? taintedSender with
+     | some rtcb, some stcb =>
+       let sinks := (receiverTaintEdges taintedEndpointState highCurrent highEndpoint).map (·.sink)
+       decide (rtcb.cspaceRoot ∉ sinks) && decide (stcb.cspaceRoot ∉ sinks)
+     | _, _ => false)
+  assertBool "NEGATIVE: …and the receiver's own root is not read into the subject"
     (match taintedEndpointState.getTcb? highCurrent with
      | none => false
      | some rtcb =>
-       decide (({ sink := rtcb.cspaceRoot, source := taintedSender.toObjId } : TaintFlowEdge)
-         ∈ receiverTaintEdges taintedEndpointState highCurrent highEndpoint))
-  -- NEGATIVE: the SEND plan on this same state names no CNode sink at all —
-  -- which is the gap the receive-side edge exists to close, not a duplicate of
-  -- a sink the sender already declared.
-  assertBool "NEGATIVE: the parked-sender SEND plan declares no CSpace sink"
-    (match taintedEndpointState.getTcb? highCurrent with
-     | none => false
-     | some rtcb =>
-       decide (rtcb.cspaceRoot
-         ∉ (senderTaintEdges taintedEndpointState taintedSender highEndpoint true).map (·.sink)))
-  -- PR #873 round 3: the root→subject feedback.  `capTransferTaintSinks` moves
-  -- provenance root-to-root, and nothing else reads a CSpace root into a
-  -- subject — so a courier sharing a tagged CSpace would forward a capability
-  -- and then downgrade with no predecessor.  Consuming a message taints the
-  -- consumer from its own root.
-  assertBool "a receiver is tainted by its own CSpace root when it consumes"
-    (match taintedEndpointState.getTcb? highCurrent with
-     | none => false
-     | some rtcb =>
-       decide (({ sink := highCurrent.toObjId, source := rtcb.cspaceRoot } : TaintFlowEdge)
-         ∈ receiverTaintEdges taintedEndpointState highCurrent highEndpoint))
-  -- …and it carries through the applied plan, on a state whose CSpace root holds
-  -- an identity the receiver itself never had.
-  assertBool "…and applying the plan moves that root identity onto the subject"
-    (match taintedEndpointState.getTcb? highCurrent with
-     | none => false
-     | some rtcb =>
-       let stRoot : SystemState :=
-         { taintedEndpointState with
-             declassificationTaint :=
-               taintedEndpointState.declassificationTaint.joinAt rtcb.cspaceRoot
-                 (DeclassificationTaint.singleton 71) }
-       let decoded : SyscallDecodeResult :=
-         { capAddr := SeLe4n.CPtr.ofNat 2, msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0,
-           syscallId := .receive }
-       let post := applySyscallTaint (syscallTaintPlan stRoot highCurrent decoded) stRoot stRoot
-       (post.declassificationTaint highCurrent.toObjId).contains 71)
-  -- PR #873 round 4: SIMULTANEITY.  The root→subject edge above reads the
-  -- receiver's root from the PRE-state, so it cannot chain with the root→root
-  -- edge of the same commit.  A courier whose provenance lives only on its OWN
-  -- root would hand over a capability and leave the receiver free to downgrade
-  -- with no predecessor — so the transfer must taint the receiving subject
-  -- directly from the sender's root.
-  assertBool "a transfer taints the receiving subject from the SENDER's root"
-    (match taintedEndpointState.getTcb? taintedSender with
-     | none => false
-     | some stcb =>
-       decide (({ sink := highCurrent.toObjId, source := stcb.cspaceRoot } : TaintFlowEdge)
-         ∈ receiverTaintEdges taintedEndpointState highCurrent highEndpoint))
-  -- …and it carries through the applied plan, on a state where ONLY the sender's
-  -- root holds the identity — the exact shape the pre-state read would lose.
-  assertBool "…and applying the plan moves it onto the receiver in one commit"
-    (match taintedEndpointState.getTcb? taintedSender with
-     | none => false
-     | some stcb =>
-       let stRoot : SystemState :=
-         { taintedEndpointState with
-             declassificationTaint :=
-               taintedEndpointState.declassificationTaint.joinAt stcb.cspaceRoot
-                 (DeclassificationTaint.singleton 83) }
-       let decoded : SyscallDecodeResult :=
-         { capAddr := SeLe4n.CPtr.ofNat 2, msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0,
-           syscallId := .receive }
-       let post := applySyscallTaint (syscallTaintPlan stRoot highCurrent decoded) stRoot stRoot
-       (post.declassificationTaint highCurrent.toObjId).contains 83)
-  -- NEGATIVE (round 4): a CAPLESS delivery declares no CSpace sink at all.  This
-  -- is the load-bearing half of the gate: without it the sender's provenance
-  -- would land in a CNode no capability reached, and the root→subject edge would
-  -- then hand an unrelated later downgrade an unsaturated predecessor — the very
-  -- false positive `staleTaint_is_not_saturation` rules out.
+       decide (rtcb.cspaceRoot ∉
+         (receiverTaintEdges taintedEndpointState highCurrent highEndpoint).map (·.source)))
+  -- NEGATIVE (round 4/5, the gate): a capless transfer declares no CSpace sink,
+  -- and neither does one whose endpoint lacks Grant — an endpoint without Grant
+  -- installs nothing however many capabilities the message declares.
   assertBool "NEGATIVE: a capless transfer declares no CSpace sink"
     (decide (capTransferTaintSinks taintedEndpointState taintedSender highCurrent false = []))
-  -- …and the gate reads the real message: the parked sender here carries one
-  -- capability, so the receive-side sinks ARE declared.
-  assertBool "the parked message's capability is what opens the gate"
-    (parkedCarriesCaps taintedEndpointState taintedSender)
+  assertBool "the send gate requires BOTH a declared capability and Grant"
+    (let grantCap : Capability :=
+       { target := .object highEndpoint, rights := AccessRightSet.ofList [.write, .grant] }
+     let noGrantCap : Capability :=
+       { target := .object highEndpoint, rights := AccessRightSet.ofList [.write] }
+     let withCaps : SyscallDecodeResult :=
+       { capAddr := SeLe4n.CPtr.ofNat 2, msgInfo := SeLe4n.Model.MessageInfo.mk 0 1 0,
+         syscallId := .send }
+     let noCaps : SyscallDecodeResult :=
+       { capAddr := SeLe4n.CPtr.ofNat 2, msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0,
+         syscallId := .send }
+     sendCarriesCaps grantCap withCaps &&
+       !sendCarriesCaps noGrantCap withCaps &&
+       !sendCarriesCaps grantCap noCaps)
   -- PR #873 round 4: a BOUND delivery leaves the notification holding its badge,
   -- so it must not be cleared.  `boundDeliveryTarget?` ignores `pendingBadge`
   -- entirely and `notificationSignalBound` never writes the notification, so the
@@ -10662,22 +10618,37 @@ private def runCausalReaderChecks : IO Unit := do
 queued to receive, so `contentFlowEdges` (not a hand-built plan) resolves the
 receiver AND the capability-transfer sink, and the write-lock coverage claim is
 computed on the edge list the entry actually applies. -/
+private def grantSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 4
+private def grantEndpointCap : Capability :=
+  { target := .object highEndpoint, rights := AccessRightSet.ofList [.read, .write, .grant] }
+
 private def sendRendezvousState : SystemState :=
-  { successEntryState with
-      objects := successEntryState.objects.insert highEndpoint
-        (.endpoint { receiveQ := { head := some lowCurrent
-                                   tail := some lowCurrent } }) }
+  let base : SystemState :=
+    { successEntryState with
+        objects := successEntryState.objects.insert highEndpoint
+          (.endpoint { receiveQ := { head := some lowCurrent
+                                     tail := some lowCurrent } }) }
+  -- PR #873 round 5: the send gate requires **Grant** as well as a declared
+  -- capability count, because an endpoint capability without it installs nothing
+  -- (`ipcUnwrapCaps` answers `.grantDenied` for every cap).  The shared probe
+  -- capability carries `.read` only, so this scenario — whose whole subject is
+  -- the caps-carrying edge list — installs a Grant-bearing endpoint capability
+  -- at a slot of its own rather than weakening the gate to suit the fixture.
+  match base.objects[probeCNode]? with
+  | some (.cnode cn) =>
+      { base with objects := base.objects.insert probeCNode (.cnode (cn.insert grantSlot grantEndpointCap)) }
+  | _ => base
 
 /-- PR #873 round 4: `extraCaps := 1`, because the CSpace sinks are gated on the
 message actually declaring capabilities.  This is the caps-carrying shape, whose
 edge list must name the receiver's CNode; `sendRendezvousCaplessDecoded` below is
 the same rendezvous with a plain message, and must not. -/
 private def sendRendezvousDecoded : SyscallDecodeResult :=
-  { syscallId := .send, capAddr := SeLe4n.CPtr.ofNat 2,
+  { syscallId := .send, capAddr := SeLe4n.CPtr.ofNat 4,
     msgInfo := SeLe4n.Model.MessageInfo.mk 0 1 0 }
 
 private def sendRendezvousCaplessDecoded : SyscallDecodeResult :=
-  { syscallId := .send, capAddr := SeLe4n.CPtr.ofNat 2,
+  { syscallId := .send, capAddr := SeLe4n.CPtr.ofNat 4,
     msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0 }
 
 private def sendRendezvousEdges : List TaintFlowEdge :=

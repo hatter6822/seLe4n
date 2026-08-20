@@ -1,3 +1,77 @@
+## v0.33.61 — bound delivery becomes one classification; the receive stops claiming a transfer it never makes
+
+**Bound delivery produced three findings in three review rounds — the clear
+(round 4), the declared edge (round 6), the origination (round 7) — and each was
+patched where it surfaced.**  Three patches for one cause is the signal to stop
+patching.  The cause: all three consumers re-read `declassifiedSignalReceiver?`,
+which returns a `ThreadId` and therefore **cannot distinguish a bound target from
+a waiter** — precisely the distinction each of them needed.
+
+`SignalDelivery` now names the three outcomes, and every consumer derives from
+it:
+
+```lean
+inductive SignalDelivery where
+  | stored          -- no receiver: the badge lands on the notification
+  | toWaiter (w)    -- delivered directly; the notification ends empty
+  | toBound  (t)    -- delivered into the bound TCB; the notification untouched
+```
+
+`signalDelivery_bound_leaves_notification_alone` states all three agreeing at
+once — no clear, a bypass, and only the signaller's own content reaching the
+thread — with `signalDelivery_waiter_empties_notification` as its contrast.  A
+disagreement between the three is no longer something one can write.
+
+**A bypass is not a clear**, and round 7 needed that distinction to exist.
+`TaintPlan.bypassed` is a separate list because the two are opposites in what
+they preserve: a clear is destructive (the object held content, now holds none,
+so its provenance goes with it), while a bypass destroys nothing — the bound path
+writes the thread and never touches the notification, so a badge already stored
+there keeps both its content and its provenance while the *new* badge never
+landed there at all.  Folding them together would either wipe the stored badge's
+provenance (a missed chain) or tag a notification the badge went nowhere near (a
+false one).  `bypassedObject_not_originated` is the property.
+
+**The receive stops claiming a transfer the kernel does not perform.**  The live
+`.receive` arm runs `endpointReceiveDualOnCore`, which delivers the parked
+message wholesale and performs **no capability unwrap** — the arm says so in
+place and reports an installed count of zero.  `endpointReceiveDualWithCaps`
+exists, is verified, and has no live caller.  So the receive-side CSpace sinks
+added in v0.33.58 described an installation that never happens: they wrote the
+sender's provenance into a CNode no capability reached and, because a CSpace root
+fed the consuming subject, handed unrelated later downgrades an *unsaturated*
+predecessor — exactly what `staleTaint_is_not_saturation` forbids.
+
+Three theorems asserting that provenance are **deleted rather than weakened**
+(`taintPropagation_queued_receive_to_cspace`,
+`taintPropagation_cspace_taints_consumer`,
+`taintPropagation_transfer_taints_receiver`), with negative anchors pinning them
+out; `parkedCarriesCaps` lost its last consumer and went with them.  Capability
+provenance is still tracked where a transfer actually happens — the live send
+*does* unwrap, and `senderTaintEdges` declares the sinks there.  Wiring the
+receive through the WithCaps path, and restoring these behind it, is recorded in
+`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`.
+
+**The send gate now requires Grant.**  `ipcUnwrapCaps` answers `.grantDenied` for
+every capability when the endpoint capability lacks it, so a declared count alone
+was not evidence that anything would be installed.  §12.8's fixture gains a
+Grant-bearing endpoint capability at a slot of its own rather than the gate being
+weakened to suit a fixture built before it existed.
+
+**Two gates caught their own author.**  The anchor-satisfiability gate added in
+v0.33.58 caught this cut pinning the deleted theorems both present *and* absent —
+the exact contradiction it was written for.  Tier 3 caught a stale
+`srcRef : SlotRef` anchor left by v0.33.60's rename, which would otherwise have
+failed CI: Tier 0 ran before that commit, Tier 3 did not.  The lesson already
+recorded for the codebase map — *"last" means after the final green run, not
+after the edits you planned* — applies to anchors too.
+
+Evidence: information-flow suite 777 → **794**; zero errors and zero warnings
+across the tree, staged modules and every suite; Tier 3, the content-flow gate
+and its self-test all green.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
 ## v0.33.60 — a transferred capability carries its derivation node, not a reusable slot address
 
 **The residual half of the revocation-precision fix.**  v0.33.59 made IPC

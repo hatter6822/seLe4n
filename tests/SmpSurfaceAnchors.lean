@@ -1087,11 +1087,14 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- PR #873 round 4: the flow fold is SIMULTANEOUS, so a transfer's
      -- root-to-root edge cannot chain into a root-to-subject edge of the same
      -- commit — the receiving subject is sourced from the sender's root directly.
-     have _tr := @SeLe4n.Kernel.taintPropagation_transfer_taints_receiver
+     have _sd := @SeLe4n.Kernel.signalDelivery
+     have _sb := @SeLe4n.Kernel.signalBypassedNotification
+     have _bl := @SeLe4n.Kernel.signalDelivery_bound_leaves_notification_alone
+     have _wl := @SeLe4n.Kernel.signalDelivery_waiter_empties_notification
+     have _bn := @SeLe4n.Kernel.bypassedObject_not_originated
      -- …and the CSpace sinks are gated on capabilities actually crossing, so a
      -- plain message cannot hand a later downgrade an unsaturated predecessor.
      have _sc := @SeLe4n.Kernel.sendCarriesCaps
-     have _pc := @SeLe4n.Kernel.parkedCarriesCaps
      have _cl := @SeLe4n.Kernel.capTransferTaintSinks_capless
      -- A clear is final within its commit: the origination pass skips cleared
      -- keys, so a delivered-onward transport cannot be re-tagged after emptying.
