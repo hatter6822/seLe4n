@@ -3738,6 +3738,26 @@ run_check "INVARIANT" rg -n '^theorem clearAt_eq_of_empty' SeLe4n/Kernel/Informa
 # …and the disjoint-write-set claim APPLIES both plans rather than restating the
 # frame lemma (the tautology class this workstream has now hit three times).
 run_check "INVARIANT" rg -n '^theorem taintWriteKeys_disjoint_order_independent' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873: IPC capability transfer records its derivation edge from the slot the
+# capability was REALLY resolved from.  CDT nodes are keyed by the full SlotRef,
+# so the previous synthetic parent (slot 0 of the sender's root) put every
+# transferred copy under a node that revoking the true source never visits: the
+# copy survived a revoke meant to destroy it, and an unrelated capability at the
+# stand-in address was destroyed by a revoke that had nothing to do with it.
+run_check "INVARIANT" rg -n '^structure TransferCap' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'srcRef : SlotRef' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'caps : Array TransferCap' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'ipcTransferSingleCap tc.cap tc.srcRef' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+# The synthetic parent must not come back.  The type change makes it awkward
+# rather than impossible — a caller could still synthesise a SlotRef — so the
+# address itself is pinned out of the transfer path.
+run_negative_check "INVARIANT" rg -n 'cnode := senderCspaceRoot, slot := SeLe4n.Slot.ofNat 0' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+run_negative_check "INVARIANT" rg -n 'cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+# …and the end-to-end regression: revoking the REAL source destroys the
+# transferred copy, while revoking the old stand-in address does not.  Both
+# verdicts swap under the defect, which is what makes the pair load-bearing.
+run_check "INVARIANT" rg -n 'chain12b: revoking the real source destroys the transferred cap' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'chain12b: revoking an unrelated slot leaves the transferred cap alone' tests/OperationChainSuite.lean
 # PR #873 review round 4: the flow fold reads every source from the PRE-state, so
 # a transfer's root-to-root edge cannot chain into a root-to-subject edge within
 # one commit.  The receiving subject is therefore sourced from the sender's root

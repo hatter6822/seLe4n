@@ -993,14 +993,19 @@ Returns the resolved capabilities as an array. -/
    normative specification, including the seL4 reference C kernel equivalence. -/
 private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
-    (st : SystemState) : Array Capability :=
+    (st : SystemState) : Array TransferCap :=
   capAddrs.foldl (fun acc addr =>
     match resolveCapAddress cspaceRoot addr depth st with
     | .error _ => acc
     | .ok ref =>
         match SystemState.lookupSlotCap st ref with
         | none => acc
-        | some cap => acc.push cap) #[]
+        -- `ref` is the real source slot.  It is kept rather than discarded
+        -- because the derivation edge recorded at the unwrap has to name it:
+        -- CDT nodes are keyed by the full `SlotRef`, so a stand-in address
+        -- would put the transferred copy under a node that revoking the true
+        -- source never visits.
+        | some cap => acc.push { cap := cap, srcRef := ref }) #[]
 
 /-- AN7-E (API-M01): Debug-noisy variant of `resolveExtraCaps` that surfaces
     partial resolution explicitly.  Returns the resolved array paired with a
@@ -1023,14 +1028,14 @@ private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
     in the consuming module. -/
 private def resolveExtraCapsDetailed (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
-    (st : SystemState) : Array Capability × Bool :=
+    (st : SystemState) : Array TransferCap × Bool :=
   capAddrs.foldl (fun acc addr =>
     match resolveCapAddress cspaceRoot addr depth st with
     | .error _ => (acc.1, true)  -- partial: lookup failed
     | .ok ref =>
         match SystemState.lookupSlotCap st ref with
         | none => (acc.1, true)  -- partial: slot empty
-        | some cap => (acc.1.push cap, acc.2)) (#[], false)
+        | some cap => (acc.1.push { cap := cap, srcRef := ref }, acc.2)) (#[], false)
 
 /-- AN7-E (API-M01) option declaration: `set_option sele4n.debug.noisyResolution true`
     flips production callers from the silent-drop `resolveExtraCaps` to
@@ -1071,7 +1076,7 @@ theorem resolveExtraCaps_empty
     `sele4n.debug.noisyResolution` documents the project-level policy. -/
 private def resolveExtraCapsGated (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
-    (st : SystemState) : Except KernelError (Array Capability) :=
+    (st : SystemState) : Except KernelError (Array TransferCap) :=
   let (caps, isPartial) := resolveExtraCapsDetailed cspaceRoot capAddrs depth st
   if isPartial then .error .partialResolution else .ok caps
 

@@ -306,11 +306,11 @@ theorem ipcTransferSingleCap_preserves_badgeWellFormed
 cap in `caps` carries a valid badge (each transferred cap feeds the single-cap
 frame; the error/short-circuit branch leaves state unchanged). -/
 theorem ipcUnwrapCapsLoop_preserves_badgeWellFormed
-    (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (senderRoot receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
     (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt)
-    (hCaps : ∀ (i : Nat) (c : Capability), caps[i]? = some c → ∀ b, c.badge = some b → b.valid)
+    (hCaps : ∀ (i : Nat) (c : TransferCap), caps[i]? = some c → ∀ b, c.cap.badge = some b → b.valid)
     (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase accResults fuel st
              = .ok (summary, st')) :
     badgeWellFormed st' := by
@@ -322,19 +322,18 @@ theorem ipcUnwrapCapsLoop_preserves_badgeWellFormed
     simp only [ipcUnwrapCapsLoop] at hStep
     cases hCap : caps[idx]? with
     | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
-    | some cap =>
+    | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap cap
-          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcRef
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
         obtain ⟨_, rfl⟩ := hStep; exact hInv
       | ok pair =>
         rcases pair with ⟨result, stNext⟩
-        have hInvNext := ipcTransferSingleCap_preserves_badgeWellFormed cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result hInv hObjInv (hCaps idx cap hCap) hTransfer
-        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt cap _ receiverRoot nextBase
+        have hInvNext := ipcTransferSingleCap_preserves_badgeWellFormed tc.cap _ receiverRoot nextBase
+          maxExtraCaps st stNext result hInv hObjInv (hCaps idx tc hCap) hTransfer
+        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
           maxExtraCaps st stNext result hObjInv hTransfer
         simp [hTransfer] at hStep
         cases result with
@@ -349,7 +348,7 @@ theorem ipcUnwrapCaps_preserves_badgeWellFormed
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt)
-    (hCaps : ∀ (i : Nat) (c : Capability), msg.caps[i]? = some c → ∀ b, c.badge = some b → b.valid)
+    (hCaps : ∀ (i : Nat) (c : TransferCap), msg.caps[i]? = some c → ∀ b, c.cap.badge = some b → b.valid)
     (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
     badgeWellFormed st' := by
   unfold ipcUnwrapCaps at hStep
@@ -434,7 +433,7 @@ The `hCdtPost` hypothesis is externalized following the standard pattern for
 CDT-expanding operations (see `cspaceCopy_preserves_capabilityInvariantBundle`).
 The caller (API layer) is responsible for discharging CDT obligations. -/
 theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
-    (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (senderRoot receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
     (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : capabilityInvariantBundle st)
@@ -467,10 +466,9 @@ theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
       simp [hCap] at hStep
       obtain ⟨_, rfl⟩ := hStep
       exact hInv
-    | some cap =>
+    | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap cap
-          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcRef
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
@@ -479,14 +477,12 @@ theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
       | ok pair =>
         rcases pair with ⟨result, stNext⟩
         have hInvNext := ipcTransferSingleCap_preserves_capabilityInvariantBundle
-          st stNext cap
-          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          st stNext tc.cap tc.srcRef
           receiverRoot nextBase maxExtraCaps result
           hInv
-          (hSlotCap st cap hInv)
-          (hCapBacked st cap hInv)
-          (hCdtPost st stNext cap
-            { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          (hSlotCap st tc.cap hInv)
+          (hCapBacked st tc.cap hInv)
+          (hCdtPost st stNext tc.cap tc.srcRef
             nextBase maxExtraCaps result hInv hTransfer)
           hTransfer
         simp [hTransfer] at hStep

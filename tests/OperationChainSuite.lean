@@ -709,7 +709,10 @@ private def chain12IpcCapTransfer : IO Unit := do
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none st0)
 
   -- Step 2: Sender sends with caps (immediate rendezvous)
-  let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[cap1, cap2, cap3], badge := none }
+  let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[TransferCap.fromSlot cap1 senderCNode 0,
+                                          TransferCap.fromSlot cap2 senderCNode 1,
+                                          TransferCap.fromSlot cap3 senderCNode 2],
+                            badge := none }
   let (summary, st2) ← expectOkSt "chain12: send with caps"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)
 
@@ -724,6 +727,94 @@ private def chain12IpcCapTransfer : IO Unit := do
   expect "chain12: receiver CNode has 3 caps" recvCnodeCheck
 
   assertInvariants "chain12: IPC cap transfer basic" st2
+
+/-- SCN-IPC-CAP-TRANSFER-REVOCABLE: **revoking the real source destroys the
+transferred copy.**
+
+The regression for the derivation-attribution defect.  IPC transfer records a
+derivation edge so that revoking a capability also destroys everything derived
+from it, and CDT nodes are keyed by the **full** slot address.  While the
+transfer recorded its edge from a stand-in address (`slot 0` of the sender's
+root) rather than from the slot the capability was actually resolved from, a
+revoke of the true source walked a different node and never reached the copy:
+the receiver kept authority the revoker meant to destroy.
+
+This scenario is built to fail against that shape.  The transferred capability
+is deliberately resolved from **slot 5**, so the real source and the old
+stand-in are different nodes; the positive check is that revoking slot 5 empties
+the receiver's slot, and the negative is that revoking slot 0 — which held an
+unrelated capability — leaves it alone.  Under the defect the two verdicts swap. -/
+private def chain12bIpcCapTransferRevocable : IO Unit := do
+  let epId : SeLe4n.ObjId := ⟨3250⟩
+  let sender : SeLe4n.ThreadId := ⟨3260⟩
+  let receiver : SeLe4n.ThreadId := ⟨3261⟩
+  let senderCNode : SeLe4n.ObjId := ⟨3270⟩
+  let receiverCNode : SeLe4n.ObjId := ⟨3271⟩
+  let payloadObj : SeLe4n.ObjId := ⟨3280⟩
+  let unrelatedObj : SeLe4n.ObjId := ⟨3281⟩
+  -- The capability that will be transferred, and the one occupying slot 0 —
+  -- distinct targets so the assertions below cannot confuse them.
+  let payloadCap : Capability :=
+    { target := .object payloadObj, rights := AccessRightSet.ofList [.read], badge := none }
+  let unrelatedCap : Capability :=
+    { target := .object unrelatedObj, rights := AccessRightSet.ofList [.read], badge := none }
+  let grantRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
+  let srcSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 5
+
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
+      |>.withObject unrelatedObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
+      |>.withObject senderCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
+            ((SeLe4n.Slot.ofNat 0), unrelatedCap),
+            (srcSlot, payloadCap)
+          ]
+        })
+      |>.withObject receiverCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.empty
+        })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3290⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3291⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
+      |>.withRunnable [sender, receiver]
+      |>.buildChecked)
+
+  let (_, st1) ← expectOkSt "chain12b: receiver blocks on endpoint"
+    (SeLe4n.Kernel.endpointReceiveDual epId receiver none st0)
+
+  -- The message names the capability *and the slot it came from* — slot 5.
+  let msg : IpcMessage :=
+    { registers := #[],
+      caps := #[TransferCap.fromSlot payloadCap senderCNode 5],
+      badge := none }
+  let (_, st2) ← expectOkSt "chain12b: send with caps"
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode
+      (SeLe4n.Slot.ofNat 0) st1)
+
+  let receiverSlotFilled (st : SystemState) : Bool :=
+    match st.objects[receiverCNode]? with
+    | some (.cnode cn) => (cn.lookup (SeLe4n.Slot.ofNat 0)).isSome
+    | _ => false
+  expect "chain12b: the transfer installed the capability" (receiverSlotFilled st2)
+
+  -- NEGATIVE: revoking slot 0 — the old stand-in address, holding an unrelated
+  -- capability — must NOT reach the transferred copy.  Under the defect this
+  -- was the address the edge was recorded from, so this revoke destroyed it.
+  let (_, stRevokeWrong) ← expectOkSt "chain12b: revoke the unrelated slot 0"
+    (SeLe4n.Kernel.cspaceRevokeCdt { cnode := senderCNode, slot := SeLe4n.Slot.ofNat 0 } st2)
+  expect "chain12b: revoking an unrelated slot leaves the transferred cap alone"
+    (receiverSlotFilled stRevokeWrong)
+
+  -- POSITIVE: revoking the real source destroys the copy derived from it.
+  let (_, stRevokeReal) ← expectOkSt "chain12b: revoke the REAL source slot"
+    (SeLe4n.Kernel.cspaceRevokeCdt { cnode := senderCNode, slot := srcSlot } st2)
+  expect "chain12b: revoking the real source destroys the transferred cap"
+    (!receiverSlotFilled stRevokeReal)
+
+  assertInvariants "chain12b: revocation reaches IPC-transferred children" stRevokeReal
 
 /-- SCN-IPC-CAP-TRANSFER-NO-GRANT: Grant-right gate blocks cap transfer.
 Endpoint lacks Grant right — caps should be silently dropped. -/
@@ -759,7 +850,7 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
   let (_, st1) ← expectOkSt "chain13: receiver blocks"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none st0)
 
-  let msg : IpcMessage := { registers := #[⟨99⟩], caps := #[cap1], badge := none }
+  let msg : IpcMessage := { registers := #[⟨99⟩], caps := #[TransferCap.fromSlot cap1 senderCNode 0], badge := none }
   let (summary, st2) ← expectOkSt "chain13: send without grant right"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg noGrantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)
 
@@ -821,7 +912,9 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
 
   -- Step 2: Sender sends with badge 0xCAFE + 2 caps (immediate rendezvous)
   let badgeVal : SeLe4n.Badge := SeLe4n.Badge.ofNatMasked 0xCAFE
-  let msg : IpcMessage := { registers := #[⟨77⟩], caps := #[cap1, cap2], badge := some badgeVal }
+  let msg : IpcMessage := { registers := #[⟨77⟩], caps := #[TransferCap.fromSlot cap1 senderCNode 0,
+                                          TransferCap.fromSlot cap2 senderCNode 1],
+                            badge := some badgeVal }
   let (summary, st2) ← expectOkSt "chain14: send with badge + caps"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)
 
@@ -2216,6 +2309,7 @@ private def runOperationChainSuite : IO Unit := do
   chain10RegisterDecodeMultiSyscall
   chain11RegisterDecodeIpcTransfer
   chain12IpcCapTransfer
+  chain12bIpcCapTransferRevocable
   chain13IpcCapTransferNoGrant
   chain14IpcBadgeAndCapTransfer
   chain15StrictRevokeDeepChain

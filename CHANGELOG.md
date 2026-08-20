@@ -1,3 +1,82 @@
+## v0.33.59 — IPC capability transfer records its real derivation source (revocation precision)
+
+**A capability transferred over IPC was recorded as derived from the wrong
+slot, so revoking the source did not destroy the copy.**  Severity **High** —
+revocation of derived authority is a core capability-system guarantee.  Found
+during the SM9.D audit, reported before any fix landed, and closed here.
+
+**The defect.**  `resolveExtraCaps` resolved each extra capability address to a
+real `ref : SlotRef` and then pushed **only the capability**, discarding `ref`.
+With no source address in the message, `ipcUnwrapCapsLoop` hardcoded the
+derivation parent as `{ cnode := senderCspaceRoot, slot := Slot.ofNat 0 }`, and
+`ipcTransferSingleCap` recorded `addEdge (node of that synthetic slot) (node of
+dst) .ipcTransfer`.  CDT nodes are keyed by the **full** `SlotRef`
+(`ensureCdtNodeForSlot` mints a distinct node per distinct ref), so slot 0's
+node is not the real source's node.
+
+The live userspace revoke — `cspaceRevokeCdt`, the default for untrusted
+invocations — walks `descendantsOf (lookupCdtNodeOfSlot addr)`, the **real**
+slot's node.  Local `cspaceRevoke` only clears same-CNode siblings, so that CDT
+walk is the only cross-CNode reach.  Consequences, both reachable single-core
+with only `Grant` on the endpoint:
+
+* **Use-after-revoke.**  Revoking a capability held at any slot ≠ 0 never
+  reached its IPC-transferred children; the receiver kept authority the revoker
+  meant to destroy.
+* **Over-revocation.**  Every transferred capability, from any source, hung off
+  the one synthetic node, so revoking whatever really lived at the sender root's
+  slot 0 destroyed unrelated transferred capabilities.
+
+**The fix.**  The source slot now travels with the capability:
+
+```lean
+structure TransferCap where
+  cap    : Capability
+  srcRef : SlotRef
+```
+
+`IpcMessage.caps : Array Capability` becomes `Array TransferCap`,
+`resolveExtraCaps` keeps the `ref` it already resolves, and the unwrap loop
+passes `tc.srcRef`.  One array of pairs rather than two parallel arrays,
+because a `caps` array beside a `capSrcRefs` array would carry a same-length
+same-order invariant that nothing in the type states — the implicit-invariant
+shape this project requires to be structural.  A transfer capability cannot be
+half-built.
+
+The source slot has to live in the *message* rather than be recomputed at the
+unwrap, because the unwrap can happen in a **later** syscall: a blocking send
+parks its message in the sender's TCB and the transfer completes when a receiver
+arrives, at which point nothing about the original resolution is still in hand.
+
+**A layering move it required.**  `IpcMessage` is in `Model/Object/Types.lean`,
+`SlotRef` was in `Model/State.lean`, and `State.lean` imports `Model.Object` —
+so the field could not be written.  `SlotRef` moves down beside `CapTarget` and
+`Capability`, which is also where it belongs: an address into a CNode is part of
+the object model, not of whole-system state, and `LifecycleMetadata` already
+pairs it with `CapTarget`.  It is a self-contained leaf with no dependency on
+`State.lean`, and both modules are in `namespace SeLe4n.Model`, so
+`SeLe4n.Model.SlotRef` is unchanged and no reference anywhere needed editing.
+
+**Evidence, and why it is load-bearing.**  `chain12b` builds a sender whose
+payload capability sits at **slot 5** — so the real source and the old stand-in
+are different nodes — transfers it, and then revokes:
+
+* revoking **slot 5** (the real source) destroys the transferred copy;
+* revoking **slot 0** (unrelated, and the old synthetic address) leaves it alone.
+
+Both verdicts swap under the defect.  Re-running the scenario with the
+capability attributed to slot 0 fails on the negative — revoking an unrelated
+capability destroys the transferred one — which is the over-revocation half
+reproduced end to end through the real `cspaceRevokeCdt` walk.  Restoring the
+synthetic literal in the loop no longer even compiles: the proof surface now
+binds the per-capability source, so 26 sites reject it.
+
+Tier-3 anchors pin the structure, the loop's use of `tc.srcRef`, both regression
+verdicts, and — negatively — the synthetic address itself, since the type change
+makes it awkward rather than impossible to reconstruct.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §3
+
 ## v0.33.58 — WS-SM SM9.D review round 4: simultaneity, the gate, the resurrected clear, the bound badge
 
 **Review round 4 (v0.33.58)** — four findings on the v0.33.57 cut, each verified

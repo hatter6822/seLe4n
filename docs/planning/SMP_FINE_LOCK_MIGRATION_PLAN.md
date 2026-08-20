@@ -81,6 +81,15 @@ commit (Track D) rather than registering it as debt.
 
 ## 3. Confirmed security finding (High) — revocation bypass via IPC cap transfer
 
+> **CLOSED at v0.33.59.**  `TransferCap { cap, srcRef }` now carries the slot each
+> capability was resolved from, `resolveExtraCaps` keeps the `ref` it had already
+> resolved, and the unwrap loop records the derivation edge from `tc.srcRef`.
+> The `chain12b` regression revokes the real source (slot 5) and destroys the
+> transferred copy, and revoking the old stand-in address (slot 0) leaves it
+> alone — both verdicts swap under the defect.  The synthetic address is pinned
+> out of the transfer path by a Tier-3 negative anchor.  The description below is
+> retained as the record of the finding.
+
 **Verified against primary sources; reported here per the project's
 vulnerability-reporting rule.**
 

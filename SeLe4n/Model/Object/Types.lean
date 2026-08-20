@@ -369,6 +369,25 @@ inductive CapTarget where
     the H-06/WS-E3 sentinel convention. -/
 instance : Inhabited CapTarget := ⟨.object SeLe4n.ObjId.sentinel⟩
 
+/-- Architecture-neutral address of a capability slot inside a CNode object.
+
+Lives here rather than in `Model/State.lean` because it is part of the *object*
+model — an address into a CNode — and because `IpcMessage` below has to name one:
+a transferred capability carries the slot it came from, so the derivation tree
+records the real source rather than a synthesised stand-in.  `State.lean` imports
+this module, and both are in `namespace SeLe4n.Model`, so `SeLe4n.Model.SlotRef`
+is unchanged for every consumer. -/
+structure SlotRef where
+  cnode : SeLe4n.ObjId
+  slot : SeLe4n.Slot
+  deriving Repr, DecidableEq
+
+/-- WS-G1: Hash instance for composite HashMap/HashSet keying.
+    Combines cnode and slot hashes via `mixHash` for uniform distribution.
+    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
+@[inline] instance : Hashable SlotRef where
+  hash a := mixHash (hash a.cnode) (hash a.slot)
+
 /-- WS-F5/D2b: Capability with order-independent rights set.
     `rights` is an `AccessRightSet` (bitmask), replacing the prior `List AccessRight`. -/
 structure Capability where
@@ -587,6 +606,37 @@ def maxMessageRegisters : Nat := 120
 Matches seL4's `seL4_MsgMaxExtraCaps` (3 extra caps). -/
 def maxExtraCaps : Nat := 3
 
+/-- A capability in transit, **with the slot it was resolved from**.
+
+The source slot travels with the capability because the receiving end is where
+the derivation edge is recorded, and that can be a *later* syscall: a blocking
+send parks its message in the sender's TCB, and the unwrap runs when some
+receiver arrives.  Anything not carried here is unavailable at that point.
+
+Carrying the pair in one array rather than two parallel ones is deliberate.  A
+`caps` array beside a `capSrcRefs` array would have to be kept the same length
+and the same order by every producer, and nothing in the type would say so —
+exactly the implicit invariant this codebase requires to be structural.  A
+transfer capability is therefore a single value that cannot be half-built. -/
+structure TransferCap where
+  /-- The capability being transferred. -/
+  cap : Capability
+  /-- The slot it was resolved from, in the sender's CSpace.  This is the
+      derivation parent the receiving copy is recorded against, so revoking the
+      source reaches the copy. -/
+  srcRef : SlotRef
+  deriving Repr, DecidableEq
+
+/-- A transfer capability with its source slot spelled out.
+
+For fixtures, which build messages by hand rather than through
+`resolveExtraCaps`.  There is deliberately **no** defaulted slot: a stand-in
+source address is exactly the defect this structure exists to prevent, so a
+caller that has no real slot to name has to say so explicitly. -/
+def TransferCap.fromSlot (cap : Capability) (cnode : SeLe4n.ObjId) (slot : Nat) :
+    TransferCap :=
+  { cap := cap, srcRef := { cnode := cnode, slot := SeLe4n.Slot.ofNat slot } }
+
 /-- WS-E4/M-02: Structured IPC message payload for endpoint transfers.
 
 Models seL4 message registers plus optional capability transfer and sender badge.
@@ -599,7 +649,7 @@ structure IpcMessage where
       are now typed, matching the `RegValue` wrapper used throughout the
       register decode and context-switch infrastructure. -/
   registers : Array SeLe4n.RegValue
-  caps : Array Capability := #[]
+  caps : Array TransferCap := #[]
   badge : Option SeLe4n.Badge := none
   deriving Repr, DecidableEq
 

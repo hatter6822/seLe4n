@@ -451,17 +451,13 @@ configurations before they are installed. -/
 def SchedulerState.domainScheduleAllPositive (schedule : List DomainScheduleEntry) : Bool :=
   schedule.all (fun e => e.length > 0)
 
-/-- Architecture-neutral address of a capability slot inside a CNode object. -/
-structure SlotRef where
-  cnode : SeLe4n.ObjId
-  slot : SeLe4n.Slot
-  deriving Repr, DecidableEq
-
-/-- WS-G1: Hash instance for composite HashMap/HashSet keying.
-    Combines cnode and slot hashes via `mixHash` for uniform distribution.
-    BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
-@[inline] instance : Hashable SlotRef where
-  hash a := mixHash (hash a.cnode) (hash a.slot)
+-- `SlotRef` and its `Hashable` instance live in `Model/Object/Types.lean`,
+-- beside `CapTarget` and `Capability`.  An address into a CNode is part of the
+-- object model rather than of whole-system state, and `IpcMessage` — which sits
+-- below this module — has to name one, since a transferred capability now
+-- carries the slot it came from so the derivation tree records the real source.
+-- The namespace is the same (`SeLe4n.Model`), so the qualified name is
+-- unchanged and every reference here still resolves through the import.
 
 /-- Lifecycle metadata required by the first M4-A transition story.
 

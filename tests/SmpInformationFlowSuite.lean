@@ -10173,7 +10173,7 @@ private def transferredCap : Capability :=
   { target := .object lowNotification, rights := AccessRightSet.ofList [] }
 
 private def transferMessage : IpcMessage :=
-  { registers := #[], caps := #[transferredCap], badge := none }
+  { registers := #[], caps := #[TransferCap.fromSlot transferredCap cnRoot 0], badge := none }
 
 private def taintedEndpointState : SystemState :=
   let base : SystemState :=

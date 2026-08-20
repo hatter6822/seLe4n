@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.33.58.
+Lean 4.28.0 toolchain, Lake build system, version 0.33.59.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,22 +182,22 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~42588 lines)
+- `CHANGELOG.md` (~42667 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~20449 lines)
 - `docs/WORKSTREAM_HISTORY.md` (~11841 lines)
 - `tests/SmpInformationFlowSuite.lean` (~11055 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~7902 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5567 lines)
-- `SeLe4n/Kernel/API.lean` (~5346 lines)
+- `SeLe4n/Kernel/API.lean` (~5351 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5082 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4764 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~4543 lines)
-- `SeLe4n/Model/State.lean` (~4487 lines)
+- `SeLe4n/Model/State.lean` (~4483 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~4351 lines)
 - `docs/spec/SELE4N_SPEC.md` (~4161 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
-- `tests/NegativeStateSuite.lean` (~4101 lines)
+- `tests/NegativeStateSuite.lean` (~4107 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~3784 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3659 lines)
@@ -228,6 +228,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
+- `tests/OperationChainSuite.lean` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
@@ -235,16 +236,15 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~2280 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2258 lines)
 - `SeLe4n/Platform/FFI.lean` (~2249 lines)
-- `tests/OperationChainSuite.lean` (~2246 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~2182 lines)
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~2178 lines)
 - `SeLe4n/Prelude.lean` (~2137 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2131 lines)
+- `SeLe4n/Model/Object/Types.lean` (~2114 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2096 lines)
 - `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~2083 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2070 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2067 lines)
-- `SeLe4n/Model/Object/Types.lean` (~2064 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2062 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2025 lines)
@@ -266,7 +266,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~1785 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1782 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
-- `tests/InformationFlowSuite.lean` (~1772 lines)
+- `tests/InformationFlowSuite.lean` (~1773 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~1762 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1737 lines)
@@ -284,8 +284,8 @@ To find files that need pagination today, run:
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1398 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
+- `tests/SmpIpcSuite.lean` (~1358 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
-- `tests/SmpIpcSuite.lean` (~1350 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md` (~1342 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1337 lines)
@@ -346,13 +346,13 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~886 lines)
-- `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~885 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~882 lines)
+- `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~878 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~877 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
-- `SeLe4n/Kernel/Capability/Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean` (~831 lines)
 - `tests/TwoPhaseArchSuite.lean` (~829 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean` (~827 lines)
 - `tests/DecodingSuite.lean` (~827 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~826 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
@@ -826,8 +826,8 @@ code may assume:
   `withLockSet`, so the per-object fine locks are a model-level discipline.  The
   migration plus commit partitioning is planned in
   [`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`](docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md),
-  which also carries a confirmed High-severity revocation-precision finding to
-  fix first.
+  whose High-severity revocation-precision finding is **closed** at v0.33.59
+  (IPC transfer now records its derivation edge from the real source slot).
 - **SM4.C.11**: per-core Liveness forms (`Scheduler/Liveness/*.lean`) remain
   `bootCoreId`-pinned; migration is Scheduler-subsystem scope, not SM4.D.
 - **Registered uncovered lock domains** are enumerated in Lean, not in prose:
