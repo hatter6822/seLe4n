@@ -2690,22 +2690,23 @@ def syscallEntryChecked (ctx : LabelingContext)
           -- not move content the declared edges miss is checked by reach, in
           -- `scripts/check_content_flow_coverage.py`.
           --
-          -- Written without intermediate `let`s so the term the downstream
-          -- proofs case on is a bare `match` on the dispatch: a `have`-bound
-          -- state blocks `split`, and three of this PR's carriage proofs are
-          -- exactly that case analysis.
-          match dispatchSyscallChecked ctx decoded tid
-              (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-                st executingCore tid decoded.overflowCount) with
+          -- The filled state is bound ONCE.  It used to be spelled out three
+          -- times — for the dispatch, for the taint plan, and as the plan's
+          -- pre-state — on the reasoning that an intermediate binding would stop
+          -- the downstream carriage proofs from `split`ting on a bare `match`.
+          -- That is true of `have`, which is opaque, but not of `let`, which
+          -- zeta-reduces and stays transparent to `split`.  Three evaluations of
+          -- a TCB/VSpace resolution (and, with overflow registers, of the page
+          -- fold and the TLB-table update) on every successful syscall was the
+          -- cost of the stronger reading.
+          let stFilled :=
+            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
+              st executingCore tid decoded.overflowCount
+          match dispatchSyscallChecked ctx decoded tid stFilled with
           | .error e => .error e
           | .ok ((), stPost) =>
               .ok ((), applySyscallTaint
-                (syscallTaintPlan
-                  (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-                    st executingCore tid decoded.overflowCount) tid decoded)
-                (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-                  st executingCore tid decoded.overflowCount)
-                stPost)
+                (syscallTaintPlan stFilled tid decoded) stFilled stPost)
 
 -- ============================================================================
 -- U5-A/U5-D: Dispatch structural equivalence theorems

@@ -1846,6 +1846,11 @@ theorem syscallEntryChecked_preserves_projection (ctx : LabelingContext) (observ
           -- the dispatch committed.  The write is projection-invisible
           -- (`applySyscallTaint_preserves_projection`), so the argument is the
           -- pre-SM9.D one with one rewrite in front of it.
+          --
+          -- The entry binds the TLB-filled state once rather than spelling it out
+          -- three times; Lean elaborates that binding to `letFun`, which `split`
+          -- cannot see through, so reduce it away first.
+          dsimp only at hOk
           split at hOk
           · exact absurd hOk (by simp)
           · next stPost hDisp =>

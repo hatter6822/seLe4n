@@ -822,15 +822,19 @@ reason:
   receiver that actually took the badge.  `taintWriteKeys` is unaffected, since
   it unions the cleared list in anyway. -/
 def applySyscallTaint (plan : TaintPlan) (pre post : SystemState) : SystemState :=
+  -- Bound once.  `newlyRecordedEvents` is `post.log.drop pre.log.length`, so each
+  -- evaluation is two O(n) walks with n bounded at the SM9.A 256-entry cliff, and
+  -- `applySyscallTaint` runs on EVERY syscall — inert plans included, since the
+  -- entry always applies a plan.  Computing it twice made every syscall pay four
+  -- list walks where two suffice.
+  let origins := originationTags (newlyRecordedEvents pre post)
   { post with
       declassificationTaint :=
         applyOrigination
-          ((originationTags (newlyRecordedEvents pre post)).filter
-            (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
+          (origins.filter (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
           (applyTaintClears plan.cleared
             (applyTaintFlow
-              (applyOrigination (originationTags (newlyRecordedEvents pre post))
-                pre.declassificationTaint)
+              (applyOrigination origins pre.declassificationTaint)
               plan.edges
               post.declassificationTaint)) }
 

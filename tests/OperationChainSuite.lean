@@ -839,12 +839,45 @@ private def chain12bIpcCapTransferRevocable : IO Unit := do
     (SeLe4n.Kernel.cspaceRevokeCdt { cnode := senderCNode, slot := srcSlot } stStale)
   expect "chain12b: an in-place rewrite keeps the slot's node, so the revoke still reaches"
     (!receiverSlotFilled stStaleRevoke)
-  -- The delete path is a different question and is NOT settled here:
-  -- `cspaceDeleteSlotCore` detaches the slot from its node, so a delete during
-  -- the parked window orphans the node the message names.  `cspaceDeleteSlot`
-  -- refuses a slot that already has CDT children, but a parked transfer is not
-  -- yet a child, so the refusal does not cover the in-flight window.  Recorded
-  -- as tracked debt rather than asserted either way.
+  -- THE PARKED WINDOW, closed.  A blocking send parks its message and the unwrap
+  -- runs in a later syscall.  During that window the source slot has no CDT
+  -- child yet — the edge is recorded at the unwrap — so a children-only guard
+  -- would permit the delete, `cspaceDeleteSlotCore` would detach the slot from
+  -- its node, and the transferred copy would land under a parent no slot points
+  -- at: unreachable by any revoke.  The guard now also refuses a slot with a
+  -- transfer in flight from it.
+  --
+  -- Park a send with no receiver queued, so the message sits in the sender's TCB.
+  let stParkedBase : SystemState :=
+    match st1.objects[epId]? with
+    | some (.endpoint _) => { st1 with objects := st1.objects.insert epId (.endpoint {}) }
+    | _ => st1
+  let (_, stParked) ← expectOkSt "chain12b: send blocks with no receiver"
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode
+      (SeLe4n.Slot.ofNat 0) stParkedBase)
+  expect "chain12b: the message really is parked in the sender's TCB"
+    (match stParked.getTcb? sender with
+     | some tcb => match tcb.pendingMessage with
+                   | some m => m.caps.size == 1
+                   | none => false
+     | none => false)
+  -- The source slot has no CDT child yet …
+  expect "chain12b: NEGATIVE — the parked source has no CDT child yet"
+    (!SeLe4n.Kernel.hasCdtChildren stParked { cnode := senderCNode, slot := srcSlot })
+  -- … but the transfer in flight from it is visible to the guard, so the delete
+  -- is refused rather than silently orphaning the copy's parent.
+  expect "chain12b: a transfer in flight from the slot is visible to the guard"
+    (SeLe4n.Kernel.slotHasPendingTransfer stParked { cnode := senderCNode, slot := srcSlot })
+  expect "chain12b: deleting the source of a parked transfer is REFUSED"
+    (match SeLe4n.Kernel.cspaceDeleteSlot { cnode := senderCNode, slot := srcSlot } stParked with
+     | .error .revocationRequired => true
+     | _ => false)
+  -- NEGATIVE: an unrelated slot in the same CNode is unaffected — the guard is
+  -- keyed on the transfer's own source, not on the CNode holding it.
+  expect "chain12b: NEGATIVE — an unrelated slot in the same CNode still deletes"
+    (match SeLe4n.Kernel.cspaceDeleteSlot { cnode := senderCNode, slot := SeLe4n.Slot.ofNat 0 } stParked with
+     | .ok _ => true
+     | _ => false)
 
 /-- SCN-IPC-CAP-TRANSFER-NO-GRANT: Grant-right gate blocks cap transfer.
 Endpoint lacks Grant right — caps should be silently dropped. -/

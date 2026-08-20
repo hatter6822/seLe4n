@@ -3779,6 +3779,21 @@ run_negative_check "INVARIANT" rg -n 'def parkedCarriesCaps' SeLe4n/Kernel/Infor
 # …and the send gate requires Grant, since an endpoint without it installs
 # nothing however many capabilities the message declares.
 run_check "INVARIANT" rg -n 'cap.hasRight .grant' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 round 8: the delete guard sees transfers IN FLIGHT, not only children.
+# Between a blocking send and the unwrap that completes it the source slot has no
+# CDT child yet, so a children-only guard permitted the delete, the slot was
+# detached from its node, and the transferred copy landed under a parent no slot
+# pointed at — unreachable by any revoke.
+run_check "INVARIANT" rg -n '^def nodeHasPendingTransfer' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def slotHasPendingTransfer' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_refuses_pending_transfer' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_refuses_existing_children' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n 'hasCdtChildren st addr \|\| slotHasPendingTransfer st addr' SeLe4n/Kernel/Capability/Operations.lean
+# The load-bearing negative: the parked source provably has NO CDT child, so the
+# old guard would have permitted the delete and the new predicate is doing the work.
+run_check "INVARIANT" rg -n 'chain12b: NEGATIVE . the parked source has no CDT child yet' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'chain12b: deleting the source of a parked transfer is REFUSED' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'chain12b: NEGATIVE . an unrelated slot in the same CNode still deletes' tests/OperationChainSuite.lean
 # PR #873 review round 4: the flow fold reads every source from the PRE-state, so
 # a transfer's root-to-root edge cannot chain into a root-to-subject edge within
 # one commit.  The receiving subject is therefore sourced from the sender's root

@@ -875,6 +875,42 @@ def cspaceMint
             | .error e => .error e
             | .ok child => cspaceInsertSlot dst child st'
 
+/-- **Is this derivation node the parent of a transfer still in flight?**
+
+A capability resolved for IPC carries its derivation node in the message, and a
+blocking send parks that message until some receiver arrives.  Between those two
+syscalls the node has no child *yet* — the edge is recorded at the unwrap — so a
+children-only guard sees an unused node and permits the source slot to be
+deleted.  `cspaceDeleteSlotCore` then detaches the slot from the node, and the
+later unwrap installs the transferred copy under a parent no slot points at:
+no revoke can reach it.
+
+The reservation is **derived from the parked messages themselves** rather than
+recorded in a side table, and that is the point.  A counter would have to be
+incremented at resolution and decremented at every path that discards a parked
+message — delivery, cancellation, thread teardown — and a missed decrement leaks
+an undeletable slot while a missed increment reopens this hole.  Reading the
+messages cannot drift: when a cancellation drops `pendingMessage`, the
+reservation disappears with it, because it *was* the message.
+
+Cost is a scan of the object store, which is acceptable here: this is consulted
+only when deleting a capability slot, never on the IPC path. -/
+def nodeHasPendingTransfer (st : SystemState) (node : CdtNodeId) : Bool :=
+  st.objects.toList.any (fun entry =>
+    match entry.2 with
+    | .tcb tcb =>
+        match tcb.pendingMessage with
+        | some msg => msg.caps.any (fun tc => tc.srcNode == node)
+        | none => false
+    | _ => false)
+
+/-- **Does a slot have a transfer in flight from it?** — the slot-addressed form
+of `nodeHasPendingTransfer`, for the delete guard. -/
+def slotHasPendingTransfer (st : SystemState) (addr : CSpaceAddr) : Bool :=
+  match st.lookupCdtNodeOfSlot addr with
+  | none => false
+  | some node => nodeHasPendingTransfer st node
+
 /-- U-H03: Check whether a CSpace slot has CDT children (derived capabilities).
 Returns `true` if the slot's CDT node has any children, indicating that
 `cspaceRevoke` must be called before deletion. -/
@@ -909,10 +945,37 @@ Returns `.revocationRequired` if children are found, enforcing the
 `revokeBeforeDelete` proof obligation as a runtime check. -/
 def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
-    if hasCdtChildren st addr then
+    -- Two ways a slot can still be a derivation parent: it already has children,
+    -- or a capability resolved from it is in flight and will become one when the
+    -- receiving end runs.  `hasCdtChildren` keeps its exact meaning; the guard is
+    -- the disjunction, so neither predicate has to lie about what it covers.
+    if hasCdtChildren st addr || slotHasPendingTransfer st addr then
       .error .revocationRequired
     else
       cspaceDeleteSlotCore addr st
+
+/-- **A slot with a transfer in flight from it cannot be deleted.**
+
+The parked-window property.  Between a blocking send and the unwrap that
+completes it, the source slot has no CDT child — the edge is recorded at the
+unwrap — so a children-only guard would permit the delete, `cspaceDeleteSlotCore`
+would detach the slot from its node, and the transferred copy would be installed
+under a parent no slot points at.  Nothing could then revoke it.
+
+Stated against `slotHasPendingTransfer` rather than against the message store
+directly, so the guard and this theorem read the same predicate. -/
+theorem cspaceDeleteSlot_refuses_pending_transfer (st : SystemState) (addr : CSpaceAddr)
+    (h : slotHasPendingTransfer st addr = true) :
+    cspaceDeleteSlot addr st = .error .revocationRequired := by
+  simp [cspaceDeleteSlot, h]
+
+/-- The guard's other half, unchanged: an existing child still forces a revoke
+first.  Kept as its own statement so the disjunction cannot silently collapse to
+one side. -/
+theorem cspaceDeleteSlot_refuses_existing_children (st : SystemState) (addr : CSpaceAddr)
+    (h : hasCdtChildren st addr = true) :
+    cspaceDeleteSlot addr st = .error .revocationRequired := by
+  simp [cspaceDeleteSlot, h]
 
 /-- V5-G (M-DEF-7): **Revocation routing guide.**
 

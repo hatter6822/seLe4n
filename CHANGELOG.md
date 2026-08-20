@@ -1,3 +1,76 @@
+## v0.33.62 — the delete guard sees transfers in flight, not only children
+
+**A capability slot could be deleted while a transfer from it was still in
+flight, orphaning the transferred copy's derivation parent.**  The last
+remaining hole in the revocation-precision series, identified from two
+directions at once — while investigating why a v0.33.60 regression failed, and
+independently in review.
+
+**The window.**  `resolveExtraCaps` mints the source's derivation node and the
+message carries it; a blocking send then parks that message until a receiver
+arrives.  The CDT edge is recorded at the **unwrap**, so during the parked window
+the source slot has no child yet.  `cspaceDeleteSlot` refuses a slot with CDT
+children — a strong guard — but a pending transfer is not a child, so the delete
+was permitted, `cspaceDeleteSlotCore` detached the slot from its node, and the
+later unwrap installed the copy under a parent no slot points at.  Nothing could
+revoke it.
+
+**The fix, and why it is derived rather than stored.**
+`nodeHasPendingTransfer` reads the parked messages themselves — it scans TCB
+`pendingMessage`s for a `TransferCap` naming the node — and
+`cspaceDeleteSlot`'s guard becomes
+`hasCdtChildren st addr || slotHasPendingTransfer st addr`.
+
+A reservation counter in `SystemState` was the obvious alternative and is worse.
+It would have to be incremented at resolution and decremented at *every* path
+that discards a parked message — delivery, cancellation, thread teardown — and
+the two failure modes are both bad: a missed decrement leaks a slot that can
+never be deleted, a missed increment reopens exactly this hole.  Reading the
+messages cannot drift, because the reservation **is** the message: when a
+cancellation drops `pendingMessage`, the reservation disappears with it.  It also
+keeps `SystemState` — and therefore the invariant bundle — untouched.  The cost
+is an object-store scan, paid only when deleting a capability slot, never on the
+IPC path.
+
+`hasCdtChildren` keeps its exact meaning and the guard is the explicit
+disjunction, so neither predicate has to lie about what it covers.
+`cspaceDeleteSlot_refuses_pending_transfer` and
+`cspaceDeleteSlot_refuses_existing_children` state the two halves separately so
+the disjunction cannot silently collapse to one side.
+
+**Why the regression is load-bearing.**  `chain12b` parks a send and first
+asserts the source slot has **no CDT child** — which is what proves the
+children-only guard would have permitted the delete, and therefore that the new
+predicate is doing real work rather than shadowing an existing check.  Then the
+delete is refused, and an unrelated slot in the same CNode still deletes, pinning
+the guard as transfer-keyed rather than CNode-keyed.
+
+**Two evaluations removed from the syscall path.**  `applySyscallTaint` computed
+`originationTags (newlyRecordedEvents …)` twice — two O(n) list walks over a
+trail bounded at the SM9.A 256-entry cliff, on *every* syscall, inert plans
+included.  Bound once.
+
+`syscallEntryChecked` evaluated `tlbFillIpcBufferOnCore` **three** times, with a
+comment explaining that an intermediate binding would stop the carriage proofs
+from `split`ting.  That comment was right and I initially assumed it was
+over-cautious: Lean elaborates a non-dependent `let` in that position to
+`letFun`, which is a `have`, and the staged `FineLockFlow` proof failed on
+`split` exactly as predicted.  Resolved by absorbing it in the proof
+(`dsimp only` before the `split`) rather than reverting, so the triple
+evaluation is gone and the case analysis still works.  The comment now records
+the real constraint instead of the conclusion drawn from it.
+
+**Documentation.**  `docs/DEVELOPMENT.md` still described the audit-read ABI as
+ending at adjacent-pair opcode 27; it now documents `chainNamesEntry` at opcode
+28 and the count of 29, which a monitor needs when an unrelated event is
+interleaved between two causal hops.
+
+Evidence: four new `chain12b` assertions with their negatives; Tier-3 anchors on
+both guard halves and on the load-bearing negative.  Zero errors and zero
+warnings across the tree, staged modules and every suite.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §3
+
 ## v0.33.61 — bound delivery becomes one classification; the receive stops claiming a transfer it never makes
 
 **Bound delivery produced three findings in three review rounds — the clear
