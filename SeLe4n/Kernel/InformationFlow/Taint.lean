@@ -757,9 +757,21 @@ def set (tbl : TaintTable) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) : Ta
 
 /-- WS-SM SM9.D.2: **add provenance to one object**, keeping what it had — the
 propagation primitive.  A sink joins its source's taint in; nothing is ever
-replaced, so a propagation step cannot lose a causal link. -/
+replaced, so a propagation step cannot lose a causal link.
+
+**Value-preserving writes are elided.**  The table is a function, so each `set`
+closes over the previous one and a lookup walks the chain; joining an empty
+source into an untainted sink — which is what *every* edge of ordinary untainted
+IPC does — would otherwise extend that chain on the syscall hot path forever,
+making later reads progressively slower and retaining unbounded closure history
+for no semantic gain.  The guard returns the table itself when the join changes
+nothing, so a write survives only when it actually moves the value.  It is
+observationally invisible (`joinAt_self`/`joinAt_ne` below are unchanged, and
+`joinAt_eq_of_join_eq` states the elided case), because the branch it takes is
+exactly the case where the two tables are already pointwise equal. -/
 def joinAt (tbl : TaintTable) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) : TaintTable :=
-  tbl.set oid (DeclassificationTaint.join (tbl oid) T)
+  let joined := DeclassificationTaint.join (tbl oid) T
+  if joined = tbl oid then tbl else tbl.set oid joined
 
 /-- WS-SM SM9.D.12: **forget one object's provenance** — what a retype owes,
 and the only operation in this module that removes a causal link.
@@ -780,10 +792,28 @@ def clearAt (tbl : TaintTable) (oid : SeLe4n.ObjId) : TaintTable :=
     (T : DeclassificationTaint) : tbl.set oid T o = tbl o := by simp [set, h]
 
 @[simp] theorem joinAt_self (tbl : TaintTable) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) :
-    tbl.joinAt oid T oid = DeclassificationTaint.join (tbl oid) T := by simp [joinAt]
+    tbl.joinAt oid T oid = DeclassificationTaint.join (tbl oid) T := by
+  unfold joinAt
+  split
+  · next hEq => exact hEq.symm
+  · simp
 
 @[simp] theorem joinAt_ne (tbl : TaintTable) {oid o : SeLe4n.ObjId} (h : o ≠ oid)
-    (T : DeclassificationTaint) : tbl.joinAt oid T o = tbl o := by simp [joinAt, h]
+    (T : DeclassificationTaint) : tbl.joinAt oid T o = tbl o := by
+  unfold joinAt
+  split
+  · rfl
+  · simp [h]
+
+/-- WS-SM SM9.D.2 (**the elision is invisible**): when the join changes nothing
+the table is returned unchanged, which is pointwise the same table the
+unconditional `set` would have produced.  The property that lets the hot-path
+guard exist without any theorem about `joinAt` having to know it is there. -/
+theorem joinAt_eq_of_join_eq (tbl : TaintTable) (oid : SeLe4n.ObjId)
+    (T : DeclassificationTaint) (h : DeclassificationTaint.join (tbl oid) T = tbl oid) :
+    tbl.joinAt oid T = tbl := by
+  unfold joinAt
+  simp [h]
 
 @[simp] theorem clearAt_self (tbl : TaintTable) (oid : SeLe4n.ObjId) :
     tbl.clearAt oid oid = DeclassificationTaint.empty := by simp [clearAt]

@@ -2152,6 +2152,30 @@ theorem chainVerdict_all_ok_causal (ctx : GenericLabelingContext)
   · exact hN
   · simp [hN] at hWord
 
+/-- WS-SM SM9.D.14 (**the general query closes the adjacency gap**): for ANY two
+visible indices `earlier < later` — not only the adjacent pair — the opcode word
+is `1` exactly when the later entry names the earlier one.  This is the relation
+`declassificationChainCausal` / `chainLaunders` are built from, over an arbitrary
+non-contiguous subchain, so a hop an interleaved event split out of adjacency is
+now queryable where `chainNamesPredecessor` returned `0` on the wrong (adjacent)
+pair.  The reader cost is unchanged — one opaque bit about two entries the caller
+already holds (`chainEntryVerdict_view_local`), never the recorded tags. -/
+theorem chainEntryVerdict_names_iff (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (st : SystemState) (later earlier : Nat) (hLt : earlier < later)
+    (laterEvent earlierEvent : DeclassificationEvent)
+    (hLater :
+      (auditLogVisibleTo ctx reader st.declassificationAuditLog)[later]? = some laterEvent)
+    (hEarlier :
+      (auditLogVisibleTo ctx reader st.declassificationAuditLog)[earlier]? = some earlierEvent) :
+    auditReadWord ctx monitorClearance reader st (.chainNamesEntry later earlier) = .ok 1 ↔
+      declassificationEventNames laterEvent earlierEvent = true := by
+  rw [chainEntryVerdict_ok ctx monitorClearance reader st later earlier hLt
+    laterEvent earlierEvent hLater hEarlier]
+  cases hN : declassificationEventNames laterEvent earlierEvent with
+  | true => simp
+  | false => simp
+
 /-- WS-SM SM8.C.5 (**`authorizationBasis_perCore`'s scope**): the *verdict* is
 core-uniform, so the theorem's `∀ c` is a quantifier over a dimension the
 verdict does not read (`declassificationBasisKernelVerified_core_independent`).

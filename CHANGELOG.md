@@ -1,3 +1,94 @@
+## v0.33.55 — WS-SM SM9.D review cut: content-derived transport taint, the general causality verdict, consumed CSpace provenance
+
+**Review cut (v0.33.55)** — seven findings from two automated review rounds on
+the SM9.D landing, every one verified against the code and closed.  No theorem
+was false; three were real model defects (one of them a *missed* chain, the
+direction a detector must never err in), two were claims stronger than their
+evidence, one a scope boundary asserted rather than enforced, and one a
+hot-path cost.
+
+**(1) The capability-transfer provenance was written and never read.**
+`capTransferTaintSinks` tagged the receiver's CSpace root — correctly, because a
+CNode is shared and a second thread rooted there reads what the transfer
+installed — but **no** edge anywhere sourced from a CSpace root, so the tag was
+an unwired structure and a capability forwarded by an untainted courier dropped
+the chain.  Closed by making the sink also a source: the edge list gains
+`{sink := receiverRoot, source := senderRoot}`, with
+`taintPropagation_cspace_provenance_forwarded` the property.
+
+**(2) Transport taint is now content-derived.**  The endpoint and notification
+accumulated provenance and never lost it, so after one tainted message crossed
+an endpoint a later *unrelated* message handed its receiver the old identity — a
+specific, unsaturated false positive, which is exactly what
+`staleTaint_is_not_saturation` says must not exist and what the "residual is
+only saturation" claim (five sites) denied.  Rather than add a replace
+primitive, the model now says what each object actually holds: an **endpoint is
+not a taint sink at all** — it buffers no content (a parked message lives in the
+blocked sender's TCB) and a receiver reads `sendQ.head` directly, so the proxy
+was both redundant and less precise — and a **consumed notification is cleared**
+(`contentFlowClears`: a `.notificationWait` takes the whole badge; a signal
+delivered straight to a waiter stores none).  `taintPropagation_edge`'s
+hypothesis weakens from `cleared = []` to `sink ∉ cleared` accordingly;
+`taintPropagation_receive_from_endpoint` becomes `…_receive_from_sender`;
+`waitClearsNotificationTaint` is the new checkable fact.  Both stale-taint
+sources — a retype's replacement and a consumed transport — are now closed by a
+clear, so the residual really is saturation.
+
+**(3) The monitor could not query a non-adjacent causal hop.**
+`chainNamesPredecessor` (opcode 27) tests only `index` against `index - 1`, but
+`predecessorTags` may name **any** earlier event and
+`declassificationChainCausal` / `chainLaunders` run over an arbitrary
+non-contiguous subchain — so when another core appends an unrelated event
+between two hops, the laundering link became unqueryable even though Lean
+accepts it.  Closed by appending `AuditReadOp.chainNamesEntry` (opcode **28**,
+`auditReadOpcodeCount` 28 → 29, mirrored in `sele4n-sys`), which reads two
+arbitrary view-local indices and returns the same one opaque bit — never the
+tags — so `chainEntryVerdict_view_local` inherits the no-channel argument
+verbatim.  Appended, never renumbered: an ABI number is a contract.  It
+deliberately does **not** recover a drained predecessor; no view-local reader
+can query an entry it cannot see.
+
+**(4) A declassified second hop lost its own fresh tag.**  Flows read every
+source from the pre-state table, and origination ran *after* them, so
+`.declassifySignal`'s second hop — the notification → waiting-receiver delivery,
+an ordinary one — carried nothing, and a later downgrade by that receiver had no
+predecessor.  A **missed** chain.  Closed by seeding the flow-source table with
+this commit's own origination, a no-op for every syscall that records nothing.
+
+**(5) `.cspaceMint`'s `.inert` justification was factually wrong.**  The
+docstring grouped it with its siblings as a same-CNode self-loop, but
+`decodeCSpaceMintArgs` reads the badge and rights from the caller's message
+registers, so a mint writes caller-supplied bits into a CNode.  The
+classification is unchanged and correct — a capability badge is authority
+metadata, not the payload this model tracks — but the *reason* is now the scope
+boundary rather than a false claim: `contentTrackedFields` states the scope as a
+value and `capabilityBadgeChannel_out_of_scope` records the accepted channel as
+a theorem.
+
+**(6) The scope boundary is now enforced, not asserted.**  The content-flow gate
+scanned two channels and described that as derived; a cap-slot write was
+invisible to it by construction.  Its docstring now states the boundary and
+names the exclusion, and `check_scope_matches_lean` fails the gate if
+`CONTENT_CHANNELS` and `contentTrackedFields` ever disagree — so widening the
+scope takes two edits that must match rather than one silent one.
+
+**(7) Value-preserving taint writes are elided.**  `TaintTable` is a function, so
+every `joinAt` closed over the previous table and a lookup walked the chain —
+including the joins ordinary *untainted* IPC performs on every edge, which
+extended it forever on the syscall hot path.  `joinAt` now returns the table
+unchanged when the join changes nothing (`joinAt_eq_of_join_eq`); the existing
+`joinAt_self` / `joinAt_ne` laws are unaffected.
+
+Evidence: `SmpInformationFlowSuite` §12.4's fixture is re-keyed to a **blocked
+sender** (the endpoint-proxy fixture was testing the stale path itself) with
+both endpoint-untouched negatives, §12.8 recomputed on the content-derived edge
+list — where the registered cap-transfer CNode gap is now the *only* uncovered
+key — and the golden fixture gains `transportUntouched=`.  All 29 opcodes
+round-trip both sides; Tier-3 anchors pin the new symbols and forbid the
+endpoint-proxy forms from returning.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
 ## v0.33.54 — WS-SM SM9.D audit cut: the reply leg, the field-writer sweep, the monitor's inference direction
 
 **Audit cut (v0.33.54)** — a code-first audit of the whole SM9.D landing,

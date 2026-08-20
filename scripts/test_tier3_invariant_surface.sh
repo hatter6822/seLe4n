@@ -3272,8 +3272,8 @@ run_check "INVARIANT" rg -n '^theorem refusalLedger_records_gate_unsound' SeLe4n
 run_check "INVARIANT" rg -n '^theorem refusalRead_requires_monitor_at_entry' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 # The ABI mirror, both sides: 12 trail opcodes + 9 refusal opcodes + WS-SM
 # SM9.C.1's 4 actor opcodes = 25.
-run_check "INVARIANT" rg -n '^def auditReadOpcodeCount : Nat := 28' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n 'AUDIT_READ_OPCODE_COUNT: u64 = 28' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n '^def auditReadOpcodeCount : Nat := 29' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n 'AUDIT_READ_OPCODE_COUNT: u64 = 29' rust/sele4n-sys/src/audit.rs
 # WS-SM SM9.C.1: and the count is the DECODER's boundary on the Rust side, not
 # a restatement of the enum's own last variant — which is what let this mirror
 # sit at 21 while Lean moved to 25, invisible to every Rust test.
@@ -3350,7 +3350,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines' tests/SmpInfo
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=34 opcodes=28 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=34 opcodes=29 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification
@@ -3693,6 +3693,17 @@ run_check "INVARIANT" rg -n '^theorem chainVerdict_view_local' SeLe4n/Kernel/Inf
 run_check "INVARIANT" rg -n '^theorem chainVerdict_reconstructs_causal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n 'ChainNamesPredecessor = 27' rust/sele4n-sys/src/audit.rs
 run_check "INVARIANT" rg -n 'the causality verdict reaches a monitor' tests/SmpInformationFlowSuite.lean
+# PR #873 review: the GENERAL causality verdict.  `predecessorTags` may name any
+# earlier event and `declassificationChainCausal` runs over an arbitrary
+# non-contiguous subchain, so an adjacency-only query cannot test a hop an
+# interleaved event split out of adjacency.  Opcode 28 is appended (never a
+# renumber — an ABI number is a contract) and reads two view-local indices.
+run_check "INVARIANT" rg -n 'chainNamesEntry \(later earlier : Nat\)' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_ok' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_refused' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_view_local' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_names_iff' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n 'ChainNamesEntry = 28' rust/sele4n-sys/src/audit.rs
 run_check "INVARIANT" rg -n 'NEGATIVE: the same domain-composing pair with no snapshot reads 0' tests/SmpInformationFlowSuite.lean
 run_check "TRACE" rg -n 'causality verdict: monitorReads=' tests/fixtures/smp_information_flow.expected
 # SM9.D.11: the capability-transfer sink — a CNode is shared, so tagging the
@@ -3700,6 +3711,38 @@ run_check "TRACE" rg -n 'causality verdict: monitorReads=' tests/fixtures/smp_in
 # third subject.
 run_check "INVARIANT" rg -n '^def capTransferTaintSinks' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem taintPropagation_send_to_receiver_cspace' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 review: the CSpace provenance the transfer writes is also CONSUMED.
+# Without the sender-CSpace-root source the tag would be an unwired structure —
+# written on a root and read by nothing — and a capability forwarded by an
+# untainted courier would drop the chain.
+run_check "INVARIANT" rg -n '^theorem taintPropagation_cspace_provenance_forwarded' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 review: the CONTENT-DERIVED transport model.  A transport's taint
+# reflects the content it currently holds: an endpoint is not a sink at all (it
+# buffers no content — the message is in the blocked sender's TCB, and the
+# receiver reads the head sender directly), and a consumed notification is
+# cleared.  Without this a reused endpoint links causally-unrelated messages —
+# a false positive that is NOT saturation.
+run_check "INVARIANT" rg -n '^def contentFlowClears' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem waitClearsNotificationTaint' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_receive_from_sender' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the endpoint is not among the declared sinks at all' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the endpoint itself carries no identity' tests/SmpInformationFlowSuite.lean
+run_check "TRACE" rg -n 'transportUntouched=' tests/fixtures/smp_information_flow.expected
+# …and the endpoint-proxy forms must not come back: they ARE the stale-transport
+# false positive, so a regression that re-adds an endpoint sink or an
+# endpoint-sourced receive would restore it.
+run_negative_check "INVARIANT" rg -n 'theorem taintPropagation_send_to_endpoint' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_negative_check "INVARIANT" rg -n 'theorem taintPropagation_receive_from_endpoint' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 review: the tracked-content SCOPE, stated as a value and tied to the
+# gate's own channel list, with the one deliberate exclusion (a capability badge
+# is authority metadata, not payload) recorded as a theorem rather than prose.
+run_check "INVARIANT" rg -n '^def contentTrackedFields' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem capabilityBadgeChannel_out_of_scope' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "BUILD" rg -n 'def check_scope_matches_lean' scripts/check_content_flow_coverage.py
+# PR #873 review: the hot-path elision — a value-preserving join must not extend
+# the table's closure chain, which ordinary untainted IPC would otherwise do on
+# every edge.
+run_check "INVARIANT" rg -n '^theorem joinAt_eq_of_join_eq' SeLe4n/Kernel/InformationFlow/Taint.lean
 # SM9.D.9 (audit): the replyRecv REPLY leg — the steady-state server loop's
 # second hop, which a receive-leg-only plan under-approximates (the unsafe
 # direction for a detector).  The resolution mirrors `resolveReplyRecvReply`
@@ -3713,6 +3756,12 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the receive-leg edges alone miss the reco
 # view is causal — alongside the forward reconstruction.
 run_check "INVARIANT" rg -n '^theorem declassificationChainCausal_of_pairwise' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^theorem chainVerdict_all_ok_causal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# PR #873 review: the flow sources are SEEDED with this commit's own origination,
+# so a syscall that both declassifies and delivers (`.declassifySignal`, whose
+# second hop is an ordinary delivery) carries the fresh event's tag to the object
+# the delivery reached.  Reading the raw pre-table there loses the successor —
+# a MISSED chain, the direction a detector must never err in.
+run_check "INVARIANT" rg -n 'applyOrigination \(originationTags \(newlyRecordedEvents pre post\)\)' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # SM9.D.17 (audit): the pre-existing cap-transfer footprint gap — the receiver's
 # CSpace root, which `ipcUnwrapCaps` writes with no declared CNode write lock —
 # as a registered domain (owner recorded in the inventory itself) with its

@@ -46,7 +46,7 @@ use sele4n_types::{CPtr, KernelResult, SyscallId};
 /// Number of `audit_read` sub-operation opcodes.  Mirrors Lean's
 /// `auditReadOpcodeCount`; a divergence would surface as
 /// `InvalidSyscallArgument` on a valid request rather than as a decode bug.
-pub const AUDIT_READ_OPCODE_COUNT: u64 = 28;
+pub const AUDIT_READ_OPCODE_COUNT: u64 = 29;
 
 /// The `audit_read` sub-operations, mirroring Lean's `AuditReadOp`.
 ///
@@ -148,6 +148,23 @@ pub enum AuditReadOpcode {
     /// laundering monitor consumes.  `index == 0` names no predecessor and is
     /// `InvalidArgument`.
     ChainNamesPredecessor = 27,
+    /// WS-SM SM9.D.14: does visible entry `index` name visible entry `chunk`,
+    /// for **any** two visible indices with `chunk < index`?
+    ///
+    /// The general form of the verdict above.  `predecessorTags` is a set that
+    /// may name any earlier event, and Lean's `declassificationChainCausal` /
+    /// `chainLaunders` run over an arbitrary non-contiguous subchain of the
+    /// view — so when an unrelated event lands between two causal hops (a
+    /// different core appending into the single global trail), the hop is no
+    /// longer adjacent and `ChainNamesPredecessor` answers `0` on it.  This
+    /// opcode reads the two entries the caller already holds, at arbitrary
+    /// view-local indices, and returns the same one opaque bit.
+    ///
+    /// `index` carries `later`, `chunk` carries `earlier`; `earlier >= later`
+    /// names no predecessor and is `InvalidArgument`.  It deliberately does not
+    /// recover a predecessor that has left the view — no view-local reader can
+    /// query an entry it cannot see.
+    ChainNamesEntry = 28,
 }
 
 impl AuditReadOpcode {
@@ -199,6 +216,7 @@ impl AuditReadOpcode {
             25 => Some(Self::RefusalReceiverChunks),
             26 => Some(Self::RefusalReceiver),
             27 => Some(Self::ChainNamesPredecessor),
+            28 => Some(Self::ChainNamesEntry),
             _ => None,
         }
     }
@@ -497,12 +515,15 @@ mod tests {
         // receiver, appended after the actor pair.
         assert_eq!(AuditReadOpcode::RefusalReceiverChunks.to_u64(), 25);
         assert_eq!(AuditReadOpcode::RefusalReceiver.to_u64(), 26);
-        // WS-SM SM9.D.14: the causality verdict, appended last.
+        // WS-SM SM9.D.14: the causality verdicts — the adjacent form, then the
+        // general arbitrary-pair form, each appended so earlier opcodes are
+        // unmoved.
         assert_eq!(AuditReadOpcode::ChainNamesPredecessor.to_u64(), 27);
+        assert_eq!(AuditReadOpcode::ChainNamesEntry.to_u64(), 28);
         // Every opcode is below the count, and the count is the first value the
         // kernel refuses.
         assert_eq!(
-            AuditReadOpcode::ChainNamesPredecessor.to_u64() + 1,
+            AuditReadOpcode::ChainNamesEntry.to_u64() + 1,
             AUDIT_READ_OPCODE_COUNT
         );
     }

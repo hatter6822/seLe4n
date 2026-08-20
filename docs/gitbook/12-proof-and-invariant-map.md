@@ -3388,7 +3388,17 @@ so taint propagates through ordinary IPC.
   27 → **28**, mirrored in `sele4n-sys`) returns one bit — does visible entry
   `index` name visible entry `index - 1` — so a monitor reading it at every
   index reconstructs `declassificationChainCausal` over its whole view
-  (`chainVerdict_reconstructs_causal`).  Index `0` is **refused** rather than
+  (`chainVerdict_reconstructs_causal`).  The **PR #873 review** added the
+  general form beside it, because `predecessorTags` may name *any* earlier event
+  and the model relation runs over an arbitrary non-contiguous subchain: an
+  unrelated event appended between two hops (another core writing into the
+  single global trail) splits the hop out of adjacency, and the adjacency
+  verdict then answers `0` on it.  `AuditReadOp.chainNamesEntry` (opcode **28**,
+  count 28 → **29**) takes two arbitrary view-local indices and returns the same
+  one opaque bit (`chainEntryVerdict_ok` / `_refused` / `_view_local`,
+  `chainEntryVerdict_names_iff`) — appended, never renumbered, since an ABI
+  number is a contract, and deliberately not a recovery of a *drained*
+  predecessor, which no view-local reader can query.  Index `0` is **refused** rather than
   answered `0`, since a `0` word would be indistinguishable from a genuine
   "no"; `chainVerdict_view_local` is why it opens no channel — the arm reads two
   entries the caller already holds and nothing else, in particular not the

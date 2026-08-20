@@ -1012,7 +1012,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _wk := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_wrong_kind
      have _ab := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_absent_target
      have _pb := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_invalid_target_policy_blind
-     decide (SeLe4n.Kernel.auditReadOpcodeCount = 28
+     decide (SeLe4n.Kernel.auditReadOpcodeCount = 29
        ∧ SeLe4n.Kernel.decodeAuditReadOp 25 0 0
            = some (.refusalReceiverChunkCount 0)
        ∧ SeLe4n.Kernel.decodeAuditReadOp 26 0 0 = some (.refusalReceiverChunk 0 0)))
@@ -1054,12 +1054,22 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
     (-- Taint propagates through *ordinary* IPC delivery, which is the whole
      -- scoping argument: a downgrade writes a badge, an ordinary delivery
      -- moves it, and the next downgrade must still see it.
-     have _se := @SeLe4n.Kernel.taintPropagation_send_to_endpoint
      have _sr := @SeLe4n.Kernel.taintPropagation_send_to_receiver
-     have _rf := @SeLe4n.Kernel.taintPropagation_receive_from_endpoint
+     have _rf := @SeLe4n.Kernel.taintPropagation_receive_from_sender
      have _rc := @SeLe4n.Kernel.taintPropagation_reply_to_caller
      have _sn := @SeLe4n.Kernel.taintPropagation_signal_to_notification
      have _wn := @SeLe4n.Kernel.taintPropagation_wait_from_notification
+     -- PR #873 review: the transport's taint is CONTENT-DERIVED.  An endpoint
+     -- is not a sink (it holds no content), and a consumed notification is
+     -- cleared — so a reused transport cannot link unrelated messages.
+     have _cc := @SeLe4n.Kernel.contentFlowClears
+     have _wc := @SeLe4n.Kernel.waitClearsNotificationTaint
+     -- …and the CSpace provenance a transfer writes is also consumed, so a
+     -- forwarded capability carries its chain.
+     have _cf := @SeLe4n.Kernel.taintPropagation_cspace_provenance_forwarded
+     -- The tracked-content scope, and its one deliberate exclusion.
+     have _tf := @SeLe4n.Kernel.contentTrackedFields
+     have _bc := @SeLe4n.Kernel.capabilityBadgeChannel_out_of_scope
      -- Retype **clears** rather than frames: it commits `storeObject` at the
      -- same id, so a framed retype would leave a destroyed object's tags on
      -- its replacement.
@@ -1093,6 +1103,13 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _cp := @SeLe4n.Kernel.declassificationChainCausal_of_pairwise
      have _ca := @SeLe4n.Kernel.chainVerdict_all_ok_causal
      have _cp := @SeLe4n.Kernel.declassificationChainCausal_pairwise
+     -- PR #873 review: the GENERAL verdict — the model relation runs over an
+     -- arbitrary non-contiguous subchain, so an adjacency-only query cannot
+     -- test a hop an interleaved event split out of adjacency.
+     have _ce := @SeLe4n.Kernel.chainEntryVerdict_ok
+     have _cr := @SeLe4n.Kernel.chainEntryVerdict_refused
+     have _cv := @SeLe4n.Kernel.chainEntryVerdict_view_local
+     have _cn := @SeLe4n.Kernel.chainEntryVerdict_names_iff
      decide (SeLe4n.Kernel.declassificationChainCausal [] = true
        ∧ SeLe4n.Kernel.DeclassificationRuleId.all.length = 12))
 

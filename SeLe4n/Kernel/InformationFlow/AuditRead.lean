@@ -1093,6 +1093,27 @@ inductive AuditReadOp where
       view.  `index = 0` has no predecessor and is `.invalidArgument`, the same
       answer an out-of-range index gets. -/
   | chainNamesPredecessor (index : Nat)
+  /-- WS-SM SM9.D.14: **the general causality verdict** — does visible entry
+      `later` name visible entry `earlier` as a predecessor, for *any* two
+      visible indices `earlier < later`?
+
+      `chainNamesPredecessor` tests only the adjacent pair `(index, index - 1)`,
+      but `predecessorTags` is a set that may name *any* earlier event, and
+      `declassificationChainCausal` / `chainLaunders` run over an arbitrary
+      non-contiguous subchain of the view.  When an unrelated event lands between
+      two causal hops — a different core appending into the single global log —
+      the hop is no longer adjacent, and the adjacency verdict returns `0` on it.
+      This opcode closes that gap: it reads the two entries the caller already
+      holds (both view-local indices) and returns the same one opaque bit — never
+      the tags — so it opens no channel the adjacency verdict did not, while
+      reconstructing the *general* relation rather than only its adjacent
+      instances.  `earlier ≥ later` names no valid predecessor and is refused
+      exactly as `index = 0` is for the adjacent form.
+
+      It deliberately does **not** recover a predecessor that has left the view
+      (a drained entry): no view-local reader can query an entry it cannot see,
+      so the gap it closes is the non-adjacent-but-both-visible one. -/
+  | chainNamesEntry (later earlier : Nat)
   deriving Repr, DecidableEq, Inhabited
 
 /-- WS-SM SM9.A.2 (plan §3.7, **the fusion**): every read operation names the
@@ -1117,6 +1138,7 @@ def AuditReadOp.readsStructure : AuditReadOp → ReadableStructure
   | .refusalReceiverChunkCount _ => .declassificationRefusalLedger
   | .refusalReceiverChunk _ _ => .declassificationRefusalLedger
   | .chainNamesPredecessor _ => .declassificationAuditTrail
+  | .chainNamesEntry _ _ => .declassificationAuditTrail
 
 /-- WS-SM SM9.A.2: the totality anchor.  The *mechanism* is the definition
 itself — an exhaustive match with no wildcard; this theorem is the named surface
@@ -1524,6 +1546,19 @@ def auditReadWord (ctx : GenericLabelingContext)
           if index = 0 then .error .invalidArgument
           else .ok (if declassificationEventNames later earlier then 1 else 0)
       | _, _ => .error .invalidArgument
+  -- WS-SM SM9.D.14: the general causality verdict — the same one opaque bit for
+  -- an arbitrary visible pair `earlier < later` rather than the adjacent one, so
+  -- a hop split out of adjacency by an unrelated interleaved event is still
+  -- queryable.  `earlier ≥ later` names no predecessor and is refused as the
+  -- adjacent form refuses `index = 0`.  Reads only `view[later]` and
+  -- `view[earlier]`, so it opens no channel the adjacency verdict did not.
+  | .chainNamesEntry later earlier =>
+      match view[later]?, view[earlier]? with
+      | some laterEvent, some earlierEvent =>
+          if earlier < later then
+            .ok (if declassificationEventNames laterEvent earlierEvent then 1 else 0)
+          else .error .invalidArgument
+      | _, _ => .error .invalidArgument
 
 /-- WS-SM SM9.D.14: **the causality verdict, characterised.**
 
@@ -1569,6 +1604,56 @@ theorem chainVerdict_view_local (ctx : GenericLabelingContext)
       auditLogVisibleTo ctx reader s2.declassificationAuditLog) :
     auditReadWord ctx monitorClearance reader s1 (.chainNamesPredecessor index) =
       auditReadWord ctx monitorClearance reader s2 (.chainNamesPredecessor index) := by
+  unfold auditReadWord
+  simp only [hView]
+
+/-- WS-SM SM9.D.14: **the general causality verdict, characterised.**
+
+The word is `1` exactly when the later entry's snapshot names the earlier one,
+for any two visible indices `earlier < later` — the same bit `chainVerdict_ok`
+gives for the adjacent pair, now for an arbitrary one, so the monitor can test a
+hop an interleaved event split out of adjacency. -/
+theorem chainEntryVerdict_ok (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (st : SystemState) (later earlier : Nat) (hLt : earlier < later)
+    (laterEvent earlierEvent : DeclassificationEvent)
+    (hLater :
+      (auditLogVisibleTo ctx reader st.declassificationAuditLog)[later]? = some laterEvent)
+    (hEarlier :
+      (auditLogVisibleTo ctx reader st.declassificationAuditLog)[earlier]? = some earlierEvent) :
+    auditReadWord ctx monitorClearance reader st (.chainNamesEntry later earlier) =
+      .ok (if declassificationEventNames laterEvent earlierEvent then 1 else 0) := by
+  unfold auditReadWord
+  simp only [hLater, hEarlier, if_pos hLt]
+
+/-- WS-SM SM9.D.14: `earlier ≥ later` names no valid predecessor, and is refused
+with the same error the adjacent verdict gives `index = 0` — the question does
+not exist, rather than having the answer "no". -/
+theorem chainEntryVerdict_refused (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (st : SystemState) (later earlier : Nat) (hGe : later ≤ earlier) :
+    auditReadWord ctx monitorClearance reader st (.chainNamesEntry later earlier) =
+      .error .invalidArgument := by
+  unfold auditReadWord
+  cases hL : (auditLogVisibleTo ctx reader st.declassificationAuditLog)[later]? with
+  | none => simp [hL]
+  | some le =>
+    cases hE : (auditLogVisibleTo ctx reader st.declassificationAuditLog)[earlier]? with
+    | none => simp [hL, hE]
+    | some ee =>
+        simp only [hL, hE]
+        exact if_neg (Nat.not_lt.mpr hGe)
+
+/-- WS-SM SM9.D.14: **the general verdict is a function of the reader's own
+view**, the same no-channel argument `chainVerdict_view_local` makes for the
+adjacent form: it reads `view[later]` and `view[earlier]` and nothing else. -/
+theorem chainEntryVerdict_view_local (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (s1 s2 : SystemState) (later earlier : Nat)
+    (hView : auditLogVisibleTo ctx reader s1.declassificationAuditLog =
+      auditLogVisibleTo ctx reader s2.declassificationAuditLog) :
+    auditReadWord ctx monitorClearance reader s1 (.chainNamesEntry later earlier) =
+      auditReadWord ctx monitorClearance reader s2 (.chainNamesEntry later earlier) := by
   unfold auditReadWord
   simp only [hView]
 
@@ -2746,6 +2831,9 @@ theorem auditRead_stable_under_append (ctx : GenericLabelingContext)
       op = .coreAndTrust i ∨ op = .basisByteCount i ∨ op = .basisChunk i k ∨
       op = .chainNamesPredecessor i →
       i < (auditLogVisibleTo ctx reader st.declassificationAuditLog).length)
+    (hEntryIdx : ∀ l e, op = .chainNamesEntry l e →
+      l < (auditLogVisibleTo ctx reader st.declassificationAuditLog).length ∧
+      e < (auditLogVisibleTo ctx reader st.declassificationAuditLog).length)
     (hNotStatus : op ≠ .status) :
     auditReadWord ctx monitorClearance reader
         { st with declassificationAuditLog := st.declassificationAuditLog ++ extra } op =
@@ -2786,6 +2874,11 @@ theorem auditRead_stable_under_append (ctx : GenericLabelingContext)
   | chainNamesPredecessor i =>
     have hi := hIndex i .srcDomain 0 (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr rfl)))))
     simp only [hEntry i hi, hEntry (i - 1) (Nat.lt_of_le_of_lt (Nat.sub_le i 1) hi)]
+  -- WS-SM SM9.D.14: the general verdict reads TWO independent visible indices, so
+  -- it needs both stable under the append — the dedicated two-index hypothesis.
+  | chainNamesEntry l e =>
+    obtain ⟨hl, he⟩ := hEntryIdx l e rfl
+    simp only [hEntry l hl, hEntry e he]
 
 /-- WS-SM SM9.A.5 (**the bracket**): for a monitor, an unchanged status word
 means an unchanged epoch and an unchanged visible length — so no drain
@@ -3107,12 +3200,17 @@ def decodeAuditReadOp (opcode index chunk : Nat) : Option AuditReadOp :=
   -- WS-SM SM9.D.14: the causality verdict, appended for the same reason — an
   -- ABI number is a contract.
   | 27 => some (.chainNamesPredecessor index)
+  -- WS-SM SM9.D.14: the general causality verdict (an arbitrary visible pair),
+  -- appended after the adjacency verdict so every earlier opcode keeps its
+  -- value.  `index` is `later`, `chunk` is `earlier` — the existing operand
+  -- triple, no new register.
+  | 28 => some (.chainNamesEntry index chunk)
   | _  => none
 
 /-- WS-SM SM9.A.10: the number of `.auditRead` opcodes.  Pinned in the Rust
 mirror, so a divergence is a conformance failure rather than a silent
 `.invalidSyscallArgument` on a valid request. -/
-def auditReadOpcodeCount : Nat := 28
+def auditReadOpcodeCount : Nat := 29
 
 /-- WS-SM SM9.A.10: encode a sub-operation back to its operand triple. -/
 def encodeAuditReadOp : AuditReadOp → Nat × Nat × Nat
@@ -3144,6 +3242,7 @@ def encodeAuditReadOp : AuditReadOp → Nat × Nat × Nat
   | .refusalReceiverChunkCount i => (25, i, 0)
   | .refusalReceiverChunk i k => (26, i, k)
   | .chainNamesPredecessor i => (27, i, 0)
+  | .chainNamesEntry l e => (28, l, e)
 
 /-- WS-SM SM9.A.10: **the operand encoding round-trips.**  Every sub-operation
 is reachable through the ABI, and reaches the arm it names. -/
@@ -3165,6 +3264,7 @@ theorem decodeAuditReadOp_encode (op : AuditReadOp) :
   | refusalReceiverChunkCount i => rfl
   | refusalReceiverChunk i k => rfl
   | chainNamesPredecessor i => rfl
+  | chainNamesEntry l e => rfl
 
 /-- WS-SM SM9.A.10 (**fail-closed**): an opcode outside the table is refused. -/
 theorem decodeAuditReadOp_out_of_range (opcode index chunk : Nat)
@@ -3175,8 +3275,8 @@ theorem decodeAuditReadOp_out_of_range (opcode index chunk : Nat)
   | 0, h | 1, h | 2, h | 3, h | 4, h | 5, h | 6, h | 7, h | 8, h | 9, h
   | 10, h | 11, h | 12, h | 13, h | 14, h | 15, h | 16, h | 17, h | 18, h
   | 19, h | 20, h | 21, h | 22, h | 23, h | 24, h | 25, h | 26, h
-  | 27, h => omega
-  | n + 28, _ => rfl
+  | 27, h | 28, h => omega
+  | n + 29, _ => rfl
 
 /-- WS-SM SM9.A.10: every opcode the table admits is below the count — the
 other half of the range pin. -/

@@ -2120,11 +2120,15 @@ totality over the wrong domain proves nothing, which is why the
 -- The six per-site propagation theorems: the ordinary IPC deliveries the
 -- SM9.D scoping argument turns on — a downgrade writes a badge, an
 -- *ordinary* delivery moves it, and the next downgrade must still see it.
-#check @taintPropagation_send_to_endpoint
 #check @taintPropagation_send_to_receiver
 #check @capTransferTaintSinks
 #check @taintPropagation_send_to_receiver_cspace
-#check @taintPropagation_receive_from_endpoint
+#check @taintPropagation_cspace_provenance_forwarded
+#check @taintPropagation_receive_from_sender
+#check @contentFlowClears
+#check @waitClearsNotificationTaint
+#check @contentTrackedFields
+#check @capabilityBadgeChannel_out_of_scope
 #check @replyRecvReplyLegEdges
 #check @taintPropagation_replyRecv_reply_to_prevCaller
 #check @taintPropagation_reply_to_caller
@@ -2861,11 +2865,15 @@ example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomai
       op = .coreAndTrust i ∨ op = .basisByteCount i ∨ op = .basisChunk i k ∨
       op = .chainNamesPredecessor i →
       i < (auditLogVisibleTo gctx reader st.declassificationAuditLog).length)
+    (hEntryIdx : ∀ l e, op = .chainNamesEntry l e →
+      l < (auditLogVisibleTo gctx reader st.declassificationAuditLog).length ∧
+      e < (auditLogVisibleTo gctx reader st.declassificationAuditLog).length)
     (hNotStatus : op ≠ .status) :
     auditReadWord gctx monitorClearance reader
         { st with declassificationAuditLog := st.declassificationAuditLog ++ extra } op
       = auditReadWord gctx monitorClearance reader st op :=
-  auditRead_stable_under_append gctx monitorClearance reader st extra op hIndex hNotStatus
+  auditRead_stable_under_append gctx monitorClearance reader st extra op hIndex hEntryIdx
+    hNotStatus
 
 -- SM9.A.4a: **the discipline, applied.**  A read is a function of the visible
 -- view alone, so two audit-observationally-equivalent states return the same
@@ -8487,7 +8495,7 @@ private def runRefusalReaderChecks : IO Unit := do
         -- WS-SM SM9.C.1: the refused receiver's pair, appended after the
         -- actor opcodes (§11.7 exercises their read semantics).
         .refusalReceiverChunkCount 3, .refusalReceiverChunk 3 1]
-     decide (auditReadOpcodeCount = 28) &&
+     decide (auditReadOpcodeCount = 29) &&
      ops.all (fun op =>
        let (a, b, k) := encodeAuditReadOp op
        decide (decodeAuditReadOp a b k = some op)) &&
@@ -9119,7 +9127,7 @@ private def runAuditLiveArmChecks : IO Unit := do
      decide (Capability.auditTrailManage.hasRight .write = true))
   -- The operand encoding round-trips, so every sub-operation is reachable.
   -- WS-SM SM9.B.10: the opcode space now spans two readable structures — the
-  -- trail's seventeen sub-operations and the refusal ledger's eleven (§10.4,
+  -- trail's eighteen sub-operations and the refusal ledger's eleven (§10.4,
   -- §11.7) — so the completeness claim is the sum, and each half names the
   -- structure it reads.
   assertBool "every trail sub-operation round-trips through the three-word operand encoding"
@@ -9132,10 +9140,12 @@ private def runAuditLiveArmChecks : IO Unit := do
         -- unmoved.
         .fieldChunkCount 3 .actorSubject, .fieldChunkCount 3 .actorDomain,
         .field 3 .actorSubject 1, .field 3 .actorDomain 1,
-        -- WS-SM SM9.D.14: the causality verdict, likewise appended, and
-        -- likewise a read of the TRAIL.
-        .chainNamesPredecessor 3]
-     decide (ops.length = 17) &&
+        -- WS-SM SM9.D.14: the causality verdicts, likewise appended, and
+        -- likewise reads of the TRAIL.  The adjacent form and the general
+        -- arbitrary-pair form (opcode 28), which is what lets a monitor test a
+        -- hop an interleaved event split out of adjacency.
+        .chainNamesPredecessor 3, .chainNamesEntry 5 2]
+     decide (ops.length = 18) &&
      decide (ops.length + 11 = auditReadOpcodeCount) &&
      ops.all (fun op =>
        let (a, b, k) := encodeAuditReadOp op
@@ -9893,13 +9903,14 @@ private def runDeclassifiedSignalFailedHopChecks : IO Unit := do
         (.refusalReceiverChunk 0 0) with
       | .error e => decide (e = KernelError.invalidArgument)
       | .ok _ => false))
-  assertBool "the two opcodes are in the ABI at 25 and 26, and the count is 28"
+  assertBool "the two opcodes are in the ABI at 25 and 26, and the count is 29"
     (decide (decodeAuditReadOp 25 0 0 = some (.refusalReceiverChunkCount 0)) &&
      decide (decodeAuditReadOp 26 0 0 = some (.refusalReceiverChunk 0 0)) &&
-     -- SM9.D.14 appended the causality verdict at 27, so the count moved and
-     -- 28 is the first value the kernel refuses.
-     decide (auditReadOpcodeCount = 28) &&
-     decide (decodeAuditReadOp 28 0 0 = none))
+     -- SM9.D.14 appended the adjacency verdict at 27 and the general
+     -- arbitrary-pair verdict at 28, so the count moved twice and 29 is the
+     -- first value the kernel refuses.
+     decide (auditReadOpcodeCount = 29) &&
+     decide (decodeAuditReadOp 29 0 0 = none))
 
 /-- §11.8 fixture — the no-waiter twin of `declassSignalState`, so the
 disclosure pair below compares two states differing ONLY in the queue. -/
@@ -10138,13 +10149,26 @@ private def runContentFlowClassChecks : IO Unit := do
       decide (contentFlowClass sid = .movesContent) ||
       decide (contentFlowClass sid = .clearsProvenance)))
 
-/-- §12.4 fixture — an endpoint carrying a declassification identity, and the
-receiver that a `.receive` will hand it to. -/
+/-- §12.4 fixture — a **blocked sender** carrying a declassification identity,
+and the receiver that a `.receive` will hand it to.
+
+Keyed on the sender rather than on the endpoint: an endpoint buffers no content
+of its own (the parked message lives in the blocked sender's TCB), so the
+content-derived model reads the head sender directly rather than through an
+endpoint proxy.  A proxy would hand this receiver the taint of *every* sender
+that ever queued here, including ones whose messages a different receiver
+consumed — the stale-transport false positive. -/
+private def taintedSender : SeLe4n.ThreadId := lowCurrent
+
 private def taintedEndpointTable : SeLe4n.Kernel.TaintTable :=
-  SeLe4n.Kernel.TaintTable.empty.joinAt highEndpoint (DeclassificationTaint.singleton 42)
+  SeLe4n.Kernel.TaintTable.empty.joinAt taintedSender.toObjId
+    (DeclassificationTaint.singleton 42)
 
 private def taintedEndpointState : SystemState :=
-  { successEntryState with declassificationTaint := taintedEndpointTable }
+  { successEntryState with
+      objects := successEntryState.objects.insert highEndpoint
+        (.endpoint { sendQ := { head := some taintedSender, tail := some taintedSender } }),
+      declassificationTaint := taintedEndpointTable }
 
 /-- The live per-core entry, run on that state: the fixture's high thread issues
 `.receive` against the tainted endpoint. -/
@@ -10188,23 +10212,35 @@ private def replyLegDecoded : SyscallDecodeResult :=
 /-- §12.4  SM9.D.8-.D.11 — propagation, through the **live** entry. -/
 private def runTaintPropagationChecks : IO Unit := do
   IO.println "--- §12.4 SM9.D.8 propagation on the live syscall path ---"
-  assertBool "the fixture's endpoint carries a declassification identity"
-    ((taintedEndpointState.declassificationTaint highEndpoint).contains 42)
+  assertBool "the fixture's blocked SENDER carries a declassification identity"
+    ((taintedEndpointState.declassificationTaint taintedSender.toObjId).contains 42)
   assertBool "NEGATIVE: …and the receiver does not, before the syscall runs"
     (!((taintedEndpointState.declassificationTaint highCurrent.toObjId).contains 42))
+  -- The content-derived model: the ENDPOINT itself carries nothing, because it
+  -- holds no content — the message is in the blocked sender's TCB.  A model that
+  -- tagged the endpoint would leave this identity on it after the message is
+  -- consumed, and hand it to the next, unrelated receiver.
+  assertBool "NEGATIVE: the endpoint itself carries no identity — it holds no content"
+    (!((taintedEndpointState.declassificationTaint highEndpoint).contains 42))
   assertBool "the live `.receive` entry succeeds"
     (match taintedEntryOutcome with | .ok _ => true | .error _ => false)
-  -- The property: the entry's propagation moved the endpoint's provenance to
-  -- the receiver, in the same committed state as the transition.
-  assertBool "…and the receiver now carries the endpoint's identity"
+  -- The property: the entry's propagation moved the blocked sender's provenance
+  -- to the receiver, in the same committed state as the transition.
+  assertBool "…and the receiver now carries the SENDER's identity"
     (match taintedEntryOutcome with
      | .ok ((), st) => (st.declassificationTaint highCurrent.toObjId).contains 42
+     | .error _ => false)
+  -- …and the endpoint is still untouched afterwards, so nothing accumulates on
+  -- it for a later unrelated message to pick up.
+  assertBool "NEGATIVE: the endpoint acquires no identity from the delivery either"
+    (match taintedEntryOutcome with
+     | .ok ((), st) => !((st.declassificationTaint highEndpoint).contains 42)
      | .error _ => false)
   -- NEGATIVE: an unrelated object gets nothing, so the propagation is an edge
   -- rather than a broadcast.
   assertBool "NEGATIVE: an unrelated object acquires nothing"
     (match taintedEntryOutcome with
-     | .ok ((), st) => !((st.declassificationTaint lowCurrent.toObjId).contains 42)
+     | .ok ((), st) => !((st.declassificationTaint lowNotification).contains 42)
      | .error _ => false)
   -- The replyRecv REPLY leg (audit Finding 1): the server's provenance reaches
   -- the caller the reply object records — the steady-state loop's second hop.
@@ -10215,8 +10251,8 @@ private def runTaintPropagationChecks : IO Unit := do
     (let post := applySyscallTaint (syscallTaintPlan replyLegState highCurrent replyLegDecoded)
                    replyLegState replyLegState
      (post.declassificationTaint lowCurrent.toObjId).contains 57 &&
-     -- the receive leg still tags the server from the endpoint side
-     decide (({ sink := highCurrent.toObjId, source := highEndpoint } : TaintFlowEdge)
+     -- …and the reply leg's edge is genuinely in the plan the arm runs
+     decide (({ sink := lowCurrent.toObjId, source := highCurrent.toObjId } : TaintFlowEdge)
        ∈ (syscallTaintPlan replyLegState highCurrent replyLegDecoded).edges))
   -- NEGATIVE (the pre-fix shape): the receive-leg pair alone does NOT name the
   -- recorded caller, so a plan built from `receiverTaintEdges` misses this hop —
@@ -10405,12 +10441,15 @@ Without this the detector would be an improvement only the model can see: SM8's
 the same thing one refinement further on. -/
 private def runCausalReaderChecks : IO Unit := do
   IO.println "--- §12.9 SM9.D.14 the causality verdict reaches a monitor ---"
-  assertBool "the opcode is in the ABI at 27, and 28 is the first value refused"
+  assertBool "both verdict opcodes are in the ABI at 27 and 28, and 29 is the first refused"
     (decide (decodeAuditReadOp 27 1 0 = some (.chainNamesPredecessor 1)) &&
-     decide (auditReadOpcodeCount = 28) &&
-     decide (decodeAuditReadOp 28 1 0 = none) &&
-     -- it reads the TRAIL, so it inherits the trail's equivalence clause
+     decide (decodeAuditReadOp 28 5 2 = some (.chainNamesEntry 5 2)) &&
+     decide (auditReadOpcodeCount = 29) &&
+     decide (decodeAuditReadOp 29 1 0 = none) &&
+     -- both read the TRAIL, so both inherit the trail's equivalence clause
      decide ((AuditReadOp.chainNamesPredecessor 1).readsStructure
+       = .declassificationAuditTrail) &&
+     decide ((AuditReadOp.chainNamesEntry 5 2).readsStructure
        = .declassificationAuditTrail))
   assertBool "the monitor reads 1 on the causal chain the acceptance scenario built"
     (match declassHop2 with
@@ -10490,18 +10529,22 @@ private def runTaintFootprintChecks : IO Unit := do
   -- the commit appended no audit event, which is every syscall but the two
   -- that write the trail.
   let sendPlan : TaintPlan :=
-    { edges := [{ sink := highEndpoint, source := highCurrent.toObjId }
+    { edges := [{ sink := highCurrent.toObjId, source := lowCurrent.toObjId }
                ,{ sink := lowCurrent.toObjId, source := highCurrent.toObjId }] }
   assertBool "a content-moving plan's write set is exactly its declared sinks"
-    (decide (taintWriteKeys sendPlan niState niState = [highEndpoint, lowCurrent.toObjId]))
+    (decide (taintWriteKeys sendPlan niState niState
+      = [highCurrent.toObjId, lowCurrent.toObjId]))
   -- The write-lock coverage claim, computed on the REAL edge list a rendezvous
   -- send declares — not on a hand-built plan, which is how the audit's first
-  -- form of this check missed the capability-transfer sink.  The endpoint (W)
-  -- and the woken receiver's TCB (W) are declared members; the receiver's
-  -- CSpace root — the object `ipcUnwrapCaps` writes — is NOT, a pre-existing
-  -- SM3.B footprint gap now registered as
-  -- `UncoveredLockDomain.capTransferReceiverCnode`
+  -- form of this check missed the capability-transfer sink.  The woken
+  -- receiver's TCB (W) is a declared member; the receiver's CSpace root — the
+  -- object `ipcUnwrapCaps` writes — is NOT, a pre-existing SM3.B footprint gap
+  -- registered as `UncoveredLockDomain.capTransferReceiverCnode`
   -- (`capTransfer_receiverCnode_write_undeclared`).
+  --
+  -- The ENDPOINT is no longer among the sinks at all: the content-derived model
+  -- does not tag it, because it holds no content of its own.  That makes the
+  -- registered CNode gap the *only* uncovered key here, rather than one of two.
   let sendSet := SeLe4n.Kernel.Concurrency.lockSet_endpointSend highCurrent probeCNode
                    highEndpoint (some lowCurrent)
   let sendWriteObjects : List SeLe4n.ObjId :=
@@ -10511,13 +10554,16 @@ private def runTaintFootprintChecks : IO Unit := do
     match sendRendezvousState.getTcb? lowCurrent with
     | some tcb => tcb.cspaceRoot
     | none => SeLe4n.ObjId.ofNat 0
-  assertBool "the real rendezvous edge list names endpoint, receiver TCB, and receiver CNode"
-    (decide (({ sink := highEndpoint, source := highCurrent.toObjId } : TaintFlowEdge)
-       ∈ sendRendezvousEdges) &&
-     decide (({ sink := lowCurrent.toObjId, source := highCurrent.toObjId } : TaintFlowEdge)
+  assertBool "the real rendezvous edge list names the receiver TCB and receiver CNode"
+    (decide (({ sink := lowCurrent.toObjId, source := highCurrent.toObjId } : TaintFlowEdge)
        ∈ sendRendezvousEdges) &&
      decide (({ sink := recvRoot, source := highCurrent.toObjId } : TaintFlowEdge)
        ∈ sendRendezvousEdges))
+  -- NEGATIVE (the content-derived model): the endpoint is NOT a sink, so a
+  -- rendezvous leaves its provenance untouched and nothing accumulates on it for
+  -- a later unrelated message to pick up.
+  assertBool "NEGATIVE: the endpoint is not among the declared sinks at all"
+    (decide (highEndpoint ∉ sendRendezvousEdges.map (·.sink)))
   assertBool "every taint write key EXCEPT the cap-transfer CNode is write-locked by the send"
     ((sendRendezvousEdges.map (·.sink)).all
       (fun o => sendWriteObjects.contains o || decide (o = recvRoot)))
@@ -10601,7 +10647,10 @@ maxTags={maxTaintTags}"
   | .ok ((), st) => toString ((st.declassificationTaint highCurrent.toObjId).contains 42)
   | .error _ => "entry-failed"} \
 unrelatedUntouched={match taintedEntryOutcome with
-  | .ok ((), st) => toString (!((st.declassificationTaint lowCurrent.toObjId).contains 42))
+  | .ok ((), st) => toString (!((st.declassificationTaint lowNotification).contains 42))
+  | .error _ => "entry-failed"} \
+transportUntouched={match taintedEntryOutcome with
+  | .ok ((), st) => toString (!((st.declassificationTaint highEndpoint).contains 42))
   | .error _ => "entry-failed"}"
   , s!"[smp-information-flow] causal chain: causal=\
 {match declassHop2 with

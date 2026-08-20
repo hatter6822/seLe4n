@@ -1755,7 +1755,13 @@ reachable**: `AuditReadOp.chainNamesPredecessor` (opcode 27, count 27 → **28**
 mirrored in `sele4n-sys`) returns one bit — does visible entry `index` name
 visible entry `index - 1` — so a monitor reading it at every index
 reconstructs `declassificationChainCausal` over its whole view
-(`chainVerdict_reconstructs_causal`).  Index `0` names no predecessor and is
+(`chainVerdict_reconstructs_causal`).  The **PR #873 review** added the general
+form `AuditReadOp.chainNamesEntry` (opcode **28**, count 28 → **29**), which
+takes two *arbitrary* visible indices: `predecessorTags` may name any earlier
+event and `chainLaunders` runs over a non-contiguous subchain, so an unrelated
+cross-core append between two hops made the real link unqueryable through the
+adjacency verdict alone.  Same one opaque bit, same view-local reads, so the
+no-channel argument carries verbatim (`chainEntryVerdict_view_local`).  Index `0` names no predecessor and is
 refused rather than answered `0`, since a `0` word would be indistinguishable
 from a genuine "no".  `chainVerdict_view_local` is why it opens no channel: the
 arm reads two entries the caller already holds and nothing else — in

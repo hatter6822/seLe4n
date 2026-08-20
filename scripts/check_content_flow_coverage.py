@@ -33,15 +33,32 @@ Three properties, and each one has caught a different mistake in review:
   constant can move the field at all, which `storeObject_declassificationTaint_eq`
   then makes true of every object write.
 
-**What a content channel is, derived rather than asserted.**  A kernel object
-carries user content in exactly two fields — `TCB.pendingMessage` (the IPC
-message a thread holds) and `Notification.state` (the badge).  The probe finds
-*writes* to those fields structurally: an application of the structure's
-constructor whose argument at that field's index is neither a projection of the
-same record (an unchanged field in a `{ r with ... }` update) nor a closed term
-(`none`, `.idle` — a **clear**, which destroys content rather than moving it).
-No spelling of the update can hide from that, which is the reason detection runs
-against the elaborated environment and not against source text.
+**What a content channel is — a declared scope, not a derivation.**  This model
+tracks user *payload*: `TCB.pendingMessage` (the IPC message a thread holds) and
+`Notification.pendingBadge` (the badge).  That list is a **threat-model boundary**, and
+it is stated on the Lean side as `contentTrackedFields`, which this file's
+`CONTENT_CHANNELS` mirrors; `contentFlowClass`'s docstring cites the same
+boundary, and `capabilityBadgeChannel_out_of_scope` records the one deliberate
+exclusion as a theorem.
+
+The exclusion worth naming, because it is the one an arm could hide behind:
+`CNode.slots`.  A capability's badge and rights are caller-supplied on a
+`.cspaceMint`, so a mint *does* write caller-controlled bits into a CNode — but
+those bits are capability **metadata** (the authority a capability names), not
+payload, and tracking them would have to follow every `cspace*` operation and
+every badged delivery.  So a cap-slot write is out of scope **by declaration**,
+and the classification of an arm that only writes cap slots is a scope statement
+rather than a claim that its writes are self-loops.  Changing that decision means
+adding the channel here *and* deleting the Lean theorem — one edit, two places
+that must agree, rather than a silent widening.
+
+Within the declared scope the probe finds *writes* structurally: an application
+of the structure's constructor whose argument at that field's index is neither a
+projection of the same record (an unchanged field in a `{ r with ... }` update)
+nor a closed term (`none`, `.idle` — a **clear**, which destroys content rather
+than moving it).  No spelling of the update can hide from that, which is the
+reason detection runs against the elaborated environment and not against source
+text.
 
 **Reach, stated honestly.**  Arm bodies come from the source text of the three
 dispatch functions — text answers "which functions does this arm name" correctly
@@ -403,6 +420,46 @@ def classification() -> dict[str, str]:
     return out
 
 
+def tracked_fields() -> list[tuple[str, str]]:
+    """`contentTrackedFields`'s own entries, read off its source.
+
+    The declared threat-model boundary on the Lean side.  `CONTENT_CHANNELS`
+    below must name the same fields: the scope is a decision, and a decision
+    stated in two places is a decision that drifts unless something compares
+    them.  Excluding a channel here while the Lean side still claims it is
+    tracked (or the reverse) is exactly the silent widening this gate exists to
+    prevent, so a mismatch is a hard failure rather than a warning.
+    """
+    src = code_view(TAINT)
+    m = re.search(r"^def contentTrackedFields : List \(String × String\) :=$", src, re.M)
+    if m is None:
+        raise RuntimeError("`contentTrackedFields` not found in TaintPropagation.lean")
+    body = src[m.end():]
+    nxt = re.search(r"\n(?:private )?(?:def|theorem|abbrev|instance)\s", body)
+    if nxt is not None:
+        body = body[: nxt.start()]
+    return re.findall(r'\("([A-Za-z0-9_]+)",\s*"([A-Za-z0-9_]+)"\)', body)
+
+
+def check_scope_matches_lean() -> list[str]:
+    """Compare the probe's channels with the Lean-side declared scope."""
+    lean = {(s, f) for s, f in tracked_fields()}
+    # `CONTENT_CHANNELS` carries fully-qualified structure names; the Lean list
+    # names the structure only, since it is the boundary statement rather than
+    # the probe's lookup key.
+    probe = {(s.rsplit(".", 1)[-1], f) for s, f in CONTENT_CHANNELS}
+    problems = []
+    for miss in sorted(lean - probe):
+        problems.append(
+            f"`contentTrackedFields` declares {miss[0]}.{miss[1]} tracked, but "
+            f"CONTENT_CHANNELS does not scan it")
+    for extra in sorted(probe - lean):
+        problems.append(
+            f"CONTENT_CHANNELS scans {extra[0]}.{extra[1]}, but "
+            f"`contentTrackedFields` does not declare it tracked")
+    return problems
+
+
 def run_probe(roots: dict[str, set[str]], depth: int, channels) -> str:
     quoted_channels = ", ".join(f"(`{s}, `{f})" for s, f in channels)
     quoted_roots = ", ".join(
@@ -466,6 +523,20 @@ def main() -> int:
     roots = {a: s for a, s in roots.items() if a in cls}
 
     missing = sorted(set(cls) - set(roots))
+
+    # The declared scope must agree with what the probe scans, BEFORE any
+    # finding is computed: a scope that has silently narrowed makes every
+    # "no unclassified content movement" result below vacuous for the channel
+    # it dropped.
+    scope_problems = check_scope_matches_lean()
+    if scope_problems:
+        print("FAIL: the declared content scope and the probe's channels disagree.")
+        for p in scope_problems:
+            print(f"  {p}")
+        print("      The scope is a threat-model boundary stated in two places")
+        print("      (`contentTrackedFields` and CONTENT_CHANNELS); they must match.")
+        return 1
+
     channels = list(CONTENT_CHANNELS)
     if args.self_test:
         channels = channels + [SELF_TEST_CHANNEL]

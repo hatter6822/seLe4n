@@ -32,7 +32,7 @@
 [smp-information-flow] audit drain by monitor: remaining=0 epoch=3; by partial reader: error=SeLe4n.Model.KernelError.illegalAuthority
 [smp-information-flow] audit gate unconfigured: authorized=false read=SeLe4n.Model.KernelError.illegalAuthority drain=SeLe4n.Model.KernelError.illegalAuthority
 [smp-information-flow] audit live partial reader (round 6): read=SeLe4n.Model.KernelError.illegalAuthority model view len=2
-[smp-information-flow] audit ABI: auditRead=31 auditDrain=32 syscalls=34 opcodes=28 readableStructures=2
+[smp-information-flow] audit ABI: auditRead=31 auditDrain=32 syscalls=34 opcodes=29 readableStructures=2
 [smp-information-flow] refusal ledger: ring=32 ceiling=65535 bootAttempts=0 bootVersion=0
 [smp-information-flow] refusal seam: recordingSyscalls=2 declassify=SeLe4n.Kernel.RefusalSeamClass.records send=SeLe4n.Kernel.RefusalSeamClass.exempt
 [smp-information-flow] refusal write: attempts=1 version=1 trailMoved=false exemptRecorded=false
@@ -44,7 +44,7 @@
 [smp-information-flow] declassifying signal ABI: id=33 right=SeLe4n.Model.AccessRight.write shape=SeLe4n.Kernel.Architecture.ReturnShape.unit receiverRefusal=56
 [smp-information-flow] declassifying signal failed hop: reason=56 recordedReceiver=1021 receiverOpcodes=25/26
 [smp-information-flow] taint classification: moving=8 clearing=1 inert=25 maxTags=8
-[smp-information-flow] taint propagation: liveReceiverTagged=true unrelatedUntouched=true
+[smp-information-flow] taint propagation: liveReceiverTagged=true unrelatedUntouched=true transportUntouched=true
 [smp-information-flow] causal chain: causal=true launders=true domainOnlyFalsePositive=true causalVerdict=false
-[smp-information-flow] causality verdict: monitorReads=1 strippedReads=0 opcode=27 opcodes=28
+[smp-information-flow] causality verdict: monitorReads=1 strippedReads=0 opcode=27 opcodes=29
 [smp-information-flow] taint saturation: full=8 saturatesOnNinth=true rules=12
