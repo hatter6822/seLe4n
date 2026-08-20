@@ -96,21 +96,21 @@ transferred caps.
 
 **Location / chain** (each link verified):
 - `resolveExtraCaps` resolves each `CPtr` to a real `ref : SlotRef` but pushes
-  only `cap`, discarding `ref` (`SeLe4n/Kernel/API.lean:1000-1003`) — so
+  only `cap`, discarding `ref` (`SeLe4n/Kernel/API.lean`) — so
   `IpcMessage.caps : Array Capability` carries no source slot.
 - `ipcUnwrapCapsLoop` therefore hardcodes the CDT parent as
   `{ cnode := senderCspaceRoot, slot := Slot.ofNat 0 }`
-  (`SeLe4n/Kernel/IPC/Operations/CapTransfer.lean:114-116`).
+  (`SeLe4n/Kernel/IPC/Operations/CapTransfer.lean`).
 - `ipcTransferSingleCap` records the edge from that synthetic node
-  (`SeLe4n/Kernel/Capability/Operations.lean:1605-1607`).
+  (`SeLe4n/Kernel/Capability/Operations.lean`).
 - CDT nodes are keyed by the **full** `SlotRef`, with `ensureCdtNodeForSlot`
   minting a distinct node per distinct ref
-  (`SeLe4n/Model/State.lean:455,665,4025-4034`), so slot 0's node is not the
+  (`SeLe4n/Model/State.lean`), so slot 0's node is not the
   real source's node.
 - The live userspace revoke `cspaceRevokeCdt` (the default for untrusted
   invocations) walks `descendantsOf (lookupCdtNodeOfSlot addr)` — the *real*
-  source slot's node (`Operations.lean:941-943,1285-1308`); local `cspaceRevoke`
-  only clears same-CNode siblings (`:966-980`).
+  source slot's node (`Operations.lean`); local `cspaceRevoke`
+  only clears same-CNode siblings.
 
 **Severity / reachability**: High — revocation of derived authority is a core
 capability-system guarantee. Single-core reachable, requires only the `Grant`
@@ -148,11 +148,11 @@ PR body per the vulnerability rule.
   change `IpcMessage.caps : Array Capability → Array TransferCap`. Rebuild to
   enumerate every break site.
 - *Step 2 (producer):* `resolveExtraCaps` / `resolveExtraCapsDetailed` push
-  `⟨cap, ref⟩` — they already resolve `ref` and discard it (`API.lean:1000-1003`);
+  `⟨cap, ref⟩` — they already resolve `ref` and discard it (`API.lean`);
   keep it.
 - *Step 3 (consumer):* `ipcUnwrapCapsLoop` passes `tc.srcRef` to
   `ipcTransferSingleCap`, deleting the synthetic slot-0 literal
-  (`CapTransfer.lean:114-116`).
+  (`CapTransfer.lean`).
 - *Step 4 (constructors/fixtures):* update message builders, the live WithCaps
   callers (`endpointSendDualWithCaps` / `endpointCallWithCaps`), and any
   `IpcMessage.caps` fixtures.
@@ -174,7 +174,7 @@ PR body per the vulnerability rule.
   so every capless pin survives by `rfl`. Maxima: **send 6, call 8**
   (= `maxLockSetSize`).
 - *Step 2:* fold `lockSet_endpointCallWithCaps`
-  (`IPC/CrossCore/EndpointCall.lean:144-163`) → `lockSet_endpointCall … (some
+  (`IPC/CrossCore/EndpointCall.lean`) → `lockSet_endpointCall … (some
   destCnode)` (tie by `rfl`, kills the parallel-function drift); add the
   send-side analogue.
 - *Step 3:* consistency tiers **+2** (one `Option` drives two members — send
@@ -183,8 +183,8 @@ PR body per the vulnerability rule.
   `.call` (`.cnode` already permitted).
 - *Step 4:* size proofs to send ≤ 6 / call ≤ 8; **widen the
   `lockSetTransitions_within_bound` send/call conjunct arity**
-  (`Deadlock.lean:915`) — the silent-unbounding hazard, exactly the SM9.C
-  `notificationSignal` fix; re-pin `DeadlockInventory.lean:191` ("29" → true
+  (`Deadlock.lean`) — the silent-unbounding hazard, exactly the SM9.C
+  `notificationSignal` fix; re-pin `DeadlockInventory.lean` ("29" → true
   count).
 - *Step 5:* `lockSet_endpointCall_reply_write_mem` switches
   `self_write_mem_insertOrMerge` → `mem_write_lockSetExtendOpt` (reply is no
@@ -201,8 +201,8 @@ PR body per the vulnerability rule.
   caps-presence from the resolved receiver + the caps count/grant in `decoded`.
 - *Step 2 (the coverage theorem):* `ipcUnwrapCaps`'s write set ⊆ the declared
   footprint — one for send, one for call. Object half reuses
-  `ipcUnwrapCaps_preserves_objects_ne` (`CapTransfer.lean:367-379`) +
-  `_objects_at_root_orig_or_cnode` (:805-817); CDT half rides
+  `ipcUnwrapCaps_preserves_objects_ne` (`CapTransfer.lean`) +
+  `_objects_at_root_orig_or_cnode`; CDT half rides
   `(stateLevelLock, .write)`.
 - *Step 3:* delete `capTransferReceiverCnode` — the violation theorem, the
   constructor + list entries (`UncoveredLockDomain` inventory 4→3;
@@ -221,10 +221,9 @@ PR body per the vulnerability rule.
 **PR 5 — CDT coverage on the four `cspace{Mint,Copy,Move,Delete}` ops** (independent object).
 - Declare `(stateLevelLock, .write)` on `lockSet_cspace{Mint,Copy,Move,Delete}`;
   `permittedKinds` += `.objStore`; coverage proofs (the CDT-write shape is
-  identical across all four — `Operations.lean:991-1010,1160-1169`).
-- Fix `capabilityOp_modifiedFields` (`SeLe4n/Kernel/CrossSubsystem.lean:1197-1198`,
-  `[.objects,.lifecycle]`) to include the four CDT `StateField` constructors
-  (:868-873).
+  identical across all four — `Operations.lean`).
+- Fix `capabilityOp_modifiedFields` (`SeLe4n/Kernel/CrossSubsystem.lean`,
+  `[.objects,.lifecycle]`) to include the four CDT `StateField` constructors.
 
 ### Track C — SM3.C.9 fine locks (object domain, dispatch entry)
 
@@ -244,11 +243,11 @@ Send/call feed the PR 3/4 caps optional. The other 32 arms stay `none`.
 
 **PR 8 — Dispatch-body `withLockSet` migration.**
 - *Step 1:* wire `syscallDispatchCrossCoreEntry`
-  (`SyscallDispatchEntry.lean:561-606`) through the revalidated bracket
+  (`SyscallDispatchEntry.lean`) through the revalidated bracket
   (`RevalidatedEntryOutcome`: resolve → acquire → re-resolve → refuse-on-change)
   with fail-closed `none` fallback (undeclared syscalls run unbracketed exactly
   as today). Model on the already-migrated `suspend_thread_cross_core`
-  (:734-791, v0.32.149).
+  (v0.32.149).
 - *Step 2:* preserve `scheduleLocalSuccessorLive`-inside-the-closure and the
   diff-against-`st''` discipline (do not lift the reschedule out of the bracket).
 - *Step 3:* update the `syscallDispatchCrossCoreEntry_def` marker theorem + the
@@ -306,14 +305,14 @@ serializability theorem in
   both `cdtSlotNode`/`cdtNodeSlot` keyed maps — including the sender-side keyed
   entry — in one member, so the caller-root member stays READ (no read→write
   upgrade that would break the shared "caller root read" shape). `stateLevelLock`
-  (`LockSetTransitions.lean:239`) is already the declared serialization subject
+  (`LockSetTransitions.lean`) is already the declared serialization subject
   for the audit trail's List, so this is the established SM3.A.10 convention, not
   a new one; conservative (never under-serializes). *Runtime obligation
   (Track D)*: the key-local reading of the object-store lock is sound only if the
   runtime realises `SystemState.objects` as per-object storage — the same
   obligation `storeObject` already carries, discharged at SM10.E.
 - **Caps-presence gating, not receiver-presence.** The capless-rendezvous
-  `= 5`/900µs tick-fit pin (`tests/SmpIpcSuite.lean:707-718`) *has* a waiting
+  `= 5`/900µs tick-fit pin (`tests/SmpIpcSuite.lean`) *has* a waiting
   receiver; receiver-gating would break it for all rendezvous calls. The
   caps-carrying call footprint (8) does **not** fit the 1 ms tick — pinned
   honestly as a load-bearing statement, not hidden.
@@ -323,8 +322,8 @@ serializability theorem in
   the `mem_write_lockSetExtendOpt` switch).
 - **Improve-and-re-pin roll-up** (folded into the PRs above): the false
   `PerCoreWcrt.lean` "under withLockSet" sentence (honest re-statement in PR 3/4,
-  flipped true in PR 8); `DeadlockInventory.lean:191` count (PR 3);
-  `LockSetInventory.lean:224,:306` stale comments + inventory counts (PR 3–5);
+  flipped true in PR 8); `DeadlockInventory.lean` count (PR 3);
+  `LockSetInventory.lean` stale comments + inventory counts (PR 3–5);
   the SMP-plan risk row's promised-but-absent CI gate (built in PR 9);
   `SMP_RELEASE_CLOSURE_PLAN.md` SMP-C3 (PR 12); the `lockSet_endpointCallWithCaps`
   parallel-function drift (PR 3 fold-in).
