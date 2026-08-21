@@ -1,3 +1,68 @@
+## v0.33.69 — the Tier 1 gates were asking the same question thousands of times
+
+Tier 1 took roughly thirty-four minutes, and thirty-three of them were two
+checks: `check_live_arm_per_core_routing.py` (13m40s, run twice) and
+`check_content_flow_coverage.py` (3m11s, run twice).  Neither was doing more
+work than the property required — each was doing the same work repeatedly, and
+nothing in the harness output said which one to look at.  Tier 1 now finishes in
+**27 seconds**, with every verdict byte-identical: 34 syscalls / 0 allowlisted /
+PASS, and 34 arms / 8 moving content / 26 inert.
+
+**Three redundancies, one shape.**  Each is a question whose answer does not
+depend on the context it was being asked in:
+
+- **`routeBootHits` walked an `Expr` DAG as a tree.**  An elaborated term is a
+  DAG with heavy sharing; a shared subterm was re-collected once per *path* that
+  reached it, and the `.app f a` recursion re-entered every proper prefix of each
+  application spine, so an n-argument call emitted its arguments O(n²) times.
+  Measured over the two-hop reach of six syscall roots: 333 254 pairs emitted
+  before, 610 after — **both yielding the same 301 distinct pairs**, neither
+  containing one the other lacked.  Findings are a `HashSet`, so the verdict only
+  ever depended on that distinct set.  The `Array ++ Array` concatenation went
+  with it: a single threaded accumulator copies nothing.
+- **`cfResolve` scanned all 126 700 constants per stem.**  The 34 arms name some
+  680 stems between them, and `run_cmd` bodies run in Lean's *interpreter* — so
+  this was ~86 million interpreted iterations, and Lean's own profiler put it
+  plainly: `interpretation took 79.9s` against 3 s for everything else in the
+  probe.  Replaced by one pass building a stem index, which is what the routing
+  gate's `byStem` had been doing all along.
+- **`cfWritesChannel` re-walked bodies with no prefilter and no memo.**  The
+  field-writer sweep directly above it already prefilters on the constructor's
+  presence — "an Expr that never names `SystemState.mk` cannot apply it" — and
+  the hit filter did not; nor did it share answers across arms whose reaches
+  overlap almost entirely.  Both fixed, plus a subterm cache in `cfScan` and
+  `cfUpdateWritesField` for the same DAG-as-tree reason as above.
+
+**Proof terms are no longer walked** (`routeExecutableValue`, `cfExecutableValue`).
+A `theorem` is forced to be `Prop`-valued and `Prop` is erased, so a proof
+executes nothing: it can neither route a syscall to a scheduler primitive nor
+move a field, and a definition reachable from an arm *solely* through a proof is
+not run by that arm.  This is not a narrowing of what the gates check — the
+content-flow gate's own sweeps already state the rule ("a theorem naming the API
+states a property of it, and a property cannot move a field") and simply had not
+applied it to their traversal, and the routing gate's printed remediation
+("route the arm through the per-core form, or allowlist it") is not something a
+developer can do to a lemma, which is the sign such a finding was never in its
+contract.  Stated honestly: with the DAG cache in place this buys **no**
+measurable time (6.2s vs 6.5s), and it is kept for the false-positive surface it
+removes, not for speed.  Verified detection-neutral by running both gates both
+ways — same production verdicts, same self-test detections.
+
+**The self-tests still detect what they are for**, which is the check that
+matters for a scanner: the routing gate flags all four boot-pinned arms in the
+pre-SMP map, and the content-flow gate finds its planted `TCB.priority` channel
+on the same 4 inert arms as before.
+
+**And the harness now reports what each check cost** (`test_lib.sh`).  A check
+taking a second or more prints its duration, and every tier ends with the ten
+slowest.  Two gates accounted for thirty-three of thirty-four minutes and the
+output looked identical either way; that is the gap that made this expensive to
+find rather than the gate code itself.  Applied on the first run: Tier 0 spends
+21.5s of its 33s in `check_identifier_naming.py` — a follow-on, now visible
+instead of latent.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.7
+
 ## v0.33.68 — the taint table is keyed, so it is bounded by what it holds
 
 **The last open review thread, and the second architectural root of this

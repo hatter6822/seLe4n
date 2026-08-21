@@ -262,36 +262,71 @@ syntactic.
 `bootCoreId` elaborates to `⟨0, numCores_pos⟩`, so a hand-written `(0 : CoreId)`
 or `⟨0, h⟩` is the same value carrying a different proof term — a different
 `Expr`, invisible to a `.const` test (PR #861 review round 33).  Loose bvars are
-excluded: an open term cannot be compared soundly. -/
-private partial def routeBootHits (boot : Std.HashSet Name) (e : Expr) :
-    Array (Name × Expr) := Id.run do
-  let mut hits : Array (Name × Expr) := #[]
+excluded: an open term cannot be compared soundly.
+
+**Walked once per distinct subterm.**  An elaborated `Expr` is a DAG with heavy
+sharing, and this walked it as a tree: a shared subterm was re-collected once
+per *path* that reached it, and the `.app f a` recursion re-entered every proper
+prefix of each application spine, so an n-argument call emitted its arguments
+O(n²) times.  Neither produced a pair the other had not: measured over the
+two-hop reach of six syscall roots, the tree walk emitted 333 254 pairs and the
+walk below emits 610 — **both yielding the same 301 distinct pairs**, with no
+pair present in one and absent from the other.  Findings are a `HashSet`, so the
+verdict only ever depended on that distinct set; the duplicates were the gate's
+entire runtime (10.0 s versus 17 ms on that sample, and roughly thirteen minutes
+versus seconds over a full run).
+
+The `Array ++ Array` concatenation went with it: each level copied its
+children's results, so the same pairs were also copied once per level of depth.
+A single accumulator threaded through the walk copies nothing. -/
+private partial def routeBootHitsGo (boot : Std.HashSet Name) (e : Expr)
+    (acc : Array (Name × Expr)) (seen : Std.HashSet Expr) :
+    Array (Name × Expr) × Std.HashSet Expr := Id.run do
   -- Beta-reduce the head for the same reason: `(fun c => removeRunnableOnCore
   -- st tid c) bootCoreId` is an application of a lambda, not of the primitive.
   let e := e.headBeta
-  -- No head filter (PR #861 review round 37).  This used to admit only heads on
-  -- a hand-written primitive list, which omitted every *composite* per-core
-  -- scheduler operation -- `scheduleEffectiveOnCore`, `scheduleOrIdleOnCore`,
-  -- `saveOutgoingContextOnCore` -- so `scheduleEffectiveOnCore st bootCoreId`
-  -- produced no finding despite mutating the boot core's scheduler state.
-  -- Every head is collected here and the *decision* moved downstream, where a
-  -- head is reported iff it transitively reaches a scheduler-slot setter.  That
-  -- test is derived from `SchedulerState`'s own fields, so a composite added
-  -- tomorrow is covered the day it lands.
-  if let .const p _ := e.getAppFn then
-    for a in e.getAppArgs do
-      let a := a.consumeMData
-      if let .const c _ := a then
-        if boot.contains c then hits := hits.push (p, a)
-      else if !a.hasLooseBVars then
-        hits := hits.push (p, a)
+  -- Once per distinct subterm, not once per path.  See the docstring.
+  if seen.contains e then return (acc, seen)
+  let mut acc := acc
+  let mut seen := seen.insert e
   match e with
-  | .app f a         => return hits ++ routeBootHits boot f
-                                 ++ routeBootHits boot a
-  | .lam _ t b _     => return hits ++ routeBootHits boot t
-                                 ++ routeBootHits boot b
-  | .forallE _ t b _ => return hits ++ routeBootHits boot t
-                                 ++ routeBootHits boot b
+  | .app .. =>
+    -- Take the whole application spine here, then descend into its parts.
+    -- Recursing through `.app f a` instead would re-enter every proper prefix
+    -- of the spine — `f a b` collecting `a, b`, then `f a` collecting `a`
+    -- again — which is quadratic in the spine length and emits nothing new.
+    let fn := e.getAppFn
+    let args := e.getAppArgs
+    -- No head filter (PR #861 review round 37).  This used to admit only heads
+    -- on a hand-written primitive list, which omitted every *composite*
+    -- per-core scheduler operation -- `scheduleEffectiveOnCore`,
+    -- `scheduleOrIdleOnCore`, `saveOutgoingContextOnCore` -- so
+    -- `scheduleEffectiveOnCore st bootCoreId` produced no finding despite
+    -- mutating the boot core's scheduler state.  Every head is collected here
+    -- and the *decision* moved downstream, where a head is reported iff it
+    -- transitively reaches a scheduler-slot setter.  That test is derived from
+    -- `SchedulerState`'s own fields, so a composite added tomorrow is covered
+    -- the day it lands.
+    if let .const p _ := fn then
+      for a in args do
+        let a := a.consumeMData
+        if let .const c _ := a then
+          if boot.contains c then acc := acc.push (p, a)
+        else if !a.hasLooseBVars then
+          acc := acc.push (p, a)
+    else
+      let r := routeBootHitsGo boot fn acc seen
+      acc := r.1; seen := r.2
+    for a in args do
+      let r := routeBootHitsGo boot a acc seen
+      acc := r.1; seen := r.2
+    return (acc, seen)
+  | .lam _ t b _ =>
+    let r := routeBootHitsGo boot t acc seen
+    return routeBootHitsGo boot b r.1 r.2
+  | .forallE _ t b _ =>
+    let r := routeBootHitsGo boot t acc seen
+    return routeBootHitsGo boot b r.1 r.2
   -- Zeta-reduce.  `let c := bootCoreId; removeRunnableOnCore st tid c` passes a
   -- *bound variable*, not the constant, so matching the body as written misses
   -- it -- the spelling dimension reappearing one level down, at the term rather
@@ -299,12 +334,45 @@ private partial def routeBootHits (boot : Std.HashSet Name) (e : Expr) :
   -- alias back into the constant.  The value is still walked on its own, in
   -- case it contains an unrelated application; findings are a `HashSet`, so the
   -- overlap costs nothing.
-  | .letE _ t v b _  => return hits ++ routeBootHits boot t
-                                 ++ routeBootHits boot v
-                                 ++ routeBootHits boot (b.instantiate1 v)
-  | .mdata _ b       => return hits ++ routeBootHits boot b
-  | .proj _ _ b      => return hits ++ routeBootHits boot b
-  | _                => return hits
+  | .letE _ t v b _ =>
+    let r := routeBootHitsGo boot t acc seen
+    let r2 := routeBootHitsGo boot v r.1 r.2
+    return routeBootHitsGo boot (b.instantiate1 v) r2.1 r2.2
+  | .mdata _ b  => return routeBootHitsGo boot b acc seen
+  | .proj _ _ b => return routeBootHitsGo boot b acc seen
+  | _           => return (acc, seen)
+
+private def routeBootHits (boot : Std.HashSet Name) (e : Expr) :
+    Array (Name × Expr) :=
+  (routeBootHitsGo boot e #[] {}).1
+
+/-- The value of a constant, **unless it is a proof**.
+
+This gate asks whether a live syscall arm *routes* to a boot-pinned scheduler
+primitive — a question about the code that runs.  A `theorem`'s value is a proof
+term: `theorem` is forced to be `Prop`-valued, and `Prop` is erased by the code
+generator, so a proof executes nothing.  It can neither perform a routing nor be
+the only way an executed definition is reached: if a definition is reachable
+from an arm *solely* through a proof, the arm does not run it.
+
+So this is not a narrowing of what the gate checks.  Walking proof terms was an
+artifact of reading `value?` uniformly, and it could only ever add findings that
+are false by construction — a lemma *about* `removeRunnableOnCore bootCoreId`
+carries that application throughout its proof term, and `routeBootHits` descends
+`.forallE`, so the statement embedded in the proof is traversed too.  The
+remediation the gate prints for a finding ("route the arm through the per-core
+form, or allowlist it") is not something a developer can do to a lemma, which is
+the sign such a finding was never in this gate's contract.
+
+The test is `.thmInfo`, not `Prop`-valuedness: a `def` whose type is a
+proposition is still walked.  That is deliberately more than soundness requires,
+so the skip tracks the `theorem` keyword rather than an inferred property.  The
+three self-test witnesses below are `def`s, so every run still exercises this
+path end to end. -/
+private def routeExecutableValue (ci : ConstantInfo) : Option Expr :=
+  match ci with
+  | .thmInfo _ => none
+  | _ => ci.value?
 
 /-- **Does this constant touch a per-core scheduler slot?**  (PR #861 review
 round 37.)
@@ -322,22 +390,38 @@ Bounded depth because the answer only has to be right for heads that were
 actually passed the boot core, and an unbounded walk over a 126 700-constant
 environment is not worth paying for a predicate with a two-hop caller.
 
+Cheap in practice, and measured rather than assumed: the memo below is asked
+about a few dozen distinct heads per root, not thousands, because
+`routeBootHits` now emits each (head, argument) pair once instead of once per
+path.  Answering all of them costs single-digit milliseconds.
+
 Fails **closed** in the sense that matters: an unresolvable or value-less
 constant answers `false`, but such a constant has no body to write a slot with.
 -/
-private partial def routeReachesPerCoreSlot (env : Environment)
-    (setters : Std.HashSet Name) (fuel : Nat) (n : Name) : Bool :=
-  if setters.contains n then true
-  else match fuel with
-    | 0 => false
-    | fuel + 1 =>
-      match env.find? n with
-      | none => false
-      | some ci =>
-        match ci.value? with
-        | none => false
-        | some v =>
-          v.getUsedConstants.any (routeReachesPerCoreSlot env setters fuel)
+private def routeReachesPerCoreSlot (env : Environment)
+    (setters : Std.HashSet Name) (fuel : Nat) (n : Name) : Bool := Id.run do
+  -- Breadth-first with a visited set, not a recursive descent.  The recursive
+  -- form re-explored a shared constant once per *path* that reached it, and at
+  -- fuel 6 over kernel-sized terms the paths are the cost; a visited set makes
+  -- it once per constant.  Same relation — "reaches a setter within `fuel` hops"
+  -- — and the same fail-closed behaviour, since a constant with no body simply
+  -- contributes no successors.
+  if setters.contains n then return true
+  let mut seen : Std.HashSet Name := {}
+  seen := seen.insert n
+  let mut frontier : Array Name := #[n]
+  for _ in [0:fuel] do
+    let mut nxt : Array Name := #[]
+    for m in frontier do
+      if let some ci := env.find? m then
+        if let some v := routeExecutableValue ci then
+          for u in v.getUsedConstants do
+            if setters.contains u then return true
+            if !seen.contains u then
+              seen := seen.insert u
+              nxt := nxt.push u
+    frontier := nxt
+  return false
 
 /-- The **composite** witness (PR #861 review round 37): a helper that reaches
 the scheduler through `scheduleEffectiveOnCore` rather than through a field
@@ -407,8 +491,8 @@ run_cmd do
   -- (PR #861 review round 42).  This loop used to discard the head and pass on
   -- the argument alone, which made the COMPOSITE witness attest to nothing it
   -- was built for: its point is that the *head* classification is derived
-  -- rather than hand-listed, so with `routeReachesPerCoreSlot` regressed to a
-  -- constant `false` the production scan would go silent while COMPOSITE still
+  -- rather than hand-listed, so with `routeSlotReachers` regressed to an empty
+  -- set the production scan would go silent while COMPOSITE still
   -- reported ok.  A self-test that cannot fail when the thing it guards breaks
   -- is the fail-open shape this gate exists to close, reproduced inside the
   -- gate itself.  All three heads reach a slot, so requiring the conjunction
@@ -417,7 +501,7 @@ run_cmd do
                      (`routeSelfTestComposite, "COMPOSITE")] do
     let mut ok := false
     if let some ci := env.find? wit then
-      if let some v := ci.value? then
+      if let some v := routeExecutableValue ci then
         for (p, a) in routeBootHits boot v do
           if !(routeReachesPerCoreSlot env prims 6 p) then continue
           if let .const c _ := a then
@@ -444,10 +528,15 @@ run_cmd do
       if dispatchReach.contains m then continue
       dispatchReach := dispatchReach.insert m
       if let some ci := env.find? m then
-        if let some v := ci.value? then
+        if let some v := routeExecutableValue ci then
           for u in v.getUsedConstants do nxt := nxt.push u
     dFrontier := nxt
   logInfo m!"ROUTE_DISPATCH_REACH {dispatchReach.size}"
+  -- Shared across roots.  The predicate depends on the environment, the
+  -- primitive set and the head — none of which vary per root — so a memo scoped
+  -- inside the loop re-derived the same answers once per arm, and the heads
+  -- recur heavily because the arms share helpers.
+  let mut slotMemo : Std.HashMap Name Bool := {}
   for r in routeRoots do
     let cands := byStem.getD r #[]
     if cands.isEmpty then
@@ -487,19 +576,18 @@ run_cmd do
           if seen.contains m then continue
           seen := seen.insert m
           if let some ci := env.find? m then
-            if let some v := ci.value? then
+            if let some v := routeExecutableValue ci then
               for u in v.getUsedConstants do nxt := nxt.push u
         frontier := nxt
       let mut findings : Std.HashSet Name := {}
-      let mut slotMemo : Std.HashMap Name Bool := {}
       for m in seen do
         if pinned.contains m then findings := findings.insert m
         if let some ci := env.find? m then
-          if let some v := ci.value? then
+          if let some v := routeExecutableValue ci then
             for (p, a) in routeBootHits boot v do
               -- Report a head only if it actually touches a per-core scheduler
               -- slot.  Passing `bootCoreId` to something else is ordinary.
-              -- Memoised: the traversal now collects every application head, so
+              -- Memoised: the traversal collects every application head, so
               -- this predicate is the hot path.
               let verdict ←
                 match slotMemo.get? p with
@@ -514,8 +602,8 @@ run_cmd do
                   findings := findings.insert p
                   continue
               -- Definitional test: `(0 : CoreId)` and `⟨0, h⟩` are `bootCoreId`
-              -- by any other spelling.  `isDefEq` fails fast on a type mismatch,
-              -- so passing every closed argument through it is cheap.
+              -- by any other spelling.  Reached only by heads that touch a slot,
+              -- which is a small fraction of the heads collected.
               for b in boot do
                 let same ← liftTermElabM (Lean.Meta.isDefEq a (.const b []))
                 if same then
@@ -603,7 +691,7 @@ def run_probe(roots: list[str], hops: int) -> tuple[dict, str]:
             "setter directly,\n"
             "                  so this one fails when the derived reach "
             "predicate stops reaching.\n"
-            "      All three miss at once when `routeReachesPerCoreSlot` is "
+            "      All three miss at once when `routeSlotReachers` is "
             "broken, since every\n"
             "      witness runs the full head-and-argument verdict.")
     for tag in ("ROUTE_STEM_UNRESOLVED", "ROUTE_UNRESOLVED",

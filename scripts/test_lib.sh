@@ -205,6 +205,62 @@ _scans_lean_source() {
   return 1
 }
 
+# How long each check took, so a slow one is visible in the report instead of
+# requiring an investigation to locate.  Two Tier 1 gates once accounted for
+# roughly thirty-three of the tier's thirty-four minutes and nothing in the
+# output said so; the tier printed the same PASS lines either way.
+SLOW_CHECK_LINES=()
+# Below this a duration is noise -- Tier 0 runs hundreds of sub-second checks.
+SLOW_CHECK_THRESHOLD_MS="${SLOW_CHECK_THRESHOLD_MS:-1000}"
+
+_now_ms() {
+  # `%N` is a GNU extension; fall back to whole seconds where it is absent so a
+  # non-GNU `date` degrades to coarse timing rather than breaking the harness.
+  local raw
+  raw="$(date +%s%3N 2>/dev/null || true)"
+  case "${raw}" in
+    ''|*[!0-9]*) printf '%s000\n' "$(date +%s)" ;;
+    *) printf '%s\n' "${raw}" ;;
+  esac
+}
+
+# Set `DURATION_NOTE` to " (12.3s)" when a check was slow enough to be worth
+# naming, and record it for the end-of-run summary; empty otherwise.
+#
+# A global rather than a printed value on purpose: called as `$(_note_duration
+# ...)` it would run in a command-substitution subshell, so the summary array
+# would be appended to in a child and lost, leaving the per-check note printing
+# correctly while the summary stayed permanently empty.
+DURATION_NOTE=""
+_note_duration() {
+  local start="$1" label="$2" now elapsed
+  now="$(_now_ms)"
+  elapsed=$(( now - start ))
+  DURATION_NOTE=""
+  if [[ "${elapsed}" -lt "${SLOW_CHECK_THRESHOLD_MS}" ]]; then
+    return 0
+  fi
+  local pretty
+  pretty="$(printf '%d.%01ds' "$(( elapsed / 1000 ))" "$(( (elapsed % 1000) / 100 ))")"
+  SLOW_CHECK_LINES+=("${elapsed}|${pretty}|${label}")
+  DURATION_NOTE=" (${pretty})"
+}
+
+# The slowest checks, worst first.  Reported on success as well as failure: the
+# point is to make cost visible on an ordinary green run.
+_report_slow_checks() {
+  if [[ "${#SLOW_CHECK_LINES[@]}" -eq 0 ]]; then
+    return 0
+  fi
+  local sorted entry pretty label
+  sorted="$(printf '%s\n' "${SLOW_CHECK_LINES[@]}" | sort -t'|' -k1,1nr | head -10)"
+  log_section "META" "Slowest checks (>= ${SLOW_CHECK_THRESHOLD_MS}ms):"
+  while IFS='|' read -r _ pretty label; do
+    [[ -n "${pretty}" ]] || continue
+    log_section "META" "  ${pretty}  ${label}"
+  done <<< "${sorted}"
+}
+
 # Run a command, in the code view when it scans Lean source.
 _run_with_view() {
   if _scans_lean_source "$@"; then
@@ -236,8 +292,11 @@ run_check() {
   shift
 
   log_section "${category}" "RUN: $*"
+  local _t0
+  _t0="$(_now_ms)"
   if _run_with_view "$@"; then
-    log_section "${category}" "PASS"
+    _note_duration "${_t0}" "$*"
+    log_section "${category}" "PASS${DURATION_NOTE}"
     return 0
   fi
 
@@ -342,6 +401,8 @@ run_negative_check() {
 
   log_section "${category}" "RUN (must not match): $*"
   local status=0
+  local _t0
+  _t0="$(_now_ms)"
   _run_with_view "$@" >/dev/null 2>&1 || status=$?
 
   case "${status}" in
@@ -349,7 +410,8 @@ run_negative_check() {
       record_failure "${category}" "Forbidden pattern present: $*"
       ;;
     1)
-      log_section "${category}" "PASS"
+      _note_duration "${_t0}" "$*"
+      log_section "${category}" "PASS${DURATION_NOTE}"
       return 0
       ;;
     *)
@@ -443,6 +505,7 @@ run_check_with_timeout() {
 }
 
 finalize_report() {
+  _report_slow_checks
   if [[ "${FAILURE_COUNT}" -gt 0 ]]; then
     log_section "META" "Completed with ${FAILURE_COUNT} failure(s)."
     local entry

@@ -174,32 +174,72 @@ private def cfIsProjection (structName field : Name) (idx : Nat) (e : Expr) : Bo
     | .const n _ => n == structName ++ field
     | _ => false
 
+/-- **Is `hit` true of any application subterm?**, asking each distinct subterm
+once.
+
+An elaborated `Expr` is a DAG with heavy sharing, and the obvious recursive
+predicate walks it as a tree: a subterm reached by k paths is re-examined k
+times, which on kernel-sized bodies is the difference between milliseconds and
+minutes.  The `||` short-circuit hides this on a body that *does* write the
+field -- the walk stops at the first hit -- and not at all on one that does not,
+which is the answer this gate needs for the inert arms and for every definition
+it sweeps.  So the walk carries the set of subterms already examined: reaching
+one again means it was examined and did not hit, because a hit returns
+immediately.
+
+`hit` is asked only of applications, which is where both callers' shapes live;
+asking it of a bare `.const` constructor would be harmless (no argument at the
+field index) but would not match what the uncached form did. -/
+private partial def cfAnySubterm (hit : Expr -> Bool) (e : Expr)
+    (seen : Std.HashSet Expr) : Bool × Std.HashSet Expr := Id.run do
+  if seen.contains e then return (false, seen)
+  let mut seen := seen.insert e
+  match e with
+  | .app .. =>
+      if hit e then return (true, seen)
+      let r := cfAnySubterm hit e.getAppFn seen
+      if r.1 then return (true, r.2)
+      seen := r.2
+      for a in e.getAppArgs do
+        let r := cfAnySubterm hit a seen
+        if r.1 then return (true, r.2)
+        seen := r.2
+      return (false, seen)
+  | .lam _ t b _ =>
+      let r := cfAnySubterm hit t seen
+      if r.1 then return (true, r.2)
+      return cfAnySubterm hit b r.2
+  | .forallE _ t b _ =>
+      let r := cfAnySubterm hit t seen
+      if r.1 then return (true, r.2)
+      return cfAnySubterm hit b r.2
+  | .letE _ t v b _ =>
+      let r := cfAnySubterm hit t seen
+      if r.1 then return (true, r.2)
+      let r2 := cfAnySubterm hit v r.2
+      if r2.1 then return (true, r2.2)
+      return cfAnySubterm hit b r2.2
+  | .mdata _ b => return cfAnySubterm hit b seen
+  | .proj _ _ b => return cfAnySubterm hit b seen
+  | _ => return (false, seen)
+
 /-- A **write** of one content channel: the constructor applied with an argument
 at the field's index that is neither a projection (unchanged) nor a closed term
 (a clear -- `none`, `.idle`).  An open term is content coming from somewhere
 else, which is precisely what taint has to follow. -/
-private partial def cfScan (structName field : Name) (idx : Nat) : Expr -> Bool
-  | e@(.app _ _) =>
-      let hit :=
-        match e.getAppFn with
-        | .const n _ =>
-            if n == structName ++ `mk then
-              match e.getAppArgs[idx]? with
-              | none => false
-              | some a =>
-                  !cfIsProjection structName field idx a && (a.hasLooseBVars || a.hasFVar)
-            else false
-        | _ => false
-      hit || e.getAppArgs.any (cfScan structName field idx)
-        || cfScan structName field idx e.getAppFn
-  | .lam _ t b _ => cfScan structName field idx t || cfScan structName field idx b
-  | .forallE _ t b _ => cfScan structName field idx t || cfScan structName field idx b
-  | .letE _ t v b _ =>
-      cfScan structName field idx t || cfScan structName field idx v
-        || cfScan structName field idx b
-  | .mdata _ b => cfScan structName field idx b
-  | .proj _ _ b => cfScan structName field idx b
+private def cfScanHit (structName field : Name) (idx : Nat) (e : Expr) : Bool :=
+  match e.getAppFn with
+  | .const n _ =>
+      if n == structName ++ `mk then
+        match e.getAppArgs[idx]? with
+        | none => false
+        | some a =>
+            !cfIsProjection structName field idx a && (a.hasLooseBVars || a.hasFVar)
+      else false
   | _ => false
+
+private def cfScan (structName field : Name) (idx : Nat) (e : Expr) : Bool :=
+  (cfAnySubterm (cfScanHit structName field idx) e {}).1
 
 /-- The channel indices, resolved once. -/
 private def cfChannelIdx (env : Environment) : List (Name × Name × Nat) :=
@@ -208,37 +248,91 @@ private def cfChannelIdx (env : Environment) : List (Name × Name × Nat) :=
     | none => none
     | some idx => some (structName, field, idx)
 
+/-- Prefiltered on the constructor's presence, the same way the field-writer
+sweep below is: `cfScanHit` fires only where the application head is
+`structName ++ `mk`, so a body whose used-constant set does not contain that
+name cannot contain such an application, and the structural walk can be skipped
+outright.  The used-constant set costs a fraction of a walk, and the filter is
+exact rather than heuristic -- it excludes only bodies where `cfScan` is
+provably `false`. -/
 private def cfWritesChannel (idxs : List (Name × Name × Nat)) (e : Expr) : Bool :=
-  idxs.any fun (structName, field, idx) => cfScan structName field idx e
+  let used := e.getUsedConstants
+  idxs.any fun (structName, field, idx) =>
+    used.contains (structName ++ `mk) && cfScan structName field idx e
 
-/-- Resolve a short name to every non-internal constant whose last component
-matches.  Ambiguity is harmless here: the walk is a union, so over-resolving can
-only widen the reach, never hide a write. -/
-private def cfResolve (env : Environment) (stem : String) : List Name :=
-  env.constants.fold (init := []) fun acc n _ =>
-    if cfLast n == stem && !n.isInternal then n :: acc else acc
+/-- Resolve short names to every non-internal constant whose last component
+matches, for **every** stem in one pass.  Ambiguity is harmless here: the walk
+is a union, so over-resolving can only widen the reach, never hide a write.
 
-private def cfUsed (env : Environment) (n : Name) : List Name :=
+Built as an index rather than a per-stem search.  Resolving one stem means
+scanning all 126 700 constants, the 34 arms name some 680 stems between them,
+and `run_cmd` bodies run in Lean's *interpreter* -- so the per-stem form was
+~86 million interpreted iterations and essentially this gate's whole runtime
+(`interpretation took 79.9s` against 3 s of everything else).  One pass fills
+the index; a stem is then a hash lookup. -/
+private def cfStemIndex (env : Environment) (wanted : Std.HashSet String) :
+    Std.HashMap String (Array Name) := Id.run do
+  let mut idx : Std.HashMap String (Array Name) := {}
+  for (n, _) in env.constants.toList do
+    if !n.isInternal then
+      let c := cfLast n
+      if wanted.contains c then
+        idx := idx.insert c ((idx.getD c #[]).push n)
+  return idx
+
+/-- The value of a constant, **unless it is a proof** -- the same distinction the
+field-writer and taint-writer sweeps below already make, applied to the walk.
+
+Those sweeps report only `.defnInfo` because "a theorem naming the API states a
+property of it, and a property cannot move a field".  The reach that feeds them
+was reading `value?` uniformly, which is the same claim taken in the other
+direction: a proof term is `Prop`-valued and erased, so it executes nothing and
+cannot be the step by which an arm reaches a write.  Including proofs could only
+widen the reach with constants no arm actually runs -- and they are the majority
+of the environment. -/
+private def cfExecutableValue (ci : ConstantInfo) : Option Expr :=
+  match ci with
+  | .thmInfo _ => none
+  | _ => ci.value?
+
+private def cfUsed (env : Environment) (n : Name) : Array Name :=
   match env.find? n with
-  | none => []
+  | none => #[]
   | some ci =>
-    match ci.value? with
-    | some v => v.getUsedConstants.toList
-    | none => []
+    match cfExecutableValue ci with
+    | some v => v.getUsedConstants
+    | none => #[]
 
-/-- Bounded transitive closure over the elaborated call graph. -/
-private partial def cfClosureGo (env : Environment) (frontier : List Name) (d : Nat)
-    (seen : NameSet) : NameSet :=
+/-- Bounded transitive closure over the elaborated call graph.
+
+**The frontier is deduplicated as it is built.**  It was not: the membership
+test ran against the level's *starting* `seen`, so a constant used by fifty
+members of one level passed the filter fifty times, entered the next frontier
+fifty times, and was re-expanded fifty times -- and that multiplies again at
+every level.  At depth 6 over a kernel-sized graph it was this gate's entire
+runtime: 1.1-4.1 s per arm across 34 arms, for reaches of only 1 200-2 500
+constants.
+
+The resulting set is unchanged.  A name enters `seen` at the first level that
+reaches it either way, so both forms compute "reachable within `depth` hops";
+only the number of times each name is expanded differs. -/
+private partial def cfClosureGo (env : Environment) (frontier : Array Name) (d : Nat)
+    (seen : NameSet) : NameSet := Id.run do
   match d with
-  | 0 => seen
+  | 0 => return seen
   | d + 1 =>
-    let next := frontier.flatMap (cfUsed env)
-    let fresh := next.filter (fun n => !seen.contains n)
-    if fresh.isEmpty then seen
-    else cfClosureGo env fresh d (fresh.foldl (fun s n => s.insert n) seen)
+    let mut seen := seen
+    let mut fresh : Array Name := #[]
+    for m in frontier do
+      for u in cfUsed env m do
+        if !seen.contains u then
+          seen := seen.insert u
+          fresh := fresh.push u
+    if fresh.isEmpty then return seen
+    return cfClosureGo env fresh d seen
 
 private def cfClosure (env : Environment) (seeds : List Name) (depth : Nat) : NameSet :=
-  cfClosureGo env seeds depth (seeds.foldl (fun s n => s.insert n) ({} : NameSet))
+  cfClosureGo env seeds.toArray depth (seeds.foldl (fun s n => s.insert n) ({} : NameSet))
 
 /-- Is `e` a projection of *any* field of `structName`?  Both spellings, with
 the projection-function spelling checked against the structure's own field
@@ -259,41 +353,29 @@ structure — which is what distinguishes `{ st with .. }` from a fresh literal 
 and (b) the watched field's argument not a projection.  Open or closed: a
 closed non-projection argument in an update is a silent *clear*, which for a
 provenance table is a laundering enabler and must be as visible as a rewrite. -/
-private partial def cfUpdateWritesField (structName field : Name) (fields : List Name)
-    (idx : Nat) : Expr -> Bool
-  | e@(.app _ _) =>
-      let hit :=
-        match e.getAppFn with
-        | .const n _ =>
-            if n == structName ++ `mk then
-              let args := e.getAppArgs
-              let isUpdate := (List.range args.size).any fun i =>
-                i != idx && match args[i]? with
-                  | some a => cfIsAnyProjection structName fields a
-                  | none => false
-              match args[idx]? with
-              | none => false
-              | some a => isUpdate && !cfIsProjection structName field idx a
-            else false
-        | _ => false
-      hit || e.getAppArgs.any (cfUpdateWritesField structName field fields idx)
-        || cfUpdateWritesField structName field fields idx e.getAppFn
-  | .lam _ t b _ =>
-      cfUpdateWritesField structName field fields idx t
-        || cfUpdateWritesField structName field fields idx b
-  | .forallE _ t b _ =>
-      cfUpdateWritesField structName field fields idx t
-        || cfUpdateWritesField structName field fields idx b
-  | .letE _ t v b _ =>
-      cfUpdateWritesField structName field fields idx t
-        || cfUpdateWritesField structName field fields idx v
-        || cfUpdateWritesField structName field fields idx b
-  | .mdata _ b => cfUpdateWritesField structName field fields idx b
-  | .proj _ _ b => cfUpdateWritesField structName field fields idx b
+private def cfUpdateWritesFieldHit (structName field : Name) (fields : List Name)
+    (idx : Nat) (e : Expr) : Bool :=
+  match e.getAppFn with
+  | .const n _ =>
+      if n == structName ++ `mk then
+        let args := e.getAppArgs
+        let isUpdate := (List.range args.size).any fun i =>
+          i != idx && match args[i]? with
+            | some a => cfIsAnyProjection structName fields a
+            | none => false
+        match args[idx]? with
+        | none => false
+        | some a => isUpdate && !cfIsProjection structName field idx a
+      else false
   | _ => false
+
+private def cfUpdateWritesField (structName field : Name) (fields : List Name)
+    (idx : Nat) (e : Expr) : Bool :=
+  (cfAnySubterm (cfUpdateWritesFieldHit structName field fields idx) e {}).1
 
 run_cmd do
   let env <- getEnv
+
   let idxs := cfChannelIdx env
   if idxs.length != cfChannels.length then
     logInfo m!"CF_CHANNEL_UNRESOLVED {cfChannels.length - idxs.length}"
@@ -334,22 +416,41 @@ run_cmd do
         | _ => acc
   for w in writers do
     logInfo m!"CF_TAINT_WRITER {w}"
+  -- Shared across arms.  "Does this constant write a content channel?" depends
+  -- on the constant and the channel set, neither of which varies per arm, and
+  -- the 34 arms' reaches overlap almost entirely -- they are all rooted in the
+  -- same kernel core.  Asking it per arm re-walked the same ~2 000 bodies up to
+  -- 34 times, which was this gate's runtime.
+  let mut writesMemo : Std.HashMap Name Bool := {}
+  -- Every stem every arm names, resolved in one pass over the environment.
+  let wantedStems : Std.HashSet String :=
+    Std.HashSet.emptyWithCapacity.insertMany
+      (cfRoots.flatMap fun (_, stems) => (stems.splitOn " ").filter (fun s => s != ""))
+  let stemIdx := cfStemIndex env wantedStems
   -- roots: resolve each arm's named callees, then walk.
   for (arm, stems) in cfRoots do
     let stemList := (stems.splitOn " ").filter (fun s => s != "")
-    let seeds : List Name := stemList.flatMap (cfResolve env)
+    let seeds : List Name := stemList.flatMap fun s => (stemIdx.getD s #[]).toList
     if seeds.isEmpty then
       logInfo m!"CF_NO_ROOT {arm}"
     else
       let reach := cfClosure env seeds cfDepth
-      let hits : List Name :=
-        reach.toList.filter fun n =>
-          match env.find? n with
-          | none => false
-          | some ci =>
-            match ci.value? with
-            | none => false
-            | some v => cfWritesChannel idxs v
+      let mut hits : List Name := []
+      for n in reach.toList do
+        let w ←
+          match writesMemo.get? n with
+          | some b => pure b
+          | none =>
+            let b :=
+              match env.find? n with
+              | none => false
+              | some ci =>
+                match cfExecutableValue ci with
+                | none => false
+                | some v => cfWritesChannel idxs v
+            writesMemo := writesMemo.insert n b
+            pure b
+        if w then hits := n :: hits
       logInfo m!"CF_ARM {arm} {hits.length}"
       for h in hits.take 6 do
         logInfo m!"CF_HIT {arm} {h}"
