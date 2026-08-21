@@ -3989,6 +3989,44 @@ run_negative_check "INVARIANT" rg -n 'let isUpdate' scripts/check_content_flow_c
 run_check "INVARIANT" rg -n 'storeTcbIpcStateAndMessage st. receiver \(\.blockedOnReceive endpointId\) none' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
 run_check "INVARIANT" rg -n 'storeTcbIpcStateAndMessage st. receiver \(\.blockedOnReceive endpointId\) none' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_negative_check "INVARIANT" rg -n 'storeTcbIpcState st. receiver \(\.blockedOnReceive endpointId\)' SeLe4n/Kernel/IPC/DualQueue/Transport.lean SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# PR #873 round 13: **an in-flight derivation is a derived capability.**  A
+# capability-bearing send that parks carries its derivation in the sender's
+# `pendingMessage` and becomes a CDT child only when a receiver collects it, so a
+# revoke walked a subtree the pending transfer was not in, reported success, and
+# the later receive installed the snapshot and added the child edge AFTER the
+# revocation.  The fix is at the operation that defines the guarantee rather than
+# at a third reader of the pending-transfer predicate: both revoke wrappers end by
+# consuming the carried derivations, over the revoked root and its whole subtree.
+run_check "INVARIANT" rg -n '^def revokePendingTransfersFrom' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_frame' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n 'revokePendingTransfersFrom stDone' SeLe4n/Kernel/Capability/Operations.lean
+# Consuming from a TCB is a write to the object store, so the seven-conjunct
+# capability bundle has to survive it -- proved, not assumed, and in the Invariant
+# layer because Operations cannot name the bundle.
+run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+run_check "INVARIANT" rg -n 'chain12gRevokeConsumesPendingTransfer' tests/OperationChainSuite.lean
+# And the send-side half of round 6's ordering independence.  The wrappers took
+# the grant authority TWICE -- the `endpointRights` argument for the rendezvous
+# arm, `msg.capsGranted` for the parked one -- and never tied them, so a caller
+# passing granting rights on a message at the field's default transferred on
+# rendezvous and nothing after parking, and one passing a CLAIMED grant on a
+# non-granting endpoint transferred after parking.  Deriving the field from the
+# endpoint's rights makes the two inputs one, in both directions.
+run_check "INVARIANT" rg -n 'endpointSendDual endpointId sender \{ msg with capsGranted := endpointRights.mem .grant \}' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+run_check "INVARIANT" rg -n 'endpointCall endpointId caller \{ msg with capsGranted := endpointRights.mem .grant \}' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+run_check "INVARIANT" rg -n 'endpointSendDualOnCore endpointId sender \{ msg with capsGranted := endpointRights.mem .grant \}' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_check "INVARIANT" rg -n 'endpointCallOnCore endpointId caller \{ msg with capsGranted := endpointRights.mem .grant \}' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+# The regression drives the property from the UNSTAMPED message `chain12c`'s
+# fixture deliberately does not prepare -- `chain12c` sets the field from the same
+# rights it passes, so it cannot see the two inputs disagree.
+run_check "INVARIANT" rg -n 'chain12hEndpointGrantDecidesBothOrderings' tests/OperationChainSuite.lean
+# The CDT node allocator's global counter is the footprint gap the caps path
+# opened: minting a node for a source slot writes `cdtNextNode` while the send's
+# declared footprint holds the source CNode in READ mode and declares no
+# state-level write.  Registered rather than papered over, so enabling fine locks
+# has to delete the entry deliberately.
+run_check "INVARIANT" rg -n 'cdtNodeAllocation' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '\(\.cdtNodeAllocation, "' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # PR #873 round 7: a CLEAR is a taint write too, so the retype's cleared key
 # rides its own object lock — the third member of `taintWriteKeys` the key-local
 # declaration had skipped.  The fixed four stay pinned separately.

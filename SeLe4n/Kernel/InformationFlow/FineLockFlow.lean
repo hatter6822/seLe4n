@@ -2992,6 +2992,30 @@ inductive UncoveredLockDomain where
   the difference between an obligation a later cut must discharge and one it can
   forget: the completeness theorem below now fails until this entry is removed. -/
   | taintTablePerKeyStore
+  /-- WS-SM (PR #873 round 13): the **CDT node allocator's global counter**.
+
+  Resolving an extra capability whose source slot has no CDT node yet mints one
+  through `ensureCdtNodeForSlotChecked`, which writes `cdtNextNode` (a global
+  monotone counter) and both keyed maps (`cdtSlotNode` / `cdtNodeSlot`).  That
+  happens on the `.send` and `.call` paths, whose footprints
+  (`lockSet_endpointSend` / `lockSet_endpointCall`) hold the source CNode in
+  **read** mode and declare no state-level or CDT write at all.
+
+  Under the declared fine locks two sends on otherwise disjoint endpoints would
+  hold disjoint footprints while allocating from the same pre-state counter, and
+  the later commit would either collide on a node id or lose one slot mapping.
+  Not live today for the same reason the sibling domains are not — SM5.I's global
+  entry ticket lock serialises every commit and `withLockSet` is deferred at the
+  export bodies (SM3.C.9).
+
+  The counter is not key-decomposable, so covering it means `stateLevelLock` in
+  **write** mode on the two hottest IPC arms, which moves the resolved-footprint
+  WCRT arithmetic the IPC suites pin — the same cost that keeps
+  `capTransferReceiverCnode` registered, and the same owner.  The remedy is
+  planned as Track B of `SMP_FINE_LOCK_MIGRATION_PLAN`, which declares
+  `(stateLevelLock, .write)` on send/call together with the four `cspace*`
+  operations that write the identical fields. -/
+  | cdtNodeAllocation
   deriving DecidableEq, Repr
 
 /-- SM8.D.5: the domains this bracket does **not** cover, and the workstream that
@@ -2999,14 +3023,14 @@ owns composing them. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
   [(.schedulerDomain, "SM3.C.9"), (.dynamicPipChain, "SM3.C.11"),
    (.queueOwnershipProtocol, "SM3.B"), (.capTransferReceiverCnode, "SM3.B"),
-   (.taintTablePerKeyStore, "SM10.E")]
+   (.taintTablePerKeyStore, "SM10.E"), (.cdtNodeAllocation, "SM3.B")]
 
 /-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
 inventory uses — so completeness can be quantified over the *constructors*
 rather than compared against a literal. -/
 def UncoveredLockDomain.all : List UncoveredLockDomain :=
   [.schedulerDomain, .dynamicPipChain, .queueOwnershipProtocol,
-   .capTransferReceiverCnode, .taintTablePerKeyStore]
+   .capTransferReceiverCnode, .taintTablePerKeyStore, .cdtNodeAllocation]
 
 /-- SM8.D.5: every constructor is listed.  This is the clause a literal
 comparison cannot supply: adding a third domain makes `cases d` non-exhaustive

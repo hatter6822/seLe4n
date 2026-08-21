@@ -1,3 +1,77 @@
+## v0.33.88 — a derivation that has not landed yet is still a derivation
+
+Round 13 found a revoke that reports success while the authority it destroyed is
+in flight, and a capability-transfer gate that reads its authority from two
+places that were never tied together.
+
+**Revocation missed the transfers still in the sender's hands.**  A
+capability-bearing send that parks carries its derivation in the sender's
+`pendingMessage`; the CDT child edge appears only when a receiver collects it.
+`cspaceRevokeCdt` walks `descendantsOf` the revoked node, so it walked a subtree
+the pending transfer was not in — it reported success, and the later receive
+installed the snapshotted capability and added the child edge *after* the
+revocation.  The receiver kept authority the revoker had destroyed, and the CDT
+regrew under a node that was supposed to be gone.
+
+The v0.33.64 cut had already met the neighbouring shape and fixed it at the
+creator of the edge: `ipcTransferSingleCap` declines with `.sourceRevoked` when
+the source node has no live slot, which holds against slot-destroying operations
+nobody has written yet.  That guard does not fire here, because `cspaceRevokeCdt`
+revokes the *derived* subtree without destroying the source slot the parked
+message names — the source is still perfectly live, and its in-flight child is
+exactly what the caller asked to destroy.  Adding a third consumer of the
+pending-transfer predicate at the revoke's call sites would have patched this
+revoke; the set of operations that destroy a derivation is as open-ended as the
+set that destroys a slot.  So the fix sits at the operation that *defines* the
+guarantee: `revokePendingTransfersFrom` sweeps the parked senders and drops the
+carried derivations rooted at the revoked node or any of its descendants, and
+both wrappers — `cspaceRevokeCdt` and `cspaceRevokeCdtStreaming` — end with it.
+A revoke still reports success, because refusing would let a parked sender block
+revocation indefinitely; what changes is that there is nothing left to install.
+
+Consuming from a TCB is a write to the object store, so the seven-conjunct
+capability bundle has to survive it.  `revokePendingTransfersFrom_frame` proves
+the sweep touches TCBs only — the CDT and both keyed maps are unchanged, and
+every object is either untouched or a TCB rewritten to a TCB — and
+`revokePendingTransfersFrom_preserves_capabilityInvariantBundle` discharges all
+seven from that, since each conjunct quantifies over `.cnode` or `.reply`
+lookups.  It lives in the Invariant layer rather than next to the operation,
+because Operations cannot name the bundle.
+
+**The grant right was read from two places.**  `endpointSendDualWithCaps` and
+`endpointCallWithCaps` take the endpoint's rights as an argument *and* the
+message's `capsGranted` field, and used one for each arrival ordering: the
+immediate rendezvous consulted the argument, while a parked send left the field
+untouched for the later receive to read.  Round 6 established that the authority
+travels on the message precisely because the sender's endpoint capability is gone
+by the time a receiver dequeues a parked send — but nothing ever wrote it there.
+A caller passing granting rights on a message at the field's `false` default
+transferred capabilities on rendezvous and none after parking; one passing a
+message that *claimed* a grant its endpoint lacked transferred after parking and
+not on rendezvous.  Capability delivery decided by which side reached the endpoint
+first, which is the order-dependence round 6 removed from the receive side, and a
+caller-asserted authority the wrapper had no business honouring.  Not reachable
+from user space — every live caller derives the bit from the endpoint capability
+it looked up — but that made it a trusted-caller obligation that was neither
+written down nor enforced.  The four wrappers now stamp
+`capsGranted := endpointRights.mem .grant` into the message they hand the
+transition, so the two inputs are one, derived from the one that carries the
+authority.
+
+`chain12c` could not see either direction: its fixture sets `capsGranted` from
+the same rights it passes, so the two inputs never disagree there.
+`chain12hEndpointGrantDecidesBothOrderings` drives the property from the
+unstamped message and from the claimed one, and `chain12gRevokeConsumesPendingTransfer`
+pins the revoke against a control run showing the same transfer landing when
+nothing revokes it.
+
+**Registered, not papered over.**  Resolving an extra capability whose source slot
+has no CDT node yet mints one, which writes the global `cdtNextNode` counter while
+the send footprint holds the source CNode in read mode and declares no state-level
+write.  `UncoveredLockDomain.cdtNodeAllocation` names it with its owner, so the
+inventory's completeness theorem forces a deliberate deletion rather than an
+oversight, and `fineLockDisciplineComplete` stays false until it goes.
+
 ## v0.33.87 — two defaults inverted, because a list of exceptions is a list of what someone thought of
 
 Round 12 found a downgrade of an endpoint, CNode, VSpace root or untyped

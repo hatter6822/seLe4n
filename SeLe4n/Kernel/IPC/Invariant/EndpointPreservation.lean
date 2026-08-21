@@ -2181,13 +2181,17 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariant
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     ipcInvariant st' := by
+  -- PR #873 round 13: the wrapper stamps the endpoint's grant right into the
+  -- message before sending, so the transition under it is the stamped one.
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hInvMid := endpointSendDual_preserves_ipcInvariant st stMid endpointId sender msg hInv hObjInv hSend
-    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+    have hInvMid := endpointSendDual_preserves_ipcInvariant st stMid endpointId sender
+      { msg with capsGranted := endpointRights.mem AccessRight.grant } hInv hObjInv hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender
+      { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     simp [hSend] at hStep
     -- AN10-B: post-migration `endpointSendDualWithCaps` reads via
     -- `getEndpoint?`; case-split on the typed helper.
@@ -2211,7 +2215,7 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariant
           | none => simp [hLookup] at hStep -- AK1-I: fail-closed, vacuous
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_ipcInvariant msg senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_ipcInvariant { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hInvMid hObjInvMid hStep
 
 /-- M3-E4: endpointReceiveDualWithCaps preserves ipcInvariant. -/

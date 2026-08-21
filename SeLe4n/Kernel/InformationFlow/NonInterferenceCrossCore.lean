@@ -1394,9 +1394,9 @@ theorem endpointCallWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
     (executingCore : CoreId) (st : SystemState) :
     (endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
         receiverSlotBase executingCore st).1.scheduler
-      = (endpointCallOnCore endpointId caller msg executingCore st).1.scheduler := by
+      = (endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1.scheduler := by
   unfold endpointCallWithCapsOnCore
-  cases hCall : endpointCallOnCore endpointId caller msg executingCore st with
+  cases hCall : endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
   | mk stCall res =>
     cases res with
     | error e => rfl
@@ -1414,9 +1414,9 @@ theorem endpointCallWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
     (executingCore : CoreId) (st : SystemState) :
     (endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
         receiverSlotBase executingCore st).1.machine
-      = (endpointCallOnCore endpointId caller msg executingCore st).1.machine := by
+      = (endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1.machine := by
   unfold endpointCallWithCapsOnCore
-  cases hCall : endpointCallOnCore endpointId caller msg executingCore st with
+  cases hCall : endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
   | mk stCall res =>
     cases res with
     | error e => rfl
@@ -1444,7 +1444,7 @@ theorem endpointCallWithCapsOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
         receiverSlotBase executingCore st).1
       (endpointCallWriteSet st endpointId executingCore) := by
   have h := observableSlotsConfinedToCores_trans
-    (endpointCallOnCore_confinedToCores endpointId caller msg executingCore st hObjInv)
+    (endpointCallOnCore_confinedToCores endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st hObjInv)
     (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
       (endpointCallWithCapsOnCore_scheduler_eq endpointId caller msg endpointRights
         callerCspaceRoot receiverSlotBase executingCore st)
@@ -2950,9 +2950,9 @@ theorem endpointSendDualWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
     (executingCore : CoreId) (st : SystemState) :
     (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
         receiverSlotBase executingCore st).1.scheduler
-      = (endpointSendDualOnCore endpointId sender msg executingCore st).1.scheduler := by
+      = (endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1.scheduler := by
   unfold endpointSendDualWithCapsOnCore
-  cases hSend : endpointSendDualOnCore endpointId sender msg executingCore st with
+  cases hSend : endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
   | mk stSend res =>
     cases res with
     | error e => rfl
@@ -2970,9 +2970,9 @@ theorem endpointSendDualWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
     (executingCore : CoreId) (st : SystemState) :
     (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
         receiverSlotBase executingCore st).1.machine
-      = (endpointSendDualOnCore endpointId sender msg executingCore st).1.machine := by
+      = (endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1.machine := by
   unfold endpointSendDualWithCapsOnCore
-  cases hSend : endpointSendDualOnCore endpointId sender msg executingCore st with
+  cases hSend : endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
   | mk stSend res =>
     cases res with
     | error e => rfl
@@ -2996,7 +2996,7 @@ theorem endpointSendDualWithCapsOnCore_confinedToCores (endpointId : SeLe4n.ObjI
         receiverSlotBase executingCore st).1
       (endpointSendWriteSet st endpointId executingCore) := by
   have h := observableSlotsConfinedToCores_trans
-    (endpointSendDualOnCore_confinedToCores endpointId sender msg executingCore st hObjInv)
+    (endpointSendDualOnCore_confinedToCores endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st hObjInv)
     (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
       (endpointSendDualWithCapsOnCore_scheduler_eq endpointId sender msg endpointRights
         senderCspaceRoot receiverSlotBase executingCore st)

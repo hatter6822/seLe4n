@@ -163,23 +163,27 @@ theorem endpointSendDualWithCaps_preserves_dualQueueSystemInvariant
           ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
         (epId' = endpointId →
           ep'.receiveQ.tail ≠ some tailTid))
-    (hCnodeRoot : ∀ (stMid : SystemState) (recvRoot : SeLe4n.ObjId),
-      endpointSendDual endpointId sender msg st = .ok ((), stMid) →
+    -- PR #873 round 13: quantified over the message, because the wrapper stamps
+    -- the endpoint's grant right into it before sending and the transition below
+    -- is therefore the stamped one.  Whether the receiver's root is a CNode does
+    -- not depend on a message's grant bit, so generalising is the honest form.
+    (hCnodeRoot : ∀ (m : IpcMessage) (stMid : SystemState) (recvRoot : SeLe4n.ObjId),
+      endpointSendDual endpointId sender m st = .ok ((), stMid) →
       ∃ cn, stMid.objects[recvRoot]? = some (.cnode cn))
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
               senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     dualQueueSystemInvariant st' := by
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     simp only [hSend] at hStep
-    have hInvMid := endpointSendDual_preserves_dualQueueSystemInvariant endpointId sender msg
+    have hInvMid := endpointSendDual_preserves_dualQueueSystemInvariant endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant }
       st stMid hObjInv hSend hInv hFreshSender hSendTailFresh
     have hObjInvMid : stMid.objects.invExt :=
-      endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+      endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     -- AN10-B: post-migration `endpointSendDualWithCaps` reads via
     -- `getEndpoint?`; case-split on the typed helper.
     cases hObj : st.getEndpoint? endpointId with
@@ -199,8 +203,8 @@ theorem endpointSendDualWithCaps_preserves_dualQueueSystemInvariant
           | none => simp [hLookup] at hStep -- AK1-I: fail-closed, vacuous
           | some recvRoot =>
             simp only [hLookup] at hStep
-            obtain ⟨cn, hCn⟩ := hCnodeRoot stMid recvRoot hSend
-            exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant msg senderCspaceRoot
+            obtain ⟨cn, hCn⟩ := hCnodeRoot _ stMid recvRoot hSend
+            exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot
               recvRoot receiverSlotBase _ stMid st' summary cn hCn hInvMid hObjInvMid hStep
 
 /-- M3-E4: endpointReceiveDualWithCaps preserves dualQueueSystemInvariant.

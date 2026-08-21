@@ -1414,6 +1414,215 @@ private def chain12fReceiveRefusesMessagelessParkedSender : IO Unit := do
   -- conforming kernel actually reaches.
   assertInvariants "chain12f: delivering from a sender that kept its message" stOk
 
+/-- SCN-CAP-REVOKE-PENDING-TRANSFER (PR #873 round 13): a revoke destroys the
+derivations that have not landed yet.
+
+A capability-bearing send that parks carries its derivation in the sender's
+`pendingMessage`; the CDT edge appears only when a receiver collects it.  So
+`cspaceRevokeCdt` walked a subtree the pending transfer was not in, reported
+success, and the later receive installed the snapshot and added the child edge
+*after* the revocation -- the receiver kept authority the revoker had destroyed.
+
+The negative is load-bearing in both directions: the revoke must still report
+success (refusing would let a parked sender block revocation indefinitely), and
+the capability must not arrive.  The control run shows the same transfer landing
+when no revoke intervenes, so the test is measuring the revoke rather than a
+transfer that never worked. -/
+private def chain12gRevokeConsumesPendingTransfer : IO Unit := do
+  let epId : SeLe4n.ObjId := ⟨3750⟩
+  let sender : SeLe4n.ThreadId := ⟨3760⟩
+  let receiver : SeLe4n.ThreadId := ⟨3761⟩
+  let senderCNode : SeLe4n.ObjId := ⟨3770⟩
+  let receiverCNode : SeLe4n.ObjId := ⟨3771⟩
+  let payloadObj : SeLe4n.ObjId := ⟨3780⟩
+  let payloadCap : Capability :=
+    { target := .object payloadObj, rights := AccessRightSet.ofList [.read], badge := none }
+  let grantRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
+  let srcSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 5
+  let recvSlot0 : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
+
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
+      |>.withObject senderCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)]
+        })
+      |>.withObject receiverCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.empty
+        })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3790⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3791⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
+      |>.withRunnable [sender, receiver]
+      |>.buildChecked)
+
+  let srcAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := senderCNode, slot := srcSlot }
+  let (srcNode, stBase) := SystemState.ensureCdtNodeForSlot st0 srcAddr
+  let msg : IpcMessage :=
+    { registers := #[], caps := #[{ cap := payloadCap, srcNode := srcNode }], badge := none, capsGranted := true }
+
+  -- The sender parks: no receiver waits, so the caps-bearing message queues.
+  let (stParked, _) :=
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender msg grantRights senderCNode
+      recvSlot0 bootCoreId stBase
+  expect "chain12g: the parked sender carries the capability"
+    ((stParked.getTcb? sender).any (fun t =>
+      match t.pendingMessage with
+      | some m => m.caps.any (fun tc => tc.srcNode == srcNode)
+      | none => false))
+  expect "chain12g: and the derivation is not in the CDT yet"
+    ((stParked.cdt.childrenOf srcNode).isEmpty)
+
+  let slotFilled (st : SystemState) : Bool :=
+    match st.objects[receiverCNode]? with
+    | some (.cnode cn) => (cn.lookup recvSlot0).isSome
+    | _ => false
+
+  -- Control: with no revoke, the parked transfer lands.
+  let (stControl, _) :=
+    SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none receiverCNode
+      recvSlot0 bootCoreId stParked
+  expect "chain12g: control — the same transfer installs when nothing revokes it"
+    (slotFilled stControl)
+
+  -- THE DEFECT, now closed: revoke, then receive.
+  match SeLe4n.Kernel.cspaceRevokeCdt srcAddr stParked with
+  | .error e =>
+      expect s!"chain12g: revoke must not fail ({reprStr e})" false
+  | .ok ((), stRevoked) =>
+      expect "chain12g: the revoke still reports success"
+        ((stRevoked.getTcb? sender).isSome)
+      expect "chain12g: and it consumed the in-flight derivation"
+        ((stRevoked.getTcb? sender).all (fun t =>
+          match t.pendingMessage with
+          | some m => !(m.caps.any (fun tc => tc.srcNode == srcNode))
+          | none => true))
+      let (stAfter, _) :=
+        SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none receiverCNode
+          recvSlot0 bootCoreId stRevoked
+      expect "chain12g: no capability arrives after the revoke"
+        (!(slotFilled stAfter))
+      expect "chain12g: and no child edge appears after it either"
+        ((stAfter.cdt.childrenOf srcNode).isEmpty)
+      assertInvariants "chain12g: revoke consumed the pending transfer" stAfter
+
+/-- SCN-IPC-CAP-TRANSFER-GRANT-STAMPED (PR #873 round 13): the endpoint's grant
+right decides, whatever the message arrived carrying.
+
+`chain12c` proves the two arrival orderings agree -- but it hands the wrapper a
+message whose `capsGranted` the *fixture* already set from the same rights, so it
+cannot see the two inputs disagree.  They could: the rendezvous arm read the
+`endpointRights` argument, the parked arm left the field alone for the later
+receive to read, and a caller that passed granting rights on a message at the
+field's `false` default transferred on rendezvous and nothing after parking --
+capability delivery decided by which side reached the endpoint first, which is
+the order-dependence round 6 removed from the receive side.
+
+So this drives the same property from the *unstamped* message the fixture
+deliberately does not prepare.  The wrapper derives the bit from the one input
+that carries the authority, which is what makes the two orderings the same
+transfer rather than two that happen to agree when the caller sets both. -/
+private def chain12hEndpointGrantDecidesBothOrderings : IO Unit := do
+  let epId : SeLe4n.ObjId := ⟨3800⟩
+  let sender : SeLe4n.ThreadId := ⟨3810⟩
+  let receiver : SeLe4n.ThreadId := ⟨3811⟩
+  let senderCNode : SeLe4n.ObjId := ⟨3820⟩
+  let receiverCNode : SeLe4n.ObjId := ⟨3821⟩
+  let payloadObj : SeLe4n.ObjId := ⟨3830⟩
+  let payloadCap : Capability :=
+    { target := .object payloadObj, rights := AccessRightSet.ofList [.read], badge := none }
+  let grantRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
+  let noGrantRights : AccessRightSet := AccessRightSet.ofList [.read, .write]
+  let srcSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 5
+  let recvSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
+
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
+      |>.withObject senderCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)]
+        })
+      |>.withObject receiverCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.empty
+        })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3840⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3841⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
+      |>.withRunnable [sender, receiver]
+      |>.buildChecked)
+
+  let (srcNode, stBase) :=
+    SystemState.ensureCdtNodeForSlot st0 { cnode := senderCNode, slot := srcSlot }
+  -- The message as a caller who did NOT pre-stamp the bit builds it: the field
+  -- keeps its default while the endpoint capability grants.
+  let msg : IpcMessage :=
+    { registers := #[], caps := #[{ cap := payloadCap, srcNode := srcNode }], badge := none }
+  expect "chain12h: the message arrives with the grant bit at its default"
+    (!msg.capsGranted)
+
+  let receiverSlotFilled (st : SystemState) : Bool :=
+    match st.objects[receiverCNode]? with
+    | some (.cnode cn) => (cn.lookup recvSlot).isSome
+    | _ => false
+
+  -- Ordering A: receiver first (immediate rendezvous at the send).
+  let (_, stA1) ← expectOkSt "chain12h: A — receiver blocks first"
+    (SeLe4n.Kernel.endpointReceiveDual epId receiver none stBase)
+  let (summaryA, stA2) ← expectOkSt "chain12h: A — granting sender rendezvouses"
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode
+      recvSlot stA1)
+
+  -- Ordering B: sender first (the send parks; the receive must install).
+  let (_, stB1) ← expectOkSt "chain12h: B — granting sender parks"
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode
+      recvSlot stBase)
+  let ((_, summaryB), stB2) ← expectOkSt "chain12h: B — receiver dequeues the parked sender"
+    (SeLe4n.Kernel.endpointReceiveDualWithCaps epId receiver none receiverCNode
+      recvSlot stB1)
+
+  -- THE PROPERTY: the endpoint's grant right decided both, so they agree.
+  expect "chain12h: the rendezvous ordering installed the capability"
+    (receiverSlotFilled stA2)
+  expect "chain12h: the QUEUED ordering installed it too, from the same authority"
+    (receiverSlotFilled stB2)
+  expect "chain12h: both orderings report the same install count"
+    (summaryA.installedCount == summaryB.installedCount)
+
+  -- The parked message carries the derived bit, which is how the receive that
+  -- dequeues it -- long after the sender's endpoint capability is out of reach --
+  -- can know the authority at all.
+  expect "chain12h: the parked message records the endpoint's grant right"
+    ((stB1.getTcb? sender).any (fun t => t.pendingMessage.any (fun m => m.capsGranted)))
+
+  -- NEGATIVE, load-bearing: the derivation runs in the denying direction too, so
+  -- a pre-stamped `true` on a non-granting endpoint does not transfer.  Without
+  -- it the stamp would be an OR of the two inputs rather than a replacement, and
+  -- a caller could grant itself the right the endpoint withheld.
+  let msgClaimsGrant : IpcMessage := { msg with capsGranted := true }
+  let (_, stC1) ← expectOkSt "chain12h: C — receiver blocks first (endpoint denies)"
+    (SeLe4n.Kernel.endpointReceiveDual epId receiver none stBase)
+  let (summaryC, stC2) ← expectOkSt "chain12h: C — sender claims a grant the endpoint lacks"
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msgClaimsGrant noGrantRights
+      senderCNode recvSlot stC1)
+  let (_, stD1) ← expectOkSt "chain12h: D — the same claim parks"
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msgClaimsGrant noGrantRights
+      senderCNode recvSlot stBase)
+  let ((_, summaryD), stD2) ← expectOkSt "chain12h: D — receiver dequeues the parked claim"
+    (SeLe4n.Kernel.endpointReceiveDualWithCaps epId receiver none receiverCNode
+      recvSlot stD1)
+  expect "chain12h: NEGATIVE — a claimed grant does not transfer on rendezvous"
+    (!receiverSlotFilled stC2 && summaryC.installedCount == 0)
+  expect "chain12h: NEGATIVE — nor after parking; the stamp overwrote the claim"
+    (!receiverSlotFilled stD2 && summaryD.installedCount == 0)
+  expect "chain12h: NEGATIVE — the parked message records the endpoint's denial"
+    ((stD1.getTcb? sender).any (fun t => t.pendingMessage.any (fun m => !m.capsGranted)))
+
+  assertInvariants "chain12h: grant stamped from the endpoint's rights" stB2
+
 /-- SCN-IPC-CAP-TRANSFER-NO-GRANT: Grant-right gate blocks cap transfer.
 Endpoint lacks Grant right — caps should be silently dropped. -/
 private def chain13IpcCapTransferNoGrant : IO Unit := do
@@ -2917,6 +3126,8 @@ private def runOperationChainSuite : IO Unit := do
   chain12dReplyRecvCapTransferArrivalOrder
   chain12eReceiveWithoutSenderInstallsNothing
   chain12fReceiveRefusesMessagelessParkedSender
+  chain12gRevokeConsumesPendingTransfer
+  chain12hEndpointGrantDecidesBothOrderings
   chain13IpcCapTransferNoGrant
   chain14IpcBadgeAndCapTransfer
   chain15StrictRevokeDeepChain

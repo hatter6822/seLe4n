@@ -180,6 +180,53 @@ theorem revokeCdtFold_preserves
       have ⟨hInvMid, hKMid⟩ := revokeCdtFoldBody_preserves stInit stMid node hInv hNodeSlotK hStep
       exact ih stMid stFinal hInvMid hKMid hFold
 
+/-- **Consuming in-flight transfers preserves the capability bundle.**
+
+Every conjunct quantifies over `.cnode` lookups (and, for
+`replyCapPointsToValidReply`, a `.reply` lookup), and the sweep rewrites only
+TCBs -- so `revokePendingTransfersFrom_frame` frames all seven.  This is what
+lets `cspaceRevokeCdt` close the in-flight hole without weakening anything it
+already proved. -/
+theorem revokePendingTransfersFrom_preserves_capabilityInvariantBundle
+    (st : SystemState) (nodes : List CdtNodeId)
+    (hInv : capabilityInvariantBundle st) :
+    capabilityInvariantBundle (revokePendingTransfersFrom st nodes) := by
+  obtain ⟨hSound, hBounded, hComp, hAcyclic, hDepth, hExt, hReply⟩ := hInv
+  obtain ⟨hExt', hCdt, hNS, _, hObj⟩ := revokePendingTransfersFrom_frame st nodes hExt
+  -- Every CNode the post-state exposes was already there: the sweep's only
+  -- writes are TCBs, so the `.tcb` half of the frame cannot produce a `.cnode`.
+  have hCnode : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
+      (revokePendingTransfersFrom st nodes).objects[oid]? = some (KernelObject.cnode cn) →
+      st.objects[oid]? = some (KernelObject.cnode cn) := by
+    intro oid cn h
+    rcases hObj oid with hEq | ⟨_, _, _, hT⟩
+    · rw [h] at hEq; exact hEq.symm
+    · rw [h] at hT; cases hT
+  refine ⟨?_, ?_, ?_, ?_, ?_, hExt', ?_⟩
+  · intro cnodeId cn slot cap hCn hLk
+    have hOrig := hSound cnodeId cn slot cap (hCnode cnodeId cn hCn) hLk
+    unfold SystemState.lookupSlotCap SystemState.lookupCNode at hOrig ⊢
+    rw [hCn]
+    rw [hCnode cnodeId cn hCn] at hOrig
+    exact hOrig
+  · intro cnodeId cn hCn; exact hBounded cnodeId cn (hCnode cnodeId cn hCn)
+  · intro nodeId ref hRef
+    have hRef' : st.cdtNodeSlot[nodeId]? = some ref := by rw [← hNS]; exact hRef
+    have hNe := hComp nodeId ref hRef'
+    intro hNone
+    apply hNe
+    rcases hObj ref.cnode with hEq | ⟨_, _, _, hT'⟩
+    · rw [← hEq]; exact hNone
+    · rw [hNone] at hT'; cases hT'
+  · unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
+  · intro cnodeId cn hCn; exact hDepth cnodeId cn (hCnode cnodeId cn hCn)
+  · intro oid cn slot cap rid hCn hLk hTarget
+    have hOrig := hReply oid cn slot cap rid (hCnode oid cn hCn) hLk hTarget
+    unfold SystemState.getReply? at hOrig ⊢
+    rcases hObj rid.toObjId with hEq | ⟨_, _, hT, _⟩
+    · rw [hEq]; exact hOrig
+    · rw [hT] at hOrig; simp at hOrig
+
 /-- WS-F4/F-06: cspaceRevokeCdt preserves capabilityInvariantBundle.
 Composes cspaceRevoke (proven) + fold over CDT descendants. -/
 theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle
@@ -222,10 +269,20 @@ theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle
     split at hStep
     · simp at hStep; cases hStep; exact hLocalInv
     · rename_i rootNode hLookup
-      -- hStep has the fold result; the inline lambda is definitionally equal to revokeCdtFoldBody
-      change (stLocal.cdt.descendantsOf rootNode).foldl revokeCdtFoldBody
-          (.ok ((), stLocal)) = .ok ((), st') at hStep
-      exact revokeCdtFold_preserves _ stLocal st' hLocalInv hLocalK hStep
+      -- PR #873 round 13: the fold now feeds the in-flight sweep, so peel the
+      -- outer match first.  The `.error` arm cannot be this `.ok`; the `.ok` arm
+      -- gives the fold's own post-state, which the pre-existing lemma covers, and
+      -- the sweep on top of it is framed.
+      split at hStep
+      · simp at hStep
+      · next stDone hFold =>
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq
+        refine revokePendingTransfersFrom_preserves_capabilityInvariantBundle _ _ ?_
+        -- the inline lambda is definitionally equal to `revokeCdtFoldBody`
+        change (stLocal.cdt.descendantsOf rootNode).foldl revokeCdtFoldBody
+            (.ok ((), stLocal)) = .ok ((), stDone) at hFold
+        exact revokeCdtFold_preserves _ stLocal stDone hLocalInv hLocalK hFold
 
 /-- R2-F: Error propagation consistency theorem. When `cspaceDeleteSlotCore` fails
 for a CDT descendant, `processRevokeNode` (and therefore `revokeCdtFoldBody`)
@@ -454,8 +511,16 @@ theorem cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle
     split at hStep
     · simp at hStep; cases hStep; exact hLocalInv
     · rename_i rootNode hLookup
-      exact streamingRevokeBFS_preserves _ _ stLocal st' hLocalInv
-        (hLocalNS ▸ hNodeSlotK) hStep
+      -- PR #873 round 13: peel the in-flight sweep, exactly as the materialized
+      -- fold above.
+      split at hStep
+      · simp at hStep
+      · next stDone hBfs =>
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq
+        exact revokePendingTransfersFrom_preserves_capabilityInvariantBundle _ _
+          (streamingRevokeBFS_preserves _ _ stLocal stDone hLocalInv
+            (hLocalNS ▸ hNodeSlotK) hBfs)
 
 
 end SeLe4n.Kernel

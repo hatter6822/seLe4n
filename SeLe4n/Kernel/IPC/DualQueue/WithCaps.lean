@@ -81,6 +81,15 @@ def endpointSendDualWithCaps
     (senderCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
   fun st =>
+    -- PR #873 round 13: **the endpoint's grant right is stamped into the
+    -- message**, because the message is where both orderings read it.  The
+    -- immediate rendezvous below consulted `endpointRights` while a queued send
+    -- left `msg.capsGranted` untouched for the later unwrap to read, so a caller
+    -- that passed granting rights with the field's `false` default transferred
+    -- capabilities on rendezvous and none after parking -- capability delivery
+    -- decided by which side reached the endpoint first, the order-dependence
+    -- round 6 removed from the receive side.  One authority, recorded once, read
+    -- once.
     -- Check if a receiver is waiting BEFORE the send.
     -- AJ1-C (M-02): `endpointQueuePopHead_returns_head` proves the pre-inspected
     -- receiver matches the thread actually dequeued, ensuring capability transfer
@@ -89,7 +98,7 @@ def endpointSendDualWithCaps
     let hasReceiver := match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head.isSome
       | none    => false
-    match endpointSendDual endpointId sender msg st with
+    match endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem .grant } st with
     | .error e => .error e
     | .ok ((), st') =>
         if !hasReceiver || msg.caps.isEmpty then
@@ -107,8 +116,8 @@ def endpointSendDualWithCaps
             | some receiverId =>
               match lookupCspaceRoot st' receiverId with
               | some recvRoot =>
-                let grantRight := endpointRights.mem .grant
-                ipcUnwrapCaps msg senderCspaceRoot recvRoot receiverSlotBase grantRight st'
+                ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } senderCspaceRoot recvRoot
+                  receiverSlotBase (endpointRights.mem .grant) st'
               | none =>
                 -- AK1-I (I-M07 / MEDIUM, NI L-1): Symmetric with the
                 -- `endpointReceiveDualWithCaps` and `endpointCallWithCaps`
@@ -228,11 +237,20 @@ def endpointCallWithCaps
     (callerCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
   fun st =>
+    -- PR #873 round 13: **the endpoint's grant right is stamped into the
+    -- message**, because the message is where both orderings read it.  The
+    -- immediate rendezvous below consulted `endpointRights` while a queued send
+    -- left `msg.capsGranted` untouched for the later unwrap to read, so a caller
+    -- that passed granting rights with the field's `false` default transferred
+    -- capabilities on rendezvous and none after parking -- capability delivery
+    -- decided by which side reached the endpoint first, the order-dependence
+    -- round 6 removed from the receive side.  One authority, recorded once, read
+    -- once.
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
     let hasReceiver := match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head.isSome
       | none    => false
-    match endpointCall endpointId caller msg st with
+    match endpointCall endpointId caller { msg with capsGranted := endpointRights.mem .grant } st with
     | .error e => .error e
     | .ok ((), st') =>
         if !hasReceiver || msg.caps.isEmpty then
@@ -245,8 +263,8 @@ def endpointCallWithCaps
             | some receiverId =>
               match lookupCspaceRoot st' receiverId with
               | some recvRoot =>
-                let grantRight := endpointRights.mem .grant
-                ipcUnwrapCaps msg callerCspaceRoot recvRoot receiverSlotBase grantRight st'
+                ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } callerCspaceRoot recvRoot
+                  receiverSlotBase (endpointRights.mem .grant) st'
               | none =>
                 -- WS-RC R1 (DEEP-IPC-03 / MEDIUM, NI L-1): Symmetric with
                 -- the `endpointSendDualWithCaps` and

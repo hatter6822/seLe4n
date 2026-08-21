@@ -160,15 +160,16 @@ the pre-fix state does not.
 
 ### 3.1 The class behind the finding, and where it is closed
 
-The §3 finding was the first of four sightings of one defect, each found
+The §3 finding was the first of five sightings of one defect, each found
 separately and each initially patched where it surfaced:
 
 | # | Where the orphan could be made | Closed at |
 |---|--------------------------------|-----------|
 | 1 | The transfer named a synthetic source slot, so the edge hung off a node the real source's revoke never walks | v0.33.59 → v0.33.60 (stable node id) |
 | 2 | `cspaceDeleteSlot` refused a slot with CDT children, but a parked transfer is not yet a child | v0.33.62 |
-| 3 | Retyping the CNode destroyed every slot it held with no such check at all | this cut |
-| 4 | The revoke sweep deletes a descendant slot, and a transfer parked from it still lands | this cut |
+| 3 | Retyping the CNode destroyed every slot it held with no such check at all | v0.33.64 |
+| 4 | The revoke sweep deletes a descendant slot, and a transfer parked from it still lands | v0.33.64 |
+| 5 | The revoke destroys the *derived subtree* without touching the source slot, so the source stays live and its in-flight child lands afterwards | v0.33.88 |
 
 The common cause is structural rather than incidental. Every CDT invariant the
 model carries is stated **node → slot**: `cdtCompleteness` says a node with a
@@ -196,6 +197,32 @@ The two guards remain, and are deliberately not the guarantee.
 to revoke first, which is a better answer than a capability that silently fails
 to arrive. They are the ergonomics; the creator-side check is what makes the
 orphan unconstructible.
+
+Sighting 5 is the one that shows where the creator-side check *stops*, and it is
+worth stating precisely because the check reads as if it covered everything. It
+keys on the **source slot's** liveness: a transfer declines when the node it was
+derived from no longer maps to a slot. Revocation of a derived subtree does not
+destroy the source slot — the source is exactly what the revoker is keeping — so
+`sourceRevoked` never fires, and the in-flight child of a revoked parent lands
+after the revoke reports success. The creator-side check answers *"is the thing I
+was derived from still there?"*; revocation asks a different question, *"is this
+particular derivation one I was told to destroy?"*, and only the revoke knows the
+answer.
+
+So revocation carries its own half of the guarantee.
+`revokePendingTransfersFrom` sweeps the parked senders and drops the derivations
+rooted at the revoked node or any of its descendants, and both `cspaceRevokeCdt`
+and `cspaceRevokeCdtStreaming` end with it. The revoke still reports success —
+refusing would let a parked sender block revocation indefinitely — and there is
+nothing left for a later receive to install.
+`revokePendingTransfersFrom_preserves_capabilityInvariantBundle` discharges all
+seven conjuncts from `revokePendingTransfersFrom_frame`, which proves the sweep
+rewrites TCBs to TCBs and leaves the CDT and both keyed maps untouched.
+
+The two halves together are what the guarantee needs: the creator refuses a
+derivation whose *source* is gone, the revoke destroys a derivation whose *parent
+edge* was revoked. Neither implies the other, and a future operation that
+destroys authority in a third way owes the same question of itself.
 
 Still open, and deliberately: an invariant stating parent-liveness directly
 (`∀ node, node is a derivation parent → cdtNodeSlot[node] ≠ none`) would let the

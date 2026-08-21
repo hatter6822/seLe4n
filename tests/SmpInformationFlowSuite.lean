@@ -7789,22 +7789,24 @@ private def runDeclaredFootprintChecks : IO Unit := do
      true)
   -- The bracket covers the OBJECT domain only; the scheduler domain, the
   -- dynamic PIP chain, the queue-ownership protocol, (SM9.D audit) the
-  -- capability-transfer destination CNode and (SM9.D audit) the taint table's
-  -- per-key realisation are named as data with owners rather than left implicit.
-  assertBool "the five uncovered lock domains are registered, each with an owner"
-    (decide (declaredFootprintUncoveredDomains.length = 5) &&
+  -- capability-transfer destination CNode, (SM9.D audit) the taint table's
+  -- per-key realisation and (PR #873 round 13) the CDT node allocator's global
+  -- counter are named as data with owners rather than left implicit.
+  assertBool "the six uncovered lock domains are registered, each with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 6) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
        = [UncoveredLockDomain.schedulerDomain, UncoveredLockDomain.dynamicPipChain,
           UncoveredLockDomain.queueOwnershipProtocol,
           UncoveredLockDomain.capTransferReceiverCnode,
-          UncoveredLockDomain.taintTablePerKeyStore]) &&
+          UncoveredLockDomain.taintTablePerKeyStore,
+          UncoveredLockDomain.cdtNodeAllocation]) &&
      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
   -- LOAD-BEARING NEGATIVE: completeness is quantified over the *constructors*,
   -- so a domain added without a registration cannot pass.
   assertBool "NEGATIVE: every uncovered-domain constructor is registered"
     (UncoveredLockDomain.all.all
        (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
-     decide (UncoveredLockDomain.all.length = 5))
+     decide (UncoveredLockDomain.all.length = 6))
   -- PR #873 round 6: the inventory is no longer data alone.  Relying on declared
   -- footprints as a complete serialization discipline is gated on it being
   -- EMPTY, so the per-key taint store — the entry the review pressed twice — is

@@ -328,8 +328,8 @@ coverage sentence is corrected to carve the sink out; the taint write at that
 key is exactly as covered as the object write it shadows, so the gap belongs
 to the footprint, not to the taint layer.
 
-**Revocation precision — one defect, four sightings, closed at the creator
-(v0.33.59 → v0.33.64).**  Review of the SM9.D cut surfaced an IPC-transferred
+**Revocation precision — one defect, five sightings, closed in two halves
+(v0.33.59 → v0.33.88).**  Review of the SM9.D cut surfaced an IPC-transferred
 capability whose CDT parent was a synthetic slot, and each subsequent round
 found another operation that could leave a transferred copy hanging beneath a
 node no slot points at — where `cspaceRevokeCdt`, which resolves through
@@ -353,6 +353,21 @@ invariant stating parent-liveness directly — so a future destroyer fails at
 elaboration rather than at runtime — is recorded against PR 5 in
 [`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`](planning/SMP_FINE_LOCK_MIGRATION_PLAN.md)
 §3.1.
+
+A fifth sighting (v0.33.88) showed where that creator-side check *stops*: it
+keys on the **source slot's** liveness, and revoking a derived subtree keeps the
+source slot — the source is exactly what the revoker retains — so
+`sourceRevoked` never fires and the in-flight child of a revoked parent lands
+after the revoke reports success.  Revocation therefore carries the other half:
+`revokePendingTransfersFrom` drops the derivations still parked in senders'
+`pendingMessage` beneath the revoked node or any descendant, and both
+`cspaceRevokeCdt` and `cspaceRevokeCdtStreaming` end with it.  The revoke still
+succeeds — refusing would let a parked sender block revocation indefinitely —
+and `revokePendingTransfersFrom_preserves_capabilityInvariantBundle` discharges
+all seven conjuncts from a frame proving the sweep rewrites TCBs to TCBs and
+leaves the CDT untouched.  The creator refuses a derivation whose *source* is
+gone; the revoke destroys one whose *parent edge* was revoked.  Neither implies
+the other.
 
 Plan: [`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md)
 §SM9.D.  Next: SM9.E tests and phase closure.

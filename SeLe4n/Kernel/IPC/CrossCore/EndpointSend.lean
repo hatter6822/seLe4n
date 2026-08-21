@@ -322,10 +322,13 @@ def endpointSendDualWithCapsOnCore
     (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
+  -- PR #873 round 13: stamp the endpoint's grant right into the message, so the
+  -- queued ordering and the immediate rendezvous read the same authority from the
+  -- same place.  See `endpointSendDualWithCaps` for the ordering this removes.
   let hasReceiver := match st.getEndpoint? endpointId with
     | some ep => ep.receiveQ.head.isSome
     | none    => false
-  match endpointSendDualOnCore endpointId sender msg executingCore st with
+  match endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem .grant } executingCore st with
   | (st', .error e) => (st', .error e)
   | (st', .ok sgi) =>
       if !hasReceiver || msg.caps.isEmpty then (st', .ok ({ results := #[] }, sgi))
@@ -336,8 +339,8 @@ def endpointSendDualWithCapsOnCore
           | some receiverId =>
             match lookupCspaceRoot st' receiverId with
             | some recvRoot =>
-              match ipcUnwrapCaps msg senderCspaceRoot recvRoot receiverSlotBase
-                  (endpointRights.mem .grant) st' with
+              match ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } senderCspaceRoot recvRoot
+                  receiverSlotBase (endpointRights.mem .grant) st' with
               | .error e => (st', .error e)
               | .ok (summary, st'') => (st'', .ok (summary, sgi))
             | none => (st', .error .invalidCapability)
@@ -354,11 +357,14 @@ theorem endpointSendDualWithCapsOnCore_no_caps
     (hCaps : msg.caps.isEmpty = true) :
     endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
         receiverSlotBase executingCore st
-      = ((endpointSendDualOnCore endpointId sender msg executingCore st).1,
-         (endpointSendDualOnCore endpointId sender msg executingCore st).2.map
+      = ((endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1,
+         (endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).2.map
            (fun sgi => ({ results := #[] }, sgi))) := by
+  -- PR #873 round 13: against the **stamped** message, because that is what the
+  -- wrapper transmits.  With no capabilities the grant bit changes no behaviour,
+  -- but it is part of the message the send parks.
   unfold endpointSendDualWithCapsOnCore
-  cases h : endpointSendDualOnCore endpointId sender msg executingCore st with
+  cases h : endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
   | mk st' res => cases res with
     | error e => simp [Except.map]
     | ok sgi => simp [hCaps, Except.map]

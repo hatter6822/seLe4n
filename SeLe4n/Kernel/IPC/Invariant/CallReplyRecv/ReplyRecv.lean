@@ -646,13 +646,17 @@ theorem endpointCallWithCaps_preserves_ipcInvariant
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     ipcInvariant st' := by
+  -- PR #873 round 13: the wrapper stamps the endpoint's grant right into the
+  -- message before the call, so the transition under it is the stamped one.
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
+  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hInvMid := endpointCall_preserves_ipcInvariant st stMid endpointId caller msg hInv hObjInv hCall
-    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    have hInvMid := endpointCall_preserves_ipcInvariant st stMid endpointId caller
+      { msg with capsGranted := endpointRights.mem AccessRight.grant } hInv hObjInv hCall
+    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid
+      endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
     simp [hCall] at hStep
     -- AN10-B: post-migration `endpointCallWithCaps` reads via `getEndpoint?`.
     cases hEp : st.getEndpoint? endpointId with
@@ -672,7 +676,7 @@ theorem endpointCallWithCaps_preserves_ipcInvariant
           | none => simp [hLookup] at hStep -- WS-RC R1 (DEEP-IPC-03): fail-closed, vacuous
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_ipcInvariant msg callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_ipcInvariant { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hInvMid hObjInvMid hStep
 
 -- ============================================================================

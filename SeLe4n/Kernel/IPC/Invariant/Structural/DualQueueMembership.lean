@@ -5607,12 +5607,12 @@ theorem endpointCallWithCaps_establishes_blockedOnReplyHasReplyObject
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     blockedOnReplyHasReplyObject st' := by
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
+  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hPMid := endpointCall_establishes_blockedOnReplyHasReplyObject st stMid endpointId caller msg hInv hObjInv hCall
-    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    have hPMid := endpointCall_establishes_blockedOnReplyHasReplyObject st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hInv hObjInv hCall
+    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
     simp [hCall] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
@@ -5629,7 +5629,7 @@ theorem endpointCallWithCaps_establishes_blockedOnReplyHasReplyObject
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject msg callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hPMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -5697,12 +5697,12 @@ theorem endpointSendDualWithCaps_preserves_blockedOnReplyHasReplyObject
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     blockedOnReplyHasReplyObject st' := by
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hPMid := endpointSendDual_preserves_blockedOnReplyHasReplyObject st stMid endpointId sender msg hInv hObjInv hSend
-    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+    have hPMid := endpointSendDual_preserves_blockedOnReplyHasReplyObject st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hInv hObjInv hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     simp [hSend] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
@@ -5719,7 +5719,7 @@ theorem endpointSendDualWithCaps_preserves_blockedOnReplyHasReplyObject
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject msg senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hPMid hStep
 
 -- ============================================================================
@@ -9978,12 +9978,12 @@ theorem endpointSendDualWithCaps_sameSchedContextBindings
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     sameSchedContextBindings st st' := by
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hSMid := endpointSendDual_sameSchedContextBindings st stMid endpointId sender msg hObjInv hSend
-    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+    have hSMid := endpointSendDual_sameSchedContextBindings st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     simp [hSend] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hSMid
@@ -10000,7 +10000,7 @@ theorem endpointSendDualWithCaps_sameSchedContextBindings
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hSMid.trans (ipcUnwrapCaps_sameSchedContextBindings msg senderCspaceRoot recvRoot
+            exact hSMid.trans (ipcUnwrapCaps_sameSchedContextBindings { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -10016,12 +10016,12 @@ theorem endpointCallWithCaps_sameSchedContextBindings
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     sameSchedContextBindings st st' := by
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
+  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hSMid := endpointCall_sameSchedContextBindings st stMid endpointId caller msg hObjInv hCall
-    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    have hSMid := endpointCall_sameSchedContextBindings st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
+    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
     simp [hCall] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hSMid
@@ -10038,7 +10038,7 @@ theorem endpointCallWithCaps_sameSchedContextBindings
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hSMid.trans (ipcUnwrapCaps_sameSchedContextBindings msg callerCspaceRoot recvRoot
+            exact hSMid.trans (ipcUnwrapCaps_sameSchedContextBindings { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -10057,12 +10057,12 @@ theorem endpointSendDualWithCaps_donationOwnerFrame
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     donationOwnerFrame st st' := by
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hFMid := endpointSendDual_donationOwnerFrame st stMid endpointId sender msg hObjInv hQHBC hSenderNotReply hSend
-    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+    have hFMid := endpointSendDual_donationOwnerFrame st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hQHBC hSenderNotReply hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     simp [hSend] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
@@ -10079,7 +10079,7 @@ theorem endpointSendDualWithCaps_donationOwnerFrame
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hFMid.trans (ipcUnwrapCaps_donationOwnerFrame msg senderCspaceRoot recvRoot
+            exact hFMid.trans (ipcUnwrapCaps_donationOwnerFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -10120,12 +10120,12 @@ theorem endpointCallWithCaps_donationOwnerFrame
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     donationOwnerFrame st st' := by
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
+  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hFMid := endpointCall_donationOwnerFrame st stMid endpointId caller msg hObjInv hQHBC hCallerNotReply hCall
-    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    have hFMid := endpointCall_donationOwnerFrame st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hQHBC hCallerNotReply hCall
+    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
     simp [hCall] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
@@ -10142,7 +10142,7 @@ theorem endpointCallWithCaps_donationOwnerFrame
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hFMid.trans (ipcUnwrapCaps_donationOwnerFrame msg callerCspaceRoot recvRoot
+            exact hFMid.trans (ipcUnwrapCaps_donationOwnerFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -10182,12 +10182,12 @@ theorem endpointSendDualWithCaps_passiveServerIdleFrame
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     passiveServerIdleFrame st st' := by
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hFMid := endpointSendDual_passiveServerIdleFrame st stMid endpointId sender msg hObjInv hSenderNotUnbound hSend
-    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+    have hFMid := endpointSendDual_passiveServerIdleFrame st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSenderNotUnbound hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     simp [hSend] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
@@ -10204,7 +10204,7 @@ theorem endpointSendDualWithCaps_passiveServerIdleFrame
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrame msg senderCspaceRoot recvRoot
+            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -10238,12 +10238,12 @@ theorem endpointSendDualWithCaps_timeoutBudgetFrame
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     timeoutBudgetFrame st st' := by
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hFMid := endpointSendDual_timeoutBudgetFrame st stMid endpointId sender msg hObjInv hSend
-    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+    have hFMid := endpointSendDual_timeoutBudgetFrame st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     simp [hSend] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
@@ -10260,7 +10260,7 @@ theorem endpointSendDualWithCaps_timeoutBudgetFrame
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hFMid.trans (ipcUnwrapCaps_timeoutBudgetFrame msg senderCspaceRoot recvRoot
+            exact hFMid.trans (ipcUnwrapCaps_timeoutBudgetFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -10293,12 +10293,12 @@ theorem endpointCallWithCaps_passiveServerIdleFrame
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     passiveServerIdleFrame st st' := by
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
+  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hFMid := endpointCall_passiveServerIdleFrame st stMid endpointId caller msg hObjInv hCallerNotUnbound hCall
-    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    have hFMid := endpointCall_passiveServerIdleFrame st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCallerNotUnbound hCall
+    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
     simp [hCall] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
@@ -10315,7 +10315,7 @@ theorem endpointCallWithCaps_passiveServerIdleFrame
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrame msg callerCspaceRoot recvRoot
+            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -10348,12 +10348,12 @@ theorem endpointCallWithCaps_timeoutBudgetFrame
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     timeoutBudgetFrame st st' := by
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
+  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hFMid := endpointCall_timeoutBudgetFrame st stMid endpointId caller msg hObjInv hCall
-    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    have hFMid := endpointCall_timeoutBudgetFrame st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
+    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
     simp [hCall] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
@@ -10370,7 +10370,7 @@ theorem endpointCallWithCaps_timeoutBudgetFrame
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hFMid.trans (ipcUnwrapCaps_timeoutBudgetFrame msg callerCspaceRoot recvRoot
+            exact hFMid.trans (ipcUnwrapCaps_timeoutBudgetFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -11327,12 +11327,12 @@ theorem endpointCallWithCaps_establishes_blockedOnReplyHasTarget
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     blockedOnReplyHasTarget st' := by
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
+  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hPMid := endpointCall_establishes_blockedOnReplyHasTarget st stMid endpointId caller msg hInv hObjInv hCall
-    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    have hPMid := endpointCall_establishes_blockedOnReplyHasTarget st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hInv hObjInv hCall
+    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
     simp [hCall] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
@@ -11349,7 +11349,7 @@ theorem endpointCallWithCaps_establishes_blockedOnReplyHasTarget
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_blockedOnReplyHasTarget msg callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_blockedOnReplyHasTarget { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hPMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -11413,12 +11413,12 @@ theorem endpointSendDualWithCaps_preserves_blockedOnReplyHasTarget
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     blockedOnReplyHasTarget st' := by
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hPMid := endpointSendDual_preserves_blockedOnReplyHasTarget st stMid endpointId sender msg hInv hObjInv hSend
-    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+    have hPMid := endpointSendDual_preserves_blockedOnReplyHasTarget st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hInv hObjInv hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     simp [hSend] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
@@ -11435,7 +11435,7 @@ theorem endpointSendDualWithCaps_preserves_blockedOnReplyHasTarget
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_blockedOnReplyHasTarget msg senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_blockedOnReplyHasTarget { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hPMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -13879,13 +13879,13 @@ theorem endpointSendDualWithCaps_preserves_pendingReceiveReplyWellFormed
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     pendingReceiveReplyWellFormed st' := by
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     have hPMid := endpointSendDual_preserves_pendingReceiveReplyWellFormed st stMid endpointId
-      sender msg hObjInv hInv hSenderNotRecv hSend
-    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+      sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hInv hSenderNotRecv hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     simp [hSend] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
@@ -13902,7 +13902,7 @@ theorem endpointSendDualWithCaps_preserves_pendingReceiveReplyWellFormed
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed msg senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hPMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -13921,13 +13921,13 @@ theorem endpointCallWithCaps_preserves_pendingReceiveReplyWellFormed
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     pendingReceiveReplyWellFormed st' := by
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
+  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     have hPMid := endpointCall_preserves_pendingReceiveReplyWellFormed st stMid endpointId
-      caller msg hObjInv hInv hCallerNotRecv hCall
-    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+      caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hInv hCallerNotRecv hCall
+    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
     simp [hCall] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
@@ -13944,7 +13944,7 @@ theorem endpointCallWithCaps_preserves_pendingReceiveReplyWellFormed
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed msg callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hPMid hStep
 
 -- ============================================================================
@@ -14928,13 +14928,13 @@ theorem endpointSendDualWithCaps_preserves_queueNextBlockingConsistent
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     queueNextBlockingConsistent st' := by
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     have hQNBCMid := endpointSendDual_preserves_queueNextBlockingConsistent st stMid endpointId sender
-      msg hInv hDQSI hTail hObjInv hFreshSender hSendTailFresh hSend
-    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+      { msg with capsGranted := endpointRights.mem AccessRight.grant } hInv hDQSI hTail hObjInv hFreshSender hSendTailFresh hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     simp [hSend] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQNBCMid
@@ -14951,7 +14951,7 @@ theorem endpointSendDualWithCaps_preserves_queueNextBlockingConsistent
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_queueNextBlockingConsistent msg senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_queueNextBlockingConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hQNBCMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -14982,13 +14982,13 @@ theorem endpointCallWithCaps_preserves_queueNextBlockingConsistent
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     queueNextBlockingConsistent st' := by
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
+  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hQNBCMid := endpointCall_preserves_queueNextBlockingConsistent st stMid endpointId caller msg
+    have hQNBCMid := endpointCall_preserves_queueNextBlockingConsistent st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant }
       hInv hDQSI hTail hObjInv hFreshCaller hSendTailFresh hCall
-    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
     simp [hCall] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQNBCMid
@@ -15005,7 +15005,7 @@ theorem endpointCallWithCaps_preserves_queueNextBlockingConsistent
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_queueNextBlockingConsistent msg callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_queueNextBlockingConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hQNBCMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -15099,13 +15099,13 @@ theorem endpointSendDualWithCaps_preserves_endpointQueueTailBlockedConsistent
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     endpointQueueTailBlockedConsistent st' := by
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     have hTailMid := endpointSendDual_preserves_endpointQueueTailBlockedConsistent st stMid endpointId
-      sender msg hInv hDQSI hQHBC hObjInv hFreshSender hSend
-    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+      sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hInv hDQSI hQHBC hObjInv hFreshSender hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     simp [hSend] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hTailMid
@@ -15122,7 +15122,7 @@ theorem endpointSendDualWithCaps_preserves_endpointQueueTailBlockedConsistent
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent msg senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hTailMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -15145,13 +15145,13 @@ theorem endpointCallWithCaps_preserves_endpointQueueTailBlockedConsistent
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     endpointQueueTailBlockedConsistent st' := by
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
+  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     have hTailMid := endpointCall_preserves_endpointQueueTailBlockedConsistent st stMid endpointId caller
-      msg hInv hDQSI hQHBC hObjInv hFreshCaller hCall
-    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+      { msg with capsGranted := endpointRights.mem AccessRight.grant } hInv hDQSI hQHBC hObjInv hFreshCaller hCall
+    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
     simp [hCall] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hTailMid
@@ -15168,7 +15168,7 @@ theorem endpointCallWithCaps_preserves_endpointQueueTailBlockedConsistent
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent msg callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hTailMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -16518,13 +16518,13 @@ theorem endpointSendDualWithCaps_preserves_queueHeadBlockedConsistent
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     queueHeadBlockedConsistent st' := by
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     have hQHBCMid := endpointSendDual_preserves_queueHeadBlockedConsistent st stMid endpointId
-      sender msg hQHBC hQNTB hDQSI hObjInv hFreshSender hSend
-    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+      sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hQHBC hQNTB hDQSI hObjInv hFreshSender hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     simp [hSend] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQHBCMid
@@ -16541,7 +16541,7 @@ theorem endpointSendDualWithCaps_preserves_queueHeadBlockedConsistent
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_queueHeadBlockedConsistent msg senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_queueHeadBlockedConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hQHBCMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -16572,13 +16572,13 @@ theorem endpointSendDualWithCaps_preserves_queueNextTargetBlocked
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     queueNextTargetBlocked st' := by
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     have hQNTBMid := endpointSendDual_preserves_queueNextTargetBlocked st stMid endpointId
-      sender msg hQNTB hTail hDQSI hObjInv hFreshSender hSendTailFresh hSend
-    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+      sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hQNTB hTail hDQSI hObjInv hFreshSender hSendTailFresh hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     simp [hSend] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQNTBMid
@@ -16595,7 +16595,7 @@ theorem endpointSendDualWithCaps_preserves_queueNextTargetBlocked
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_queueNextTargetBlocked msg senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_queueNextTargetBlocked { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hQNTBMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -17841,13 +17841,13 @@ theorem endpointCallWithCaps_preserves_queueHeadBlockedConsistent
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     queueHeadBlockedConsistent st' := by
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
+  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hQHBCMid := endpointCall_preserves_queueHeadBlockedConsistent st stMid endpointId caller msg
+    have hQHBCMid := endpointCall_preserves_queueHeadBlockedConsistent st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant }
       hQHBC hQNTB hDQSI hObjInv hCallerNotRecv hFreshCaller hCall
-    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
     simp [hCall] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQHBCMid
@@ -17864,7 +17864,7 @@ theorem endpointCallWithCaps_preserves_queueHeadBlockedConsistent
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_queueHeadBlockedConsistent msg callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_queueHeadBlockedConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hQHBCMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -17899,13 +17899,13 @@ theorem endpointCallWithCaps_preserves_queueNextTargetBlocked
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     queueNextTargetBlocked st' := by
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
+  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hQNTBMid := endpointCall_preserves_queueNextTargetBlocked st stMid endpointId caller msg
+    have hQNTBMid := endpointCall_preserves_queueNextTargetBlocked st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant }
       hQNTB hDQSI hTail hObjInv hCallerReady hFreshCaller hSendTailFresh hCall
-    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
     simp [hCall] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQNTBMid
@@ -17922,7 +17922,7 @@ theorem endpointCallWithCaps_preserves_queueNextTargetBlocked
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_queueNextTargetBlocked msg callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_queueNextTargetBlocked { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hQNTBMid hStep
 
 /-- IPC de-threading D2 (de-threaded): `endpointReceiveDual` preserves `ipcInvariantFull`,
@@ -19495,13 +19495,13 @@ theorem endpointSendDualWithCaps_preserves_allPendingMessagesBounded
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     allPendingMessagesBounded st' := by
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hMid := endpointSendDual_preserves_allPendingMessagesBounded st stMid endpointId sender msg
+    have hMid := endpointSendDual_preserves_allPendingMessagesBounded st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant }
       hInv hObjInv hSend
-    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     simp [hSend] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
@@ -19518,7 +19518,7 @@ theorem endpointSendDualWithCaps_preserves_allPendingMessagesBounded
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_allPendingMessagesBounded msg senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_allPendingMessagesBounded { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- IPC de-threading D8: `endpointSendDualWithCaps` establishes `endpointQueueNoDup`
@@ -19547,13 +19547,13 @@ theorem endpointSendDualWithCaps_preserves_endpointQueueNoDup
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     endpointQueueNoDup st' := by
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hMid := endpointSendDual_preserves_endpointQueueNoDup st stMid endpointId sender msg
+    have hMid := endpointSendDual_preserves_endpointQueueNoDup st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant }
       hInv hDQSI hObjInv hFreshSender hSendTailFresh hSend
-    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     simp [hSend] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
@@ -19570,7 +19570,7 @@ theorem endpointSendDualWithCaps_preserves_endpointQueueNoDup
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_endpointQueueNoDup msg senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_endpointQueueNoDup { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- IPC de-threading D8: `endpointSendDualWithCaps` establishes
@@ -19598,13 +19598,13 @@ theorem endpointSendDualWithCaps_preserves_ipcStateQueueMembershipConsistent
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     ipcStateQueueMembershipConsistent st' := by
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender msg st with
+  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     have hMid := endpointSendDual_preserves_ipcStateQueueMembershipConsistent st stMid endpointId
-      sender msg hInvFull hObjInv hFreshSender hSendTailFresh hSend
-    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+      sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hInvFull hObjInv hFreshSender hSendTailFresh hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
     simp [hSend] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
@@ -19621,7 +19621,7 @@ theorem endpointSendDualWithCaps_preserves_ipcStateQueueMembershipConsistent
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent msg senderCspaceRoot
+            exact ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot
               recvRoot receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- IPC de-threading D8: `endpointReceiveDualWithCaps` establishes `allPendingMessagesBounded`
@@ -19815,13 +19815,13 @@ theorem endpointCallWithCaps_preserves_allPendingMessagesBounded
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     allPendingMessagesBounded st' := by
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
+  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hMid := endpointCall_preserves_allPendingMessagesBounded st stMid endpointId caller msg
+    have hMid := endpointCall_preserves_allPendingMessagesBounded st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant }
       hInv hObjInv hCall
-    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
     simp [hCall] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
@@ -19838,7 +19838,7 @@ theorem endpointCallWithCaps_preserves_allPendingMessagesBounded
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_allPendingMessagesBounded msg callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_allPendingMessagesBounded { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- IPC de-threading D8: `endpointCallWithCaps` establishes `endpointQueueNoDup`
@@ -19867,13 +19867,13 @@ theorem endpointCallWithCaps_preserves_endpointQueueNoDup
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     endpointQueueNoDup st' := by
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
+  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
-    have hMid := endpointCall_preserves_endpointQueueNoDup st stMid endpointId caller msg
+    have hMid := endpointCall_preserves_endpointQueueNoDup st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant }
       hInv hDQSI hObjInv hFreshCaller hSendTailFresh hCall
-    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
     simp [hCall] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
@@ -19890,7 +19890,7 @@ theorem endpointCallWithCaps_preserves_endpointQueueNoDup
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_endpointQueueNoDup msg callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_endpointQueueNoDup { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- IPC de-threading D8: `endpointCallWithCaps` establishes
@@ -19918,13 +19918,13 @@ theorem endpointCallWithCaps_preserves_ipcStateQueueMembershipConsistent
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     ipcStateQueueMembershipConsistent st' := by
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
+  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     have hMid := endpointCall_preserves_ipcStateQueueMembershipConsistent st stMid endpointId caller
-      msg hInvFull hObjInv hFreshCaller hSendTailFresh hCall
-    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+      { msg with capsGranted := endpointRights.mem AccessRight.grant } hInvFull hObjInv hFreshCaller hSendTailFresh hCall
+    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
     simp [hCall] at hStep
     cases hEp : st.getEndpoint? endpointId with
     | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
@@ -19941,7 +19941,7 @@ theorem endpointCallWithCaps_preserves_ipcStateQueueMembershipConsistent
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent msg callerCspaceRoot
+            exact ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot
               recvRoot receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- IPC de-threading D2 (de-threaded): `endpointSendDualWithCaps` preserves
