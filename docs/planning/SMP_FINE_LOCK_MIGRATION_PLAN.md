@@ -485,23 +485,39 @@ Both of these surfaced at v0.33.77, while wiring the live `.receive` through the
 WithCaps path.  Neither is a regression from that cut; both are pre-existing and
 were invisible while the receive installed nothing at all.
 
-### 9.1 `.replyRecv`'s receive leg still drops a parked sender's capabilities
+### 9.1 `.replyRecv`'s receive leg dropped a parked sender's capabilities — **CLOSED at v0.33.80**
 
-`.receive` now installs what a parked sender was carrying.  `.replyRecv` is
-reply-then-receive, and its receive leg runs inside `replyRecvBody`, which calls
-the **bare** `endpointReceiveDualOnCore` — so the identical defect survives on
-that arm: a caps-carrying send that parks and is later collected by a
-`.replyRecv` rather than a `.receive` transfers nothing, and the arm's staged
-`extraCaps` reports zero.
+`.receive` installed what a parked sender was carrying from v0.33.77.
+`.replyRecv` is reply-then-receive, and its receive leg ran inside
+`replyRecvBody`, which called the **bare** `endpointReceiveDualOnCore` — so the
+identical defect survived on that arm: a caps-carrying send that parked and was
+later collected by a `.replyRecv` rather than a `.receive` transferred nothing,
+and the arm's staged `extraCaps` reported zero.  That arm is how an seL4-MCS
+server loop actually runs (`Recv` once, then `ReplyRecv` forever), so a server
+received capabilities on its first request and silently none afterwards.
 
-Closing it means threading the receiver's CSpace root, its receive slot and the
-resulting `CapTransferSummary` through `replyRecvBody` — **59 references**, 23 of
-them in `NonInterferenceCrossCore.lean` — and moving the arm's staged count off
-the hardcoded zero.  That is the same shape of mechanical surgery the
-`endpointReceiveDualWithCaps` grant-principal change took, and it is a coherent
-slice of its own rather than a rider.
+Closed by threading the receiver's CSpace root and receive slot through
+`replyRecvBody` and returning the `CapTransferSummary`, so both dispatch arms
+stage the honest installed count.  The 59 figure recorded here counted prose;
+the real surgery was **nine** applications plus the cross-core non-interference
+carriage (`replyRecvBodyWriteSet` and the two theorems gained the two
+parameters, and `endpointReceiveDualWithCapsOnCore` gained its own
+scheduler/machine frame lemmas, confinement bound and NI instantiation — the
+capability install writes no core, so the declared per-core footprint is
+unchanged).
 
-**Closure target**: the cut after the `.receive` wiring lands, before SM9 closes.
+The cut also corrected an inventory claim that had gone stale one round earlier:
+`crossCoreTransitionIsLiveArm` still marked the *bare* per-core receive a live
+arm on the strength of two facts — that `.receive` invoked it directly and that
+it was `replyRecvBody`'s receive leg — neither of which survives.  The live-arm
+claim moved to a new `.endpointReceiveDualWithCaps` entry (which is also what
+`syscallDelegates_receive` already names), and the bare transition joined
+`.notificationSignal` and `.endpointReply` as a below-API entry.
+
+Regression: `chain12dReplyRecvCapTransferArrivalOrder` runs both arrival
+orderings from one state and compares them to each other, with a load-bearing
+negative driving the bare per-core receive on the state ordering A succeeds
+from — it installs nothing, so a reroute back to it fails the positive.
 
 ### 9.2 `ipcUnwrapCaps` carries a `senderCspaceRoot` nothing reads
 
@@ -517,4 +533,8 @@ the argument removes that lookup, and with it an error a caller can currently
 observe, so the cut has to decide deliberately whether that fail-closed branch
 is still wanted on its own terms.
 
-**Closure target**: same cut as §9.1, which touches the same three paths.
+**Closure target**: still open.  §9.1 closed at v0.33.80 without touching it:
+that cut threaded the *receiver* side through `replyRecvBody` and never had to
+decide the sender-side fail-closed question, which remains a deliberate call
+about an observable error rather than a mechanical deletion.  It stays owed
+before SM9 closes.

@@ -1087,6 +1087,134 @@ private def chain12cIpcCapTransferArrivalOrder : IO Unit := do
   assertInvariants "chain12c: arrival-order-independent transfer (queued)" stB2
   assertInvariants "chain12c: arrival-order-independent transfer (live per-core)" stLive
 
+/-- SCN-IPC-CAP-TRANSFER-REPLYRECV-ORDER (PR #873 round 7): **the same
+arrival-order property, for the arm that is a receive without being spelled
+`.receive`.**
+
+`.replyRecv` is how an seL4-MCS server loop actually runs: `Recv` once, then
+`ReplyRecv` forever.  Its receive leg ran the *bare* per-core receive, so a
+capability-bearing client that parked before the server came back around had its
+capabilities dropped — while a client that arrived after the server blocked took
+the WithCaps send path and had them installed.  A server would therefore receive
+capabilities on its first request and silently none afterwards.
+
+Both orderings are run from the same starting state and compared to each other,
+so a change that breaks both the same way cannot pass by moving one number. -/
+private def chain12dReplyRecvCapTransferArrivalOrder : IO Unit := do
+  let epId : SeLe4n.ObjId := ⟨3450⟩
+  let server : SeLe4n.ThreadId := ⟨3460⟩
+  let prevCaller : SeLe4n.ThreadId := ⟨3461⟩
+  let nextSender : SeLe4n.ThreadId := ⟨3462⟩
+  let senderCNode : SeLe4n.ObjId := ⟨3470⟩
+  let serverCNode : SeLe4n.ObjId := ⟨3471⟩
+  let payloadObj : SeLe4n.ObjId := ⟨3480⟩
+  let rid : SeLe4n.ReplyId := ⟨3490⟩
+  let payloadCap : Capability :=
+    { target := .object payloadObj, rights := AccessRightSet.ofList [.read], badge := none }
+  let grantRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
+  let srcSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 5
+  let recvSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
+
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
+      |>.withObject senderCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)]
+        })
+      |>.withObject serverCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.empty
+        })
+      |>.withObject server.toObjId (.tcb { tid := server, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := serverCNode, vspaceRoot := ⟨3491⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
+      |>.withObject prevCaller.toObjId (.tcb { tid := prevCaller, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3492⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .blockedOnReply epId (some server), replyObject := some rid })
+      |>.withObject nextSender.toObjId (.tcb { tid := nextSender, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3493⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288), ipcState := .ready })
+      |>.withObject rid.toObjId (.reply { replyId := rid, caller := some prevCaller })
+      |>.withRunnable [server, nextSender]
+      |>.buildChecked)
+
+  let (srcNode, stBase) :=
+    SystemState.ensureCdtNodeForSlot st0 { cnode := senderCNode, slot := srcSlot }
+  let requestMsg : IpcMessage :=
+    { registers := #[], caps := #[{ cap := payloadCap, srcNode := srcNode }],
+      badge := none, capsGranted := grantRights.mem .grant }
+  let replyMsg : IpcMessage :=
+    { registers := #[SeLe4n.RegValue.ofNat 7], caps := #[], badge := none }
+
+  let serverSlotFilled (st : SystemState) : Bool :=
+    match st.objects[serverCNode]? with
+    | some (.cnode cn) => (cn.lookup recvSlot).isSome
+    | _ => false
+
+  -- Ordering A: the next request PARKS first, then the server comes back around
+  -- with `.replyRecv` and dequeues it.  This is the ordering that dropped the
+  -- capabilities.
+  let (stA1, sendResA) :=
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender requestMsg grantRights
+      senderCNode recvSlot bootCoreId stBase
+  expect "chain12d: A — the request parks (no server waiting yet)"
+    (match sendResA with
+     | .ok (summary, _) => summary.results.isEmpty && !serverSlotFilled stA1
+     | .error _ => false)
+  let (summaryA, stA2) ← expectOkSt "chain12d: A — .replyRecv collects the parked request"
+    (SeLe4n.Kernel.replyRecvBody epId server rid prevCaller replyMsg serverCNode recvSlot
+      bootCoreId stA1)
+
+  -- Ordering B: the server calls `.replyRecv` FIRST (its receive leg blocks),
+  -- then the request arrives and rendezvouses.
+  let (summaryB0, stB1) ← expectOkSt "chain12d: B — .replyRecv blocks on the receive leg"
+    (SeLe4n.Kernel.replyRecvBody epId server rid prevCaller replyMsg serverCNode recvSlot
+      bootCoreId stBase)
+  expect "chain12d: B — a blocked receive leg installs nothing yet"
+    (summaryB0.results.isEmpty && !serverSlotFilled stB1)
+  let (stB2, sendResB) :=
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender requestMsg grantRights
+      senderCNode recvSlot bootCoreId stB1
+
+  -- THE PROPERTY: the two orderings agree.
+  expect "chain12d: the QUEUED ordering installed the capability"
+    (serverSlotFilled stA2)
+  expect "chain12d: the rendezvous ordering installed the capability too"
+    (serverSlotFilled stB2)
+  expect "chain12d: both orderings report the same install count"
+    (match sendResB with
+     | .ok (summaryB, _) => summaryA.installedCount == summaryB.installedCount
+     | .error _ => false)
+  expect "chain12d: both orderings report the same transfer results"
+    (match sendResB with
+     | .ok (summaryB, _) => summaryA.results == summaryB.results
+     | .error _ => false)
+
+  -- NEGATIVE, load-bearing: the SENDER's grant decides here too.  Without it the
+  -- queued ordering installs nothing, so the positive above is measuring the
+  -- transfer rather than the mere presence of a slot.
+  let requestNoGrant : IpcMessage := { requestMsg with capsGranted := false }
+  let (stC1, _) :=
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender requestNoGrant
+      (AccessRightSet.ofList [.read, .write]) senderCNode recvSlot bootCoreId stBase
+  let (summaryC, stC2) ← expectOkSt "chain12d: C — .replyRecv collects a non-granting request"
+    (SeLe4n.Kernel.replyRecvBody epId server rid prevCaller replyMsg serverCNode recvSlot
+      bootCoreId stC1)
+  expect "chain12d: NEGATIVE — a non-granting parked request installs nothing"
+    (!serverSlotFilled stC2 && summaryC.installedCount == 0)
+
+  -- NEGATIVE, load-bearing: the BARE per-core receive — what the leg ran until
+  -- this cut — installs nothing on the very state ordering A succeeds from.  If
+  -- `replyRecvBody` is ever routed back to it, the positive above fails rather
+  -- than the difference going unnoticed.
+  let (stBare, _) :=
+    SeLe4n.Kernel.endpointReceiveDualOnCore epId server (some rid) bootCoreId stA1
+  expect "chain12d: NEGATIVE — the BARE per-core receive installs nothing (the defect)"
+    (!serverSlotFilled stBare)
+
+  -- The reply leg still did its job in both orderings.
+  expect "chain12d: the reply leg unblocked the previous caller"
+    ((stA2.getTcb? prevCaller).any (fun t => decide (t.ipcState = .ready)))
+
+  assertInvariants "chain12d: replyRecv arrival-order-independent transfer (queued)" stA2
+  assertInvariants "chain12d: replyRecv arrival-order-independent transfer (rendezvous)" stB2
+
 /-- SCN-IPC-CAP-TRANSFER-NO-GRANT: Grant-right gate blocks cap transfer.
 Endpoint lacks Grant right — caps should be silently dropped. -/
 private def chain13IpcCapTransferNoGrant : IO Unit := do
@@ -2587,6 +2715,7 @@ private def runOperationChainSuite : IO Unit := do
   chain12IpcCapTransfer
   chain12bIpcCapTransferRevocable
   chain12cIpcCapTransferArrivalOrder
+  chain12dReplyRecvCapTransferArrivalOrder
   chain13IpcCapTransferNoGrant
   chain14IpcBadgeAndCapTransfer
   chain15StrictRevokeDeepChain

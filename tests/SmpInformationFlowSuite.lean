@@ -4690,17 +4690,17 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "twenty-nine cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 29))
-  assertBool "twenty-three of the twenty-nine can name a core other than the executing one"
+  assertBool "thirty cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 30))
+  assertBool "twenty-four of the thirty can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 23))
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 24))
   assertBool "…and the wait, the two VSpace arms, the declassification and the two audit readers are the six that cannot"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationWait,
       .vspaceMapDispatch, .vspaceUnmapDispatch, .declassifyDispatch,
       .auditReadDispatch, .auditDrainDispatch].all (fun t =>
         decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote t = false)))
-  assertBool "twenty-two of the twenty-nine are the arms the live syscall dispatch reaches"
+  assertBool "twenty-two of the thirty are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
       SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 22))
   -- Round 35: the three entries that emptied the per-core routing allowlist.
@@ -4776,12 +4776,21 @@ private def runCoreSetAlgebraChecks : IO Unit := do
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReply = false) &&
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReplyRecv = false) &&
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .cancelIpcBlocking = false))
-  -- Round 8: the receive dual is a leg of `replyRecvBody` AND the transition the
-  -- live `.receive` arm reaches, so it is a live arm too.  The enforcement table
-  -- has said so since round 4; this inventory agrees.
-  assertBool "the bound signal and the receive dual are both live arms"
+  -- Round 8, restated at PR #873 round 7: the receive dual was a leg of
+  -- `replyRecvBody` AND the transition the live `.receive` arm reached, which
+  -- made it a live arm.  Neither half holds now — both receive-shaped arms reach
+  -- the WithCaps form — so the live-arm claim moved to that entry and the bare
+  -- transition became a below-API one, like `.endpointReply` beside it.
+  assertBool "the bound signal and the WithCaps receive are both live arms"
     (decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .notificationSignalBound = true) &&
-     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReceiveDual = true))
+     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReceiveDualWithCaps = true))
+  -- NEGATIVE: and the bare receive cannot carry the claim as well, which is what
+  -- would happen if a later cut added the WithCaps entry without demoting it.
+  assertBool "NEGATIVE: the bare per-core receive is not a live arm"
+    (decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReceiveDual = false) &&
+     decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .endpointReceiveDual = none) &&
+     decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .endpointReceiveDualWithCaps
+       = some SeLe4n.Model.SyscallId.receive))
   -- PR #873 round 6: the arm reaches it through `endpointReceiveDualWithCapsOnCore`
   -- now — the bare per-core receive delivered a parked sender's message wholesale
   -- and installed none of the capabilities it carried, so a transfer happened or
@@ -4801,7 +4810,7 @@ private def runCoreSetAlgebraChecks : IO Unit := do
         n == "endpointReceiveDualOnCore"))
   assertBool "the covered-transition theorem names are pairwise distinct"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
-      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 29))
+      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 30))
   -- The load-bearing negative: the write set is *state-dependent*, so it is not
   -- a constant the theorem could be satisfying vacuously.  With no receiver the
   -- call writes one core; with a remote receiver waiting it writes two — and

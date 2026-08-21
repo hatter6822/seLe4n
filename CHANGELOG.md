@@ -1,3 +1,74 @@
+## v0.33.80 — the receive that was not spelled `.receive`
+
+v0.33.77 made capability delivery independent of who reached the endpoint first
+— for `.receive`.  `.replyRecv` is a receive too, and it was still on the bare
+per-core transition.
+
+That is not the obscure half.  `.replyRecv` is how an seL4-MCS server loop
+actually runs: `Recv` once, then `ReplyRecv` forever.  So a server received a
+client's capabilities on its **first** request — the one collected by the
+`.receive` — and silently none on every request after it, whenever the client
+parked before the server came back around.  A client that happened to arrive
+while the server was already blocked took the WithCaps send path and transferred
+normally, so the same two threads, the same endpoint and the same capability
+still produced a transfer or no transfer depending on scheduling; one arm
+narrower than before, and the arm servers spend their lives in.
+
+`replyRecvBody`'s receive leg now runs `endpointReceiveDualWithCapsOnCore`.  It
+takes the receiver's CSpace root and receive slot and **returns** the
+`CapTransferSummary` rather than staging it, because the arm owns the return
+frame: both dispatch arms stage `extraCaps` as the installed count instead of the
+hardcoded zero, the same honest figure `.send`, `.call` and `.receive` report.
+The authority is unchanged and is the sender's — `IpcMessage.capsGranted`,
+recorded when the message was built — which is what makes the two orderings ask
+the same question rather than merely both do something.
+
+The cross-core non-interference carriage moved with it:
+`endpointReceiveDualWithCapsOnCore` gained its own scheduler and register-bank
+frame lemmas, a confinement bound and an NI instantiation, and
+`replyRecvBodyWriteSet` reads the receive leg at the WithCaps post-state.  The
+declared per-core footprint is **unchanged**, because a capability install writes
+a CNode and no core at all — so every pin taken against the bare receive's write
+set still describes the live leg.
+
+### An inventory claim that had gone stale one round earlier
+
+`crossCoreTransitionIsLiveArm` marked the *bare* per-core receive a live arm, and
+the docstring said why: `.receive` invoked it directly, and it was
+`replyRecvBody`'s receive leg.  Round 6 falsified the first half and this cut
+falsifies the second, which left the inventory naming
+`endpointReceiveDualOnCore_crossCoreNonInterference` as the evidence for an arm
+that no longer calls it — the round-5 error exactly, in the entry round 8 had
+argued *into* the live set.  Its evidence field was worse than stale: it cited
+`syscallDelegates_receive`, whose statement has named the WithCaps form since
+round 6.
+
+So `.endpointReceiveDualWithCaps` is now its own entry and carries the live-arm
+claim, the delegation proof and the new NI theorem; the bare transition joins
+`.notificationSignal` and `.endpointReply` as a below-API entry with `syscall?`
+`none`.  Inventory 29 → 30, remote writers 23 → 24, live arms unchanged at 22 —
+the claim moved rather than multiplied, which is the check that says the demotion
+happened.  A suite negative pins that the bare entry is not a live arm and that
+the two `crossCoreLiveArmSyscall` answers did not both become `.receive`.
+
+### The regression measures the property, not one ordering's outcome
+
+`chain12dReplyRecvCapTransferArrivalOrder` runs both orderings of a
+capability-bearing request against a `.replyRecv` server from one starting state
+and compares them to **each other** — install count and result array — so a
+change that breaks both the same way cannot pass by moving one number.  Two
+load-bearing negatives: a non-granting sender transfers nothing in the queued
+ordering either, and the bare per-core receive, driven on the very state the
+fixed ordering succeeds from, installs nothing.  If the leg is ever routed back,
+the positive fails rather than the difference going unnoticed.
+
+`SMP_FINE_LOCK_MIGRATION_PLAN` §9.1 is closed.  Its "59 references" estimate
+counted prose; the real surgery was nine applications plus the non-interference
+carriage.  §9.2 stays open and untouched — this cut threaded the *receiver* side
+and never had to decide the sender-side fail-closed question.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §9.1
+
 ## v0.33.79 — the gates were reading less than they reported
 
 Six findings, and five of them share a shape: an artefact that reports on the

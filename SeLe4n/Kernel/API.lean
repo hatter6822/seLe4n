@@ -661,16 +661,34 @@ exactly this).  Steps reusing the verified cross-core transitions:
    server's SC and descheduling it *before* the receive leg would leave a server
    that immediately rendezvouses with a queued `Call` stuck `.ready` but absent
    from the run queues (PR #822 review, 6J90-w);
-2. **receive + re-link leg** — `endpointReceiveDualOnCore … (some rid)` receives the
-   next message and, on a `Call` rendezvous, links the *same* freed reply object to
-   the next caller atomically (#7.2 fold — faithful one-object reuse, formerly the
-   separate `linkReceivedCaller` step);
+2. **receive + re-link leg** — `endpointReceiveDualWithCapsOnCore … (some rid)`
+   receives the next message, **installs the capabilities it carries** into the
+   server's own CSpace, and, on a `Call` rendezvous, links the *same* freed reply
+   object to the next caller atomically (#7.2 fold — faithful one-object reuse,
+   formerly the separate `linkReceivedCaller` step);
 3. **donation** — `replyRecvReturnDonation` returns the old client's SC and, when a
    new `Call` rendezvoused, donates the new client's SC so the passive server keeps
-   running on the new request's budget (seL4-MCS SC-follows-message). -/
+   running on the new request's budget (seL4-MCS SC-follows-message).
+
+**The receive leg installs, and why it must** (PR #873 round 7).  It ran the
+*bare* per-core receive until this cut, so a capability-bearing sender that parked
+before the server invoked `.replyRecv` had its message moved across wholesale and
+its capabilities dropped — while a sender that arrived *after* the server blocked
+took the WithCaps send path and had them installed.  That is exactly the
+arrival-order dependence the `.receive` arms shed one round earlier, surviving in
+the one arm that is a receive without being spelled `.receive`.  A server loop
+written the seL4-MCS way (`Recv` once, then `ReplyRecv` forever) would have
+received capabilities on its first request and silently none afterwards.
+
+The authority is the sender's, carried on the message (`IpcMessage.capsGranted`),
+so both orderings ask the same question.  The summary is **returned** rather than
+staged here, because the arm owns the return frame — `.replyRecv`'s `extraCaps`
+is now the honest installed count instead of a hardcoded zero. -/
 def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : Concurrency.CoreId)
-    : Kernel Unit :=
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : Concurrency.CoreId)
+    : Kernel CapTransferSummary :=
   fun st =>
     -- WS-SM SM6.D (PR #822 review): capture the recorded server (the passive server
     -- `prevCaller` donated its SC to) and its home core BEFORE the reply leg consumes
@@ -690,9 +708,10 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
         -- `rid` (freed by the reply leg's folded consume — PR #827 review #3) to
         -- the next `Call` caller atomically — faithful one-object reuse, formerly
         -- the separate `linkReceivedCaller nextThread (some rid)` dispatch step.
-        match endpointReceiveDualOnCore epId tid (some rid) executingCore st1 with
+        match endpointReceiveDualWithCapsOnCore epId tid (some rid) receiverCspaceRoot
+            receiverSlotBase executingCore st1 with
         | (_, .error e) => .error e
-        | (st2, .ok (nextThread, _)) =>
+        | (st2, .ok (nextThread, summary, _)) =>
             match replyRecvReturnDonation tid recordedServer nextThread serverCore st2 with
             | .error e => .error e
             | .ok ((), st3) =>
@@ -701,10 +720,11 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
                 -- `.call`'s frame, delivered entirely through this path) and
                 -- the receive leg's completed plain sender (unit frame).  Both
                 -- stagers are guard-inert when their target was not woken.
-                -- Installed count 0: the reply message is built `caps := #[]`
-                -- by both `.reply`-shaped arms and the reply path runs no
-                -- unwrap (PR #866 round-2).
-                .ok ((), Architecture.stageWokenSendCompletion
+                -- Installed count 0 *for `prevCaller`*: the reply message is
+                -- built `caps := #[]` by both `.reply`-shaped arms and the
+                -- reply path runs no unwrap (PR #866 round-2).  The receive
+                -- leg's own count is the returned `summary`, staged by the arm.
+                .ok (summary, Architecture.stageWokenSendCompletion
                           (Architecture.stageDeliveredMessage st3 prevCaller 0)
                           wokenSender?)
 
@@ -2059,18 +2079,18 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             -- into the caller's `pendingMessage`; stage it as the return frame.
             -- A caller that blocked on the receive leg stages nothing (the
             -- `.ready` guard inside `stageDeliveredMessage`).
-            match replyRecvBody epId tid rid prevCaller msg executingCore st with
-            -- PR #873 round 6: installed count 0 — and unlike the `.receive`
-            -- arm one step over, this one is still honest.  `.replyRecv`'s
-            -- receive leg runs inside `replyRecvBody`, which routes through the
-            -- BARE per-core receive and so still drops a parked sender's
-            -- capabilities: the same defect `.receive` just had.  Closing it
-            -- means threading the receiver's CSpace root, its receive slot and
-            -- the transfer summary through `replyRecvBody` — 59 references, 23
-            -- of them in the cross-core non-interference module — so it is its
-            -- own cut rather than a rider on this one.  Registered in
-            -- `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`.
-            | .ok ((), st') => .ok ((), Architecture.stageDeliveredMessage st' tid 0)
+            match replyRecvBody epId tid rid prevCaller msg gate.cspaceRoot
+                decoded.capRecvSlot executingCore st with
+            -- PR #873 round 7: the receive leg inside `replyRecvBody` now runs
+            -- the **WithCaps** per-core receive, so a capability-bearing sender
+            -- that parked before this `.replyRecv` delivers its capabilities
+            -- too — the arrival-order dependence the `.receive` arms shed one
+            -- round earlier, closed in the arm that is a receive without being
+            -- spelled `.receive`.  `extraCaps` is the summary's INSTALLED
+            -- count, the same honest figure `.send`, `.call` and `.receive`
+            -- report; it was hardcoded to zero while this leg installed nothing.
+            | .ok (summary, st') =>
+                .ok ((), Architecture.stageDeliveredMessage st' tid summary.installedCount)
             | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-SM SM8.C.9: **there is no unchecked declassification.**
@@ -2505,11 +2525,15 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
                 -- WS-RA RA.B.6: stage the receive leg's delivery (the checked
                 -- twin of the unchecked arm's staging; the receive leg's own
                 -- flow gate governs the consumed message).
-                match replyRecvBody epId tid rid prevCaller msg executingCore st with
-                -- Installed count 0 — the checked twin of the unchecked
-                -- arm's still-open `.replyRecv` receive-leg gap (see there);
-                -- `.receive` itself now installs, this leg does not yet.
-                | .ok ((), st') => .ok ((), Architecture.stageDeliveredMessage st' tid 0)
+                match replyRecvBody epId tid rid prevCaller msg gate.cspaceRoot
+                    decoded.capRecvSlot executingCore st with
+                -- PR #873 round 7: the checked twin of the unchecked arm's
+                -- WithCaps receive leg — the endpoint→receiver flow is gated
+                -- above, so the *unchecked* per-core WithCaps receive inside
+                -- the shared body is correct here for the same reason the bare
+                -- one was, and `extraCaps` is the summary's installed count.
+                | .ok (summary, st') =>
+                    .ok ((), Architecture.stageDeliveredMessage st' tid summary.installedCount)
                 | .error e => .error e
               else .error .replyCapInvalid
     | _ => fun _ => .error .invalidCapability
@@ -3981,12 +4005,14 @@ theorem dispatchArm_receive_matches_returnShape
       summary.installedCount hTcb hReady hMsg hObjInv
 
 /-- RA.B.8, `.replyRecv` (`.message`): the compound arm's receive leg stages
-the delivered message for the server exactly as `.receive` does. -/
+the delivered message for the server exactly as `.receive` does — and, since
+PR #873 round 7, with the same honest `extraCaps`: the transfer summary the
+WithCaps receive leg returns, not a zero. -/
 theorem dispatchArm_replyRecv_matches_returnShape
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (epId : SeLe4n.ObjId)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge)
-    (st stB : SystemState) (msg : IpcMessage) (tcb : TCB)
+    (st stB : SystemState) (msg : IpcMessage) (tcb : TCB) (summary : CapTransferSummary)
     (hSyscall : decoded.syscallId = .replyRecv)
     (hTarget : cap.target = .object epId)
     (hResolve : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge))
@@ -3994,7 +4020,8 @@ theorem dispatchArm_replyRecv_matches_returnShape
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1
             (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           caps := #[], badge := replyBadge }
-        (determineExecutingCore st tid) st = .ok ((), stB))
+        gate.cspaceRoot decoded.capRecvSlot
+        (determineExecutingCore st tid) st = .ok (summary, stB))
     (hTcb : stB.getTcb? tid = some tcb)
     (hReady : tcb.ipcState = .ready)
     (hMsg : tcb.pendingMessage = some msg)
@@ -4002,11 +4029,11 @@ theorem dispatchArm_replyRecv_matches_returnShape
     Architecture.syscallReturnShape .replyRecv = .message ∧
     ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
-        = Architecture.returnFrameOfMessage msg 0 := by
-  refine ⟨rfl, Architecture.stageDeliveredMessage stB tid 0, ?_, ?_⟩
+        = Architecture.returnFrameOfMessage msg summary.installedCount := by
+  refine ⟨rfl, Architecture.stageDeliveredMessage stB tid summary.installedCount, ?_, ?_⟩
   · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hResolve, hBody]
-  · exact Architecture.blockedReturn_staged_in_waiter_frame stB tid tcb msg 0
-      hTcb hReady hMsg hObjInv
+  · exact Architecture.blockedReturn_staged_in_waiter_frame stB tid tcb msg
+      summary.installedCount hTcb hReady hMsg hObjInv
 
 /-- RA.B.8, `.call` (`.message`) — **through the reply arm**, per §3.5: a
 successful call leaves the caller `blockedOnReply` in every ordering, so

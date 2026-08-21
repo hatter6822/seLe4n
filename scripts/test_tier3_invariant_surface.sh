@@ -1796,7 +1796,7 @@ run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterferenc
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # SM9.A.4b took the inventory 26 -> 28 with the two audit readers, both of
 # which take an executing core and carry an EMPTY write set.
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 29' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 30' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # PR #861 review round 34: the context-restore gate lives in WRAPPERS, never
 # inside the transitions.  An in-transition `if contextRestoreSeamLive` reduces
@@ -2089,7 +2089,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 run_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 29' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 30' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # Round 14: all three SchedContext arms this cut made remote writers are audited.
 # The negative is the point — `crossCoreRemoteWriterPendingAudit` was the counted
 # gap while two were unproven, and it must not come back as an empty list, which
@@ -3729,6 +3729,25 @@ run_check "INVARIANT" rg -n 'receiverSlotBase msg.capsGranted' SeLe4n/Kernel/IPC
 run_negative_check "INVARIANT" rg -n 'endpointReceiveDualWithCaps endpointId receiver replyId endpointRights' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
 # The regression that measures the property rather than one ordering's outcome.
 run_check "INVARIANT" rg -n 'chain12cIpcCapTransferArrivalOrder' tests/OperationChainSuite.lean
+
+# PR #873 round 7: **and the same for `.replyRecv`**, the arm that is a receive
+# without being spelled `.receive`.  Its receive leg ran inside `replyRecvBody`
+# on the BARE per-core transition, so an seL4-MCS server loop (`Recv` once, then
+# `ReplyRecv` forever) received capabilities on its first request and silently
+# none afterwards.  The body now takes the receiver's CSpace root and receive
+# slot and RETURNS the transfer summary, so `extraCaps` is the installed count.
+run_check "INVARIANT" rg -n 'endpointReceiveDualWithCapsOnCore epId tid \(some rid\)' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'endpointReceiveDualOnCore epId tid \(some rid\)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'replyRecvBody epId tid rid prevCaller msg gate.cspaceRoot' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'chain12dReplyRecvCapTransferArrivalOrder' tests/OperationChainSuite.lean
+# The inventory must name the function the dispatch calls: both receive-shaped
+# live arms reach the WithCaps form now, so the bare transition is a below-API
+# entry and the live-arm claim sits on the new one.  The negative forbids the
+# claim drifting back onto the bare transition.
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '\| \.endpointReceiveDualWithCaps => \.delegationProof \.receive' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -n '\| \.endpointReceiveDual => \.delegationProof \.receive' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # PR #873 round 6 (SM9.D.13a): the origination diff is SKIPPED for the arms that
 # provably cannot append.  `newlyRecordedEvents` costs two O(n) walks of a trail
