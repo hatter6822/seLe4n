@@ -113,13 +113,17 @@ DECLARED_TAINT_WRITERS = {
 # without being part of it — the live entry point that applies a plan, and the
 # planner that builds one.  Anything else naming the API is a finding.
 DECLARED_TAINT_CONSUMERS = {
-    "SeLe4n.Kernel.syscallEntryChecked",
-    # The unchecked entry applies the same plan (SM9.D.7 audit).  It is a second
-    # *consumer*, not a second writer: both entries call `applySyscallTaint`,
-    # which remains the one place the field moves.  Declared here because the
-    # modelled SVC route reaches the kernel through this entry, so leaving it out
-    # was how content could cross a syscall boundary without its provenance.
-    "SeLe4n.Kernel.syscallEntry",
+    # PR #873 round 6: the seam sits at the two **dispatchers**, not at the two
+    # entries above them.  It used to be the entries, and that was the defect:
+    # `dispatchSyscall`'s own docstring points integrators at
+    # `dispatchSyscallChecked` for production user-space entry, and an integrator
+    # who called it directly never reached a seam sitting one layer up — content
+    # moved with no provenance, and a retype kept the destroyed object's tags.
+    # Both dispatchers now apply the plan and both entries inherit it, which is
+    # why the entries no longer appear here: they name the dispatcher, not the
+    # API.
+    "SeLe4n.Kernel.dispatchSyscallChecked",
+    "SeLe4n.Kernel.dispatchSyscall",
     "SeLe4n.Kernel.TaintTable.empty",
 }
 
@@ -135,6 +139,25 @@ CONTENT_CHANNELS = [
     ("SeLe4n.Model.TCB", "pendingMessage"),
     ("SeLe4n.Model.Notification", "pendingBadge"),
 ]
+
+# WS-SM SM9.D.13a (C3): arms that write the audit trail without being able to
+# APPEND to it, each with the theorem that says so.
+#
+# The reach check below asks "does this arm write `declassificationAuditLog`",
+# which is the detectable question; the one that matters for origination is "can
+# this arm make `newlyRecordedEvents` non-empty".  `.auditDrain` separates them:
+# it rewrites the field on every successful call, and it removes a prefix while
+# advancing the epoch by exactly what it removed — a shape that yields `[]` in
+# both branches (`newlyRecordedEvents_of_drop` covers the zero-length drain that
+# leaves the epoch guard unfired).
+#
+# An exemption is only as good as its justification, so the probe asserts the
+# named theorem is in the elaborated environment.  Delete the theorem and this
+# arm goes back to failing the gate rather than quietly keeping a pass it no
+# longer earns.
+AUDIT_APPEND_EXEMPT = {
+    "auditDrain": "SeLe4n.Kernel.newlyRecordedEvents_auditDrain",
+}
 
 # The self-test's planted channel: a field every inert scheduling arm writes
 # with an open value (`priority := newPrio`).  If the write detector has stopped
@@ -180,6 +203,9 @@ private def cfRoots : List (String × String) :=
 
 private def cfTaintApi : List Name :=
   [@TAINTAPI@]
+
+private def cfJustifications : List Name :=
+  [@JUSTIFICATIONS@]
 
 private def cfDepth : Nat := @DEPTH@
 
@@ -479,6 +505,38 @@ run_cmd do
         | _ => acc
   for w in writers do
     logInfo m!"CF_TAINT_WRITER {cfReportName w}"
+  -- (C3) WS-SM SM9.D.13a: **who can append to the audit trail.**
+  --
+  -- `applySyscallTaint` skips the origination diff for every arm
+  -- `syscallRecordsDeclassification` calls non-recording, which is what keeps two
+  -- O(n) trail walks off the IPC path.  That skip is only sound if those arms
+  -- really cannot append -- and "really cannot" is a reachability fact about the
+  -- elaborated call graph, not something a hand-written `match` can be trusted to
+  -- remember.  So the same field-write detector runs against
+  -- `declassificationAuditLog`, and the reach below reports which arms hit one.
+  let auditIdx? := stateFields.findIdx? (· == `declassificationAuditLog)
+  if auditIdx?.isNone then
+    logInfo m!"CF_FIELD_UNRESOLVED declassificationAuditLog"
+  let auditWriters : NameSet :=
+    match auditIdx? with
+    | none => {}
+    | some auditIdx =>
+      env.constants.fold (init := ({} : NameSet)) fun acc n ci =>
+        if !cfInspectable n then acc
+        else match ci with
+          | .defnInfo di =>
+              if di.value.getUsedConstants.contains (stateName ++ `mk)
+                  && cfUpdateWritesField stateName `declassificationAuditLog
+                      stateFields auditIdx di.value then acc.insert n
+              else acc
+          | _ => acc
+  for w in auditWriters.toList do
+    logInfo m!"CF_AUDIT_WRITER {cfReportName w}"
+  -- The theorems the append exemptions below rest on.  An exemption whose
+  -- justification has been deleted must stop being an exemption.
+  for j in cfJustifications do
+    if (env.find? j).isSome then
+      logInfo m!"CF_JUSTIFIED {j}"
   -- Shared across arms.  "Does this constant write a content channel?" depends
   -- on the constant and the channel set, neither of which varies per arm, and
   -- the 34 arms' reaches overlap almost entirely -- they are all rooted in the
@@ -517,6 +575,11 @@ run_cmd do
       logInfo m!"CF_ARM {arm} {hits.length}"
       for h in hits.take 6 do
         logInfo m!"CF_HIT {arm} {h}"
+      -- (C3) the same reach, asked about the trail instead of the channels.
+      let auditHits := reach.toList.filter (fun n => auditWriters.contains n)
+      logInfo m!"CF_AUDIT_ARM {arm} {auditHits.length}"
+      for h in auditHits.take 4 do
+        logInfo m!"CF_AUDIT_HIT {arm} {cfReportName h}"
 """
 
 
@@ -564,6 +627,31 @@ def arm_roots() -> dict[str, set[str]]:
     if not roots:
         raise RuntimeError("no dispatch arms parsed from API.lean")
     return roots
+
+
+def recording_classification() -> dict[str, bool]:
+    """`syscallRecordsDeclassification`'s own arms, read off its source.
+
+    Multi-constructor arms (`| .a | .b => false`) are expanded, since that is how
+    the 31 non-recording syscalls are actually written.
+    """
+    src = code_view(TAINT)
+    m = re.search(r"^def syscallRecordsDeclassification : SyscallId → Bool$", src, re.M)
+    if m is None:
+        raise RuntimeError(
+            "`syscallRecordsDeclassification` not found in TaintPropagation.lean")
+    body = src[m.end():]
+    nxt = re.search(r"\n(?:private )?(?:def|theorem|abbrev|instance)\s", body)
+    if nxt is not None:
+        body = body[: nxt.start()]
+    out: dict[str, bool] = {}
+    for arms, verdict in re.findall(
+            r"\|\s*((?:\.[A-Za-z][A-Za-z0-9']*\s*\|?\s*)+)=>\s*(true|false)", body):
+        for arm in re.findall(r"\.([A-Za-z][A-Za-z0-9']*)", arms):
+            out[arm] = (verdict == "true")
+    if not out:
+        raise RuntimeError("`syscallRecordsDeclassification` parsed to no arms")
+    return out
 
 
 def classification() -> dict[str, str]:
@@ -631,10 +719,12 @@ def run_probe(roots: dict[str, set[str]], depth: int, channels,
         '("{}", "{}")'.format(arm, " ".join(sorted(stems)))
         for arm, stems in sorted(roots.items()))
     quoted_api = ", ".join(f"`{n}" for n in sorted(DECLARED_TAINT_WRITERS))
+    quoted_just = ", ".join(f"`{n}" for n in sorted(set(AUDIT_APPEND_EXEMPT.values())))
     src = (PROBE
            .replace("@CHANNELS@", quoted_channels)
            .replace("@ROOTS@", quoted_roots)
            .replace("@TAINTAPI@", quoted_api)
+           .replace("@JUSTIFICATIONS@", quoted_just)
            .replace("@PLANTED@", SELF_TEST_ROGUE_SRC if plant_rogue else "")
            .replace("@DEPTH@", str(depth)))
     with tempfile.NamedTemporaryFile("w", suffix=".lean", delete=False) as fh:
@@ -671,7 +761,13 @@ def parse(out: str):
     field_writers = set(re.findall(r"CF_FIELD_WRITER (\S+)", out))
     field_unresolved = bool(re.search(r"CF_FIELD_UNRESOLVED", out))
     noroot = set(re.findall(r"CF_NO_ROOT (\S+)", out))
-    return hits, detail, writers, field_writers, field_unresolved, noroot
+    justified = set(re.findall(r"CF_JUSTIFIED (\S+)", out))
+    audit_hits = {arm: int(n) for arm, n in re.findall(r"CF_AUDIT_ARM (\S+) (\d+)", out)}
+    audit_detail: dict[str, list[str]] = {}
+    for arm, name in re.findall(r"CF_AUDIT_HIT (\S+) (\S+)", out):
+        audit_detail.setdefault(arm, []).append(name)
+    return (hits, detail, writers, field_writers, field_unresolved, noroot,
+            audit_hits, audit_detail, justified)
 
 
 def main() -> int:
@@ -708,13 +804,15 @@ def main() -> int:
         channels = channels + [SELF_TEST_CHANNEL]
 
     out = run_probe(roots, args.depth, channels, plant_rogue=args.self_test)
-    hits, detail, writers, field_writers, field_unresolved, noroot = parse(out)
+    (hits, detail, writers, field_writers, field_unresolved, noroot,
+     audit_hits, audit_detail, justified) = parse(out)
 
     failures: list[str] = []
 
     if args.list:
         for arm in sorted(roots):
-            print(f"  {arm:<24} {cls[arm]:<18} content-writes reached: {hits.get(arm, 0)}")
+            print(f"  {arm:<24} {cls[arm]:<18} content-writes reached: "
+                  f"{hits.get(arm, 0)}  audit-writes reached: {audit_hits.get(arm, 0)}")
         print(f"  taint writers: {len(writers)}")
 
     if args.self_test:
@@ -754,9 +852,24 @@ def main() -> int:
             print("      the declared taint-writing API.  A private caller of the")
             print("      API is invisible to check (C) for the same reason.")
             return 1
+        # (C3) must have bite.  Its verdict is "no arm records while claiming
+        # not to", and a sweep that found no audit writers at all would return
+        # that verdict for every arm without having looked — the same vacuous
+        # pass the planted channel above exists to rule out.  The two arms that
+        # provably do append are the witnesses.
+        blind = [a for a in ("declassify", "declassifySignal")
+                 if audit_hits.get(a, 0) == 0]
+        if blind:
+            print("FAIL: --self-test — the audit-trail reach found no writer under")
+            print(f"      {', '.join('`.' + a + '`' for a in blind)}, which append on")
+            print("      every authorized hop.  Check (C3) has lost its reach, so it")
+            print("      would clear an arm that records while declared silent — and")
+            print("      `applySyscallTaint` skips the origination diff on that word.")
+            return 1
         print(f"PASS: --self-test — the planted channel was detected on "
               f"{len(planted)} inert arm(s); both sweeps detected the declared "
-              f"writer and the planted private rogue writer.")
+              f"writer and the planted private rogue writer; the audit-trail "
+              f"reach found the two recording arms.")
         return 0
 
     # (A) no unclassified content movement
@@ -765,6 +878,51 @@ def main() -> int:
             failures.append(
                 f"  `.{arm}` is classified `.{cls[arm]}` but reaches "
                 f"{hits[arm]} content write(s): {', '.join(detail.get(arm, [])[:4])}")
+
+    # (C3) WS-SM SM9.D.13a: the recording classification must match the reach.
+    #
+    # `applySyscallTaint` skips the origination diff — two O(n) walks of the audit
+    # trail — for every arm `syscallRecordsDeclassification` calls non-recording.
+    # That skip is what keeps the trail off the IPC hot path, and it is sound only
+    # while those arms genuinely cannot append.  An arm that reaches a writer of
+    # `declassificationAuditLog` while classified `false` would record a downgrade
+    # and originate nothing from it: a MISSED chain, which is the direction this
+    # module must never err in, and it would be silent.
+    #
+    # So the classification is checked against the call graph rather than trusted.
+    # Both directions fail: under-declaring is the unsound one, over-declaring
+    # means an arm pays the trail walk for a diff it can never fill, and a set
+    # that has drifted either way is a set nobody is reading.
+    records = recording_classification()
+    for arm, thm in sorted(AUDIT_APPEND_EXEMPT.items()):
+        if thm not in justified:
+            failures.append(
+                f"  `.{arm}` is exempted from the audit-append check by `{thm}`, "
+                f"which is not in the elaborated environment — the exemption has "
+                f"outlived its justification")
+    for arm in sorted(roots):
+        declared = records.get(arm)
+        if declared is None:
+            failures.append(
+                f"  `.{arm}` has no `syscallRecordsDeclassification` arm, so "
+                f"whether its commit can append to the audit trail is undeclared")
+            continue
+        # An arm that writes the trail without being able to append to it is
+        # exempt — but only while the theorem saying so is still there.
+        reached = (audit_hits.get(arm, 0) > 0
+                   and arm not in AUDIT_APPEND_EXEMPT)
+        if reached and not declared:
+            failures.append(
+                f"  `.{arm}` reaches {audit_hits[arm]} audit-trail write(s) "
+                f"({', '.join(audit_detail.get(arm, [])[:3])}) but "
+                f"`syscallRecordsDeclassification` says it cannot record — "
+                f"`applySyscallTaint` would skip the origination diff and lose "
+                f"every causal chain through this arm")
+        elif declared and not reached:
+            failures.append(
+                f"  `.{arm}` is declared as recording a declassification but "
+                f"reaches no writer of `declassificationAuditLog`, so it pays the "
+                f"trail diff on every call for events it cannot produce")
 
     # (B) no vacuous classification.  A content-moving arm must either write a
     # content channel or deliver through the WS-RA return frame.
@@ -855,10 +1013,13 @@ def main() -> int:
 
     moving = sum(1 for a in roots if cls[a] == "movesContent")
     by_write = sum(1 for a in roots if cls[a] == "movesContent" and hits.get(a, 0) > 0)
+    recording = sum(1 for a in roots if records.get(a))
     print(f"PASS: content-flow coverage — {len(roots)} live arms classified; "
           f"{moving} moving content ({by_write} reaching an object content write, "
           f"{moving - by_write} delivering through the return frame); "
-          f"{len(roots) - moving} inert or clearing, none reaching a content write.")
+          f"{len(roots) - moving} inert or clearing, none reaching a content write; "
+          f"{recording} recording a declassification, and no other arm reaches an "
+          f"audit-trail append.")
     return 0
 
 

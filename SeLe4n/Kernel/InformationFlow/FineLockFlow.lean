@@ -1842,25 +1842,22 @@ theorem syscallEntryChecked_preserves_projection (ctx : LabelingContext) (observ
         split at hOk
         · exact absurd hOk (by simp)
         · next decoded _ =>
-          -- WS-SM SM9.D.7: the entry now applies the taint plan to the state
-          -- the dispatch committed.  The write is projection-invisible
-          -- (`applySyscallTaint_preserves_projection`), so the argument is the
-          -- pre-SM9.D one with one rewrite in front of it.
+          -- PR #873 round 6: the taint seam moved into `dispatchSyscallChecked`,
+          -- so the entry delegates and `hOk` IS the dispatch's own success.  The
+          -- seam is still projection-invisible
+          -- (`applySyscallTaint_preserves_projection`, `rfl`), which is what lets
+          -- `hDispatchProj` be discharged from a statement about the arm.
           --
           -- The entry binds the TLB-filled state once rather than spelling it out
-          -- three times; Lean elaborates that binding to `letFun`, which `split`
-          -- cannot see through, so reduce it away first.
+          -- three times; Lean elaborates that binding to `letFun`, which the
+          -- rewrite below cannot see through, so reduce it away first.
           dsimp only at hOk
-          split at hOk
-          · exact absurd hOk (by simp)
-          · next stPost hDisp =>
-            simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hOk
-            rw [← hOk, applySyscallTaint_preserves_projection, hDispatchProj decoded tid stPost hDisp]
-            obtain ⟨t, hEq⟩ :=
-              SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st executingCore tid
-                decoded.overflowCount
-            rw [hEq]
-            exact perCoreTlb_write_preserves_projection ctx observer st t
+          rw [hDispatchProj decoded tid st' hOk]
+          obtain ⟨t, hEq⟩ :=
+            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st executingCore tid
+              decoded.overflowCount
+          rw [hEq]
+          exact perCoreTlb_write_preserves_projection ctx observer st t
 
 -- ============================================================================
 -- §4b  WS-SM SM9.D.18 — the taint propagation carries the non-interference
@@ -2435,29 +2432,23 @@ reshaping a production entry point to suit a staged module, and it would pin
 less, since a common prefix says nothing about what the entry does with its
 result.
 
-**WS-SM SM9.D.7** — restated, and strictly stronger.  The entry now applies the
-taint plan to the state the dispatch committed, so the equation carries that
-step too: it pins the `tid` and the `decoded` the dispatch runs on **and** the
-plan the propagation runs, all three read off the helper's outputs.  A decode
-normalisation, a new validation step, or a propagation keyed on anything other
-than the entry's own resolution all stop this elaborating. -/
+**WS-SM SM9.D.7 / PR #873 round 6.**  The equation used to spell the taint seam
+out here, because the seam sat at the entry.  It sits at the dispatcher now, so
+the entry *is* the dispatch at the filled state and the equation says exactly
+that — the `tid`, the `decoded` and the state the dispatch runs on, all three
+read off the helper's outputs.  Nothing was given up in the move: what the
+propagation is keyed on is pinned one layer down and over *every* caller of the
+dispatcher rather than over this entry alone, by
+`dispatchSyscallChecked_applies_taint_plan`.  A decode normalisation or a new
+validation step still stops this elaborating. -/
 theorem entryDecode_some_entry_dispatches (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
     (s : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
     (h : entryDecode ctx layout executingCore regCount s = some (tid, decoded)) :
     syscallEntryChecked ctx layout executingCore regCount s
-      = (match dispatchSyscallChecked ctx decoded tid
-              (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore s executingCore tid
-                decoded.overflowCount) with
-         | .error e => .error e
-         | .ok ((), stPost) =>
-             .ok ((), applySyscallTaint
-               (syscallTaintPlan
-                 (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore s executingCore tid
-                   decoded.overflowCount) tid decoded)
-               (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore s executingCore tid
-                 decoded.overflowCount)
-               stPost)) := by
+      = dispatchSyscallChecked ctx decoded tid
+          (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore s executingCore tid
+            decoded.overflowCount) := by
   unfold entryDecode at h
   unfold syscallEntryChecked
   cases hIns : isInsecureDefaultContext ctx with

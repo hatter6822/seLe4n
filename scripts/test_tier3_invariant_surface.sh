@@ -3684,9 +3684,44 @@ run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_drained' SeLe4n/Kernel
 run_check "INVARIANT" rg -n '^theorem retypeClearsTaint' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem retypedObject_taint_empty' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem staleTaint_is_not_saturation' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-# The one live write site: the per-core entry, applied to the state the
-# dispatch committed.  The boot-pinned `syscallEntry` is deliberately unfilled.
+# The live write sites: BOTH dispatchers, applied to the state each was given.
+# PR #873 round 6 moved the seam down from the two entries, because
+# `dispatchSyscall`'s docstring points integrators at `dispatchSyscallChecked`
+# for production entry and a seam above it was one an integrator never reached.
 run_check "INVARIANT" rg -n 'applySyscallTaint' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_applies_taint_plan' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscall_applies_taint_plan' SeLe4n/Kernel/API.lean
+# That the entries do NOT re-apply it is enforced where it can be enforced
+# exactly: `DECLARED_TAINT_CONSUMERS` in the Tier-1 content-flow gate names the
+# two dispatchers and fails on any other constant that reaches the taint API, so
+# a second application at an entry is a build failure rather than a text pin.
+run_check "INVARIANT" rg -n 'SeLe4n.Kernel.dispatchSyscallChecked' scripts/check_content_flow_coverage.py
+
+# PR #873 round 6 (SM9.D.13a): the origination diff is SKIPPED for the arms that
+# provably cannot append.  `newlyRecordedEvents` costs two O(n) walks of a trail
+# bounded only at the 256-entry cliff, and it ran on every successful syscall.
+# The skip is licensed by a total classifier whose set is a checked value, and
+# whose answer the Tier-1 content-flow gate verifies against the call graph.
+run_check "INVARIANT" rg -n '^def syscallRecordsDeclassification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem syscallRecordsDeclassification_iff' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem syscallRecordsDeclassification_independent_of_class' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def planOriginationTags' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '  originates : Bool' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem planOriginationTags_eq_of_no_events' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'theorem syscallTaintPlan_originates' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# The drain writes the trail and still originates nothing — the load-bearing
+# exemption behind `.auditDrain` answering `false`, and what the Tier-1 gate
+# requires to be present before it honours that exemption.  Both branches:
+# a non-empty drain moves the epoch, a zero-length one does not.
+run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_of_drop' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_auditDrain' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'AUDIT_APPEND_EXEMPT' scripts/check_content_flow_coverage.py
+run_check "INVARIANT" rg -n 'CF_AUDIT_ARM' scripts/check_content_flow_coverage.py
+# The gates must see private definitions: Lean mangles `private def` to
+# `_private.…`, which answers `isInternal`, and both one-writer sweeps filtered
+# on exactly that.
+run_check "INVARIANT" rg -n 'privateToUserName' scripts/check_content_flow_coverage.py
+run_negative_check "INVARIANT" rg -n 'if n.isInternal' scripts/check_content_flow_coverage.py
 
 # SM9.D.14 – SM9.D.16: the detector.  `declassificationChainLinked` keeps its
 # name and gains the causal conjunct; the TABLE-derived alternative is retained
@@ -3924,7 +3959,7 @@ run_check "INVARIANT" rg -n '^theorem chainVerdict_all_ok_causal' SeLe4n/Kernel/
 # second hop is an ordinary delivery) carries the fresh event's tag to the object
 # the delivery reached.  Reading the raw pre-table there loses the successor —
 # a MISSED chain, the direction a detector must never err in.
-run_check "INVARIANT" rg -n 'applyOrigination \(originationTags \(newlyRecordedEvents pre post\)\)' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'applyOrigination \(planOriginationTags plan pre post\)' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # SM9.D.17 (audit): the pre-existing cap-transfer footprint gap — the receiver's
 # CSpace root, which `ipcUnwrapCaps` writes with no declared CNode write lock —
 # as a registered domain (owner recorded in the inventory itself) with its

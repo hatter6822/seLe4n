@@ -3344,9 +3344,15 @@ so taint propagates through ordinary IPC.
   register — so the second check admits a `.movesContent` arm whose
   `syscallReturnShape` is not `.unit`, derived from the ABI rather than waived.
 
-* **One write site, not twelve** (SM9.D.8–.D.11).  The propagation is a single
-  write at the per-core entry (`API.syscallEntryChecked`), applied to the state
-  the dispatch committed and driven by a declared `TaintPlan`.  Every IPC
+* **One write site per dispatcher, not twelve** (SM9.D.8–.D.11).  The
+  propagation is a single write in each of `API.dispatchSyscall` and
+  `API.dispatchSyscallChecked`, applied to the state that dispatcher was given
+  and driven by a declared `TaintPlan`; both entries inherit it by delegating.
+  It sat at `syscallEntryChecked` until PR #873 round 6 — one layer above the
+  function `dispatchSyscall`'s docstring recommends for production user-space
+  entry, so an integrator who followed that advice never reached it.
+  `dispatchSyscallChecked_applies_taint_plan` pins that no success path skips
+  the seam.  Every IPC
   transition is quantified over by roughly 1 900 references, and a field write
   inside one reopens all of them, while `applySyscallTaint_frame` leaves
   `authorizeDeclassificationOnCore_frame` and SM8.C's "writes only the trail"
@@ -3379,10 +3385,11 @@ so taint propagates through ordinary IPC.
   the same id, so a *framed* retype leaves a destroyed object's tags on its
   replacement (`retypeClearsTaint`, `retypedObject_taint_empty`, with
   `staleTaint_is_not_saturation` keeping the residual claim true by exhibiting
-  the two imprecisions as different things).  With the propagation at the entry,
-  the plan's "frames for every non-content transition, ~12 files" is **one**
-  theorem — `applySyscallTaint_inert` covers every inert syscall at once,
-  including ones added later.
+  the two imprecisions as different things).  With the propagation at the
+  dispatcher, the plan's "frames for every non-content transition, ~12 files" is
+  **one** theorem — `applySyscallTaint_inert` covers every inert syscall at once,
+  including ones added later, and since SM9.D.13a it needs no hypothesis about
+  the trail: the plan records whether its syscall can append at all.
 
 * **The detector, and a reader for it** (SM9.D.14–.D.16).
   `declassificationChainLinked` keeps its name and becomes the conjunction of

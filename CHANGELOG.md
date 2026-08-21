@@ -1,3 +1,85 @@
+## v0.33.75 — the seam an integrator never reached, and the walk every syscall paid for
+
+**The taint seam sat one layer above the function the docs recommend.**
+`dispatchSyscall`'s own docstring tells integrators that "for production
+user-space entry points, use `dispatchSyscallChecked`".  An integrator who took
+that advice called the dispatcher directly — and the provenance seam was applied
+by `syscallEntryChecked`, above it.  So a successful send or receive taken that
+way moved tagged content with no provenance following, and a successful retype
+kept the replaced object's tags on its replacement.  The recommendation was
+right; the seam was in the wrong place.
+
+It now sits at **both** dispatchers, applied to the state each was given, and
+both entries inherit it by delegating.  That makes the rule one sentence — *the
+taint seam is at the dispatcher* — instead of a list of entry points that each
+have to remember, and an entry written tomorrow inherits it.  The unchecked
+dispatcher carries it too: "unchecked" names what is not *gated*, and provenance
+is not a gate — it records where content came from whatever authority moved it,
+which matters more on the ungated route, not less.
+
+`dispatchSyscallChecked_applies_taint_plan` and `dispatchSyscall_applies_taint_plan`
+pin that **no success path skips it**: whatever route a successful dispatch takes
+— target-first resolve or rights-gated lookup, any of the 33 arms — the state it
+returns is the plan applied to what the invoke committed, keyed on the state the
+dispatcher was given.  Stated existentially over the committed state rather than
+as an equation against a named inner function, so it quantifies over every path
+rather than pinning one spelling.  `entryDecode_some_entry_dispatches` still pins
+the entry to the dispatcher; between them they say what the old entry-level
+equation said, one layer down and over every caller rather than over one.
+
+**And every successful syscall was walking the audit trail twice.**
+`newlyRecordedEvents` takes `pre.declassificationAuditLog.length` and then drops
+that many entries off the post-trail — two O(n) walks over a list bounded only by
+the SM9.A 256-entry cliff — and `applySyscallTaint` runs on every syscall.  An
+inert `.tcbSetPriority` and an ordinary `.send` were each paying up to ~512
+pointer chases for a diff that is provably empty for them.
+
+`TaintPlan.originates` now gates it, set from a new total
+`syscallRecordsDeclassification`.  Deliberately not the content-flow class: the
+two cut the surface differently and folding them would be wrong in both
+directions — `.declassify` moves no content between objects yet records the
+downgrade that must originate a tag, while `.notificationWait` moves content and
+records nothing.
+
+**The gating is licensed, not assumed.**  A future declassifying syscall that
+forgot the flag would originate nothing and lose every chain through it — a
+*missed* chain, the direction this module must never err in.  So the predicate is
+total on `SyscallId` (a new constructor cannot elaborate without an answer), its
+set is pinned as a value by `syscallRecordsDeclassification_iff`, and the Tier-1
+content-flow gate now walks the elaborated call graph from every dispatch arm and
+**fails the build** on any arm that reaches a writer of
+`declassificationAuditLog` while answering `false`.  Both directions fail:
+under-declaring is the unsound one, over-declaring means an arm pays the trail
+walk for a diff it can never fill.
+
+That check found `.auditDrain` immediately, and correctly — the drain rewrites
+the trail on every successful call.  It cannot *append*, though: it removes a
+prefix and advances the epoch by exactly what it removed.  Rather than assert
+that in the gate, `newlyRecordedEvents_of_drop` proves it for **both** branches
+(the zero-length drain leaves the epoch guard unfired, which an inventory
+forgets) and `newlyRecordedEvents_auditDrain` states it over the transition.  The
+gate's exemption cites that theorem and the probe asserts it is still in the
+environment, so the exemption cannot outlive its justification.
+
+Two theorems got *stronger* on the way: `applySyscallTaint_inert` and
+`taintWriteKeys_inert` no longer need a hypothesis about the trail.  The identity
+used to be conditional on the commit having recorded nothing; the plan now
+carries whether its syscall can record at all, so it is structural.
+
+`taintOriginationKeys` takes the plan too, keeping the declared write set and the
+actual write in lockstep rather than letting the declaration over-approximate.
+`taintOrigination_target` / `_actor` gain a `plan.originates = true` hypothesis —
+the honest statement, since a plan that says "cannot record" applied to a commit
+that did record originates nothing, and the Tier-1 gate is what makes that
+combination impossible in the live kernel.
+
+Verified: Tier 0, Tier 1, all three Tier 2 suites, Tier 3 (all checks passed),
+and the dispatch-sensitive suites (`syscall_dispatch`, `vspace_capability_binding`,
+`smp_ipc`, `operation_chain`, `model_integrity`, `smp_information_flow`).  The
+golden trace is byte-identical, 233/233.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md
+
 ## v0.33.74 — two gates that could not read what they were checking
 
 Both findings this cut are the same shape one level down from the last one: a

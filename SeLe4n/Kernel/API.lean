@@ -2598,7 +2598,24 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
   | _ => fun _ => .error .illegalState
 
 /-- T6-I: Policy-checked dispatch variant. Routes syscalls through
-    information-flow-checked wrappers when a `LabelingContext` is provided. -/
+    information-flow-checked wrappers when a `LabelingContext` is provided.
+
+    **WS-SM SM9.D.7 (PR #873 round 6): the taint seam is applied here, not at the
+    entry above it.**
+
+    It used to live in `syscallEntryChecked`, one layer up — which was wrong for a
+    reason this function's own sibling documents: `dispatchSyscall`'s docstring
+    tells integrators that "for production user-space entry points, use
+    `dispatchSyscallChecked`".  An integrator who took that advice called *this*
+    function directly and never reached the seam, so a successful send or receive
+    moved tagged content with no provenance following it, and a successful retype
+    kept the replaced object's tags on its replacement.  The recommendation was
+    right; the seam was in the wrong place.
+
+    Applied to the state **this** function was given, so composing it under an
+    entry that pre-processes the state (the SM7.F.5 TLB fill) is unchanged: the
+    entry passes the filled state, and the plan and the pre-state are both that.
+    Nothing is applied on the error arm, because nothing moved. -/
 def dispatchSyscallChecked (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
@@ -2619,10 +2636,13 @@ def dispatchSyscallChecked (ctx : LabelingContext)
         -- (`.invalidCapability` for every non-audit target, whatever its
         -- rights), right second.  Everything else keeps the classic
         -- rights-gated lookup.
-        (if syscallChecksTargetFirst decoded.syscallId then
-           syscallInvokeResolved gate (dispatchWithCapChecked ctx decoded tid gate)
-         else
-           syscallInvoke gate (dispatchWithCapChecked ctx decoded tid gate)) st
+        match (if syscallChecksTargetFirst decoded.syscallId then
+                 syscallInvokeResolved gate (dispatchWithCapChecked ctx decoded tid gate)
+               else
+                 syscallInvoke gate (dispatchWithCapChecked ctx decoded tid gate)) st with
+        | .error e => .error e
+        | .ok ((), stPost) =>
+            .ok ((), applySyscallTaint (syscallTaintPlan st tid decoded) st stPost)
       | some _ => .error .invalidCapability
       | none   => .error .objectNotFound
     | some _ => .error .illegalState
@@ -2673,21 +2693,28 @@ def syscallEntryChecked (ctx : LabelingContext)
           -- established by mapping.  Purely a TLB-model event
           -- (`tlbFillIpcBufferOnCore_frame`), and inert when the syscall
           -- carried no overflow registers.
-          -- WS-SM SM9.D.7: **the taint propagation seam.**  The plan is
-          -- resolved from the state the dispatch will run on and the decoded
-          -- syscall — never from what the transition happened to do — and
-          -- applied to the committed post-state, in the same step.  On the
-          -- error arm nothing is applied, because nothing moved.
+          -- WS-SM SM9.D.7: **the taint propagation seam is inherited, not
+          -- repeated.**  `dispatchSyscallChecked` applies the plan to the state
+          -- it was handed, so this entry gets it by passing the filled state and
+          -- returning what comes back — the same plan, the same pre-state, the
+          -- same post-state as when the two lines lived here.
           --
-          -- One writer, here rather than at the arms, for the SM7.F.5 reason
-          -- one layer on: this is where a projection-invisible model field is
-          -- already maintained around the dispatch, and keeping the write out
-          -- of the transitions leaves every IPC frame, invariant and
-          -- non-interference result untouched
-          -- (`applySyscallTaint_frame`, `storeObject_declassificationTaint_eq`).
-          -- The classification `contentFlowClass` is total on `SyscallId`, so a
-          -- new syscall is a missing case at elaboration; that its *callees* do
-          -- not move content the declared edges miss is checked by reach, in
+          -- It moved down one layer in PR #873 round 6.  `dispatchSyscall`'s own
+          -- docstring points integrators at `dispatchSyscallChecked` for
+          -- production user-space entry, and an integrator who took that advice
+          -- called the dispatcher directly and never reached a seam that sat
+          -- above it: content moved with no provenance, and a retype kept the
+          -- destroyed object's tags.  Putting the seam at the dispatcher makes
+          -- every entry inherit it, including one written tomorrow.
+          --
+          -- One writer, at the dispatcher rather than at the arms, for the
+          -- SM7.F.5 reason one layer on: keeping the write out of the
+          -- transitions leaves every IPC frame, invariant and non-interference
+          -- result untouched (`applySyscallTaint_frame`,
+          -- `storeObject_declassificationTaint_eq`).  The classification
+          -- `contentFlowClass` is total on `SyscallId`, so a new syscall is a
+          -- missing case at elaboration; that its *callees* do not move content
+          -- the declared edges miss is checked by reach, in
           -- `scripts/check_content_flow_coverage.py`.
           --
           -- The filled state is bound ONCE.  It used to be spelled out three
@@ -2702,11 +2729,7 @@ def syscallEntryChecked (ctx : LabelingContext)
           let stFilled :=
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
               st executingCore tid decoded.overflowCount
-          match dispatchSyscallChecked ctx decoded tid stFilled with
-          | .error e => .error e
-          | .ok ((), stPost) =>
-              .ok ((), applySyscallTaint
-                (syscallTaintPlan stFilled tid decoded) stFilled stPost)
+          dispatchSyscallChecked ctx decoded tid stFilled
 
 -- ============================================================================
 -- U5-A/U5-D: Dispatch structural equivalence theorems
@@ -3110,7 +3133,16 @@ information-flow checks. For production user-space entry points, use
 `securityFlowsTo` wrappers. This function is retained for:
 1. Backward compatibility with existing dispatch delegation theorems
 2. Internal kernel paths that operate within the TCB
-3. Proof infrastructure (delegation/preservation theorems reference this) -/
+3. Proof infrastructure (delegation/preservation theorems reference this)
+
+**WS-SM SM9.D.7 (PR #873 round 6): it does carry the taint seam.**  "Unchecked"
+names what it does not *gate* — no `securityFlowsTo` wrapper decides whether a
+flow is permitted — and provenance is not a gate: it records where content came
+from, whatever authority moved it.  A path that skipped it would leave content
+moved through this dispatcher untraceable, which is worse on the unchecked route
+than on the checked one, not better.  So both dispatchers apply the plan and both
+entries inherit it, and the seam is one sentence rather than a list of call sites
+that each have to remember. -/
 def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match st.objects[tid.toObjId]? with
@@ -3124,7 +3156,10 @@ def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) : Ke
           capDepth     := rootCn.depth
           requiredRight := syscallRequiredRight decoded.syscallId
         }
-        (syscallInvoke gate (dispatchWithCap decoded tid gate)) st
+        match (syscallInvoke gate (dispatchWithCap decoded tid gate)) st with
+        | .error e => .error e
+        | .ok ((), stPost) =>
+            .ok ((), applySyscallTaint (syscallTaintPlan st tid decoded) st stPost)
       | some _ => .error .invalidCapability
       | none   => .error .objectNotFound
     | some _ => .error .illegalState
@@ -3165,23 +3200,26 @@ def syscallEntry (layout : SeLe4n.SyscallRegisterLayout)
           -- what the SMP dispatch path actually runs.  Filling the per-core
           -- model from the boot-pinned entry would mix the two models.
           --
-          -- WS-SM SM9.D.7: the taint seam is applied here **too**, and for the
-          -- opposite reason to the TLB fill above.  The per-core TLB model is a
-          -- refinement this entry deliberately does not participate in; taint is
-          -- not — provenance is a property of the content a syscall moves, and
-          -- this entry moves the same content through the same transitions.  The
-          -- modelled SVC route (`dispatchSynchronousException`) reaches the
-          -- kernel through here, so leaving the step out let a send or receive
-          -- taken by that route carry content without its provenance following,
-          -- and let a `.lifecycleRetype` leave a destroyed object's tags on its
-          -- replacement.  Same plan, same pre-state, same post-state shape as
-          -- `syscallEntryChecked`; nothing is applied on the error arm, because
-          -- nothing moved.
-          match dispatchSyscall decoded tid st with
-          | .error e => .error e
-          | .ok ((), stPost) =>
-              .ok ((), applySyscallTaint
-                (syscallTaintPlan st tid decoded) st stPost)
+          -- WS-SM SM9.D.7: the taint seam applies on this route **too**, and
+          -- for the opposite reason to the TLB fill above.  The per-core TLB
+          -- model is a refinement this entry deliberately does not participate
+          -- in; taint is not — provenance is a property of the content a syscall
+          -- moves, and this entry moves the same content through the same
+          -- transitions.  The modelled SVC route
+          -- (`dispatchSynchronousException`) reaches the kernel through here, so
+          -- leaving the step out let a send or receive taken by that route carry
+          -- content without its provenance following, and let a
+          -- `.lifecycleRetype` leave a destroyed object's tags on its
+          -- replacement.
+          --
+          -- PR #873 round 6: inherited from `dispatchSyscall` rather than
+          -- repeated here, the same way `syscallEntryChecked` inherits it from
+          -- the checked dispatcher.  Both dispatchers carry the seam and both
+          -- entries delegate, so the rule is one sentence — *the taint seam sits
+          -- at the dispatcher* — instead of a list of entry points that each
+          -- have to remember.  An entry written tomorrow inherits it; a caller
+          -- who enters at a dispatcher gets it too.
+          dispatchSyscall decoded tid st
 
 -- ============================================================================
 -- WS-J1-C: Soundness theorems
@@ -3228,22 +3266,30 @@ theorem dispatchSyscall_requires_right
           resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref ∧
           SystemState.lookupSlotCap st ref = some cap ∧
           cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
-  unfold dispatchSyscall at hOk
+  -- `simp only` rather than `unfold`: the gate binding elaborates to a `have`,
+  -- which is opaque to `split` (the same distinction `syscallEntryChecked`
+  -- records above), and the seam's `match` sits inside it.
+  simp only [dispatchSyscall] at hOk
   split at hOk
   next tcb hTcb =>
     refine ⟨tcb, hTcb, ?_⟩
     split at hOk
     next rootCn hRoot =>
       refine ⟨rootCn, hRoot, ?_⟩
-      have hInvoke := syscallInvoke_requires_right
-        { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-          capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-        (dispatchWithCap decoded tid
+      -- PR #873 round 6: the taint seam wraps the invoke inside the dispatcher,
+      -- so the invoke's own success has to be opened before it can be used.
+      split at hOk
+      · simp at hOk
+      next stPost hInvokeOk =>
+        have hInvoke := syscallInvoke_requires_right
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-            capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId })
-        st () st' hOk
-      obtain ⟨cap, ref, hResolve, hSlot, hRight⟩ := hInvoke
-      exact ⟨cap, ref, hResolve, hSlot, hRight⟩
+            capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+          (dispatchWithCap decoded tid
+            { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+              capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId })
+          st () stPost hInvokeOk
+        obtain ⟨cap, ref, hResolve, hSlot, hRight⟩ := hInvoke
+        exact ⟨cap, ref, hResolve, hSlot, hRight⟩
     · simp at hOk
     · simp at hOk
   · simp at hOk
@@ -3286,17 +3332,14 @@ theorem syscallEntry_implies_capability_held
           unfold lookupThreadRegisterContext at hLookup
           split at hLookup <;> simp at hLookup
           exact hLookup.2.symm
-        -- The taint seam wraps the dispatch (SM9.D.7), so the dispatch's own
-        -- success hypothesis has to be opened before it can be used.
-        split at hOk
-        · simp at hOk
-        next stPost hDispatchOk =>
-          have hDispatch :=
-            dispatchSyscall_requires_right decoded tid _st_regs stPost (hStEq ▸ hDispatchOk)
-          rw [hStEq] at hDispatch hLookup
-          obtain ⟨tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ := hDispatch
-          exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode,
-                 tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩
+        -- PR #873 round 6: the seam moved into `dispatchSyscall`, so the entry
+        -- delegates and this hypothesis IS the dispatch's own success.
+        have hDispatch :=
+          dispatchSyscall_requires_right decoded tid _st_regs st' (hStEq ▸ hOk)
+        rw [hStEq] at hDispatch hLookup
+        obtain ⟨tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ := hDispatch
+        exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode,
+               tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩
 
 /-- WS-J1-C: `lookupThreadRegisterContext` does not modify kernel state. -/
 theorem lookupThreadRegisterContext_state_unchanged
@@ -3975,16 +4018,12 @@ theorem syscallEntry_preserves_proofLayerInvariantBundle
   rw [hCur] at hOk; simp at hOk
   rw [hLookup] at hOk; simp at hOk
   rw [hDecode] at hOk; simp at hOk
-  -- SM9.D.7: the taint seam wraps the dispatch, so the post-state is the
-  -- dispatch's output with the plan applied.  The bundle survives the write
-  -- because `declassificationTaint` is not one of its conjuncts' subjects.
-  split at hOk
-  · simp at hOk
-  next stPost hDispatchOk =>
-    simp at hOk
-    subst hOk
-    exact Architecture.proofLayerInvariantBundle_setDeclassificationTaint stPost _
-      (hDispatchPres decoded tid st stPost hInv hDispatchOk)
+  -- PR #873 round 6: the taint seam moved into `dispatchSyscall`, so the entry's
+  -- post-state IS the dispatcher's and this is a delegation.  The seam's own
+  -- bundle preservation has not gone anywhere — it is
+  -- `proofLayerInvariantBundle_setDeclassificationTaint`, which is what a
+  -- discharger of `hDispatchPres` composes with its per-arm result.
+  exact hDispatchPres decoded tid st st' hInv hOk
 
 -- ============================================================================
 -- WS-J1-D: Non-interference theorems for the syscall decode path
@@ -4060,18 +4099,12 @@ theorem syscallEntry_preserves_projection
   rw [hCur] at hOk; simp at hOk
   rw [hLookup] at hOk; simp at hOk
   rw [hDecode] at hOk; simp at hOk
-  -- SM9.D.7: the hypothesis is now about the **dispatch's** post-state rather
-  -- than the entry's, because the taint seam sits between them.  That is the
-  -- honest shape: the caller knows what its transition preserves, not what the
-  -- seam does with the result afterwards — and the seam is projection-invisible
-  -- by `applySyscallTaint_preserves_projection`, which holds by `rfl`.
-  split at hOk
-  · simp at hOk
-  next stPost hDispatchOk =>
-    simp at hOk
-    subst hOk
-    rw [applySyscallTaint_preserves_projection]
-    exact hDispatchProj decoded tid stPost hDispatchOk
+  -- PR #873 round 6: the taint seam moved into `dispatchSyscall`, so the entry's
+  -- post-state IS the dispatcher's and the hypothesis applies directly.  The
+  -- seam is still projection-invisible — `applySyscallTaint_preserves_projection`
+  -- holds by `rfl` — which is what lets a discharger of `hDispatchProj` reduce it
+  -- to a statement about the transition the arm ran.
+  exact hDispatchProj decoded tid st' hOk
 
 -- ============================================================================
 -- WS-J1-D: NonInterferenceStep bridge theorems for syscallEntry
@@ -4294,6 +4327,65 @@ theorem dispatchCapabilityOnly_preserves_projection
   exact hArmProj kop hSome hRun
 
 -- ============================================================================
+-- WS-SM SM9.D.7 (PR #873 round 6): the seam is at the dispatcher
+-- ============================================================================
+
+/-- **No success path through the checked dispatcher skips the taint seam.**
+
+The property that makes moving the seam down a layer worth anything: whatever
+route a successful `dispatchSyscallChecked` takes — the target-first resolve or
+the classic rights-gated lookup, any of the 33 arms — the state it returns is the
+plan applied to the state the invoke committed, keyed on the state the dispatcher
+itself was given and on the decoded syscall.
+
+Stated existentially over the committed state rather than as an equation against
+a named inner function, because there is no inner function: the seam wraps the
+invoke in place.  That is the stronger form for this purpose — it quantifies over
+every path rather than pinning one spelling, so an arm added tomorrow either
+satisfies it or stops this elaborating.
+
+`entryDecode_some_entry_dispatches` (SM8.D) pins the *entry* to the dispatcher;
+this pins the dispatcher to the seam.  Together they say what the old
+entry-level equation said, one layer down and over every caller rather than
+over one. -/
+theorem dispatchSyscallChecked_applies_taint_plan
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (h : dispatchSyscallChecked ctx decoded tid st = .ok ((), st')) :
+    ∃ stPost, st' = applySyscallTaint (syscallTaintPlan st tid decoded) st stPost := by
+  simp only [dispatchSyscallChecked] at h
+  split at h
+  · split at h
+    · split at h
+      · exact absurd h (by simp)
+      · next stPost _ => exact ⟨stPost, by simpa using h.symm⟩
+    · exact absurd h (by simp)
+    · exact absurd h (by simp)
+  · exact absurd h (by simp)
+  · exact absurd h (by simp)
+
+/-- **And no success path through the unchecked dispatcher skips it either.**
+
+The twin of the theorem above, and the reason the two are stated as a pair: the
+seam sits at the dispatcher on *both* routes, so "which entry did the caller
+use" stops being a question provenance depends on. -/
+theorem dispatchSyscall_applies_taint_plan
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (h : dispatchSyscall decoded tid st = .ok ((), st')) :
+    ∃ stPost, st' = applySyscallTaint (syscallTaintPlan st tid decoded) st stPost := by
+  simp only [dispatchSyscall] at h
+  split at h
+  · split at h
+    · split at h
+      · exact absurd h (by simp)
+      · next stPost _ => exact ⟨stPost, by simpa using h.symm⟩
+    · exact absurd h (by simp)
+    · exact absurd h (by simp)
+  · exact absurd h (by simp)
+  · exact absurd h (by simp)
+
+-- ============================================================================
 -- AE1-G3: Master dispatch NI theorem
 -- ============================================================================
 
@@ -4337,32 +4429,43 @@ theorem dispatchSyscallChecked_preserves_projection
     -- Layer 1b: CNode lookup (read-only)
     split at hStep
     · -- some (.cnode rootCn)
-      -- PR #870 round 5: the target-first syscalls take the resolve-only
-      -- lookup, everything else the classic rights-gated one.  The inner-NI
-      -- hypothesis is stated over the resolve (the weaker premise, so the
-      -- stronger hypothesis) and covers both branches — a full-lookup success
-      -- is a resolve success (`syscallResolveCap_of_lookup`).
+      -- PR #873 round 6: layer 4 — the provenance seam.  It writes only
+      -- `declassificationTaint`, which is not on the projection surface
+      -- (`applySyscallTaint_preserves_projection`), so the observer's view of
+      -- the sealed state is the view of the state the invoke committed, and the
+      -- inner-NI hypothesis carries the rest.
       split at hStep
-      · -- target-first branch: resolve-only lookup
-        unfold syscallInvokeResolved at hStep
-        split at hStep
-        · -- syscallResolveCap returned error
-          simp at hStep
-        · rename_i cap stCap hCap
-          have ⟨_, _, _, hStEq⟩ :=
-            syscallResolveCap_implies_capability_at_slot _ st cap stCap hCap
-          rw [hStEq] at hStep hCap
-          exact hInnerProj _ cap hCap st' hStep
-      · -- classic branch: full lookup
-        unfold syscallInvoke at hStep
-        split at hStep
-        · -- syscallLookupCap returned error
-          simp at hStep
-        · rename_i cap stCap hCap
-          have ⟨_, _, _, _, hStEq⟩ :=
-            syscallLookupCap_implies_capability_held _ st cap stCap hCap
-          rw [hStEq] at hStep hCap
-          exact hInnerProj _ cap (syscallResolveCap_of_lookup _ st cap st hCap) st' hStep
+      · simp at hStep
+      next stPost hInvoke =>
+        have hSt : st' = applySyscallTaint (syscallTaintPlan st tid decoded) st stPost := by
+          simpa using hStep.symm
+        rw [hSt, applySyscallTaint_preserves_projection]
+        -- PR #870 round 5: the target-first syscalls take the resolve-only
+        -- lookup, everything else the classic rights-gated one.  The inner-NI
+        -- hypothesis is stated over the resolve (the weaker premise, so the
+        -- stronger hypothesis) and covers both branches — a full-lookup success
+        -- is a resolve success (`syscallResolveCap_of_lookup`).
+        split at hInvoke
+        · -- target-first branch: resolve-only lookup
+          unfold syscallInvokeResolved at hInvoke
+          split at hInvoke
+          · -- syscallResolveCap returned error
+            simp at hInvoke
+          · rename_i cap stCap hCap
+            have ⟨_, _, _, hStEq⟩ :=
+              syscallResolveCap_implies_capability_at_slot _ st cap stCap hCap
+            rw [hStEq] at hInvoke hCap
+            exact hInnerProj _ cap hCap stPost hInvoke
+        · -- classic branch: full lookup
+          unfold syscallInvoke at hInvoke
+          split at hInvoke
+          · -- syscallLookupCap returned error
+            simp at hInvoke
+          · rename_i cap stCap hCap
+            have ⟨_, _, _, _, hStEq⟩ :=
+              syscallLookupCap_implies_capability_held _ st cap stCap hCap
+            rw [hStEq] at hInvoke hCap
+            exact hInnerProj _ cap (syscallResolveCap_of_lookup _ st cap st hCap) stPost hInvoke
     · -- some (not .cnode): error
       simp at hStep
     · -- none: error
@@ -4684,21 +4787,31 @@ theorem dispatchSyscallChecked_audit_target_first
     (hLookup : SystemState.lookupSlotCap st ref = some cap)
     (hTarget : cap.target = .object oid) :
     dispatchSyscallChecked ctx decoded tid st = .error .invalidCapability := by
+  -- PR #873 round 6: the taint seam wraps the invoke inside the dispatcher, so
+  -- the arm's refusal is rewritten under the wrapping `match` rather than being
+  -- the goal outright — and the gate is spelled out, because a `_` under that
+  -- match no longer determines itself.
   rcases hSyscall with h | h
-  · simp only [dispatchSyscallChecked,
+  · have hArm := dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid
+      { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+        capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+      cap oid st (Or.inl h) hTarget
+    rw [h] at hArm
+    simp only [dispatchSyscallChecked,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
-    exact dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid _ cap oid st
-      (Or.inl h) hTarget
-  · simp only [dispatchSyscallChecked,
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup, hArm]
+  · have hArm := dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid
+      { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+        capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+      cap oid st (Or.inr h) hTarget
+    rw [h] at hArm
+    simp only [dispatchSyscallChecked,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
-    exact dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid _ cap oid st
-      (Or.inr h) hTarget
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup, hArm]
 
 /-- **WS-SM SM9.A.9 (PR #870 round 5, the order's other half)**: an audit-target
 capability lacking the required right is refused `.illegalAuthority` — after
@@ -4718,21 +4831,29 @@ theorem dispatchSyscallChecked_audit_right_checked_second
     (hTarget : cap.target = .auditTrail)
     (hRight : cap.hasRight (syscallRequiredRight decoded.syscallId) = false) :
     dispatchSyscallChecked ctx decoded tid st = .error .illegalAuthority := by
+  -- PR #873 round 6: as above — the refusal is rewritten under the seam's
+  -- `match`, and the gate is named rather than inferred.
   rcases hSyscall with h | h
-  · simp only [dispatchSyscallChecked,
+  · have hArm := dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid
+      { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+        capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+      cap st (Or.inl h) hTarget hRight
+    rw [h] at hArm
+    simp only [dispatchSyscallChecked,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
-    exact dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid _ cap st
-      (Or.inl h) hTarget (by simpa [h] using hRight)
-  · simp only [dispatchSyscallChecked,
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup, hArm]
+  · have hArm := dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid
+      { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+        capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+      cap st (Or.inr h) hTarget hRight
+    rw [h] at hArm
+    simp only [dispatchSyscallChecked,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
-    exact dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid _ cap st
-      (Or.inr h) hTarget (by simpa [h] using hRight)
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup, hArm]
 
 /-- **WS-SM SM9.A.10: there is no unchecked audit read.**
 

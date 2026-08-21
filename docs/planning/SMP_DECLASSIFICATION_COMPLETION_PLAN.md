@@ -1685,8 +1685,14 @@ the ABI rather than waived.
 
 **D.8 – D.11 — propagation, at one site rather than twelve.**  The plan's file
 list put the propagation *inside* each IPC transition.  It is instead **one
-write at the per-core entry**, `API.syscallEntryChecked`, applied to the state
-the dispatch committed and driven by a declared `TaintPlan`.  The reason is the
+write at each dispatcher**, `API.dispatchSyscall` and
+`API.dispatchSyscallChecked`, applied to the state that dispatcher was given and
+driven by a declared `TaintPlan`; both entries inherit it by delegating.  (It sat
+at `syscallEntryChecked` until PR #873 round 6, one layer above the function
+`dispatchSyscall`'s own docstring recommends for production user-space entry —
+so an integrator who followed that advice never reached the seam.  Moving it down
+makes every entry inherit it, including one written tomorrow, and
+`dispatchSyscallChecked_applies_taint_plan` pins that no success path skips it.)  The reason is the
 invariant surface: every IPC transition is quantified over by roughly 1 900
 references, and a field write inside one of them reopens all of them, while
 `applySyscallTaint_frame` (one field, six projections) leaves
@@ -1736,10 +1742,13 @@ replacement.  `retypeClearsTaint` / `retypedObject_taint_empty` close it, and
 `staleTaint_is_not_saturation` keeps D.15's residual claim true by exhibiting
 the two imprecisions as different things.  The plan's "frames for every
 non-content transition, ~12 files" is realised as **one** theorem rather than
-twelve, and is stronger for it: with the propagation at the entry, an inert
+twelve, and is stronger for it: with the propagation at the dispatcher, an inert
 syscall's plan is `TaintPlan.inert` and `applySyscallTaint_inert` says its
 commit leaves the table untouched — for every inert syscall at once, including
-ones added later.
+ones added later.  Since SM9.D.13a that theorem carries **no hypothesis about
+the trail**: the plan records whether its syscall can append at all, so the
+identity is structural rather than conditional on the commit having recorded
+nothing.
 
 **D.13a — the recorded snapshot.**  `DeclassificationEvent.predecessorTags` is
 **undefaulted**: a default would attribute an empty history to every event

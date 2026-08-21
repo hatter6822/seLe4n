@@ -5714,6 +5714,18 @@ private def declassPayload (badge : Nat) : KernelObject :=
   .notification { state := .active, waitingThreads := SeLe4n.NoDupList.empty,
                   pendingBadge := some (SeLe4n.Badge.ofNatMasked badge) }
 
+/-- WS-SM SM9.D.13a: **the plan a `.declassify` runs.**
+
+No content edges — a downgrade re-labels an object in place rather than moving
+content between two — but the arm *records*, so the plan says so and the
+origination diff is taken.  Spelled out here rather than as `TaintPlan.inert`
+because since SM9.D.13a those differ exactly where it matters: an inert plan
+cannot record, so a declassification hop applied under one would originate
+nothing and every chain below would be missed.  This is what
+`syscallTaintPlan` produces for `.declassify`
+(`syscallTaintPlan_originates`). -/
+private def declassifyingPlan : TaintPlan := { TaintPlan.inert with originates := true }
+
 /-- Hop 1 — on **core 1**, whose subject is in the secret domain: a downgrade to
 the middle domain, entered through the attributed wrapper. -/
 private def declassHop1 : Option (DeclassificationAuditLog × SystemState) :=
@@ -5725,7 +5737,7 @@ private def declassHop1 : Option (DeclassificationAuditLog × SystemState) :=
   -- lands on the object its content reached and on the subject that performed
   -- it.  Running it here is what makes this fixture the *live* shape rather
   -- than a transition-only one, and it is why the chain below is causal.
-  | .ok ((), st) => some (st.declassificationAuditLog, applySyscallTaint TaintPlan.inert niState st)
+  | .ok ((), st) => some (st.declassificationAuditLog, applySyscallTaint declassifyingPlan niState st)
   | .error _ => none
 
 /-- WS-SM SM9.D.8 (**the §3.6 chain's middle step**): an **ordinary,
@@ -5753,7 +5765,7 @@ private def declassHop2 : Option (DeclassificationAuditLog × SystemState) :=
       match declassifyStoreFromCore declassContext launderingDeclPolicy c0 declassPublic
           declassTargetB (declassPayload 0xB2) st₁ with
       | .ok ((), st₂) =>
-          some (st₂.declassificationAuditLog, applySyscallTaint TaintPlan.inert st₁ st₂)
+          some (st₂.declassificationAuditLog, applySyscallTaint declassifyingPlan st₁ st₂)
       | .error _ => none
 
 /-- A **forged** attribution: run on core 0, whose subject is `lowCurrent` (the

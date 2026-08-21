@@ -185,6 +185,61 @@ theorem contentFlowClass_moves_iff (sid : SyscallId) :
         sid = .notificationSignal ∨ sid = .notificationWait ∨ sid = .declassifySignal) := by
   cases sid <;> simp [contentFlowClass]
 
+/-- WS-SM SM9.D.13a: **can this syscall append to the declassification trail?**
+
+Deliberately *not* the content-flow class — the two cut the surface differently
+and folding them would be wrong in both directions.  `.declassify` moves no
+content between objects (it re-labels one in place) yet records the downgrade
+that must originate a tag; `.notificationWait` moves content and records nothing.
+
+Total on `SyscallId`, so a constructor added tomorrow cannot elaborate without an
+answer here.  The answer is checked rather than trusted: the Tier-1 content-flow
+gate walks the elaborated call graph from each dispatch arm and fails the build
+on any arm that reaches a writer of `SystemState.declassificationAuditLog` while
+this returns `false`.  That is what makes it safe for `applySyscallTaint` to skip
+the trail diff on the other 31 arms — the skip is licensed by a checked
+reachability fact, not by this list being remembered. -/
+def syscallRecordsDeclassification : SyscallId → Bool
+  -- WS-SM SM8.C.9: the declassification authority — `declassifyObjectFromCore`
+  -- appends the hop it authorized.
+  | .declassify => true
+  -- WS-SM SM9.C.8: the data-carrying declassification — the ordinary signal
+  -- plus that same append.
+  | .declassifySignal => true
+  -- The audit pair reads and drains the trail; neither appends.  A drain
+  -- advances the epoch, which `newlyRecordedEvents` already answers `[]` for.
+  | .auditRead | .auditDrain => false
+  | .send | .receive | .call | .reply | .replyRecv => false
+  | .notificationSignal | .notificationWait => false
+  | .cspaceCopy | .cspaceMove | .cspaceMint | .cspaceDelete | .mintReplyCap => false
+  | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction => false
+  | .lifecycleRetype => false
+  | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority => false
+  | .tcbSetIPCBuffer | .tcbSetAffinity => false
+  | .tcbBindNotification | .tcbUnbindNotification => false
+  | .schedContextBind | .schedContextUnbind | .schedContextConfigure => false
+  | .serviceRegister | .serviceRevoke | .serviceQuery => false
+
+/-- WS-SM SM9.D.13a: **the two arms that record, named.**
+
+The set as a checked value rather than as prose, so widening it is a visible
+change to a theorem and not a quiet edit to a `match`. -/
+theorem syscallRecordsDeclassification_iff (sid : SyscallId) :
+    syscallRecordsDeclassification sid = true ↔
+      (sid = .declassify ∨ sid = .declassifySignal) := by
+  cases sid <;> simp [syscallRecordsDeclassification]
+
+/-- WS-SM SM9.D.13a: recording and moving content are independent — the reason
+this is its own classifier.  `.declassify` records without moving and
+`.notificationWait` moves without recording, so neither predicate implies the
+other in either direction. -/
+theorem syscallRecordsDeclassification_independent_of_class :
+    syscallRecordsDeclassification .declassify = true ∧
+      contentFlowClass .declassify = .inert ∧
+      syscallRecordsDeclassification .notificationWait = false ∧
+      contentFlowClass .notificationWait = .movesContent := by
+  refine ⟨rfl, rfl, rfl, rfl⟩
+
 /-- WS-SM SM9.D.7: **what this model tracks as content**, named so the boundary
 is a value rather than a claim in prose.
 
@@ -257,9 +312,37 @@ structure TaintPlan where
       wipe the stored badge's provenance (a missed chain) or tag a notification
       the new badge went nowhere near (a false one). -/
   bypassed : List SeLe4n.ObjId := []
+  /-- Can the syscall this plan belongs to **append to the audit trail**?
+
+      Not what it *did* append — that is still recovered from the trail's own
+      diff, so a downgrade's identity remains the record it wrote rather than
+      anything the planner guessed.  This says only whether the diff is worth
+      taking, and it is `false` for the 31 arms whose dispatch provably cannot
+      reach a trail writer.
+
+      It exists because the diff is not free.  `newlyRecordedEvents` walks
+      `pre.declassificationAuditLog` for its length and then drops that many
+      entries off the post-trail, so every successful syscall — an inert
+      `.tcbSetPriority`, an ordinary `.send` — paid two O(n) walks over a trail
+      bounded only by the SM9.A 256-entry cliff.  On the IPC path that is up to
+      ~512 pointer chases per call for a diff that is provably empty.
+
+      **The fail-open shape is real, so it is not left to convention.**  A future
+      declassifying syscall that forgot this flag would originate nothing and
+      lose every chain through it — a *missed* chain, the direction this module
+      must never err in.  So `syscallRecordsDeclassification` is total on
+      `SyscallId` (a new constructor cannot elaborate without an answer), its set
+      is pinned as a value by `syscallRecordsDeclassification_iff`, and the
+      Tier-1 content-flow gate checks that answer against the elaborated call
+      graph: an arm that reaches a writer of `declassificationAuditLog` while
+      answering `false` fails the build. -/
+  originates : Bool := false
   deriving Repr, DecidableEq
 
-/-- WS-SM SM9.D.7: the empty plan — what an `.inert` syscall runs. -/
+/-- WS-SM SM9.D.7: the empty plan — what an `.inert` syscall runs.
+
+Inert *and* non-originating: an arm that records a downgrade is not inert in the
+sense that matters here, whatever its content-flow class. -/
 def TaintPlan.inert : TaintPlan := {}
 
 /-- WS-SM SM9.D.7: **the operand capability, resolved the way the dispatch
@@ -688,19 +771,49 @@ def retypeClearedObjects (decoded : SyscallDecodeResult) : List SeLe4n.ObjId :=
 /-- WS-SM SM9.D.7: **the plan a syscall runs**, from its classification. -/
 def syscallTaintPlan (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) : TaintPlan :=
+  -- Set from its own classifier, not from the content-flow class: `.declassify`
+  -- is `.inert` and records, so folding the two would silence exactly the arm
+  -- whose whole purpose is to record.
+  let originates := syscallRecordsDeclassification decoded.syscallId
   match contentFlowClass decoded.syscallId with
-  | .inert => TaintPlan.inert
+  | .inert => { TaintPlan.inert with originates }
   | .movesContent => { edges := contentFlowEdges st tid decoded,
                        cleared := contentFlowClears st tid decoded,
-                       bypassed := contentFlowBypassed st tid decoded }
-  | .clearsProvenance => { cleared := retypeClearedObjects decoded }
+                       bypassed := contentFlowBypassed st tid decoded,
+                       originates }
+  | .clearsProvenance => { cleared := retypeClearedObjects decoded, originates }
 
-/-- WS-SM SM9.D.7: an inert syscall plans nothing — the property the reach gate
-checks the *other* half of (that nothing it calls moves content either). -/
+/-- WS-SM SM9.D.7: an inert syscall plans no content movement — the property the
+reach gate checks the *other* half of (that nothing it calls moves content
+either).
+
+Stated over the three movement fields rather than as `= TaintPlan.inert`, because
+since SM9.D.13a the plan also carries whether the arm can record a downgrade, and
+`.declassify` is an inert arm that can.  Collapsing the two would have made this
+theorem false for the one syscall the provenance layer exists for. -/
 @[simp] theorem syscallTaintPlan_inert (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (h : contentFlowClass decoded.syscallId = .inert) :
+    (syscallTaintPlan st tid decoded).edges = [] ∧
+      (syscallTaintPlan st tid decoded).cleared = [] ∧
+      (syscallTaintPlan st tid decoded).bypassed = [] := by
+  simp [syscallTaintPlan, h, TaintPlan.inert]
+
+/-- WS-SM SM9.D.13a: an inert arm that cannot record plans literally nothing —
+the pre-SM9.D.13a statement, kept for the 30 arms it still holds of. -/
+theorem syscallTaintPlan_eq_inert (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (h : contentFlowClass decoded.syscallId = .inert)
+    (hRec : syscallRecordsDeclassification decoded.syscallId = false) :
     syscallTaintPlan st tid decoded = TaintPlan.inert := by
-  simp [syscallTaintPlan, h]
+  simp [syscallTaintPlan, h, hRec, TaintPlan.inert]
+
+/-- WS-SM SM9.D.13a: the plan's recording flag **is** the syscall's classifier —
+the tie that lets a consumer read either one. -/
+@[simp] theorem syscallTaintPlan_originates (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) :
+    (syscallTaintPlan st tid decoded).originates =
+      syscallRecordsDeclassification decoded.syscallId := by
+  simp only [syscallTaintPlan]
+  cases h : contentFlowClass decoded.syscallId <;> simp
 
 -- ============================================================================
 -- §3  WS-SM SM9.D.12 / SM9.D.13a — applying a plan
@@ -733,6 +846,7 @@ def newlyRecordedEvents (pre post : SystemState) : List DeclassificationEvent :=
     post.declassificationAuditLog.drop pre.declassificationAuditLog.length
   else []
 
+
 /-- WS-SM SM9.D.13a: **on a pure append the diff IS the appended suffix.**
 
 The characterisation the origination rests on, so "recovered from the trail's
@@ -758,6 +872,54 @@ theorem newlyRecordedEvents_drained (pre post : SystemState)
     newlyRecordedEvents pre post = [] := by
   simp [newlyRecordedEvents, hEpoch]
 
+/-- WS-SM SM9.D.13a: **a commit that only removes a prefix originates nothing** —
+both branches of it.
+
+`newlyRecordedEvents_drained` covers the interesting one, where the epoch moved.
+The other is the one an inventory forgets: a drain of zero entries leaves the
+trail and the epoch identical, so the epoch guard does *not* fire and the answer
+has to come from `drop`'s own behaviour at the list's full length.  Stating both
+together is what makes "a drain contributes no origination" a fact about the
+transition rather than about the branch someone happened to check. -/
+theorem newlyRecordedEvents_of_drop (pre post : SystemState) (k : Nat)
+    (hLog : post.declassificationAuditLog = pre.declassificationAuditLog.drop k)
+    (hEpoch : post.declassificationAuditEpoch = pre.declassificationAuditEpoch + k) :
+    newlyRecordedEvents pre post = [] := by
+  unfold newlyRecordedEvents
+  cases k with
+  | zero =>
+    have hEq : pre.declassificationAuditEpoch = post.declassificationAuditEpoch := by
+      rw [hEpoch]; omega
+    rw [if_pos hEq, hLog]
+    simp
+  | succ k' =>
+    have hNe : pre.declassificationAuditEpoch ≠ post.declassificationAuditEpoch := by
+      rw [hEpoch]; omega
+    rw [if_neg hNe]
+
+/-- WS-SM SM9.D.13a: **the drain writes the trail and still originates nothing.**
+
+The load-bearing exemption behind `syscallRecordsDeclassification .auditDrain =
+false`.  The Tier-1 content-flow gate finds `.auditDrain` reaching a writer of
+`declassificationAuditLog` — correctly, since the drain rewrites the field — and
+would otherwise report it as an arm that records while claiming not to.  It does
+not record: it removes a prefix and advances the epoch by exactly what it removed,
+which is the `newlyRecordedEvents_of_drop` shape.  The gate's exemption cites this
+theorem, so the exemption cannot outlive its justification. -/
+theorem newlyRecordedEvents_auditDrain (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (c : Concurrency.CoreId) (count : Nat)
+    (st st' : SystemState) (n : Nat)
+    (h : auditDrainVisiblePrefix ctx monitorClearance c count st = .ok (n, st')) :
+    newlyRecordedEvents st st' = [] := by
+  unfold auditDrainVisiblePrefix at h
+  split at h
+  · injection h with hPair
+    injection hPair with _ hState
+    rw [← hState]
+    exact newlyRecordedEvents_of_drop _ _
+      (min count st.declassificationAuditLog.length) rfl rfl
+  · exact absurd h (by simp)
+
 /-- WS-SM SM9.D.13a: **a downgrade originates its own identity** — on the object
 its content landed in, and on the subject that performed it.
 
@@ -771,6 +933,55 @@ def originationTags (events : List DeclassificationEvent) : List (SeLe4n.ObjId �
 /-- WS-SM SM9.D.13a: apply the origination tags. -/
 def applyOrigination (origins : List (SeLe4n.ObjId × Nat)) (tbl : TaintTable) : TaintTable :=
   origins.foldl (fun t p => t.joinAt p.1 (DeclassificationTaint.singleton p.2)) tbl
+
+/-- WS-SM SM9.D.13a: **the diff, taken only when the syscall could have appended.**
+
+`newlyRecordedEvents` costs two O(n) walks — `pre`'s length, then a `drop` of that
+many off `post` — over a trail bounded only by SM9.A's 256-entry cliff, and the
+entry applies a plan on *every* successful syscall.  Inert scheduling, CSpace and
+VSpace calls, and the whole IPC path were paying for a diff that is provably empty
+for them.
+
+The skip is licensed, not assumed.  `syscallRecordsDeclassification` is total on
+`SyscallId`, its set is pinned by `syscallRecordsDeclassification_iff`, and the
+Tier-1 content-flow gate fails the build on any dispatch arm that reaches a writer
+of `declassificationAuditLog` while classified as non-recording — so an arm is
+skipped here only when it demonstrably has nothing to contribute.  For an arm that
+*does* record, nothing changes: the tags are still recovered from the trail's own
+diff, so what a downgrade originates is still the record it wrote, and a new
+declassifying syscall still originates the day it lands. -/
+def planOriginationTags (plan : TaintPlan) (pre post : SystemState) :
+    List (SeLe4n.ObjId × Nat) :=
+  if plan.originates then originationTags (newlyRecordedEvents pre post) else []
+
+/-- WS-SM SM9.D.13a: a recording plan takes the full diff — the gate is a skip for
+the arms that cannot append, never a filter on what a recording one sees. -/
+@[simp] theorem planOriginationTags_of_originates (plan : TaintPlan)
+    (pre post : SystemState) (h : plan.originates = true) :
+    planOriginationTags plan pre post = originationTags (newlyRecordedEvents pre post) := by
+  simp [planOriginationTags, h]
+
+/-- WS-SM SM9.D.13a: a non-recording plan originates nothing, without reading the
+trail at all. -/
+@[simp] theorem planOriginationTags_of_not_originates (plan : TaintPlan)
+    (pre post : SystemState) (h : plan.originates = false) :
+    planOriginationTags plan pre post = [] := by
+  simp [planOriginationTags, h]
+
+/-- WS-SM SM9.D.13a: **the skip changes no result it was allowed to skip.**
+
+The soundness statement in one line: whenever the commit really did append
+nothing, the gated tags and the ungated diff agree — so on the 31 non-recording
+arms the optimisation is an identity, and on a hypothetical arm that recorded
+while classified `false` this is exactly the hypothesis the Tier-1 gate refuses
+to let go unchecked. -/
+theorem planOriginationTags_eq_of_no_events (plan : TaintPlan) (pre post : SystemState)
+    (h : plan.originates = false → newlyRecordedEvents pre post = []) :
+    planOriginationTags plan pre post = originationTags (newlyRecordedEvents pre post) := by
+  unfold planOriginationTags
+  cases hp : plan.originates with
+  | true => rfl
+  | false => rw [h hp]; simp [originationTags]
 
 /-- WS-SM SM9.D.7 (**the one writer**): apply a syscall's whole taint effect to
 the state the dispatch committed.
@@ -801,12 +1012,14 @@ reason:
   receiver that actually took the badge.  `taintWriteKeys` is unaffected, since
   it unions the cleared list in anyway. -/
 def applySyscallTaint (plan : TaintPlan) (pre post : SystemState) : SystemState :=
-  -- Bound once.  `newlyRecordedEvents` is `post.log.drop pre.log.length`, so each
-  -- evaluation is two O(n) walks with n bounded at the SM9.A 256-entry cliff, and
-  -- `applySyscallTaint` runs on EVERY syscall — inert plans included, since the
-  -- entry always applies a plan.  Computing it twice made every syscall pay four
-  -- list walks where two suffice.
-  let origins := originationTags (newlyRecordedEvents pre post)
+  -- Bound once, and taken only when the plan says the syscall could have
+  -- appended.  `newlyRecordedEvents` is `post.log.drop pre.log.length`, so each
+  -- evaluation is two O(n) walks with n bounded only at the SM9.A 256-entry
+  -- cliff, and `applySyscallTaint` runs on EVERY syscall — inert plans included,
+  -- since the entry always applies a plan.  Computing it twice made every syscall
+  -- pay four list walks where two suffice; computing it at all made 31 of the 33
+  -- arms pay two walks for a diff that is provably empty (SM9.D.13a).
+  let origins := planOriginationTags plan pre post
   { post with
       declassificationTaint :=
         applyOrigination
@@ -828,11 +1041,11 @@ theorem applySyscallTaint_frame (plan : TaintPlan) (pre post : SystemState) :
       { post with
           declassificationTaint :=
             applyOrigination
-              ((originationTags (newlyRecordedEvents pre post)).filter
+              ((planOriginationTags plan pre post).filter
                 (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
               (applyTaintClears plan.cleared
                 (applyTaintFlow
-                  (applyOrigination (originationTags (newlyRecordedEvents pre post))
+                  (applyOrigination (planOriginationTags plan pre post)
                     pre.declassificationTaint)
                   plan.edges
                   post.declassificationTaint)) } := rfl
@@ -863,23 +1076,28 @@ projection form the carriage arguments read. -/
     (applySyscallTaint plan pre post).declassificationRefusals =
       post.declassificationRefusals := rfl
 
-/-- WS-SM SM9.D.7: an inert plan on a syscall that recorded nothing is the
-identity — the property that makes "most syscalls do not touch the table" a
-fact rather than an expectation. -/
-theorem applySyscallTaint_inert (pre post : SystemState)
-    (hEvents : newlyRecordedEvents pre post = []) :
+/-- WS-SM SM9.D.7: an inert plan is the identity — the property that makes "most
+syscalls do not touch the table" a fact rather than an expectation.
+
+Since SM9.D.13a this needs **no hypothesis about the trail**.  It used to require
+`newlyRecordedEvents pre post = []` because the origination diff was taken
+unconditionally, so an inert plan applied to a commit that happened to append
+would still have originated onto it.  The plan now carries whether its syscall can
+append at all, and `TaintPlan.inert` says it cannot — so the identity is
+structural. -/
+theorem applySyscallTaint_inert (pre post : SystemState) :
     applySyscallTaint TaintPlan.inert pre post = post := by
   show { post with
       declassificationTaint :=
         applyOrigination
-          ((originationTags (newlyRecordedEvents pre post)).filter
+          ((planOriginationTags TaintPlan.inert pre post).filter
             (fun p => !([] : List SeLe4n.ObjId).contains p.1))
           (applyTaintClears [] (applyTaintFlow
-            (applyOrigination (originationTags (newlyRecordedEvents pre post))
+            (applyOrigination (planOriginationTags TaintPlan.inert pre post)
               pre.declassificationTaint) []
             post.declassificationTaint)) } = post
-  rw [hEvents]
-  simp [originationTags, applyOrigination, applyTaintClears, applyTaintFlow]
+  simp [planOriginationTags, TaintPlan.inert, applyOrigination, applyTaintClears,
+    applyTaintFlow]
 
 -- ----------------------------------------------------------------------------
 -- WS-SM SM9.D.17: per-step key frames, stated next to the steps they frame.
@@ -973,7 +1191,7 @@ theorem applySyscallTaint_cleared_empty (plan : TaintPlan) (pre post : SystemSta
     (o : SeLe4n.ObjId) (h : o ∈ plan.cleared) :
     (applySyscallTaint plan pre post).declassificationTaint o =
       DeclassificationTaint.empty := by
-  have hOrigF : o ∉ ((originationTags (newlyRecordedEvents pre post)).filter
+  have hOrigF : o ∉ ((planOriginationTags plan pre post).filter
       (fun p => !(plan.cleared ++ plan.bypassed).contains p.1)).map (·.fst) := by
     intro hm
     obtain ⟨q, hq, hqo⟩ := List.mem_map.mp hm
@@ -981,11 +1199,11 @@ theorem applySyscallTaint_cleared_empty (plan : TaintPlan) (pre post : SystemSta
     rw [← hqo] at h
     simp [h] at hkeep
   show applyOrigination
-      ((originationTags (newlyRecordedEvents pre post)).filter
+      ((planOriginationTags plan pre post).filter
         (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
       (applyTaintClears plan.cleared
         (applyTaintFlow
-          (applyOrigination (originationTags (newlyRecordedEvents pre post))
+          (applyOrigination (planOriginationTags plan pre post)
             pre.declassificationTaint)
           plan.edges post.declassificationTaint)) o = DeclassificationTaint.empty
   rw [applyOrigination_not_mem o _ _ hOrigF]
@@ -1092,17 +1310,17 @@ theorem taintPropagation_edge (plan : TaintPlan) (pre post : SystemState)
     (hSrc : (pre.declassificationTaint e.source).contains t = true) :
     ((applySyscallTaint plan pre post).declassificationTaint e.sink).contains t = true := by
   show ((applyOrigination
-      ((originationTags (newlyRecordedEvents pre post)).filter
+      ((planOriginationTags plan pre post).filter
         (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
       (applyTaintClears plan.cleared
         (applyTaintFlow
-          (applyOrigination (originationTags (newlyRecordedEvents pre post))
+          (applyOrigination (planOriginationTags plan pre post)
             pre.declassificationTaint)
           plan.edges post.declassificationTaint))) e.sink).contains t = true
   refine contains_applyOrigination_mono _ _ e.sink ?_
   refine contains_applyTaintClears_of_not_mem plan.cleared _ e.sink hClear ?_
   exact contains_applyTaintFlow_of_mem
-    (applyOrigination (originationTags (newlyRecordedEvents pre post))
+    (applyOrigination (planOriginationTags plan pre post)
       pre.declassificationTaint)
     plan.edges post.declassificationTaint e hMem
     (contains_applyOrigination_mono _ pre.declassificationTaint e.source hSrc)
@@ -1124,13 +1342,15 @@ coincide only in that delivered-onward case, where
 tag instead. -/
 theorem taintOrigination_target (plan : TaintPlan) (pre post : SystemState)
     (ev : DeclassificationEvent) (hMem : ev ∈ newlyRecordedEvents pre post)
+    (hRec : plan.originates = true)
     (hClear : ev.targetObject ∉ plan.cleared ++ plan.bypassed) :
     ((applySyscallTaint plan pre post).declassificationTaint ev.targetObject).contains
       ev.timestamp = true := by
   show ((applyOrigination
-    ((originationTags (newlyRecordedEvents pre post)).filter
+    ((planOriginationTags plan pre post).filter
       (fun p => !(plan.cleared ++ plan.bypassed).contains p.1)) _)
     ev.targetObject).contains ev.timestamp = true
+  rw [planOriginationTags_of_originates plan pre post hRec]
   exact contains_applyOrigination_of_mem _ _ (ev.targetObject, ev.timestamp)
     (List.mem_filter.mpr ⟨List.mem_flatMap.mpr ⟨ev, hMem, by simp⟩, by simp [hClear]⟩)
 
@@ -1142,13 +1362,15 @@ Without this the `.declassify`-then-`.declassify` chain — the simplest launder
 shape there is — would carry no predecessor and go undetected. -/
 theorem taintOrigination_actor (plan : TaintPlan) (pre post : SystemState)
     (ev : DeclassificationEvent) (hMem : ev ∈ newlyRecordedEvents pre post)
+    (hRec : plan.originates = true)
     (hClear : ev.sourceSubject ∉ plan.cleared ++ plan.bypassed) :
     ((applySyscallTaint plan pre post).declassificationTaint ev.sourceSubject).contains
       ev.timestamp = true := by
   show ((applyOrigination
-    ((originationTags (newlyRecordedEvents pre post)).filter
+    ((planOriginationTags plan pre post).filter
       (fun p => !(plan.cleared ++ plan.bypassed).contains p.1)) _)
     ev.sourceSubject).contains ev.timestamp = true
+  rw [planOriginationTags_of_originates plan pre post hRec]
   exact contains_applyOrigination_of_mem _ _ (ev.sourceSubject, ev.timestamp)
     (List.mem_filter.mpr ⟨List.mem_flatMap.mpr ⟨ev, hMem, by simp⟩, by simp [hClear]⟩)
 
@@ -1383,7 +1605,8 @@ theorem retypeClearsTaint (st : SystemState) (tid : SeLe4n.ThreadId)
     (args : Architecture.SyscallArgDecode.LifecycleRetypeArgs)
     (hArgs : Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs decoded = .ok args) :
     syscallTaintPlan st tid decoded = { edges := [], cleared := [args.targetObj] } := by
-  simp [syscallTaintPlan, contentFlowClass, hSid, retypeClearedObjects, hArgs]
+  simp [syscallTaintPlan, contentFlowClass, hSid, retypeClearedObjects, hArgs,
+    syscallRecordsDeclassification]
 
 /-- WS-SM SM9.D.12 (**the property**): after a retype the destroyed object
 carries **no** provenance.
@@ -1444,7 +1667,7 @@ theorem bypassedObject_not_originated (plan : TaintPlan) (pre post : SystemState
     (hFlow : o ∉ plan.edges.map (fun e => e.sink)) :
     (applySyscallTaint plan pre post).declassificationTaint o =
       post.declassificationTaint o := by
-  have hOrigF : o ∉ ((originationTags (newlyRecordedEvents pre post)).filter
+  have hOrigF : o ∉ ((planOriginationTags plan pre post).filter
       (fun p => !(plan.cleared ++ plan.bypassed).contains p.1)).map (·.fst) := by
     intro hm
     obtain ⟨q, hq, hqo⟩ := List.mem_map.mp hm
@@ -1452,11 +1675,11 @@ theorem bypassedObject_not_originated (plan : TaintPlan) (pre post : SystemState
     rw [← hqo] at hBypass
     simp [hBypass] at hkeep
   show applyOrigination
-      ((originationTags (newlyRecordedEvents pre post)).filter
+      ((planOriginationTags plan pre post).filter
         (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
       (applyTaintClears plan.cleared
         (applyTaintFlow
-          (applyOrigination (originationTags (newlyRecordedEvents pre post))
+          (applyOrigination (planOriginationTags plan pre post)
             pre.declassificationTaint)
           plan.edges post.declassificationTaint)) o = post.declassificationTaint o
   rw [applyOrigination_not_mem o _ _ hOrigF,
@@ -1580,21 +1803,29 @@ So `lockSet_declassify` holds the actor TCB in **write** mode and carries the
 resolved target's own lock, and `lockSet_declassifySignal` inherits the
 notification write from the signal it wraps.
 `lockSet_declassify_originationKeys_write_mem` is the checkable form. -/
-def taintOriginationKeys (pre post : SystemState) : List SeLe4n.ObjId :=
-  (originationTags (newlyRecordedEvents pre post)).map (·.fst)
+def taintOriginationKeys (plan : TaintPlan) (pre post : SystemState) : List SeLe4n.ObjId :=
+  (planOriginationTags plan pre post).map (·.fst)
 
 /-- WS-SM SM9.D.17: **the full write set** — flow sinks, cleared ids, and
 origination targets. -/
 def taintWriteKeys (plan : TaintPlan) (pre post : SystemState) : List SeLe4n.ObjId :=
-  taintFlowSinks plan ++ plan.cleared ++ taintOriginationKeys pre post
+  taintFlowSinks plan ++ plan.cleared ++ taintOriginationKeys plan pre post
 
 /-- WS-SM SM9.D.17: an origination writes nothing when the commit appended no
 event — so for the six content-moving syscalls that do not touch the trail the
 write set is exactly the declared sinks. -/
-@[simp] theorem taintOriginationKeys_nil_of_no_events (pre post : SystemState)
-    (h : newlyRecordedEvents pre post = []) :
-    taintOriginationKeys pre post = [] := by
-  simp [taintOriginationKeys, h, originationTags]
+@[simp] theorem taintOriginationKeys_nil_of_no_events (plan : TaintPlan)
+    (pre post : SystemState) (h : newlyRecordedEvents pre post = []) :
+    taintOriginationKeys plan pre post = [] := by
+  simp [taintOriginationKeys, planOriginationTags, h, originationTags]
+
+/-- WS-SM SM9.D.13a: an arm that cannot record writes no origination key, without
+the trail being consulted — the write-set half of the same skip
+`planOriginationTags` performs at the apply. -/
+@[simp] theorem taintOriginationKeys_nil_of_not_originates (plan : TaintPlan)
+    (pre post : SystemState) (h : plan.originates = false) :
+    taintOriginationKeys plan pre post = [] := by
+  simp [taintOriginationKeys, planOriginationTags, h]
 
 /-- WS-SM SM9.D.17 (**the key-locality frame**): outside its write set a plan
 leaves the taint table literally unchanged.
@@ -1612,19 +1843,19 @@ theorem applySyscallTaint_frame_off_writeKeys (plan : TaintPlan)
     simp only [taintWriteKeys, List.mem_append]; exact Or.inl (Or.inl hm))
   have hClear : o ∉ plan.cleared := fun hm => h (by
     simp only [taintWriteKeys, List.mem_append]; exact Or.inl (Or.inr hm))
-  have hOrig : o ∉ taintOriginationKeys pre post := fun hm => h (by
+  have hOrig : o ∉ taintOriginationKeys plan pre post := fun hm => h (by
     simp only [taintWriteKeys, List.mem_append]; exact Or.inr hm)
-  have hOrigF : o ∉ ((originationTags (newlyRecordedEvents pre post)).filter
+  have hOrigF : o ∉ ((planOriginationTags plan pre post).filter
       (fun p => !(plan.cleared ++ plan.bypassed).contains p.1)).map (·.fst) := by
     intro hm
     obtain ⟨q, hq, hqo⟩ := List.mem_map.mp hm
     exact hOrig (List.mem_map.mpr ⟨q, (List.mem_filter.mp hq).1, hqo⟩)
   show applyOrigination
-      ((originationTags (newlyRecordedEvents pre post)).filter
+      ((planOriginationTags plan pre post).filter
         (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
       (applyTaintClears plan.cleared
         (applyTaintFlow
-          (applyOrigination (originationTags (newlyRecordedEvents pre post))
+          (applyOrigination (planOriginationTags plan pre post)
             pre.declassificationTaint)
           plan.edges post.declassificationTaint)) o = post.declassificationTaint o
   rw [applyOrigination_not_mem o _ _ hOrigF,
@@ -1710,13 +1941,17 @@ the append needs, which orders them against other state-level writers only. -/
 theorem taintWriteKeys_of_no_events (plan : TaintPlan) (pre post : SystemState)
     (h : newlyRecordedEvents pre post = []) :
     taintWriteKeys plan pre post = taintFlowSinks plan ++ plan.cleared := by
-  simp [taintWriteKeys, taintOriginationKeys_nil_of_no_events pre post h]
+  simp [taintWriteKeys, taintOriginationKeys_nil_of_no_events plan pre post h]
 
-/-- WS-SM SM9.D.17: an inert syscall writes no key at all. -/
-theorem taintWriteKeys_inert (pre post : SystemState)
-    (h : newlyRecordedEvents pre post = []) :
+/-- WS-SM SM9.D.17: an inert syscall writes no key at all.
+
+Hypothesis-free since SM9.D.13a, for the same reason `applySyscallTaint_inert`
+is: an inert plan cannot record, so its origination key set is empty without the
+trail being consulted. -/
+theorem taintWriteKeys_inert (pre post : SystemState) :
     taintWriteKeys TaintPlan.inert pre post = [] := by
-  simp [taintWriteKeys_of_no_events _ pre post h, taintFlowSinks, TaintPlan.inert]
+  simp [taintWriteKeys, taintOriginationKeys, planOriginationTags, taintFlowSinks,
+    TaintPlan.inert]
 
 -- ============================================================================
 -- §4  WS-SM SM9.D.6 / SM9.D.18 — the propagation is invisible
