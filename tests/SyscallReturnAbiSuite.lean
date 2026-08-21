@@ -891,8 +891,22 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
   match capsSendScenario epCapNoGrantPtr with
   | .error e => assertBool s!"9h dispatches (got .error {reprStr e})" false
   | .ok (frame, deliveredCaps, slot0) => do
-      assertBool "9h control: the delivered message still CARRIES the requested cap (caps.size = 1)"
-        (deliveredCaps == 1)
+      -- PR #873 round 14: the message now carries **nothing**, where it used to
+      -- carry the requested cap and have it denied at the unwrap.  Resolution
+      -- mints a persistent CDT node per source slot and marks that slot as
+      -- having a transfer in flight, so resolving for a sender that cannot
+      -- transfer spent the bounded node counter and made `cspaceDeleteSlot`
+      -- answer `.revocationRequired` for a derivation the unwrap was always
+      -- going to deny.  The receiver could never see these caps anyway — the
+      -- frame below reports extraCaps 0 either way — so carrying them bought
+      -- nothing and cost a bounded resource.
+      assertBool "9h control: a grant-denied send resolves NOTHING (caps.size = 0)"
+        (deliveredCaps == 0)
+      -- The honesty property this section is named for — extraCaps is the
+      -- INSTALLED count, never the requested one — is pinned by the 9h+ positive
+      -- control below, where a granting endpoint installs one and the frame
+      -- reports one, against this arm where the request was 1 and the frame
+      -- reports 0.  The two together are what make the staged count load-bearing.
       assertBool "9h: a grant-denied transfer stages extraCaps = 0 (x1 = length 1 only — the pre-fix frame read 1 + (1<<7))"
         (frame.x1 == 1)
       assertBool "9h: nothing landed in the receive slot"

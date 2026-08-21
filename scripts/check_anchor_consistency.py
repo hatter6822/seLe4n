@@ -94,6 +94,12 @@ HELPER_RE = re.compile(
     re.VERBOSE,
 )
 
+# Helper *detection*, deliberately weaker than `HELPER_RE`: the name alone.
+# Whether the rest parses decides `anchor` vs `unparsed`; it must not decide
+# whether the line is an anchor at all, or a label spelling nobody anticipated
+# silently removes a pin from the comparison.
+HELPER_NAME_RE = re.compile(r"^run_(?:prose_)?(?:negative_)?check(?:_with_timeout)?\s")
+
 # The tools an anchor can be built out of.  Word-bounded so a path like
 # `check_bcm2712_freshness.sh` is not read as naming one.
 SEARCH_TOOLS = ("rg", "grep", "egrep", "fgrep")
@@ -433,6 +439,18 @@ def classify_line(line: str):
     """
     m = HELPER_RE.match(line)
     if not m:
+        # PR #873 round 14: **a helper line this cannot parse is `unparsed`, not
+        # absent.**  `HELPER_RE` demands a `[A-Z-]+` label, but `test_lib.sh`
+        # accepts any category string through its default `category_color` arm.
+        # An anchor labelled `"SM9_D"` or `"Tier1"` therefore failed the regex,
+        # returned `None`, and the caller read that as "not a helper line" --
+        # the anchor vanished from the comparison while the gate reported PASS.
+        # That is the fail-open the `unparsed` kind exists to remove, reaching
+        # the gate one step earlier than the kind could see: at detection rather
+        # than at parsing.  Detection is now by helper NAME alone, so a label
+        # grammar can no longer decide whether an anchor is counted.
+        if HELPER_NAME_RE.match(line):
+            return ("unparsed", False, None, [], frozenset())
         return None
     rest = m.group("rest")
     searches = bool(SEARCH_TOOL_RE.search(rest))
@@ -580,6 +598,27 @@ def _literal_core(pattern: str, fixed: bool = False) -> str | None:
     return runs[0]
 
 
+def _regex_matches_literal(pattern: str, literal: str, mode: frozenset) -> bool:
+    """Does `pattern`, read as a regex, match the text `literal` anywhere?
+
+    Used only in the one direction where it is sound: a fixed-string positive
+    obliges an exact substring, so the negative's regex can be run against that
+    exact text.  An uncompilable pattern answers `False` -- this is a
+    contradiction detector, and reporting one from a pattern `rg` itself would
+    reject would fail CI on an anchor that never runs.
+    """
+    flags = re.IGNORECASE if "i" in mode else 0
+    body = pattern
+    if "w" in mode:
+        body = r"\b(?:" + body + r")\b"
+    if "x" in mode:
+        body = r"\A(?:" + body + r")\Z"
+    try:
+        return re.search(body, literal, flags) is not None
+    except re.error:
+        return False
+
+
 def _dot_literal(pattern: str) -> str | None:
     """`pattern` with every unescaped `.` read as a literal dot, or `None`.
 
@@ -723,6 +762,23 @@ def find_contradictions(paths):
                 break
             if not _mode_allows(p_mode, n_mode):
                 continue
+            # PR #873 round 14: **a fixed-string positive against a regex
+            # negative.**  `-F` makes the positive require a LITERAL in the
+            # file; the negative is then a regex forbidding whatever matches it.
+            # `rg -F 'foo.bar'` and `rg 'foo.bar'` over one file are
+            # unsatisfiable -- the literal the positive demands is itself
+            # matched by the negative's wildcard -- but `_literal_core` answers
+            # `None` for a regex carrying a metacharacter, and a `None` core was
+            # read as "no contradiction".  The asymmetry is the point: the
+            # positive's obligation is a concrete string, so it can be tested
+            # against the negative's pattern directly rather than by comparing
+            # two literal cores.
+            if "F" in p_mode and "F" not in n_mode:
+                if _regex_matches_literal(n_pat, p_pat, n_mode):
+                    both.append(key)
+                    negative[key] = [n_where]
+                    positive.setdefault(key, [p_where])
+                    break
             if p_runs is None:
                 continue
             n_core = _literal_core(n_pat, fixed="F" in n_mode)
@@ -1220,6 +1276,60 @@ def self_test() -> int:
             )
             return 1
 
+        # PR #873 round 14: a helper line whose CATEGORY LABEL the parser does
+        # not recognise must fail, not vanish.  `test_lib.sh` accepts any
+        # category string, so a label outside `[A-Z-]+` used to make `HELPER_RE`
+        # miss the line entirely and the anchor drop out of the comparison
+        # while the gate reported PASS.
+        label_p = d / "label.sh"
+        label_p.write_text(
+            "run_check \"SM9_D\" rg -n 'theorem eta' Some/File.lean\n")
+        try:
+            find_contradictions([str(label_p)])
+        except SystemExit:
+            pass
+        else:
+            print(
+                "FAIL: --self-test — an anchor with an unrecognised category "
+                "label was skipped instead of failing the gate; a label "
+                "spelling must not decide whether a pin is compared.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and a fixed-string positive is unsatisfiable against a regex negative
+        # whose wildcard matches the literal the positive demands.
+        fixed_p = d / "fixed.sh"
+        fixed_p.write_text(
+            "run_check \"INVARIANT\" rg -F 'foo.bar' F.lean\n"
+            "run_negative_check \"INVARIANT\" rg -n 'foo.bar' F.lean\n")
+        both, *_ = find_contradictions([str(fixed_p)])
+        if both != [("foo.bar", "F.lean")]:
+            print(
+                f"FAIL: --self-test — a fixed-string positive was not compared "
+                f"against a regex negative that matches its literal (got "
+                f"{both}); `-F` makes the positive demand an exact string, which "
+                f"the negative's wildcard forbids.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # The reverse pairing stays satisfiable: a regex positive can be met by
+        # `fooXbar`, which the fixed-string negative does not forbid.
+        fixed_rev_p = d / "fixed_rev.sh"
+        fixed_rev_p.write_text(
+            "run_check \"INVARIANT\" rg -n 'foo.bar' G.lean\n"
+            "run_negative_check \"INVARIANT\" rg -F 'foo.bar' G.lean\n")
+        both, _, _, _, _, _, amb = find_contradictions([str(fixed_rev_p)])
+        if both:
+            print(
+                f"FAIL: --self-test — a regex positive against a fixed-string "
+                f"negative was reported contradictory (got {both}), but "
+                f"`fooXbar` satisfies both.",
+                file=sys.stderr,
+            )
+            return 1
+
         # Every target of a multi-file search is pinned, not just the first.
         multi_p = d / "multi.sh"
         multi_p.write_text(
@@ -1240,7 +1350,10 @@ def self_test() -> int:
         "target, through an `else exit 1` presence check and past a "
         "value-taking option; a filtered search was counted rather than "
         "compared, an unreadable command and an unknown option each failed the "
-        "gate, `grep -nwE` was read as bare switches, an unescaped `.` was read "
+        "gate, an unrecognised category label failed rather than vanishing, a "
+        "fixed-string positive was compared against a regex negative that "
+        "matches its literal while the reverse pairing stayed satisfiable, "
+        "`grep -nwE` was read as bare switches, an unescaped `.` was read "
         "as the wildcard it is (satisfiable pair not flagged, escape-spelling "
         "pair reported as ambiguous, in-run overlap still proven), a negative "
         "over a directory contradicted a positive over a file inside it while "

@@ -4054,6 +4054,29 @@ run_check "INVARIANT" rg -n 'fo033_differentialComparisonHasBite' tests/FrozenOp
 # The corrected row.  The wrong one must not come back.
 run_prose_check "INVARIANT" rg -n 'frozenNotificationSignal.*notificationSignalBound' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_prose_negative_check "INVARIANT" rg -n '\| 5 \| .frozenNotificationSignal.*\| .notificationSignal. ' SeLe4n/Kernel/FrozenOps/Operations.lean
+# PR #873 round 14: **the authority is checked where the resource is committed.**
+# Resolving an extra capability mints a persistent CDT node and marks its slot
+# as having a transfer in flight; Grant was consulted only later, at the unwrap.
+# So a sender holding Write but not Grant spent the bounded node counter on
+# every send, and `cspaceDeleteSlot` / the CNode retype answered
+# `.revocationRequired` for a derivation the unwrap was always going to deny.
+# The contract is definitional -- the state is untouched, not merely the caps
+# denied -- so it is `rfl` rather than a scenario.
+run_check "INVARIANT" rg -n '^theorem resolveExtraCaps_ungranted' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem resolveExtraCapsDetailed_ungranted' SeLe4n/Kernel/API.lean
+# And each live arm passes the endpoint capability's own bit, which the
+# delegation theorems restate and therefore prove rather than assert.
+run_check "INVARIANT" rg -n 'resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth \(cap.rights.mem .grant\)' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st' SeLe4n/Kernel/API.lean
+# The anchor gate's two fail-open holes, which are one defect: "I could not
+# analyse this" was read as "this is fine".  A category label outside the
+# parser's grammar made the helper line miss detection entirely, so the anchor
+# left the comparison while the gate reported PASS; and a fixed-string positive
+# against a regex negative returned no literal core, which was read as no
+# contradiction even though the literal the positive demands is matched by the
+# negative's wildcard.
+run_check "BUILD" rg -n 'HELPER_NAME_RE' scripts/check_anchor_consistency.py
+run_check "BUILD" rg -n '^def _regex_matches_literal' scripts/check_anchor_consistency.py
 # PR #873 round 7: a CLEAR is a taint write too, so the retype's cleared key
 # rides its own object lock — the third member of `taintWriteKeys` the key-local
 # declaration had skipped.  The fixed four stay pinned separately.

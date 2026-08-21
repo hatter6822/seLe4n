@@ -1012,8 +1012,21 @@ Returns the resolved capabilities as an array. -/
    §8.10.4 "IPC Extra Capability Resolution — Silent-Drop Semantics" for the
    normative specification, including the seL4 reference C kernel equivalence. -/
 private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
+    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
     (st : SystemState) : Array TransferCap × SystemState :=
+  -- PR #873 round 14: **the authority is checked where the resource is
+  -- committed.**  Resolution mints a persistent CDT node per source slot and
+  -- marks that slot as having a transfer in flight; the Grant right was
+  -- consulted only later, at the unwrap.  So a sender holding Write but not
+  -- Grant spent the bounded global node counter on every send, and
+  -- `nodeHasPendingTransfer` reported its slots as future parents -- making
+  -- `cspaceDeleteSlot` and the CNode retype answer `.revocationRequired` for a
+  -- derivation that could never materialise, since the unwrap was always going
+  -- to deny it.  A commitment made before the authority is checked is a
+  -- commitment that can outlive the authority, which is the same shape round 13
+  -- closed on `capsGranted`: one authority, read once, at the point it decides
+  -- something.
+  if !granted then (#[], st) else
   capAddrs.foldl (fun acc addr =>
     match resolveCapAddress cspaceRoot addr depth acc.2 with
     | .error _ => acc
@@ -1061,7 +1074,7 @@ private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
 
     Callers that want to reject partial resolutions should do:
     ```
-    match resolveExtraCapsDetailed cspaceRoot addrs depth st with
+    match resolveExtraCapsDetailed cspaceRoot addrs depth granted st with
     | (caps, false) => -- complete: all addresses resolved
     | (_,    true)  => .error .partialResolution
     ```
@@ -1072,8 +1085,13 @@ private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
     `sele4n.debug.noisyResolution` — a compile-time `set_option` directive
     in the consuming module. -/
 private def resolveExtraCapsDetailed (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
+    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
     (st : SystemState) : (Array TransferCap × Bool) × SystemState :=
+  -- PR #873 round 14: the same gate, for the same reason.  `isPartial` stays
+  -- `false`: a sender without Grant did not fail to resolve anything, it had
+  -- nothing to resolve, and reporting a partial resolution would tell a caller
+  -- its capabilities were dropped when they were never eligible.
+  if !granted then ((#[], false), st) else
   capAddrs.foldl (fun acc addr =>
     match resolveCapAddress cspaceRoot addr depth acc.2 with
     | .error _ => ((acc.1.1, true), acc.2)   -- partial: lookup failed
@@ -1108,17 +1126,34 @@ register_option sele4n.debug.noisyResolution : Bool := {
     beyond the AN7-E landing scope and recorded as a post-1.0 hardening
     candidate; no currently-active plan file tracks it. -/
 theorem resolveExtraCapsDetailed_empty
-    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (st : SystemState) :
-    resolveExtraCapsDetailed cspaceRoot #[] depth st = ((#[], false), st) := by
-  rfl
+    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (granted : Bool) (st : SystemState) :
+    resolveExtraCapsDetailed cspaceRoot #[] depth granted st = ((#[], false), st) := by
+  cases granted <;> rfl
 
 /-- AN7-E (API-M01): the silent-drop variant on the empty input is also
     empty.  Paired with `resolveExtraCapsDetailed_empty`, this confirms
     that in the base case both variants agree (vacuously). -/
 theorem resolveExtraCaps_empty
-    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (st : SystemState) :
-    resolveExtraCaps cspaceRoot #[] depth st = (#[], st) := by
-  rfl
+    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (granted : Bool) (st : SystemState) :
+    resolveExtraCaps cspaceRoot #[] depth granted st = (#[], st) := by
+  cases granted <;> rfl
+
+/-- **PR #873 round 14: a sender without Grant resolves nothing, whatever it
+asked for.**  The statement the gate is for: not merely that the caps are
+denied later, but that the *state is untouched* -- no CDT node minted, no slot
+marked as having a transfer in flight.  Stated over an arbitrary address array,
+so it is the resolver's contract rather than a fact about one input. -/
+theorem resolveExtraCaps_ungranted
+    (cspaceRoot : SeLe4n.ObjId) (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
+    (st : SystemState) :
+    resolveExtraCaps cspaceRoot capAddrs depth false st = (#[], st) := rfl
+
+/-- The same for the detailed resolver, including that it reports **complete**
+rather than partial: nothing failed to resolve, there was nothing eligible. -/
+theorem resolveExtraCapsDetailed_ungranted
+    (cspaceRoot : SeLe4n.ObjId) (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
+    (st : SystemState) :
+    resolveExtraCapsDetailed cspaceRoot capAddrs depth false st = ((#[], false), st) := rfl
 
 /-- AN7-E (API-M01): Gated resolver for production dispatch arms that
     want to surface partial resolution explicitly.  Returns
@@ -1128,17 +1163,17 @@ theorem resolveExtraCaps_empty
     instead of `resolveExtraCaps` — the debug option
     `sele4n.debug.noisyResolution` documents the project-level policy. -/
 private def resolveExtraCapsGated (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
+    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
     (st : SystemState) : Except KernelError (Array TransferCap × SystemState) :=
-  let ((caps, isPartial), stNodes) := resolveExtraCapsDetailed cspaceRoot capAddrs depth st
+  let ((caps, isPartial), stNodes) := resolveExtraCapsDetailed cspaceRoot capAddrs depth granted st
   if isPartial then .error .partialResolution else .ok (caps, stNodes)
 
 /-- AN7-E (API-M01): The gated resolver returns `.ok #[]` on empty input
     (no addresses to resolve → no partial condition possible).  Base case
     of the gated-resolver contract. -/
 theorem resolveExtraCapsGated_empty
-    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (st : SystemState) :
-    resolveExtraCapsGated cspaceRoot #[] depth st = .ok (#[], st) := by
+    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (granted : Bool) (st : SystemState) :
+    resolveExtraCapsGated cspaceRoot #[] depth granted st = .ok (#[], st) := by
   unfold resolveExtraCapsGated
   simp [resolveExtraCapsDetailed_empty]
 
@@ -1754,7 +1789,7 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         -- Resolution mints a derivation node per source slot, so it returns
         -- the state carrying them; the transition must run from THAT state,
         -- or the parents the message names would live only in a discarded copy.
-        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
         -- PR #873 round 6: **the sender's grant authority travels with the
         -- message.**  Capability transfer is authorised by the *sender's*
         -- endpoint capability, and the two rendezvous orderings ask about it at
@@ -1870,7 +1905,7 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         -- Resolution mints a derivation node per source slot, so it returns
         -- the state carrying them; the transition must run from THAT state,
         -- or the parents the message names would live only in a discarded copy.
-        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
         -- PR #873 round 6: **the sender's grant authority travels with the
         -- message.**  Capability transfer is authorised by the *sender's*
         -- endpoint capability, and the two rendezvous orderings ask about it at
@@ -2208,7 +2243,7 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         -- Resolution mints a derivation node per source slot, so it returns
         -- the state carrying them; the transition must run from THAT state,
         -- or the parents the message names would live only in a discarded copy.
-        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
         -- PR #873 round 6: **the sender's grant authority travels with the
         -- message.**  Capability transfer is authorised by the *sender's*
         -- endpoint capability, and the two rendezvous orderings ask about it at
@@ -2319,7 +2354,7 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         -- Resolution mints a derivation node per source slot, so it returns
         -- the state carrying them; the transition must run from THAT state,
         -- or the parents the message names would live only in a discarded copy.
-        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
         -- PR #873 round 6: **the sender's grant authority travels with the
         -- message.**  Capability transfer is authorised by the *sender's*
         -- endpoint capability, and the two rendezvous orderings ask about it at
@@ -3748,7 +3783,7 @@ theorem dispatchWithCap_send_uses_withCaps
         -- Resolution mints a derivation node per source slot, so it returns
         -- the state carrying them; the transition must run from THAT state,
         -- or the parents the message names would live only in a discarded copy.
-        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
         -- PR #873 round 6: **the sender's grant authority travels with the
         -- message.**  Capability transfer is authorised by the *sender's*
         -- endpoint capability, and the two rendezvous orderings ask about it at
@@ -3791,7 +3826,7 @@ theorem dispatchWithCap_call_uses_crossCoreDispatch
         -- Resolution mints a derivation node per source slot, so it returns
         -- the state carrying them; the transition must run from THAT state,
         -- or the parents the message names would live only in a discarded copy.
-        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
         -- PR #873 round 6: **the sender's grant authority travels with the
         -- message.**  Capability transfer is authorised by the *sender's*
         -- endpoint capability, and the two rendezvous orderings ask about it at
@@ -5250,7 +5285,7 @@ theorem dispatchWithCap_send_delegates
     (hTarget : cap.target = .object epId) :
     dispatchWithCap decoded tid gate cap st =
       (let (resolvedCaps, st) :=
-         resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth st
+         resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st
        match endpointSendDualWithCapsOnCore epId tid
               { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
                 caps := resolvedCaps,
@@ -5282,7 +5317,7 @@ theorem dispatchWithCapChecked_send_delegates
     (hTarget : cap.target = .object epId) :
     dispatchWithCapChecked ctx decoded tid gate cap st =
       (let (resolvedCaps, st) :=
-         resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth st
+         resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st
        match endpointSendCrossCoreDispatchChecked ctx epId tid
               { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
                 caps := resolvedCaps,
@@ -5393,7 +5428,7 @@ def syscallDelegates : SyscallId → Prop
         cap.target = .object epId →
         dispatchWithCap decoded tid gate cap st =
           (let (resolvedCaps, st) :=
-             resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth st
+             resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st
            match endpointSendDualWithCapsOnCore epId tid
                   { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
                     caps := resolvedCaps,

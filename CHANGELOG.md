@@ -1,3 +1,56 @@
+## v0.33.90 — three commitments made before the authority was checked
+
+Round 14 found the kernel spending a bounded resource on a transfer it was
+always going to deny, and the anchor gate reading "I could not analyse this" as
+"this is fine" in two different places.
+
+**A sender without Grant resolved capabilities anyway.**  Resolving an extra
+capability mints a persistent CDT node for its source slot and marks that slot
+as having a transfer in flight.  The Grant right was consulted later, at the
+unwrap.  So a sender holding endpoint Write but not Grant paid for resolution on
+every send: it consumed the global bounded node counter from newly populated
+slots, and `nodeHasPendingTransfer` reported its slots as future parents — which
+made `cspaceDeleteSlot` and the CNode retype answer `.revocationRequired` for a
+derivation that could never materialise, because the unwrap was always going to
+deny it.
+
+A commitment made before its authority is checked is a commitment that can
+outlive the authority.  That is the shape v0.33.88 closed on `capsGranted`, one
+layer up, and the fix is the same move: the authority goes to the point that
+commits.  `resolveExtraCaps` and `resolveExtraCapsDetailed` now take the grant
+bit and resolve nothing without it, so no call site can forget — and the
+contract is definitional rather than behavioural.  `resolveExtraCaps_ungranted`
+says the *state is untouched*, by `rfl`: no node minted, no slot marked, nothing
+for the delete guard to trip over.  The detailed resolver additionally reports
+**complete** rather than partial, since a sender without Grant did not fail to
+resolve anything — it had nothing eligible, and telling a caller its
+capabilities were dropped would be a different lie.  The three delegation
+theorems restate each live arm against the endpoint capability's own bit, so
+that the six call sites pass the right authority is proved, not asserted.
+
+**The anchor gate had two fail-open holes, and they are one defect.**  Both read
+an analysis failure as an absence of contradiction.
+
+A helper invocation whose category label fell outside the parser's `[A-Z-]+`
+grammar — `test_lib.sh` accepts any category string — failed the helper regex
+entirely and returned `None`, which the caller reads as "not a helper line".
+The anchor left the comparison and the gate reported PASS.  The `unparsed` kind
+exists precisely to stop that, but it could not see this: the failure was at
+*detection*, one step before parsing.  Detection is now by helper name alone, so
+a label spelling cannot decide whether a pin is compared, and an unreadable rest
+is `unparsed` — a hard failure — as it always should have been.
+
+And a fixed-string positive against a regex negative: `rg -F 'foo.bar'` and
+`rg 'foo.bar'` over one file are unsatisfiable, because the literal the positive
+demands is itself matched by the negative's wildcard.  `_literal_core` answers
+`None` for a regex carrying a metacharacter, and a `None` core was read as no
+contradiction.  The asymmetry is what makes this decidable: a fixed-string
+positive obliges a concrete string, so the negative's pattern can be run against
+that exact text.  The reverse pairing stays satisfiable — `fooXbar` meets a
+regex positive without tripping a fixed-string negative — and the self-test pins
+both directions, since a checker that reported the reverse would fail CI on a
+sound suite.
+
 ## v0.33.89 — a correspondence nothing ran
 
 Five review findings on this branch were the same defect wearing different
