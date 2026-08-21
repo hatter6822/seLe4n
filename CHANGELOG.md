@@ -1,3 +1,58 @@
+## v0.33.71 — five review findings, four of them about a claim the code did not keep
+
+**The unchecked syscall entry now applies the taint seam.**  `syscallEntryChecked`
+applied `applySyscallTaint`; `syscallEntry` returned straight from
+`dispatchSyscall`.  Those are not two flavours of the same thing — the modelled
+SVC route (`dispatchSynchronousException`) reaches the kernel through the
+unchecked one, so content tagged by an earlier declassification could pass
+through a send or receive taken by that route without its provenance following,
+and an unchecked `.lifecycleRetype` left a destroyed object's tags on its
+replacement.  The seam is now the same plan, pre-state and post-state shape on
+both entries, applied only on the success arm.  Three theorems moved with it, and
+two got *more* honest in the process: `syscallEntry_preserves_projection` and its
+NI wrapper now take their hypothesis about the **dispatch's** post-state rather
+than the entry's, which is what a caller actually knows — the seam's own
+invisibility is `applySyscallTaint_preserves_projection`, by `rfl`.
+
+**The declassifying signal takes a write lock on its signaller.**
+`lockSet_declassifySignal` extends `lockSet_notificationSignal`, which holds the
+caller **read**-only — correctly, because a plain signal records no event.  A
+declassifying one does, and the origination tags the signaller, so its taint key
+was written under a read lock.  `stateLevelLock` cannot cover it: §3d keeps that
+lock off the eight content-moving syscalls precisely so unrelated IPC does not
+serialise, which means an ordinary IPC writing the same TCB's taint holds only
+that TCB's lock.  Upgraded by merge — `insertOrMerge` takes the `AccessMode.lub`,
+so the size bound is unchanged — with the consistency tier moved to five
+optionals and `lockSet_declassifySignal_originationKeys_write_mem` pinning it.
+
+**A completed capability transfer stops reserving its source.**  The in-flight
+reservation added at v0.33.64 read *every* TCB's `pendingMessage`, and a
+rendezvous leaves the delivered message — `caps` array intact — in the
+receiver's TCB.  So the reservation outlived the transfer without bound: even
+after `cspaceRevokeCdt` removed the installed descendants, the source slot
+answered `.revocationRequired` until the receiver happened to overwrite its
+message, letting a receiver pin the sender's capability storage indefinitely.
+"Parked" is a property of the **sender**, so the scan is gated on
+`blockedOnSend` / `blockedOnCall`; from the rendezvous onward the CDT edges
+exist and `hasCdtChildren` is what covers it.  The two halves of
+`slotIsDerivationParent` now partition the lifetime instead of overlapping
+forever.  `chain12b` gained the regression: the guard releases, and the delete
+succeeds.
+
+**Two frozen operations stopped claiming deliveries they had not made.**
+`frozenNotificationSignal`'s waiter branch cleared `pendingBadge` and readied the
+waiter while storing no message — the badge vanished, and the comment said it
+arrived.  It now stores the badge-only `IpcMessage` the live path stores.  And
+`frozenEndpointReply` accepted a `replierId` absent from the frozen map, reading
+the total table's empty default for it, so a reply carrying declassified content
+reached its caller with no predecessor tag — the blind snapshot the required
+frozen field exists to prevent.  The composing thread must now resolve, checked
+**after** the authority gates so a wrong or missing reply cap still answers
+`.replyCapInvalid`.  Delegation is untouched: a delegated replier is a different
+*live* thread, which is what FO-004b and FO-005 now say.  FO-023 pins both.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md
+
 ## v0.33.70 — two invariants that were only comments
 
 Two review findings on the keyed-taint-table cut, both of the same kind: a

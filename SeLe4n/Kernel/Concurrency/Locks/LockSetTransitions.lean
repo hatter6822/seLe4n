@@ -725,10 +725,28 @@ def lockSet_declassifySignal (callerTid : ThreadId)
     (waiterTid : Option ThreadId)
     (boundEndpoint : Option ObjId := none)
     (boundTcb : Option ThreadId := none) : LockSet :=
+  -- WS-SM SM9.D.17 (audit): the signaller's own TCB is a **write**, and that is
+  -- a difference from the plain signal rather than an inherited property.  An
+  -- authorized `.declassifySignal` records a hop, and an origination tags the
+  -- event's `sourceSubject` — the signaller — so its taint key is written.  The
+  -- plain `.notificationSignal` records nothing and correctly holds the caller
+  -- read-only, so the upgrade belongs here and not in the footprint it extends.
+  --
+  -- `stateLevelLock` cannot stand in for it, for the reason §3d of
+  -- `TaintPropagation.lean` records: it is deliberately kept off the eight
+  -- content-moving syscalls, so an ordinary IPC writing this same TCB's taint
+  -- holds only that TCB's lock.  Two such commits would otherwise have provably
+  -- disjoint footprints while both writing one taint key.
+  --
+  -- Merged rather than appended: `insertOrMerge` takes the `AccessMode.lub` of
+  -- an existing key, so this upgrades the read the extended footprint already
+  -- carries instead of adding a member — the size bound is unchanged.
   lockSetExtendOpt
-    (lockSet_notificationSignal callerTid cnodeRootObjId notificationObjId
-      waiterTid boundEndpoint boundTcb)
-    (some (stateLevelLock, .write))
+    (lockSetExtendOpt
+      (lockSet_notificationSignal callerTid cnodeRootObjId notificationObjId
+        waiterTid boundEndpoint boundTcb)
+      (some (stateLevelLock, .write)))
+    (some (tcbLock callerTid, AccessMode.write))
 
 /-! ## Audit-trail access (2 transitions)
 
@@ -850,6 +868,27 @@ theorem lockSet_declassify_originationKeys_write_mem
     simp only [Option.map]
     exact LockSet.mem_insertOrMerge_write_self _ _
 
+/-- WS-SM SM9.D.17 (audit): the **signalling** declassification writes its
+signaller's TCB too.
+
+The sibling of `lockSet_declassify_originationKeys_write_mem`, and it was
+missing: `.declassifySignal` extends `lockSet_notificationSignal`, which holds
+the caller read-only because a plain signal records no event — but a
+declassifying one does, and the origination tags the signaller.  Without this
+the declared footprint permitted an ordinary IPC writing the same TCB's taint to
+run concurrently, losing one of the two predecessor updates once SM3.C.9 starts
+consuming these footprints. -/
+theorem lockSet_declassifySignal_originationKeys_write_mem
+    (callerTid : ThreadId) (cnodeRootObjId : ObjId) (notificationObjId : ObjId)
+    (waiterTid : Option ThreadId) (boundEndpoint : Option ObjId)
+    (boundTcb : Option ThreadId) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_declassifySignal callerTid cnodeRootObjId notificationObjId
+          waiterTid boundEndpoint boundTcb).pairs := by
+  unfold lockSet_declassifySignal lockSetExtendOpt
+  simp only [Option.map]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
 /-- WS-SM SM9.A.12 (PR #870 round 7): the drain's trail read-modify-write is a
 declared **write** on the state-level lock. -/
 theorem lockSet_auditDrain_stateLevel_write_mem (callerTid : ThreadId)
@@ -896,7 +935,8 @@ theorem lockSet_declassifySignal_stateLevel_write_mem (callerTid : ThreadId)
       ∈ (lockSet_declassifySignal callerTid cnodeRootObjId notificationObjId
           waiterTid boundEndpoint boundTcb).pairs := by
   unfold lockSet_declassifySignal lockSetExtendOpt
-  exact LockSet.mem_insertOrMerge_write_self _ _
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+    (LockSet.mem_insertOrMerge_write_self _ _)
 
 /-- WS-SM SM9.C.8: the declassifying signal's footprint **contains** the
 ordinary signal's — every write mode member of the wrapped syscall's set is a
@@ -921,7 +961,8 @@ theorem lockSet_declassifySignal_extends_notificationSignal
       ∈ (lockSet_declassifySignal callerTid cnodeRootObjId notificationObjId
           waiterTid boundEndpoint boundTcb).pairs := by
   unfold lockSet_declassifySignal lockSetExtendOpt
-  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _ hMem
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+    (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _ hMem)
 
 /-- WS-SM SM9.A.12 (PR #870 round 7, **the non-disjointness capstone**;
 extended by SM9.C.8): every footprint that touches the audit trail shares the
@@ -2058,7 +2099,11 @@ theorem lockSet_consistent_declassifySignal (callerTid : ThreadId)
     (boundEndpoint : Option ObjId := none) (boundTcb : Option ThreadId := none) :
     ∀ p ∈ (lockSet_declassifySignal callerTid cnRoot nId wTid boundEndpoint boundTcb).pairs,
       p.fst.kind ∈ permittedKinds .declassifySignal :=
-  lockSet_consistent_base_plus_four_opts _ _ _ _ _ _
+  -- SM9.D.17: a **fifth** optional — the signaller's TCB write upgrade — so the
+  -- tier moves with it.  A four-optional builder would still elaborate against
+  -- the inner four and leave the outermost member unchecked, which is the
+  -- silent-drift shape these builders exist to prevent.
+  lockSet_consistent_base_plus_five_opts _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -2079,6 +2124,8 @@ theorem lockSet_consistent_declassifySignal (callerTid : ThreadId)
         cases boundTcb with
         | none => simp at hpp
         | some bt => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        simp at hpp; rw [← hpp]; simp; decide)
     (by intro pp hpp
         simp at hpp; rw [← hpp]; simp; decide)
 

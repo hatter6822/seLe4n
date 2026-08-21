@@ -763,8 +763,12 @@ the way `lockSet_tcbSuspend` is (8 exactly). -/
 theorem lockSet_declassifySignal_size_le (a : ThreadId) (b c : ObjId)
     (d : Option ThreadId) (e : Option ObjId) (f : Option ThreadId) :
     (lockSet_declassifySignal a b c d e f).size ≤ maxLockSetSize := by
+  -- SM9.D.17: five optionals now — the fifth is the signaller's TCB write
+  -- upgrade.  It merges onto a key the base already carries, so the *bound*
+  -- this establishes is one member looser than the set can actually reach;
+  -- `size_le_5` is what the shape admits, and it still clears the maximum.
   unfold lockSet_declassifySignal lockSet_notificationSignal maxLockSetSize
-  exact Nat.le_trans (size_le_4 _ _ _ _ _) (by size_bound)
+  exact Nat.le_trans (size_le_5 _ _ _ _ _ _) (by size_bound)
 
 theorem lockSet_notificationWait_size_le (a : ThreadId) (b c : ObjId) :
     (lockSet_notificationWait a b c).size ≤ maxLockSetSize := by

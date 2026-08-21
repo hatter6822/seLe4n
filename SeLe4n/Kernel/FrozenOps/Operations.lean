@@ -264,15 +264,32 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
             match st.objects.set notificationId (.notification ntfn') with
             | some objects' =>
                 let st' := { st with objects := objects' }
-                match frozenStoreTcbIpcState st' waiter .ready with
-                | .error e => .error e
-                | .ok st'' =>
-                    -- Delivered straight to the waiter: the badge reaches that
-                    -- thread and the notification is left holding none, so the
-                    -- transport's provenance goes with the content.
-                    .ok ((), frozenTaintClear
-                            (frozenTaintFlow st'' waiter.toObjId signaller.toObjId)
-                            notificationId)
+                -- **The badge is delivered, not just dropped.**  This branch
+                -- clears `pendingBadge` and woke the waiter, but stored no
+                -- message — so the badge vanished while the state claimed a
+                -- delivery had happened.  The live `notificationSignal` stores
+                -- a badge-only `IpcMessage` in the waiter's `pendingMessage`
+                -- on this path, and a frozen snapshot that does otherwise is
+                -- not a snapshot of this kernel.  Storing both fields in one
+                -- write also keeps the taint flow below honest: it says the
+                -- waiter received the signaller's content, which is only true
+                -- if the content is actually there.
+                match frozenLookupTcb st' waiter with
+                | none => .error .objectNotFound
+                | some waiterTcb =>
+                  match frozenStoreTcb waiter
+                      { waiterTcb with
+                        ipcState := .ready,
+                        pendingMessage :=
+                          some { IpcMessage.empty with badge := some badge } } st' with
+                  | .error e => .error e
+                  | .ok ((), st'') =>
+                      -- Delivered straight to the waiter: the badge reaches that
+                      -- thread and the notification is left holding none, so the
+                      -- transport's provenance goes with the content.
+                      .ok ((), frozenTaintClear
+                              (frozenTaintFlow st'' waiter.toObjId signaller.toObjId)
+                              notificationId)
             | none => .error .objectNotFound
         | none =>
             let mergedBadge : SeLe4n.Badge :=
@@ -584,6 +601,25 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
                   match st.objects.get? replyId.toObjId with
                   | some (.reply r) =>
                       if r.caller = some targetId then
+                        -- **The composing thread must be resolvable**, because
+                        -- the reply's provenance is read from it.  A `replierId`
+                        -- absent from the frozen map used to succeed and read
+                        -- the total table's empty default, so a reply carrying
+                        -- previously declassified content reached its caller
+                        -- with no predecessor tag — a laundering step the
+                        -- snapshot would then report as unconnected, which is
+                        -- exactly what carrying the table into `FrozenOps` is
+                        -- meant to prevent.
+                        --
+                        -- Checked **after** the authority gates, deliberately:
+                        -- authority still comes from the presented reply cap,
+                        -- so a wrong or missing cap must still answer
+                        -- `.replyCapInvalid` rather than being masked by this.
+                        -- Delegation is unaffected — a delegated replier is a
+                        -- *different* live thread, not a nonexistent one.
+                        match frozenLookupTcb st replierId with
+                        | none => .error .objectNotFound
+                        | some _ =>
                         match frozenStoreTcb targetId targetTcb' st with
                         | .error e => .error e
                         | .ok ((), st') =>

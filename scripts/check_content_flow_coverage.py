@@ -114,6 +114,12 @@ DECLARED_TAINT_WRITERS = {
 # planner that builds one.  Anything else naming the API is a finding.
 DECLARED_TAINT_CONSUMERS = {
     "SeLe4n.Kernel.syscallEntryChecked",
+    # The unchecked entry applies the same plan (SM9.D.7 audit).  It is a second
+    # *consumer*, not a second writer: both entries call `applySyscallTaint`,
+    # which remains the one place the field moves.  Declared here because the
+    # modelled SVC route reaches the kernel through this entry, so leaving it out
+    # was how content could cross a syscall boundary without its provenance.
+    "SeLe4n.Kernel.syscallEntry",
     "SeLe4n.Kernel.TaintTable.empty",
 }
 

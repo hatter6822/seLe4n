@@ -829,6 +829,25 @@ private def chain12bIpcCapTransferRevocable : IO Unit := do
 
   assertInvariants "chain12b: revocation reaches IPC-transferred children" stRevokeReal
 
+  -- REGRESSION: a **completed** transfer must stop reserving its source.
+  --
+  -- The rendezvous above delivered the message into the receiver's TCB and left
+  -- its `caps` array there — return-frame staging rewrites registers, not the
+  -- message.  A reservation that scanned every TCB therefore reported this
+  -- transfer as still in flight for as long as the receiver kept the message,
+  -- which is unbounded: even here, with the children already revoked, the
+  -- source slot answered `.revocationRequired` and a receiver could pin the
+  -- sender's capability storage indefinitely.  The window belongs to the
+  -- sender's parked state, and it closed at the rendezvous.
+  expect "chain12b: NEGATIVE — a completed transfer no longer reserves its source"
+    (!SeLe4n.Kernel.slotHasPendingTransfer stRevokeReal
+        { cnode := senderCNode, slot := srcSlot })
+  expect "chain12b: the source deletes once the transfer completed and its children are revoked"
+    (match SeLe4n.Kernel.cspaceDeleteSlot { cnode := senderCNode, slot := srcSlot }
+             stRevokeReal with
+     | .ok _ => true
+     | _ => false)
+
   -- What the node identity does and does not settle, pinned honestly.
   --
   -- A capability replaced *in place* keeps its slot's derivation node, because

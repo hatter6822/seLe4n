@@ -145,7 +145,10 @@ private def fo004b_endpointReplyConsumesLink : IO Unit := do
   let callerTcb : TCB := { mkTcb 2 with
     ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
-  let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb), (rid.toObjId, .reply replyObj)]
+  -- The replier is a live TCB: the reply's provenance is read from the thread
+  -- that composed it, so an unresolvable one is refused (SM9.D audit).
+  let fst := mkFrozenState
+    [(⟨2⟩, .tcb callerTcb), (⟨3⟩, .tcb (mkTcb 3)), (rid.toObjId, .reply replyObj)]
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointReply ⟨3⟩ ⟨2⟩ rid msg fst with
   | .ok ((), fst') =>
@@ -169,7 +172,11 @@ private def fo005_replyDelegatedReplier : IO Unit := do
   let callerTcb : TCB :=
     { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
-  let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb), (rid.toObjId, .reply replyObj)]
+  -- ⟨99⟩ is a live thread that is simply *not* the recorded server — which is
+  -- what delegation means.  It was absent from the map before, which made the
+  -- reply's provenance read the empty default rather than the composer's.
+  let fst := mkFrozenState
+    [(⟨2⟩, .tcb callerTcb), (⟨99⟩, .tcb (mkTcb 99)), (rid.toObjId, .reply replyObj)]
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
   -- replier ⟨99⟩ ≠ the recorded server ⟨3⟩, but presents the linked Reply cap (rid).
   match frozenEndpointReply ⟨99⟩ ⟨2⟩ rid msg fst with
@@ -552,6 +559,51 @@ private def fo022_frozenProvenanceFollowsContent : IO Unit := do
     (!((fstWait.declassificationTaint ⟨5⟩).contains 77))
   IO.println "frozen-ops check passed [FO-022: provenance follows frozen content]"
 
+/-- FO-023 (PR #873 round 11): the two ways a frozen operation could claim a
+delivery it had not made.
+
+Both were surfaced by the provenance carriage rather than caused by it — the
+taint flow asserts that content reached somewhere, which is only honest if the
+content is actually there and its source is actually readable. -/
+private def fo023_frozenDeliveryIsHonest : IO Unit := do
+  -- (a) A signalled waiter receives the BADGE, not just the wake.  This branch
+  -- cleared `pendingBadge` and readied the waiter while storing no message, so
+  -- the badge vanished — while the flow below recorded it as delivered.
+  let ntfn : Notification :=
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
+  let base := mkFrozenState
+    [(⟨4⟩, .tcb (mkTcb 4)), (⟨6⟩, .tcb (mkTcb 6)), (⟨5⟩, .notification ntfn)]
+  -- Wait first, so the signal below takes the *waiter* branch.
+  match frozenNotificationWait ⟨5⟩ ⟨4⟩ base with
+  | .error e => throw <| IO.userError s!"FO-023 wait failed: {reprStr e}"
+  | .ok (_, fstWaiting) =>
+  match frozenNotificationSignal ⟨5⟩ ⟨6⟩ (Badge.ofNatMasked 42) fstWaiting with
+  | .error e => throw <| IO.userError s!"FO-023 signal failed: {reprStr e}"
+  | .ok (_, fstSig) =>
+  expect "FO-023: the signalled waiter is handed the badge, not only woken"
+    (match frozenLookupTcb fstSig ⟨4⟩ with
+     | some wt => match wt.pendingMessage with
+                  | some m => m.badge == some (Badge.ofNatMasked 42)
+                  | none => false
+     | none => false)
+  expect "FO-023: the notification is left holding none of it"
+    (match fstSig.objects.get? ⟨5⟩ with
+     | some (.notification n) => n.pendingBadge == none
+     | _ => false)
+  -- (b) A reply whose composing thread cannot be resolved is REFUSED rather
+  -- than reading the total table's empty default and silently under-tagging.
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  let callerTcb : TCB :=
+    { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+  let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
+  let fstRep := mkFrozenState [(⟨2⟩, .tcb callerTcb), (rid.toObjId, .reply replyObj)]
+  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  expect "FO-023: an unresolvable reply source is refused, not defaulted"
+    (match frozenEndpointReply ⟨99⟩ ⟨2⟩ rid msg fstRep with
+     | .ok _ => false
+     | .error e => e == .objectNotFound)
+  IO.println "frozen-ops check passed [FO-023: a frozen delivery is honest]"
+
 end SeLe4n.Testing.FrozenOpsSuite
 
 open SeLe4n.Testing.FrozenOpsSuite in
@@ -592,4 +644,5 @@ def main : IO Unit := do
   IO.println "--- U-H01: Multi-round IPC Regression ---"
   fo021_popThenPushRegression
   fo022_frozenProvenanceFollowsContent
-  IO.println "=== All Q7 frozen ops tests passed (22 scenarios) ==="
+  fo023_frozenDeliveryIsHonest
+  IO.println "=== All Q7 frozen ops tests passed (23 scenarios) ==="

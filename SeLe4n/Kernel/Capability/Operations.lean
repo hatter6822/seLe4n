@@ -893,15 +893,43 @@ an undeletable slot while a missed increment reopens this hole.  Reading the
 messages cannot drift: when a cancellation drops `pendingMessage`, the
 reservation disappears with it, because it *was* the message.
 
+**Parked is a property of the sender, not of the message.**  The first version
+of this read every TCB's `pendingMessage`, which is not the same question: a
+delivered message keeps its `caps` array in the receiver's TCB, so the
+reservation outlived the transfer and never ended on its own.  Gating on the
+sender's `ipcState` restores the intended meaning — the window is open exactly
+while a sender is queued on an endpoint — and it keeps the anti-drift property
+above, because the state is dropped by the same transitions that drop the
+message.
+
 Cost is a scan of the object store, which is acceptable here: this is consulted
 only when deleting a capability slot, never on the IPC path. -/
 def nodeHasPendingTransfer (st : SystemState) (node : CdtNodeId) : Bool :=
   st.objects.toList.any (fun entry =>
     match entry.2 with
     | .tcb tcb =>
-        match tcb.pendingMessage with
-        | some msg => msg.caps.any (fun tc => tc.srcNode == node)
-        | none => false
+        -- **Only a parked sender's message is in flight.**  The message a
+        -- rendezvous delivers stays in the *receiver's* `pendingMessage` with
+        -- its `caps` array intact — return-frame staging rewrites registers,
+        -- not the message — so scanning every TCB reported a transfer as
+        -- pending forever after it had completed.  The source slot then stayed
+        -- undeletable even once `cspaceRevokeCdt` had removed the installed
+        -- descendants, until the receiver happened to overwrite its message:
+        -- a receiver could pin the sender's capability storage indefinitely.
+        --
+        -- `blockedOnSend` / `blockedOnCall` are exactly the states a sender
+        -- holds while queued on an endpoint with its message not yet
+        -- transferred; a `Call` sender leaves the queue as `blockedOnReply`,
+        -- by which point the unwrap has run and the CDT edges exist, so
+        -- `hasCdtChildren` is what covers it from then on.  The two halves of
+        -- `slotIsDerivationParent` therefore partition the lifetime rather
+        -- than overlapping in a way that never ends.
+        match tcb.ipcState with
+        | .blockedOnSend _ | .blockedOnCall _ =>
+            match tcb.pendingMessage with
+            | some msg => msg.caps.any (fun tc => tc.srcNode == node)
+            | none => false
+        | _ => false
     | _ => false)
 
 /-- **Does a slot have a transfer in flight from it?** — the slot-addressed form

@@ -3164,7 +3164,24 @@ def syscallEntry (layout : SeLe4n.SyscallRegisterLayout)
           -- is filled at the per-core entry (`syscallEntryChecked`), which is
           -- what the SMP dispatch path actually runs.  Filling the per-core
           -- model from the boot-pinned entry would mix the two models.
-          dispatchSyscall decoded tid st
+          --
+          -- WS-SM SM9.D.7: the taint seam is applied here **too**, and for the
+          -- opposite reason to the TLB fill above.  The per-core TLB model is a
+          -- refinement this entry deliberately does not participate in; taint is
+          -- not — provenance is a property of the content a syscall moves, and
+          -- this entry moves the same content through the same transitions.  The
+          -- modelled SVC route (`dispatchSynchronousException`) reaches the
+          -- kernel through here, so leaving the step out let a send or receive
+          -- taken by that route carry content without its provenance following,
+          -- and let a `.lifecycleRetype` leave a destroyed object's tags on its
+          -- replacement.  Same plan, same pre-state, same post-state shape as
+          -- `syscallEntryChecked`; nothing is applied on the error arm, because
+          -- nothing moved.
+          match dispatchSyscall decoded tid st with
+          | .error e => .error e
+          | .ok ((), stPost) =>
+              .ok ((), applySyscallTaint
+                (syscallTaintPlan st tid decoded) st stPost)
 
 -- ============================================================================
 -- WS-J1-C: Soundness theorems
@@ -3269,11 +3286,17 @@ theorem syscallEntry_implies_capability_held
           unfold lookupThreadRegisterContext at hLookup
           split at hLookup <;> simp at hLookup
           exact hLookup.2.symm
-        have hDispatch := dispatchSyscall_requires_right decoded tid _st_regs st' (hStEq ▸ hOk)
-        rw [hStEq] at hDispatch hLookup
-        obtain ⟨tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ := hDispatch
-        exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode,
-               tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩
+        -- The taint seam wraps the dispatch (SM9.D.7), so the dispatch's own
+        -- success hypothesis has to be opened before it can be used.
+        split at hOk
+        · simp at hOk
+        next stPost hDispatchOk =>
+          have hDispatch :=
+            dispatchSyscall_requires_right decoded tid _st_regs stPost (hStEq ▸ hDispatchOk)
+          rw [hStEq] at hDispatch hLookup
+          obtain ⟨tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ := hDispatch
+          exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode,
+                 tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩
 
 /-- WS-J1-C: `lookupThreadRegisterContext` does not modify kernel state. -/
 theorem lookupThreadRegisterContext_state_unchanged
@@ -3952,8 +3975,16 @@ theorem syscallEntry_preserves_proofLayerInvariantBundle
   rw [hCur] at hOk; simp at hOk
   rw [hLookup] at hOk; simp at hOk
   rw [hDecode] at hOk; simp at hOk
-  -- hOk : dispatchSyscall decoded tid st = .ok ((), st')
-  exact hDispatchPres decoded tid st st' hInv hOk
+  -- SM9.D.7: the taint seam wraps the dispatch, so the post-state is the
+  -- dispatch's output with the plan applied.  The bundle survives the write
+  -- because `declassificationTaint` is not one of its conjuncts' subjects.
+  split at hOk
+  · simp at hOk
+  next stPost hDispatchOk =>
+    simp at hOk
+    subst hOk
+    exact Architecture.proofLayerInvariantBundle_setDeclassificationTaint stPost _
+      (hDispatchPres decoded tid st stPost hInv hDispatchOk)
 
 -- ============================================================================
 -- WS-J1-D: Non-interference theorems for the syscall decode path
@@ -4019,9 +4050,9 @@ theorem syscallEntry_preserves_projection
     (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
     (st st' : SystemState)
     (hOk : syscallEntry layout regCount st = .ok ((), st'))
-    (hDispatchProj : ∀ decoded tid,
-        dispatchSyscall decoded tid st = .ok ((), st') →
-        projectState ctx observer st' = projectState ctx observer st) :
+    (hDispatchProj : ∀ decoded tid stPost,
+        dispatchSyscall decoded tid st = .ok ((), stPost) →
+        projectState ctx observer stPost = projectState ctx observer st) :
     projectState ctx observer st' = projectState ctx observer st := by
   obtain ⟨tid, regs, decoded, hCur, hLookup, hDecode⟩ :=
     syscallEntry_requires_valid_decode layout regCount st st' hOk
@@ -4029,7 +4060,18 @@ theorem syscallEntry_preserves_projection
   rw [hCur] at hOk; simp at hOk
   rw [hLookup] at hOk; simp at hOk
   rw [hDecode] at hOk; simp at hOk
-  exact hDispatchProj decoded tid hOk
+  -- SM9.D.7: the hypothesis is now about the **dispatch's** post-state rather
+  -- than the entry's, because the taint seam sits between them.  That is the
+  -- honest shape: the caller knows what its transition preserves, not what the
+  -- seam does with the result afterwards — and the seam is projection-invisible
+  -- by `applySyscallTaint_preserves_projection`, which holds by `rfl`.
+  split at hOk
+  · simp at hOk
+  next stPost hDispatchOk =>
+    simp at hOk
+    subst hOk
+    rw [applySyscallTaint_preserves_projection]
+    exact hDispatchProj decoded tid stPost hDispatchOk
 
 -- ============================================================================
 -- WS-J1-D: NonInterferenceStep bridge theorems for syscallEntry
@@ -4059,9 +4101,9 @@ theorem syscallEntry_success_yields_NI_step
     (hOk : syscallEntry layout regCount st = .ok ((), st'))
     (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
         threadObservable ctx observer t = false)
-    (hDispatchProj : ∀ decoded tid,
-        dispatchSyscall decoded tid st = .ok ((), st') →
-        projectState ctx observer st' = projectState ctx observer st) :
+    (hDispatchProj : ∀ decoded tid stPost,
+        dispatchSyscall decoded tid st = .ok ((), stPost) →
+        projectState ctx observer stPost = projectState ctx observer st) :
     NonInterferenceStep ctx observer st st' :=
   .syscallDispatchHigh hCurrentHigh
     (syscallEntry_preserves_projection ctx observer layout regCount st st' hOk hDispatchProj)

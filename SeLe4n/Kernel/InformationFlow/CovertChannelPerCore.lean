@@ -1766,8 +1766,8 @@ theorem syscallEntry_preserves_projectionOnCore (ctx : LabelingContext)
     (observer : IfObserver) (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
     (st st' : SystemState)
     (hOk : syscallEntry layout regCount st = .ok ((), st'))
-    (hDispatchProj : ∀ decoded tid, dispatchSyscall decoded tid st = .ok ((), st') →
-      projectState ctx observer st' = projectState ctx observer st)
+    (hDispatchProj : ∀ decoded tid stPost, dispatchSyscall decoded tid st = .ok ((), stPost) →
+      projectState ctx observer stPost = projectState ctx observer st)
     (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
     lowEquivalent_smp ctx observer st' st :=
   lowEquivalent_smp_of_projection_and_confinement ctx observer
@@ -1784,8 +1784,8 @@ theorem syscallEntry_success_perCore_NI (ctx : LabelingContext) (observer : IfOb
     (hOk : syscallEntry layout regCount st = .ok ((), st'))
     (hCurrentHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
       threadObservable ctx observer t = false)
-    (hDispatchProj : ∀ decoded tid, dispatchSyscall decoded tid st = .ok ((), st') →
-      projectState ctx observer st' = projectState ctx observer st)
+    (hDispatchProj : ∀ decoded tid stPost, dispatchSyscall decoded tid st = .ok ((), stPost) →
+      projectState ctx observer stPost = projectState ctx observer st)
     (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
