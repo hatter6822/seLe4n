@@ -1064,9 +1064,10 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- cleared — so a reused transport cannot link unrelated messages.
      have _cc := @SeLe4n.Kernel.contentFlowClears
      have _wc := @SeLe4n.Kernel.waitClearsNotificationTaint
-     -- …and the CSpace provenance a transfer writes is also consumed, so a
-     -- forwarded capability carries its chain.
-     have _cf := @SeLe4n.Kernel.taintPropagation_cspace_provenance_forwarded
+     -- …and no declared sender edge names a CSpace root at all, so nothing
+     -- writes provenance onto an object whose content the model does not track
+     -- and therefore cannot clear.
+     have _cf := @SeLe4n.Kernel.senderTaintEdges_content_only
      -- The tracked-content scope, and its one deliberate exclusion.
      have _tf := @SeLe4n.Kernel.contentTrackedFields
      have _bc := @SeLe4n.Kernel.capabilityBadgeChannel_out_of_scope
@@ -1092,10 +1093,6 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _bl := @SeLe4n.Kernel.signalDelivery_bound_leaves_notification_alone
      have _wl := @SeLe4n.Kernel.signalDelivery_waiter_empties_notification
      have _bn := @SeLe4n.Kernel.bypassedObject_not_originated
-     -- …and the CSpace sinks are gated on capabilities actually crossing, so a
-     -- plain message cannot hand a later downgrade an unsaturated predecessor.
-     have _sc := @SeLe4n.Kernel.sendCarriesCaps
-     have _cl := @SeLe4n.Kernel.capTransferTaintSinks_capless
      -- A clear is final within its commit: the origination pass skips cleared
      -- keys, so a delivered-onward transport cannot be re-tagged after emptying.
      have _ce := @SeLe4n.Kernel.applySyscallTaint_cleared_empty

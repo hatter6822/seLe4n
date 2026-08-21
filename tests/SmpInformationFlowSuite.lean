@@ -2121,9 +2121,7 @@ totality over the wrong domain proves nothing, which is why the
 -- SM9.D scoping argument turns on — a downgrade writes a badge, an
 -- *ordinary* delivery moves it, and the next downgrade must still see it.
 #check @taintPropagation_send_to_receiver
-#check @capTransferTaintSinks
-#check @taintPropagation_send_to_receiver_cspace
-#check @taintPropagation_cspace_provenance_forwarded
+#check @senderTaintEdges_content_only
 #check @taintPropagation_receive_from_sender
 #check @contentFlowClears
 #check @waitClearsNotificationTaint
@@ -10303,25 +10301,19 @@ private def runTaintPropagationChecks : IO Unit := do
      | some rtcb =>
        decide (rtcb.cspaceRoot ∉
          (receiverTaintEdges taintedEndpointState highCurrent highEndpoint).map (·.source)))
-  -- NEGATIVE (round 4/5, the gate): a capless transfer declares no CSpace sink,
-  -- and neither does one whose endpoint lacks Grant — an endpoint without Grant
-  -- installs nothing however many capabilities the message declares.
-  assertBool "NEGATIVE: a capless transfer declares no CSpace sink"
-    (decide (capTransferTaintSinks taintedEndpointState taintedSender highCurrent false = []))
-  assertBool "the send gate requires BOTH a declared capability and Grant"
-    (let grantCap : Capability :=
-       { target := .object highEndpoint, rights := AccessRightSet.ofList [.write, .grant] }
-     let noGrantCap : Capability :=
-       { target := .object highEndpoint, rights := AccessRightSet.ofList [.write] }
-     let withCaps : SyscallDecodeResult :=
-       { capAddr := SeLe4n.CPtr.ofNat 2, msgInfo := SeLe4n.Model.MessageInfo.mk 0 1 0,
-         syscallId := .send }
-     let noCaps : SyscallDecodeResult :=
-       { capAddr := SeLe4n.CPtr.ofNat 2, msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0,
-         syscallId := .send }
-     sendCarriesCaps grantCap withCaps &&
-       !sendCarriesCaps noGrantCap withCaps &&
-       !sendCarriesCaps grantCap noCaps)
+  -- NEGATIVE (round 5): a send declares exactly one edge — the content edge to
+  -- the rendezvous receiver — and never names a CSpace root.  A CNode holds no
+  -- tracked content, so a tag written on one has no operation able to clear it:
+  -- deleting the capability that carried it would leave a specific unsaturated
+  -- predecessor behind for the next unrelated transfer out of that CNode, which
+  -- is exactly what `staleTaint_is_not_saturation` forbids.  The authority hop
+  -- needs no edge of its own — the flows it enables are declared where the
+  -- content actually moves.
+  assertBool "NEGATIVE: a send declares no CSpace-root sink or source"
+    (let edges := senderTaintEdges taintedEndpointState taintedSender highEndpoint
+     let roots := (taintedEndpointState.getTcb? taintedSender).toList.map (·.cspaceRoot)
+       ++ (taintedEndpointState.getTcb? highCurrent).toList.map (·.cspaceRoot)
+     edges.all (fun e => !(roots.contains e.sink) && !(roots.contains e.source)))
   -- PR #873 round 4: a BOUND delivery leaves the notification holding its badge,
   -- so it must not be cleared.  `boundDeliveryTarget?` ignores `pendingBadge`
   -- entirely and `notificationSignalBound` never writes the notification, so the
@@ -10689,33 +10681,38 @@ private def runTaintFootprintChecks : IO Unit := do
     match sendRendezvousState.getTcb? lowCurrent with
     | some tcb => tcb.cspaceRoot
     | none => SeLe4n.ObjId.ofNat 0
-  assertBool "the real rendezvous edge list names the receiver TCB and receiver CNode"
+  assertBool "the real rendezvous edge list names the receiver TCB"
     (decide (({ sink := lowCurrent.toObjId, source := highCurrent.toObjId } : TaintFlowEdge)
-       ∈ sendRendezvousEdges) &&
-     decide (({ sink := recvRoot, source := highCurrent.toObjId } : TaintFlowEdge)
        ∈ sendRendezvousEdges))
   -- NEGATIVE (the content-derived model): the endpoint is NOT a sink, so a
   -- rendezvous leaves its provenance untouched and nothing accumulates on it for
   -- a later unrelated message to pick up.
   assertBool "NEGATIVE: the endpoint is not among the declared sinks at all"
     (decide (highEndpoint ∉ sendRendezvousEdges.map (·.sink)))
-  -- NEGATIVE (round 4, the gate): the SAME rendezvous with a plain message names
-  -- no CSpace sink — the receiver's TCB is still a sink, so the delivery is not
-  -- silently dropped, but no CNode is written for a transfer that never happened.
-  assertBool "NEGATIVE: a capless rendezvous declares no CSpace sink"
-    (decide (recvRoot ∉ sendRendezvousCaplessEdges.map (·.sink)) &&
+  -- NEGATIVE (round 5): neither is the receiver's CSpace root, whether or not
+  -- the message declares capabilities.  A CNode holds no tracked content, so a
+  -- tag written on one has no operation able to clear it — and the authority hop
+  -- needs no edge of its own, since every flow it enables is declared where the
+  -- content actually moves.  Both shapes are checked because the two used to
+  -- differ: the caps-carrying one is the shape that carried the sink.
+  assertBool "NEGATIVE: no rendezvous declares a CSpace-root sink, caps or not"
+    (decide (recvRoot ∉ sendRendezvousEdges.map (·.sink)) &&
+     decide (recvRoot ∉ sendRendezvousCaplessEdges.map (·.sink)) &&
      decide (({ sink := lowCurrent.toObjId, source := highCurrent.toObjId } : TaintFlowEdge)
        ∈ sendRendezvousCaplessEdges))
-  -- …and with the gate closed every remaining key IS write-locked, so the
-  -- registered CNode gap below is the whole of what the capless path leaves
-  -- uncovered: nothing.
+  -- …so the coverage claim is total again, in both shapes.  It was carved out
+  -- while the CSpace sink existed; with the carrier gone there is no taint write
+  -- key the send footprint fails to hold in write mode.
   assertBool "a capless rendezvous is fully write-locked by the send footprint"
     ((sendRendezvousCaplessEdges.map (·.sink)).all (fun o => sendWriteObjects.contains o))
-  assertBool "every taint write key EXCEPT the cap-transfer CNode is write-locked by the send"
-    ((sendRendezvousEdges.map (·.sink)).all
-      (fun o => sendWriteObjects.contains o || decide (o = recvRoot)))
-  -- The registered gap, pinned positively so closing it breaks this line and
-  -- forces the §12.8 partition above back to a total claim.
+  assertBool "EVERY taint write key is write-locked by the send footprint"
+    ((sendRendezvousEdges.map (·.sink)).all (fun o => sendWriteObjects.contains o))
+  -- The registered footprint gap is unchanged and is now purely an *object*
+  -- write: `ipcUnwrapCaps` still writes the receiver's CSpace root CNode with no
+  -- declared lock (`UncoveredLockDomain.capTransferReceiverCnode`).  Pinned
+  -- positively so closing it breaks this line.  What changed is that it is no
+  -- longer also a taint write key, so the taint-coverage claim above no longer
+  -- has to carve it out.
   assertBool "GAP (registered lock-inventory debt): the receiver's CSpace root is NOT write-locked"
     (!sendWriteObjects.contains recvRoot &&
      decide ((SeLe4n.Kernel.Concurrency.cnodeLock recvRoot,

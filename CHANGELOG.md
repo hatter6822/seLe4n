@@ -1,3 +1,63 @@
+## v0.33.66 — a CSpace root is not a taint carrier, because the model cannot say when its tag dies
+
+**The stale-root finding could not be patched, because the carrier itself was
+the defect.**  A capability transfer tagged the receiver's CSpace root with the
+sender's provenance, and `.cspaceDelete` is `.inert` — so deleting the capability
+that carried a tag left the tag on the root, and the next unrelated transfer out
+of that CNode sourced it and attributed an old downgrade to an unrelated
+receiver.  A *specific, unsaturated* false predecessor, which is precisely what
+`staleTaint_is_not_saturation` says cannot exist.  The carrier did not cost
+precision; it falsified a stated property.
+
+**Why no clear rule works.**  `contentTrackedFields` names the two fields this
+model treats as content — `TCB.pendingMessage` and `Notification.pendingBadge` —
+and a CNode holds neither.  The model therefore cannot decide when a root's tag
+dies: clearing on delete over-clears (other capabilities in the same CNode may
+still carry provenance, so live chains would be dropped — the direction a
+detector must never err in), and not clearing is the finding.  Precision needs
+slot granularity, which is the scope widening already declined for badges.
+
+**And the carrier was redundant.**  A transfer moves *authority*, not content.
+Every flow that authority enables is declared where the content actually moves:
+a subject that receives a capability to a notification and later waits on it
+gets the edge at the wait, sourcing from the notification and whatever
+provenance it holds; one that receives an endpoint capability and receives
+through it gets the head-sender edge.  The authority hop needs no edge of its
+own.
+
+So the carrier is gone.  `capTransferTaintSinks`, its `sendCarriesCaps` gate and
+the three theorems asserting the root edges are **deleted rather than weakened**,
+with Tier-3 negatives pinning them out.  `senderTaintEdges` declares exactly one
+edge — the content edge to the rendezvous receiver — and
+`senderTaintEdges_content_only` is the checkable form of "no declared edge names
+a CSpace root".  The remaining gap is stated in the shape
+`capabilityBadgeChannel_out_of_scope` uses, and a future decision to track
+capability provenance at slot granularity has to delete that theorem.
+
+This closes rounds 2, 3, 4 and 5 of one thread at once.  Each earlier round
+patched a *consequence* of having a root carrier — the tag was written and read
+by nothing, then the root had to feed the consuming subject, then the two could
+not compose within one commit because `applyTaintFlow` reads every source from
+the pre-state.  Four rounds on one structure is the signal that the structure,
+not its wiring, was wrong.
+
+**Two claims get stronger.**  §12.8's coverage line was carved out while the
+CSpace sink existed ("every taint write key *except* the cap-transfer CNode");
+it is now the total claim, in both the caps-carrying and capless shapes.  And
+`taintWriteKeys_of_no_events` drops its exception: every taint write a
+non-appending syscall performs rides a declared write lock.  The registered
+footprint gap is unchanged and is now purely what it always was — an *object*
+write, `ipcUnwrapCaps` writing the receiver's root CNode with no declared lock,
+still pinned as `UncoveredLockDomain.capTransferReceiverCnode`.
+
+Evidence: §12.8 gains a negative asserting no rendezvous declares a CSpace-root
+sink or source in either shape, alongside the strengthened total coverage line;
+surface anchors swap the deleted theorems for the scope theorem; the
+content-flow gate is unchanged (34 arms, 8 moving content).  Zero errors and
+zero warnings across the tree, staged modules and every suite.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
 ## v0.33.65 — a taint write is serialised by its own key's lock, and provenance survives the frozen operations
 
 Two coverage gaps in the SM9.D taint surface, both from review round 5, both

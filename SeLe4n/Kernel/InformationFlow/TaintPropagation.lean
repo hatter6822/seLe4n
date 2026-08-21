@@ -285,77 +285,37 @@ def syscallOperandCap? (st : SystemState) (tid : SeLe4n.ThreadId)
       | .error _ => none
       | .ok ref => SystemState.lookupSlotCap st ref
 
-/-- WS-SM SM9.D.11: **the capability-transfer sink.**
+/-! ### WS-SM SM9.D — the accepted out-of-scope channel: capability provenance
 
-A message may carry capabilities, and `ipcUnwrapCaps` installs them into the
-*receiver's* CSpace — a CNode, a different object from the receiver's TCB.  A
-badge minted into a transferred capability is data, and a CNode is shared: a
-second thread rooted at the same CSpace reads what the transfer installed
-without ever touching the receiver's TCB, so tagging the TCB alone would lose
-the link at exactly the point where the content becomes reachable by a third
-subject.
+A transfer moves **authority**, not content.  `contentTrackedFields` names the
+two fields this model treats as content — `TCB.pendingMessage` and
+`Notification.pendingBadge` — and a CNode holds neither, so a CSpace root is not
+a thing whose taint the model can derive: it cannot say when that taint dies,
+because it does not track what the CNode holds.
 
-**Three edges, because provenance has to arrive *and* be consumed.**  The first
-tags the receiver's CSpace root with the *sender's own content* (`tid`).  The
-second tags it with the *sender's CSpace-root* taint (`stcb.cspaceRoot`): a
-capability a prior transfer installed into `tid`'s CSpace carries that
-transfer's provenance on `tid`'s root, and forwarding it must carry the chain
-forward.  Without the second edge the taint this function writes would be an
-unwired structure — written on the receiver's root and read by nothing, since no
-other edge sources from a CSpace root — and a cap forwarded by an untainted
-courier would drop the link.
+Earlier cuts made the root a carrier anyway, and every consequence had to be
+patched in turn — the tag was written and read by nothing, then the root fed the
+consuming subject, then the two could not compose within one commit.  The one
+that cannot be patched is the clear: deleting the capability that carried a tag
+leaves the root's tag behind, so a later unrelated transfer out of the same CNode
+sources it and attributes an old downgrade to an unrelated receiver.  That is a
+specific *unsaturated* false predecessor, which is exactly what
+`staleTaint_is_not_saturation` says cannot exist — so the carrier did not merely
+cost precision, it falsified a stated property.
 
-The third edge is the one simultaneity makes necessary.  `applyTaintFlow` reads
-**every** source from the pre-state table, so the root-to-root edge above and any
-root-to-subject edge in the same plan do not compose within one commit: the
-receiver's root gets the sender's provenance, but a root-to-subject edge keyed on
-the receiver's root still reads that root's *old* value and the receiver's TCB
-stays untainted.  A courier whose provenance lives only on the sender's CSpace
-root would therefore hand a capability to a receiver who could downgrade
-immediately with no recorded predecessor — a missed chain.  Sourcing the
-receiver's *subject* directly from the sender's root closes that in one hop,
-which is why the edge is here (shared by both rendezvous orderings) rather than
-in either planner.
+**And it was redundant.**  Content chains are recorded where content moves.  If
+a subject receives a capability to a notification and later waits on it, the
+*wait* declares an edge from that notification, which carries whatever
+provenance it holds; if it receives a capability to an endpoint and receives
+through it, the receive declares the head-sender edge.  The authority hop moves
+no content and needs no edge of its own — the flows it enables are each declared
+at the point they happen.
 
-**Gated on capabilities actually crossing.**  A plain message installs nothing,
-so declaring these sinks for every delivery would write the sender's provenance
-into a CSpace no capability reached — and since a CSpace root now feeds the
-consuming subject, that over-approximation would name an *unsaturated*
-predecessor for an unrelated later downgrade.  That is precisely the false
-positive `staleTaint_is_not_saturation` says must not exist, so over-approximating
-here is not the safe direction it would be for an isolated sink; the gate is the
-caller's, because the two orderings learn about capabilities differently (a send
-from its own `MessageInfo`, a receive from the parked message it is about to
-unwrap).
-
-A resolved receiver whose TCB is absent contributes nothing, which is correct: no
-CSpace, no install.  An absent sender TCB drops both CSpace-provenance edges and
-keeps the content edge. -/
-def capTransferTaintSinks (st : SystemState) (tid : SeLe4n.ThreadId)
-    (receiver : SeLe4n.ThreadId) (carriesCaps : Bool) : List TaintFlowEdge :=
-  match carriesCaps with
-  | false => []
-  | true =>
-    match st.getTcb? receiver, st.getTcb? tid with
-    | some rtcb, some stcb =>
-        [ { sink := rtcb.cspaceRoot, source := tid.toObjId }
-        , { sink := rtcb.cspaceRoot, source := stcb.cspaceRoot }
-        , { sink := receiver.toObjId, source := stcb.cspaceRoot } ]
-    | some rtcb, none => [{ sink := rtcb.cspaceRoot, source := tid.toObjId }]
-    | none, _ => []
-
-/-- WS-SM SM9.D.11: **does a `.send` / `.call` declare capabilities?**
-
-Read from the caller's own `MessageInfo`, which is what `resolveExtraCaps`
-iterates: the message is still in the sender's registers at this point, so the
-declared count is the only signal available and re-deriving anything else would
-duplicate the dispatch's own decode.  Silent-drop means the resolved count can
-be *lower* than the declared one, so this over-approximates by at most a
-declared-but-unresolvable capability — a sink declared for a transfer that moves
-nothing, which is the harmless direction (the sink's source contributes whatever
-the sender already held, exactly as an ordinary content edge would). -/
-def sendCarriesCaps (cap : Capability) (decoded : SyscallDecodeResult) : Bool :=
-  decoded.msgInfo.extraCaps > 0 && cap.hasRight .grant
+What remains out of scope is stated rather than left implicit, in the shape
+`capabilityBadgeChannel_out_of_scope` uses and for the same reason: a future
+decision to track capability provenance at slot granularity has to delete
+`senderTaintEdges_content_only`, which is the checkable form of "no declared
+edge names a CSpace root". -/
 
 /-- WS-SM SM9.D.8: **a sender's edges** — `.send` and `.call`.
 
@@ -371,14 +331,33 @@ sender directly (`receiverTaintEdges`), so an endpoint proxy would be redundant
 *and* less precise (it would hand a receiver the taint of every queued sender,
 not just the one it consumes).  Not declaring it is the content-derived model:
 an object's taint reflects the content it currently holds, and an endpoint holds
-none. -/
+none.
+
+**Neither is the receiver's CSpace.**  A carried capability moves authority, and
+a CNode holds no tracked content — see the out-of-scope note above for why a
+root carrier both falsified `staleTaint_is_not_saturation` and was redundant with
+the edges declared where content actually flows. -/
 def senderTaintEdges (st : SystemState) (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
-    (carriesCaps : Bool) : List TaintFlowEdge :=
+    : List TaintFlowEdge :=
   match (st.getEndpoint? epId).bind (·.receiveQ.head) with
-  | some receiver =>
-      { sink := receiver.toObjId, source := tid.toObjId } ::
-        capTransferTaintSinks st tid receiver carriesCaps
+  | some receiver => [{ sink := receiver.toObjId, source := tid.toObjId }]
   | none => []
+
+/-- **No declared sender edge names a CSpace root.**
+
+The checkable form of the scope boundary: a send's declared flow is exactly the
+content edge to the rendezvous receiver, so nothing writes provenance onto an
+object whose content the model does not track — and therefore nothing can leave
+a tag on one that no operation is able to clear.
+
+A future decision to track capability provenance at slot granularity has to
+delete this theorem, which is the point of stating it. -/
+theorem senderTaintEdges_content_only (st : SystemState) (tid : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) :
+    senderTaintEdges st tid epId =
+      match (st.getEndpoint? epId).bind (·.receiveQ.head) with
+      | some receiver => [{ sink := receiver.toObjId, source := tid.toObjId }]
+      | none => [] := rfl
 
 /-- WS-SM SM9.D.8: **a receiver's edges** — `.receive` and `.replyRecv`.
 
@@ -585,8 +564,8 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
   | none => []
   | some cap =>
     match decoded.syscallId, cap.target with
-    | .send, .object epId => senderTaintEdges st tid epId (sendCarriesCaps cap decoded)
-    | .call, .object epId => senderTaintEdges st tid epId (sendCarriesCaps cap decoded)
+    | .send, .object epId => senderTaintEdges st tid epId
+    | .call, .object epId => senderTaintEdges st tid epId
     | .receive, .object epId => receiverTaintEdges st tid epId
     | .replyRecv, .object epId =>
         receiverTaintEdges st tid epId ++ replyRecvReplyLegEdges st tid decoded
@@ -1219,39 +1198,6 @@ theorem taintPropagation_send_to_receiver (st post : SystemState) (tid : SeLe4n.
   refine taintPropagation_edge _ st post _ hIn ?_ hSender
   rw [hCleared]; rcases hSid with h | h <;> simp [contentFlowClears, hCap, h, hTarget]
 
-/-- WS-SM SM9.D.11 (**send / call → receiver's CSpace**): a transferred
-capability lands in the receiver's CNode, so the CNode carries the sender's
-provenance too.
-
-The sink the receiver's TCB tag does not cover: a CNode is shared, so a second
-thread rooted at the same CSpace reads what `ipcUnwrapCaps` installed without
-ever touching the receiver's TCB. -/
-theorem taintPropagation_send_to_receiver_cspace (st post : SystemState)
-    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (cap : Capability)
-    (epId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (rtcb : SeLe4n.Model.TCB)
-    (hClass : contentFlowClass decoded.syscallId = .movesContent)
-    (hSid : decoded.syscallId = .send ∨ decoded.syscallId = .call)
-    (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
-    (hTarget : cap.target = .object epId)
-    (hRecv : (st.getEndpoint? epId).bind (·.receiveQ.head) = some receiver)
-    (hTcb : st.getTcb? receiver = some rtcb)
-    (hCaps : sendCarriesCaps cap decoded = true) {t : Nat}
-    (hSender : (st.declassificationTaint tid.toObjId).contains t = true) :
-    ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
-      rtcb.cspaceRoot).contains t = true := by
-  have hCT : ({ sink := rtcb.cspaceRoot, source := tid.toObjId } : TaintFlowEdge) ∈
-      capTransferTaintSinks st tid receiver (sendCarriesCaps cap decoded) := by
-    simp only [capTransferTaintSinks, hCaps, hTcb]
-    cases st.getTcb? tid <;> simp
-  have hMem : ({ sink := rtcb.cspaceRoot, source := tid.toObjId } : TaintFlowEdge) ∈
-      contentFlowEdges st tid decoded := by
-    simp only [contentFlowEdges, hCap]
-    rcases hSid with h | h <;> simp only [h, hTarget, senderTaintEdges, hRecv] <;>
-      exact List.mem_cons_of_mem _ hCT
-  obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
-  refine taintPropagation_edge _ st post _ hIn ?_ hSender
-  rw [hCleared]; rcases hSid with h | h <;> simp [contentFlowClears, hCap, h, hTarget]
-
 /-- WS-SM SM9.D.8 (**receive / replyRecv ← sender**): a receiver picks up the
 provenance of the blocked sender at `sendQ.head` directly — whether that sender
 parked in an earlier syscall or arrives in this rendezvous.  The content-derived
@@ -1425,55 +1371,6 @@ theorem waitClearsNotificationTaint (st post : SystemState) (tid : SeLe4n.Thread
     simp only [syscallTaintPlan, hClass]
     simp [contentFlowClears, hCap, hSid, hTarget]
   exact applySyscallTaint_cleared_empty _ st post nid (by rw [hCleared]; simp)
-
-/-- WS-SM SM9.D.11 (**the CSpace provenance is consumed**): a capability
-transfer reads the *sender's* CSpace-root taint into the receiver's root, so a
-capability an earlier transfer installed carries its chain forward when it is
-forwarded again.
-
-Without this edge the tag `capTransferTaintSinks` writes would be an unwired
-structure — written on a CSpace root and read by nothing, since no other edge
-sources from one — and a capability forwarded by an untainted courier would drop
-the link at exactly the hop the detector is looking for. -/
-theorem taintPropagation_cspace_provenance_forwarded (st post : SystemState)
-    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (cap : Capability)
-    (epId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (rtcb stcb : SeLe4n.Model.TCB)
-    (hClass : contentFlowClass decoded.syscallId = .movesContent)
-    (hSid : decoded.syscallId = .send ∨ decoded.syscallId = .call)
-    (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
-    (hTarget : cap.target = .object epId)
-    (hRecv : (st.getEndpoint? epId).bind (·.receiveQ.head) = some receiver)
-    (hRTcb : st.getTcb? receiver = some rtcb)
-    (hSTcb : st.getTcb? tid = some stcb)
-    (hCaps : sendCarriesCaps cap decoded = true) {t : Nat}
-    (hSenderCSpace : (st.declassificationTaint stcb.cspaceRoot).contains t = true) :
-    ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
-      rtcb.cspaceRoot).contains t = true := by
-  have hCT : ({ sink := rtcb.cspaceRoot, source := stcb.cspaceRoot } : TaintFlowEdge) ∈
-      capTransferTaintSinks st tid receiver (sendCarriesCaps cap decoded) := by
-    simp [capTransferTaintSinks, hCaps, hRTcb, hSTcb]
-  have hMem : ({ sink := rtcb.cspaceRoot, source := stcb.cspaceRoot } : TaintFlowEdge) ∈
-      contentFlowEdges st tid decoded := by
-    simp only [contentFlowEdges, hCap]
-    rcases hSid with h | h <;> simp only [h, hTarget, senderTaintEdges, hRecv] <;>
-      exact List.mem_cons_of_mem _ hCT
-  obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
-  refine taintPropagation_edge _ st post _ hIn ?_ hSenderCSpace
-  rw [hCleared]; rcases hSid with h | h <;> simp [contentFlowClears, hCap, h, hTarget]
-
-/-- WS-SM SM9.D.11 (**a plain message installs nothing**): a delivery carrying no
-capabilities declares no CSpace sink at all.
-
-The load-bearing negative for the gate.  Without it the sender's provenance would
-be written into a CSpace root no capability reached, and — since a root now feeds
-the consuming subject — an unrelated later downgrade could name that as an
-*unsaturated* predecessor.  That is exactly the false positive
-`staleTaint_is_not_saturation` rules out, so over-approximating here would break
-a stated property rather than merely cost precision. -/
-@[simp] theorem capTransferTaintSinks_capless (st : SystemState)
-    (tid receiver : SeLe4n.ThreadId) :
-    capTransferTaintSinks st tid receiver false = [] := rfl
 
 -- ============================================================================
 -- §3c  WS-SM SM9.D.12 — the retype forgets
@@ -1788,17 +1685,21 @@ theorem taintWriteKeys_disjoint_order_independent
 
 A syscall that appends no audit event has an empty origination set, so its taint
 write set is confined to the objects its own edges and clears name — each of
-which the transition itself writes.  All but one of those writes ride a
-declared write lock; the exception is the capability-transfer sink, the
+which the transition itself writes, and each under a declared write lock.
+
+That sentence used to carry an exception: the capability-transfer sink, the
 receiver's CSpace root, whose write the send/call footprints have never
-declared — a pre-existing SM3.B gap this phase's audit surfaced and registered
-(`UncoveredLockDomain.capTransferReceiverCnode`,
-`capTransfer_receiverCnode_write_undeclared`), not a property of the taint
-layer: the taint write at that key is exactly as covered as the object write
-it shadows.  The two syscalls that *do* append (`.declassify`,
-`.declassifySignal`) are exactly the two whose footprints already carry
-`stateLevelLock` in write mode for the append, which is what covers their
-actor-TCB origination key. -/
+declared.  The exception is gone because the sink is — a CNode holds no tracked
+content, so it is not a taint carrier at all (see the out-of-scope note in §3a).
+The *object* write `ipcUnwrapCaps` performs at that key remains undeclared, and
+remains registered as `UncoveredLockDomain.capTransferReceiverCnode` /
+`capTransfer_receiverCnode_write_undeclared`; it was always an SM3.B footprint
+gap rather than a property of this layer, and now it is only that.
+
+The two syscalls that *do* append (`.declassify`, `.declassifySignal`) hold
+their origination keys under those keys' own object locks —
+`lockSet_declassify_originationKeys_write_mem` — not under the state-level lock
+the append needs, which orders them against other state-level writers only. -/
 theorem taintWriteKeys_of_no_events (plan : TaintPlan) (pre post : SystemState)
     (h : newlyRecordedEvents pre post = []) :
     taintWriteKeys plan pre post = taintFlowSinks plan ++ plan.cleared := by

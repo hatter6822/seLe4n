@@ -3713,16 +3713,17 @@ run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_names_iff' SeLe4n/Kernel
 run_check "INVARIANT" rg -n 'ChainNamesEntry = 28' rust/sele4n-sys/src/audit.rs
 run_check "INVARIANT" rg -n 'NEGATIVE: the same domain-composing pair with no snapshot reads 0' tests/SmpInformationFlowSuite.lean
 run_check "TRACE" rg -n 'causality verdict: monitorReads=' tests/fixtures/smp_information_flow.expected
-# SM9.D.11: the capability-transfer sink — a CNode is shared, so tagging the
-# receiver's TCB alone loses the link where the content becomes reachable by a
-# third subject.
-run_check "INVARIANT" rg -n '^def capTransferTaintSinks' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem taintPropagation_send_to_receiver_cspace' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-# PR #873 review: the CSpace provenance the transfer writes is also CONSUMED.
-# Without the sender-CSpace-root source the tag would be an unwired structure —
-# written on a root and read by nothing — and a capability forwarded by an
-# untainted courier would drop the chain.
-run_check "INVARIANT" rg -n '^theorem taintPropagation_cspace_provenance_forwarded' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 review round 5: capability provenance is OUT OF SCOPE, consistently.
+# A CNode holds no tracked content, so a tag written on a CSpace root has no
+# operation able to clear it — deleting the capability that carried it leaves a
+# specific unsaturated predecessor behind, which `staleTaint_is_not_saturation`
+# forbids.  It was also redundant: a transfer moves authority, and every content
+# flow the authority enables is declared where that content actually moves.
+run_check "INVARIANT" rg -n '^theorem senderTaintEdges_content_only' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# NEGATIVE: the carrier and its gate must not come back.
+run_negative_check "INVARIANT" rg -n '^def capTransferTaintSinks' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_negative_check "INVARIANT" rg -n '^theorem taintPropagation_send_to_receiver_cspace' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_negative_check "INVARIANT" rg -n '^theorem taintPropagation_cspace_provenance_forwarded' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # PR #873 review round 3: the two orderings of a capability transfer must agree,
 # and the CSpace provenance must reach a SUBJECT or it can never reach an audit
 # event.  A parked sender names no receiver, so the receive declares the CNode
@@ -3821,9 +3822,10 @@ run_check "INVARIANT" rg -n 'chain12b: NEGATIVE . an unrelated slot in the same 
 # reached, and — since a root now feeds the consuming subject — an unrelated
 # later downgrade could name it as an UNSATURATED predecessor, which is exactly
 # what `staleTaint_is_not_saturation` rules out.
-run_check "INVARIANT" rg -n '^def sendCarriesCaps' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n 'NEGATIVE: a capless transfer declares no CSpace sink' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'NEGATIVE: a capless rendezvous declares no CSpace sink' tests/SmpInformationFlowSuite.lean
+run_negative_check "INVARIANT" rg -n '^def sendCarriesCaps' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a send declares no CSpace-root sink or source' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: no rendezvous declares a CSpace-root sink, caps or not' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'EVERY taint write key is write-locked by the send footprint' tests/SmpInformationFlowSuite.lean
 # …a clear is FINAL within its commit: the final origination pass skips cleared
 # keys, so a declassifying signal that delivers straight to a waiter cannot
 # re-tag the transport it just emptied.
