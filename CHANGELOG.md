@@ -1,3 +1,77 @@
+## v0.33.85 — what an anchor pins, and what a coverage walk actually reached
+
+Two gates, one failure each way.  The anchor-consistency gate was **inventing**
+contradictions between anchors that cannot contradict, and missing ones that do;
+the content-flow gate was **under-reading**, reporting coverage it had not
+established.  Both are soundness of the checker, not of the kernel — which is
+why they are worth a cut: a gate that cries wolf gets edited around, and a gate
+that under-reads is a false PASS on every finding beneath it.
+
+**An anchor is a pattern, a mode, and a scope — the gate was keeping one.**
+
+`_search_invocation` parsed `rg`'s flags to find the pattern and threw the rest
+away, so `rg -i foo F` and `rg foo F` collapsed to one `(pattern, target)` key.
+A file holding only `FOO` satisfies the first and not the second: they are
+consistent, and the gate called them a contradiction.  The flags that change the
+**match language** — `-i`, `-s`, `-S`, `-F`, `-w`, `-x` — are now retained as a
+mode, and `_mode_allows` decides whether a negative anchor's language is *no
+stricter* than the positive's, which is what a containment claim over literal
+runs needs.  A boundary-anchored negative (`-w`, `-x`) does not match mid-token,
+so containment implies nothing; `-S` is case-sensitivity that depends on the
+pattern's own spelling, which this gate does not model, so it refuses rather
+than guess.  `-F` also removes the regex: `^` is a literal character there, so
+it is no longer stripped, and the pattern is one literal run of its own text.
+
+The scope half is the opposite error.  `rg`'s positional arguments are files
+**or directories**, and the suites use both, but the comparison was string
+equality — so a negative over `SeLe4n/` was never checked against a positive
+over `SeLe4n/Foo.lean`, which is a real contradiction.  `_scope_contains` is
+directional on purpose: the reverse pair (positive over a directory, negative
+over one file in it) is satisfiable by a different file and must not be
+reported.
+
+**A walk that stops with an unexpanded frontier has not reached a fixed point.**
+
+`cfClosureGo` returned its `seen` set when the hop counter hit zero and said
+nothing about the frontier it had not expanded.  Every reachability verdict was
+therefore "no write within 6 hops", while checks (A)–(C3) claim "ever" — an
+inert arm whose payload or audit-trail write sat behind a seventh helper would
+have passed both.  The walk now reports `CF_TRUNCATED` and the gate fails hard
+on it.  Measured rather than assumed: the reach converges at ~25 hops
+(2 046–3 358 constants) in about 13 s with the classification unchanged, so the
+`--depth` default moves 6 → 200 as *fixed-point fuel* — a bound that exists so a
+pathological graph fails loudly instead of hanging, not a horizon.
+
+**Three dispatchers under one syscall name let a healthy arm mask a broken one.**
+
+`arm_roots` keyed its stems on the syscall, unioning `dispatchCapabilityOnly`,
+`dispatchWithCap` and `dispatchWithCapChecked`.  If the *checked* `.receive` arm
+— the route production takes — stopped reaching its `pendingMessage` write while
+the unchecked one still did, the union kept a content hit and check (B) reported
+success.  The key is now `dispatcher::arm`, so every live implementation of a
+content-moving syscall satisfies the classification on its own; the verdict line
+reports 34 live arms across 47 dispatcher implementations.
+
+Splitting the key surfaced the arms that exist in a dispatcher only to fail
+closed: `.declassify` and `.declassifySignal` have no unchecked form, because
+their authority *is* a policy and "unchecked" would mean "every downgrade is
+authorized" — `dispatchWithCap` implements both as
+`fun _ => .error .declassificationDenied`.  `FAIL_CLOSED_ARMS` names them, like
+`RETURN_FRAME_DELIVERY` and `AUDIT_APPEND_EXEMPT`, and carries the same bite: a
+listed implementation must reach **nothing**, content or trail.  An entry that
+starts reaching one is a refusal that stopped refusing — a worse defect than the
+masking the exemption exists to allow past.
+
+Both `--self-test` suites grew witnesses for the new mechanisms, since a gate
+that stops checking fails silently: four anchor pairs pinning the mode and scope
+decisions in both directions, and a `.receive`-resolves-in-two-dispatchers
+assertion that fails if the reach key ever collapses back to the syscall name.
+
+Tier 3 pins `_mode_allows`, `_scope_contains`, `arm_key`, `FAIL_CLOSED_ARMS` and
+`CF_TRUNCATED`.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
 ## v0.33.84 — the half of the last fix that was still tagging the actor
 
 Round 7 stopped a bare `.declassify` of an **idle** target from originating onto

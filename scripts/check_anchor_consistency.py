@@ -193,6 +193,67 @@ _OPTION_TABLES = {
 }
 _PATTERN_OPTIONS = {"-e", "--regexp"}
 
+# PR #873 round 10: the flags that change the **match language**, not just the
+# output.  They were parsed and thrown away, so `rg -i foo F` and `rg foo F`
+# collapsed to one `(pattern, target)` key and a file containing only `FOO` —
+# which satisfies the first and not the second — was reported as a contradiction.
+# Retaining them lets `_mode_allows` compare only languages that can contradict.
+_MODE_FLAGS: dict[str, set[str]] = {
+    "-i": {"i"}, "--ignore-case": {"i"},
+    "-s": {"s"}, "--case-sensitive": {"s"},
+    "-S": {"S"}, "--smart-case": {"S"},
+    "-F": {"F"}, "--fixed-strings": {"F"},
+    "-w": {"w"}, "--word-regexp": {"w"},
+    "-x": {"x"}, "--line-regexp": {"x"},
+    "-G": set(), "--basic-regexp": set(),
+    "-E": set(), "--extended-regexp": set(),
+    "-P": set(), "--perl-regexp": set(),
+}
+
+
+def _mode_allows(p_mode: frozenset, n_mode: frozenset) -> bool:
+    """May a negative anchor in `n_mode` contradict a positive one in `p_mode`?
+
+    A contradiction says *every* line the positive requires also contains what
+    the negative forbids.  That needs the negative's match language to be **no
+    stricter** than the positive's:
+
+    * a negative anchored at a word or line boundary (`-w`, `-x`) does not match
+      the same text found mid-token, so containment inside the positive's
+      literal run implies nothing;
+    * a case-sensitive negative against a case-insensitive positive is escaped
+      by any line whose case differs — the reviewer's `rg -i foo` / `rg foo`
+      pair, satisfied together by a file holding only `FOO`;
+    * `-S` (smart case) is case-sensitivity that depends on the pattern's own
+      spelling, which this gate does not model, so it refuses rather than guess.
+
+    The converse directions are all sound: a *more* permissive negative, or a
+    boundary-anchored positive, only narrows what the positive can be satisfied
+    by."""
+    if {"w", "x"} & n_mode:
+        return False
+    if "S" in p_mode or "S" in n_mode:
+        return False
+    if "i" in p_mode and "i" not in n_mode:
+        return False
+    return True
+
+
+def _scope_contains(outer: str, inner: str) -> bool:
+    """Does search scope `outer` cover everything scope `inner` covers?
+
+    `rg` positional arguments are files **or directories**, and the suites use
+    both — so comparing the target strings for equality (PR #873 round 10's
+    finding) skipped a negative anchor over `SeLe4n/` against a positive over
+    `SeLe4n/Foo.lean`, which is a real contradiction: the positive requires a
+    match in a file the negative forbids it in.
+
+    Directional on purpose.  The reverse — a positive over a *directory* and a
+    negative over one file in it — is satisfiable, because the positive can be
+    met by a different file, so it must not be reported."""
+    o, i = outer.rstrip("/"), inner.rstrip("/")
+    return o == i or i.startswith(o + "/")
+
 
 def _split_short_cluster(tok: str, valued: set[str], bare: set[str]) -> bool:
     """Is `-nwE` a cluster of *bare* short flags for this tool?
@@ -229,6 +290,7 @@ def _search_invocation(argv: list[str]):
         return None
     valued, bare = _OPTION_TABLES[argv[0]]
     i, pattern = 1, None
+    mode: set[str] = set()
     while i < len(argv) and argv[i].startswith("-") and argv[i] != "--":
         tok = argv[i]
         # `-v` inverts the match, so the invocation succeeds on the lines that do
@@ -258,9 +320,12 @@ def _search_invocation(argv: list[str]):
             i += 2
             continue
         if tok in bare:
+            mode |= _MODE_FLAGS.get(tok, set())
             i += 1
             continue
         if _split_short_cluster(tok, valued, bare):
+            for ch in tok[1:]:
+                mode |= _MODE_FLAGS.get("-" + ch, set())
             i += 1
             continue
         return None                       # unknown flag, unknown arity
@@ -274,7 +339,11 @@ def _search_invocation(argv: list[str]):
         targets = argv[i:]
     if not targets:
         return None
-    return pattern, targets
+    # `-s` is an explicit case-sensitive override, so it cancels a preceding `-i`.
+    if "s" in mode:
+        mode.discard("i")
+        mode.discard("s")
+    return pattern, targets, frozenset(mode)
 
 
 def _wrapped_search(script: str):
@@ -371,13 +440,13 @@ def classify_line(line: str):
         argv = _shell_tokens(rest)
     except ValueError:
         # An unbalanced quote — a form this cannot read.
-        return ("unparsed" if searches else "plain", False, None, [])
+        return ("unparsed" if searches else "plain", False, None, [], frozenset())
 
     inv = None if _is_composed(argv) else _search_invocation(argv)
     if inv is not None:
-        return ("anchor", bool(m.group("neg")), inv[0], inv[1])
+        return ("anchor", bool(m.group("neg")), inv[0], inv[1], inv[2])
     if argv and argv[0] in SEARCH_TOOLS:
-        return ("unparsed", False, None, [])
+        return ("unparsed", False, None, [], frozenset())
 
     script = _bash_script(argv)
     if script is not None:
@@ -391,11 +460,11 @@ def classify_line(line: str):
                 # that asserts PRESENCE under `run_check` is a positive one, and
                 # under `run_negative_check` each flips again.
                 is_neg = asserts_absent != bool(m.group("neg"))
-                return ("anchor", is_neg, inv[0], inv[1])
+                return ("anchor", is_neg, inv[0], inv[1], inv[2])
         return ("filtered" if SEARCH_TOOL_RE.search(script) else "plain",
-                False, None, [])
+                False, None, [], frozenset())
 
-    return ("unparsed" if searches else "plain", False, None, [])
+    return ("unparsed" if searches else "plain", False, None, [], frozenset())
 
 
 def logical_lines(text: str):
@@ -432,18 +501,20 @@ def parse_anchors(text: str):
         got = classify_line(line)
         if got is None:
             continue
-        kind, is_neg, pattern, targets = got
+        kind, is_neg, pattern, targets, mode = got
         if kind != "anchor":
-            yield line_no, kind, False, None, None
+            yield line_no, kind, False, None, None, frozenset()
             continue
         # `^` is an anchoring detail of the regex, not part of the symbol the
         # two helpers are talking about, so normalise it away before comparing.
-        pattern = pattern.lstrip("^")
+        # Under `-F` there is no regex, so `^` is a literal character and stays.
+        if "F" not in mode:
+            pattern = pattern.lstrip("^")
         for target in targets:
-            yield line_no, "anchor", is_neg, pattern, target
+            yield line_no, "anchor", is_neg, pattern, target, mode
 
 
-def _literal_runs(pattern: str) -> list[str] | None:
+def _literal_runs(pattern: str, fixed: bool = False) -> list[str] | None:
     """The maximal literal runs of `pattern`, or `None` if it is not decomposable.
 
     The soundness primitive.  **Every** string matching `pattern` contains each
@@ -455,7 +526,12 @@ def _literal_runs(pattern: str) -> list[str] | None:
     rather than contributing a dot to it.  A quantifier, class, group or
     alternation makes even run-decomposition unsound (`a*` does not require an
     `a` at all), so those refuse outright.
+
+    Under `-F` (`fixed`) there is no regex at all: `rg` documents it as what
+    makes metacharacters literal, so the pattern is one run of its own text.
     """
+    if fixed:
+        return [pattern] if pattern else []
     runs, cur, i = [], [], 0
     while i < len(pattern):
         c = pattern[i]
@@ -482,7 +558,7 @@ def _literal_runs(pattern: str) -> list[str] | None:
     return runs
 
 
-def _literal_core(pattern: str) -> str | None:
+def _literal_core(pattern: str, fixed: bool = False) -> str | None:
     """The single literal string `pattern` pins, or `None` if it pins a set.
 
     A pattern with no wildcard at all decomposes into exactly one run, and that
@@ -498,7 +574,7 @@ def _literal_core(pattern: str) -> str | None:
     invents failures is as bad as one that misses them.  What the fold was
     really catching is preserved, honestly, as `_dot_ambiguous` below.
     """
-    runs = _literal_runs(pattern)
+    runs = _literal_runs(pattern, fixed=fixed)
     if runs is None or len(runs) != 1:
         return None
     return runs[0]
@@ -531,6 +607,12 @@ def _dot_literal(pattern: str) -> str | None:
 def find_contradictions(paths):
     positive: dict[tuple[str, str], list[str]] = {}
     negative: dict[tuple[str, str], list[str]] = {}
+    # PR #873 round 10: the dicts above key on `(pattern, target)` for *reporting*
+    # only.  Comparison runs over these records, because two anchors sharing a key
+    # can still have different search modes — and two with different targets can
+    # still overlap when one names a directory.
+    pos_records: list[tuple[str, str, frozenset, str]] = []
+    neg_records: list[tuple[str, str, frozenset, str]] = []
     filtered: list[str] = []
     unparsed: list[str] = []
     total_pos = total_neg = 0
@@ -547,7 +629,7 @@ def find_contradictions(paths):
                 f"its anchors would go unchecked while the gate reported PASS."
             )
         rel = p.relative_to(REPO_ROOT) if p.is_relative_to(REPO_ROOT) else p
-        for line_no, kind, is_neg, pattern, target in parse_anchors(p.read_text()):
+        for line_no, kind, is_neg, pattern, target, mode in parse_anchors(p.read_text()):
             where = f"{rel}:{line_no}"
             if kind == "plain":
                 continue
@@ -560,9 +642,11 @@ def find_contradictions(paths):
             key = (pattern, target)
             if is_neg:
                 negative.setdefault(key, []).append(where)
+                neg_records.append((pattern, target, mode, where))
                 total_neg += 1
             else:
                 positive.setdefault(key, []).append(where)
+                pos_records.append((pattern, target, mode, where))
                 total_pos += 1
     if unparsed:
         # The reviewer's second half, and the one that keeps this honest: a form
@@ -577,7 +661,7 @@ def find_contradictions(paths):
               "direct `rg PATTERN FILE`, or as `bash -c \"! rg PATTERN FILE\"`, "
               "so the gate can compare it."
         )
-    both = sorted(set(positive) & set(negative))
+    both: list[tuple[str, str]] = []
 
     # …and the contradictions that are not textually identical.
     #
@@ -609,34 +693,53 @@ def find_contradictions(paths):
     # *module-separator* reading the suites use everywhere — the pair that kept
     # Tier 3 red — the disagreement is about **escaping**, and the gate says so
     # separately instead of claiming unsatisfiability it cannot show.
+    #
+    # PR #873 round 10, two more soundness corrections in the same comparison:
+    #
+    # * **Scope.** `rg`'s positional arguments are files *or directories*, and the
+    #   suites use both, so `n_target == p_target` skipped a negative over
+    #   `SeLe4n/` against a positive over `SeLe4n/Foo.lean` — a real
+    #   contradiction, since the positive requires a match in a file the negative
+    #   forbids it in.  `_scope_contains` is directional: the reverse pair is
+    #   satisfiable by a different file and must not be reported.
+    # * **Match language.**  `-i`, `-F`, `-w`, `-x` were parsed and discarded, so
+    #   `rg -i foo F` and `rg foo F` collapsed to one key and a file holding only
+    #   `FOO` — which satisfies both — was reported contradictory.
+    #   `_mode_allows` compares only languages where the negative is no stricter
+    #   than the positive; an identical search asserted both ways is a
+    #   contradiction whatever its flags, which is the rule stated first.
     ambiguous: list[tuple[str, str]] = []
-    # Snapshot both maps: the loop writes back into them to record where a
-    # contradiction fires, and mutating a dict under iteration is an error.
-    positive_items = list(positive.items())
-    negative_items = list(negative.items())
-    for (p_pat, p_target), p_where in positive_items:
-        p_runs = _literal_runs(p_pat)
-        if p_runs is None:
-            continue
+    for p_pat, p_target, p_mode, p_where in pos_records:
+        p_runs = _literal_runs(p_pat, fixed="F" in p_mode)
         p_dotted = _dot_literal(p_pat)
-        for (n_pat, n_target), n_where in negative_items:
-            if n_target != p_target or (p_pat, p_target) in both:
+        for n_pat, n_target, n_mode, n_where in neg_records:
+            key = (p_pat, p_target)
+            if key in both or not _scope_contains(n_target, p_target):
                 continue
-            n_core = _literal_core(n_pat)
+            # The same search asserted both ways: no language reasoning needed.
+            if p_pat == n_pat and p_mode == n_mode:
+                both.append(key)
+                negative[key] = [n_where]
+                break
+            if not _mode_allows(p_mode, n_mode):
+                continue
+            if p_runs is None:
+                continue
+            n_core = _literal_core(n_pat, fixed="F" in n_mode)
             if n_core and any(n_core in run for run in p_runs):
-                both.append((p_pat, p_target))
+                both.append(key)
                 # Report against the negative anchor that actually fires.
-                negative[(p_pat, p_target)] = n_where
-                positive[(p_pat, p_target)] = p_where
+                negative[key] = [n_where]
+                positive.setdefault(key, [p_where])
                 break
             # Same text under the reading the suites intend, different under the
             # regex one — an authoring ambiguity, not a proven contradiction.
             n_dotted = _dot_literal(n_pat)
             if (n_core and p_dotted and n_dotted and n_dotted in p_dotted
-                    and (p_pat, p_target) not in ambiguous):
-                ambiguous.append((p_pat, p_target))
-                negative[(p_pat, p_target)] = n_where
-                positive[(p_pat, p_target)] = p_where
+                    and key not in ambiguous):
+                ambiguous.append(key)
+                negative[key] = [n_where]
+                positive.setdefault(key, [p_where])
     both = sorted(set(both))
     ambiguous = sorted({a for a in ambiguous if a not in set(both)})
     return both, positive, negative, total_pos, total_neg, filtered, ambiguous
@@ -818,6 +921,74 @@ def self_test() -> int:
                 f"FAIL: --self-test — a contradiction contained in one literal "
                 f"run of a wildcard-carrying positive anchor was missed "
                 f"(got {both}).",
+                file=sys.stderr,
+            )
+            return 1
+
+        # PR #873 round 10: a negative anchor over a DIRECTORY contradicts a
+        # positive over a file beneath it.  Exact target-string comparison
+        # skipped the pair, and the suites really do search directories.
+        scope_p = d / "scope.sh"
+        scope_p.write_text(
+            "run_check \"INVARIANT\" rg -n 'theorem overlap_kept' SeLe4n/Foo.lean\n"
+            "run_negative_check \"INVARIANT\" rg -n 'theorem overlap_kept' SeLe4n\n")
+        both, *_ = find_contradictions([str(scope_p)])
+        if both != [("theorem overlap_kept", "SeLe4n/Foo.lean")]:
+            print(
+                f"FAIL: --self-test — a negative anchor over a directory did not "
+                f"contradict a positive anchor over a file inside it (got {both}).",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and the reverse is SATISFIABLE: a positive over a directory can be met
+        # by a different file than the one the negative forbids.  Reporting it
+        # would be the round-8 mistake in a new place.
+        scope_rev_p = d / "scope_rev.sh"
+        scope_rev_p.write_text(
+            "run_check \"INVARIANT\" rg -n 'theorem elsewhere_ok' SeLe4n\n"
+            "run_negative_check \"INVARIANT\" rg -n 'theorem elsewhere_ok' SeLe4n/Foo.lean\n")
+        both, *_ = find_contradictions([str(scope_rev_p)])
+        if both:
+            print(
+                f"FAIL: --self-test — a positive anchor over a directory was "
+                f"reported as contradicted by a negative over one file in it "
+                f"({both}); that pair is satisfiable elsewhere in the tree.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # PR #873 round 10: the search MODE is part of what an anchor pins.  A
+        # case-insensitive positive and a case-sensitive negative are satisfied
+        # together by a file holding only `FOO`, and flagging that failed CI over
+        # a fine suite.
+        mode_p = d / "mode.sh"
+        mode_p.write_text(
+            "run_check \"INVARIANT\" rg -n -i 'theorem case_free' Some/File.lean\n"
+            "run_negative_check \"INVARIANT\" rg -n 'theorem case_free' Some/File.lean\n")
+        both, *_ = find_contradictions([str(mode_p)])
+        if both:
+            print(
+                f"FAIL: --self-test — a case-insensitive positive and a "
+                f"case-sensitive negative were reported as contradictory "
+                f"({both}); a differently-cased line satisfies both.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and the OTHER direction is a real contradiction: a case-insensitive
+        # negative forbids every spelling the case-sensitive positive requires.
+        # Without this the mode check would just be a way to stop checking.
+        mode_rev_p = d / "mode_rev.sh"
+        mode_rev_p.write_text(
+            "run_check \"INVARIANT\" rg -n 'theorem case_pinned' Some/File.lean\n"
+            "run_negative_check \"INVARIANT\" rg -n -i 'theorem case_pinned' Some/File.lean\n")
+        both, *_ = find_contradictions([str(mode_rev_p)])
+        if both != [("theorem case_pinned", "Some/File.lean")]:
+            print(
+                f"FAIL: --self-test — a case-INsensitive negative did not "
+                f"contradict a case-sensitive positive (got {both}); it forbids "
+                f"every spelling the positive requires.",
                 file=sys.stderr,
             )
             return 1
@@ -1071,7 +1242,10 @@ def self_test() -> int:
         "compared, an unreadable command and an unknown option each failed the "
         "gate, `grep -nwE` was read as bare switches, an unescaped `.` was read "
         "as the wildcard it is (satisfiable pair not flagged, escape-spelling "
-        "pair reported as ambiguous, in-run overlap still proven), the clean "
+        "pair reported as ambiguous, in-run overlap still proven), a negative "
+        "over a directory contradicted a positive over a file inside it while "
+        "the reverse did not, case-insensitivity was compared in the direction "
+        "that implies and skipped in the one that does not, the clean "
         "set passed, and a commented-out anchor was not counted."
     )
     return 0

@@ -3944,6 +3944,16 @@ run_check "INVARIANT" rg -n '^theorem originationTags_cons_release' SeLe4n/Kerne
 # learns nothing about the trail's extent.
 run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_refuses_live_timestamp' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_negative_check "INVARIANT" rg -n '&& decide \(timestamp <' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+# PR #873 round 10: four gate-soundness corrections.  Two stop the anchor gate
+# inventing failures (a search MODE and a search SCOPE are part of what an
+# anchor pins), and two stop the content-flow gate under-reading (a walk that
+# stops with an unexpanded frontier, and three dispatchers merged under one
+# syscall name so a healthy arm masked a broken sibling).
+run_check "INVARIANT" rg -n '^def _mode_allows' scripts/check_anchor_consistency.py
+run_check "INVARIANT" rg -n '^def _scope_contains' scripts/check_anchor_consistency.py
+run_check "INVARIANT" rg -n '^def arm_key' scripts/check_content_flow_coverage.py
+run_check "INVARIANT" rg -n 'FAIL_CLOSED_ARMS' scripts/check_content_flow_coverage.py
+run_check "INVARIANT" rg -n 'CF_TRUNCATED' scripts/check_content_flow_coverage.py
 # PR #873 round 7: a CLEAR is a taint write too, so the retype's cleared key
 # rides its own object lock — the third member of `taintWriteKeys` the key-local
 # declaration had skipped.  The fixed four stay pinned separately.

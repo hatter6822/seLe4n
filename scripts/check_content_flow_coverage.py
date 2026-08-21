@@ -214,6 +214,25 @@ private def {SELF_TEST_ROOT_HELPER} (tcb : SeLe4n.Model.TCB)
   {{ tcb with priority := p }}
 """
 
+# PR #873 round 10: implementations that deliberately **refuse**.
+#
+# Splitting the reachability key per dispatcher (so a healthy arm can no longer
+# mask a broken sibling) surfaces the arms that exist in a dispatcher only to
+# fail closed: `.declassify` and `.declassifySignal` have no unchecked form,
+# because their authority *is* a policy and "unchecked" would mean "every
+# downgrade is authorized".  Their `dispatchWithCap` arms are
+# `fun _ => .error .declassificationDenied`.
+#
+# Named rather than inferred, like `RETURN_FRAME_DELIVERY` and
+# `AUDIT_APPEND_EXEMPT`, and given the same bite: a listed implementation must
+# reach **nothing** — no content write and no trail write.  An entry that starts
+# reaching one is a refusal that stopped refusing, which is a worse defect than
+# the masking this set exists to allow past.
+FAIL_CLOSED_ARMS: set[tuple[str, str]] = {
+    ("dispatchWithCap", "declassify"),
+    ("dispatchWithCap", "declassifySignal"),
+}
+
 SHAPE = os.path.join(REPO, "SeLe4n", "Kernel", "Architecture", "SyscallReturn.lean")
 
 PROBE = r"""
@@ -469,9 +488,9 @@ The resulting set is unchanged.  A name enters `seen` at the first level that
 reaches it either way, so both forms compute "reachable within `depth` hops";
 only the number of times each name is expanded differs. -/
 private partial def cfClosureGo (env : Environment) (frontier : Array Name) (d : Nat)
-    (seen : NameSet) : NameSet := Id.run do
+    (seen : NameSet) : NameSet × Bool := Id.run do
   match d with
-  | 0 => return seen
+  | 0 => return (seen, !frontier.isEmpty)
   | d + 1 =>
     let mut seen := seen
     let mut fresh : Array Name := #[]
@@ -480,10 +499,11 @@ private partial def cfClosureGo (env : Environment) (frontier : Array Name) (d :
         if !seen.contains u then
           seen := seen.insert u
           fresh := fresh.push u
-    if fresh.isEmpty then return seen
+    if fresh.isEmpty then return (seen, false)
     return cfClosureGo env fresh d seen
 
-private def cfClosure (env : Environment) (seeds : List Name) (depth : Nat) : NameSet :=
+private def cfClosure (env : Environment) (seeds : List Name) (depth : Nat) :
+    NameSet × Bool :=
   cfClosureGo env seeds.toArray depth (seeds.foldl (fun s n => s.insert n) ({} : NameSet))
 
 /-- Is `e` a projection of *any* field of `structName`?  Both spellings, with
@@ -618,7 +638,9 @@ run_cmd do
     if seeds.isEmpty then
       logInfo m!"CF_NO_ROOT {arm}"
     else
-      let reach := cfClosure env seeds cfDepth
+      let (reach, truncated) := cfClosure env seeds cfDepth
+      if truncated then
+        logInfo m!"CF_TRUNCATED {arm}"
       let mut hits : List Name := []
       for n in reach.toList do
         let w ←
@@ -669,8 +691,33 @@ def code_view(path: str) -> str:
     return lean_code_view.strip(open(path, encoding="utf-8").read())
 
 
+def arm_key(dispatcher: str, arm: str) -> str:
+    """The reachability key: one syscall arm **in one dispatcher**."""
+    return f"{dispatcher}::{arm}"
+
+
+def arm_of(key: str) -> str:
+    """The syscall name inside a reachability key."""
+    return key.split("::", 1)[1] if "::" in key else key
+
+
+def dispatcher_of(key: str) -> str:
+    """The dispatcher inside a reachability key."""
+    return key.split("::", 1)[0] if "::" in key else ""
+
+
 def arm_roots() -> dict[str, set[str]]:
-    """Per-syscall root stems, read off the dispatch arms' own text."""
+    """Root stems per `(dispatcher, arm)`, read off the dispatch arms' own text.
+
+    PR #873 round 10: keyed on the **pair**, not on the syscall alone.  Merging
+    `dispatchCapabilityOnly`, `dispatchWithCap` and `dispatchWithCapChecked`
+    under one name let a healthy implementation mask a broken sibling: if the
+    checked `.receive` arm stopped reaching its `pendingMessage` write while the
+    unchecked one still did, the union kept a content hit and check (B) reported
+    success — for the route production actually takes.  Every live
+    implementation of a content-moving syscall must satisfy the classification on
+    its own.
+    """
     src = code_view(API)
     roots: dict[str, set[str]] = {}
     for dispatcher in DISPATCHERS:
@@ -686,7 +733,7 @@ def arm_roots() -> dict[str, set[str]]:
         for i in range(1, len(parts) - 1, 2):
             arm, text = parts[i], parts[i + 1]
             ids = set(re.findall(r"\b([a-z][A-Za-z0-9_']{3,})\b", text))
-            roots.setdefault(arm, set()).update(ids)
+            roots.setdefault(arm_key(dispatcher, arm), set()).update(ids)
     if not roots:
         raise RuntimeError("no dispatch arms parsed from API.lean")
     return roots
@@ -824,18 +871,26 @@ def parse(out: str):
     field_writers = set(re.findall(r"CF_FIELD_WRITER (\S+)", out))
     field_unresolved = bool(re.search(r"CF_FIELD_UNRESOLVED", out))
     noroot = set(re.findall(r"CF_NO_ROOT (\S+)", out))
+    truncated = set(re.findall(r"CF_TRUNCATED (\S+)", out))
     justified = set(re.findall(r"CF_JUSTIFIED (\S+)", out))
     audit_hits = {arm: int(n) for arm, n in re.findall(r"CF_AUDIT_ARM (\S+) (\d+)", out)}
     audit_detail: dict[str, list[str]] = {}
     for arm, name in re.findall(r"CF_AUDIT_HIT (\S+) (\S+)", out):
         audit_detail.setdefault(arm, []).append(name)
-    return (hits, detail, writers, field_writers, field_unresolved, noroot,
+    return (hits, detail, writers, field_writers, field_unresolved, noroot, truncated,
             audit_hits, audit_detail, justified)
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--depth", type=int, default=6)
+    # PR #873 round 10: the default is **fixed-point fuel**, not a horizon.  At
+    # 6 hops every arm's walk stopped with an unexpanded frontier and the gate
+    # said nothing about it, so an inert arm whose payload write sat behind a
+    # seventh helper passed both coverage checks silently.  The reach converges
+    # at ~25 hops (2 046..3 358 constants) in about 13 s and the classification
+    # is unchanged there, so the walk now runs to a fixed point; this bound only
+    # exists so a pathological graph fails loudly instead of hanging.
+    ap.add_argument("--depth", type=int, default=200)
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
@@ -845,9 +900,9 @@ def main() -> int:
     # Only arms the classification knows about are in scope: an arm name parsed
     # out of the dispatch source that is not a `SyscallId` is a parse artefact,
     # not a syscall.
-    roots = {a: s for a, s in roots.items() if a in cls}
+    roots = {k: v for k, v in roots.items() if arm_of(k) in cls}
 
-    missing = sorted(set(cls) - set(roots))
+    missing = sorted(set(cls) - {arm_of(k) for k in roots})
 
     # The declared scope must agree with what the probe scans, BEFORE any
     # finding is computed: a scope that has silently narrowed makes every
@@ -875,24 +930,61 @@ def main() -> int:
         cls[SELF_TEST_ROOT_ARM] = "inert"
 
     out = run_probe(roots, args.depth, channels, plant_rogue=args.self_test)
-    (hits, detail, writers, field_writers, field_unresolved, noroot,
+    (hits, detail, writers, field_writers, field_unresolved, noroot, truncated,
      audit_hits, audit_detail, justified) = parse(out)
 
     failures: list[str] = []
 
+    # PR #873 round 10: **the walk must reach a fixed point.**  `cfClosureGo`
+    # used to return its `seen` set when the counter hit zero and say nothing
+    # about the frontier it had not expanded, so every reachability verdict was
+    # silently "within N hops" rather than "ever" — and an inert arm whose
+    # payload or audit-log write moved behind one more helper would have passed
+    # both coverage checks.  A truncated walk is now a hard failure, not a
+    # quieter answer.
+    if truncated:
+        print("FAIL: the call-graph walk hit its fuel with an unexpanded frontier")
+        print(f"      on arm(s): {', '.join(sorted(truncated))}.")
+        print("      Every verdict from a truncated walk is 'no write within N")
+        print("      hops', which is not what checks (A)-(C3) claim.  Raise")
+        print("      --depth until the walk converges, or find out why the reach")
+        print("      does not terminate.")
+        return 1
+
     if args.list:
-        for arm in sorted(roots):
-            print(f"  {arm:<24} {cls[arm]:<18} content-writes reached: "
-                  f"{hits.get(arm, 0)}  audit-writes reached: {audit_hits.get(arm, 0)}")
+        for key in sorted(roots):
+            print(f"  {key:<52} {cls[arm_of(key)]:<18} content-writes reached: "
+                  f"{hits.get(key, 0)}  audit-writes reached: {audit_hits.get(key, 0)}")
         print(f"  taint writers: {len(writers)}")
 
     if args.self_test:
-        planted = [a for a in roots if cls[a] == "inert" and hits.get(a, 0) > 0]
+        planted = [k for k in roots if cls[arm_of(k)] == "inert" and hits.get(k, 0) > 0]
         if not planted:
             print("FAIL: --self-test planted `TCB.priority` as a content channel and the")
             print("      gate flagged no inert arm.  The write detector has stopped")
             print("      detecting: every production finding below would be a false PASS.")
             return 1
+        # PR #873 round 10: the dispatchers must stay SEPARATE keys.  Merging
+        # them let a healthy implementation mask a broken sibling — a checked
+        # `.receive` that lost its `pendingMessage` write still passed on the
+        # unchecked arm's hit.  A collapse back to one key per syscall would be
+        # invisible in the verdict, so it is asserted here: `.receive` is
+        # implemented in two dispatchers and both must reach a content write.
+        recv_keys = [k for k in roots if arm_of(k) == "receive"]
+        if len(recv_keys) < 2:
+            print("FAIL: --self-test — `.receive` resolved to fewer than two")
+            print(f"      dispatcher implementations ({recv_keys}).  The reach key")
+            print("      has collapsed back to the syscall name, so one dispatcher's")
+            print("      healthy arm can again mask a broken sibling.")
+            return 1
+        blind_recv = [k for k in recv_keys if hits.get(k, 0) == 0]
+        if blind_recv:
+            print("FAIL: --self-test — `.receive` reaches no content write in")
+            print(f"      {', '.join(blind_recv)}.  Every live implementation of a")
+            print("      content-moving syscall must satisfy the classification on")
+            print("      its own; this one does not.")
+            return 1
+
         # Root resolution must reach a PRIVATE helper an arm names.  The two
         # plants above would both be found by a sweep over the whole
         # environment; this one is found only if the arm's stem resolved to the
@@ -950,7 +1042,8 @@ def main() -> int:
         # pass the planted channel above exists to rule out.  The two arms that
         # provably do append are the witnesses.
         blind = [a for a in ("declassify", "declassifySignal")
-                 if audit_hits.get(a, 0) == 0]
+                 if all(audit_hits.get(k, 0) == 0
+                        for k in roots if arm_of(k) == a)]
         if blind:
             print("FAIL: --self-test — the audit-trail reach found no writer under")
             print(f"      {', '.join('`.' + a + '`' for a in blind)}, which append on")
@@ -962,14 +1055,17 @@ def main() -> int:
               f"{len(planted)} inert arm(s); both sweeps detected the declared "
               f"writer, the planted private rogue writer and the one that hides "
               f"its rebuild behind a `match`; root resolution reached a PRIVATE "
-              f"arm helper; the audit-trail reach found the two recording arms.")
+              f"arm helper; `.receive` was checked in each of its dispatchers "
+              f"separately; the audit-trail reach found the two recording arms.")
         return 0
 
     # (A) no unclassified content movement
-    for arm in sorted(roots):
-        if cls[arm] in ("inert", "clearsProvenance") and hits.get(arm, 0) > 0:
+    for key in sorted(roots):
+        arm = arm_of(key)
+        if cls[arm] in ("inert", "clearsProvenance") and hits.get(key, 0) > 0:
             failures.append(
-                f"  `.{arm}` is classified `.{cls[arm]}` but reaches "
+                f"  `.{arm}` (in `{dispatcher_of(key)}`) is classified "
+                f"`.{cls[arm]}` but reaches "
                 f"{hits[arm]} content write(s): {', '.join(detail.get(arm, [])[:4])}")
 
     # (C3) WS-SM SM9.D.13a: the recording classification must match the reach.
@@ -993,7 +1089,8 @@ def main() -> int:
                 f"  `.{arm}` is exempted from the audit-append check by `{thm}`, "
                 f"which is not in the elaborated environment — the exemption has "
                 f"outlived its justification")
-    for arm in sorted(roots):
+    for key in sorted(roots):
+        arm = arm_of(key)
         declared = records.get(arm)
         if declared is None:
             failures.append(
@@ -1002,7 +1099,7 @@ def main() -> int:
             continue
         # An arm that writes the trail without being able to append to it is
         # exempt — but only while the theorem saying so is still there.
-        reached = (audit_hits.get(arm, 0) > 0
+        reached = (audit_hits.get(key, 0) > 0
                    and arm not in AUDIT_APPEND_EXEMPT)
         if reached and not declared:
             failures.append(
@@ -1011,11 +1108,25 @@ def main() -> int:
                 f"`syscallRecordsDeclassification` says it cannot record — "
                 f"`applySyscallTaint` would skip the origination diff and lose "
                 f"every causal chain through this arm")
-        elif declared and not reached:
+        elif declared and not reached and (dispatcher_of(key), arm) not in FAIL_CLOSED_ARMS:
             failures.append(
-                f"  `.{arm}` is declared as recording a declassification but "
+                f"  `.{arm}` (in `{dispatcher_of(key)}`) is declared as "
+                f"recording a declassification but "
                 f"reaches no writer of `declassificationAuditLog`, so it pays the "
                 f"trail diff on every call for events it cannot produce")
+
+    # …and the exemption's bite.  A refusal that reaches a write is not a
+    # refusal, and without this the set above would be a way to switch checks off.
+    for key in sorted(roots):
+        arm = arm_of(key)
+        if (dispatcher_of(key), arm) not in FAIL_CLOSED_ARMS:
+            continue
+        if hits.get(key, 0) > 0 or audit_hits.get(key, 0) > 0:
+            failures.append(
+                f"  `.{arm}` (in `{dispatcher_of(key)}`) is listed as failing "
+                f"closed but reaches {hits.get(key, 0)} content write(s) and "
+                f"{audit_hits.get(key, 0)} audit write(s) — the arm that is "
+                f"supposed to refuse is doing something")
 
     # (B) no vacuous classification.  A content-moving arm must either write a
     # content channel or deliver through the WS-RA return frame.
@@ -1036,8 +1147,11 @@ def main() -> int:
     # Adding an arm without that evidence reopens the hole this closes.
     RETURN_FRAME_DELIVERY = {"notificationWait"}
     shapes = return_shapes()
-    for arm in sorted(roots):
-        if cls[arm] == "movesContent" and hits.get(arm, 0) == 0:
+    for key in sorted(roots):
+        arm = arm_of(key)
+        if (dispatcher_of(key), arm) in FAIL_CLOSED_ARMS:
+            continue
+        if cls[arm] == "movesContent" and hits.get(key, 0) == 0:
             if arm not in RETURN_FRAME_DELIVERY:
                 shape = shapes.get(arm, "unit")
                 failures.append(
@@ -1104,13 +1218,16 @@ def main() -> int:
             print(f)
         return 1
 
-    moving = sum(1 for a in roots if cls[a] == "movesContent")
-    by_write = sum(1 for a in roots if cls[a] == "movesContent" and hits.get(a, 0) > 0)
-    recording = sum(1 for a in roots if records.get(a))
-    print(f"PASS: content-flow coverage — {len(roots)} live arms classified; "
+    moving = len({arm_of(k) for k in roots if cls[arm_of(k)] == "movesContent"})
+    by_write = len({arm_of(k) for k in roots
+                    if cls[arm_of(k)] == "movesContent" and hits.get(k, 0) > 0})
+    recording = len({arm_of(k) for k in roots if records.get(arm_of(k))})
+    arms = {arm_of(k) for k in roots}
+    print(f"PASS: content-flow coverage — {len(arms)} live arms classified across "
+          f"{len(roots)} dispatcher implementation(s); "
           f"{moving} moving content ({by_write} reaching an object content write, "
           f"{moving - by_write} delivering through the return frame); "
-          f"{len(roots) - moving} inert or clearing, none reaching a content write; "
+          f"{len(arms) - moving} inert or clearing, none reaching a content write; "
           f"{recording} recording a declassification, and no other arm reaches an "
           f"audit-trail append.")
     return 0
