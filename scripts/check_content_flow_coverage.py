@@ -142,6 +142,27 @@ CONTENT_CHANNELS = [
 # whole point, since a gate that has lost its reach reports PASS.
 SELF_TEST_CHANNEL = ("SeLe4n.Model.TCB", "priority")
 
+# The self-test's planted rogue writer: a **private** definition that rewrites
+# `SystemState.declassificationTaint` outright and reaches it through the declared
+# API, so it must be reported by BOTH sweeps — the direct-field one (C2) and the
+# API-naming one (C).
+#
+# Private on purpose.  Lean stores `private def foo` as `_private.<Module>.<n>.foo`,
+# which answers `isInternal = true`, and both sweeps filtered on exactly that — so
+# a private helper reachable from syscall dispatch could clear or replace provenance
+# while the gate reported "one writer" over the 3 872 private definitions it never
+# opened.  Planting the rogue *private* rather than *public* is what makes this
+# case bite: a public plant passes against the old filter too and would have
+# reported PASS on the blind gate.
+SELF_TEST_ROGUE = "cfPlantedPrivateTaintWriter"
+
+SELF_TEST_ROGUE_SRC = f"""
+private def {SELF_TEST_ROGUE} (st : SeLe4n.Model.SystemState) :
+    SeLe4n.Model.SystemState :=
+  {{ st with declassificationTaint :=
+      SeLe4n.Kernel.applyTaintClears [] SeLe4n.Kernel.TaintTable.empty }}
+"""
+
 SHAPE = os.path.join(REPO, "SeLe4n", "Kernel", "Architecture", "SyscallReturn.lean")
 
 PROBE = r"""
@@ -161,6 +182,8 @@ private def cfTaintApi : List Name :=
   [@TAINTAPI@]
 
 private def cfDepth : Nat := @DEPTH@
+
+@PLANTED@
 
 /-- Total: `Name.getString!` panics on a numeric component and this environment
 has well over a hundred thousand constants. -/
@@ -301,6 +324,40 @@ private def cfExecutableValue (ci : ConstantInfo) : Option Expr :=
   | .thmInfo _ => none
   | _ => ci.value?
 
+/-- The name a human wrote, recovered from the name the elaborator stored.
+
+`private def foo` is not stored as `foo`: Lean mangles it to
+`_private.<Module>.<n>.foo`, which reports `isInternal = true` **and**
+`isInternalDetail = true`.  Both sweeps below filtered on `isInternal`, so every
+private definition in the tree — 11 292 of them — was skipped before its body was
+ever inspected.  A private helper that rewrote `SystemState.declassificationTaint`
+would therefore have passed the "one writer" checks by being private, which is
+the opposite of what privacy should buy a definition in a gate whose subject is
+"who writes this field". -/
+private def cfUserName (n : Name) : Name := (privateToUserName? n).getD n
+
+/-- Is this a definition a human wrote, rather than one the compiler generated?
+
+The discriminator has to run on the **user** name: `isInternalDetail` is true of
+every private constant, so applying it to the stored name would drop exactly the
+definitions this exists to admit.  Applied to `cfUserName n` it keeps
+`ProbeNs.helper` and drops `ProbeNs.helper.match_1`, `.eq_1`, `._proof_1` and the
+rest of the equation/matcher/unfolding auxiliaries — which carry no write a
+source line does not already carry.
+
+Strictly wider than the `isInternal` filter it replaces: everything that filter
+admitted is admitted here, plus 3 872 private definitions. -/
+private def cfInspectable (n : Name) : Bool := !(cfUserName n).isInternalDetail
+
+/-- How a writer is reported: the readable name, with private ones marked.
+
+The mark is not cosmetic.  Reporting a private constant under its bare user name
+would let `_private.Rogue.0.SeLe4n.Kernel.applySyscallTaint` match the declared
+writer list and pass — a private definition impersonating the one writer is
+precisely the finding this sweep must not miss. -/
+private def cfReportName (n : Name) : String :=
+  if isPrivateName n then s!"private@{cfUserName n}" else toString n
+
 private def cfUsed (env : Environment) (n : Name) : Array Name :=
   match env.find? n with
   | none => #[]
@@ -394,7 +451,7 @@ run_cmd do
   | some fieldIdx =>
     let fieldWriters : List Name :=
       env.constants.fold (init := []) fun acc n ci =>
-        if n.isInternal then acc
+        if !cfInspectable n then acc
         else match ci with
           | .defnInfo di =>
               -- Prefilter on the constructor's presence: an Expr that never
@@ -406,7 +463,7 @@ run_cmd do
               else acc
           | _ => acc
     for w in fieldWriters do
-      logInfo m!"CF_FIELD_WRITER {w}"
+      logInfo m!"CF_FIELD_WRITER {cfReportName w}"
   -- (C) every constant whose value names the taint-writing API.
   -- Only **definitions** are reported: a theorem naming the API states a
   -- property of it, and a property cannot move a field.  `ConstantInfo.defnInfo`
@@ -414,14 +471,14 @@ run_cmd do
   -- name pattern.
   let writers : List Name :=
     env.constants.fold (init := []) fun acc n ci =>
-      if n.isInternal then acc
+      if !cfInspectable n then acc
       else match ci with
         | .defnInfo di =>
             if cfTaintApi.any (fun a => di.value.getUsedConstants.contains a) then n :: acc
             else acc
         | _ => acc
   for w in writers do
-    logInfo m!"CF_TAINT_WRITER {w}"
+    logInfo m!"CF_TAINT_WRITER {cfReportName w}"
   -- Shared across arms.  "Does this constant write a content channel?" depends
   -- on the constant and the channel set, neither of which varies per arm, and
   -- the 34 arms' reaches overlap almost entirely -- they are all rooted in the
@@ -567,7 +624,8 @@ def check_scope_matches_lean() -> list[str]:
     return problems
 
 
-def run_probe(roots: dict[str, set[str]], depth: int, channels) -> str:
+def run_probe(roots: dict[str, set[str]], depth: int, channels,
+              plant_rogue: bool = False) -> str:
     quoted_channels = ", ".join(f"(`{s}, `{f})" for s, f in channels)
     quoted_roots = ", ".join(
         '("{}", "{}")'.format(arm, " ".join(sorted(stems)))
@@ -577,6 +635,7 @@ def run_probe(roots: dict[str, set[str]], depth: int, channels) -> str:
            .replace("@CHANNELS@", quoted_channels)
            .replace("@ROOTS@", quoted_roots)
            .replace("@TAINTAPI@", quoted_api)
+           .replace("@PLANTED@", SELF_TEST_ROGUE_SRC if plant_rogue else "")
            .replace("@DEPTH@", str(depth)))
     with tempfile.NamedTemporaryFile("w", suffix=".lean", delete=False) as fh:
         fh.write(src)
@@ -648,7 +707,7 @@ def main() -> int:
     if args.self_test:
         channels = channels + [SELF_TEST_CHANNEL]
 
-    out = run_probe(roots, args.depth, channels)
+    out = run_probe(roots, args.depth, channels, plant_rogue=args.self_test)
     hits, detail, writers, field_writers, field_unresolved, noroot = parse(out)
 
     failures: list[str] = []
@@ -675,9 +734,29 @@ def main() -> int:
             print("      `SystemState.declassificationTaint`.  The sweep is blind:")
             print("      a rogue writer would pass check (C2) for the same reason.")
             return 1
+        # …and it must detect one that hides behind `private`.  Both sweeps
+        # filtered on `isInternal`, which is true of every private constant, so
+        # each opened only public bodies and a private rewrite of the field was
+        # invisible to both.  A public plant cannot show this — it passes against
+        # the blind filter too — so the plant is private and both sweeps are
+        # asserted separately.
+        rogue = f"private@{SELF_TEST_ROGUE}"
+        if rogue not in field_writers:
+            print("FAIL: --self-test — the direct-field-writer sweep did not detect")
+            print(f"      the planted PRIVATE writer `{SELF_TEST_ROGUE}`, which")
+            print("      rewrites `SystemState.declassificationTaint` outright.")
+            print("      The sweep is skipping private definitions, so a private")
+            print("      helper could launder provenance and still report one writer.")
+            return 1
+        if rogue not in writers:
+            print("FAIL: --self-test — the API-naming sweep did not detect the")
+            print(f"      planted PRIVATE consumer `{SELF_TEST_ROGUE}`, which calls")
+            print("      the declared taint-writing API.  A private caller of the")
+            print("      API is invisible to check (C) for the same reason.")
+            return 1
         print(f"PASS: --self-test — the planted channel was detected on "
-              f"{len(planted)} inert arm(s); the field-writer sweep detected the "
-              f"declared writer.")
+              f"{len(planted)} inert arm(s); both sweeps detected the declared "
+              f"writer and the planted private rogue writer.")
         return 0
 
     # (A) no unclassified content movement

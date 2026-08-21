@@ -16,6 +16,21 @@ This gate is deliberately STATIC — it reads the anchor declarations rather tha
 running them — so it belongs in the fast hygiene lane and fires on the PR that
 introduces the contradiction.
 
+**Every helper invocation is classified, and the classification is exhaustive.**
+An absence pin is not always spelled `run_negative_check`: a couple of dozen live
+anchors say it with `run_check "…" bash -c "! rg …"` or
+`run_check "…" bash -c "if rg …; then …; exit 1; fi"`, and a parser that expected
+`rg` immediately after the label filed none of them — so a positive anchor could
+contradict one and this gate would still report PASS.  Reading the shell wrapper
+is half the fix; the other half is that an invocation which searches but cannot
+be reduced to a single (pattern, target) is a **hard failure** rather than a
+skip, because "the gate could not read it" and "the gate checked it" must never
+produce the same PASS line.  The one tolerated middle case is a search whose
+result is *composed* — piped through a filter, conjoined, or read out of a
+process substitution.  Those pin a property of the composition rather than of a
+pattern, so they have no counterpart to contradict; they are counted and named
+(`--list`) instead of being silently dropped.
+
 Exit status: 0 when the anchor set is satisfiable, 1 otherwise.
 """
 
@@ -24,6 +39,7 @@ from __future__ import annotations
 import argparse
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -66,56 +82,216 @@ def discover_anchor_scripts() -> list[str]:
         )
     return scripts
 
-ANCHOR_RE = re.compile(
-    r"""run_(?P<prose>prose_)?(?P<neg>negative_)?check\s+   # helper
-        "(?P<label>[A-Z-]+)"\s+                             # label
-        rg\s+(?:-\S+\s+)*                                   # rg flags
-        (?:'(?P<sq>[^']*)'                                  # '…' pattern
-          |"(?P<dq>(?:[^"\\]|\\.)*)")\s+                    # or "…" pattern
-        (?P<target>\S+)                                     # the file it reads
+# A helper invocation, split at the label.  Everything after it is a command,
+# and *which* command decides whether the line is an anchor at all — which is
+# why the rest is handed to a shell-aware splitter rather than matched by a
+# regex that assumed `rg` came next.
+HELPER_RE = re.compile(
+    r"""^run_(?P<prose>prose_)?(?P<neg>negative_)?check(?:_with_timeout)?\s+
+        "(?P<label>[A-Z-]+)"\s+
+        (?P<rest>.+)$
     """,
     re.VERBOSE,
 )
 
-# Bash keeps a backslash inside double quotes unless it precedes one of these,
-# so `"\s"` reaches `rg` as `\s` while `"\\."` reaches it as `\.`.  Both forms
-# are live in the suites, and a parser that skipped the unescaping would file
-# the same pattern under two spellings and see no contradiction between them.
-_DQ_SPECIAL = set('$`"\\\n')
+# The tools an anchor can be built out of.  Word-bounded so a path like
+# `check_bcm2712_freshness.sh` is not read as naming one.
+SEARCH_TOOLS = ("rg", "grep", "egrep", "fgrep")
+SEARCH_TOOL_RE = re.compile(
+    r"(?<![\w./-])(?:" + "|".join(SEARCH_TOOLS) + r")(?![\w-])")
+
+# Anything that composes a command with another one, or derives its input.  A
+# search whose result is piped, conjoined, or read out of a process substitution
+# does not pin "this pattern is absent from this file" — it pins something about
+# the composition — so these mark the boundary of what can be compared.
+#
+# Tested against *tokens*, never against the raw text.  Half the suites' patterns
+# are alternations — `rg "SeLe4n\.Testing\.rc(AcceptAll|DenyAll)" …` — so a
+# substring test for `|` or `(` reads the regex as a pipeline and files a live
+# absence pin as uncomparable.  `shlex` with `punctuation_chars` splits an
+# *unquoted* operator into its own token and leaves a quoted one inside the word,
+# which is exactly the distinction that matters here.
+_OPERATOR_CHARS = set("();<>|&")
+_OPERATOR_WORDS = {"[[", "]]", "!", "{", "}"}
 
 
-def _unescape_double_quoted(s: str) -> str:
-    """The string bash hands the command for a double-quoted word."""
-    out, i = [], 0
-    while i < len(s):
-        c = s[i]
-        if c == "\\" and i + 1 < len(s) and s[i + 1] in _DQ_SPECIAL:
-            out.append(s[i + 1])
-            i += 2
-            continue
-        out.append(c)
+def _shell_tokens(s: str) -> list[str]:
+    """Bash's words for `s`, with unquoted operators as separate tokens."""
+    lexer = shlex.shlex(s, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    return list(lexer)
+
+
+def _is_composed(tokens: list[str]) -> bool:
+    """Does this token stream join commands, or derive one's input?"""
+    return any(
+        tok in _OPERATOR_WORDS or (tok != "" and set(tok) <= _OPERATOR_CHARS)
+        for tok in tokens)
+
+
+def _search_invocation(argv: list[str]):
+    """`(pattern, targets)` if `argv` is a plain search, else `None`.
+
+    Flags are skipped by shape rather than by name: every flag the suites use is
+    either a bare switch (`-n`, `-q`, `-w`, `-nE`) or an attached value
+    (`--glob=…`), so the first non-flag word is the pattern and the rest are the
+    files it reads.  A search with no target reads stdin and pins nothing about
+    the tree, so it is not an anchor.
+    """
+    if not argv or argv[0] not in SEARCH_TOOLS:
+        return None
+    i = 1
+    while i < len(argv) and argv[i].startswith("-") and argv[i] != "--":
+        # `-v` inverts the match, so the invocation succeeds on the lines that do
+        # NOT contain the pattern — the opposite of what a positive anchor
+        # claims.  Reading it as a plain pin would invert the polarity silently.
+        if argv[i] == "--invert-match" or (
+                not argv[i].startswith("--") and "v" in argv[i][1:]):
+            return None
         i += 1
-    return "".join(out)
+    if i < len(argv) and argv[i] == "--":
+        i += 1
+    if i >= len(argv):
+        return None
+    pattern, targets = argv[i], argv[i + 1:]
+    if not targets:
+        return None
+    return pattern, targets
+
+
+def _negated_search(script: str):
+    """The search argv a shell script asserts finds NOTHING, or `None`.
+
+    Two shapes, both live in the suites and both meaning "this must be absent":
+
+        ! rg -n 'PATTERN' FILE
+        if rg -n 'PATTERN' FILE; then echo '…' >&2; exit 1; fi
+
+    Composition disqualifies: `rg … | grep -v …` asserts that nothing *survives
+    the filter*, which is a weaker claim than absence and would be a false
+    contradiction if compared as one.  Those are reported as uncompared rather
+    than guessed at.
+    """
+    s = script.strip()
+    m = re.match(r"^!\s+(.*)$", s, re.S)
+    if m:
+        body = m.group(1)
+    else:
+        m = re.match(r"^if\s+(.*?);\s*then\b(.*)\bfi$", s, re.S)
+        if not m:
+            return None
+        body, tail = m.group(1), m.group(2)
+        # Without the `exit 1` the `if` is a report, not an assertion.
+        if not re.search(r"\bexit\s+1\b", tail):
+            return None
+    try:
+        tokens = _shell_tokens(body)
+    except ValueError:
+        return None
+    return None if _is_composed(tokens) else tokens
+
+
+def _bash_script(argv: list[str]):
+    """The script `bash -c` / `bash -lc` was handed, if this is such a call."""
+    if not argv or argv[0] != "bash":
+        return None
+    for i, tok in enumerate(argv[1:], 1):
+        if tok.startswith("-") and "c" in tok[1:]:
+            return argv[i + 1] if i + 1 < len(argv) else None
+    return None
+
+
+def classify_line(line: str):
+    """`(kind, is_negative, pattern, targets)` for one helper invocation.
+
+    `kind` is one of:
+
+    * `anchor` — a single pattern pinned present or absent in named files.
+    * `plain` — the command names no search tool, so it is not an anchor at all
+      (a build, a python gate, a `test -x`).  Decided by evidence, not by the
+      regex failing to match.
+    * `filtered` — it *does* search, but composes the result, so no single
+      (pattern, target) is pinned.  Counted and reportable, never silently
+      dropped.
+    * `unparsed` — it searches and this parser cannot say what it pins.  A hard
+      failure: an anchor the gate cannot read is an anchor it cannot compare,
+      and reporting PASS over it is the fail-open this gate exists to remove.
+    """
+    m = HELPER_RE.match(line)
+    if not m:
+        return None
+    rest = m.group("rest")
+    searches = bool(SEARCH_TOOL_RE.search(rest))
+    try:
+        argv = _shell_tokens(rest)
+    except ValueError:
+        # An unbalanced quote — a form this cannot read.
+        return ("unparsed" if searches else "plain", False, None, [])
+
+    inv = None if _is_composed(argv) else _search_invocation(argv)
+    if inv is not None:
+        return ("anchor", bool(m.group("neg")), inv[0], inv[1])
+    if argv and argv[0] in SEARCH_TOOLS:
+        return ("unparsed", False, None, [])
+
+    script = _bash_script(argv)
+    if script is not None:
+        inner = _negated_search(script)
+        if inner is not None:
+            inv = _search_invocation(inner)
+            if inv is not None:
+                # The script asserts absence, so the helper's own polarity is
+                # inverted: `run_check "…" bash -c "! rg …"` is a NEGATIVE anchor.
+                return ("anchor", not m.group("neg"), inv[0], inv[1])
+        return ("filtered" if SEARCH_TOOL_RE.search(script) else "plain",
+                False, None, [])
+
+    return ("unparsed" if searches else "plain", False, None, [])
+
+
+def logical_lines(text: str):
+    """Yield `(first_line_no, joined)` with backslash continuations folded in.
+
+    Six live Tier-3 anchors put the file on the continuation line, and reading
+    the physical line stopped at the trailing `\\` — which `\\S+` happily matched,
+    so those six were filed under the target `'\\'` and could never collide with
+    the anchor they were opposite to.  Bash joins the lines before the helper
+    ever sees them; so must this.
+    """
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        start = i + 1
+        buf = lines[i]
+        while buf.rstrip().endswith("\\") and i + 1 < len(lines):
+            buf = buf.rstrip()[:-1] + " " + lines[i + 1]
+            i += 1
+        yield start, buf
+        i += 1
 
 
 def parse_anchors(text: str):
-    """Yield (line_no, is_negative, pattern, target) for each anchor."""
-    for line_no, raw in enumerate(text.splitlines(), 1):
+    """Yield `(line_no, kind, is_negative, pattern, target)` per anchor/target.
+
+    One record per *target*: `rg -q 'X' a.rs b.rs` pins `X` absent in both files,
+    and reading only the first left the second uncompared.
+    """
+    for line_no, raw in logical_lines(text):
         line = raw.strip()
         if line.startswith("#"):
             continue
-        m = ANCHOR_RE.search(line)
-        if not m:
+        got = classify_line(line)
+        if got is None:
             continue
-        # Both quoting styles appear in the suites, and an anchor is no less
-        # live for being double-quoted — reduce each to the pattern `rg`
-        # actually receives so the two are comparable.
-        sq = m.group("sq")
-        pattern = sq if sq is not None else _unescape_double_quoted(m.group("dq"))
+        kind, is_neg, pattern, targets = got
+        if kind != "anchor":
+            yield line_no, kind, False, None, None
+            continue
         # `^` is an anchoring detail of the regex, not part of the symbol the
         # two helpers are talking about, so normalise it away before comparing.
         pattern = pattern.lstrip("^")
-        yield line_no, bool(m.group("neg")), pattern, m.group("target")
+        for target in targets:
+            yield line_no, "anchor", is_neg, pattern, target
 
 
 def _literal_core(pattern: str) -> str | None:
@@ -157,6 +333,8 @@ def _literal_core(pattern: str) -> str | None:
 def find_contradictions(paths):
     positive: dict[tuple[str, str], list[str]] = {}
     negative: dict[tuple[str, str], list[str]] = {}
+    filtered: list[str] = []
+    unparsed: list[str] = []
     total_pos = total_neg = 0
     for path in paths:
         p = pathlib.Path(path)
@@ -170,15 +348,37 @@ def find_contradictions(paths):
                 f"FAIL: anchor-set satisfiability — {path} does not exist, so "
                 f"its anchors would go unchecked while the gate reported PASS."
             )
-        for line_no, is_neg, pattern, target in parse_anchors(p.read_text()):
+        rel = p.relative_to(REPO_ROOT) if p.is_relative_to(REPO_ROOT) else p
+        for line_no, kind, is_neg, pattern, target in parse_anchors(p.read_text()):
+            where = f"{rel}:{line_no}"
+            if kind == "plain":
+                continue
+            if kind == "filtered":
+                filtered.append(where)
+                continue
+            if kind == "unparsed":
+                unparsed.append(where)
+                continue
             key = (pattern, target)
-            where = f"{p.relative_to(REPO_ROOT) if p.is_relative_to(REPO_ROOT) else p}:{line_no}"
             if is_neg:
                 negative.setdefault(key, []).append(where)
                 total_neg += 1
             else:
                 positive.setdefault(key, []).append(where)
                 total_pos += 1
+    if unparsed:
+        # The reviewer's second half, and the one that keeps this honest: a form
+        # the parser cannot read is not evidence of consistency.  Better to fail
+        # on a shape nobody anticipated than to report PASS over it.
+        raise SystemExit(
+            "FAIL: anchor-set satisfiability — "
+            f"{len(unparsed)} helper invocation(s) run a search this gate cannot "
+            "read, so what they pin is uncompared:\n  "
+            + "\n  ".join(unparsed)
+            + "\n\nWrite the anchor as `run_check`/`run_negative_check` with a "
+              "direct `rg PATTERN FILE`, or as `bash -c \"! rg PATTERN FILE\"`, "
+              "so the gate can compare it."
+        )
     both = sorted(set(positive) & set(negative))
 
     # …and the contradictions that are not textually identical.
@@ -213,14 +413,20 @@ def find_contradictions(paths):
                 positive[(p_pat, p_target)] = p_where
                 break
     both = sorted(set(both))
-    return both, positive, negative, total_pos, total_neg
+    return both, positive, negative, total_pos, total_neg, filtered
 
 
-def report(both, positive, negative, total_pos, total_neg) -> int:
+def report(both, positive, negative, total_pos, total_neg, filtered) -> int:
+    # Say what was NOT compared as plainly as what was.  A filtered invocation
+    # pins something about a composition rather than about a pattern, so it has
+    # no counterpart to contradict — but a PASS line that omits it would read as
+    # coverage the gate does not have.
+    note = (f"; {len(filtered)} filtered invocation(s) pin a composed result "
+            f"and are not compared (--list names them)" if filtered else "")
     if not both:
         print(
             f"PASS: anchor-set satisfiability — {total_pos} positive and "
-            f"{total_neg} negative anchors, no pattern pinned both ways."
+            f"{total_neg} negative anchors, no pattern pinned both ways{note}."
         )
         return 0
     print(
@@ -276,7 +482,7 @@ def self_test() -> int:
             )
             return 1
 
-        both, pos, neg, _, _ = find_contradictions([str(planted_p)])
+        both, *_ = find_contradictions([str(planted_p)])
         if not both:
             print(
                 "FAIL: --self-test — the planted contradiction was NOT detected; "
@@ -379,10 +585,102 @@ def self_test() -> int:
             )
             return 1
 
+        # THE SHELL-WRAPPED NEGATIVE.  Tier 3 spells roughly a dozen of its
+        # absence pins as `run_check "…" bash -c "! rg …"` rather than through
+        # `run_negative_check`, and a parser that required `rg` immediately after
+        # the label filed none of them — so an opposing positive anchor could
+        # make the tier unsatisfiable while this gate reported PASS.  Both live
+        # spellings are planted: the bare negation and the `if …; then exit 1`
+        # form.
+        for name, wrapped in (
+            ("bang", "run_check \"INVARIANT\" bash -c "
+                     "\"! rg -q 'theorem delta_removed' Some/File.lean\"\n"),
+            ("if-exit", "run_check \"INVARIANT\" bash -lc "
+                        "\"if rg -n 'theorem delta_removed' Some/File.lean; "
+                        "then echo 'back' >&2; exit 1; fi\"\n"),
+        ):
+            wrapped_p = d / f"wrapped_{name}.sh"
+            wrapped_p.write_text(
+                "run_check \"INVARIANT\" rg -n '^theorem delta_removed' "
+                "Some/File.lean\n" + wrapped)
+            both, *_ = find_contradictions([str(wrapped_p)])
+            if both != [("theorem delta_removed", "Some/File.lean")]:
+                print(
+                    f"FAIL: --self-test — the shell-wrapped negative anchor "
+                    f"({name} form) was not compared (got {both}).  Those pins "
+                    f"are live in Tier 3, and a gate blind to them reports PASS "
+                    f"over an unsatisfiable suite.",
+                    file=sys.stderr,
+                )
+                return 1
+
+        # A composed search pins the composition, not the pattern — comparing it
+        # as an absence claim would be a false contradiction.  It must be
+        # tolerated and counted, never treated as an anchor.
+        composed_p = d / "composed.sh"
+        composed_p.write_text(
+            "run_check \"INVARIANT\" rg -n '^theorem eps_kept' Some/File.lean\n"
+            "run_check \"HYGIENE\" bash -lc "
+            "\"if rg -n 'theorem eps_kept' Some/File.lean | grep -v OK; "
+            "then exit 1; fi\"\n")
+        both, _, _, _, _, filtered = find_contradictions([str(composed_p)])
+        if both:
+            print(
+                f"FAIL: --self-test — a filtered search was compared as a plain "
+                f"absence claim ({both}); `rg … | grep -v …` pins that nothing "
+                f"survives the filter, which a positive anchor does not "
+                f"contradict.",
+                file=sys.stderr,
+            )
+            return 1
+        if len(filtered) != 1:
+            print(
+                f"FAIL: --self-test — the filtered search was not counted "
+                f"(got {filtered}); an uncompared invocation that goes "
+                f"unreported is the silent skip this gate exists to remove.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and a search shape the parser cannot read at all must FAIL, not be
+        # skipped.  This is what stops the blind spot from reopening the next
+        # time someone writes an anchor in a form nobody anticipated.
+        opaque_p = d / "opaque.sh"
+        opaque_p.write_text(
+            "run_check \"INVARIANT\" xargs rg -q 'theorem zeta' Some/File.lean\n")
+        try:
+            find_contradictions([str(opaque_p)])
+        except SystemExit:
+            pass
+        else:
+            print(
+                "FAIL: --self-test — a helper invocation running an unreadable "
+                "search was skipped instead of failing the gate; an anchor the "
+                "gate cannot read is one it cannot compare.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # Every target of a multi-file search is pinned, not just the first.
+        multi_p = d / "multi.sh"
+        multi_p.write_text(
+            "run_negative_check \"INVARIANT\" rg -q 'Sym' a.rs b.rs\n"
+            "run_check \"INVARIANT\" rg -n 'Sym' b.rs\n")
+        both, *_ = find_contradictions([str(multi_p)])
+        if both != [("Sym", "b.rs")]:
+            print(
+                f"FAIL: --self-test — a contradiction on the SECOND target of a "
+                f"multi-file search was missed (got {both}).",
+                file=sys.stderr,
+            )
+            return 1
+
     print(
         "PASS: --self-test — planted contradictions were detected in both "
-        "quoting styles, the clean set passed, and a commented-out anchor was "
-        "not counted."
+        "quoting styles, in both shell-wrapped spellings and on a second search "
+        "target; a filtered search was counted rather than compared, an "
+        "unreadable one failed the gate, the clean set passed, and a "
+        "commented-out anchor was not counted."
     )
     return 0
 
@@ -395,6 +693,11 @@ def main() -> int:
         help="drive the checker over a planted contradiction and assert detection",
     )
     ap.add_argument(
+        "--list",
+        action="store_true",
+        help="name the invocations whose composed result is not compared",
+    )
+    ap.add_argument(
         "scripts",
         nargs="*",
         help="anchor-declaring scripts to check (default: the tiered suites)",
@@ -404,7 +707,11 @@ def main() -> int:
     if args.self_test:
         return self_test()
 
-    return report(*find_contradictions(args.scripts or discover_anchor_scripts()))
+    result = find_contradictions(args.scripts or discover_anchor_scripts())
+    if args.list:
+        for where in result[5]:
+            print(f"  filtered (not compared): {where}")
+    return report(*result)
 
 
 if __name__ == "__main__":

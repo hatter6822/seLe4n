@@ -1,3 +1,65 @@
+## v0.33.74 — two gates that could not read what they were checking
+
+Both findings this cut are the same shape one level down from the last one: a
+gate whose PASS line covered text it never opened.  Neither was a missing check;
+both were filters that dropped their subject before inspecting it.
+
+**The anchor gate required `rg` immediately after the label, so it never saw a
+shell-wrapped absence pin.**  Tier 3 spells roughly two dozen of its negatives as
+`run_check "INVARIANT" bash -c "! rg …"` and `run_check "…" bash -lc
+"if rg …; then …; exit 1; fi"` rather than through `run_negative_check`.  The
+parser's regex rejected every one of them, so they entered neither map — and a
+positive anchor opposing one could make Tier 3 unsatisfiable while the gate
+reported PASS.  That is the exact failure this gate was built to catch, reopened
+by the shape of its own parser.
+
+The parser now reads the command rather than assuming it: `shlex` with
+`punctuation_chars` splits the invocation the way bash does, so an unquoted
+operator is a token and a quoted alternation like
+`rg "…\.rc(AcceptAll|DenyAll)" …` stays one word.  Line continuations are folded
+first — six anchors put the file on the next line, and the old `\S+` matched the
+trailing backslash and filed them under the target `'\'`, where nothing could
+ever collide with them.  Every target of a multi-file search is now pinned, not
+just the first.
+
+**And what it cannot read now fails.**  A helper invocation that runs a search
+this parser cannot reduce to one (pattern, target) is a hard error, because "the
+gate could not read it" and "the gate checked it" must not produce the same PASS
+line.  The one tolerated case is a search whose result is *composed* — piped
+through `grep -v`, conjoined with `&&`, or read out of a process substitution.
+Those pin a property of the composition, not of a pattern, so they have no
+counterpart to contradict; there are eight, they are counted in the PASS line and
+named by `--list`, rather than dropped in silence.
+
+Coverage: 2 523 positive / 105 negative → 2 524 positive / **131** negative.
+
+**The content-flow gate skipped every private definition in the tree.**  Lean
+stores `private def foo` as `_private.<Module>.<n>.foo`, which answers
+`isInternal = true` — and both "one writer" sweeps filtered on exactly that.
+11 292 private constants were therefore never opened, 3 872 of them real
+definitions.  A private helper reachable from syscall dispatch could have
+rewritten `SystemState.declassificationTaint` — clearing or replacing provenance
+— while the gate reported that `applySyscallTaint` was the one writer.
+
+The discriminator now runs on the name a human wrote, recovered with
+`privateToUserName?`: `isInternalDetail` is true of *every* private constant, so
+applying it to the stored name drops precisely the definitions that must be
+admitted, while applying it to the user name keeps `Ns.helper` and drops
+`Ns.helper.match_1`, `.eq_1`, `._proof_1` and the other generated auxiliaries.
+The filter is strictly wider than the one it replaces.  Writers are reported
+under their readable name with private ones marked `private@…`, so a private
+constant cannot match the declared writer list by impersonating the name it
+mangles to.
+
+The self-test plants a **private** rogue writer that both rewrites the field and
+calls the declared API, and asserts both sweeps report it.  A public plant would
+not have shown anything: it passes against the blind filter too.
+
+No production writer changed — the widened sweep still finds exactly
+`applySyscallTaint`.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md
+
 ## v0.33.73 — the gate that should have caught the anchors, and the third unvalidated source
 
 **The anchor-satisfiability gate was covering four suites out of nine, one of
