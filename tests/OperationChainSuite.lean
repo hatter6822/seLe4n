@@ -1215,6 +1215,97 @@ private def chain12dReplyRecvCapTransferArrivalOrder : IO Unit := do
   assertInvariants "chain12d: replyRecv arrival-order-independent transfer (queued)" stA2
   assertInvariants "chain12d: replyRecv arrival-order-independent transfer (rendezvous)" stB2
 
+/-- SCN-IPC-CAP-TRANSFER-NO-DUPLICATE (PR #873 round 8): **a receive that
+dequeues nothing installs nothing.**
+
+The security regression.  `endpointReceiveDual*`'s blocking branch returns the
+receiver's *own* id and leaves `pendingMessage` untouched, so a wrapper deciding
+by that field alone could not tell a fresh delivery from one the receiver had
+been holding since its last receive.  While the live `.receive` installed nothing
+that was inert; once PR #873 routed the live arms through the WithCaps receive it
+became capability duplication — a receiver holding one caps-bearing message could
+re-unwrap it into a new receive slot on every subsequent receive against an idle
+endpoint, minting copies of authority with no sender involved.
+
+Measured as the property, not one call's outcome: the legitimate rendezvous must
+still install, and the receive that dequeues nothing must not — a change that
+broke both the same way (never installing) would pass the negative alone. -/
+private def chain12eReceiveWithoutSenderInstallsNothing : IO Unit := do
+  let epId : SeLe4n.ObjId := ⟨3550⟩
+  let sender : SeLe4n.ThreadId := ⟨3560⟩
+  let receiver : SeLe4n.ThreadId := ⟨3561⟩
+  let senderCNode : SeLe4n.ObjId := ⟨3570⟩
+  let receiverCNode : SeLe4n.ObjId := ⟨3571⟩
+  let payloadObj : SeLe4n.ObjId := ⟨3580⟩
+  let payloadCap : Capability :=
+    { target := .object payloadObj, rights := AccessRightSet.ofList [.read], badge := none }
+  let grantRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
+  let srcSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 5
+  let recvSlot0 : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
+  let recvSlot1 : SeLe4n.Slot := SeLe4n.Slot.ofNat 1
+
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
+      |>.withObject senderCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)]
+        })
+      |>.withObject receiverCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.empty
+        })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3590⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3591⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
+      |>.withRunnable [sender, receiver]
+      |>.buildChecked)
+
+  let (srcNode, stBase) :=
+    SystemState.ensureCdtNodeForSlot st0 { cnode := senderCNode, slot := srcSlot }
+  let msg : IpcMessage :=
+    { registers := #[], caps := #[{ cap := payloadCap, srcNode := srcNode }],
+      badge := none, capsGranted := grantRights.mem .grant }
+
+  let slotFilled (st : SystemState) (s : SeLe4n.Slot) : Bool :=
+    match st.objects[receiverCNode]? with
+    | some (.cnode cn) => (cn.lookup s).isSome
+    | _ => false
+
+  -- A legitimate transfer: the sender parks, the receiver collects it.
+  let (st1, _) :=
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender msg grantRights senderCNode
+      recvSlot0 bootCoreId stBase
+  let (st2, res2) :=
+    SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none receiverCNode
+      recvSlot0 bootCoreId st1
+  expect "chain12e: the legitimate rendezvous installs the capability"
+    (slotFilled st2 recvSlot0 &&
+      (match res2 with | .ok (_, s, _) => s.installedCount == 1 | .error _ => false))
+  -- The receiver is still holding that message — nothing clears it — which is
+  -- what made the second receive able to re-read it.
+  expect "chain12e: the receiver still holds the delivered caps-bearing message"
+    ((st2.getTcb? receiver).any (fun t =>
+      match t.pendingMessage with
+      | some m => !m.caps.isEmpty
+      | none => false))
+
+  -- THE DEFECT, now closed: receive again on an endpoint with an EMPTY send
+  -- queue.  Nothing is dequeued — the receiver blocks — so nothing may install.
+  let (st3, res3) :=
+    SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none receiverCNode
+      recvSlot1 bootCoreId st2
+  expect "chain12e: the send queue really is empty before the second receive"
+    ((SeLe4n.Kernel.receiveRendezvousSender? st2 epId).isNone)
+  expect "chain12e: a receive that dequeued nothing installs nothing"
+    (!slotFilled st3 recvSlot1 &&
+      (match res3 with | .ok (_, s, _) => s.installedCount == 0 | .error _ => false))
+  expect "chain12e: and the receiver really did block rather than rendezvous"
+    ((st3.getTcb? receiver).any (fun t =>
+      match t.ipcState with | .blockedOnReceive _ => true | _ => false))
+
+  assertInvariants "chain12e: no duplicate install on a blocking receive" st3
+
 /-- SCN-IPC-CAP-TRANSFER-NO-GRANT: Grant-right gate blocks cap transfer.
 Endpoint lacks Grant right — caps should be silently dropped. -/
 private def chain13IpcCapTransferNoGrant : IO Unit := do
@@ -2716,6 +2807,7 @@ private def runOperationChainSuite : IO Unit := do
   chain12bIpcCapTransferRevocable
   chain12cIpcCapTransferArrivalOrder
   chain12dReplyRecvCapTransferArrivalOrder
+  chain12eReceiveWithoutSenderInstallsNothing
   chain13IpcCapTransferNoGrant
   chain14IpcBadgeAndCapTransfer
   chain15StrictRevokeDeepChain

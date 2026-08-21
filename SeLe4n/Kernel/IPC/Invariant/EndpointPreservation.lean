@@ -2238,6 +2238,13 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId
       receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: the rendezvous gate.  A receive that dequeued nothing
+    -- returns the bare transition's post-state, so the invariant is the one the
+    -- bare transition already preserves.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hInvMid
+    | some _ =>
+    simp [hRv] at hStep
     -- AN10-B: post-migration `endpointReceiveDualWithCaps` reads via
     -- `getTcb?`; case-split on the typed helper.
     cases hTcb : stMid.getTcb? receiver with

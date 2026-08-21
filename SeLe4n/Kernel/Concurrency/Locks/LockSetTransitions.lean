@@ -315,17 +315,29 @@ mutates; optional sender TCB completes its handshake. -/
 def lockSet_endpointReceive (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId)
     (senderTid : Option ThreadId)
-    (replyId : Option ReplyId := none) : LockSet :=
+    (replyId : Option ReplyId := none)
+    (installsCaps : Bool := false) : LockSet :=
   -- WS-SM SM6.D: a `Call` rendezvous on receive links a server-supplied Reply
   -- object (`linkCallerReply` writes `reply.caller`) under the per-object reply
   -- write-lock — folded in as an outermost optional.  `none` ⇒ the set is
   -- definitionally the pre-SM6.D footprint (`lockSetExtendOpt S none = S`), so
   -- every existing call site is unchanged.
+  -- PR #873 round 8: and a rendezvous that carries capabilities **writes** the
+  -- caller's own CSpace root (`ipcTransferSingleCap` → `cspaceInsertSlot`).
+  --
+  -- Expressed as the member's own **mode**, not as another optional.  The
+  -- receiver's CSpace root *is* `cnodeRootObjId` — the receiver is the caller of
+  -- `.receive`, and the arm passes `gate.cspaceRoot` — so this is the same lock
+  -- in a stronger mode, and saying it that way keeps the footprint's size and
+  -- acquisition order literally unchanged.  An outer `lockSetExtendOpt` would
+  -- have merged to the same set while making the crude size bound count a
+  -- member that cannot exist, which is a worse statement of the same fact.
+  -- `false` reduces definitionally, so every pin taken before this survives.
   lockSetExtendOpt
     (lockSetExtendOpt
       (lockSetOfList
         [(tcbLock callerTid, .write),
-         (cnodeLock cnodeRootObjId, .read),
+         (cnodeLock cnodeRootObjId, if installsCaps then .write else .read),
          (endpointLock endpointObjId, .write)])
       (senderTid.map (fun st => (tcbLock st, .write))))
     (replyId.map (fun rid => (replyLock rid, .write)))
@@ -448,11 +460,16 @@ def lockSet_replyRecv (callerTid : ThreadId)
     (endpointObjId : ObjId) (newSenderTid : Option ThreadId)
     (donatedScId : Option SchedContextId)
     (donatedOriginalOwnerTid : Option ThreadId)
-    (replyId : Option ReplyId := none) : LockSet :=
+    (replyId : Option ReplyId := none)
+    (installsCaps : Bool := false) : LockSet :=
+  -- PR #873 round 8: `.replyRecv`'s receive leg installs capabilities too (it
+  -- runs the same WithCaps transition `.receive` does), so the caller's own
+  -- CSpace root takes the same write upgrade, in the same size- and
+  -- order-preserving way: a mode on the member, not another optional.
   let withSender := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .write),
-       (cnodeLock cnodeRootObjId, .read),
+       (cnodeLock cnodeRootObjId, if installsCaps then .write else .read),
        (tcbLock replyTargetTid, .write),
        (endpointLock endpointObjId, .write)])
     (newSenderTid.map (fun st => (tcbLock st, .write)))
@@ -2019,18 +2036,23 @@ theorem lockSet_consistent_send (callerTid : ThreadId)
         | none => simp at hpp
         | some rt => simp at hpp; rw [← hpp]; simp; decide)
 
-/-- WS-SM SM3.B.4 for `.receive`. -/
+/-- WS-SM SM3.B.4 for `.receive`.
+
+PR #873 round 8: stated over **every** `installsCaps`, not only the default.
+Leaving it at the default would repeat the round-6 `.declassify` error — a
+consistency claim checked against one of the argument values while the resolved
+footprint a fine-lock consumer acquires carries the other. -/
 theorem lockSet_consistent_receive (callerTid : ThreadId)
     (cnRoot epId : ObjId) (sTid : Option ThreadId)
-    (replyId : Option ReplyId := none) :
-    ∀ p ∈ (lockSet_endpointReceive callerTid cnRoot epId sTid replyId).pairs,
+    (replyId : Option ReplyId := none) (installsCaps : Bool := false) :
+    ∀ p ∈ (lockSet_endpointReceive callerTid cnRoot epId sTid replyId installsCaps).pairs,
       p.fst.kind ∈ permittedKinds .receive :=
   lockSet_consistent_base_plus_two_opts _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
+        · rw [h]; cases installsCaps <;> simp <;> decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
@@ -2112,16 +2134,16 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
     (newSenderTid : Option ThreadId)
     (donatedScId : Option SchedContextId)
     (donatedOriginalOwnerTid : Option ThreadId)
-    (replyId : Option ReplyId := none) :
+    (replyId : Option ReplyId := none) (installsCaps : Bool := false) :
     ∀ p ∈ (lockSet_replyRecv callerTid cnRoot rTid epId newSenderTid
-              donatedScId donatedOriginalOwnerTid replyId).pairs,
+              donatedScId donatedOriginalOwnerTid replyId installsCaps).pairs,
       p.fst.kind ∈ permittedKinds .replyRecv :=
   lockSet_consistent_base_plus_four_opts _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
+        · rw [h]; cases installsCaps <;> simp <;> decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem

@@ -244,6 +244,12 @@ theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant
       replyId st stMid sid hObjInv hRecv hInv hFreshReceiver hRecvTailFresh
     have hObjInvMid : stMid.objects.invExt :=
       endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the invariant is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
+    | some _ =>
+    simp only [hRv] at hStep
     -- AN10-B: post-migration `endpointReceiveDualWithCaps` reads via
     -- `getTcb?`; case-split on the typed helper.
     cases hTcb : stMid.getTcb? receiver with

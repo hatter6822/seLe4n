@@ -712,10 +712,16 @@ theorem lockSet_endpointSend_size_le (a : ThreadId) (b c : ObjId) (d : Option Th
   unfold lockSet_endpointSend maxLockSetSize
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
-theorem lockSet_endpointReceive_size_le (a : ThreadId) (b c : ObjId) (d : Option ThreadId) :
-    (lockSet_endpointReceive a b c d).size ≤ maxLockSetSize := by
+-- PR #873 round 8: stated over the reply optional and the caps flag too.  A
+-- partial application here is how an added member gets silently unbounded (the
+-- SM9.C `notificationSignal` defect), and the caps flag in particular merges
+-- into a key already present, so the bound is the same one — but it has to be
+-- *stated* at that argument to say so.
+theorem lockSet_endpointReceive_size_le (a : ThreadId) (b c : ObjId) (d : Option ThreadId)
+    (e : Option ReplyId) (f : Bool) :
+    (lockSet_endpointReceive a b c d e f).size ≤ maxLockSetSize := by
   unfold lockSet_endpointReceive maxLockSetSize
-  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+  exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
 theorem lockSet_endpointCall_size_le (a : ThreadId) (b c : ObjId)
     (d : Option ThreadId) (e : Option SchedContextId)
@@ -733,10 +739,11 @@ theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
   exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
 theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
-    (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId) :
-    (lockSet_replyRecv a b c d e f g).size ≤ maxLockSetSize := by
+    (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId)
+    (h : Option ReplyId) (i : Bool) :
+    (lockSet_replyRecv a b c d e f g h i).size ≤ maxLockSetSize := by
   unfold lockSet_replyRecv maxLockSetSize
-  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
+  exact Nat.le_trans (size_le_4 _ _ _ _ _) (by size_bound)
 
 -- WS-SM SM9.C.8: stated over **all six** arguments, including the SM6.B
 -- bound-delivery optionals.  Before this cut the theorem fixed those two at
@@ -922,10 +929,10 @@ had been fixed at their `none` defaults and so left the five-member
 bound-delivery footprint unbounded.) -/
 theorem lockSetTransitions_within_bound :
     (∀ a b c d, (lockSet_endpointSend a b c d).size ≤ maxLockSetSize) ∧
-    (∀ a b c d, (lockSet_endpointReceive a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f, (lockSet_endpointReceive a b c d e f).size ≤ maxLockSetSize) ∧
     (∀ a b c d e, (lockSet_endpointCall a b c d e).size ≤ maxLockSetSize) ∧
     (∀ a b c d e, (lockSet_endpointReply a b c d e).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e f g, (lockSet_replyRecv a b c d e f g).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f g h i, (lockSet_replyRecv a b c d e f g h i).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f, (lockSet_notificationSignal a b c d e f).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_notificationWait a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceMint a b c).size ≤ maxLockSetSize) ∧
@@ -998,9 +1005,10 @@ def KernelOperation.ofEndpointCall (a : ThreadId) (b c : ObjId)
 /-- WS-SM SM3.D.6: build the `KernelOperation` for a `replyRecv` (a 7-arg,
 3-extension transition — the deepest static footprint). -/
 def KernelOperation.ofReplyRecv (a : ThreadId) (b : ObjId) (c : ThreadId)
-    (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId) :
+    (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId)
+    (h : Option ReplyId := none) (i : Bool := false) :
     KernelOperation :=
-  ⟨lockSet_replyRecv a b c d e f g, lockSet_replyRecv_size_le a b c d e f g⟩
+  ⟨lockSet_replyRecv a b c d e f g h i, lockSet_replyRecv_size_le a b c d e f g h i⟩
 
 /-- WS-SM SM3.D.6: build the `KernelOperation` for a `tcbSuspend` (the
 5-extension transition — WS-SM SM6.E added the optional reply-link

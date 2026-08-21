@@ -3740,6 +3740,23 @@ run_check "INVARIANT" rg -n 'endpointReceiveDualWithCapsOnCore epId tid \(some r
 run_negative_check "INVARIANT" rg -n 'endpointReceiveDualOnCore epId tid \(some rid\)' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'replyRecvBody epId tid rid prevCaller msg gate.cspaceRoot' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'chain12dReplyRecvCapTransferArrivalOrder' tests/OperationChainSuite.lean
+
+# PR #873 round 8 (SECURITY): **a receive that dequeued nothing installs
+# nothing.**  The blocking branch returns the receiver's OWN id and leaves
+# `pendingMessage` untouched, so deciding by that field alone re-unwrapped a
+# message the receiver had held since its last receive — an extra copy of
+# authority minted with no sender.  The gate is the endpoint's pre-state send
+# queue, which is what the bare transition itself branches on.
+run_check "INVARIANT" rg -n '^def receiveRendezvousSender\?' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^def receiveInstallsCaps' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_blocked_installs_nothing' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCaps_blocked_installs_nothing' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+run_check "INVARIANT" rg -n 'chain12eReceiveWithoutSenderInstallsNothing' tests/OperationChainSuite.lean
+# And the install's declared footprint: `ipcTransferSingleCap` writes the
+# receiver's own CSpace root, which both receive-shaped footprints declared READ.
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_capsInstall_write_mem' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_capsInstall_write_mem' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n 'receiveInstallsCaps st endpointObjId' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # The inventory must name the function the dispatch calls: both receive-shaped
 # live arms reach the WithCaps form now, so the bare transition is a below-API
 # entry and the live-arm claim sits on the new one.  The negative forbids the

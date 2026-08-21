@@ -1556,6 +1556,12 @@ theorem endpointReceiveDualWithCaps_passiveServerIdleFrameOnCore
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver
       sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
     | some receiverTcb =>

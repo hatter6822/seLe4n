@@ -2172,6 +2172,46 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
+/-- WS-SM SM6 (PR #873 round 8): **the sender a receive will dequeue, or `none`
+if it will block.**
+
+Read from the endpoint's send queue at the *pre*-state, which is exactly what
+`endpointReceiveDual` and `endpointReceiveDualOnCore` branch on — so this is the
+receive's rendezvous classification, not an approximation of it.
+
+**Why it has to be a function.**  `endpointSendDualWithCaps` has always had this
+gate on its own side (`hasReceiver`, read from `receiveQ.head` before the send)
+and the receive side never did, because the receive-side unwrap had no live
+caller to expose it.  Once PR #873 wired `.receive` and `.replyRecv` through the
+WithCaps receive, the missing gate became a capability-duplication defect: the
+blocking branch returns the *receiver's own* id and leaves `pendingMessage`
+untouched, so a receiver still holding a previously delivered caps-bearing
+message had those capabilities unwrapped **again** — an extra copy of authority
+installed by a receive that dequeued nothing.
+
+The live arms already re-derived this same read three times inline (each one's
+`wokenSender?`), which is the shape that lets four copies drift apart; naming it
+once is the `signalDelivery` remedy applied to the receive. -/
+def receiveRendezvousSender? (st : SystemState) (endpointId : SeLe4n.ObjId) :
+    Option SeLe4n.ThreadId :=
+  (st.getEndpoint? endpointId).bind (·.sendQ.head)
+
+/-- WS-SM SM6 (PR #873 round 8): **will this receive install capabilities?**
+
+The condition the WithCaps receive actually branches on, read from the same
+pre-state: a sender is there to dequeue, and the message it parked carries caps.
+Exists so the *declared lock footprint* can be resolved from the same fact the
+transition uses — `lockSet_endpointReceive` / `lockSet_replyRecv` hold the
+receiver's own CSpace root in **write** mode exactly when this is `true`, because
+that is when `ipcTransferSingleCap` writes it. -/
+def receiveInstallsCaps (st : SystemState) (endpointId : SeLe4n.ObjId) : Bool :=
+  match receiveRendezvousSender? st endpointId with
+  | none => false
+  | some sender =>
+    match (st.getTcb? sender).bind (·.pendingMessage) with
+    | none => false
+    | some msg => !msg.caps.isEmpty
+
 /-- WS-F1/WS-E4/M-01: Receive from endpoint using intrusive dual-queue semantics
 with IPC message transfer.
 

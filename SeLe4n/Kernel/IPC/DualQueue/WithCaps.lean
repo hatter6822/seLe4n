@@ -144,9 +144,17 @@ def endpointReceiveDualWithCaps
   fun st =>
     -- WS-SM SM6.D (#7.1 fold): forward the server-supplied reply object into the
     -- folded receive transition (atomic reply-linking on a Call rendezvous).
+    -- PR #873 round 8: **did this receive dequeue anything?**  Read before the
+    -- transition, exactly as `endpointSendDualWithCaps` reads `hasReceiver`
+    -- before the send.  Without it the blocking branch — which returns the
+    -- receiver's own id and leaves `pendingMessage` untouched — unwrapped a
+    -- *previously delivered* message a second time, installing an extra copy of
+    -- authority for a receive that consumed nothing.
+    let rendezvous := (receiveRendezvousSender? st endpointId).isSome
     match endpointReceiveDual endpointId receiver replyId st with
     | .error e => .error e
     | .ok (senderId, st') =>
+        if !rendezvous then .ok ((senderId, { results := #[] }), st') else
         -- Check if the receiver got a message (sender was dequeued)
         -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
         match st'.getTcb? receiver with
@@ -189,6 +197,27 @@ def endpointReceiveDualWithCaps
                 -- Receiver was enqueued (no sender available)
                 .ok ((senderId, { results := #[] }), st')
         | none => .ok ((senderId, { results := #[] }), st')
+
+/-- **M-D01 (PR #873 round 8): a receive that dequeued nothing installs
+nothing** — the single-core sibling of
+`endpointReceiveDualWithCapsOnCore_blocked_installs_nothing`, and the same
+security property.
+
+`endpointReceiveDual`'s blocking branch returns the receiver's own id and leaves
+`pendingMessage` untouched, so deciding by that field alone re-unwrapped a
+message the receiver had been holding since a previous receive — an extra copy of
+authority installed with no sender.  The gate is the endpoint's pre-state send
+queue, which is what the bare transition itself branches on. -/
+theorem endpointReceiveDualWithCaps_blocked_installs_nothing
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (st st' : SystemState) (senderId : SeLe4n.ThreadId)
+    (hBlocked : receiveRendezvousSender? st endpointId = none)
+    (hRecv : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
+    endpointReceiveDualWithCaps endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase st
+      = .ok ((senderId, { results := #[] }), st') := by
+  simp [endpointReceiveDualWithCaps, hRecv, hBlocked]
 
 /-- M-D01: Extended call with capability transfer. Composes `endpointCall`
 with `ipcUnwrapCaps` for the immediate-rendezvous path. Same structure as

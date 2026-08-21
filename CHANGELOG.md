@@ -1,3 +1,79 @@
+## v0.33.82 — a receive that dequeued nothing was installing capabilities
+
+**Security fix.**  A thread that had legitimately received one capability-bearing
+message could call `.receive` on an **idle** endpoint and get a *fresh copy* of
+that capability installed into a new receive slot — with no sender, and with no
+message consumed.  Repeat for as many slots as it has.
+
+The mechanism is a two-line seam.  `endpointReceiveDual`'s blocking branch
+returns the **receiver's own** thread id — there is no sender to name — and does
+not clear `pendingMessage`.  So a WithCaps wrapper that decides by looking at
+that field alone cannot tell a message delivered *by this call* from one the
+receiver has been holding since its last receive, and it unwrapped the stale one
+again.
+
+Nothing shipped: the wrapper is older than this PR but had no live caller, so
+until v0.33.77 routed `.receive` through it — and v0.33.80 `.replyRecv` — the
+defect was unreachable.  Both cuts are on this branch.  Reported before the fix
+per the project's vulnerability rule, with the reproduction:
+
+```
+step2 receive installed=1 slot0=true          ← legitimate transfer
+step3 BLOCKING receive: installed=1 slot1=true   ← duplicate, pre-fix
+step3 BLOCKING receive: installed=0 slot1=false  ← post-fix
+```
+
+**The send side always had this gate.**  `endpointSendDualWithCaps` reads
+`hasReceiver` from the endpoint's `receiveQ` *before* the send and refuses to
+unwrap without a rendezvous; the receive side simply never grew its mirror image,
+because nothing exercised it.  So the fix is that mirror: `receiveRendezvousSender?`
+reads the pre-state `sendQ` head, which is exactly what the bare transition
+branches on, and both WithCaps receives return the empty summary when it is
+`none`.  `endpointReceiveDualWithCaps{,OnCore}_blocked_installs_nothing` state it.
+
+It is a **function**, not a fourth inline read.  The live arms already re-derived
+the same expression three times for their `wokenSender?`, and four copies of one
+classification drifting apart is precisely what `signalDelivery` was introduced to
+stop after three rounds of exactly that.
+
+### The install's declared footprint was wrong too
+
+Found in the same seam: `ipcTransferSingleCap` mutates the receiver's CSpace root
+through `cspaceInsertSlot`, while `lockSet_endpointReceive` and
+`lockSet_replyRecv` declared that same CNode **read**-only.  Under SM3.C.9's fine
+locks a concurrent CSpace writer would share the alleged read lock and one update
+would be lost.
+
+Both footprints take an `installsCaps` flag that puts the member in **write**
+mode.  A mode on the existing member rather than another `lockSetExtendOpt`,
+because the receiver's CSpace root *is* the caller's — the receiver is the caller
+of `.receive`, and the arm passes `gate.cspaceRoot` — so the size and the
+acquisition order are untouched, every WCRT pin survives, and `false` reduces
+definitionally.  An outer optional would have merged to the same set while making
+the crude size bound count a member that cannot exist: the same fact, worse
+stated.
+
+`receiveInstallsCaps` resolves the flag from the pre-state — a sender to dequeue,
+carrying caps — so `lockSet_endpointReplyRecvOnCore` and the transition read the
+same fact rather than two that could drift.  The consistency theorems are stated
+over **every** value of the flag, not only the default, which is the round-6
+`.declassify` lesson applied before it could repeat; the size bounds and the
+`lockSetTransitions_within_bound` conjuncts move to the new arity together,
+because a partial application there is how an added member gets silently
+unbounded.  `lockSet_{endpointReceive,replyRecv}_capsInstall_write_mem` are the
+checkable forms.
+
+### The regression measures the property, not one call
+
+`chain12eReceiveWithoutSenderInstallsNothing` asserts both directions: the
+legitimate rendezvous still installs, and the receive against an idle endpoint
+does not — so a change that broke both the same way (never installing) cannot
+pass the negative alone.  It also pins the two facts that made the defect
+possible, so they stay visible: the receiver is still holding the delivered
+message, and the send queue really is empty at the second call.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md
+
 ## v0.33.81 — three ways to invent a predecessor
 
 SM9.D replaced a *syntactic* laundering detector — one that matched domains and

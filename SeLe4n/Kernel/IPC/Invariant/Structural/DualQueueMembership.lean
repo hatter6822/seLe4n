@@ -5832,6 +5832,12 @@ theorem endpointReceiveDualWithCaps_establishes_blockedOnReplyHasReplyObject
     have hPMid := endpointReceiveDual_establishes_blockedOnReplyHasReplyObject st stMid endpointId receiver sid replyId hInv hObjInv hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hPMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hPMid
     | some receiverTcb =>
@@ -8844,6 +8850,12 @@ theorem endpointReceiveDualWithCaps_preserves_donationBudgetTransfer
     have hDMid := endpointReceiveDual_preserves_donationBudgetTransfer st stMid endpointId receiver sid replyId hInv hObjInv hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hDMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hDMid
     | some receiverTcb =>
@@ -8965,6 +8977,12 @@ theorem endpointReceiveDualWithCaps_preserves_donationOwnerUnique
     have hDMid := endpointReceiveDual_preserves_donationOwnerUnique st stMid endpointId receiver sid replyId hInv hObjInv hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hDMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hDMid
     | some receiverTcb =>
@@ -9017,6 +9035,12 @@ theorem endpointReceiveDualWithCaps_preserves_donationOwnerValid
       hInv hUnique hQHBC hReceiverReady hObjInv hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hDMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hDMid
     | some receiverTcb =>
@@ -9067,6 +9091,12 @@ theorem endpointReceiveDualWithCaps_passiveServerIdleFrame
       hReceiverReady hObjInv hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
     | some receiverTcb =>
@@ -9129,6 +9159,12 @@ theorem endpointReceiveDualWithCaps_timeoutBudgetFrame
     have hFMid := endpointReceiveDual_timeoutBudgetFrame st stMid endpointId receiver sid replyId hObjInv hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
     | some receiverTcb =>
@@ -11500,6 +11536,12 @@ theorem endpointReceiveDualWithCaps_establishes_blockedOnReplyHasTarget
     have hPMid := endpointReceiveDual_establishes_blockedOnReplyHasTarget st stMid endpointId receiver sid replyId hInv hObjInv hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hPMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hPMid
     | some receiverTcb =>
@@ -13952,6 +13994,12 @@ theorem endpointReceiveDualWithCaps_preserves_pendingReceiveReplyWellFormed
       receiver sid replyId hObjInv hInv hReplyIdValid hReceiverNotRecv hQHBC hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hPMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hPMid
     | some receiverTcb =>
@@ -15160,6 +15208,12 @@ theorem endpointReceiveDualWithCaps_preserves_queueNextBlockingConsistent
       replyId st stMid sid hInv hDQSI hTail hObjInv hFreshReceiver hRecvTailFresh hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hQNBCMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hQNBCMid
     | some receiverTcb =>
@@ -15306,6 +15360,12 @@ theorem endpointReceiveDualWithCaps_preserves_endpointQueueTailBlockedConsistent
       replyId st stMid sid hInv hDQSI hQHBC hObjInv hFreshReceiver hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hTailMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hTailMid
     | some receiverTcb =>
@@ -17277,6 +17337,12 @@ theorem endpointReceiveDualWithCaps_preserves_queueHeadBlockedConsistent
       replyId st stMid sid hQHBC hQNTB hDQSI hObjInv hReceiverReady hFreshReceiver hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hQHBCMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hQHBCMid
     | some receiverTcb =>
@@ -17341,6 +17407,12 @@ theorem endpointReceiveDualWithCaps_preserves_queueNextTargetBlocked
       replyId st stMid sid hQNTB hDQSI hTail hObjInv hReceiverReady hFreshReceiver hRecvTailFresh hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hQNTBMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hQNTBMid
     | some receiverTcb =>
@@ -19850,6 +19922,12 @@ theorem endpointReceiveDualWithCaps_preserves_allPendingMessagesBounded
       replyId st stMid hInv hObjInv hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hMid
     | some receiverTcb =>
@@ -19908,6 +19986,12 @@ theorem endpointReceiveDualWithCaps_preserves_endpointQueueNoDup
       sid hInv hDQSI hObjInv hFreshReceiver hRecvTailFresh hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hMid
     | some receiverTcb =>
@@ -19967,6 +20051,12 @@ theorem endpointReceiveDualWithCaps_preserves_ipcStateQueueMembershipConsistent
       hFreshReceiver hRecvTailFresh hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
+    -- PR #873 round 8: a receive that dequeued nothing returns the bare
+    -- transition's post-state, so the clause is the one it already gives.
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hMid
+    | some _ =>
+    simp [hRv] at hStep
     cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hMid
     | some receiverTcb =>
