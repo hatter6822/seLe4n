@@ -443,6 +443,18 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     else
     match st.objects.get? endpointId with
     | some (.endpoint ep) =>
+        -- **The sender is resolved once, for both orderings.**  The blocking
+        -- path already did this and the rendezvous path did not, so whether a
+        -- nonexistent sender was refused depended on whether a receiver
+        -- happened to be waiting — and on the rendezvous ordering the message
+        -- was delivered while `frozenTaintFlow` read the total table at an id
+        -- that names nothing (empty provenance) or names a non-TCB object
+        -- (that object's provenance).  Hoisting the lookup removes the
+        -- asymmetry structurally rather than adding a second guard that could
+        -- drift from this one.
+        match frozenLookupTcb st sender with
+        | none => .error .objectNotFound
+        | some senderTcb =>
         match ep.receiveQ.head with
         | some _receiver =>
             -- Receiver waiting: pop head and transfer message
@@ -463,19 +475,18 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
             -- No receiver: block sender with message, then enqueue into sendQ (T1-B/M-FRZ-1).
             -- The message stays in the sender's own TCB, whose provenance is
             -- already the sender's, so there is nothing to propagate here.
-            match frozenLookupTcb st sender with
-            | some senderTcb =>
-                let senderTcb' := { senderTcb with
-                  ipcState := .blockedOnSend endpointId
-                  pendingMessage := some msg }
-                match frozenStoreTcb sender senderTcb' st with
+            -- `senderTcb` is the one resolved above, shared with the rendezvous
+            -- ordering so the two cannot disagree about what a valid sender is.
+            let senderTcb' := { senderTcb with
+              ipcState := .blockedOnSend endpointId
+              pendingMessage := some msg }
+            match frozenStoreTcb sender senderTcb' st with
+            | .error e => .error e
+            | .ok ((), st') =>
+                -- Enqueue sender into sendQ so subsequent receive can find it
+                match frozenQueuePushTail endpointId false sender st' with
                 | .error e => .error e
-                | .ok ((), st') =>
-                    -- Enqueue sender into sendQ so subsequent receive can find it
-                    match frozenQueuePushTail endpointId false sender st' with
-                    | .error e => .error e
-                    | .ok st'' => .ok ((), st'')
-            | none => .error .objectNotFound
+                | .ok st'' => .ok ((), st'')
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 

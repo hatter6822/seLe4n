@@ -1,3 +1,52 @@
+## v0.33.73 — the gate that should have caught the anchors, and the third unvalidated source
+
+**The anchor-satisfiability gate was covering four suites out of nine, one of
+which does not exist.**  `ANCHOR_SCRIPTS` named `test_tier2_smoke.sh` — no such
+file — and omitted `test_tier2_{trace,determinism,negative}.sh`, both Tier 4
+suites and Tier 5.  A path that could not be read was skipped in silence, so the
+gate reported PASS over five live suites exactly as confidently as over the four
+it read.  A satisfiability gate that quietly covers less than it claims is worse
+than none: it turns "unverified" into "verified", which is what its PASS line
+invites a reader to conclude.
+
+The list is now **discovered** (`scripts/test_tier*.sh`), an unreadable path is a
+hard failure rather than a skip, and an empty discovery is a hard failure too —
+a glob that stops matching would otherwise check nothing and pass.  Coverage went
+from 2 520 anchors to 2 523 across all nine suites.
+
+**And it could not see the contradiction that actually shipped.**  Keys were
+compared exactly (modulo a leading `^`), so it caught `^theorem foo` against
+`theorem foo` and missed the pair that kept Tier 3 red for four commits:
+
+    run_check          '^abbrev TaintTable := SeLe4n.ObjId → DeclassificationTaint'
+    run_negative_check  'abbrev TaintTable := SeLe4n\.ObjId'
+
+Different strings — one spells the module separator `.`, the other `\.`, and the
+negative names only a prefix — same file, unsatisfiable together.  A positive
+anchor asserts that some line matching it exists; when a negative anchor's
+forbidden text is *literally contained* in that required text, the line the
+positive demands is one the negative rejects.  That is now checked by containment
+over literal cores, with patterns carrying a real wildcard yielding no core and
+being skipped rather than guessed at.  The historical pair is planted verbatim in
+`--self-test`, along with the missing-path and empty-discovery cases, so a future
+simplification cannot quietly stop catching any of them.
+
+**`frozenEndpointSend` never resolved its sender on the rendezvous path** — the
+third instance of one family, after the reply and the signal.  The blocking path
+always resolved it, so whether a nonexistent sender was refused depended on
+whether a receiver happened to be waiting; on the rendezvous ordering the message
+was delivered while the flow read the total table at an id naming nothing (empty
+provenance) or a non-TCB object (that object's provenance).  The lookup is now
+hoisted above the branch and shared, which removes the asymmetry structurally
+rather than adding a second guard that could drift from the first.
+
+This time the whole family was swept rather than the reported member:
+`frozenEndpointReceive` and `frozenEndpointCall` already resolve their sources,
+and the wait path sources from the notification the enclosing match resolved —
+so the send was the last one.  FO-023 pins both send orderings.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md
+
 ## v0.33.72 — the signal's source, which the reply's fix should have covered
 
 `frozenNotificationSignal` never resolved its `signaller`, and both delivery

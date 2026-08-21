@@ -621,6 +621,29 @@ private def fo023_frozenDeliveryIsHonest : IO Unit := do
     (match frozenNotificationSignal ⟨5⟩ ⟨8⟩ (Badge.ofNatMasked 9) fstSg with
      | .ok _ => false
      | .error e => e == .objectNotFound)
+  -- (d) …and the send's source, on BOTH orderings.  The blocking path always
+  -- resolved the sender; the rendezvous path did not, so whether a nonexistent
+  -- sender was refused depended on whether a receiver happened to be waiting.
+  let epEmpty : Endpoint := { sendQ := {}, receiveQ := {} }
+  let fstNoRecv := mkFrozenState [(⟨10⟩, .endpoint epEmpty)]
+  let sendMsg : IpcMessage :=
+    { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  expect "FO-023: an absent sender is refused with no receiver waiting"
+    (match frozenEndpointSend ⟨10⟩ ⟨77⟩ sendMsg fstNoRecv with
+     | .ok _ => false
+     | .error e => e == .objectNotFound)
+  -- Same sender, same endpoint, but now a receiver is queued — the ordering
+  -- that used to accept it.
+  match frozenEndpointReceive ⟨10⟩ ⟨4⟩ (mkFrozenState
+      [(⟨10⟩, .endpoint epEmpty), (⟨4⟩, .tcb (mkTcb 4))]) with
+  | .error _ =>
+      -- A receive with no sender blocks the receiver; that is the state we want.
+      throw <| IO.userError "FO-023: parking a receiver should succeed"
+  | .ok (_, fstWithRecv) =>
+    expect "FO-023: an absent sender is refused at a rendezvous too, not only when blocking"
+      (match frozenEndpointSend ⟨10⟩ ⟨77⟩ sendMsg fstWithRecv with
+       | .ok _ => false
+       | .error e => e == .objectNotFound)
   IO.println "frozen-ops check passed [FO-023: a frozen delivery is honest]"
 
 end SeLe4n.Testing.FrozenOpsSuite

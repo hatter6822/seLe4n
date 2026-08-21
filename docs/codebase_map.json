@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm9d-causal-declassification-ppwxud",
-      "commit_sha": "fd936b366ded2b523560e442e1cdc0eefee5c9e8",
-      "tree_sha": "2b80b329523c1cf11c4e8022abb4040ca2fdb0bd",
-      "committed_at_utc": "2026-08-21T06:00:21+00:00"
+      "commit_sha": "88b016c75df91df4fe034ad3b24ac982c6541b3a",
+      "tree_sha": "1cba775e7dce81c20af1eff403cf8befb5778029",
+      "committed_at_utc": "2026-08-21T06:23:42+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "25ccae250a7f8516f51debb9914486bf814d5e6c4b2933cb7ed622794e1c4ed6"
+    "source_digest": "ee9ddf4ea9cd712af185dee2fa976f58460788be8a78d4e2689ff71f81d11171"
   },
   "summary": {
     "module_count": 354,
     "declaration_count": 16778
   },
   "readme_sync": {
-    "version": "0.33.72",
+    "version": "0.33.73",
     "lean_toolchain": "v4.28.0",
     "production_files": 285,
-    "production_loc": 283304,
+    "production_loc": 283315,
     "test_files": 69,
-    "test_loc": 62081,
+    "test_loc": 62104,
     "proved_theorem_lemma_decls": 9531,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -51178,7 +51178,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointReceive",
-          "line": 484,
+          "line": 495,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -51199,7 +51199,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointCall",
-          "line": 537,
+          "line": 548,
           "called": [
             "FrozenKernel",
             "IpcMessage",
@@ -51224,7 +51224,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointReply",
-          "line": 590,
+          "line": 601,
           "called": [
             "FrozenKernel",
             "IpcMessage",
@@ -51244,7 +51244,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceLookup",
-          "line": 667,
+          "line": 678,
           "called": [
             "CPtr",
             "Capability",
@@ -51263,7 +51263,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceLookupSlot",
-          "line": 679,
+          "line": 690,
           "called": [
             "CPtr",
             "Capability",
@@ -51276,7 +51276,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceMint",
-          "line": 693,
+          "line": 704,
           "called": [
             "Capability",
             "FrozenCNode",
@@ -51294,7 +51294,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceDelete",
-          "line": 711,
+          "line": 722,
           "called": [
             "FrozenCNode",
             "FrozenKernel",
@@ -51310,7 +51310,7 @@
         {
           "kind": "def",
           "name": "frozenVspaceLookup",
-          "line": 730,
+          "line": 741,
           "called": [
             "ASID",
             "FrozenKernel",
@@ -51325,7 +51325,7 @@
         {
           "kind": "def",
           "name": "frozenLookupServiceByCap",
-          "line": 751,
+          "line": 762,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -51339,7 +51339,7 @@
         {
           "kind": "def",
           "name": "frozenSchedContextConfigure",
-          "line": 773,
+          "line": 784,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -51357,7 +51357,7 @@
         {
           "kind": "def",
           "name": "frozenSchedContextBind",
-          "line": 819,
+          "line": 830,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -51375,7 +51375,7 @@
         {
           "kind": "def",
           "name": "frozenSchedContextUnbind",
-          "line": 862,
+          "line": 873,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -51390,7 +51390,7 @@
         {
           "kind": "def",
           "name": "frozenTimerTickBudget",
-          "line": 899,
+          "line": 910,
           "called": [
             "FrozenKernel",
             "cbsBudgetCheck",
@@ -51407,7 +51407,7 @@
         {
           "kind": "def",
           "name": "frozenSuspendThread",
-          "line": 948,
+          "line": 959,
           "called": [
             "FrozenKernel",
             "ThreadId",
@@ -51421,7 +51421,7 @@
         {
           "kind": "def",
           "name": "frozenResumeThread",
-          "line": 971,
+          "line": 982,
           "called": [
             "FrozenKernel",
             "ThreadId",
@@ -51436,7 +51436,7 @@
         {
           "kind": "def",
           "name": "frozenSetPriority",
-          "line": 1001,
+          "line": 1012,
           "called": [
             "FrozenKernel",
             "Priority",
@@ -51454,7 +51454,7 @@
         {
           "kind": "def",
           "name": "frozenSetMCPriority",
-          "line": 1030,
+          "line": 1041,
           "called": [
             "FrozenKernel",
             "Priority",
@@ -51470,7 +51470,7 @@
         {
           "kind": "def",
           "name": "frozenSetIPCBuffer",
-          "line": 1061,
+          "line": 1072,
           "called": [
             "FrozenKernel",
             "ThreadId",
@@ -51489,7 +51489,7 @@
         {
           "kind": "def",
           "name": "frozenOpCoverage",
-          "line": 1110,
+          "line": 1121,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -51506,7 +51506,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_count",
-          "line": 1158,
+          "line": 1169,
           "called": [
             "cspaceCopy",
             "cspaceMint",
@@ -51525,7 +51525,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_exhaustive",
-          "line": 1173,
+          "line": 1184,
           "called": [
             "SyscallId",
             "frozenOpCoverage"
@@ -204158,6 +204158,7 @@
           "name": "fo023_frozenDeliveryIsHonest",
           "line": 570,
           "called": [
+            "Endpoint",
             "IpcMessage",
             "Notification",
             "Reply",
@@ -204166,7 +204167,9 @@
             "badge",
             "empty",
             "expect",
+            "frozenEndpointReceive",
             "frozenEndpointReply",
+            "frozenEndpointSend",
             "frozenLookupTcb",
             "frozenNotificationSignal",
             "frozenNotificationWait",
@@ -204183,7 +204186,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 629,
+          "line": 652,
           "called": [
             "fo001_lookupExisting",
             "fo002_lookupMissing",

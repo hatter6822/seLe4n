@@ -30,14 +30,41 @@ import tempfile
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-# Scripts whose anchors are checked.  A tiered suite that starts declaring
-# anchors must be added here; the self-test pins the parser, not this list.
-ANCHOR_SCRIPTS = [
-    "scripts/test_tier3_invariant_surface.sh",
-    "scripts/test_tier2_smoke.sh",
-    "scripts/test_tier1_build.sh",
-    "scripts/test_tier0_hygiene.sh",
-]
+# Scripts whose anchors are checked — **discovered, not listed**.
+#
+# The hand-written list this replaces had gone stale in the way a hand-written
+# list does: it named `test_tier2_smoke.sh`, which does not exist, and omitted
+# `test_tier2_{trace,determinism,negative}.sh`, both Tier 4 suites and Tier 5.
+# Five live suites were therefore unchecked, and because a missing path was
+# skipped in silence the gate reported PASS over them just as confidently as
+# over the four it actually read.  A satisfiability gate that quietly covers
+# less than it claims is worse than none: it converts "unverified" into
+# "verified", which is the reading its PASS line invites.
+#
+# Discovery keeps it honest — a tier script added tomorrow is covered the day it
+# lands, and one renamed cannot silently drop out.
+TIER_SCRIPT_GLOB = "test_tier*.sh"
+
+
+def discover_anchor_scripts() -> list[str]:
+    """Every tiered suite, by discovery.
+
+    Sorted for a stable report order.  An empty result is a hard error rather
+    than an empty pass: it means the glob has stopped matching the tree, which
+    is the same fail-open this function exists to remove.
+    """
+    scripts = sorted(
+        str(p.relative_to(REPO_ROOT))
+        for p in (REPO_ROOT / "scripts").glob(TIER_SCRIPT_GLOB)
+        if p.is_file()
+    )
+    if not scripts:
+        raise SystemExit(
+            f"FAIL: anchor-set satisfiability — no tier suites matched "
+            f"scripts/{TIER_SCRIPT_GLOB}; the gate would have checked nothing "
+            f"and reported PASS."
+        )
+    return scripts
 
 ANCHOR_RE = re.compile(
     r"""run_(?P<prose>prose_)?(?P<neg>negative_)?check\s+   # helper
@@ -91,6 +118,42 @@ def parse_anchors(text: str):
         yield line_no, bool(m.group("neg")), pattern, m.group("target")
 
 
+def _literal_core(pattern: str) -> str | None:
+    """The literal text `pattern` pins, or `None` if it pins no single string.
+
+    `.` and `\\.` both reduce to a literal dot.  Unescaped `.` *is* a wildcard,
+    but in these suites it is overwhelmingly a module separator written without
+    the escape (`SeLe4n.ObjId`), and the two helpers routinely spell the same
+    symbol one way in the positive anchor and the other way in the negative —
+    which is precisely the pair that has to be comparable.  Treating them alike
+    is what makes the containment test below able to see them as the same text.
+
+    A pattern carrying a genuine wildcard — a quantifier, class, group or
+    alternation — pins a *set* of strings rather than one, so no single string
+    stands for it and the honest answer is "no verdict" rather than a guess.
+    """
+    out, i = [], 0
+    while i < len(pattern):
+        c = pattern[i]
+        if c == "\\" and i + 1 < len(pattern):
+            nxt = pattern[i + 1]
+            # `\.`, `\(`, … are escaped literals; `\s`, `\b`, `\d` are classes.
+            if nxt.isalnum():
+                return None
+            out.append(nxt)
+            i += 2
+            continue
+        if c == ".":
+            out.append(".")
+            i += 1
+            continue
+        if c in "*+?[]()|{}^$":
+            return None
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def find_contradictions(paths):
     positive: dict[tuple[str, str], list[str]] = {}
     negative: dict[tuple[str, str], list[str]] = {}
@@ -100,7 +163,13 @@ def find_contradictions(paths):
         if not p.is_absolute():
             p = REPO_ROOT / p
         if not p.exists():
-            continue
+            # Never silently.  A path that cannot be read is a tier whose
+            # anchors are unchecked, and reporting PASS over it is the failure
+            # this gate is for.
+            raise SystemExit(
+                f"FAIL: anchor-set satisfiability — {path} does not exist, so "
+                f"its anchors would go unchecked while the gate reported PASS."
+            )
         for line_no, is_neg, pattern, target in parse_anchors(p.read_text()):
             key = (pattern, target)
             where = f"{p.relative_to(REPO_ROOT) if p.is_relative_to(REPO_ROOT) else p}:{line_no}"
@@ -111,6 +180,39 @@ def find_contradictions(paths):
                 positive.setdefault(key, []).append(where)
                 total_pos += 1
     both = sorted(set(positive) & set(negative))
+
+    # …and the contradictions that are not textually identical.
+    #
+    # Exact-key matching sees `^theorem foo` against `theorem foo` (the `^` is
+    # normalised away) but not a negative anchor whose regex matches a *part* of
+    # what a positive anchor requires.  That is the shape that actually shipped:
+    # `run_check` required `^abbrev TaintTable := SeLe4n.ObjId → Declassification…`
+    # while `run_negative_check` forbade `abbrev TaintTable := SeLe4n\.ObjId`.
+    # Different strings, same file, and unsatisfiable together — Tier 3 was red
+    # for four commits before anyone read the two lines side by side.
+    #
+    # A positive anchor asserts that some line matching P exists.  When the text
+    # a negative anchor forbids is *literally contained* in the text P requires,
+    # that line necessarily contains the forbidden text too, so the two cannot
+    # both hold — no regex reasoning needed, just string containment over the
+    # literal cores.  Restricting to literal cores is what keeps this free of
+    # false positives: a pattern with a real wildcard yields no core and is
+    # skipped rather than guessed at.
+    for (p_pat, p_target), p_where in positive.items():
+        p_core = _literal_core(p_pat)
+        if p_core is None:
+            continue
+        for (n_pat, n_target), n_where in negative.items():
+            if n_target != p_target or (p_pat, p_target) in both:
+                continue
+            n_core = _literal_core(n_pat)
+            if n_core and n_core in p_core:
+                both.append((p_pat, p_target))
+                # Report against the negative anchor that actually fires.
+                negative[(p_pat, p_target)] = n_where
+                positive[(p_pat, p_target)] = p_where
+                break
+    both = sorted(set(both))
     return both, positive, negative, total_pos, total_neg
 
 
@@ -189,6 +291,59 @@ def self_test() -> int:
             )
             return 1
 
+        # THE HISTORICAL PAIR.  Exact-key matching could not see this: the
+        # positive spells the module separator `.` and the negative spells it
+        # `\.`, and the negative names only a prefix of what the positive
+        # requires.  Different strings, same file, unsatisfiable together —
+        # this is the contradiction that kept Tier 3 red for four commits, and
+        # it is planted verbatim so a future simplification of the containment
+        # test cannot quietly stop catching it.
+        historical = (
+            "run_check \"INVARIANT\" rg -n "
+            "'^abbrev TaintTable := SeLe4n.ObjId → DeclassificationTaint' "
+            "SeLe4n/Kernel/InformationFlow/Taint.lean\n"
+            "run_negative_check \"INVARIANT\" rg -n "
+            "'abbrev TaintTable := SeLe4n\\.ObjId' "
+            "SeLe4n/Kernel/InformationFlow/Taint.lean\n"
+        )
+        historical_p = d / "historical.sh"
+        historical_p.write_text(historical)
+        both, *_ = find_contradictions([str(historical_p)])
+        if not both:
+            print(
+                "FAIL: --self-test — the substring/escape-spelling "
+                "contradiction was NOT detected; a positive anchor whose "
+                "required text contains a negative anchor's forbidden text is "
+                "the shape that shipped, and it would ship again.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # A path that cannot be read must FAIL rather than be skipped: a
+        # silently-skipped tier is one the PASS line covers without checking.
+        try:
+            find_contradictions([str(d / "does_not_exist.sh")])
+        except SystemExit:
+            pass
+        else:
+            print(
+                "FAIL: --self-test — a missing anchor script was skipped "
+                "silently instead of failing the gate.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # Discovery must actually find the tiered suites.  A glob that stops
+        # matching would check nothing and report PASS over everything.
+        discovered = discover_anchor_scripts()
+        if len(discovered) < 5 or not any("tier3" in s for s in discovered):
+            print(
+                f"FAIL: --self-test — discovery returned {discovered}, which "
+                f"does not look like the tiered suites.",
+                file=sys.stderr,
+            )
+            return 1
+
         # The parser must not be fooled by a commented-out anchor.
         commented = clean + "# run_check \"INVARIANT\" rg -n '^theorem beta_removed' Some/File.lean\n"
         commented_p = d / "commented.sh"
@@ -249,7 +404,7 @@ def main() -> int:
     if args.self_test:
         return self_test()
 
-    return report(*find_contradictions(args.scripts or ANCHOR_SCRIPTS))
+    return report(*find_contradictions(args.scripts or discover_anchor_scripts()))
 
 
 if __name__ == "__main__":
