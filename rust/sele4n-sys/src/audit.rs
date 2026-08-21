@@ -46,7 +46,7 @@ use sele4n_types::{CPtr, KernelResult, SyscallId};
 /// Number of `audit_read` sub-operation opcodes.  Mirrors Lean's
 /// `auditReadOpcodeCount`; a divergence would surface as
 /// `InvalidSyscallArgument` on a valid request rather than as a decode bug.
-pub const AUDIT_READ_OPCODE_COUNT: u64 = 29;
+pub const AUDIT_READ_OPCODE_COUNT: u64 = 30;
 
 /// The `audit_read` sub-operations, mirroring Lean's `AuditReadOp`.
 ///
@@ -163,8 +163,28 @@ pub enum AuditReadOpcode {
     /// `index` carries `later`, `chunk` carries `earlier`; `earlier >= later`
     /// names no predecessor and is `InvalidArgument`.  It deliberately does not
     /// recover a predecessor that has left the view — no view-local reader can
-    /// query an entry it cannot see.
+    /// query an entry it cannot see.  `ChainNamesArchived` is that case.
     ChainNamesEntry = 28,
+    /// WS-SM SM9.D: does a visible entry name one that has been **drained**?
+    ///
+    /// A drain advances the epoch rather than renumbering, so a surviving
+    /// entry's predecessor set can name a timestamp whose entry is gone, and
+    /// neither index-keyed verdict can ask about it: both operands must be
+    /// positions in the current view.  A laundering chain spanning a drain was
+    /// therefore unqueryable.
+    ///
+    /// `index` carries `later` (a view index), `chunk` carries the archived
+    /// **timestamp** — a raw identity rather than an index, which is why this
+    /// opcode is monitor-only, under the same gate that discloses the epoch to
+    /// `Status`.  An entry can only have been archived by a drain, and a drain
+    /// refuses unless its caller both passes that gate and sees the whole
+    /// trail, so an archived timestamp always belonged to an entry a
+    /// monitor-cleared reader could read.  A partial reader is refused
+    /// `IllegalAuthority` before the index is looked at, so it learns nothing
+    /// about the trail's extent.  Timestamps at or past the current epoch are
+    /// refused likewise: a still-present predecessor is `ChainNamesEntry`'s
+    /// question, asked through an index the projection checks.
+    ChainNamesArchived = 29,
 }
 
 impl AuditReadOpcode {
@@ -217,6 +237,7 @@ impl AuditReadOpcode {
             26 => Some(Self::RefusalReceiver),
             27 => Some(Self::ChainNamesPredecessor),
             28 => Some(Self::ChainNamesEntry),
+            29 => Some(Self::ChainNamesArchived),
             _ => None,
         }
     }
@@ -520,10 +541,12 @@ mod tests {
         // unmoved.
         assert_eq!(AuditReadOpcode::ChainNamesPredecessor.to_u64(), 27);
         assert_eq!(AuditReadOpcode::ChainNamesEntry.to_u64(), 28);
+        // WS-SM SM9.D: the archived form, for a chain that spans a drain.
+        assert_eq!(AuditReadOpcode::ChainNamesArchived.to_u64(), 29);
         // Every opcode is below the count, and the count is the first value the
         // kernel refuses.
         assert_eq!(
-            AuditReadOpcode::ChainNamesEntry.to_u64() + 1,
+            AuditReadOpcode::ChainNamesArchived.to_u64() + 1,
             AUDIT_READ_OPCODE_COUNT
         );
     }

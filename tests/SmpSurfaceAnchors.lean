@@ -1012,7 +1012,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _wk := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_wrong_kind
      have _ab := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_absent_target
      have _pb := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_invalid_target_policy_blind
-     decide (SeLe4n.Kernel.auditReadOpcodeCount = 29
+     decide (SeLe4n.Kernel.auditReadOpcodeCount = 30
        ∧ SeLe4n.Kernel.decodeAuditReadOp 25 0 0
            = some (.refusalReceiverChunkCount 0)
        ∧ SeLe4n.Kernel.decodeAuditReadOp 26 0 0 = some (.refusalReceiverChunk 0 0)))

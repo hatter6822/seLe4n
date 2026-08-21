@@ -3720,6 +3720,19 @@ run_check "TRACE" rg -n 'causality verdict: monitorReads=' tests/fixtures/smp_in
 # forbids.  It was also redundant: a transfer moves authority, and every content
 # flow the authority enables is declared where that content actually moves.
 run_check "INVARIANT" rg -n '^theorem senderTaintEdges_content_only' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+
+# PR #873 review round 5: a laundering chain that spans an audit drain is
+# queryable again.  Monitor-only and gated on `auditMonitorAuthorized` alone —
+# a gate that read the reader's current view would answer differently for two
+# states with identical views but different hidden entries, which is a count of
+# what the reader cannot see.
+run_check "INVARIANT" rg -n '\| chainNamesArchived \(later timestamp : Nat\)' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_names_iff' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_denied_for_non_monitor' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_refuses_live_timestamp' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^def auditReadOpcodeCount : Nat := 30' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n 'AUDIT_READ_OPCODE_COUNT: u64 = 30' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n 'ChainNamesArchived = 29' rust/sele4n-sys/src/audit.rs
 # NEGATIVE: the carrier and its gate must not come back.
 run_negative_check "INVARIANT" rg -n '^def capTransferTaintSinks' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_negative_check "INVARIANT" rg -n '^theorem taintPropagation_send_to_receiver_cspace' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean

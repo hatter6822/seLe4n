@@ -1112,8 +1112,44 @@ inductive AuditReadOp where
 
       It deliberately does **not** recover a predecessor that has left the view
       (a drained entry): no view-local reader can query an entry it cannot see,
-      so the gap it closes is the non-adjacent-but-both-visible one. -/
+      so the gap it closes is the non-adjacent-but-both-visible one.
+      `chainNamesArchived` is the operation for the drained case. -/
   | chainNamesEntry (later earlier : Nat)
+  /-- WS-SM SM9.D: **does this visible entry name an entry that has been
+      drained?**  The chain a drain would otherwise break.
+
+      A drain advances the epoch rather than renumbering, so a surviving entry's
+      `predecessorTags` can name a timestamp whose entry is gone — and neither
+      index-keyed verdict can ask about it, because both operands must be
+      positions in the current view.  A genuine laundering chain that spans a
+      drain was therefore unqueryable, which is the one case the round-3
+      non-adjacent fix explicitly left open.
+
+      **Why a raw timestamp operand is safe here and would not be in general.**
+      An index names an entry the policy has already cleared this reader to see;
+      a bare number names anything, so answering "does `later` name `t`" for an
+      arbitrary `t` would let a *partial* reader enumerate a visible entry's
+      predecessor set, which the projection hides.  So this arm is **monitor
+      only**, under exactly the gate that already discloses the epoch to
+      `.status`: `auditMonitorAuthorized`.  An entry can only have been archived
+      by a drain, and a drain refuses unless its caller sees the whole trail
+      (`auditDrainViewComplete`) *and* passes that same monitor gate — so every
+      archived timestamp belonged to an entry a monitor-cleared reader could
+      read, and answering discloses nothing this caller could not have read
+      before the drain.
+
+      The gate is a function of `(ctx, monitorClearance, reader)` alone and
+      reads no state, which is what keeps `auditRead_determined_by_view` true.
+      Gating on the reader's *current* view of the trail would have been the
+      obvious spelling and is the wrong one: it would answer differently for two
+      states with identical views but different hidden entries, which is a count
+      of what the reader cannot see.
+
+      Restricted to `timestamp < declassificationAuditEpoch` on top of the gate,
+      so the operation answers only about entries that have actually left the
+      trail — a still-present predecessor is `chainNamesEntry`'s question, asked
+      through an index the projection checks. -/
+  | chainNamesArchived (later timestamp : Nat)
   deriving Repr, DecidableEq, Inhabited
 
 /-- WS-SM SM9.A.2 (plan §3.7, **the fusion**): every read operation names the
@@ -1139,6 +1175,7 @@ def AuditReadOp.readsStructure : AuditReadOp → ReadableStructure
   | .refusalReceiverChunk _ _ => .declassificationRefusalLedger
   | .chainNamesPredecessor _ => .declassificationAuditTrail
   | .chainNamesEntry _ _ => .declassificationAuditTrail
+  | .chainNamesArchived _ _ => .declassificationAuditTrail
 
 /-- WS-SM SM9.A.2: the totality anchor.  The *mechanism* is the definition
 itself — an exhaustive match with no wildcard; this theorem is the named surface
@@ -1559,6 +1596,18 @@ def auditReadWord (ctx : GenericLabelingContext)
             .ok (if declassificationEventNames laterEvent earlierEvent then 1 else 0)
           else .error .invalidArgument
       | _, _ => .error .invalidArgument
+  -- WS-SM SM9.D: the chain across a drain.  The gate is checked **before** the
+  -- index, so a caller it refuses learns nothing about the trail's extent —
+  -- the drain's own two gates share one error for the same reason.  A caller
+  -- the gate admits sees the whole trail, so the range is not news to it.
+  | .chainNamesArchived later timestamp =>
+      if auditMonitorAuthorized ctx monitorClearance reader
+          && decide (timestamp < st.declassificationAuditEpoch) then
+        match view[later]? with
+        | some laterEvent =>
+            .ok (if laterEvent.predecessorTags.contains timestamp then 1 else 0)
+        | none => .error .invalidArgument
+      else .error .illegalAuthority
 
 /-- WS-SM SM9.D.14: **the causality verdict, characterised.**
 
@@ -1657,6 +1706,52 @@ theorem chainEntryVerdict_view_local (ctx : GenericLabelingContext)
   unfold auditReadWord
   simp only [hView]
 
+/-- WS-SM SM9.D: **the archived verdict is the predecessor bit, and nothing
+more.**
+
+The word is `1` exactly when the visible later entry's own recorded snapshot
+names the archived timestamp — one bit about one entry the reader already holds,
+never the tag set itself.  Same disclosure as the two index-keyed verdicts;
+what differs is only that the predecessor it names is gone from the trail. -/
+theorem chainArchivedVerdict_names_iff (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (st : SystemState) (later timestamp : Nat) (laterEvent : DeclassificationEvent)
+    (hMon : auditMonitorAuthorized ctx monitorClearance reader = true)
+    (hArchived : timestamp < st.declassificationAuditEpoch)
+    (hLater :
+      (auditLogVisibleTo ctx reader st.declassificationAuditLog)[later]? = some laterEvent) :
+    auditReadWord ctx monitorClearance reader st (.chainNamesArchived later timestamp) =
+      .ok (if laterEvent.predecessorTags.contains timestamp then 1 else 0) := by
+  unfold auditReadWord
+  simp only [hMon, hLater, hArchived, decide_true, Bool.and_self, if_true]
+
+/-- WS-SM SM9.D (**fail-closed for a partial reader**): a caller the monitor gate
+does not admit is refused before the index is read, so the refusal carries no
+information about the trail's extent — the drain's two gates share one error for
+the same reason. -/
+theorem chainArchivedVerdict_denied_for_non_monitor (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (st : SystemState) (later timestamp : Nat)
+    (hMon : auditMonitorAuthorized ctx monitorClearance reader = false) :
+    auditReadWord ctx monitorClearance reader st (.chainNamesArchived later timestamp) =
+      .error .illegalAuthority := by
+  unfold auditReadWord
+  simp only [hMon, Bool.false_and, Bool.false_eq_true, if_false]
+
+/-- WS-SM SM9.D (**a live predecessor is not this question**): a timestamp at or
+past the epoch names an entry that has not been drained, and is refused.  The
+index-keyed `chainNamesEntry` is the operation for that case, and it checks the
+earlier entry's visibility through the projection rather than trusting a raw
+identity. -/
+theorem chainArchivedVerdict_refuses_live_timestamp (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (st : SystemState) (later timestamp : Nat)
+    (hLive : st.declassificationAuditEpoch ≤ timestamp) :
+    auditReadWord ctx monitorClearance reader st (.chainNamesArchived later timestamp) =
+      .error .illegalAuthority := by
+  unfold auditReadWord
+  simp only [Nat.not_lt.mpr hLive, decide_false, Bool.and_false, Bool.false_eq_true, if_false]
+
 /-- WS-SM SM9.A.2: **the reader is a function of the readable structures it is
 entitled to, and of nothing else.**
 
@@ -1683,7 +1778,9 @@ theorem auditRead_determined_by_view (ctx : GenericLabelingContext)
       auditReadWord ctx monitorClearance reader st₂ op := by
   unfold auditReadWord
   cases hMon : auditMonitorAuthorized ctx monitorClearance reader with
-  | false => cases op <;> simp only [hView, Bool.false_eq_true, if_false]
+  | false =>
+    cases op <;>
+      simp only [hView, Bool.false_eq_true, Bool.false_and, if_false]
   | true =>
     rw [hEpoch hMon, hLedger hMon]
     cases op <;> simp only [hView]
@@ -2829,7 +2926,7 @@ theorem auditRead_stable_under_append (ctx : GenericLabelingContext)
     (st : SystemState) (extra : DeclassificationAuditLog) (op : AuditReadOp)
     (hIndex : ∀ i f k, op = .fieldChunkCount i f ∨ op = .field i f k ∨
       op = .coreAndTrust i ∨ op = .basisByteCount i ∨ op = .basisChunk i k ∨
-      op = .chainNamesPredecessor i →
+      op = .chainNamesPredecessor i ∨ op = .chainNamesArchived i k →
       i < (auditLogVisibleTo ctx reader st.declassificationAuditLog).length)
     (hEntryIdx : ∀ l e, op = .chainNamesEntry l e →
       l < (auditLogVisibleTo ctx reader st.declassificationAuditLog).length ∧
@@ -2872,13 +2969,21 @@ theorem auditRead_stable_under_append (ctx : GenericLabelingContext)
   -- predecessor — so it needs both to be stable, which `i - 1 ≤ i` supplies
   -- from the single index hypothesis.
   | chainNamesPredecessor i =>
-    have hi := hIndex i .srcDomain 0 (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr rfl)))))
+    have hi := hIndex i .srcDomain 0
+      (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl))))))
     simp only [hEntry i hi, hEntry (i - 1) (Nat.lt_of_le_of_lt (Nat.sub_le i 1) hi)]
   -- WS-SM SM9.D.14: the general verdict reads TWO independent visible indices, so
   -- it needs both stable under the append — the dedicated two-index hypothesis.
   | chainNamesEntry l e =>
     obtain ⟨hl, he⟩ := hEntryIdx l e rfl
     simp only [hEntry l hl, hEntry e he]
+  -- WS-SM SM9.D: the archived verdict reads one visible index and the epoch,
+  -- and an append moves neither — the epoch because the append does not touch
+  -- it, the entry because the index was already in view.
+  | chainNamesArchived l t =>
+    have hl := hIndex l .srcDomain t
+      (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr rfl))))))
+    simp only [hEntry l hl]
 
 /-- WS-SM SM9.A.5 (**the bracket**): for a monitor, an unchanged status word
 means an unchanged epoch and an unchanged visible length — so no drain
@@ -3205,12 +3310,13 @@ def decodeAuditReadOp (opcode index chunk : Nat) : Option AuditReadOp :=
   -- value.  `index` is `later`, `chunk` is `earlier` — the existing operand
   -- triple, no new register.
   | 28 => some (.chainNamesEntry index chunk)
+  | 29 => some (.chainNamesArchived index chunk)
   | _  => none
 
 /-- WS-SM SM9.A.10: the number of `.auditRead` opcodes.  Pinned in the Rust
 mirror, so a divergence is a conformance failure rather than a silent
 `.invalidSyscallArgument` on a valid request. -/
-def auditReadOpcodeCount : Nat := 29
+def auditReadOpcodeCount : Nat := 30
 
 /-- WS-SM SM9.A.10: encode a sub-operation back to its operand triple. -/
 def encodeAuditReadOp : AuditReadOp → Nat × Nat × Nat
@@ -3243,6 +3349,7 @@ def encodeAuditReadOp : AuditReadOp → Nat × Nat × Nat
   | .refusalReceiverChunk i k => (26, i, k)
   | .chainNamesPredecessor i => (27, i, 0)
   | .chainNamesEntry l e => (28, l, e)
+  | .chainNamesArchived l t => (29, l, t)
 
 /-- WS-SM SM9.A.10: **the operand encoding round-trips.**  Every sub-operation
 is reachable through the ABI, and reaches the arm it names. -/
@@ -3265,6 +3372,7 @@ theorem decodeAuditReadOp_encode (op : AuditReadOp) :
   | refusalReceiverChunk i k => rfl
   | chainNamesPredecessor i => rfl
   | chainNamesEntry l e => rfl
+  | chainNamesArchived l t => rfl
 
 /-- WS-SM SM9.A.10 (**fail-closed**): an opcode outside the table is refused. -/
 theorem decodeAuditReadOp_out_of_range (opcode index chunk : Nat)
@@ -3275,8 +3383,8 @@ theorem decodeAuditReadOp_out_of_range (opcode index chunk : Nat)
   | 0, h | 1, h | 2, h | 3, h | 4, h | 5, h | 6, h | 7, h | 8, h | 9, h
   | 10, h | 11, h | 12, h | 13, h | 14, h | 15, h | 16, h | 17, h | 18, h
   | 19, h | 20, h | 21, h | 22, h | 23, h | 24, h | 25, h | 26, h
-  | 27, h | 28, h => omega
-  | n + 29, _ => rfl
+  | 27, h | 28, h | 29, h => omega
+  | n + 30, _ => rfl
 
 /-- WS-SM SM9.A.10: every opcode the table admits is below the count — the
 other half of the range pin. -/

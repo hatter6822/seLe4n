@@ -2861,7 +2861,7 @@ example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomai
     (op : AuditReadOp)
     (hIndex : ∀ i f k, op = .fieldChunkCount i f ∨ op = .field i f k ∨
       op = .coreAndTrust i ∨ op = .basisByteCount i ∨ op = .basisChunk i k ∨
-      op = .chainNamesPredecessor i →
+      op = .chainNamesPredecessor i ∨ op = .chainNamesArchived i k →
       i < (auditLogVisibleTo gctx reader st.declassificationAuditLog).length)
     (hEntryIdx : ∀ l e, op = .chainNamesEntry l e →
       l < (auditLogVisibleTo gctx reader st.declassificationAuditLog).length ∧
@@ -8493,7 +8493,7 @@ private def runRefusalReaderChecks : IO Unit := do
         -- WS-SM SM9.C.1: the refused receiver's pair, appended after the
         -- actor opcodes (§11.7 exercises their read semantics).
         .refusalReceiverChunkCount 3, .refusalReceiverChunk 3 1]
-     decide (auditReadOpcodeCount = 29) &&
+     decide (auditReadOpcodeCount = 30) &&
      ops.all (fun op =>
        let (a, b, k) := encodeAuditReadOp op
        decide (decodeAuditReadOp a b k = some op)) &&
@@ -9142,8 +9142,10 @@ private def runAuditLiveArmChecks : IO Unit := do
         -- likewise reads of the TRAIL.  The adjacent form and the general
         -- arbitrary-pair form (opcode 28), which is what lets a monitor test a
         -- hop an interleaved event split out of adjacency.
-        .chainNamesPredecessor 3, .chainNamesEntry 5 2]
-     decide (ops.length = 18) &&
+        -- WS-SM SM9.D: and the archived form (opcode 29), which is what lets a
+        -- monitor test a hop whose predecessor a drain removed from the view.
+        .chainNamesPredecessor 3, .chainNamesEntry 5 2, .chainNamesArchived 5 2]
+     decide (ops.length = 19) &&
      decide (ops.length + 11 = auditReadOpcodeCount) &&
      ops.all (fun op =>
        let (a, b, k) := encodeAuditReadOp op
@@ -9901,14 +9903,15 @@ private def runDeclassifiedSignalFailedHopChecks : IO Unit := do
         (.refusalReceiverChunk 0 0) with
       | .error e => decide (e = KernelError.invalidArgument)
       | .ok _ => false))
-  assertBool "the two opcodes are in the ABI at 25 and 26, and the count is 29"
+  assertBool "the two opcodes are in the ABI at 25 and 26, and the count is 30"
     (decide (decodeAuditReadOp 25 0 0 = some (.refusalReceiverChunkCount 0)) &&
      decide (decodeAuditReadOp 26 0 0 = some (.refusalReceiverChunk 0 0)) &&
      -- SM9.D.14 appended the adjacency verdict at 27 and the general
-     -- arbitrary-pair verdict at 28, so the count moved twice and 29 is the
-     -- first value the kernel refuses.
-     decide (auditReadOpcodeCount = 29) &&
-     decide (decodeAuditReadOp 29 0 0 = none))
+     -- arbitrary-pair verdict at 28; SM9.D then appended the archived verdict
+     -- at 29, so 30 is the first value the kernel refuses.
+     decide (auditReadOpcodeCount = 30) &&
+     decide (decodeAuditReadOp 29 0 0 = some (.chainNamesArchived 0 0)) &&
+     decide (decodeAuditReadOp 30 0 0 = none))
 
 /-- §11.8 fixture — the no-waiter twin of `declassSignalState`, so the
 disclosure pair below compares two states differing ONLY in the queue. -/
@@ -10542,15 +10545,18 @@ Without this the detector would be an improvement only the model can see: SM8's
 the same thing one refinement further on. -/
 private def runCausalReaderChecks : IO Unit := do
   IO.println "--- §12.9 SM9.D.14 the causality verdict reaches a monitor ---"
-  assertBool "both verdict opcodes are in the ABI at 27 and 28, and 29 is the first refused"
+  assertBool "all three verdict opcodes are in the ABI at 27..29, and 30 is the first refused"
     (decide (decodeAuditReadOp 27 1 0 = some (.chainNamesPredecessor 1)) &&
      decide (decodeAuditReadOp 28 5 2 = some (.chainNamesEntry 5 2)) &&
-     decide (auditReadOpcodeCount = 29) &&
-     decide (decodeAuditReadOp 29 1 0 = none) &&
-     -- both read the TRAIL, so both inherit the trail's equivalence clause
+     decide (decodeAuditReadOp 29 5 2 = some (.chainNamesArchived 5 2)) &&
+     decide (auditReadOpcodeCount = 30) &&
+     decide (decodeAuditReadOp 30 1 0 = none) &&
+     -- all three read the TRAIL, so all three inherit its equivalence clause
      decide ((AuditReadOp.chainNamesPredecessor 1).readsStructure
        = .declassificationAuditTrail) &&
      decide ((AuditReadOp.chainNamesEntry 5 2).readsStructure
+       = .declassificationAuditTrail) &&
+     decide ((AuditReadOp.chainNamesArchived 5 2).readsStructure
        = .declassificationAuditTrail))
   assertBool "the monitor reads 1 on the causal chain the acceptance scenario built"
     (match declassHop2 with

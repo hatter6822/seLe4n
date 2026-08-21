@@ -1,3 +1,58 @@
+## v0.33.67 — a laundering chain that spans an audit drain is queryable again
+
+**The last of the round-5 findings, and the one I had explicitly scoped out.**
+Round 3 added `chainNamesEntry` for a causal hop split out of adjacency by an
+interleaved event, and its docstring said plainly that it did *not* recover a
+predecessor that had left the view: "no view-local reader can query an entry it
+cannot see."  That was true of the mechanism and wrong as a conclusion.  A drain
+advances the epoch rather than renumbering, so a surviving entry's
+`predecessorTags` still names the archived timestamp — the kernel can answer;
+only the ABI had no way to ask.
+
+`AuditReadOp.chainNamesArchived (later timestamp)` at **opcode 29** (count 29 →
+30, mirrored in `sele4n-sys`) reuses the existing `[op, index, chunk]` triple:
+`index` is a view index, `chunk` is the archived timestamp.  It returns the same
+single opaque bit the other two verdicts return — whether the visible later
+entry's own recorded snapshot names that predecessor — so the tags themselves
+stay unexported.
+
+**The operand is a raw identity, so the gate had to carry the whole argument.**
+An index names an entry the projection has already cleared this reader to see; a
+bare number names anything, and answering for arbitrary timestamps would let a
+*partial* reader enumerate a visible entry's predecessor set.  So this arm is
+monitor-only, under exactly the gate that already discloses the epoch to
+`.status`.  That is sound because of a property the drain already has: it
+refuses unless its caller passes the monitor gate *and* sees the entire trail
+(`auditDrainViewComplete`), so an entry can only have been archived by a
+monitor-cleared caller who could read it, and answering discloses nothing this
+caller could not have read before the drain.
+
+**Where the obvious spelling would have opened a channel.**  Gating on the
+reader's *current* view — "you may ask if you can see the whole trail right now"
+— reads state, and would answer differently for two states with identical
+visible views but different hidden entries.  That is a count of what the reader
+cannot see, and `auditRead_determined_by_view` (the keystone the whole no-channel
+argument rests on) stops being provable.  The gate is therefore a function of
+`(ctx, monitorClearance, reader)` alone, and the theorem still goes through.
+
+Two further restrictions, both stated as theorems.  A timestamp at or past the
+epoch is refused (`chainArchivedVerdict_refuses_live_timestamp`): a still-present
+predecessor is opcode 28's question, asked through an index the projection
+checks, so this operation answers only about entries that have actually left the
+trail.  And the gate is checked **before** the index
+(`chainArchivedVerdict_denied_for_non_monitor`), so a refused caller learns
+nothing about the trail's extent — the drain's own two gates share one error for
+the same reason.
+
+Evidence: `chainArchivedVerdict_names_iff` characterises the word;
+`auditRead_stable_under_append` gains the arm (an append moves neither the epoch
+nor an index already in view); the §10.4/§11.7 round-trip lists, the ABI
+boundary assertions and the Rust conformance test all move to 30; the golden
+fixture's two opcode-count lines are regenerated.  Zero errors and zero warnings
+across the tree, staged modules and every suite; `test_rust.sh` green.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
 ## v0.33.66 — a CSpace root is not a taint carrier, because the model cannot say when its tag dies
 
 **The stale-root finding could not be patched, because the carrier itself was
