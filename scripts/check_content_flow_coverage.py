@@ -179,11 +179,24 @@ SELF_TEST_CHANNEL = ("SeLe4n.Model.TCB", "priority")
 # reported PASS on the blind gate.
 SELF_TEST_ROGUE = "cfPlantedPrivateTaintWriter"
 
+# A second plant, in the shape a matcher could have hidden: the helper
+# **pattern-matches the `SystemState`** and rebuilds it with a replacement taint
+# table.  Lean puts `SystemState.mk` in the generated `.match_1` for this shape as
+# well as in the user definition, so it is the case where "the sweep skips
+# generated auxiliaries" could have meant "the sweep skips the write".  Planted
+# so that stays a checked fact rather than a reading of the elaborator.
+SELF_TEST_ROGUE_MATCH = "cfPlantedMatchingTaintWriter"
+
 SELF_TEST_ROGUE_SRC = f"""
 private def {SELF_TEST_ROGUE} (st : SeLe4n.Model.SystemState) :
     SeLe4n.Model.SystemState :=
   {{ st with declassificationTaint :=
       SeLe4n.Kernel.applyTaintClears [] SeLe4n.Kernel.TaintTable.empty }}
+
+private def {SELF_TEST_ROGUE_MATCH} (st : SeLe4n.Model.SystemState)
+    (t : SeLe4n.Kernel.TaintTable) : SeLe4n.Model.SystemState :=
+  match st with
+  | {{ declassificationTaint := _, .. }} => {{ st with declassificationTaint := t }}
 """
 
 SHAPE = os.path.join(REPO, "SeLe4n", "Kernel", "Architecture", "SyscallReturn.lean")
@@ -362,18 +375,35 @@ the opposite of what privacy should buy a definition in a gate whose subject is
 "who writes this field". -/
 private def cfUserName (n : Name) : Name := (privateToUserName? n).getD n
 
-/-- Is this a definition a human wrote, rather than one the compiler generated?
+/-- The human-written definition a generated auxiliary belongs to.
 
-The discriminator has to run on the **user** name: `isInternalDetail` is true of
-every private constant, so applying it to the stored name would drop exactly the
-definitions this exists to admit.  Applied to `cfUserName n` it keeps
-`ProbeNs.helper` and drops `ProbeNs.helper.match_1`, `.eq_1`, `._proof_1` and the
-rest of the equation/matcher/unfolding auxiliaries — which carry no write a
-source line does not already carry.
+`Ns.helper.match_1`, `Ns.helper.eq_3`, `Ns.helper._proof_1` all strip back to
+`Ns.helper`.  A name with no such suffix is its own owner.
 
-Strictly wider than the `isInternal` filter it replaces: everything that filter
-admitted is admitted here, plus 3 872 private definitions. -/
-private def cfInspectable (n : Name) : Bool := !(cfUserName n).isInternalDetail
+Why attribute rather than skip: a helper that pattern-matches a `SystemState`
+before rebuilding it puts the `SystemState.mk` application in the generated
+matcher **as well as** in its own body (checked — the self-test plants exactly
+that shape).  "As well as" is what makes skipping auxiliaries safe today, and it
+is not a property this gate should depend on the elaborator continuing to have.
+Scanning the auxiliary and reporting it under its owner keeps the coverage
+without turning `applySyscallTaint.match_1` into an undeclared writer. -/
+private partial def cfOwnerName : Name -> Name
+  | .str p s =>
+      if s.startsWith "match_" || s.startsWith "eq_" || s.startsWith "proof_"
+          || s.startsWith "_" || s == "eq_def" || s == "brecOn"
+          || s == "below" || s == "induct" || s == "fun_cases" then
+        cfOwnerName p
+      else
+        .str p s
+  | n => n
+
+/-- Is this a constant whose body belongs to something a human wrote?
+
+Decided on the **owner**, so a generated auxiliary is inspected on behalf of its
+definition instead of being dropped, and a constant with no human-written owner
+(the matcher of a matcher, a purely internal detail) is still skipped. -/
+private def cfInspectable (n : Name) : Bool :=
+  !(cfOwnerName (cfUserName n)).isInternalDetail
 
 /-- How a writer is reported: the readable name, with private ones marked.
 
@@ -382,7 +412,8 @@ would let `_private.Rogue.0.SeLe4n.Kernel.applySyscallTaint` match the declared
 writer list and pass — a private definition impersonating the one writer is
 precisely the finding this sweep must not miss. -/
 private def cfReportName (n : Name) : String :=
-  if isPrivateName n then s!"private@{cfUserName n}" else toString n
+  let owner := cfOwnerName (cfUserName n)
+  if isPrivateName n then s!"private@{owner}" else toString owner
 
 private def cfUsed (env : Environment) (n : Name) : Array Name :=
   match env.find? n with
@@ -846,6 +877,16 @@ def main() -> int:
             print("      The sweep is skipping private definitions, so a private")
             print("      helper could launder provenance and still report one writer.")
             return 1
+        # …and the destructuring shape, where the elaborator also puts the
+        # constructor application inside the generated matcher.
+        rogue_match = f"private@{SELF_TEST_ROGUE_MATCH}"
+        if rogue_match not in field_writers:
+            print("FAIL: --self-test — the direct-field-writer sweep did not detect")
+            print(f"      the planted PRIVATE writer `{SELF_TEST_ROGUE_MATCH}`, which")
+            print("      pattern-matches the `SystemState` before rebuilding it with a")
+            print("      replacement taint table.  A helper can hide a write behind a")
+            print("      `match` if the sweep only reads unmatched bodies.")
+            return 1
         if rogue not in writers:
             print("FAIL: --self-test — the API-naming sweep did not detect the")
             print(f"      planted PRIVATE consumer `{SELF_TEST_ROGUE}`, which calls")
@@ -868,8 +909,9 @@ def main() -> int:
             return 1
         print(f"PASS: --self-test — the planted channel was detected on "
               f"{len(planted)} inert arm(s); both sweeps detected the declared "
-              f"writer and the planted private rogue writer; the audit-trail "
-              f"reach found the two recording arms.")
+              f"writer, the planted private rogue writer and the one that hides "
+              f"its rebuild behind a `match`; the audit-trail reach found the two "
+              f"recording arms.")
         return 0
 
     # (A) no unclassified content movement

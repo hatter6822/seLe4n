@@ -50,11 +50,23 @@ namespace SeLe4n.Kernel
 carry before its taint saturates.
 
 A configuration choice, not a correctness one — every theorem here is stated
-against the name.  Sized small deliberately: the tags are exported to a
-privileged monitor through SM9.A's chunk protocol, at up to
-`maxAuditFieldChunks` calls per tag, and an object that has received content
-from eight distinct authorized downgrades is already a laundering report's
-subject rather than a value whose ninth tag adds information. -/
+against the name.
+
+Sized small for **internal** cost, and the earlier rationale here was wrong about
+which cost: it said the tags are exported to a privileged monitor through SM9.A's
+chunk protocol.  They are not, deliberately.  A tag is a global
+`declassificationAuditEpoch`-relative identity, and exporting one would defeat the
+view-local re-indexing the partially-cleared reader exists to enforce — so the
+audit interface returns only opaque causality verdicts
+(`AuditReadOp.chainNamesPredecessor` / `chainNamesEntry`), one bit per query,
+never the tags themselves.
+
+What the bound actually pays for is the snapshot and the lookup: every recorded
+`DeclassificationEvent` carries a `predecessorTags` copy of its target's tag list,
+and every join walks both operands.  Eight is also where the value stops adding
+information for a detector — an object that has received content from eight
+distinct authorized downgrades is already a laundering report's subject rather
+than one whose ninth tag changes the verdict. -/
 def maxTaintTags : Nat := 8
 
 /-- WS-SM SM9.D.1: `maxTaintTags` is positive, so a single tag always fits and
@@ -74,6 +86,62 @@ library does not carry.) -/
 def insertTag : List Nat → Nat → List Nat
   | [], t => [t]
   | x :: xs, t => if t < x then t :: x :: xs else if t = x then x :: xs else x :: insertTag xs t
+
+/-- WS-SM SM9.D.1 (PR #873 round 7): **strictly increasing above a floor.**
+
+The auxiliary the canonical shape is defined through, because it is what makes
+the insertion proof one line per branch: `tagsAbove b l` says every entry of `l`
+is above `b` *and* above its predecessor, so the recursive call already carries
+the bound the cons case needs. -/
+def tagsAbove : Nat -> List Nat -> Prop
+  | _, [] => True
+  | b, a :: rest => b < a ∧ tagsAbove a rest
+
+/-- WS-SM SM9.D.1 (PR #873 round 7): **the tag list's canonical shape** —
+strictly increasing, which is sortedness and duplicate-freeness in one predicate.
+
+Carried as a field below rather than left to the operations.  `tags_bounded` was
+the only structural constraint, so the public constructor accepted any bounded
+list: `⟨false, [5,5,5,5,5,5,5,5], _⟩` is eight tags of one identity, and
+inserting a second *distinct* timestamp into it saturates the value to `top` —
+which matches every later identity, so a laundering verdict could be manufactured
+out of a value naming only two.  The field doc said "ordered and duplicate-free"
+and nothing enforced it, which is the implicit-invariant shape CLAUDE.md requires
+to be made structural. -/
+def tagsCanonical : List Nat -> Prop
+  | [] => True
+  | a :: rest => tagsAbove a rest
+
+/-- WS-SM SM9.D.1: **insertion preserves the floor.**
+
+`insertTag` places the tag in order and drops an exact duplicate, so a list whose
+every entry is above `b` still is after inserting a `t` that is itself above `b`.
+Three branches, one line each — which is the whole reason `tagsAbove` exists
+rather than reasoning about heads after the fact. -/
+theorem insertTag_above :
+    ∀ (l : List Nat) (b t : Nat), b < t -> tagsAbove b l -> tagsAbove b (insertTag l t)
+  | [], _, _, hbt, _ => ⟨hbt, trivial⟩
+  | x :: xs, b, t, hbt, h => by
+      simp only [insertTag]
+      split
+      · next hlt => exact ⟨hbt, hlt, h.2⟩
+      · split
+        · exact h
+        · next h₁ h₂ => exact ⟨h.1, insertTag_above xs x t (by omega) h.2⟩
+
+/-- WS-SM SM9.D.1: **insertion preserves the canonical shape** — the fact the
+type carries, so no value of `DeclassificationTaint` can hold a duplicate or an
+out-of-order tag however it was built. -/
+theorem insertTag_canonical :
+    ∀ (l : List Nat) (t : Nat), tagsCanonical l -> tagsCanonical (insertTag l t)
+  | [], _, _ => trivial
+  | x :: xs, t, h => by
+      simp only [insertTag]
+      split
+      · next hlt => exact ⟨hlt, h⟩
+      · split
+        · exact h
+        · next h₁ h₂ => exact insertTag_above xs x t (by omega) h
 
 /-- WS-SM SM9.D.1: insertion adds at most one element — the arithmetic the
 bound's `if` below rests on. -/
@@ -155,11 +223,21 @@ structure DeclassificationTaint where
   /-- Tainted by everything: the top of the order. -/
   saturated : Bool
   /-- The declassification identities (SM9.A.1a global timestamps) this value
-      carries, ordered and duplicate-free. -/
+      carries, ordered and duplicate-free — and that is a *field obligation*
+      (`tags_canonical`), not a convention the operations happen to keep. -/
   tags : List Nat
   /-- WS-SM SM9.D.1: the structural bound.  A `Prop` field, so definitional
       proof irrelevance keeps it invisible to equality. -/
   tags_bounded : tags.length ≤ maxTaintTags
+  /-- WS-SM SM9.D.1 (PR #873 round 7): the tags are strictly increasing, which
+      is ordered *and* duplicate-free in one predicate.
+
+      Bounded-ness alone left `⟨false, [5,5,5,5,5,5,5,5], _⟩` constructible —
+      eight copies of one identity — and inserting a second distinct timestamp
+      into that saturates the value to `top`, which matches every later identity.
+      A causal verdict could then be manufactured from a value naming two.  Also
+      a `Prop` field, so it stays invisible to equality. -/
+  tags_canonical : tagsCanonical tags
 
 namespace DeclassificationTaint
 
@@ -184,7 +262,7 @@ instance : Repr DeclassificationTaint where
 
 /-- WS-SM SM9.D.1: **no identities** — the boot value and the value every object
 starts with. -/
-def empty : DeclassificationTaint := ⟨false, [], by simp⟩
+def empty : DeclassificationTaint := ⟨false, [], by simp, trivial⟩
 
 /-- WS-SM SM9.D.1: **tainted by everything** — the top of the order, and the
 canonical saturated value.
@@ -192,7 +270,7 @@ canonical saturated value.
 Canonical deliberately: an operation that saturates drops the tags it was
 carrying, so `saturated = true` and a non-empty `tags` list is not a shape the
 API produces (`insert_saturated`, `join_saturated`). -/
-def top : DeclassificationTaint := ⟨true, [], by simp⟩
+def top : DeclassificationTaint := ⟨true, [], by simp, trivial⟩
 
 instance : Inhabited DeclassificationTaint := ⟨empty⟩
 
@@ -232,7 +310,7 @@ def insert (T : DeclassificationTaint) (t : Nat) : DeclassificationTaint :=
   if T.saturated then top
   else
     if h : (insertTag T.tags t).length ≤ maxTaintTags then
-      ⟨false, insertTag T.tags t, h⟩
+      ⟨false, insertTag T.tags t, h, insertTag_canonical T.tags t T.tags_canonical⟩
     else top
 
 /-- WS-SM SM9.D.1: a saturated taint absorbs insertion. -/
@@ -961,13 +1039,16 @@ def set (tbl : TaintTable) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) : Ta
 propagation primitive.  A sink joins its source's taint in; nothing is ever
 replaced, so a propagation step cannot lose a causal link.
 
-**Value-preserving writes are elided.**  The table is a function, so each `set`
-closes over the previous one and a lookup walks the chain; joining an empty
+**Value-preserving writes are elided.**  The rationale is no longer the closure
+chain a function representation would have grown — the table is a canonical
+association list now, so `set` rebuilds entries rather than closing over a
+previous table, and a lookup does not walk a write history.  What the guard saves
+is the erase-and-reinsert the rebuild would otherwise perform: joining an empty
 source into an untainted sink — which is what *every* edge of ordinary untainted
-IPC does — would otherwise extend that chain on the syscall hot path forever,
-making later reads progressively slower and retaining unbounded closure history
-for no semantic gain.  The guard returns the table itself when the join changes
-nothing, so a write survives only when it actually moves the value.  It is
+IPC does — would walk the entry list, drop the key and cons it back with a value
+identical to the one removed, on the syscall hot path, for no semantic gain.  The
+guard returns the table itself when the join changes nothing, so a write survives
+only when it actually moves the value.  It is
 observationally invisible (`joinAt_self`/`joinAt_ne` below are unchanged, and
 `joinAt_eq_of_join_eq` states the elided case), because the branch it takes is
 exactly the case where the two tables are already pointwise equal. -/
@@ -986,9 +1067,10 @@ positive with nothing to do with saturation, which is why
 **Value-preserving clears are elided**, for the reason `joinAt` elides
 value-preserving joins and with more force: `contentFlowClears` empties the
 transport on *every* `.notificationWait` and every direct-to-waiter signal, and
-on ordinary untainted traffic that object's entry is already empty — so an
-unguarded clear would extend the table's closure chain on the notification hot
-path exactly where the content-derived model made clears frequent.  The guard
+on ordinary untainted traffic that object's entry is already absent — so an
+unguarded clear would walk the whole entry list looking for a key that is not
+there, on the notification hot path, exactly where the content-derived model made
+clears frequent.  The guard
 returns the table itself when there is nothing to forget; `clearAt_eq_of_empty`
 states that case, and `clearAt_self` / `clearAt_ne` are unchanged, because the
 branch it takes is the one where the two tables are already pointwise equal. -/

@@ -1,3 +1,103 @@
+## v0.33.79 — the gates were reading less than they reported
+
+Six findings, and five of them share a shape: an artefact that reports on the
+tree — a scanner, a timing report, a docstring — was quietly describing something
+narrower than what it claimed, and nothing could tell.
+
+**A slow-check report that could abort the run with no verdict.**
+`_report_slow_checks` did `printf … | sort -t'|' -k1,1nr | head -10`.  `sort`
+buffers its whole output before writing, so once the sorted text passes the
+64 KiB pipe buffer `head` closes the pipe mid-write and `sort` dies of SIGPIPE
+(141).  Every tier sources `test_lib.sh` under `set -euo pipefail`, where
+`pipefail` surfaces that 141 as the substitution's status and `errexit` aborts
+`finalize_report` **before** it prints the pass/fail summary — a run with enough
+slow checks (an overloaded runner, or a lowered `SLOW_CHECK_THRESHOLD_MS`) would
+exit 141 having decided nothing.  The pipeline is gone: `mapfile` from a process
+substitution drains `sort` completely and the truncation happens in bash, where
+nothing closes early.  The report also now says how many entries it dropped
+instead of silently showing ten.
+
+**The anchor gate read one branch shape backwards.**  `_negated_search` looked
+for `exit 1` anywhere after `then` and called every match an absence assertion.
+That is right for `if rg 'P' F; then echo …; exit 1; fi` and exactly wrong for
+`if rg 'P' F; then echo ok; else exit 1; fi`, where the failing exit is in the
+*else* branch and the check fails when the search finds **nothing**.  Pairing
+such a line with an ordinary positive anchor for the same pattern would have
+produced a false contradiction and blocked CI on a perfectly satisfiable suite —
+a gate that invents failures is as bad as one that misses them.  The branches are
+now separated and the polarity comes from *which* one exits: then-only → absent,
+else-only → present, both or neither → refused as unparsed.  `elif` is refused
+outright rather than guessed at.  The wrapper's polarity composes with the
+helper's (`is_neg = asserts_absent != is_negative_helper`), so all four
+combinations classify.
+
+**And it guessed option arity from shape.**  Any word starting with `-` was
+skipped and the next word taken as the pattern — right for a bare switch, wrong
+for every option carrying a separate value.  `rg -g '*.lean' forbidden SeLe4n`
+was filed under pattern `*.lean` with `forbidden` as a target: an anchor
+recorded against a key nothing could ever contradict, which is the failure mode
+this gate exists to catch.  Arity now comes from a table, **per tool**, because
+the two disagree on a letter the suites use: `-E` is `--extended-regexp` in
+`grep` (bare, live here as `grep -nwE`) and `--encoding` in `rg` (valued).  One
+shared table would either refuse the live `grep -nwE` or swallow rg's encoding
+argument.  Clustered shorts are accepted only when every letter is bare, `-e`'s
+value is recognised as the pattern, and an option in neither table is **refused**
+rather than parsed on a guess — an unknown flag has unknown arity, so the caller
+reports it unparsed and Tier 0 fails.  Five new self-test cases pin the else
+form, the else-form contradiction, `-g`, the unknown-flag refusal and the
+`grep -nwE` cluster.  Live classification: 2554 positive, 134 negative.
+
+**The content-flow probe could not see inside a compiler-generated auxiliary.**
+`cfInspectable` filtered on `isInternalDetail`, which is true of `.match_1`,
+`._proof_2` and the rest — so a function whose taint write happens inside a
+`match` arm was skipped along with the noise.  It now attributes each auxiliary
+to its **owner** (`cfOwnerName` strips the generated suffix) and inspects it if
+the owner is a real definition, reporting under the owner's name.  A second
+plant, `cfPlantedMatchingTaintWriter`, writes the field through a `match` arm and
+is asserted detected by `--self-test`, so the shape is pinned permanently rather
+than argued about.  Production result is unchanged — 34 arms, 8 moving content,
+2 recording — which is the point: the gate widened without moving the number it
+reports.
+
+**`DeclassificationTaint.tags` assumed a canonical order nothing enforced.**  The
+field doc said "ordered and duplicate-free"; `tags_bounded` was the only
+structural constraint, so the public constructor accepted any bounded list.
+`⟨false, [5,5,5,5,5,5,5,5], _⟩` is eight copies of one identity, and inserting a
+second *distinct* timestamp into it saturates the value to `top` — which matches
+every later identity, so a laundering verdict could be manufactured out of a
+value naming only two.  That is the implicit-invariant shape CLAUDE.md requires
+to be made structural, so `tagsCanonical` is now a field: strictly increasing,
+which is sortedness and duplicate-freeness in one predicate, and a `Prop` so
+definitional proof irrelevance keeps it invisible to equality.
+`insertTag_canonical` discharges the obligation through a `tagsAbove` floor
+auxiliary — the recursive call then already carries the bound the cons case
+needs, which is what keeps each branch of the three-way `insertTag` split to one
+line; `empty` and `top` discharge it by `trivial`.
+
+**Four stale rationales, corrected rather than deleted.**  Each described a
+weaker or simply different artefact than the one in the tree:
+
+* `TaintPropagation`'s header still placed the taint seam at
+  `API.syscallEntryChecked`.  It runs in both **dispatchers** now (v0.33.76) —
+  which is the whole point of that move, since `dispatchSyscall`'s own docstring
+  recommends it for production user-space entry, so an integrator who followed
+  that advice never reached the seam.
+* The same header listed "a send tags the endpoint" among the model's safe
+  over-approximations.  It does not, and has not since the model became
+  content-derived: an endpoint buffers no content of its own, so an endpoint
+  proxy would be both redundant and *less* precise — it would hand a receiver the
+  taint of every queued sender rather than of the one it consumed.
+  `senderTaintEdges_content_only` is the checkable form.
+* `joinAt`/`clearAt` claimed a closure chain they do not walk, and `maxTaintTags`
+  justified its bound by tags "exported to a monitor".  They are not exported;
+  the monitor receives opaque verdicts.  The bound's real justification — a
+  fail-closed saturation that can only over-approximate — is now what it says.
+* `audit_read`'s `chunk` parameter was documented as "the chunk index … ignored
+  otherwise", which stopped being true when the causal opcodes landed:
+  `ChainNamesEntry` reads it as the earlier **view index** and `ChainNamesArchived`
+  as an archived **timestamp**.  A monitor following the old contract would leave
+  it at zero and get a well-formed answer to the wrong question.
+
 ## v0.33.78 — "before" is now enforced, not intended
 
 The uncovered-lock-domain inventory was **data alone**.  Five domains registered,

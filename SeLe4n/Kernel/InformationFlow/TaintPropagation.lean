@@ -19,12 +19,23 @@ Three things move a tag, and exactly three:
   id, so a framed retype would leave a destroyed object's tags on its unrelated
   replacement.  Retype **clears** (`retypeClearsTaint`).
 
-**Where the write happens, and why there.**  `applySyscallTaint` runs once, at
-the per-core syscall entry (`API.syscallEntryChecked`), on the state the
-dispatch committed.  That is the SM7.F.5 seam one step later — the entry already
-threads a projection-invisible model write (`tlbFillIpcBufferOnCore`) around the
-dispatch for exactly this kind of bookkeeping — and it buys three things a
-per-arm write does not:
+**Where the write happens, and why there.**  `applySyscallTaint` runs once per
+syscall, in each of the two **dispatchers** — `API.dispatchSyscall` and
+`API.dispatchSyscallChecked` — on the state that dispatcher committed.  Both
+entries inherit it by delegating, so the rule is one sentence rather than a list
+of entry points that each have to remember it.
+
+It sat at `syscallEntryChecked` until PR #873 round 6, one layer above the
+function `dispatchSyscall`'s own docstring recommends for production user-space
+entry — so an integrator who followed that advice never reached the seam, and a
+successful send moved tagged content with no provenance.
+`dispatchSyscallChecked_applies_taint_plan` and its unchecked twin pin that no
+success path skips it.
+
+The placement is the SM7.F.5 seam one layer down: the entry already threads a
+projection-invisible model write (`tlbFillIpcBufferOnCore`) around the dispatch
+for exactly this kind of bookkeeping, and keeping the taint write out of the
+transitions buys three things a per-arm write does not:
 
 * **one writer.**  `storeObject_declassificationTaint_eq` frames the field, so
   "this is the only writer" is a checkable fact rather than a reading of the
@@ -42,10 +53,19 @@ per-arm write does not:
   not cover?") is answered by reach, in
   `scripts/check_content_flow_coverage.py`, and not by this function.
 
-**The direction the model errs in.**  Every planner over-approximates: a send
-tags the endpoint *and* the rendezvous receiver even when the message carries
-nothing, and a saturated taint names identities it never received.  For a
-detector that is the safe direction — extra reports, never a missed chain.
+**The direction the model errs in.**  Every planner over-approximates, and it is
+worth naming *which* approximations survive.  A send tags the rendezvous receiver
+even when the message carries nothing, and a saturated taint names identities it
+never received.  For a detector that is the safe direction — extra reports, never
+a missed chain.
+
+The endpoint is **not** among them, and has not been since the model became
+content-derived: an endpoint buffers no content of its own (a parked message
+lives in the blocked sender's TCB) and a receiver reads the head sender directly,
+so an endpoint proxy would be both redundant and *less* precise — it would hand a
+receiver the taint of every queued sender rather than of the one it consumed.
+`senderTaintEdges` says so in place, and `senderTaintEdges_content_only` is the
+checkable form.
 -/
 import SeLe4n.Kernel.InformationFlow.DeclassifiedSignal
 import SeLe4n.Kernel.InformationFlow.Invariant

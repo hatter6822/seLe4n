@@ -252,13 +252,31 @@ _report_slow_checks() {
   if [[ "${#SLOW_CHECK_LINES[@]}" -eq 0 ]]; then
     return 0
   fi
-  local sorted entry pretty label
-  sorted="$(printf '%s\n' "${SLOW_CHECK_LINES[@]}" | sort -t'|' -k1,1nr | head -10)"
+  # No early-closing pipeline.  `… | sort | head -10` looks harmless and is not:
+  # `sort` buffers its whole output, so once the sorted text exceeds the 64 KiB
+  # pipe buffer `head` closes the pipe mid-write and `sort` dies of SIGPIPE with
+  # status 141.  Every tier sources this file under `set -euo pipefail`, where
+  # `pipefail` reports that 141 as the command substitution's status and `errexit`
+  # then aborts `finalize_report` *before* it prints the pass/fail summary — so a
+  # run with enough slow checks (an overloaded runner, or a lowered
+  # `SLOW_CHECK_THRESHOLD_MS`) would exit 141 with no verdict at all.
+  #
+  # `mapfile` from a process substitution drains `sort` completely, and the
+  # truncation happens in bash where nothing can be closed early.
+  local -a _sorted=()
+  mapfile -t _sorted < <(printf '%s\n' "${SLOW_CHECK_LINES[@]}" | sort -t'|' -k1,1nr)
+  local _shown="${#_sorted[@]}"
+  if [[ "${_shown}" -gt 10 ]]; then _shown=10; fi
   log_section "META" "Slowest checks (>= ${SLOW_CHECK_THRESHOLD_MS}ms):"
-  while IFS='|' read -r _ pretty label; do
+  local _i pretty label
+  for (( _i = 0; _i < _shown; _i++ )); do
+    IFS='|' read -r _ pretty label <<< "${_sorted[_i]}"
     [[ -n "${pretty}" ]] || continue
     log_section "META" "  ${pretty}  ${label}"
-  done <<< "${sorted}"
+  done
+  if [[ "${#_sorted[@]}" -gt "${_shown}" ]]; then
+    log_section "META" "  … and $(( ${#_sorted[@]} - _shown )) more over the threshold."
+  fi
 }
 
 # Run a command, in the code view when it scans Lean source.

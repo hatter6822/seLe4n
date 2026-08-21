@@ -129,43 +129,175 @@ def _is_composed(tokens: list[str]) -> bool:
         for tok in tokens)
 
 
+# Option arity, **per tool**.  The word after an option is its value or the
+# pattern depending on the option, and skipping the flag alone made
+# `rg -g '*.lean' forbidden SeLe4n` parse as pattern `*.lean` with `forbidden` as
+# a target — filed under a key nothing could contradict, so the gate passed over
+# it.
+#
+# Per tool because the two disagree on a letter the suites actually use: `-E` is
+# `--extended-regexp` in `grep` (a bare switch, live here as `grep -nwE`) and
+# `--encoding` in `rg` (which takes a value).  One shared table would either
+# refuse `grep -nwE` or swallow rg's encoding argument.
+#
+# `-e`/`--regexp` is the special one in both: its value IS the pattern.
+_RG_VALUE = {
+    "-e", "--regexp", "-f", "--file", "-g", "--glob", "--iglob",
+    "-t", "--type", "-T", "--type-not", "--type-add", "--type-clear",
+    "-m", "--max-count", "-A", "--after-context", "-B", "--before-context",
+    "-C", "--context", "-M", "--max-columns", "-d", "--max-depth",
+    "-r", "--replace", "--sort", "--sortr", "--color", "--colors",
+    "-E", "--encoding", "--pre", "--ignore-file", "--context-separator",
+    "--field-context-separator", "--field-match-separator",
+    "--path-separator", "-j", "--threads", "--engine", "--stats-format",
+}
+_RG_BARE = {
+    "-n", "--line-number", "-N", "--no-line-number", "-q", "--quiet",
+    "-w", "--word-regexp", "-x", "--line-regexp", "-i", "--ignore-case",
+    "-s", "--case-sensitive", "-S", "--smart-case", "-F", "--fixed-strings",
+    "-U", "--multiline", "--multiline-dotall", "-o", "--only-matching",
+    "-c", "--count", "--count-matches", "-l", "--files-with-matches",
+    "--files-without-match", "-H", "--with-filename", "-I", "--no-filename",
+    "--hidden", "--no-ignore", "-u", "--unrestricted", "-a", "--text",
+    "-z", "--search-zip", "--no-heading", "--heading", "--vimgrep",
+    "--json", "--null", "-0", "--no-config", "--pcre2", "-P",
+    "--no-messages", "--binary", "-p", "--pretty", "--trim", "--invert-match",
+    "-v", "-L", "--follow", "--one-file-system", "--crlf", "--debug",
+}
+_GREP_VALUE = {
+    "-e", "--regexp", "-f", "--file", "-m", "--max-count",
+    "-A", "--after-context", "-B", "--before-context", "-C", "--context",
+    "-d", "--directories", "-D", "--devices", "--include", "--exclude",
+    "--exclude-dir", "--exclude-from", "--label", "--binary-files",
+    "--color", "--colour", "--group-separator", "--NUM",
+}
+_GREP_BARE = {
+    "-E", "--extended-regexp", "-F", "--fixed-strings", "-G", "--basic-regexp",
+    "-P", "--perl-regexp", "-i", "--ignore-case", "-y", "-v", "--invert-match",
+    "-w", "--word-regexp", "-x", "--line-regexp", "-c", "--count",
+    "-l", "--files-with-matches", "-L", "--files-without-match",
+    "-o", "--only-matching", "-q", "--quiet", "--silent", "-s", "--no-messages",
+    "-n", "--line-number", "-H", "--with-filename", "-h", "--no-filename",
+    "-b", "--byte-offset", "-u", "--unix-byte-offsets", "-Z", "--null",
+    "-z", "--null-data", "-a", "--text", "-I", "-r", "--recursive",
+    "-R", "--dereference-recursive", "-U", "--binary", "--line-buffered",
+    "-T", "--initial-tab", "--no-group-separator",
+}
+
+# `egrep`/`fgrep` are `grep` with a preset pattern mode.
+_OPTION_TABLES = {
+    "rg": (_RG_VALUE, _RG_BARE),
+    "grep": (_GREP_VALUE, _GREP_BARE),
+    "egrep": (_GREP_VALUE, _GREP_BARE),
+    "fgrep": (_GREP_VALUE, _GREP_BARE),
+}
+_PATTERN_OPTIONS = {"-e", "--regexp"}
+
+
+def _split_short_cluster(tok: str, valued: set[str], bare: set[str]) -> bool:
+    """Is `-nwE` a cluster of *bare* short flags for this tool?
+
+    Clustered short flags are live in the suites (`grep -nwE`, `rg -Un`), and a
+    cluster is only safe to skip when every letter is a bare switch: a valued one
+    hiding inside (`-nge`) would swallow the next word as its argument while the
+    parser went looking for the pattern.
+    """
+    if len(tok) < 2 or tok.startswith("--"):
+        return False
+    for ch in tok[1:]:
+        flag = "-" + ch
+        if flag in valued or flag not in bare:
+            return False
+    return True
+
+
 def _search_invocation(argv: list[str]):
     """`(pattern, targets)` if `argv` is a plain search, else `None`.
 
-    Flags are skipped by shape rather than by name: every flag the suites use is
-    either a bare switch (`-n`, `-q`, `-w`, `-nE`) or an attached value
-    (`--glob=…`), so the first non-flag word is the pattern and the rest are the
-    files it reads.  A search with no target reads stdin and pins nothing about
-    the tree, so it is not an anchor.
+    Option arity is read from a table rather than guessed from shape.  The
+    previous version skipped any word starting with `-` and took the next word as
+    the pattern, which is right for a bare switch and wrong for every option that
+    takes a separate value — `rg -g '*.lean' forbidden SeLe4n` was parsed as
+    pattern `*.lean`.  An option in neither table is refused (`None` → the caller
+    reports it as unparsed, which is a hard failure) rather than parsed on a
+    guess: an unknown flag has unknown arity.
+
+    A search with no target reads stdin and pins nothing about the tree, so it is
+    not an anchor.
     """
-    if not argv or argv[0] not in SEARCH_TOOLS:
+    if not argv or argv[0] not in _OPTION_TABLES:
         return None
-    i = 1
+    valued, bare = _OPTION_TABLES[argv[0]]
+    i, pattern = 1, None
     while i < len(argv) and argv[i].startswith("-") and argv[i] != "--":
+        tok = argv[i]
         # `-v` inverts the match, so the invocation succeeds on the lines that do
         # NOT contain the pattern — the opposite of what a positive anchor
         # claims.  Reading it as a plain pin would invert the polarity silently.
-        if argv[i] == "--invert-match" or (
-                not argv[i].startswith("--") and "v" in argv[i][1:]):
+        if tok == "--invert-match" or (
+                not tok.startswith("--") and "v" in tok[1:]):
             return None
-        i += 1
+        if tok.startswith("--") and "=" in tok:
+            # `--glob=…` carries its value; nothing to consume.
+            name = tok.split("=", 1)[0]
+            if name not in valued and name not in bare:
+                return None
+            if name in _PATTERN_OPTIONS:
+                if pattern is not None:
+                    return None          # two patterns: not one pinned string
+                pattern = tok.split("=", 1)[1]
+            i += 1
+            continue
+        if tok in valued:
+            if i + 1 >= len(argv):
+                return None
+            if tok in _PATTERN_OPTIONS:
+                if pattern is not None:
+                    return None
+                pattern = argv[i + 1]
+            i += 2
+            continue
+        if tok in bare:
+            i += 1
+            continue
+        if _split_short_cluster(tok, valued, bare):
+            i += 1
+            continue
+        return None                       # unknown flag, unknown arity
     if i < len(argv) and argv[i] == "--":
         i += 1
-    if i >= len(argv):
-        return None
-    pattern, targets = argv[i], argv[i + 1:]
+    if pattern is None:
+        if i >= len(argv):
+            return None
+        pattern, targets = argv[i], argv[i + 1:]
+    else:
+        targets = argv[i:]
     if not targets:
         return None
     return pattern, targets
 
 
-def _negated_search(script: str):
-    """The search argv a shell script asserts finds NOTHING, or `None`.
+def _wrapped_search(script: str):
+    """`(tokens, asserts_absent)` for a shell-wrapped search, or `None`.
 
-    Two shapes, both live in the suites and both meaning "this must be absent":
+    Three shapes, and the third is why this returns a polarity instead of just
+    the argv:
 
-        ! rg -n 'PATTERN' FILE
-        if rg -n 'PATTERN' FILE; then echo '…' >&2; exit 1; fi
+        ! rg 'P' F                                   → P must be ABSENT
+        if rg 'P' F; then echo …; exit 1; fi         → P must be ABSENT
+        if rg 'P' F; then echo ok; else exit 1; fi   → P must be PRESENT
+
+    The earlier version looked for `exit 1` anywhere after `then` and called every
+    match an absence assertion.  That reads the third shape backwards: the failing
+    exit is in the **else** branch, so the check fails when the search finds
+    *nothing*.  Pairing such a line with an ordinary positive anchor for the same
+    pattern would have produced a false contradiction and blocked CI on a
+    perfectly satisfiable suite — a gate that invents failures is as bad as one
+    that misses them.
+
+    So the branches are separated and the polarity comes from *which* branch
+    exits: then-only → absent, else-only → present, both or neither → `None`, and
+    the caller reports it as unparsed rather than guessing.
 
     Composition disqualifies: `rg … | grep -v …` asserts that nothing *survives
     the filter*, which is a weaker claim than absence and would be a false
@@ -175,20 +307,33 @@ def _negated_search(script: str):
     s = script.strip()
     m = re.match(r"^!\s+(.*)$", s, re.S)
     if m:
-        body = m.group(1)
+        body, asserts_absent = m.group(1), True
     else:
         m = re.match(r"^if\s+(.*?);\s*then\b(.*)\bfi$", s, re.S)
         if not m:
             return None
         body, tail = m.group(1), m.group(2)
-        # Without the `exit 1` the `if` is a report, not an assertion.
-        if not re.search(r"\bexit\s+1\b", tail):
+        # Split the two branches at a top-level `else`.  `elif` is a third
+        # branch this cannot reason about, so it is refused outright.
+        if re.search(r"(^|[;\s])elif(\s|$)", tail):
             return None
+        parts = re.split(r"(?:^|[;\s])else(?:\s|$)", tail, maxsplit=1)
+        then_part = parts[0]
+        else_part = parts[1] if len(parts) > 1 else ""
+        exits_on_found = bool(re.search(r"\bexit\s+1\b", then_part))
+        exits_on_missing = bool(re.search(r"\bexit\s+1\b", else_part))
+        if exits_on_found == exits_on_missing:
+            # Neither branch fails (a report, not an assertion), or both do
+            # (asserts nothing about the pattern either way).
+            return None
+        asserts_absent = exits_on_found
     try:
         tokens = _shell_tokens(body)
     except ValueError:
         return None
-    return None if _is_composed(tokens) else tokens
+    if _is_composed(tokens):
+        return None
+    return tokens, asserts_absent
 
 
 def _bash_script(argv: list[str]):
@@ -236,13 +381,17 @@ def classify_line(line: str):
 
     script = _bash_script(argv)
     if script is not None:
-        inner = _negated_search(script)
-        if inner is not None:
+        wrapped = _wrapped_search(script)
+        if wrapped is not None:
+            inner, asserts_absent = wrapped
             inv = _search_invocation(inner)
             if inv is not None:
-                # The script asserts absence, so the helper's own polarity is
-                # inverted: `run_check "…" bash -c "! rg …"` is a NEGATIVE anchor.
-                return ("anchor", not m.group("neg"), inv[0], inv[1])
+                # The wrapper's own polarity composes with the helper's.  A script
+                # that asserts ABSENCE under `run_check` is a negative anchor; one
+                # that asserts PRESENCE under `run_check` is a positive one, and
+                # under `run_negative_check` each flips again.
+                is_neg = asserts_absent != bool(m.group("neg"))
+                return ("anchor", is_neg, inv[0], inv[1])
         return ("filtered" if SEARCH_TOOL_RE.search(script) else "plain",
                 False, None, [])
 
@@ -614,6 +763,97 @@ def self_test() -> int:
                 )
                 return 1
 
+        # THE ELSE-BRANCH FORM.  `if rg P F; then echo ok; else exit 1; fi`
+        # asserts that P is PRESENT — the failing exit is in the else branch.
+        # Reading any `exit 1` after `then` as an absence claim turned this into a
+        # negative anchor, so pairing it with an ordinary positive anchor for the
+        # same pattern produced a FALSE contradiction and would have blocked CI on
+        # a perfectly satisfiable suite.  A gate that invents failures is as bad as
+        # one that misses them, so both directions are planted.
+        else_form_p = d / "else_form.sh"
+        else_form_p.write_text(
+            "run_check \"INVARIANT\" rg -n '^theorem eta_present' Some/File.lean\n"
+            "run_check \"INVARIANT\" bash -lc "
+            "\"if rg -n 'theorem eta_present' Some/File.lean; then echo ok; "
+            "else exit 1; fi\"\n")
+        both, *_ = find_contradictions([str(else_form_p)])
+        if both:
+            print(
+                f"FAIL: --self-test — an `else exit 1` check (which asserts the "
+                f"pattern is PRESENT) was read as an absence claim and reported "
+                f"as contradicting a positive anchor ({both}).",
+                file=sys.stderr,
+            )
+            return 1
+        # …and it really is compared, as a POSITIVE anchor: a negative anchor for
+        # the same pattern must contradict it.  Without this the check above would
+        # pass just as well if the form were dropped on the floor.
+        else_form_neg_p = d / "else_form_neg.sh"
+        else_form_neg_p.write_text(
+            "run_negative_check \"INVARIANT\" rg -n 'theorem eta_present' Some/File.lean\n"
+            "run_check \"INVARIANT\" bash -lc "
+            "\"if rg -n 'theorem eta_present' Some/File.lean; then echo ok; "
+            "else exit 1; fi\"\n")
+        both, *_ = find_contradictions([str(else_form_neg_p)])
+        if both != [("theorem eta_present", "Some/File.lean")]:
+            print(
+                f"FAIL: --self-test — an `else exit 1` check was not compared as a "
+                f"POSITIVE anchor (got {both}); tolerating the form is not the "
+                f"same as reading it.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # A VALUE-TAKING OPTION.  `rg -g '*.lean' P dir` puts the option's value
+        # where a bare-switch parser expects the pattern, so the anchor was filed
+        # under `*.lean` — a key nothing could ever contradict.  Planted with an
+        # opposing negative anchor, which must now collide.
+        glob_p = d / "glob_option.sh"
+        glob_p.write_text(
+            "run_check \"INVARIANT\" rg -n -g '*.lean' 'theorem theta_kept' SeLe4n\n"
+            "run_negative_check \"INVARIANT\" rg -n 'theorem theta_kept' SeLe4n\n")
+        both, *_ = find_contradictions([str(glob_p)])
+        if both != [("theorem theta_kept", "SeLe4n")]:
+            print(
+                f"FAIL: --self-test — a value-taking search option was not "
+                f"consumed (got {both}); its value was taken as the pattern, so "
+                f"the anchor could never collide with anything.",
+                file=sys.stderr,
+            )
+            return 1
+        # An option whose arity this parser does not know must FAIL rather than be
+        # parsed on a guess — the same fail-closed rule as an unreadable command.
+        unknown_opt_p = d / "unknown_option.sh"
+        unknown_opt_p.write_text(
+            "run_check \"INVARIANT\" rg --frobnicate xyz 'theorem iota' F.lean\n")
+        try:
+            find_contradictions([str(unknown_opt_p)])
+        except SystemExit:
+            pass
+        else:
+            print(
+                "FAIL: --self-test — a search with an unknown option was parsed "
+                "on a guess instead of failing the gate; an unknown flag has "
+                "unknown arity, so the pattern's position is unknown too.",
+                file=sys.stderr,
+            )
+            return 1
+        # `grep -nwE` is a cluster of BARE switches even though rg spells `-E`
+        # with a value.  Per-tool tables are what keep both readable.
+        grep_cluster_p = d / "grep_cluster.sh"
+        grep_cluster_p.write_text(
+            "run_check \"INVARIANT\" grep -nwE 'theorem kappa' F.lean\n"
+            "run_negative_check \"INVARIANT\" grep -n 'theorem kappa' F.lean\n")
+        both, *_ = find_contradictions([str(grep_cluster_p)])
+        if both != [("theorem kappa", "F.lean")]:
+            print(
+                f"FAIL: --self-test — `grep -nwE` was not read as a cluster of "
+                f"bare switches (got {both}); `-E` is valued in rg and bare in "
+                f"grep, which is why the tables are per-tool.",
+                file=sys.stderr,
+            )
+            return 1
+
         # A composed search pins the composition, not the pattern — comparing it
         # as an absence claim would be a false contradiction.  It must be
         # tolerated and counted, never treated as an anchor.
@@ -677,10 +917,12 @@ def self_test() -> int:
 
     print(
         "PASS: --self-test — planted contradictions were detected in both "
-        "quoting styles, in both shell-wrapped spellings and on a second search "
-        "target; a filtered search was counted rather than compared, an "
-        "unreadable one failed the gate, the clean set passed, and a "
-        "commented-out anchor was not counted."
+        "quoting styles, in both shell-wrapped spellings, on a second search "
+        "target, through an `else exit 1` presence check and past a "
+        "value-taking option; a filtered search was counted rather than "
+        "compared, an unreadable command and an unknown option each failed the "
+        "gate, `grep -nwE` was read as bare switches, the clean set passed, and "
+        "a commented-out anchor was not counted."
     )
     return 0
 

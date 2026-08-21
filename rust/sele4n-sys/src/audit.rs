@@ -328,8 +328,19 @@ pub const fn refusal_slot_tags_decode(word: u64) -> (u64, u64, u64) {
 ///   `0..REFUSAL_RING_SIZE` — the ledger has no clearance-filtered view,
 ///   because a caller that is not the configured monitor is refused outright
 ///   (Lean's `refusalLedger_requires_full_dominance`).
-/// * `chunk` — the chunk index, for the chunked field and basis operations;
-///   ignored otherwise.
+/// * `chunk` — a **second operand**, and which one depends on the opcode:
+///   - for the chunked field and basis operations, the chunk index;
+///   - for `ChainNamesEntry` (SM9.D.14), the **earlier view index** the verdict
+///     asks about, so `chunk < index`;
+///   - for `ChainNamesArchived`, the archived **timestamp** — a raw global
+///     identity rather than a view index, which is why that opcode is
+///     monitor-only;
+///   - ignored by every other opcode.
+///
+///   Naming it "ignored otherwise" was wrong once the causal opcodes landed: a
+///   monitor following that contract would leave `chunk` at zero and ask about
+///   view entry 0 (or timestamp 0) rather than the predecessor it meant, and
+///   get a well-formed answer to the wrong question.
 ///
 /// # Errors
 ///
