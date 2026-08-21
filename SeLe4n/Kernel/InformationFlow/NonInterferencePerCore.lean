@@ -1344,11 +1344,11 @@ theorem endpointReceiveDual_confinedToBootCore (st st' : SystemState)
             simp only [hEnq] at hStep
             have hEnqC := endpointQueueEnqueue_confinedToCore endpointId true receiver stClean st1
               bootCoreId hEnq
-            cases hStore : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+            cases hStore : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
             | error e => simp [hStore] at hStep
             | ok st2 =>
               simp only [hStore] at hStep
-              have hStoreC := storeTcbIpcState_confinedToCore st1 st2 receiver _ bootCoreId hStore
+              have hStoreC := storeTcbIpcStateAndMessage_confinedToCore st1 st2 receiver _ _ bootCoreId hStore
               cases hGet : st2.getTcb? receiver with
               | none =>
                 simp only [hGet, Except.ok.injEq, Prod.mk.injEq] at hStep

@@ -494,6 +494,22 @@ earlier syscall or arrives in this rendezvous.  The endpoint is **not** a source
 it holds no content of its own (`senderTaintEdges`), and the head-sender edge is
 exact where an endpoint proxy would over-approximate to every queued sender.
 
+**Why a head sender means content actually moves.**  This reads the queue head
+and not the message, so on its own it would declare an edge for a head parked
+with `pendingMessage := none` — a receiver handed `none` and joined to the
+sender's provenance anyway, which is a causal predecessor for content never
+delivered.  `blockedThreadsPendingMessageConsistent` does not rule that head out: it
+constrains only `.blockedOnReceive` / `.blockedOnNotification`.  What rules it
+out is `blockedThreadsPendingMessageConsistent` (PR #873 round 11), which ties
+`pendingMessage` to the blocking state in *both* directions: a thread parked to
+deliver carries what it is delivering, so a head sender in any state satisfying
+`ipcInvariantFull` has a message by construction.  Below the invariant the
+transport refuses the head outright, so both receives fail closed and the plan is
+never applied to such a state
+(`endpointQueuePopHead_send_sender_carries_message` is that form).  Neither test
+is duplicated here on purpose: a declared edge and a delivered message stay one
+condition apart, not two that can drift.
+
 **No CSpace sink is declared here** — for the same reason `senderTaintEdges`
 declares none, and it is worth saying which reason that is.  It used to be "the
 live receive installs nothing", which was true: the `.receive` arm ran the bare

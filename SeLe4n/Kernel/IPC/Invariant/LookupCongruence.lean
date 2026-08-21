@@ -199,10 +199,10 @@ theorem ipcInvariant_of_getElem_eq {s1 s2 : SystemState}
   rw [hEq] at hObj
   exact h oid ntfn hObj
 
-/-- SM6.D: pointwise-lookup transport of `waitingThreadsPendingMessageNone`. -/
-theorem waitingThreadsPendingMessageNone_of_getElem_eq {s1 s2 : SystemState}
+/-- SM6.D: pointwise-lookup transport of `blockedThreadsPendingMessageConsistent`. -/
+theorem blockedThreadsPendingMessageConsistent_of_getElem_eq {s1 s2 : SystemState}
     (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : waitingThreadsPendingMessageNone s1) : waitingThreadsPendingMessageNone s2 := by
+    (h : blockedThreadsPendingMessageConsistent s1) : blockedThreadsPendingMessageConsistent s2 := by
   intro tid tcb hObj
   rw [hEq] at hObj
   exact h tid tcb hObj
@@ -404,7 +404,7 @@ theorem ipcInvariantFull_of_getElem_eq {s1 s2 : SystemState}
    dualQueueSystemInvariant_of_getElem_eq hEq h.dualQueueSystemInvariant,
    allPendingMessagesBounded_of_getElem_eq hEq h.allPendingMessagesBounded,
    badgeWellFormed_of_getElem_eq hEq h.badgeWellFormed,
-   waitingThreadsPendingMessageNone_of_getElem_eq hEq h.waitingThreadsPendingMessageNone,
+   blockedThreadsPendingMessageConsistent_of_getElem_eq hEq h.blockedThreadsPendingMessageConsistent,
    endpointQueueNoDup_of_getElem_eq hEq h.endpointQueueNoDup,
    ipcStateQueueMembershipConsistent_of_getElem_eq hEq h.ipcStateQueueMembershipConsistent,
    queueNextBlockingConsistent_of_getElem_eq hEq h.queueNextBlockingConsistent,

@@ -608,7 +608,7 @@ point.
 (The remaining fourteen bundle conjuncts also received per-core forms +
 both bridges each — `tcbQueueLinkIntegrity/tcbQueueChainAcyclic/
 dualQueueSystemInvariant/allPendingMessagesBounded/
-waitingThreadsPendingMessageNone/blockedThreadTimeoutConsistent/
+blockedThreadsPendingMessageConsistent/blockedThreadTimeoutConsistent/
 donationChainAcyclic/donationOwnerValid/donationBudgetTransfer/
 blockedOnReplyHasTarget/replyCallerLinkage{,Reciprocal}/
 blockedOnReplyHasReplyObject/pendingReceiveReplyWellFormed/

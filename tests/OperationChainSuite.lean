@@ -1306,6 +1306,114 @@ private def chain12eReceiveWithoutSenderInstallsNothing : IO Unit := do
 
   assertInvariants "chain12e: no duplicate install on a blocking receive" st3
 
+/-- SCN-IPC-RECEIVE-MESSAGELESS-PARKED-SENDER (PR #873 round 11): a receive that
+dequeues a parked sender carrying **no** message is refused.
+
+`blockedThreadsPendingMessageConsistent` constrains only the blocked *receiver* states,
+so a structurally invariant state may hold a `.blockedOnSend` queue head with
+`pendingMessage := none`.  Before `endpointQueuePopHead` guarded the send-queue
+direction, dequeuing that head stored `none` into the receiver and still returned
+success, while `receiverTaintEdges` joined the sender's provenance into a
+receiver that received nothing — a causal predecessor for content never
+delivered.  The negative is load-bearing: the assertions below pin that the
+declared edge *does* name this sender, so the transport refusal is the only thing
+standing between the malformed state and an invented predecessor. -/
+private def chain12fReceiveRefusesMessagelessParkedSender : IO Unit := do
+  let epId : SeLe4n.ObjId := ⟨3650⟩
+  let sender : SeLe4n.ThreadId := ⟨3660⟩
+  let receiver : SeLe4n.ThreadId := ⟨3661⟩
+  let senderCNode : SeLe4n.ObjId := ⟨3670⟩
+  let receiverCNode : SeLe4n.ObjId := ⟨3671⟩
+  let recvSlot0 : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
+  let plainRights : AccessRightSet := AccessRightSet.ofList [.read, .write]
+
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject senderCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.empty
+        })
+      |>.withObject receiverCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.empty
+        })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3690⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3691⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
+      |>.withRunnable [sender, receiver]
+      |>.buildChecked)
+
+  let msg : IpcMessage :=
+    { registers := #[⟨7⟩], caps := #[], badge := none, capsGranted := false }
+
+  -- Park a sender the legitimate way: no receiver is waiting, so it blocks
+  -- `.blockedOnSend` holding its message.
+  let (stParked, _) :=
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender msg plainRights senderCNode
+      recvSlot0 bootCoreId st0
+  expect "chain12f: the sender parked carrying its message"
+    ((stParked.getTcb? sender).any (fun t =>
+      t.pendingMessage.isSome &&
+      (match t.ipcState with | .blockedOnSend e => e == epId | _ => false)))
+
+  -- Below the API, strip the parked sender's message.  Nothing in
+  -- `ipcInvariantFull` forbids the result: the sender is still `.blockedOnSend`
+  -- and still the send-queue head.
+  let stStripped : SystemState :=
+    match stParked.getTcb? sender with
+    | some t =>
+      { stParked with objects :=
+          stParked.objects.insert sender.toObjId (.tcb { t with pendingMessage := none }) }
+    | none => stParked
+  expect "chain12f: the stripped sender is still the send-queue head"
+    ((SeLe4n.Kernel.receiveRendezvousSender? stStripped epId) == some sender)
+  expect "chain12f: and it is carrying nothing"
+    ((stStripped.getTcb? sender).any (fun t => t.pendingMessage.isNone))
+
+  -- The root fix: the stripped state is no longer *structurally* admissible.
+  -- `blockedThreadsPendingMessageConsistent` requires a thread parked to deliver
+  -- to be carrying what it delivers, so the executable mirror rejects the state
+  -- where it is produced rather than at the dequeue that would consume it.
+  let carriesMessageFailed (st : SystemState) : Bool :=
+    (SeLe4n.Testing.stateInvariantChecks st).any (fun c =>
+      c.1.startsWith "blockedOnSend carries its message" && !c.2)
+  expect "chain12f: the invariant checker rejects the stripped state"
+    (carriesMessageFailed stStripped)
+  expect "chain12f: and accepts the same state with the message in place"
+    (!(carriesMessageFailed stParked))
+
+  -- Load-bearing: the declared provenance edge names this sender as the source,
+  -- so a successful dequeue here is exactly the invented predecessor.
+  expect "chain12f: receiverTaintEdges still declares the sender→receiver edge"
+    ((SeLe4n.Kernel.receiverTaintEdges stStripped receiver epId).any (fun e =>
+      e.source == sender.toObjId && e.sink == receiver.toObjId))
+
+  -- THE DEFECT, now closed: the dequeue refuses the message-less head.
+  let (stAfter, resAfter) :=
+    SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none receiverCNode
+      recvSlot0 bootCoreId stStripped
+  expect "chain12f: the receive is refused with endpointStateMismatch"
+    (match resAfter with
+     | .error .endpointStateMismatch => true
+     | _ => false)
+  expect "chain12f: the receiver was handed nothing"
+    ((stAfter.getTcb? receiver).all (fun t => t.pendingMessage.isNone))
+  expect "chain12f: and the malformed sender is left where it was"
+    ((SeLe4n.Kernel.receiveRendezvousSender? stAfter epId) == some sender)
+
+  -- Positive control: restore the message and the same receive delivers it.
+  let (stOk, resOk) :=
+    SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none receiverCNode
+      recvSlot0 bootCoreId stParked
+  expect "chain12f: the same receive delivers when the sender kept its message"
+    ((match resOk with | .ok (s, _, _) => s == sender | .error _ => false) &&
+      (stOk.getTcb? receiver).any (fun t => t.pendingMessage.isSome))
+
+  -- `stAfter` is the refused state, i.e. still the deliberately malformed one --
+  -- assert the invariants on the delivering run instead, which is the state a
+  -- conforming kernel actually reaches.
+  assertInvariants "chain12f: delivering from a sender that kept its message" stOk
+
 /-- SCN-IPC-CAP-TRANSFER-NO-GRANT: Grant-right gate blocks cap transfer.
 Endpoint lacks Grant right — caps should be silently dropped. -/
 private def chain13IpcCapTransferNoGrant : IO Unit := do
@@ -2808,6 +2916,7 @@ private def runOperationChainSuite : IO Unit := do
   chain12cIpcCapTransferArrivalOrder
   chain12dReplyRecvCapTransferArrivalOrder
   chain12eReceiveWithoutSenderInstallsNothing
+  chain12fReceiveRefusesMessagelessParkedSender
   chain13IpcCapTransferNoGrant
   chain14IpcBadgeAndCapTransfer
   chain15StrictRevokeDeepChain

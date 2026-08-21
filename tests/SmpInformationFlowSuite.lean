@@ -4516,7 +4516,13 @@ private def blockedSenderState : SystemState :=
       objects :=
         (crossCoreState.objects.insert crossCoreSender.toObjId
             (.tcb { mkTcb 1022 40 (some c2) with
-                      ipcState := .blockedOnSend crossCoreEndpoint })).insert
+                      ipcState := .blockedOnSend crossCoreEndpoint
+                      -- PR #873 round 11: a thread parked to deliver carries what
+                      -- it delivers (`blockedThreadsPendingMessageConsistent`), and
+                      -- the dequeue refuses a head that does not -- so a fixture
+                      -- without this models a state the kernel cannot reach.
+                      pendingMessage := some { registers := #[], caps := #[],
+                                               badge := none } })).insert
           crossCoreEndpoint
             (.endpoint { sendQ := { head := some crossCoreSender
                                     tail := some crossCoreSender } }) }

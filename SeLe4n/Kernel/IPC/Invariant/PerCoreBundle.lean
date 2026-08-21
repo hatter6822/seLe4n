@@ -201,13 +201,15 @@ def allPendingMessagesBounded_perCore (st : SystemState) (c : CoreId) : Prop :=
     tcb.pendingMessage = some msg →
     msg.bounded
 
-/-- SM6.D: per-core form of `waitingThreadsPendingMessageNone` (V3-G1). -/
-def waitingThreadsPendingMessageNone_perCore (st : SystemState) (c : CoreId) : Prop :=
+/-- SM6.D: per-core form of `blockedThreadsPendingMessageConsistent` (V3-G1). -/
+def blockedThreadsPendingMessageConsistent_perCore (st : SystemState) (c : CoreId) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
     st.getTcb? tid = some tcb → threadHomeCore tcb = c →
     match tcb.ipcState with
     | .blockedOnReceive _ => tcb.pendingMessage = none
     | .blockedOnNotification _ => tcb.pendingMessage = none
+    | .blockedOnSend _ => tcb.pendingMessage.isSome
+    | .blockedOnCall _ => tcb.pendingMessage.isSome
     | _ => True
 
 /-- SM6.D: per-core form of `blockedThreadTimeoutConsistent` (Z6-J).  The
@@ -428,9 +430,9 @@ theorem allPendingMessagesBounded_perCore_of_global {st : SystemState}
     allPendingMessagesBounded_perCore st c :=
   fun tid tcb msg hTcb _ hMsg => h tid tcb msg ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb) hMsg
 
-theorem waitingThreadsPendingMessageNone_perCore_of_global {st : SystemState}
-    (h : waitingThreadsPendingMessageNone st) (c : CoreId) :
-    waitingThreadsPendingMessageNone_perCore st c :=
+theorem blockedThreadsPendingMessageConsistent_perCore_of_global {st : SystemState}
+    (h : blockedThreadsPendingMessageConsistent st) (c : CoreId) :
+    blockedThreadsPendingMessageConsistent_perCore st c :=
   fun tid tcb hTcb _ => h tid tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb)
 
 theorem blockedThreadTimeoutConsistent_perCore_of_global {st : SystemState}
@@ -602,9 +604,9 @@ theorem allPendingMessagesBounded_of_forall_perCore {st : SystemState}
   fun tid tcb msg hRaw hMsg =>
     h (threadHomeCore tcb) tid tcb msg ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hRaw) rfl hMsg
 
-theorem waitingThreadsPendingMessageNone_of_forall_perCore {st : SystemState}
-    (h : ∀ c, waitingThreadsPendingMessageNone_perCore st c) :
-    waitingThreadsPendingMessageNone st :=
+theorem blockedThreadsPendingMessageConsistent_of_forall_perCore {st : SystemState}
+    (h : ∀ c, blockedThreadsPendingMessageConsistent_perCore st c) :
+    blockedThreadsPendingMessageConsistent st :=
   fun tid tcb hRaw =>
     h (threadHomeCore tcb) tid tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hRaw) rfl
 
@@ -756,7 +758,7 @@ structure ipcInvariantFull_perCore (st : SystemState) (c : CoreId) : Prop where
   dualQueueSystemInvariant : dualQueueSystemInvariant_perCore st c
   allPendingMessagesBounded : allPendingMessagesBounded_perCore st c
   badgeWellFormed : badgeWellFormed st
-  waitingThreadsPendingMessageNone : waitingThreadsPendingMessageNone_perCore st c
+  blockedThreadsPendingMessageConsistent : blockedThreadsPendingMessageConsistent_perCore st c
   endpointQueueNoDup : endpointQueueNoDup_perCore st c
   ipcStateQueueMembershipConsistent : ipcStateQueueMembershipConsistent_perCore st c
   queueNextBlockingConsistent : queueNextBlockingConsistent_perCore st c
@@ -792,8 +794,8 @@ theorem ipcInvariantFull_perCore_of_full {st : SystemState} {c : CoreId}
   dualQueueSystemInvariant := dualQueueSystemInvariant_perCore_of_global h.dualQueueSystemInvariant c
   allPendingMessagesBounded := allPendingMessagesBounded_perCore_of_global h.allPendingMessagesBounded c
   badgeWellFormed := h.badgeWellFormed
-  waitingThreadsPendingMessageNone :=
-    waitingThreadsPendingMessageNone_perCore_of_global h.waitingThreadsPendingMessageNone c
+  blockedThreadsPendingMessageConsistent :=
+    blockedThreadsPendingMessageConsistent_perCore_of_global h.blockedThreadsPendingMessageConsistent c
   endpointQueueNoDup := endpointQueueNoDup_perCore_of_global h.endpointQueueNoDup c
   ipcStateQueueMembershipConsistent :=
     ipcStateQueueMembershipConsistent_perCore_of_global h.ipcStateQueueMembershipConsistent c
@@ -825,8 +827,8 @@ theorem ipcInvariantFull_of_smp {st : SystemState}
    dualQueueSystemInvariant_of_forall_perCore (fun c => (h c).dualQueueSystemInvariant),
    allPendingMessagesBounded_of_forall_perCore (fun c => (h c).allPendingMessagesBounded),
    (h bootCoreId).badgeWellFormed,
-   waitingThreadsPendingMessageNone_of_forall_perCore
-     (fun c => (h c).waitingThreadsPendingMessageNone),
+   blockedThreadsPendingMessageConsistent_of_forall_perCore
+     (fun c => (h c).blockedThreadsPendingMessageConsistent),
    endpointQueueNoDup_of_forall_perCore (fun c => (h c).endpointQueueNoDup),
    ipcStateQueueMembershipConsistent_of_forall_perCore
      (fun c => (h c).ipcStateQueueMembershipConsistent),
@@ -903,7 +905,7 @@ theorem default_ipcInvariantFull_perCore (c : CoreId) :
   badgeWellFormed :=
     ⟨fun oid ntfn badge h _ => (by rw [default_objects_getElem_none'] at h; cases h),
      fun oid cn slot cap badge h _ _ => (by rw [default_objects_getElem_none'] at h; cases h)⟩
-  waitingThreadsPendingMessageNone := fun tid tcb hTcb _ => absurd hTcb default_no_tcb
+  blockedThreadsPendingMessageConsistent := fun tid tcb hTcb _ => absurd hTcb default_no_tcb
   endpointQueueNoDup := fun oid ep h => by rw [default_objects_getElem_none'] at h; cases h
   ipcStateQueueMembershipConsistent := fun tid tcb hTcb _ => absurd hTcb default_no_tcb
   queueNextBlockingConsistent := fun a b tcbA tcbB hA _ _ _ => absurd hA default_no_tcb

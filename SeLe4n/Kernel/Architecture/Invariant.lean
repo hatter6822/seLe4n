@@ -481,8 +481,8 @@ private theorem default_badgeWellFormed :
   refine ⟨fun oid _ _ hObj => ?_, fun oid _ _ _ _ hObj => ?_⟩
   all_goals exact default_objects_absurd hObj
 
-private theorem default_waitingThreadsPendingMessageNone :
-    waitingThreadsPendingMessageNone (default : SystemState) := by
+private theorem default_blockedThreadsPendingMessageConsistent :
+    blockedThreadsPendingMessageConsistent (default : SystemState) := by
   intro tid tcb hObj; exact default_objects_absurd hObj
 
 private theorem default_endpointQueueNoDup :
@@ -560,7 +560,7 @@ private theorem default_pendingReceiveReplyWellFormed :
 private theorem default_ipcInvariantFull :
     ipcInvariantFull (default : SystemState) :=
   ⟨default_ipcInvariant, default_dualQueueSystemInvariant, default_allPendingMessagesBounded,
-   default_badgeWellFormed, default_waitingThreadsPendingMessageNone,
+   default_badgeWellFormed, default_blockedThreadsPendingMessageConsistent,
    default_endpointQueueNoDup, default_ipcStateQueueMembershipConsistent,
    default_queueNextBlockingConsistent, default_queueHeadBlockedConsistent,
    default_blockedThreadTimeoutConsistent,
@@ -849,7 +849,7 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
            ⟨fun a tcbA hA b hN => (hLink.1 a tcbA (hObjs ▸ hA) b hN).imp fun tcbB ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩,
             fun b tcbB hB a hP => (hLink.2 b tcbB (hObjs ▸ hB) a hP).imp fun tcbA ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩⟩,
            fun tid hp => hAcyc tid (transportPath hObjs hp)⟩
-  -- waitingThreadsPendingMessageNone
+  -- blockedThreadsPendingMessageConsistent
   · intro tid tcb hObj; exact h5 tid tcb (hObjs ▸ hObj)
   -- endpointQueueNoDup
   · intro oid ep hObj; rw [hLk] at hObj; exact h6 oid ep hObj

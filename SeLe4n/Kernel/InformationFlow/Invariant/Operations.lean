@@ -1498,6 +1498,10 @@ theorem endpointQueuePopHead_preserves_projection
         | none => simp
         | some htcb =>
           simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
@@ -1942,6 +1946,10 @@ theorem endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split at hStep
+          · simp at hStep
           revert hStep
           cases hStore : storeObject endpointId _ st with
           | error e => simp
@@ -2160,11 +2168,11 @@ theorem endpointReceiveDual_preserves_projection
             have hProjEnq := endpointQueueEnqueue_preserves_projection ctx observer
                 endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hEndpointHighClean hReceiverObjHighClean
                 hTailHighClean hObjInvClean hEnq
-            cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+            cases hIpc : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
             | error e => simp [hIpc] at hStep
             | ok st2 =>
               simp only [hIpc] at hStep
-              have hObjInv2 := storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 receiver _ _
                   hObjInv1 hIpc
               -- AI4-A: chain rewrite through cleanup → enqueue → storeTcbIpcState → removeRunnable
               -- AI4-A: cleanupPreReceiveDonation preserves projection.
@@ -2194,7 +2202,7 @@ theorem endpointReceiveDual_preserves_projection
                         hIdxComplete hObjSetInv
               -- Common tail: from st2 back to st (storeTcbIpcState → enqueue → cleanup).
               have hProjTail : projectState ctx observer st2 = projectState ctx observer st := by
-                rw [storeTcbIpcState_preserves_projection ctx observer st1 st2 receiver _
+                rw [storeTcbIpcStateAndMessage_preserves_projection ctx observer st1 st2 receiver _ _
                     hReceiverObjHigh hObjInv1 hIpc, hProjEnq, hProjClean]
               -- WS-SM SM6.D (#7.1 fold): server-first stash.  The `none` arm is the
               -- pre-fold path (final state `removeRunnable st2 receiver`).  The

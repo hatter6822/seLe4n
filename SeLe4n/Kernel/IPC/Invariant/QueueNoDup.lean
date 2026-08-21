@@ -631,6 +631,10 @@ theorem endpointQueuePopHead_preserves_endpointQueueNoDup
             | none => simp
             | some tcb =>
               simp only []
+              -- PR #873 round 11: the send-queue message-presence guard --
+              -- a head that fails it errors, so it is not this `.ok`.
+              split
+              · simp
               cases hNext : tcb.queueNext with
               | none =>
                 -- Queue becomes empty: q' = { head := none, tail := none }

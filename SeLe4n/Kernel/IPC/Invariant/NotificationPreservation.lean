@@ -17,7 +17,7 @@ Split per AN3-D (IPC-M03 / Theme 4.7):
   `ipcSchedulerContractPredicates` preservation for
   `notificationSignal`/`notificationWait`
 * `Wait` — `badgeWellFormed`, `notificationWaiterConsistent`,
-  `waitingThreadsPendingMessageNone` preservation + frame lemmas
+  `blockedThreadsPendingMessageConsistent` preservation + frame lemmas
 
 All theorems preserved unchanged; no renames, no reorderings.
 -/

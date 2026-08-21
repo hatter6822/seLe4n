@@ -3954,6 +3954,28 @@ run_check "INVARIANT" rg -n '^def _scope_contains' scripts/check_anchor_consiste
 run_check "INVARIANT" rg -n '^def arm_key' scripts/check_content_flow_coverage.py
 run_check "INVARIANT" rg -n 'FAIL_CLOSED_ARMS' scripts/check_content_flow_coverage.py
 run_check "INVARIANT" rg -n 'CF_TRUNCATED' scripts/check_content_flow_coverage.py
+# PR #873 round 11: `pendingMessage` agrees with the blocking state in BOTH
+# directions.  The invariant used to constrain only the two collecting states and
+# say `True` of the two delivering ones, which made "a parked sender carries its
+# message" a convention every consumer had to re-derive -- and the consumers that
+# forgot were the round-7 frozen dequeue and the round-11 live one.  Four pins:
+# the invariant's delivering half, its executable mirror (the harness could not
+# see the violation either), the dequeue's fail-closed complement for states that
+# carry no invariant, and the converse theorem `receiverTaintEdges` reads against.
+run_check "INVARIANT" rg -n '\.blockedOnSend _ => tcb\.pendingMessage\.isSome' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '\.blockedOnCall _ => tcb\.pendingMessage\.isSome' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n 'blockedThreadPendingMessageChecks' SeLe4n/Testing/InvariantChecks.lean
+run_check "INVARIANT" rg -n 'headTcb\.pendingMessage\.isNone' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_send_sender_carries_message' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n 'chain12fReceiveRefusesMessagelessParkedSender' tests/OperationChainSuite.lean
+# And the other half of the same relation, which the executable mirror exposed: a
+# receive that blocks clears the message it is not going to deliver.  The negative
+# is load-bearing -- a bare `storeTcbIpcState` there is the shape that carried a
+# consumed message into `.blockedOnReceive` and made the preservation theorem
+# depend on an `hReceiverMsg` hypothesis nothing established.
+run_check "INVARIANT" rg -n 'storeTcbIpcStateAndMessage st. receiver \(\.blockedOnReceive endpointId\) none' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n 'storeTcbIpcStateAndMessage st. receiver \(\.blockedOnReceive endpointId\) none' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_negative_check "INVARIANT" rg -n 'storeTcbIpcState st. receiver \(\.blockedOnReceive endpointId\)' SeLe4n/Kernel/IPC/DualQueue/Transport.lean SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # PR #873 round 7: a CLEAR is a taint write too, so the retype's cleared key
 # rides its own object lock — the third member of `taintWriteKeys` the key-local
 # declaration had skipped.  The fixed four stay pinned separately.

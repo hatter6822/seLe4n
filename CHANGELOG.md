@@ -1,3 +1,69 @@
+## v0.33.86 — the invariant said half of what it meant, and every consumer paid for the other half
+
+Round 11 reported that the live `endpointReceiveDual` reads a queued sender's
+`pendingMessage` without requiring `some msg`, stores that `none` into the
+receiver, returns success, and lets `receiverTaintEdges` join the sender's
+provenance into a receiver that received nothing.
+
+That is true, and it is the *second* time: round 7 fixed the identical defect in
+`frozenQueuePopHead`.  Fixing the live consumer the same way would have been the
+third patch of one root cause, so this cut goes after the root.
+
+**`waitingThreadsPendingMessageNone` stated one direction of a two-directional
+relation.**  Its own docstring said so: "Note: `blockedOnSend` and `blockedOnCall`
+threads **MAY** have a pending message."  A thread parked to *collect* was pinned
+to hold nothing; a thread parked to *deliver* was pinned to nothing at all.  So
+"a parked sender is carrying its message" — true of every state the live park
+sites produce, since `endpointSendDual` and `endpointCall` both store `some msg`
+atomically with the block — was a **convention**, and every consumer that read a
+parked sender had to re-derive it defensively.  The two that did not are the two
+findings.
+
+The invariant now states both halves, and the predicate is renamed
+`blockedThreadsPendingMessageConsistent` because the old name described only the
+half it had.  The cost was three central store helpers and **two `rfl`s** at the
+park sites: the obligation is discharged by the value those sites already write.
+The malformed state is now unreachable rather than merely refused.
+
+**Closing it exposed the other direction failing.**  The executable mirror
+(`blockedThreadPendingMessageChecks`, new — the harness could not see either half
+before) immediately failed on a state built by live operations alone: a receiver
+that collects a message, then receives again with no sender waiting, becomes
+`.blockedOnReceive` **still holding the previous message**.  Blocking wrote only
+`ipcState`.  Reported before fixing, per the vulnerability rule: the exploitable
+form of this — re-unwrapping that stale message into fresh capability copies —
+was the P1 closed earlier in this PR at round 8, which gated the *install*; what
+remained was retention of the body.
+
+The block now clears atomically (`storeTcbIpcStateAndMessage … none`, the AK1-D
+pattern the rendezvous branch already used).  The payoff is visible in the proof:
+`endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent` carried
+`hReceiverMsg`, an assumption that the receiver held nothing, which **nothing in
+`ipcInvariantFull` established** — `.ready` is unconstrained, and a `.ready`
+thread holding an unconsumed message is exactly what a second receive produces.
+The theorem is unconditional now; the hypothesis, the twenty lines transporting
+it through `cleanupPreReceiveDonation` and the enqueue, and the sixty more
+threading it through `replyRecv` are gone, along with the three
+`_blockStoreIpc_establishes_*` helpers whose only caller was the non-atomic
+block.
+
+**The dequeue guard stays** as the fail-closed complement, for the states that
+carry no invariant — a below-API construction, a thawed snapshot — mirroring
+`frozenQueuePopHead` on the side where there is no invariant to lean on at all.
+`endpointQueuePopHead_send_sender_carries_message` is its unconditional converse,
+and it is what `receiverTaintEdges` can be read against below the invariant.
+
+Two fixtures modelled states the kernel cannot reach and were corrected with that
+rationale: the cross-core `blockedSenderState` parked a sender with no message,
+and the golden trace's post-dispatch check count moves 25 → 26 for the new check.
+`chain12f` pins the whole chain — the checker rejects the stripped state and
+accepts it with the message in place, the declared taint edge *does* still name
+that sender (so the transport refusal is what stands between the malformed state
+and an invented predecessor), the receive is refused, and the same receive
+delivers when the message is there.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md
+
 ## v0.33.85 — what an anchor pins, and what a coverage walk actually reached
 
 Two gates, one failure each way.  The anchor-consistency gate was **inventing**

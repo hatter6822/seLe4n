@@ -2073,7 +2073,7 @@ theorem notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthro
     (st st' : SystemState) (sgi : Option (CoreId × SgiKind))
     (hNoBound : boundDeliveryTarget? st notificationId = none)
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
       (notificationSignalOnCore notificationId badge c st).1)
     (hRCLRecip' : replyCallerLinkageReciprocal
       (notificationSignalOnCore notificationId badge c st).1)

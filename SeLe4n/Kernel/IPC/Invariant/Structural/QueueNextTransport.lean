@@ -1397,6 +1397,10 @@ theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant
         | none => simp [hLookup] at hStep
         | some headTcb =>
           simp only [hLookup] at hStep
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split at hStep
+          · simp at hStep
           have hHeadTcb := lookupTcb_some_objects st headTid headTcb hLookup
           have hNeEpHead : endpointId ≠ headTid.toObjId :=
             fun h => by rw [h] at hObj; rw [hHeadTcb] at hObj; cases hObj

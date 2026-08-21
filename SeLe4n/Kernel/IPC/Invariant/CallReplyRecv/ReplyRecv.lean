@@ -676,14 +676,14 @@ theorem endpointCallWithCaps_preserves_ipcInvariant
               receiverSlotBase _ stMid st' summary hInvMid hObjInvMid hStep
 
 -- ============================================================================
--- V3-G5 (M-PRF-5): waitingThreadsPendingMessageNone preservation
+-- V3-G5 (M-PRF-5): blockedThreadsPendingMessageConsistent preservation
 -- for call/replyRecv operations
 -- ============================================================================
 
 -- V3-G5 (M-PRF-5): `endpointCall`/`endpointReplyRecv` preserve
--- `waitingThreadsPendingMessageNone`.
+-- `blockedThreadsPendingMessageConsistent`.
 -- Machine-checked proofs in Structural.lean:
---   `endpointCall_preserves_waitingThreadsPendingMessageNone`
---   `endpointReplyRecv_preserves_waitingThreadsPendingMessageNone`
+--   `endpointCall_preserves_blockedThreadsPendingMessageConsistent`
+--   `endpointReplyRecv_preserves_blockedThreadsPendingMessageConsistent`
 
 end SeLe4n.Kernel

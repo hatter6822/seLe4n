@@ -512,6 +512,10 @@ theorem endpointQueuePopHead_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
         | none => simp
         | some headTcb =>
           simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
           cases hStore : storeObject endpointId
               (.endpoint (if isReceiveQ
                 then { ep with receiveQ := _ } else { ep with sendQ := _ })) st with
@@ -1016,7 +1020,7 @@ theorem endpointReceiveDualOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
           · exact observableSlotsConfinedToCores_of_eq _ rfl
           · next st2 hIpc =>
             have hPre2 := observableSlotsConfinedToCores_trans hPre
-              (storeTcbIpcState_confinedToCores st1 st2 receiver _ hIpc)
+              (storeTcbIpcStateAndMessage_confinedToCores st1 st2 receiver _ _ hIpc)
             split
             · exact observableSlotsConfinedToCores_widen_cons hPre2
                 (removeRunnableOnCore_confinedToCores st2 receiver executingCore)

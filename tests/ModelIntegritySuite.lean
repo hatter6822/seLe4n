@@ -1868,8 +1868,8 @@ def ipc_invariant_full_named_projection_signatures : IO Unit := do
     @ipcInvariantFull.allPendingMessagesBounded
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> badgeWellFormed st :=
     @ipcInvariantFull.badgeWellFormed
-  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> waitingThreadsPendingMessageNone st :=
-    @ipcInvariantFull.waitingThreadsPendingMessageNone
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> blockedThreadsPendingMessageConsistent st :=
+    @ipcInvariantFull.blockedThreadsPendingMessageConsistent
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> endpointQueueNoDup st :=
     @ipcInvariantFull.endpointQueueNoDup
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> ipcStateQueueMembershipConsistent st :=

@@ -1084,7 +1084,7 @@ overwrites any previous `pendingMessage` value. This is safe because:
    AND `pendingMessage := some badgeMsg`, so the overwrite is the intended
    delivery mechanism, not a loss of prior state.
 AF5-A (AF-12): `pendingMessage = none` for waiting threads IS formally proven:
-defined as `waitingThreadsPendingMessageNone` in IPC/Invariant/Defs.lean
+defined as `blockedThreadsPendingMessageConsistent` in IPC/Invariant/Defs.lean
 with preservation theorems in IPC/Invariant/WaitingThreadHelpers.lean
 (helper extraction in WS-AC Phase AC1-A). The safety argument is now both
 structural (entry path analysis above) AND formally verified. -/

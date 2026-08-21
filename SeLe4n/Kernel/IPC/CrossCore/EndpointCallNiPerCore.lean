@@ -86,6 +86,10 @@ theorem endpointQueuePopHead_machine_eq
         | none => simp
         | some headTcb =>
           simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair => simp only []; cases hNext : headTcb.queueNext with

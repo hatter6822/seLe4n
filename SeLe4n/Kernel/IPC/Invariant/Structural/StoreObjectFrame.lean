@@ -522,12 +522,12 @@ theorem endpointReceiveDual_preserves_dualQueueSystemInvariant
               endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hEnq hInvClean hObjInvClean hFreshReceiverClean hRecvTailFreshClean
             have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt
               endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
-            cases hStore : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+            cases hStore : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
             | error e => simp [hStore] at hStep
             | ok st2 =>
               simp only [hStore] at hStep
-              have hInv2 := storeTcbIpcState_preserves_dualQueueSystemInvariant st1 st2 receiver _ hObjInv1 hStore hInv1
-              have hObjInv2 := storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInv1 hStore
+              have hInv2 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant st1 st2 receiver _ _ hObjInv1 hStore hInv1
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 receiver _ _ hObjInv1 hStore
               -- WS-SM SM6.D (#7.1 fold): server-first stash store on the blocked receiver.
               cases hGetR : st2.getTcb? receiver with
               | none =>
@@ -1198,7 +1198,12 @@ theorem endpointQueuePopHead_preserves_allPendingMessagesBounded
         cases hLookup : lookupTcb st headTid with
         | none => simp [hLookup] at hStep
         | some tcb =>
-          simp only [hLookup] at hStep; revert hStep
+          simp only [hLookup] at hStep
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split at hStep
+          · simp at hStep
+          revert hStep
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
@@ -1259,7 +1264,12 @@ theorem endpointQueuePopHead_preserves_badgeWellFormed
         cases hLookup : lookupTcb st headTid with
         | none => simp [hLookup] at hStep
         | some tcb =>
-          simp only [hLookup] at hStep; revert hStep
+          simp only [hLookup] at hStep
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split at hStep
+          · simp at hStep
+          revert hStep
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
@@ -2144,13 +2154,15 @@ theorem endpointReceiveDual_preserves_allPendingMessagesBounded
               endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq hInvClean
             have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt
               endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
-            cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+            cases hIpc : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
             | error e => simp [hIpc] at hStep
             | ok st2 =>
               simp only [hIpc] at hStep
-              have hInv2 := storeTcbIpcState_preserves_allPendingMessagesBounded
-                st1 st2 receiver _ hObjInv1 hIpc hInv1
-              have hObjInv2 := storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInv1 hIpc
+              -- PR #873 round 11: the block now clears `pendingMessage`, so the
+              -- boundedness obligation on the stored message is vacuous.
+              have hInv2 := storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
+                st1 st2 receiver _ none (fun _ h => by cases h) hObjInv1 hIpc hInv1
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 receiver _ _ hObjInv1 hIpc
               -- WS-SM SM6.D (#7.1 fold): server-first stash store on the blocked receiver.
               cases hGetR : st2.getTcb? receiver with
               | none =>
@@ -2285,12 +2297,12 @@ theorem endpointReceiveDual_preserves_badgeWellFormed
               endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq hInvClean
             have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt
               endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
-            cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+            cases hIpc : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
             | error e => simp [hIpc] at hStep
             | ok st2 =>
               simp only [hIpc] at hStep
-              have hInv2 := storeTcbIpcState_preserves_badgeWellFormed st1 st2 receiver _ hInv1 hObjInv1 hIpc
-              have hObjInv2 := storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInv1 hIpc
+              have hInv2 := storeTcbIpcStateAndMessage_preserves_badgeWellFormed st1 st2 receiver _ _ hInv1 hObjInv1 hIpc
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 receiver _ _ hObjInv1 hIpc
               -- WS-SM SM6.D (#7.1 fold): server-first stash store on the blocked receiver.
               cases hGetR : st2.getTcb? receiver with
               | none =>

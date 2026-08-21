@@ -1196,12 +1196,12 @@ theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
             hFreshReceiverClean hRecvTailFreshClean
           have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt
             endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
-          cases hStore : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+          cases hStore : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
           | error e => simp only [hStore]; exact hInv
           | ok st2 =>
             simp only [hStore]
-            have hInv2 := storeTcbIpcState_preserves_dualQueueSystemInvariant st1 st2 receiver _ hObjInv1 hStore hInv1
-            have hObjInv2 := storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInv1 hStore
+            have hInv2 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant st1 st2 receiver _ _ hObjInv1 hStore hInv1
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 receiver _ _ hObjInv1 hStore
             cases hGetR : st2.getTcb? receiver with
             | none =>
               simp only [hGetR]
@@ -2545,7 +2545,7 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
         (epId' = endpointId →
           ep'.receiveQ.tail ≠ some tailTid))
     (hStep : (endpointCallOnCore endpointId caller msg executingCore st).1 = st')
-    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
@@ -2777,7 +2777,7 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull_perCore
         (epId' = endpointId →
           ep'.receiveQ.tail ≠ some tailTid))
     (hStep : (endpointCallOnCore endpointId caller msg executingCore st).1 = st')
-    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →

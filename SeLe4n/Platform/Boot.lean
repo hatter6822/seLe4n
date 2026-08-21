@@ -3236,7 +3236,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         intro oid cn slot cap badge hObj hSlotLookup hBadge
         have hCN := (hBS oid _ hObj).2.2.1 cn rfl
         exact hCN.2.2.2.1 slot cap badge hSlotLookup hBadge
-    · -- waitingThreadsPendingMessageNone
+    · -- blockedThreadsPendingMessageConsistent
       intro tid tcb hObj
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
       rw [hTcb.2.1]; trivial

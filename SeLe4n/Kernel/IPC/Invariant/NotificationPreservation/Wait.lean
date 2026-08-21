@@ -17,7 +17,7 @@ import SeLe4n.Kernel.IPC.Invariant.NotificationPreservation.Signal
 Extracted from `NotificationPreservation.lean` as part of AN3-D
 (IPC-M03 / Theme 4.7).  Contains preservation theorems for
 `badgeWellFormed`, `notificationWaiterConsistent`,
-`waitingThreadsPendingMessageNone` covering both
+`blockedThreadsPendingMessageConsistent` covering both
 `notificationSignal` / `notificationWait` and their frame
 lemmas.  Declarations are unchanged in order, content, and
 proof; only the file boundary has moved.
@@ -572,7 +572,7 @@ theorem frame_preserves_notificationWaiterConsistent
   exact ⟨tcb, (hTcbPreserved noid ntfn waiter hNtfnPre hMem).symm ▸ hTcb, hIpc⟩
 
 -- ============================================================================
--- V3-G2/G3 (M-PRF-5): waitingThreadsPendingMessageNone preservation
+-- V3-G2/G3 (M-PRF-5): blockedThreadsPendingMessageConsistent preservation
 -- for notification operations
 -- ============================================================================
 --
@@ -583,11 +583,11 @@ theorem frame_preserves_notificationWaiterConsistent
 
 /-- V3-I (L-IPC-1): Before `notificationSignal` delivers a badge to a waiting
     thread, the waiter's `pendingMessage` was `none`. Direct extraction from the
-    `waitingThreadsPendingMessageNone` invariant: any thread with
+    `blockedThreadsPendingMessageConsistent` invariant: any thread with
     `ipcState = .blockedOnNotification _` has `pendingMessage = none`. -/
 theorem notificationWake_pendingMessage_was_none
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (nid : SeLe4n.ObjId)
-    (hInv : waitingThreadsPendingMessageNone st)
+    (hInv : blockedThreadsPendingMessageConsistent st)
     (hLookup : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hBlocked : tcb.ipcState = .blockedOnNotification nid) :
     tcb.pendingMessage = none := by
@@ -595,14 +595,14 @@ theorem notificationWake_pendingMessage_was_none
   rw [hBlocked] at h
   exact h
 
-/-- V3-G3 (M-PRF-5): `notificationSignal` preserves `waitingThreadsPendingMessageNone`.
+/-- V3-G3 (M-PRF-5): `notificationSignal` preserves `blockedThreadsPendingMessageConsistent`.
     Wake path: sets `.ready` (out of scope). Merge path: non-TCB store only. -/
-theorem notificationSignal_preserves_waitingThreadsPendingMessageNone
+theorem notificationSignal_preserves_blockedThreadsPendingMessageConsistent
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hObjInv : st.objects.invExt)
-    (hInv : waitingThreadsPendingMessageNone st)
+    (hInv : blockedThreadsPendingMessageConsistent st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
-    waitingThreadsPendingMessageNone st' := by
+    blockedThreadsPendingMessageConsistent st' := by
   simp only [notificationSignal] at hStep
   split at hStep
   · -- some (.notification ntfn)
@@ -616,7 +616,7 @@ theorem notificationSignal_preserves_waitingThreadsPendingMessageNone
       split at hStep
       next => contradiction  -- storeObject error
       next st1 hSO =>
-        have hInv1 := storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone
+        have hInv1 := storeObject_nonTcb_preserves_blockedThreadsPendingMessageConsistent
           st st1 notificationId (.notification _) (fun tcb => by simp) hObjInv hSO hInv
         have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
         split at hStep
@@ -624,32 +624,32 @@ theorem notificationSignal_preserves_waitingThreadsPendingMessageNone
         next st2 hSM =>
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          have hInv2 := storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
+          have hInv2 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
             st1 st2 waiter .ready _ hObjInv1 hSM hInv1 (by trivial)
-          exact ensureRunnable_preserves_waitingThreadsPendingMessageNone st2 waiter hInv2
+          exact ensureRunnable_preserves_blockedThreadsPendingMessageConsistent st2 waiter hInv2
     | none =>
       -- Merge path: storeObject only
       simp only [hWaiters] at hStep
       -- pendingBadge match produces two sub-cases, both are storeObject
       split at hStep
       all_goals (
-        exact storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone
+        exact storeObject_nonTcb_preserves_blockedThreadsPendingMessageConsistent
           st st' notificationId (.notification _) (fun tcb => by simp) hObjInv hStep hInv)
   · contradiction
   · contradiction
 
-/-- V3-G2 (M-PRF-5): `notificationWait` preserves `waitingThreadsPendingMessageNone`.
+/-- V3-G2 (M-PRF-5): `notificationWait` preserves `blockedThreadsPendingMessageConsistent`.
     Deliver path: `storeTcbIpcState` to `.ready` exits scope.
     Block path: `storeTcbIpcState_fromTcb` to `.blockedOnNotification` + `removeRunnable`;
     requires `hWaiterMsg` precondition that the waiter's `pendingMessage` is `none`. -/
-theorem notificationWait_preserves_waitingThreadsPendingMessageNone
+theorem notificationWait_preserves_blockedThreadsPendingMessageConsistent
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (badge : Option SeLe4n.Badge)
     (hObjInv : st.objects.invExt)
-    (hInv : waitingThreadsPendingMessageNone st)
+    (hInv : blockedThreadsPendingMessageConsistent st)
     (hWaiterMsg : ∀ tcb, lookupTcb st waiter = some tcb → tcb.pendingMessage = none)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
-    waitingThreadsPendingMessageNone st' := by
+    blockedThreadsPendingMessageConsistent st' := by
   simp only [notificationWait] at hStep
   split at hStep
   · -- some (.notification ntfn)
@@ -659,7 +659,7 @@ theorem notificationWait_preserves_waitingThreadsPendingMessageNone
       split at hStep
       next => contradiction
       next st1 hSO =>
-        have hInv1 := storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone
+        have hInv1 := storeObject_nonTcb_preserves_blockedThreadsPendingMessageConsistent
           st st1 notificationId (.notification _) (fun tcb => by simp) hObjInv hSO hInv
         have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
         split at hStep
@@ -667,7 +667,7 @@ theorem notificationWait_preserves_waitingThreadsPendingMessageNone
         next st2 hSI =>
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          exact storeTcbIpcState_preserves_waitingThreadsPendingMessageNone
+          exact storeTcbIpcState_preserves_blockedThreadsPendingMessageConsistent
             st1 st2 waiter .ready hObjInv1 hSI hInv1 (fun _ _ => trivial)
     · -- Block path: pendingBadge = none
       split at hStep
@@ -681,7 +681,7 @@ theorem notificationWait_preserves_waitingThreadsPendingMessageNone
           · split at hStep
             next => contradiction -- storeObject error
             next st1 hSO =>
-            have hInv1 := storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone
+            have hInv1 := storeObject_nonTcb_preserves_blockedThreadsPendingMessageConsistent
               st st1 notificationId (.notification _) (fun tcb => by simp) hObjInv hSO hInv
             have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
             -- Split on storeTcbIpcState_fromTcb result
@@ -690,7 +690,7 @@ theorem notificationWait_preserves_waitingThreadsPendingMessageNone
             next st2 hSI =>
               simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, rfl⟩ := hStep
-              apply removeRunnable_preserves_waitingThreadsPendingMessageNone
+              apply removeRunnable_preserves_blockedThreadsPendingMessageConsistent
               -- Unfold storeTcbIpcState_fromTcb to extract underlying storeObject
               simp only [storeTcbIpcState_fromTcb] at hSI
               split at hSI

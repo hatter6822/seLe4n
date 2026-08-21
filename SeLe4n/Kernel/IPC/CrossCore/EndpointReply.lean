@@ -218,7 +218,11 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
             match endpointQueueEnqueue endpointId true receiver stClean with
             | .error e => (st, .error e)
             | .ok st' =>
-                match storeTcbIpcState st' receiver (.blockedOnReceive endpointId) with
+                -- PR #873 round 11: clear `pendingMessage` atomically with the block,
+                -- exactly as the single-core `endpointReceiveDual` does -- a receiver
+                -- that already collected a message would otherwise carry it into
+                -- `.blockedOnReceive`, breaking `blockedThreadsPendingMessageConsistent`.
+                match storeTcbIpcStateAndMessage st' receiver (.blockedOnReceive endpointId) none with
                 | .error e => (st, .error e)
                 | .ok st'' =>
                     -- WS-SM SM6.D (#7.2 fold): server-first stash — record the
