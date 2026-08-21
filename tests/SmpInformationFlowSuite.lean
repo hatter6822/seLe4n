@@ -2018,6 +2018,10 @@ link is the unsafe direction. -/
 #check @TaintTable.contains_joinAt_of_contains
 #check @TaintTable.contains_joinAt_of_source
 #check @TaintTable.contains_clearAt_self
+-- WS-SM SM9.D.2: the keyed representation, and the bound it buys.
+#check @TaintTable.clearAt_set_entries
+#check @TaintTable.storeThenClear_no_growth
+#check @TaintTable.taintEntriesErase_idem
 
 /-! ### SM9.D.2 – SM9.D.6 — the §6 mount checklist, run for the fourth time. -/
 
@@ -10658,6 +10662,28 @@ private def sendRendezvousCaplessEdges : List TaintFlowEdge :=
 /-- §12.8  SM9.D.17 / SM9.D.18 — the footprint and the non-interference. -/
 private def runTaintFootprintChecks : IO Unit := do
   IO.println "--- §12.8 SM9.D.17 the serialization subject and the NI carriage ---"
+  -- WS-SM SM9.D.2 (PR #873 round 9): the table is bounded by what it currently
+  -- holds, not by how many times it has been written.  The cycle below is the
+  -- ordinary authorized one — a declassified badge stored on a notification,
+  -- then taken by a wait — and it is *value-changing* in both directions, which
+  -- is exactly the case the no-op write guards do not cover.  Under the old
+  -- functional representation each pass added two closures for ever and lookups
+  -- of unrelated objects walked the whole history.
+  let taintCycle : SeLe4n.Kernel.TaintTable → SeLe4n.Kernel.TaintTable :=
+    fun t => (t.joinAt lowNotification (SeLe4n.Kernel.DeclassificationTaint.singleton 5)).clearAt
+      lowNotification
+  let afterFiveCycles :=
+    taintCycle (taintCycle (taintCycle (taintCycle (taintCycle
+      SeLe4n.Kernel.TaintTable.empty))))
+  assertBool "five store/consume cycles leave the taint table with no entries at all"
+    (decide (afterFiveCycles.entries.length = 0))
+  -- …and the table is not simply always empty: a stored tag is retained, and
+  -- retained as ONE entry however many times it is re-joined.
+  let stored := (SeLe4n.Kernel.TaintTable.empty.joinAt lowNotification
+    (SeLe4n.Kernel.DeclassificationTaint.singleton 5)).joinAt lowNotification
+      (SeLe4n.Kernel.DeclassificationTaint.singleton 5)
+  assertBool "a stored tag survives, as exactly one entry"
+    ((stored lowNotification).contains 5 && decide (stored.entries.length = 1))
   -- The write set of a content-moving plan is exactly its declared sinks when
   -- the commit appended no audit event, which is every syscall but the two
   -- that write the trail.

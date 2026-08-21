@@ -725,35 +725,110 @@ end DeclassificationTaint
 -- §6  WS-SM SM9.D.2 — the side table
 -- ============================================================================
 
+/-- WS-SM SM9.D.2: the association list a `TaintTable` is, before the wrapper.
+
+Kept **canonical**: no entry ever holds `DeclassificationTaint.empty`, so the
+list's length is the number of objects that currently carry provenance rather
+than a record of how many writes have happened.  `eraseKey` is what maintains
+that, and it is why `clearAt` genuinely shrinks the table. -/
+def TaintEntries := List (SeLe4n.ObjId × DeclassificationTaint)
+
+/-- WS-SM SM9.D.2: the provenance recorded for `oid`, or none at all.
+
+Defined by structural recursion rather than through `List.find?` so every lemma
+below is a plain induction on the list, with no `find?`-over-`filter` reasoning
+in the way. -/
+def taintEntriesLookup : TaintEntries → SeLe4n.ObjId → DeclassificationTaint
+  | [], _ => DeclassificationTaint.empty
+  | (k, v) :: rest, o => if k = o then v else taintEntriesLookup rest o
+
+/-- WS-SM SM9.D.2: drop every entry for `oid`.  Total, and removes duplicates as
+well as the first hit, so the canonical form survives any construction. -/
+def taintEntriesErase : TaintEntries → SeLe4n.ObjId → TaintEntries
+  | [], _ => []
+  | (k, v) :: rest, o =>
+      if k = o then taintEntriesErase rest o else (k, v) :: taintEntriesErase rest o
+
+@[simp] theorem taintEntriesLookup_erase_self (l : TaintEntries) (o : SeLe4n.ObjId) :
+    taintEntriesLookup (taintEntriesErase l o) o = DeclassificationTaint.empty := by
+  induction l with
+  | nil => rfl
+  | cons p rest ih =>
+    obtain ⟨k, v⟩ := p
+    by_cases h : k = o
+    · simp [taintEntriesErase, h, ih]
+    · simp [taintEntriesErase, taintEntriesLookup, h, ih]
+
+@[simp] theorem taintEntriesLookup_erase_ne (l : TaintEntries) {o o' : SeLe4n.ObjId}
+    (h : o' ≠ o) :
+    taintEntriesLookup (taintEntriesErase l o) o' = taintEntriesLookup l o' := by
+  induction l with
+  | nil => rfl
+  | cons p rest ih =>
+    obtain ⟨k, v⟩ := p
+    by_cases hk : k = o
+    · subst hk
+      have hne : ¬ (k = o') := fun hc => h hc.symm
+      simpa [taintEntriesErase, taintEntriesLookup, hne] using ih
+    · by_cases hk' : k = o'
+      · simp [taintEntriesErase, taintEntriesLookup, hk', h]
+      · simpa [taintEntriesErase, taintEntriesLookup, hk, hk'] using ih
+
 /-- WS-SM SM9.D.2: **the declassification taint side table** — provenance for
 every object id.
 
-A **total function** rather than an `RHTable`, and the choice is load-bearing
-rather than stylistic.  `RHTable`'s lookup-after-insert lemmas
-(`RHTable.getElem?_insert_self`, `_insert_ne`) take `invExt` as a hypothesis, so
-a hash-table representation would have to carry that well-formedness as an
-invariant — a seventeenth `proofLayerInvariantBundle` conjunct plus a capacity
-obligation at every writer, which is exactly what §6 of the plan decides against
-for all three SM9 mounts.  A total function has no well-formedness to carry, so
-the frames are `rfl` and the bound that matters — the number of identities *per
-object* — stays where it belongs, in `DeclassificationTaint.tags_bounded`.
+A **keyed** table under a total lookup, and both halves of that are
+load-bearing.
 
-The representation is precedented in this codebase for exactly this reason:
-`Machine.Memory` is `PAddr → UInt8` and `RegisterFile.gpr` is
-`RegName → RegValue`, both with the same recorded rationale (proofs stay total,
-and a concrete implementation is a refinement concern rather than a model one). -/
-abbrev TaintTable := SeLe4n.ObjId → DeclassificationTaint
+*Keyed*, because the table is read and written by `applySyscallTaint` on the
+live syscall path.  It was a bare `SeLe4n.ObjId → DeclassificationTaint`, and a
+function representation records history rather than state: every value-changing
+write closes over the previous table and a lookup walks the chain, so the
+ordinary authorized cycle — a declassified badge stored, then consumed by
+`.notificationWait`, then stored again — added two closures per cycle for ever.
+Guards that elide value-*preserving* writes made the inert case free and left
+that one untouched, because it is the case where the value really does change.
+`Machine.Memory : PAddr → UInt8` was cited as precedent for the function form,
+and that citation was the flaw in the argument: `Machine.Memory` is a
+specification of hardware that is never executed, while this table is.
+
+The association list is bounded by the number of objects that currently carry
+provenance, not by the number of writes — `clearAt` erases rather than storing
+an empty value, so a consumed transport leaves the table smaller than it found
+it.
+
+*Under a total lookup*, because the reason the function form was chosen still
+holds: `RHTable`'s lookup-after-write lemmas take `invExt` (and `erase_ne` a
+capacity bound) as hypotheses, so a hash-table representation would have to
+carry that well-formedness — a seventeenth `proofLayerInvariantBundle` conjunct
+plus an obligation at every writer, which §6 of the plan decides against for all
+three SM9 mounts.  A list needs no such invariant, and the `CoeFun` below keeps
+every downstream site reading `tbl oid` exactly as it did, so the pointwise
+lemmas are unchanged in statement and the frames stay `rfl`. -/
+structure TaintTable where
+  /-- The canonical entries: at most one per object, never empty-valued. -/
+  entries : TaintEntries
 
 namespace TaintTable
 
+/-- WS-SM SM9.D.2: a table *is* its lookup, so every existing `tbl oid` reads
+unchanged and no downstream statement moves. -/
+instance : CoeFun TaintTable (fun _ => SeLe4n.ObjId → DeclassificationTaint) :=
+  ⟨fun tbl => taintEntriesLookup tbl.entries⟩
+
 /-- WS-SM SM9.D.2: no object carries provenance — the boot table. -/
-def empty : TaintTable := fun _ => DeclassificationTaint.empty
+def empty : TaintTable := ⟨[]⟩
 
 instance : Inhabited TaintTable := ⟨empty⟩
 
-/-- WS-SM SM9.D.2: replace one object's provenance. -/
+/-- WS-SM SM9.D.2: replace one object's provenance.
+
+Storing `DeclassificationTaint.empty` **erases** rather than recording an empty
+entry, which is what keeps the representation canonical — and therefore what
+makes `clearAt` shrink the table instead of extending it. -/
 def set (tbl : TaintTable) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) : TaintTable :=
-  fun o => if o = oid then T else tbl o
+  if T = DeclassificationTaint.empty then ⟨taintEntriesErase tbl.entries oid⟩
+  else ⟨(oid, T) :: taintEntriesErase tbl.entries oid⟩
 
 /-- WS-SM SM9.D.2: **add provenance to one object**, keeping what it had — the
 propagation primitive.  A sink joins its source's taint in; nothing is ever
@@ -797,14 +872,25 @@ def clearAt (tbl : TaintTable) (oid : SeLe4n.ObjId) : TaintTable :=
 @[simp] theorem empty_apply (oid : SeLe4n.ObjId) : empty oid = DeclassificationTaint.empty := rfl
 
 @[simp] theorem set_self (tbl : TaintTable) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) :
-    tbl.set oid T oid = T := by simp [set]
+    tbl.set oid T oid = T := by
+  unfold set
+  split
+  · next hT => simpa using hT.symm
+  · simp [taintEntriesLookup]
 
 @[simp] theorem set_ne (tbl : TaintTable) {oid o : SeLe4n.ObjId} (h : o ≠ oid)
-    (T : DeclassificationTaint) : tbl.set oid T o = tbl o := by simp [set, h]
+    (T : DeclassificationTaint) : tbl.set oid T o = tbl o := by
+  unfold set
+  split
+  · simp [taintEntriesLookup_erase_ne _ h]
+  · simp [taintEntriesLookup, Ne.symm h, taintEntriesLookup_erase_ne _ h]
 
 @[simp] theorem joinAt_self (tbl : TaintTable) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) :
     tbl.joinAt oid T oid = DeclassificationTaint.join (tbl oid) T := by
   unfold joinAt
+  -- The non-dependent `let` elaborates to `letFun`, which `split` cannot see
+  -- through; `dsimp only` reduces it without touching anything else.
+  dsimp only
   split
   · next hEq => exact hEq.symm
   · simp
@@ -812,6 +898,7 @@ def clearAt (tbl : TaintTable) (oid : SeLe4n.ObjId) : TaintTable :=
 @[simp] theorem joinAt_ne (tbl : TaintTable) {oid o : SeLe4n.ObjId} (h : o ≠ oid)
     (T : DeclassificationTaint) : tbl.joinAt oid T o = tbl o := by
   unfold joinAt
+  dsimp only
   split
   · rfl
   · simp [h]
@@ -871,6 +958,89 @@ theorem contains_joinAt_of_source (tbl : TaintTable) (oid : SeLe4n.ObjId)
 @[simp] theorem contains_clearAt_self (tbl : TaintTable) (oid : SeLe4n.ObjId) (t : Nat) :
     ((tbl.clearAt oid) oid).contains t = false := by
   simp only [clearAt_self]; exact DeclassificationTaint.contains_empty t
+
+/-! ### WS-SM SM9.D.2 — the table is bounded by what it holds, not by its history
+
+The reason the representation is keyed rather than functional.  A function-backed
+table recorded every write, so the store/consume cycle ordinary authorized
+notification traffic performs — a declassified badge stored, taken by
+`.notificationWait`, stored again — grew it without bound and made lookups of
+unrelated objects walk the whole history.  These three say that cannot happen
+here: an erase never grows the list, it is idempotent, and therefore one full
+cycle leaves the table no larger than it started. -/
+
+theorem taintEntriesErase_length_le (l : TaintEntries) (o : SeLe4n.ObjId) :
+    (taintEntriesErase l o).length ≤ l.length := by
+  induction l with
+  | nil => exact Nat.le_refl 0
+  | cons p rest ih =>
+    obtain ⟨k, v⟩ := p
+    by_cases hk : k = o
+    · simp only [taintEntriesErase, if_pos hk, List.length_cons]
+      exact Nat.le_succ_of_le ih
+    · simp only [taintEntriesErase, if_neg hk, List.length_cons]
+      exact Nat.succ_le_succ ih
+
+theorem taintEntriesErase_idem (l : TaintEntries) (o : SeLe4n.ObjId) :
+    taintEntriesErase (taintEntriesErase l o) o = taintEntriesErase l o := by
+  induction l with
+  | nil => rfl
+  | cons p rest ih =>
+    obtain ⟨k, v⟩ := p
+    by_cases hk : k = o
+    · simp only [taintEntriesErase, if_pos hk]; exact ih
+    · simp only [taintEntriesErase, if_neg hk]; rw [ih]
+
+/-- **A store then a consume leaves exactly the erase.**
+
+Computing the composition rather than bounding each half: both branches of `set`
+collapse to the same list once the clear runs, because a clear at the key the
+set just wrote removes what it wrote.  This is what makes the cycle bound tight
+rather than off by the cons. -/
+theorem clearAt_set_entries (tbl : TaintTable) (oid : SeLe4n.ObjId)
+    (T : DeclassificationTaint) :
+    ((tbl.set oid T).clearAt oid).entries = taintEntriesErase tbl.entries oid := by
+  by_cases hT : T = DeclassificationTaint.empty
+  · subst hT
+    have hset : tbl.set oid DeclassificationTaint.empty
+        = ⟨taintEntriesErase tbl.entries oid⟩ := by unfold set; simp
+    rw [hset]
+    unfold clearAt
+    rw [if_pos (taintEntriesLookup_erase_self tbl.entries oid)]
+  · have hset : tbl.set oid T = ⟨(oid, T) :: taintEntriesErase tbl.entries oid⟩ := by
+      unfold set; simp [hT]
+    rw [hset]
+    unfold clearAt
+    rw [if_neg (by simpa [taintEntriesLookup] using hT)]
+    unfold set
+    rw [if_pos rfl]
+    simp only [taintEntriesErase]
+    exact taintEntriesErase_idem _ _
+
+/-- **A store-then-consume cycle leaves the table no larger.**
+
+The property the functional representation could not have: `joinAt` then
+`clearAt` at the same key is exactly the notification cycle — a declassified
+badge stored, then taken by `.notificationWait` — and it returns a table bounded
+by the one it started from rather than one two writes longer.
+
+The bound is on *entries*, which is what a lookup walks, so an object's read cost
+depends on how many objects currently carry provenance and never on how many
+times any of them has been written. -/
+theorem storeThenClear_no_growth (tbl : TaintTable) (oid : SeLe4n.ObjId)
+    (T : DeclassificationTaint) :
+    ((tbl.joinAt oid T).clearAt oid).entries.length ≤ tbl.entries.length := by
+  unfold joinAt
+  dsimp only
+  split
+  · -- The join changed nothing, so the cycle is just the clear.
+    unfold clearAt
+    split
+    · exact Nat.le_refl _
+    · simp only [set]
+      exact taintEntriesErase_length_le _ _
+  · rw [clearAt_set_entries]
+    exact taintEntriesErase_length_le _ _
 
 end TaintTable
 

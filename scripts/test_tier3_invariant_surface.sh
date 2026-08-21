@@ -3721,6 +3721,19 @@ run_check "TRACE" rg -n 'causality verdict: monitorReads=' tests/fixtures/smp_in
 # flow the authority enables is declared where that content actually moves.
 run_check "INVARIANT" rg -n '^theorem senderTaintEdges_content_only' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 
+# PR #873 round 9: the taint table is keyed, so it is bounded by the objects
+# that currently carry provenance rather than by how many writes have happened.
+# A function-backed table recorded history: the ordinary store/consume cycle is
+# value-changing in both directions, so the no-op write guards never covered it.
+run_check "INVARIANT" rg -n '^structure TaintTable where' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^def taintEntriesErase' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem storeThenClear_no_growth' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem clearAt_set_entries' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n 'five store/consume cycles leave the taint table with no entries at all' tests/SmpInformationFlowSuite.lean
+# NEGATIVE: the function representation must not come back — it is what made the
+# table a record of every write.
+run_negative_check "INVARIANT" rg -n 'abbrev TaintTable := SeLe4n\.ObjId' SeLe4n/Kernel/InformationFlow/Taint.lean
+
 # PR #873 review round 5: a laundering chain that spans an audit drain is
 # queryable again.  Monitor-only and gated on `auditMonitorAuthorized` alone —
 # a gate that read the reader's current view would answer differently for two

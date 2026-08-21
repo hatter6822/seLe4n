@@ -1,3 +1,59 @@
+## v0.33.68 — the taint table is keyed, so it is bounded by what it holds
+
+**The last open review thread, and the second architectural root of this
+workstream.**  `TaintTable` was `SeLe4n.ObjId → DeclassificationTaint`, so every
+write closed over the previous table and a lookup walked the chain: the table
+recorded *history* rather than state.  Two earlier cuts guarded against
+value-*preserving* writes, which made ordinary untainted traffic free and left
+the actual growth mode untouched — the store/consume cycle is value-*changing*
+in both directions.  A declassified badge stored on a notification, taken by
+`.notificationWait`, stored again: two closures per cycle, for ever, and lookups
+of unrelated objects walking all of it.
+
+The docstring defended the function form by citing `Machine.Memory : PAddr →
+UInt8`, and that citation was the flaw in the argument.  `Machine.Memory` is a
+specification of hardware that is never executed; this table is read and written
+by `applySyscallTaint` on the live syscall path.  A specification-shaped
+representation on an execution path was the mistake.
+
+**Keyed, under a total lookup.**  `TaintTable` is now a structure over an
+association list with a `CoeFun` doing the lookup, so every downstream site still
+reads `tbl oid` and every pointwise lemma — `set_self`, `set_ne`, `joinAt_*`,
+`clearAt_*` — is unchanged in statement.  The whole tree and the staged modules
+build with zero errors and zero warnings without a single call-site edit, which
+is the property the coercion was chosen for.
+
+The list is kept **canonical**: `set` with `DeclassificationTaint.empty` erases
+rather than storing an empty entry, so the length is the number of objects that
+currently carry provenance.  `clearAt` therefore genuinely shrinks the table
+instead of extending it — the difference between a bound and a leak.
+
+**Why not `RHTable`.**  The original reason for avoiding a hash table still
+holds and is now recorded where it belongs: `RHTable`'s lookup-after-write
+lemmas take `invExt` as a hypothesis, and `getElem?_erase_ne` a capacity bound as
+well, so a hash-backed table would have to carry that well-formedness — a
+seventeenth `proofLayerInvariantBundle` conjunct plus an obligation at every
+writer, which §6 of the plan decides against for all three SM9 mounts.  An
+association list needs no invariant; its lemmas are plain inductions.
+
+**The bound is stated, not asserted.**  `taintEntriesErase_length_le` and
+`taintEntriesErase_idem` are the two facts, `clearAt_set_entries` computes the
+composition (a clear at the key a set just wrote removes what it wrote, so both
+branches of `set` collapse to the same list), and `storeThenClear_no_growth`
+concludes: one full cycle leaves the table no larger than it started.  Stated on
+*entries*, which is what a lookup walks — so an object's read cost depends on how
+many objects carry provenance and never on how many times any of them has been
+written.
+
+Evidence: §12.8 drives five store/consume cycles from the empty table and asserts
+it ends with **no entries at all** — the old representation would have held ten
+closures — alongside the contrast that a stored tag survives, as exactly one
+entry however many times it is re-joined.  Tier-3 anchors on the structure, the
+erase, both bound theorems and the regression, plus a negative forbidding the
+`abbrev`-over-function form from returning.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
 ## v0.33.67 — a laundering chain that spans an audit drain is queryable again
 
 **The last of the round-5 findings, and the one I had explicitly scoped out.**
