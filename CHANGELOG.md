@@ -1,3 +1,87 @@
+## v0.33.83 — five gaps found by reading the seams the last cut opened
+
+**The CDT node counter was advanced unchecked during capability resolution.**
+`resolveExtraCaps` mints a derivation node per source slot and runs up to
+`maxExtraCaps` times per syscall, through the *unchecked* minter — so a resolver
+near `cdtNextNodeBounded` could carry the counter past it in one call, and a
+*blocking* send commits that resolver state before any unwrap runs.  A
+fixed-width runtime allocating node ids past the bound eventually reuses one, and
+a reused derivation node is a revocation that reaches the wrong children.
+
+Both resolvers now use `ensureCdtNodeForSlotChecked`, and each reports exhaustion
+in its own idiom: the ABI path drops the cap (seL4's silent drop, which is what
+it already does for an address it cannot resolve), the detailed path sets
+`partial`.  Dropping is fail-closed — a capability with no derivation node is not
+transferred, so nothing is installed untracked.
+
+**The frozen signal ignored bound delivery.**  With no ordinary waiter and a
+bound TCB parked on an endpoint, the live `notificationSignalBound` dequeues that
+TCB and delivers the badge into its `pendingMessage`.  The frozen path fell
+through to the storage branch: the bound thread stayed blocked, the badge sat on
+the notification, and — since SM9.D — the signaller's provenance was recorded on
+the notification rather than on the thread that was supposed to receive the
+content.  A snapshot that names the wrong recipient is not a snapshot of this
+kernel.
+
+It needed a primitive that did not exist: `frozenQueueRemove`, the counterpart of
+`endpointQueueRemoveDual`.  O(1) rather than a walk, because the model already
+maintains `queuePrev` on every push, so removal is head/tail fix-up plus at most
+two relinks; a thread with no `queuePPrev` is on no queue and is refused, the
+same guard `frozenQueuePushTail` applies in the other direction.  `FO-025` pins
+the delivery, the unblock, the provenance, and the negative that says the storage
+branch did not run.
+
+**The anchor gate was failing CI over satisfiable suites.**  `_literal_core`
+folded an unescaped `.` to a literal dot, so a positive `foo.bar` and a negative
+`foo\.bar` were reported as contradictory — yet a tree containing only `fooXbar`
+satisfies both.  `rg` documents `PATTERN` as a regex and `-F` as what makes
+metacharacters literal, and a gate that invents failures is as bad as one that
+misses them.
+
+Containment is now over the positive's literal **runs**: every string matching a
+pattern contains each run, so a negative whose forbidden literal sits inside one
+run is forbidden by every match — sound, and still catches an overlap that lies
+within a run even when the pattern carries a wildcard elsewhere.  What the fold
+was really catching is kept, honestly relabelled: a pair that contradicts under
+the module-separator reading the suites use everywhere, but not under the regex
+one, is reported as an **escaping ambiguity** naming the one-character fix,
+rather than as an unsatisfiability the gate cannot show.  The historical
+`TaintTable := SeLe4n.ObjId` pair is still planted and still caught — as
+ambiguous.  Two new witnesses pin the boundary from both sides: the satisfiable
+wildcard pair must not be flagged, and an in-run overlap must still be proven.
+
+**The content-flow gate resolved arm roots by stored name.**  Round 6 taught the
+*sweeps* to see private definitions; the *roots* still could not.  `cfRoots` names
+an arm's helpers by the stem a human wrote, while Lean stores `private def foo` as
+`_private.<Module>.<n>.foo` — so an arm delegating its only payload write to a
+directly-called private helper produced **no seed**, its reach came back empty,
+and an `.inert` classification could be accepted for an arm that moves content.
+The index is keyed on the user-facing name now, with generated auxiliaries
+attributed to their owner so a write Lean split into `foo.match_1` is still
+reachable under `foo`.
+
+The witness is the point: a third plant, private, wired into a synthetic arm's
+root list — so it is found only if resolution reached it, which a sweep over the
+whole environment would not show.  Verified to fail when the old filter is put
+back.
+
+**Three descriptions that had drifted from the code.**  The content-flow
+inventory said "seven content-moving arms" when the match below it classifies
+eight — omitting `.declassifySignal`, the arm whose whole point is that it moves
+content.  The non-recording count said 31 where 34 − 2 is 32, in four places.
+And `SystemState.declassificationTaint`'s field docstring still described a total
+function "like `Machine.Memory`", which stopped being true when the table became
+a canonical association list carrying its own well-formedness — and that
+paragraph is where a maintainer reads the storage, lookup-cost and invariant
+model, so a wrong answer there is wrong everywhere downstream.
+
+The "three receive-side theorems are deliberately GONE" block was recording a
+*fixed bug* as its justification ("a path that installs nothing" — it installs
+since round 6).  The reason that actually holds is the standing scope decision:
+a CNode holds no tracked content, so a CSpace root is not a taint carrier on
+either ordering.  Restoring those theorems is a scope change, not a wiring gap,
+and there is nothing left to wire.
+
 ## v0.33.82 — a receive that dequeued nothing was installing capabilities
 
 **Security fix.**  A thread that had legitimately received one capability-bearing

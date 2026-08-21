@@ -135,8 +135,11 @@ justified groups:
   and resume move no content between objects; they move a thread's *scheduling*
   attributes.  `.tcbSetIPCBuffer` installs a buffer address, not its contents.
 
-`.lifecycleRetype` is the sole `.clearsProvenance` arm, and the seven
-content-moving arms are the IPC surface plus the declassifying signal. -/
+`.lifecycleRetype` is the sole `.clearsProvenance` arm, and the **eight**
+content-moving arms are the seven-strong IPC and notification surface plus the
+declassifying signal (PR #873 round 8: the count said seven, from before
+`.declassifySignal` joined them — the arm whose whole point is that it moves
+content, omitted from the inventory that says which arms do). -/
 def contentFlowClass : SyscallId → ContentFlowClass
   -- The IPC surface: a message or a badge crosses between objects.
   | .send => .movesContent
@@ -217,7 +220,7 @@ answer here.  The answer is checked rather than trusted: the Tier-1 content-flow
 gate walks the elaborated call graph from each dispatch arm and fails the build
 on any arm that reaches a writer of `SystemState.declassificationAuditLog` while
 this returns `false`.  That is what makes it safe for `applySyscallTaint` to skip
-the trail diff on the other 31 arms — the skip is licensed by a checked
+the trail diff on the other 32 arms — the skip is licensed by a checked
 reachability fact, not by this list being remembered. -/
 def syscallRecordsDeclassification : SyscallId → Bool
   -- WS-SM SM8.C.9: the declassification authority — `declassifyObjectFromCore`
@@ -337,7 +340,7 @@ structure TaintPlan where
       Not what it *did* append — that is still recovered from the trail's own
       diff, so a downgrade's identity remains the record it wrote rather than
       anything the planner guessed.  This says only whether the diff is worth
-      taking, and it is `false` for the 31 arms whose dispatch provably cannot
+      taking, and it is `false` for the 32 arms whose dispatch provably cannot
       reach a trail writer.
 
       It exists because the diff is not free.  `newlyRecordedEvents` walks
@@ -1062,7 +1065,7 @@ trail at all. -/
 /-- WS-SM SM9.D.13a: **the skip changes no result it was allowed to skip.**
 
 The soundness statement in one line: whenever the commit really did append
-nothing, the gated tags and the ungated diff agree — so on the 31 non-recording
+nothing, the gated tags and the ungated diff agree — so on the 32 non-recording
 arms the optimisation is an identity, and on a hypothetical arm that recorded
 while classified `false` this is exactly the hypothesis the Tier-1 gate refuses
 to let go unchecked. -/
@@ -1108,7 +1111,7 @@ def applySyscallTaint (plan : TaintPlan) (pre post : SystemState) : SystemState 
   -- evaluation is two O(n) walks with n bounded only at the SM9.A 256-entry
   -- cliff, and `applySyscallTaint` runs on EVERY syscall — inert plans included,
   -- since the entry always applies a plan.  Computing it twice made every syscall
-  -- pay four list walks where two suffice; computing it at all made 31 of the 33
+  -- pay four list walks where two suffice; computing it at all made 32 of the 34
   -- arms pay two walks for a diff that is provably empty (SM9.D.13a).
   let origins := planOriginationTags plan pre post
   { post with
@@ -1538,20 +1541,31 @@ theorem taintPropagation_receive_from_sender (st post : SystemState) (tid : SeLe
   refine taintPropagation_edge _ st post _ hIn ?_ hSrc
   rw [hCleared]; rcases hSid with h | h <;> simp [contentFlowClears, hCap, h, hTarget]
 
--- Three receive-side theorems are deliberately GONE, not moved: they asserted
--- capability provenance on a path that installs nothing.
+-- Three receive-side theorems are deliberately GONE, not moved — and PR #873
+-- round 8 corrected *why*.  The reason recorded here was "they assert capability
+-- provenance on a path that installs nothing", which stopped being true at round
+-- 6: both `.receive` arms run `endpointReceiveDualWithCapsOnCore` and install
+-- what a parked sender was carrying, and `.replyRecv`'s leg has since joined
+-- them.  Leaving that reason in place presented a fixed bug as the justification
+-- for an absence it does not justify.
 --
---   * `taintPropagation_queued_receive_to_cspace` — the queued transfer's CNode
---     sink.  Added when the receive was believed to unwrap; it does not.
---   * `taintPropagation_cspace_taints_consumer` — the root-to-subject feedback.
---     Ungated, it tagged a receiver from an unrelated earlier transfer's
+-- The reason that actually holds is the standing scope decision `receiverTaintEdges`
+-- states above and `senderTaintEdges_content_only` pins: **a CNode holds no
+-- tracked content**, so a CSpace root is not a taint carrier on *either*
+-- ordering.  Each of the three would have declared one:
+--
+--   * `taintPropagation_queued_receive_to_cspace` — a receiver-CNode sink.
+--   * `taintPropagation_cspace_taints_consumer` — the root-to-subject feedback,
+--     which ungated tagged a receiver with an unrelated earlier transfer's
 --     provenance on an ordinary capless delivery.
 --   * `taintPropagation_transfer_taints_receiver` — the receive-side direct
---     sender-root edge, which has no transfer to describe here.
+--     sender-root edge.
 --
--- The send ordering keeps all three properties, because the live send really
--- does unwrap.  Restoring these belongs with wiring the receive through
--- `endpointReceiveDualWithCaps`, tracked in the fine-lock plan.
+-- The send ordering does not have them either, for the same reason, so the two
+-- orderings agree.  Restoring them is a *scope* change — tracking capability
+-- provenance at slot granularity — which would delete
+-- `senderTaintEdges_content_only` and restore the sinks on both orderings at
+-- once.  It is not a wiring gap, and there is nothing left to wire.
 
 /-- WS-SM SM9.D.9 (**reply → caller**): a reply message carries the replying
 server's provenance to the caller the reply object records. -/

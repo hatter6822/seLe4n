@@ -1043,13 +1043,25 @@ structure SystemState where
       obligation and no `proofLayerInvariantBundle` conjunct reads the field;
       overflow **saturates upward** rather than evicting, because for a detector
       the safe direction is over-approximation
-      (`taintSaturate_over_approximates`).  The table itself is a **total
-      function** on `ObjId` rather than an `RHTable`, because `RHTable`'s
-      lookup-after-insert lemmas take `invExt` as a hypothesis and carrying that
-      would reintroduce exactly the seventeenth conjunct and the per-writer
-      obligation the type-level bound exists to avoid — the same representation
-      choice, for the same recorded reason, as `Machine.Memory` and
-      `RegisterFile.gpr`.
+      (`taintSaturate_over_approximates`).
+
+      **Representation**: a **canonical association list**, not an `RHTable` and
+      — since the keyed-store cut — not a total function either.  `TaintTable`
+      carries its own well-formedness (`TaintTable.canonical`: at most one row
+      per object, never an empty-valued one), so `entries.length` *is* the number
+      of objects currently carrying provenance, and `set`/`clearAt` rebuild or
+      erase the row for one key rather than closing over a previous table.  A
+      lookup is a scan of that list, not a walk of a write history.  `RHTable`
+      was declined because its lookup-after-insert lemmas take `invExt` as a
+      hypothesis, and carrying that would reintroduce exactly the seventeenth
+      `proofLayerInvariantBundle` conjunct and the per-writer obligation the
+      type-level bound exists to avoid.
+
+      (PR #873 round 8: this paragraph described the field as a total function
+      "like `Machine.Memory` and `RegisterFile.gpr`", which stopped being true
+      when the table became keyed — and it is the paragraph a maintainer reads
+      for the storage, lookup-cost and invariant model, so the wrong answer here
+      is the wrong answer everywhere downstream.)
 
       **Information flow**: outside the IF projection surface, like the trail,
       the epoch and the refusal ledger

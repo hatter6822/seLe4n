@@ -237,6 +237,29 @@ private def frozenTaintClear (st : FrozenSystemState)
     (oid : SeLe4n.ObjId) : FrozenSystemState :=
   { st with declassificationTaint := st.declassificationTaint.clearAt oid }
 
+/-- **WS-SM SM6.B (PR #873 round 8): the frozen bound-delivery target.**
+
+The frozen mirror of `boundDeliveryTarget?`, and it has to agree with it exactly:
+the notification has **no** ordinary waiters and its bound TCB is currently
+`.blockedOnReceive` on some endpoint.  Same three conditions, same fail-safe
+`none` on a dangling binding or a bound thread doing something else. -/
+private def frozenBoundDeliveryTarget? (st : FrozenSystemState)
+    (notificationId : SeLe4n.ObjId) : Option (SeLe4n.ThreadId × SeLe4n.ObjId) :=
+  match st.objects.get? notificationId with
+  | some (.notification ntfn) =>
+      if ntfn.waitingThreads.val.isEmpty then
+        match ntfn.boundTCB with
+        | some t =>
+            match frozenLookupTcb st t with
+            | some tcb =>
+                match tcb.ipcState with
+                | .blockedOnReceive epId => some (t, epId)
+                | _ => none
+            | none => none
+        | none => none
+      else none
+  | _ => none
+
 /-- Q7-C2: Frozen notification signal — wake waiter or accumulate badge.
 Mirrors `notificationSignal` using frozen state lookups and mutations.
 
@@ -273,6 +296,41 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
         match frozenLookupTcb st signaller with
         | none => .error .objectNotFound
         | some _ =>
+        -- **Bound delivery comes first**, exactly as `notificationSignalBound`
+        -- orders it (PR #873 round 8).  With no ordinary waiter and a bound TCB
+        -- parked on an endpoint, the live kernel dequeues that TCB and delivers
+        -- the badge into its `pendingMessage`; this path used to fall through to
+        -- the storage branch instead, leaving the bound thread blocked and — once
+        -- SM9.D landed — recording the signaller's provenance on the
+        -- *notification* rather than on the thread that was supposed to receive
+        -- the content.  A snapshot that reports the wrong recipient is not a
+        -- snapshot of this kernel.
+        match frozenBoundDeliveryTarget? st notificationId with
+        | some (boundTid, epId) =>
+            match frozenQueueRemove epId true boundTid st with
+            | .error e => .error e
+            | .ok st1 =>
+                match frozenLookupTcb st1 boundTid with
+                | none => .error .objectNotFound
+                | some boundTcb =>
+                  -- `pendingReceiveReply` is cleared with the delivery: the bound
+                  -- TCB was `.blockedOnReceive` and no `Call` arrived, which is
+                  -- what `storeTcbReceiveComplete` does on the live path.
+                  match frozenStoreTcb boundTid
+                      { boundTcb with
+                        ipcState := .ready,
+                        pendingReceiveReply := none,
+                        pendingMessage :=
+                          some { IpcMessage.empty with badge := some badge } } st1 with
+                  | .error e => .error e
+                  | .ok ((), st2) =>
+                      -- The badge reached the bound thread, so the provenance
+                      -- goes there.  The notification is not written at all on
+                      -- this path — a badge it already held keeps its own
+                      -- provenance — so nothing is cleared, matching
+                      -- `signalBypassedNotification`'s live classification.
+                      .ok ((), frozenTaintFlow st2 boundTid.toObjId signaller.toObjId)
+        | none =>
         -- WS-RC R4.C: pop via `NoDupList.tail?`.
         match ntfn.waitingThreads.tail? with
         | some (waiter, rest) =>

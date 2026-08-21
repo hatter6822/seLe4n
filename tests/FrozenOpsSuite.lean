@@ -686,6 +686,64 @@ private def fo024_parkedSenderCarriesItsMessage : IO Unit := do
        | none => false)
   IO.println "frozen-ops check passed [FO-024: a parked sender carries its message]"
 
+/-- FO-025 (PR #873 round 8): **the frozen signal honours bound delivery.**
+
+With no ordinary waiter and a bound TCB parked on an endpoint, the live
+`notificationSignalBound` dequeues that TCB and delivers the badge into its
+`pendingMessage`.  The frozen path fell through to the storage branch instead:
+the bound thread stayed blocked, the badge sat on the notification, and — once
+SM9.D landed — the signaller's provenance was recorded on the notification rather
+than on the thread that was supposed to receive the content.
+
+Delivery and provenance are separate ways to get this wrong, so both are
+asserted, together with the negative that says the storage branch did *not*
+run. -/
+private def fo025_frozenBoundNotificationDelivery : IO Unit := do
+  let epId      : SeLe4n.ObjId := ⟨40⟩
+  let notifId   : SeLe4n.ObjId := ⟨41⟩
+  let bound     : SeLe4n.ThreadId := ⟨42⟩
+  let signaller : SeLe4n.ThreadId := ⟨43⟩
+  let badge := Badge.ofNatMasked 77
+  -- The bound TCB is parked on the endpoint's receive queue, and the
+  -- notification has no ordinary waiter — the live bound-delivery shape.
+  let ep : Endpoint := { sendQ := {}, receiveQ := { head := some bound, tail := some bound } }
+  let ntfn : Notification :=
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+      boundTCB := some bound }
+  let boundTcb : TCB :=
+    { mkTcb 42 with ipcState := .blockedOnReceive epId, queuePPrev := some .endpointHead }
+  let fst := mkFrozenState
+    [(epId, .endpoint ep),
+     (notifId, .notification ntfn),
+     (⟨42⟩, .tcb boundTcb),
+     (⟨43⟩, .tcb (mkTcb 43))]
+  match frozenNotificationSignal notifId signaller badge fst with
+  | .error _ => throw <| IO.userError "FO-025: bound delivery should succeed"
+  | .ok ((), fst') =>
+    expect "FO-025: the badge is delivered into the bound thread's pendingMessage"
+      (match frozenLookupTcb fst' bound with
+       | some t => (t.pendingMessage.bind (·.badge)) == some badge
+       | none => false)
+    expect "FO-025: the bound thread is unblocked and off the endpoint queue"
+      ((match frozenLookupTcb fst' bound with
+        | some t => decide (t.ipcState = .ready) && t.queuePPrev.isNone
+        | none => false) &&
+       (match fst'.objects.get? epId with
+        | some (.endpoint e) => e.receiveQ.head.isNone
+        | _ => false))
+    -- NEGATIVE, load-bearing: the storage branch did NOT run.  If it had, the
+    -- badge would sit on the notification and the provenance with it — which is
+    -- exactly the state this cut replaced.
+    expect "FO-025: NEGATIVE — the badge was not stored on the notification"
+      (match fst'.objects.get? notifId with
+       | some (.notification n) => n.pendingBadge.isNone
+       | _ => false)
+    expect "FO-025: the provenance follows the badge to the bound thread"
+      ((fst'.declassificationTaint bound.toObjId) ==
+        (fst.declassificationTaint signaller.toObjId).join
+          (fst.declassificationTaint bound.toObjId))
+  IO.println "frozen-ops check passed [FO-025: frozen bound notification delivery]"
+
 end SeLe4n.Testing.FrozenOpsSuite
 
 open SeLe4n.Testing.FrozenOpsSuite in
@@ -728,4 +786,5 @@ def main : IO Unit := do
   fo022_frozenProvenanceFollowsContent
   fo023_frozenDeliveryIsHonest
   fo024_parkedSenderCarriesItsMessage
+  fo025_frozenBoundNotificationDelivery
   IO.println "=== All Q7 frozen ops tests passed (23 scenarios) ==="

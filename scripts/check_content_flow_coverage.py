@@ -187,6 +187,17 @@ SELF_TEST_ROGUE = "cfPlantedPrivateTaintWriter"
 # so that stays a checked fact rather than a reading of the elaborator.
 SELF_TEST_ROGUE_MATCH = "cfPlantedMatchingTaintWriter"
 
+# A third plant, for the *other* half of the private-name defect.  The two above
+# pin the **sweeps**; this one pins **root resolution**.  `cfRoots` names an
+# arm's helpers by the stem a human wrote, while Lean stores `private def foo` as
+# `_private.<Module>.<n>.foo` — so an arm delegating its only payload write to a
+# directly-called private helper produced no seed at all, its reach came back
+# empty, and an `.inert` classification was accepted for an arm that moves
+# content.  The plant is wired into a synthetic arm below, so the witness
+# exercises resolution rather than the sweeps a public plant would also satisfy.
+SELF_TEST_ROOT_HELPER = "cfPlantedPrivateArmHelper"
+SELF_TEST_ROOT_ARM = "cfSelfTestPrivateRootArm"
+
 SELF_TEST_ROGUE_SRC = f"""
 private def {SELF_TEST_ROGUE} (st : SeLe4n.Model.SystemState) :
     SeLe4n.Model.SystemState :=
@@ -197,6 +208,10 @@ private def {SELF_TEST_ROGUE_MATCH} (st : SeLe4n.Model.SystemState)
     (t : SeLe4n.Kernel.TaintTable) : SeLe4n.Model.SystemState :=
   match st with
   | {{ declassificationTaint := _, .. }} => {{ st with declassificationTaint := t }}
+
+private def {SELF_TEST_ROOT_HELPER} (tcb : SeLe4n.Model.TCB)
+    (p : SeLe4n.Priority) : SeLe4n.Model.TCB :=
+  {{ tcb with priority := p }}
 """
 
 SHAPE = os.path.join(REPO, "SeLe4n", "Kernel", "Architecture", "SyscallReturn.lean")
@@ -328,41 +343,6 @@ private def cfWritesChannel (idxs : List (Name × Name × Nat)) (e : Expr) : Boo
   idxs.any fun (structName, field, idx) =>
     used.contains (structName ++ `mk) && cfScan structName field idx e
 
-/-- Resolve short names to every non-internal constant whose last component
-matches, for **every** stem in one pass.  Ambiguity is harmless here: the walk
-is a union, so over-resolving can only widen the reach, never hide a write.
-
-Built as an index rather than a per-stem search.  Resolving one stem means
-scanning all 126 700 constants, the 34 arms name some 680 stems between them,
-and `run_cmd` bodies run in Lean's *interpreter* -- so the per-stem form was
-~86 million interpreted iterations and essentially this gate's whole runtime
-(`interpretation took 79.9s` against 3 s of everything else).  One pass fills
-the index; a stem is then a hash lookup. -/
-private def cfStemIndex (env : Environment) (wanted : Std.HashSet String) :
-    Std.HashMap String (Array Name) := Id.run do
-  let mut idx : Std.HashMap String (Array Name) := {}
-  for (n, _) in env.constants.toList do
-    if !n.isInternal then
-      let c := cfLast n
-      if wanted.contains c then
-        idx := idx.insert c ((idx.getD c #[]).push n)
-  return idx
-
-/-- The value of a constant, **unless it is a proof** -- the same distinction the
-field-writer and taint-writer sweeps below already make, applied to the walk.
-
-Those sweeps report only `.defnInfo` because "a theorem naming the API states a
-property of it, and a property cannot move a field".  The reach that feeds them
-was reading `value?` uniformly, which is the same claim taken in the other
-direction: a proof term is `Prop`-valued and erased, so it executes nothing and
-cannot be the step by which an arm reaches a write.  Including proofs could only
-widen the reach with constants no arm actually runs -- and they are the majority
-of the environment. -/
-private def cfExecutableValue (ci : ConstantInfo) : Option Expr :=
-  match ci with
-  | .thmInfo _ => none
-  | _ => ci.value?
-
 /-- The name a human wrote, recovered from the name the elaborator stored.
 
 `private def foo` is not stored as `foo`: Lean mangles it to
@@ -396,6 +376,58 @@ private partial def cfOwnerName : Name -> Name
       else
         .str p s
   | n => n
+
+/-- Resolve short names to every non-internal constant whose last component
+matches, for **every** stem in one pass.  Ambiguity is harmless here: the walk
+is a union, so over-resolving can only widen the reach, never hide a write.
+
+Built as an index rather than a per-stem search.  Resolving one stem means
+scanning all 126 700 constants, the 34 arms name some 680 stems between them,
+and `run_cmd` bodies run in Lean's *interpreter* -- so the per-stem form was
+~86 million interpreted iterations and essentially this gate's whole runtime
+(`interpretation took 79.9s` against 3 s of everything else).  One pass fills
+the index; a stem is then a hash lookup. -/
+private def cfStemIndex (env : Environment) (wanted : Std.HashSet String) :
+    Std.HashMap String (Array Name) := Id.run do
+  let mut idx : Std.HashMap String (Array Name) := {}
+  for (n, _) in env.constants.toList do
+    -- PR #873 round 8: keyed on the name a **human wrote**, not on the name the
+    -- elaborator stored.  `private def foo` is stored as
+    -- `_private.<Module>.<n>.foo` and reports `isInternal`, so filtering on that
+    -- dropped every private definition from this index — and `cfRoots` names
+    -- arm helpers by their user-facing stem.  An arm whose only payload write
+    -- lives in a directly-called private helper therefore produced **no seed**,
+    -- its reach was empty, and an `.inert` classification could be accepted for
+    -- an arm that moves content.  The round-6 fix taught the *sweeps* to see
+    -- private writers; this teaches the *roots* to resolve them, which is the
+    -- other half of the same defect.
+    --
+    -- Generated auxiliaries are attributed to their owner (`cfOwnerName`), so a
+    -- helper whose body Lean split into `foo.match_1` is still reachable under
+    -- the stem `foo`.  Over-resolving is harmless by the same argument as
+    -- ambiguity above: the walk is a union, so a wider seed set can only widen
+    -- the reach, never hide a write.
+    let owner := cfOwnerName (cfUserName n)
+    if !owner.isInternalDetail then
+      let c := cfLast owner
+      if wanted.contains c then
+        idx := idx.insert c ((idx.getD c #[]).push n)
+  return idx
+
+/-- The value of a constant, **unless it is a proof** -- the same distinction the
+field-writer and taint-writer sweeps below already make, applied to the walk.
+
+Those sweeps report only `.defnInfo` because "a theorem naming the API states a
+property of it, and a property cannot move a field".  The reach that feeds them
+was reading `value?` uniformly, which is the same claim taken in the other
+direction: a proof term is `Prop`-valued and erased, so it executes nothing and
+cannot be the step by which an arm reaches a write.  Including proofs could only
+widen the reach with constants no arm actually runs -- and they are the majority
+of the environment. -/
+private def cfExecutableValue (ci : ConstantInfo) : Option Expr :=
+  match ci with
+  | .thmInfo _ => none
+  | _ => ci.value?
 
 /-- Is this a constant whose body belongs to something a human wrote?
 
@@ -833,6 +865,14 @@ def main() -> int:
     channels = list(CONTENT_CHANNELS)
     if args.self_test:
         channels = channels + [SELF_TEST_CHANNEL]
+        # The root-resolution witness: a synthetic arm whose only named helper is
+        # the planted PRIVATE definition.  If the stem index skips private
+        # names this arm resolves to no seed at all, and the assertion below
+        # fires — which is exactly what happened before PR #873 round 8.
+        roots = dict(roots)
+        roots[SELF_TEST_ROOT_ARM] = {SELF_TEST_ROOT_HELPER}
+        cls = dict(cls)
+        cls[SELF_TEST_ROOT_ARM] = "inert"
 
     out = run_probe(roots, args.depth, channels, plant_rogue=args.self_test)
     (hits, detail, writers, field_writers, field_unresolved, noroot,
@@ -852,6 +892,17 @@ def main() -> int:
             print("FAIL: --self-test planted `TCB.priority` as a content channel and the")
             print("      gate flagged no inert arm.  The write detector has stopped")
             print("      detecting: every production finding below would be a false PASS.")
+            return 1
+        # Root resolution must reach a PRIVATE helper an arm names.  The two
+        # plants above would both be found by a sweep over the whole
+        # environment; this one is found only if the arm's stem resolved to the
+        # private constant, so it pins the half of the defect the sweeps cannot.
+        if SELF_TEST_ROOT_ARM in noroot or hits.get(SELF_TEST_ROOT_ARM, 0) == 0:
+            print("FAIL: --self-test — the synthetic arm naming the planted PRIVATE")
+            print(f"      helper `{SELF_TEST_ROOT_HELPER}` resolved to no reachable")
+            print("      content write.  Root resolution is skipping private")
+            print("      definitions, so an arm that delegates its only payload write")
+            print("      to a private helper can be classified `.inert` and pass.")
             return 1
         # The field-writer sweep must detect the one real writer: a sweep that
         # has gone blind reports zero unexpected writers for the same reason it
@@ -910,8 +961,8 @@ def main() -> int:
         print(f"PASS: --self-test — the planted channel was detected on "
               f"{len(planted)} inert arm(s); both sweeps detected the declared "
               f"writer, the planted private rogue writer and the one that hides "
-              f"its rebuild behind a `match`; the audit-trail reach found the two "
-              f"recording arms.")
+              f"its rebuild behind a `match`; root resolution reached a PRIVATE "
+              f"arm helper; the audit-trail reach found the two recording arms.")
         return 0
 
     # (A) no unclassified content movement

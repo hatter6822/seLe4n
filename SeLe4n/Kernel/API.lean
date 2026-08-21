@@ -1032,9 +1032,25 @@ private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
         --
         -- Minting is idempotent for a slot that already has a node, so this
         -- costs an allocation only the first time a slot is used as a source.
+        --
+        -- PR #873 round 8: through the **checked** minter.  The unchecked one
+        -- advances `cdtNextNode` without consulting `cdtNextNodeBounded`, and
+        -- this fold runs up to `maxExtraCaps` times per syscall — so a resolver
+        -- near the bound could carry the counter past it in one call, and a
+        -- *blocking* send commits that state before any unwrap runs.  A
+        -- fixed-width runtime allocating node ids past the bound eventually
+        -- reuses one, and a reused derivation node is a revocation that reaches
+        -- the wrong children.
+        --
+        -- Exhaustion drops the cap, which is this resolver's existing semantics
+        -- for an address it cannot resolve (seL4's silent drop) — and it is
+        -- fail-closed: a capability with no derivation node is not transferred,
+        -- so nothing is installed untracked.
         | some cap =>
-            let (node, stNode) := SystemState.ensureCdtNodeForSlot acc.2 ref
-            (acc.1.push { cap := cap, srcNode := node }, stNode)) (#[], st)
+            match SystemState.ensureCdtNodeForSlotChecked acc.2 ref with
+            | none => acc
+            | some (node, stNode) =>
+                (acc.1.push { cap := cap, srcNode := node }, stNode)) (#[], st)
 
 /-- AN7-E (API-M01): Debug-noisy variant of `resolveExtraCaps` that surfaces
     partial resolution explicitly.  Returns the resolved array paired with a
@@ -1065,8 +1081,13 @@ private def resolveExtraCapsDetailed (cspaceRoot : SeLe4n.ObjId)
         match SystemState.lookupSlotCap acc.2 ref with
         | none => ((acc.1.1, true), acc.2)   -- partial: slot empty
         | some cap =>
-            let (node, stNode) := SystemState.ensureCdtNodeForSlot acc.2 ref
-            ((acc.1.1.push { cap := cap, srcNode := node }, acc.1.2), stNode))
+            -- PR #873 round 8: the checked minter here too, and exhaustion is
+            -- reported rather than dropped silently — this resolver's whole
+            -- purpose is to surface what the ABI path drops.
+            match SystemState.ensureCdtNodeForSlotChecked acc.2 ref with
+            | none => ((acc.1.1, true), acc.2)   -- partial: CDT node budget exhausted
+            | some (node, stNode) =>
+                ((acc.1.1.push { cap := cap, srcNode := node }, acc.1.2), stNode))
     ((#[], false), st)
 
 /-- AN7-E (API-M01) option declaration: `set_option sele4n.debug.noisyResolution true`

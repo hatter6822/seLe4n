@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.33.82.
+Lean 4.28.0 toolchain, Lake build system, version 0.33.83.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -317,7 +317,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1140 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1138 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1123 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1260 lines)
 - `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (~1111 lines)
 - `SeLe4n/Machine.lean` (~1105 lines)
 - `tests/PerObjectLockSuite.lean` (~1097 lines)

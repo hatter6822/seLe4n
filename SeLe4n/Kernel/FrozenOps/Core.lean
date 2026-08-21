@@ -366,6 +366,72 @@ def frozenQueuePushTail (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
   | some _ => .error .invalidCapability
   | none => .error .objectNotFound
 
+/-- **WS-SM SM6.B (PR #873 round 8): unlink a thread from an endpoint queue.**
+
+The frozen counterpart of `endpointQueueRemoveDual`, and it did not exist — which
+is why `frozenNotificationSignal` had no bound-delivery branch to fall into and
+stored the badge on the notification instead, leaving the bound TCB blocked and
+recording the signaller's provenance on the wrong object.
+
+O(1) rather than a walk, because the model maintains `queuePrev`
+(`frozenQueuePushTailObjects` sets it on every push): the node's own neighbours
+are named by its links, so removal is head/tail fix-up plus at most two relinks.
+A thread with no `queuePPrev` is on no queue at all and is refused
+(`.illegalState`) rather than silently "removed" — the same guard
+`frozenQueuePushTail` applies in the opposite direction. -/
+def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st : FrozenSystemState)
+    : Except KernelError FrozenSystemState :=
+  match st.objects.get? endpointId with
+  | some (.endpoint ep) =>
+      match frozenLookupTcb st tid with
+      | none => .error .objectNotFound
+      | some tcb =>
+        if tcb.queuePPrev.isNone then .error .illegalState
+        else
+          let q := if isReceiveQ then ep.receiveQ else ep.sendQ
+          let q' : IntrusiveQueue :=
+            { head := if q.head == some tid then tcb.queueNext else q.head,
+              tail := if q.tail == some tid then tcb.queuePrev else q.tail }
+          let ep' : Endpoint := if isReceiveQ
+            then { ep with receiveQ := q' }
+            else { ep with sendQ := q' }
+          let tcb' := { tcb with queuePrev := none, queueNext := none, queuePPrev := none }
+          match st.objects.set endpointId (.endpoint ep') with
+          | none => .error .objectNotFound
+          | some o1 =>
+            match o1.set tid.toObjId (.tcb tcb') with
+            | none => .error .objectNotFound
+            | some o2 =>
+              -- Predecessor now points past the removed node.
+              let afterPrev : Option (FrozenMap SeLe4n.ObjId FrozenKernelObject) :=
+                match tcb.queuePrev with
+                | none => some o2
+                | some prevTid =>
+                  match o2.get? prevTid.toObjId with
+                  | some (.tcb prevTcb) =>
+                      o2.set prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
+                  | _ => none
+              match afterPrev with
+              | none => .error .objectNotFound
+              | some o3 =>
+                -- Successor's back-links move to the removed node's predecessor.
+                match tcb.queueNext with
+                | none => .ok { st with objects := o3 }
+                | some nextTid =>
+                  match o3.get? nextTid.toObjId with
+                  | some (.tcb nextTcb) =>
+                      match o3.set nextTid.toObjId (.tcb { nextTcb with
+                          queuePrev := tcb.queuePrev,
+                          queuePPrev := match tcb.queuePrev with
+                            | none => some .endpointHead
+                            | some prevTid => some (.tcbNext prevTid) }) with
+                      | some o4 => .ok { st with objects := o4 }
+                      | none => .error .objectNotFound
+                  | _ => .error .objectNotFound
+  | some _ => .error .invalidCapability
+  | none => .error .objectNotFound
+
 /-- T1-E: Key structural lemma: `frozenQueuePushTail` only modifies `objects`.
 Every success path returns `{ st with objects := _ }`. -/
 theorem frozenQueuePushTail_only_modifies_objects

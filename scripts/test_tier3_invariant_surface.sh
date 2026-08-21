@@ -3942,9 +3942,13 @@ run_check "INVARIANT" rg -n '^theorem permittedKinds_lifecycleRetype_admits_ever
 # after which the receiver got `none` and the sender's provenance anyway.
 run_check "INVARIANT" rg -n 'headTcb.pendingMessage.isSome' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n 'fo024_parkedSenderCarriesItsMessage' tests/FrozenOpsSuite.lean
-# The live `.receive` runs NO capability unwrap, so the receive declares no
-# CSpace sink.  These three theorems asserted provenance on a path that installs
-# nothing and are pinned OUT until the WithCaps path is wired.
+# No receive declares a CSpace sink, and PR #873 round 8 corrected the reason:
+# not "the live receive installs nothing" — it has installed since round 6 — but
+# the standing scope decision that a CNode holds no tracked content
+# (`senderTaintEdges_content_only`).  The three are pinned OUT because declaring
+# them would hand an unrelated later downgrade an unsaturated predecessor; only
+# a scope change that tracks capability provenance can restore them, on BOTH
+# orderings at once.
 run_negative_check "INVARIANT" rg -n 'theorem taintPropagation_queued_receive_to_cspace' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_negative_check "INVARIANT" rg -n 'theorem taintPropagation_cspace_taints_consumer' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_negative_check "INVARIANT" rg -n 'def parkedCarriesCaps' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean

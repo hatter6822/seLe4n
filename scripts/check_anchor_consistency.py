@@ -443,21 +443,20 @@ def parse_anchors(text: str):
             yield line_no, "anchor", is_neg, pattern, target
 
 
-def _literal_core(pattern: str) -> str | None:
-    """The literal text `pattern` pins, or `None` if it pins no single string.
+def _literal_runs(pattern: str) -> list[str] | None:
+    """The maximal literal runs of `pattern`, or `None` if it is not decomposable.
 
-    `.` and `\\.` both reduce to a literal dot.  Unescaped `.` *is* a wildcard,
-    but in these suites it is overwhelmingly a module separator written without
-    the escape (`SeLe4n.ObjId`), and the two helpers routinely spell the same
-    symbol one way in the positive anchor and the other way in the negative —
-    which is precisely the pair that has to be comparable.  Treating them alike
-    is what makes the containment test below able to see them as the same text.
+    The soundness primitive.  **Every** string matching `pattern` contains each
+    returned run as a substring, which is what lets the containment test below
+    conclude something about the whole match language from one run.
 
-    A pattern carrying a genuine wildcard — a quantifier, class, group or
-    alternation — pins a *set* of strings rather than one, so no single string
-    stands for it and the honest answer is "no verdict" rather than a guess.
+    An unescaped `.` is a wildcard — `rg` documents `PATTERN` as a regular
+    expression and `-F` as what makes metacharacters literal — so it *ends* a run
+    rather than contributing a dot to it.  A quantifier, class, group or
+    alternation makes even run-decomposition unsound (`a*` does not require an
+    `a` at all), so those refuse outright.
     """
-    out, i = [], 0
+    runs, cur, i = [], [], 0
     while i < len(pattern):
         c = pattern[i]
         if c == "\\" and i + 1 < len(pattern):
@@ -465,15 +464,65 @@ def _literal_core(pattern: str) -> str | None:
             # `\.`, `\(`, … are escaped literals; `\s`, `\b`, `\d` are classes.
             if nxt.isalnum():
                 return None
-            out.append(nxt)
+            cur.append(nxt)
             i += 2
             continue
         if c == ".":
-            out.append(".")
+            if cur:
+                runs.append("".join(cur))
+                cur = []
             i += 1
             continue
         if c in "*+?[]()|{}^$":
             return None
+        cur.append(c)
+        i += 1
+    if cur:
+        runs.append("".join(cur))
+    return runs
+
+
+def _literal_core(pattern: str) -> str | None:
+    """The single literal string `pattern` pins, or `None` if it pins a set.
+
+    A pattern with no wildcard at all decomposes into exactly one run, and that
+    run *is* the pattern's text.  Anything else — an unescaped `.` included —
+    pins a set, and the honest answer is "no verdict" rather than a guess.
+
+    PR #873 round 8 made the unescaped dot a wildcard here.  It used to be folded
+    to a literal dot on the grounds that the suites overwhelmingly write module
+    separators unescaped, which is true but not a licence to *decide* on: a
+    positive `foo.bar` and a negative `foo\.bar` are both satisfied by a tree
+    containing only `fooXbar`, and the gate was reporting that satisfiable pair
+    as a contradiction — failing CI over a suite that is fine.  A gate that
+    invents failures is as bad as one that misses them.  What the fold was
+    really catching is preserved, honestly, as `_dot_ambiguous` below.
+    """
+    runs = _literal_runs(pattern)
+    if runs is None or len(runs) != 1:
+        return None
+    return runs[0]
+
+
+def _dot_literal(pattern: str) -> str | None:
+    """`pattern` with every unescaped `.` read as a literal dot, or `None`.
+
+    Not a claim about the regex — the *other* reading, the one the suites
+    actually intend when they write `SeLe4n.ObjId` for a module separator.  Used
+    only to tell an author that two anchors disagree about escaping, never to
+    conclude that a tree cannot exist.
+    """
+    if _literal_runs(pattern) is None:
+        # A quantifier, class, group or alternation is a wildcard under *both*
+        # readings, so there is no "intended literal" to compare.
+        return None
+    out, i = [], 0
+    while i < len(pattern):
+        c = pattern[i]
+        if c == "\\" and i + 1 < len(pattern):
+            out.append(pattern[i + 1])
+            i += 2
+            continue
         out.append(c)
         i += 1
     return "".join(out)
@@ -547,37 +596,87 @@ def find_contradictions(paths):
     # literal cores.  Restricting to literal cores is what keeps this free of
     # false positives: a pattern with a real wildcard yields no core and is
     # skipped rather than guessed at.
-    for (p_pat, p_target), p_where in positive.items():
-        p_core = _literal_core(p_pat)
-        if p_core is None:
+    #
+    # PR #873 round 8: the containment is over the positive's literal **runs**,
+    # not over a dot-literalised core.  An unescaped `.` is a wildcard, so the
+    # only text every match is guaranteed to contain is each run — and a
+    # negative whose forbidden literal sits inside one run is forbidden by every
+    # match, which is a real contradiction.  A negative that spans a wildcard is
+    # not implied at all, and reporting it was the round-8 finding: `foo.bar`
+    # positive against `foo\.bar` negative is satisfied by `fooXbar`.
+    #
+    # That reading is not simply dropped.  When the two contradict under the
+    # *module-separator* reading the suites use everywhere — the pair that kept
+    # Tier 3 red — the disagreement is about **escaping**, and the gate says so
+    # separately instead of claiming unsatisfiability it cannot show.
+    ambiguous: list[tuple[str, str]] = []
+    # Snapshot both maps: the loop writes back into them to record where a
+    # contradiction fires, and mutating a dict under iteration is an error.
+    positive_items = list(positive.items())
+    negative_items = list(negative.items())
+    for (p_pat, p_target), p_where in positive_items:
+        p_runs = _literal_runs(p_pat)
+        if p_runs is None:
             continue
-        for (n_pat, n_target), n_where in negative.items():
+        p_dotted = _dot_literal(p_pat)
+        for (n_pat, n_target), n_where in negative_items:
             if n_target != p_target or (p_pat, p_target) in both:
                 continue
             n_core = _literal_core(n_pat)
-            if n_core and n_core in p_core:
+            if n_core and any(n_core in run for run in p_runs):
                 both.append((p_pat, p_target))
                 # Report against the negative anchor that actually fires.
                 negative[(p_pat, p_target)] = n_where
                 positive[(p_pat, p_target)] = p_where
                 break
+            # Same text under the reading the suites intend, different under the
+            # regex one — an authoring ambiguity, not a proven contradiction.
+            n_dotted = _dot_literal(n_pat)
+            if (n_core and p_dotted and n_dotted and n_dotted in p_dotted
+                    and (p_pat, p_target) not in ambiguous):
+                ambiguous.append((p_pat, p_target))
+                negative[(p_pat, p_target)] = n_where
+                positive[(p_pat, p_target)] = p_where
     both = sorted(set(both))
-    return both, positive, negative, total_pos, total_neg, filtered
+    ambiguous = sorted({a for a in ambiguous if a not in set(both)})
+    return both, positive, negative, total_pos, total_neg, filtered, ambiguous
 
 
-def report(both, positive, negative, total_pos, total_neg, filtered) -> int:
+def report(both, positive, negative, total_pos, total_neg, filtered, ambiguous=()) -> int:
     # Say what was NOT compared as plainly as what was.  A filtered invocation
     # pins something about a composition rather than about a pattern, so it has
     # no counterpart to contradict — but a PASS line that omits it would read as
     # coverage the gate does not have.
     note = (f"; {len(filtered)} filtered invocation(s) pin a composed result "
             f"and are not compared (--list names them)" if filtered else "")
-    if not both:
+    if not both and not ambiguous:
         print(
             f"PASS: anchor-set satisfiability — {total_pos} positive and "
             f"{total_neg} negative anchors, no pattern pinned both ways{note}."
         )
         return 0
+    if not both:
+        # Not a proven contradiction — an ambiguity the gate refuses to guess at.
+        print(
+            f"FAIL: anchor escaping is ambiguous — {len(ambiguous)} pattern(s) "
+            f"contradict a negative anchor under the module-separator reading "
+            f"these suites use, but not under the regex one, because an "
+            f"unescaped `.` is a wildcard:",
+            file=sys.stderr,
+        )
+        for key in ambiguous:
+            pattern, target = key
+            print(f"\n  pattern: {pattern!r}", file=sys.stderr)
+            print(f"  target:  {target}", file=sys.stderr)
+            print(f"    asserted PRESENT at: {', '.join(positive[key])}", file=sys.stderr)
+            print(f"    asserted ABSENT  at: {', '.join(negative[key])}", file=sys.stderr)
+        print(
+            "\nEscape the dot in BOTH anchors (`SeLe4n\\.ObjId`) so the pair is "
+            "comparable — then a real contradiction is reported as one, and a "
+            "deliberate wildcard is spelled as a wildcard and left alone.",
+            file=sys.stderr,
+        )
+        return 1
     print(
         f"FAIL: anchor-set satisfiability — {len(both)} pattern(s) are pinned "
         f"BOTH present and absent, so no tree can satisfy the suite:",
@@ -663,13 +762,62 @@ def self_test() -> int:
         )
         historical_p = d / "historical.sh"
         historical_p.write_text(historical)
-        both, *_ = find_contradictions([str(historical_p)])
-        if not both:
+        both, _, _, _, _, _, ambiguous = find_contradictions([str(historical_p)])
+        # PR #873 round 8: still caught, and now correctly *labelled*.  The two
+        # spell the module separator differently, so under the regex reading a
+        # tree containing `SeLe4nXObjId` satisfies both — the pair is not
+        # provably unsatisfiable, and saying it was is what the round-8 finding
+        # objected to.  It IS an escaping ambiguity, which the gate reports as
+        # such and still fails on, because an anchor set it cannot compare is
+        # one it cannot protect.
+        if both:
             print(
-                "FAIL: --self-test — the substring/escape-spelling "
-                "contradiction was NOT detected; a positive anchor whose "
-                "required text contains a negative anchor's forbidden text is "
-                "the shape that shipped, and it would ship again.",
+                f"FAIL: --self-test — the escape-spelling pair was reported as "
+                f"a proven contradiction ({both}); it is satisfiable under the "
+                f"regex reading and must be reported as ambiguous instead.",
+                file=sys.stderr,
+            )
+            return 1
+        if not ambiguous:
+            print(
+                "FAIL: --self-test — the substring/escape-spelling pair was "
+                "NOT detected at all; a positive anchor whose required text "
+                "contains a negative anchor's forbidden text is the shape that "
+                "shipped, and it would ship again.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # A wildcard the author MEANT is satisfiable, and must not be reported
+        # as a contradiction: `foo.bar` present and `foo\.bar` absent are both
+        # true of a tree containing only `fooXbar`.  The old dot-literalising
+        # core failed CI on exactly this.
+        wildcard_p = d / "wildcard.sh"
+        wildcard_p.write_text(
+            "run_check \"INVARIANT\" rg -n 'zeta.omega' Some/File.lean\n"
+            "run_negative_check \"INVARIANT\" rg -n 'zeta\\.omega' Some/File.lean\n")
+        both, *_ = find_contradictions([str(wildcard_p)])
+        if both:
+            print(
+                f"FAIL: --self-test — a satisfiable wildcard/escaped pair was "
+                f"reported as a contradiction ({both}).",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …while a contradiction whose overlap lies INSIDE one literal run is
+        # still proven, wildcard elsewhere in the pattern or not.  This is what
+        # keeps the run decomposition from being a way to stop checking.
+        run_p = d / "run.sh"
+        run_p.write_text(
+            "run_check \"INVARIANT\" rg -n 'alpha.theorem gamma_kept' Some/File.lean\n"
+            "run_negative_check \"INVARIANT\" rg -n 'theorem gamma_kept' Some/File.lean\n")
+        both, *_ = find_contradictions([str(run_p)])
+        if both != [("alpha.theorem gamma_kept", "Some/File.lean")]:
+            print(
+                f"FAIL: --self-test — a contradiction contained in one literal "
+                f"run of a wildcard-carrying positive anchor was missed "
+                f"(got {both}).",
                 file=sys.stderr,
             )
             return 1
@@ -863,7 +1011,7 @@ def self_test() -> int:
             "run_check \"HYGIENE\" bash -lc "
             "\"if rg -n 'theorem eps_kept' Some/File.lean | grep -v OK; "
             "then exit 1; fi\"\n")
-        both, _, _, _, _, filtered = find_contradictions([str(composed_p)])
+        both, _, _, _, _, filtered, _ = find_contradictions([str(composed_p)])
         if both:
             print(
                 f"FAIL: --self-test — a filtered search was compared as a plain "
@@ -921,8 +1069,10 @@ def self_test() -> int:
         "target, through an `else exit 1` presence check and past a "
         "value-taking option; a filtered search was counted rather than "
         "compared, an unreadable command and an unknown option each failed the "
-        "gate, `grep -nwE` was read as bare switches, the clean set passed, and "
-        "a commented-out anchor was not counted."
+        "gate, `grep -nwE` was read as bare switches, an unescaped `.` was read "
+        "as the wildcard it is (satisfiable pair not flagged, escape-spelling "
+        "pair reported as ambiguous, in-run overlap still proven), the clean "
+        "set passed, and a commented-out anchor was not counted."
     )
     return 0
 
