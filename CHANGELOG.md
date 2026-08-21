@@ -1,3 +1,75 @@
+## v0.33.81 — three ways to invent a predecessor
+
+SM9.D replaced a *syntactic* laundering detector — one that matched domains and
+timestamps with no data dependency behind them — with a causal one.  The value of
+that replacement is entirely in the data dependency being real.  Three places
+were manufacturing one.
+
+**A bare downgrade of an idle transport tagged it anyway.**  `.declassify`
+carries no payload; it records that a downgrade of an object's label was
+authorized (`.declassifySignal` is the data-carrying one, added at SM9.C for
+exactly this distinction).  So the origination's premise — "the target is where
+the released content now lives" — holds only when the target *is* holding
+content.  Against an empty notification it did not: the fresh, unsaturated
+identity landed there anyway, a later unrelated signal **joined** rather than
+replaced it, `.notificationWait` carried it to the receiver, and a downgrade
+behind that receiver reported a causal predecessor for content that never
+existed.  That is the syntactic detector's failure mode reappearing inside the
+causal check, and it is not free either: `maxTaintTags` is 8, so invented
+identities crowd out real ones and can saturate a value to `top`, which matches
+every later identity.
+
+The target now goes in the plan's `bypassed` list when it is provably empty —
+bypassed, not cleared, so an object that *is* holding content keeps both the
+content and its provenance.  **Emptiness has to be positively established**:
+only the two content-carrying kinds are read (a notification with no pending
+badge, a TCB with no pending message), and every other target keeps the
+origination.  Skipping is an *under*-approximation, the one direction a detector
+must never take by accident, so `declassify_pending_notification_not_bypassed` is
+the load-bearing half — a notification holding a badge still gets the tag,
+because that is content the downgrade really released.
+
+`.declassify` is inert and records, which is why the plan's inert branch now
+carries a `bypassed` list at all; `declassifyBypassedTargets` is separate from
+`contentFlowBypassed` rather than an arm of it, so "an inert arm bypasses
+nothing" stays exactly true for the twenty-nine arms where it is.
+
+**A clear is a write, and the retype's clear had no lock.**  SM9.D.17 argued
+carefully that a taint write is serialised by the key's own object lock rather
+than by `stateLevelLock`, and then applied that rule to the flow sinks and the
+origination keys — skipping the third member of `taintWriteKeys`.
+`.lifecycleRetype` is the one arm that *clears* provenance, keyed on
+`args.targetObj`, and `lockSet_lifecycleRetype` named the caller, its root, the
+untyped source and the destination CNode: none of them that key.  So a retype and
+a delivery into the very object being re-purposed had provably disjoint
+footprints while updating the same entry, and the clear is the half that must not
+be lost — a replacement object inheriting a destroyed one's predecessor is a
+chain that outlives the object it described.
+
+The footprint takes the resolved target's own write lock, exactly as
+`lockSet_declassify` takes its target's, with the same `Option LockId` default so
+every capless pin survives by `rfl`.  `permittedKinds .lifecycleRetype` admits
+every kind for the same reason `.declassify` does — a retype re-purposes an
+object whose type the state decides — and the widening is paid for by
+`lockSet_lifecycleRetype_nonTarget_kinds`, which holds the fixed part to exactly
+four.  `lockSet_lifecycleRetype_size_le` and the aggregate's conjunct move to the
+new arity together: a partial application there is how an optional member gets
+silently unbounded, which is the defect SM9.C found in `notificationSignal`.
+
+**A frozen parked sender with no message was dequeued anyway.**
+`frozenQueuePopHead` validated the head's blocking *state* and nothing else, so a
+`.blockedOnSend` head carrying `pendingMessage := none` passed;
+`frozenEndpointReceive` stored that `none` in the receiver and joined the
+sender's provenance regardless.  The frozen send path always parks with a
+message, so such a head is a malformed snapshot in exactly the way a mismatched
+blocking state is — and a frozen state *is* hand-built, which is why the refusal
+belongs in the pop rather than in one caller's guard.  Same error, and the
+receive queue is untouched: a thread parked to receive correctly holds nothing.
+
+`FO-024` pins both directions — the message-less shape is refused, and the
+identical queue shape *with* a message still delivers, so the refusal is about
+the missing message and not about the hand-built queue.
+
 ## v0.33.80 — the receive that was not spelled `.receive`
 
 v0.33.77 made capability delivery independent of who reached the endpoint first

@@ -3904,6 +3904,27 @@ run_check "INVARIANT" rg -n '^theorem signalDelivery_waiter_empties_notification
 # provenance, but the fresh event is not originated onto it.
 run_check "INVARIANT" rg -n 'bypassed : List SeLe4n.ObjId' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem bypassedObject_not_originated' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 round 7: a BARE downgrade releases nothing into an IDLE target, so it
+# originates nothing there.  `.declassify` carries no payload, and against an
+# empty notification the tag was fictitious — a later unrelated signal joined it,
+# `.notificationWait` carried it on, and a downgrade behind that receiver named a
+# predecessor for content that never existed.  The second check is the direction
+# that keeps the skip from becoming an under-approximation.
+run_check "INVARIANT" rg -n '^def declassifyBypassedTarget ' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def declassifyBypassedTargets ' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem declassify_idle_notification_bypassed' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem declassify_pending_notification_not_bypassed' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 round 7: a CLEAR is a taint write too, so the retype's cleared key
+# rides its own object lock — the third member of `taintWriteKeys` the key-local
+# declaration had skipped.  The fixed four stay pinned separately.
+run_check "INVARIANT" rg -n '^theorem lockSet_lifecycleRetype_clearedKey_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_lifecycleRetype_nonTarget_kinds' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem permittedKinds_lifecycleRetype_admits_every_kind' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# PR #873 round 7: a frozen parked sender must carry its message — the state
+# check alone let a `.blockedOnSend` head with no `pendingMessage` be dequeued,
+# after which the receiver got `none` and the sender's provenance anyway.
+run_check "INVARIANT" rg -n 'headTcb.pendingMessage.isSome' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n 'fo024_parkedSenderCarriesItsMessage' tests/FrozenOpsSuite.lean
 # The live `.receive` runs NO capability unwrap, so the receive declares no
 # CSpace sink.  These three theorems asserted provenance on a path that installs
 # nothing and are pinned OUT until the WithCaps path is wired.

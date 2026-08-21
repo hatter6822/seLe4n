@@ -646,6 +646,46 @@ private def fo023_frozenDeliveryIsHonest : IO Unit := do
        | .error e => e == .objectNotFound)
   IO.println "frozen-ops check passed [FO-023: a frozen delivery is honest]"
 
+/-- FO-024 (PR #873 round 7): **a parked sender with no message is refused, not
+dequeued.**
+
+`frozenQueuePopHead` validated the head's blocking *state* and nothing else, so a
+`.blockedOnSend` head carrying `pendingMessage := none` was accepted;
+`frozenEndpointReceive` then stored that `none` in the receiver and still joined
+the sender's provenance, inventing a causal predecessor for content that was
+never delivered.
+
+The state is malformed rather than reachable — the frozen send path parks with
+`pendingMessage := some msg` — which is exactly why it has to be refused
+structurally: a hand-built snapshot is what a frozen state IS. -/
+private def fo024_parkedSenderCarriesItsMessage : IO Unit := do
+  let epParked : Endpoint := { sendQ := { head := some ⟨3⟩, tail := some ⟨3⟩ }, receiveQ := {} }
+  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  -- The malformed snapshot: parked to send, holding nothing.
+  let fstEmpty := mkFrozenState
+    [(⟨10⟩, .endpoint epParked),
+     (⟨3⟩, .tcb { mkTcb 3 with ipcState := .blockedOnSend ⟨10⟩, pendingMessage := none }),
+     (⟨4⟩, .tcb (mkTcb 4))]
+  expect "FO-024: a message-less parked sender is refused rather than dequeued"
+    (match frozenEndpointReceive ⟨10⟩ ⟨4⟩ fstEmpty with
+     | .ok _ => false
+     | .error e => e == .endpointStateMismatch)
+  -- NEGATIVE, load-bearing: the SAME queue shape with a message succeeds and
+  -- delivers, so the refusal above is about the missing message and not about
+  -- the hand-built queue.
+  let fstFull := mkFrozenState
+    [(⟨10⟩, .endpoint epParked),
+     (⟨3⟩, .tcb { mkTcb 3 with ipcState := .blockedOnSend ⟨10⟩, pendingMessage := some msg }),
+     (⟨4⟩, .tcb (mkTcb 4))]
+  expect "FO-024: the same shape WITH a message still delivers"
+    (match frozenEndpointReceive ⟨10⟩ ⟨4⟩ fstFull with
+     | .error _ => false
+     | .ok (_, fst') =>
+       match frozenLookupTcb fst' ⟨4⟩ with
+       | some recvTcb => recvTcb.pendingMessage.isSome
+       | none => false)
+  IO.println "frozen-ops check passed [FO-024: a parked sender carries its message]"
+
 end SeLe4n.Testing.FrozenOpsSuite
 
 open SeLe4n.Testing.FrozenOpsSuite in
@@ -687,4 +727,5 @@ def main : IO Unit := do
   fo021_popThenPushRegression
   fo022_frozenProvenanceFollowsContent
   fo023_frozenDeliveryIsHonest
+  fo024_parkedSenderCarriesItsMessage
   IO.println "=== All Q7 frozen ops tests passed (23 scenarios) ==="

@@ -731,6 +731,65 @@ def signalBypassedNotification (st : SystemState) (nid : SeLe4n.ObjId) :
   | .toWaiter _ => []
   | .stored => []
 
+/-- WS-SM SM9.D.13a (PR #873 round 7): **the target a bare downgrade released
+nothing into.**
+
+`.declassify` carries no payload — it records that a downgrade of an object's
+label was authorized, and moves not one byte (`.declassifySignal` is the
+data-carrying one, added at SM9.C for exactly that reason).  So the origination's
+premise — "the target is where the released content now lives" — holds only when
+the target *is* holding content.  Against an idle transport it does not: a
+downgrade of an empty notification tagged it with a fresh, unsaturated identity,
+a later unrelated signal **joined** rather than replaced it, `.notificationWait`
+carried it to the receiver, and a downgrade behind that receiver reported a
+causal predecessor for content that never existed.
+
+That is a fictitious data dependency, which is the one thing SM9.D exists to
+remove: the syntactic detector it replaced fired on causally unrelated hops, and
+a tag invented here would put that failure back inside the causal check.  It is
+also not free — `maxTaintTags` is 8, so invented identities crowd out real ones
+and can saturate a value to `top`, which matches *every* later identity.
+
+**Emptiness must be positively established**, never assumed from an unmodelled
+shape.  Only the two content-carrying kinds are read: a notification is empty
+when it holds no pending badge, a TCB when it holds no pending message.  Every
+other target — including one whose object is absent, which the arm rejects
+anyway — keeps the origination, so this can only remove tags provably attached to
+nothing.  Bypassed, not cleared: an object that *is* holding content keeps both
+the content and its provenance, exactly as on the bound-signal path below. -/
+def declassifyBypassedTarget (st : SystemState) (targetId : SeLe4n.ObjId) :
+    List SeLe4n.ObjId :=
+  match st.getNotification? targetId with
+  | some ntfn => if ntfn.pendingBadge.isNone then [targetId] else []
+  | none =>
+    match st.getTcb? (SeLe4n.ThreadId.ofNat targetId.toNat) with
+    | some tcb => if tcb.pendingMessage.isNone then [targetId] else []
+    | none => []
+
+/-- WS-SM SM9.D.13a (PR #873 round 7): the bare downgrade's bypassed list, at the
+operand the arm reads.
+
+Separate from `contentFlowBypassed` rather than an arm of it, because that
+function is about what a *content-moving* delivery reached and `.declassify`
+moves nothing — folding them would make "inert arms bypass nothing" unprovable
+for the twenty-nine arms where it is still exactly true. -/
+def declassifyBypassedTargets (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) : List SeLe4n.ObjId :=
+  match decoded.syscallId, syscallOperandCap? st tid decoded.capAddr with
+  | .declassify, some cap =>
+      match cap.target with
+      | .object targetId => declassifyBypassedTarget st targetId
+      | _ => []
+  | _, _ => []
+
+/-- WS-SM SM9.D.13a (PR #873 round 7): every arm but `.declassify` bypasses
+nothing here — the fact `syscallTaintPlan_eq_inert` rests on. -/
+@[simp] theorem declassifyBypassedTargets_of_ne (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (h : decoded.syscallId ≠ .declassify) :
+    declassifyBypassedTargets st tid decoded = [] := by
+  unfold declassifyBypassedTargets
+  cases hSid : decoded.syscallId <;> simp_all
+
 /-- WS-SM SM9.D.10: the objects a content-moving syscall's delivery bypassed. -/
 def contentFlowBypassed (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) : List SeLe4n.ObjId :=
@@ -795,7 +854,13 @@ def syscallTaintPlan (st : SystemState) (tid : SeLe4n.ThreadId)
   -- whose whole purpose is to record.
   let originates := syscallRecordsDeclassification decoded.syscallId
   match contentFlowClass decoded.syscallId with
-  | .inert => { TaintPlan.inert with originates }
+  -- PR #873 round 7: an inert arm still carries `bypassed`, because `.declassify`
+  -- is inert *and* records — it releases the content an object already holds, so
+  -- against an idle target it releases nothing and must originate nothing there.
+  -- `contentFlowBypassed` is `[]` for every other inert arm.
+  | .inert =>
+      { edges := [], cleared := [], bypassed := declassifyBypassedTargets st tid decoded,
+        originates }
   | .movesContent => { edges := contentFlowEdges st tid decoded,
                        cleared := contentFlowClears st tid decoded,
                        bypassed := contentFlowBypassed st tid decoded,
@@ -806,16 +871,21 @@ def syscallTaintPlan (st : SystemState) (tid : SeLe4n.ThreadId)
 reach gate checks the *other* half of (that nothing it calls moves content
 either).
 
-Stated over the three movement fields rather than as `= TaintPlan.inert`, because
-since SM9.D.13a the plan also carries whether the arm can record a downgrade, and
+Stated over the movement fields rather than as `= TaintPlan.inert`, because since
+SM9.D.13a the plan also carries whether the arm can record a downgrade, and
 `.declassify` is an inert arm that can.  Collapsing the two would have made this
-theorem false for the one syscall the provenance layer exists for. -/
+theorem false for the one syscall the provenance layer exists for.
+
+`bypassed` left out for the same reason, since PR #873 round 7: a bare downgrade
+of an *idle* target releases nothing into it, so `.declassify` — inert, and the
+only inert arm that records — names that target as bypassed.  The theorem below
+still gives `bypassed = []` for every inert arm that cannot record, which is the
+twenty-nine this one used to be about. -/
 @[simp] theorem syscallTaintPlan_inert (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (h : contentFlowClass decoded.syscallId = .inert) :
     (syscallTaintPlan st tid decoded).edges = [] ∧
-      (syscallTaintPlan st tid decoded).cleared = [] ∧
-      (syscallTaintPlan st tid decoded).bypassed = [] := by
-  simp [syscallTaintPlan, h, TaintPlan.inert]
+      (syscallTaintPlan st tid decoded).cleared = [] := by
+  simp [syscallTaintPlan, h]
 
 /-- WS-SM SM9.D.13a: an inert arm that cannot record plans literally nothing —
 the pre-SM9.D.13a statement, kept for the 30 arms it still holds of. -/
@@ -823,7 +893,9 @@ theorem syscallTaintPlan_eq_inert (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (h : contentFlowClass decoded.syscallId = .inert)
     (hRec : syscallRecordsDeclassification decoded.syscallId = false) :
     syscallTaintPlan st tid decoded = TaintPlan.inert := by
-  simp [syscallTaintPlan, h, hRec, TaintPlan.inert]
+  have hNe : decoded.syscallId ≠ .declassify := by
+    intro hEq; rw [hEq] at hRec; simp [syscallRecordsDeclassification] at hRec
+  simp [syscallTaintPlan, h, hRec, hNe, TaintPlan.inert]
 
 /-- WS-SM SM9.D.13a: the plan's recording flag **is** the syscall's classifier —
 the tie that lets a consumer read either one. -/
@@ -1673,6 +1745,48 @@ theorem signalDelivery_waiter_empties_notification (st : SystemState)
   refine ⟨?_, ?_, ?_⟩ <;>
     simp [signalClearedNotification, signalBypassedNotification, signalTaintEdges, h]
 
+/-- WS-SM SM9.D.13a (PR #873 round 7): **a bare downgrade of an idle notification
+bypasses it**, so the fresh identity is not originated onto an object holding
+nothing.
+
+The composed statement is this plus `bypassedObject_not_originated`: the target
+is in `bypassed`, `.declassify` clears nothing and declares no edge, so the
+notification's taint is carried through the commit unchanged.  Without it a
+later unrelated signal joined onto an invented tag, `.notificationWait` carried
+it to the receiver, and a downgrade behind that receiver reported a predecessor
+for content that never existed. -/
+theorem declassify_idle_notification_bypassed (st : SystemState)
+    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (cap : Capability)
+    (nid : SeLe4n.ObjId) (ntfn : SeLe4n.Model.Notification)
+    (hSid : decoded.syscallId = .declassify)
+    (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
+    (hTarget : cap.target = .object nid)
+    (hNtfn : st.getNotification? nid = some ntfn)
+    (hIdle : ntfn.pendingBadge = none) :
+    (syscallTaintPlan st tid decoded).bypassed = [nid] := by
+  simp [syscallTaintPlan, contentFlowClass, hSid, declassifyBypassedTargets, hCap,
+    hTarget, declassifyBypassedTarget, hNtfn, hIdle]
+
+/-- WS-SM SM9.D.13a (PR #873 round 7): **and a downgrade of a notification that
+IS holding a badge originates onto it**, which is what makes the theorem above a
+precision fix rather than a hole.
+
+The load-bearing direction.  Skipping origination is an *under*-approximation,
+the one this module must never make by accident, so the skip is licensed only by
+positively established emptiness — a notification with a pending badge keeps the
+tag, because that is content the downgrade really released. -/
+theorem declassify_pending_notification_not_bypassed (st : SystemState)
+    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (cap : Capability)
+    (nid : SeLe4n.ObjId) (ntfn : SeLe4n.Model.Notification) (b : SeLe4n.Badge)
+    (hSid : decoded.syscallId = .declassify)
+    (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
+    (hTarget : cap.target = .object nid)
+    (hNtfn : st.getNotification? nid = some ntfn)
+    (hPending : ntfn.pendingBadge = some b) :
+    (syscallTaintPlan st tid decoded).bypassed = [] := by
+  simp [syscallTaintPlan, contentFlowClass, hSid, declassifyBypassedTargets, hCap,
+    hTarget, declassifyBypassedTarget, hNtfn, hPending]
+
 /-- WS-SM SM9.D.10 (**a bypassed object keeps what it had**): the fresh event is
 not originated onto a notification the delivery went around, and — unlike a
 clear — its existing provenance survives untouched.
@@ -1776,6 +1890,17 @@ So the declared subject is the object's own lock, and what this section supplies
 is the fact that makes that declaration checkable rather than asserted: the
 **write set** of a plan, and the frame proving the table is untouched outside
 it.
+
+**And a *clear* is a write** (PR #873 round 7).  The rule above was applied to
+the flow sinks and the origination keys and skipped the third member of
+`taintWriteKeys`: `.lifecycleRetype`'s `cleared` list is `[args.targetObj]`, a
+key whose lock `lockSet_lifecycleRetype` did not name — so a retype and a
+delivery into the object being re-purposed had provably disjoint footprints while
+updating the same entry, and the *clear* is the half that must not be lost (a
+replacement object inheriting a destroyed one's predecessor is a chain that
+outlives the object it described).  The retype now carries the resolved target's
+own write lock, exactly as `.declassify` carries its target's;
+`lockSet_lifecycleRetype_clearedKey_write_mem` is the checkable form.
 
 **Implementation obligation, registered rather than assumed.**  The model writes
 the field whole, so the key-local reading is sound only if the runtime realises

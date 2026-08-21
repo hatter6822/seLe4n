@@ -795,10 +795,11 @@ theorem lockSet_cspaceDelete_size_le (a : ThreadId) (b c : ObjId) :
   unfold lockSet_cspaceDelete maxLockSetSize
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
-theorem lockSet_lifecycleRetype_size_le (a : ThreadId) (b c d : ObjId) :
-    (lockSet_lifecycleRetype a b c d).size ≤ maxLockSetSize := by
+theorem lockSet_lifecycleRetype_size_le (a : ThreadId) (b c d : ObjId)
+    (t : Option LockId) :
+    (lockSet_lifecycleRetype a b c d t).size ≤ maxLockSetSize := by
   unfold lockSet_lifecycleRetype maxLockSetSize
-  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
 theorem lockSet_vspaceMap_size_le (a : ThreadId) (b c : ObjId) :
     (lockSet_vspaceMap a b c).size ≤ maxLockSetSize := by
@@ -931,7 +932,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c, (lockSet_cspaceCopy a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceMove a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceDelete a b c).size ≤ maxLockSetSize) ∧
-    (∀ a b c d, (lockSet_lifecycleRetype a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d t, (lockSet_lifecycleRetype a b c d t).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceMap a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnifyInstruction a b c).size ≤ maxLockSetSize) ∧

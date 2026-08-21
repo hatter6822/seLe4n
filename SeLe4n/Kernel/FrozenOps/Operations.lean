@@ -389,7 +389,18 @@ Returns the dequeued ThreadId, its TCB, and updated state.
 V5-O (L-DS-3): Validates that the head thread's IPC state is consistent
 with the queue it's being dequeued from (blocked-on-send for send queues,
 blocked-on-receive for receive queues). Returns `.endpointStateMismatch`
-if the head TCB's blocking state doesn't match the queue direction. -/
+if the head TCB's blocking state doesn't match the queue direction.
+
+PR #873 round 7: **a parked sender must also be carrying its message.**  The
+state check alone accepted a `.blockedOnSend` / `.blockedOnCall` head with
+`pendingMessage := none`, and `frozenEndpointReceive` then stored that `none` in
+the receiver while still joining the sender's provenance — inventing a causal
+predecessor for content that was never delivered.  Structural rather than a guard
+at the one caller: the frozen send path always parks with `pendingMessage := some
+msg`, so a message-less parked sender is a malformed snapshot in exactly the way
+a mismatched blocking state is, and it is refused with the same error.  The
+receive queue is unaffected — a thread parked to *receive* correctly holds
+nothing. -/
 private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (st : FrozenSystemState) : Except KernelError (SeLe4n.ThreadId × TCB × FrozenSystemState) :=
   match st.objects.get? endpointId with
@@ -407,10 +418,13 @@ private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
                 | .blockedOnReceive epId => epId == endpointId
                 | _ => false
               else
-                match headTcb.ipcState with
-                | .blockedOnSend epId => epId == endpointId
-                | .blockedOnCall epId => epId == endpointId
-                | _ => false
+                -- The parked sender's message is part of what "parked to send"
+                -- means: without it the dequeue would hand the receiver `none`
+                -- while the provenance join claimed a delivery.
+                (match headTcb.ipcState with
+                 | .blockedOnSend epId => epId == endpointId
+                 | .blockedOnCall epId => epId == endpointId
+                 | _ => false) && headTcb.pendingMessage.isSome
               if !stateConsistent then .error .endpointStateMismatch
               else
               -- Advance queue head to next TCB in chain
