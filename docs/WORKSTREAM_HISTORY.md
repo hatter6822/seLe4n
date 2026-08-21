@@ -369,6 +369,25 @@ leaves the CDT untouched.  The creator refuses a derivation whose *source* is
 gone; the revoke destroys one whose *parent edge* was revoked.  Neither implies
 the other.
 
+**The frozen/live correspondence became a computation (v0.33.89).**  Five of
+this branch's review findings were one defect: a frozen operation had drifted
+from the live transition it mirrors.  The 24 frozen operations declared their
+counterparts in a docstring table and a `mirrors X` sentence apiece, and the
+frozen suite exercised each operation *alone*, asserting against what its author
+had read in the live code — so a drift stayed green until a person noticed.  The
+table was itself wrong: row 5 named `notificationSignal` while the operation
+mirrors the bound-aware composition the live arm runs.
+
+`FrozenOps/Agreement.lean` runs the live transition on a `SystemState` and the
+frozen one on its `freeze`, and compares object stores, taint tables, current
+thread — and refusals, since a frozen operation accepting what the live one
+refuses is a divergence no state comparison can see.  Six pairs run today (the
+notification and endpoint transitions every recorded divergence touched), and
+`frozenOpCoverage_obliges_differential_check` interlocks the new coverage with
+the existing one: a syscall with a frozen operation is either run beside its
+live counterpart or carries a stated reason, decided over `SyscallId.all` so a
+new constructor forces the choice.
+
 Plan: [`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md)
 §SM9.D.  Next: SM9.E tests and phase closure.
 

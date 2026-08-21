@@ -4027,6 +4027,33 @@ run_check "INVARIANT" rg -n 'chain12hEndpointGrantDecidesBothOrderings' tests/Op
 # has to delete the entry deliberately.
 run_check "INVARIANT" rg -n 'cdtNodeAllocation' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '\(\.cdtNodeAllocation, "' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# PR #873 round 14: **the frozen/live correspondence, as something that runs.**
+# Each frozen operation re-implements a live transition, and which one it
+# re-implements was recorded in a markdown table and a `mirrors X` sentence.
+# Nothing ran either, so a frozen operation could drift and stay green -- which
+# is how five separate divergences reached review rather than the build.  The
+# table was itself wrong: row 5 named `notificationSignal` while the operation
+# mirrors the bound-aware composition the live arm runs.
+run_check "INVARIANT" rg -n '^def frozenObjectAgrees' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^def frozenStateAgrees' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^def frozenRunAgrees' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# The interlock: `frozenOpCoverage` says a frozen operation EXISTS for a
+# syscall, which every divergence also satisfied.  Claiming it now obliges
+# either a differential scenario or a stated reason, decided over
+# `SyscallId.all` so a new constructor forces the choice.
+run_check "INVARIANT" rg -n '^def frozenOpDifferentiallyChecked' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^theorem frozenOpCoverage_obliges_differential_check' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^theorem frozenOpDifferentiallyChecked_implies_covered' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# An excuse left behind after the scenario lands would re-open the escape hatch.
+run_check "INVARIANT" rg -n '^theorem frozenOpUncheckedReason_only_when_unchecked' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# The scenarios, and the negative that makes them evidence rather than
+# decoration: a comparison returning `true` for everything would pass all six.
+run_check "INVARIANT" rg -n 'fo026_differentialNotificationSignal' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'fo032_differentialRefusalsAgree' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'fo033_differentialComparisonHasBite' tests/FrozenOpsSuite.lean
+# The corrected row.  The wrong one must not come back.
+run_prose_check "INVARIANT" rg -n 'frozenNotificationSignal.*notificationSignalBound' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_prose_negative_check "INVARIANT" rg -n '\| 5 \| .frozenNotificationSignal.*\| .notificationSignal. ' SeLe4n/Kernel/FrozenOps/Operations.lean
 # PR #873 round 7: a CLEAR is a taint write too, so the retype's cleared key
 # rides its own object lock — the third member of `taintWriteKeys` the key-local
 # declaration had skipped.  The fixed four stay pinned separately.

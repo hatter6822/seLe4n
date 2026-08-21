@@ -11,6 +11,7 @@ import SeLe4n.Kernel.FrozenOps.Core
 import SeLe4n.Kernel.FrozenOps.Operations
 import SeLe4n.Kernel.FrozenOps.Commutativity
 import SeLe4n.Kernel.FrozenOps.Invariant
+import SeLe4n.Kernel.FrozenOps.Agreement
 
 /-!
 # Q7: Frozen Kernel Operations — Re-export Hub
@@ -23,4 +24,5 @@ Thin import hub for the Q7 frozen kernel operations subsystem.
 - `Operations.lean`: 12 per-subsystem frozen operations
 - `Commutativity.lean`: FrozenMap set/get? roundtrip proofs
 - `Invariant.lean`: Frame lemmas (frozenStoreObject preservation)
+- `Agreement.lean`: frozen/live correspondence, as a computation the suite runs
 -/

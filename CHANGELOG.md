@@ -1,3 +1,60 @@
+## v0.33.89 — a correspondence nothing ran
+
+Five review findings on this branch were the same defect wearing different
+clothes: a frozen operation had drifted from the live transition it claims to
+mirror.  A frozen signal that left a bound thread blocked while the live one
+delivered to it.  A frozen dequeue that recorded a causal predecessor the live
+one did not.  A frozen waiter whose badge vanished.  Each was found by a person
+reading both sides, fixed where it surfaced, and followed by another.
+
+The reason they kept coming is that nothing tied the two sides together.  The
+24 frozen operations declared their counterparts in a markdown table in
+`FrozenOps/Operations.lean`'s module docstring and a `mirrors X` sentence
+apiece, and the frozen suite exercised each operation **alone** — asserting
+against what its author had read in the live code and written into a comment.
+A frozen operation could therefore diverge from its counterpart and stay green
+indefinitely, which is exactly what happened, five times.
+
+That is the shape this project already forbids: an invariant maintained by
+convention, and a docstring deciding whether a check passes.
+
+**The correspondence is now a computation.**  `FrozenOps/Agreement.lean` runs
+the live transition on a `SystemState` and the frozen one on that state's
+`freeze`, then compares.  `FrozenKernelObject` re-represents exactly two
+variants — `.cnode` and `.vspaceRoot` — so agreement on the other six is plain
+equality, with no observation to choose and therefore no field anyone can forget
+to include; the two re-represented variants are compared through their lookups
+in both directions, so neither a missing entry nor an invented one passes.
+Refusals are compared too: a frozen operation that accepts what the live one
+refuses is a divergence no state comparison can see, and a missing frozen guard
+is precisely how a message-less parked sender reached the frozen dequeue.
+
+**And the table was wrong.**  Row 5 named `notificationSignal` as
+`frozenNotificationSignal`'s counterpart.  It is not — the frozen operation
+mirrors the bound-aware `notificationSignalBound` composition the live
+`.notificationSignal` arm actually runs, and on the bound shape the two
+disagree.  Reading the table was how you got the wrong answer.  The row is
+corrected, and `fo033` pins the disagreement so a comparison that returned
+`true` for everything could not pass the other six scenarios.
+
+**Claiming coverage now costs something.**  `frozenOpCoverage` already said, for
+every `SyscallId`, whether a frozen operation exists — and every divergence
+satisfied it, because the operation did exist.  It is a claim about existence.
+`frozenOpDifferentiallyChecked` is the other half, and
+`frozenOpCoverage_obliges_differential_check` interlocks them: a syscall with a
+frozen operation is either run beside its live counterpart or carries a stated
+reason it is not.  Decided over `SyscallId.all`, so a new constructor forces the
+choice rather than inheriting a default.  Two companion theorems keep the
+interlock honest in both directions — a scenario may only claim a syscall that
+has a frozen operation, and no syscall may be both run and excused, so an excuse
+left behind after its scenario lands cannot quietly re-open the escape hatch.
+
+Six pairs run today: notification signal and wait, endpoint send, receive, call
+and reply — every pair a recorded divergence touched.  The twelve owed scenarios
+are rows in `frozenOpUncheckedReason` with what they need, including the two
+whose live entries are not `Kernel`-shaped and want an adapter rather than a
+scenario.  A gap is a row someone wrote, not a row nobody noticed.
+
 ## v0.33.88 — a derivation that has not landed yet is still a derivation
 
 Round 13 found a revoke that reports success while the authority it destroyed is

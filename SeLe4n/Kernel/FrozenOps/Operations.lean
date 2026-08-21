@@ -23,13 +23,25 @@ of `RHTable` operations.
 
 ## Operation Table
 
-| # | Frozen Operation              | Builder Counterpart        | Subsystem    |
+This table is a reading aid, and it must not be the reason anyone believes a
+frozen operation still matches the transition it names.  It was exactly that
+for a long time, and row 5 was **wrong** the whole time — it named
+`notificationSignal` while the operation mirrors the bound-aware
+`notificationSignalBound` the live `.notificationSignal` arm runs.  Nothing
+could tell, because nothing ran both.
+
+`FrozenOps/Agreement.lean` is what tells: it runs the live transition on a
+`SystemState` and the frozen one on that state's `freeze`, and compares.  A row
+here that names the wrong counterpart now fails a differential scenario rather
+than misleading its next reader.
+
+| # | Frozen Operation              | Live Counterpart           | Subsystem    |
 |---|------------------------------|----------------------------|--------------|
 | 1 | `frozenSchedule`             | `schedule`                 | Scheduler    |
 | 2 | `frozenHandleYield`          | `handleYield`              | Scheduler    |
 | 3 | `frozenTimerTick`            | `timerTick`                | Scheduler    |
 | 4 | `frozenTimerTickBudget`      | `timerTickBudget`          | Scheduler    |
-| 5 | `frozenNotificationSignal`   | `notificationSignal`       | IPC          |
+| 5 | `frozenNotificationSignal`   | `notificationSignalBound`  | IPC          |
 | 6 | `frozenNotificationWait`     | `notificationWait`         | IPC          |
 | 7 | `frozenEndpointSend`         | `endpointSendDual`         | IPC          |
 | 8 | `frozenEndpointReceive`      | `endpointReceiveDual`      | IPC          |
