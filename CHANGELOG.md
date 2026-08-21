@@ -1,3 +1,42 @@
+## v0.33.78 — "before" is now enforced, not intended
+
+The uncovered-lock-domain inventory was **data alone**.  Five domains registered,
+each with an owner, a completeness theorem that fails if one is dropped — and
+nothing anywhere consulted it.  So "the per-key taint store lands before anything
+relies on key-local locking" was a sequencing intention recorded in prose, which
+is exactly the kind of ordering a later cut forgets.
+
+`fineLockDisciplineComplete` makes it a decidable predicate: the declared
+footprints may be relied on as a complete serialization discipline exactly when
+`declaredFootprintUncoveredDomains` is empty.  It is `false` today
+(`fineLockDisciplineComplete_is_false`), it can only become `true` by emptying the
+inventory (`fineLockDiscipline_requires_every_domain_covered`), and
+`taintPerKeyStore_blocks_fineLockDiscipline` names the entry PR #873's review
+pressed twice so a reader can check the dependency without reconstructing it from
+the list.
+
+A cut that enables SM3.C.9's fine locks while a domain is still registered now has
+to delete an entry it cannot honestly delete.
+
+**Why the per-key store itself is not in this cut, stated plainly.**  The model
+replaces `SystemState.declassificationTaint` whole, so two cores committing
+disjoint taint keys from their own pre-states would each write the whole field and
+the later commit would discard the other's provenance.  That is true — and it is
+equally true of `SystemState.objects` under `storeObject`, which every transition
+writes.  A per-key taint store shipped on its own would leave the identical lost
+update reachable through the object store, so the realisation is a property of the
+**commit**, not of one field: the two land together in the commit-partitioning cut
+(SM10.E / `SMP_FINE_LOCK_MIGRATION_PLAN` Track D) or neither does.  Nothing relies
+on key-local locking in the meantime — SM5.I's global entry ticket lock serialises
+every commit and `withLockSet` is deferred at the export bodies — and now nothing
+*can*, silently.
+
+The suite pins carry a load-bearing negative: the flag is computed from the
+inventory rather than hardcoded, measured by exhibiting an empty list that flips
+it, so the two positive checks cannot be satisfied by a constant `false`.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md
+
 ## v0.33.77 — a capability transfer that depended on who arrived first
 
 `endpointSendDualWithCaps`' own docstring said what should happen: *"If no

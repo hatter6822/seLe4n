@@ -3036,6 +3036,64 @@ theorem declaredFootprintUncoveredDomains_complete :
   · decide
   · rfl
 
+/-- **WS-SM SM8.D.5 (PR #873 round 6): may the declared footprints be relied on
+as a complete serialization discipline yet?**
+
+`false`, and the point is that it is now a *decidable predicate a consumer can
+consult* rather than a sequencing intention recorded in prose.
+
+Every entry in `declaredFootprintUncoveredDomains` names a write the bracket does
+not order.  `taintTablePerKeyStore` is the sharpest of them: the model replaces
+`SystemState.declassificationTaint` whole, so two cores committing **disjoint**
+taint keys from their own pre-states would each write the whole field and the
+later commit would discard the other's provenance — a lost causal chain, which is
+the direction this subsystem must never err in.  The same is true of
+`SystemState.objects` under `storeObject`, which is why the per-key realisation
+is a property of the *commit*, not of this field: a per-key taint store shipped
+on its own would leave the identical lost update reachable through the object
+store, so the two land together in the commit-partitioning cut (SM10.E / the
+`SMP_FINE_LOCK_MIGRATION_PLAN` Track D) or neither does.
+
+**What this buys.**  The reviewer's ask on PR #873 was "implement that
+representation *before* relying on key-local locking".  Before was already the
+plan; it was not enforced.  It is now: reliance is gated on this flag,
+`fineLockDiscipline_requires_every_domain_covered` says the flag can only become
+`true` by emptying the inventory, and `fineLockDisciplineComplete_is_false` pins
+that it has not.  A cut that enables SM3.C.9's fine locks while a domain is still
+registered has to delete an entry it cannot honestly delete. -/
+def fineLockDisciplineComplete : Bool :=
+  declaredFootprintUncoveredDomains.isEmpty
+
+/-- SM8.D.5 (PR #873 round 6): **it is false today**, and this is the pin that
+makes flipping it a deliberate act.  Deleting it is the same edit as claiming the
+five registered domains are covered. -/
+theorem fineLockDisciplineComplete_is_false : fineLockDisciplineComplete = false := by
+  decide
+
+/-- SM8.D.5 (PR #873 round 6): **the interlock.**  The discipline is complete
+exactly when no domain is registered as uncovered — so a per-key taint store, a
+covering CNode write member and the scheduler-domain bracket are each a
+*precondition* of relying on declared footprints, not work that may run
+alongside it. -/
+theorem fineLockDiscipline_requires_every_domain_covered :
+    fineLockDisciplineComplete = true ↔ declaredFootprintUncoveredDomains = [] := by
+  unfold fineLockDisciplineComplete
+  exact List.isEmpty_iff
+
+/-- SM8.D.5 (PR #873 round 6): **and the taint store specifically gates it.**
+
+Named on its own because it is the entry PR #873's review pressed twice, and
+because a reader should be able to check the dependency without reconstructing it
+from the list: while `taintTablePerKeyStore` is registered, the flag is false, so
+nothing may treat a key-local taint write as serialised by the key's own lock. -/
+theorem taintPerKeyStore_blocks_fineLockDiscipline
+    (h : UncoveredLockDomain.taintTablePerKeyStore
+      ∈ declaredFootprintUncoveredDomains.map Prod.fst) :
+    fineLockDisciplineComplete = false := by
+  cases hEmpty : declaredFootprintUncoveredDomains with
+  | nil => rw [hEmpty] at h; simp at h
+  | cons a rest => simp [fineLockDisciplineComplete, hEmpty]
+
 /-- SM8.D.5: the 2PL-bracketed live entry **over the declared footprint** —
 `declaredLockSetForEntry`'s output, bracketed, or `none` where no footprint is
 declared for the operation the entry will run. -/

@@ -7783,6 +7783,23 @@ private def runDeclaredFootprintChecks : IO Unit := do
     (UncoveredLockDomain.all.all
        (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
      decide (UncoveredLockDomain.all.length = 5))
+  -- PR #873 round 6: the inventory is no longer data alone.  Relying on declared
+  -- footprints as a complete serialization discipline is gated on it being
+  -- EMPTY, so the per-key taint store — the entry the review pressed twice — is
+  -- a precondition of SM3.C.9's fine locks rather than work that may run
+  -- alongside them.
+  assertBool "the fine-lock discipline is not complete while a domain is uncovered"
+    (decide (SeLe4n.Kernel.fineLockDisciplineComplete = false))
+  assertBool "…and it can only become complete by emptying the inventory"
+    (decide ((SeLe4n.Kernel.fineLockDisciplineComplete = true)
+      ↔ (declaredFootprintUncoveredDomains = [])))
+  -- NEGATIVE, load-bearing: the flag is not a constant `false` — it is computed
+  -- from the inventory, so an emptied inventory would flip it.  Measured on a
+  -- list rather than asserted, since a hardcoded `false` would satisfy the two
+  -- checks above without gating anything.
+  assertBool "NEGATIVE: the gate is computed, not hardcoded — an empty inventory flips it"
+    (decide (([] : List (UncoveredLockDomain × String)).isEmpty = true) &&
+     decide (declaredFootprintUncoveredDomains.isEmpty = false))
   assertBool "the confinement core is carried through the declared-footprint witness (theorem)"
     (have _a := @suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore
      true)

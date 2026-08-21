@@ -3697,6 +3697,15 @@ run_check "INVARIANT" rg -n '^theorem dispatchSyscall_applies_taint_plan' SeLe4n
 # a second application at an entry is a build failure rather than a text pin.
 run_check "INVARIANT" rg -n 'SeLe4n.Kernel.dispatchSyscallChecked' scripts/check_content_flow_coverage.py
 
+# PR #873 round 6: relying on declared footprints as a complete serialization
+# discipline is GATED on the uncovered-domain inventory being empty, so the
+# per-key taint store (and every other registered domain) is a precondition of
+# SM3.C.9's fine locks rather than work that may land alongside them.
+run_check "INVARIANT" rg -n '^def fineLockDisciplineComplete' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem fineLockDisciplineComplete_is_false' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem fineLockDiscipline_requires_every_domain_covered' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem taintPerKeyStore_blocks_fineLockDiscipline' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+
 # PR #873 round 6: **a queued capability transfer installs, like a rendezvous
 # one.**  The `.receive` arm ran the bare per-core receive, which delivers a
 # parked sender's message wholesale and installs none of the capabilities it
