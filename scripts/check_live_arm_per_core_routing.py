@@ -491,8 +491,8 @@ run_cmd do
   -- (PR #861 review round 42).  This loop used to discard the head and pass on
   -- the argument alone, which made the COMPOSITE witness attest to nothing it
   -- was built for: its point is that the *head* classification is derived
-  -- rather than hand-listed, so with `routeSlotReachers` regressed to an empty
-  -- set the production scan would go silent while COMPOSITE still
+  -- rather than hand-listed, so with `routeReachesPerCoreSlot` regressed to a
+  -- constant `false` the production scan would go silent while COMPOSITE still
   -- reported ok.  A self-test that cannot fail when the thing it guards breaks
   -- is the fail-open shape this gate exists to close, reproduced inside the
   -- gate itself.  All three heads reach a slot, so requiring the conjunction
@@ -691,7 +691,7 @@ def run_probe(roots: list[str], hops: int) -> tuple[dict, str]:
             "setter directly,\n"
             "                  so this one fails when the derived reach "
             "predicate stops reaching.\n"
-            "      All three miss at once when `routeSlotReachers` is "
+            "      All three miss at once when `routeReachesPerCoreSlot` is "
             "broken, since every\n"
             "      witness runs the full head-and-argument verdict.")
     for tag in ("ROUTE_STEM_UNRESOLVED", "ROUTE_UNRESOLVED",

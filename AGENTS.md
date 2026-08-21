@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.33.69.
+Lean 4.28.0 toolchain, Lake build system, version 0.33.70.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,10 +182,10 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~43176 lines)
+- `CHANGELOG.md` (~43297 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~20449 lines)
 - `docs/WORKSTREAM_HISTORY.md` (~11867 lines)
-- `tests/SmpInformationFlowSuite.lean` (~11055 lines)
+- `tests/SmpInformationFlowSuite.lean` (~11063 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~7902 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5565 lines)
 - `SeLe4n/Kernel/API.lean` (~5385 lines)
@@ -199,7 +199,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4112 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
-- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~3789 lines)
+- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~3811 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3767 lines)
 - `SeLe4n/Platform/Boot.lean` (~3628 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3443 lines)
@@ -269,7 +269,7 @@ To find files that need pagination today, run:
 - `tests/InformationFlowSuite.lean` (~1773 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1737 lines)
-- `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~1729 lines)
+- `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~1736 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1706 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
@@ -305,6 +305,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1186 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~1172 lines)
+- `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1170 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1167 lines)
@@ -324,7 +325,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1076 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `tests/SyscallDispatchSuite.lean` (~1048 lines)
-- `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1047 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `tests/SyscallReturnAbiSuite.lean` (~1035 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1029 lines)

@@ -3270,10 +3270,14 @@ run_check "INVARIANT" rg -n '^theorem refusalLedger_partial_reader_learns_nothin
 run_check "INVARIANT" rg -n '^theorem refusalLedger_gate_is_configuration_derived' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem refusalLedger_records_gate_unsound' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem refusalRead_requires_monitor_at_entry' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-# The ABI mirror, both sides: 12 trail opcodes + 9 refusal opcodes + WS-SM
-# SM9.C.1's 4 actor opcodes = 25.
-run_check "INVARIANT" rg -n '^def auditReadOpcodeCount : Nat := 29' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n 'AUDIT_READ_OPCODE_COUNT: u64 = 29' rust/sele4n-sys/src/audit.rs
+# The ABI mirror, both sides.  The count is the decoder's boundary in opcode
+# slots, not the number of `AuditReadOp` constructors — several carry an index
+# and a chunk — so it is pinned as a number against both sides rather than
+# re-derived from the enum.  This is the ONE place it is pinned: a second copy
+# added next to a new opcode's anchors is how it last went stale, sitting at 29
+# after the Lean side moved to 30.
+run_check "INVARIANT" rg -n '^def auditReadOpcodeCount : Nat := 30' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n 'AUDIT_READ_OPCODE_COUNT: u64 = 30' rust/sele4n-sys/src/audit.rs
 # WS-SM SM9.C.1: and the count is the DECODER's boundary on the Rust side, not
 # a restatement of the enum's own last variant — which is what let this mirror
 # sit at 21 while Lean moved to 25, invisible to every Rust test.
@@ -3350,7 +3354,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines' tests/SmpInfo
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=34 opcodes=29 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=34 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification
@@ -3595,10 +3599,19 @@ run_check "INVARIANT" rg -n '^theorem taint_bounded_structurally' SeLe4n/Kernel/
 # direction — losing a real link is what must not happen.
 run_check "INVARIANT" rg -n '^theorem taintSaturate_over_approximates' SeLe4n/Kernel/InformationFlow/Taint.lean
 run_check "INVARIANT" rg -n '^theorem join_saturated_covers_all' SeLe4n/Kernel/InformationFlow/Taint.lean
-# The side table is a TOTAL FUNCTION, not an `RHTable`: a hash table's
-# lookup-after-insert law needs `invExt`, which would force the bundle conjunct
-# this design avoids.
-run_check "INVARIANT" rg -n '^abbrev TaintTable := SeLe4n.ObjId → DeclassificationTaint' SeLe4n/Kernel/InformationFlow/Taint.lean
+# The side table is a KEYED association list under a total lookup, not an
+# `RHTable`: a hash table's lookup-after-insert law needs `invExt`, which would
+# force the bundle conjunct this design avoids.  The canonical form — at most one
+# row per object, none empty-valued — is a FIELD, so the length claim holds of
+# every value of the type rather than only of the ones the API builds.
+#
+# This pin replaced one requiring the old `abbrev TaintTable := ObjId → …`, which
+# sat here contradicting the negative check below (added with the keyed cut) —
+# the two could not both pass, so the tier failed until one was corrected.
+run_check "INVARIANT" rg -n '^structure TaintTable where' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^  canonical : TaintEntries\.Canonical entries' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem TaintEntries\.canonical_erase' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem entries_live' SeLe4n/Kernel/InformationFlow/Taint.lean
 
 # SM9.D.2 – SM9.D.6: the §6 `SystemState` mount checklist, run for the fourth
 # time.  The frozen field is REQUIRED (a silent drop is a compile error) and the
@@ -3743,8 +3756,8 @@ run_check "INVARIANT" rg -n '\| chainNamesArchived \(later timestamp : Nat\)' Se
 run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_names_iff' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_denied_for_non_monitor' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_refuses_live_timestamp' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^def auditReadOpcodeCount : Nat := 30' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n 'AUDIT_READ_OPCODE_COUNT: u64 = 30' rust/sele4n-sys/src/audit.rs
+# The count itself is pinned once, with the ABI mirror above; only this
+# opcode's own value belongs here.
 run_check "INVARIANT" rg -n 'ChainNamesArchived = 29' rust/sele4n-sys/src/audit.rs
 # NEGATIVE: the carrier and its gate must not come back.
 run_negative_check "INVARIANT" rg -n '^def capTransferTaintSinks' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
@@ -3803,9 +3816,11 @@ run_check "INVARIANT" rg -n '^theorem bypassedObject_not_originated' SeLe4n/Kern
 run_negative_check "INVARIANT" rg -n 'theorem taintPropagation_queued_receive_to_cspace' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_negative_check "INVARIANT" rg -n 'theorem taintPropagation_cspace_taints_consumer' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_negative_check "INVARIANT" rg -n 'def parkedCarriesCaps' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-# …and the send gate requires Grant, since an endpoint without it installs
-# nothing however many capabilities the message declares.
-run_check "INVARIANT" rg -n 'cap.hasRight .grant' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# The send-side Grant gate is NOT pinned here any more.  It lived inside
+# `sendCarriesCaps`, which the content-derived cut deleted and which the negative
+# check below pins out — so requiring its text in this file contradicted that
+# check and could not pass.  The gate itself is unchanged; it is a property of
+# the IPC transition, and this file no longer restates it.
 # PR #873 round 8: the delete guard sees transfers IN FLIGHT, not only children.
 # Between a blocking send and the unwrap that completes it the source slot has no
 # CDT child yet, so a children-only guard permitted the delete, the slot was
@@ -3917,7 +3932,19 @@ run_check "INVARIANT" rg -n 'applyOrigination \(originationTags \(newlyRecordedE
 run_check "INVARIANT" rg -n 'capTransferReceiverCnode' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem capTransfer_receiverCnode_write_undeclared' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'GAP .registered lock-inventory debt.: the receiver.s CSpace root is NOT write-locked' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'every taint write key EXCEPT the cap-transfer CNode is write-locked by the send' tests/SmpInformationFlowSuite.lean
+# The carve-out is gone: with the cap-transfer sink deleted, the receiver's
+# CSpace root is no longer a taint write key at all, so the send's coverage claim
+# is unconditional.  The registered domain above still records the underlying
+# footprint gap, which is a fact about `ipcUnwrapCaps`, not about taint.
+run_check "INVARIANT" rg -n 'EVERY taint write key is write-locked by the send footprint' tests/SmpInformationFlowSuite.lean
+
+# WS-SM SM9.D.17 (audit): the taint table's per-key realisation is a registered
+# domain rather than a paragraph.  The footprints declare each taint key's own
+# object lock while the model replaces the field whole, so key-local locking is
+# sound only once the runtime stores per object — owed by the representation cut.
+# Registered so that enabling fine locks has to delete the entry deliberately.
+run_check "INVARIANT" rg -n 'taintTablePerKeyStore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '\(\.taintTablePerKeyStore, "SM10\.E"\)' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # SM9.D.7 (audit): the gate's direct-field-writer sweep — check (C) names only
 # constants that USE the taint API; (C2) scans every definition for a direct
 # `{ st with declassificationTaint := .. }` update, and the self-test asserts

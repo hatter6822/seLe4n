@@ -1,3 +1,42 @@
+## v0.33.70 — two invariants that were only comments
+
+Two review findings on the keyed-taint-table cut, both of the same kind: a
+property the code depends on, stated in a docstring where nothing could check it.
+
+**The taint table's canonical form is now a field.**  `TaintTable` wrapped an
+unconstrained list under the comment *"at most one per object, never
+empty-valued"*, and the bound the keyed representation was adopted for — that
+`entries.length` counts objects carrying provenance rather than writes — rested
+on that sentence.  `TaintTable.mk` was public, so a duplicate or empty-valued row
+was constructible, and `SystemState` accepted it: unbounded lookup cost could
+return without any semantic taint changing.  `TaintEntries.Canonical` is now a
+**field of the structure**, discharged at the only two constructors (`empty` and
+`set`; `joinAt` and `clearAt` both route through `set`), with
+`TaintEntries.canonical_erase` / `noKey_erase` / `noKey_erase_self` closing it
+under erasure.  `TaintTable.entries_live` is the payoff, and the reason the field
+is not decorative: every row a table holds is one the lookup returns and none is
+empty, so the length claim is now carried rather than asserted.  The whole tree
+builds unchanged — the writer surface was two sites, so nothing cascaded.
+
+**The taint table's per-key realisation is now a registered lock domain.**  The
+content-moving syscalls declare each taint key's own object lock — deliberately,
+since `stateLevelLock` on those eight arms would serialise unrelated IPC on
+unrelated endpoints and break the tick-budget fit the IPC suites pin.  But the
+model replaces the field whole, so under SM3.C.9's fine locks two cores
+committing disjoint taint keys from their own pre-states would each write the
+whole field and the later commit would discard the other's provenance.  That
+obligation was recorded in `TaintPropagation`'s prose, which is something a cut
+enabling fine locks can enable without ever reading.  It is now
+`UncoveredLockDomain.taintTablePerKeyStore` (owner `SM10.E`), so the inventory's
+completeness theorem — quantified over the constructors — fails until the entry
+is deliberately deleted, which is only sound once the representation exists.
+Not a live race: SM5.I's global entry lock serialises every commit, and
+`SystemState.objects` carries the identical obligation for `storeObject` under
+the same discipline.  Inventory 4 → 5, with the suite counts and Tier-3 anchors
+moved with it.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md
+
 ## v0.33.69 — the Tier 1 gates were asking the same question thousands of times
 
 Tier 1 took roughly thirty-four minutes, and thirty-three of them were two

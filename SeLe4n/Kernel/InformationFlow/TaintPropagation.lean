@@ -1535,13 +1535,20 @@ is the fact that makes that declaration checkable rather than asserted: the
 **write set** of a plan, and the frame proving the table is untouched outside
 it.
 
-**Implementation obligation, recorded rather than assumed.**  The model writes
+**Implementation obligation, registered rather than assumed.**  The model writes
 the field whole, so the key-local reading is sound only if the runtime realises
 the table as per-object storage — a store at slot `o` for
-`TaintTable.set _ o _`.  That is precisely the obligation `SystemState.objects`
-already carries for `storeObject` under the same discipline, and it is
-discharged the same way: by the representation, at SM10.E.  Stated here so a
-reader of the footprint knows which half is proven and which half is owed. -/
+`TaintTable.set _ o _`.  Until it does, two cores committing disjoint taint keys
+from their own pre-states would each write the whole field and the later commit
+would discard the other's provenance.  That is precisely the obligation
+`SystemState.objects` already carries for `storeObject` under the same
+discipline, and it is discharged the same way: by the representation, at SM10.E.
+
+It is carried as `UncoveredLockDomain.taintTablePerKeyStore`
+(`InformationFlow/FineLockFlow.lean`), not as this paragraph.  A docstring is
+something a later cut can enable fine locks without ever reading; the inventory's
+completeness theorem is quantified over the *constructors*, so the entry has to
+be deleted deliberately — which is only sound once the representation exists. -/
 
 /-- WS-SM SM9.D.17: **the objects a plan's flows write.**
 

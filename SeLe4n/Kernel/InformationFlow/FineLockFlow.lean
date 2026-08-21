@@ -2980,20 +2980,42 @@ inductive UncoveredLockDomain where
   caps-carrying call's footprint would exceed the 1 ms tick fit that holds for
   the capless shape). -/
   | capTransferReceiverCnode
+  /-- WS-SM SM9.D.17 (audit): the **taint table's per-key realisation**.
+
+  Every content-moving syscall writes `SystemState.declassificationTaint` at the
+  keys its plan names, and declares the *objects'* own locks for them — a
+  deliberate choice, since `stateLevelLock` on the eight content-moving arms
+  would serialise unrelated IPC on unrelated endpoints and break the tick-budget
+  fit the IPC suites pin.  The **model**, though, replaces the field whole:
+  `TaintTable.set` returns a table built from the pre-state's entries.  So the
+  key-local reading is sound only once the runtime realises the table as
+  per-object storage; until it does, two cores committing disjoint taint keys
+  from their own pre-states would each write the whole field and the later commit
+  would discard the other's provenance.
+
+  Not a live race — SM5.I's global entry lock serialises every commit, and
+  `withLockSet` is deferred at the export bodies (SM3.C.9).  `SystemState.objects`
+  carries the identical obligation for `storeObject` under the same discipline,
+  which is why the owner is the representation cut rather than this phase.
+  Registered here rather than left in `TaintPropagation`'s prose because that is
+  the difference between an obligation a later cut must discharge and one it can
+  forget: the completeness theorem below now fails until this entry is removed. -/
+  | taintTablePerKeyStore
   deriving DecidableEq, Repr
 
 /-- SM8.D.5: the domains this bracket does **not** cover, and the workstream that
 owns composing them. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
   [(.schedulerDomain, "SM3.C.9"), (.dynamicPipChain, "SM3.C.11"),
-   (.queueOwnershipProtocol, "SM3.B"), (.capTransferReceiverCnode, "SM3.B")]
+   (.queueOwnershipProtocol, "SM3.B"), (.capTransferReceiverCnode, "SM3.B"),
+   (.taintTablePerKeyStore, "SM10.E")]
 
 /-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
 inventory uses — so completeness can be quantified over the *constructors*
 rather than compared against a literal. -/
 def UncoveredLockDomain.all : List UncoveredLockDomain :=
   [.schedulerDomain, .dynamicPipChain, .queueOwnershipProtocol,
-   .capTransferReceiverCnode]
+   .capTransferReceiverCnode, .taintTablePerKeyStore]
 
 /-- SM8.D.5: every constructor is listed.  This is the clause a literal
 comparison cannot supply: adding a third domain makes `cases d` non-exhaustive

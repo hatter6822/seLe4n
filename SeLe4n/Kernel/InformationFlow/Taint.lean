@@ -774,6 +774,111 @@ def taintEntriesErase : TaintEntries → SeLe4n.ObjId → TaintEntries
       · simp [taintEntriesErase, taintEntriesLookup, hk', h]
       · simpa [taintEntriesErase, taintEntriesLookup, hk, hk'] using ih
 
+/-- WS-SM SM9.D.2: `o` has no entry in this list.
+
+Structural recursion rather than `∀ p ∈ l, p.1 ≠ o`, for the same reason
+`taintEntriesLookup` is: every lemma below is then a plain induction with no
+membership reasoning in the way. -/
+def TaintEntries.NoKey (o : SeLe4n.ObjId) : TaintEntries → Prop
+  | [] => True
+  | (k, _) :: rest => k ≠ o ∧ TaintEntries.NoKey o rest
+
+/-- WS-SM SM9.D.2: **the canonical form** — at most one entry per object, and no
+entry holding the empty taint.
+
+This is the property the table's size claim rests on: with it, the list's length
+*is* the number of objects currently carrying provenance rather than a record of
+how many writes have happened.  It is a **field of `TaintTable`** rather than a
+sentence in its docstring, because an invariant maintained only by convention is
+one a later constructor breaks silently — and here the convention was doing real
+work, since an unconstrained list admits duplicate and empty-valued rows that
+reintroduce exactly the unbounded growth the keyed representation removed. -/
+def TaintEntries.Canonical : TaintEntries → Prop
+  | [] => True
+  | (k, v) :: rest =>
+      v ≠ DeclassificationTaint.empty ∧ TaintEntries.NoKey k rest ∧
+        TaintEntries.Canonical rest
+
+theorem TaintEntries.noKey_erase_self (o : SeLe4n.ObjId) :
+    ∀ (l : TaintEntries), TaintEntries.NoKey o (taintEntriesErase l o) := by
+  intro l
+  induction l with
+  | nil => trivial
+  | cons p rest ih =>
+    obtain ⟨k, _⟩ := p
+    by_cases h : k = o
+    · simpa [taintEntriesErase, h] using ih
+    · simp only [taintEntriesErase, if_neg h]
+      exact ⟨h, ih⟩
+
+theorem TaintEntries.noKey_erase (o k : SeLe4n.ObjId) :
+    ∀ (l : TaintEntries), TaintEntries.NoKey k l →
+      TaintEntries.NoKey k (taintEntriesErase l o) := by
+  intro l
+  induction l with
+  | nil => intro _; trivial
+  | cons p rest ih =>
+    obtain ⟨kk, _⟩ := p
+    intro h
+    by_cases hk : kk = o
+    · simpa [taintEntriesErase, hk] using ih h.2
+    · simp only [taintEntriesErase, if_neg hk]
+      exact ⟨h.1, ih h.2⟩
+
+theorem TaintEntries.canonical_erase (o : SeLe4n.ObjId) :
+    ∀ (l : TaintEntries), TaintEntries.Canonical l →
+      TaintEntries.Canonical (taintEntriesErase l o) := by
+  intro l
+  induction l with
+  | nil => intro _; trivial
+  | cons p rest ih =>
+    obtain ⟨k, _⟩ := p
+    intro h
+    by_cases hk : k = o
+    · simpa [taintEntriesErase, hk] using ih h.2.2
+    · simp only [taintEntriesErase, if_neg hk]
+      exact ⟨h.1, TaintEntries.noKey_erase o k rest h.2.1, ih h.2.2⟩
+
+theorem TaintEntries.ne_of_noKey (k : SeLe4n.ObjId) :
+    ∀ (l : List (SeLe4n.ObjId × DeclassificationTaint)), TaintEntries.NoKey k l →
+      ∀ p ∈ l, p.1 ≠ k := by
+  intro l
+  induction l with
+  | nil => intro _ p hp; cases hp
+  | cons q rest ih =>
+    obtain ⟨_, _⟩ := q
+    intro h p hp
+    cases hp with
+    | head => exact h.1
+    | tail _ hrest => exact ih h.2 p hrest
+
+/-- WS-SM SM9.D.2: **every row of a canonical list is live** — the lookup returns
+it, and it is not the empty taint.
+
+This is what the canonicity field buys, stated so it cannot quietly stop being
+true: no row is a duplicate shadowed by an earlier one, and none is an empty
+value occupying space, so the list's length counts objects that currently carry
+provenance.  Without the field this was a docstring sentence that any
+`TaintTable.mk` could falsify without a single taint value changing. -/
+theorem TaintEntries.live_of_canonical :
+    ∀ (l : List (SeLe4n.ObjId × DeclassificationTaint)), TaintEntries.Canonical l →
+      ∀ p ∈ l,
+        taintEntriesLookup l p.1 = p.2 ∧ p.2 ≠ DeclassificationTaint.empty := by
+  intro l
+  induction l with
+  | nil => intro _ p hp; cases hp
+  | cons q rest ih =>
+    obtain ⟨kk, v⟩ := q
+    intro h p hp
+    cases hp with
+    | head => exact ⟨by simp [taintEntriesLookup], h.1⟩
+    | tail _ hrest =>
+      have hne : p.1 ≠ kk := TaintEntries.ne_of_noKey kk rest h.2.1 p hrest
+      have hrec := ih h.2.2 p hrest
+      refine ⟨?_, hrec.2⟩
+      have hkk : ¬ (kk = p.1) := fun hc => hne hc.symm
+      simpa [taintEntriesLookup, hkk] using hrec.1
+
 /-- WS-SM SM9.D.2: **the declassification taint side table** — provenance for
 every object id.
 
@@ -806,8 +911,13 @@ three SM9 mounts.  A list needs no such invariant, and the `CoeFun` below keeps
 every downstream site reading `tbl oid` exactly as it did, so the pointwise
 lemmas are unchanged in statement and the frames stay `rfl`. -/
 structure TaintTable where
-  /-- The canonical entries: at most one per object, never empty-valued. -/
+  /-- The entries: at most one per object, never empty-valued. -/
   entries : TaintEntries
+  /-- ...and that is *carried*, not asserted.  `TaintTable.mk` cannot build a
+  table with a duplicate or empty-valued row, so the length claim above holds of
+  every value of this type rather than only of the ones the API happens to
+  produce. -/
+  canonical : TaintEntries.Canonical entries
 
 namespace TaintTable
 
@@ -816,8 +926,20 @@ unchanged and no downstream statement moves. -/
 instance : CoeFun TaintTable (fun _ => SeLe4n.ObjId → DeclassificationTaint) :=
   ⟨fun tbl => taintEntriesLookup tbl.entries⟩
 
+/-- WS-SM SM9.D.2: **the size claim, carried rather than asserted.**
+
+Every entry this table holds is one a lookup actually returns, and none of them
+is empty — so `entries.length` is the number of objects currently carrying
+provenance.  That is the claim the keyed representation was adopted for, and
+until the `canonical` field existed it rested on the API happening not to build
+a duplicate or empty-valued row. -/
+theorem entries_live (tbl : TaintTable) :
+    ∀ p ∈ show List (SeLe4n.ObjId × DeclassificationTaint) from tbl.entries,
+      tbl p.1 = p.2 ∧ p.2 ≠ DeclassificationTaint.empty :=
+  TaintEntries.live_of_canonical tbl.entries tbl.canonical
+
 /-- WS-SM SM9.D.2: no object carries provenance — the boot table. -/
-def empty : TaintTable := ⟨[]⟩
+def empty : TaintTable := ⟨[], trivial⟩
 
 instance : Inhabited TaintTable := ⟨empty⟩
 
@@ -827,8 +949,13 @@ Storing `DeclassificationTaint.empty` **erases** rather than recording an empty
 entry, which is what keeps the representation canonical — and therefore what
 makes `clearAt` shrink the table instead of extending it. -/
 def set (tbl : TaintTable) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) : TaintTable :=
-  if T = DeclassificationTaint.empty then ⟨taintEntriesErase tbl.entries oid⟩
-  else ⟨(oid, T) :: taintEntriesErase tbl.entries oid⟩
+  if h : T = DeclassificationTaint.empty then
+    ⟨taintEntriesErase tbl.entries oid,
+     TaintEntries.canonical_erase oid tbl.entries tbl.canonical⟩
+  else
+    ⟨(oid, T) :: taintEntriesErase tbl.entries oid,
+     ⟨h, TaintEntries.noKey_erase_self oid tbl.entries,
+      TaintEntries.canonical_erase oid tbl.entries tbl.canonical⟩⟩
 
 /-- WS-SM SM9.D.2: **add provenance to one object**, keeping what it had — the
 propagation primitive.  A sink joins its source's taint in; nothing is ever
@@ -1002,19 +1129,15 @@ theorem clearAt_set_entries (tbl : TaintTable) (oid : SeLe4n.ObjId)
     ((tbl.set oid T).clearAt oid).entries = taintEntriesErase tbl.entries oid := by
   by_cases hT : T = DeclassificationTaint.empty
   · subst hT
-    have hset : tbl.set oid DeclassificationTaint.empty
-        = ⟨taintEntriesErase tbl.entries oid⟩ := by unfold set; simp
-    rw [hset]
     unfold clearAt
-    rw [if_pos (taintEntriesLookup_erase_self tbl.entries oid)]
-  · have hset : tbl.set oid T = ⟨(oid, T) :: taintEntriesErase tbl.entries oid⟩ := by
-      unfold set; simp [hT]
-    rw [hset]
-    unfold clearAt
-    rw [if_neg (by simpa [taintEntriesLookup] using hT)]
-    unfold set
-    rw [if_pos rfl]
-    simp only [taintEntriesErase]
+    rw [if_pos (set_self tbl oid DeclassificationTaint.empty)]
+    simp [set]
+  · unfold clearAt
+    rw [if_neg (by rw [set_self]; exact hT)]
+    have hentries : ((tbl.set oid T).set oid DeclassificationTaint.empty).entries
+        = taintEntriesErase (taintEntriesErase tbl.entries oid) oid := by
+      simp [set, hT, taintEntriesErase]
+    rw [hentries]
     exact taintEntriesErase_idem _ _
 
 /-- **A store-then-consume cycle leaves the table no larger.**

@@ -2213,6 +2213,21 @@ no observer projects, the write is confined to no core at all. -/
 #check @UncoveredLockDomain.capTransferReceiverCnode
 #check @capTransfer_receiverCnode_write_undeclared
 
+-- SM9.D audit: the taint table's per-key realisation, owed by the representation
+-- cut.  The footprints declare the objects' own locks for taint keys while the
+-- model replaces the field whole, so key-local locking is sound only once the
+-- runtime stores per object.  Registered as data for the same reason as the
+-- entry above: a docstring is something enabling fine locks can skip reading.
+#check @UncoveredLockDomain.taintTablePerKeyStore
+
+-- SM9.D.2: the taint table's canonical form is a FIELD, and these are what make
+-- it load-bearing rather than decorative — closure under erasure at the only two
+-- constructors, and the consequence that every row a table holds is one the
+-- lookup returns and none is empty (so the length counts tainted objects).
+#check @TaintEntries.canonical_erase
+#check @TaintEntries.noKey_erase_self
+#check @TaintTable.entries_live
+
 -- ============================================================================
 -- §2  Elaboration-time examples: each headline theorem applied
 -- ============================================================================
@@ -7727,22 +7742,23 @@ private def runDeclaredFootprintChecks : IO Unit := do
      have _o := @lockSet_tcbSetPriority_omits_endpointLock
      true)
   -- The bracket covers the OBJECT domain only; the scheduler domain, the
-  -- dynamic PIP chain, the queue-ownership protocol and (SM9.D audit) the
-  -- capability-transfer destination CNode are named as data with owners
-  -- rather than left implicit.
-  assertBool "the four uncovered lock domains are registered, each with an owner"
-    (decide (declaredFootprintUncoveredDomains.length = 4) &&
+  -- dynamic PIP chain, the queue-ownership protocol, (SM9.D audit) the
+  -- capability-transfer destination CNode and (SM9.D audit) the taint table's
+  -- per-key realisation are named as data with owners rather than left implicit.
+  assertBool "the five uncovered lock domains are registered, each with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 5) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
        = [UncoveredLockDomain.schedulerDomain, UncoveredLockDomain.dynamicPipChain,
           UncoveredLockDomain.queueOwnershipProtocol,
-          UncoveredLockDomain.capTransferReceiverCnode]) &&
+          UncoveredLockDomain.capTransferReceiverCnode,
+          UncoveredLockDomain.taintTablePerKeyStore]) &&
      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
   -- LOAD-BEARING NEGATIVE: completeness is quantified over the *constructors*,
   -- so a domain added without a registration cannot pass.
   assertBool "NEGATIVE: every uncovered-domain constructor is registered"
     (UncoveredLockDomain.all.all
        (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
-     decide (UncoveredLockDomain.all.length = 4))
+     decide (UncoveredLockDomain.all.length = 5))
   assertBool "the confinement core is carried through the declared-footprint witness (theorem)"
     (have _a := @suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore
      true)
