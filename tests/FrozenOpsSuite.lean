@@ -321,7 +321,9 @@ private def fo013_cspaceDelete : IO Unit := do
 /-- FO-014: frozenNotificationSignal — accumulate badge on idle notification -/
 private def fo014_notificationSignal : IO Unit := do
   let ntfn : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
-  let fst := mkFrozenState [(⟨5⟩, .notification ntfn)]
+  -- The signaller is a live TCB: the badge's provenance is read from it, so an
+  -- unresolvable one is refused rather than defaulted or invented (SM9.D audit).
+  let fst := mkFrozenState [(⟨5⟩, .notification ntfn), (⟨3⟩, .tcb (mkTcb 3))]
   match frozenNotificationSignal ⟨5⟩ ⟨3⟩ (Badge.ofNatMasked 0xFF) fst with
   | .ok ((), fst') =>
       match fst'.objects.get? ⟨5⟩ with
@@ -600,6 +602,23 @@ private def fo023_frozenDeliveryIsHonest : IO Unit := do
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
   expect "FO-023: an unresolvable reply source is refused, not defaulted"
     (match frozenEndpointReply ⟨99⟩ ⟨2⟩ rid msg fstRep with
+     | .ok _ => false
+     | .error e => e == .objectNotFound)
+  -- (c) The same for a signal's source, which has one failure mode more: an id
+  -- naming a live NON-TCB object would read that object's provenance, so the
+  -- snapshot could report a predecessor the badge never had.  Losing a link
+  -- makes the analysis miss a chain; inventing one makes it name a false origin.
+  let idle : Notification :=
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
+  let other : Notification :=
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
+  let fstSg := mkFrozenState [(⟨5⟩, .notification idle), (⟨8⟩, .notification other)]
+  expect "FO-023: an absent signaller is refused, not defaulted"
+    (match frozenNotificationSignal ⟨5⟩ ⟨7⟩ (Badge.ofNatMasked 9) fstSg with
+     | .ok _ => false
+     | .error e => e == .objectNotFound)
+  expect "FO-023: a signaller naming a live non-TCB object cannot invent a predecessor"
+    (match frozenNotificationSignal ⟨5⟩ ⟨8⟩ (Badge.ofNatMasked 9) fstSg with
      | .ok _ => false
      | .error e => e == .objectNotFound)
   IO.println "frozen-ops check passed [FO-023: a frozen delivery is honest]"

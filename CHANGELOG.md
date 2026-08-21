@@ -1,3 +1,30 @@
+## v0.33.72 — the signal's source, which the reply's fix should have covered
+
+`frozenNotificationSignal` never resolved its `signaller`, and both delivery
+branches feed it to `frozenTaintFlow`.  That is the same defect the previous cut
+fixed on `frozenEndpointReply`'s replier — a parameter this workstream added,
+whose whole purpose is to say where the content came from — caught one function
+short.  Fixing the symmetric case and stopping is how a class of defect survives
+being reported.
+
+It carries **one failure mode more** than the reply did, and it is the worse of
+the two.  `frozenTaintFlow` reads `declassificationTaint` at whatever `ObjId` it
+is handed: an absent signaller yields the total table's empty default, so the
+badge arrives having lost its predecessor; but an id naming some *other live
+object* yields that object's provenance, so the snapshot reports a predecessor
+the badge never had.  Losing a link makes the analysis miss a chain; inventing
+one makes it name a false origin.  A provenance table that can do either is not
+evidence, which is the standard the required frozen field was added to meet.
+
+The signaller must now resolve to a live TCB — checked after the notification is
+resolved, so a missing or non-notification target still answers `.objectNotFound`
+/ `.invalidCapability` on its own terms, and before either branch commits,
+because both apply the flow.  FO-023 pins both directions, including the
+non-TCB-object case that distinguishes inventing from losing; FO-014 signals
+from a live TCB, which is what it always meant.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md
+
 ## v0.33.71 — five review findings, four of them about a claim the code did not keep
 
 **The unchecked syscall entry now applies the taint seam.**  `syscallEntryChecked`

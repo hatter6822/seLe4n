@@ -255,6 +255,24 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
   fun st =>
     match st.objects.get? notificationId with
     | some (.notification ntfn) =>
+        -- **The signaller must resolve to a live TCB**, for the reason the
+        -- replier must in `frozenEndpointReply`, and with one failure mode more.
+        -- `frozenTaintFlow` reads `declassificationTaint` at whatever `ObjId` it
+        -- is handed: an absent signaller yields the total table's empty default,
+        -- so the badge reaches its destination having lost its predecessor —
+        -- but an id naming some *other* live object yields that object's
+        -- provenance, so the snapshot would report a predecessor the badge
+        -- never had.  Losing a link makes the analysis miss a chain; inventing
+        -- one makes it name the wrong origin, and a provenance table that can
+        -- do either is not evidence.
+        --
+        -- Checked after the notification is resolved, so a missing or
+        -- non-notification target still answers `.objectNotFound` /
+        -- `.invalidCapability` on its own terms, and before either delivery
+        -- branch commits, because both of them apply the flow.
+        match frozenLookupTcb st signaller with
+        | none => .error .objectNotFound
+        | some _ =>
         -- WS-RC R4.C: pop via `NoDupList.tail?`.
         match ntfn.waitingThreads.tail? with
         | some (waiter, rest) =>
