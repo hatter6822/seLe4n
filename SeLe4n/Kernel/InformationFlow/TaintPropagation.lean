@@ -771,40 +771,97 @@ def signalBypassedNotification (st : SystemState) (nid : SeLe4n.ObjId) :
   | .toWaiter _ => []
   | .stored => []
 
-/-- WS-SM SM9.D.13a (PR #873 round 7): **the target a bare downgrade released
-nothing into.**
+/-- WS-SM SM9.D.13a (PR #873 round 12): **is the downgrade's target holding
+tracked content?**
 
-`.declassify` carries no payload — it records that a downgrade of an object's
-label was authorized, and moves not one byte (`.declassifySignal` is the
-data-carrying one, added at SM9.C for exactly that reason).  So the origination's
-premise — "the target is where the released content now lives" — holds only when
-the target *is* holding content.  Against an idle transport it does not: a
-downgrade of an empty notification tagged it with a fresh, unsaturated identity,
-a later unrelated signal **joined** rather than replaced it, `.notificationWait`
-carried it to the receiver, and a downgrade behind that receiver reported a
-causal predecessor for content that never existed.
+The predicate the origination rests on, stated positively.  `.declassify` carries
+no payload — it records that a downgrade of an object's label was authorized, and
+moves not one byte (`.declassifySignal` is the data-carrying one, added at SM9.C
+for exactly that reason).  So the origination's premise — "the target is where the
+released content now lives" — holds only when the target *is* holding content, and
+this says when it is.
 
-That is a fictitious data dependency, which is the one thing SM9.D exists to
-remove: the syntactic detector it replaced fired on causally unrelated hops, and
-a tag invented here would put that failure back inside the causal check.  It is
-also not free — `maxTaintTags` is 8, so invented identities crowd out real ones
-and can saturate a value to `top`, which matches *every* later identity.
-
-**Emptiness must be positively established**, never assumed from an unmodelled
-shape.  Only the two content-carrying kinds are read: a notification is empty
-when it holds no pending badge, a TCB when it holds no pending message.  Every
-other target — including one whose object is absent, which the arm rejects
-anyway — keeps the origination, so this can only remove tags provably attached to
-nothing.  Bypassed, not cleared: an object that *is* holding content keeps both
-the content and its provenance, exactly as on the bound-signal path below. -/
-def declassifyBypassedTarget (st : SystemState) (targetId : SeLe4n.ObjId) :
-    List SeLe4n.ObjId :=
+Reads exactly the kinds `contentTrackedFields` names, because those are what this
+model calls content: a notification holds content when it has a pending badge, a
+TCB when it has a pending message.  **Everything else holds none**, and that is
+the answer rather than an omission — an endpoint carries no payload of its own
+(the message lives in the blocked sender's TCB), a CNode holds capabilities, a
+VSpace root holds mappings, an untyped holds unformed memory, and none of them is
+a channel this model tracks. -/
+def declassifyTargetHoldsContent (st : SystemState) (targetId : SeLe4n.ObjId) : Bool :=
   match st.getNotification? targetId with
-  | some ntfn => if ntfn.pendingBadge.isNone then [targetId] else []
+  | some ntfn => ntfn.pendingBadge.isSome
   | none =>
     match st.getTcb? (SeLe4n.ThreadId.ofNat targetId.toNat) with
-    | some tcb => if tcb.pendingMessage.isNone then [targetId] else []
-    | none => []
+    | some tcb => tcb.pendingMessage.isSome
+    | none => false
+
+/-- WS-SM SM9.D.13a (PR #873 rounds 7 and 12): **the target a bare downgrade
+released nothing into.**
+
+A downgrade that released nothing must originate nothing.  Otherwise the target
+takes a fresh, unsaturated identity, a later unrelated write **joins** rather than
+replaces it, a delivery carries it onward, and a downgrade behind that carrier
+reports a causal predecessor for content that never existed.  That is a
+fictitious data dependency, the one thing SM9.D exists to remove — the syntactic
+detector it replaced fired on causally unrelated hops, and a tag invented here
+puts that failure back inside the causal check.  It is not free either:
+`maxTaintTags` is 8, so invented identities crowd out real ones and can saturate a
+value to `top`, which matches *every* later identity.
+
+**The default is no-release, and that is the round-12 correction.**  This used to
+enumerate the emptiness cases it knew — an idle notification, a message-less TCB —
+and keep the origination for every other target, on the reasoning that a skip must
+be licensed by positively established emptiness.  That reasoning is right for a
+*clear*, where an unjustified removal loses real provenance; it is backwards for an
+origination, where the unjustified direction is the extra tag.  And the enumeration
+could only ever be a list of remembered kinds: `declassifyObjectFromCore` admits
+every object kind that exists, so a downgrade of an endpoint, CNode, VSpace root or
+untyped released nothing and originated anyway.
+
+Inverting it fixes that class rather than the three instances of it found so far:
+the release is established through `declassifyTargetHoldsContent`, and anything
+that predicate cannot establish is bypassed.  A kind this model does not track
+content for therefore bypasses **by construction**, and a future kind that does
+carry content is bypassed until someone adds it to `contentTrackedFields` — at
+which point `declassifyTargetHoldsContent_covers_every_tracked_field` stops
+elaborating and names the branch they owe.  The safe default is the one you get by
+forgetting.
+
+Bypassed, not cleared: an object that *is* holding content keeps both the content
+and its provenance, exactly as on the bound-signal path above. -/
+def declassifyBypassedTarget (st : SystemState) (targetId : SeLe4n.ObjId) :
+    List SeLe4n.ObjId :=
+  if declassifyTargetHoldsContent st targetId then [] else [targetId]
+
+/-- WS-SM SM9.D.13a (PR #873 round 12): **an object of a kind this model tracks no
+content for releases nothing.**
+
+The statement the enumerate-the-exceptions shape could not make.  Neither a
+notification nor a TCB at that id means no branch of
+`declassifyTargetHoldsContent` can establish a release, so the target is bypassed
+— endpoints, CNodes, VSpace roots, untypeds, sched contexts and replies included,
+and an absent object too (which the arm rejects anyway, so this only makes the
+plan agree with the transition). -/
+theorem declassifyBypassedTarget_of_untracked_kind (st : SystemState)
+    (targetId : SeLe4n.ObjId)
+    (hNtfn : st.getNotification? targetId = none)
+    (hTcb : st.getTcb? (SeLe4n.ThreadId.ofNat targetId.toNat) = none) :
+    declassifyBypassedTarget st targetId = [targetId] := by
+  simp [declassifyBypassedTarget, declassifyTargetHoldsContent, hNtfn, hTcb]
+
+/-- WS-SM SM9.D.13a (PR #873 round 12): **the reader covers every tracked content
+field**, which is what makes the no-release default safe rather than merely
+convenient.
+
+`declassifyTargetHoldsContent` establishes a release from two field reads.  If
+those were a *subset* of `contentTrackedFields` the default would silently drop
+real provenance — the under-approximation this module must never make — so the two
+have to stay in step.  Stated as an equality on the list rather than as prose:
+adding a third tracked field breaks this proof, and the fix is to give the
+predicate the matching branch, not to edit the expected list. -/
+theorem declassifyTargetHoldsContent_covers_every_tracked_field :
+    contentTrackedFields = [("TCB", "pendingMessage"), ("Notification", "pendingBadge")] := rfl
 
 /-- WS-SM SM9.D.13a (PR #873 round 7): the bare downgrade's bypassed list, at the
 operand the arm reads.
@@ -1836,7 +1893,7 @@ theorem declassify_idle_notification_bypassed (st : SystemState)
     (hIdle : ntfn.pendingBadge = none) :
     (syscallTaintPlan st tid decoded).noRelease = [nid] := by
   simp [syscallTaintPlan, contentFlowClass, hSid, declassifyBypassedTargets, hCap,
-    hTarget, declassifyBypassedTarget, hNtfn, hIdle]
+    hTarget, declassifyBypassedTarget, declassifyTargetHoldsContent, hNtfn, hIdle]
 
 /-- WS-SM SM9.D.13a (PR #873 round 7): **and a downgrade of a notification that
 IS holding a badge originates onto it**, which is what makes the theorem above a
@@ -1857,7 +1914,7 @@ theorem declassify_pending_notification_not_bypassed (st : SystemState)
     (hPending : ntfn.pendingBadge = some b) :
     (syscallTaintPlan st tid decoded).noRelease = [] := by
   simp [syscallTaintPlan, contentFlowClass, hSid, declassifyBypassedTargets, hCap,
-    hTarget, declassifyBypassedTarget, hNtfn, hPending]
+    hTarget, declassifyBypassedTarget, declassifyTargetHoldsContent, hNtfn, hPending]
 
 /-- WS-SM SM9.D.13a (PR #873 round 9): **a no-release event contributes nothing
 to the origin list** — neither its target pair nor its actor pair.

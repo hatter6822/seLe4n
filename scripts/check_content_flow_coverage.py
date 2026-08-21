@@ -198,6 +198,22 @@ SELF_TEST_ROGUE_MATCH = "cfPlantedMatchingTaintWriter"
 SELF_TEST_ROOT_HELPER = "cfPlantedPrivateArmHelper"
 SELF_TEST_ROOT_ARM = "cfSelfTestPrivateRootArm"
 
+# A fourth plant, for the spelling the detector stopped depending on (PR #873
+# round 12).  The matcher plant above destructures and then rebuilds with
+# `{ st with .. }`, so its unchanged fields are still projections; this one
+# rebuilds through `SystemState.mk` positionally, so they are the *bound
+# variables* of the match and no projection appears anywhere in the term.  That
+# is the shape the old `isUpdate` test read as a fresh literal, letting a second
+# direct writer pass the one-writer gate.  Generated from the structure's own
+# field list rather than hand-written: 26 fields is too many to keep in step by
+# hand, and a plant that silently stopped elaborating would take the witness
+# with it.
+SELF_TEST_ROGUE_REBUILD = "cfPlantedRebuildTaintWriter"
+
+# Definitions that build a `SystemState` from nothing rather than rewrite one.
+# See `cfStateConstructors` in the probe for why this is a named list.
+STATE_CONSTRUCTORS = ["SeLe4n.Model.instInhabitedSystemState"]
+
 SELF_TEST_ROGUE_SRC = f"""
 private def {SELF_TEST_ROGUE} (st : SeLe4n.Model.SystemState) :
     SeLe4n.Model.SystemState :=
@@ -234,6 +250,48 @@ FAIL_CLOSED_ARMS: set[tuple[str, str]] = {
 }
 
 SHAPE = os.path.join(REPO, "SeLe4n", "Kernel", "Architecture", "SyscallReturn.lean")
+STATE = os.path.join(REPO, "SeLe4n", "Model", "State.lean")
+
+
+def system_state_fields() -> list[str]:
+    """`SystemState`'s field names, in declaration order, read off its own source.
+
+    The rebuild plant needs every field positionally, and there are 26 of them.
+    Reading the list here keeps the plant in step with the structure: a field
+    added or reordered changes the plant with it, where a hand-written list would
+    quietly stop elaborating and take the witness with it.
+    """
+    src = code_view(STATE)
+    head = src.index("structure SystemState where")
+    fields: list[str] = []
+    for line in src[head:].split("\n")[1:]:
+        if not line.strip():
+            continue
+        if not line.startswith("  "):
+            break
+        m = re.match(r"^  ([A-Za-z][A-Za-z0-9_']*)\s*:", line)
+        if m:
+            fields.append(m.group(1))
+    if "declassificationTaint" not in fields:
+        raise RuntimeError(
+            f"parsed {len(fields)} SystemState fields with no `declassificationTaint`; "
+            "the structure's shape moved and the rebuild plant cannot be generated")
+    return fields
+
+
+def rebuild_plant_src() -> str:
+    """The destructured-rebuild plant, positional so no projection appears."""
+    fields = system_state_fields()
+    binders = ", ".join(f"f{i}" for i in range(len(fields)))
+    args = " ".join(
+        "t" if f == "declassificationTaint" else f"f{i}"
+        for i, f in enumerate(fields))
+    return f"""
+private def {SELF_TEST_ROGUE_REBUILD} (st : SeLe4n.Model.SystemState)
+    (t : SeLe4n.Kernel.TaintTable) : SeLe4n.Model.SystemState :=
+  match st with
+  | ⟨{binders}⟩ => SeLe4n.Model.SystemState.mk {args}
+"""
 
 PROBE = r"""
 import SeLe4n
@@ -506,44 +564,70 @@ private def cfClosure (env : Environment) (seeds : List Name) (depth : Nat) :
     NameSet × Bool :=
   cfClosureGo env seeds.toArray depth (seeds.foldl (fun s n => s.insert n) ({} : NameSet))
 
-/-- Is `e` a projection of *any* field of `structName`?  Both spellings, with
-the projection-function spelling checked against the structure's own field
-list rather than a namespace prefix — `SystemState.getTcb? st` lives in the
-namespace but is not a projection, and reading it as one would let an update
-masquerade as a fresh literal. -/
-private def cfIsAnyProjection (structName : Name) (fields : List Name) (e : Expr) : Bool :=
-  match e with
-  | .proj s _ _ => s == structName
-  | _ =>
-    match e.getAppFn with
-    | .const n _ => fields.any (fun f => n == structName ++ f)
-    | _ => false
+/-- **A direct write of one structure field**: the constructor applied with the
+watched field's argument not being that field of an incoming value.
 
-/-- A **direct write of one structure field in an update**: the constructor
-applied with (a) at least one *other* argument that is a projection of the same
-structure — which is what distinguishes `{ st with .. }` from a fresh literal —
-and (b) the watched field's argument not a projection.  Open or closed: a
-closed non-projection argument in an update is a silent *clear*, which for a
+PR #873 round 12: this used to require, additionally, that some *other* argument
+be a projection of the same structure -- the thing that distinguishes
+`{ st with .. }` from a fresh literal.  That is a test on the **spelling**, and a
+helper that pattern-matches the structure into its fields and rebuilds it with
+`mk` passes bound variables for the unchanged fields, not projections.  Its
+rewrite of the watched field was therefore read as a fresh literal and the
+one-writer gate saw nothing.  A detector for a laundering channel cannot be
+satisfied by choosing a different way to write the same term, so the spelling test
+is gone: every `mk` whose watched argument is not the corresponding projection is
+a write, whatever the rest of the application looks like.
+
+What that would otherwise sweep in -- genuine constructions, which write the field
+because they write *every* field -- is excluded before the walk by
+`cfRewritesState`, from a named list rather than from another reading of the body.
+
+Open or closed: a closed non-projection argument is a silent *clear*, which for a
 provenance table is a laundering enabler and must be as visible as a rewrite. -/
-private def cfUpdateWritesFieldHit (structName field : Name) (fields : List Name)
-    (idx : Nat) (e : Expr) : Bool :=
+private def cfWritesFieldHit (structName field : Name) (idx : Nat) (e : Expr) : Bool :=
   match e.getAppFn with
   | .const n _ =>
       if n == structName ++ `mk then
-        let args := e.getAppArgs
-        let isUpdate := (List.range args.size).any fun i =>
-          i != idx && match args[i]? with
-            | some a => cfIsAnyProjection structName fields a
-            | none => false
-        match args[idx]? with
+        match e.getAppArgs[idx]? with
         | none => false
-        | some a => isUpdate && !cfIsProjection structName field idx a
+        | some a => !cfIsProjection structName field idx a
       else false
   | _ => false
 
-private def cfUpdateWritesField (structName field : Name) (fields : List Name)
-    (idx : Nat) (e : Expr) : Bool :=
-  (cfAnySubterm (cfUpdateWritesFieldHit structName field fields idx) e {}).1
+private def cfWritesField (structName field : Name) (idx : Nat) (e : Expr) : Bool :=
+  (cfAnySubterm (cfWritesFieldHit structName field idx) e {}).1
+
+/-- Is `n` the structure's own generated machinery rather than something a human
+wrote?  `casesOn`/`recOn`/`brecOn` (`isAuxRecursor`), `noConfusion`
+(`isNoConfusion`) and the constructor itself all name `mk` by construction and
+write nothing.
+
+Decided on the **owner**, like `cfInspectable`: the constructor carries generated
+auxiliaries of its own (`SystemState.mk._flat_ctor` is a `defn`, not a `ctor`, so
+the sweep's `.defnInfo` filter does not skip it), and each is machinery for the
+same reason its owner is. -/
+private def cfStructureMachinery (env : Environment) (structName n : Name) : Bool :=
+  let owner := cfOwnerName (cfUserName n)
+  isAuxRecursor env owner || isNoConfusion env owner || owner == structName ++ `mk
+
+/-- Definitions that **construct** a `SystemState` rather than rewrite one.
+
+Dropping the spelling test means a constructor application counts as a write of
+every field, which is right for a rewrite and wrong for a construction: something
+has to build the first state, and it necessarily supplies the watched field.  The
+tree has exactly one such definition, so it is named rather than inferred — the
+`FAIL_CLOSED_ARMS` shape, and for the same reason.  A structural test was tried
+first and is the wrong tool: "takes a `SystemState` argument" reads false for
+every monadic definition, whose state argument lives inside `Kernel α`.
+
+The list carries bite in `--self-test`: an entry that stops being reported is a
+construction that became something else, or a name that no longer exists, and
+either way the exemption must not stay. -/
+private def cfStateConstructors : List Name := [@STATECTORS@]
+
+/-- **Can this constant rewrite an existing `structName`'s field?** -/
+private def cfRewritesState (env : Environment) (structName n : Name) : Bool :=
+  !cfStructureMachinery env structName n && !cfStateConstructors.contains n
 
 run_cmd do
   let env <- getEnv
@@ -560,19 +644,27 @@ run_cmd do
   | some fieldIdx =>
     let fieldWriters : List Name :=
       env.constants.fold (init := []) fun acc n ci =>
-        if !cfInspectable n then acc
+        if !cfInspectable n || !cfRewritesState env stateName n then acc
         else match ci with
           | .defnInfo di =>
               -- Prefilter on the constructor's presence: an Expr that never
               -- names `SystemState.mk` cannot apply it, and the used-constant
               -- set is cached where a structural walk is not.
               if di.value.getUsedConstants.contains (stateName ++ `mk)
-                  && cfUpdateWritesField stateName `declassificationTaint stateFields
-                      fieldIdx di.value then n :: acc
+                  && cfWritesField stateName `declassificationTaint fieldIdx di.value
+              then n :: acc
               else acc
           | _ => acc
     for w in fieldWriters do
       logInfo m!"CF_FIELD_WRITER {cfReportName w}"
+    -- The exempted constructions, reported so a stale entry is visible: a name
+    -- that no longer writes the field (or no longer exists) must leave the list.
+    for c in cfStateConstructors do
+      match env.find? c with
+      | some (.defnInfo di) =>
+          if cfWritesField stateName `declassificationTaint fieldIdx di.value then
+            logInfo m!"CF_STATE_CTOR {c}"
+      | _ => pure ()
   -- (C) every constant whose value names the taint-writing API.
   -- Only **definitions** are reported: a theorem naming the API states a
   -- property of it, and a property cannot move a field.  `ConstantInfo.defnInfo`
@@ -605,12 +697,12 @@ run_cmd do
     | none => {}
     | some auditIdx =>
       env.constants.fold (init := ({} : NameSet)) fun acc n ci =>
-        if !cfInspectable n then acc
+        if !cfInspectable n || !cfRewritesState env stateName n then acc
         else match ci with
           | .defnInfo di =>
               if di.value.getUsedConstants.contains (stateName ++ `mk)
-                  && cfUpdateWritesField stateName `declassificationAuditLog
-                      stateFields auditIdx di.value then acc.insert n
+                  && cfWritesField stateName `declassificationAuditLog auditIdx di.value
+              then acc.insert n
               else acc
           | _ => acc
   for w in auditWriters.toList do
@@ -830,12 +922,15 @@ def run_probe(roots: dict[str, set[str]], depth: int, channels,
         for arm, stems in sorted(roots.items()))
     quoted_api = ", ".join(f"`{n}" for n in sorted(DECLARED_TAINT_WRITERS))
     quoted_just = ", ".join(f"`{n}" for n in sorted(set(AUDIT_APPEND_EXEMPT.values())))
+    quoted_ctors = ", ".join(f"`{n}" for n in sorted(STATE_CONSTRUCTORS))
     src = (PROBE
            .replace("@CHANNELS@", quoted_channels)
            .replace("@ROOTS@", quoted_roots)
            .replace("@TAINTAPI@", quoted_api)
            .replace("@JUSTIFICATIONS@", quoted_just)
-           .replace("@PLANTED@", SELF_TEST_ROGUE_SRC if plant_rogue else "")
+           .replace("@STATECTORS@", quoted_ctors)
+           .replace("@PLANTED@",
+                    SELF_TEST_ROGUE_SRC + rebuild_plant_src() if plant_rogue else "")
            .replace("@DEPTH@", str(depth)))
     with tempfile.NamedTemporaryFile("w", suffix=".lean", delete=False) as fh:
         fh.write(src)
@@ -871,6 +966,7 @@ def parse(out: str):
     field_writers = set(re.findall(r"CF_FIELD_WRITER (\S+)", out))
     field_unresolved = bool(re.search(r"CF_FIELD_UNRESOLVED", out))
     noroot = set(re.findall(r"CF_NO_ROOT (\S+)", out))
+    state_ctors = set(re.findall(r"CF_STATE_CTOR (\S+)", out))
     truncated = set(re.findall(r"CF_TRUNCATED (\S+)", out))
     justified = set(re.findall(r"CF_JUSTIFIED (\S+)", out))
     audit_hits = {arm: int(n) for arm, n in re.findall(r"CF_AUDIT_ARM (\S+) (\d+)", out)}
@@ -878,7 +974,7 @@ def parse(out: str):
     for arm, name in re.findall(r"CF_AUDIT_HIT (\S+) (\S+)", out):
         audit_detail.setdefault(arm, []).append(name)
     return (hits, detail, writers, field_writers, field_unresolved, noroot, truncated,
-            audit_hits, audit_detail, justified)
+            audit_hits, audit_detail, justified, state_ctors)
 
 
 def main() -> int:
@@ -931,7 +1027,7 @@ def main() -> int:
 
     out = run_probe(roots, args.depth, channels, plant_rogue=args.self_test)
     (hits, detail, writers, field_writers, field_unresolved, noroot, truncated,
-     audit_hits, audit_detail, justified) = parse(out)
+     audit_hits, audit_detail, justified, state_ctors) = parse(out)
 
     failures: list[str] = []
 
@@ -1030,6 +1126,33 @@ def main() -> int:
             print("      replacement taint table.  A helper can hide a write behind a")
             print("      `match` if the sweep only reads unmatched bodies.")
             return 1
+        # …and the positional rebuild, where no projection appears at all.  The
+        # matcher plant above still writes `{ st with .. }` in its body, so it
+        # passed the old spelling test too; this one is the shape that did not,
+        # and it is the witness that the detector no longer depends on spelling.
+        rogue_rebuild = f"private@{SELF_TEST_ROGUE_REBUILD}"
+        if rogue_rebuild not in field_writers:
+            print("FAIL: --self-test — the direct-field-writer sweep did not detect")
+            print(f"      the planted PRIVATE writer `{SELF_TEST_ROGUE_REBUILD}`, which")
+            print("      destructures the `SystemState` and rebuilds it positionally")
+            print("      through `SystemState.mk`.  Its unchanged fields are bound")
+            print("      variables rather than projections, so a detector that infers")
+            print("      'this is an update' from a projection being present reads the")
+            print("      rewrite as a fresh literal — and a second direct writer passes")
+            print("      check (C2) by being spelled this way.")
+            return 1
+        # …and every named construction must still be one.  The exemption exists
+        # because a constructor application counts as a write of every field, so
+        # an entry that stops being reported is a name that no longer builds a
+        # state — a stale exemption that would hide the next writer spelled that
+        # way.
+        stale = [c for c in STATE_CONSTRUCTORS if c not in state_ctors]
+        if stale:
+            print("FAIL: --self-test — STATE_CONSTRUCTORS names definitions that no")
+            print(f"      longer write `declassificationTaint`: {', '.join(stale)}.")
+            print("      An exemption that has stopped applying must be deleted, not")
+            print("      carried: it exempts nothing and hides whatever takes the name.")
+            return 1
         if rogue not in writers:
             print("FAIL: --self-test — the API-naming sweep did not detect the")
             print(f"      planted PRIVATE consumer `{SELF_TEST_ROGUE}`, which calls")
@@ -1053,8 +1176,9 @@ def main() -> int:
             return 1
         print(f"PASS: --self-test — the planted channel was detected on "
               f"{len(planted)} inert arm(s); both sweeps detected the declared "
-              f"writer, the planted private rogue writer and the one that hides "
-              f"its rebuild behind a `match`; root resolution reached a PRIVATE "
+              f"writer, the planted private rogue writer, the one that hides its "
+              f"rebuild behind a `match` and the one that rebuilds positionally "
+              f"with no projection anywhere; root resolution reached a PRIVATE "
               f"arm helper; `.receive` was checked in each of its dispatchers "
               f"separately; the audit-trail reach found the two recording arms.")
         return 0

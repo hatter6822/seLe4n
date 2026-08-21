@@ -1,3 +1,59 @@
+## v0.33.87 — two defaults inverted, because a list of exceptions is a list of what someone thought of
+
+Round 12 found a downgrade of an endpoint, CNode, VSpace root or untyped
+originating tags on both the target and the actor while releasing nothing, and a
+field-write detector that a positional rebuild walks straight past.  Different
+files, same shape: a check that enumerates the cases it knows, and is therefore
+wrong about the next one.
+
+**`.declassify` originated unless it recognised the target as empty.**
+`declassifyBypassedTarget` read the two content-carrying kinds and kept the
+origination for everything else, on the reasoning that a skip must be licensed by
+positively established emptiness.  That reasoning is right for a *clear*, where an
+unjustified removal loses real provenance.  It is backwards for an origination,
+where the unjustified direction is the extra tag — and `declassifyObjectFromCore`
+admits every object kind that exists, so every kind nobody enumerated originated a
+causal predecessor for content that never existed.  Rounds 7 and 9 were the first
+two instances; this is the third, which is why the shape rather than the instance
+is what changed.
+
+The release is now established through `declassifyTargetHoldsContent` and the
+bypass is its complement.  A kind this model tracks no content for cannot satisfy
+the predicate, so it bypasses **by construction** — and a future kind that does
+carry content bypasses until someone adds it to `contentTrackedFields`, at which
+point `declassifyTargetHoldsContent_covers_every_tracked_field` stops elaborating
+and names the branch they owe.  The safe default is the one you get by forgetting.
+`declassifyBypassedTarget_of_untracked_kind` is the statement the old shape could
+not make.
+
+**The gate's detector recognised a spelling, not a write.**  `cfUpdateWritesField`
+required some *other* constructor argument to be a projection — what distinguishes
+`{ st with .. }` from a fresh literal.  A helper that destructures the
+`SystemState` and rebuilds it positionally passes bound variables for the
+unchanged fields, so its rewrite read as a fresh literal and the one-writer gate
+saw nothing.  A detector for a laundering channel cannot be satisfied by choosing
+a different way to write the same term, so the spelling test is gone: every `mk`
+whose watched argument is not the corresponding projection is a write.
+
+What that would otherwise sweep in is constructions, which write the field because
+they write every field.  Measured rather than assumed: the tree has five, four of
+them the structure's own generated machinery (now filtered on the *owner*, since
+`SystemState.mk._flat_ctor` is a `defn` the `.defnInfo` filter does not skip) and
+one real `Inhabited` instance, named in `STATE_CONSTRUCTORS` with the
+`FAIL_CLOSED_ARMS` bite — an entry that stops being reported must be deleted.  A
+structural test was tried first and rejected on evidence: "takes a `SystemState`
+argument" reads false for every monadic definition, whose state lives inside
+`Kernel α`.
+
+The self-test gains the plant that proves it.  The existing matcher witness still
+wrote `{ st with .. }` in its body, so it passed the old detector too; the new one
+rebuilds positionally with no projection anywhere, and it is **generated from the
+structure's own field list** — 26 fields is too many to keep in step by hand, and
+a plant that silently stopped elaborating would take the witness with it.
+Verified against the previous detector: it is missed there and caught here.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md
+
 ## v0.33.86 — the invariant said half of what it meant, and every consumer paid for the other half
 
 Round 11 reported that the live `endpointReceiveDual` reads a queued sender's

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm9d-causal-declassification-ppwxud",
-      "commit_sha": "a8a0c8a0674e32a4bb03f4506e20307839922d12",
-      "tree_sha": "092204a59825b0f4fb6f1a1aef4b4fef1305044a",
-      "committed_at_utc": "2026-08-21T19:15:01+00:00"
+      "commit_sha": "b9b83b5feeb0c4a71ff278a6d73aa320658ba796",
+      "tree_sha": "649e4b2d1205fea83a87fef6cdface1e2a3c9214",
+      "committed_at_utc": "2026-08-21T19:16:03+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f94e8bdd856033dbdb235054c270739a7d99731d42446a71853d57d07ca88476"
+    "source_digest": "a9c0e20aa2257096fc8562d0a79e27fae8f4f06366ebe5b89c2b040f57b6c12c"
   },
   "summary": {
     "module_count": 354,
-    "declaration_count": 16836
+    "declaration_count": 16839
   },
   "readme_sync": {
-    "version": "0.33.86",
+    "version": "0.33.87",
     "lean_toolchain": "v4.28.0",
     "production_files": 285,
-    "production_loc": 285022,
+    "production_loc": 285079,
     "test_files": 69,
     "test_loc": 62782,
-    "proved_theorem_lemma_decls": 9567,
+    "proved_theorem_lemma_decls": 9569,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -123134,7 +123134,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.TaintPropagation",
       "path": "SeLe4n/Kernel/InformationFlow/TaintPropagation.lean",
-      "declaration_count": 106,
+      "declaration_count": 109,
       "declarations": [
         {
           "kind": "namespace",
@@ -123551,8 +123551,8 @@
         },
         {
           "kind": "def",
-          "name": "declassifyBypassedTarget",
-          "line": 800,
+          "name": "declassifyTargetHoldsContent",
+          "line": 791,
           "called": [
             "ObjId",
             "SystemState",
@@ -123566,8 +123566,44 @@
         },
         {
           "kind": "def",
+          "name": "declassifyBypassedTarget",
+          "line": 833,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "declassifyTargetHoldsContent",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "declassifyBypassedTarget_of_untracked_kind",
+          "line": 846,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "declassifyBypassedTarget",
+            "declassifyTargetHoldsContent",
+            "getNotification",
+            "getTcb",
+            "none",
+            "ofNat",
+            "st",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "declassifyTargetHoldsContent_covers_every_tracked_field",
+          "line": 863,
+          "called": [
+            "contentTrackedFields"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "declassifyBypassedTargets",
-          "line": 816,
+          "line": 873,
           "called": [
             "ObjId",
             "SyscallDecodeResult",
@@ -123581,7 +123617,7 @@
         {
           "kind": "theorem",
           "name": "declassifyBypassedTargets_of_ne",
-          "line": 827,
+          "line": 884,
           "called": [
             "SyscallDecodeResult",
             "SystemState",
@@ -123593,7 +123629,7 @@
         {
           "kind": "def",
           "name": "contentFlowBypassed",
-          "line": 834,
+          "line": 891,
           "called": [
             "ObjId",
             "SyscallDecodeResult",
@@ -123609,7 +123645,7 @@
         {
           "kind": "def",
           "name": "contentFlowClears",
-          "line": 868,
+          "line": 925,
           "called": [
             "ObjId",
             "SyscallDecodeResult",
@@ -123626,7 +123662,7 @@
         {
           "kind": "def",
           "name": "retypeClearedObjects",
-          "line": 884,
+          "line": 941,
           "called": [
             "ObjId",
             "SyscallDecodeResult",
@@ -123636,7 +123672,7 @@
         {
           "kind": "def",
           "name": "syscallTaintPlan",
-          "line": 890,
+          "line": 947,
           "called": [
             "SyscallDecodeResult",
             "SystemState",
@@ -123656,7 +123692,7 @@
         {
           "kind": "theorem",
           "name": "syscallTaintPlan_inert",
-          "line": 925,
+          "line": 982,
           "called": [
             "SyscallDecodeResult",
             "SystemState",
@@ -123670,7 +123706,7 @@
         {
           "kind": "theorem",
           "name": "syscallTaintPlan_eq_inert",
-          "line": 934,
+          "line": 991,
           "called": [
             "SyscallDecodeResult",
             "SystemState",
@@ -123686,7 +123722,7 @@
         {
           "kind": "theorem",
           "name": "syscallTaintPlan_originates",
-          "line": 944,
+          "line": 1001,
           "called": [
             "SyscallDecodeResult",
             "SystemState",
@@ -123700,7 +123736,7 @@
         {
           "kind": "def",
           "name": "applyTaintFlow",
-          "line": 957,
+          "line": 1014,
           "called": [
             "TaintFlowEdge",
             "TaintTable",
@@ -123710,7 +123746,7 @@
         {
           "kind": "def",
           "name": "applyTaintClears",
-          "line": 962,
+          "line": 1019,
           "called": [
             "ObjId",
             "TaintTable",
@@ -123720,7 +123756,7 @@
         {
           "kind": "def",
           "name": "newlyRecordedEvents",
-          "line": 977,
+          "line": 1034,
           "called": [
             "DeclassificationEvent",
             "SystemState",
@@ -123730,7 +123766,7 @@
         {
           "kind": "theorem",
           "name": "newlyRecordedEvents_append",
-          "line": 987,
+          "line": 1044,
           "called": [
             "DeclassificationAuditLog",
             "SystemState",
@@ -123740,7 +123776,7 @@
         {
           "kind": "theorem",
           "name": "newlyRecordedEvents_drained",
-          "line": 1003,
+          "line": 1060,
           "called": [
             "SystemState",
             "newlyRecordedEvents"
@@ -123749,7 +123785,7 @@
         {
           "kind": "theorem",
           "name": "newlyRecordedEvents_of_drop",
-          "line": 1017,
+          "line": 1074,
           "called": [
             "SystemState",
             "newlyRecordedEvents",
@@ -123759,7 +123795,7 @@
         {
           "kind": "theorem",
           "name": "newlyRecordedEvents_auditDrain",
-          "line": 1042,
+          "line": 1099,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -123776,7 +123812,7 @@
         {
           "kind": "def",
           "name": "originationTags",
-          "line": 1070,
+          "line": 1127,
           "called": [
             "DeclassificationEvent",
             "ObjId",
@@ -123787,7 +123823,7 @@
         {
           "kind": "def",
           "name": "applyOrigination",
-          "line": 1077,
+          "line": 1134,
           "called": [
             "ObjId",
             "TaintTable",
@@ -123798,7 +123834,7 @@
         {
           "kind": "def",
           "name": "planOriginationTags",
-          "line": 1096,
+          "line": 1153,
           "called": [
             "ObjId",
             "SystemState",
@@ -123810,7 +123846,7 @@
         {
           "kind": "theorem",
           "name": "planOriginationTags_of_originates",
-          "line": 1102,
+          "line": 1159,
           "called": [
             "SystemState",
             "TaintPlan",
@@ -123822,7 +123858,7 @@
         {
           "kind": "theorem",
           "name": "planOriginationTags_of_not_originates",
-          "line": 1110,
+          "line": 1167,
           "called": [
             "SystemState",
             "TaintPlan",
@@ -123832,7 +123868,7 @@
         {
           "kind": "theorem",
           "name": "planOriginationTags_eq_of_no_events",
-          "line": 1122,
+          "line": 1179,
           "called": [
             "SystemState",
             "TaintPlan",
@@ -123844,7 +123880,7 @@
         {
           "kind": "def",
           "name": "applySyscallTaint",
-          "line": 1159,
+          "line": 1216,
           "called": [
             "SystemState",
             "TaintPlan",
@@ -123859,7 +123895,7 @@
         {
           "kind": "theorem",
           "name": "applySyscallTaint_frame",
-          "line": 1184,
+          "line": 1241,
           "called": [
             "SystemState",
             "TaintPlan",
@@ -123875,7 +123911,7 @@
         {
           "kind": "theorem",
           "name": "applySyscallTaint_objects",
-          "line": 1200,
+          "line": 1257,
           "called": [
             "SystemState",
             "TaintPlan",
@@ -123885,7 +123921,7 @@
         {
           "kind": "theorem",
           "name": "applySyscallTaint_scheduler",
-          "line": 1203,
+          "line": 1260,
           "called": [
             "SystemState",
             "TaintPlan",
@@ -123895,7 +123931,7 @@
         {
           "kind": "theorem",
           "name": "applySyscallTaint_machine",
-          "line": 1206,
+          "line": 1263,
           "called": [
             "SystemState",
             "TaintPlan",
@@ -123905,7 +123941,7 @@
         {
           "kind": "theorem",
           "name": "applySyscallTaint_declassificationAuditLog",
-          "line": 1209,
+          "line": 1266,
           "called": [
             "SystemState",
             "TaintPlan",
@@ -123915,7 +123951,7 @@
         {
           "kind": "theorem",
           "name": "applySyscallTaint_declassificationAuditEpoch",
-          "line": 1214,
+          "line": 1271,
           "called": [
             "SystemState",
             "TaintPlan",
@@ -123925,7 +123961,7 @@
         {
           "kind": "theorem",
           "name": "applySyscallTaint_declassificationRefusals",
-          "line": 1219,
+          "line": 1276,
           "called": [
             "SystemState",
             "TaintPlan",
@@ -123935,7 +123971,7 @@
         {
           "kind": "theorem",
           "name": "applySyscallTaint_inert",
-          "line": 1233,
+          "line": 1290,
           "called": [
             "ObjId",
             "SystemState",
@@ -123952,7 +123988,7 @@
         {
           "kind": "theorem",
           "name": "applyTaintFlow_not_mem",
-          "line": 1254,
+          "line": 1311,
           "called": [
             "ObjId",
             "TaintFlowEdge",
@@ -123966,7 +124002,7 @@
         {
           "kind": "theorem",
           "name": "applyTaintClears_not_mem",
-          "line": 1270,
+          "line": 1327,
           "called": [
             "ObjId",
             "TaintTable",
@@ -123979,7 +124015,7 @@
         {
           "kind": "theorem",
           "name": "applyOrigination_not_mem",
-          "line": 1284,
+          "line": 1341,
           "called": [
             "ObjId",
             "TaintTable",
@@ -123993,7 +124029,7 @@
         {
           "kind": "theorem",
           "name": "applyTaintClears_empty_of_mem_or_empty",
-          "line": 1301,
+          "line": 1358,
           "called": [
             "ObjId",
             "TaintTable",
@@ -124008,7 +124044,7 @@
         {
           "kind": "theorem",
           "name": "applySyscallTaint_cleared_empty",
-          "line": 1335,
+          "line": 1392,
           "called": [
             "ObjId",
             "SystemState",
@@ -124028,7 +124064,7 @@
         {
           "kind": "theorem",
           "name": "contains_applyTaintFlow_mono",
-          "line": 1363,
+          "line": 1420,
           "called": [
             "ObjId",
             "TaintFlowEdge",
@@ -124042,7 +124078,7 @@
         {
           "kind": "theorem",
           "name": "contains_applyTaintFlow_of_mem",
-          "line": 1379,
+          "line": 1436,
           "called": [
             "TaintFlowEdge",
             "TaintTable",
@@ -124056,7 +124092,7 @@
         {
           "kind": "theorem",
           "name": "contains_applyTaintClears_of_not_mem",
-          "line": 1395,
+          "line": 1452,
           "called": [
             "ObjId",
             "TaintTable",
@@ -124069,7 +124105,7 @@
         {
           "kind": "theorem",
           "name": "contains_applyOrigination_mono",
-          "line": 1411,
+          "line": 1468,
           "called": [
             "ObjId",
             "TaintTable",
@@ -124083,7 +124119,7 @@
         {
           "kind": "theorem",
           "name": "contains_applyOrigination_of_mem",
-          "line": 1424,
+          "line": 1481,
           "called": [
             "ObjId",
             "TaintTable",
@@ -124099,7 +124135,7 @@
         {
           "kind": "theorem",
           "name": "taintPropagation_edge",
-          "line": 1453,
+          "line": 1510,
           "called": [
             "SystemState",
             "TaintFlowEdge",
@@ -124119,7 +124155,7 @@
         {
           "kind": "theorem",
           "name": "taintOrigination_target",
-          "line": 1488,
+          "line": 1545,
           "called": [
             "DeclassificationEvent",
             "SystemState",
@@ -124137,7 +124173,7 @@
         {
           "kind": "theorem",
           "name": "taintOrigination_actor",
-          "line": 1509,
+          "line": 1566,
           "called": [
             "DeclassificationEvent",
             "SystemState",
@@ -124156,7 +124192,7 @@
         {
           "kind": "theorem",
           "name": "mem_movesContent_edges",
-          "line": 1526,
+          "line": 1583,
           "called": [
             "SyscallDecodeResult",
             "SystemState",
@@ -124172,7 +124208,7 @@
         {
           "kind": "theorem",
           "name": "taintPropagation_send_to_receiver",
-          "line": 1551,
+          "line": 1608,
           "called": [
             "Capability",
             "ObjId",
@@ -124201,7 +124237,7 @@
         {
           "kind": "theorem",
           "name": "taintPropagation_receive_from_sender",
-          "line": 1575,
+          "line": 1632,
           "called": [
             "Capability",
             "ObjId",
@@ -124230,7 +124266,7 @@
         {
           "kind": "theorem",
           "name": "taintPropagation_reply_to_caller",
-          "line": 1625,
+          "line": 1682,
           "called": [
             "Capability",
             "ReplyId",
@@ -124257,7 +124293,7 @@
         {
           "kind": "theorem",
           "name": "taintPropagation_replyRecv_reply_to_prevCaller",
-          "line": 1647,
+          "line": 1704,
           "called": [
             "Capability",
             "ObjId",
@@ -124291,7 +124327,7 @@
         {
           "kind": "theorem",
           "name": "taintPropagation_signal_to_notification",
-          "line": 1681,
+          "line": 1738,
           "called": [
             "Capability",
             "ObjId",
@@ -124321,7 +124357,7 @@
         {
           "kind": "theorem",
           "name": "taintPropagation_wait_from_notification",
-          "line": 1709,
+          "line": 1766,
           "called": [
             "Capability",
             "ObjId",
@@ -124347,7 +124383,7 @@
         {
           "kind": "theorem",
           "name": "waitClearsNotificationTaint",
-          "line": 1742,
+          "line": 1799,
           "called": [
             "Capability",
             "ObjId",
@@ -124368,7 +124404,7 @@
         {
           "kind": "theorem",
           "name": "retypeClearsTaint",
-          "line": 1761,
+          "line": 1818,
           "called": [
             "LifecycleRetypeArgs",
             "SyscallDecodeResult",
@@ -124385,7 +124421,7 @@
         {
           "kind": "theorem",
           "name": "retypedObject_taint_empty",
-          "line": 1775,
+          "line": 1832,
           "called": [
             "ObjId",
             "SystemState",
@@ -124398,7 +124434,7 @@
         {
           "kind": "theorem",
           "name": "signalDelivery_bound_leaves_notification_alone",
-          "line": 1791,
+          "line": 1848,
           "called": [
             "ObjId",
             "SystemState",
@@ -124414,7 +124450,7 @@
         {
           "kind": "theorem",
           "name": "signalDelivery_waiter_empties_notification",
-          "line": 1804,
+          "line": 1861,
           "called": [
             "ObjId",
             "SystemState",
@@ -124430,7 +124466,7 @@
         {
           "kind": "theorem",
           "name": "declassify_idle_notification_bypassed",
-          "line": 1829,
+          "line": 1886,
           "called": [
             "Capability",
             "Notification",
@@ -124441,6 +124477,7 @@
             "contentFlowClass",
             "declassifyBypassedTarget",
             "declassifyBypassedTargets",
+            "declassifyTargetHoldsContent",
             "getNotification",
             "none",
             "st",
@@ -124451,7 +124488,7 @@
         {
           "kind": "theorem",
           "name": "declassify_pending_notification_not_bypassed",
-          "line": 1850,
+          "line": 1907,
           "called": [
             "Badge",
             "Capability",
@@ -124463,6 +124500,7 @@
             "contentFlowClass",
             "declassifyBypassedTarget",
             "declassifyBypassedTargets",
+            "declassifyTargetHoldsContent",
             "getNotification",
             "st",
             "syscallOperandCap",
@@ -124472,7 +124510,7 @@
         {
           "kind": "theorem",
           "name": "originationTags_cons_noRelease",
-          "line": 1876,
+          "line": 1933,
           "called": [
             "DeclassificationEvent",
             "ObjId",
@@ -124482,7 +124520,7 @@
         {
           "kind": "theorem",
           "name": "originationTags_cons_release",
-          "line": 1888,
+          "line": 1945,
           "called": [
             "DeclassificationEvent",
             "ObjId",
@@ -124493,7 +124531,7 @@
         {
           "kind": "theorem",
           "name": "bypassedObject_not_originated",
-          "line": 1904,
+          "line": 1961,
           "called": [
             "ObjId",
             "SystemState",
@@ -124513,7 +124551,7 @@
         {
           "kind": "theorem",
           "name": "staleTaint_is_not_saturation",
-          "line": 1955,
+          "line": 2012,
           "called": [
             "ObjId",
             "TaintTable",
@@ -124527,7 +124565,7 @@
         {
           "kind": "def",
           "name": "taintFlowSinks",
-          "line": 2032,
+          "line": 2089,
           "called": [
             "ObjId",
             "TaintPlan"
@@ -124536,7 +124574,7 @@
         {
           "kind": "def",
           "name": "taintOriginationKeys",
-          "line": 2056,
+          "line": 2113,
           "called": [
             "ObjId",
             "SystemState",
@@ -124547,7 +124585,7 @@
         {
           "kind": "def",
           "name": "taintWriteKeys",
-          "line": 2061,
+          "line": 2118,
           "called": [
             "ObjId",
             "SystemState",
@@ -124559,7 +124597,7 @@
         {
           "kind": "theorem",
           "name": "taintOriginationKeys_nil_of_no_events",
-          "line": 2067,
+          "line": 2124,
           "called": [
             "SystemState",
             "TaintPlan",
@@ -124572,7 +124610,7 @@
         {
           "kind": "theorem",
           "name": "taintOriginationKeys_nil_of_not_originates",
-          "line": 2075,
+          "line": 2132,
           "called": [
             "SystemState",
             "TaintPlan",
@@ -124583,7 +124621,7 @@
         {
           "kind": "theorem",
           "name": "applySyscallTaint_frame_off_writeKeys",
-          "line": 2087,
+          "line": 2144,
           "called": [
             "ObjId",
             "SystemState",
@@ -124606,7 +124644,7 @@
         {
           "kind": "theorem",
           "name": "taintWriteKeys_disjoint_updates_independent",
-          "line": 2130,
+          "line": 2187,
           "called": [
             "ObjId",
             "SystemState",
@@ -124620,7 +124658,7 @@
         {
           "kind": "theorem",
           "name": "taintWriteKeys_disjoint_order_independent",
-          "line": 2155,
+          "line": 2212,
           "called": [
             "ObjId",
             "SystemState",
@@ -124634,7 +124672,7 @@
         {
           "kind": "theorem",
           "name": "taintWriteKeys_of_no_events",
-          "line": 2191,
+          "line": 2248,
           "called": [
             "SystemState",
             "TaintPlan",
@@ -124647,7 +124685,7 @@
         {
           "kind": "theorem",
           "name": "taintWriteKeys_inert",
-          "line": 2201,
+          "line": 2258,
           "called": [
             "SystemState",
             "TaintPlan.inert",
@@ -124660,7 +124698,7 @@
         {
           "kind": "theorem",
           "name": "applySyscallTaint_preserves_projection",
-          "line": 2216,
+          "line": 2273,
           "called": [
             "IfObserver",
             "Kernel",

@@ -3968,6 +3968,19 @@ run_check "INVARIANT" rg -n 'blockedThreadPendingMessageChecks' SeLe4n/Testing/I
 run_check "INVARIANT" rg -n 'headTcb\.pendingMessage\.isNone' SeLe4n/Kernel/IPC/DualQueue/Core.lean
 run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_send_sender_carries_message' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n 'chain12fReceiveRefusesMessagelessParkedSender' tests/OperationChainSuite.lean
+# PR #873 round 12: two defaults inverted, for the same reason each time -- a set
+# of remembered exceptions is a list of the cases someone thought of.  The
+# downgrade's origination is now established from the target actually holding
+# tracked content, so a kind this model tracks none for bypasses by construction;
+# and the field-write detector no longer infers "this is an update" from a
+# projection being present, so no spelling of the rebuild can hide a second
+# writer.  The negatives pin that neither default comes back.
+run_check "INVARIANT" rg -n '^def declassifyTargetHoldsContent' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem declassifyBypassedTarget_of_untracked_kind' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem declassifyTargetHoldsContent_covers_every_tracked_field' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'cfPlantedRebuildTaintWriter' scripts/check_content_flow_coverage.py
+run_check "INVARIANT" rg -n 'STATE_CONSTRUCTORS' scripts/check_content_flow_coverage.py
+run_negative_check "INVARIANT" rg -n 'let isUpdate' scripts/check_content_flow_coverage.py
 # And the other half of the same relation, which the executable mirror exposed: a
 # receive that blocks clears the message it is not going to deliver.  The negative
 # is load-bearing -- a bare `storeTcbIpcState` there is the shape that carried a
@@ -4132,11 +4145,13 @@ run_check "INVARIANT" rg -n 'taintTablePerKeyStore' SeLe4n/Kernel/InformationFlo
 run_check "INVARIANT" rg -n '\(\.taintTablePerKeyStore, "' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # SM9.D.7 (audit): the gate's direct-field-writer sweep — check (C) names only
 # constants that USE the taint API; (C2) scans every definition for a direct
-# `{ st with declassificationTaint := .. }` update, and the self-test asserts
-# the sweep detects the one declared writer so blindness cannot pass.
+# write of `declassificationTaint` through the structure's constructor, in any
+# spelling (PR #873 round 12 dropped the `{ st with .. }` test that a positional
+# rebuild walked past), and the self-test asserts the sweep detects the one
+# declared writer so blindness cannot pass.
 run_check "BUILD" rg -n 'DECLARED_FIELD_WRITERS' scripts/check_content_flow_coverage.py
 run_check "BUILD" rg -n 'CF_FIELD_WRITER' scripts/check_content_flow_coverage.py
-run_check "BUILD" rg -n 'cfUpdateWritesField' scripts/check_content_flow_coverage.py
+run_check "BUILD" rg -n 'cfWritesField' scripts/check_content_flow_coverage.py
 # The rule inventory records the NEW claim in place of the retired one; the
 # count is unchanged, so the replacement is 1:1 rather than an addition.
 run_check "INVARIANT" rg -n 'chainLinkageIsCausal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
