@@ -1,3 +1,49 @@
+## v0.33.76 — a kind inventory checked against one argument out of many
+
+**`lockSet_consistent_declassify` proved consistency for the capless shape and
+nothing else.**  SM9.D.17 gave `lockSet_declassify` a
+`targetLock : Option LockId` so the origination key rides the target object's own
+lock — the whole point of §3d, which keeps `stateLevelLock` off the content path.
+The consistency theorem was never given that argument, so it elaborated at the
+default `none` and said nothing about the shape a fine-lock consumer actually
+acquires.
+
+Meanwhile `permittedKinds .declassify` listed `[.tcb, .cnode, .objStore]` while
+`permittedKinds`' own contract is "the kinds that *could* appear over all
+argument values, including all possible `Option` cases".  The live arm hands
+`cap.target = .object targetId` to `declassifyObjectFromCore`, which commits a
+`storeObject` at that id; nothing narrows the object's type.  So a downgrade of
+an endpoint, a notification, a reply, a scheduling context, a VSpace root, an
+untyped region or a page frame put that kind into the resolved footprint —
+outside the inventory that downstream deadlock and consistency reasoning reads.
+
+Both halves are fixed together, because either alone is the wrong shape.  The
+inventory now admits every kind, with
+`permittedKinds_declassify_admits_every_kind` stating that as a checked value
+rather than as a comment; and `lockSet_consistent_declassify` takes the
+`targetLock` and holds for **every** one of them.
+
+Admitting every kind would give up the tightness the inventory exists for, so it
+does not: `lockSet_declassify_nonTarget_kinds` holds the members the transition
+*itself* takes to exactly `[.tcb, .cnode, .objStore]` — the caller's TCB, the
+caller's CSpace root, and the state-level lock the trail append needs.  A fourth
+member there is a failure even though the widened consistency theorem would still
+hold of it.
+
+The by-kind ladder is unaffected: acquisition order is by `LockKind.level`, a
+total order over all ten kinds, so admitting more kinds cannot introduce a cycle.
+
+`tests/LockSetSuite.lean` gains the value pin for `.declassify` and — noticed
+while writing it — for `.declassifySignal`, `.auditRead` and `.auditDrain`, none
+of which had one.
+
+Also: the unused `simp only [Option.map]` in
+`lockSet_declassifySignal_originationKeys_write_mem` is gone.  It was the tree's
+only build warning; both `lake build` and `lake build SeLe4n.Platform.Staged` are
+now warning-free.
+
+Refs: docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md
+
 ## v0.33.75 — the seam an integrator never reached, and the walk every syscall paid for
 
 **The taint seam sat one layer above the function the docs recommend.**

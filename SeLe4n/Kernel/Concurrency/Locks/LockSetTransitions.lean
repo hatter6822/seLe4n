@@ -886,7 +886,6 @@ theorem lockSet_declassifySignal_originationKeys_write_mem
       ∈ (lockSet_declassifySignal callerTid cnodeRootObjId notificationObjId
           waiterTid boundEndpoint boundTcb).pairs := by
   unfold lockSet_declassifySignal lockSetExtendOpt
-  simp only [Option.map]
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- WS-SM SM9.A.12 (PR #870 round 7): the drain's trail read-modify-write is a
@@ -1597,15 +1596,35 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
       [.tcb, .cnode, .vspaceRoot]
   -- WS-SM SM8.C.9: `.declassify` reads the caller TCB (to resolve the running
   -- subject's domain) and the caller's CNode (capability resolution), and its
-  -- only write is `SystemState.declassificationAuditLog` — a state-level
-  -- field, declared since PR #870 round 7 through the `.objStore` singleton
+  -- only state-level write is `SystemState.declassificationAuditLog` —
+  -- declared since PR #870 round 7 through the `.objStore` singleton
   -- (`stateLevelLock`, write mode): the trail append must exclude against a
-  -- concurrent `.auditDrain`'s read-modify-write.  The target object is
-  -- touched by a single kind-tag lookup with no field access, which the same
-  -- state-level member covers; `.serviceRegister` takes an `.endpoint` lock
-  -- because it inspects the object's *contents*, which this does not.
+  -- concurrent `.auditDrain`'s read-modify-write.
+  --
+  -- **And every remaining kind, because the target can be any object.**  The
+  -- live arm takes `cap.target = .object targetId` and hands that id to
+  -- `declassifyObjectFromCore`, which commits a `storeObject` at it; nothing
+  -- narrows the object's *type*.  SM9.D.17 then gave `lockSet_declassify` a
+  -- `targetLock : Option LockId` for the origination key, and a `LockId` is
+  -- `⟨kind, objId⟩` with the kind read off the state — so a downgrade of an
+  -- endpoint, a notification, a reply, a scheduling context, a VSpace root, an
+  -- untyped region or a page frame contributes that kind to the resolved
+  -- footprint.  Listing only `[.tcb, .cnode, .objStore]` (PR #873 round 6) made
+  -- `lockSet_consistent_declassify` provable *only* at the default `none`,
+  -- while `permittedKinds`' own contract is "over all argument values,
+  -- including all possible `Option` cases" — so the resolved footprint could
+  -- carry a kind the inventory downstream deadlock and consistency reasoning
+  -- reads did not admit.
+  --
+  -- Admitting every kind is honest rather than lax: what keeps this arm pinned
+  -- is `lockSet_declassify_nonTarget_kinds`, which holds the three members the
+  -- transition itself takes to exactly `[.tcb, .cnode, .objStore]`, so drift in
+  -- the *fixed* part is still a failure.  The by-kind ladder is unaffected —
+  -- acquisition order is by `LockKind.level`, which is a total order over all
+  -- ten kinds, so admitting more kinds cannot introduce a cycle.
   | .declassify =>
-      [.tcb, .cnode, .objStore]
+      [.tcb, .cnode, .objStore,
+       .untyped, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page]
   -- WS-SM SM9.C.8: `.declassifySignal` is the *data-carrying* declassification —
   -- the ordinary `.notificationSignal` (whose kinds it inherits wholesale,
   -- bound-delivery `.endpoint` included) plus the trail append `.declassify`
@@ -1663,6 +1682,16 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- the footprint, plus the CNode (read) covering the capability resolution.
   | .tcbBindNotification | .tcbUnbindNotification =>
       [.tcb, .cnode, .notification]
+
+/-- WS-SM SM3.B.4 (PR #873 round 6): **the kind inventory admits any target.**
+
+The honest reading of the widened `permittedKinds .declassify`, as a checked
+value rather than as a comment: the arm hands `cap.target = .object targetId`
+to a transition that commits a `storeObject` at it, so the target's kind is
+whatever the state says and nothing narrows it. -/
+theorem permittedKinds_declassify_admits_every_kind (k : LockKind) :
+    k ∈ permittedKinds .declassify := by
+  cases k <;> decide
 
 /-- WS-SM SM3.B.4 helper: `Decidable` `kind ∈ permittedKinds τ`. -/
 instance (k : LockKind) (sid : SyscallId) :
@@ -2329,10 +2358,16 @@ theorem lockSet_consistent_serviceQuery (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.4 for `.declassify` (SM8.C.9). -/
 theorem lockSet_consistent_declassify (callerTid : ThreadId)
-    (cnRoot : ObjId) :
-    ∀ p ∈ (lockSet_declassify callerTid cnRoot).pairs,
+    (cnRoot : ObjId) (targetLock : Option LockId := none) :
+    ∀ p ∈ (lockSet_declassify callerTid cnRoot targetLock).pairs,
       p.fst.kind ∈ permittedKinds .declassify :=
-  lockSet_consistent_of_extended_base _ _
+  -- PR #873 round 6: stated over **every** `targetLock`, not only the default
+  -- `none`.  It used to take no such argument, so it proved consistency for the
+  -- capless shape alone while the resolved footprint — the one a fine-lock
+  -- consumer acquires — could carry a target of any object kind.  A
+  -- `permittedKinds` documented as covering "all argument values, including all
+  -- possible `Option` cases" was therefore checked against one of them.
+  lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -2340,6 +2375,29 @@ theorem lockSet_consistent_declassify (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+    (by intro pp _
+        exact permittedKinds_declassify_admits_every_kind pp.fst.kind)
+
+/-- WS-SM SM3.B.4 (PR #873 round 6): **and the members the transition itself
+takes are still exactly three.**
+
+The tightness that admitting every target kind would otherwise give up.  Stated
+at `none` — the shape with no target — so it pins the *fixed* part of the
+footprint: the caller's TCB, the caller's CSpace root, and the state-level lock
+the trail append needs.  A fourth member appearing here is a failure even though
+`lockSet_consistent_declassify` above would still hold of it. -/
+theorem lockSet_declassify_nonTarget_kinds (callerTid : ThreadId) (cnRoot : ObjId) :
+    ∀ p ∈ (lockSet_declassify callerTid cnRoot none).pairs,
+      p.fst.kind ∈ [LockKind.tcb, LockKind.cnode, LockKind.objStore] :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [tcbLock]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [cnodeLock]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.auditRead` (SM9.A.12). -/

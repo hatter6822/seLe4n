@@ -3713,6 +3713,13 @@ run_check "INVARIANT" rg -n 'theorem syscallTaintPlan_originates' SeLe4n/Kernel/
 # exemption behind `.auditDrain` answering `false`, and what the Tier-1 gate
 # requires to be present before it honours that exemption.  Both branches:
 # a non-empty drain moves the epoch, a zero-length one does not.
+# PR #873 round 6: `.declassify`'s target can be an object of ANY kind, so the
+# kind inventory admits every one — and the consistency theorem is stated over
+# EVERY `targetLock`, not only the default `none` it used to be provable at.
+# `lockSet_declassify_nonTarget_kinds` is what keeps the fixed part tight.
+run_check "INVARIANT" rg -n '^theorem permittedKinds_declassify_admits_every_kind' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_declassify_nonTarget_kinds' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n 'cnRoot : ObjId\) \(targetLock : Option LockId := none\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_of_drop' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_auditDrain' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n 'AUDIT_APPEND_EXEMPT' scripts/check_content_flow_coverage.py
