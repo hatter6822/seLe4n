@@ -139,7 +139,6 @@ the receiver will get caps when a sender later arrives via
 def endpointReceiveDualWithCaps
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
-    (endpointRights : AccessRightSet)
     (receiverCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) : Kernel (SeLe4n.ThreadId × CapTransferSummary) :=
   fun st =>
@@ -175,9 +174,15 @@ def endpointReceiveDualWithCaps
                   match lookupCspaceRoot st' senderId with
                   | none => .error .invalidCapability
                   | some senderRoot =>
-                    let grantRight := endpointRights.mem .grant
+                    -- PR #873 round 6: the grant right is the **sender's**, read
+                    -- off the message it sent.  It used to be the receiver's
+                    -- endpoint rights, which is a different principal's
+                    -- authority: seL4 gates capability transfer on the sender's
+                    -- endpoint capability, and consulting the receiver's here
+                    -- made the queued ordering disagree with the rendezvous one
+                    -- whenever a granting sender met a non-granting receiver.
                     match ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                        receiverSlotBase grantRight st' with
+                        receiverSlotBase msg.capsGranted st' with
                     | .error e => .error e
                     | .ok (summary, st'') => .ok ((senderId, summary), st'')
             | none =>

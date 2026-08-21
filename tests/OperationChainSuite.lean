@@ -946,6 +946,147 @@ private def chain12bIpcCapTransferRevocable : IO Unit := do
     (stOrphanRun.cdt.edges.length == stOrphaned.cdt.edges.length)
   assertInvariants "chain12b: declining an orphaning transfer keeps the state well-formed" stOrphanRun
 
+/-- SCN-IPC-CAP-TRANSFER-ARRIVAL-ORDER (PR #873 round 6): **a capability
+transfer must not depend on which side reached the endpoint first.**
+
+The two orderings of one rendezvous:
+
+* the receiver arrives first and blocks, then the sender sends — the send finds
+  a waiting receiver and transfers through `endpointSendDualWithCaps`;
+* the sender arrives first and parks with the message in its own TCB, then the
+  receiver receives — the receive dequeues the parked sender and must install
+  what it was carrying.
+
+The second one installed nothing.  The live `.receive` ran the bare per-core
+receive, which moves the parked sender's `pendingMessage` across wholesale, and
+`endpointReceiveDualWithCaps` — the transition that does the install — had no
+live caller.  So the same two threads, the same endpoint, the same capability
+produced a transfer or no transfer depending on scheduling.
+
+Both orderings are run here against the same starting state and the outcomes are
+compared to each other, not to a hardcoded expectation: a future change that
+breaks *both* the same way cannot pass this by moving one number. -/
+private def chain12cIpcCapTransferArrivalOrder : IO Unit := do
+  let epId : SeLe4n.ObjId := ⟨3350⟩
+  let sender : SeLe4n.ThreadId := ⟨3360⟩
+  let receiver : SeLe4n.ThreadId := ⟨3361⟩
+  let senderCNode : SeLe4n.ObjId := ⟨3370⟩
+  let receiverCNode : SeLe4n.ObjId := ⟨3371⟩
+  let payloadObj : SeLe4n.ObjId := ⟨3380⟩
+  let payloadCap : Capability :=
+    { target := .object payloadObj, rights := AccessRightSet.ofList [.read], badge := none }
+  let grantRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
+  let noGrantRights : AccessRightSet := AccessRightSet.ofList [.read, .write]
+  let srcSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 5
+  let recvSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
+
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
+      |>.withObject senderCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)]
+        })
+      |>.withObject receiverCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.empty
+        })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3390⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3391⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
+      |>.withRunnable [sender, receiver]
+      |>.buildChecked)
+
+  let (srcNode, stBase) :=
+    SystemState.ensureCdtNodeForSlot st0 { cnode := senderCNode, slot := srcSlot }
+  -- The message a granting sender builds: the live arms record the grant right
+  -- on it (`capsGranted`), which is the authority the queued ordering reads back
+  -- once the sender's endpoint capability is gone.
+  let msg : IpcMessage :=
+    { registers := #[], caps := #[{ cap := payloadCap, srcNode := srcNode }],
+      badge := none, capsGranted := grantRights.mem .grant }
+
+  let receiverSlotFilled (st : SystemState) : Bool :=
+    match st.objects[receiverCNode]? with
+    | some (.cnode cn) => (cn.lookup recvSlot).isSome
+    | _ => false
+
+  -- Ordering A: receiver first (immediate rendezvous at the send).
+  let (_, stA1) ← expectOkSt "chain12c: A — receiver blocks first"
+    (SeLe4n.Kernel.endpointReceiveDual epId receiver none stBase)
+  let (summaryA, stA2) ← expectOkSt "chain12c: A — sender rendezvouses with caps"
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode
+      recvSlot stA1)
+
+  -- Ordering B: sender first (the send parks; the receive must install).
+  let (summaryPark, stB1) ← expectOkSt "chain12c: B — sender parks with caps"
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode
+      recvSlot stBase)
+  expect "chain12c: B — a parked send installs nothing yet"
+    (summaryPark.results.isEmpty && !receiverSlotFilled stB1)
+  let ((_, summaryB), stB2) ← expectOkSt "chain12c: B — receiver dequeues the parked sender"
+    (SeLe4n.Kernel.endpointReceiveDualWithCaps epId receiver none receiverCNode
+      recvSlot stB1)
+
+  -- THE PROPERTY: the two orderings agree.
+  expect "chain12c: the rendezvous ordering installed the capability"
+    (receiverSlotFilled stA2)
+  expect "chain12c: the QUEUED ordering installed the capability too"
+    (receiverSlotFilled stB2)
+  expect "chain12c: both orderings report the same install count"
+    (summaryA.installedCount == summaryB.installedCount)
+  expect "chain12c: both orderings report the same transfer results"
+    (summaryA.results == summaryB.results)
+
+  -- NEGATIVE, load-bearing: it is the SENDER's grant that decides, in BOTH
+  -- orderings.  A sender without it transfers nothing whichever side arrives
+  -- first — and the queued ordering can only know that because the message
+  -- carries the bit, the sender's endpoint capability being long gone by then.
+  let msgNoGrant : IpcMessage := { msg with capsGranted := noGrantRights.mem .grant }
+  let (_, stC1) ← expectOkSt "chain12c: C — receiver blocks first (no grant)"
+    (SeLe4n.Kernel.endpointReceiveDual epId receiver none stBase)
+  let (summaryC, stC2) ← expectOkSt "chain12c: C — non-granting sender rendezvouses"
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msgNoGrant noGrantRights senderCNode
+      recvSlot stC1)
+  let (_, stD1) ← expectOkSt "chain12c: D — non-granting sender parks"
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msgNoGrant noGrantRights senderCNode
+      recvSlot stBase)
+  let ((_, summaryD), stD2) ← expectOkSt "chain12c: D — receiver dequeues the parked sender"
+    (SeLe4n.Kernel.endpointReceiveDualWithCaps epId receiver none receiverCNode
+      recvSlot stD1)
+  expect "chain12c: NEGATIVE — a non-granting rendezvous installs nothing"
+    (!receiverSlotFilled stC2 && summaryC.installedCount == 0)
+  expect "chain12c: NEGATIVE — a non-granting QUEUED transfer installs nothing either"
+    (!receiverSlotFilled stD2 && summaryD.installedCount == 0)
+  expect "chain12c: NEGATIVE — the two denied orderings agree as well"
+    (summaryC.installedCount == summaryD.installedCount)
+
+  -- THE LIVE TRANSITION, and the measurement that makes this load-bearing.
+  --
+  -- Everything above drives `endpointReceiveDualWithCaps`, the transition that
+  -- always did the install and never had a caller.  What the `.receive` arm
+  -- actually ran was the BARE per-core receive, so the two must be compared side
+  -- by side on the same parked state: the bare one delivers the message and
+  -- installs nothing (the defect), the WithCaps one installs (the fix).  If the
+  -- arm is ever routed back to the bare transition, the second assertion here
+  -- fails rather than the difference going unnoticed.
+  let (stBare, _) := SeLe4n.Kernel.endpointReceiveDualOnCore epId receiver none bootCoreId stB1
+  expect "chain12c: NEGATIVE — the BARE per-core receive installs nothing (the defect)"
+    (!receiverSlotFilled stBare)
+  let (stLive, liveRes) :=
+    SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none receiverCNode
+      recvSlot bootCoreId stB1
+  expect "chain12c: the LIVE per-core WithCaps receive installs the queued capability"
+    (receiverSlotFilled stLive)
+  expect "chain12c: the live receive reports what it installed"
+    (match liveRes with
+     | .ok (_, summary, _) => summary.installedCount == summaryA.installedCount
+     | .error _ => false)
+
+  assertInvariants "chain12c: arrival-order-independent transfer (rendezvous)" stA2
+  assertInvariants "chain12c: arrival-order-independent transfer (queued)" stB2
+  assertInvariants "chain12c: arrival-order-independent transfer (live per-core)" stLive
+
 /-- SCN-IPC-CAP-TRANSFER-NO-GRANT: Grant-right gate blocks cap transfer.
 Endpoint lacks Grant right — caps should be silently dropped. -/
 private def chain13IpcCapTransferNoGrant : IO Unit := do
@@ -2445,6 +2586,7 @@ private def runOperationChainSuite : IO Unit := do
   chain11RegisterDecodeIpcTransfer
   chain12IpcCapTransfer
   chain12bIpcCapTransferRevocable
+  chain12cIpcCapTransferArrivalOrder
   chain13IpcCapTransferNoGrant
   chain14IpcBadgeAndCapTransfer
   chain15StrictRevokeDeepChain

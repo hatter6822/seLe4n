@@ -478,3 +478,43 @@ race-free under contention with the seam flag in **both** settings.
 The **timer-tick fine-lock migration (SM3.C.9.b)** and the **SM10.E seam flip**
 are the two items that remain open after this plan; both are named follow-ons,
 not silent gaps.
+
+## 9. Registered debt found while closing the queued-receive transfer
+
+Both of these surfaced at v0.33.77, while wiring the live `.receive` through the
+WithCaps path.  Neither is a regression from that cut; both are pre-existing and
+were invisible while the receive installed nothing at all.
+
+### 9.1 `.replyRecv`'s receive leg still drops a parked sender's capabilities
+
+`.receive` now installs what a parked sender was carrying.  `.replyRecv` is
+reply-then-receive, and its receive leg runs inside `replyRecvBody`, which calls
+the **bare** `endpointReceiveDualOnCore` — so the identical defect survives on
+that arm: a caps-carrying send that parks and is later collected by a
+`.replyRecv` rather than a `.receive` transfers nothing, and the arm's staged
+`extraCaps` reports zero.
+
+Closing it means threading the receiver's CSpace root, its receive slot and the
+resulting `CapTransferSummary` through `replyRecvBody` — **59 references**, 23 of
+them in `NonInterferenceCrossCore.lean` — and moving the arm's staged count off
+the hardcoded zero.  That is the same shape of mechanical surgery the
+`endpointReceiveDualWithCaps` grant-principal change took, and it is a coherent
+slice of its own rather than a rider.
+
+**Closure target**: the cut after the `.receive` wiring lands, before SM9 closes.
+
+### 9.2 `ipcUnwrapCaps` carries a `senderCspaceRoot` nothing reads
+
+The revocation-precision fix (v0.33.59) moved the CDT parent off a synthetic
+`{ senderCspaceRoot, slot 0 }` onto the real source node the message carries
+(`TransferCap.srcNode`).  `ipcUnwrapCapsLoop` has taken `senderCspaceRoot` ever
+since **without using it**, and `ipcUnwrapCaps` passes it straight through.
+
+It is not simply deletable: the parameter is what makes all three transfer paths
+perform a `lookupCspaceRoot senderId` and fail closed with `.invalidCapability`
+when the sender has no CSpace root — the AK1-I NI-symmetry behaviour.  Removing
+the argument removes that lookup, and with it an error a caller can currently
+observe, so the cut has to decide deliberately whether that fail-closed branch
+is still wanted on its own terms.
+
+**Closure target**: same cut as §9.1, which touches the same three paths.

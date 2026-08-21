@@ -1536,14 +1536,14 @@ open SeLe4n.Model.SystemState in
 (`endpointReceiveDual` + the TCB-preserving `ipcUnwrapCaps`). -/
 theorem endpointReceiveDualWithCaps_passiveServerIdleFrameOnCore
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (c : CoreId)
     (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         tcb.ipcState = .ready)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     passiveServerIdleFrameOnCore st st' c := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -1571,7 +1571,7 @@ theorem endpointReceiveDualWithCaps_passiveServerIdleFrameOnCore
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩
@@ -1680,7 +1680,7 @@ open SeLe4n.Model.SystemState in
 preserves every core's view of the IPC invariant bundle. -/
 theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull_smp st)
@@ -1708,20 +1708,18 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         tcb.ipcState = .ready)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st'))
     (c : CoreId) :
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
-    (endpointReceiveDualWithCaps_preserves_ipcInvariantFull endpointId receiver replyId
-      endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary
+    (endpointReceiveDualWithCaps_preserves_ipcInvariantFull endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary
       (ipcInvariantFull_of_smp hInv) hObjInv hDualQueue' hBadge' hWtpmn' hAllBudgetsNone
       hRCLRecip' hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
       hStep)
     (passiveServerIdle_perCore_of_frameOnCore
-      (endpointReceiveDualWithCaps_passiveServerIdleFrameOnCore endpointId receiver replyId
-        endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary c
+      (endpointReceiveDualWithCaps_passiveServerIdleFrameOnCore endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary c
         hReceiverReady hObjInv hStep)
       (hInv c).passiveServerIdle)
 

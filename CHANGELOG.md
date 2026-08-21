@@ -1,3 +1,93 @@
+## v0.33.77 — a capability transfer that depended on who arrived first
+
+`endpointSendDualWithCaps`' own docstring said what should happen: *"If no
+receiver was waiting (sender enqueued): caps stay in the message stored in the
+sender's TCB.  They will be unwrapped when a receiver later dequeues the
+sender."*  Nothing did.
+
+The live `.receive` arm ran the bare per-core receive, which moves a parked
+sender's `pendingMessage` across wholesale and installs none of the capabilities
+it carries.  `endpointReceiveDualWithCaps` — the transition that performs the
+install — existed, was verified, and had **no live caller**.  So the same two
+threads, the same endpoint and the same capability produced a transfer or no
+transfer depending on which side reached the endpoint first, and the arm reported
+`extraCaps = 0` however many capabilities the message still held.
+
+**The authority is the sender's, and it now travels with the message.**  This is
+the part that makes the two orderings genuinely agree rather than merely both do
+something.  Capability transfer is authorised by the *sender's* endpoint
+capability, and the two orderings ask about it at different times: on an
+immediate rendezvous the sender's capability is in hand, but when the send parks
+it is gone by the time a receiver dequeues the message — and the receiver's own
+endpoint capability is a different principal's authority, not a substitute.
+
+`IpcMessage.capsGranted` records the bit where the arms build the message, which
+is exactly what seL4 stores as `blockingIPCCanGrant` on the blocked sender's
+thread state.  It defaults to `false`, so a message built without an explicit
+grant decision transfers nothing.
+
+That also fixes `endpointReceiveDualWithCaps` itself, which consulted the
+*receiver's* endpoint rights: with a granting sender and a non-granting receiver
+the queued ordering would still have disagreed with the rendezvous one, one case
+narrower.  Its `endpointRights` parameter is gone — 119 sites, all mechanical —
+and the gate is `msg.capsGranted`.
+
+**The live wiring.**  `endpointReceiveDualWithCapsOnCore` is the per-core sibling
+the live arm needs, exactly as `endpointSendDualWithCapsOnCore` is the one the
+live `.send` arm runs.  Both `.receive` arms — unchecked and information-flow
+checked — route through it, and both now stage the transfer summary's **installed
+count** instead of a hardcoded zero.  The `syscallDelegates` obligation and the
+`dispatchArm_receive_matches_returnShape` pin moved with them.
+
+The enforcement inventory names the operation an arm *reaches*, so it moved too:
+`crossCoreEnforcementEntries` classifies `endpointReceiveDualWithCapsOnCore`, and
+a Tier-3 negative anchor plus a suite negative forbid the bare transition coming
+back as the classified arm.  The per-core routing gate found the reroute on its
+own before any of this was pinned, which is what it is for.
+
+**The regression measures the property, not one ordering's outcome.**
+`chain12c` runs both orderings from the same starting state and compares them to
+*each other* — install count and result array — so a future change that breaks
+both the same way cannot pass by moving one number.  It then drives the bare and
+the WithCaps per-core transitions side by side on the same parked state: the bare
+one installs nothing (the defect), the WithCaps one installs (the fix).  Four
+negatives pin that the sender's grant governs both orderings and that a
+non-granting sender transfers nothing either way.
+
+`receiverTaintEdges` declares no CSpace sink, and the *reason* changed: it was
+"the live receive installs nothing", which is no longer true.  The reason that
+remains is the standing scope decision — a CNode holds no tracked content, so it
+is not a taint carrier on either ordering (`senderTaintEdges_content_only`).  The
+deferral note that promised sinks "behind the WithCaps wiring" is gone with it.
+
+### Two sibling defects found on the way, registered rather than absorbed
+
+Both are pre-existing and were invisible while the receive installed nothing at
+all.  Recorded in `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` §9 with closure
+targets.
+
+**§9.1 — `.replyRecv`'s receive leg still drops queued capabilities.**  It runs
+inside `replyRecvBody`, which calls the bare per-core receive, so a caps-carrying
+send collected by a `.replyRecv` rather than a `.receive` still transfers
+nothing.  Closing it means threading the receiver's CSpace root, its receive slot
+and the summary through `replyRecvBody` — 59 references, 23 of them in the
+cross-core non-interference module — which is a coherent slice of its own, not a
+rider on this one.  The two arms' comments say plainly which one is still open.
+
+**§9.2 — `ipcUnwrapCaps` carries a `senderCspaceRoot` nothing reads.**  The
+revocation-precision fix (v0.33.59) moved the CDT parent onto the real source
+node the message carries, and the parameter has been unused ever since.  It is
+not simply deletable: it is what makes all three transfer paths perform a
+`lookupCspaceRoot senderId` and fail closed with `.invalidCapability`, the AK1-I
+NI-symmetry behaviour — so removing it removes an observable error and that
+decision belongs in the same cut as §9.1, which touches the same three paths.
+
+Verified: Tier 0, Tier 1 (including the routing and content-flow gates), all
+three Tier 2 suites, Tier 3, and eighteen executable suites.  Golden trace
+byte-identical, 233/233.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md
+
 ## v0.33.76 — a kind inventory checked against one argument out of many
 
 **`lockSet_consistent_declassify` proved consistency for the capless shape and

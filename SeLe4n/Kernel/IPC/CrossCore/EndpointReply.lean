@@ -252,6 +252,87 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
       if (st.objects[endpointId]?).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
+/-- **WS-SM SM6 (PR #873 round 6): the per-core receive that installs the
+capabilities a parked send was carrying.**
+
+The cross-core sibling of `endpointReceiveDualWithCaps`, and the one the live
+`.receive` arm runs — exactly as `endpointSendDualWithCapsOnCore` is the sibling
+of `endpointSendDualWithCaps` and the one the live `.send` arm runs.
+
+**Why it had to exist.**  `endpointSendDualWithCaps`' own docstring already said
+what should happen: "If no receiver was waiting (sender enqueued): caps stay in
+the message stored in the sender's TCB.  *They will be unwrapped when a receiver
+later dequeues the sender.*"  Nothing did.  The live `.receive` ran the bare
+`endpointReceiveDualOnCore`, which moves the parked sender's `pendingMessage`
+across wholesale and installs nothing, while an immediate rendezvous transferred
+the capabilities — so whether a capability arrived depended on which side reached
+the endpoint first.  The verified receive-side transition existed and had no live
+caller; this is that transition on the per-core base the live arm needs.
+
+**Whose grant right.**  The message's own (`IpcMessage.capsGranted`), recorded by
+the sender when it built the message from its endpoint capability.  Not the
+receiver's endpoint rights, which is what the single-core sibling used to consult:
+that is a different principal's authority, and consulting it here would have left
+the orderings disagreeing whenever a granting sender met a non-granting receiver
+— the same order-dependence one case narrower.
+
+Returns the post-state, the dequeued sender, the transfer summary, and the
+receive's cross-core SGI.  The AK1-I fail-closed `.invalidCapability` on a sender
+with no CSpace root is preserved, keeping the NI symmetry all three transfer
+paths share. -/
+def endpointReceiveDualWithCapsOnCore
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) :
+    SystemState ×
+      Except KernelError
+        (SeLe4n.ThreadId × CapTransferSummary × Option (CoreId × SgiKind)) :=
+  match endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+  | (st', .error e) => (st', .error e)
+  | (st', .ok (senderId, sgi)) =>
+      -- A receiver that *enqueued* has no delivered message, and a delivered
+      -- message with no caps has nothing to install; both are the empty summary.
+      match st'.getTcb? receiver with
+      | none => (st', .ok (senderId, { results := #[] }, sgi))
+      | some receiverTcb =>
+        match receiverTcb.pendingMessage with
+        | none => (st', .ok (senderId, { results := #[] }, sgi))
+        | some msg =>
+          if msg.caps.isEmpty then (st', .ok (senderId, { results := #[] }, sgi))
+          else
+            match lookupCspaceRoot st' senderId with
+            | none => (st', .error .invalidCapability)
+            | some senderRoot =>
+              match ipcUnwrapCaps msg senderRoot receiverCspaceRoot receiverSlotBase
+                  msg.capsGranted st' with
+              | .error e => (st', .error e)
+              | .ok (summary, st'') => (st'', .ok (senderId, summary, sgi))
+
+/-- WS-SM SM6 (PR #873 round 6): with nothing to install, the WithCaps per-core
+receive is exactly the bare per-core receive — so every capless pin taken against
+the bare transition still describes the live arm. -/
+theorem endpointReceiveDualWithCapsOnCore_no_caps
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st st' : SystemState)
+    (senderId : SeLe4n.ThreadId) (sgi : Option (CoreId × SgiKind))
+    (hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st
+      = (st', .ok (senderId, sgi)))
+    (hNoCaps : ∀ tcb, st'.getTcb? receiver = some tcb →
+      ∀ m, tcb.pendingMessage = some m → m.caps.isEmpty = true) :
+    endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore st
+      = (st', .ok (senderId, { results := #[] }, sgi)) := by
+  unfold endpointReceiveDualWithCapsOnCore
+  simp only [hRecv]
+  cases hTcb : st'.getTcb? receiver with
+  | none => simp
+  | some tcb =>
+    cases hMsg : tcb.pendingMessage with
+    | none => simp [hMsg]
+    | some m => simp [hMsg, hNoCaps tcb hTcb m hMsg]
+
 /-- WS-SM SM6.C.5 (plan §3.1): reply-and-receive across cores.
 
 The cross-core generalisation of `endpointReplyRecv`: the reply leg

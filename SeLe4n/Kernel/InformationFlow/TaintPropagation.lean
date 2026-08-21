@@ -450,24 +450,23 @@ earlier syscall or arrives in this rendezvous.  The endpoint is **not** a source
 it holds no content of its own (`senderTaintEdges`), and the head-sender edge is
 exact where an endpoint proxy would over-approximate to every queued sender.
 
-**No CSpace sink is declared here, because the live receive installs nothing.**
-The `.receive` arm runs `endpointReceiveDualOnCore`, which delivers the dequeued
-sender's message wholesale and performs **no capability unwrap** — the arm says
-so in place, and reports an installed count of zero however many capabilities the
-parked message still carries.  `endpointReceiveDualWithCaps` exists and is
-verified but has no live caller.  Declaring a receiver-CNode sink here would
-therefore write the sender's provenance into a CNode no capability reached, and —
-because a CSpace root feeds the consuming subject — hand an unrelated later
-downgrade an *unsaturated* predecessor, which is exactly what
-`staleTaint_is_not_saturation` forbids.
+**No CSpace sink is declared here** — for the same reason `senderTaintEdges`
+declares none, and it is worth saying which reason that is.  It used to be "the
+live receive installs nothing", which was true: the `.receive` arm ran the bare
+per-core receive and performed no capability unwrap.  Since PR #873 round 6 it
+runs `endpointReceiveDualWithCapsOnCore` and *does* install what a parked sender
+was carrying, so that justification is gone.
 
-So the model states what the kernel does rather than what the design intends.
-Capability provenance is still tracked on the ordering where a transfer actually
-happens: the live send *does* unwrap, and `senderTaintEdges` declares the sinks
-there.  Wiring the receive through the WithCaps path — and restoring these sinks
-behind it — is tracked in `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`; it
-changes live IPC semantics, the return frame's `extraCaps` count and the golden
-trace, so it belongs in its own cut rather than being anticipated here. -/
+The one that remains is the standing scope decision: a **CNode holds no tracked
+content**, so it is not a taint carrier on either ordering
+(`senderTaintEdges_content_only` is the checkable form — no declared edge names a
+CSpace root).  Declaring a receiver-CNode sink would write the sender's
+provenance into an object this model does not track content in and — because a
+CSpace root feeds the consuming subject — hand an unrelated later downgrade an
+*unsaturated* predecessor, which is exactly what `staleTaint_is_not_saturation`
+forbids.  A future decision to track capability provenance at slot granularity
+has to delete `senderTaintEdges_content_only`, and it would restore the sinks on
+**both** orderings at once, which is now possible because both orderings transfer. -/
 def receiverTaintEdges (st : SystemState) (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) :
     List TaintFlowEdge :=
   match (st.getEndpoint? epId).bind (·.sendQ.head) with

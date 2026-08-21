@@ -4776,14 +4776,26 @@ private def runCoreSetAlgebraChecks : IO Unit := do
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReply = false) &&
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReplyRecv = false) &&
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .cancelIpcBlocking = false))
-  -- Round 8: the receive dual is a leg of `replyRecvBody` AND the function the
-  -- live `.receive` arm calls directly, so it is a live arm too.  The
-  -- enforcement table has said so since round 4; this inventory now agrees.
+  -- Round 8: the receive dual is a leg of `replyRecvBody` AND the transition the
+  -- live `.receive` arm reaches, so it is a live arm too.  The enforcement table
+  -- has said so since round 4; this inventory agrees.
   assertBool "the bound signal and the receive dual are both live arms"
     (decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .notificationSignalBound = true) &&
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReceiveDual = true))
-  assertBool "…and the two inventories agree on it"
+  -- PR #873 round 6: the arm reaches it through `endpointReceiveDualWithCapsOnCore`
+  -- now — the bare per-core receive delivered a parked sender's message wholesale
+  -- and installed none of the capabilities it carried, so a transfer happened or
+  -- not depending on which side reached the endpoint first.  The enforcement
+  -- entry moved with the arm, which is what this checks.
+  assertBool "…and the two inventories agree on the operation the arm reaches"
     (SeLe4n.Kernel.crossCoreEnforcementEntries.any (fun e =>
+      match e with
+      | .policyGated n | .capabilityOnly n | .readOnly n =>
+        n == "endpointReceiveDualWithCapsOnCore"))
+  -- NEGATIVE: and the bare transition is no longer the classified live arm, so a
+  -- reroute back to it cannot pass by leaving both entries in the table.
+  assertBool "NEGATIVE: the bare per-core receive is no longer the classified arm"
+    (!SeLe4n.Kernel.crossCoreEnforcementEntries.any (fun e =>
       match e with
       | .policyGated n | .capabilityOnly n | .readOnly n =>
         n == "endpointReceiveDualOnCore"))

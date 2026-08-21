@@ -2218,14 +2218,14 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariant
 theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
-    (endpointRights : AccessRightSet)
+   
     (receiverCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId)
     (summary : CapTransferSummary)
     (hInv : ipcInvariant st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     ipcInvariant st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -2262,7 +2262,7 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
             -- senderRoot = senderRoot
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩

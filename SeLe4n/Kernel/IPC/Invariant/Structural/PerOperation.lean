@@ -208,7 +208,7 @@ Composes endpointReceiveDual base preservation with ipcUnwrapCaps preservation. 
 theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
-    (endpointRights : AccessRightSet)
+   
     (receiverCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId)
@@ -231,7 +231,7 @@ theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant
       endpointReceiveDual endpointId receiver replyId st = .ok (senderId, stMid) →
       ∃ cn, stMid.objects[receiverCspaceRoot]? = some (.cnode cn))
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
               receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     dualQueueSystemInvariant st' := by
   simp only [endpointReceiveDualWithCaps] at hStep

@@ -3697,6 +3697,30 @@ run_check "INVARIANT" rg -n '^theorem dispatchSyscall_applies_taint_plan' SeLe4n
 # a second application at an entry is a build failure rather than a text pin.
 run_check "INVARIANT" rg -n 'SeLe4n.Kernel.dispatchSyscallChecked' scripts/check_content_flow_coverage.py
 
+# PR #873 round 6: **a queued capability transfer installs, like a rendezvous
+# one.**  The `.receive` arm ran the bare per-core receive, which delivers a
+# parked sender's message wholesale and installs none of the capabilities it
+# carries, while an immediate rendezvous transferred them — so IPC semantics
+# depended on which side reached the endpoint first.  The authority is the
+# SENDER's, carried on the message (`capsGranted`), because the sender's endpoint
+# capability is gone by the time a receiver dequeues a parked send.
+run_check "INVARIANT" rg -n '  capsGranted : Bool' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def endpointReceiveDualWithCapsOnCore' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_no_caps' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n 'endpointReceiveDualWithCapsOnCore epId tid replyIdOpt' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'capsGranted := cap.rights.mem .grant' SeLe4n/Kernel/API.lean
+# The enforcement inventory names the operation the arm REACHES, so it moved with
+# the reroute — and the bare transition must not come back as the classified arm.
+run_check "INVARIANT" rg -n 'policyGated "endpointReceiveDualWithCapsOnCore"' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_negative_check "INVARIANT" rg -n 'policyGated "endpointReceiveDualOnCore"' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+# The receive-side grant gate is the message's, not the receiver's endpoint
+# rights: consulting the receiver's is a different principal's authority and left
+# the orderings disagreeing when a granting sender met a non-granting receiver.
+run_check "INVARIANT" rg -n 'receiverSlotBase msg.capsGranted' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+run_negative_check "INVARIANT" rg -n 'endpointReceiveDualWithCaps endpointId receiver replyId endpointRights' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+# The regression that measures the property rather than one ordering's outcome.
+run_check "INVARIANT" rg -n 'chain12cIpcCapTransferArrivalOrder' tests/OperationChainSuite.lean
+
 # PR #873 round 6 (SM9.D.13a): the origination diff is SKIPPED for the arms that
 # provably cannot append.  `newlyRecordedEvents` costs two O(n) walks of a trail
 # bounded only at the 256-entry cliff, and it ran on every successful syscall.

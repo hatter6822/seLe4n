@@ -5816,12 +5816,12 @@ open SeLe4n.Model.SystemState in
 base `endpointReceiveDual` establishes it; the optional `ipcUnwrapCaps` frames it. -/
 theorem endpointReceiveDualWithCaps_establishes_blockedOnReplyHasReplyObject
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : blockedOnReplyHasReplyObject st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     blockedOnReplyHasReplyObject st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -5847,7 +5847,7 @@ theorem endpointReceiveDualWithCaps_establishes_blockedOnReplyHasReplyObject
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩
@@ -8829,11 +8829,11 @@ open SeLe4n.Model.SystemState in
 preserves it; the trailing `ipcUnwrapCaps` is `sameSchedContextBindings`). -/
 theorem endpointReceiveDualWithCaps_preserves_donationBudgetTransfer
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : donationBudgetTransfer st) (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     donationBudgetTransfer st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -8859,7 +8859,7 @@ theorem endpointReceiveDualWithCaps_preserves_donationBudgetTransfer
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩
@@ -8950,11 +8950,11 @@ open SeLe4n.Model.SystemState in
 preserves it; the trailing `ipcUnwrapCaps` is `sameSchedContextBindings`). -/
 theorem endpointReceiveDualWithCaps_preserves_donationOwnerUnique
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : donationOwnerUnique st) (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     donationOwnerUnique st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -8980,7 +8980,7 @@ theorem endpointReceiveDualWithCaps_preserves_donationOwnerUnique
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩
@@ -8996,7 +8996,7 @@ open SeLe4n.Model.SystemState in
 `ipcUnwrapCaps` writes only CNode caps, framing both the SchedContext and the owner side). -/
 theorem endpointReceiveDualWithCaps_preserves_donationOwnerValid
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : donationOwnerValid st)
@@ -9005,7 +9005,7 @@ theorem endpointReceiveDualWithCaps_preserves_donationOwnerValid
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     donationOwnerValid st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -9032,7 +9032,7 @@ theorem endpointReceiveDualWithCaps_preserves_donationOwnerValid
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩
@@ -9049,13 +9049,13 @@ open SeLe4n.Model.SystemState in
 TCB-preserving `ipcUnwrapCaps`). -/
 theorem endpointReceiveDualWithCaps_passiveServerIdleFrame
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     passiveServerIdleFrame st st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -9082,7 +9082,7 @@ theorem endpointReceiveDualWithCaps_passiveServerIdleFrame
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩
@@ -9095,18 +9095,18 @@ open SeLe4n.Model.SystemState in
 /-- IPC de-threading D6: `endpointReceiveDualWithCaps` preserves `passiveServerIdle`. -/
 theorem endpointReceiveDualWithCaps_preserves_passiveServerIdle
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
     (hObjInv : st.objects.invExt)
     (hInv : passiveServerIdle st)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     passiveServerIdle st' :=
   passiveServerIdle_of_frame
-    (endpointReceiveDualWithCaps_passiveServerIdleFrame endpointId receiver replyId endpointRights
+    (endpointReceiveDualWithCaps_passiveServerIdleFrame endpointId receiver replyId
       receiverCspaceRoot receiverSlotBase st st' senderId summary hReceiverReady hObjInv hStep) hInv
 
 open SeLe4n.Model.SystemState in
@@ -9114,11 +9114,11 @@ open SeLe4n.Model.SystemState in
 `ipcUnwrapCaps`, neither touching any `timeoutBudget`). -/
 theorem endpointReceiveDualWithCaps_timeoutBudgetFrame
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     timeoutBudgetFrame st st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -9144,7 +9144,7 @@ theorem endpointReceiveDualWithCaps_timeoutBudgetFrame
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩
@@ -9157,16 +9157,16 @@ open SeLe4n.Model.SystemState in
 /-- IPC de-threading D5: `endpointReceiveDualWithCaps` preserves `blockedThreadTimeoutConsistent`. -/
 theorem endpointReceiveDualWithCaps_preserves_blockedThreadTimeoutConsistent
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hAll : allTimeoutBudgetsNone st)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     blockedThreadTimeoutConsistent st' :=
   blockedThreadTimeoutConsistent_of_frame
-    (endpointReceiveDualWithCaps_timeoutBudgetFrame endpointId receiver replyId endpointRights
+    (endpointReceiveDualWithCaps_timeoutBudgetFrame endpointId receiver replyId
       receiverCspaceRoot receiverSlotBase st st' senderId summary hObjInv hStep) hAll
 
 open SeLe4n.Model.SystemState in
@@ -11485,11 +11485,11 @@ open SeLe4n.Model.SystemState in
 /-- D3: `endpointReceiveDualWithCaps` establishes the clause. -/
 theorem endpointReceiveDualWithCaps_establishes_blockedOnReplyHasTarget
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : blockedOnReplyHasTarget st) (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     blockedOnReplyHasTarget st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -11515,7 +11515,7 @@ theorem endpointReceiveDualWithCaps_establishes_blockedOnReplyHasTarget
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩
@@ -13932,7 +13932,7 @@ open SeLe4n.Model.SystemState in
 / `hQHBC`), and the optional `ipcUnwrapCaps` cap-transfer frames it. -/
 theorem endpointReceiveDualWithCaps_preserves_pendingReceiveReplyWellFormed
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : pendingReceiveReplyWellFormed st)
@@ -13940,7 +13940,7 @@ theorem endpointReceiveDualWithCaps_preserves_pendingReceiveReplyWellFormed
     (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hQHBC : queueHeadBlockedConsistent st)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     pendingReceiveReplyWellFormed st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -13967,7 +13967,7 @@ theorem endpointReceiveDualWithCaps_preserves_pendingReceiveReplyWellFormed
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pairU =>
               rcases pairU with ⟨s, stFinal⟩
@@ -15128,7 +15128,7 @@ The cap-transfer leg is gated on the *receiver*'s delivered `pendingMessage` rat
 endpoint receive-queue head (the receive op already dequeued the rendezvous sender). -/
 theorem endpointReceiveDualWithCaps_preserves_queueNextBlockingConsistent
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : queueNextBlockingConsistent st)
@@ -15148,7 +15148,7 @@ theorem endpointReceiveDualWithCaps_preserves_queueNextBlockingConsistent
           ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
         (epId' = endpointId →
           ep'.sendQ.tail ≠ some tailTid))
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     queueNextBlockingConsistent st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -15175,7 +15175,7 @@ theorem endpointReceiveDualWithCaps_preserves_queueNextBlockingConsistent
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩
@@ -15283,7 +15283,7 @@ open SeLe4n.Model.SystemState in
 `ipcUnwrapCaps`, gated on the receiver's delivered `pendingMessage`). -/
 theorem endpointReceiveDualWithCaps_preserves_endpointQueueTailBlockedConsistent
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : endpointQueueTailBlockedConsistent st)
@@ -15294,7 +15294,7 @@ theorem endpointReceiveDualWithCaps_preserves_endpointQueueTailBlockedConsistent
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
       ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     endpointQueueTailBlockedConsistent st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -15321,7 +15321,7 @@ theorem endpointReceiveDualWithCaps_preserves_endpointQueueTailBlockedConsistent
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩
@@ -17252,7 +17252,7 @@ open SeLe4n.Model.SystemState in
 — the base `endpointReceiveDual` establish on `stMid` + the optional `ipcUnwrapCaps` frame. -/
 theorem endpointReceiveDualWithCaps_preserves_queueHeadBlockedConsistent
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hQHBC : queueHeadBlockedConsistent st)
@@ -17265,7 +17265,7 @@ theorem endpointReceiveDualWithCaps_preserves_queueHeadBlockedConsistent
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
       ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     queueHeadBlockedConsistent st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -17292,7 +17292,7 @@ theorem endpointReceiveDualWithCaps_preserves_queueHeadBlockedConsistent
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩
@@ -17307,7 +17307,7 @@ open SeLe4n.Model.SystemState in
 transfer writes only CNode caps, leaving every TCB's `ipcState`/`queueNext` intact). -/
 theorem endpointReceiveDualWithCaps_preserves_queueNextTargetBlocked
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hQNTB : queueNextTargetBlocked st)
@@ -17329,7 +17329,7 @@ theorem endpointReceiveDualWithCaps_preserves_queueNextTargetBlocked
           ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
         (epId' = endpointId →
           ep'.sendQ.tail ≠ some tailTid))
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     queueNextTargetBlocked st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -17356,7 +17356,7 @@ theorem endpointReceiveDualWithCaps_preserves_queueNextTargetBlocked
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩
@@ -19834,11 +19834,11 @@ theorem endpointSendDualWithCaps_preserves_ipcStateQueueMembershipConsistent
 (base receive establish + the `ipcUnwrapCaps` frame). -/
 theorem endpointReceiveDualWithCaps_preserves_allPendingMessagesBounded
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : allPendingMessagesBounded st) (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     allPendingMessagesBounded st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -19865,7 +19865,7 @@ theorem endpointReceiveDualWithCaps_preserves_allPendingMessagesBounded
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩
@@ -19878,7 +19878,7 @@ theorem endpointReceiveDualWithCaps_preserves_allPendingMessagesBounded
 (base receive establish + the `ipcUnwrapCaps` frame). -/
 theorem endpointReceiveDualWithCaps_preserves_endpointQueueNoDup
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : endpointQueueNoDup st) (hDQSI : dualQueueSystemInvariant st)
@@ -19896,7 +19896,7 @@ theorem endpointReceiveDualWithCaps_preserves_endpointQueueNoDup
           ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
         (epId' = endpointId →
           ep'.sendQ.tail ≠ some tailTid))
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     endpointQueueNoDup st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -19923,7 +19923,7 @@ theorem endpointReceiveDualWithCaps_preserves_endpointQueueNoDup
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩
@@ -19936,7 +19936,7 @@ theorem endpointReceiveDualWithCaps_preserves_endpointQueueNoDup
 `ipcStateQueueMembershipConsistent` (base receive establish + the `ipcUnwrapCaps` frame). -/
 theorem endpointReceiveDualWithCaps_preserves_ipcStateQueueMembershipConsistent
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInvFull : ipcInvariantFull st) (hObjInv : st.objects.invExt)
@@ -19953,7 +19953,7 @@ theorem endpointReceiveDualWithCaps_preserves_ipcStateQueueMembershipConsistent
           ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
         (epId' = endpointId →
           ep'.sendQ.tail ≠ some tailTid))
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     ipcStateQueueMembershipConsistent st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
@@ -19982,7 +19982,7 @@ theorem endpointReceiveDualWithCaps_preserves_ipcStateQueueMembershipConsistent
           | some senderRoot =>
             simp only [hLookup] at hStep
             cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase (endpointRights.mem .grant) stMid with
+                receiverSlotBase msg.capsGranted stMid with
             | error e => simp [hUnwrap] at hStep
             | ok pair =>
               rcases pair with ⟨s, stFinal⟩
@@ -20242,7 +20242,7 @@ receive establish + the cap-transfer frame) rather than threading it. -/
 theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
-    (endpointRights : AccessRightSet)
+   
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull st)
@@ -20276,66 +20276,57 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     -- and `passiveServerIdle`).
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state (base receive
   -- establish + the cap-transfer frame — `ipcUnwrapCaps` writes only CNode caps).
-  have hDOVest := endpointReceiveDualWithCaps_preserves_donationOwnerValid endpointId receiver replyId
-    endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationOwnerValid
+  have hDOVest := endpointReceiveDualWithCaps_preserves_donationOwnerValid endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationOwnerValid
     hInv.donationOwnerUnique hInv.queueHeadBlockedConsistent hReceiverReady hObjInv hStep
   -- IPC de-threading D6: `passiveServerIdle` **established** (base receive frame + cap-transfer frame).
-  have hPSIest := endpointReceiveDualWithCaps_preserves_passiveServerIdle endpointId receiver replyId
-    endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hReceiverReady
+  have hPSIest := endpointReceiveDualWithCaps_preserves_passiveServerIdle endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary hReceiverReady
     hObjInv hInv.passiveServerIdle hStep
-  exact ⟨endpointReceiveDualWithCaps_preserves_ipcInvariant endpointId receiver replyId endpointRights
+  exact ⟨endpointReceiveDualWithCaps_preserves_ipcInvariant endpointId receiver replyId
      receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.1 hObjInv hStep,
    hDualQueue',
    -- IPC de-threading D8: allPendingMessagesBounded **established** (base + cap-transfer frame).
-   endpointReceiveDualWithCaps_preserves_allPendingMessagesBounded endpointId receiver replyId
-     endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.2.2.1 hObjInv hStep,
+   endpointReceiveDualWithCaps_preserves_allPendingMessagesBounded endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.2.2.1 hObjInv hStep,
    hBadge', hWtpmn',
    -- IPC de-threading D8: endpointQueueNoDup / ipcStateQueueMembershipConsistent **established**.
-   endpointReceiveDualWithCaps_preserves_endpointQueueNoDup endpointId receiver replyId endpointRights
+   endpointReceiveDualWithCaps_preserves_endpointQueueNoDup endpointId receiver replyId
      receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.endpointQueueNoDup hInv.2.1 hObjInv
      hFreshReceiver hRecvTailFresh hStep,
-   endpointReceiveDualWithCaps_preserves_ipcStateQueueMembershipConsistent endpointId receiver replyId
-     endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv hObjInv
+   endpointReceiveDualWithCaps_preserves_ipcStateQueueMembershipConsistent endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary hInv hObjInv
      hFreshReceiver hRecvTailFresh hStep,
    -- IPC de-threading D4 Slice 2b: queueNext **established** from the pre-state (base + cap-transfer frame).
-   endpointReceiveDualWithCaps_preserves_queueNextBlockingConsistent endpointId receiver replyId
-     endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary
+   endpointReceiveDualWithCaps_preserves_queueNextBlockingConsistent endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary
      hInv.queueNextBlockingConsistent hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv
      hFreshReceiver hRecvTailFresh hStep,
    -- IPC de-threading D4 Slice 2c: queueHeadBlockedConsistent **established** from the pre-state
    -- (base establish + the cap-transfer frame).
-   endpointReceiveDualWithCaps_preserves_queueHeadBlockedConsistent endpointId receiver replyId
-     endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary
+   endpointReceiveDualWithCaps_preserves_queueHeadBlockedConsistent endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary
      hInv.queueHeadBlockedConsistent hInv.queueNextTargetBlocked hInv.2.1 hObjInv hReceiverReady
      hFreshReceiver hStep,
-   endpointReceiveDualWithCaps_preserves_blockedThreadTimeoutConsistent endpointId receiver replyId endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hObjInv hAllBudgetsNone hStep,
+   endpointReceiveDualWithCaps_preserves_blockedThreadTimeoutConsistent endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary hObjInv hAllBudgetsNone hStep,
    donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
-   endpointReceiveDualWithCaps_preserves_donationBudgetTransfer endpointId receiver replyId endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationBudgetTransfer hObjInv hStep,
-   endpointReceiveDualWithCaps_establishes_blockedOnReplyHasTarget endpointId receiver replyId endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.blockedOnReplyHasTarget hObjInv hStep,
+   endpointReceiveDualWithCaps_preserves_donationBudgetTransfer endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationBudgetTransfer hObjInv hStep,
+   endpointReceiveDualWithCaps_establishes_blockedOnReplyHasTarget endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointReceiveDualWithCaps_establishes_blockedOnReplyHasReplyObject endpointId receiver
-      replyId endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.replyCallerLinkage.2 hObjInv hStep⟩,
+      replyId receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.replyCallerLinkage.2 hObjInv hStep⟩,
    -- IPC de-threading D3: **establish** PRR from the pre-state (was threaded `hPRR'`).
-   endpointReceiveDualWithCaps_preserves_pendingReceiveReplyWellFormed endpointId receiver replyId
-     endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hObjInv
+   endpointReceiveDualWithCaps_preserves_pendingReceiveReplyWellFormed endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary hObjInv
      hInv.pendingReceiveReplyWellFormed hReplyIdValid hReceiverNotRecv
      hInv.queueHeadBlockedConsistent hStep,
-   endpointReceiveDualWithCaps_preserves_donationOwnerUnique endpointId receiver replyId endpointRights
+   endpointReceiveDualWithCaps_preserves_donationOwnerUnique endpointId receiver replyId
      receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationOwnerUnique hObjInv hStep,
    -- IPC de-threading D4 Slice 2b: tail-blocked **established** from the pre-state (base receive
    -- enqueue via cores (a)+(c); the cap-transfer leaves every endpoint + TCB byte-identical).
-   endpointReceiveDualWithCaps_preserves_endpointQueueTailBlockedConsistent endpointId receiver replyId
-     endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary
+   endpointReceiveDualWithCaps_preserves_endpointQueueTailBlockedConsistent endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary
      hInv.endpointQueueTailBlockedConsistent hInv.2.1 hInv.queueHeadBlockedConsistent hObjInv
      hFreshReceiver hStep,
    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked **established** from the pre-state
    -- (base receive establish + the cap-transfer frame).
-   endpointReceiveDualWithCaps_preserves_queueNextTargetBlocked endpointId receiver replyId
-     endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary
+   endpointReceiveDualWithCaps_preserves_queueNextTargetBlocked endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary
      hInv.queueNextTargetBlocked hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv hReceiverReady
      hFreshReceiver hRecvTailFresh hStep⟩
 
