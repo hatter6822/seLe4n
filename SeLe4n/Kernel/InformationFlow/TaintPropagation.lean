@@ -335,6 +335,27 @@ structure TaintPlan where
       wipe the stored badge's provenance (a missed chain) or tag a notification
       the new badge went nowhere near (a false one). -/
   bypassed : List SeLe4n.ObjId := []
+  /-- Targets whose recorded downgrade released **nothing at all**, so the whole
+      event originates nothing — not the target, and not the actor either.
+
+      Distinct from `bypassed`, and PR #873 round 9 is why.  A bypass says the
+      released content went somewhere *else*: `.declassifySignal` really does
+      deliver a badge, so the acting subject really did release content and its
+      origination tag is earned; only the notification the delivery went around
+      must not be tagged.  A **no-release** event is the other case entirely — a
+      bare `.declassify` of an idle transport moves nothing, so an actor tag
+      manufactures the same fictitious dependency the target tag did, one hop
+      over: the subject carries an identity it never released, its *next*
+      downgrade snapshots that identity into `predecessorTags`
+      (`declassificationActorTaint` reads the **actor**), and the causal detector
+      reports a laundering chain whose first link never carried content.
+
+      Round 7 dropped the target half and left the actor half standing, which is
+      why this is a field rather than more entries in `bypassed`: the two lists
+      answer different questions and folding them would either re-tag the
+      notification `.declassifySignal` bypassed or un-tag the signaller that
+      genuinely released. -/
+  noRelease : List SeLe4n.ObjId := []
   /-- Can the syscall this plan belongs to **append to the audit trail**?
 
       Not what it *did* append — that is still recovered from the trail's own
@@ -862,7 +883,8 @@ def syscallTaintPlan (st : SystemState) (tid : SeLe4n.ThreadId)
   -- against an idle target it releases nothing and must originate nothing there.
   -- `contentFlowBypassed` is `[]` for every other inert arm.
   | .inert =>
-      { edges := [], cleared := [], bypassed := declassifyBypassedTargets st tid decoded,
+      { edges := [], cleared := [], bypassed := [],
+        noRelease := declassifyBypassedTargets st tid decoded,
         originates }
   | .movesContent => { edges := contentFlowEdges st tid decoded,
                        cleared := contentFlowClears st tid decoded,
@@ -879,15 +901,16 @@ SM9.D.13a the plan also carries whether the arm can record a downgrade, and
 `.declassify` is an inert arm that can.  Collapsing the two would have made this
 theorem false for the one syscall the provenance layer exists for.
 
-`bypassed` left out for the same reason, since PR #873 round 7: a bare downgrade
-of an *idle* target releases nothing into it, so `.declassify` — inert, and the
-only inert arm that records — names that target as bypassed.  The theorem below
-still gives `bypassed = []` for every inert arm that cannot record, which is the
-twenty-nine this one used to be about. -/
+`bypassed` is back in, since PR #873 round 9 moved `.declassify`'s idle-target
+list to `noRelease` where it belongs: a bypass says the released content went
+somewhere else, and a bare downgrade of an idle target released none.  So no
+inert arm bypasses anything, and `noRelease` — which `.declassify` alone can
+populate — is the one movement-adjacent field this theorem cannot claim. -/
 @[simp] theorem syscallTaintPlan_inert (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (h : contentFlowClass decoded.syscallId = .inert) :
     (syscallTaintPlan st tid decoded).edges = [] ∧
-      (syscallTaintPlan st tid decoded).cleared = [] := by
+      (syscallTaintPlan st tid decoded).cleared = [] ∧
+      (syscallTaintPlan st tid decoded).bypassed = [] := by
   simp [syscallTaintPlan, h]
 
 /-- WS-SM SM9.D.13a: an inert arm that cannot record plans literally nothing —
@@ -1020,9 +1043,19 @@ its content landed in, and on the subject that performed it.
 The target because that is where the released content now lives; the actor
 because a subject that released content at `t` and releases again later is a
 laundering candidate, and without this the second downgrade would carry no
-predecessor. -/
-def originationTags (events : List DeclassificationEvent) : List (SeLe4n.ObjId × Nat) :=
-  events.flatMap (fun e => [(e.targetObject, e.timestamp), (e.sourceSubject, e.timestamp)])
+predecessor.
+
+**Both premises fail together** (PR #873 round 9).  Each clause says "released
+content", so an event that released none earns neither tag — and the two are
+dropped as a pair, per event, rather than filtered afterwards by key: the
+afterwards-filter cannot tell which event a `(subject, t)` pair came from, which
+is how round 7 removed the target half and left the actor half naming an
+identity its subject never released. -/
+def originationTags (noRelease : List SeLe4n.ObjId)
+    (events : List DeclassificationEvent) : List (SeLe4n.ObjId × Nat) :=
+  events.flatMap fun e =>
+    if noRelease.contains e.targetObject then []
+    else [(e.targetObject, e.timestamp), (e.sourceSubject, e.timestamp)]
 
 /-- WS-SM SM9.D.13a: apply the origination tags. -/
 def applyOrigination (origins : List (SeLe4n.ObjId × Nat)) (tbl : TaintTable) : TaintTable :=
@@ -1046,13 +1079,14 @@ diff, so what a downgrade originates is still the record it wrote, and a new
 declassifying syscall still originates the day it lands. -/
 def planOriginationTags (plan : TaintPlan) (pre post : SystemState) :
     List (SeLe4n.ObjId × Nat) :=
-  if plan.originates then originationTags (newlyRecordedEvents pre post) else []
+  if plan.originates then originationTags plan.noRelease (newlyRecordedEvents pre post) else []
 
 /-- WS-SM SM9.D.13a: a recording plan takes the full diff — the gate is a skip for
 the arms that cannot append, never a filter on what a recording one sees. -/
 @[simp] theorem planOriginationTags_of_originates (plan : TaintPlan)
     (pre post : SystemState) (h : plan.originates = true) :
-    planOriginationTags plan pre post = originationTags (newlyRecordedEvents pre post) := by
+    planOriginationTags plan pre post
+      = originationTags plan.noRelease (newlyRecordedEvents pre post) := by
   simp [planOriginationTags, h]
 
 /-- WS-SM SM9.D.13a: a non-recording plan originates nothing, without reading the
@@ -1071,7 +1105,8 @@ while classified `false` this is exactly the hypothesis the Tier-1 gate refuses
 to let go unchecked. -/
 theorem planOriginationTags_eq_of_no_events (plan : TaintPlan) (pre post : SystemState)
     (h : plan.originates = false → newlyRecordedEvents pre post = []) :
-    planOriginationTags plan pre post = originationTags (newlyRecordedEvents pre post) := by
+    planOriginationTags plan pre post
+      = originationTags plan.noRelease (newlyRecordedEvents pre post) := by
   unfold planOriginationTags
   cases hp : plan.originates with
   | true => rfl
@@ -1090,7 +1125,7 @@ reason:
   the delivery reached.  Without the seed the receiver would read the target's
   pre-event taint and the fresh downgrade would have no successor — a missed
   chain, the direction a detector must never err in.  The seed is a no-op for
-  every syscall that records nothing (`originationTags [] = []`);
+  every syscall that records nothing (`originationTags _ [] = []`);
 * clears next, so a retype forgets provenance the same commit's flows could not
   have given it, and a consumed transport (a `.notificationWait`, or a signal
   delivered directly to a waiter) is emptied to the content it now holds;
@@ -1437,7 +1472,8 @@ tag instead. -/
 theorem taintOrigination_target (plan : TaintPlan) (pre post : SystemState)
     (ev : DeclassificationEvent) (hMem : ev ∈ newlyRecordedEvents pre post)
     (hRec : plan.originates = true)
-    (hClear : ev.targetObject ∉ plan.cleared ++ plan.bypassed) :
+    (hClear : ev.targetObject ∉ plan.cleared ++ plan.bypassed)
+    (hRel : ev.targetObject ∉ plan.noRelease) :
     ((applySyscallTaint plan pre post).declassificationTaint ev.targetObject).contains
       ev.timestamp = true := by
   show ((applyOrigination
@@ -1446,7 +1482,7 @@ theorem taintOrigination_target (plan : TaintPlan) (pre post : SystemState)
     ev.targetObject).contains ev.timestamp = true
   rw [planOriginationTags_of_originates plan pre post hRec]
   exact contains_applyOrigination_of_mem _ _ (ev.targetObject, ev.timestamp)
-    (List.mem_filter.mpr ⟨List.mem_flatMap.mpr ⟨ev, hMem, by simp⟩, by simp [hClear]⟩)
+    (List.mem_filter.mpr ⟨List.mem_flatMap.mpr ⟨ev, hMem, by simp [hRel]⟩, by simp [hClear]⟩)
 
 /-- WS-SM SM9.D.13a (**origination, actor half**): a downgrade also tags the
 subject that performed it, so a subject that releases content twice carries the
@@ -1457,7 +1493,8 @@ shape there is — would carry no predecessor and go undetected. -/
 theorem taintOrigination_actor (plan : TaintPlan) (pre post : SystemState)
     (ev : DeclassificationEvent) (hMem : ev ∈ newlyRecordedEvents pre post)
     (hRec : plan.originates = true)
-    (hClear : ev.sourceSubject ∉ plan.cleared ++ plan.bypassed) :
+    (hClear : ev.sourceSubject ∉ plan.cleared ++ plan.bypassed)
+    (hRel : ev.targetObject ∉ plan.noRelease) :
     ((applySyscallTaint plan pre post).declassificationTaint ev.sourceSubject).contains
       ev.timestamp = true := by
   show ((applyOrigination
@@ -1466,7 +1503,7 @@ theorem taintOrigination_actor (plan : TaintPlan) (pre post : SystemState)
     ev.sourceSubject).contains ev.timestamp = true
   rw [planOriginationTags_of_originates plan pre post hRec]
   exact contains_applyOrigination_of_mem _ _ (ev.sourceSubject, ev.timestamp)
-    (List.mem_filter.mpr ⟨List.mem_flatMap.mpr ⟨ev, hMem, by simp⟩, by simp [hClear]⟩)
+    (List.mem_filter.mpr ⟨List.mem_flatMap.mpr ⟨ev, hMem, by simp [hRel]⟩, by simp [hClear]⟩)
 
 /-- WS-SM SM9.D.8: the edge a content-moving syscall's plan carries, named once
 so every per-site corollary below reads the same resolution. -/
@@ -1759,16 +1796,20 @@ theorem signalDelivery_waiter_empties_notification (st : SystemState)
   refine ⟨?_, ?_, ?_⟩ <;>
     simp [signalClearedNotification, signalBypassedNotification, signalTaintEdges, h]
 
-/-- WS-SM SM9.D.13a (PR #873 round 7): **a bare downgrade of an idle notification
-bypasses it**, so the fresh identity is not originated onto an object holding
-nothing.
+/-- WS-SM SM9.D.13a (PR #873 rounds 7 and 9): **a bare downgrade of an idle
+notification releases nothing**, so the fresh identity is originated **nowhere** —
+not onto the empty target, and not onto the acting subject either.
 
-The composed statement is this plus `bypassedObject_not_originated`: the target
-is in `bypassed`, `.declassify` clears nothing and declares no edge, so the
-notification's taint is carried through the commit unchanged.  Without it a
-later unrelated signal joined onto an invented tag, `.notificationWait` carried
-it to the receiver, and a downgrade behind that receiver reported a predecessor
-for content that never existed. -/
+Round 7 put the target in `bypassed`, which removed half of it: `originationTags`
+also emits `(sourceSubject, timestamp)`, so the actor kept a tag for content it
+never released — and since `declassificationActorTaint` snapshots the **actor**,
+that subject's *next* downgrade would record the invented identity in
+`predecessorTags` and the detector would report a laundering chain whose first
+link carried nothing.  Round 9 moved the target to `noRelease`, which drops the
+whole event rather than one of its two pairs.
+
+`.declassify` clears nothing and declares no edge, so the notification's taint
+and the subject's are both carried through the commit unchanged. -/
 theorem declassify_idle_notification_bypassed (st : SystemState)
     (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (cap : Capability)
     (nid : SeLe4n.ObjId) (ntfn : SeLe4n.Model.Notification)
@@ -1777,7 +1818,7 @@ theorem declassify_idle_notification_bypassed (st : SystemState)
     (hTarget : cap.target = .object nid)
     (hNtfn : st.getNotification? nid = some ntfn)
     (hIdle : ntfn.pendingBadge = none) :
-    (syscallTaintPlan st tid decoded).bypassed = [nid] := by
+    (syscallTaintPlan st tid decoded).noRelease = [nid] := by
   simp [syscallTaintPlan, contentFlowClass, hSid, declassifyBypassedTargets, hCap,
     hTarget, declassifyBypassedTarget, hNtfn, hIdle]
 
@@ -1788,7 +1829,8 @@ precision fix rather than a hole.
 The load-bearing direction.  Skipping origination is an *under*-approximation,
 the one this module must never make by accident, so the skip is licensed only by
 positively established emptiness — a notification with a pending badge keeps the
-tag, because that is content the downgrade really released. -/
+tag, and so does the subject that downgraded it, because that is content the
+downgrade really released. -/
 theorem declassify_pending_notification_not_bypassed (st : SystemState)
     (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (cap : Capability)
     (nid : SeLe4n.ObjId) (ntfn : SeLe4n.Model.Notification) (b : SeLe4n.Badge)
@@ -1797,9 +1839,43 @@ theorem declassify_pending_notification_not_bypassed (st : SystemState)
     (hTarget : cap.target = .object nid)
     (hNtfn : st.getNotification? nid = some ntfn)
     (hPending : ntfn.pendingBadge = some b) :
-    (syscallTaintPlan st tid decoded).bypassed = [] := by
+    (syscallTaintPlan st tid decoded).noRelease = [] := by
   simp [syscallTaintPlan, contentFlowClass, hSid, declassifyBypassedTargets, hCap,
     hTarget, declassifyBypassedTarget, hNtfn, hPending]
+
+/-- WS-SM SM9.D.13a (PR #873 round 9): **a no-release event contributes nothing
+to the origin list** — neither its target pair nor its actor pair.
+
+The statement the round-7 fix was missing.  `originationTags` emits two pairs per
+event and the `bypassed` filter removes them by *key*, which cannot tell which
+event a `(subject, timestamp)` pair came from — so suppressing the target left
+the actor tagged with an identity nothing released, and since
+`declassificationActorTaint` snapshots the **actor**, that subject's next
+downgrade would record the invented identity as its predecessor.
+
+Stated as "the event contributes nothing", which is the property, rather than as
+"this key is absent", which is not: a key can also arrive from a *different*
+event, and a claim that conflated the two would be false for reasons having
+nothing to do with the release. -/
+@[simp] theorem originationTags_cons_noRelease (noRelease : List SeLe4n.ObjId)
+    (ev : DeclassificationEvent) (events : List DeclassificationEvent)
+    (hRel : ev.targetObject ∈ noRelease) :
+    originationTags noRelease (ev :: events) = originationTags noRelease events := by
+  simp [originationTags, hRel]
+
+/-- WS-SM SM9.D.13a (PR #873 round 9): **and an event that DID release
+contributes both pairs** — the load-bearing direction.
+
+Suppression is an under-approximation, the one this module must never make by
+accident, so the two theorems are stated together: without this one the first
+would also hold of a broken `originationTags` that emitted nothing ever. -/
+theorem originationTags_cons_release (noRelease : List SeLe4n.ObjId)
+    (ev : DeclassificationEvent) (events : List DeclassificationEvent)
+    (hRel : ev.targetObject ∉ noRelease) :
+    originationTags noRelease (ev :: events) =
+      (ev.targetObject, ev.timestamp) :: (ev.sourceSubject, ev.timestamp) ::
+        originationTags noRelease events := by
+  simp [originationTags, hRel]
 
 /-- WS-SM SM9.D.10 (**a bypassed object keeps what it had**): the fresh event is
 not originated onto a notification the delivery went around, and — unlike a

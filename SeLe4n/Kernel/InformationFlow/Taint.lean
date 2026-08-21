@@ -62,11 +62,20 @@ audit interface returns only opaque causality verdicts
 never the tags themselves.
 
 What the bound actually pays for is the snapshot and the lookup: every recorded
-`DeclassificationEvent` carries a `predecessorTags` copy of its target's tag list,
-and every join walks both operands.  Eight is also where the value stops adding
-information for a detector — an object that has received content from eight
-distinct authorized downgrades is already a laundering report's subject rather
-than one whose ninth tag changes the verdict. -/
+`DeclassificationEvent` carries a `predecessorTags` copy of the **acting
+subject's** tag list, and every join walks both operands.  Eight is also where the
+value stops adding information for a detector — a subject that has released
+content behind eight distinct authorized downgrades is already a laundering
+report's subject rather than one whose ninth tag changes the verdict.
+
+The *subject's*, not the target's (PR #873 round 9 — this said "its target's").
+`declassificationActorTaint` reads `actor.subject.toObjId` and that is what
+`declassifyStoreEvent` records, which is the whole shape of the causal check: a
+downgrade names an earlier one when the **actor** was already carrying that
+identity.  The target is tagged separately, *after* the event is committed
+(`originationTags`).  Reversing the two would let a reader conclude that
+downgrading a tainted target records its provenance even when the acting subject
+has none — the case the detector must not claim. -/
 def maxTaintTags : Nat := 8
 
 /-- WS-SM SM9.D.1: `maxTaintTags` is positive, so a single tag always fits and

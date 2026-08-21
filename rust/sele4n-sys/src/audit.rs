@@ -180,10 +180,18 @@ pub enum AuditReadOpcode {
     /// refuses unless its caller both passes that gate and sees the whole
     /// trail, so an archived timestamp always belonged to an entry a
     /// monitor-cleared reader could read.  A partial reader is refused
-    /// `IllegalAuthority` before the index is looked at, so it learns nothing
-    /// about the trail's extent.  Timestamps at or past the current epoch are
-    /// refused likewise: a still-present predecessor is `ChainNamesEntry`'s
-    /// question, asked through an index the projection checks.
+    /// `IllegalAuthority` before anything else is looked at, so it learns
+    /// nothing about the trail's extent — whatever timestamp it supplied.
+    ///
+    /// A timestamp at or past the current epoch names a still-present
+    /// predecessor, which is `ChainNamesEntry`'s question asked through an index
+    /// the projection checks; supplied here it is `InvalidArgument`.  That is a
+    /// **malformed operand**, not an authority failure, and the two are
+    /// deliberately distinct: this paragraph used to say such a timestamp was
+    /// refused like a partial reader, which made valid monitor credentials read
+    /// as invalid and contradicted the error contract below.  Splitting them
+    /// discloses nothing, because a caller the gate admits already sees the
+    /// whole trail.
     ChainNamesArchived = 29,
 }
 

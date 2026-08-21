@@ -1,3 +1,68 @@
+## v0.33.84 — the half of the last fix that was still tagging the actor
+
+Round 7 stopped a bare `.declassify` of an **idle** target from originating onto
+that target: nothing was released, so tagging it invented a causal predecessor.
+That fix removed one of the event's two tags.
+
+`originationTags` emits **two** pairs per event — `(targetObject, t)` and
+`(sourceSubject, t)` — and the `bypassed` filter removes them by *key*, which
+cannot tell which event a `(subject, t)` pair came from.  So the actor kept a tag
+for content it never released.  That is worse than the target half, not better:
+`declassificationActorTaint` snapshots the **actor**, so the subject's *next*
+downgrade records the invented identity in `predecessorTags`, and the causal
+detector reports a laundering chain whose first link carried nothing.  Which is
+the exact failure SM9.D replaced the syntactic detector to avoid.
+
+**The two pairs are dropped together, per event, before they exist.**  A
+filter-by-key applied afterwards cannot express "this event contributed nothing",
+which is why round 7 could remove one half and leave the other.
+`originationTags` takes the no-release set and skips the whole event.
+
+**`noRelease` is a new field, not more entries in `bypassed`** — the two answer
+different questions.  A *bypass* says the released content went somewhere else:
+`.declassifySignal` really does deliver a badge, so its actor tag is earned and
+only the notification the delivery went around must not be tagged.  A
+*no-release* event released nothing anywhere, so neither tag is.  Folding them
+would either re-tag the notification `.declassifySignal` bypassed or un-tag a
+signaller that genuinely released.
+
+A pleasant consequence: `bypassed` is `[]` for every inert arm again, so
+`syscallTaintPlan_inert` gets its third conjunct back — round 7 had to weaken it.
+`originationTags_cons_noRelease` and `originationTags_cons_release` are stated as
+a pair, because suppression is an under-approximation and the first would also
+hold of a broken planner that emitted nothing ever.
+
+### `ChainNamesArchived` reported a bad operand as an authority failure
+
+The arm ANDed `auditMonitorAuthorized` with `timestamp < epoch` and sent both
+failures to `.illegalAuthority` — so an **authorized** monitor supplying a
+non-archived timestamp read as unauthorized.  `audit_read`'s error contract
+reserves `IllegalAuthority` for capability, configuration and caller causes and
+uses `InvalidArgument` for operands, and this contradicted it; a monitor could
+not tell a malformed request from a revoked credential.
+
+The gate and the operand check are sequential now.  Splitting them discloses
+nothing: a caller the gate admits already sees the whole trail, so "that
+timestamp is not archived" is not news to it — while an **unauthorized** caller
+still gets `.illegalAuthority` whatever the timestamp, which is the property the
+gate-first ordering exists for.  `chainArchivedVerdict_refuses_live_timestamp` is
+restated for an authorized monitor and returns `.invalidArgument`;
+`chainArchivedVerdict_denied_for_non_monitor` is unchanged and still covers the
+partial reader.  The Rust opcode doc said the old thing in one paragraph while
+the general contract said the new one three hundred lines down; both now agree.
+
+### And the snapshot named the wrong subject
+
+`maxTaintTags`' rationale said every event carries a `predecessorTags` copy of
+its **target's** tag list.  `declassificationActorTaint` reads
+`actor.subject.toObjId`, and that is what `declassifyStoreEvent` records — the
+target is tagged separately, *after* the event commits.  Reversed, it would let a
+reader conclude that downgrading a tainted target records its provenance even
+when the acting subject has none, which is the one thing the causal check must
+not claim.  The bound's cost paragraph now names the subject, which is also what
+makes the count argument right: eight is where a *subject* stops gaining
+information, not an object.
+
 ## v0.33.83 — five gaps found by reading the seams the last cut opened
 
 **The CDT node counter was advanced unchecked during capability resolution.**

@@ -1596,17 +1596,28 @@ def auditReadWord (ctx : GenericLabelingContext)
             .ok (if declassificationEventNames laterEvent earlierEvent then 1 else 0)
           else .error .invalidArgument
       | _, _ => .error .invalidArgument
-  -- WS-SM SM9.D: the chain across a drain.  The gate is checked **before** the
-  -- index, so a caller it refuses learns nothing about the trail's extent —
-  -- the drain's own two gates share one error for the same reason.  A caller
-  -- the gate admits sees the whole trail, so the range is not news to it.
+  -- WS-SM SM9.D: the chain across a drain.  The gate is checked **before**
+  -- anything else, so a caller it refuses learns nothing about the trail's
+  -- extent — the drain's own two gates share one error for the same reason.
+  --
+  -- PR #873 round 9: the gate and the operand check are **sequential**, not one
+  -- `&&`.  Folding them sent an *authorized* monitor supplying a non-archived
+  -- timestamp to `.illegalAuthority`, which `audit_read`'s own error contract
+  -- reserves for capability, configuration and caller failures — so valid
+  -- monitor credentials read as invalid, and a caller could not tell a bad
+  -- operand from a revoked one.  Splitting them costs nothing here: a caller the
+  -- gate admits already sees the whole trail, so "that timestamp is not
+  -- archived" is not news to it, while an *unauthorized* caller still gets
+  -- `.illegalAuthority` whatever the timestamp — which is the property the
+  -- gate-first ordering exists for.
   | .chainNamesArchived later timestamp =>
-      if auditMonitorAuthorized ctx monitorClearance reader
-          && decide (timestamp < st.declassificationAuditEpoch) then
-        match view[later]? with
-        | some laterEvent =>
-            .ok (if laterEvent.predecessorTags.contains timestamp then 1 else 0)
-        | none => .error .invalidArgument
+      if auditMonitorAuthorized ctx monitorClearance reader then
+        if timestamp < st.declassificationAuditEpoch then
+          match view[later]? with
+          | some laterEvent =>
+              .ok (if laterEvent.predecessorTags.contains timestamp then 1 else 0)
+          | none => .error .invalidArgument
+        else .error .invalidArgument
       else .error .illegalAuthority
 
 /-- WS-SM SM9.D.14: **the causality verdict, characterised.**
@@ -1723,7 +1734,7 @@ theorem chainArchivedVerdict_names_iff (ctx : GenericLabelingContext)
     auditReadWord ctx monitorClearance reader st (.chainNamesArchived later timestamp) =
       .ok (if laterEvent.predecessorTags.contains timestamp then 1 else 0) := by
   unfold auditReadWord
-  simp only [hMon, hLater, hArchived, decide_true, Bool.and_self, if_true]
+  simp only [hMon, hLater, hArchived, if_true]
 
 /-- WS-SM SM9.D (**fail-closed for a partial reader**): a caller the monitor gate
 does not admit is refused before the index is read, so the refusal carries no
@@ -1736,21 +1747,31 @@ theorem chainArchivedVerdict_denied_for_non_monitor (ctx : GenericLabelingContex
     auditReadWord ctx monitorClearance reader st (.chainNamesArchived later timestamp) =
       .error .illegalAuthority := by
   unfold auditReadWord
-  simp only [hMon, Bool.false_and, Bool.false_eq_true, if_false]
+  simp only [hMon, Bool.false_eq_true, if_false]
 
 /-- WS-SM SM9.D (**a live predecessor is not this question**): a timestamp at or
 past the epoch names an entry that has not been drained, and is refused.  The
 index-keyed `chainNamesEntry` is the operation for that case, and it checks the
 earlier entry's visibility through the projection rather than trusting a raw
-identity. -/
+identity.
+
+PR #873 round 9: refused with `.invalidArgument`, and stated **for an authorized
+monitor**, because that is what the two errors now distinguish.  A non-archived
+timestamp is a malformed operand, not an authority failure, and `audit_read`'s
+contract reserves `IllegalAuthority` for capability, configuration and caller
+causes; reporting one for the other made valid monitor credentials read as
+invalid.  An unauthorized caller is still refused `.illegalAuthority` whatever
+the timestamp (`chainArchivedVerdict_denied_for_non_monitor`), so the refusal
+still carries nothing about the trail's extent to a caller not entitled to it. -/
 theorem chainArchivedVerdict_refuses_live_timestamp (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
     (st : SystemState) (later timestamp : Nat)
+    (hMon : auditMonitorAuthorized ctx monitorClearance reader = true)
     (hLive : st.declassificationAuditEpoch ≤ timestamp) :
     auditReadWord ctx monitorClearance reader st (.chainNamesArchived later timestamp) =
-      .error .illegalAuthority := by
+      .error .invalidArgument := by
   unfold auditReadWord
-  simp only [Nat.not_lt.mpr hLive, decide_false, Bool.and_false, Bool.false_eq_true, if_false]
+  simp only [hMon, Nat.not_lt.mpr hLive, if_true, if_false]
 
 /-- WS-SM SM9.A.2: **the reader is a function of the readable structures it is
 entitled to, and of nothing else.**
@@ -1780,7 +1801,7 @@ theorem auditRead_determined_by_view (ctx : GenericLabelingContext)
   cases hMon : auditMonitorAuthorized ctx monitorClearance reader with
   | false =>
     cases op <;>
-      simp only [hView, Bool.false_eq_true, Bool.false_and, if_false]
+      simp only [hView, Bool.false_eq_true, if_false]
   | true =>
     rw [hEpoch hMon, hLedger hMon]
     cases op <;> simp only [hView]

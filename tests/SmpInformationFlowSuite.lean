@@ -2091,6 +2091,9 @@ totality over the wrong domain proves nothing, which is why the
 #check @syscallTaintPlan
 #check @syscallTaintPlan_inert
 #check @declassify_idle_notification_bypassed
+#check @originationTags_cons_noRelease
+#check @originationTags_cons_release
+#check @chainArchivedVerdict_refuses_live_timestamp
 #check @declassify_pending_notification_not_bypassed
 #check @SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype_clearedKey_write_mem
 #check @SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype_nonTarget_kinds

@@ -3931,6 +3931,19 @@ run_check "INVARIANT" rg -n '^def declassifyBypassedTarget ' SeLe4n/Kernel/Infor
 run_check "INVARIANT" rg -n '^def declassifyBypassedTargets ' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem declassify_idle_notification_bypassed' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem declassify_pending_notification_not_bypassed' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 round 9: and the ACTOR half.  Round 7 suppressed the target pair and
+# left `(sourceSubject, timestamp)` standing, so the subject kept an identity it
+# never released — and `declassificationActorTaint` snapshots the ACTOR, so its
+# next downgrade recorded that identity as a predecessor.  A no-release event now
+# contributes neither pair, dropped per event rather than filtered by key.
+run_check "INVARIANT" rg -n '  noRelease : List SeLe4n.ObjId' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem originationTags_cons_noRelease' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem originationTags_cons_release' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 round 9: a non-archived timestamp is a malformed OPERAND, not an
+# authority failure — the gate is checked first, so an unauthorized caller still
+# learns nothing about the trail's extent.
+run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_refuses_live_timestamp' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_negative_check "INVARIANT" rg -n '&& decide \(timestamp <' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 # PR #873 round 7: a CLEAR is a taint write too, so the retype's cleared key
 # rides its own object lock — the third member of `taintWriteKeys` the key-local
 # declaration had skipped.  The fixed four stay pinned separately.
