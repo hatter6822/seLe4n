@@ -1,3 +1,55 @@
+## v0.33.91 — the frozen scheduler had no run queue
+
+The differential harness from v0.33.89 caught its first divergence, and it is a
+big one: **no frozen operation ever wrote `scheduler.byPriority`.** Not one.
+`frozenChooseThread` selects exclusively by folding that field and filtering on
+`.ready`, so the run queue was whatever `freeze` captured, permanently, while
+the frozen transitions moved threads in and out of `.ready` beneath it.
+
+It broke in both directions. Wakes did not enqueue: the notification signal's
+bound-delivery and waiter branches, the endpoint send's rendezvous, the receive's
+dequeued sender, the call's woken receiver, the reply's woken caller and
+`frozenResumeThread` all set `.ready` and stopped, leaving a runnable thread that
+`frozenChooseThread` could never select. Suspends did not dequeue:
+`frozenSuspendThread` set `threadState := .Inactive` with `ipcState := .ready`
+and left the thread in its bucket, where the `.ready` filter would still pick it
+— suspended in name, runnable in fact.
+
+Two docstrings asserted the opposite, and named the wrong field: *"the woken
+thread is already in the `membership` FrozenSet … Setting `ipcState := .ready`
+makes the thread eligible for selection by `frozenChooseThread`."*
+`frozenChooseThread` does not read `membership`. That sentence is why the gap
+survived — it reads as a design decision rather than a missing update, which is
+exactly the failure mode v0.33.89 was written to end.
+
+**What the representation allows.** `FrozenMap.set` answers `none` for an absent
+key: the frozen key set is fixed by construction, the property that keeps
+`lifecycleRetype` out of `frozenOpCoverage`. `membership` is a `FrozenSet` — key
+presence with `Unit` values — so it genuinely cannot change, and `frozenSchedule`
+was right to call it a read-only census. `byPriority` is not: its values are
+lists, so a thread can be enqueued into any bucket that existed at freeze, which
+covers the case that matters — a thread runnable at freeze, blocked, now woken.
+`frozenEnsureRunnable` does that and **fails closed** where the bucket does not
+exist, because marking a thread `.ready` and leaving it unselectable is the
+divergence being removed, not an acceptable fallback.
+
+**The fixtures were part of the defect.** Six suites each carried their own copy
+of a frozen-state builder, and all six left the scheduler empty — modelling a
+state where objects exist and no thread is runnable, which the live kernel cannot
+reach, since a thread only ever blocks from being runnable. A fixture with no
+buckets cannot show a wake failing to refill one. There is now one
+`frozenStateOf` in `SeLe4n.Testing`, giving the run queue a real state would
+have, and one `emptyFrozenSystemState` in place of six copies of the same
+literal. `Builder.markRunnable` closes the matching gap on the live side: the
+builder could create threads but not make any of them runnable, so no test could
+construct the state this defect lives in.
+
+The relation compares `byPriority` in both directions and by bucket, not just
+`scheduler.current` — whether a woken thread can be selected is not visible in
+its TCB. And §FO-031 gained a control pair: it had been agreeing because both
+sides refused with `.replyCapInvalid`, which is agreement about nothing
+happening. It now asserts both sides succeed before comparing them.
+
 ## v0.33.90 — three commitments made before the authority was checked
 
 Round 14 found the kernel spending a bounded resource on a transfer it was

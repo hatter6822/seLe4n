@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n
+import SeLe4n.Model.FrozenState
 
 open SeLe4n.Model
 
@@ -188,5 +189,94 @@ def buildChecked (builder : BootstrapBuilder) : SystemState :=
   | .error msg => panic! s!"BootstrapBuilder.buildChecked: {msg}"
 
 end BootstrapBuilder
+
+/-! ## Frozen fixtures
+
+`freeze` turns a live `IntermediateState` into a `FrozenSystemState`; a test that
+wants an arbitrary frozen state builds one directly instead.  Six suites each
+grew their own copy of that builder, and all six left the scheduler at its empty
+default — modelling a state in which objects exist and no thread is runnable,
+which the live kernel cannot reach, since a thread only ever blocks from being
+runnable.
+
+That is not a cosmetic difference.  `frozenChooseThread` selects by folding
+`scheduler.byPriority`, so a fixture with no buckets cannot show a wake failing
+to refill one, which is how the frozen operations went five review rounds
+without maintaining the run queue at all.  One builder, used by every suite, so
+the shape cannot drift back per-file. -/
+
+/-- The frozen state with nothing in it.
+
+Six suites each carried a byte-for-byte copy of this literal.  A required frozen
+field with no default (the audit epoch, the refusal ledger, the per-core caches)
+then has to be added in six places, and a suite that lags behind stops
+compiling — the duplication has no upside and one clear downside. -/
+def emptyFrozenSystemState : FrozenSystemState :=
+  { objects := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    irqHandlers := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    asidTable := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    serviceRegistry := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    interfaceRegistry := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    services := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    cdtChildMap := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    cdtParentMap := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    cdtSlotNode := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    cdtNodeSlot := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    cdtEdges := []
+    cdtNextNode := ⟨0⟩
+    scheduler :=
+      { byPriority := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+        threadPriority := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+        membership := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+        current := none
+        activeDomain := ⟨0⟩
+        domainTimeRemaining := 5
+        domainSchedule := []
+        domainScheduleIndex := 0
+        configDefaultTimeSlice := 5
+        replenishQueue := { entries := [], size := 0 } }
+    objectTypes := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    capabilityRefs := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    machine := default
+    objectIndex := []
+    objectIndexSet := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    scThreadIndex := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    tlb := TlbState.empty
+    perCoreTlb := _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores TlbState.empty
+    declassificationAuditLog := []
+    declassificationAuditEpoch := 0
+    declassificationRefusals := SeLe4n.Kernel.RefusalLedger.initial
+    declassificationTaint := SeLe4n.Kernel.TaintTable.empty
+    perCoreICache :=
+      _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty
+    pendingIcacheMaintenance := [] }
+
+/-- A `FrozenSystemState` holding `objs`, with the run queue a live state would
+have: a bucket per distinct TCB priority, holding the threads that are `.ready`.
+
+Buckets for priorities whose threads are all blocked exist but are empty — which
+is what a real freeze produces for a thread that had run before blocking, and
+what lets a wake enqueue back into them. -/
+def frozenStateOf (objs : List (SeLe4n.ObjId × FrozenKernelObject))
+    : FrozenSystemState :=
+  let rt := objs.foldl (fun acc kv =>
+    acc.insert kv.1 kv.2) (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+  let tcbs := objs.filterMap (fun kv =>
+    match kv.2 with | .tcb t => some t | _ => none)
+  let prios := tcbs.foldl (fun acc t =>
+    if acc.contains t.priority then acc else acc ++ [t.priority]) []
+  let byPrio := prios.foldl (fun acc p =>
+    acc.insert p ((tcbs.filter (fun t => t.priority == p && t.ipcState == .ready)).map
+      (fun t => t.tid))) (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+  let thrPrio := tcbs.foldl (fun acc t =>
+    acc.insert t.tid t.priority) (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+  let memb := tcbs.foldl (fun acc t =>
+    acc.insert t.tid ()) (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+  { emptyFrozenSystemState with
+      objects := freezeMap rt
+      scheduler := { emptyFrozenSystemState.scheduler with
+                       byPriority := freezeMap byPrio
+                       threadPriority := freezeMap thrPrio
+                       membership := freezeMap memb } }
 
 end SeLe4n.Testing

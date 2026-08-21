@@ -238,6 +238,74 @@ theorem frozenStoreNotificationChecked_ok_eq_frozenStoreNotification
   | some _ => rw [hLookup] at hOk; exact hOk
   | none => rw [hLookup] at hOk; cases hOk
 
+/-- **The frozen run queue's insert** (PR #873 round 15), mirroring the live
+`ensureRunnable`.
+
+`frozenChooseThread` selects exclusively by folding `scheduler.byPriority` and
+filtering on `.ready`.  Until this existed no frozen operation ever wrote that
+field, so a thread woken during the frozen phase became `.ready` and stayed
+permanently unselectable -- the live `ensureRunnable` put it back in a bucket
+and the frozen mirror did not.  The module docstring asserted the opposite and
+named `membership`, which `frozenChooseThread` does not read.
+
+**What the representation allows.**  `byPriority` is a `FrozenMap` keyed by
+priority, and `FrozenMap.set` answers `none` for an absent key -- the frozen key
+set is fixed by construction, the same property that keeps `lifecycleRetype` out
+of `frozenOpCoverage`.  So a thread can be enqueued only into a bucket that
+existed at freeze time.  That covers the case this is for: a thread runnable at
+freeze, which blocked and is now woken.  A thread whose bucket never existed
+cannot be enqueued at all, and this **fails closed** rather than marking it
+`.ready` and leaving it unselectable, which is the divergence being removed.
+
+`membership` is untouched, deliberately: a `FrozenSet` carries `Unit` values, so
+its content *is* its key set and cannot change.  `frozenSchedule` already records
+it as a read-only census of the population at freeze time. -/
+def frozenEnsureRunnable (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    : Except KernelError FrozenSystemState :=
+  match frozenLookupTcb st tid with
+  | none => .error .objectNotFound
+  | some tcb =>
+      let prio : SeLe4n.Priority :=
+        match tcb.pipBoost with
+        | none => tcb.priority
+        | some boost => ⟨Nat.max tcb.priority.val boost.val⟩
+      let bucket := (st.scheduler.byPriority.get? prio).getD []
+      if bucket.contains tid then .ok st
+      else
+        match st.scheduler.byPriority.set prio (bucket ++ [tid]) with
+        -- The snapshot has no bucket at this priority, so it cannot represent
+        -- the thread becoming runnable.  Refusing is the only answer that does
+        -- not lie: marking it `.ready` would leave it permanently unselectable,
+        -- which is the divergence this exists to remove.
+        | none => .error .illegalState
+        | some bp =>
+            .ok { st with scheduler := { st.scheduler with byPriority := bp } }
+
+/-- **The frozen run queue's remove** (PR #873 round 15), mirroring the live
+`removeRunnable`: drop the thread from its bucket, and clear `current` if it was
+the running thread.
+
+Unlike the insert this cannot fail on a missing key -- a thread absent from every
+bucket is already not runnable, so removing it is the identity.  The buckets are
+searched rather than indexed by the thread's current priority, because a block
+can follow a priority change and the thread must leave the bucket it is actually
+in. -/
+def frozenRemoveRunnable (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    : FrozenSystemState :=
+  let cleared : FrozenSystemState :=
+    if st.scheduler.current == some tid then
+      { st with scheduler := { st.scheduler with current := none } }
+    else st
+  cleared.scheduler.byPriority.indexMap.toList.foldl
+    (fun acc kv =>
+      let bucket := (acc.scheduler.byPriority.get? kv.1).getD []
+      if bucket.contains tid then
+        match acc.scheduler.byPriority.set kv.1 (bucket.filter (· != tid)) with
+        | none => acc
+        | some bp => { acc with scheduler := { acc.scheduler with byPriority := bp } }
+      else acc)
+    cleared
+
 /-- Q7-B: Store a TCB's IPC state in frozen state. -/
 def frozenStoreTcbIpcState (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
     (ipcState : ThreadIpcState) : Except KernelError FrozenSystemState :=

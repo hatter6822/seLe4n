@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n
+import SeLe4n.Testing.StateBuilder
 import SeLe4n.Kernel.FrozenOps
 import SeLe4n.Model.FrozenState
 import SeLe4n.Model.Builder
@@ -27,56 +28,8 @@ private def expect (label : String) (cond : Bool) : IO Unit := do
     throw <| IO.userError s!"frozen-ops check failed [{label}]"
 
 /-- Helper: construct a minimal empty FrozenSystemState. -/
-private def emptyFrozenState : FrozenSystemState := {
-  objects := freezeMap (RHTable.empty 16)
-  irqHandlers := freezeMap (RHTable.empty 16)
-  asidTable := freezeMap (RHTable.empty 16)
-  serviceRegistry := freezeMap (RHTable.empty 16)
-  interfaceRegistry := freezeMap (RHTable.empty 16)
-  services := freezeMap (RHTable.empty 16)
-  cdtChildMap := freezeMap (RHTable.empty 16)
-  cdtParentMap := freezeMap (RHTable.empty 16)
-  cdtSlotNode := freezeMap (RHTable.empty 16)
-  cdtNodeSlot := freezeMap (RHTable.empty 16)
-  cdtEdges := []
-  cdtNextNode := ⟨0⟩
-  scheduler := {
-    byPriority := freezeMap (RHTable.empty 16)
-    threadPriority := freezeMap (RHTable.empty 16)
-    membership := freezeMap (RHTable.empty 16)
-    current := none
-    activeDomain := ⟨0⟩
-    domainTimeRemaining := 5
-    domainSchedule := []
-    domainScheduleIndex := 0
-    configDefaultTimeSlice := 5
-    replenishQueue := { entries := [], size := 0 }
-  }
-  objectTypes := freezeMap (RHTable.empty 16)
-  capabilityRefs := freezeMap (RHTable.empty 16)
-  machine := default
-  objectIndex := []
-  objectIndexSet := freezeMap (RHTable.empty 16)
-  scThreadIndex := freezeMap (RHTable.empty 16)
-  tlb := TlbState.empty
-  perCoreTlb := _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores TlbState.empty
-  declassificationAuditLog := []
-  -- WS-SM SM9.A.1a: nothing drained, so the audit epoch is zero and the
-  -- (empty) trail's timestamps are its indices.
-  declassificationAuditEpoch := 0
-  -- WS-SM SM9.B.5: nothing has been refused, so the refusal ledger is the
-  -- empty ring.  A required frozen field (no default), so a silent drop is
-  -- a compile error here rather than a snapshot reporting a system in
-  -- which no declassification was ever attempted.
-  declassificationRefusals := SeLe4n.Kernel.RefusalLedger.initial
-  declassificationTaint := SeLe4n.Kernel.TaintTable.empty
-  -- WS-SM SM7.D.1: required frozen field (no default).
-  perCoreICache :=
-    _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty
-  -- WS-SM SM7.D.1: the emission ledger is likewise required; it is always
-  -- `none` at a syscall boundary.
-  pendingIcacheMaintenance := []
-}
+private def emptyFrozenState : FrozenSystemState :=
+  SeLe4n.Testing.emptyFrozenSystemState
 
 /-- Helper: construct a test TCB. -/
 private def mkTcb (tid : Nat) (prio : Nat := 0) (dom : Nat := 0) : TCB :=
@@ -86,8 +39,7 @@ private def mkTcb (tid : Nat) (prio : Nat := 0) (dom : Nat := 0) : TCB :=
 /-- Helper: construct a FrozenSystemState with given objects. -/
 private def mkFrozenState (objs : List (ObjId × FrozenKernelObject))
     : FrozenSystemState :=
-  let rt := objs.foldl (fun acc (k, v) => acc.insert k v) (RHTable.empty 16)
-  { emptyFrozenState with objects := freezeMap rt }
+  SeLe4n.Testing.frozenStateOf objs
 
 -- ============================================================================
 -- Q7-T1: FrozenKernel Monad Tests (FO-001 to FO-003)
@@ -778,8 +730,22 @@ discharged by `nomatch` on a literal constructor.  A list of `KernelObject`s
 could not do that: the obligations quantify over a value the fold cannot see
 into. -/
 
+/-- Create the TCB **and** put it in the run queue.
+
+Every thread in these scenarios is one that had been runnable and then blocked
+or is about to be woken, which is the only way a live state reaches these
+shapes.  Building them outside the run queue would model a state the live kernel
+cannot produce — and would hide exactly what these scenarios are for, since a
+wake's run-queue insert has nothing to insert into. -/
 private def diffAddTcb (ist : IntermediateState) (t : TCB) : IntermediateState :=
-  Builder.createObject ist t.tid.toObjId (.tcb t) (fun _ h => nomatch h) (fun _ h => nomatch h)
+  let withObj := Builder.createObject ist t.tid.toObjId (.tcb t)
+    (fun _ h => nomatch h) (fun _ h => nomatch h)
+  -- Only a `.ready` thread is in the run queue: a blocked one left it when it
+  -- blocked, which is what makes the wake paths' re-insert observable.  Queuing
+  -- blocked threads too would put the bucket in the state the wake wants to
+  -- reach and hide whether the transition got it there.
+  if t.ipcState == .ready then Builder.markRunnable withObj t.tid t.priority
+  else withObj
 
 private def diffAddEndpoint (ist : IntermediateState) (id : SeLe4n.ObjId) (e : Endpoint) :
     IntermediateState :=
@@ -788,6 +754,10 @@ private def diffAddEndpoint (ist : IntermediateState) (id : SeLe4n.ObjId) (e : E
 private def diffAddNotification (ist : IntermediateState) (id : SeLe4n.ObjId)
     (n : Notification) : IntermediateState :=
   Builder.createObject ist id (.notification n) (fun _ h => nomatch h) (fun _ h => nomatch h)
+
+private def diffAddReply (ist : IntermediateState) (rid : SeLe4n.ReplyId)
+    (r : SeLe4n.Kernel.Reply) : IntermediateState :=
+  Builder.createObject ist rid.toObjId (.reply r) (fun _ h => nomatch h) (fun _ h => nomatch h)
 
 /-- FO-026: the signal, against the live entry the `.notificationSignal` arm
 runs.  A notification with no ordinary waiter and a bound TCB parked on an
@@ -858,12 +828,25 @@ private def fo030_differentialEndpointCall : IO Unit := do
 `.blockedOnCall`. -/
 private def fo031_differentialEndpointReply : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨13⟩], caps := #[], badge := none }
-  let caller : TCB := { diffTcb 62 with ipcState := .blockedOnCall diffEpId, pendingMessage := some msg }
-  let ist := diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) (diffTcb 63)
+  -- The reply's authority is the presented reply capability, so the fixture has
+  -- to carry the whole link: the target parked in `.blockedOnReply` with its
+  -- forward `replyObject`, and a Reply object naming it back.  Without those
+  -- both sides refuse with `.replyCapInvalid` and the comparison passes without
+  -- ever running a reply — a check that agrees because nothing happened.
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  let caller : TCB := { diffTcb 62 with ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some rid }
+  let ist := diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) (diffTcb 63))
+    rid { replyId := rid, caller := some diffA }
+  -- Control: the reply really happens on both sides, so the agreement below is
+  -- about a delivered reply rather than a shared refusal.
+  expect "FO-031 control: the live reply succeeds (not a shared refusal)"
+    (SeLe4n.Kernel.endpointReply diffB diffA msg ist.state).toOption.isSome
+  expect "FO-031 control: and so does the frozen one"
+    (frozenEndpointReply diffB diffA rid msg (freeze ist)).toOption.isSome
   expect "FO-031: the frozen reply agrees with the live reply"
     (frozenRunAgrees
-      (frozenEndpointReply diffB diffA ⟨0⟩ msg (freeze ist))
+      (frozenEndpointReply diffB diffA rid msg (freeze ist))
       (SeLe4n.Kernel.endpointReply diffB diffA msg ist.state))
 
 /-- FO-032: **refusals agree too.**  A frozen operation that accepts what the

@@ -4077,6 +4077,32 @@ run_negative_check "INVARIANT" rg -n 'resolveExtraCaps gate.cspaceRoot extraCapA
 # negative's wildcard.
 run_check "BUILD" rg -n 'HELPER_NAME_RE' scripts/check_anchor_consistency.py
 run_check "BUILD" rg -n '^def _regex_matches_literal' scripts/check_anchor_consistency.py
+# PR #873 round 15: **the frozen scheduler kept no run queue.**  No frozen
+# operation ever wrote `scheduler.byPriority`, which is the only field
+# `frozenChooseThread` selects from -- so a woken thread was `.ready` and
+# permanently unselectable, and a suspended one stayed in its bucket still
+# marked `.ready`.  The docstring asserted the opposite and named `membership`,
+# a `FrozenSet` whose keys cannot change and which selection never reads.
+run_check "INVARIANT" rg -n '^def frozenEnsureRunnable' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenRemoveRunnable' SeLe4n/Kernel/FrozenOps/Core.lean
+# The builder could not express a runnable thread at all, which is why every
+# frozen test started from a state the live kernel cannot produce.
+run_check "INVARIANT" rg -n '^def markRunnable' SeLe4n/Model/Builder.lean
+# Every wake enqueues and every block dequeues -- the pairs the live transitions
+# maintain with `ensureRunnable` / `removeRunnable`.
+run_check "INVARIANT" rg -n 'frozenEnsureRunnable' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n 'frozenRemoveRunnable' SeLe4n/Kernel/FrozenOps/Operations.lean
+# The relation compares the buckets, not just the current thread; comparing
+# `current` alone is what let the wake divergence through the differential
+# scenarios that were built to catch exactly this class.
+run_check "INVARIANT" rg -n 'let queueAgree' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# The reply scenario asserts BOTH sides succeed before comparing them: it used to
+# agree because both refused with `.replyCapInvalid`, which is agreement about
+# nothing happening.
+run_check "INVARIANT" rg -n 'FO-031 control: the live reply succeeds' tests/FrozenOpsSuite.lean
+# The corrected claims must not come back.
+run_prose_negative_check "INVARIANT" rg -n 'run queue manipulation is skipped' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_prose_negative_check "INVARIANT" rg -n 'run queue insertion.{0,12}is skipped' SeLe4n/Kernel/FrozenOps/Operations.lean
 # PR #873 round 7: a CLEAR is a taint write too, so the retype's cleared key
 # rides its own object lock — the third member of `taintWriteKeys` the key-local
 # declaration had skipped.  The fixed four stay pinned separately.

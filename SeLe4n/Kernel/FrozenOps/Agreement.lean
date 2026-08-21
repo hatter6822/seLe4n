@@ -93,7 +93,9 @@ The object store is compared over the live index **and** the frozen index, so an
 object appearing on one side only is a disagreement.  The taint table is
 compared at every key either side holds — the frozen operations write it, and
 three of the five recorded divergences were provenance recorded against the
-wrong carrier, which no object comparison can see. -/
+wrong carrier, which no object comparison can see.  The **run queue** is
+compared in both directions and by priority, because whether a woken thread can
+be selected is not visible in its TCB. -/
 def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
   let objectsAgree :=
     ls.objectIndex.all (fun oid =>
@@ -115,10 +117,37 @@ def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
     taintKeys.all (fun oid =>
       fs.declassificationTaint oid == ls.declassificationTaint oid)
   -- The frozen phase is single-core by construction, and `freeze` takes the
-  -- scheduler's current thread from the boot core; comparing against any other
-  -- core would be comparing against something the frozen side never modelled.
-  objectsAgree && taintAgree
+  -- scheduler's state from the boot core; comparing against any other core would
+  -- be comparing against something the frozen side never modelled.
+  --
+  -- PR #873 round 15: **the whole run queue, not just the current thread.**
+  -- Comparing `current` alone accepted states whose run queues differ, which is
+  -- the difference between a thread the scheduler can select and one it cannot.
+  -- It is the divergence a wake produces, so leaving it out made the wake paths
+  -- -- the very paths the recorded divergences were on -- the ones this relation
+  -- could not see.
+  --
+  -- The subject is `byPriority`, because that is what *selection* reads:
+  -- `frozenChooseThread` folds over its buckets and the live `chooseThread` over
+  -- the same field, so two states whose buckets agree can select the same
+  -- threads.  `membership` is deliberately not compared -- a `FrozenSet` is a
+  -- key-presence map with `Unit` values, so frozen membership cannot change at
+  -- all, and `frozenSchedule`'s own docstring records it as a read-only record
+  -- of the population at freeze time.  Requiring it to track the live run queue
+  -- would be requiring the representation to be something it is not; requiring
+  -- the buckets to track it is requiring the frozen kernel to schedule the same
+  -- threads, which is the claim that matters.
+  let lq := ls.scheduler.runQueueOnCore Concurrency.bootCoreId
+  let queueAgree :=
+    -- Both directions over the union of bucket keys: a thread queued on one side
+    -- only is a disagreement whichever side queues it, and an empty bucket on
+    -- one side must face an empty or absent bucket on the other.
+    (lq.byPriority.toList.map Prod.fst
+        ++ fs.scheduler.byPriority.indexMap.toList.map Prod.fst).all (fun prio =>
+      (fs.scheduler.byPriority.get? prio).getD [] == (lq.byPriority[prio]?).getD [])
+  objectsAgree && taintAgree && queueAgree
     && fs.scheduler.current == ls.scheduler.currentOnCore Concurrency.bootCoreId
+    && fs.scheduler.activeDomain == ls.scheduler.activeDomainOnCore Concurrency.bootCoreId
 
 /-- Run-level agreement: the same refusal, or two successes whose states agree.
 

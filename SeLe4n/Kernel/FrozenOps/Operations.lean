@@ -100,11 +100,12 @@ The frozen scheduler uses a different representation than the builder-phase
 4. **Yield**: Clears `current` (conceptually re-enqueues the outgoing thread)
    then calls `frozenSchedule` to select the next thread.
 
-5. **`ensureRunnable` equivalent**: In the builder phase, woken threads are
-   inserted into the run queue. In the frozen phase, woken threads must
-   already be in the `membership` set (pre-allocated at freeze time). The
-   frozen equivalent is updating the TCB's `ipcState` to `.ready`, which
-   makes the thread eligible for selection. -/
+5. **`ensureRunnable` equivalent**: `frozenEnsureRunnable`, on every wake, and
+   `frozenRemoveRunnable` on every block or suspend.  Setting `ipcState` alone
+   does *not* make a thread eligible: `frozenChooseThread` folds `byPriority`
+   and filters on `.ready`, so a thread outside every bucket is unselectable
+   whatever its `ipcState` says.  `membership` is a `FrozenSet` — key-presence
+   with `Unit` values — so it cannot change and is not what selection reads. -/
 
 /-- Q7-C1: Choose the best runnable thread in the frozen scheduler.
 Mirrors `chooseThread` — scans `byPriority` buckets for an eligible thread
@@ -279,11 +280,17 @@ Mirrors `notificationSignal` using frozen state lookups and mutations.
 badge's provenance is the signalling subject's, and without naming that subject
 this operation could not say where the content it introduces came from.
 
-**`ensureRunnable` equivalent**: The builder phase calls `ensureRunnable` to
-insert the woken thread into the run queue. In the frozen phase, the woken
-thread is already in the `membership` FrozenSet (pre-allocated at freeze time).
-Setting `ipcState := .ready` via `frozenStoreTcbIpcState` makes the thread
-eligible for selection by `frozenChooseThread`, which checks `.ready` state. -/
+**`ensureRunnable` equivalent**: `frozenEnsureRunnable`, called on every wake.
+
+This sentence used to claim the insert was unnecessary because the woken thread
+"is already in the `membership` FrozenSet (pre-allocated at freeze time)", and
+that setting `.ready` therefore made it eligible for `frozenChooseThread`.  Both
+halves were wrong, and being wrong in a docstring is why the gap survived five
+review rounds: `frozenChooseThread` never reads `membership` at all -- it folds
+`byPriority` and filters on `.ready` -- so a woken thread absent from every
+bucket was `.ready` and permanently unselectable.  `membership` genuinely cannot
+change (a `FrozenSet` is key-presence with `Unit` values); `byPriority` can, and
+is the field that decides selection. -/
 def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
     (signaller : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
     : FrozenKernel Unit :=
@@ -336,12 +343,20 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
                           some { IpcMessage.empty with badge := some badge } } st1 with
                   | .error e => .error e
                   | .ok ((), st2) =>
-                      -- The badge reached the bound thread, so the provenance
-                      -- goes there.  The notification is not written at all on
-                      -- this path — a badge it already held keeps its own
-                      -- provenance — so nothing is cleared, matching
-                      -- `signalBypassedNotification`'s live classification.
-                      .ok ((), frozenTaintFlow st2 boundTid.toObjId signaller.toObjId)
+                      -- PR #873 round 15: the woken thread re-enters the run
+                      -- queue, as `notificationSignalBound`'s `ensureRunnable`
+                      -- puts it back live.  Without this it is `.ready` and
+                      -- invisible to `frozenChooseThread`, which selects only
+                      -- from `byPriority`.
+                      match frozenEnsureRunnable st2 boundTid with
+                      | .error e => .error e
+                      | .ok st3 =>
+                        -- The badge reached the bound thread, so the provenance
+                        -- goes there.  The notification is not written at all on
+                        -- this path — a badge it already held keeps its own
+                        -- provenance — so nothing is cleared, matching
+                        -- `signalBypassedNotification`'s live classification.
+                        .ok ((), frozenTaintFlow st3 boundTid.toObjId signaller.toObjId)
         | none =>
         -- WS-RC R4.C: pop via `NoDupList.tail?`.
         match ntfn.waitingThreads.tail? with
@@ -372,11 +387,16 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
                           some { IpcMessage.empty with badge := some badge } } st' with
                   | .error e => .error e
                   | .ok ((), st'') =>
+                    -- PR #873 round 15: the woken waiter re-enters the run queue,
+                    -- as the live `notificationSignal` does with `ensureRunnable`.
+                    match frozenEnsureRunnable st'' waiter with
+                    | .error e => .error e
+                    | .ok st3 =>
                       -- Delivered straight to the waiter: the badge reaches that
                       -- thread and the notification is left holding none, so the
                       -- transport's provenance goes with the content.
                       .ok ((), frozenTaintClear
-                              (frozenTaintFlow st'' waiter.toObjId signaller.toObjId)
+                              (frozenTaintFlow st3 waiter.toObjId signaller.toObjId)
                               notificationId)
             | none => .error .objectNotFound
         | none =>
@@ -417,7 +437,8 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
             match st.objects.set notificationId (.notification ntfn') with
             | some objects' =>
                 let st' := { st with objects := objects' }
-                match frozenStoreTcbIpcState st' waiter .ready with
+                match (frozenStoreTcbIpcState st' waiter .ready).bind
+                    (fun stR => frozenEnsureRunnable stR waiter) with
                 | .error e => .error e
                 | .ok st'' =>
                     -- The wait takes the whole stored badge, so the waiter
@@ -445,7 +466,9 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
                       match st.objects.set notificationId (.notification ntfn') with
                       | some objects' =>
                           let st' := { st with objects := objects' }
-                          match frozenStoreTcbIpcState st' waiter (.blockedOnNotification notificationId) with
+                          match (frozenStoreTcbIpcState st' waiter
+                              (.blockedOnNotification notificationId)).map
+                              (fun stB => frozenRemoveRunnable stB waiter) with
                           | .error e => .error e
                           | .ok st'' => .ok (none, st'')
                       | none => .error .objectNotFound
@@ -551,9 +574,15 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                     match frozenStoreTcb receiver recvTcb' st' with
                     | .error e => .error e
                     | .ok ((), st'') =>
+                      -- PR #873 round 15: the woken receiver re-enters the run
+                      -- queue, as the live `endpointSendDual` does with
+                      -- `ensureRunnable`.
+                      match frozenEnsureRunnable st'' receiver with
+                      | .error e => .error e
+                      | .ok st3 =>
                         -- Rendezvous: the message reaches the receiver, so the
                         -- receiver joins the sender's provenance.
-                        .ok ((), frozenTaintFlow st'' receiver.toObjId sender.toObjId)
+                        .ok ((), frozenTaintFlow st3 receiver.toObjId sender.toObjId)
                 | none => .error .objectNotFound
         | none =>
             -- No receiver: block sender with message, then enqueue into sendQ (T1-B/M-FRZ-1).
@@ -570,7 +599,9 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                 -- Enqueue sender into sendQ so subsequent receive can find it
                 match frozenQueuePushTail endpointId false sender st' with
                 | .error e => .error e
-                | .ok st'' => .ok ((), st'')
+                -- PR #873 round 15: a blocked sender leaves the run queue, as
+                -- the live `endpointSendDual` does with `removeRunnable`.
+                | .ok st'' => .ok ((), frozenRemoveRunnable st'' sender)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -607,8 +638,14 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
                                 -- sender's provenance, and the sender's own
                                 -- taint is left alone (it still describes the
                                 -- content that thread holds).
+                              -- PR #873 round 15: the woken sender re-enters the
+                              -- run queue, as the live `endpointReceiveDual`
+                              -- does with `ensureRunnable`.
+                              match frozenEnsureRunnable st''' sender with
+                              | .error e => .error e
+                              | .ok st4 =>
                                 .ok (sender,
-                                     frozenTaintFlow st''' receiver.toObjId sender.toObjId)
+                                     frozenTaintFlow st4 receiver.toObjId sender.toObjId)
                         | none => .error .objectNotFound
                 | none => .error .objectNotFound
         | none =>
@@ -622,7 +659,10 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
                     -- Enqueue receiver into receiveQ so subsequent send can find it
                     match frozenQueuePushTail endpointId true receiver st' with
                     | .error e => .error e
-                    | .ok st'' => .ok (receiver, st'')
+                    -- PR #873 round 15: a blocked receiver leaves the run
+                    -- queue, as the live `endpointReceiveDual` does with
+                    -- `removeRunnable`.
+                    | .ok st'' => .ok (receiver, frozenRemoveRunnable st'' receiver)
             | none => .error .objectNotFound
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
@@ -657,9 +697,17 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                             match frozenStoreTcb caller callerTcb' st'' with
                             | .error e => .error e
                             | .ok ((), st''') =>
+                              -- PR #873 round 15: the run queue moves both ways
+                              -- here, as the live `endpointCall` does -- the woken
+                              -- receiver enters it, the caller blocking for its
+                              -- reply leaves it.
+                              match frozenEnsureRunnable st''' receiver with
+                              | .error e => .error e
+                              | .ok st4 =>
                                 -- Same content move as the send half of a call:
                                 -- the message reaches the receiver.
-                                .ok ((), frozenTaintFlow st''' receiver.toObjId caller.toObjId)
+                                .ok ((), frozenTaintFlow (frozenRemoveRunnable st4 caller)
+                                          receiver.toObjId caller.toObjId)
                         | none => .error .objectNotFound
                 | none => .error .objectNotFound
         | none =>
@@ -675,7 +723,9 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                     -- Enqueue caller into sendQ (caller is a sender until reply)
                     match frozenQueuePushTail endpointId false caller st' with
                     | .error e => .error e
-                    | .ok st'' => .ok ((), st'')
+                    -- PR #873 round 15: a blocked caller leaves the run queue,
+                    -- as the live `endpointCall` does with `removeRunnable`.
+                    | .ok st'' => .ok ((), frozenRemoveRunnable st'' caller)
             | none => .error .objectNotFound
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
@@ -740,12 +790,18 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
                                     (.reply { r with caller := none }) st' with
                             | .error e => .error e
                             | .ok ((), st'') =>
+                              -- PR #873 round 15: the woken caller re-enters the
+                              -- run queue, as the live `endpointReply` does with
+                              -- `ensureRunnable`.
+                              match frozenEnsureRunnable st'' targetId with
+                              | .error e => .error e
+                              | .ok st3 =>
                                 -- The reply message lands in the caller's TCB, so
                                 -- the caller joins the replier's provenance.  This
                                 -- is what `replierId` is *for* — authority still
                                 -- comes from the presented cap, but the content
                                 -- comes from the thread that composed it.
-                                .ok ((), frozenTaintFlow st'' targetId.toObjId
+                                .ok ((), frozenTaintFlow st3 targetId.toObjId
                                           replierId.toObjId)
                       else .error .replyCapInvalid
                   | _ => .error .replyCapInvalid
@@ -1038,8 +1094,14 @@ def frozenTimerTickBudget : FrozenKernel Unit :=
 -- ============================================================================
 
 /-- D1: Frozen thread suspend — transition a thread from any non-Inactive state
-to Inactive. Mirrors `suspendThread` in frozen state. In frozen phase, run queue
-manipulation is skipped (fixed membership set); only TCB state is updated. -/
+to Inactive. Mirrors `suspendThread` in frozen state.
+
+PR #873 round 15: the thread also **leaves the run queue**.  This used to say
+run-queue manipulation was skipped because the membership set is fixed — true of
+`membership`, whose `FrozenSet` keys cannot change, but not of `byPriority`,
+which is the field `frozenChooseThread` actually selects from.  So a suspended
+thread stayed in its bucket carrying `ipcState := .ready` and the frozen
+scheduler would still pick it: suspended in name, runnable in fact. -/
 def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
   fun st =>
     match frozenLookupTcb st tid with
@@ -1056,13 +1118,18 @@ def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
           queueNext := none
           queuePPrev := none }
         match st.objects.set tid.toObjId (.tcb tcb') with
-        | some objs => .ok ((), { st with objects := objs })
+        | some objs => .ok ((), frozenRemoveRunnable { st with objects := objs } tid)
         | none => .error .objectNotFound
 
 /-- D1: Frozen thread resume — transition a thread from Inactive to Ready.
-Mirrors `resumeThread` in frozen state. In frozen phase, run queue insertion
-is skipped (fixed membership set); only TCB state is updated. If the resumed
-thread has higher priority than current, clears current to force rescheduling. -/
+Mirrors `resumeThread` in frozen state.
+
+PR #873 round 15: the thread also **enters the run queue**, for the reason its
+suspending counterpart leaves it.  Skipping the insert left a resumed thread
+`.ready` and absent from every `byPriority` bucket, which is precisely the state
+`frozenChooseThread` cannot select from — resumed in name, unschedulable in
+fact.  If the resumed thread has higher priority than current, `current` is
+cleared to force rescheduling. -/
 def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
   fun st =>
     match frozenLookupTcb st tid with
@@ -1084,7 +1151,11 @@ def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
                 else st'
               | _ => { st' with scheduler := { st'.scheduler with current := none } }
             | none => st'
-          .ok ((), st')
+          -- PR #873 round 15: and it re-enters the run queue, which is what
+          -- makes it selectable at all.
+          match frozenEnsureRunnable st' tid with
+          | .error e => .error e
+          | .ok st'' => .ok ((), st'')
         | none => .error .objectNotFound
 
 -- ============================================================================

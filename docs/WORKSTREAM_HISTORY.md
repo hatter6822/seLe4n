@@ -388,6 +388,23 @@ the existing one: a syscall with a frozen operation is either run beside its
 live counterpart or carries a stated reason, decided over `SyscallId.all` so a
 new constructor forces the choice.
 
+**The harness caught its first divergence, and it was the whole run queue
+(v0.33.91).**  No frozen operation ever wrote `scheduler.byPriority` — the only
+field `frozenChooseThread` selects from — so wakes left threads `.ready` and
+permanently unselectable, and `frozenSuspendThread` left a suspended thread in
+its bucket still marked `.ready`.  Two docstrings asserted the opposite and named
+`membership`, which selection never reads; that is why the gap survived five
+review rounds.
+
+`frozenEnsureRunnable` / `frozenRemoveRunnable` now mirror the live
+`ensureRunnable` / `removeRunnable` at every wake, block and suspend, failing
+closed where the frozen fixed-key map cannot express the insert.  The six
+per-suite copies of the frozen-state fixture — all of which left the scheduler
+empty, modelling a state the live kernel cannot reach — collapse to one
+`SeLe4n.Testing.frozenStateOf`, and `Builder.markRunnable` closes the matching
+gap on the live side: the builder could create threads but not make any of them
+runnable.
+
 Plan: [`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md)
 §SM9.D.  Next: SM9.E tests and phase closure.
 

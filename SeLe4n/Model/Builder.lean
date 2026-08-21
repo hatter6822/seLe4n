@@ -296,6 +296,46 @@ def insertCap (ist : IntermediateState)
     (fun vs hEq => by cases hEq)
 
 -- ============================================================================
+-- Make a thread runnable (PR #873 round 15)
+-- ============================================================================
+
+/-- **Put a thread in the boot core's run queue.**
+
+The builder could create threads but not make any of them *runnable*, so every
+state it could produce had an empty run queue — a shape the live kernel cannot
+reach, since a thread only ever blocks from being runnable.  That gap is why the
+frozen operations' failure to maintain `byPriority` stayed invisible for so long:
+the frozen tests all started from states where the run queue was empty and
+therefore could not show a wake failing to refill it.
+
+The three `allTablesInvExtK` conjuncts that name the run queue are discharged
+from the new `RunQueue`'s own fields, which `RunQueue.insert` maintains by
+construction; the rest of the bundle and the other three obligations do not
+mention the scheduler, so they carry over unchanged. -/
+def markRunnable (ist : IntermediateState) (tid : SeLe4n.ThreadId)
+    (prio : SeLe4n.Priority) : IntermediateState where
+  state :=
+    { ist.state with
+        scheduler := ist.state.scheduler.setRunQueueOnCore bootCoreId
+          ((ist.state.scheduler.runQueueOnCore bootCoreId).insert tid prio) }
+  hAllTables := by
+    have h := ist.hAllTables
+    unfold SystemState.allTablesInvExtK at h ⊢
+    simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    exact ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
+      h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
+      h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
+      h.2.2.2.2.2.2.2.2.2.2.2.1,
+      ((ist.state.scheduler.runQueueOnCore bootCoreId).insert tid prio).byPrio_invExtK,
+      ((ist.state.scheduler.runQueueOnCore bootCoreId).insert tid prio).threadPrio_invExtK,
+      h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+      ((ist.state.scheduler.runQueueOnCore bootCoreId).insert tid prio).mem_invExtK,
+      h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+  hPerObjectSlots := ist.hPerObjectSlots
+  hPerObjectMappings := ist.hPerObjectMappings
+  hLifecycleConsistent := ist.hLifecycleConsistent
+
+-- ============================================================================
 -- Q3-B.7: mapPage — insert a page mapping into a VSpaceRoot
 -- ============================================================================
 

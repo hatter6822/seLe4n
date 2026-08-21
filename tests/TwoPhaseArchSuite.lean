@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n
+import SeLe4n.Testing.StateBuilder
 import SeLe4n.Model.FrozenState
 import SeLe4n.Model.Builder
 import SeLe4n.Kernel.FrozenOps
@@ -67,62 +68,13 @@ private def mkTcb (tid : Nat) (prio : Nat := 0) (dom : Nat := 0) : TCB :=
     cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
 
 /-- Helper: construct an empty FrozenSystemState. -/
-private def emptyFrozenState : FrozenSystemState := {
-  objects := freezeMap (RHTable.empty 16)
-  irqHandlers := freezeMap (RHTable.empty 16)
-  asidTable := freezeMap (RHTable.empty 16)
-  serviceRegistry := freezeMap (RHTable.empty 16)
-  interfaceRegistry := freezeMap (RHTable.empty 16)
-  services := freezeMap (RHTable.empty 16)
-  cdtChildMap := freezeMap (RHTable.empty 16)
-  cdtParentMap := freezeMap (RHTable.empty 16)
-  cdtSlotNode := freezeMap (RHTable.empty 16)
-  cdtNodeSlot := freezeMap (RHTable.empty 16)
-  cdtEdges := []
-  cdtNextNode := ⟨0⟩
-  scheduler := {
-    byPriority := freezeMap (RHTable.empty 16)
-    threadPriority := freezeMap (RHTable.empty 16)
-    membership := freezeMap (RHTable.empty 16)
-    current := none
-    activeDomain := ⟨0⟩
-    domainTimeRemaining := 5
-    domainSchedule := []
-    domainScheduleIndex := 0
-    configDefaultTimeSlice := 5
-    replenishQueue := { entries := [], size := 0 }
-  }
-  objectTypes := freezeMap (RHTable.empty 16)
-  capabilityRefs := freezeMap (RHTable.empty 16)
-  machine := default
-  objectIndex := []
-  objectIndexSet := freezeMap (RHTable.empty 16)
-  scThreadIndex := freezeMap (RHTable.empty 16)
-  tlb := TlbState.empty
-  perCoreTlb := _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores TlbState.empty
-  declassificationAuditLog := []
-  -- WS-SM SM9.A.1a: nothing drained, so the audit epoch is zero and the
-  -- (empty) trail's timestamps are its indices.
-  declassificationAuditEpoch := 0
-  -- WS-SM SM9.B.5: nothing has been refused, so the refusal ledger is the
-  -- empty ring.  A required frozen field (no default), so a silent drop is
-  -- a compile error here rather than a snapshot reporting a system in
-  -- which no declassification was ever attempted.
-  declassificationRefusals := SeLe4n.Kernel.RefusalLedger.initial
-  declassificationTaint := SeLe4n.Kernel.TaintTable.empty
-  -- WS-SM SM7.D.1: required frozen field (no default).
-  perCoreICache :=
-    _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty
-  -- WS-SM SM7.D.1: the emission ledger is likewise required; it is always
-  -- `none` at a syscall boundary.
-  pendingIcacheMaintenance := []
-}
+private def emptyFrozenState : FrozenSystemState :=
+  SeLe4n.Testing.emptyFrozenSystemState
 
 /-- Helper: make a FrozenSystemState with given objects. -/
 private def mkFrozenState (objs : List (ObjId × FrozenKernelObject))
     : FrozenSystemState :=
-  let rt := objs.foldl (fun acc (k, v) => acc.insert k v) (RHTable.empty 16)
-  { emptyFrozenState with objects := freezeMap rt }
+  SeLe4n.Testing.frozenStateOf objs
 
 -- ============================================================================
 -- TPH-001: Build IntermediateState from Empty + Objects
