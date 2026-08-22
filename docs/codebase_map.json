@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm9d-causal-declassification-ppwxud",
-      "commit_sha": "a570711cb3b5a91d39200a0ef2a1e2891c82d154",
-      "tree_sha": "b3dfd112fb03045dbec681e3682243e0866aee50",
-      "committed_at_utc": "2026-08-22T01:13:49+00:00"
+      "commit_sha": "ae675dbf92dc41527b1ff92ac9ef49d3dd384fa1",
+      "tree_sha": "5148e4a32f740b2fd2c4754d3a3657e94aab0eef",
+      "committed_at_utc": "2026-08-22T01:50:08+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "43639abde60f7fb64ee70bd61d999310d93f4965396712eeef971642fb0d456c"
+    "source_digest": "b3e85a111ed654debb6f7aea78f88b5258dc19740773797349d971e87e005903"
   },
   "summary": {
     "module_count": 355,
-    "declaration_count": 16920
+    "declaration_count": 16925
   },
   "readme_sync": {
-    "version": "0.33.94",
+    "version": "0.33.95",
     "lean_toolchain": "v4.28.0",
     "production_files": 286,
-    "production_loc": 286246,
+    "production_loc": 286338,
     "test_files": 69,
-    "test_loc": 63154,
-    "proved_theorem_lemma_decls": 9596,
+    "test_loc": 63253,
+    "proved_theorem_lemma_decls": 9599,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -26647,6 +26647,7 @@
             "badge",
             "badgeWellFormed",
             "badgeWellFormed_of_objects_eq",
+            "cdtNodeIsRevocable",
             "cspaceInsertSlot",
             "cspaceInsertSlot_preserves_badgeWellFormed",
             "ensureCdtNodeForSlot_objects_eq",
@@ -26654,7 +26655,6 @@
             "getCNode",
             "invExt",
             "ipcTransferSingleCap",
-            "lookupCdtSlotOfNode",
             "none",
             "st",
             "valid"
@@ -26720,6 +26720,7 @@
             "capabilityInvariantBundle",
             "cdtAcyclicity",
             "cdtCompleteness",
+            "cdtNodeIsRevocable",
             "cspaceDepthConsistent_of_objects_eq",
             "cspaceInsertSlot",
             "cspaceInsertSlot_preserves_capabilityInvariantBundle",
@@ -26732,7 +26733,6 @@
             "getReply",
             "insert",
             "ipcTransferSingleCap",
-            "lookupCdtSlotOfNode",
             "none",
             "objects_invExt_of_capabilityInvariantBundle",
             "replyCapPointsToValidReply_of_objects_eq",
@@ -29069,7 +29069,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Operations",
       "path": "SeLe4n/Kernel/Capability/Operations.lean",
-      "declaration_count": 105,
+      "declaration_count": 109,
       "declarations": [
         {
           "kind": "namespace",
@@ -30261,8 +30261,51 @@
         },
         {
           "kind": "def",
+          "name": "cdtNodeIsRevocable",
+          "line": 1985,
+          "called": [
+            "CdtNodeId",
+            "SystemState",
+            "lookupCdtSlotOfNode",
+            "lookupSlotCap",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceRevoke_ok_implies_slot_occupied",
+          "line": 1996,
+          "called": [
+            "CSpaceAddr",
+            "SystemState",
+            "cspaceLookupSlot",
+            "cspaceRevoke",
+            "getCNode",
+            "lookupSlotCap",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtNodeIsRevocable_false_revoke_refuses",
+          "line": 2014,
+          "called": [
+            "CSpaceAddr",
+            "CdtNodeId",
+            "SystemState",
+            "cdtNodeIsRevocable",
+            "cspaceRevoke",
+            "cspaceRevoke_ok_implies_slot_occupied",
+            "lookupCdtSlotOfNode",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "ipcTransferSingleCap",
-          "line": 1979,
+          "line": 2042,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -30272,11 +30315,29 @@
             "ObjId",
             "Slot",
             "addEdge",
+            "cdtNodeIsRevocable",
             "cspaceInsertSlot",
             "ensureCdtNodeForSlot",
             "findFirstEmptySlot",
             "getCNode",
-            "lookupCdtSlotOfNode",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcTransferSingleCap_installed_implies_revocable_source",
+          "line": 2129,
+          "called": [
+            "Capability",
+            "CdtNodeId",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "cdtNodeIsRevocable",
+            "findFirstEmptySlot",
+            "getCNode",
+            "ipcTransferSingleCap",
             "none",
             "st"
           ]
@@ -30284,16 +30345,16 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_installed_implies_live_source",
-          "line": 2053,
+          "line": 2153,
           "called": [
             "Capability",
             "CdtNodeId",
             "ObjId",
             "Slot",
             "SystemState",
-            "findFirstEmptySlot",
-            "getCNode",
+            "cdtNodeIsRevocable",
             "ipcTransferSingleCap",
+            "ipcTransferSingleCap_installed_implies_revocable_source",
             "lookupCdtSlotOfNode",
             "none",
             "st"
@@ -30302,18 +30363,18 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_sourceRevoked_preserves_state",
-          "line": 2078,
+          "line": 2170,
           "called": [
             "Capability",
             "CdtNodeId",
             "ObjId",
             "Slot",
             "SystemState",
+            "cdtNodeIsRevocable",
             "cspaceInsertSlot",
             "findFirstEmptySlot",
             "getCNode",
             "ipcTransferSingleCap",
-            "lookupCdtSlotOfNode",
             "none",
             "st",
             "symm"
@@ -30322,7 +30383,7 @@
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_scheduler_eq",
-          "line": 2102,
+          "line": 2194,
           "called": [
             "SlotRef",
             "SystemState",
@@ -30333,7 +30394,7 @@
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_services_eq",
-          "line": 2107,
+          "line": 2199,
           "called": [
             "SlotRef",
             "SystemState",
@@ -30344,7 +30405,7 @@
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_machine_eq",
-          "line": 2112,
+          "line": 2204,
           "called": [
             "SlotRef",
             "SystemState",
@@ -30355,7 +30416,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_scheduler",
-          "line": 2117,
+          "line": 2209,
           "called": [
             "CapTransferResult",
             "Capability",
@@ -30363,13 +30424,13 @@
             "ObjId",
             "Slot",
             "SystemState",
+            "cdtNodeIsRevocable",
             "cspaceInsertSlot",
             "cspaceInsertSlot_preserves_scheduler",
             "ensureCdtNodeForSlot_scheduler_eq",
             "findFirstEmptySlot",
             "getCNode",
             "ipcTransferSingleCap",
-            "lookupCdtSlotOfNode",
             "none",
             "st"
           ]
@@ -30377,7 +30438,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_machine",
-          "line": 2157,
+          "line": 2249,
           "called": [
             "CapTransferResult",
             "Capability",
@@ -30385,13 +30446,13 @@
             "ObjId",
             "Slot",
             "SystemState",
+            "cdtNodeIsRevocable",
             "cspaceInsertSlot",
             "cspaceInsertSlot_preserves_machine",
             "ensureCdtNodeForSlot_machine_eq",
             "findFirstEmptySlot",
             "getCNode",
             "ipcTransferSingleCap",
-            "lookupCdtSlotOfNode",
             "none",
             "st"
           ]
@@ -30399,7 +30460,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_objects_ne",
-          "line": 2192,
+          "line": 2284,
           "called": [
             "CapTransferResult",
             "Capability",
@@ -30407,6 +30468,7 @@
             "ObjId",
             "Slot",
             "SystemState",
+            "cdtNodeIsRevocable",
             "cspaceInsertSlot",
             "cspaceInsertSlot_preserves_objects_ne",
             "ensureCdtNodeForSlot_objects_eq",
@@ -30414,7 +30476,6 @@
             "getCNode",
             "invExt",
             "ipcTransferSingleCap",
-            "lookupCdtSlotOfNode",
             "none",
             "st"
           ]
@@ -30422,7 +30483,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_services",
-          "line": 2229,
+          "line": 2321,
           "called": [
             "CapTransferResult",
             "Capability",
@@ -30430,13 +30491,13 @@
             "ObjId",
             "Slot",
             "SystemState",
+            "cdtNodeIsRevocable",
             "cspaceInsertSlot",
             "cspaceInsertSlot_preserves_services",
             "ensureCdtNodeForSlot_services_eq",
             "findFirstEmptySlot",
             "getCNode",
             "ipcTransferSingleCap",
-            "lookupCdtSlotOfNode",
             "none",
             "st"
           ]
@@ -30444,7 +30505,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_objects_invExt",
-          "line": 2264,
+          "line": 2356,
           "called": [
             "CapTransferResult",
             "Capability",
@@ -30452,6 +30513,7 @@
             "ObjId",
             "Slot",
             "SystemState",
+            "cdtNodeIsRevocable",
             "cspaceInsertSlot",
             "cspaceInsertSlot_preserves_objects_invExt",
             "ensureCdtNodeForSlot_objects_eq",
@@ -30459,7 +30521,6 @@
             "getCNode",
             "invExt",
             "ipcTransferSingleCap",
-            "lookupCdtSlotOfNode",
             "none",
             "st"
           ]
@@ -30467,7 +30528,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ntfn_objects",
-          "line": 2304,
+          "line": 2396,
           "called": [
             "CapTransferResult",
             "Capability",
@@ -30487,7 +30548,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_receiverRoot_not_ntfn",
-          "line": 2329,
+          "line": 2421,
           "called": [
             "CapTransferResult",
             "Capability",
@@ -30495,6 +30556,7 @@
             "ObjId",
             "Slot",
             "SystemState",
+            "cdtNodeIsRevocable",
             "cspaceInsertSlot",
             "ensureCdtNodeForSlot_objects_eq",
             "findFirstEmptySlot",
@@ -30503,7 +30565,6 @@
             "invExt",
             "ipcTransferSingleCap",
             "lookup",
-            "lookupCdtSlotOfNode",
             "none",
             "st",
             "storeCapabilityRef",
@@ -30514,7 +30575,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ep_objects",
-          "line": 2411,
+          "line": 2503,
           "called": [
             "CapTransferResult",
             "Capability",
@@ -30534,7 +30595,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_tcb_objects",
-          "line": 2435,
+          "line": 2527,
           "called": [
             "CapTransferResult",
             "Capability",
@@ -30554,7 +30615,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_schedContext_objects",
-          "line": 2463,
+          "line": 2555,
           "called": [
             "CapTransferResult",
             "Capability",
@@ -30574,7 +30635,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_reply_objects",
-          "line": 2487,
+          "line": 2579,
           "called": [
             "CapTransferResult",
             "Capability",
@@ -30594,7 +30655,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_ok_implies_cnode_at_root",
-          "line": 2510,
+          "line": 2602,
           "called": [
             "CapTransferResult",
             "Capability",
@@ -30611,7 +30672,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_receiverRoot_stays_cnode",
-          "line": 2526,
+          "line": 2618,
           "called": [
             "CNode",
             "CapTransferResult",
@@ -30621,6 +30682,7 @@
             "ObjId",
             "Slot",
             "SystemState",
+            "cdtNodeIsRevocable",
             "cspaceInsertSlot",
             "ensureCdtNodeForSlot_objects_eq",
             "findFirstEmptySlot",
@@ -30629,7 +30691,6 @@
             "invExt",
             "ipcTransferSingleCap",
             "lookup",
-            "lookupCdtSlotOfNode",
             "none",
             "st",
             "storeCapabilityRef",
@@ -214454,7 +214515,7 @@
     {
       "module": "tests.OperationChainSuite",
       "path": "tests/OperationChainSuite.lean",
-      "declaration_count": 55,
+      "declaration_count": 56,
       "declarations": [
         {
           "kind": "namespace",
@@ -215183,8 +215244,52 @@
         },
         {
           "kind": "def",
+          "name": "revokeSweptSiblingBlocksPendingTransfer",
+          "line": 1558,
+          "called": [
+            "AccessRightSet",
+            "CSpaceAddr",
+            "Capability",
+            "IpcMessage",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "any",
+            "assertInvariants",
+            "badge",
+            "bootCoreId",
+            "buildChecked",
+            "cdtNodeIsRevocable",
+            "childrenOf",
+            "cspaceRevokeCdt",
+            "empty",
+            "endpointReceiveDualWithCapsOnCore",
+            "endpointSendDualWithCapsOnCore",
+            "ensureCdtNodeForSlot",
+            "epId",
+            "expect",
+            "getTcb",
+            "isEmpty",
+            "lookup",
+            "lookupCdtSlotOfNode",
+            "none",
+            "ofList",
+            "ofListWF",
+            "ofNat",
+            "payloadCap",
+            "siblingSlot",
+            "st",
+            "stBase",
+            "toObjId",
+            "withObject",
+            "withRunnable"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "endpointGrantDecidesBothOrderings",
-          "line": 1560,
+          "line": 1658,
           "called": [
             "AccessRightSet",
             "Capability",
@@ -215224,7 +215329,7 @@
         {
           "kind": "def",
           "name": "chain13IpcCapTransferNoGrant",
-          "line": 1661,
+          "line": 1759,
           "called": [
             "Capability",
             "IpcMessage",
@@ -215255,7 +215360,7 @@
         {
           "kind": "def",
           "name": "chain14IpcBadgeAndCapTransfer",
-          "line": 1715,
+          "line": 1813,
           "called": [
             "Badge",
             "Capability",
@@ -215287,7 +215392,7 @@
         {
           "kind": "def",
           "name": "chain15StrictRevokeDeepChain",
-          "line": 1803,
+          "line": 1901,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -215316,7 +215421,7 @@
         {
           "kind": "def",
           "name": "chain16StrictRevokePartialFail",
-          "line": 1880,
+          "line": 1978,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -215347,7 +215452,7 @@
         {
           "kind": "def",
           "name": "chain17StrictRevokeOrdering",
-          "line": 1990,
+          "line": 2088,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -215375,7 +215480,7 @@
         {
           "kind": "def",
           "name": "chain18StreamingRevokeBFS",
-          "line": 2104,
+          "line": 2202,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -215400,7 +215505,7 @@
         {
           "kind": "def",
           "name": "chain19StreamingRevokeEmpty",
-          "line": 2178,
+          "line": 2276,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -215423,7 +215528,7 @@
         {
           "kind": "def",
           "name": "chain20StreamingRevokeDeepChain",
-          "line": 2207,
+          "line": 2305,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -215448,7 +215553,7 @@
         {
           "kind": "def",
           "name": "chain21StreamingRevokeEquivalence",
-          "line": 2267,
+          "line": 2365,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -215476,7 +215581,7 @@
         {
           "kind": "def",
           "name": "chain22NotificationBadgeDelivery",
-          "line": 2328,
+          "line": 2426,
           "called": [
             "ObjId",
             "ThreadId",
@@ -215503,7 +215608,7 @@
         {
           "kind": "def",
           "name": "chain23CdtDeepCascadeWithMidDelete",
-          "line": 2375,
+          "line": 2473,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -215530,7 +215635,7 @@
         {
           "kind": "def",
           "name": "chain24HandleYieldEmptyQueue",
-          "line": 2495,
+          "line": 2593,
           "called": [
             "Priority",
             "ThreadId",
@@ -215555,7 +215660,7 @@
         {
           "kind": "def",
           "name": "chain25IrqHandlerDispatch",
-          "line": 2534,
+          "line": 2632,
           "called": [
             "Irq",
             "ObjId",
@@ -215579,7 +215684,7 @@
         {
           "kind": "def",
           "name": "chain26BootSequence",
-          "line": 2564,
+          "line": 2662,
           "called": [
             "Irq",
             "IrqEntry",
@@ -215599,7 +215704,7 @@
         {
           "kind": "def",
           "name": "buildSyscallState",
-          "line": 2622,
+          "line": 2720,
           "called": [
             "AccessRightSet",
             "Capability",
@@ -215627,7 +215732,7 @@
         {
           "kind": "def",
           "name": "chain27SyscallCSpaceOps",
-          "line": 2669,
+          "line": 2767,
           "called": [
             "CNode",
             "ObjId",
@@ -215652,7 +215757,7 @@
         {
           "kind": "def",
           "name": "chain28SyscallVSpaceOps",
-          "line": 2755,
+          "line": 2853,
           "called": [
             "ASID",
             "ObjId",
@@ -215673,7 +215778,7 @@
         {
           "kind": "def",
           "name": "chain29SyscallLifecycleRetype",
-          "line": 2812,
+          "line": 2910,
           "called": [
             "ObjId",
             "arm64DefaultLayout",
@@ -215688,7 +215793,7 @@
         {
           "kind": "def",
           "name": "chain30SyscallServiceOps",
-          "line": 2834,
+          "line": 2932,
           "called": [
             "ObjId",
             "arm64DefaultLayout",
@@ -215704,7 +215809,7 @@
         {
           "kind": "def",
           "name": "chain31SyscallReply",
-          "line": 2878,
+          "line": 2976,
           "called": [
             "ObjId",
             "RegName",
@@ -215732,7 +215837,7 @@
         {
           "kind": "def",
           "name": "chain32SyscallCall",
-          "line": 2943,
+          "line": 3041,
           "called": [
             "ObjId",
             "arm64DefaultLayout",
@@ -215745,7 +215850,7 @@
         {
           "kind": "def",
           "name": "chain33ServiceLifecycle",
-          "line": 2962,
+          "line": 3060,
           "called": [
             "Capability",
             "InterfaceId",
@@ -215778,7 +215883,7 @@
         {
           "kind": "def",
           "name": "chain34ResolveExtraCapsSilentDrop",
-          "line": 3085,
+          "line": 3183,
           "called": [
             "CPtr",
             "Capability",
@@ -215803,7 +215908,7 @@
         {
           "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 3143,
+          "line": 3241,
           "called": [
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
@@ -215846,13 +215951,14 @@
             "receiveWithoutSenderInstallsNothing",
             "replyRecvCapTransferArrivalOrder",
             "revokeConsumesPendingTransfer",
+            "revokeSweptSiblingBlocksPendingTransfer",
             "schedulerStressChecks"
           ]
         },
         {
           "kind": "def",
           "name": "main",
-          "line": 3190,
+          "line": 3289,
           "called": [
             "runOperationChainSuite"
           ]

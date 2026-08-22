@@ -1,3 +1,41 @@
+## v0.33.95 — the install checked for a mapping, not for a capability
+
+`ipcTransferSingleCap` declined an in-flight transfer when the source node no
+longer *mapped* to a slot. That rested on a premise: every operation that
+destroys a slot severs `cdtSlotNode`. Delete, CNode retype and the descendant
+sweep do. The **local sibling sweep does not** — `cspaceRevoke` empties every
+sibling naming the revoked target (`revokeTargetLocal` filters them out of the
+CNode) while `revokeAndClearRefsState` deliberately preserves the CDT maps. The
+mapping outlived the capability, so a transfer parked against a swept sibling
+passed the check and installed after a successful revoke.
+
+**Worse than a leak.** `cspaceRevokeCdt` on an empty slot fails at
+`cspaceLookupSlot`, so the installed copy lands beneath a node no revocation path
+can enter: nothing can destroy it afterwards. And the swept sibling is neither
+the revoked root nor one of its descendants, so v0.33.93's in-flight consumption
+does not reach it either — asserted in the regression, because that is what makes
+this a second hole rather than a restatement of the first.
+`lifecycleRevokeDeleteRetype` calls `cspaceRevoke` directly and has the same
+exposure.
+
+**The check is now revocation's own precondition.** `cdtNodeIsRevocable` asks
+whether the mapped slot is still *occupied*, which is exactly what every
+revocation entry point requires: the scaffold opens with `cspaceRevoke`, which
+opens with `cspaceLookupSlot`, and an empty slot is `.error` there.
+`cspaceRevoke_ok_implies_slot_occupied` ties the two, so a change to what
+revocation requires breaks a theorem rather than silently widening the check, and
+`cdtNodeIsRevocable_false_revoke_refuses` states the consequence: a node this
+declines on is a node no revocation can enter.
+
+`ipcTransferSingleCap_installed_implies_revocable_source` replaces the
+mapping-shaped guarantee; the old form survives as the corollary it now is. The
+weaker statement was not a weaker way of saying the same thing — it was true of a
+transfer that had just been let through.
+
+Found in review of PR #873 (round 18).
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §3.1
+
 ## v0.33.94 — the frozen model refused what the kernel does
 
 `frozenEnsureRunnable` enqueued through `FrozenMap.set`, which answers `none` for

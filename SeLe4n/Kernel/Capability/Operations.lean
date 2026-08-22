@@ -1960,6 +1960,69 @@ theorem revokeCdtScaffold_ok_consumed_or_nothing_derived {ρ : Type}
 -- M-D01: IPC capability transfer operations
 -- ============================================================================
 
+/-- **Can a revocation still reach this node?** (PR #873 round 18)
+
+The condition `ipcTransferSingleCap` must decline on, defined by what revocation
+*requires* rather than by what the install remembers about it.  Every CDT
+revocation entry point is `revokeCdtScaffold`, which begins with `cspaceRevoke`,
+which begins with `cspaceLookupSlot` — and an empty slot is `.error` there.  So a
+node whose slot has been emptied is a node no revocation path can enter, and a
+capability installed beneath it is authority nothing can destroy.
+
+The first version of this check asked only whether the node still *mapped* to a
+slot address.  That is a weaker question, and the local sibling sweep went
+straight through it: `cspaceRevoke` empties every sibling naming the revoked
+target (`revokeTargetLocal` filters them out of the CNode) while
+`revokeAndClearRefsState` deliberately preserves `cdtNodeSlot`.  The mapping
+outlived the capability, so a transfer parked against a swept sibling passed the
+check and installed under a node `cspaceRevokeCdt` cannot enter.  The swept
+sibling is neither the revoked root nor one of its descendants, so the in-flight
+consumption does not cover it either — it is a distinct hole in the same wall.
+
+`cspaceRevoke_ok_implies_slot_occupied` is the tie that keeps this derived: a
+change to what revocation requires breaks that theorem rather than silently
+widening this check. -/
+def cdtNodeIsRevocable (st : SystemState) (node : CdtNodeId) : Bool :=
+  match SystemState.lookupCdtSlotOfNode st node with
+  | none => false
+  | some addr => (SystemState.lookupSlotCap st addr).isSome
+
+/-- **A successful local revoke witnesses an occupied slot.**
+
+`cspaceRevoke` opens with `cspaceLookupSlot`, whose `.ok` is exactly
+`lookupSlotCap = some`.  Stated separately because it is what makes
+`cdtNodeIsRevocable` revocation's own precondition rather than a second opinion
+about it. -/
+theorem cspaceRevoke_ok_implies_slot_occupied
+    (addr : CSpaceAddr) (st st' : SystemState)
+    (h : cspaceRevoke addr st = .ok ((), st')) :
+    (SystemState.lookupSlotCap st addr).isSome := by
+  cases hLk : SystemState.lookupSlotCap st addr with
+  | none =>
+    exfalso
+    unfold cspaceRevoke cspaceLookupSlot at h
+    cases hCn : st.getCNode? addr.cnode with
+    | none => simp [hLk, hCn] at h
+    | some _ => simp [hLk, hCn] at h
+  | some _ => simp
+
+/-- **A node this check refuses is a node no revocation can enter.**
+
+The consequence that makes declining the right answer: were the transfer to
+install anyway, the resulting `.ipcTransfer` edge would hang beneath a node whose
+slot cannot be revoked, so nothing could ever destroy the installed capability. -/
+theorem cdtNodeIsRevocable_false_revoke_refuses
+    (st : SystemState) (node : CdtNodeId) (addr : CSpaceAddr)
+    (hMap : SystemState.lookupCdtSlotOfNode st node = some addr)
+    (hNot : cdtNodeIsRevocable st node = false) :
+    ∀ st', cspaceRevoke addr st ≠ .ok ((), st') := by
+  intro st' hOk
+  have hOcc := cspaceRevoke_ok_implies_slot_occupied addr st st' hOk
+  have hTrue : cdtNodeIsRevocable st node = true := by
+    simp [cdtNodeIsRevocable, hMap, hOcc]
+  rw [hTrue] at hNot
+  exact Bool.noConfusion hNot
+
 /-- M-D01: Transfer a single capability from the sender's IPC message into
 the receiver's CSpace.
 
@@ -1999,11 +2062,18 @@ def ipcTransferSingleCap
             -- and it can run a whole syscall after the capability was resolved:
             -- a blocking send parks its message until a receiver arrives.  In
             -- between, the source slot can be destroyed — deleted, retyped away
-            -- with its CNode, or swept as a descendant by a revoke.  Each of
-            -- those severs `cdtSlotNode`, and `cspaceRevokeCdt` resolves
-            -- *through* that mapping, so installing anyway would hand the
-            -- receiver authority beneath a parent no slot points at, which
-            -- nothing could subsequently revoke.
+            -- with its CNode, swept as a descendant by a revoke, or emptied as a
+            -- same-target sibling by a local revoke.  Installing anyway would
+            -- hand the receiver authority beneath a parent no revocation can
+            -- reach, which nothing could subsequently destroy.
+            --
+            -- The condition is `cdtNodeIsRevocable`, which is revocation's own
+            -- precondition rather than a restatement of it.  Round 18: this
+            -- asked only whether `cdtSlotNode` still mapped the node, on the
+            -- premise that every destroyer severs that mapping.  The first three
+            -- do; the sibling sweep does not, because `revokeAndClearRefsState`
+            -- deliberately preserves the CDT maps — so the mapping outlived the
+            -- capability and the check passed on an empty slot.
             --
             -- Checking here rather than at each destroyer is deliberate.  The
             -- destroyers are open-ended — delete, CNode retype and revoke
@@ -2022,9 +2092,9 @@ def ipcTransferSingleCap
             -- and the object-shape frames rest on that) — the check that
             -- declines to install belongs next to the install, not ahead of the
             -- checks the install already had.
-            match SystemState.lookupCdtSlotOfNode st srcNode with
-            | none => .ok (.sourceRevoked, st)
-            | some _ =>
+            match cdtNodeIsRevocable st srcNode with
+            | false => .ok (.sourceRevoked, st)
+            | true =>
             let dstAddr : CSpaceAddr := { cnode := receiverCspaceRoot, slot := emptySlot }
             match cspaceInsertSlot dstAddr cap st with
             | .error e => .error e
@@ -2040,27 +2110,33 @@ def ipcTransferSingleCap
                      { stDst with cdt := cdt' })
     | none => .error .objectNotFound
 
-/-- **No capability is ever installed beneath a source that no slot points at.**
+/-- **No capability is ever installed beneath a source no revocation can reach.**
 
 The guarantee the whole revocation-precision series rests on, stated where the
 only `.ipcTransfer` edge is made rather than at any of the operations that can
-destroy a slot.  `cspaceRevokeCdt` reaches a transferred capability by walking
-from the source slot's node, so an install under a node with no slot would be
-authority nothing could revoke.  Because the install is the single creator of
-such an edge, this one statement covers every destroyer — the ones that exist
-(delete, CNode retype, the revoke sweep) and the ones a later transition might
-add. -/
-theorem ipcTransferSingleCap_installed_implies_live_source
+destroy a slot.  A revocation reaches a transferred capability by entering the
+source slot's node, and `cdtNodeIsRevocable_false_revoke_refuses` says a node
+this declines on is one no revocation can enter — so an install there would be
+authority nothing could destroy.  Because the install is the single creator of
+such an edge, this one statement covers every destroyer: the ones that exist
+(delete, CNode retype, the revoke sweep, the local sibling sweep) and the ones a
+later transition might add.
+
+Round 18 strengthened the conclusion from "the node still maps to a slot" to
+"the mapped slot is still occupied".  The weaker form was not a weaker way of
+saying the same thing: the sibling sweep empties the slot and keeps the mapping,
+so the old statement was true of a transfer that had just been let through. -/
+theorem ipcTransferSingleCap_installed_implies_revocable_source
     (cap : Capability) (srcNode : CdtNodeId)
     (receiverCspaceRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) (st st' : SystemState)
     (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     (hStep : ipcTransferSingleCap cap srcNode receiverCspaceRoot slotBase scanLimit st
              = .ok (.installed cnode slot, st')) :
-    SystemState.lookupCdtSlotOfNode st srcNode ≠ none := by
+    cdtNodeIsRevocable st srcNode = true := by
   simp only [ipcTransferSingleCap] at hStep
-  cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
-  | none =>
+  cases hSrc : cdtNodeIsRevocable st srcNode with
+  | false =>
     -- The declining branch answers `.sourceRevoked`, never `.installed`.
     exfalso
     cases hCn : st.getCNode? receiverCspaceRoot with
@@ -2070,8 +2146,24 @@ theorem ipcTransferSingleCap_installed_implies_live_source
       cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
       | none => simp [hSlot] at hStep
       | some _ => simp [hSlot, hSrc] at hStep
-  -- `cases … with` already rewrote the goal to `some ref ≠ none`.
-  | some ref => simp
+  | true => rfl
+
+/-- The mapping half of the guarantee, kept as the corollary it now is: a
+revocable node maps to a slot by construction. -/
+theorem ipcTransferSingleCap_installed_implies_live_source
+    (cap : Capability) (srcNode : CdtNodeId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState)
+    (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot)
+    (hStep : ipcTransferSingleCap cap srcNode receiverCspaceRoot slotBase scanLimit st
+             = .ok (.installed cnode slot, st')) :
+    SystemState.lookupCdtSlotOfNode st srcNode ≠ none := by
+  have hRev := ipcTransferSingleCap_installed_implies_revocable_source
+    cap srcNode receiverCspaceRoot slotBase scanLimit st st' cnode slot hStep
+  unfold cdtNodeIsRevocable at hRev
+  intro hNone
+  rw [hNone] at hRev
+  exact Bool.noConfusion hRev
 
 /-- The declining branch is a no-op: a transfer that finds its source gone
 leaves the state exactly as it was, so nothing is half-installed. -/
@@ -2091,9 +2183,9 @@ theorem ipcTransferSingleCap_sourceRevoked_preserves_state
     | none => simp [hSlot] at hStep
     | some emptySlot =>
       simp only [hSlot] at hStep
-      cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
-      | none => simp [hSrc] at hStep; exact hStep.symm
-      | some _ =>
+      cases hSrc : cdtNodeIsRevocable st srcNode with
+      | false => simp [hSrc] at hStep; exact hStep.symm
+      | true =>
         simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverCspaceRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
@@ -2134,9 +2226,9 @@ theorem ipcTransferSingleCap_preserves_scheduler
         simp [hSlot] at hStep
         -- A source destroyed since resolution declines the install and leaves
         -- the state untouched, so this frame holds there by reflexivity.
-        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
-        | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
-        | some _ =>
+        cases hSrc : cdtNodeIsRevocable st srcNode with
+        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
+        | true =>
         simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
@@ -2173,9 +2265,9 @@ theorem ipcTransferSingleCap_preserves_machine
         simp [hSlot] at hStep
         -- A source destroyed since resolution declines the install and leaves
         -- the state untouched, so this frame holds there by reflexivity.
-        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
-        | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
-        | some _ =>
+        cases hSrc : cdtNodeIsRevocable st srcNode with
+        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
+        | true =>
         simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
@@ -2211,9 +2303,9 @@ theorem ipcTransferSingleCap_preserves_objects_ne
         simp [hSlot] at hStep
         -- A source destroyed since resolution declines the install and leaves
         -- the state untouched, so this frame holds there by reflexivity.
-        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
-        | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
-        | some _ =>
+        cases hSrc : cdtNodeIsRevocable st srcNode with
+        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
+        | true =>
         simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
@@ -2246,9 +2338,9 @@ theorem ipcTransferSingleCap_preserves_services
         simp [hSlot] at hStep
         -- A source destroyed since resolution declines the install and leaves
         -- the state untouched, so this frame holds there by reflexivity.
-        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
-        | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
-        | some _ =>
+        cases hSrc : cdtNodeIsRevocable st srcNode with
+        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
+        | true =>
         simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
@@ -2282,9 +2374,9 @@ theorem ipcTransferSingleCap_preserves_objects_invExt
         simp [hSlot] at hStep
         -- A source destroyed since resolution declines the install and leaves
         -- the state untouched, so this frame holds there by reflexivity.
-        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
-        | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
-        | some _ =>
+        cases hSrc : cdtNodeIsRevocable st srcNode with
+        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
+        | true =>
         simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
@@ -2353,11 +2445,11 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
         simp [hSlot] at hStep
         -- A source destroyed since resolution declines the install and leaves
         -- the state untouched, so this frame holds there by reflexivity.
-        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
-        | none =>
+        cases hSrc : cdtNodeIsRevocable st srcNode with
+        | false =>
           simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep
           intro ntfn h; rw [hObj] at h; exact absurd h (by simp)
-        | some _ =>
+        | true =>
         simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
@@ -2547,9 +2639,9 @@ theorem ipcTransferSingleCap_receiverRoot_stays_cnode
     simp [hSlot] at hStep
     -- A source destroyed since resolution declines the install and leaves
     -- the state untouched, so this frame holds there by reflexivity.
-    cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
-    | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; exact ⟨cn, hCn⟩
-    | some _ =>
+    cases hSrc : cdtNodeIsRevocable st srcNode with
+    | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; exact ⟨cn, hCn⟩
+    | true =>
     simp only [hSrc] at hStep
     cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
     | error e => simp [hIns] at hStep

@@ -1541,6 +1541,104 @@ private def revokeConsumesPendingTransfer : IO Unit := do
           ((stAfter.cdt.childrenOf srcNode).isEmpty)
         assertInvariants s!"revoke-pending: {name} consumed the pending transfer" stAfter
 
+/-- SCN-CAP-REVOKE-SWEPT-SIBLING (PR #873 round 18): a transfer parked against a
+slot the *local* sweep emptied must not install either.
+
+`cspaceRevoke` clears every sibling naming the revoked target
+(`revokeTargetLocal` filters them out of the CNode) but `revokeAndClearRefsState`
+deliberately preserves the CDT maps.  So the swept sibling's node kept pointing
+at a slot that no longer holds anything, and the install-time check -- which
+asked only whether the node still *mapped* to a slot -- let the transfer through.
+Nothing could revoke the installed copy afterwards: `cspaceRevokeCdt` on an empty
+slot fails at `cspaceLookupSlot`.
+
+The swept sibling is neither the revoked root nor one of its descendants, so the
+in-flight consumption does not reach it -- asserted below, because that is what
+makes this a second hole rather than a restatement of the first. -/
+private def revokeSweptSiblingBlocksPendingTransfer : IO Unit := do
+  let epId : SeLe4n.ObjId := ⟨3850⟩
+  let sender : SeLe4n.ThreadId := ⟨3860⟩
+  let receiver : SeLe4n.ThreadId := ⟨3861⟩
+  let senderCNode : SeLe4n.ObjId := ⟨3870⟩
+  let receiverCNode : SeLe4n.ObjId := ⟨3871⟩
+  let payloadObj : SeLe4n.ObjId := ⟨3880⟩
+  let payloadCap : Capability :=
+    { target := .object payloadObj, rights := AccessRightSet.ofList [.read], badge := none }
+  let grantRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
+  -- Two slots in ONE CNode naming the SAME target: revoking the first sweeps the
+  -- second, which is the shape the mapping-only check could not see.
+  let revokedSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 5
+  let siblingSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 6
+  let recvSlot0 : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
+
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
+      |>.withObject senderCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF [(revokedSlot, payloadCap), (siblingSlot, payloadCap)]
+        })
+      |>.withObject receiverCNode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.empty
+        })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3890⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3891⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
+      |>.withRunnable [sender, receiver]
+      |>.buildChecked)
+
+  let revokedAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := senderCNode, slot := revokedSlot }
+  let siblingAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := senderCNode, slot := siblingSlot }
+  let (_, stRoot) := SystemState.ensureCdtNodeForSlot st0 revokedAddr
+  let (siblingNode, stBase) := SystemState.ensureCdtNodeForSlot stRoot siblingAddr
+  let msg : IpcMessage :=
+    { registers := #[], caps := #[{ cap := payloadCap, srcNode := siblingNode }], badge := none, capsGranted := true }
+
+  let (stParked, _) :=
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender msg grantRights senderCNode
+      recvSlot0 bootCoreId stBase
+
+  let slotFilled (st : SystemState) (cn : SeLe4n.ObjId) (s : SeLe4n.Slot) : Bool :=
+    match st.objects[cn]? with
+    | some (.cnode c) => (c.lookup s).isSome
+    | _ => false
+
+  -- Control: with no revoke, the sibling-sourced transfer installs.
+  let (stControl, _) :=
+    SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none receiverCNode
+      recvSlot0 bootCoreId stParked
+  expect "swept-sibling: control — the sibling-sourced transfer installs when nothing revokes"
+    (slotFilled stControl receiverCNode recvSlot0)
+
+  match SeLe4n.Kernel.cspaceRevokeCdt revokedAddr stParked with
+  | .error e =>
+      expect s!"swept-sibling: the revoke must not fail ({reprStr e})" false
+  | .ok ((), stRevoked) =>
+      expect "swept-sibling: the local sweep emptied the sibling slot"
+        (!(slotFilled stRevoked senderCNode siblingSlot))
+      -- The two load-bearing negatives.  The mapping survives the sweep, so the
+      -- old check would have passed; and the sibling is outside the revoked
+      -- subtree, so the in-flight consumption did not reach it.
+      expect "swept-sibling: NEGATIVE — the CDT mapping outlived the capability"
+        ((SystemState.lookupCdtSlotOfNode stRevoked siblingNode).isSome)
+      expect "swept-sibling: NEGATIVE — the consumption sweep did not reach it"
+        ((stRevoked.getTcb? sender).any (fun t =>
+          match t.pendingMessage with
+          | some m => m.caps.any (fun tc => tc.srcNode == siblingNode)
+          | none => false))
+      -- And the install declines anyway, because the mapped slot is empty.
+      expect "swept-sibling: the node is no longer revocable"
+        (!(SeLe4n.Kernel.cdtNodeIsRevocable stRevoked siblingNode))
+      let (stAfter, _) :=
+        SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none receiverCNode
+          recvSlot0 bootCoreId stRevoked
+      expect "swept-sibling: no capability arrives after the sweep"
+        (!(slotFilled stAfter receiverCNode recvSlot0))
+      expect "swept-sibling: and no child edge appears under the swept node"
+        ((stAfter.cdt.childrenOf siblingNode).isEmpty)
+      assertInvariants "swept-sibling: the swept source declined the install" stAfter
+
 /-- SCN-IPC-CAP-TRANSFER-GRANT-STAMPED (PR #873 round 13): the endpoint's grant
 right decides, whatever the message arrived carrying.
 
@@ -3160,6 +3258,7 @@ private def runOperationChainSuite : IO Unit := do
   receiveWithoutSenderInstallsNothing
   receiveRefusesMessagelessParkedSender
   revokeConsumesPendingTransfer
+  revokeSweptSiblingBlocksPendingTransfer
   endpointGrantDecidesBothOrderings
   chain13IpcCapTransferNoGrant
   chain14IpcBadgeAndCapTransfer

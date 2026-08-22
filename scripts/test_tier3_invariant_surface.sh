@@ -4238,6 +4238,28 @@ run_check "INVARIANT" rg -n 'if cnodeHasDerivationParentSlot st target cn then' 
 run_check "INVARIANT" rg -n '^  \| sourceRevoked$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_installed_implies_live_source' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_sourceRevoked_preserves_state' SeLe4n/Kernel/Capability/Operations.lean
+# PR #873 round 18: that check asked whether the node still MAPPED to a slot, on
+# the premise that every destroyer severs the mapping.  Delete, CNode retype and
+# the descendant sweep do; the LOCAL sibling sweep does not -- `revokeTargetLocal`
+# empties every sibling naming the revoked target while `revokeAndClearRefsState`
+# deliberately preserves the CDT maps.  So the mapping outlived the capability, a
+# transfer parked against a swept sibling installed, and nothing could revoke the
+# copy afterwards: `cspaceRevokeCdt` on an empty slot fails at `cspaceLookupSlot`.
+run_check "INVARIANT" rg -n '^def cdtNodeIsRevocable' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n 'match cdtNodeIsRevocable st srcNode with' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_installed_implies_revocable_source' SeLe4n/Kernel/Capability/Operations.lean
+# The condition is revocation's own precondition, not a second opinion about it:
+# a change to what revocation requires breaks these rather than widening the check.
+run_check "INVARIANT" rg -n '^theorem cspaceRevoke_ok_implies_slot_occupied' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cdtNodeIsRevocable_false_revoke_refuses' SeLe4n/Kernel/Capability/Operations.lean
+# The mapping-only test must not come back at the install site.
+run_negative_check "INVARIANT" rg -n 'match SystemState.lookupCdtSlotOfNode st srcNode with' SeLe4n/Kernel/Capability/Operations.lean
+# The regression carries both load-bearing negatives: the mapping survives the
+# sweep (so the old check would have passed) and the in-flight consumption does
+# not reach a swept sibling (so this is a second hole, not the first restated).
+run_check "INVARIANT" rg -n '^private def revokeSweptSiblingBlocksPendingTransfer' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'the CDT mapping outlived the capability' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'the consumption sweep did not reach it' tests/OperationChainSuite.lean
 # NEGATIVE: the CNode retype arm must not go back to branching on the
 # replacement's shape — both shapes destroy the old slots, so both must detach.
 run_negative_check "INVARIANT" rg -n 'CNode → CNode: no CDT cleanup needed' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean

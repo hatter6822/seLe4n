@@ -290,9 +290,9 @@ theorem ipcTransferSingleCap_preserves_badgeWellFormed
         simp [hSlot] at hStep
         -- A source destroyed since resolution declines the install and leaves
         -- the state untouched, so the claim holds there unchanged.
-        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
-        | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
-        | some _ =>
+        cases hSrc : cdtNodeIsRevocable st srcNode with
+        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
+        | true =>
         simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
@@ -401,9 +401,9 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
         simp [hSlot] at hStep
         -- A source destroyed since resolution declines the install and leaves
         -- the state untouched, so the claim holds there unchanged.
-        cases hSrc : SystemState.lookupCdtSlotOfNode st srcNode with
-        | none => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
-        | some _ =>
+        cases hSrc : cdtNodeIsRevocable st srcNode with
+        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
+        | true =>
         simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
