@@ -442,8 +442,17 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
             match st.objects.set notificationId (.notification ntfn') with
             | some objects' =>
                 let st' := { st with objects := objects' }
-                match (frozenStoreTcbIpcState st' waiter .ready).bind
-                    (fun stR => frozenEnsureRunnable stR waiter) with
+                -- **No enqueue here** (PR #873 round 17).  The waiter on this
+                -- branch is the *calling* thread: it consumed a badge that was
+                -- already pending, so it never blocked and never left the run
+                -- queue -- and under dequeue-on-dispatch it is the current
+                -- thread, absent from the queue entirely.  The live
+                -- `notificationWait` marks it `.ready` and leaves the scheduler
+                -- alone; an enqueue here would put a thread into a bucket the
+                -- live transition does not touch.  The round-15 cut added one to
+                -- every `.ready` transition without separating the wake of a
+                -- *blocked* thread from the return of the caller.
+                match frozenStoreTcbIpcState st' waiter .ready with
                 | .error e => .error e
                 | .ok st'' =>
                     -- The wait takes the whole stored badge, so the waiter
@@ -611,9 +620,23 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     | none => .error .objectNotFound
 
 /-- Q7-C2: Frozen endpoint receive — receive message via frozen endpoint.
-Returns sender ThreadId. -/
+Returns sender ThreadId.
+
+**The dequeued sender's own state decides what happens to it** (PR #873 round
+17).  `frozenQueuePopHead` accepts a `.blockedOnCall` head as well as a
+`.blockedOnSend` one, and this woke both: it set the head `.ready` and put it
+back in the run queue.  A caller does not become runnable at rendezvous — the
+live `endpointReceiveDual` moves it to `.blockedOnReply`, links it to the
+server-supplied reply object, and fails closed with `.replyCapInvalid` when the
+receive carries none.  So the frozen operation succeeded with a runnable caller
+where its counterpart either leaves it blocked or refuses.
+
+`replyId` exists for that: the frozen operation could not previously express the
+reply path at all, which is why the divergence was invisible rather than
+deliberate. -/
 def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) : FrozenKernel SeLe4n.ThreadId :=
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    : FrozenKernel SeLe4n.ThreadId :=
   fun st =>
     match st.objects.get? endpointId with
     | some (.endpoint ep) =>
@@ -624,29 +647,53 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
             | .error e => .error e
             | .ok (sender, senderTcb, st') =>
                 let senderMsg := senderTcb.pendingMessage
-                -- Unblock sender
+                let senderWasCall : Bool :=
+                  match senderTcb.ipcState with
+                  | .blockedOnCall _ => true
+                  | _ => false
                 match frozenLookupTcb st' sender with
                 | some senderTcb' =>
-                    let senderTcbUpdated := { senderTcb' with ipcState := ThreadIpcState.ready, pendingMessage := none }
+                    -- The call arm parks the caller for its reply; the send arm
+                    -- wakes it.  Both then deliver the message to the receiver.
+                    let senderNext : ThreadIpcState :=
+                      if senderWasCall then .blockedOnReply endpointId (some receiver)
+                      else ThreadIpcState.ready
+                    let senderTcbUpdated := { senderTcb' with ipcState := senderNext, pendingMessage := none }
                     match frozenStoreTcb sender senderTcbUpdated st' with
                     | .error e => .error e
-                    | .ok ((), st'') =>
+                    | .ok ((), stSender) =>
+                        -- A Call rendezvous carrying no reply object fails
+                        -- closed: the post-state is discarded, so the caller is
+                        -- never stranded `.blockedOnReply` with nothing to wake
+                        -- it.
+                        match (if senderWasCall then
+                                 match replyId with
+                                 | none => (.error .replyCapInvalid :
+                                     Except KernelError FrozenSystemState)
+                                 | some rid => frozenLinkCallerReply stSender sender rid
+                               else .ok stSender) with
+                        | .error e => .error e
+                        | .ok st'' =>
                         -- Deliver message to receiver
                         match frozenLookupTcb st'' receiver with
                         | some recvTcb =>
                             let recvTcb' := { recvTcb with pendingMessage := senderMsg }
                             match frozenStoreTcb receiver recvTcb' st'' with
                             | .error e => .error e
-                            | .ok ((), st''') =>
+                            | .ok ((), stDelivered) =>
                                 -- The parked message moves from the sender's TCB
                                 -- into the receiver's: the receiver joins the
                                 -- sender's provenance, and the sender's own
                                 -- taint is left alone (it still describes the
                                 -- content that thread holds).
-                              -- PR #873 round 15: the woken sender re-enters the
+                              -- PR #873 round 15: a woken sender re-enters the
                               -- run queue, as the live `endpointReceiveDual`
-                              -- does with `ensureRunnable`.
-                              match frozenEnsureRunnable st''' sender with
+                              -- does with `ensureRunnable`.  Round 17: only the
+                              -- send arm wakes, so only the send arm enqueues.
+                              match (if senderWasCall then
+                                       (.ok stDelivered :
+                                         Except KernelError FrozenSystemState)
+                                     else frozenEnsureRunnable stDelivered sender) with
                               | .error e => .error e
                               | .ok st4 =>
                                 .ok (sender,

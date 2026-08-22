@@ -309,6 +309,39 @@ def frozenRemoveRunnable (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
       else acc)
     cleared
 
+/-- **Link a dequeued caller to the server's reply object** (PR #873 round 17),
+mirroring `SystemState.linkCallerReply`.
+
+Both single-use barriers are kept, because both are what make the link
+unforgeable: a Reply already naming a caller is refused (`linkReply`'s barrier),
+and a caller already holding a reply object is refused, else the old Reply is
+orphaned with a stale `caller` and a later reply cap could resolve to it.
+
+The frozen receive needs this because a `.blockedOnCall` sender does not become
+runnable at rendezvous — it becomes `.blockedOnReply`, holding a link the reply
+transition later consumes. Without it the frozen receive woke the caller, which
+is a transition the live kernel never performs. -/
+def frozenLinkCallerReply (st : FrozenSystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) : Except KernelError FrozenSystemState :=
+  match st.objects.get? rid.toObjId with
+  | some (.reply r) =>
+      if r.caller.isNone then
+        match st.objects.set rid.toObjId (.reply { r with caller := some caller }) with
+        | none => .error .objectNotFound
+        | some objects' =>
+            let st1 : FrozenSystemState := { st with objects := objects' }
+            match frozenLookupTcb st1 caller with
+            | none => .error .objectNotFound
+            | some tcb =>
+                if tcb.replyObject.isNone then
+                  match st1.objects.set caller.toObjId
+                      (.tcb { tcb with replyObject := some rid }) with
+                  | none => .error .objectNotFound
+                  | some objects'' => .ok { st1 with objects := objects'' }
+                else .error .replyCapInvalid
+      else .error .replyCapInvalid
+  | _ => .error .replyCapInvalid
+
 /-- Q7-B: Store a TCB's IPC state in frozen state. -/
 def frozenStoreTcbIpcState (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
     (ipcState : ThreadIpcState) : Except KernelError FrozenSystemState :=

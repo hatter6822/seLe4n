@@ -4071,6 +4071,26 @@ run_check "INVARIANT" rg -n '^def frozenRunAgrees' SeLe4n/Kernel/FrozenOps/Agree
 # either a differential scenario or a stated reason, decided over
 # `SyscallId.all` so a new constructor forces the choice.
 run_check "INVARIANT" rg -n '^def frozenOpDifferentiallyChecked' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# PR #873 round 17: keyed by SYSCALL, one scenario satisfied a whole syscall --
+# `.send` read "checked" on a fixture with no receiver waiting while the
+# rendezvous branch had never been compared.  The unit of the claim is now the
+# unit of the transition, and the per-syscall view is derived from it rather
+# than asserted beside it.
+run_check "INVARIANT" rg -n '^inductive FrozenOpBranch' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^def frozenBranchDifferentiallyChecked' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^theorem frozenBranch_checked_or_reasoned' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^theorem frozenBranchUncheckedReason_only_when_unchecked' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# The vacuity guard: without it a syscall with no branches listed satisfies the
+# `all` and claims to be checked.
+run_check "INVARIANT" rg -n 'FrozenOpBranch.all.any \(fun b => b.syscall == sid\)' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# A `.blockedOnCall` head is parked for its reply, not woken: the branch the
+# frozen receive could not previously express, since it took no reply id.
+run_check "INVARIANT" rg -n 'senderWasCall' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^def frozenLinkCallerReply' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n 'differentialReceiveFromBlockedCallerAgrees' tests/FrozenOpsSuite.lean
+# The consuming waiter is the calling thread: it never blocked, so the live
+# `notificationWait` leaves the scheduler alone and the frozen mirror must too.
+run_negative_check "INVARIANT" rg -n 'fun stR => frozenEnsureRunnable stR waiter' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n '^theorem frozenOpCoverage_obliges_differential_check' SeLe4n/Kernel/FrozenOps/Agreement.lean
 run_check "INVARIANT" rg -n '^theorem frozenOpDifferentiallyChecked_implies_covered' SeLe4n/Kernel/FrozenOps/Agreement.lean
 # An excuse left behind after the scenario lands would re-open the escape hatch.

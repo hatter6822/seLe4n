@@ -191,21 +191,144 @@ interlocked below, so a covered syscall must either be differentially checked or
 carry a stated reason it is not.  A gap is then a row someone wrote, not a row
 nobody noticed. -/
 
-/-- WS-SM: the syscalls whose frozen operation is run against its live
+/-- **The branches a frozen IPC operation can take.**
+
+The coverage claim was keyed by `SyscallId`, so one scenario satisfied a whole
+syscall.  `.send` was claimed on a fixture with *no receiver waiting*: the
+rendezvous branch — a different transition, which the live `endpointSendDual`
+completes with `storeTcbReceiveComplete` — was never compared against anything,
+and neither was the call rendezvous that stages a reply.  Two of the divergences
+found in round 17 lived in branches a per-syscall row reported as checked.
+
+A row per branch cannot stop someone adding a branch without listing it; the
+`SyscallId` keying could not do that either.  What it does is make the unit of
+the claim the unit of the transition, so a `true` means the comparison ran on the
+shape being claimed rather than on whichever shape the fixture happened to hit.
+
+The list is the discriminating test each operation actually performs —
+`receiveQ.head`, `sendQ.head` plus the dequeued sender's `ipcState`,
+`pendingBadge`, `boundTCB` then `waitingThreads` — not a grouping chosen for the
+table. -/
+inductive FrozenOpBranch where
+  /-- A signal delivered straight to the notification's bound TCB. -/
+  | notificationSignalToBoundThread
+  /-- A signal delivered to an ordinary waiter popped from `waitingThreads`. -/
+  | notificationSignalToWaiter
+  /-- A signal with no waiter and no bound thread: the badge is stored. -/
+  | notificationSignalStoresBadge
+  /-- A wait that takes a badge already pending. -/
+  | notificationWaitConsumesBadge
+  /-- A wait with nothing pending: the caller blocks. -/
+  | notificationWaitBlocks
+  /-- A send that finds a receiver waiting. -/
+  | endpointSendToWaitingReceiver
+  /-- A send with no receiver: the sender parks with its message. -/
+  | endpointSendParks
+  /-- A receive that dequeues a `.blockedOnSend` sender. -/
+  | endpointReceiveFromBlockedSender
+  /-- A receive that dequeues a `.blockedOnCall` caller. -/
+  | endpointReceiveFromBlockedCaller
+  /-- A receive with no sender queued: the receiver blocks. -/
+  | endpointReceiveBlocks
+  /-- A call that finds a receiver waiting. -/
+  | endpointCallToWaitingReceiver
+  /-- A call with no receiver: the caller parks. -/
+  | endpointCallParks
+  /-- A reply delivered to a linked `.blockedOnReply` caller. -/
+  | endpointReplyToBlockedCaller
+  deriving DecidableEq, Repr, Inhabited
+
+/-- Every branch, for the totality the interlocks below decide over. -/
+def FrozenOpBranch.all : List FrozenOpBranch :=
+  [ .notificationSignalToBoundThread, .notificationSignalToWaiter,
+    .notificationSignalStoresBadge, .notificationWaitConsumesBadge,
+    .notificationWaitBlocks, .endpointSendToWaitingReceiver, .endpointSendParks,
+    .endpointReceiveFromBlockedSender, .endpointReceiveFromBlockedCaller,
+    .endpointReceiveBlocks, .endpointCallToWaitingReceiver, .endpointCallParks,
+    .endpointReplyToBlockedCaller ]
+
+/-- The syscall each branch belongs to. -/
+def FrozenOpBranch.syscall : FrozenOpBranch → SyscallId
+  | .notificationSignalToBoundThread => .notificationSignal
+  | .notificationSignalToWaiter => .notificationSignal
+  | .notificationSignalStoresBadge => .notificationSignal
+  | .notificationWaitConsumesBadge => .notificationWait
+  | .notificationWaitBlocks => .notificationWait
+  | .endpointSendToWaitingReceiver => .send
+  | .endpointSendParks => .send
+  | .endpointReceiveFromBlockedSender => .receive
+  | .endpointReceiveFromBlockedCaller => .receive
+  | .endpointReceiveBlocks => .receive
+  | .endpointCallToWaitingReceiver => .call
+  | .endpointCallParks => .call
+  | .endpointReplyToBlockedCaller => .reply
+
+/-- WS-SM: the **branches** whose frozen transition is run against its live
 counterpart by `FrozenOpsSuite`'s differential scenarios. -/
-def frozenOpDifferentiallyChecked : SyscallId → Bool
-  | .notificationSignal => true  -- against `notificationSignalBound`
-  | .notificationWait => true    -- against `notificationWait`
-  | .send => true                -- against `endpointSendDual`
-  | .receive => true             -- against `endpointReceiveDual`
-  | .call => true                -- against `endpointCall`
-  | .reply => true               -- against `endpointReply`
+def frozenBranchDifferentiallyChecked : FrozenOpBranch → Bool
+  | .notificationSignalToBoundThread => true   -- against `notificationSignalBound`
+  | .notificationWaitConsumesBadge => true     -- against `notificationWait`
+  | .endpointSendParks => true                 -- against `endpointSendDual`
+  | .endpointReceiveFromBlockedSender => true  -- against `endpointReceiveDual`
+  | .endpointReceiveFromBlockedCaller => true  -- against `endpointReceiveDual`
+  | .endpointCallParks => true                 -- against `endpointCall`
+  | .endpointReplyToBlockedCaller => true      -- against `endpointReply`
   | _ => false
+
+/-- Why a branch is not yet run beside its live counterpart.  Non-empty exactly
+for the unchecked ones, so the interlock cannot be satisfied by a blank row. -/
+def frozenBranchUncheckedReason : FrozenOpBranch → String
+  | .notificationSignalToWaiter => "ordinary-waiter delivery; scenario owed"
+  | .notificationSignalStoresBadge => "store-only signal; scenario owed"
+  | .notificationWaitBlocks => "blocking wait; scenario owed"
+  | .endpointSendToWaitingReceiver => "send rendezvous; scenario owed"
+  | .endpointReceiveBlocks => "blocking receive; scenario owed"
+  | .endpointCallToWaitingReceiver => "call rendezvous; scenario owed"
+  | _ => ""
+
+/-- **Every branch is either checked or carries a stated reason.**
+
+Decided over `FrozenOpBranch.all`, so a new constructor makes this fail to
+elaborate until its row exists. -/
+theorem frozenBranch_checked_or_reasoned :
+    FrozenOpBranch.all.all (fun b =>
+      frozenBranchDifferentiallyChecked b
+        || !(frozenBranchUncheckedReason b).isEmpty) = true := by
+  decide
+
+/-- A checked branch carries no "owed" reason, and an unchecked one carries no
+empty reason: the two tables partition rather than overlap. -/
+theorem frozenBranchUncheckedReason_only_when_unchecked :
+    FrozenOpBranch.all.all (fun b =>
+      frozenBranchDifferentiallyChecked b
+        == (frozenBranchUncheckedReason b).isEmpty) = true := by
+  decide
+
+/-- WS-SM: a syscall is differentially checked when **every** branch of it is.
+
+The per-syscall claim is now derived from the per-branch ones rather than
+asserted beside them, so it cannot say "checked" while a branch of that syscall
+has never run.  That is what it used to do: six syscalls read `true` while seven
+of their thirteen branches had no comparison behind them. -/
+def frozenOpDifferentiallyChecked (sid : SyscallId) : Bool :=
+  -- The `any` guard is load-bearing: without it a syscall with no branches
+  -- listed would satisfy the `all` vacuously and claim to be checked.
+  FrozenOpBranch.all.any (fun b => b.syscall == sid)
+    && FrozenOpBranch.all.all (fun b =>
+         b.syscall != sid || frozenBranchDifferentiallyChecked b)
 
 /-- WS-SM: why a frozen-covered syscall is not yet run beside its live
 counterpart.  Non-empty exactly for the covered-but-unchecked ones, so the
 interlock below cannot be satisfied by leaving a row blank. -/
 def frozenOpUncheckedReason : SyscallId → String
+  -- Partially checked: some branches run beside their live counterpart and some
+  -- do not.  Named here rather than rounded up to `true`, which is what the
+  -- per-syscall keying used to do -- see `frozenBranchUncheckedReason` for which.
+  | .notificationSignal => "branch scenarios owed; see frozenBranchUncheckedReason"
+  | .notificationWait => "branch scenarios owed; see frozenBranchUncheckedReason"
+  | .send => "branch scenarios owed; see frozenBranchUncheckedReason"
+  | .receive => "branch scenarios owed; see frozenBranchUncheckedReason"
+  | .call => "branch scenarios owed; see frozenBranchUncheckedReason"
   | .cspaceMint => "capability operation; scenario owed"
   | .cspaceDelete => "capability operation; scenario owed"
   | .vspaceMap => "read-only in the frozen phase; scenario owed"

@@ -1,3 +1,46 @@
+## v0.33.96 — one scenario was standing in for a whole syscall
+
+`frozenOpDifferentiallyChecked` was keyed by `SyscallId`. Round 16 tied it to an
+executed scenario, which was necessary and not sufficient: one scenario satisfied
+a whole syscall. `.send` read "checked" on a fixture with **no receiver
+waiting**, so the rendezvous branch — a different transition — had never been
+compared against anything, and neither had the call rendezvous that stages a
+reply. Two divergences found this round lived in branches a per-syscall row
+reported as covered.
+
+**The unit of the claim is now the unit of the transition.** `FrozenOpBranch`
+enumerates the branches each frozen IPC operation actually takes — the
+discriminating tests the code performs (`receiveQ.head`, `sendQ.head` plus the
+dequeued sender's `ipcState`, `pendingBadge`, `boundTCB` then `waitingThreads`),
+not a grouping chosen for the table. The per-syscall view is *derived* from the
+per-branch rows rather than asserted beside them, with a vacuity guard: without
+it a syscall with no branches listed satisfies the `all` and claims to be
+checked. The honest picture is 7 of 13 branches, where the old table said 6 of 6
+syscalls.
+
+**A dequeued `.blockedOnCall` caller is parked, not woken.**
+`frozenQueuePopHead` accepts a `.blockedOnCall` head as well as a
+`.blockedOnSend` one, and the frozen receive woke both — `.ready`, back in the
+run queue. The live `endpointReceiveDual` moves a caller to `.blockedOnReply`,
+links it to the server-supplied reply object, and fails closed with
+`.replyCapInvalid` when the receive carries none. The frozen operation could not
+express any of that: it took no reply id, which is why the divergence was
+invisible rather than deliberate. It now takes one, `frozenLinkCallerReply`
+mirrors both single-use barriers, and FO-035 compares the branch in both
+directions — the completed rendezvous and the refusal. Probed: it fails when the
+caller is woken.
+
+**The consuming waiter is not enqueued.** A wait that takes an
+already-pending badge returns the *calling* thread, which never blocked and never
+left the run queue — under dequeue-on-dispatch it is the current thread, absent
+from the queue entirely. Live `notificationWait` marks it `.ready` and leaves the
+scheduler alone. The round-15 cut added an enqueue to every `.ready` transition
+without separating the wake of a blocked thread from the return of the caller.
+
+Found in review of PR #873 (round 17).
+
+Refs: docs/WORKSTREAM_HISTORY.md SM9.E
+
 ## v0.33.95 — the install checked for a mapping, not for a capability
 
 `ipcTransferSingleCap` declined an in-flight transfer when the source node no

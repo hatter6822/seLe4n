@@ -327,7 +327,7 @@ private def fo017_receiveEnqueuesReceiver : IO Unit := do
   let recvTcb := mkTcb 4
   let ep : Endpoint := { sendQ := {}, receiveQ := {} }
   let fst := mkFrozenState [(⟨4⟩, .tcb recvTcb), (⟨10⟩, .endpoint ep)]
-  match frozenEndpointReceive ⟨10⟩ ⟨4⟩ fst with
+  match frozenEndpointReceive ⟨10⟩ ⟨4⟩ none fst with
   | .ok (_, fst') =>
       -- Verify receiver TCB is now blockedOnReceive
       match frozenLookupTcb fst' ⟨4⟩ with
@@ -437,7 +437,7 @@ private def fo021_popThenPushRegression : IO Unit := do
   | .error e => throw <| IO.userError s!"round1 send failed: {reprStr e}"
   | .ok ((), fst1) =>
   -- Round 1: receiver receives (pops sender from sendQ, delivers message)
-  match frozenEndpointReceive ⟨10⟩ ⟨4⟩ fst1 with
+  match frozenEndpointReceive ⟨10⟩ ⟨4⟩ none fst1 with
   | .error e => throw <| IO.userError s!"round1 receive failed: {reprStr e}"
   | .ok (_, fst2) =>
   -- Verify sender was popped and queue links cleared (including queuePPrev)
@@ -493,7 +493,7 @@ private def frozenProvenanceFollowsContent : IO Unit := do
   | .ok ((), fstSend) =>
   expect "FO-022: a parked send leaves the message in the sender, so nothing propagates"
     (!((fstSend.declassificationTaint ⟨4⟩).contains 77))
-  match frozenEndpointReceive ⟨10⟩ ⟨4⟩ fstSend with
+  match frozenEndpointReceive ⟨10⟩ ⟨4⟩ none fstSend with
   | .error e => throw <| IO.userError s!"FO-022 receive failed: {reprStr e}"
   | .ok (_, fstRecv) =>
   expect "FO-022: the receiver inherits the sender's provenance with the message"
@@ -587,7 +587,7 @@ private def frozenDeliveryIsHonest : IO Unit := do
      | .error e => e == .objectNotFound)
   -- Same sender, same endpoint, but now a receiver is queued — the ordering
   -- that used to accept it.
-  match frozenEndpointReceive ⟨10⟩ ⟨4⟩ (mkFrozenState
+  match frozenEndpointReceive ⟨10⟩ ⟨4⟩ none (mkFrozenState
       [(⟨10⟩, .endpoint epEmpty), (⟨4⟩, .tcb (mkTcb 4))]) with
   | .error _ =>
       -- A receive with no sender blocks the receiver; that is the state we want.
@@ -620,7 +620,7 @@ private def frozenParkedSenderCarriesItsMessage : IO Unit := do
      (⟨3⟩, .tcb { mkTcb 3 with ipcState := .blockedOnSend ⟨10⟩, pendingMessage := none }),
      (⟨4⟩, .tcb (mkTcb 4))]
   expect "FO-024: a message-less parked sender is refused rather than dequeued"
-    (match frozenEndpointReceive ⟨10⟩ ⟨4⟩ fstEmpty with
+    (match frozenEndpointReceive ⟨10⟩ ⟨4⟩ none fstEmpty with
      | .ok _ => false
      | .error e => e == .endpointStateMismatch)
   -- NEGATIVE, load-bearing: the SAME queue shape with a message succeeds and
@@ -631,7 +631,7 @@ private def frozenParkedSenderCarriesItsMessage : IO Unit := do
      (⟨3⟩, .tcb { mkTcb 3 with ipcState := .blockedOnSend ⟨10⟩, pendingMessage := some msg }),
      (⟨4⟩, .tcb (mkTcb 4))]
   expect "FO-024: the same shape WITH a message still delivers"
-    (match frozenEndpointReceive ⟨10⟩ ⟨4⟩ fstFull with
+    (match frozenEndpointReceive ⟨10⟩ ⟨4⟩ none fstFull with
      | .error _ => false
      | .ok (_, fst') =>
        match frozenLookupTcb fst' ⟨4⟩ with
@@ -866,7 +866,7 @@ private def differentialEndpointReceiveAgrees : IO Unit := do
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parked) (diffTcb 63)
   expect "FO-029: the frozen receive agrees with the live receive"
     (frozenRunAgrees (fun a b => a == b)
-      (frozenEndpointReceive diffEpId diffB (freeze ist))
+      (frozenEndpointReceive diffEpId diffB none (freeze ist))
       (liveWithTaint .receive diffB (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB none) ist.state))
 
@@ -907,6 +907,45 @@ private def differentialEndpointReplyAgrees : IO Unit := do
       (frozenEndpointReply diffB diffA rid msg (freeze ist))
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.endpointReply diffB diffA msg) ist.state))
+
+/-- FO-035: **a receive that dequeues a `.blockedOnCall` caller** (PR #873
+round 17).
+
+`frozenQueuePopHead` accepts a `.blockedOnCall` head as well as a
+`.blockedOnSend` one, and the frozen receive woke both -- `.ready`, back in the
+run queue.  A caller does not become runnable at rendezvous: the live
+`endpointReceiveDual` moves it to `.blockedOnReply` and links it to the
+server-supplied reply object.  The branch was unreachable from the suite because
+FO-029's queued sender is `.blockedOnSend`, and the coverage row said `.receive`
+was checked.
+
+The control asserts both sides succeed, so the agreement is about a completed
+rendezvous rather than a shared refusal. -/
+private def differentialReceiveFromBlockedCallerAgrees : IO Unit := do
+  let msg : IpcMessage := { registers := #[⟨21⟩], caps := #[], badge := none }
+  let rid : SeLe4n.ReplyId := ⟨506⟩
+  let ep : Endpoint := { sendQ := { head := some diffA, tail := some diffA }, receiveQ := {} }
+  let parkedCaller : TCB := { diffTcb 62 with ipcState := .blockedOnCall diffEpId, pendingMessage := some msg, queuePPrev := some .endpointHead }
+  let ist := diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
+      [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parkedCaller) (diffTcb 63))
+    rid { replyId := rid, caller := none }
+  expect "FO-035 control: the live receive completes the call rendezvous"
+    (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB (some rid) ist.state).toOption.isSome
+  expect "FO-035 control: and so does the frozen one"
+    (frozenEndpointReceive diffEpId diffB (some rid) (freeze ist)).toOption.isSome
+  expect "FO-035: the dequeued caller is parked for reply, not woken"
+    (frozenRunAgrees (fun a b => a == b)
+      (frozenEndpointReceive diffEpId diffB (some rid) (freeze ist))
+      (liveWithTaint .receive diffB (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB (some rid)) ist.state))
+  -- And the fail-closed half: a call rendezvous with no reply object must be
+  -- refused on both sides rather than stranding the caller `.blockedOnReply`.
+  expect "FO-035: both refuse a call rendezvous carrying no reply object"
+    (frozenRunAgrees (fun a b => a == b)
+      (frozenEndpointReceive diffEpId diffB none (freeze ist))
+      (liveWithTaint .receive diffB (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB none) ist.state))
 
 /-- The same signal, from an actor that **carries provenance**.
 
@@ -991,34 +1030,49 @@ private def differentialWakeAtUnqueuedPriorityAgrees : IO Unit := do
       (liveWithTaint .notificationSignal diffB (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.notificationSignalBound diffNotifId badge) ist.state))
 
-/-- **The registry the runner executes**, paired with the syscall each scenario
-covers.
+/-- **The registry the runner executes**, paired with the **branch** each
+scenario covers.
 
 `frozenOpDifferentiallyChecked` was a hand-maintained table nothing consumed:
 setting an arm `true` satisfied all three interlock theorems whether or not a
 comparison existed, and deleting a scenario left the claim standing.  A coverage
 claim no execution backs is the shape this whole harness exists to remove, so the
-claim is now checked against this list -- which is also the list the runner runs,
-so the two cannot describe different sets. -/
-private def differentialScenarios : List (SyscallId × IO Unit) :=
-  [ (.notificationSignal, differentialNotificationSignalAgrees),
-    (.notificationSignal, differentialWakeAtUnqueuedPriorityAgrees),
-    (.notificationWait,   differentialNotificationWaitAgrees),
-    (.send,               differentialEndpointSendAgrees),
-    (.receive,            differentialEndpointReceiveAgrees),
-    (.call,               differentialEndpointCallAgrees),
-    (.reply,              differentialEndpointReplyAgrees) ]
+claim is checked against this list -- which is also the list the runner runs, so
+the two cannot describe different sets.
+
+Round 17 moved the key from syscall to branch.  Tying the claim to an executed
+scenario was necessary and not sufficient: one scenario satisfied a whole
+syscall, so `.send` read "checked" on a fixture with no receiver waiting while
+the rendezvous branch had never been compared against anything.  The unit of the
+claim is now the unit of the transition. -/
+private def differentialScenarios :
+    List (SeLe4n.Kernel.FrozenOps.FrozenOpBranch × IO Unit) :=
+  [ (.notificationSignalToBoundThread,  differentialNotificationSignalAgrees),
+    (.notificationSignalToBoundThread,  differentialWakeAtUnqueuedPriorityAgrees),
+    (.notificationWaitConsumesBadge,    differentialNotificationWaitAgrees),
+    (.endpointSendParks,                differentialEndpointSendAgrees),
+    (.endpointReceiveFromBlockedSender, differentialEndpointReceiveAgrees),
+    (.endpointReceiveFromBlockedCaller, differentialReceiveFromBlockedCallerAgrees),
+    (.endpointCallParks,                differentialEndpointCallAgrees),
+    (.endpointReplyToBlockedCaller,     differentialEndpointReplyAgrees) ]
 
 /-- The claim and the scenarios name the same syscalls, in both directions: a
 scenario for a syscall the table does not claim, or a claim with no scenario,
 fails here. -/
 private def differentialRegistryMatchesClaim : IO Unit := do
   let covered := differentialScenarios.map Prod.fst
-  expect "registry: every differentially-checked syscall has a scenario"
+  expect "registry: every differentially-checked branch has a scenario"
+    (SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all.all (fun b =>
+      !(SeLe4n.Kernel.FrozenOps.frozenBranchDifferentiallyChecked b) || covered.contains b))
+  expect "registry: every scenario covers a branch the claim names"
+    (covered.all (fun b => SeLe4n.Kernel.FrozenOps.frozenBranchDifferentiallyChecked b))
+  -- The per-syscall view is derived, so it must not read `true` for a syscall
+  -- whose branches are not all covered -- the overstatement this replaced.
+  expect "registry: a syscall reads checked only when every branch of it is"
     (SyscallId.all.all (fun sid =>
-      !(SeLe4n.Kernel.FrozenOps.frozenOpDifferentiallyChecked sid) || covered.contains sid))
-  expect "registry: every scenario covers a syscall the claim names"
-    (covered.all (fun sid => SeLe4n.Kernel.FrozenOps.frozenOpDifferentiallyChecked sid))
+      !(SeLe4n.Kernel.FrozenOps.frozenOpDifferentiallyChecked sid)
+        || SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all.all (fun b =>
+             b.syscall != sid || covered.contains b)))
 
 /-- FO-033: **the comparison has bite, and the table was wrong.**
 

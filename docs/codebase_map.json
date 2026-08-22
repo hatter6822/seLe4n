@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm9d-causal-declassification-ppwxud",
-      "commit_sha": "ae675dbf92dc41527b1ff92ac9ef49d3dd384fa1",
-      "tree_sha": "5148e4a32f740b2fd2c4754d3a3657e94aab0eef",
-      "committed_at_utc": "2026-08-22T01:50:08+00:00"
+      "commit_sha": "f38b89933df338378da54511d481c3822338c9a5",
+      "tree_sha": "e9d66b75719dd6f63d1d8a818b473a38a1d72155",
+      "committed_at_utc": "2026-08-22T02:15:53+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b3e85a111ed654debb6f7aea78f88b5258dc19740773797349d971e87e005903"
+    "source_digest": "e21ab6025a20f132845263d5c504042104b08d89117fbe4bb0f3056a94e2aebb"
   },
   "summary": {
     "module_count": 355,
-    "declaration_count": 16925
+    "declaration_count": 16934
   },
   "readme_sync": {
-    "version": "0.33.95",
+    "version": "0.33.96",
     "lean_toolchain": "v4.28.0",
     "production_files": 286,
-    "production_loc": 286338,
+    "production_loc": 286541,
     "test_files": 69,
-    "test_loc": 63253,
-    "proved_theorem_lemma_decls": 9599,
+    "test_loc": 63307,
+    "proved_theorem_lemma_decls": 9601,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -50710,7 +50710,7 @@
     {
       "module": "SeLe4n.Kernel.FrozenOps.Agreement",
       "path": "SeLe4n/Kernel/FrozenOps/Agreement.lean",
-      "declaration_count": 12,
+      "declaration_count": 19,
       "declarations": [
         {
           "kind": "namespace",
@@ -50790,10 +50790,25 @@
           "called": []
         },
         {
+          "kind": "inductive",
+          "name": "FrozenOpBranch",
+          "line": 212,
+          "called": []
+        },
+        {
           "kind": "def",
-          "name": "frozenOpDifferentiallyChecked",
-          "line": 196,
+          "name": "FrozenOpBranch.all",
+          "line": 242,
           "called": [
+            "FrozenOpBranch"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "FrozenOpBranch.syscall",
+          "line": 251,
+          "called": [
+            "FrozenOpBranch",
             "SyscallId",
             "notificationSignal",
             "notificationWait"
@@ -50801,11 +50816,63 @@
         },
         {
           "kind": "def",
+          "name": "frozenBranchDifferentiallyChecked",
+          "line": 268,
+          "called": [
+            "FrozenOpBranch"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenBranchUncheckedReason",
+          "line": 280,
+          "called": [
+            "FrozenOpBranch"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenBranch_checked_or_reasoned",
+          "line": 293,
+          "called": [
+            "all",
+            "frozenBranchDifferentiallyChecked",
+            "frozenBranchUncheckedReason",
+            "isEmpty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenBranchUncheckedReason_only_when_unchecked",
+          "line": 301,
+          "called": [
+            "all",
+            "frozenBranchDifferentiallyChecked",
+            "frozenBranchUncheckedReason",
+            "isEmpty"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenOpDifferentiallyChecked",
+          "line": 313,
+          "called": [
+            "SyscallId",
+            "all",
+            "any",
+            "frozenBranchDifferentiallyChecked",
+            "syscall"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "frozenOpUncheckedReason",
-          "line": 208,
+          "line": 323,
           "called": [
             "SyscallId",
             "cspaceMint",
+            "notificationSignal",
+            "notificationWait",
             "schedContextBind",
             "schedContextConfigure",
             "schedContextUnbind"
@@ -50814,7 +50881,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_obliges_differential_check",
-          "line": 237,
+          "line": 360,
           "called": [
             "all",
             "frozenOpCoverage",
@@ -50826,7 +50893,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpDifferentiallyChecked_implies_covered",
-          "line": 247,
+          "line": 370,
           "called": [
             "all",
             "frozenOpCoverage",
@@ -50836,7 +50903,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpUncheckedReason_only_when_unchecked",
-          "line": 255,
+          "line": 378,
           "called": [
             "all",
             "frozenOpDifferentiallyChecked",
@@ -51119,7 +51186,7 @@
     {
       "module": "SeLe4n.Kernel.FrozenOps.Core",
       "path": "SeLe4n/Kernel/FrozenOps/Core.lean",
-      "declaration_count": 30,
+      "declaration_count": 31,
       "declarations": [
         {
           "kind": "namespace",
@@ -51380,8 +51447,25 @@
         },
         {
           "kind": "def",
+          "name": "frozenLinkCallerReply",
+          "line": 324,
+          "called": [
+            "FrozenSystemState",
+            "KernelError",
+            "ReplyId",
+            "ThreadId",
+            "frozenLookupTcb",
+            "get",
+            "none",
+            "set",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "frozenStoreTcbIpcState",
-          "line": 313,
+          "line": 346,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -51396,7 +51480,7 @@
         {
           "kind": "def",
           "name": "frozenSaveOutgoingContext",
-          "line": 329,
+          "line": 362,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -51411,7 +51495,7 @@
         {
           "kind": "def",
           "name": "frozenRestoreIncomingContext",
-          "line": 345,
+          "line": 378,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -51426,7 +51510,7 @@
         {
           "kind": "def",
           "name": "frozenSetCurrentThread",
-          "line": 353,
+          "line": 386,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -51437,7 +51521,7 @@
         {
           "kind": "def",
           "name": "frozenQueuePushTailObjects",
-          "line": 367,
+          "line": 400,
           "called": [
             "Endpoint",
             "FrozenKernelObject",
@@ -51460,7 +51544,7 @@
         {
           "kind": "def",
           "name": "frozenQueuePushTail",
-          "line": 422,
+          "line": 455,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -51477,7 +51561,7 @@
         {
           "kind": "def",
           "name": "frozenQueueRemove",
-          "line": 453,
+          "line": 486,
           "called": [
             "Endpoint",
             "FrozenKernelObject",
@@ -51503,7 +51587,7 @@
         {
           "kind": "theorem",
           "name": "frozenQueuePushTail_only_modifies_objects",
-          "line": 508,
+          "line": 541,
           "called": [
             "FrozenSystemState",
             "ObjId",
@@ -51518,7 +51602,7 @@
         {
           "kind": "theorem",
           "name": "frozenLookupObject_state_unchanged",
-          "line": 526,
+          "line": 559,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
@@ -51531,7 +51615,7 @@
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_scheduler",
-          "line": 536,
+          "line": 569,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
@@ -51545,7 +51629,7 @@
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_machine",
-          "line": 547,
+          "line": 580,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
@@ -51917,10 +52001,8 @@
             "ObjId",
             "ThreadId",
             "badge",
-            "bind",
             "consWithGuard",
             "empty",
-            "frozenEnsureRunnable",
             "frozenLookupTcb",
             "frozenRemoveRunnable",
             "frozenStoreTcbIpcState",
@@ -51937,7 +52019,7 @@
         {
           "kind": "def",
           "name": "frozenQueuePopHead",
-          "line": 502,
+          "line": 511,
           "called": [
             "FrozenSystemState",
             "IntrusiveQueue",
@@ -51960,7 +52042,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointSend",
-          "line": 550,
+          "line": 559,
           "called": [
             "FrozenKernel",
             "IpcMessage",
@@ -51987,13 +52069,18 @@
         {
           "kind": "def",
           "name": "frozenEndpointReceive",
-          "line": 615,
+          "line": 637,
           "called": [
             "FrozenKernel",
+            "FrozenSystemState",
+            "KernelError",
             "ObjId",
+            "ReplyId",
             "ThreadId",
+            "ThreadIpcState",
             "endpointId",
             "frozenEnsureRunnable",
+            "frozenLinkCallerReply",
             "frozenLookupTcb",
             "frozenQueuePopHead",
             "frozenQueuePushTail",
@@ -52003,6 +52090,7 @@
             "get",
             "head",
             "none",
+            "replyId",
             "st",
             "toObjId"
           ]
@@ -52010,7 +52098,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointCall",
-          "line": 677,
+          "line": 724,
           "called": [
             "FrozenKernel",
             "IpcMessage",
@@ -52037,7 +52125,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointReply",
-          "line": 740,
+          "line": 787,
           "called": [
             "FrozenKernel",
             "IpcMessage",
@@ -52058,7 +52146,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceLookup",
-          "line": 823,
+          "line": 870,
           "called": [
             "CPtr",
             "Capability",
@@ -52077,7 +52165,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceLookupSlot",
-          "line": 835,
+          "line": 882,
           "called": [
             "CPtr",
             "Capability",
@@ -52090,7 +52178,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceMint",
-          "line": 849,
+          "line": 896,
           "called": [
             "Capability",
             "FrozenCNode",
@@ -52108,7 +52196,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceDelete",
-          "line": 867,
+          "line": 914,
           "called": [
             "FrozenCNode",
             "FrozenKernel",
@@ -52124,7 +52212,7 @@
         {
           "kind": "def",
           "name": "frozenVspaceLookup",
-          "line": 886,
+          "line": 933,
           "called": [
             "ASID",
             "FrozenKernel",
@@ -52139,7 +52227,7 @@
         {
           "kind": "def",
           "name": "frozenLookupServiceByCap",
-          "line": 907,
+          "line": 954,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -52153,7 +52241,7 @@
         {
           "kind": "def",
           "name": "frozenSchedContextConfigure",
-          "line": 929,
+          "line": 976,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -52171,7 +52259,7 @@
         {
           "kind": "def",
           "name": "frozenSchedContextBind",
-          "line": 975,
+          "line": 1022,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -52189,7 +52277,7 @@
         {
           "kind": "def",
           "name": "frozenSchedContextUnbind",
-          "line": 1018,
+          "line": 1065,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -52204,7 +52292,7 @@
         {
           "kind": "def",
           "name": "frozenTimerTickBudget",
-          "line": 1055,
+          "line": 1102,
           "called": [
             "FrozenKernel",
             "cbsBudgetCheck",
@@ -52221,7 +52309,7 @@
         {
           "kind": "def",
           "name": "frozenSuspendThread",
-          "line": 1110,
+          "line": 1157,
           "called": [
             "FrozenKernel",
             "ThreadId",
@@ -52236,7 +52324,7 @@
         {
           "kind": "def",
           "name": "frozenResumeThread",
-          "line": 1138,
+          "line": 1185,
           "called": [
             "FrozenKernel",
             "ThreadId",
@@ -52252,7 +52340,7 @@
         {
           "kind": "def",
           "name": "frozenSetPriority",
-          "line": 1172,
+          "line": 1219,
           "called": [
             "FrozenKernel",
             "Priority",
@@ -52270,7 +52358,7 @@
         {
           "kind": "def",
           "name": "frozenSetMCPriority",
-          "line": 1201,
+          "line": 1248,
           "called": [
             "FrozenKernel",
             "Priority",
@@ -52286,7 +52374,7 @@
         {
           "kind": "def",
           "name": "frozenSetIPCBuffer",
-          "line": 1232,
+          "line": 1279,
           "called": [
             "FrozenKernel",
             "ThreadId",
@@ -52305,7 +52393,7 @@
         {
           "kind": "def",
           "name": "frozenOpCoverage",
-          "line": 1283,
+          "line": 1330,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -52322,7 +52410,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_count",
-          "line": 1331,
+          "line": 1378,
           "called": [
             "cspaceCopy",
             "cspaceMint",
@@ -52341,7 +52429,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_exhaustive",
-          "line": 1346,
+          "line": 1393,
           "called": [
             "SyscallId",
             "frozenOpCoverage"
@@ -205069,7 +205157,7 @@
     {
       "module": "tests.FrozenOpsSuite",
       "path": "tests/FrozenOpsSuite.lean",
-      "declaration_count": 59,
+      "declaration_count": 60,
       "declarations": [
         {
           "kind": "namespace",
@@ -205944,8 +206032,41 @@
         },
         {
           "kind": "def",
+          "name": "differentialReceiveFromBlockedCallerAgrees",
+          "line": 924,
+          "called": [
+            "Endpoint",
+            "IpcMessage",
+            "ReplyId",
+            "TCB",
+            "badge",
+            "diffA",
+            "diffAddCSpace",
+            "diffAddEndpoint",
+            "diffAddReply",
+            "diffAddTcb",
+            "diffB",
+            "diffEpId",
+            "diffObjCap",
+            "diffTcb",
+            "endpointReceiveDual",
+            "expect",
+            "freeze",
+            "frozenEndpointReceive",
+            "frozenRunAgrees",
+            "head",
+            "liveWithTaint",
+            "mkEmptyIntermediateState",
+            "none",
+            "ofNat",
+            "replyId",
+            "tail"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "differentialTaintedSignalAgrees",
-          "line": 917,
+          "line": 956,
           "called": [
             "DeclassificationTaint",
             "Endpoint",
@@ -205986,7 +206107,7 @@
         {
           "kind": "def",
           "name": "differentialRefusalsAgree",
-          "line": 952,
+          "line": 991,
           "called": [
             "ObjId",
             "diffA",
@@ -206005,7 +206126,7 @@
         {
           "kind": "def",
           "name": "differentialWakeAtUnqueuedPriorityAgrees",
-          "line": 973,
+          "line": 1012,
           "called": [
             "Endpoint",
             "Notification",
@@ -206042,35 +206163,36 @@
         {
           "kind": "def",
           "name": "differentialScenarios",
-          "line": 1003,
+          "line": 1048,
           "called": [
-            "SyscallId",
+            "FrozenOpBranch",
             "differentialEndpointCallAgrees",
             "differentialEndpointReceiveAgrees",
             "differentialEndpointReplyAgrees",
             "differentialEndpointSendAgrees",
             "differentialNotificationSignalAgrees",
             "differentialNotificationWaitAgrees",
-            "differentialWakeAtUnqueuedPriorityAgrees",
-            "notificationSignal",
-            "notificationWait"
+            "differentialReceiveFromBlockedCallerAgrees",
+            "differentialWakeAtUnqueuedPriorityAgrees"
           ]
         },
         {
           "kind": "def",
           "name": "differentialRegistryMatchesClaim",
-          "line": 1015,
+          "line": 1062,
           "called": [
             "all",
             "contains",
             "expect",
-            "frozenOpDifferentiallyChecked"
+            "frozenBranchDifferentiallyChecked",
+            "frozenOpDifferentiallyChecked",
+            "syscall"
           ]
         },
         {
           "kind": "def",
           "name": "differentialComparisonHasBite",
-          "line": 1031,
+          "line": 1085,
           "called": [
             "Endpoint",
             "Notification",
@@ -206101,7 +206223,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1048,
+          "line": 1102,
           "called": [
             "differentialComparisonHasBite",
             "differentialRefusalsAgree",

@@ -171,7 +171,7 @@ private def tph005b_receiveBlocks : IO Unit := do
   let ep : Endpoint := { sendQ := {}, receiveQ := {} }
   let recvTcb := mkTcb 2
   let fst := mkFrozenState [(⟨10⟩, .endpoint ep), (⟨2⟩, .tcb recvTcb)]
-  match frozenEndpointReceive ⟨10⟩ ⟨2⟩ fst with
+  match frozenEndpointReceive ⟨10⟩ ⟨2⟩ none fst with
   | .ok (_, fst') =>
       match frozenLookupTcb fst' ⟨2⟩ with
       | some tcb =>
