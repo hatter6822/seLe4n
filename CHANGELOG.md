@@ -1,3 +1,46 @@
+## v0.33.99 — the audit compared the ordering the claim was resting on
+
+A full-tree audit of the branch (SM9.D and every review fix, code against code
+rather than against its documentation). The default target builds cold with zero
+warnings; the diff carries no `sorry`, no `axiom`, no `panic!`/`.get!`, no
+`partial def`, and no new tracked-exception annotations. Three findings, all in
+the frozen mirror's differential surface, all fixed here:
+
+**The claimed-checked send-rendezvous branch was compared only on its refusal
+ordering.** FO-036 enters the receiver-waiting arm with a ghost sender, so both
+sides refuse — and the branch's *known* divergence sat on the delivery ordering:
+live `storeTcbReceiveComplete` clears the receiver's stashed reply object (a
+plain `Send` completing a server-first `Recv` moots the stash, D3/F-1) while the
+frozen mirror kept it. A claimed-checked branch whose substantive path is never
+compared is the overstatement the branch keying exists to prevent — reintroduced
+by the very cut that closed the keying's first gap.
+
+**The mirror is now field-exact and the delivery ordering is compared.** The
+frozen rendezvous writes `pendingReceiveReply := none` alongside the message,
+mirroring `storeTcbReceiveComplete` field for field. FO-037 parks the server
+holding a stashed reply — seeding exactly the field the two sides disagreed on —
+and compares the full delivered states. Probed both ways: it fails against the
+stash-keeping mirror and passes against this one. The comparison also measures
+the run-queue and taint halves of the path for free, since `frozenStateAgrees`
+compares buckets and taint tables in both directions.
+
+**The frozen receive's delivery now writes both halves of the live atomic
+pair.** Live delivers with `storeTcbIpcStateAndMessage _ _ .ready senderMsg`
+(AK1-D's atomic update); the mirror wrote only `pendingMessage`. On every
+reachable state the receiver is already `.ready`, so nothing observable changes —
+but a mirror that writes one field of a two-field atomic update is one stale
+invariant away from diverging on the other.
+
+Also verified and found sound, with the reasoning recorded where it matters: the
+streaming traversal's `revokedNodes` claim (children are read pre-removal, edge
+mutations touch only visited nodes, fuel exhaustion fails closed), the halted
+strict fold consuming `rootNode :: []` (the root's local revoke already
+succeeded), `senderTaintEdges`' rendezvous sensitivity, the origination
+inversion's forced coverage, and the taint seam applying on the ok path only in
+both dispatchers.
+
+Refs: docs/WORKSTREAM_HISTORY.md SM9.E
+
 ## v0.33.98 — a delivery attributed to a thread that does not exist
 
 On a rendezvous the message goes straight from `endpointSendDual`'s argument into

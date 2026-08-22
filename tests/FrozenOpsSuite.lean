@@ -1032,6 +1032,47 @@ private def differentialSendFromAbsentSenderAgrees : IO Unit := do
      | .error _ => true
      | .ok _ => false)
 
+/-- FO-037: **the send rendezvous actually delivering** (PR #873 audit).
+
+FO-036 above enters the receiver-waiting arm but compares only its *refusal*
+ordering, and the branch's known divergence sat on the delivery ordering: the
+live `storeTcbReceiveComplete` clears the receiver's stashed reply object -- a
+plain `Send` completing a server-first `Recv` moots the stash (D3/F-1) -- while
+the frozen mirror kept it.  A claimed-checked branch whose substantive path is
+never compared is the overstatement the branch keying exists to prevent, so this
+scenario is the delivery comparison, with the stash **seeded**: the receiver
+parks holding a reply object, which is exactly the field the two sides disagreed
+on.  It fails against the stash-keeping frozen mirror and passes against the
+field-exact one.
+
+The run-queue halves ride along with bite of their own: the live delivery ends
+in `ensureRunnable receiver` and the frozen one in `frozenEnsureRunnable`, and
+`frozenStateAgrees` compares the buckets in both directions. -/
+private def differentialSendRendezvousDeliversAgrees : IO Unit := do
+  let msg : IpcMessage := { registers := #[⟨37⟩], caps := #[], badge := none }
+  let rid : SeLe4n.ReplyId := ⟨507⟩
+  let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
+  -- The server parked on a server-first `Recv`, reply object stashed: the state
+  -- the D3/F-1 clear exists for.
+  let parkedReceiver : TCB := { diffTcb 62 with ipcState := .blockedOnReceive diffEpId, queuePPrev := some .endpointHead, pendingReceiveReply := some rid }
+  let ist := diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
+      [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parkedReceiver) (diffTcb 63))
+    rid { replyId := rid, caller := none }
+  expect "FO-037 control: the receiver really parks holding a stashed reply"
+    ((ist.state.getTcb? diffA).any (fun t => t.pendingReceiveReply.isSome))
+  -- The live delivery clears the stash: the field the comparison is about.
+  expect "FO-037 control: the live delivery clears the stash and hands over the message"
+    (match SeLe4n.Kernel.endpointSendDual diffEpId diffB msg ist.state with
+     | .ok ((), st') => (st'.getTcb? diffA).any (fun t =>
+         t.pendingReceiveReply.isNone && t.pendingMessage.isSome)
+     | .error _ => false)
+  expect "FO-037: the frozen delivery agrees with the live delivery"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointSend diffEpId diffB msg (freeze ist))
+      (liveWithTaint .send diffB (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointSendDual diffEpId diffB msg) ist.state))
+
 /-- FO-034: **waking a thread whose priority has no bucket.**
 
 Every actor in the scenarios above sits at priority 0, so a wake always found a
@@ -1087,6 +1128,7 @@ private def differentialScenarios :
     (.notificationWaitConsumesBadge,    differentialNotificationWaitAgrees),
     (.endpointSendParks,                differentialEndpointSendAgrees),
     (.endpointSendToWaitingReceiver,    differentialSendFromAbsentSenderAgrees),
+    (.endpointSendToWaitingReceiver,    differentialSendRendezvousDeliversAgrees),
     (.endpointReceiveFromBlockedSender, differentialEndpointReceiveAgrees),
     (.endpointReceiveFromBlockedCaller, differentialReceiveFromBlockedCallerAgrees),
     (.endpointCallParks,                differentialEndpointCallAgrees),

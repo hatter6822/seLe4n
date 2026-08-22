@@ -584,7 +584,17 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
             | .ok (receiver, _tcb, st') =>
                 match frozenLookupTcb st' receiver with
                 | some recvTcb =>
-                    let recvTcb' := { recvTcb with ipcState := ThreadIpcState.ready, pendingMessage := some msg }
+                    -- Mirrors `storeTcbReceiveComplete` **field for field** (PR
+                    -- #873 audit): a plain `Send` completing a server-first
+                    -- `Recv` also clears the receiver's stashed reply object —
+                    -- no `Call` arrived, so the stash is moot (IPC de-threading
+                    -- D3, finding F-1).  The frozen mirror kept the stash, and
+                    -- the branch's differential scenario compared only the
+                    -- refusal ordering, so the divergence sat exactly where the
+                    -- claimed-checked branch was not being compared.  FO-037 is
+                    -- the delivery-ordering comparison, with the stash seeded so
+                    -- this field is what the scenario measures.
+                    let recvTcb' := { recvTcb with ipcState := ThreadIpcState.ready, pendingMessage := some msg, pendingReceiveReply := none }
                     match frozenStoreTcb receiver recvTcb' st' with
                     | .error e => .error e
                     | .ok ((), st'') =>
@@ -677,7 +687,15 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
                         -- Deliver message to receiver
                         match frozenLookupTcb st'' receiver with
                         | some recvTcb =>
-                            let recvTcb' := { recvTcb with pendingMessage := senderMsg }
+                            -- `.ready` mirrors `storeTcbIpcStateAndMessage _ _
+                            -- .ready senderMsg` exactly (PR #873 audit).  On
+                            -- every reachable state the receiver — the calling
+                            -- thread — is already `.ready`, so this changes
+                            -- nothing observable; the live side still writes the
+                            -- field (AK1-D's atomic pair), and a mirror that
+                            -- writes one field of the pair is one stale
+                            -- invariant away from diverging on the other.
+                            let recvTcb' := { recvTcb with ipcState := ThreadIpcState.ready, pendingMessage := senderMsg }
                             match frozenStoreTcb receiver recvTcb' st'' with
                             | .error e => .error e
                             | .ok ((), stDelivered) =>

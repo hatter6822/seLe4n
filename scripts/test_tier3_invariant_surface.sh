@@ -4098,6 +4098,14 @@ run_check "INVARIANT" rg -n 'match st.getTcb\? sender with' SeLe4n/Kernel/IPC/Du
 # …and the per-core mirror in lockstep, which is what the refinement theorem ties.
 run_check "INVARIANT" rg -n 'match st.getTcb\? sender with' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
 run_check "INVARIANT" rg -n 'differentialSendFromAbsentSenderAgrees' tests/FrozenOpsSuite.lean
+# PR #873 audit: the branch above was CLAIMED checked while its scenario compared
+# only the refusal ordering, and the known divergence sat on the delivery
+# ordering -- live `storeTcbReceiveComplete` clears the receiver's stashed reply
+# object (D3/F-1) where the frozen mirror kept it.  The mirror is now field-exact
+# and the delivery ordering is compared with the stash seeded.
+run_check "INVARIANT" rg -n 'pendingMessage := some msg, pendingReceiveReply := none' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n 'differentialSendRendezvousDeliversAgrees' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'the live delivery clears the stash' tests/FrozenOpsSuite.lean
 # The consuming waiter is the calling thread: it never blocked, so the live
 # `notificationWait` leaves the scheduler alone and the frozen mirror must too.
 run_negative_check "INVARIANT" rg -n 'fun stR => frozenEnsureRunnable stR waiter' SeLe4n/Kernel/FrozenOps/Operations.lean
