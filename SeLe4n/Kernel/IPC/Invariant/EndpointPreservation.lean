@@ -418,10 +418,18 @@ theorem endpointSendDual_preserves_ipcInvariant
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- Handshake path: PopHead → storeTcbIpcStateAndMessage → ensureRunnable
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it --
+        -- the frozen mirror refused, and the frozen behaviour was the correct
+        -- one.  The extra split is the whole of the repair here.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hHead, hSnd, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hHead, hSnd, hPop] at hStep
           have hObjInv1 : pair.2.2.objects.invExt :=
             endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
           have hInv1 := endpointQueuePopHead_preserves_ipcInvariant endpointId true st pair.2.2 pair.1 hInv hObjInv hPop
@@ -530,10 +538,18 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- Handshake: PopHead → storeTcbIpcStateAndMessage(.ready) → ensureRunnable
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it --
+        -- the frozen mirror refused, and the frozen behaviour was the correct
+        -- one.  The extra split is the whole of the repair here.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hHead, hSnd, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hHead, hSnd, hPop] at hStep
           have hObjInv1 : pair.2.2.objects.invExt :=
             endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
           have hSchedPop := endpointQueuePopHead_scheduler_eq endpointId true st pair.2.2 pair.1 hPop
@@ -647,10 +663,18 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- Handshake: PopHead → storeTcbIpcStateAndMessage(.ready) → ensureRunnable
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it --
+        -- the frozen mirror refused, and the frozen behaviour was the correct
+        -- one.  The extra split is the whole of the repair here.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hHead, hSnd, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hHead, hSnd, hPop] at hStep
           have hObjInv1 : pair.2.2.objects.invExt :=
             endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
           -- PopHead preserves scheduler and TCB ipcStates → contracts preserved through PopHead
@@ -2018,10 +2042,18 @@ theorem endpointSendDual_preserves_objects_invExt
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
       | some _ =>
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it --
+        -- the frozen mirror refused, and the frozen behaviour was the correct
+        -- one.  The extra split is the whole of the repair here.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hHead, hSnd, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hHead, hSnd, hPop] at hStep
           have hObjInvPop : pair.2.2.objects.invExt :=
             endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with

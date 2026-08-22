@@ -1,3 +1,39 @@
+## v0.33.98 — a delivery attributed to a thread that does not exist
+
+On a rendezvous the message goes straight from `endpointSendDual`'s argument into
+the receiver's TCB, so `sender` was never resolved. A send naming a nonexistent
+thread — or a non-TCB object — delivered anyway, and the receiver held a message
+attributed to it. Only the parking arm failed, and only incidentally, because it
+happens to store into the sender's own TCB.
+
+Measured against the pre-fix shape: **DELIVERED from a nonexistent sender = true**;
+after, `.objectNotFound`.
+
+**The frozen mirror was right and the live path was wrong.** `frozenEndpointSend`
+resolved the sender on both arms, so the two disagreed on a concrete rendezvous
+input. This branch has spent several rounds fixing the frozen model to match the
+live kernel; here the disagreement resolves the other way, because a delivery
+attributed to a thread that does not exist is not one anybody can reason about.
+`endpointSendDualOnCore` gets the same guard, in lockstep — the refinement
+theorem `endpointSendDualOnCore_eq_single_on_bootCore` is what holds the two
+together, and it now shares the split rather than needing a new hypothesis.
+
+The repair reached 24 proof sites across seven modules, all mechanical: one extra
+case split on the rendezvous arm, and the surrounding `simp` lists taught about
+it. Two staged non-interference proofs use positional `split` rather than named
+cases and needed the extra level threaded by hand.
+
+FO-036 is the scenario, keyed to the send-rendezvous branch the round-17 coverage
+work had listed as owed — which closes it, so `.send` now reads fully checked and
+its "branch scenarios owed" row is gone. The interlock caught that stale row on
+the first build after the branch landed, which is what it is for. Two controls
+keep the refusal non-vacuous: the same rendezvous delivers from a sender that
+exists, and the ghost id really is absent.
+
+Found in review of PR #873 (round 16).
+
+Refs: docs/WORKSTREAM_HISTORY.md SM9.E
+
 ## v0.33.97 — two parsers over one syntax, one of them right
 
 The content-flow gate's dispatcher-arm splitter recognised only a constructor

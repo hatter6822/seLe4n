@@ -2909,9 +2909,13 @@ theorem endpointSendDualOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
         | some headRecv =>
           -- Rendezvous path: the receiver wakes on its own home core.
           simp only []
+          -- PR #873 round 17: the arm resolves the sender before popping, so
+          -- there is one more split than there used to be.
           split
           · exact observableSlotsConfinedToCores_of_eq _ rfl
-          · next recvTid recvTcb st1 hPop =>
+          · split
+            · exact observableSlotsConfinedToCores_of_eq _ rfl
+            · next recvTid recvTcb st1 hPop =>
             split
             · exact observableSlotsConfinedToCores_of_eq _ rfl
             · next st2 hMsgR =>

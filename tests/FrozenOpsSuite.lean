@@ -997,6 +997,41 @@ private def differentialRefusalsAgree : IO Unit := do
       (liveWithTaint .notificationWait diffA (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.notificationWait missing diffA) ist.state))
 
+/-- FO-036: **a send naming a thread that does not exist** (PR #873 round 17).
+
+On a rendezvous the message goes straight from the argument into the receiver's
+TCB, so the live `endpointSendDual` never resolved `sender`: a caller naming a
+nonexistent thread delivered anyway, and the receiver held a message attributed
+to it.  Only the parking arm failed, and only because it happens to store into
+the sender's own TCB.  The frozen mirror resolved the sender on both arms, so
+the two disagreed on a concrete rendezvous input — and the frozen behaviour was
+the correct one, which is why the live path is what changed.
+
+The control is the same send from a sender that **does** exist: without it the
+refusal below would pass against a fixture where nothing could ever be
+delivered. -/
+private def differentialSendFromAbsentSenderAgrees : IO Unit := do
+  let msg : IpcMessage := { registers := #[⟨31⟩], caps := #[], badge := none }
+  let ghost : SeLe4n.ThreadId := ⟨9997⟩
+  let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
+  let parkedReceiver : TCB := { diffTcb 62 with ipcState := .blockedOnReceive diffEpId, queuePPrev := some .endpointHead }
+  let ist := diffAddTcb (diffAddTcb
+    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
+      [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parkedReceiver) (diffTcb 63)
+  expect "FO-036 control: the same rendezvous delivers from a sender that exists"
+    (SeLe4n.Kernel.endpointSendDual diffEpId diffB msg ist.state).toOption.isSome
+  expect "FO-036 control: and the ghost really is absent"
+    ((ist.state.getTcb? ghost).isNone)
+  expect "FO-036: both refuse a rendezvous send from a nonexistent sender"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointSend diffEpId ghost msg (freeze ist))
+      (liveWithTaint .send ghost (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointSendDual diffEpId ghost msg) ist.state))
+  expect "FO-036: and the live refusal leaves the receiver empty-handed"
+    (match SeLe4n.Kernel.endpointSendDual diffEpId ghost msg ist.state with
+     | .error _ => true
+     | .ok _ => false)
+
 /-- FO-034: **waking a thread whose priority has no bucket.**
 
 Every actor in the scenarios above sits at priority 0, so a wake always found a
@@ -1051,6 +1086,7 @@ private def differentialScenarios :
     (.notificationSignalToBoundThread,  differentialWakeAtUnqueuedPriorityAgrees),
     (.notificationWaitConsumesBadge,    differentialNotificationWaitAgrees),
     (.endpointSendParks,                differentialEndpointSendAgrees),
+    (.endpointSendToWaitingReceiver,    differentialSendFromAbsentSenderAgrees),
     (.endpointReceiveFromBlockedSender, differentialEndpointReceiveAgrees),
     (.endpointReceiveFromBlockedCaller, differentialReceiveFromBlockedCallerAgrees),
     (.endpointCallParks,                differentialEndpointCallAgrees),

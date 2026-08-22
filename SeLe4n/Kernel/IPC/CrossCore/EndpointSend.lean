@@ -69,6 +69,14 @@ def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId
   | some ep =>
       match ep.receiveQ.head with
       | some _ =>
+          -- PR #873 round 17: the sender has to exist even though this arm
+          -- never looks it up -- the message goes straight from the argument
+          -- into the receiver's TCB.  In lockstep with `endpointSendDual`,
+          -- which is what `endpointSendDualOnCore_eq_single_on_bootCore` ties
+          -- the two to.
+          match st.getTcb? sender with
+          | none => (st, .error .objectNotFound)
+          | some _ =>
           match endpointQueuePopHead endpointId true st with
           | .error e => (st, .error e)
           | .ok (receiver, _tcb, st') =>
@@ -277,7 +285,16 @@ theorem endpointSendDualOnCore_bootCore_rendezvous_eq_single (endpointId : SeLe4
   have hRaw := (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
   unfold endpointSendDualOnCore
   unfold endpointSendDual at hSingle
-  simp only [hRegs, hCaps, hRaw, hEp, hReceiver, hPop, hStore, if_false] at hSingle ⊢
+  -- PR #873 round 17: both sides now resolve the sender first, so the split is
+  -- shared.  The declining arm cannot be this `.ok`, which is what discharges it
+  -- without adding a hypothesis to the statement.
+  cases hSnd : st.getTcb? sender with
+  | none =>
+    exfalso
+    simp only [hRegs, hCaps, hRaw, hReceiver, hSnd, if_false] at hSingle
+    simp at hSingle
+  | some _ =>
+  simp only [hRegs, hCaps, hRaw, hEp, hReceiver, hSnd, hPop, hStore, if_false] at hSingle ⊢
   -- Both sides are now the same mid-state, wired to two different wakes.
   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hSingle
   rw [← hSingle]

@@ -1671,8 +1671,14 @@ theorem endpointSendDual_preserves_projection
       | some _ =>
         -- Path 1: Receiver waiting — PopHead + storeTcbIpcState + ensureRunnable
         simp only [hRecvHead] at hStep
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hPop] at hStep
+        | error e => simp [hSnd, hPop] at hStep
         | ok triple =>
           obtain ⟨receiver, recvTcb, st1⟩ := triple
           simp only [hPop] at hStep
@@ -1693,9 +1699,9 @@ theorem endpointSendDual_preserves_projection
               endpointId true st st1 receiver recvTcb hEndpointHigh hRecvObjHigh
               hNextHighForPop hObjInv hPop
           cases hTcbStore : storeTcbReceiveComplete st1 receiver (some msg) with
-          | error e => simp [hTcbStore] at hStep
+          | error e => simp [hSnd, hTcbStore] at hStep
           | ok st2 =>
-            simp only [hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
+            simp only [hSnd, hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hStEq⟩ := hStep; subst hStEq
             rw [ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh,
                 storeTcbReceiveComplete_preserves_projection ctx observer st1 st2

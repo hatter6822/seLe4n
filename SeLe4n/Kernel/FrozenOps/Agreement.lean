@@ -269,6 +269,7 @@ def frozenBranchDifferentiallyChecked : FrozenOpBranch → Bool
   | .notificationSignalToBoundThread => true   -- against `notificationSignalBound`
   | .notificationWaitConsumesBadge => true     -- against `notificationWait`
   | .endpointSendParks => true                 -- against `endpointSendDual`
+  | .endpointSendToWaitingReceiver => true     -- against `endpointSendDual`
   | .endpointReceiveFromBlockedSender => true  -- against `endpointReceiveDual`
   | .endpointReceiveFromBlockedCaller => true  -- against `endpointReceiveDual`
   | .endpointCallParks => true                 -- against `endpointCall`
@@ -281,7 +282,6 @@ def frozenBranchUncheckedReason : FrozenOpBranch → String
   | .notificationSignalToWaiter => "ordinary-waiter delivery; scenario owed"
   | .notificationSignalStoresBadge => "store-only signal; scenario owed"
   | .notificationWaitBlocks => "blocking wait; scenario owed"
-  | .endpointSendToWaitingReceiver => "send rendezvous; scenario owed"
   | .endpointReceiveBlocks => "blocking receive; scenario owed"
   | .endpointCallToWaitingReceiver => "call rendezvous; scenario owed"
   | _ => ""
@@ -326,7 +326,6 @@ def frozenOpUncheckedReason : SyscallId → String
   -- per-syscall keying used to do -- see `frozenBranchUncheckedReason` for which.
   | .notificationSignal => "branch scenarios owed; see frozenBranchUncheckedReason"
   | .notificationWait => "branch scenarios owed; see frozenBranchUncheckedReason"
-  | .send => "branch scenarios owed; see frozenBranchUncheckedReason"
   | .receive => "branch scenarios owed; see frozenBranchUncheckedReason"
   | .call => "branch scenarios owed; see frozenBranchUncheckedReason"
   | .cspaceMint => "capability operation; scenario owed"

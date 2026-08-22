@@ -1472,10 +1472,16 @@ theorem endpointSendDual_preserves_blockedThreadsPendingMessageConsistent
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- Handshake path: popHead → storeTcbIpcStateAndMessage .ready → ensureRunnable
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok triple =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt
             endpointId true st triple.2.2 triple.1 triple.2.1 hObjInv hPop
           have hInv1 := endpointQueuePopHead_preserves_blockedThreadsPendingMessageConsistent

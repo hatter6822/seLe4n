@@ -511,10 +511,16 @@ theorem endpointSendDual_preserves_endpointQueueNoDup
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- Rendezvous path: PopHead + storeTcbIpcStateAndMessage + ensureRunnable
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
           have hDQSI1 := endpointQueuePopHead_preserves_dualQueueSystemInvariant endpointId true st pair.2.2 pair.1 hObjInv hPop hDQSI
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
@@ -1002,10 +1008,16 @@ theorem endpointSendDual_preserves_ipcStateQueueMembershipConsistent
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- RENDEZVOUS PATH: PopHead + storeTcb(.ready) + ensureRunnable
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok triple =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           obtain ⟨receiver, headTcb, st1⟩ := triple
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt
             endpointId true st st1 receiver headTcb hObjInv hPop
@@ -2187,10 +2199,16 @@ theorem endpointSendDual_preserves_queueNextBlockingConsistent
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
       | some _ =>
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
             pair.1 pair.2.1 hObjInv hPop
           have hQNBC1 := endpointQueuePopHead_preserves_queueNextBlockingConsistent endpointId true st
@@ -2314,10 +2332,16 @@ theorem endpointSendDual_preserves_endpointQueueTailBlockedConsistent
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
       | some _ =>
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
             pair.1 pair.2.1 hObjInv hPop
           have hTail1 := endpointQueuePopHead_preserves_endpointQueueTailBlockedConsistent endpointId true st
@@ -2389,10 +2413,16 @@ theorem endpointSendDual_preserves_queueNextTargetBlocked
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
       | some _ =>
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
             pair.1 pair.2.1 hObjInv hPop
           have hQNTB1 := endpointQueuePopHead_preserves_queueNextTargetBlocked endpointId true st
@@ -2686,10 +2716,16 @@ theorem endpointSendDual_preserves_ipcStateQueueConsistent
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
       | some _ =>
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok triple =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           obtain ⟨receiver, _tcb, stPop⟩ := triple
           cases hMsg : storeTcbReceiveComplete stPop receiver (some msg) with
           | error e => simp [hMsg] at hStep
@@ -5256,10 +5292,16 @@ theorem endpointSendDual_preserves_blockedOnReplyHasReplyObject
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
       | some _ =>
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
           have hP1 := endpointQueuePopHead_preserves_blockedOnReplyHasReplyObject endpointId true st pair.2.2 pair.1 _ hObjInv hInv hPop
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
@@ -9708,10 +9750,16 @@ theorem endpointSendDual_sameSchedContextBindings
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
       | some _ =>
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
           have hS1 := endpointQueuePopHead_sameSchedContextBindings endpointId true st pair.2.2 pair.1 _ hObjInv hPop
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
@@ -9766,10 +9814,16 @@ theorem endpointSendDual_donationOwnerFrame
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
       | some _ =>
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
           have hF1 := endpointQueuePopHead_donationOwnerFrame endpointId true st pair.2.2 pair.1 _ hObjInv hPop
           have hHeadEq := endpointQueuePopHead_returns_head endpointId true st ep pair.1 pair.2.2 hObj hPop
@@ -9851,10 +9905,16 @@ theorem endpointSendDual_passiveServerIdleFrame
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
       | some _ =>
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
           have hF1 := endpointQueuePopHead_passiveServerIdleFrame endpointId true st pair.2.2 pair.1 _ hObjInv hPop
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
@@ -9923,10 +9983,16 @@ theorem endpointSendDual_timeoutBudgetFrame
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
       | some _ =>
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
           have hF1 := endpointQueuePopHead_timeoutBudgetFrame endpointId true st pair.2.2 pair.1 _ hObjInv hPop
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
@@ -10411,10 +10477,16 @@ theorem endpointSendDual_preserves_blockedOnReplyHasTarget
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
       | some _ =>
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
           have hP1 := endpointQueuePopHead_preserves_blockedOnReplyHasTarget endpointId true st pair.2.2 pair.1 _ hObjInv hInv hPop
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
@@ -12653,10 +12725,16 @@ theorem endpointSendDual_preserves_pendingReceiveReplyWellFormed
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
       | some _ =>
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
           have hP1 := endpointQueuePopHead_preserves_pendingReceiveReplyWellFormed endpointId true st pair.2.2 pair.1 _ hObjInv hInv hPop
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
@@ -16464,10 +16542,16 @@ theorem endpointSendDual_preserves_queueHeadBlockedConsistent
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
       | some _ =>
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st
             pair.2.2 pair.1 pair.2.1 hObjInv hPop
           have hQHBC1 := endpointQueuePopHead_preserves_queueHeadBlockedConsistent endpointId true st

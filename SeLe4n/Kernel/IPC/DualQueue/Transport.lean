@@ -2181,6 +2181,22 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
         | some _ =>
+            -- **The sender has to exist even when nothing looks it up**
+            -- (PR #873 round 17).  On this arm the message goes straight from
+            -- the argument into the receiver's TCB, so `sender` was never
+            -- resolved: a caller naming a nonexistent thread, or a non-TCB
+            -- object, delivered anyway and the receiver held a message
+            -- attributed to it.  Only the parking arm below failed, and only
+            -- because it happens to store into the sender's own TCB.
+            --
+            -- The frozen mirror resolved the sender on both arms, so the two
+            -- disagreed on a concrete rendezvous input.  The frozen behaviour is
+            -- the correct one -- a delivery attributed to a thread that does not
+            -- exist is not one anybody can reason about -- so the live path is
+            -- what changes.
+            match st.getTcb? sender with
+            | none => .error .objectNotFound
+            | some _ =>
             -- WS-L1/L1-A: PopHead now returns (ThreadId × TCB × SystemState)
             -- Note: _tcb has stale queue links (WS-L1/L1-A); use st' for current state
             match endpointQueuePopHead endpointId true st with

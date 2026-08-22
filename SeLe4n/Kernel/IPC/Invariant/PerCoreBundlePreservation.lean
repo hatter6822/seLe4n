@@ -680,10 +680,16 @@ theorem endpointSendDual_passiveServerIdleFrameOnCore
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
       | some _ =>
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
+        | error e => simp [hSnd, hHead, hPop] at hStep
         | ok pair =>
-          simp only [hHead, hPop] at hStep
+          simp only [hSnd, hHead, hPop] at hStep
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
           have hF1 := endpointQueuePopHead_passiveServerIdleFrameOnCore (c := c) endpointId true st pair.2.2 pair.1 _ hObjInv hPop
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with

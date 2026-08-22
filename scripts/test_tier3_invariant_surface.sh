@@ -4088,6 +4088,16 @@ run_check "INVARIANT" rg -n 'FrozenOpBranch.all.any \(fun b => b.syscall == sid\
 run_check "INVARIANT" rg -n 'senderWasCall' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n '^def frozenLinkCallerReply' SeLe4n/Kernel/FrozenOps/Core.lean
 run_check "INVARIANT" rg -n 'differentialReceiveFromBlockedCallerAgrees' tests/FrozenOpsSuite.lean
+# PR #873 round 17: on a rendezvous the message goes straight from the argument
+# into the receiver's TCB, so the live send never resolved `sender` -- a caller
+# naming a nonexistent thread delivered anyway and the receiver held a message
+# attributed to it.  Only the parking arm failed, and only because it happens to
+# store into the sender's own TCB.  The frozen mirror refused on both arms, and
+# the frozen behaviour was the correct one, so the live path is what changed.
+run_check "INVARIANT" rg -n 'match st.getTcb\? sender with' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+# …and the per-core mirror in lockstep, which is what the refinement theorem ties.
+run_check "INVARIANT" rg -n 'match st.getTcb\? sender with' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_check "INVARIANT" rg -n 'differentialSendFromAbsentSenderAgrees' tests/FrozenOpsSuite.lean
 # The consuming waiter is the calling thread: it never blocked, so the live
 # `notificationWait` leaves the scheduler alone and the frozen mirror must too.
 run_negative_check "INVARIANT" rg -n 'fun stR => frozenEnsureRunnable stR waiter' SeLe4n/Kernel/FrozenOps/Operations.lean

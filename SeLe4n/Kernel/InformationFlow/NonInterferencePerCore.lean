@@ -1172,22 +1172,26 @@ theorem endpointSendDual_confinedToBootCore (st st' : SystemState)
       cases hHead : ep.receiveQ.head with
       | some _ =>
         simp only [hHead] at hStep
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping, so there is one more split than there used to be.
         split at hStep
         · simp at hStep
-        · next receiver headTcb st1 hPop =>
-          split at hStep
+        · split at hStep
           · simp at hStep
-          · next st2 hStore =>
-            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-            obtain ⟨_, hEq⟩ := hStep
-            subst hEq
-            refine observableSlotsConfinedToCore_trans
-              (endpointQueuePopHead_confinedToCore endpointId true st st1 receiver
-                (headTcb := headTcb) bootCoreId hPop) ?_
-            refine observableSlotsConfinedToCore_trans
-              (storeTcbReceiveComplete_confinedToCore st1 st2 receiver (some msg)
-                bootCoreId hStore) ?_
-            exact ensureRunnable_confinedToBootCore st2 receiver
+          · next receiver headTcb st1 hPop =>
+            split at hStep
+            · simp at hStep
+            · next st2 hStore =>
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep
+              subst hEq
+              refine observableSlotsConfinedToCore_trans
+                (endpointQueuePopHead_confinedToCore endpointId true st st1 receiver
+                  (headTcb := headTcb) bootCoreId hPop) ?_
+              refine observableSlotsConfinedToCore_trans
+                (storeTcbReceiveComplete_confinedToCore st1 st2 receiver (some msg)
+                  bootCoreId hStore) ?_
+              exact ensureRunnable_confinedToBootCore st2 receiver
       | none =>
         simp only [hHead] at hStep
         split at hStep
