@@ -1414,14 +1414,42 @@ private def receiveRefusesMessagelessParkedSender : IO Unit := do
   -- conforming kernel actually reaches.
   assertInvariants "chain12f: delivering from a sender that kept its message" stOk
 
-/-- SCN-CAP-REVOKE-PENDING-TRANSFER (PR #873 round 13): a revoke destroys the
-derivations that have not landed yet.
+/-- **Every revocation entry point, as the suite can run it.**
+
+The report types differ (`Unit` for the two walking variants, a
+`RevokeCdtStrictReport` for the two reporting ones), so each runner projects to
+the state.  Listing them here rather than writing the scenario four times is the
+same reason `revokeCdtScaffold` exists: a claim about "revocation" that is only
+exercised on one entry point is a claim about that entry point. -/
+private def revocationEntryPoints :
+    List (String × (SeLe4n.Kernel.CSpaceAddr → SystemState →
+      Except KernelError (Unit × SystemState))) :=
+  [ ("cspaceRevokeCdt", fun addr st => SeLe4n.Kernel.cspaceRevokeCdt addr st)
+  , ("cspaceRevokeCdtStreaming", fun addr st => SeLe4n.Kernel.cspaceRevokeCdtStreaming addr st)
+  , ("cspaceRevokeCdtStrict", fun addr st =>
+      match SeLe4n.Kernel.cspaceRevokeCdtStrict addr st with
+      | .error e => .error e
+      | .ok (_, stDone) => .ok ((), stDone))
+  , ("cspaceRevokeCdtTransactional", fun addr st =>
+      match SeLe4n.Kernel.cspaceRevokeCdtTransactional addr st with
+      | .error e => .error e
+      | .ok (_, stDone) => .ok ((), stDone)) ]
+
+/-- SCN-CAP-REVOKE-PENDING-TRANSFER (PR #873 rounds 13 and 17): a revoke destroys
+the derivations that have not landed yet -- at every entry point.
 
 A capability-bearing send that parks carries its derivation in the sender's
 `pendingMessage`; the CDT edge appears only when a receiver collects it.  So
-`cspaceRevokeCdt` walked a subtree the pending transfer was not in, reported
-success, and the later receive installed the snapshot and added the child edge
-*after* the revocation -- the receiver kept authority the revoker had destroyed.
+revocation walked a subtree the pending transfer was not in, reported success,
+and the later receive installed the snapshot and added the child edge *after* the
+revocation -- the receiver kept authority the revoker had destroyed.
+
+Round 13 closed that for `cspaceRevokeCdt` and `cspaceRevokeCdtStreaming` by
+appending the consumption at those two call sites, and this scenario ran the
+first of them.  The two reporting variants kept the hole, and the scenario could
+not see it: it named one function.  It now drives all four through
+`revocationEntryPoints`, so the claim is about revocation rather than about the
+variant that happened to be typed here.
 
 The negative is load-bearing in both directions: the revoke must still report
 success (refusing would let a parked sender block revocation indefinitely), and
@@ -1467,12 +1495,12 @@ private def revokeConsumesPendingTransfer : IO Unit := do
   let (stParked, _) :=
     SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender msg grantRights senderCNode
       recvSlot0 bootCoreId stBase
-  expect "chain12g: the parked sender carries the capability"
+  expect "revoke-pending: the parked sender carries the capability"
     ((stParked.getTcb? sender).any (fun t =>
       match t.pendingMessage with
       | some m => m.caps.any (fun tc => tc.srcNode == srcNode)
       | none => false))
-  expect "chain12g: and the derivation is not in the CDT yet"
+  expect "revoke-pending: and the derivation is not in the CDT yet"
     ((stParked.cdt.childrenOf srcNode).isEmpty)
 
   let slotFilled (st : SystemState) : Bool :=
@@ -1484,29 +1512,34 @@ private def revokeConsumesPendingTransfer : IO Unit := do
   let (stControl, _) :=
     SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none receiverCNode
       recvSlot0 bootCoreId stParked
-  expect "chain12g: control — the same transfer installs when nothing revokes it"
+  expect "revoke-pending: control — the same transfer installs when nothing revokes it"
     (slotFilled stControl)
 
-  -- THE DEFECT, now closed: revoke, then receive.
-  match SeLe4n.Kernel.cspaceRevokeCdt srcAddr stParked with
-  | .error e =>
-      expect s!"chain12g: revoke must not fail ({reprStr e})" false
-  | .ok ((), stRevoked) =>
-      expect "chain12g: the revoke still reports success"
-        ((stRevoked.getTcb? sender).isSome)
-      expect "chain12g: and it consumed the in-flight derivation"
-        ((stRevoked.getTcb? sender).all (fun t =>
-          match t.pendingMessage with
-          | some m => !(m.caps.any (fun tc => tc.srcNode == srcNode))
-          | none => true))
-      let (stAfter, _) :=
-        SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none receiverCNode
-          recvSlot0 bootCoreId stRevoked
-      expect "chain12g: no capability arrives after the revoke"
-        (!(slotFilled stAfter))
-      expect "chain12g: and no child edge appears after it either"
-        ((stAfter.cdt.childrenOf srcNode).isEmpty)
-      assertInvariants "chain12g: revoke consumed the pending transfer" stAfter
+  -- The registry must not silently shrink to the variant that already worked.
+  expect "revoke-pending: all four revocation entry points are exercised"
+    (revocationEntryPoints.length == 4)
+
+  -- THE DEFECT, now closed at every entry point: revoke, then receive.
+  for (name, revoke) in revocationEntryPoints do
+    match revoke srcAddr stParked with
+    | .error e =>
+        expect s!"revoke-pending: {name} must not fail ({reprStr e})" false
+    | .ok ((), stRevoked) =>
+        expect s!"revoke-pending: {name} still reports success"
+          ((stRevoked.getTcb? sender).isSome)
+        expect s!"revoke-pending: {name} consumed the in-flight derivation"
+          ((stRevoked.getTcb? sender).all (fun t =>
+            match t.pendingMessage with
+            | some m => !(m.caps.any (fun tc => tc.srcNode == srcNode))
+            | none => true))
+        let (stAfter, _) :=
+          SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none receiverCNode
+            recvSlot0 bootCoreId stRevoked
+        expect s!"revoke-pending: no capability arrives after {name}"
+          (!(slotFilled stAfter))
+        expect s!"revoke-pending: and no child edge appears after {name} either"
+          ((stAfter.cdt.childrenOf srcNode).isEmpty)
+        assertInvariants s!"revoke-pending: {name} consumed the pending transfer" stAfter
 
 /-- SCN-IPC-CAP-TRANSFER-GRANT-STAMPED (PR #873 round 13): the endpoint's grant
 right decides, whatever the message arrived carrying.

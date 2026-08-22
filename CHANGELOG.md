@@ -1,3 +1,63 @@
+## v0.33.93 — revocation stopped being four copies of one algorithm
+
+`revokePendingTransfersFrom` — the in-flight consumption added at v0.33.88 —
+reached only `cspaceRevokeCdt` and `cspaceRevokeCdtStreaming`. A successful
+`cspaceRevokeCdtStrict` or `cspaceRevokeCdtTransactional` returned its folded
+state with a parked caps-bearing send still carrying a capability derived from
+the revoked root, and the receiver's later collect installed it: revocation
+reported success and the authority arrived anyway. Measured before the fix, on
+the strict variant — the derivation survives the revoke and the capability lands
+in the receiver's CNode.
+
+**The cause was not two missing call sites.** v0.33.88 appended an epilogue at
+each entry point, and there were four hand-written traversals to append it to.
+The two reporting variants' folds are byte-identical apart from a comment; the
+strict preservation theorem carried a third copy of the same fold inline in a
+`suffices`. Adding the epilogue to the two that lacked it would have left the
+next variant to remember it — the same open-ended-set shape the v0.33.88 fix was
+itself closing.
+
+**One algorithm, four policies.** `revokeCdtScaffold` owns the prologue (local
+revoke, root lookup, descendant list) and the epilogue (the consuming sweep); a
+variant supplies only its traversal. Four `_routes_through_scaffold` theorems
+hold by `rfl`, so the tie is what the definitions *are* rather than a table of
+what someone remembered, and
+`revokeCdtScaffold_ok_consumed_or_nothing_derived` states over an arbitrary
+traversal that a successful revocation either found nothing derived from the
+slot or ends in the consumption — a statement about the variants that exist and
+the ones that do not exist yet.
+
+**A traversal reports what it revoked, not what it was asked to revoke.**
+`cspaceRevokeCdtStrict` commits partial progress: a halted fold leaves the
+remaining descendants' slots alive. Consuming in-flight derivations from those
+survivors would destroy authority the call did not destroy, and would do it
+invisibly — `deletedSlots`, the caller's only record, would not mention it. So
+`RevokeTraversalOutcome.revokedNodes` carries the set the traversal actually
+destroyed and the scaffold consumes exactly that. The descendants a halted fold
+*did* delete stay covered without being listed: their slots are gone, so
+`ipcTransferSingleCap` declines a derivation from them on its own. The root is
+the one node that survives its own revocation, which is why it is in the set
+unconditionally.
+
+**The proofs collapsed the same way.** `cspaceRevoke_preserves_cdtNodeSlot` was
+copied verbatim into three theorems; `revokeCdtReportingStep` and
+`revokeCdtReportingFold_preserves` replace the inline `suffices`. What that
+duplication had cost was visible once it was gone:
+`cspaceRevokeCdtTransactional` had **no** preservation theorem at all, because
+the strict one restated its fold instead of naming it, leaving nothing for a
+second variant over the same fold to reuse. It is now one line, like the other
+three.
+
+**The regression names revocation, not a function.** The scenario ran
+`cspaceRevokeCdt` alone, which is why it could not see the hole in the other
+three. It now drives all four through `revocationEntryPoints`, with a length
+pin so the registry cannot quietly shrink back to the variant that already
+worked.
+
+Found in review of PR #873 (round 17).
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §3.1
+
 ## v0.33.92 — the relation stopped being a list of what someone remembered
 
 Six findings against the differential harness, and five of them were one shape:

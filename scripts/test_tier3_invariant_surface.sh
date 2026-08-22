@@ -3999,12 +3999,41 @@ run_negative_check "INVARIANT" rg -n 'storeTcbIpcState st. receiver \(\.blockedO
 # consuming the carried derivations, over the revoked root and its whole subtree.
 run_check "INVARIANT" rg -n '^def revokePendingTransfersFrom' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_frame' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n 'revokePendingTransfersFrom stDone' SeLe4n/Kernel/Capability/Operations.lean
+# PR #873 round 17: that consumption was an epilogue appended at each entry
+# point, and there were FOUR hand-written traversals to append it to.  Two got
+# it; a successful `cspaceRevokeCdtStrict` or `cspaceRevokeCdtTransactional`
+# returned its folded state with the derivation still parked, and the receiver's
+# later collect installed it.  The entry points are now one scaffold at four
+# traversals, so the prologue and the epilogue are not a variant's to write.
+run_check "INVARIANT" rg -n '^def revokeCdtScaffold' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n 'revokePendingTransfersFrom out.state \(rootNode :: out.revokedNodes\)' SeLe4n/Kernel/Capability/Operations.lean
+# The tie is definitional -- four `rfl`s, so a variant that stopped being the
+# scaffold would fail to elaborate rather than fail to be listed.
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_routes_through_scaffold' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStreaming_routes_through_scaffold' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStrict_routes_through_scaffold' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtTransactional_routes_through_scaffold' SeLe4n/Kernel/Capability/Operations.lean
+# Held over an arbitrary traversal, so it covers the four that exist and the ones
+# that do not exist yet.
+run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_ok_consumed_or_nothing_derived' SeLe4n/Kernel/Capability/Operations.lean
+# The exact pre-fix return of both reporting variants: the fold's state handed
+# back with no consumption.  Load-bearing negative -- this is the shape that let
+# a revoke report success while the capability was still on its way.
+run_negative_check "INVARIANT" rg -n 'ok \(\{ report with deletedSlots := report.deletedSlots.reverse \}, stFinal\)' SeLe4n/Kernel/Capability/Operations.lean
 # Consuming from a TCB is a write to the object store, so the seven-conjunct
 # capability bundle has to survive it -- proved, not assumed, and in the Invariant
 # layer because Operations cannot name the bundle.
 run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+# The transactional variant had NO preservation theorem: the strict one restated
+# its fold inline instead of naming it, so there was nothing for a second variant
+# over the same fold to reuse.
+run_check "INVARIANT" rg -n '^theorem revokeCdtReportingStep_preserves' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtTransactional_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+# And the regression names revocation rather than one function: it ran
+# `cspaceRevokeCdt` alone, which is why it could not see the other three.
 run_check "INVARIANT" rg -n 'revokeConsumesPendingTransfer' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n '^private def revocationEntryPoints' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'revocationEntryPoints.length == 4' tests/OperationChainSuite.lean
 # And the send-side half of round 6's ordering independence.  The wrappers took
 # the grant authority TWICE -- the `endpointRights` argument for the rendezvous
 # arm, `msg.capsGranted` for the parked one -- and never tied them, so a caller

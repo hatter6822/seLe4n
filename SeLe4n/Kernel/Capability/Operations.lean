@@ -1522,6 +1522,112 @@ def processRevokeNode (st : SystemState) (node : CdtNodeId)
 -- WS-E4/C-04: Cross-CNode CDT revocation
 -- ============================================================================
 
+/-- Structured failure context for strict CDT descendant deletion.
+
+`offendingSlot` is the slot projected from the failing CDT node (when a slot
+mapping exists). `error` is the concrete deletion error surfaced by
+`cspaceDeleteSlot`. -/
+structure RevokeCdtStrictFailure where
+  offendingNode : CdtNodeId
+  offendingSlot : Option CSpaceAddr
+  error : KernelError
+  deriving Repr, DecidableEq
+
+/-- Return payload for strict CDT revocation.
+
+The strict variant stops at the first descendant deletion failure and returns
+its context in `firstFailure` instead of swallowing the error. -/
+structure RevokeCdtStrictReport where
+  deletedSlots : List CSpaceAddr
+  firstFailure : Option RevokeCdtStrictFailure
+  deriving Repr, DecidableEq
+
+/-- **What a revocation traversal produced.**
+
+`report` is the policy-specific payload the caller sees; `state` is the store
+after the deletions; `revokedNodes` is the set of CDT nodes this traversal
+*actually* destroyed — not the set it was asked to destroy.
+
+The distinction is load-bearing.  `cspaceRevokeCdtStrict` commits partial
+progress: when a descendant's deletion fails it halts and reports, leaving the
+remaining descendants' slots alive.  Consuming in-flight derivations from those
+survivors would destroy authority the operation did not destroy, and would do it
+silently — `deletedSlots` would not mention it.  So the traversal reports what it
+revoked and the scaffold consumes exactly that. -/
+structure RevokeTraversalOutcome (ρ : Type) where
+  report : ρ
+  revokedNodes : List CdtNodeId
+  state : SystemState
+
+/-- **CDT revocation, once.**
+
+Every public revocation entry point is this function at a different traversal.
+The shape they share is not a coincidence to be re-typed four times:
+
+1. local revoke of the source slot's same-CNode siblings,
+2. look up the source slot's CDT node — no node means nothing was derived,
+3. walk the subtree (the part that differs: materialized fold, streaming BFS,
+   strict report, validate-then-apply),
+4. consume the derivations that have not landed yet
+   (`revokePendingTransfersFrom`).
+
+Step 4 is why this exists.  It was added to `cspaceRevokeCdt` and
+`cspaceRevokeCdtStreaming` as an epilogue at each call site, and the two
+reporting variants — written earlier, byte-identical in their folds — did not
+get it: a successful `cspaceRevokeCdtStrict` reported revocation while a parked
+caps-bearing send still carried a capability derived from the revoked root.
+Adding the epilogue to those two as well would have left the next variant to
+remember it.  Here a variant *is* its traversal, so there is nothing to
+remember: the prologue and the epilogue are not the variant's to write.
+
+**Why the root is in the consumed set unconditionally.**  `cspaceRevoke` leaves
+the source slot itself present — it clears siblings naming the same target, not
+the slot the caller named.  Every descendant's slot is deleted by the traversal,
+so `ipcTransferSingleCap` declines an in-flight derivation from a descendant on
+its own (`CapTransferResult.sourceRevoked`, "no live slot").  The root is the
+one node that survives its own revocation, so it is the one node the
+install-time guard cannot see. -/
+def revokeCdtScaffold {ρ : Type} (emptyReport : ρ)
+    (traverse : SystemState → CdtNodeId → List CdtNodeId →
+      Except KernelError (RevokeTraversalOutcome ρ))
+    (addr : CSpaceAddr) : Kernel ρ :=
+  fun st =>
+    match cspaceRevoke addr st with
+    | .error e => .error e
+    | .ok ((), stLocal) =>
+        match SystemState.lookupCdtNodeOfSlot stLocal addr with
+        | none => .ok (emptyReport, stLocal)
+        | some rootNode =>
+            match traverse stLocal rootNode (stLocal.cdt.descendantsOf rootNode) with
+            | .error e => .error e
+            | .ok out =>
+                .ok (out.report,
+                  revokePendingTransfersFrom out.state (rootNode :: out.revokedNodes))
+
+/-- Materialize the descendant list, then fold `processRevokeNode` over it,
+stopping at the first failure.
+
+AJ-L10: `descendantsOf` materializes the full descendant list before folding.
+For deep CDT trees this is a performance concern (O(n) allocation), not a
+correctness issue; `revokeCdtStreamingTraversal` is the O(branching-factor)
+alternative. -/
+def revokeCdtMaterializedTraversal (stLocal : SystemState) (_rootNode : CdtNodeId)
+    (descendants : List CdtNodeId)
+    : Except KernelError (RevokeTraversalOutcome Unit) :=
+  match descendants.foldl (fun acc node =>
+      match acc with
+      | .error e => .error e
+      | .ok ((), stAcc) =>
+          match processRevokeNode stAcc node with
+          | .error e => .error e
+          | .ok stNext => .ok ((), stNext)
+    ) (.ok ((), stLocal) : Except KernelError (Unit × SystemState)) with
+  | .error e => .error e
+  | .ok ((), stDone) =>
+      -- Reaching `.ok` means every descendant was processed, so the traversal
+      -- revoked the whole list it was handed.
+      .ok { report := (), revokedNodes := descendants, state := stDone }
+
 /-- WS-E4/C-04: Revoke all capabilities derived from the source capability
 via CDT traversal, across all CNodes in the system.
 
@@ -1530,6 +1636,10 @@ Extends local revoke with CDT-based global traversal:
 2. Walk the CDT to find all descendants of the source slot
 3. Delete each descendant's capability from its CNode
 4. Clean up CDT edges for deleted slots
+5. Consume the derivations that have not landed yet
+
+Steps 1, 2 and 5 are `revokeCdtScaffold`'s and are shared with every other
+revocation entry point; steps 3-4 are `revokeCdtMaterializedTraversal`.
 
 **Error handling** (WS-R2/M-06): Descendant deletion errors are now propagated
 to callers. If any descendant's `cspaceDeleteSlot` fails, the fold stops and
@@ -1544,42 +1654,7 @@ retained in this note purely so a future reader searching the codebase
 for the old symbol can find the explanation here rather than guess at a
 missing helper. -/
 def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel Unit :=
-  fun st =>
-    -- First do local revocation
-    match cspaceRevoke addr st with
-    | .error e => .error e
-    | .ok ((), stLocal) =>
-        -- Walk CDT descendants in node space, then project to slots for deletion.
-        match SystemState.lookupCdtNodeOfSlot stLocal addr with
-        | none => .ok ((), stLocal)
-        | some rootNode =>
-            -- AJ-L10: `descendantsOf` materializes the full descendant list before
-            -- folding. For deep CDT trees this is a performance concern (O(n) allocation),
-            -- not a correctness issue. A streaming/iterator-based approach is recorded
-            -- as a post-1.0 hardening candidate; no currently-active plan file tracks it.
-            -- PR #873 round 13: an in-flight derivation is a derived capability.
-            -- The fold destroys the edges that exist; a caps-bearing send that
-            -- parked carries one that does not exist yet, and installing it after
-            -- the revoke handed the receiver authority this call had just
-            -- destroyed.  Consumed on the way out, so the postcondition covers
-            -- the whole subtree rather than only what had already landed.
-            --
-            -- The descendant list is spelled out at each use rather than bound:
-            -- a `let` here elaborates to a `letFun` the preservation proofs'
-            -- `split` cannot see through, and the fold's shape is what those
-            -- proofs case on.
-            match (stLocal.cdt.descendantsOf rootNode).foldl (fun acc node =>
-                match acc with
-                | .error e => .error e
-                | .ok ((), stAcc) =>
-                    match processRevokeNode stAcc node with
-                    | .error e => .error e
-                    | .ok stNext => .ok ((), stNext)
-              ) (.ok ((), stLocal) : Except KernelError (Unit × SystemState)) with
-            | .error e => .error e
-            | .ok ((), stDone) =>
-                .ok ((), revokePendingTransfersFrom stDone
-                  (rootNode :: stLocal.cdt.descendantsOf rootNode))
+  revokeCdtScaffold () revokeCdtMaterializedTraversal addr
 
 -- ============================================================================
 -- M-P04: Streaming CDT revocation (WS-M5)
@@ -1612,6 +1687,24 @@ def streamingRevokeBFS
           let children := st.cdt.childrenOf node
           streamingRevokeBFS fuel (rest ++ children) stNext
 
+/-- M-P04: Interleave BFS discovery with deletion instead of materializing the
+descendant list. Peak memory: O(max branching factor) instead of O(N).
+
+Fuel = the CDT's edge count, which bounds the number of nodes reachable from the
+root; running out is `.error .resourceExhausted` rather than a silent partial
+revocation, so the scaffold discards the state and no in-flight derivation is
+consumed for a revocation that did not happen. -/
+def revokeCdtStreamingTraversal (stLocal : SystemState) (rootNode : CdtNodeId)
+    (descendants : List CdtNodeId)
+    : Except KernelError (RevokeTraversalOutcome Unit) :=
+  match streamingRevokeBFS stLocal.cdt.edges.length
+      (stLocal.cdt.childrenOf rootNode) stLocal with
+  | .error e => .error e
+  | .ok ((), stDone) =>
+      -- An empty BFS queue is the only `.ok`, so every node reachable from the
+      -- root was processed: the same set the materialized fold walks.
+      .ok { report := (), revokedNodes := descendants, state := stDone }
+
 /-- M-P04: Streaming CDT revocation — interleaves BFS discovery with deletion.
 
 Equivalent to `cspaceRevokeCdt` but processes descendants on-the-fly instead
@@ -1626,44 +1719,63 @@ factor) instead of O(N).
 Error handling (WS-R2/M-05, M-06): descendant deletion errors are propagated.
 Fuel exhaustion returns `.error .resourceExhausted`. -/
 def cspaceRevokeCdtStreaming (addr : CSpaceAddr) : Kernel Unit :=
-  fun st =>
-    match cspaceRevoke addr st with
-    | .error e => .error e
-    | .ok ((), stLocal) =>
-        match SystemState.lookupCdtNodeOfSlot stLocal addr with
-        | none => .ok ((), stLocal)
-        | some rootNode =>
-            -- PR #873 round 13: the same in-flight consumption as the
-            -- materialized fold, over the same subtree, so the two revocation
-            -- entry points cannot disagree about what "revoked" means.  Spelled
-            -- out rather than bound for the same reason as there: a `let` becomes
-            -- a `letFun` the preservation proofs' `split` cannot see through.
-            match streamingRevokeBFS stLocal.cdt.edges.length
-                (stLocal.cdt.childrenOf rootNode) stLocal with
-            | .error e => .error e
-            | .ok ((), stDone) =>
-                .ok ((), revokePendingTransfersFrom stDone
-                  (rootNode :: stLocal.cdt.descendantsOf rootNode))
+  revokeCdtScaffold () revokeCdtStreamingTraversal addr
 
-/-- Structured failure context for strict CDT descendant deletion.
+/-- **One reporting step, shared by the two reporting variants.**
 
-`offendingSlot` is the slot projected from the failing CDT node (when a slot
-mapping exists). `error` is the concrete deletion error surfaced by
-`cspaceDeleteSlot`. -/
-structure RevokeCdtStrictFailure where
-  offendingNode : CdtNodeId
-  offendingSlot : Option CSpaceAddr
-  error : KernelError
-  deriving Repr, DecidableEq
+`cspaceRevokeCdtStrict` and `cspaceRevokeCdtTransactional` carried this fold
+body twice, byte-identical apart from a comment, and the preservation proof
+carried a third copy inline in a `suffices`. Named once, the two variants differ
+only in the validation prologue — which is the whole of what "transactional"
+means.
 
-/-- Return payload for strict CDT revocation.
+On a deletion failure the CDT node is deliberately **preserved** (AH3-A/L-04):
+the capability slot still exists, and removing its CDT node would make it
+unreachable by future revocation, creating an orphan. -/
+def revokeCdtReportingStep (acc : RevokeCdtStrictReport × SystemState)
+    (node : CdtNodeId) : RevokeCdtStrictReport × SystemState :=
+  let (report, stAcc) := acc
+  match report.firstFailure with
+  | some _ => (report, stAcc)
+  | none =>
+      match SystemState.lookupCdtSlotOfNode stAcc node with
+      | none => (report, { stAcc with cdt := stAcc.cdt.removeNode node })
+      | some descAddr =>
+          match cspaceDeleteSlotCore descAddr stAcc with
+          | .error err =>
+              ({ report with firstFailure := some {
+                  offendingNode := node
+                  offendingSlot := some descAddr
+                  error := err } }, stAcc)
+          | .ok ((), stDel) =>
+              -- V5-N: Redundant detachSlotFromCdt removed (already done inside
+              -- cspaceDeleteSlotCore).
+              ({ report with deletedSlots := descAddr :: report.deletedSlots },
+               { stDel with cdt := stDel.cdt.removeNode node })
 
-The strict variant stops at the first descendant deletion failure and returns
-its context in `firstFailure` instead of swallowing the error. -/
-structure RevokeCdtStrictReport where
-  deletedSlots : List CSpaceAddr
-  firstFailure : Option RevokeCdtStrictFailure
-  deriving Repr, DecidableEq
+/-- **The reporting traversal's outcome**, shared by both reporting variants.
+
+`revokedNodes` is the descendant list only when the fold ran to completion. A
+halted strict fold left the remaining descendants' slots alive, so reporting
+them as revoked would have the scaffold consume in-flight derivations from
+capabilities this call did not destroy — and `deletedSlots`, the caller's only
+record of what happened, would not mention it. The descendants it *did* delete
+are covered without being listed: their slots are gone, so `ipcTransferSingleCap`
+declines an in-flight derivation from them on its own. -/
+def revokeCdtReportingOutcome (stLocal : SystemState) (descendants : List CdtNodeId)
+    : RevokeTraversalOutcome RevokeCdtStrictReport :=
+  match descendants.foldl revokeCdtReportingStep
+      ({ deletedSlots := [], firstFailure := none }, stLocal) with
+  | (report, stFinal) =>
+      { report := { report with deletedSlots := report.deletedSlots.reverse }
+        revokedNodes := if report.firstFailure.isNone then descendants else []
+        state := stFinal }
+
+/-- Best-effort reporting traversal: fold, recording the first failure. -/
+def revokeCdtStrictTraversal (stLocal : SystemState) (_rootNode : CdtNodeId)
+    (descendants : List CdtNodeId)
+    : Except KernelError (RevokeTraversalOutcome RevokeCdtStrictReport) :=
+  .ok (revokeCdtReportingOutcome stLocal descendants)
 
 /-- Strict WS-E4/C-04 revocation variant.
 
@@ -1676,41 +1788,8 @@ failure; successfully deleted descendants before that point remain recorded in
 Local (`same-CNode`) revoke failures are still reported via `.error`, matching
 the base operation contract. -/
 def cspaceRevokeCdtStrict (addr : CSpaceAddr) : Kernel RevokeCdtStrictReport :=
-  fun st =>
-    match cspaceRevoke addr st with
-    | .error e => .error e
-    | .ok ((), stLocal) =>
-        match SystemState.lookupCdtNodeOfSlot stLocal addr with
-        | none => .ok ({ deletedSlots := [], firstFailure := none }, stLocal)
-        | some rootNode =>
-            let descendants := stLocal.cdt.descendantsOf rootNode
-            let step := fun (acc : RevokeCdtStrictReport × SystemState) (node : CdtNodeId) =>
-              let (report, stAcc) := acc
-              match report.firstFailure with
-              | some _ => (report, stAcc)
-              | none =>
-                  match SystemState.lookupCdtSlotOfNode stAcc node with
-                  | none =>
-                      let stRemoved := { stAcc with cdt := stAcc.cdt.removeNode node }
-                      (report, stRemoved)
-                  | some descAddr =>
-                      match cspaceDeleteSlotCore descAddr stAcc with
-                      | .error err =>
-                          let failure : RevokeCdtStrictFailure := {
-                            offendingNode := node
-                            offendingSlot := some descAddr
-                            error := err
-                          }
-                          -- AH3-A (L-04): Preserve CDT node on slot deletion failure.
-                          -- The capability slot still exists; removing its CDT node would
-                          -- make it unreachable by future revocation, creating an orphan.
-                          ({ report with firstFailure := some failure }, stAcc)
-                      | .ok ((), stDel) =>
-                          -- V5-N: Redundant detachSlotFromCdt removed (already done by cspaceDeleteSlotCore)
-                          let stRemoved := { stDel with cdt := stDel.cdt.removeNode node }
-                          ({ report with deletedSlots := descAddr :: report.deletedSlots }, stRemoved)
-            let (report, stFinal) := descendants.foldl step ({ deletedSlots := [], firstFailure := none }, stLocal)
-            .ok ({ report with deletedSlots := report.deletedSlots.reverse }, stFinal)
+  revokeCdtScaffold { deletedSlots := [], firstFailure := none }
+    revokeCdtStrictTraversal addr
 
 /-- AK8-B (WS-AK / C-M02): Precondition check for transactional CDT revocation.
 
@@ -1730,6 +1809,26 @@ def validateRevokeCdtDescendants (st : SystemState) (descendants : List CdtNodeI
         | some (.cnode _) => .ok ()
         | _ => .error .objectNotFound)
 
+/-- AK8-B (WS-AK / C-M02): validate-then-apply reporting traversal.
+
+Identical to `revokeCdtStrictTraversal` behind a precondition check — which is
+the whole of what "transactional" adds. Because validation proved every
+descendant's CNode present, the shared step's failure branch is dead here, so
+`revokeCdtReportingOutcome`'s completion test always reports the full descendant
+list.
+
+The formal "the fold never sets `firstFailure` to `some`" witness is tracked as
+an AN12-B monotonicity lemma (a post-1.0 hardening candidate; no currently-active
+plan file tracks it). Until it exists the completion test is what keeps the
+defensive branch honest: were validation ever weakened, a halted fold would
+report `[]` rather than claim a revocation it did not perform. -/
+def revokeCdtTransactionalTraversal (stLocal : SystemState) (_rootNode : CdtNodeId)
+    (descendants : List CdtNodeId)
+    : Except KernelError (RevokeTraversalOutcome RevokeCdtStrictReport) :=
+  match validateRevokeCdtDescendants stLocal descendants with
+  | .error err => .error err
+  | .ok _ => .ok (revokeCdtReportingOutcome stLocal descendants)
+
 /-- AK8-B (WS-AK / C-M02): **Transactional** CDT revocation variant.
 
 Unlike `cspaceRevokeCdtStrict` (which uses best-effort partial-progress
@@ -1746,73 +1845,20 @@ this variant follows a strict **validate-then-apply** discipline:
    deleted, and the caller's `SystemState` is rolled back to the
    pre-transaction snapshot (since the `Kernel` monad discards the
    intermediate `stLocal` on `.error`).
-3. **Apply phase.** If all descendants validate, each deletion in the
-   fold below is guaranteed to succeed — `cspaceDeleteSlotCore`'s sole
-   failure path is `.objectNotFound` on the descendant's CNode, which
-   we verified is present. The `firstFailure` field of the returned
-   report is therefore always `none`.
+3. **Apply phase.** If all descendants validate, each deletion in
+   `revokeCdtReportingOutcome`'s fold is guaranteed to succeed —
+   `cspaceDeleteSlotCore`'s sole failure path is `.objectNotFound` on the
+   descendant's CNode, which we verified is present. The `firstFailure`
+   field of the returned report is therefore always `none`.
+4. **Consumption phase.** `revokeCdtScaffold` drops the derivations that
+   have not landed yet, the same as every other revocation entry point.
 
 This provides true all-or-nothing semantics for CDT revocation, at the
 cost of a double walk (validation + apply). Callers who can tolerate
 partial progress should continue to use `cspaceRevokeCdtStrict`. -/
 def cspaceRevokeCdtTransactional (addr : CSpaceAddr) : Kernel RevokeCdtStrictReport :=
-  fun st =>
-    match cspaceRevoke addr st with
-    | .error e => .error e
-    | .ok ((), stLocal) =>
-        match SystemState.lookupCdtNodeOfSlot stLocal addr with
-        | none => .ok ({ deletedSlots := [], firstFailure := none }, stLocal)
-        | some rootNode =>
-            let descendants := stLocal.cdt.descendantsOf rootNode
-            -- Phase 2: Validate every descendant before touching any state.
-            match validateRevokeCdtDescendants stLocal descendants with
-            | .error err => .error err
-            | .ok _ =>
-                -- Phase 3: Apply. Because validation passed, every
-                -- `cspaceDeleteSlotCore` below is guaranteed to succeed.
-                let step := fun (acc : RevokeCdtStrictReport × SystemState) (node : CdtNodeId) =>
-                  let (report, stAcc) := acc
-                  match report.firstFailure with
-                  | some _ => (report, stAcc)
-                  | none =>
-                      match SystemState.lookupCdtSlotOfNode stAcc node with
-                      | none =>
-                          let stRemoved := { stAcc with cdt := stAcc.cdt.removeNode node }
-                          (report, stRemoved)
-                      | some descAddr =>
-                          match cspaceDeleteSlotCore descAddr stAcc with
-                          | .error err =>
-                              -- AN4-F.2 (CAP-M02): dead branch by construction.
-                              -- Phase 2 proved every descendant's CNode present
-                              -- in `stLocal.objects`. Each iteration of the
-                              -- fold calls `cspaceDeleteSlotCore`, which only
-                              -- overwrites CNodes (never removes them from the
-                              -- object store) via `storeObject` — so the set of
-                              -- CNode keys in `stAcc.objects` monotonically
-                              -- includes the set in `stLocal.objects`. Hence
-                              -- `stAcc.objects[descAddr.cnode]? = some (.cnode _)`
-                              -- for every descendant reached during the fold,
-                              -- and `cspaceDeleteSlotCore`'s sole failure path
-                              -- (`.objectNotFound` on `addr.cnode`) cannot fire.
-                              -- The defensive fallback keeps the fold total so
-                              -- no consumer can crash if a future change
-                              -- weakens the Phase-2 guarantee; the formal
-                              -- "fold never sets firstFailure to some" witness
-                              -- is tracked as an AN12-B monotonicity lemma
-                              -- (recorded as a post-1.0 hardening candidate —
-                              -- no currently-active plan file tracks it).
-                              let failure : RevokeCdtStrictFailure := {
-                                offendingNode := node
-                                offendingSlot := some descAddr
-                                error := err
-                              }
-                              ({ report with firstFailure := some failure }, stAcc)
-                          | .ok ((), stDel) =>
-                              let stRemoved := { stDel with cdt := stDel.cdt.removeNode node }
-                              ({ report with deletedSlots := descAddr :: report.deletedSlots }, stRemoved)
-                let (report, stFinal) := descendants.foldl step
-                  ({ deletedSlots := [], firstFailure := none }, stLocal)
-                .ok ({ report with deletedSlots := report.deletedSlots.reverse }, stFinal)
+  revokeCdtScaffold { deletedSlots := [], firstFailure := none }
+    revokeCdtTransactionalTraversal addr
 
 /-- AK8-B: `validateRevokeCdtDescendants` on an empty descendant list succeeds. -/
 theorem validateRevokeCdtDescendants_empty (st : SystemState) :
@@ -1830,7 +1876,7 @@ theorem cspaceRevokeCdtTransactional_no_failure_no_cdt_node
     (hNoRoot : SystemState.lookupCdtNodeOfSlot stLocal addr = none) :
     cspaceRevokeCdtTransactional addr st
       = .ok ({ deletedSlots := [], firstFailure := none }, stLocal) := by
-  simp [cspaceRevokeCdtTransactional, hLocal, hNoRoot]
+  simp [cspaceRevokeCdtTransactional, revokeCdtScaffold, hLocal, hNoRoot]
 
 /-- AK8-B: The transactional variant's local revoke step matches the strict
 variant's — they share the same local revoke invocation. This witnesses
@@ -1840,10 +1886,75 @@ theorem cspaceRevokeCdtTransactional_requires_local_revoke_ok
     (addr : CSpaceAddr) (st : SystemState) (r : RevokeCdtStrictReport) (st' : SystemState)
     (hOk : cspaceRevokeCdtTransactional addr st = .ok (r, st')) :
     (cspaceRevoke addr st).isOk := by
-  unfold cspaceRevokeCdtTransactional at hOk
+  unfold cspaceRevokeCdtTransactional revokeCdtScaffold at hOk
   cases hRev : cspaceRevoke addr st with
   | error e => simp [hRev] at hOk
   | ok _ => simp [Except.isOk, Except.toBool]
+
+/-- **Every revocation entry point is the scaffold at a traversal.**
+
+Four `rfl`s, and they are the reason the in-flight consumption cannot be
+forgotten by a fifth variant: there is nothing for it to forget, because the
+prologue and the epilogue are not written at the entry point.  A variant that
+did not appear here would be a variant that reimplemented the walk — which is
+what happened, and what these pin against.
+
+Stated as definitional equations rather than as a table of claims: a table
+records what someone remembered, `rfl` records what the definition is. -/
+theorem cspaceRevokeCdt_routes_through_scaffold :
+    cspaceRevokeCdt = revokeCdtScaffold () revokeCdtMaterializedTraversal := rfl
+
+/-- Streaming revocation is the scaffold at the BFS traversal. -/
+theorem cspaceRevokeCdtStreaming_routes_through_scaffold :
+    cspaceRevokeCdtStreaming = revokeCdtScaffold () revokeCdtStreamingTraversal := rfl
+
+/-- Strict revocation is the scaffold at the reporting traversal. -/
+theorem cspaceRevokeCdtStrict_routes_through_scaffold :
+    cspaceRevokeCdtStrict
+      = revokeCdtScaffold { deletedSlots := [], firstFailure := none }
+          revokeCdtStrictTraversal := rfl
+
+/-- Transactional revocation is the scaffold at the validated reporting
+traversal. -/
+theorem cspaceRevokeCdtTransactional_routes_through_scaffold :
+    cspaceRevokeCdtTransactional
+      = revokeCdtScaffold { deletedSlots := [], firstFailure := none }
+          revokeCdtTransactionalTraversal := rfl
+
+/-- **A successful revocation either found nothing derived, or consumed.**
+
+The scaffold's post-state is not the traversal's post-state: it is always
+`revokePendingTransfersFrom` applied to it.  The only escape is the branch where
+the source slot has no CDT node at all — nothing was ever derived from it, so
+there is no in-flight derivation to consume.
+
+Held over an arbitrary traversal, so it covers the variants that exist and the
+ones that do not exist yet. -/
+theorem revokeCdtScaffold_ok_consumed_or_nothing_derived {ρ : Type}
+    (emptyReport : ρ)
+    (traverse : SystemState → CdtNodeId → List CdtNodeId →
+      Except KernelError (RevokeTraversalOutcome ρ))
+    (addr : CSpaceAddr) (st st' : SystemState) (r : ρ)
+    (hOk : revokeCdtScaffold emptyReport traverse addr st = .ok (r, st')) :
+    (cspaceRevoke addr st = .ok ((), st') ∧
+        SystemState.lookupCdtNodeOfSlot st' addr = none) ∨
+    (∃ (rootNode : CdtNodeId) (out : RevokeTraversalOutcome ρ),
+        st' = revokePendingTransfersFrom out.state (rootNode :: out.revokedNodes)) := by
+  unfold revokeCdtScaffold at hOk
+  split at hOk
+  · simp at hOk
+  · rename_i stLocal hRevoke
+    split at hOk
+    · rename_i hNoRoot
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
+      obtain ⟨_, hEq⟩ := hOk
+      exact Or.inl ⟨hEq ▸ hRevoke, hEq ▸ hNoRoot⟩
+    · rename_i rootNode _
+      split at hOk
+      · simp at hOk
+      · rename_i out _
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
+        exact Or.inr ⟨rootNode, out, hOk.2.symm⟩
 
 -- ============================================================================
 -- M-D01: IPC capability transfer operations
