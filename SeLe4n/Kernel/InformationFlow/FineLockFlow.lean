@@ -1819,11 +1819,12 @@ theorem syscallEntryChecked_preserves_projection (ctx : LabelingContext) (observ
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
     (st st' : SystemState)
     (hOk : syscallEntryChecked ctx layout executingCore regCount st = .ok ((), st'))
-    (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId),
+    (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+        (stPost : SystemState),
         dispatchSyscallChecked ctx decoded tid
             (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
-              decoded.overflowCount) = .ok ((), st') →
-        projectState ctx observer st'
+              decoded.overflowCount) = .ok ((), stPost) →
+        projectState ctx observer stPost
           = projectState ctx observer
               (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
                 decoded.overflowCount)) :
@@ -1841,12 +1842,66 @@ theorem syscallEntryChecked_preserves_projection (ctx : LabelingContext) (observ
         split at hOk
         · exact absurd hOk (by simp)
         · next decoded _ =>
-          rw [hDispatchProj decoded tid hOk]
+          -- PR #873 round 6: the taint seam moved into `dispatchSyscallChecked`,
+          -- so the entry delegates and `hOk` IS the dispatch's own success.  The
+          -- seam is still projection-invisible
+          -- (`applySyscallTaint_preserves_projection`, `rfl`), which is what lets
+          -- `hDispatchProj` be discharged from a statement about the arm.
+          --
+          -- The entry binds the TLB-filled state once rather than spelling it out
+          -- three times; Lean elaborates that binding to `letFun`, which the
+          -- rewrite below cannot see through, so reduce it away first.
+          dsimp only at hOk
+          rw [hDispatchProj decoded tid st' hOk]
           obtain ⟨t, hEq⟩ :=
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st executingCore tid
               decoded.overflowCount
           rw [hEq]
           exact perCoreTlb_write_preserves_projection ctx observer st t
+
+-- ============================================================================
+-- §4b  WS-SM SM9.D.18 — the taint propagation carries the non-interference
+-- ============================================================================
+
+/-- WS-SM SM9.D.18: **the propagation writes no core's observable slots.**
+
+`applySyscallTaint` changes exactly one `SystemState` field, and that field is
+in none of the six per-core components `observableSlotsConfinedToCores` reads —
+no run queue, no current slot, no domain state, no register bank.  So it is
+confined to the **empty** set of cores, which is the sharpest statement
+available and the one the cross-core inventory composes with: a content-moving
+arm's write set is exactly the transition's, unchanged by the propagation the
+entry runs on top of it. -/
+theorem applySyscallTaint_confinedToCores_nil (plan : TaintPlan) (pre post : SystemState) :
+    observableSlotsConfinedToCores post (applySyscallTaint plan pre post) [] :=
+  ⟨fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl,
+   fun _ _ => rfl⟩
+
+/-- WS-SM SM9.D.18 / SM9.D.6: **the propagation is invisible on every core.**
+
+The per-core companion of `applySyscallTaint_preserves_projection`.  Both halves
+are needed and neither implies the other: being outside the projection says the
+write moves no observer's global view, and being outside the per-core read set
+says the same on a core other than the one the propagating syscall executed on —
+which is the statement the cross-core non-interference inventory consumes, since
+every content-moving arm can run on any core. -/
+theorem applySyscallTaint_preserves_onCore (ctx : LabelingContext) (L : SecurityLabel)
+    (c : CoreId) (plan : TaintPlan) (pre post : SystemState) :
+    ObservableState.onCore ctx c L (applySyscallTaint plan pre post)
+      = ObservableState.onCore ctx c L post :=
+  onCore_declassificationTaint ctx L post c _
+
+/-- WS-SM SM9.D.18: **the whole invariant bundle across the propagation.**
+
+Unconditional, because no `proofLayerInvariantBundle` conjunct reads the taint
+table — each entry is bounded by its own type, so a writer owes nothing to the
+sixteen conjuncts that are already there.  This is the carriage the mount
+checklist's step 8 requires of *every* mounted field, and it is what a
+whole-entry bundle-preservation proof for the live path composes with. -/
+theorem applySyscallTaint_preserves_proofLayerInvariantBundle (plan : TaintPlan)
+    (pre post : SystemState) (h : Architecture.proofLayerInvariantBundle post) :
+    Architecture.proofLayerInvariantBundle (applySyscallTaint plan pre post) :=
+  Architecture.proofLayerInvariantBundle_setDeclassificationTaint post _ h
 
 /-- SM8.D.5: the state the guarded entry is actually run in — the pre-state
 after the 2PL growing phase.  Named because every §5 hypothesis is stated
@@ -2040,12 +2095,13 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore (ctx : LabelingConte
     (s st' : SystemState) (hInv : s.objects.invExt) (hOutInv : st'.objects.invExt)
     (hOk : syscallEntryChecked ctx layout executingCore regCount
         (lockSetAcquiredState S lockCore s) = .ok ((), st'))
-    (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId),
+    (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+        (stPost : SystemState),
         dispatchSyscallChecked ctx decoded tid
             (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
               (lockSetAcquiredState S lockCore s) executingCore tid decoded.overflowCount)
-              = .ok ((), st') →
-        projectState ctx observer st'
+              = .ok ((), stPost) →
+        projectState ctx observer stPost
           = projectState ctx observer
               (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
                 (lockSetAcquiredState S lockCore s) executingCore tid decoded.overflowCount))
@@ -2186,12 +2242,13 @@ theorem secureInformationFlow_underFineLocks (ctx : LabelingContext) (L : Securi
     (s st' : SystemState) (hInv : s.objects.invExt) (hOutInv : st'.objects.invExt)
     (hOk : syscallEntryChecked ctx layout executingCore regCount
         (lockSetAcquiredState S lockCore s) = .ok ((), st'))
-    (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId),
+    (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+        (stPost : SystemState),
         dispatchSyscallChecked ctx decoded tid
             (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
               (lockSetAcquiredState S lockCore s) executingCore tid decoded.overflowCount)
-              = .ok ((), st') →
-        projectState ctx (IfObserver.ofLabel L) st'
+              = .ok ((), stPost) →
+        projectState ctx (IfObserver.ofLabel L) stPost
           = projectState ctx (IfObserver.ofLabel L)
               (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
                 (lockSetAcquiredState S lockCore s) executingCore tid decoded.overflowCount))
@@ -2373,7 +2430,17 @@ divergence in either value stops this elaborating.
 Preferred over factoring the shared prefix into one function: that would mean
 reshaping a production entry point to suit a staged module, and it would pin
 less, since a common prefix says nothing about what the entry does with its
-result. -/
+result.
+
+**WS-SM SM9.D.7 / PR #873 round 6.**  The equation used to spell the taint seam
+out here, because the seam sat at the entry.  It sits at the dispatcher now, so
+the entry *is* the dispatch at the filled state and the equation says exactly
+that — the `tid`, the `decoded` and the state the dispatch runs on, all three
+read off the helper's outputs.  Nothing was given up in the move: what the
+propagation is keyed on is pinned one layer down and over *every* caller of the
+dispatcher rather than over this entry alone, by
+`dispatchSyscallChecked_applies_taint_plan`.  A decode normalisation or a new
+validation step still stops this elaborating. -/
 theorem entryDecode_some_entry_dispatches (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
     (s : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
@@ -2408,7 +2475,8 @@ theorem entryDecode_some_entry_dispatches (ctx : LabelingContext)
           simp only [Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨hTid, hDecoded⟩ := h
           subst hTid; subst hDecoded
-          simp [hRegs, hDec]
+          simp only [hRegs, hDec]
+          rfl
 
 /-- SM8.D.5: the target a capability-addressed syscall names, read the way the
 live `dispatchWithCapChecked` arms read it.
@@ -2741,6 +2809,33 @@ theorem suspendFootprint_respects_queueOwnership (st : SystemState)
   fun _ => (suspendFootprint_splice_neighbors_under_endpoint_lock st callerTid targetTid
     S victim ep hFp hVictim hBlocked hLinks).1
 
+/-- WS-SM SM9.D.17 (audit, **the violation as data**): the send and call
+footprints declare no CNode **write** — in particular not the receiver's CSpace
+root, which `ipcUnwrapCaps` writes on a caps-carrying rendezvous.  Concrete
+witnesses because the honest general statement needs a mode-aware inversion the
+kind-based `omits` pattern cannot supply (the caller's root IS a cnode-kind
+member, in read mode), and a `decide` over closed footprints pins the same
+fact: the fold that builds each set inserts exactly one CNode key, read-mode,
+the caller's.  Closing the gap deletes this theorem — the SM8.D round-11
+discipline, so the debt cannot quietly become a stale comment. -/
+theorem capTransfer_receiverCnode_write_undeclared :
+    ∃ (callerTid receiverTid : SeLe4n.ThreadId) (cnRoot epId recvRoot : SeLe4n.ObjId),
+      cnRoot ≠ recvRoot ∧
+      (SeLe4n.Kernel.Concurrency.cnodeLock recvRoot, AccessMode.write) ∉
+        (SeLe4n.Kernel.Concurrency.lockSet_endpointSend callerTid cnRoot epId
+          (some receiverTid)).pairs ∧
+      (SeLe4n.Kernel.Concurrency.cnodeLock recvRoot, AccessMode.write) ∉
+        (SeLe4n.Kernel.Concurrency.lockSet_endpointCall callerTid cnRoot epId
+          (some receiverTid) none none).pairs ∧
+      -- …and the gap is not an artifact of naming a FOREIGN root: even the
+      -- caller's own root — the one CNode the footprints do name — is held in
+      -- read mode only, so no CNode write is declared anywhere in either set.
+      (SeLe4n.Kernel.Concurrency.cnodeLock cnRoot, AccessMode.write) ∉
+        (SeLe4n.Kernel.Concurrency.lockSet_endpointSend callerTid cnRoot epId
+          (some receiverTid)).pairs := by
+  refine ⟨⟨1⟩, ⟨2⟩, SeLe4n.ObjId.ofNat 3, SeLe4n.ObjId.ofNat 4, SeLe4n.ObjId.ofNat 5,
+    by decide, ?_, ?_, ?_⟩ <;> decide
+
 /-- SM8.D.5: `lockSet_tcbSetPriority` never holds an endpoint lock.
 
 Its four possible members are a caller TCB read, a CNode read, a target TCB write
@@ -2860,19 +2955,82 @@ inductive UncoveredLockDomain where
   `lockSet_tcbSuspend` is at it exactly) so the suspend can name the neighbours,
   which moves the WCRT headline. -/
   | queueOwnershipProtocol
+  /-- WS-SM SM9.D.17 (audit): the **capability-transfer destination CNode**.  On
+  a caps-carrying rendezvous the live `.send` / `.call` run `ipcUnwrapCaps`,
+  which installs the transferred capabilities into the *receiver's* CSpace root
+  — a CNode write — while `lockSet_endpointSend` / `lockSet_endpointCall`
+  declare no CNode **write** at all (their one CNode member is the *caller's*
+  root, in read mode; `capTransfer_receiverCnode_write_undeclared`).  Surfaced
+  by SM9.D's cap-transfer taint sink, which names exactly this object: the taint
+  write at that key has no covering lock because the underlying transition's own
+  footprint predates the WithCaps path.  Not a live race (SM5.I's global entry
+  lock serialises every commit; `withLockSet` is deferred at the export bodies,
+  SM3.C.9), and closing it is an SM3.B inventory decision with a real cost — a
+  conditional receiver-CNode write member moves both signatures, the size
+  bounds, and the resolved-footprint WCRT arithmetic the IPC suites pin (a
+  caps-carrying call's footprint would exceed the 1 ms tick fit that holds for
+  the capless shape). -/
+  | capTransferReceiverCnode
+  /-- WS-SM SM9.D.17 (audit): the **taint table's per-key realisation**.
+
+  Every content-moving syscall writes `SystemState.declassificationTaint` at the
+  keys its plan names, and declares the *objects'* own locks for them — a
+  deliberate choice, since `stateLevelLock` on the eight content-moving arms
+  would serialise unrelated IPC on unrelated endpoints and break the tick-budget
+  fit the IPC suites pin.  The **model**, though, replaces the field whole:
+  `TaintTable.set` returns a table built from the pre-state's entries.  So the
+  key-local reading is sound only once the runtime realises the table as
+  per-object storage; until it does, two cores committing disjoint taint keys
+  from their own pre-states would each write the whole field and the later commit
+  would discard the other's provenance.
+
+  Not a live race — SM5.I's global entry lock serialises every commit, and
+  `withLockSet` is deferred at the export bodies (SM3.C.9).  `SystemState.objects`
+  carries the identical obligation for `storeObject` under the same discipline,
+  which is why the owner is the representation cut rather than this phase.
+  Registered here rather than left in `TaintPropagation`'s prose because that is
+  the difference between an obligation a later cut must discharge and one it can
+  forget: the completeness theorem below now fails until this entry is removed. -/
+  | taintTablePerKeyStore
+  /-- WS-SM (PR #873 round 13): the **CDT node allocator's global counter**.
+
+  Resolving an extra capability whose source slot has no CDT node yet mints one
+  through `ensureCdtNodeForSlotChecked`, which writes `cdtNextNode` (a global
+  monotone counter) and both keyed maps (`cdtSlotNode` / `cdtNodeSlot`).  That
+  happens on the `.send` and `.call` paths, whose footprints
+  (`lockSet_endpointSend` / `lockSet_endpointCall`) hold the source CNode in
+  **read** mode and declare no state-level or CDT write at all.
+
+  Under the declared fine locks two sends on otherwise disjoint endpoints would
+  hold disjoint footprints while allocating from the same pre-state counter, and
+  the later commit would either collide on a node id or lose one slot mapping.
+  Not live today for the same reason the sibling domains are not — SM5.I's global
+  entry ticket lock serialises every commit and `withLockSet` is deferred at the
+  export bodies (SM3.C.9).
+
+  The counter is not key-decomposable, so covering it means `stateLevelLock` in
+  **write** mode on the two hottest IPC arms, which moves the resolved-footprint
+  WCRT arithmetic the IPC suites pin — the same cost that keeps
+  `capTransferReceiverCnode` registered, and the same owner.  The remedy is
+  planned as Track B of `SMP_FINE_LOCK_MIGRATION_PLAN`, which declares
+  `(stateLevelLock, .write)` on send/call together with the four `cspace*`
+  operations that write the identical fields. -/
+  | cdtNodeAllocation
   deriving DecidableEq, Repr
 
 /-- SM8.D.5: the domains this bracket does **not** cover, and the workstream that
 owns composing them. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
   [(.schedulerDomain, "SM3.C.9"), (.dynamicPipChain, "SM3.C.11"),
-   (.queueOwnershipProtocol, "SM3.B")]
+   (.queueOwnershipProtocol, "SM3.B"), (.capTransferReceiverCnode, "SM3.B"),
+   (.taintTablePerKeyStore, "SM10.E"), (.cdtNodeAllocation, "SM3.B")]
 
 /-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
 inventory uses — so completeness can be quantified over the *constructors*
 rather than compared against a literal. -/
 def UncoveredLockDomain.all : List UncoveredLockDomain :=
-  [.schedulerDomain, .dynamicPipChain, .queueOwnershipProtocol]
+  [.schedulerDomain, .dynamicPipChain, .queueOwnershipProtocol,
+   .capTransferReceiverCnode, .taintTablePerKeyStore, .cdtNodeAllocation]
 
 /-- SM8.D.5: every constructor is listed.  This is the clause a literal
 comparison cannot supply: adding a third domain makes `cases d` non-exhaustive
@@ -2901,6 +3059,64 @@ theorem declaredFootprintUncoveredDomains_complete :
   · cases d <;> decide
   · decide
   · rfl
+
+/-- **WS-SM SM8.D.5 (PR #873 round 6): may the declared footprints be relied on
+as a complete serialization discipline yet?**
+
+`false`, and the point is that it is now a *decidable predicate a consumer can
+consult* rather than a sequencing intention recorded in prose.
+
+Every entry in `declaredFootprintUncoveredDomains` names a write the bracket does
+not order.  `taintTablePerKeyStore` is the sharpest of them: the model replaces
+`SystemState.declassificationTaint` whole, so two cores committing **disjoint**
+taint keys from their own pre-states would each write the whole field and the
+later commit would discard the other's provenance — a lost causal chain, which is
+the direction this subsystem must never err in.  The same is true of
+`SystemState.objects` under `storeObject`, which is why the per-key realisation
+is a property of the *commit*, not of this field: a per-key taint store shipped
+on its own would leave the identical lost update reachable through the object
+store, so the two land together in the commit-partitioning cut (SM10.E / the
+`SMP_FINE_LOCK_MIGRATION_PLAN` Track D) or neither does.
+
+**What this buys.**  The reviewer's ask on PR #873 was "implement that
+representation *before* relying on key-local locking".  Before was already the
+plan; it was not enforced.  It is now: reliance is gated on this flag,
+`fineLockDiscipline_requires_every_domain_covered` says the flag can only become
+`true` by emptying the inventory, and `fineLockDisciplineComplete_is_false` pins
+that it has not.  A cut that enables SM3.C.9's fine locks while a domain is still
+registered has to delete an entry it cannot honestly delete. -/
+def fineLockDisciplineComplete : Bool :=
+  declaredFootprintUncoveredDomains.isEmpty
+
+/-- SM8.D.5 (PR #873 round 6): **it is false today**, and this is the pin that
+makes flipping it a deliberate act.  Deleting it is the same edit as claiming the
+five registered domains are covered. -/
+theorem fineLockDisciplineComplete_is_false : fineLockDisciplineComplete = false := by
+  decide
+
+/-- SM8.D.5 (PR #873 round 6): **the interlock.**  The discipline is complete
+exactly when no domain is registered as uncovered — so a per-key taint store, a
+covering CNode write member and the scheduler-domain bracket are each a
+*precondition* of relying on declared footprints, not work that may run
+alongside it. -/
+theorem fineLockDiscipline_requires_every_domain_covered :
+    fineLockDisciplineComplete = true ↔ declaredFootprintUncoveredDomains = [] := by
+  unfold fineLockDisciplineComplete
+  exact List.isEmpty_iff
+
+/-- SM8.D.5 (PR #873 round 6): **and the taint store specifically gates it.**
+
+Named on its own because it is the entry PR #873's review pressed twice, and
+because a reader should be able to check the dependency without reconstructing it
+from the list: while `taintTablePerKeyStore` is registered, the flag is false, so
+nothing may treat a key-local taint write as serialised by the key's own lock. -/
+theorem taintPerKeyStore_blocks_fineLockDiscipline
+    (h : UncoveredLockDomain.taintTablePerKeyStore
+      ∈ declaredFootprintUncoveredDomains.map Prod.fst) :
+    fineLockDisciplineComplete = false := by
+  cases hEmpty : declaredFootprintUncoveredDomains with
+  | nil => rw [hEmpty] at h; simp at h
+  | cons a rest => simp [fineLockDisciplineComplete, hEmpty]
 
 /-- SM8.D.5: the 2PL-bracketed live entry **over the declared footprint** —
 `declaredLockSetForEntry`'s output, bracketed, or `none` where no footprint is

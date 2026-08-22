@@ -315,17 +315,29 @@ mutates; optional sender TCB completes its handshake. -/
 def lockSet_endpointReceive (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId)
     (senderTid : Option ThreadId)
-    (replyId : Option ReplyId := none) : LockSet :=
+    (replyId : Option ReplyId := none)
+    (installsCaps : Bool := false) : LockSet :=
   -- WS-SM SM6.D: a `Call` rendezvous on receive links a server-supplied Reply
   -- object (`linkCallerReply` writes `reply.caller`) under the per-object reply
   -- write-lock — folded in as an outermost optional.  `none` ⇒ the set is
   -- definitionally the pre-SM6.D footprint (`lockSetExtendOpt S none = S`), so
   -- every existing call site is unchanged.
+  -- PR #873 round 8: and a rendezvous that carries capabilities **writes** the
+  -- caller's own CSpace root (`ipcTransferSingleCap` → `cspaceInsertSlot`).
+  --
+  -- Expressed as the member's own **mode**, not as another optional.  The
+  -- receiver's CSpace root *is* `cnodeRootObjId` — the receiver is the caller of
+  -- `.receive`, and the arm passes `gate.cspaceRoot` — so this is the same lock
+  -- in a stronger mode, and saying it that way keeps the footprint's size and
+  -- acquisition order literally unchanged.  An outer `lockSetExtendOpt` would
+  -- have merged to the same set while making the crude size bound count a
+  -- member that cannot exist, which is a worse statement of the same fact.
+  -- `false` reduces definitionally, so every pin taken before this survives.
   lockSetExtendOpt
     (lockSetExtendOpt
       (lockSetOfList
         [(tcbLock callerTid, .write),
-         (cnodeLock cnodeRootObjId, .read),
+         (cnodeLock cnodeRootObjId, if installsCaps then .write else .read),
          (endpointLock endpointObjId, .write)])
       (senderTid.map (fun st => (tcbLock st, .write))))
     (replyId.map (fun rid => (replyLock rid, .write)))
@@ -448,11 +460,16 @@ def lockSet_replyRecv (callerTid : ThreadId)
     (endpointObjId : ObjId) (newSenderTid : Option ThreadId)
     (donatedScId : Option SchedContextId)
     (donatedOriginalOwnerTid : Option ThreadId)
-    (replyId : Option ReplyId := none) : LockSet :=
+    (replyId : Option ReplyId := none)
+    (installsCaps : Bool := false) : LockSet :=
+  -- PR #873 round 8: `.replyRecv`'s receive leg installs capabilities too (it
+  -- runs the same WithCaps transition `.receive` does), so the caller's own
+  -- CSpace root takes the same write upgrade, in the same size- and
+  -- order-preserving way: a mode on the member, not another optional.
   let withSender := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .write),
-       (cnodeLock cnodeRootObjId, .read),
+       (cnodeLock cnodeRootObjId, if installsCaps then .write else .read),
        (tcbLock replyTargetTid, .write),
        (endpointLock endpointObjId, .write)])
     (newSenderTid.map (fun st => (tcbLock st, .write)))
@@ -572,15 +589,34 @@ def lockSet_cspaceDelete (callerTid : ThreadId)
 
 Caller TCB (read), untyped source (write — watermark advance,
 child list append), destination CNode (write — caps installed for
-the new objects). -/
+the new objects).
+
+**And the re-purposed target's own lock** (PR #873 round 7).  SM9.D.12 made
+`.lifecycleRetype` the one arm that *clears* provenance: the plan's `cleared`
+list is `[args.targetObj]`, so the commit writes the taint table at that key.
+The target is named by the decoded arguments and its type is whatever the state
+says — it can be a TCB or a notification concurrently receiving tagged content —
+so without this member a retype and a delivery had provably disjoint footprints
+while both updating the same taint key, and either the propagation or the clear
+could be lost.  A lost clear is the sharper half: the replacement object would
+keep a destroyed object's predecessor and a downgrade behind it would report a
+chain that ended when the object did.
+
+Supplied by the caller rather than derived here, for the reason
+`lockSet_declassify` supplies its target lock: a `LockId` is `⟨kind, objId⟩` and
+the kind is a property of the state.  `none` is the unresolved shape and is
+definitionally the identity, so every pin taken before this member existed
+survives by `rfl`. -/
 def lockSet_lifecycleRetype (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (untypedObjId : ObjId)
-    (dstCnodeObjId : ObjId) : LockSet :=
-  lockSetOfList
-    [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read),
-     (untypedLock untypedObjId, .write),
-     (cnodeLock dstCnodeObjId, .write)]
+    (dstCnodeObjId : ObjId) (targetLock : Option LockId := none) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (untypedLock untypedObjId, .write),
+       (cnodeLock dstCnodeObjId, .write)])
+    (targetLock.map (fun l => (l, AccessMode.write)))
 
 /-! ## VSpace syscalls (2 transitions) -/
 
@@ -637,9 +673,34 @@ state-level half must never be dropped (`lockSet_declassifySignal_stateLevel_wri
 
 /-- WS-SM SM8.C.9: `lockSet` for `declassify`.
 
-Caller TCB and CNode are **read** mode (subject-domain resolution and
-capability resolution).  The transition's only write is the audit-trail
-append — a `SystemState` field, not an object — and since PR #870 round 7
+**The caller TCB is write mode, and the resolved target carries its own lock.**
+An authorized hop appends an audit event, and SM9.D's origination writes that
+event's identity into the taint table at two keys — the event's `targetObject`
+and the actor's TCB (`taintOriginationKeys`).  Those are taint writes, and the
+serialization subject for a taint write is the **key's own object lock**: that is
+the whole point of §3d in `TaintPropagation.lean`, which declines to put
+`stateLevelLock` on the eight content-moving syscalls because a globally
+contended lock on the IPC path is a design regression.
+
+So `stateLevelLock` cannot stand in for those two keys.  It serialises this
+transition against other *state-level* writers — another declassification, an
+`.auditDrain` — and against nothing else; an ordinary IPC updating the same
+object's taint holds only that object's lock and, by that same decision, no
+state-level lock at all.  Two such commits would have provably disjoint
+footprints while both writing one taint key, and 2PL would admit them
+concurrently with one update lost.  Declaring the keys under their own locks is
+what makes the two sides meet on the same subject.
+
+The target's lock is supplied by the caller rather than derived here, because a
+`LockId` is `⟨kind, objId⟩` and the kind is a property of the *state* — the
+declassify capability names `.object targetId` of any kind.  `none` is the
+capless/unresolved shape and is definitionally the identity, so every pin taken
+before this member existed survives by `rfl`.
+
+Caller CNode stays **read**: capability resolution reads it and nothing keys a
+taint write at a CSpace root on this path.  The transition's other write is the
+audit-trail append — a `SystemState` field, not an object — and since PR #870
+round 7
 that write is declared through the **state-level lock** in write mode:
 `stateLevelLock` is SM3.A.10's `objStoreLock` singleton, whose acquire
 advances `SystemState.objStoreLock` directly, and it is the serialization
@@ -658,11 +719,14 @@ the syscall return `.objectNotFound`, and a target destroyed concurrently
 leaves an audit entry naming an id that no longer resolves — a fidelity
 artefact, not an authority one, since the authority came from the
 capability. -/
-def lockSet_declassify (callerTid : ThreadId) (cnodeRootObjId : ObjId) : LockSet :=
-  lockSetOfList
-    [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read),
-     (stateLevelLock, .write)]
+def lockSet_declassify (callerTid : ThreadId) (cnodeRootObjId : ObjId)
+    (targetLock : Option LockId := none) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .write),
+       (cnodeLock cnodeRootObjId, .read),
+       (stateLevelLock, .write)])
+    (targetLock.map (fun l => (l, AccessMode.write)))
 
 /-- WS-SM SM9.C.8: `lockSet` for `declassifySignal` — the data-carrying
 declassification.
@@ -697,10 +761,28 @@ def lockSet_declassifySignal (callerTid : ThreadId)
     (waiterTid : Option ThreadId)
     (boundEndpoint : Option ObjId := none)
     (boundTcb : Option ThreadId := none) : LockSet :=
+  -- WS-SM SM9.D.17 (audit): the signaller's own TCB is a **write**, and that is
+  -- a difference from the plain signal rather than an inherited property.  An
+  -- authorized `.declassifySignal` records a hop, and an origination tags the
+  -- event's `sourceSubject` — the signaller — so its taint key is written.  The
+  -- plain `.notificationSignal` records nothing and correctly holds the caller
+  -- read-only, so the upgrade belongs here and not in the footprint it extends.
+  --
+  -- `stateLevelLock` cannot stand in for it, for the reason §3d of
+  -- `TaintPropagation.lean` records: it is deliberately kept off the eight
+  -- content-moving syscalls, so an ordinary IPC writing this same TCB's taint
+  -- holds only that TCB's lock.  Two such commits would otherwise have provably
+  -- disjoint footprints while both writing one taint key.
+  --
+  -- Merged rather than appended: `insertOrMerge` takes the `AccessMode.lub` of
+  -- an existing key, so this upgrades the read the extended footprint already
+  -- carries instead of adding a member — the size bound is unchanged.
   lockSetExtendOpt
-    (lockSet_notificationSignal callerTid cnodeRootObjId notificationObjId
-      waiterTid boundEndpoint boundTcb)
-    (some (stateLevelLock, .write))
+    (lockSetExtendOpt
+      (lockSet_notificationSignal callerTid cnodeRootObjId notificationObjId
+        waiterTid boundEndpoint boundTcb)
+      (some (stateLevelLock, .write)))
+    (some (tcbLock callerTid, AccessMode.write))
 
 /-! ## Audit-trail access (2 transitions)
 
@@ -790,6 +872,81 @@ theorem lockSet_auditDrain_staging_write_mem (callerTid : ThreadId)
     (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
       (by simp [LockSet.insertOrMerge]))
 
+/-- **WS-SM SM9.D: the origination keys ride their own locks, not the trail's.**
+
+An authorized `.declassify` appends an audit event, and the SM9.D origination
+writes that event's identity into the taint table at two keys: the event's
+`targetObject` and the actor's TCB.  A taint write is serialised by the key's
+own object lock — §3d of `TaintPropagation.lean` declines to put
+`stateLevelLock` on the content-moving syscalls precisely so the IPC path is not
+globally contended — so `stateLevelLock` cannot stand in for either key: it
+serialises this transition against other state-level writers and against nothing
+else, while an ordinary IPC writing the same key holds only that key's lock.
+
+Both halves are stated separately so the pair cannot silently collapse to one,
+and the target half is stated at `some` because that is the shape the resolved
+dispatch builds — `none` is the unresolved footprint, which writes no
+origination because it names no target. -/
+theorem lockSet_declassify_originationKeys_write_mem
+    (callerTid : ThreadId) (cnodeRootObjId : ObjId) (targetLock : LockId) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_declassify callerTid cnodeRootObjId (some targetLock)).pairs ∧
+    (targetLock, AccessMode.write)
+      ∈ (lockSet_declassify callerTid cnodeRootObjId (some targetLock)).pairs := by
+  constructor
+  · unfold lockSet_declassify lockSetExtendOpt lockSetOfList
+    simp only [List.foldl, Option.map]
+    exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+      (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+        (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+          (by simp [LockSet.insertOrMerge])))
+  · unfold lockSet_declassify lockSetExtendOpt
+    simp only [Option.map]
+    exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-SM SM9.D (PR #873 round 7): the retype's cleared key rides its own lock
+too.**
+
+The sibling of `lockSet_declassify_originationKeys_write_mem`, and the finding it
+answers is the same one class over: SM9.D.12 makes `.lifecycleRetype` the arm
+that *clears* provenance, and the clear keys on `args.targetObj` — a taint write
+like any other, serialised by the key's own object lock.  The declared footprint
+named the caller, the caller's root, the untyped source and the destination
+CNode, none of which is that key, so a retype and a delivery into the very object
+being re-purposed had provably disjoint footprints while updating the same entry.
+
+Stated at `some`, because `none` is the unresolved footprint that names no
+target and therefore clears nothing. -/
+theorem lockSet_lifecycleRetype_clearedKey_write_mem
+    (callerTid : ThreadId) (cnodeRootObjId untypedObjId dstCnodeObjId : ObjId)
+    (targetLock : LockId) :
+    (targetLock, AccessMode.write)
+      ∈ (lockSet_lifecycleRetype callerTid cnodeRootObjId untypedObjId dstCnodeObjId
+          (some targetLock)).pairs := by
+  unfold lockSet_lifecycleRetype lockSetExtendOpt
+  simp only [Option.map]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- WS-SM SM9.D.17 (audit): the **signalling** declassification writes its
+signaller's TCB too.
+
+The sibling of `lockSet_declassify_originationKeys_write_mem`, and it was
+missing: `.declassifySignal` extends `lockSet_notificationSignal`, which holds
+the caller read-only because a plain signal records no event — but a
+declassifying one does, and the origination tags the signaller.  Without this
+the declared footprint permitted an ordinary IPC writing the same TCB's taint to
+run concurrently, losing one of the two predecessor updates once SM3.C.9 starts
+consuming these footprints. -/
+theorem lockSet_declassifySignal_originationKeys_write_mem
+    (callerTid : ThreadId) (cnodeRootObjId : ObjId) (notificationObjId : ObjId)
+    (waiterTid : Option ThreadId) (boundEndpoint : Option ObjId)
+    (boundTcb : Option ThreadId) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_declassifySignal callerTid cnodeRootObjId notificationObjId
+          waiterTid boundEndpoint boundTcb).pairs := by
+  unfold lockSet_declassifySignal lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
 /-- WS-SM SM9.A.12 (PR #870 round 7): the drain's trail read-modify-write is a
 declared **write** on the state-level lock. -/
 theorem lockSet_auditDrain_stateLevel_write_mem (callerTid : ThreadId)
@@ -836,7 +993,8 @@ theorem lockSet_declassifySignal_stateLevel_write_mem (callerTid : ThreadId)
       ∈ (lockSet_declassifySignal callerTid cnodeRootObjId notificationObjId
           waiterTid boundEndpoint boundTcb).pairs := by
   unfold lockSet_declassifySignal lockSetExtendOpt
-  exact LockSet.mem_insertOrMerge_write_self _ _
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+    (LockSet.mem_insertOrMerge_write_self _ _)
 
 /-- WS-SM SM9.C.8: the declassifying signal's footprint **contains** the
 ordinary signal's — every write mode member of the wrapped syscall's set is a
@@ -861,7 +1019,8 @@ theorem lockSet_declassifySignal_extends_notificationSignal
       ∈ (lockSet_declassifySignal callerTid cnodeRootObjId notificationObjId
           waiterTid boundEndpoint boundTcb).pairs := by
   unfold lockSet_declassifySignal lockSetExtendOpt
-  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _ hMem
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+    (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _ hMem)
 
 /-- WS-SM SM9.A.12 (PR #870 round 7, **the non-disjointness capstone**;
 extended by SM9.C.8): every footprint that touches the audit trail shares the
@@ -1486,9 +1645,17 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- the other cap-insert ops (it does not write the Reply object itself).
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .mintReplyCap =>
       [.tcb, .cnode]
-  -- Lifecycle
+  -- Lifecycle.  **Every kind, for the reason `.declassify` admits every kind**
+  -- (PR #873 round 7): SM9.D.12 makes the retype the arm that *clears*
+  -- provenance at `args.targetObj`, so `lockSet_lifecycleRetype` carries that
+  -- target's own lock — and the decoded target's type is whatever the state
+  -- says, since a retype re-purposes an object of any kind.  The fixed part
+  -- stays pinned by `lockSet_lifecycleRetype_nonTarget_kinds`, and the by-kind
+  -- ladder is unaffected (acquisition order is `LockKind.level`, a total order
+  -- over all ten kinds, so a wider admission cannot introduce a cycle).
   | .lifecycleRetype =>
-      [.tcb, .cnode, .untyped]
+      [.tcb, .cnode, .untyped,
+       .objStore, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page]
   -- VSpace syscalls
   -- `.vspaceUnifyInstruction` (SM7.D) shares the footprint but takes the
   -- VSpaceRoot in read mode: it modifies no page table, only cache state.
@@ -1496,15 +1663,35 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
       [.tcb, .cnode, .vspaceRoot]
   -- WS-SM SM8.C.9: `.declassify` reads the caller TCB (to resolve the running
   -- subject's domain) and the caller's CNode (capability resolution), and its
-  -- only write is `SystemState.declassificationAuditLog` — a state-level
-  -- field, declared since PR #870 round 7 through the `.objStore` singleton
+  -- only state-level write is `SystemState.declassificationAuditLog` —
+  -- declared since PR #870 round 7 through the `.objStore` singleton
   -- (`stateLevelLock`, write mode): the trail append must exclude against a
-  -- concurrent `.auditDrain`'s read-modify-write.  The target object is
-  -- touched by a single kind-tag lookup with no field access, which the same
-  -- state-level member covers; `.serviceRegister` takes an `.endpoint` lock
-  -- because it inspects the object's *contents*, which this does not.
+  -- concurrent `.auditDrain`'s read-modify-write.
+  --
+  -- **And every remaining kind, because the target can be any object.**  The
+  -- live arm takes `cap.target = .object targetId` and hands that id to
+  -- `declassifyObjectFromCore`, which commits a `storeObject` at it; nothing
+  -- narrows the object's *type*.  SM9.D.17 then gave `lockSet_declassify` a
+  -- `targetLock : Option LockId` for the origination key, and a `LockId` is
+  -- `⟨kind, objId⟩` with the kind read off the state — so a downgrade of an
+  -- endpoint, a notification, a reply, a scheduling context, a VSpace root, an
+  -- untyped region or a page frame contributes that kind to the resolved
+  -- footprint.  Listing only `[.tcb, .cnode, .objStore]` (PR #873 round 6) made
+  -- `lockSet_consistent_declassify` provable *only* at the default `none`,
+  -- while `permittedKinds`' own contract is "over all argument values,
+  -- including all possible `Option` cases" — so the resolved footprint could
+  -- carry a kind the inventory downstream deadlock and consistency reasoning
+  -- reads did not admit.
+  --
+  -- Admitting every kind is honest rather than lax: what keeps this arm pinned
+  -- is `lockSet_declassify_nonTarget_kinds`, which holds the three members the
+  -- transition itself takes to exactly `[.tcb, .cnode, .objStore]`, so drift in
+  -- the *fixed* part is still a failure.  The by-kind ladder is unaffected —
+  -- acquisition order is by `LockKind.level`, which is a total order over all
+  -- ten kinds, so admitting more kinds cannot introduce a cycle.
   | .declassify =>
-      [.tcb, .cnode, .objStore]
+      [.tcb, .cnode, .objStore,
+       .untyped, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page]
   -- WS-SM SM9.C.8: `.declassifySignal` is the *data-carrying* declassification —
   -- the ordinary `.notificationSignal` (whose kinds it inherits wholesale,
   -- bound-delivery `.endpoint` included) plus the trail append `.declassify`
@@ -1562,6 +1749,24 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- the footprint, plus the CNode (read) covering the capability resolution.
   | .tcbBindNotification | .tcbUnbindNotification =>
       [.tcb, .cnode, .notification]
+
+/-- WS-SM SM3.B.4 (PR #873 round 6): **the kind inventory admits any target.**
+
+The honest reading of the widened `permittedKinds .declassify`, as a checked
+value rather than as a comment: the arm hands `cap.target = .object targetId`
+to a transition that commits a `storeObject` at it, so the target's kind is
+whatever the state says and nothing narrows it. -/
+theorem permittedKinds_declassify_admits_every_kind (k : LockKind) :
+    k ∈ permittedKinds .declassify := by
+  cases k <;> decide
+
+/-- WS-SM SM3.B.4 (PR #873 round 7): **and the retype's inventory admits any
+re-purposed target**, for the same reason one theorem up — the arm reads
+`args.targetObj` from the decoded arguments and re-purposes an object whose kind
+the state, not the syscall, decides. -/
+theorem permittedKinds_lifecycleRetype_admits_every_kind (k : LockKind) :
+    k ∈ permittedKinds .lifecycleRetype := by
+  cases k <;> decide
 
 /-- WS-SM SM3.B.4 helper: `Decidable` `kind ∈ permittedKinds τ`. -/
 instance (k : LockKind) (sid : SyscallId) :
@@ -1831,18 +2036,23 @@ theorem lockSet_consistent_send (callerTid : ThreadId)
         | none => simp at hpp
         | some rt => simp at hpp; rw [← hpp]; simp; decide)
 
-/-- WS-SM SM3.B.4 for `.receive`. -/
+/-- WS-SM SM3.B.4 for `.receive`.
+
+PR #873 round 8: stated over **every** `installsCaps`, not only the default.
+Leaving it at the default would repeat the round-6 `.declassify` error — a
+consistency claim checked against one of the argument values while the resolved
+footprint a fine-lock consumer acquires carries the other. -/
 theorem lockSet_consistent_receive (callerTid : ThreadId)
     (cnRoot epId : ObjId) (sTid : Option ThreadId)
-    (replyId : Option ReplyId := none) :
-    ∀ p ∈ (lockSet_endpointReceive callerTid cnRoot epId sTid replyId).pairs,
+    (replyId : Option ReplyId := none) (installsCaps : Bool := false) :
+    ∀ p ∈ (lockSet_endpointReceive callerTid cnRoot epId sTid replyId installsCaps).pairs,
       p.fst.kind ∈ permittedKinds .receive :=
   lockSet_consistent_base_plus_two_opts _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
+        · rw [h]; cases installsCaps <;> simp <;> decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
@@ -1924,16 +2134,16 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
     (newSenderTid : Option ThreadId)
     (donatedScId : Option SchedContextId)
     (donatedOriginalOwnerTid : Option ThreadId)
-    (replyId : Option ReplyId := none) :
+    (replyId : Option ReplyId := none) (installsCaps : Bool := false) :
     ∀ p ∈ (lockSet_replyRecv callerTid cnRoot rTid epId newSenderTid
-              donatedScId donatedOriginalOwnerTid replyId).pairs,
+              donatedScId donatedOriginalOwnerTid replyId installsCaps).pairs,
       p.fst.kind ∈ permittedKinds .replyRecv :=
   lockSet_consistent_base_plus_four_opts _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
+        · rw [h]; cases installsCaps <;> simp <;> decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
@@ -1998,7 +2208,11 @@ theorem lockSet_consistent_declassifySignal (callerTid : ThreadId)
     (boundEndpoint : Option ObjId := none) (boundTcb : Option ThreadId := none) :
     ∀ p ∈ (lockSet_declassifySignal callerTid cnRoot nId wTid boundEndpoint boundTcb).pairs,
       p.fst.kind ∈ permittedKinds .declassifySignal :=
-  lockSet_consistent_base_plus_four_opts _ _ _ _ _ _
+  -- SM9.D.17: a **fifth** optional — the signaller's TCB write upgrade — so the
+  -- tier moves with it.  A four-optional builder would still elaborate against
+  -- the inner four and leave the outermost member unchecked, which is the
+  -- silent-drift shape these builders exist to prevent.
+  lockSet_consistent_base_plus_five_opts _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -2019,6 +2233,8 @@ theorem lockSet_consistent_declassifySignal (callerTid : ThreadId)
         cases boundTcb with
         | none => simp at hpp
         | some bt => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        simp at hpp; rw [← hpp]; simp; decide)
     (by intro pp hpp
         simp at hpp; rw [← hpp]; simp; decide)
 
@@ -2114,12 +2330,17 @@ theorem lockSet_consistent_cspaceDelete (callerTid : ThreadId)
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
-/-- WS-SM SM3.B.4 for `.lifecycleRetype`. -/
+/-- WS-SM SM3.B.4 for `.lifecycleRetype`.
+
+PR #873 round 7: stated over **every** `targetLock`, not only the default `none`
+— the same widening `lockSet_consistent_declassify` took one round earlier, and
+for the same reason: the resolved footprint a fine-lock consumer acquires carries
+the re-purposed target, whose kind the state decides. -/
 theorem lockSet_consistent_lifecycleRetype (callerTid : ThreadId)
-    (cnRoot untypedId dstCn : ObjId) :
-    ∀ p ∈ (lockSet_lifecycleRetype callerTid cnRoot untypedId dstCn).pairs,
+    (cnRoot untypedId dstCn : ObjId) (targetLock : Option LockId := none) :
+    ∀ p ∈ (lockSet_lifecycleRetype callerTid cnRoot untypedId dstCn targetLock).pairs,
       p.fst.kind ∈ permittedKinds .lifecycleRetype :=
-  lockSet_consistent_of_extended_base _ _
+  lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -2129,6 +2350,31 @@ theorem lockSet_consistent_lifecycleRetype (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+    (by intro pp _
+        exact permittedKinds_lifecycleRetype_admits_every_kind pp.fst.kind)
+
+/-- WS-SM SM3.B.4 (PR #873 round 7): **and the members the retype itself takes
+are still exactly four.**
+
+The tightness that admitting every target kind would otherwise give up, stated at
+`none` — the shape with no resolved target — so drift in the *fixed* part (caller
+TCB, caller CSpace root, untyped source, destination CNode) is still a failure
+even though the theorem above would keep holding of it. -/
+theorem lockSet_lifecycleRetype_nonTarget_kinds (callerTid : ThreadId)
+    (cnRoot untypedId dstCn : ObjId) :
+    ∀ p ∈ (lockSet_lifecycleRetype callerTid cnRoot untypedId dstCn none).pairs,
+      p.fst.kind ∈ [LockKind.tcb, LockKind.cnode, LockKind.untyped] :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [tcbLock]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [cnodeLock]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [untypedLock]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [cnodeLock]
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.vspaceMap`. -/
@@ -2222,10 +2468,16 @@ theorem lockSet_consistent_serviceQuery (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.4 for `.declassify` (SM8.C.9). -/
 theorem lockSet_consistent_declassify (callerTid : ThreadId)
-    (cnRoot : ObjId) :
-    ∀ p ∈ (lockSet_declassify callerTid cnRoot).pairs,
+    (cnRoot : ObjId) (targetLock : Option LockId := none) :
+    ∀ p ∈ (lockSet_declassify callerTid cnRoot targetLock).pairs,
       p.fst.kind ∈ permittedKinds .declassify :=
-  lockSet_consistent_of_extended_base _ _
+  -- PR #873 round 6: stated over **every** `targetLock`, not only the default
+  -- `none`.  It used to take no such argument, so it proved consistency for the
+  -- capless shape alone while the resolved footprint — the one a fine-lock
+  -- consumer acquires — could carry a target of any object kind.  A
+  -- `permittedKinds` documented as covering "all argument values, including all
+  -- possible `Option` cases" was therefore checked against one of them.
+  lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -2233,6 +2485,29 @@ theorem lockSet_consistent_declassify (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+    (by intro pp _
+        exact permittedKinds_declassify_admits_every_kind pp.fst.kind)
+
+/-- WS-SM SM3.B.4 (PR #873 round 6): **and the members the transition itself
+takes are still exactly three.**
+
+The tightness that admitting every target kind would otherwise give up.  Stated
+at `none` — the shape with no target — so it pins the *fixed* part of the
+footprint: the caller's TCB, the caller's CSpace root, and the state-level lock
+the trail append needs.  A fourth member appearing here is a failure even though
+`lockSet_consistent_declassify` above would still hold of it. -/
+theorem lockSet_declassify_nonTarget_kinds (callerTid : ThreadId) (cnRoot : ObjId) :
+    ∀ p ∈ (lockSet_declassify callerTid cnRoot none).pairs,
+      p.fst.kind ∈ [LockKind.tcb, LockKind.cnode, LockKind.objStore] :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [tcbLock]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [cnodeLock]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.auditRead` (SM9.A.12). -/

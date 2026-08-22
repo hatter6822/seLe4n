@@ -1498,6 +1498,10 @@ theorem endpointQueuePopHead_preserves_projection
         | none => simp
         | some htcb =>
           simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
@@ -1667,8 +1671,14 @@ theorem endpointSendDual_preserves_projection
       | some _ =>
         -- Path 1: Receiver waiting — PopHead + storeTcbIpcState + ensureRunnable
         simp only [hRecvHead] at hStep
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping.  It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hSnd] at hStep
+        | some _ =>
         cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hPop] at hStep
+        | error e => simp [hSnd, hPop] at hStep
         | ok triple =>
           obtain ⟨receiver, recvTcb, st1⟩ := triple
           simp only [hPop] at hStep
@@ -1689,9 +1699,9 @@ theorem endpointSendDual_preserves_projection
               endpointId true st st1 receiver recvTcb hEndpointHigh hRecvObjHigh
               hNextHighForPop hObjInv hPop
           cases hTcbStore : storeTcbReceiveComplete st1 receiver (some msg) with
-          | error e => simp [hTcbStore] at hStep
+          | error e => simp [hSnd, hTcbStore] at hStep
           | ok st2 =>
-            simp only [hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
+            simp only [hSnd, hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hStEq⟩ := hStep; subst hStEq
             rw [ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh,
                 storeTcbReceiveComplete_preserves_projection ctx observer st1 st2
@@ -1942,6 +1952,10 @@ theorem endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split at hStep
+          · simp at hStep
           revert hStep
           cases hStore : storeObject endpointId _ st with
           | error e => simp
@@ -2160,11 +2174,11 @@ theorem endpointReceiveDual_preserves_projection
             have hProjEnq := endpointQueueEnqueue_preserves_projection ctx observer
                 endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hEndpointHighClean hReceiverObjHighClean
                 hTailHighClean hObjInvClean hEnq
-            cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+            cases hIpc : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
             | error e => simp [hIpc] at hStep
             | ok st2 =>
               simp only [hIpc] at hStep
-              have hObjInv2 := storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 receiver _ _
                   hObjInv1 hIpc
               -- AI4-A: chain rewrite through cleanup → enqueue → storeTcbIpcState → removeRunnable
               -- AI4-A: cleanupPreReceiveDonation preserves projection.
@@ -2194,7 +2208,7 @@ theorem endpointReceiveDual_preserves_projection
                         hIdxComplete hObjSetInv
               -- Common tail: from st2 back to st (storeTcbIpcState → enqueue → cleanup).
               have hProjTail : projectState ctx observer st2 = projectState ctx observer st := by
-                rw [storeTcbIpcState_preserves_projection ctx observer st1 st2 receiver _
+                rw [storeTcbIpcStateAndMessage_preserves_projection ctx observer st1 st2 receiver _ _
                     hReceiverObjHigh hObjInv1 hIpc, hProjEnq, hProjClean]
               -- WS-SM SM6.D (#7.1 fold): server-first stash.  The `none` arm is the
               -- pre-fold path (final state `removeRunnable st2 receiver`).  The
@@ -3905,6 +3919,29 @@ theorem declassificationRefusals_write_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (ledger : SeLe4n.Kernel.RefusalLedger) :
     projectState ctx observer { st with declassificationRefusals := ledger } =
+      projectState ctx observer st := rfl
+
+/-- WS-SM SM9.D.6: **a write to the declassification taint side table is
+invisible to every observer.**
+
+The provenance analogue of the two theorems above, and the one whose exclusion
+points in a third direction.  The trail is excluded because it records
+downgrades that happened; the ledger because it records attempts that were
+refused.  The taint table records *which subjects and objects hold content
+released by which downgrades* — a per-object read of it would tell a low
+observer that a particular endpoint carried content from a particular high→low
+release, which is the boundary crossing itself rather than a fact about it.
+
+Unlike the trail and the ledger this field has **no reader at all**: no syscall
+exports it, so the §3.7 reader-visibility inventory records it as owing neither
+an observational-equivalence clause nor a hidden-write argument *yet*.  What a
+monitor sees of it is the per-event snapshot
+(`DeclassificationEvent.predecessorTags`), gated on the configured monitor
+clearance exactly as the epoch is.  A future reader inherits both obligations. -/
+theorem declassificationTaint_write_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tbl : SeLe4n.Kernel.TaintTable) :
+    projectState ctx observer { st with declassificationTaint := tbl } =
       projectState ctx observer st := rfl
 
 -- ============================================================================

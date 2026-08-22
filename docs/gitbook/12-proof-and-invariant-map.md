@@ -473,16 +473,29 @@ Helper lemmas: `storeTcbQueueLinks_noprevnext_preserves_linkInteg`, `storeTcbQue
 
 Bundle level:
 
-- `ipcInvariantFull` (WS-RC R4.C.7 close-out: 15-conjunct — `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed ∧ waitingThreadsPendingMessageNone ∧ endpointQueueNoDup ∧ ipcStateQueueMembershipConsistent ∧ queueNextBlockingConsistent ∧ queueHeadBlockedConsistent ∧ blockedThreadTimeoutConsistent ∧ donationChainAcyclic ∧ donationOwnerValid ∧ passiveServerIdle ∧ donationBudgetTransfer ∧ blockedOnReplyHasTarget`. The legacy 15th-slot `uniqueWaiters` conjunct was retired when `Notification.waitingThreads` was promoted to `SeLe4n.NoDupList ThreadId`, carrying the `List.Nodup` witness structurally via `NoDupList.hNodup`. WS-H12c + WS-H12d + WS-F5 + V3-G6 + V3-K + V3-J + V3-J-cross + Z6-J + Z7-F/G/H/I + AG1-C + AJ1-B + WS-RC R4.C.7)
+- `ipcInvariantFull` (WS-RC R4.C.7 close-out: 15-conjunct — `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed ∧ blockedThreadsPendingMessageConsistent ∧ endpointQueueNoDup ∧ ipcStateQueueMembershipConsistent ∧ queueNextBlockingConsistent ∧ queueHeadBlockedConsistent ∧ blockedThreadTimeoutConsistent ∧ donationChainAcyclic ∧ donationOwnerValid ∧ passiveServerIdle ∧ donationBudgetTransfer ∧ blockedOnReplyHasTarget`. The legacy 15th-slot `uniqueWaiters` conjunct was retired when `Notification.waitingThreads` was promoted to `SeLe4n.NoDupList ThreadId`, carrying the `List.Nodup` witness structurally via `NoDupList.hNodup`. WS-H12c + WS-H12d + WS-F5 + V3-G6 + V3-K + V3-J + V3-J-cross + Z6-J + Z7-F/G/H/I + AG1-C + AJ1-B + WS-RC R4.C.7)
 - `ipcInvariantFull` — **grown to twenty conjuncts** since the WS-RC R4.C.7 close-out described above: the WS-SM SM6.D reply-object hardening (v0.31.115→v0.32.57) appended `replyCallerLinkage` (16th), `pendingReceiveReplyWellFormed` (17th), `donationOwnerUnique` (18th), `endpointQueueTailBlockedConsistent` (19th), and `queueNextTargetBlocked` (20th).  Canonical definition: `SeLe4n/Kernel/IPC/Invariant/Defs.lean`.
+- `blockedThreadsPendingMessageConsistent` — **strengthened to both directions**
+  (PR #873 round 11, v0.33.86), and renamed from `waitingThreadsPendingMessageNone`
+  because the old name described only the half it stated.  It now ties
+  `pendingMessage` to the blocking state in both: a thread parked to *collect*
+  (`.blockedOnReceive` / `.blockedOnNotification`) holds nothing, and a thread
+  parked to *deliver* (`.blockedOnSend` / `.blockedOnCall`) holds what it is
+  delivering.  The delivering half had been `True`, which made "a parked sender
+  carries its message" a convention each consumer re-derived; the two that did
+  not were the frozen dequeue and the live one, each handing a receiver `none`
+  while the provenance join claimed a delivery.  Closing it also required the
+  receive's blocking branch to clear the message it is not going to deliver,
+  which is what made `endpointReceiveDual`'s preservation theorem unconditional
+  (it had assumed the receiver held nothing — a fact nothing established).
 - `ipcInvariantFull_perCore` / `ipcInvariantFull_smp` — **(WS-SM SM6.D, v0.32.58)** the per-core view of the twenty-conjunct bundle (`SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean`, production): thread-subject conjuncts restricted to the threads homed on core `c` (`threadHomeCore` = `cpuAffinity` defaulting to `bootCoreId`, provably the operational wake target via `determineTargetCore_eq_threadHomeCore`), shared-object clauses carried whole, `passiveServerIdle` via the SM4.D per-core form; **exact decomposition** `ipcInvariantFull_smp_iff_full_and_passive_smp` (∀-core bundle ↔ global bundle + per-core passive slices); preserved by all six IPC operations + `endpointReplyRecv` + the cross-core `endpointCallOnCore` (`…_preserves_ipcInvariantFull_perCore`, `PerCoreBundlePreservation.lean` + the staged `CrossCore/EndpointCallInvariant.lean` flagship), the per-core `passiveServerIdle` slice via the `passiveServerIdleFrameOnCore` micro-frame family with no idle-core assumption.  **Completed v0.32.59**: every cross-core transition (`notificationSignalOnCore`/`notificationWaitOnCore`/`endpointReplyOnCore`/`endpointReceiveDualOnCore`/`endpointReplyRecvOnCore`) and the capability-carrying trio (`endpointSendDualWithCaps`/`endpointReceiveDualWithCaps`/`endpointCallWithCaps`) carries an unconditional `…_preserves_ipcInvariantFull{,_perCore}` — the production `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` transfer layer (per-conjunct `…_of_getElem_eq` + `OffSchedulerAgrees` + step congruences) rides per-op agreement dichotomies (`…_post_agrees`); `endpointReplyRecvOnCore` composes leg-wise with a disjunctive reply-id premise covering seL4-MCS one-object reuse (`endpointReplyOnCore_reuse_freshens`).  Canonical record: `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §5 (SM6.D, incl. the tracked-debt scope note).
 - Cross-core cancellation surface — **(WS-SM SM6.E, v0.32.60)** the suspend pipeline's cancellation sub-operations under the per-object lock-set discipline (`SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, production): `descheduleThread` (the SM5.C `wakeThread` dual — home-core deschedule, `.reschedule` SGI iff the victim was actively current on a remote home core), `cancelIpcBlockingOnCore` (single-core teardown + home-core deschedule + remote poke), per-core donation cancellation (`cancelBoundDonationOnCore` with home-core replenish-queue purge, `rfl` boot bridge); footprints `lockSet_cancelIpcBlocking` / `lockSet_cancelDonation` (state-resolved, `.tcbSuspend`-consistent, member-by-member covered by the reply-extended `lockSet_tcbSuspend` — `permittedKinds .tcbSuspend` += `.reply`); 2PL atomicity `cancelIpcBlocking_atomic_under_lockSet` / `cancelDonation_atomic_under_lockSet` + OnCore companions; flagship `cancellation_cross_core_correct`; `objects.invExt` preservation across the whole cancellation surface (`cancelIpcBlocking`/`cancelDonation`(+arms)/`cleanupDonatedSchedContext`/`removeFromAll*`/`consumeReplyLink`).  **Completion cut (v0.32.61)**: the live per-core suspend `suspendThreadOnCore` behind the `.tcbSuspend` dispatch arm + the diff seam's descheduled-current SGI rule (`crossCoreSgiBody_remote_deschedule`) + the `suspend_thread_cross_core` FFI seam; the staged `CancellationNI` non-interference module; `ipcInvariant` preservation across the entire cancellation surface (fold keystone `RHTable.fold_preserves_of_lookup`, `notificationQueueWellFormed_filter_correct`); the closed-form composition `cancelIpcBlockingOnCore_eq_descheduleThread_closed`; observational atomicity (`lockSet_observer_atomic_on` + `cancelIpcBlockingOnCore_observer_atomic`); the donated-arm replenishment migration; and the SM5.H purge/placement corollaries.  Canonical record: `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §5 (SM6.E, incl. the completion note).
 - `badgeWellFormed` (WS-F5/D1d): `notificationBadgesWellFormed ∧ capabilityBadgesWellFormed` — all badge values in notification pending badges and capability slots satisfy word-boundedness
 
 Cross-subsystem composition (WS-H12e + WS-F5):
 
-- `coreIpcInvariantBundle` — upgraded from `ipcInvariant` to `ipcInvariantFull` (WS-RC R4.C.7 close-out: 15-conjunct after `uniqueWaiters` retirement, AJ1-B: +`blockedOnReplyHasTarget`), closing the gap where `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, `waitingThreadsPendingMessageNone`, `endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`, `queueNextBlockingConsistent`, `queueHeadBlockedConsistent`, `blockedThreadTimeoutConsistent`, `donationChainAcyclic`, `donationOwnerValid`, `passiveServerIdle`, `donationBudgetTransfer`, and `blockedOnReplyHasTarget` were defined but not composed into the cross-subsystem proof surface
-- Backward-compatible extraction theorems: `coreIpcInvariantBundle_to_ipcInvariant`, `coreIpcInvariantBundle_to_dualQueueSystemInvariant`, `coreIpcInvariantBundle_to_allPendingMessagesBounded`, `coreIpcInvariantBundle_to_badgeWellFormed`, `coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone`, `coreIpcInvariantBundle_to_endpointQueueNoDup`, `coreIpcInvariantBundle_to_ipcStateQueueMembershipConsistent`, `coreIpcInvariantBundle_to_queueNextBlockingConsistent`, `coreIpcInvariantBundle_to_queueHeadBlockedConsistent`
+- `coreIpcInvariantBundle` — upgraded from `ipcInvariant` to `ipcInvariantFull` (WS-RC R4.C.7 close-out: 15-conjunct after `uniqueWaiters` retirement, AJ1-B: +`blockedOnReplyHasTarget`), closing the gap where `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, `blockedThreadsPendingMessageConsistent`, `endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`, `queueNextBlockingConsistent`, `queueHeadBlockedConsistent`, `blockedThreadTimeoutConsistent`, `donationChainAcyclic`, `donationOwnerValid`, `passiveServerIdle`, `donationBudgetTransfer`, and `blockedOnReplyHasTarget` were defined but not composed into the cross-subsystem proof surface
+- Backward-compatible extraction theorems: `coreIpcInvariantBundle_to_ipcInvariant`, `coreIpcInvariantBundle_to_dualQueueSystemInvariant`, `coreIpcInvariantBundle_to_allPendingMessagesBounded`, `coreIpcInvariantBundle_to_badgeWellFormed`, `coreIpcInvariantBundle_to_blockedThreadsPendingMessageConsistent`, `coreIpcInvariantBundle_to_endpointQueueNoDup`, `coreIpcInvariantBundle_to_ipcStateQueueMembershipConsistent`, `coreIpcInvariantBundle_to_queueNextBlockingConsistent`, `coreIpcInvariantBundle_to_queueHeadBlockedConsistent`
 - AI4-A frame lemma suite for `cleanupPreReceiveDonation` (Defs.lean): `cleanupPreReceiveDonation_scheduler_eq`, `cleanupPreReceiveDonation_preserves_objects_invExt`, `returnDonatedSchedContext_notification_backward`, `returnDonatedSchedContext_endpoint_backward`, `cleanupPreReceiveDonation_tcb_forward`, `cleanupPreReceiveDonation_tcb_ipcState_backward`, `cleanupPreReceiveDonation_frame_helper` — proves cleanup is transparent to all IPC/scheduler invariants
 
 Component level:
@@ -493,7 +506,7 @@ Component level:
 
 V3 proof chain hardening predicates **(v0.22.2)**:
 
-- `waitingThreadsPendingMessageNone` — **(V3-G, M-PRF-5)** threads in blocked receiver states (`blockedOnReceive`, `blockedOnNotification`) have `pendingMessage = none`. Note: `blockedOnSend` and `blockedOnCall` are excluded because these states legitimately carry outgoing messages in `pendingMessage`. **Integrated as 5th conjunct of `ipcInvariantFull` (V3-G6).** Seven machine-checked primitive preservation lemmas (`removeRunnable`, `ensureRunnable`, `storeObject_nonTcb`, `storeTcbIpcState`, `storeTcbIpcStateAndMessage`, `storeTcbQueueLinks`, `storeTcbPendingMessage`) in `WaitingThreadHelpers.lean` (extracted from Structural.lean to break circular import). Notification operation-level proofs (`notificationWait_preserves_*`, `notificationSignal_preserves_*`, `notificationWake_pendingMessage_was_none`) in `NotificationPreservation.lean`. Remaining operation-level proofs (`endpointSendDual_preserves_*`, `endpointReceiveDual_preserves_*`, `endpointCall_preserves_*`, `endpointReply_preserves_*`, `endpointReplyRecv_preserves_*`) in `Structural.lean`. Two backward lemmas: `storeTcbQueueLinks_tcb_pendingMessage_backward` (Core.lean) and `endpointQueueEnqueue_tcb_pendingMessage_backward` (Transport.lean).
+- `blockedThreadsPendingMessageConsistent` — **(V3-G, M-PRF-5)** threads in blocked receiver states (`blockedOnReceive`, `blockedOnNotification`) have `pendingMessage = none`. Note: `blockedOnSend` and `blockedOnCall` are excluded because these states legitimately carry outgoing messages in `pendingMessage`. **Integrated as 5th conjunct of `ipcInvariantFull` (V3-G6).** Seven machine-checked primitive preservation lemmas (`removeRunnable`, `ensureRunnable`, `storeObject_nonTcb`, `storeTcbIpcState`, `storeTcbIpcStateAndMessage`, `storeTcbQueueLinks`, `storeTcbPendingMessage`) in `WaitingThreadHelpers.lean` (extracted from Structural.lean to break circular import). Notification operation-level proofs (`notificationWait_preserves_*`, `notificationSignal_preserves_*`, `notificationWake_pendingMessage_was_none`) in `NotificationPreservation.lean`. Remaining operation-level proofs (`endpointSendDual_preserves_*`, `endpointReceiveDual_preserves_*`, `endpointCall_preserves_*`, `endpointReply_preserves_*`, `endpointReplyRecv_preserves_*`) in `Structural.lean`. Two backward lemmas: `storeTcbQueueLinks_tcb_pendingMessage_backward` (Core.lean) and `endpointQueueEnqueue_tcb_pendingMessage_backward` (Transport.lean).
 - `ipcStateQueueMembershipConsistent` — **(V3-J, L-IPC-3)** bidirectional consistency: threads claiming blocked-on-endpoint state are reachable from the corresponding endpoint queue (via `head` or `queueNext` linkage). Predicate definition in `Defs.lean`. Primitive frame lemmas in `QueueMembership.lean`: `storeObject_non_ep_non_tcb_preserves_ipcStateQueueMembershipConsistent`, scheduler frame helpers (`ensureRunnable`/`removeRunnable`), and `ipcStateQueueMembershipConsistent_of_objects_eq`. TCB-store primitives: `storeTcbIpcStateAndMessage_preserves_*`, `storeTcbIpcState_preserves_*` (with non-blocking precondition), `storeTcbIpcStateAndMessage_fromTcb_preserves_*`. Per-operation proofs: `notificationSignal_preserves_*`, `notificationWait_preserves_*`, `endpointReply_preserves_*`. **Integrated as 7th conjunct of `ipcInvariantFull`.**
 - `endpointQueueNoDup` — **(V3-K, L-LIFE-1)** intrusive queue no-cycle and disjointness: no thread's `queueNext` points to itself, and `sendQ.head ≠ receiveQ.head` when both are non-empty. Predicate definition in `Defs.lean`. Primitive frame lemmas in `QueueNoDup.lean`: `storeObject_non_ep_non_tcb_preserves_endpointQueueNoDup`, `storeTcbQueueLinks_preserves_endpointQueueNoDup`, `storeObject_endpoint_preserves_endpointQueueNoDup`. TCB-store primitives: `storeTcbIpcStateAndMessage_preserves_*`, `storeTcbIpcState_preserves_*`, `storeTcbPendingMessage_preserves_*`. Per-operation proofs: `notificationSignal_preserves_*`, `notificationWait_preserves_*`, `endpointReply_preserves_*`. **Integrated as 6th conjunct of `ipcInvariantFull`.**
 
@@ -1725,7 +1738,7 @@ closing gaps where invariants were defined but not composed into the top-level p
 | Bundle | Change | Effect |
 |---|---|---|
 | `schedulerInvariantBundleFull` | Extended from 4 to 7 conjuncts (+ `contextMatchesCurrent` WS-H12e, + `runnableThreadsAreTCBs` WS-F6/D3, + `schedulerPriorityMatch` R6-D/L-12); AI3-A: `schedulerPriorityMatch` updated to track `effectiveRunQueuePriority` (base + PIP boost); `edfCurrentHasEarliestDeadline` updated with effective priority guard | Machine registers match current thread's saved context; all runnable threads are valid TCBs; RunQueue priority index matches effective priority (base + PIP boost) |
-| `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (16-conjunct, AJ1-B: +`blockedOnReplyHasTarget`) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, `waitingThreadsPendingMessageNone`, and `uniqueWaiters` now composed into cross-subsystem proof surface |
+| `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (16-conjunct, AJ1-B: +`blockedOnReplyHasTarget`) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, `blockedThreadsPendingMessageConsistent`, and `uniqueWaiters` now composed into cross-subsystem proof surface |
 | `ipcSchedulerCouplingInvariantBundle` | Extended from 2 to 4 conjuncts (+ `contextMatchesCurrent`, `currentThreadDequeueCoherent`) | Running thread dequeue coherence and context consistency compose through IPC-scheduler boundary |
 | `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle`; extended from 9 to 11 conjuncts (Z9: + `schedulerInvariantBundleExtended`, AG7-D: + `notificationWaiterConsistent`) | Top-level proof surface includes all 7 scheduler conjuncts plus full CBS scheduler extension and notification-waiter consistency |
 
@@ -1759,7 +1772,7 @@ Composed `ipcInvariantFull` preservation (7):
 - `endpointReplyRecv_preserves_ipcInvariantFull`
 
 Default-state proofs (7):
-- `default_dualQueueSystemInvariant`, `default_allPendingMessagesBounded`, `default_badgeWellFormed`, `default_waitingThreadsPendingMessageNone`, `default_ipcInvariantFull`
+- `default_dualQueueSystemInvariant`, `default_allPendingMessagesBounded`, `default_badgeWellFormed`, `default_blockedThreadsPendingMessageConsistent`, `default_ipcInvariantFull`
 - `default_contextMatchesCurrent`, `default_currentThreadDequeueCoherent`, `default_schedulerInvariantBundleFull`
 
 Badge well-formedness preservation (WS-F5/D1d):
@@ -3287,6 +3300,248 @@ is strengthened to hold *through* the gate (junk targets answer the same
 errors on both paths).  Runtime: §11.9 (722 → 726), the load-bearing negative
 being that the caller's hop-1 verdict is no longer readable off a junk
 operand.
+
+### Layer 3 under SMP — causal declassification provenance (WS-SM SM9.D)
+
+SM8's laundering detector was **syntactic**: `declassificationChainLinked`
+matched domains and increasing timestamps with no data dependency behind it, so
+it fired on causally unrelated hops.  Scoping it to declassification *edges*
+would not have fixed it either — the chain the sub-phase exists to catch is
+*downgrade → **ordinary** delivery → downgrade*, and hop 2's input is related to
+hop 1's target by no declassification edge at all.  Causality follows content,
+so taint propagates through ordinary IPC.
+
+* **The value** (SM9.D.1 / SM9.D.13), `InformationFlow/Taint.lean` — a
+  production leaf importing only `Prelude`, because `AuditRecord.lean` carries a
+  `DeclassificationTaint` and sits below `Model/State.lean`.  The bound is a
+  **refinement field** (`tags_bounded`), so `taint_bounded_structurally` holds
+  of every value rather than only of recorded ones — the shape SM9.B's ledger
+  established, and the reason there is **no seventeenth**
+  `proofLayerInvariantBundle` conjunct and no capacity obligation on any writer.
+  Overflow saturates **upward** (`taintSaturate_over_approximates`): for a
+  detector, losing a real link is the unsafe direction.  Two facts recorded
+  rather than smoothed over — the join is **not** a least upper bound once
+  saturation is in play (the law ships as the disjunctive
+  `covers_join_of_covers` plus `join_saturated_covers_all`, and commutativity /
+  idempotence / associativity hold **up to `taintEquiv`**), and the table is a
+  **total function** `ObjId → DeclassificationTaint` rather than an `RHTable`,
+  because a hash table's lookup-after-insert law needs `invExt` — which would
+  force exactly the bundle conjunct the refinement field avoids.
+
+* **The mount** (SM9.D.2–.D.6).  The §6 checklist run for the fourth time:
+  required frozen field, the `apiInvariantBundle_frozenDirectFull` conjunct, the
+  `OffSchedulerAgrees` clause and all six builders, four boot frames, and the
+  unconditional carriage layer
+  `proofLayerInvariantBundle_setDeclassificationTaint` — owed even with no
+  conjunct of its own, since v0.32.151 established that three conjuncts do not
+  transport by `rfl` across an arbitrary field write.  The table is **outside**
+  `ObservableState` for the reason SM8.C's trail is: provenance names
+  `(object, declassification identity)` pairs, so projecting it would be a
+  content channel out of the boundary the audit polices
+  (`declassificationTaint_write_preserves_projection`,
+  `onCore_declassificationTaint`).
+
+* **Totality is not the completeness argument** (SM9.D.7).
+  `contentFlowClass : SyscallId → ContentFlowClass` is total with no wildcard,
+  so a new syscall is a missing case at elaboration — necessary and **not
+  sufficient**, since the arm can be added and be wrong.  Completeness is a
+  **Tier-1 call-graph reach gate** (`scripts/check_content_flow_coverage.py`)
+  that walks from each live dispatch arm and fails when an `.inert` or
+  `.clearsProvenance` arm reaches an object **content** write, or a
+  `.movesContent` arm reaches none; `--self-test` plants a channel to prove the
+  scan still bites.  Building it found two things worth recording: the first
+  channel list named `Notification.state`, which also holds the waiter queue, so
+  `.tcbSuspend` and `.lifecycleRetype` "reached content" through a queue sweep
+  (the channel is `Notification.pendingBadge`); and `.notificationWait` reaches
+  **no** object content write at all, its badge going to the caller's return
+  register — so the second check admits a `.movesContent` arm whose
+  `syscallReturnShape` is not `.unit`, derived from the ABI rather than waived.
+
+* **One write site per dispatcher, not twelve** (SM9.D.8–.D.11).  The
+  propagation is a single write in each of `API.dispatchSyscall` and
+  `API.dispatchSyscallChecked`, applied to the state that dispatcher was given
+  and driven by a declared `TaintPlan`; both entries inherit it by delegating.
+  It sat at `syscallEntryChecked` until PR #873 round 6 — one layer above the
+  function `dispatchSyscall`'s docstring recommends for production user-space
+  entry, so an integrator who followed that advice never reached it.
+  `dispatchSyscallChecked_applies_taint_plan` pins that no success path skips
+  the seam.  Every IPC
+  transition is quantified over by roughly 1 900 references, and a field write
+  inside one reopens all of them, while `applySyscallTaint_frame` leaves
+  `authorizeDeclassificationOnCore_frame` and SM8.C's "writes only the trail"
+  rule literally unchanged.  The edges cover sender → the rendezvous receiver,
+  receiver ← the blocked sender at `sendQ.head`, replier → the reply
+  object's recorded caller, signaller → notification → resolved receiver
+  (through `declassifiedSignalReceiver?`, the **same** resolver SM9.C's
+  second-hop gate and the SM9.B refusal seam use), and waiter ← notification —
+  not optional, because in the signal-before-wait ordering the tag sits on the
+  notification and the *wait* is what moves the badge.
+
+  An **endpoint is not a taint sink** (v0.33.55): it holds no content of its own,
+  since a parked message lives in the blocked sender's TCB and a receiver reads
+  the head sender directly, so a proxy would be redundant *and* less precise.  A
+  consumed transport is **cleared** instead, and that clear is final within its
+  commit — the origination pass skips cleared keys (v0.33.58), so a downgrade
+  delivered straight to a waiter cannot re-tag the transport it emptied.
+
+  `capTransferTaintSinks` tags the receiver's **CNode**: a CNode is shared, so a
+  second thread rooted at the same CSpace reads what `ipcUnwrapCaps` installed
+  without ever touching the receiver's TCB.  It also tags the receiving
+  **subject** from the sender's CSpace root directly (v0.33.58), because
+  `applyTaintFlow` reads every source from the pre-state and two edges of one
+  commit therefore do not compose.  All of it is gated on capabilities actually
+  crossing: once a CSpace root feeds a subject, declaring the sink for a plain
+  message would name an *unsaturated* predecessor for an unrelated later
+  downgrade, which `staleTaint_is_not_saturation` forbids.
+
+* **The retype clears** (SM9.D.12).  `lifecycleRetype` commits `storeObject` at
+  the same id, so a *framed* retype leaves a destroyed object's tags on its
+  replacement (`retypeClearsTaint`, `retypedObject_taint_empty`, with
+  `staleTaint_is_not_saturation` keeping the residual claim true by exhibiting
+  the two imprecisions as different things).  With the propagation at the
+  dispatcher, the plan's "frames for every non-content transition, ~12 files" is
+  **one** theorem — `applySyscallTaint_inert` covers every inert syscall at once,
+  including ones added later, and since SM9.D.13a it needs no hypothesis about
+  the trail: the plan records whether its syscall can append at all.
+
+* **The detector, and a reader for it** (SM9.D.14–.D.16).
+  `declassificationChainLinked` keeps its name and becomes the conjunction of
+  the syntactic composition it always checked (`declassificationChainComposes`,
+  kept under its own name so the false positive is *exhibited* rather than
+  deleted) and the new `declassificationChainCausal`, which reads the recorded
+  `predecessorTags` snapshots.  The **table**-derived alternative is retained as
+  a refuted design (`chainCausalFromTable`), because re-evaluating a historical
+  event against the *current* table invents links a retype has cleared and loses
+  links acquired after the fact (`chainCausal_is_history_local`,
+  `chainCausal_survives_subject_retype`).
+  `declassificationChainLinked_is_syntactic` is **retired** — SM9.D makes it
+  genuinely false — replaced 1:1 by `declassificationChainLinked_is_causal`,
+  with `DeclassificationRuleId.chainLinkageIsSyntactic → .chainLinkageIsCausal`
+  keeping the rule count at 12.  And the detector is now **reachable**:
+  `AuditReadOp.chainNamesPredecessor` (opcode 27, `auditReadOpcodeCount`
+  27 → **28**, mirrored in `sele4n-sys`) returns one bit — does visible entry
+  `index` name visible entry `index - 1` — so a monitor reading it at every
+  index reconstructs `declassificationChainCausal` over its whole view
+  (`chainVerdict_reconstructs_causal`).  The **PR #873 review** added the
+  general form beside it, because `predecessorTags` may name *any* earlier event
+  and the model relation runs over an arbitrary non-contiguous subchain: an
+  unrelated event appended between two hops (another core writing into the
+  single global trail) splits the hop out of adjacency, and the adjacency
+  verdict then answers `0` on it.  `AuditReadOp.chainNamesEntry` (opcode **28**,
+  count 28 → **29**) takes two arbitrary view-local indices and returns the same
+  one opaque bit (`chainEntryVerdict_ok` / `_refused` / `_view_local`,
+  `chainEntryVerdict_names_iff`) — appended, never renumbered, since an ABI
+  number is a contract, and deliberately not a recovery of a *drained*
+  predecessor, which no view-local reader can query.  Index `0` is **refused** rather than
+  answered `0`, since a `0` word would be indistinguishable from a genuine
+  "no"; `chainVerdict_view_local` is why it opens no channel — the arm reads two
+  entries the caller already holds and nothing else, in particular not the
+  mutable table the tags were snapshotted from.
+
+* **The serialization subject** (SM9.D.17).  The taint table is keyed by
+  `ObjId`, so — exactly as for `SystemState.objects`, whose per-key writes ride
+  the object's own lock and never `objStoreLock` — the subject is the lock the
+  transition already holds on the key.  `.objStore` is reserved for *structural*
+  table operations, which is why `stateLevelLock` appears in exactly three
+  footprints before this phase, all of them writing the audit **trail**, a
+  `List` whose append genuinely does not decompose by key.  Declaring the
+  level-0 singleton on the eight content-moving syscalls would serialise
+  **every** IPC in the system against every other and would blow the SM5.J tick
+  budget the `smp_ipc_suite` and `smp_notification_suite` fixtures pin
+  (`|lockSet| · 3 · tCs` at `tCs = 60 µs` fits a 1 ms tick only up to five
+  locks).  What makes the key-local declaration checkable rather than asserted
+  is `taintWriteKeys` with `applySyscallTaint_frame_off_writeKeys` — outside its
+  write set a plan leaves the table literally unchanged — and
+  `taintWriteKeys_disjoint_updates_independent`;
+  `taintWriteKeys_of_no_events` closes the one case needing care, since
+  origination writes the *actor's* TCB key and is non-empty only when the commit
+  appended to the trail, which only `.declassify` and `.declassifySignal` do,
+  and both already carry `stateLevelLock` in write mode for that append.
+  Recorded rather than assumed: the model writes the field whole, so the
+  key-local reading is sound only if the runtime realises the table as
+  per-object storage — precisely the obligation `SystemState.objects` already
+  carries for `storeObject`, discharged the same way, at SM10.E.
+
+* **Non-interference carriage** (SM9.D.18).  The propagation writes a field no
+  observer projects, so `applySyscallTaint_confinedToCores_nil` is confinement
+  to **no** core, and `applySyscallTaint_preserves_onCore` /
+  `applySyscallTaint_preserves_proofLayerInvariantBundle` carry the per-core view
+  and the sixteen bundle conjuncts.  No `CrossCoreTransition` entry moves and no
+  inventory count changes.
+
+Runtime coverage: §12.1–§12.9 of `tests/SmpInformationFlowSuite.lean`
+(726 → **776** assertions), every group with a load-bearing negative, including
+the acceptance scenario run for effect — hop 1 originates a tag on the object
+its content reached *and* on the subject that performed it, an **ordinary**
+delivery carries it to the next subject, hop 2's recorded snapshot therefore
+names hop 1, and `chainLaunders` reports laundering — with the three negatives
+the plan names (a domain-only detector fires on a causally unrelated pair, an
+object-adjacency detector *misses* this very chain, and two same-domain second
+hops are distinguished by their snapshots) plus the lifecycle case: retype the
+carrier, and the later downgrade names nothing.
+
+**Audit cut (v0.33.54)** — a code-first audit of the whole SM9.D landing,
+documentation distrusted by instruction; the live-path wiring, every declared
+edge, the algebra, the gate and the mount were re-derived against the code.
+Verdict: the propagation is genuinely live (extern → `syscallDispatchFromAbi` →
+`syscallEntryChecked` → the one write), every audited edge resolves exactly what
+its transition resolves (`receiveQ.head`, `sendQ.head`, `getReply? → caller`,
+`declassifiedSignalReceiver?`, `lookupCspaceRoot`, and the operand resolver is
+gate-identical to `syscallResolveCap` — same root, same depth, same resolver),
+the `DecidableEq` instance is sound under proof irrelevance, and no theorem was
+false.  Five findings, all closed in this cut.  (1) **The `.replyRecv` reply
+leg moved content with no declared edge** — the arm resolves
+`(rid, prevCaller)` via `resolveReplyRecvReply` and delivers the server's
+message registers to the recorded caller, so the steady-state server loop's
+second hop carried no taint: an under-approximation, the one direction a
+detector must never err in.  Closed by `replyRecvReplyLegEdges` (mirroring the
+resolver step for step — the MR0-present guard, `decodeReplyRecvArgs`, the
+caller's CSpace at the reply CPtr, the `.replyCap` shape — and sharing
+`replyTaintEdges` with the `.reply` arm so the two cannot drift),
+`taintPropagation_replyRecv_reply_to_prevCaller`, and §12.4's plan-level,
+apply-level and load-bearing-negative witnesses (the receive-leg pair alone
+provably misses the recorded caller).  (2) **The gate's one-writer claim was
+stronger than its check**: check (C) polices constants that *name* the taint
+API, so a definition writing `SystemState.declassificationTaint` directly in a
+`{ st with .. }` update — including a closed-term write, which for a provenance
+table is a silent whole-table clear, a laundering enabler — would have escaped
+it.  Closed by check (C2): the probe scans every definition's elaborated value
+for a constructor application that is an *update* (at least one other argument
+projects the same structure — what distinguishes `{ st with .. }` from a fresh
+boot/test literal) whose taint-field argument is not the field's own
+projection; the environment shows exactly one such writer
+(`applySyscallTaint`), `DECLARED_FIELD_WRITERS` pins it, and `--self-test` now
+also asserts the sweep *detects* that writer, so a sweep gone blind fails the
+self-test rather than reporting a clean tree.  (3) The self-test's failure
+diagnostic named the wrong planted channel (`TCB.ipcState` for
+`TCB.priority`).  (4) **The reconstruction theorem covered the direction the
+monitor does not use**: `chainVerdict_reconstructs_causal` proves causal ⇒
+every read is 1, while a monitor infers the other way; closed by
+`declassificationChainCausal_of_pairwise` and `chainVerdict_all_ok_causal`
+(every interior read `.ok 1` ⇒ the view is causal).  Also added:
+`join_comm_equiv_of_saturated`, so the commutativity law's coverage now leaves
+exactly one case unstated (one join saturated, the other not — in fact
+unreachable, recorded in the docstring rather than proven, since it needs a
+fold-symmetry induction the algebra does not otherwise owe).  (5) **A
+pre-existing SM3.B footprint gap, surfaced by the cap-transfer sink and
+reported rather than silently fixed**: on a caps-carrying rendezvous the live
+`.send`/`.call` run `ipcUnwrapCaps`, which writes the *receiver's* CSpace root
+— and `lockSet_endpointSend`/`lockSet_endpointCall` declare no CNode write at
+all (their one CNode member is the caller's root, read mode).  Not a live race
+(SM5.I's global entry lock serialises every commit; `withLockSet` is deferred,
+SM3.C.9), and closing it is an SM3.B decision with real cost (a conditional
+receiver-CNode member moves both signatures, the size bounds, and the
+resolved-footprint WCRT arithmetic the IPC suites pin), so it is registered
+the SM8.D round-11 way: `UncoveredLockDomain.capTransferReceiverCnode`
+(inventory 3 → 4, the `cases`-forced completeness firing as designed), the
+violation as a theorem whose deletion is the closure
+(`capTransfer_receiverCnode_write_undeclared`), and §12.8 recomputed on the
+REAL rendezvous edge list with the honest partition — every taint write key
+except the cap-transfer CNode is write-locked, and the gap is pinned
+positively so closing it breaks the line.  The §3d docstring's blanket
+coverage sentence is corrected to carve the sink out; the taint write at that
+key is exactly as covered as the object write it shadows, so the gap belongs
+to the footprint, not to the taint layer.
 
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 

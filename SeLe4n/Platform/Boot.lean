@@ -363,6 +363,14 @@ theorem applyMachineConfig_declassificationRefusals_eq (ist : IntermediateState)
     (applyMachineConfig ist config).state.declassificationRefusals =
       ist.state.declassificationRefusals := rfl
 
+/-- WS-SM SM9.D.5: `applyMachineConfig` preserves the declassification taint
+side table — boot performs no declassification and moves no message, so no
+object acquires provenance. -/
+theorem applyMachineConfig_declassificationTaint_eq (ist : IntermediateState)
+    (config : MachineConfig) :
+    (applyMachineConfig ist config).state.declassificationTaint =
+      ist.state.declassificationTaint := rfl
+
 /-- AH2-F: `applyMachineConfig` preserves lifecycle metadata. -/
 theorem applyMachineConfig_lifecycle_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.lifecycle = ist.state.lifecycle := rfl
@@ -1716,6 +1724,14 @@ private theorem foldIrqs_declassificationRefusals (irqs : List IrqEntry)
   | nil => rfl
   | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
 
+private theorem foldIrqs_declassificationTaint (irqs : List IrqEntry)
+    (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.declassificationTaint =
+      ist.state.declassificationTaint := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
 private theorem foldIrqs_machine (irqs : List IrqEntry) (ist : IntermediateState) :
     (foldIrqs irqs ist).state.machine = ist.state.machine := by
   induction irqs generalizing ist with
@@ -1835,6 +1851,14 @@ private theorem foldObjects_declassificationRefusals (objs : List ObjectEntry)
     (ist : IntermediateState) :
     (foldObjects objs ist).state.declassificationRefusals =
       ist.state.declassificationRefusals := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_declassificationTaint (objs : List ObjectEntry)
+    (ist : IntermediateState) :
+    (foldObjects objs ist).state.declassificationTaint =
+      ist.state.declassificationTaint := by
   induction objs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
@@ -2507,6 +2531,20 @@ theorem bootFromPlatform_declassificationRefusals_eq (config : PlatformConfig) :
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_declassificationRefusals_eq,
       foldObjects_declassificationRefusals, foldIrqs_declassificationRefusals,
+      mkEmpty_state_eq_default]
+
+/-- WS-SM SM9.D.5: boot leaves every object untainted, so the taint side table
+after boot is the empty default.  The general bridge that makes "a
+platform-booted system carries no declassification provenance" a fact about
+*any* configuration rather than only about the default state — which is what
+the causal detector's base case rests on: a chain reported on a freshly booted
+system must have been produced by the run, not inherited from the image. -/
+theorem bootFromPlatform_declassificationTaint_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.declassificationTaint =
+    (default : SystemState).declassificationTaint := by
+  show _ = _; unfold bootFromPlatform
+  rw [applyMachineConfig_declassificationTaint_eq,
+      foldObjects_declassificationTaint, foldIrqs_declassificationTaint,
       mkEmpty_state_eq_default]
 
 /-- AH2-F: After boot, machine config-set fields come from `config.machineConfig`.
@@ -3198,7 +3236,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         intro oid cn slot cap badge hObj hSlotLookup hBadge
         have hCN := (hBS oid _ hObj).2.2.1 cn rfl
         exact hCN.2.2.2.1 slot cap badge hSlotLookup hBadge
-    · -- waitingThreadsPendingMessageNone
+    · -- blockedThreadsPendingMessageConsistent
       intro tid tcb hObj
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
       rw [hTcb.2.1]; trivial

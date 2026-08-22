@@ -69,22 +69,45 @@ lifetime of the system: it is never reused and never decreases. -/
 def declassificationEventOnCore (c : CoreId) (actor : DeclassificationActor)
     (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (epoch : Nat)
-    (log : DeclassificationAuditLog) : DeclassificationEvent :=
+    (log : DeclassificationAuditLog)
+    (predecessorTags : DeclassificationTaint) : DeclassificationEvent :=
   { srcDomain := srcDomain
     dstDomain := dstDomain
     targetObject := targetId
     authorizationBasis := .policyRule
     timestamp := epoch + log.length
     originatingCore := c
-    actor := actor }
+    actor := actor
+    predecessorTags := predecessorTags }
 
 /-- WS-SM SM8.C.1: the event a given pre-state records, named once so the
 theorems below do not each recompute it. -/
+abbrev declassifyStoreEventWithTags (c : CoreId) (actor : DeclassificationActor)
+    (srcDomain dstDomain : SecurityDomain)
+    (targetId : SeLe4n.ObjId) (predecessorTags : DeclassificationTaint)
+    (st : SystemState) : DeclassificationEvent :=
+  declassificationEventOnCore c actor srcDomain dstDomain targetId
+    st.declassificationAuditEpoch st.declassificationAuditLog predecessorTags
+
+/-- WS-SM SM9.D.13a: **the acting subject's provenance at production time** —
+the snapshot an event carries.
+
+Read from the mounted side table at the state the event is recorded against, so
+the causality the trail preserves is the causality that held *then*.  Re-reading
+the table later would be wrong in both directions (`chainCausal_not_table_derived`),
+which is why the snapshot is a field of the record rather than a lookup the
+detector performs. -/
+abbrev declassificationActorTaint (actor : DeclassificationActor) (st : SystemState) :
+    DeclassificationTaint :=
+  st.declassificationTaint actor.subject.toObjId
+
+/-- WS-SM SM8.C.1: the event a given pre-state records, with the acting
+subject's provenance snapshotted from that same pre-state (WS-SM SM9.D.13a). -/
 abbrev declassifyStoreEvent (c : CoreId) (actor : DeclassificationActor)
     (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st : SystemState) : DeclassificationEvent :=
-  declassificationEventOnCore c actor srcDomain dstDomain targetId
-    st.declassificationAuditEpoch st.declassificationAuditLog
+  declassifyStoreEventWithTags c actor srcDomain dstDomain targetId
+    (declassificationActorTaint actor st) st
 
 /-- WS-SM SM8.C.1: the trail a successful audited step leaves — the pre-state's
 trail with this step's event appended. -/
@@ -103,26 +126,29 @@ make this theorem false for every secondary core while still compiling
 everywhere. -/
 theorem declassificationEventOnCore_originatingCore
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog) :
+    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog)
+    (predecessorTags : DeclassificationTaint) :
     (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch
-      log).originatingCore = c := rfl
+      log predecessorTags).originatingCore = c := rfl
 
 /-- WS-SM SM8.C.5: the kernel records its own basis, never an integrator
 override — so `kernelVerifiable` is `true` on everything the kernel writes. -/
 theorem declassificationEventOnCore_basis_is_policyRule
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog) :
+    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog)
+    (predecessorTags : DeclassificationTaint) :
     (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch
-      log).authorizationBasis = .policyRule := rfl
+      log predecessorTags).authorizationBasis = .policyRule := rfl
 
 /-- WS-SM SM8.C / SM9.A.1a: the recorded timestamp is the event's **global**
 position — the number of entries drained so far plus its index in the current
 trail. -/
 theorem declassificationEventOnCore_timestamp
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog) :
-    (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch log).timestamp =
-      epoch + log.length := rfl
+    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog)
+    (predecessorTags : DeclassificationTaint) :
+    (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch log
+      predecessorTags).timestamp = epoch + log.length := rfl
 
 /-- WS-SM SM9.C.1: the recorded actor is the one the producer resolved — the
 field is carried, never derived from the flow endpoints.
@@ -133,9 +159,35 @@ which would compile everywhere and be silently wrong for exactly the second-hop
 events it exists to attribute. -/
 theorem declassificationEventOnCore_actor
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog) :
-    (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch log).actor =
-      actor := rfl
+    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog)
+    (predecessorTags : DeclassificationTaint) :
+    (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch log
+      predecessorTags).actor = actor := rfl
+
+/-- WS-SM SM9.D.13a: the recorded snapshot is the one the producer resolved —
+carried, never derived from the trail or from the live table.
+
+Load-bearing for the reason `declassificationEventOnCore_actor` is, and one step
+sharper: the tempting default (`DeclassificationTaint.empty`) would compile
+everywhere and make **every** event causally unlinked, so the detector would
+report no laundering at all.  That is the unsafe direction, which is why the
+field carries no default. -/
+theorem declassificationEventOnCore_predecessorTags
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
+    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog)
+    (predecessorTags : DeclassificationTaint) :
+    (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch log
+      predecessorTags).predecessorTags = predecessorTags := rfl
+
+/-- WS-SM SM9.D.13a: the live producers snapshot the **acting subject's** taint,
+so a recorded event's causality is the causality of the thread that performed
+the downgrade — not of the object it targeted, and not of whatever the table
+holds when a report is written. -/
+theorem declassifyStoreEvent_predecessorTags
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
+    (targetId : SeLe4n.ObjId) (st : SystemState) :
+    (declassifyStoreEvent c actor srcDomain dstDomain targetId st).predecessorTags =
+      st.declassificationTaint actor.subject.toObjId := rfl
 
 -- ============================================================================
 -- §2  Attribution: the subject the executing core is running

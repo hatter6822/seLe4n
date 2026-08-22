@@ -46,7 +46,7 @@ use sele4n_types::{CPtr, KernelResult, SyscallId};
 /// Number of `audit_read` sub-operation opcodes.  Mirrors Lean's
 /// `auditReadOpcodeCount`; a divergence would surface as
 /// `InvalidSyscallArgument` on a valid request rather than as a decode bug.
-pub const AUDIT_READ_OPCODE_COUNT: u64 = 27;
+pub const AUDIT_READ_OPCODE_COUNT: u64 = 30;
 
 /// The `audit_read` sub-operations, mirroring Lean's `AuditReadOp`.
 ///
@@ -136,6 +136,63 @@ pub enum AuditReadOpcode {
     /// One chunk of ring slot `index`'s refused receiver;
     /// `InvalidArgument` when the refusal named none.
     RefusalReceiver = 26,
+    /// WS-SM SM9.D.14: the **causality verdict** — `1` when visible entry
+    /// `index` names visible entry `index - 1` as its predecessor, `0` when it
+    /// does not.
+    ///
+    /// An opaque verdict rather than an export of the recorded predecessor
+    /// tags: those are global declassification identities, and handing them
+    /// out would re-open exactly what the view-local entry indices close.
+    /// Reading it at every index reconstructs Lean's
+    /// `declassificationChainCausal` over the whole view, which is what a
+    /// laundering monitor consumes.  `index == 0` names no predecessor and is
+    /// `InvalidArgument`.
+    ChainNamesPredecessor = 27,
+    /// WS-SM SM9.D.14: does visible entry `index` name visible entry `chunk`,
+    /// for **any** two visible indices with `chunk < index`?
+    ///
+    /// The general form of the verdict above.  `predecessorTags` is a set that
+    /// may name any earlier event, and Lean's `declassificationChainCausal` /
+    /// `chainLaunders` run over an arbitrary non-contiguous subchain of the
+    /// view — so when an unrelated event lands between two causal hops (a
+    /// different core appending into the single global trail), the hop is no
+    /// longer adjacent and `ChainNamesPredecessor` answers `0` on it.  This
+    /// opcode reads the two entries the caller already holds, at arbitrary
+    /// view-local indices, and returns the same one opaque bit.
+    ///
+    /// `index` carries `later`, `chunk` carries `earlier`; `earlier >= later`
+    /// names no predecessor and is `InvalidArgument`.  It deliberately does not
+    /// recover a predecessor that has left the view — no view-local reader can
+    /// query an entry it cannot see.  `ChainNamesArchived` is that case.
+    ChainNamesEntry = 28,
+    /// WS-SM SM9.D: does a visible entry name one that has been **drained**?
+    ///
+    /// A drain advances the epoch rather than renumbering, so a surviving
+    /// entry's predecessor set can name a timestamp whose entry is gone, and
+    /// neither index-keyed verdict can ask about it: both operands must be
+    /// positions in the current view.  A laundering chain spanning a drain was
+    /// therefore unqueryable.
+    ///
+    /// `index` carries `later` (a view index), `chunk` carries the archived
+    /// **timestamp** — a raw identity rather than an index, which is why this
+    /// opcode is monitor-only, under the same gate that discloses the epoch to
+    /// `Status`.  An entry can only have been archived by a drain, and a drain
+    /// refuses unless its caller both passes that gate and sees the whole
+    /// trail, so an archived timestamp always belonged to an entry a
+    /// monitor-cleared reader could read.  A partial reader is refused
+    /// `IllegalAuthority` before anything else is looked at, so it learns
+    /// nothing about the trail's extent — whatever timestamp it supplied.
+    ///
+    /// A timestamp at or past the current epoch names a still-present
+    /// predecessor, which is `ChainNamesEntry`'s question asked through an index
+    /// the projection checks; supplied here it is `InvalidArgument`.  That is a
+    /// **malformed operand**, not an authority failure, and the two are
+    /// deliberately distinct: this paragraph used to say such a timestamp was
+    /// refused like a partial reader, which made valid monitor credentials read
+    /// as invalid and contradicted the error contract below.  Splitting them
+    /// discloses nothing, because a caller the gate admits already sees the
+    /// whole trail.
+    ChainNamesArchived = 29,
 }
 
 impl AuditReadOpcode {
@@ -186,6 +243,9 @@ impl AuditReadOpcode {
             24 => Some(Self::ActorDomain),
             25 => Some(Self::RefusalReceiverChunks),
             26 => Some(Self::RefusalReceiver),
+            27 => Some(Self::ChainNamesPredecessor),
+            28 => Some(Self::ChainNamesEntry),
+            29 => Some(Self::ChainNamesArchived),
             _ => None,
         }
     }
@@ -276,8 +336,19 @@ pub const fn refusal_slot_tags_decode(word: u64) -> (u64, u64, u64) {
 ///   `0..REFUSAL_RING_SIZE` — the ledger has no clearance-filtered view,
 ///   because a caller that is not the configured monitor is refused outright
 ///   (Lean's `refusalLedger_requires_full_dominance`).
-/// * `chunk` — the chunk index, for the chunked field and basis operations;
-///   ignored otherwise.
+/// * `chunk` — a **second operand**, and which one depends on the opcode:
+///   - for the chunked field and basis operations, the chunk index;
+///   - for `ChainNamesEntry` (SM9.D.14), the **earlier view index** the verdict
+///     asks about, so `chunk < index`;
+///   - for `ChainNamesArchived`, the archived **timestamp** — a raw global
+///     identity rather than a view index, which is why that opcode is
+///     monitor-only;
+///   - ignored by every other opcode.
+///
+///   Naming it "ignored otherwise" was wrong once the causal opcodes landed: a
+///   monitor following that contract would leave `chunk` at zero and ask about
+///   view entry 0 (or timestamp 0) rather than the predecessor it meant, and
+///   get a well-formed answer to the wrong question.
 ///
 /// # Errors
 ///
@@ -484,10 +555,17 @@ mod tests {
         // receiver, appended after the actor pair.
         assert_eq!(AuditReadOpcode::RefusalReceiverChunks.to_u64(), 25);
         assert_eq!(AuditReadOpcode::RefusalReceiver.to_u64(), 26);
+        // WS-SM SM9.D.14: the causality verdicts — the adjacent form, then the
+        // general arbitrary-pair form, each appended so earlier opcodes are
+        // unmoved.
+        assert_eq!(AuditReadOpcode::ChainNamesPredecessor.to_u64(), 27);
+        assert_eq!(AuditReadOpcode::ChainNamesEntry.to_u64(), 28);
+        // WS-SM SM9.D: the archived form, for a chain that spans a drain.
+        assert_eq!(AuditReadOpcode::ChainNamesArchived.to_u64(), 29);
         // Every opcode is below the count, and the count is the first value the
         // kernel refuses.
         assert_eq!(
-            AuditReadOpcode::RefusalReceiver.to_u64() + 1,
+            AuditReadOpcode::ChainNamesArchived.to_u64() + 1,
             AUDIT_READ_OPCODE_COUNT
         );
     }

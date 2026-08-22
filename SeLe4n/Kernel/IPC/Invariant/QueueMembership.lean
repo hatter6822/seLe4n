@@ -1677,6 +1677,10 @@ theorem endpointQueuePopHead_preserves_non_head_queueNext
         | none => simp
         | some htcb =>
           simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
           -- headTid.toObjId = tid.toObjId will be derived from the result
           cases hStore : storeObject endpointId _ st with
           | error e => simp
@@ -1774,6 +1778,10 @@ theorem endpointQueuePopHead_post_endpoint_queues
     | none => simp
     | some tcb =>
       simp only []
+      -- PR #873 round 11: the send-queue message-presence guard --
+      -- a head that fails it errors, so it is not this `.ok`.
+      split
+      · simp
       cases hStore : storeObject endpointId _ st with
       | error e => simp
       | ok pair =>
@@ -1857,6 +1865,10 @@ theorem endpointQueuePopHead_post_endpoint_tail
     | none => simp
     | some tcb =>
       simp only []
+      -- PR #873 round 11: the send-queue message-presence guard --
+      -- a head that fails it errors, so it is not this `.ok`.
+      split
+      · simp
       cases hStore : storeObject endpointId _ st with
       | error e => simp
       | ok pair =>

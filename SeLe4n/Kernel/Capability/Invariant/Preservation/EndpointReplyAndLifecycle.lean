@@ -249,9 +249,9 @@ theorem coreIpcInvariantBundle_to_badgeWellFormed {st : SystemState}
     (h : coreIpcInvariantBundle st) : badgeWellFormed st :=
   h.2.2.2.2.2.1
 
-/-- V3-G6: Extract `waitingThreadsPendingMessageNone` from the core bundle. -/
-theorem coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone {st : SystemState}
-    (h : coreIpcInvariantBundle st) : waitingThreadsPendingMessageNone st :=
+/-- V3-G6: Extract `blockedThreadsPendingMessageConsistent` from the core bundle. -/
+theorem coreIpcInvariantBundle_to_blockedThreadsPendingMessageConsistent {st : SystemState}
+    (h : coreIpcInvariantBundle st) : blockedThreadsPendingMessageConsistent st :=
   h.2.2.2.2.2.2.1
 
 /-- V3-K: Extract `endpointQueueNoDup` from the core bundle. -/
@@ -967,7 +967,7 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
     (hDualQueue' : dualQueueSystemInvariant st')
     (hBounded' : allPendingMessagesBounded st')
     (hBadge' : badgeWellFormed st')
-    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
     -- IPC de-threading D4: queueNext/headBlocked established from the pre-state via
@@ -1073,7 +1073,7 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (hDualQueue' : dualQueueSystemInvariant st')
     (hBounded' : allPendingMessagesBounded st')
     (hBadge' : badgeWellFormed st')
-    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
     -- IPC de-threading D4: retype-link preconditions replace the threaded

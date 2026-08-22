@@ -481,8 +481,8 @@ private theorem default_badgeWellFormed :
   refine ⟨fun oid _ _ hObj => ?_, fun oid _ _ _ _ hObj => ?_⟩
   all_goals exact default_objects_absurd hObj
 
-private theorem default_waitingThreadsPendingMessageNone :
-    waitingThreadsPendingMessageNone (default : SystemState) := by
+private theorem default_blockedThreadsPendingMessageConsistent :
+    blockedThreadsPendingMessageConsistent (default : SystemState) := by
   intro tid tcb hObj; exact default_objects_absurd hObj
 
 private theorem default_endpointQueueNoDup :
@@ -560,7 +560,7 @@ private theorem default_pendingReceiveReplyWellFormed :
 private theorem default_ipcInvariantFull :
     ipcInvariantFull (default : SystemState) :=
   ⟨default_ipcInvariant, default_dualQueueSystemInvariant, default_allPendingMessagesBounded,
-   default_badgeWellFormed, default_waitingThreadsPendingMessageNone,
+   default_badgeWellFormed, default_blockedThreadsPendingMessageConsistent,
    default_endpointQueueNoDup, default_ipcStateQueueMembershipConsistent,
    default_queueNextBlockingConsistent, default_queueHeadBlockedConsistent,
    default_blockedThreadTimeoutConsistent,
@@ -849,7 +849,7 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
            ⟨fun a tcbA hA b hN => (hLink.1 a tcbA (hObjs ▸ hA) b hN).imp fun tcbB ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩,
             fun b tcbB hB a hP => (hLink.2 b tcbB (hObjs ▸ hB) a hP).imp fun tcbA ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩⟩,
            fun tid hp => hAcyc tid (transportPath hObjs hp)⟩
-  -- waitingThreadsPendingMessageNone
+  -- blockedThreadsPendingMessageConsistent
   · intro tid tcb hObj; exact h5 tid tcb (hObjs ▸ hObj)
   -- endpointQueueNoDup
   · intro oid ep hObj; rw [hLk] at hObj; exact h6 oid ep hObj
@@ -1159,6 +1159,79 @@ theorem proofLayerInvariantBundle_setDeclassificationRefusals (st : SystemState)
          ipcSchedulerCouplingInvariantBundle_setDeclassificationRefusals bCoupling,
          bLifecycle, bService, bVSpace,
          crossSubsystemInvariant_setDeclassificationRefusals bCross,
+         bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
+         bIcache, bAck, bAudit⟩
+
+/-! ### WS-SM SM9.D.2 — `proofLayerInvariantBundle` carriage across a taint write
+
+The same three conjuncts again, for the same structural reasons (v0.32.151: a
+`match` stuck on a symbolic `Nat`, an `inductive` family parameterised by the
+state).  Like the refusal ledger's and unlike the trail's, the carriage is
+**unconditional**: each taint value is bounded by its own type
+(`DeclassificationTaint.tags_bounded`), so no bundle conjunct reads the mounted
+table and a writer owes nothing to the sixteen that are already there.
+
+The mount checklist's step 8 is exactly this distinction: *every* mounted field
+owes a carriage block, and the type-level bound decides only whether that block
+carries an obligation. -/
+
+private theorem ipcInvariantFull_setDeclassificationTaint {st : SystemState}
+    {T : SeLe4n.Kernel.TaintTable} (h : ipcInvariantFull st) :
+    ipcInvariantFull { st with declassificationTaint := T } := by
+  obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
+          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
+  exact ⟨c1, dualQueueSystemInvariant_of_getElem_eq (s1 := st)
+           (s2 := { st with declassificationTaint := T }) (fun _ => rfl) c2,
+         c3, c4, c5, c6, c7, c8, c9, c10,
+         c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
+
+private theorem serviceGraphInvariant_setDeclassificationTaint {st : SystemState}
+    {T : SeLe4n.Kernel.TaintTable}
+    (h : serviceGraphInvariant st) :
+    serviceGraphInvariant { st with declassificationTaint := T } :=
+  ⟨fun sid hp =>
+     h.1 sid (serviceNontrivialPath_of_services_eq (st := st)
+                (st' := { st with declassificationTaint := T }) rfl hp), h.2⟩
+
+private theorem crossSubsystemInvariant_setDeclassificationTaint {st : SystemState}
+    {T : SeLe4n.Kernel.TaintTable}
+    (h : crossSubsystemInvariant st) :
+    crossSubsystemInvariant { st with declassificationTaint := T } := by
+  obtain ⟨d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12⟩ := h
+  exact ⟨d1, d2, d3, d4, d5, serviceGraphInvariant_setDeclassificationTaint d6, d7, d8, d9,
+         PriorityInheritance.blockingAcyclic_frame st _ d10
+           (fun tid => PriorityInheritance.blockingServer_congr_objects _ _ tid rfl) rfl,
+         d11, d12⟩
+
+private theorem coreIpcInvariantBundle_setDeclassificationTaint {st : SystemState}
+    {T : SeLe4n.Kernel.TaintTable}
+    (h : coreIpcInvariantBundle st) :
+    coreIpcInvariantBundle { st with declassificationTaint := T } :=
+  ⟨h.1, h.2.1, ipcInvariantFull_setDeclassificationTaint h.2.2⟩
+
+private theorem ipcSchedulerCouplingInvariantBundle_setDeclassificationTaint
+    {st : SystemState} {T : SeLe4n.Kernel.TaintTable}
+    (h : ipcSchedulerCouplingInvariantBundle st) :
+    ipcSchedulerCouplingInvariantBundle { st with declassificationTaint := T } :=
+  ⟨coreIpcInvariantBundle_setDeclassificationTaint h.1, h.2.1, h.2.2.1, h.2.2.2⟩
+
+/-- **WS-SM SM9.D.2**: `proofLayerInvariantBundle` carriage across a write to
+`declassificationTaint` — **unconditional**, because no conjunct reads the field.
+
+Stated once for *any* taint writer, so the live propagation seam
+(`InformationFlow.applySyscallTaint`, run at both dispatchers — `dispatchSyscall`
+and `dispatchSyscallChecked`) and any future one discharge it the same way. -/
+theorem proofLayerInvariantBundle_setDeclassificationTaint (st : SystemState)
+    (T : SeLe4n.Kernel.TaintTable)
+    (h : proofLayerInvariantBundle st) :
+    proofLayerInvariantBundle { st with declassificationTaint := T } := by
+  obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
+          bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
+          bIcache, bAck, bAudit⟩ := h
+  exact ⟨bSched, bCap, coreIpcInvariantBundle_setDeclassificationTaint bCoreIpc,
+         ipcSchedulerCouplingInvariantBundle_setDeclassificationTaint bCoupling,
+         bLifecycle, bService, bVSpace,
+         crossSubsystemInvariant_setDeclassificationTaint bCross,
          bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
          bIcache, bAck, bAudit⟩
 

@@ -44,6 +44,7 @@ import SeLe4n.Kernel.InformationFlow.AuditRead
 -- transition module rather than the staged `NonInterferenceCrossCore` that
 -- carries its declassification-relative non-interference on top.
 import SeLe4n.Kernel.InformationFlow.DeclassifiedSignal
+import SeLe4n.Kernel.InformationFlow.TaintPropagation
 
 import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Kernel.Architecture.RegisterDecode
@@ -660,16 +661,34 @@ exactly this).  Steps reusing the verified cross-core transitions:
    server's SC and descheduling it *before* the receive leg would leave a server
    that immediately rendezvouses with a queued `Call` stuck `.ready` but absent
    from the run queues (PR #822 review, 6J90-w);
-2. **receive + re-link leg** — `endpointReceiveDualOnCore … (some rid)` receives the
-   next message and, on a `Call` rendezvous, links the *same* freed reply object to
-   the next caller atomically (#7.2 fold — faithful one-object reuse, formerly the
-   separate `linkReceivedCaller` step);
+2. **receive + re-link leg** — `endpointReceiveDualWithCapsOnCore … (some rid)`
+   receives the next message, **installs the capabilities it carries** into the
+   server's own CSpace, and, on a `Call` rendezvous, links the *same* freed reply
+   object to the next caller atomically (#7.2 fold — faithful one-object reuse,
+   formerly the separate `linkReceivedCaller` step);
 3. **donation** — `replyRecvReturnDonation` returns the old client's SC and, when a
    new `Call` rendezvoused, donates the new client's SC so the passive server keeps
-   running on the new request's budget (seL4-MCS SC-follows-message). -/
+   running on the new request's budget (seL4-MCS SC-follows-message).
+
+**The receive leg installs, and why it must** (PR #873 round 7).  It ran the
+*bare* per-core receive until this cut, so a capability-bearing sender that parked
+before the server invoked `.replyRecv` had its message moved across wholesale and
+its capabilities dropped — while a sender that arrived *after* the server blocked
+took the WithCaps send path and had them installed.  That is exactly the
+arrival-order dependence the `.receive` arms shed one round earlier, surviving in
+the one arm that is a receive without being spelled `.receive`.  A server loop
+written the seL4-MCS way (`Recv` once, then `ReplyRecv` forever) would have
+received capabilities on its first request and silently none afterwards.
+
+The authority is the sender's, carried on the message (`IpcMessage.capsGranted`),
+so both orderings ask the same question.  The summary is **returned** rather than
+staged here, because the arm owns the return frame — `.replyRecv`'s `extraCaps`
+is now the honest installed count instead of a hardcoded zero. -/
 def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : Concurrency.CoreId)
-    : Kernel Unit :=
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : Concurrency.CoreId)
+    : Kernel CapTransferSummary :=
   fun st =>
     -- WS-SM SM6.D (PR #822 review): capture the recorded server (the passive server
     -- `prevCaller` donated its SC to) and its home core BEFORE the reply leg consumes
@@ -689,9 +708,10 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
         -- `rid` (freed by the reply leg's folded consume — PR #827 review #3) to
         -- the next `Call` caller atomically — faithful one-object reuse, formerly
         -- the separate `linkReceivedCaller nextThread (some rid)` dispatch step.
-        match endpointReceiveDualOnCore epId tid (some rid) executingCore st1 with
+        match endpointReceiveDualWithCapsOnCore epId tid (some rid) receiverCspaceRoot
+            receiverSlotBase executingCore st1 with
         | (_, .error e) => .error e
-        | (st2, .ok (nextThread, _)) =>
+        | (st2, .ok (nextThread, summary, _)) =>
             match replyRecvReturnDonation tid recordedServer nextThread serverCore st2 with
             | .error e => .error e
             | .ok ((), st3) =>
@@ -700,10 +720,11 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
                 -- `.call`'s frame, delivered entirely through this path) and
                 -- the receive leg's completed plain sender (unit frame).  Both
                 -- stagers are guard-inert when their target was not woken.
-                -- Installed count 0: the reply message is built `caps := #[]`
-                -- by both `.reply`-shaped arms and the reply path runs no
-                -- unwrap (PR #866 round-2).
-                .ok ((), Architecture.stageWokenSendCompletion
+                -- Installed count 0 *for `prevCaller`*: the reply message is
+                -- built `caps := #[]` by both `.reply`-shaped arms and the
+                -- reply path runs no unwrap (PR #866 round-2).  The receive
+                -- leg's own count is the returned `summary`, staged by the arm.
+                .ok (summary, Architecture.stageWokenSendCompletion
                           (Architecture.stageDeliveredMessage st3 prevCaller 0)
                           wokenSender?)
 
@@ -991,15 +1012,58 @@ Returns the resolved capabilities as an array. -/
    §8.10.4 "IPC Extra Capability Resolution — Silent-Drop Semantics" for the
    normative specification, including the seL4 reference C kernel equivalence. -/
 private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
-    (st : SystemState) : Array Capability :=
+    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
+    (st : SystemState) : Array TransferCap × SystemState :=
+  -- PR #873 round 14: **the authority is checked where the resource is
+  -- committed.**  Resolution mints a persistent CDT node per source slot and
+  -- marks that slot as having a transfer in flight; the Grant right was
+  -- consulted only later, at the unwrap.  So a sender holding Write but not
+  -- Grant spent the bounded global node counter on every send, and
+  -- `nodeHasPendingTransfer` reported its slots as future parents -- making
+  -- `cspaceDeleteSlot` and the CNode retype answer `.revocationRequired` for a
+  -- derivation that could never materialise, since the unwrap was always going
+  -- to deny it.  A commitment made before the authority is checked is a
+  -- commitment that can outlive the authority, which is the same shape round 13
+  -- closed on `capsGranted`: one authority, read once, at the point it decides
+  -- something.
+  if !granted then (#[], st) else
   capAddrs.foldl (fun acc addr =>
-    match resolveCapAddress cspaceRoot addr depth st with
+    match resolveCapAddress cspaceRoot addr depth acc.2 with
     | .error _ => acc
     | .ok ref =>
-        match SystemState.lookupSlotCap st ref with
+        match SystemState.lookupSlotCap acc.2 ref with
         | none => acc
-        | some cap => acc.push cap) #[]
+        -- The derivation node of the real source slot is **minted here**, at
+        -- resolution, and carried in the message.  Two things make that the
+        -- right moment rather than the unwrap:
+        --
+        --   * the unwrap can run in a later syscall (a blocking send parks its
+        --     message), and by then the slot may hold something else entirely —
+        --     a slot address resolved at that point names the new occupant;
+        --   * a node id is stable across slot moves and reuse by construction,
+        --     which is what `CdtNodeId` is for.
+        --
+        -- Minting is idempotent for a slot that already has a node, so this
+        -- costs an allocation only the first time a slot is used as a source.
+        --
+        -- PR #873 round 8: through the **checked** minter.  The unchecked one
+        -- advances `cdtNextNode` without consulting `cdtNextNodeBounded`, and
+        -- this fold runs up to `maxExtraCaps` times per syscall — so a resolver
+        -- near the bound could carry the counter past it in one call, and a
+        -- *blocking* send commits that state before any unwrap runs.  A
+        -- fixed-width runtime allocating node ids past the bound eventually
+        -- reuses one, and a reused derivation node is a revocation that reaches
+        -- the wrong children.
+        --
+        -- Exhaustion drops the cap, which is this resolver's existing semantics
+        -- for an address it cannot resolve (seL4's silent drop) — and it is
+        -- fail-closed: a capability with no derivation node is not transferred,
+        -- so nothing is installed untracked.
+        | some cap =>
+            match SystemState.ensureCdtNodeForSlotChecked acc.2 ref with
+            | none => acc
+            | some (node, stNode) =>
+                (acc.1.push { cap := cap, srcNode := node }, stNode)) (#[], st)
 
 /-- AN7-E (API-M01): Debug-noisy variant of `resolveExtraCaps` that surfaces
     partial resolution explicitly.  Returns the resolved array paired with a
@@ -1010,7 +1074,7 @@ private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
 
     Callers that want to reject partial resolutions should do:
     ```
-    match resolveExtraCapsDetailed cspaceRoot addrs depth st with
+    match resolveExtraCapsDetailed cspaceRoot addrs depth granted st with
     | (caps, false) => -- complete: all addresses resolved
     | (_,    true)  => .error .partialResolution
     ```
@@ -1021,15 +1085,28 @@ private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
     `sele4n.debug.noisyResolution` — a compile-time `set_option` directive
     in the consuming module. -/
 private def resolveExtraCapsDetailed (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
-    (st : SystemState) : Array Capability × Bool :=
+    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
+    (st : SystemState) : (Array TransferCap × Bool) × SystemState :=
+  -- PR #873 round 14: the same gate, for the same reason.  `isPartial` stays
+  -- `false`: a sender without Grant did not fail to resolve anything, it had
+  -- nothing to resolve, and reporting a partial resolution would tell a caller
+  -- its capabilities were dropped when they were never eligible.
+  if !granted then ((#[], false), st) else
   capAddrs.foldl (fun acc addr =>
-    match resolveCapAddress cspaceRoot addr depth st with
-    | .error _ => (acc.1, true)  -- partial: lookup failed
+    match resolveCapAddress cspaceRoot addr depth acc.2 with
+    | .error _ => ((acc.1.1, true), acc.2)   -- partial: lookup failed
     | .ok ref =>
-        match SystemState.lookupSlotCap st ref with
-        | none => (acc.1, true)  -- partial: slot empty
-        | some cap => (acc.1.push cap, acc.2)) (#[], false)
+        match SystemState.lookupSlotCap acc.2 ref with
+        | none => ((acc.1.1, true), acc.2)   -- partial: slot empty
+        | some cap =>
+            -- PR #873 round 8: the checked minter here too, and exhaustion is
+            -- reported rather than dropped silently — this resolver's whole
+            -- purpose is to surface what the ABI path drops.
+            match SystemState.ensureCdtNodeForSlotChecked acc.2 ref with
+            | none => ((acc.1.1, true), acc.2)   -- partial: CDT node budget exhausted
+            | some (node, stNode) =>
+                ((acc.1.1.push { cap := cap, srcNode := node }, acc.1.2), stNode))
+    ((#[], false), st)
 
 /-- AN7-E (API-M01) option declaration: `set_option sele4n.debug.noisyResolution true`
     flips production callers from the silent-drop `resolveExtraCaps` to
@@ -1049,17 +1126,34 @@ register_option sele4n.debug.noisyResolution : Bool := {
     beyond the AN7-E landing scope and recorded as a post-1.0 hardening
     candidate; no currently-active plan file tracks it. -/
 theorem resolveExtraCapsDetailed_empty
-    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (st : SystemState) :
-    resolveExtraCapsDetailed cspaceRoot #[] depth st = (#[], false) := by
-  rfl
+    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (granted : Bool) (st : SystemState) :
+    resolveExtraCapsDetailed cspaceRoot #[] depth granted st = ((#[], false), st) := by
+  cases granted <;> rfl
 
 /-- AN7-E (API-M01): the silent-drop variant on the empty input is also
     empty.  Paired with `resolveExtraCapsDetailed_empty`, this confirms
     that in the base case both variants agree (vacuously). -/
 theorem resolveExtraCaps_empty
-    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (st : SystemState) :
-    resolveExtraCaps cspaceRoot #[] depth st = #[] := by
-  rfl
+    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (granted : Bool) (st : SystemState) :
+    resolveExtraCaps cspaceRoot #[] depth granted st = (#[], st) := by
+  cases granted <;> rfl
+
+/-- **PR #873 round 14: a sender without Grant resolves nothing, whatever it
+asked for.**  The statement the gate is for: not merely that the caps are
+denied later, but that the *state is untouched* -- no CDT node minted, no slot
+marked as having a transfer in flight.  Stated over an arbitrary address array,
+so it is the resolver's contract rather than a fact about one input. -/
+theorem resolveExtraCaps_ungranted
+    (cspaceRoot : SeLe4n.ObjId) (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
+    (st : SystemState) :
+    resolveExtraCaps cspaceRoot capAddrs depth false st = (#[], st) := rfl
+
+/-- The same for the detailed resolver, including that it reports **complete**
+rather than partial: nothing failed to resolve, there was nothing eligible. -/
+theorem resolveExtraCapsDetailed_ungranted
+    (cspaceRoot : SeLe4n.ObjId) (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
+    (st : SystemState) :
+    resolveExtraCapsDetailed cspaceRoot capAddrs depth false st = ((#[], false), st) := rfl
 
 /-- AN7-E (API-M01): Gated resolver for production dispatch arms that
     want to surface partial resolution explicitly.  Returns
@@ -1069,17 +1163,17 @@ theorem resolveExtraCaps_empty
     instead of `resolveExtraCaps` — the debug option
     `sele4n.debug.noisyResolution` documents the project-level policy. -/
 private def resolveExtraCapsGated (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
-    (st : SystemState) : Except KernelError (Array Capability) :=
-  let (caps, isPartial) := resolveExtraCapsDetailed cspaceRoot capAddrs depth st
-  if isPartial then .error .partialResolution else .ok caps
+    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
+    (st : SystemState) : Except KernelError (Array TransferCap × SystemState) :=
+  let ((caps, isPartial), stNodes) := resolveExtraCapsDetailed cspaceRoot capAddrs depth granted st
+  if isPartial then .error .partialResolution else .ok (caps, stNodes)
 
 /-- AN7-E (API-M01): The gated resolver returns `.ok #[]` on empty input
     (no addresses to resolve → no partial condition possible).  Base case
     of the gated-resolver contract. -/
 theorem resolveExtraCapsGated_empty
-    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (st : SystemState) :
-    resolveExtraCapsGated cspaceRoot #[] depth st = .ok #[] := by
+    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (granted : Bool) (st : SystemState) :
+    resolveExtraCapsGated cspaceRoot #[] depth granted st = .ok (#[], st) := by
   unfold resolveExtraCapsGated
   simp [resolveExtraCapsDetailed_empty]
 
@@ -1692,8 +1786,22 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
       fun st =>
         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
         let extraCapAddrs := decodeExtraCapAddrs decoded
-        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
-        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        -- Resolution mints a derivation node per source slot, so it returns
+        -- the state carrying them; the transition must run from THAT state,
+        -- or the parents the message names would live only in a discarded copy.
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
+        -- PR #873 round 6: **the sender's grant authority travels with the
+        -- message.**  Capability transfer is authorised by the *sender's*
+        -- endpoint capability, and the two rendezvous orderings ask about it at
+        -- different times: on an immediate rendezvous `cap` is still in hand,
+        -- but when the send parks it is gone by the time a receiver dequeues the
+        -- message — and the receiver's own endpoint capability is a different
+        -- principal's authority, not a substitute for it.  Recording the bit on
+        -- the message is what makes capability transfer independent of arrival
+        -- order; seL4 stores the same bit as `blockingIPCCanGrant` on the
+        -- blocked sender's thread state.
+        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge,
+                                  capsGranted := cap.rights.mem .grant }
         -- WS-SM SM6.D (PR #822 review): capture the receive-queue head the send will
         -- wake, so its server-first reply stash is cleared once it leaves
         -- `.blockedOnReceive` (a stash lives only on a blocked receiver).
@@ -1759,21 +1867,32 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           -- payload consumed) and is owed the unit success frame; a `Call` sender
           -- lands `.blockedOnReply` and the completion stager's guard skips it.
           let wokenSender? := (st.getEndpoint? epId).bind (·.sendQ.head)
-          match endpointReceiveDualOnCore epId tid replyIdOpt executingCore st with
-          | (st', .ok (_, _sgi)) =>
+          -- PR #873 round 6: route through the **WithCaps** per-core receive, so
+          -- a send that parked before its receiver arrived delivers its
+          -- capabilities too.  It did not: the bare `endpointReceiveDualOnCore`
+          -- moves the parked sender's `pendingMessage` across wholesale and
+          -- installs nothing, while an immediate rendezvous transferred the
+          -- capabilities through `endpointSendDualWithCapsOnCore` — so whether a
+          -- capability arrived depended on which side reached the endpoint
+          -- first.  The authority is the sender's, carried on the message it
+          -- sent (`IpcMessage.capsGranted`), which is what makes the two
+          -- orderings agree rather than merely both do something.
+          match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
+              decoded.capRecvSlot executingCore st with
+          | (st', .ok (_, summary, _sgi)) =>
               -- WS-RA RA.B.6: a non-blocking consume delivered into the caller's
               -- own `pendingMessage`; stage it as the return frame (badge → x0,
               -- synthesized MessageInfo → x1, inline window → x2-x5).  A caller
               -- that blocked stages nothing (the `.ready` guard inside) — its
               -- frame is owed by the unblocking transition per plan §3.5.
-              -- PR #866 round-2: installed count 0 — the live receive path runs
-              -- NO capability unwrap (`endpointReceiveDualOnCore` delivers the
-              -- dequeued sender's message wholesale; `endpointReceiveDualWithCaps`
-              -- has no live caller — tracked debt, plan §9), so the honest
-              -- `extraCaps` is zero however many caps the parked sender's
-              -- message still carries.
+              -- PR #866 round-2 / PR #873 round 6: the `extraCaps` count is the
+              -- transfer summary's INSTALLED count, the same honest figure the
+              -- send and call paths report.  It was hardcoded to zero while the
+              -- receive installed nothing; now it says what actually arrived, so
+              -- a grant-denied or slot-exhausted transfer still reports zero.
               .ok ((), Architecture.stageDeliveredMessage
-                        (Architecture.stageWokenSendCompletion st' wokenSender?) tid 0)
+                        (Architecture.stageWokenSendCompletion st' wokenSender?) tid
+                        summary.installedCount)
           | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E/M-D01: IPC call — message body + extra caps from decoded message registers.
@@ -1783,8 +1902,22 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
       fun st =>
         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
         let extraCapAddrs := decodeExtraCapAddrs decoded
-        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
-        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        -- Resolution mints a derivation node per source slot, so it returns
+        -- the state carrying them; the transition must run from THAT state,
+        -- or the parents the message names would live only in a discarded copy.
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
+        -- PR #873 round 6: **the sender's grant authority travels with the
+        -- message.**  Capability transfer is authorised by the *sender's*
+        -- endpoint capability, and the two rendezvous orderings ask about it at
+        -- different times: on an immediate rendezvous `cap` is still in hand,
+        -- but when the send parks it is gone by the time a receiver dequeues the
+        -- message — and the receiver's own endpoint capability is a different
+        -- principal's authority, not a substitute for it.  Recording the bit on
+        -- the message is what makes capability transfer independent of arrival
+        -- order; seL4 stores the same bit as `blockingIPCCanGrant` on the
+        -- blocked sender's thread state.
+        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge,
+                                  capsGranted := cap.rights.mem .grant }
         -- WS-SM SM6.A (live cross-core `.call`): route the unchecked `.call`
         -- through the cross-core dispatch (receiver woken on its *home* core,
         -- surfacing a `.reschedule` SGI). `endpointCallCrossCoreDispatch` is the
@@ -2002,10 +2135,18 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             -- into the caller's `pendingMessage`; stage it as the return frame.
             -- A caller that blocked on the receive leg stages nothing (the
             -- `.ready` guard inside `stageDeliveredMessage`).
-            match replyRecvBody epId tid rid prevCaller msg executingCore st with
-            -- PR #866 round-2: installed count 0 — the receive leg runs no
-            -- capability unwrap (see the `.receive` arm; tracked debt, plan §9).
-            | .ok ((), st') => .ok ((), Architecture.stageDeliveredMessage st' tid 0)
+            match replyRecvBody epId tid rid prevCaller msg gate.cspaceRoot
+                decoded.capRecvSlot executingCore st with
+            -- PR #873 round 7: the receive leg inside `replyRecvBody` now runs
+            -- the **WithCaps** per-core receive, so a capability-bearing sender
+            -- that parked before this `.replyRecv` delivers its capabilities
+            -- too — the arrival-order dependence the `.receive` arms shed one
+            -- round earlier, closed in the arm that is a receive without being
+            -- spelled `.receive`.  `extraCaps` is the summary's INSTALLED
+            -- count, the same honest figure `.send`, `.call` and `.receive`
+            -- report; it was hardcoded to zero while this leg installed nothing.
+            | .ok (summary, st') =>
+                .ok ((), Architecture.stageDeliveredMessage st' tid summary.installedCount)
             | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-SM SM8.C.9: **there is no unchecked declassification.**
@@ -2099,8 +2240,22 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       fun st =>
         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
         let extraCapAddrs := decodeExtraCapAddrs decoded
-        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
-        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        -- Resolution mints a derivation node per source slot, so it returns
+        -- the state carrying them; the transition must run from THAT state,
+        -- or the parents the message names would live only in a discarded copy.
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
+        -- PR #873 round 6: **the sender's grant authority travels with the
+        -- message.**  Capability transfer is authorised by the *sender's*
+        -- endpoint capability, and the two rendezvous orderings ask about it at
+        -- different times: on an immediate rendezvous `cap` is still in hand,
+        -- but when the send parks it is gone by the time a receiver dequeues the
+        -- message — and the receiver's own endpoint capability is a different
+        -- principal's authority, not a substitute for it.  Recording the bit on
+        -- the message is what makes capability transfer independent of arrival
+        -- order; seL4 stores the same bit as `blockingIPCCanGrant` on the
+        -- blocked sender's thread state.
+        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge,
+                                  capsGranted := cap.rights.mem .grant }
         -- AH1-B (H-01 fix): Pass capability transfer params to checked send
         -- WS-SM SM6.D (PR #822 review): clear the woken receiver's server-first reply
         -- stash (mirrors the unchecked `.send` arm).
@@ -2167,15 +2322,24 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
             -- `Call` caller is linked atomically (former `linkReceivedCaller` step).
             -- WS-RA RA.B.5b: the woken plain sender's unit frame (checked twin).
             let wokenSender? := (st.getEndpoint? epId).bind (·.sendQ.head)
-            match endpointReceiveDualOnCore epId tid replyIdOpt executingCore st with
-            | (st', .ok (_, _sgi)) =>
+            -- PR #873 round 6: the checked twin of the unchecked arm's WithCaps
+            -- routing — a send that parked before its receiver arrived delivers
+            -- its capabilities here too, gated on the authority the sender
+            -- recorded on the message.  The endpoint→receiver flow is gated
+            -- above, so the *unchecked* per-core WithCaps receive is correct
+            -- here for the same reason the bare one was.
+            match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
+                decoded.capRecvSlot executingCore st with
+            | (st', .ok (_, summary, _sgi)) =>
                 -- WS-RA RA.B.6: stage the non-blocking consume's delivery (the
                 -- checked twin of the unchecked arm's staging; the endpoint
-                -- flow gate above governs the consumed message).  Installed
-                -- count 0 — no unwrap on the live receive path (see the
-                -- unchecked arm; tracked debt, plan §9).
+                -- flow gate above governs the consumed message).  PR #873
+                -- round 6: `extraCaps` is the summary's INSTALLED count, the
+                -- same honest figure the send and call paths report — it was
+                -- hardcoded to zero while the receive installed nothing.
                 .ok ((), Architecture.stageDeliveredMessage
-                          (Architecture.stageWokenSendCompletion st' wokenSender?) tid 0)
+                          (Architecture.stageWokenSendCompletion st' wokenSender?) tid
+                          summary.installedCount)
             | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
@@ -2187,8 +2351,22 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       fun st =>
         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
         let extraCapAddrs := decodeExtraCapAddrs decoded
-        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
-        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        -- Resolution mints a derivation node per source slot, so it returns
+        -- the state carrying them; the transition must run from THAT state,
+        -- or the parents the message names would live only in a discarded copy.
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
+        -- PR #873 round 6: **the sender's grant authority travels with the
+        -- message.**  Capability transfer is authorised by the *sender's*
+        -- endpoint capability, and the two rendezvous orderings ask about it at
+        -- different times: on an immediate rendezvous `cap` is still in hand,
+        -- but when the send parks it is gone by the time a receiver dequeues the
+        -- message — and the receiver's own endpoint capability is a different
+        -- principal's authority, not a substitute for it.  Recording the bit on
+        -- the message is what makes capability transfer independent of arrival
+        -- order; seL4 stores the same bit as `blockingIPCCanGrant` on the
+        -- blocked sender's thread state.
+        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge,
+                                  capsGranted := cap.rights.mem .grant }
         -- WS-SM SM6.A (live cross-core `.call`): route the checked `.call`
         -- through the cross-core dispatch.  `endpointCallCrossCoreDispatchChecked`
         -- is the cross-core analogue of `endpointCallChecked` + inline donation:
@@ -2403,10 +2581,15 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
                 -- WS-RA RA.B.6: stage the receive leg's delivery (the checked
                 -- twin of the unchecked arm's staging; the receive leg's own
                 -- flow gate governs the consumed message).
-                match replyRecvBody epId tid rid prevCaller msg executingCore st with
-                -- Installed count 0 — no unwrap on the live receive path
-                -- (mirrors the unchecked arm; tracked debt, plan §9).
-                | .ok ((), st') => .ok ((), Architecture.stageDeliveredMessage st' tid 0)
+                match replyRecvBody epId tid rid prevCaller msg gate.cspaceRoot
+                    decoded.capRecvSlot executingCore st with
+                -- PR #873 round 7: the checked twin of the unchecked arm's
+                -- WithCaps receive leg — the endpoint→receiver flow is gated
+                -- above, so the *unchecked* per-core WithCaps receive inside
+                -- the shared body is correct here for the same reason the bare
+                -- one was, and `extraCaps` is the summary's installed count.
+                | .ok (summary, st') =>
+                    .ok ((), Architecture.stageDeliveredMessage st' tid summary.installedCount)
                 | .error e => .error e
               else .error .replyCapInvalid
     | _ => fun _ => .error .invalidCapability
@@ -2568,7 +2751,24 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
   | _ => fun _ => .error .illegalState
 
 /-- T6-I: Policy-checked dispatch variant. Routes syscalls through
-    information-flow-checked wrappers when a `LabelingContext` is provided. -/
+    information-flow-checked wrappers when a `LabelingContext` is provided.
+
+    **WS-SM SM9.D.7 (PR #873 round 6): the taint seam is applied here, not at the
+    entry above it.**
+
+    It used to live in `syscallEntryChecked`, one layer up — which was wrong for a
+    reason this function's own sibling documents: `dispatchSyscall`'s docstring
+    tells integrators that "for production user-space entry points, use
+    `dispatchSyscallChecked`".  An integrator who took that advice called *this*
+    function directly and never reached the seam, so a successful send or receive
+    moved tagged content with no provenance following it, and a successful retype
+    kept the replaced object's tags on its replacement.  The recommendation was
+    right; the seam was in the wrong place.
+
+    Applied to the state **this** function was given, so composing it under an
+    entry that pre-processes the state (the SM7.F.5 TLB fill) is unchanged: the
+    entry passes the filled state, and the plan and the pre-state are both that.
+    Nothing is applied on the error arm, because nothing moved. -/
 def dispatchSyscallChecked (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
@@ -2589,10 +2789,13 @@ def dispatchSyscallChecked (ctx : LabelingContext)
         -- (`.invalidCapability` for every non-audit target, whatever its
         -- rights), right second.  Everything else keeps the classic
         -- rights-gated lookup.
-        (if syscallChecksTargetFirst decoded.syscallId then
-           syscallInvokeResolved gate (dispatchWithCapChecked ctx decoded tid gate)
-         else
-           syscallInvoke gate (dispatchWithCapChecked ctx decoded tid gate)) st
+        match (if syscallChecksTargetFirst decoded.syscallId then
+                 syscallInvokeResolved gate (dispatchWithCapChecked ctx decoded tid gate)
+               else
+                 syscallInvoke gate (dispatchWithCapChecked ctx decoded tid gate)) st with
+        | .error e => .error e
+        | .ok ((), stPost) =>
+            .ok ((), applySyscallTaint (syscallTaintPlan st tid decoded) st stPost)
       | some _ => .error .invalidCapability
       | none   => .error .objectNotFound
     | some _ => .error .illegalState
@@ -2643,9 +2846,43 @@ def syscallEntryChecked (ctx : LabelingContext)
           -- established by mapping.  Purely a TLB-model event
           -- (`tlbFillIpcBufferOnCore_frame`), and inert when the syscall
           -- carried no overflow registers.
-          dispatchSyscallChecked ctx decoded tid
-            (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-              st executingCore tid decoded.overflowCount)
+          -- WS-SM SM9.D.7: **the taint propagation seam is inherited, not
+          -- repeated.**  `dispatchSyscallChecked` applies the plan to the state
+          -- it was handed, so this entry gets it by passing the filled state and
+          -- returning what comes back — the same plan, the same pre-state, the
+          -- same post-state as when the two lines lived here.
+          --
+          -- It moved down one layer in PR #873 round 6.  `dispatchSyscall`'s own
+          -- docstring points integrators at `dispatchSyscallChecked` for
+          -- production user-space entry, and an integrator who took that advice
+          -- called the dispatcher directly and never reached a seam that sat
+          -- above it: content moved with no provenance, and a retype kept the
+          -- destroyed object's tags.  Putting the seam at the dispatcher makes
+          -- every entry inherit it, including one written tomorrow.
+          --
+          -- One writer, at the dispatcher rather than at the arms, for the
+          -- SM7.F.5 reason one layer on: keeping the write out of the
+          -- transitions leaves every IPC frame, invariant and non-interference
+          -- result untouched (`applySyscallTaint_frame`,
+          -- `storeObject_declassificationTaint_eq`).  The classification
+          -- `contentFlowClass` is total on `SyscallId`, so a new syscall is a
+          -- missing case at elaboration; that its *callees* do not move content
+          -- the declared edges miss is checked by reach, in
+          -- `scripts/check_content_flow_coverage.py`.
+          --
+          -- The filled state is bound ONCE.  It used to be spelled out three
+          -- times — for the dispatch, for the taint plan, and as the plan's
+          -- pre-state — on the reasoning that an intermediate binding would stop
+          -- the downstream carriage proofs from `split`ting on a bare `match`.
+          -- That is true of `have`, which is opaque, but not of `let`, which
+          -- zeta-reduces and stays transparent to `split`.  Three evaluations of
+          -- a TCB/VSpace resolution (and, with overflow registers, of the page
+          -- fold and the TLB-table update) on every successful syscall was the
+          -- cost of the stronger reading.
+          let stFilled :=
+            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
+              st executingCore tid decoded.overflowCount
+          dispatchSyscallChecked ctx decoded tid stFilled
 
 -- ============================================================================
 -- U5-A/U5-D: Dispatch structural equivalence theorems
@@ -3049,7 +3286,16 @@ information-flow checks. For production user-space entry points, use
 `securityFlowsTo` wrappers. This function is retained for:
 1. Backward compatibility with existing dispatch delegation theorems
 2. Internal kernel paths that operate within the TCB
-3. Proof infrastructure (delegation/preservation theorems reference this) -/
+3. Proof infrastructure (delegation/preservation theorems reference this)
+
+**WS-SM SM9.D.7 (PR #873 round 6): it does carry the taint seam.**  "Unchecked"
+names what it does not *gate* — no `securityFlowsTo` wrapper decides whether a
+flow is permitted — and provenance is not a gate: it records where content came
+from, whatever authority moved it.  A path that skipped it would leave content
+moved through this dispatcher untraceable, which is worse on the unchecked route
+than on the checked one, not better.  So both dispatchers apply the plan and both
+entries inherit it, and the seam is one sentence rather than a list of call sites
+that each have to remember. -/
 def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match st.objects[tid.toObjId]? with
@@ -3063,7 +3309,10 @@ def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) : Ke
           capDepth     := rootCn.depth
           requiredRight := syscallRequiredRight decoded.syscallId
         }
-        (syscallInvoke gate (dispatchWithCap decoded tid gate)) st
+        match (syscallInvoke gate (dispatchWithCap decoded tid gate)) st with
+        | .error e => .error e
+        | .ok ((), stPost) =>
+            .ok ((), applySyscallTaint (syscallTaintPlan st tid decoded) st stPost)
       | some _ => .error .invalidCapability
       | none   => .error .objectNotFound
     | some _ => .error .illegalState
@@ -3103,6 +3352,26 @@ def syscallEntry (layout : SeLe4n.SyscallRegisterLayout)
           -- is filled at the per-core entry (`syscallEntryChecked`), which is
           -- what the SMP dispatch path actually runs.  Filling the per-core
           -- model from the boot-pinned entry would mix the two models.
+          --
+          -- WS-SM SM9.D.7: the taint seam applies on this route **too**, and
+          -- for the opposite reason to the TLB fill above.  The per-core TLB
+          -- model is a refinement this entry deliberately does not participate
+          -- in; taint is not — provenance is a property of the content a syscall
+          -- moves, and this entry moves the same content through the same
+          -- transitions.  The modelled SVC route
+          -- (`dispatchSynchronousException`) reaches the kernel through here, so
+          -- leaving the step out let a send or receive taken by that route carry
+          -- content without its provenance following, and let a
+          -- `.lifecycleRetype` leave a destroyed object's tags on its
+          -- replacement.
+          --
+          -- PR #873 round 6: inherited from `dispatchSyscall` rather than
+          -- repeated here, the same way `syscallEntryChecked` inherits it from
+          -- the checked dispatcher.  Both dispatchers carry the seam and both
+          -- entries delegate, so the rule is one sentence — *the taint seam sits
+          -- at the dispatcher* — instead of a list of entry points that each
+          -- have to remember.  An entry written tomorrow inherits it; a caller
+          -- who enters at a dispatcher gets it too.
           dispatchSyscall decoded tid st
 
 -- ============================================================================
@@ -3150,22 +3419,30 @@ theorem dispatchSyscall_requires_right
           resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref ∧
           SystemState.lookupSlotCap st ref = some cap ∧
           cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
-  unfold dispatchSyscall at hOk
+  -- `simp only` rather than `unfold`: the gate binding elaborates to a `have`,
+  -- which is opaque to `split` (the same distinction `syscallEntryChecked`
+  -- records above), and the seam's `match` sits inside it.
+  simp only [dispatchSyscall] at hOk
   split at hOk
   next tcb hTcb =>
     refine ⟨tcb, hTcb, ?_⟩
     split at hOk
     next rootCn hRoot =>
       refine ⟨rootCn, hRoot, ?_⟩
-      have hInvoke := syscallInvoke_requires_right
-        { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-          capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-        (dispatchWithCap decoded tid
+      -- PR #873 round 6: the taint seam wraps the invoke inside the dispatcher,
+      -- so the invoke's own success has to be opened before it can be used.
+      split at hOk
+      · simp at hOk
+      next stPost hInvokeOk =>
+        have hInvoke := syscallInvoke_requires_right
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-            capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId })
-        st () st' hOk
-      obtain ⟨cap, ref, hResolve, hSlot, hRight⟩ := hInvoke
-      exact ⟨cap, ref, hResolve, hSlot, hRight⟩
+            capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+          (dispatchWithCap decoded tid
+            { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+              capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId })
+          st () stPost hInvokeOk
+        obtain ⟨cap, ref, hResolve, hSlot, hRight⟩ := hInvoke
+        exact ⟨cap, ref, hResolve, hSlot, hRight⟩
     · simp at hOk
     · simp at hOk
   · simp at hOk
@@ -3208,7 +3485,10 @@ theorem syscallEntry_implies_capability_held
           unfold lookupThreadRegisterContext at hLookup
           split at hLookup <;> simp at hLookup
           exact hLookup.2.symm
-        have hDispatch := dispatchSyscall_requires_right decoded tid _st_regs st' (hStEq ▸ hOk)
+        -- PR #873 round 6: the seam moved into `dispatchSyscall`, so the entry
+        -- delegates and this hypothesis IS the dispatch's own success.
+        have hDispatch :=
+          dispatchSyscall_requires_right decoded tid _st_regs st' (hStEq ▸ hOk)
         rw [hStEq] at hDispatch hLookup
         obtain ⟨tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ := hDispatch
         exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode,
@@ -3500,8 +3780,22 @@ theorem dispatchWithCap_send_uses_withCaps
       fun st =>
         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
         let extraCapAddrs := decodeExtraCapAddrs decoded
-        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
-        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        -- Resolution mints a derivation node per source slot, so it returns
+        -- the state carrying them; the transition must run from THAT state,
+        -- or the parents the message names would live only in a discarded copy.
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
+        -- PR #873 round 6: **the sender's grant authority travels with the
+        -- message.**  Capability transfer is authorised by the *sender's*
+        -- endpoint capability, and the two rendezvous orderings ask about it at
+        -- different times: on an immediate rendezvous `cap` is still in hand,
+        -- but when the send parks it is gone by the time a receiver dequeues the
+        -- message — and the receiver's own endpoint capability is a different
+        -- principal's authority, not a substitute for it.  Recording the bit on
+        -- the message is what makes capability transfer independent of arrival
+        -- order; seL4 stores the same bit as `blockingIPCCanGrant` on the
+        -- blocked sender's thread state.
+        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge,
+                                  capsGranted := cap.rights.mem .grant }
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         let executingCore := determineExecutingCore st tid
         match endpointSendDualWithCapsOnCore epId tid msg cap.rights gate.cspaceRoot
@@ -3529,8 +3823,22 @@ theorem dispatchWithCap_call_uses_crossCoreDispatch
       fun st =>
         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
         let extraCapAddrs := decodeExtraCapAddrs decoded
-        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
-        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        -- Resolution mints a derivation node per source slot, so it returns
+        -- the state carrying them; the transition must run from THAT state,
+        -- or the parents the message names would live only in a discarded copy.
+        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
+        -- PR #873 round 6: **the sender's grant authority travels with the
+        -- message.**  Capability transfer is authorised by the *sender's*
+        -- endpoint capability, and the two rendezvous orderings ask about it at
+        -- different times: on an immediate rendezvous `cap` is still in hand,
+        -- but when the send parks it is gone by the time a receiver dequeues the
+        -- message — and the receiver's own endpoint capability is a different
+        -- principal's authority, not a substitute for it.  Recording the bit on
+        -- the message is what makes capability transfer independent of arrival
+        -- order; seL4 stores the same bit as `blockingIPCCanGrant` on the
+        -- blocked sender's thread state.
+        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge,
+                                  capsGranted := cap.rights.mem .grant }
         let executingCore := determineExecutingCore st tid
         -- WS-SM SM6.D (#7.3b fold): server-first reply linkage is atomic with the
         -- rendezvous inside `endpointCallOnCore` (`linkServerStashedReply`); no
@@ -3723,12 +4031,16 @@ theorem dispatchArm_receive_matches_returnShape
     (cap : Capability) (epId : SeLe4n.ObjId)
     (replyIdOpt : Option SeLe4n.ReplyId) (st st' : SystemState)
     (next : SeLe4n.ThreadId) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
-    (msg : IpcMessage) (tcb : TCB)
+    (summary : CapTransferSummary) (msg : IpcMessage) (tcb : TCB)
     (hSyscall : decoded.syscallId = .receive)
     (hTarget : cap.target = .object epId)
     (hReply : resolveRecvReplyId gate decoded st = .ok replyIdOpt)
-    (hDispatch : endpointReceiveDualOnCore epId tid replyIdOpt
-        (determineExecutingCore st tid) st = (st', .ok (next, sgi)))
+    -- PR #873 round 6: the arm runs the WithCaps per-core receive, so the
+    -- hypothesis names that transition and the staged `extraCaps` is the
+    -- transfer summary's installed count rather than a hardcoded zero.
+    (hDispatch : endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
+        decoded.capRecvSlot (determineExecutingCore st tid) st
+        = (st', .ok (next, summary, sgi)))
     (hTcb : (Architecture.stageWokenSendCompletion st'
         ((st.getEndpoint? epId).bind (·.sendQ.head))).getTcb? tid = some tcb)
     (hReady : tcb.ipcState = .ready)
@@ -3738,23 +4050,25 @@ theorem dispatchArm_receive_matches_returnShape
     Architecture.syscallReturnShape .receive = .message ∧
     ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
-        = Architecture.returnFrameOfMessage msg 0 := by
+        = Architecture.returnFrameOfMessage msg summary.installedCount := by
   refine ⟨rfl,
     Architecture.stageDeliveredMessage
       (Architecture.stageWokenSendCompletion st'
-        ((st.getEndpoint? epId).bind (·.sendQ.head))) tid 0,
+        ((st.getEndpoint? epId).bind (·.sendQ.head))) tid summary.installedCount,
     ?_, ?_⟩
   · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hReply, hDispatch]
-  · exact Architecture.blockedReturn_staged_in_waiter_frame _ tid tcb msg 0
-      hTcb hReady hMsg hObjInv
+  · exact Architecture.blockedReturn_staged_in_waiter_frame _ tid tcb msg
+      summary.installedCount hTcb hReady hMsg hObjInv
 
 /-- RA.B.8, `.replyRecv` (`.message`): the compound arm's receive leg stages
-the delivered message for the server exactly as `.receive` does. -/
+the delivered message for the server exactly as `.receive` does — and, since
+PR #873 round 7, with the same honest `extraCaps`: the transfer summary the
+WithCaps receive leg returns, not a zero. -/
 theorem dispatchArm_replyRecv_matches_returnShape
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (epId : SeLe4n.ObjId)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge)
-    (st stB : SystemState) (msg : IpcMessage) (tcb : TCB)
+    (st stB : SystemState) (msg : IpcMessage) (tcb : TCB) (summary : CapTransferSummary)
     (hSyscall : decoded.syscallId = .replyRecv)
     (hTarget : cap.target = .object epId)
     (hResolve : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge))
@@ -3762,7 +4076,8 @@ theorem dispatchArm_replyRecv_matches_returnShape
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1
             (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           caps := #[], badge := replyBadge }
-        (determineExecutingCore st tid) st = .ok ((), stB))
+        gate.cspaceRoot decoded.capRecvSlot
+        (determineExecutingCore st tid) st = .ok (summary, stB))
     (hTcb : stB.getTcb? tid = some tcb)
     (hReady : tcb.ipcState = .ready)
     (hMsg : tcb.pendingMessage = some msg)
@@ -3770,11 +4085,11 @@ theorem dispatchArm_replyRecv_matches_returnShape
     Architecture.syscallReturnShape .replyRecv = .message ∧
     ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
-        = Architecture.returnFrameOfMessage msg 0 := by
-  refine ⟨rfl, Architecture.stageDeliveredMessage stB tid 0, ?_, ?_⟩
+        = Architecture.returnFrameOfMessage msg summary.installedCount := by
+  refine ⟨rfl, Architecture.stageDeliveredMessage stB tid summary.installedCount, ?_, ?_⟩
   · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hResolve, hBody]
-  · exact Architecture.blockedReturn_staged_in_waiter_frame stB tid tcb msg 0
-      hTcb hReady hMsg hObjInv
+  · exact Architecture.blockedReturn_staged_in_waiter_frame stB tid tcb msg
+      summary.installedCount hTcb hReady hMsg hObjInv
 
 /-- RA.B.8, `.call` (`.message`) — **through the reply arm**, per §3.5: a
 successful call leaves the caller `blockedOnReply` in every ordering, so
@@ -3885,7 +4200,11 @@ theorem syscallEntry_preserves_proofLayerInvariantBundle
   rw [hCur] at hOk; simp at hOk
   rw [hLookup] at hOk; simp at hOk
   rw [hDecode] at hOk; simp at hOk
-  -- hOk : dispatchSyscall decoded tid st = .ok ((), st')
+  -- PR #873 round 6: the taint seam moved into `dispatchSyscall`, so the entry's
+  -- post-state IS the dispatcher's and this is a delegation.  The seam's own
+  -- bundle preservation has not gone anywhere — it is
+  -- `proofLayerInvariantBundle_setDeclassificationTaint`, which is what a
+  -- discharger of `hDispatchPres` composes with its per-arm result.
   exact hDispatchPres decoded tid st st' hInv hOk
 
 -- ============================================================================
@@ -3952,9 +4271,9 @@ theorem syscallEntry_preserves_projection
     (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
     (st st' : SystemState)
     (hOk : syscallEntry layout regCount st = .ok ((), st'))
-    (hDispatchProj : ∀ decoded tid,
-        dispatchSyscall decoded tid st = .ok ((), st') →
-        projectState ctx observer st' = projectState ctx observer st) :
+    (hDispatchProj : ∀ decoded tid stPost,
+        dispatchSyscall decoded tid st = .ok ((), stPost) →
+        projectState ctx observer stPost = projectState ctx observer st) :
     projectState ctx observer st' = projectState ctx observer st := by
   obtain ⟨tid, regs, decoded, hCur, hLookup, hDecode⟩ :=
     syscallEntry_requires_valid_decode layout regCount st st' hOk
@@ -3962,7 +4281,12 @@ theorem syscallEntry_preserves_projection
   rw [hCur] at hOk; simp at hOk
   rw [hLookup] at hOk; simp at hOk
   rw [hDecode] at hOk; simp at hOk
-  exact hDispatchProj decoded tid hOk
+  -- PR #873 round 6: the taint seam moved into `dispatchSyscall`, so the entry's
+  -- post-state IS the dispatcher's and the hypothesis applies directly.  The
+  -- seam is still projection-invisible — `applySyscallTaint_preserves_projection`
+  -- holds by `rfl` — which is what lets a discharger of `hDispatchProj` reduce it
+  -- to a statement about the transition the arm ran.
+  exact hDispatchProj decoded tid st' hOk
 
 -- ============================================================================
 -- WS-J1-D: NonInterferenceStep bridge theorems for syscallEntry
@@ -3992,9 +4316,9 @@ theorem syscallEntry_success_yields_NI_step
     (hOk : syscallEntry layout regCount st = .ok ((), st'))
     (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
         threadObservable ctx observer t = false)
-    (hDispatchProj : ∀ decoded tid,
-        dispatchSyscall decoded tid st = .ok ((), st') →
-        projectState ctx observer st' = projectState ctx observer st) :
+    (hDispatchProj : ∀ decoded tid stPost,
+        dispatchSyscall decoded tid st = .ok ((), stPost) →
+        projectState ctx observer stPost = projectState ctx observer st) :
     NonInterferenceStep ctx observer st st' :=
   .syscallDispatchHigh hCurrentHigh
     (syscallEntry_preserves_projection ctx observer layout regCount st st' hOk hDispatchProj)
@@ -4185,6 +4509,65 @@ theorem dispatchCapabilityOnly_preserves_projection
   exact hArmProj kop hSome hRun
 
 -- ============================================================================
+-- WS-SM SM9.D.7 (PR #873 round 6): the seam is at the dispatcher
+-- ============================================================================
+
+/-- **No success path through the checked dispatcher skips the taint seam.**
+
+The property that makes moving the seam down a layer worth anything: whatever
+route a successful `dispatchSyscallChecked` takes — the target-first resolve or
+the classic rights-gated lookup, any of the 33 arms — the state it returns is the
+plan applied to the state the invoke committed, keyed on the state the dispatcher
+itself was given and on the decoded syscall.
+
+Stated existentially over the committed state rather than as an equation against
+a named inner function, because there is no inner function: the seam wraps the
+invoke in place.  That is the stronger form for this purpose — it quantifies over
+every path rather than pinning one spelling, so an arm added tomorrow either
+satisfies it or stops this elaborating.
+
+`entryDecode_some_entry_dispatches` (SM8.D) pins the *entry* to the dispatcher;
+this pins the dispatcher to the seam.  Together they say what the old
+entry-level equation said, one layer down and over every caller rather than
+over one. -/
+theorem dispatchSyscallChecked_applies_taint_plan
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (h : dispatchSyscallChecked ctx decoded tid st = .ok ((), st')) :
+    ∃ stPost, st' = applySyscallTaint (syscallTaintPlan st tid decoded) st stPost := by
+  simp only [dispatchSyscallChecked] at h
+  split at h
+  · split at h
+    · split at h
+      · exact absurd h (by simp)
+      · next stPost _ => exact ⟨stPost, by simpa using h.symm⟩
+    · exact absurd h (by simp)
+    · exact absurd h (by simp)
+  · exact absurd h (by simp)
+  · exact absurd h (by simp)
+
+/-- **And no success path through the unchecked dispatcher skips it either.**
+
+The twin of the theorem above, and the reason the two are stated as a pair: the
+seam sits at the dispatcher on *both* routes, so "which entry did the caller
+use" stops being a question provenance depends on. -/
+theorem dispatchSyscall_applies_taint_plan
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (h : dispatchSyscall decoded tid st = .ok ((), st')) :
+    ∃ stPost, st' = applySyscallTaint (syscallTaintPlan st tid decoded) st stPost := by
+  simp only [dispatchSyscall] at h
+  split at h
+  · split at h
+    · split at h
+      · exact absurd h (by simp)
+      · next stPost _ => exact ⟨stPost, by simpa using h.symm⟩
+    · exact absurd h (by simp)
+    · exact absurd h (by simp)
+  · exact absurd h (by simp)
+  · exact absurd h (by simp)
+
+-- ============================================================================
 -- AE1-G3: Master dispatch NI theorem
 -- ============================================================================
 
@@ -4228,32 +4611,43 @@ theorem dispatchSyscallChecked_preserves_projection
     -- Layer 1b: CNode lookup (read-only)
     split at hStep
     · -- some (.cnode rootCn)
-      -- PR #870 round 5: the target-first syscalls take the resolve-only
-      -- lookup, everything else the classic rights-gated one.  The inner-NI
-      -- hypothesis is stated over the resolve (the weaker premise, so the
-      -- stronger hypothesis) and covers both branches — a full-lookup success
-      -- is a resolve success (`syscallResolveCap_of_lookup`).
+      -- PR #873 round 6: layer 4 — the provenance seam.  It writes only
+      -- `declassificationTaint`, which is not on the projection surface
+      -- (`applySyscallTaint_preserves_projection`), so the observer's view of
+      -- the sealed state is the view of the state the invoke committed, and the
+      -- inner-NI hypothesis carries the rest.
       split at hStep
-      · -- target-first branch: resolve-only lookup
-        unfold syscallInvokeResolved at hStep
-        split at hStep
-        · -- syscallResolveCap returned error
-          simp at hStep
-        · rename_i cap stCap hCap
-          have ⟨_, _, _, hStEq⟩ :=
-            syscallResolveCap_implies_capability_at_slot _ st cap stCap hCap
-          rw [hStEq] at hStep hCap
-          exact hInnerProj _ cap hCap st' hStep
-      · -- classic branch: full lookup
-        unfold syscallInvoke at hStep
-        split at hStep
-        · -- syscallLookupCap returned error
-          simp at hStep
-        · rename_i cap stCap hCap
-          have ⟨_, _, _, _, hStEq⟩ :=
-            syscallLookupCap_implies_capability_held _ st cap stCap hCap
-          rw [hStEq] at hStep hCap
-          exact hInnerProj _ cap (syscallResolveCap_of_lookup _ st cap st hCap) st' hStep
+      · simp at hStep
+      next stPost hInvoke =>
+        have hSt : st' = applySyscallTaint (syscallTaintPlan st tid decoded) st stPost := by
+          simpa using hStep.symm
+        rw [hSt, applySyscallTaint_preserves_projection]
+        -- PR #870 round 5: the target-first syscalls take the resolve-only
+        -- lookup, everything else the classic rights-gated one.  The inner-NI
+        -- hypothesis is stated over the resolve (the weaker premise, so the
+        -- stronger hypothesis) and covers both branches — a full-lookup success
+        -- is a resolve success (`syscallResolveCap_of_lookup`).
+        split at hInvoke
+        · -- target-first branch: resolve-only lookup
+          unfold syscallInvokeResolved at hInvoke
+          split at hInvoke
+          · -- syscallResolveCap returned error
+            simp at hInvoke
+          · rename_i cap stCap hCap
+            have ⟨_, _, _, hStEq⟩ :=
+              syscallResolveCap_implies_capability_at_slot _ st cap stCap hCap
+            rw [hStEq] at hInvoke hCap
+            exact hInnerProj _ cap hCap stPost hInvoke
+        · -- classic branch: full lookup
+          unfold syscallInvoke at hInvoke
+          split at hInvoke
+          · -- syscallLookupCap returned error
+            simp at hInvoke
+          · rename_i cap stCap hCap
+            have ⟨_, _, _, _, hStEq⟩ :=
+              syscallLookupCap_implies_capability_held _ st cap stCap hCap
+            rw [hStEq] at hInvoke hCap
+            exact hInnerProj _ cap (syscallResolveCap_of_lookup _ st cap st hCap) stPost hInvoke
     · -- some (not .cnode): error
       simp at hStep
     · -- none: error
@@ -4575,21 +4969,31 @@ theorem dispatchSyscallChecked_audit_target_first
     (hLookup : SystemState.lookupSlotCap st ref = some cap)
     (hTarget : cap.target = .object oid) :
     dispatchSyscallChecked ctx decoded tid st = .error .invalidCapability := by
+  -- PR #873 round 6: the taint seam wraps the invoke inside the dispatcher, so
+  -- the arm's refusal is rewritten under the wrapping `match` rather than being
+  -- the goal outright — and the gate is spelled out, because a `_` under that
+  -- match no longer determines itself.
   rcases hSyscall with h | h
-  · simp only [dispatchSyscallChecked,
+  · have hArm := dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid
+      { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+        capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+      cap oid st (Or.inl h) hTarget
+    rw [h] at hArm
+    simp only [dispatchSyscallChecked,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
-    exact dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid _ cap oid st
-      (Or.inl h) hTarget
-  · simp only [dispatchSyscallChecked,
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup, hArm]
+  · have hArm := dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid
+      { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+        capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+      cap oid st (Or.inr h) hTarget
+    rw [h] at hArm
+    simp only [dispatchSyscallChecked,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
-    exact dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid _ cap oid st
-      (Or.inr h) hTarget
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup, hArm]
 
 /-- **WS-SM SM9.A.9 (PR #870 round 5, the order's other half)**: an audit-target
 capability lacking the required right is refused `.illegalAuthority` — after
@@ -4609,21 +5013,29 @@ theorem dispatchSyscallChecked_audit_right_checked_second
     (hTarget : cap.target = .auditTrail)
     (hRight : cap.hasRight (syscallRequiredRight decoded.syscallId) = false) :
     dispatchSyscallChecked ctx decoded tid st = .error .illegalAuthority := by
+  -- PR #873 round 6: as above — the refusal is rewritten under the seam's
+  -- `match`, and the gate is named rather than inferred.
   rcases hSyscall with h | h
-  · simp only [dispatchSyscallChecked,
+  · have hArm := dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid
+      { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+        capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+      cap st (Or.inl h) hTarget hRight
+    rw [h] at hArm
+    simp only [dispatchSyscallChecked,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
-    exact dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid _ cap st
-      (Or.inl h) hTarget (by simpa [h] using hRight)
-  · simp only [dispatchSyscallChecked,
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup, hArm]
+  · have hArm := dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid
+      { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+        capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+      cap st (Or.inr h) hTarget hRight
+    rw [h] at hArm
+    simp only [dispatchSyscallChecked,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
-    exact dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid _ cap st
-      (Or.inr h) hTarget (by simpa [h] using hRight)
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup, hArm]
 
 /-- **WS-SM SM9.A.10: there is no unchecked audit read.**
 
@@ -4843,12 +5255,16 @@ theorem dispatchWithCapChecked_receive_delegates
       (ctx.threadLabelOf tid) = true)
     (hReply : resolveRecvReplyId gate decoded st = .ok replyIdOpt) :
     dispatchWithCapChecked ctx decoded tid gate cap st =
-      (match endpointReceiveDualOnCore epId tid replyIdOpt
-              (determineExecutingCore st tid) st with
-       | (st', .ok (_, _)) =>
+      -- PR #873 round 6: the arm routes through the WithCaps per-core receive, so
+      -- a send that parked before its receiver arrived delivers its capabilities
+      -- too, and the staged `extraCaps` is the summary's installed count.
+      (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
+              decoded.capRecvSlot (determineExecutingCore st tid) st with
+       | (st', .ok (_, summary, _)) =>
            .ok ((), Architecture.stageDeliveredMessage
                      (Architecture.stageWokenSendCompletion st'
-                       ((st.getEndpoint? epId).bind (·.sendQ.head))) tid 0)
+                       ((st.getEndpoint? epId).bind (·.sendQ.head))) tid
+                     summary.installedCount)
        | (_, .error e) => .error e) := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
     endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply]
@@ -4868,11 +5284,16 @@ theorem dispatchWithCap_send_delegates
     (hSyscall : decoded.syscallId = .send)
     (hTarget : cap.target = .object epId) :
     dispatchWithCap decoded tid gate cap st =
-      (match endpointSendDualWithCapsOnCore epId tid
+      (let (resolvedCaps, st) :=
+         resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st
+       match endpointSendDualWithCapsOnCore epId tid
               { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-                caps := resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-                          gate.capDepth st,
-                badge := cap.badge }
+                caps := resolvedCaps,
+                badge := cap.badge,
+                -- PR #873 round 6: the sender's grant authority travels with the
+                -- message, so a send that parks can still transfer when a
+                -- receiver arrives later.
+                capsGranted := cap.rights.mem .grant }
               cap.rights gate.cspaceRoot decoded.capRecvSlot
               (determineExecutingCore st tid) st with
        | (_, .error e) => .error e
@@ -4895,11 +5316,16 @@ theorem dispatchWithCapChecked_send_delegates
     (hSyscall : decoded.syscallId = .send)
     (hTarget : cap.target = .object epId) :
     dispatchWithCapChecked ctx decoded tid gate cap st =
-      (match endpointSendCrossCoreDispatchChecked ctx epId tid
+      (let (resolvedCaps, st) :=
+         resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st
+       match endpointSendCrossCoreDispatchChecked ctx epId tid
               { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-                caps := resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-                          gate.capDepth st,
-                badge := cap.badge }
+                caps := resolvedCaps,
+                badge := cap.badge,
+                -- PR #873 round 6: the sender's grant authority travels with the
+                -- message, so a send that parks can still transfer when a
+                -- receiver arrives later.
+                capsGranted := cap.rights.mem .grant }
               cap.rights gate.cspaceRoot decoded.capRecvSlot
               (determineExecutingCore st tid) st with
        | (_, .error e) => .error e
@@ -5001,11 +5427,15 @@ def syscallDelegates : SyscallId → Prop
         decoded.syscallId = .send →
         cap.target = .object epId →
         dispatchWithCap decoded tid gate cap st =
-          (match endpointSendDualWithCapsOnCore epId tid
+          (let (resolvedCaps, st) :=
+             resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st
+           match endpointSendDualWithCapsOnCore epId tid
                   { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-                    caps := resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-                              gate.capDepth st,
-                    badge := cap.badge }
+                    caps := resolvedCaps,
+                    badge := cap.badge,
+                    -- PR #873 round 6: the sender's grant authority travels with
+                    -- the message, so a parked send can still transfer later.
+                    capsGranted := cap.rights.mem .grant }
                   cap.rights gate.cspaceRoot decoded.capRecvSlot
                   (determineExecutingCore st tid) st with
            | (_, .error e) => .error e
@@ -5059,14 +5489,17 @@ def syscallDelegates : SyscallId → Prop
           (ctx.threadLabelOf tid) = true →
         resolveRecvReplyId gate decoded st = .ok replyIdOpt →
         dispatchWithCapChecked ctx decoded tid gate cap st =
-          (match endpointReceiveDualOnCore epId tid replyIdOpt
-                  (determineExecutingCore st tid) st with
+          (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
+                  decoded.capRecvSlot (determineExecutingCore st tid) st with
            -- WS-RA RA.B.6: the arm stages the non-blocking consume's delivery
-           -- into the caller's return frame.
-           | (st', .ok (_, _)) =>
+           -- into the caller's return frame.  PR #873 round 6: with the receive
+           -- routed through the WithCaps transition, the staged `extraCaps` is
+           -- the transfer summary's installed count rather than a hardcoded 0.
+           | (st', .ok (_, summary, _)) =>
                .ok ((), Architecture.stageDeliveredMessage
                          (Architecture.stageWokenSendCompletion st'
-                           ((st.getEndpoint? epId).bind (·.sendQ.head))) tid 0)
+                           ((st.getEndpoint? epId).bind (·.sendQ.head))) tid
+                         summary.installedCount)
            | (_, .error e) => .error e)
   | .tcbSuspend =>
       ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)

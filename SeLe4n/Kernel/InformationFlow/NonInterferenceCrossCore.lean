@@ -512,6 +512,10 @@ theorem endpointQueuePopHead_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
         | none => simp
         | some headTcb =>
           simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
           cases hStore : storeObject endpointId
               (.endpoint (if isReceiveQ
                 then { ep with receiveQ := _ } else { ep with sendQ := _ })) st with
@@ -1016,7 +1020,7 @@ theorem endpointReceiveDualOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
           · exact observableSlotsConfinedToCores_of_eq _ rfl
           · next st2 hIpc =>
             have hPre2 := observableSlotsConfinedToCores_trans hPre
-              (storeTcbIpcState_confinedToCores st1 st2 receiver _ hIpc)
+              (storeTcbIpcStateAndMessage_confinedToCores st1 st2 receiver _ _ hIpc)
             split
             · exact observableSlotsConfinedToCores_widen_cons hPre2
                 (removeRunnableOnCore_confinedToCores st2 receiver executingCore)
@@ -1390,9 +1394,9 @@ theorem endpointCallWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
     (executingCore : CoreId) (st : SystemState) :
     (endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
         receiverSlotBase executingCore st).1.scheduler
-      = (endpointCallOnCore endpointId caller msg executingCore st).1.scheduler := by
+      = (endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1.scheduler := by
   unfold endpointCallWithCapsOnCore
-  cases hCall : endpointCallOnCore endpointId caller msg executingCore st with
+  cases hCall : endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
   | mk stCall res =>
     cases res with
     | error e => rfl
@@ -1410,9 +1414,9 @@ theorem endpointCallWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
     (executingCore : CoreId) (st : SystemState) :
     (endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
         receiverSlotBase executingCore st).1.machine
-      = (endpointCallOnCore endpointId caller msg executingCore st).1.machine := by
+      = (endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1.machine := by
   unfold endpointCallWithCapsOnCore
-  cases hCall : endpointCallOnCore endpointId caller msg executingCore st with
+  cases hCall : endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
   | mk stCall res =>
     cases res with
     | error e => rfl
@@ -1440,7 +1444,7 @@ theorem endpointCallWithCapsOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
         receiverSlotBase executingCore st).1
       (endpointCallWriteSet st endpointId executingCore) := by
   have h := observableSlotsConfinedToCores_trans
-    (endpointCallOnCore_confinedToCores endpointId caller msg executingCore st hObjInv)
+    (endpointCallOnCore_confinedToCores endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st hObjInv)
     (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
       (endpointCallWithCapsOnCore_scheduler_eq endpointId caller msg endpointRights
         callerCspaceRoot receiverSlotBase executingCore st)
@@ -1954,6 +1958,79 @@ theorem observableSlotsConfinedToCores_of_framed_suffix {st stMid st' : SystemSt
      (h.domainScheduleIndex c hc),
    fun c hc => (by rw [hMach] : st'.machine.regsOnCore c = _).trans (h.regs c hc)⟩
 
+/-- SM8.B.2 (PR #873 round 7): the WithCaps per-core **receive** leaves the
+scheduler where the bare receive left it.
+
+The same shape as `endpointSendDualWithCapsOnCore_scheduler_eq` one section over,
+and for the same reason: the extra leg is an `ipcUnwrapCaps`, which installs
+capabilities into a CNode and writes no run queue.  Every other branch — a
+receiver that enqueued, a delivered message with no caps, a sender with no CSpace
+root — returns the bare receive's own post-state. -/
+theorem endpointReceiveDualWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) :
+    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore st).1.scheduler
+      = (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.scheduler := by
+  unfold endpointReceiveDualWithCapsOnCore
+  cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+  | mk stRecv res =>
+    cases res with
+    | error e => rfl
+    | ok pair =>
+      obtain ⟨senderId, sgi⟩ := pair
+      simp only []
+      repeat' split
+      all_goals first
+        | rfl
+        | (rename_i h; exact ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ _ h)
+
+/-- SM8.B.2 (PR #873 round 7): and the register banks, by the same case
+analysis. -/
+theorem endpointReceiveDualWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) :
+    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore st).1.machine
+      = (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.machine := by
+  unfold endpointReceiveDualWithCapsOnCore
+  cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+  | mk stRecv res =>
+    cases res with
+    | error e => rfl
+    | ok pair =>
+      obtain ⟨senderId, sgi⟩ := pair
+      simp only []
+      repeat' split
+      all_goals first
+        | rfl
+        | (rename_i h; exact ipcUnwrapCaps_preserves_machine _ _ _ _ _ _ _ _ h)
+
+/-- SM8.B.2 (**the live `.replyRecv` receive-leg bound**, PR #873 round 7): the
+WithCaps per-core receive — the form `replyRecvBody` now runs — is confined to the
+bare receive's write set.  The capability install writes no core at all, so the
+two forms declare the same per-core footprint and every pin taken against the
+bare set still describes the live leg. -/
+theorem endpointReceiveDualWithCapsOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
+    observableSlotsConfinedToCores st
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore st).1
+      (endpointReceiveDualWriteSet st endpointId executingCore) := by
+  have h := observableSlotsConfinedToCores_trans
+    (endpointReceiveDualOnCore_confinedToCores endpointId receiver replyId executingCore st
+      hObjInv)
+    (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+      (endpointReceiveDualWithCapsOnCore_scheduler_eq endpointId receiver replyId
+        receiverCspaceRoot receiverSlotBase executingCore st)
+      (endpointReceiveDualWithCapsOnCore_machine_eq endpointId receiver replyId
+        receiverCspaceRoot receiverSlotBase executingCore st))
+  simpa using h
+
 /-- SM8.B.2: **the cores the live `.replyRecv` may write** — the answered
 caller's home core, the receive leg's set at the reply's post-state, and the
 donation leg's set at the receive's post-state.  Each leg is read at the state
@@ -1961,15 +2038,17 @@ that leg actually runs at, which is the discipline `endpointCallDispatchChainWri
 established: reading a later leg at `st` would name a different chain. -/
 def replyRecvBodyWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) : List CoreId :=
   determineTargetCore st prevCaller ::
     (match endpointReplyOnCore receiver prevCaller msg executingCore st with
      | (_, .error _) => []
      | (st1, .ok _) =>
         endpointReceiveDualWriteSet st1 endpointId executingCore ++
-          (match endpointReceiveDualOnCore endpointId receiver (some replyId) executingCore st1 with
+          (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
+              receiverCspaceRoot receiverSlotBase executingCore st1 with
            | (_, .error _) => []
-           | (st2, .ok (nextThread, _)) =>
+           | (st2, .ok (nextThread, _, _)) =>
               replyRecvReturnDonationWriteSet receiver
                 ((recordedReplyServer? st prevCaller).getD receiver) nextThread
                 (determineExecutingCore st ((recordedReplyServer? st prevCaller).getD receiver))
@@ -1984,12 +2063,15 @@ All three legs, at the states they really run at.  The receive leg's
 theorem rather than assumed, exactly as in §4a. -/
 theorem replyRecvBody_confinedToCores (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (executingCore : CoreId) (st st' : SystemState) (u : Unit)
+    (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : replyRecvBody endpointId receiver replyId prevCaller msg executingCore st
-      = .ok (u, st')) :
+    (hStep : replyRecvBody endpointId receiver replyId prevCaller msg receiverCspaceRoot
+        receiverSlotBase executingCore st
+      = .ok (summary, st')) :
     observableSlotsConfinedToCores st st'
-      (replyRecvBodyWriteSet endpointId receiver replyId prevCaller msg executingCore st) := by
+      (replyRecvBodyWriteSet endpointId receiver replyId prevCaller msg receiverCspaceRoot
+        receiverSlotBase executingCore st) := by
   have hReply := endpointReplyOnCore_confinedToCores receiver prevCaller msg executingCore st
     hObjInv
   have hInv1 : (endpointReplyOnCore receiver prevCaller msg executingCore st).1.objects.invExt :=
@@ -2003,16 +2085,16 @@ theorem replyRecvBody_confinedToCores (endpointId : SeLe4n.ObjId)
     | error e => simp only [] at hStep; exact absurd hStep (by simp)
     | ok replySgi =>
       simp only [] at hStep ⊢
-      have hRecv := endpointReceiveDualOnCore_confinedToCores endpointId receiver
-        (some replyId) executingCore st1 hInv1
-      cases hRcv : endpointReceiveDualOnCore endpointId receiver (some replyId) executingCore st1
-        with
+      have hRecv := endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver
+        (some replyId) receiverCspaceRoot receiverSlotBase executingCore st1 hInv1
+      cases hRcv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
+          receiverCspaceRoot receiverSlotBase executingCore st1 with
       | mk st2 res2 =>
         rw [hRcv] at hRecv hStep
         cases res2 with
         | error e => simp only [] at hStep; exact absurd hStep (by simp)
         | ok pair =>
-          rcases pair with ⟨nextThread, recvSgi⟩
+          rcases pair with ⟨nextThread, recvSummary, recvSgi⟩
           simp only [] at hStep ⊢
           -- WS-RA RA.B.5b: the body stages the woken caller's reply frame and
           -- the completed plain sender's unit frame after the donation; both
@@ -2055,16 +2137,19 @@ rendezvousing sender, the recorded server or any chain member. -/
 theorem replyRecvBody_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (executingCore : CoreId) (st st' : SystemState) (u : Unit) (c : CoreId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hObjInv : st.objects.invExt)
-    (hStep : replyRecvBody endpointId receiver replyId prevCaller msg executingCore st
-      = .ok (u, st'))
-    (hne : c ∉ replyRecvBodyWriteSet endpointId receiver replyId prevCaller msg executingCore st)
+    (hStep : replyRecvBody endpointId receiver replyId prevCaller msg receiverCspaceRoot
+        receiverSlotBase executingCore st
+      = .ok (summary, st'))
+    (hne : c ∉ replyRecvBodyWriteSet endpointId receiver replyId prevCaller msg
+      receiverCspaceRoot receiverSlotBase executingCore st)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (replyRecvBody_confinedToCores endpointId receiver replyId prevCaller msg executingCore
-      st st' u hObjInv hStep)
+    (replyRecvBody_confinedToCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
+      receiverSlotBase executingCore st st' summary hObjInv hStep)
     hShared
 
 -- ============================================================================
@@ -2824,9 +2909,13 @@ theorem endpointSendDualOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
         | some headRecv =>
           -- Rendezvous path: the receiver wakes on its own home core.
           simp only []
+          -- PR #873 round 17: the arm resolves the sender before popping, so
+          -- there is one more split than there used to be.
           split
           · exact observableSlotsConfinedToCores_of_eq _ rfl
-          · next recvTid recvTcb st1 hPop =>
+          · split
+            · exact observableSlotsConfinedToCores_of_eq _ rfl
+            · next recvTid recvTcb st1 hPop =>
             split
             · exact observableSlotsConfinedToCores_of_eq _ rfl
             · next st2 hMsgR =>
@@ -2865,9 +2954,9 @@ theorem endpointSendDualWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
     (executingCore : CoreId) (st : SystemState) :
     (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
         receiverSlotBase executingCore st).1.scheduler
-      = (endpointSendDualOnCore endpointId sender msg executingCore st).1.scheduler := by
+      = (endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1.scheduler := by
   unfold endpointSendDualWithCapsOnCore
-  cases hSend : endpointSendDualOnCore endpointId sender msg executingCore st with
+  cases hSend : endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
   | mk stSend res =>
     cases res with
     | error e => rfl
@@ -2885,9 +2974,9 @@ theorem endpointSendDualWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
     (executingCore : CoreId) (st : SystemState) :
     (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
         receiverSlotBase executingCore st).1.machine
-      = (endpointSendDualOnCore endpointId sender msg executingCore st).1.machine := by
+      = (endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1.machine := by
   unfold endpointSendDualWithCapsOnCore
-  cases hSend : endpointSendDualOnCore endpointId sender msg executingCore st with
+  cases hSend : endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
   | mk stSend res =>
     cases res with
     | error e => rfl
@@ -2911,7 +3000,7 @@ theorem endpointSendDualWithCapsOnCore_confinedToCores (endpointId : SeLe4n.ObjI
         receiverSlotBase executingCore st).1
       (endpointSendWriteSet st endpointId executingCore) := by
   have h := observableSlotsConfinedToCores_trans
-    (endpointSendDualOnCore_confinedToCores endpointId sender msg executingCore st hObjInv)
+    (endpointSendDualOnCore_confinedToCores endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st hObjInv)
     (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
       (endpointSendDualWithCapsOnCore_scheduler_eq endpointId sender msg endpointRights
         senderCspaceRoot receiverSlotBase executingCore st)
@@ -4216,13 +4305,11 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
       observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
         (detachCNodeSlots_scheduler_eq st target cn)
         (detachCNodeSlots_machine_eq st target cn)
-    cases newObj <;>
-      (simp only [] at hOk
-       injection hOk with hOk
-       subst hOk
-       first
-         | exact observableSlotsConfinedToCores_refl _ _
-         | exact hDetach)
+    -- The derivation-parent guard rejects (vacuous on the `.ok` path); past it
+    -- the cleanup is the detach, whatever the replacement's shape.
+    split at hOk
+    · cases hOk
+    · injection hOk with hOk; subst hOk; exact hDetach
   | endpoint _ =>
     simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
     injection hOk with hOk; subst hOk
@@ -4502,6 +4589,36 @@ theorem endpointReceiveDualOnCore_crossCoreNonInterference (ctx : LabelingContex
   crossCoreNonInterference_ofCores ctx observer hne
     (endpointReceiveDualOnCore_confinedToCores endpointId receiver replyId executingCore st
       hObjInv)
+    hShared
+
+/-- SM8.B.2 (**the live `.receive` arm, and the `.replyRecv` receive leg**,
+PR #873 round 7): the cross-core receive that *installs* the capabilities a
+parked send was carrying is invisible to any core outside the same write set.
+
+The entry the inventory needs, and it did not exist.  Both receive-shaped live
+arms route through `endpointReceiveDualWithCapsOnCore` — `.receive` since round 6,
+`.replyRecv`'s leg since round 7 — while the inventory's `.endpointReceiveDual`
+entry named the theorem about the *bare* transition, which the capability install
+is not.  It is the same "a live entry must name the function the dispatch calls"
+rule three earlier rounds applied to `.reply`, `.replyRecv` and `.tcbSuspend`;
+this is the receive's turn.  The bound is unchanged, because the install writes
+no core. -/
+theorem endpointReceiveDualWithCapsOnCore_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hne : c ∉ endpointReceiveDualWriteSet st endpointId executingCore)
+    (hShared : sharedViewUnchanged ctx observer st
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore st).1) :
+    projectStateOnCore ctx observer
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+          receiverSlotBase executingCore st).1 c
+      = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver replyId
+      receiverCspaceRoot receiverSlotBase executingCore st hObjInv)
     hShared
 
 /-- SM8.B.2 (SM6.C, **the composed live `.replyRecv`**): both legs together are
@@ -5121,8 +5238,12 @@ inductive CrossCoreTransition where
   | endpointReply
   /-- SM6.C — the **live** `.reply` arm: reply, donation return, PIP reversion. -/
   | endpointReplyDispatch
-  /-- SM6.C — the receive leg of `replyRecv`. -/
+  /-- SM6.C — the bare cross-core receive, below both live receive-shaped arms. -/
   | endpointReceiveDual
+  /-- SM6.C — the **live** receive: the form that installs a parked send's
+  capabilities, which `.receive` reaches directly and `.replyRecv` reaches as its
+  second leg (PR #873 rounds 6 and 7). -/
+  | endpointReceiveDualWithCaps
   /-- SM6.C — both `replyRecv` legs, below the donation. -/
   | endpointReplyRecv
   /-- SM6.C — the **live** `.replyRecv` arm: both legs *and* the donation. -/
@@ -5186,6 +5307,7 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .setThreadCpuAffinityDispatch,
    .notificationSignal, .notificationSignalBound,
    .notificationWait, .endpointReply, .endpointReplyDispatch, .endpointReceiveDual,
+   .endpointReceiveDualWithCaps,
    .endpointReplyRecv, .replyRecvBodyDispatch, .deschedule, .cancelIpcBlocking,
    .suspendThreadDispatch, .resumeThreadDispatch,
    .setPriorityDispatch, .setMCPriorityDispatch,
@@ -5236,6 +5358,8 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .endpointReplyDispatch =>
       niName! endpointReplyCrossCoreDispatch_crossCoreNonInterference
   | .endpointReceiveDual => niName! endpointReceiveDualOnCore_crossCoreNonInterference
+  | .endpointReceiveDualWithCaps =>
+      niName! endpointReceiveDualWithCapsOnCore_crossCoreNonInterference
   | .endpointReplyRecv => niName! endpointReplyRecvOnCore_crossCoreNonInterference
   | .replyRecvBodyDispatch => niName! replyRecvBody_crossCoreNonInterference
   | .deschedule => niName! descheduleThread_crossCoreNonInterference
@@ -5269,7 +5393,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .auditDrainDispatch =>
       niName! auditDrainDispatch_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 29 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 30 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -5289,20 +5413,24 @@ wrapper entries of their own: `.reply` routes to `endpointReplyCrossCoreDispatch
 and a scheduling point).  Each does strictly more per-core writing than the
 below-API transition it wraps, so the narrower theorem never bounded it.
 
-Three entries are a different case and are *not* re-pointed, because their live
-arm calls the `…OnCore` transition **directly**:
+Two entries are a different case and are *not* re-pointed, because their live arm
+calls the `…OnCore` transition **directly**:
 `notificationSignalBoundCrossCoreDispatch` and `notificationWaitCrossCoreDispatch`
-are definitionally `…OnCore … (determineExecutingCore st …) st`, and
-`API.dispatchWithCapChecked`'s `.receive` arm applies its `endpoint→receiver`
-flow gate and then invokes `endpointReceiveDualOnCore` itself.  For those the
+are definitionally `…OnCore … (determineExecutingCore st …) st`.  For those the
 `…OnCore` theorem is a statement about the live arm already.
 
 **Being a leg does not stop something being a live arm** (PR #861 review round
-8).  `endpointReceiveDualOnCore` is the receive leg of `replyRecvBody` *and* the
-function the live `.receive` syscall reaches; an earlier cut marked it `false` on
-the strength of the first fact alone, which contradicted
-`crossCoreEnforcementEntries` — that table has listed it among the live
-cross-core operations since round 4 — and under-reported the live-arm count. -/
+8) — but it does not make something one either.  `endpointReceiveDualOnCore` was
+a third entry of that kind while the `.receive` arm invoked it directly; it is
+not any more.  Both receive-shaped live arms now reach
+`endpointReceiveDualWithCapsOnCore` (`.receive` since PR #873 round 6,
+`replyRecvBody`'s second leg since round 7), which installs a parked send's
+capabilities and is therefore *not* the bare transition.  So the bare receive
+joins `.notificationSignal` and `.endpointReply` as a below-API entry and
+`.endpointReceiveDualWithCaps` carries the live-arm claim — along with
+`syscallDelegates_receive`, whose statement already names the WithCaps form.
+Leaving the claim on the bare entry would have been the round-5 error exactly:
+an inventory naming a theorem about a function the dispatch no longer calls. -/
 def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .wake => false
   | .endpointCall => false
@@ -5317,7 +5445,10 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .notificationWait => true
   | .endpointReply => false
   | .endpointReplyDispatch => true
-  | .endpointReceiveDual => true
+  -- PR #873 round 7: the bare receive is a below-API transition now — both
+  -- receive-shaped live arms reach the WithCaps form.
+  | .endpointReceiveDual => false
+  | .endpointReceiveDualWithCaps => true
   | .endpointReplyRecv => false
   | .replyRecvBodyDispatch => true
   | .deschedule => false
@@ -5413,7 +5544,8 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .notificationWait => some .notificationWait
   | .endpointReply => none
   | .endpointReplyDispatch => some .reply
-  | .endpointReceiveDual => some .receive
+  | .endpointReceiveDual => none
+  | .endpointReceiveDualWithCaps => some .receive
   | .endpointReplyRecv => none
   | .replyRecvBodyDispatch => some .replyRecv
   | .deschedule => none
@@ -5453,7 +5585,9 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
   | .endpointReply => .readOffTheArm "below-API transition; live arm is .endpointReplyDispatch"
   | .endpointReplyDispatch =>
       .readOffTheArm "checked `.reply` arm calls endpointReplyCrossCoreDispatch; delegation theorem pending"
-  | .endpointReceiveDual => .delegationProof .receive syscallDelegates_receive
+  | .endpointReceiveDual =>
+      .readOffTheArm "below-API transition; live arm is .endpointReceiveDualWithCaps"
+  | .endpointReceiveDualWithCaps => .delegationProof .receive syscallDelegates_receive
   | .endpointReplyRecv => .readOffTheArm "both legs below the donation; live arm is .replyRecvBodyDispatch"
   | .replyRecvBodyDispatch =>
       .readOffTheArm "checked `.replyRecv` arm calls replyRecvBody; delegation theorem pending"
@@ -5538,6 +5672,7 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .endpointReply => true
   | .endpointReplyDispatch => true
   | .endpointReceiveDual => true
+  | .endpointReceiveDualWithCaps => true
   | .endpointReplyRecv => true
   | .replyRecvBodyDispatch => true
   | .deschedule => true
@@ -5562,6 +5697,6 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .auditDrainDispatch => false
 
 theorem crossCoreTransitionWritesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 23 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 24 := by decide
 
 end SeLe4n.Kernel

@@ -9,7 +9,7 @@
 > **Calendar estimate**: 12-16 weeks
 > **Sub-task count**: 61 across ~21-26 PRs
 > **Status**: IN FLIGHT — SM9.A LANDED (v0.33.37 → v0.33.50), SM9.B LANDED,
-> SM9.C LANDED
+> SM9.C LANDED, SM9.D LANDED
 
 ## 1. Phase goal
 
@@ -1618,6 +1618,320 @@ and its consequences (D.14–D.18).
 | SM9.D.16 | `chainLaunders` consumes it; the rule-inventory `evidenceProp` moves with the theorem; counts + Tier-3 anchors incl. the retirement negative | same | M |
 | SM9.D.17 | Lock sets and write sets: the propagation writes sit inside existing transitions, so declared footprints and `permittedKinds` grow with them; inventory counts | `Concurrency/Locks/*` | L |
 | SM9.D.18 | NI carriage: propagation is projection-invisible, but every touched transition's write set moves, so `observableSlotsConfinedToCores` proofs and the cross-core inventory need the new frames | `InformationFlow/NonInterference{PerCore,CrossCore}.lean` | L |
+
+
+**SM9.D completion record (LANDED).**
+
+The phase's largest sub-phase, delivered as one coherent slice.  Two new
+production modules — `InformationFlow/Taint.lean` (the value and its algebra, a
+leaf importing only `Prelude`, because `AuditRecord.lean` carries a
+`DeclassificationTaint` and sits below `Model/State.lean`) and
+`InformationFlow/TaintPropagation.lean` (the plan a syscall runs, and the one
+write that applies it).  Zero `sorry`/`axiom` (4384 environment constants swept
+across the eight information-flow modules); the `main_trace_smoke` fixture is
+byte-identical.
+
+**D.1 / D.13 — the value.**  The bound is a **refinement field**
+(`tags_bounded : tags.length ≤ maxTaintTags`), so `taint_bounded_structurally`
+holds of every value rather than only of recorded ones — the shape SM9.B's
+ledger established, and the reason there is **no seventeenth**
+`proofLayerInvariantBundle` conjunct and no capacity obligation on any writer.
+Overflow saturates **upward** (`taintSaturate_over_approximates`): for a
+detector, losing a real link is the unsafe direction, so `top` reports
+identities nobody held rather than dropping one that was.  Two design facts are
+recorded rather than smoothed over.  First, the join is **not** a least upper
+bound once saturation is in play: `covers c (join a b)` given `covers c a` and
+`covers c b` is *false* in general (a `c` holding eight tags and a `join` that
+saturated are incomparable in the wrong direction), so the law ships as the
+disjunctive `covers_join_of_covers` plus `join_saturated_covers_all`, and the
+commutativity / idempotence / associativity laws hold **up to `taintEquiv`**
+rather than on the nose (the tag list is order-normalised by `insertTag`, but a
+saturating join discards the list).  Second, the table is a **total function**
+`ObjId → DeclassificationTaint`, not an `RHTable`: a hash table's
+lookup-after-insert law needs `invExt`, which would force exactly the bundle
+conjunct the refinement field avoids.
+
+**D.2 – D.6 — the mount.**  The §6 checklist run for the fourth time, with the
+frozen field **required** (a silent drop is a compile error; six test literals
+updated), the `apiInvariantBundle_frozenDirectFull` conjunct, the
+`OffSchedulerAgrees` clause and all six builders, four boot frames, and the
+reusable carriage layer `proofLayerInvariantBundle_setDeclassificationTaint`
+(unconditional — the taint table has no conjunct of its own, but v0.32.151
+established that three conjuncts do not transport by `rfl` across an arbitrary
+field write, so the layer is owed regardless).  Information flow: the table is
+**outside** `ObservableState`, and the exclusion points the same way SM8.C's
+does for the trail — provenance names `(object, declassification identity)`
+pairs, so projecting it would be a content channel out of exactly the boundary
+the audit polices.  `declassificationTaint_write_preserves_projection := rfl`
+and `onCore_declassificationTaint` are the witnesses.
+
+**D.7 — the classification, and why totality is not the completeness
+argument.**  `contentFlowClass : SyscallId → ContentFlowClass` is total with no
+wildcard, so a new syscall is a missing case at elaboration.  That is necessary
+and **not sufficient**, exactly as the plan's §3.6 says: the arm can be added
+and be wrong.  Completeness is a **Tier-1 reach gate**
+(`scripts/check_content_flow_coverage.py`) that walks the call graph from each
+live dispatch arm and fails when an arm classified `.inert` or
+`.clearsProvenance` reaches an object *content* write, or when a
+`.movesContent` arm reaches none — with `--self-test` planting a channel to
+prove the scan still bites.  Building it found two things worth recording: the
+first channel list named `Notification.state`, which also holds the waiter
+queue, so `.tcbSuspend` and `.lifecycleRetype` "reached content" through a
+queue sweep (the channel is `Notification.pendingBadge`); and
+`.notificationWait` reaches **no** object content write at all, because its
+badge goes to the caller's return register — so the gate's second check admits
+a `.movesContent` arm whose `syscallReturnShape` is not `.unit`, derived from
+the ABI rather than waived.
+
+**D.8 – D.11 — propagation, at one site rather than twelve.**  The plan's file
+list put the propagation *inside* each IPC transition.  It is instead **one
+write at each dispatcher**, `API.dispatchSyscall` and
+`API.dispatchSyscallChecked`, applied to the state that dispatcher was given and
+driven by a declared `TaintPlan`; both entries inherit it by delegating.  (It sat
+at `syscallEntryChecked` until PR #873 round 6, one layer above the function
+`dispatchSyscall`'s own docstring recommends for production user-space entry —
+so an integrator who followed that advice never reached the seam.  Moving it down
+makes every entry inherit it, including one written tomorrow, and
+`dispatchSyscallChecked_applies_taint_plan` pins that no success path skips it.)  The reason is the
+invariant surface: every IPC transition is quantified over by roughly 1 900
+references, and a field write inside one of them reopens all of them, while
+`applySyscallTaint_frame` (one field, six projections) leaves
+`authorizeDeclassificationOnCore_frame` and SM8.C's "writes only the trail"
+rule literally unchanged.  The plan's edges are all covered — sender → the
+rendezvous receiver, receiver ← the blocked sender at `sendQ.head`, replier →
+the reply object's recorded caller, signaller → notification → resolved
+receiver (through `declassifiedSignalReceiver?`, the *same* resolver SM9.C's
+second-hop gate and the SM9.B refusal seam use), and waiter ← notification,
+which is not optional: in the signal-before-wait ordering the tag sits on the
+notification and the **wait** is what moves the badge, so omitting it loses hop
+1 in one of the two orderings.
+
+An **endpoint is not a taint sink at all** (v0.33.55): it buffers no content of
+its own — a parked message lives in the blocked sender's TCB, and a receiver
+reads the head sender directly — so an endpoint proxy would be redundant *and*
+less precise, handing a receiver the taint of every sender that ever queued there
+rather than the one it consumed.  A consumed transport is **cleared** instead
+(`contentFlowClears`), so an object's taint describes the content it currently
+holds; and a clear is **final within its commit** (v0.33.58,
+`applySyscallTaint_cleared_empty`), because the origination pass skips cleared
+keys rather than re-tagging a transport that stored nothing.
+
+D.11's capability transfer is `capTransferTaintSinks`: a transferred capability
+lands in the *receiver's CNode*, a different object from its TCB, and a CNode is
+shared — a second thread rooted at the same CSpace reads what the transfer
+installed without ever touching that TCB.  The helper declares three edges, each
+closing a gap found in review: the receiver's root is tagged with the sender's
+content and with the sender's *root* (so a forwarded capability carries its
+chain, v0.33.55), and the receiving **subject** is tagged from the sender's root
+directly (v0.33.58) — necessary because `applyTaintFlow` reads every source from
+the pre-state, so a root→root edge and a root→subject edge in the same commit do
+not compose.
+
+The sinks are **gated on capabilities actually crossing** (v0.33.58), by the
+signal each ordering has: a send reads its own `MessageInfo.extraCaps`, a receive
+reads the parked message's `caps` array.  The earlier unconditional declaration
+rested on "over-approximation is safe", which stopped being true once a CSpace
+root fed a subject: a plain message would then hand an unrelated later downgrade
+an *unsaturated* predecessor — exactly what `staleTaint_is_not_saturation`
+forbids.  Over-approximation remains safe for an isolated sink; it is not safe
+for one that feeds the detector's subject side.
+
+**D.12 — the retype clears.**  `lifecycleRetype` commits `storeObject` at the
+same id, so a *framed* retype leaves a destroyed object's tags on its
+replacement.  `retypeClearsTaint` / `retypedObject_taint_empty` close it, and
+`staleTaint_is_not_saturation` keeps D.15's residual claim true by exhibiting
+the two imprecisions as different things.  The plan's "frames for every
+non-content transition, ~12 files" is realised as **one** theorem rather than
+twelve, and is stronger for it: with the propagation at the dispatcher, an inert
+syscall's plan is `TaintPlan.inert` and `applySyscallTaint_inert` says its
+commit leaves the table untouched — for every inert syscall at once, including
+ones added later.  Since SM9.D.13a that theorem carries **no hypothesis about
+the trail**: the plan records whether its syscall can append at all, so the
+identity is structural rather than conditional on the commit having recorded
+nothing.
+
+**D.13a — the recorded snapshot.**  `DeclassificationEvent.predecessorTags` is
+**undefaulted**: a default would attribute an empty history to every event
+while compiling everywhere.  `sourceSubject` is an `abbrev` derived from the
+SM9.C `actor` rather than a second stored field, since two stored copies can
+disagree (`declassificationEvent_sourceSubject_is_actor`).  The multi-hop
+recorder threads the snapshot (`recordDeclassifiedHopsFrom`), so hop 2 names
+hop 1 **within one transition** — `recordDeclassifiedHops_two` and
+`declassifiedSignal_audits_each_hop` now carry that conjunct.  **Deviation,
+recorded**: the plan asked for the tags to be exported *dominating-reader-only*
+with an opaque verdict for partial readers.  The tags are not exported **at
+all**, which is strictly stronger — they are global declassification
+identities, and any export re-opens exactly what SM9.A's view-local indices
+close — and PR #870 round 6 had already made the live reader monitor-only, so
+"for partial readers" describes a class that cannot reach the entry.  What
+ships instead is the opaque verdict itself (D.14 below), which is what the plan
+wanted the tags *for*.
+
+**D.14 – D.16 — the detector, and a reader for it.**
+`declassificationChainLinked` keeps its name and becomes the conjunction of the
+syntactic composition it always checked (`declassificationChainComposes`, kept
+under its own name so the false positive is exhibited rather than deleted) and
+the new `declassificationChainCausal`.  The **table**-derived alternative is
+retained as a refuted design (`chainCausalFromTable`, `chainCausalVerdict`,
+`chainCausal_not_table_derived`), because re-evaluating a historical event
+against the *current* table invents links a retype has cleared and loses links
+acquired after the fact — `chainCausal_is_history_local` and
+`chainCausal_survives_subject_retype` are the two halves.
+`declassificationChainLinked_is_syntactic` is **retired** (SM9.D makes it
+genuinely false) and replaced 1:1 by `declassificationChainLinked_is_causal`,
+with `DeclassificationRuleId.chainLinkageIsSyntactic → .chainLinkageIsCausal`
+keeping the rule count at 12 and a Tier-3 negative forbidding either name's
+return.  The residual imprecision is stated rather than implied absent:
+`chainLaunders_residual_is_saturation` and
+`causalChain_residual_over_approximation`.  **And the detector is now
+reachable**: `AuditReadOp.chainNamesPredecessor` (opcode 27, count 27 → **28**,
+mirrored in `sele4n-sys`) returns one bit — does visible entry `index` name
+visible entry `index - 1` — so a monitor reading it at every index
+reconstructs `declassificationChainCausal` over its whole view
+(`chainVerdict_reconstructs_causal`).  The **PR #873 review** added the general
+form `AuditReadOp.chainNamesEntry` (opcode **28**, count 28 → **29**), which
+takes two *arbitrary* visible indices: `predecessorTags` may name any earlier
+event and `chainLaunders` runs over a non-contiguous subchain, so an unrelated
+cross-core append between two hops made the real link unqueryable through the
+adjacency verdict alone.  Same one opaque bit, same view-local reads, so the
+no-channel argument carries verbatim (`chainEntryVerdict_view_local`).  Index `0` names no predecessor and is
+refused rather than answered `0`, since a `0` word would be indistinguishable
+from a genuine "no".  `chainVerdict_view_local` is why it opens no channel: the
+arm reads two entries the caller already holds and nothing else — in
+particular not the mutable table the tags were snapshotted from, which is the
+same fact `chainCausal_is_history_local` states one layer up.  Without this
+opcode SM9.D would have been an improvement only the model can see: SM8's
+`chainLaunders` had no consumer, and a *causal* detector nothing can query is
+the same thing one refinement further on.
+
+**D.17 — the serialization subject, corrected mid-cut.**  The first
+implementation declared `stateLevelLock` (the `.objStore` singleton, hierarchy
+level 0) on all eight content-moving footprints plus the retype, reasoning by
+analogy with SM9.A's audit trail.  Running the suites refuted it: the
+`smp_ipc_suite` and `smp_notification_suite` fixtures pin the SM5.J WCRT
+property `|lockSet| · 3 · tCs` against a 1 ms tick, which admits at most five
+locks, and the extra member took the resolved call footprint to six — 1080 µs.
+The failure was pointing at something real.  A single globally-contended lock
+on `.send` / `.receive` / `.call` / `.reply` / `.replyRecv` /
+`.notificationSignal` / `.notificationWait` serialises *every* IPC in the
+system against every other; for a microkernel whose IPC path is the product,
+that is a design regression rather than a footprint refinement.  And the
+codebase had already answered the question: `SystemState.objects` is a keyed
+table represented as one field, `storeObject` writes one key of it, and **no**
+`lockSet_<τ>` declares `objStoreLock` for that — `.objStore` is reserved for
+structural table operations, which is why `stateLevelLock` appears in exactly
+three footprints before this phase, all of them writing the audit **trail**, a
+`List` whose append genuinely does not decompose by key.  The taint table is
+keyed, so its writes ride the key's own lock exactly as the object store's do,
+and the hot path is unchanged.  What makes that declaration checkable rather
+than asserted is `taintWriteKeys` (flow sinks ⧺ cleared ⧺ origination targets)
+and `applySyscallTaint_frame_off_writeKeys` — outside its write set a plan
+leaves the table literally unchanged — with
+`taintWriteKeys_disjoint_updates_independent` the two-plan form.
+`taintWriteKeys_of_no_events` closes the one case that needed care: origination
+writes the *actor's* TCB key, which the content-moving footprints hold only in
+read mode, and it is non-empty only when the commit appended to the trail —
+which only `.declassify` and `.declassifySignal` do, and both already carry
+`stateLevelLock` in write mode for the append.  **Implementation obligation,
+recorded rather than assumed**: the model writes the field whole, so the
+key-local reading is sound only if the runtime realises the table as per-object
+storage.  That is precisely the obligation `SystemState.objects` already
+carries for `storeObject` under the same discipline, and it is discharged the
+same way, by the representation, at SM10.E.
+
+**D.18 — NI carriage.**  The propagation writes a field no observer projects,
+so `applySyscallTaint_confinedToCores_nil` is confinement to **no** core, and
+`applySyscallTaint_preserves_onCore` /
+`applySyscallTaint_preserves_proofLayerInvariantBundle` carry the per-core view
+and the sixteen bundle conjuncts.  Because the write set is empty at the
+observable level, no `CrossCoreTransition` entry moves and no cross-core
+inventory count changes.  Closed on the way past:
+`syscallEntryChecked_preserves_projection`'s dispatch hypothesis is
+generalised to quantify the post-state (the entry no longer returns the
+dispatch's state unchanged), and `entryDecode_some_entry_dispatches` is
+restated over the match — strictly stronger, and the anti-drift tie SM8.D's
+round 12 added stays load-bearing.
+
+**Evidence.**  `tests/SmpInformationFlowSuite.lean` §12.1–§12.9 (**776**
+runtime assertions, the executable's own PASS tally — believe it over this
+sentence), every group with a load-bearing negative, including the plan's
+§SM9.E.2a acceptance scenario run for effect: hop 1 originates a tag on the
+object its content reached *and* on the subject that performed it, an
+**ordinary** delivery — no declassification edge — carries it to the next
+subject, hop 2's recorded snapshot therefore names hop 1, and
+`chainLaunders` reports laundering; with the plan's three negatives (a
+domain-only detector fires on a causally unrelated pair, an object-adjacency
+detector *misses* this very chain, and two same-domain second hops are
+distinguished by their snapshots) plus the lifecycle case (retype the carrier,
+and the later downgrade names nothing).  §1.13 anchors every declaration of
+both new modules by set difference; `tests/SmpSurfaceAnchors.lean` §12 carries
+the headline surface; the phase golden fixture gains five lines (regenerated,
+hash refreshed); Tier 3 gains an SM9.D block with the two retirement negatives
+and a positive pin on the send footprint's base list, so re-adding the level-0
+lock to the hot path breaks a gate.
+
+**Audit cut (v0.33.54)** — a code-first audit of the whole SM9.D landing,
+documentation distrusted by instruction; the live-path wiring, every declared
+edge, the algebra, the gate and the mount were re-derived against the code.
+Verdict: the propagation is genuinely live (extern → `syscallDispatchFromAbi` →
+`syscallEntryChecked` → the one write), every audited edge resolves exactly what
+its transition resolves (`receiveQ.head`, `sendQ.head`, `getReply? → caller`,
+`declassifiedSignalReceiver?`, `lookupCspaceRoot`, and the operand resolver is
+gate-identical to `syscallResolveCap` — same root, same depth, same resolver),
+the `DecidableEq` instance is sound under proof irrelevance, and no theorem was
+false.  Five findings, all closed in this cut.  (1) **The `.replyRecv` reply
+leg moved content with no declared edge** — the arm resolves
+`(rid, prevCaller)` via `resolveReplyRecvReply` and delivers the server's
+message registers to the recorded caller, so the steady-state server loop's
+second hop carried no taint: an under-approximation, the one direction a
+detector must never err in.  Closed by `replyRecvReplyLegEdges` (mirroring the
+resolver step for step — the MR0-present guard, `decodeReplyRecvArgs`, the
+caller's CSpace at the reply CPtr, the `.replyCap` shape — and sharing
+`replyTaintEdges` with the `.reply` arm so the two cannot drift),
+`taintPropagation_replyRecv_reply_to_prevCaller`, and §12.4's plan-level,
+apply-level and load-bearing-negative witnesses (the receive-leg pair alone
+provably misses the recorded caller).  (2) **The gate's one-writer claim was
+stronger than its check**: check (C) polices constants that *name* the taint
+API, so a definition writing `SystemState.declassificationTaint` directly in a
+`{ st with .. }` update — including a closed-term write, which for a provenance
+table is a silent whole-table clear, a laundering enabler — would have escaped
+it.  Closed by check (C2): the probe scans every definition's elaborated value
+for a constructor application that is an *update* (at least one other argument
+projects the same structure — what distinguishes `{ st with .. }` from a fresh
+boot/test literal) whose taint-field argument is not the field's own
+projection; the environment shows exactly one such writer
+(`applySyscallTaint`), `DECLARED_FIELD_WRITERS` pins it, and `--self-test` now
+also asserts the sweep *detects* that writer, so a sweep gone blind fails the
+self-test rather than reporting a clean tree.  (3) The self-test's failure
+diagnostic named the wrong planted channel (`TCB.ipcState` for
+`TCB.priority`).  (4) **The reconstruction theorem covered the direction the
+monitor does not use**: `chainVerdict_reconstructs_causal` proves causal ⇒
+every read is 1, while a monitor infers the other way; closed by
+`declassificationChainCausal_of_pairwise` and `chainVerdict_all_ok_causal`
+(every interior read `.ok 1` ⇒ the view is causal).  Also added:
+`join_comm_equiv_of_saturated`, so the commutativity law's coverage now leaves
+exactly one case unstated (one join saturated, the other not — in fact
+unreachable, recorded in the docstring rather than proven, since it needs a
+fold-symmetry induction the algebra does not otherwise owe).  (5) **A
+pre-existing SM3.B footprint gap, surfaced by the cap-transfer sink and
+reported rather than silently fixed**: on a caps-carrying rendezvous the live
+`.send`/`.call` run `ipcUnwrapCaps`, which writes the *receiver's* CSpace root
+— and `lockSet_endpointSend`/`lockSet_endpointCall` declare no CNode write at
+all (their one CNode member is the caller's root, read mode).  Not a live race
+(SM5.I's global entry lock serialises every commit; `withLockSet` is deferred,
+SM3.C.9), and closing it is an SM3.B decision with real cost (a conditional
+receiver-CNode member moves both signatures, the size bounds, and the
+resolved-footprint WCRT arithmetic the IPC suites pin), so it is registered
+the SM8.D round-11 way: `UncoveredLockDomain.capTransferReceiverCnode`
+(inventory 3 → 4, the `cases`-forced completeness firing as designed), the
+violation as a theorem whose deletion is the closure
+(`capTransfer_receiverCnode_write_undeclared`), and §12.8 recomputed on the
+REAL rendezvous edge list with the honest partition — every taint write key
+except the cap-transfer CNode is write-locked, and the gap is pinned
+positively so closing it breaks the line.  The §3d docstring's blanket
+coverage sentence is corrected to carve the sink out; the taint write at that
+key is exactly as covered as the object write it shadows, so the gap belongs
+to the footprint, not to the taint layer.
 
 ### SM9.E — Tests + closure (7 sub-tasks)
 

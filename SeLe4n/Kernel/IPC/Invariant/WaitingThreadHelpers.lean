@@ -9,7 +9,7 @@
 
 import SeLe4n.Kernel.IPC.Invariant.EndpointPreservation
 
-/-! # Primitive preservation lemmas for `waitingThreadsPendingMessageNone`
+/-! # Primitive preservation lemmas for `blockedThreadsPendingMessageConsistent`
     (notification wait-list helpers)
 
 **AN3-F (IPC LOW #1) scope note.**  Despite the historical file name
@@ -17,16 +17,18 @@ import SeLe4n.Kernel.IPC.Invariant.EndpointPreservation
 the *notification wait-list* invariant primitives: they prove that
 low-level state mutations (`storeObject`, `storeTcbIpcState`,
 `removeRunnable`, the `storeTcbIpcStateAndMessage_*` family, ...)
-preserve `waitingThreadsPendingMessageNone`, which is an invariant
-about notification-blocked threads having a cleared `pendingMessage`
-field.  The file does NOT cover endpoint wait lists — those are
+preserve `blockedThreadsPendingMessageConsistent`, the invariant tying
+`pendingMessage` to the blocking state -- a thread parked to collect
+(`.blockedOnReceive` / `.blockedOnNotification`) holds nothing, a thread
+parked to deliver (`.blockedOnSend` / `.blockedOnCall`) holds what it is
+delivering.  The file does NOT cover endpoint wait lists — those are
 handled in `IPC/Invariant/EndpointPreservation.lean`.  The broader
 `WaitingThreadHelpers` name is preserved for git-history continuity;
 treat it as an alias for "notification-wait-list helpers" when reading
 call sites.
 
 These lemmas prove that low-level state mutation operations (storeObject,
-storeTcbIpcState, removeRunnable, etc.) preserve the `waitingThreadsPendingMessageNone`
+storeTcbIpcState, removeRunnable, etc.) preserve the `blockedThreadsPendingMessageConsistent`
 invariant. They are the building blocks for operation-level preservation proofs
 in NotificationPreservation.lean and Structural.lean.
 
@@ -39,40 +41,40 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 -- ============================================================================
--- V3-G6 (M-PRF-5): Primitive preservation for waitingThreadsPendingMessageNone
+-- V3-G6 (M-PRF-5): Primitive preservation for blockedThreadsPendingMessageConsistent
 -- ============================================================================
 
 /-- `removeRunnable` only modifies the scheduler; objects are unchanged,
-    so `waitingThreadsPendingMessageNone` is trivially preserved. -/
-theorem removeRunnable_preserves_waitingThreadsPendingMessageNone
+    so `blockedThreadsPendingMessageConsistent` is trivially preserved. -/
+theorem removeRunnable_preserves_blockedThreadsPendingMessageConsistent
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hInv : waitingThreadsPendingMessageNone st) :
-    waitingThreadsPendingMessageNone (removeRunnable st tid) := by
+    (hInv : blockedThreadsPendingMessageConsistent st) :
+    blockedThreadsPendingMessageConsistent (removeRunnable st tid) := by
   intro tid' tcb' hObj
   rw [removeRunnable_preserves_objects] at hObj
   exact hInv tid' tcb' hObj
 
 /-- `ensureRunnable` only modifies the scheduler; objects are unchanged. -/
-theorem ensureRunnable_preserves_waitingThreadsPendingMessageNone
+theorem ensureRunnable_preserves_blockedThreadsPendingMessageConsistent
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hInv : waitingThreadsPendingMessageNone st) :
-    waitingThreadsPendingMessageNone (ensureRunnable st tid) := by
+    (hInv : blockedThreadsPendingMessageConsistent st) :
+    blockedThreadsPendingMessageConsistent (ensureRunnable st tid) := by
   intro tid' tcb' hObj
   rw [ensureRunnable_preserves_objects] at hObj
   exact hInv tid' tcb' hObj
 
-/-- `storeObject` at a non-TCB-target ID preserves `waitingThreadsPendingMessageNone`
+/-- `storeObject` at a non-TCB-target ID preserves `blockedThreadsPendingMessageConsistent`
     when the stored object is not a TCB. Since `storeObject` only modifies the
     entry at `id`, any TCB at `tid.toObjId ≠ id` is unchanged by frame. For the
     entry at `id` itself, if the new object is not a TCB, the invariant's universal
     quantifier over TCBs skips it. -/
-theorem storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone
+theorem storeObject_nonTcb_preserves_blockedThreadsPendingMessageConsistent
     (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
     (hNotTcb : ∀ tcb, obj ≠ .tcb tcb)
     (hObjInv : st.objects.invExt)
     (hStore : storeObject id obj st = .ok ((), st'))
-    (hInv : waitingThreadsPendingMessageNone st) :
-    waitingThreadsPendingMessageNone st' := by
+    (hInv : blockedThreadsPendingMessageConsistent st) :
+    blockedThreadsPendingMessageConsistent st' := by
   intro tid tcb hObj
   -- All TCBs at different IDs are unchanged by frame
   have hNe : tid.toObjId ≠ id := by
@@ -86,22 +88,25 @@ theorem storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone
   rw [hFrame] at hObj
   exact hInv tid tcb hObj
 
-/-- `storeTcbIpcState` preserves `waitingThreadsPendingMessageNone` when the
-    new ipcState either (a) exits the invariant scope (e.g., `.ready`, `.blockedOnSend`),
-    or (b) enters the scope while `pendingMessage` was already `none`. The latter
-    condition is captured by requiring `pendingMessage = none` for the target thread
-    when entering a blocking-receive state. -/
-theorem storeTcbIpcState_preserves_waitingThreadsPendingMessageNone
+/-- `storeTcbIpcState` preserves `blockedThreadsPendingMessageConsistent` when the
+    new ipcState either exits the invariant's scope (`.ready`, `.blockedOnReply`,
+    ...) or enters it with the target thread's `pendingMessage` already in the
+    shape that state requires: absent for the two collecting states, present for
+    the two delivering ones. `hTarget` is that obligation, discharged at each
+    call site from what the transition knows about the thread it is parking. -/
+theorem storeTcbIpcState_preserves_blockedThreadsPendingMessageConsistent
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
     (hObjInv : st.objects.invExt)
     (hStore : storeTcbIpcState st tid ipcState = .ok st')
-    (hInv : waitingThreadsPendingMessageNone st)
+    (hInv : blockedThreadsPendingMessageConsistent st)
     (hTarget : ∀ tcb, lookupTcb st tid = some tcb →
       match ipcState with
       | .blockedOnReceive _ => tcb.pendingMessage = none
       | .blockedOnNotification _ => tcb.pendingMessage = none
+      | .blockedOnSend _ => tcb.pendingMessage.isSome
+      | .blockedOnCall _ => tcb.pendingMessage.isSome
       | _ => True) :
-    waitingThreadsPendingMessageNone st' := by
+    blockedThreadsPendingMessageConsistent st' := by
   unfold storeTcbIpcState at hStore
   cases hLk : lookupTcb st tid with
   | none => simp [hLk] at hStore
@@ -123,6 +128,7 @@ theorem storeTcbIpcState_preserves_waitingThreadsPendingMessageNone
         cases ipcState with
         | blockedOnReceive _ => exact h
         | blockedOnNotification _ => exact h
+        | blockedOnSend _ => exact h
         | blockedOnCall _ => exact h
         | _ => trivial
       · -- Different thread: frame
@@ -132,19 +138,21 @@ theorem storeTcbIpcState_preserves_waitingThreadsPendingMessageNone
         rw [hFrame] at hObj'
         exact hInv tid' tcb' hObj'
 
-/-- `storeTcbIpcStateAndMessage` preserves `waitingThreadsPendingMessageNone` when the
+/-- `storeTcbIpcStateAndMessage` preserves `blockedThreadsPendingMessageConsistent` when the
     new state/message combination satisfies the invariant for blocking states. -/
-theorem storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
+theorem storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipcState : ThreadIpcState) (msg : Option IpcMessage)
     (hObjInv : st.objects.invExt)
     (hStore : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st')
-    (hInv : waitingThreadsPendingMessageNone st)
+    (hInv : blockedThreadsPendingMessageConsistent st)
     (hTarget : match ipcState with
       | .blockedOnReceive _ => msg = none
       | .blockedOnNotification _ => msg = none
+      | .blockedOnSend _ => msg.isSome
+      | .blockedOnCall _ => msg.isSome
       | _ => True) :
-    waitingThreadsPendingMessageNone st' := by
+    blockedThreadsPendingMessageConsistent st' := by
   unfold storeTcbIpcStateAndMessage at hStore
   cases hLk : lookupTcb st tid with
   | none => simp [hLk] at hStore
@@ -165,6 +173,7 @@ theorem storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
         cases ipcState with
         | blockedOnReceive _ => exact hTarget
         | blockedOnNotification _ => exact hTarget
+        | blockedOnSend _ => exact hTarget
         | blockedOnCall _ => exact hTarget
         | _ => trivial
       · have hNe' : tid'.toObjId ≠ tid.toObjId := hEq
@@ -175,16 +184,16 @@ theorem storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
         exact hInv tid' tcb' hObj'
 
 /-- Finding F-1: `storeTcbReceiveComplete` preserves
-`waitingThreadsPendingMessageNone`.  The stored ipcState is `.ready` (non-waiting),
+`blockedThreadsPendingMessageConsistent`.  The stored ipcState is `.ready` (non-waiting),
 so no `hTarget` obligation on `msg` is needed.  Mirror of
-`storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone`. -/
-theorem storeTcbReceiveComplete_preserves_waitingThreadsPendingMessageNone
+`storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent`. -/
+theorem storeTcbReceiveComplete_preserves_blockedThreadsPendingMessageConsistent
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (msg : Option IpcMessage)
     (hObjInv : st.objects.invExt)
     (hStore : storeTcbReceiveComplete st tid msg = .ok st')
-    (hInv : waitingThreadsPendingMessageNone st) :
-    waitingThreadsPendingMessageNone st' := by
+    (hInv : blockedThreadsPendingMessageConsistent st) :
+    blockedThreadsPendingMessageConsistent st' := by
   unfold storeTcbReceiveComplete at hStore
   cases hLk : lookupTcb st tid with
   | none => simp [hLk] at hStore
@@ -212,15 +221,15 @@ theorem storeTcbReceiveComplete_preserves_waitingThreadsPendingMessageNone
 
 /-- `storeTcbQueueLinks` only modifies queue link fields (queuePrev, queuePPrev,
     queueNext) via `tcbWithQueueLinks`. ipcState and pendingMessage are unchanged,
-    so `waitingThreadsPendingMessageNone` is preserved. -/
-theorem storeTcbQueueLinks_preserves_waitingThreadsPendingMessageNone
+    so `blockedThreadsPendingMessageConsistent` is preserved. -/
+theorem storeTcbQueueLinks_preserves_blockedThreadsPendingMessageConsistent
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
     (next : Option SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hStore : storeTcbQueueLinks st tid prev pprev next = .ok st')
-    (hInv : waitingThreadsPendingMessageNone st) :
-    waitingThreadsPendingMessageNone st' := by
+    (hInv : blockedThreadsPendingMessageConsistent st) :
+    blockedThreadsPendingMessageConsistent st' := by
   unfold storeTcbQueueLinks at hStore
   cases hLk : lookupTcb st tid with
   | none => simp [hLk] at hStore
@@ -256,17 +265,19 @@ theorem storeTcbQueueLinks_preserves_waitingThreadsPendingMessageNone
 /-- `storeTcbPendingMessage` only modifies `pendingMessage` (not `ipcState`).
     Preservation requires that for threads in blocking states, the new message
     must be `none`. For threads not in blocking states, any message is fine. -/
-theorem storeTcbPendingMessage_preserves_waitingThreadsPendingMessageNone
+theorem storeTcbPendingMessage_preserves_blockedThreadsPendingMessageConsistent
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (hObjInv : st.objects.invExt)
     (hStore : storeTcbPendingMessage st tid msg = .ok st')
-    (hInv : waitingThreadsPendingMessageNone st)
+    (hInv : blockedThreadsPendingMessageConsistent st)
     (hTarget : ∀ tcb, lookupTcb st tid = some tcb →
       match tcb.ipcState with
       | .blockedOnReceive _ => msg = none
       | .blockedOnNotification _ => msg = none
+      | .blockedOnSend _ => msg.isSome
+      | .blockedOnCall _ => msg.isSome
       | _ => True) :
-    waitingThreadsPendingMessageNone st' := by
+    blockedThreadsPendingMessageConsistent st' := by
   unfold storeTcbPendingMessage at hStore
   cases hLk : lookupTcb st tid with
   | none => simp [hLk] at hStore

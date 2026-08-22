@@ -377,6 +377,25 @@ theorem storeTcbQueueLinks_preserves_objects_invExt
 -- WS-L1/L1-A: Return type includes pre-dequeue TCB. Non-queue fields
 -- (ipcState, pendingMessage, priority, domain) are accurate; queue link
 -- fields (queuePrev, queuePPrev, queueNext) are stale (cleared in post-state).
+--
+-- PR #873 round 11: **a parked sender must be carrying its message.** Every
+-- send-queue dequeue in this kernel is a delivery -- the two callers are the
+-- single-core and per-core receives, both of which store the head's
+-- `pendingMessage` straight into the receiver -- so a message-less head means
+-- handing the receiver `none` and reporting success, with `receiverTaintEdges`
+-- joining the sender's provenance into a receiver that received nothing.
+--
+-- The invariant is what makes that state unreachable:
+-- `blockedThreadsPendingMessageConsistent` requires `.blockedOnSend` /
+-- `.blockedOnCall` to carry a message, so no state satisfying `ipcInvariantFull`
+-- can present one. This guard is the fail-closed complement for the states that
+-- carry no invariant -- a below-API construction, a thawed snapshot -- exactly
+-- as the `replyStashValid` check guards a field the invariant also constrains.
+-- It sits at the dequeue rather than in each receive body so the two
+-- near-identical receives cannot drift, and mirrors `frozenQueuePopHead`, which
+-- refuses the same head with the same error on the side where there is no
+-- invariant to lean on at all. The receive queue is unaffected: a thread parked
+-- to *receive* correctly holds nothing.
 def endpointQueuePopHead
     (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool)
@@ -390,6 +409,9 @@ def endpointQueuePopHead
           match lookupTcb st tid with
           | none => .error .objectNotFound
           | some headTcb =>
+            if !isReceiveQ && headTcb.pendingMessage.isNone then
+              .error .endpointStateMismatch
+            else
               let next := headTcb.queueNext
               let q' : IntrusiveQueue :=
                 match next with
@@ -475,6 +497,10 @@ theorem endpointQueuePopHead_preserves_objects_invExt
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
+          -- PR #873 round 11: the send-queue message-presence guard. A head that
+          -- fails it errors, so it cannot be the `.ok` this theorem is given.
+          split at hStep
+          · simp at hStep
           revert hStep
           cases hStore : storeObject endpointId _ st with
           | error e => simp

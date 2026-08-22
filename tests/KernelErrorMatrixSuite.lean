@@ -288,7 +288,8 @@ private def row_ipcMessageTooManyCaps : KernelErrorRejection :=
     runScenario   := fun _ =>
       let oversized : IpcMessage :=
         { registers := #[]
-          caps := Array.replicate (maxExtraCaps + 1) Capability.null
+          caps := Array.replicate (maxExtraCaps + 1)
+                    (TransferCap.fromNode Capability.null 0)
           badge := none }
       runUnit (endpointSendDual (ObjId.ofNat 1) (ThreadId.ofNat 1)
         oversized (default : SystemState)) }

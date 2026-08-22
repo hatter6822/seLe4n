@@ -1,3 +1,3018 @@
+## v0.33.99 — the audit compared the ordering the claim was resting on
+
+A full-tree audit of the branch (SM9.D and every review fix, code against code
+rather than against its documentation). The default target builds cold with zero
+warnings; the diff carries no `sorry`, no `axiom`, no `panic!`/`.get!`, no
+`partial def`, and no new tracked-exception annotations. Three findings, all in
+the frozen mirror's differential surface, all fixed here:
+
+**The claimed-checked send-rendezvous branch was compared only on its refusal
+ordering.** FO-036 enters the receiver-waiting arm with a ghost sender, so both
+sides refuse — and the branch's *known* divergence sat on the delivery ordering:
+live `storeTcbReceiveComplete` clears the receiver's stashed reply object (a
+plain `Send` completing a server-first `Recv` moots the stash, D3/F-1) while the
+frozen mirror kept it. A claimed-checked branch whose substantive path is never
+compared is the overstatement the branch keying exists to prevent — reintroduced
+by the very cut that closed the keying's first gap.
+
+**The mirror is now field-exact and the delivery ordering is compared.** The
+frozen rendezvous writes `pendingReceiveReply := none` alongside the message,
+mirroring `storeTcbReceiveComplete` field for field. FO-037 parks the server
+holding a stashed reply — seeding exactly the field the two sides disagreed on —
+and compares the full delivered states. Probed both ways: it fails against the
+stash-keeping mirror and passes against this one. The comparison also measures
+the run-queue and taint halves of the path for free, since `frozenStateAgrees`
+compares buckets and taint tables in both directions.
+
+**The frozen receive's delivery now writes both halves of the live atomic
+pair.** Live delivers with `storeTcbIpcStateAndMessage _ _ .ready senderMsg`
+(AK1-D's atomic update); the mirror wrote only `pendingMessage`. On every
+reachable state the receiver is already `.ready`, so nothing observable changes —
+but a mirror that writes one field of a two-field atomic update is one stale
+invariant away from diverging on the other.
+
+Also verified and found sound, with the reasoning recorded where it matters: the
+streaming traversal's `revokedNodes` claim (children are read pre-removal, edge
+mutations touch only visited nodes, fuel exhaustion fails closed), the halted
+strict fold consuming `rootNode :: []` (the root's local revoke already
+succeeded), `senderTaintEdges`' rendezvous sensitivity, the origination
+inversion's forced coverage, and the taint seam applying on the ok path only in
+both dispatchers.
+
+Refs: docs/WORKSTREAM_HISTORY.md SM9.E
+
+## v0.33.98 — a delivery attributed to a thread that does not exist
+
+On a rendezvous the message goes straight from `endpointSendDual`'s argument into
+the receiver's TCB, so `sender` was never resolved. A send naming a nonexistent
+thread — or a non-TCB object — delivered anyway, and the receiver held a message
+attributed to it. Only the parking arm failed, and only incidentally, because it
+happens to store into the sender's own TCB.
+
+Measured against the pre-fix shape: **DELIVERED from a nonexistent sender = true**;
+after, `.objectNotFound`.
+
+**The frozen mirror was right and the live path was wrong.** `frozenEndpointSend`
+resolved the sender on both arms, so the two disagreed on a concrete rendezvous
+input. This branch has spent several rounds fixing the frozen model to match the
+live kernel; here the disagreement resolves the other way, because a delivery
+attributed to a thread that does not exist is not one anybody can reason about.
+`endpointSendDualOnCore` gets the same guard, in lockstep — the refinement
+theorem `endpointSendDualOnCore_eq_single_on_bootCore` is what holds the two
+together, and it now shares the split rather than needing a new hypothesis.
+
+The repair reached 24 proof sites across seven modules, all mechanical: one extra
+case split on the rendezvous arm, and the surrounding `simp` lists taught about
+it. Two staged non-interference proofs use positional `split` rather than named
+cases and needed the extra level threaded by hand.
+
+FO-036 is the scenario, keyed to the send-rendezvous branch the round-17 coverage
+work had listed as owed — which closes it, so `.send` now reads fully checked and
+its "branch scenarios owed" row is gone. The interlock caught that stale row on
+the first build after the branch landed, which is what it is for. Two controls
+keep the refusal non-vacuous: the same rendezvous delivers from a sender that
+exists, and the ghost id really is absent.
+
+Found in review of PR #873 (round 16).
+
+Refs: docs/WORKSTREAM_HISTORY.md SM9.E
+
+## v0.33.97 — two parsers over one syntax, one of them right
+
+The content-flow gate's dispatcher-arm splitter recognised only a constructor
+*immediately* followed by `=>`. A grouped arm — `| .auditRead | .auditDrain =>`,
+which is how the unchecked dispatcher writes its audit pair — produced no reach
+key for either constructor, and its text stayed inside the **preceding** arm,
+attributing a reach to code that arm never runs. Measured: 47 dispatcher
+implementations parsed before, 49 after, with `dispatchWithCap::auditRead` and
+`::auditDrain` the two that did not exist.
+
+The consequence is precise. The missing-arm check was satisfied by the *checked*
+dispatcher, which spells the same two arms separately, so the gate never verified
+that the unchecked pair stays fail-closed: either grouped arm could begin reaching
+an audit or content writer without checks (A) or (C3) seeing it.
+
+`recording_classification`, twenty lines below in the same file, already expanded
+grouped arms. Two parsers over the same syntax with only one of them right is how
+this survived, so the splitting is now a named `split_dispatch_arms` with its own
+witness rather than a regex inlined at one of its two call sites.
+
+The witness is a **plant**, not an assertion against the live tree: a synthetic
+body with a grouped arm, checking that both constructors get an entry, that each
+carries the arm's own body, and that the group's text did not leak into the
+preceding arm. Asserting against the real API would stop witnessing the moment
+someone reformatted the dispatcher — a check that quietly stops checking is the
+shape this gate exists to replace. Probed against the old regex: it fails.
+
+Found in review of PR #873 (round 17).
+
+Refs: docs/WORKSTREAM_HISTORY.md SM9.D
+
+## v0.33.96 — one scenario was standing in for a whole syscall
+
+`frozenOpDifferentiallyChecked` was keyed by `SyscallId`. Round 16 tied it to an
+executed scenario, which was necessary and not sufficient: one scenario satisfied
+a whole syscall. `.send` read "checked" on a fixture with **no receiver
+waiting**, so the rendezvous branch — a different transition — had never been
+compared against anything, and neither had the call rendezvous that stages a
+reply. Two divergences found this round lived in branches a per-syscall row
+reported as covered.
+
+**The unit of the claim is now the unit of the transition.** `FrozenOpBranch`
+enumerates the branches each frozen IPC operation actually takes — the
+discriminating tests the code performs (`receiveQ.head`, `sendQ.head` plus the
+dequeued sender's `ipcState`, `pendingBadge`, `boundTCB` then `waitingThreads`),
+not a grouping chosen for the table. The per-syscall view is *derived* from the
+per-branch rows rather than asserted beside them, with a vacuity guard: without
+it a syscall with no branches listed satisfies the `all` and claims to be
+checked. The honest picture is 7 of 13 branches, where the old table said 6 of 6
+syscalls.
+
+**A dequeued `.blockedOnCall` caller is parked, not woken.**
+`frozenQueuePopHead` accepts a `.blockedOnCall` head as well as a
+`.blockedOnSend` one, and the frozen receive woke both — `.ready`, back in the
+run queue. The live `endpointReceiveDual` moves a caller to `.blockedOnReply`,
+links it to the server-supplied reply object, and fails closed with
+`.replyCapInvalid` when the receive carries none. The frozen operation could not
+express any of that: it took no reply id, which is why the divergence was
+invisible rather than deliberate. It now takes one, `frozenLinkCallerReply`
+mirrors both single-use barriers, and FO-035 compares the branch in both
+directions — the completed rendezvous and the refusal. Probed: it fails when the
+caller is woken.
+
+**The consuming waiter is not enqueued.** A wait that takes an
+already-pending badge returns the *calling* thread, which never blocked and never
+left the run queue — under dequeue-on-dispatch it is the current thread, absent
+from the queue entirely. Live `notificationWait` marks it `.ready` and leaves the
+scheduler alone. The round-15 cut added an enqueue to every `.ready` transition
+without separating the wake of a blocked thread from the return of the caller.
+
+Found in review of PR #873 (round 17).
+
+Refs: docs/WORKSTREAM_HISTORY.md SM9.E
+
+## v0.33.95 — the install checked for a mapping, not for a capability
+
+`ipcTransferSingleCap` declined an in-flight transfer when the source node no
+longer *mapped* to a slot. That rested on a premise: every operation that
+destroys a slot severs `cdtSlotNode`. Delete, CNode retype and the descendant
+sweep do. The **local sibling sweep does not** — `cspaceRevoke` empties every
+sibling naming the revoked target (`revokeTargetLocal` filters them out of the
+CNode) while `revokeAndClearRefsState` deliberately preserves the CDT maps. The
+mapping outlived the capability, so a transfer parked against a swept sibling
+passed the check and installed after a successful revoke.
+
+**Worse than a leak.** `cspaceRevokeCdt` on an empty slot fails at
+`cspaceLookupSlot`, so the installed copy lands beneath a node no revocation path
+can enter: nothing can destroy it afterwards. And the swept sibling is neither
+the revoked root nor one of its descendants, so v0.33.93's in-flight consumption
+does not reach it either — asserted in the regression, because that is what makes
+this a second hole rather than a restatement of the first.
+`lifecycleRevokeDeleteRetype` calls `cspaceRevoke` directly and has the same
+exposure.
+
+**The check is now revocation's own precondition.** `cdtNodeIsRevocable` asks
+whether the mapped slot is still *occupied*, which is exactly what every
+revocation entry point requires: the scaffold opens with `cspaceRevoke`, which
+opens with `cspaceLookupSlot`, and an empty slot is `.error` there.
+`cspaceRevoke_ok_implies_slot_occupied` ties the two, so a change to what
+revocation requires breaks a theorem rather than silently widening the check, and
+`cdtNodeIsRevocable_false_revoke_refuses` states the consequence: a node this
+declines on is a node no revocation can enter.
+
+`ipcTransferSingleCap_installed_implies_revocable_source` replaces the
+mapping-shaped guarantee; the old form survives as the corollary it now is. The
+weaker statement was not a weaker way of saying the same thing — it was true of a
+transfer that had just been let through.
+
+Found in review of PR #873 (round 18).
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §3.1
+
+## v0.33.94 — the frozen model refused what the kernel does
+
+`frozenEnsureRunnable` enqueued through `FrozenMap.set`, which answers `none` for
+an absent key, and returned `.illegalState` when the snapshot held no bucket at
+the woken thread's priority. That was written as the conservative reading — a
+snapshot that cannot represent the thread becoming runnable should refuse rather
+than lie. It is not conservative: the live `ensureRunnable` creates the bucket
+through `RunQueue.insert`, so a passive server blocked at freeze time — never
+runnable, therefore in no bucket — made the frozen model refuse a wake the kernel
+performs. A model that refuses what the kernel does is wrong in the same way as
+one that permits what the kernel refuses.
+
+**The fixed key set was a property of `set`, not of the representation.** A
+`FrozenMap` is an `Array` of values and an `RHTable` of indices, and both grow.
+`FrozenMap.insert` appends; `insert_get?_self` pins that the key reads back what
+was written, and `insert_preserves_wellFormed` that every stored index stays in
+range — every one already stored is below the old size, which is below the new
+one, and the single new index *is* the old size. That is what licenses growing a
+frozen map at all.
+
+**The differential harness could not see this.** Every actor in the frozen/live
+scenarios sits at priority 0, so a wake always found a bucket already there and
+the missing-key branch never ran. FO-034 parks a server at a priority no runnable
+thread holds, asserts as a control that the bucket really is absent, and then
+compares the wake. It fails against the refusing version and passes against this
+one.
+
+**And the taint table's contract named the wrong seam.** It said the field was
+written by `applySyscallTaint` at `API.syscallEntryChecked`. Round 6 moved that
+write one layer down, to `dispatchSyscall` and `dispatchSyscallChecked`, because
+the unchecked dispatcher reached the transitions without passing through the
+entry — and the contract went on naming the old layer for eleven rounds. It now
+names both dispatchers and cites what keeps "only one writer" true rather than
+asserted: `storeObject_declassificationTaint_eq` frames the field, and
+`check_content_flow_coverage.py` validates each dispatcher arm independently, so
+a drifting arm fails a gate instead of a sentence going stale again. The same
+stale citation in `Architecture/Invariant.lean` is corrected with it.
+
+Found in review of PR #873 (round 17).
+
+Refs: docs/WORKSTREAM_HISTORY.md SM9.D
+
+## v0.33.93 — revocation stopped being four copies of one algorithm
+
+`revokePendingTransfersFrom` — the in-flight consumption added at v0.33.88 —
+reached only `cspaceRevokeCdt` and `cspaceRevokeCdtStreaming`. A successful
+`cspaceRevokeCdtStrict` or `cspaceRevokeCdtTransactional` returned its folded
+state with a parked caps-bearing send still carrying a capability derived from
+the revoked root, and the receiver's later collect installed it: revocation
+reported success and the authority arrived anyway. Measured before the fix, on
+the strict variant — the derivation survives the revoke and the capability lands
+in the receiver's CNode.
+
+**The cause was not two missing call sites.** v0.33.88 appended an epilogue at
+each entry point, and there were four hand-written traversals to append it to.
+The two reporting variants' folds are byte-identical apart from a comment; the
+strict preservation theorem carried a third copy of the same fold inline in a
+`suffices`. Adding the epilogue to the two that lacked it would have left the
+next variant to remember it — the same open-ended-set shape the v0.33.88 fix was
+itself closing.
+
+**One algorithm, four policies.** `revokeCdtScaffold` owns the prologue (local
+revoke, root lookup, descendant list) and the epilogue (the consuming sweep); a
+variant supplies only its traversal. Four `_routes_through_scaffold` theorems
+hold by `rfl`, so the tie is what the definitions *are* rather than a table of
+what someone remembered, and
+`revokeCdtScaffold_ok_consumed_or_nothing_derived` states over an arbitrary
+traversal that a successful revocation either found nothing derived from the
+slot or ends in the consumption — a statement about the variants that exist and
+the ones that do not exist yet.
+
+**A traversal reports what it revoked, not what it was asked to revoke.**
+`cspaceRevokeCdtStrict` commits partial progress: a halted fold leaves the
+remaining descendants' slots alive. Consuming in-flight derivations from those
+survivors would destroy authority the call did not destroy, and would do it
+invisibly — `deletedSlots`, the caller's only record, would not mention it. So
+`RevokeTraversalOutcome.revokedNodes` carries the set the traversal actually
+destroyed and the scaffold consumes exactly that. The descendants a halted fold
+*did* delete stay covered without being listed: their slots are gone, so
+`ipcTransferSingleCap` declines a derivation from them on its own. The root is
+the one node that survives its own revocation, which is why it is in the set
+unconditionally.
+
+**The proofs collapsed the same way.** `cspaceRevoke_preserves_cdtNodeSlot` was
+copied verbatim into three theorems; `revokeCdtReportingStep` and
+`revokeCdtReportingFold_preserves` replace the inline `suffices`. What that
+duplication had cost was visible once it was gone:
+`cspaceRevokeCdtTransactional` had **no** preservation theorem at all, because
+the strict one restated its fold instead of naming it, leaving nothing for a
+second variant over the same fold to reuse. It is now one line, like the other
+three.
+
+**The regression names revocation, not a function.** The scenario ran
+`cspaceRevokeCdt` alone, which is why it could not see the hole in the other
+three. It now drives all four through `revocationEntryPoints`, with a length
+pin so the registry cannot quietly shrink back to the variant that already
+worked.
+
+Found in review of PR #873 (round 17).
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §3.1
+
+## v0.33.92 — the relation stopped being a list of what someone remembered
+
+Six findings against the differential harness, and five of them were one shape:
+the agreement relation enumerated what to compare, so every review round found
+another thing it had forgotten. That is the enumerate-the-exceptions defect this
+branch has been closing since round 7, this time in the mechanism built to catch
+it.
+
+**The comparison is no longer an inclusion list.** The two re-represented object
+variants are destructured rather than sampled, so a field nobody compares is an
+unused binding the linter reports and a field added to either structure breaks
+the pattern until someone decides about it. That immediately recovered the
+per-object `RwLockState`, which both frozen structures carry *precisely* so
+freezing preserves it and which the sampled version omitted — a frozen operation
+acquiring or releasing one differently from its live counterpart used to pass.
+And the returned values are compared through a relation the caller supplies
+rather than matched away as `_`: a `frozenNotificationWait` answering the wrong
+badge, or a `frozenEndpointReceive` naming the wrong sender, agreed before, and
+those values are transition semantics.
+
+**A frozen operation is the syscall, not the bare transition.** With no
+dispatcher in the frozen phase it applies the provenance step inline, while the
+live kernel applies it afterwards at the seam. Comparing against a bare live
+transition compared two different layers, and passed only because every taint in
+the fixtures was empty — it would have started failing on the first realistic
+tagged input and reported the harness rather than the kernel. `liveWithTaint`
+composes the missing half so both sides are the syscall, the scenarios carry a
+CSpace so the live plan resolves the same operand the frozen one acts on, and a
+tagged fixture makes the step observable: the actor carries provenance, the two
+sides agree, and the recipient inherits the tag. Without the CSpace the live plan
+resolved no operand and planned nothing, which is how the layer mismatch stayed
+invisible.
+
+**A coverage claim nothing executes is not coverage.**
+`frozenOpDifferentiallyChecked` was a hand-maintained table the suite never read:
+setting an arm `true` satisfied all three interlock theorems whether a comparison
+existed or not, and deleting a scenario left the claim standing. The claim is now
+checked against the list the runner actually runs, in both directions.
+
+**The anchor gate stopped inventing contradictions.** `-g` and `-t` narrow which
+files are searched, and the options were consumed and dropped — so
+`rg -g '*.md' foo D` and `rg -g '*.lean' foo D`, which look at disjoint files,
+collapsed to one key and failed CI on a satisfiable suite. Filters now ride in
+the comparison, directionally like scope containment: an unfiltered negative
+searches everything and covers any filtered positive, a filtered negative
+forbids nothing outside its own files, and anything else refuses to compare
+rather than guessing whether two glob languages overlap. Both directions are in
+the self-test.
+
+**And the new test identifiers carry no sequence codes.** `fo026`–`fo033` and
+`chain12b`–`chain12h` encoded task numbers, which the naming rule forbids in new
+code and whose own remedy example is renaming a numbered test. They now say what
+they check, and negative anchors keep the numbering from returning.
+
+Recorded, not fixed here: the frozen send validates its sender on both branches
+while the live `endpointSendDual` validates it only when parking, so a rendezvous
+can commit a delivery on behalf of a thread that does not exist and the
+provenance step then reads that absent thread's empty default. Verified by probe
+(live succeeds and delivers, frozen refuses). The live check is the right fix and
+its proof cost was measured — 24 goals across one file, mechanically repairable,
+plus further sites in the structural suites — but it is a change to a hot IPC
+transition with a large invariant surface and belongs in its own cut rather than
+appended to this one.
+
+## v0.33.91 — the frozen scheduler had no run queue
+
+The differential harness from v0.33.89 caught its first divergence, and it is a
+big one: **no frozen operation ever wrote `scheduler.byPriority`.** Not one.
+`frozenChooseThread` selects exclusively by folding that field and filtering on
+`.ready`, so the run queue was whatever `freeze` captured, permanently, while
+the frozen transitions moved threads in and out of `.ready` beneath it.
+
+It broke in both directions. Wakes did not enqueue: the notification signal's
+bound-delivery and waiter branches, the endpoint send's rendezvous, the receive's
+dequeued sender, the call's woken receiver, the reply's woken caller and
+`frozenResumeThread` all set `.ready` and stopped, leaving a runnable thread that
+`frozenChooseThread` could never select. Suspends did not dequeue:
+`frozenSuspendThread` set `threadState := .Inactive` with `ipcState := .ready`
+and left the thread in its bucket, where the `.ready` filter would still pick it
+— suspended in name, runnable in fact.
+
+Two docstrings asserted the opposite, and named the wrong field: *"the woken
+thread is already in the `membership` FrozenSet … Setting `ipcState := .ready`
+makes the thread eligible for selection by `frozenChooseThread`."*
+`frozenChooseThread` does not read `membership`. That sentence is why the gap
+survived — it reads as a design decision rather than a missing update, which is
+exactly the failure mode v0.33.89 was written to end.
+
+**What the representation allows.** `FrozenMap.set` answers `none` for an absent
+key: the frozen key set is fixed by construction, the property that keeps
+`lifecycleRetype` out of `frozenOpCoverage`. `membership` is a `FrozenSet` — key
+presence with `Unit` values — so it genuinely cannot change, and `frozenSchedule`
+was right to call it a read-only census. `byPriority` is not: its values are
+lists, so a thread can be enqueued into any bucket that existed at freeze, which
+covers the case that matters — a thread runnable at freeze, blocked, now woken.
+`frozenEnsureRunnable` does that and **fails closed** where the bucket does not
+exist, because marking a thread `.ready` and leaving it unselectable is the
+divergence being removed, not an acceptable fallback.
+
+**The fixtures were part of the defect.** Six suites each carried their own copy
+of a frozen-state builder, and all six left the scheduler empty — modelling a
+state where objects exist and no thread is runnable, which the live kernel cannot
+reach, since a thread only ever blocks from being runnable. A fixture with no
+buckets cannot show a wake failing to refill one. There is now one
+`frozenStateOf` in `SeLe4n.Testing`, giving the run queue a real state would
+have, and one `emptyFrozenSystemState` in place of six copies of the same
+literal. `Builder.markRunnable` closes the matching gap on the live side: the
+builder could create threads but not make any of them runnable, so no test could
+construct the state this defect lives in.
+
+The relation compares `byPriority` in both directions and by bucket, not just
+`scheduler.current` — whether a woken thread can be selected is not visible in
+its TCB. And §FO-031 gained a control pair: it had been agreeing because both
+sides refused with `.replyCapInvalid`, which is agreement about nothing
+happening. It now asserts both sides succeed before comparing them.
+
+## v0.33.90 — three commitments made before the authority was checked
+
+Round 14 found the kernel spending a bounded resource on a transfer it was
+always going to deny, and the anchor gate reading "I could not analyse this" as
+"this is fine" in two different places.
+
+**A sender without Grant resolved capabilities anyway.**  Resolving an extra
+capability mints a persistent CDT node for its source slot and marks that slot
+as having a transfer in flight.  The Grant right was consulted later, at the
+unwrap.  So a sender holding endpoint Write but not Grant paid for resolution on
+every send: it consumed the global bounded node counter from newly populated
+slots, and `nodeHasPendingTransfer` reported its slots as future parents — which
+made `cspaceDeleteSlot` and the CNode retype answer `.revocationRequired` for a
+derivation that could never materialise, because the unwrap was always going to
+deny it.
+
+A commitment made before its authority is checked is a commitment that can
+outlive the authority.  That is the shape v0.33.88 closed on `capsGranted`, one
+layer up, and the fix is the same move: the authority goes to the point that
+commits.  `resolveExtraCaps` and `resolveExtraCapsDetailed` now take the grant
+bit and resolve nothing without it, so no call site can forget — and the
+contract is definitional rather than behavioural.  `resolveExtraCaps_ungranted`
+says the *state is untouched*, by `rfl`: no node minted, no slot marked, nothing
+for the delete guard to trip over.  The detailed resolver additionally reports
+**complete** rather than partial, since a sender without Grant did not fail to
+resolve anything — it had nothing eligible, and telling a caller its
+capabilities were dropped would be a different lie.  The three delegation
+theorems restate each live arm against the endpoint capability's own bit, so
+that the six call sites pass the right authority is proved, not asserted.
+
+**The anchor gate had two fail-open holes, and they are one defect.**  Both read
+an analysis failure as an absence of contradiction.
+
+A helper invocation whose category label fell outside the parser's `[A-Z-]+`
+grammar — `test_lib.sh` accepts any category string — failed the helper regex
+entirely and returned `None`, which the caller reads as "not a helper line".
+The anchor left the comparison and the gate reported PASS.  The `unparsed` kind
+exists precisely to stop that, but it could not see this: the failure was at
+*detection*, one step before parsing.  Detection is now by helper name alone, so
+a label spelling cannot decide whether a pin is compared, and an unreadable rest
+is `unparsed` — a hard failure — as it always should have been.
+
+And a fixed-string positive against a regex negative: `rg -F 'foo.bar'` and
+`rg 'foo.bar'` over one file are unsatisfiable, because the literal the positive
+demands is itself matched by the negative's wildcard.  `_literal_core` answers
+`None` for a regex carrying a metacharacter, and a `None` core was read as no
+contradiction.  The asymmetry is what makes this decidable: a fixed-string
+positive obliges a concrete string, so the negative's pattern can be run against
+that exact text.  The reverse pairing stays satisfiable — `fooXbar` meets a
+regex positive without tripping a fixed-string negative — and the self-test pins
+both directions, since a checker that reported the reverse would fail CI on a
+sound suite.
+
+## v0.33.89 — a correspondence nothing ran
+
+Five review findings on this branch were the same defect wearing different
+clothes: a frozen operation had drifted from the live transition it claims to
+mirror.  A frozen signal that left a bound thread blocked while the live one
+delivered to it.  A frozen dequeue that recorded a causal predecessor the live
+one did not.  A frozen waiter whose badge vanished.  Each was found by a person
+reading both sides, fixed where it surfaced, and followed by another.
+
+The reason they kept coming is that nothing tied the two sides together.  The
+24 frozen operations declared their counterparts in a markdown table in
+`FrozenOps/Operations.lean`'s module docstring and a `mirrors X` sentence
+apiece, and the frozen suite exercised each operation **alone** — asserting
+against what its author had read in the live code and written into a comment.
+A frozen operation could therefore diverge from its counterpart and stay green
+indefinitely, which is exactly what happened, five times.
+
+That is the shape this project already forbids: an invariant maintained by
+convention, and a docstring deciding whether a check passes.
+
+**The correspondence is now a computation.**  `FrozenOps/Agreement.lean` runs
+the live transition on a `SystemState` and the frozen one on that state's
+`freeze`, then compares.  `FrozenKernelObject` re-represents exactly two
+variants — `.cnode` and `.vspaceRoot` — so agreement on the other six is plain
+equality, with no observation to choose and therefore no field anyone can forget
+to include; the two re-represented variants are compared through their lookups
+in both directions, so neither a missing entry nor an invented one passes.
+Refusals are compared too: a frozen operation that accepts what the live one
+refuses is a divergence no state comparison can see, and a missing frozen guard
+is precisely how a message-less parked sender reached the frozen dequeue.
+
+**And the table was wrong.**  Row 5 named `notificationSignal` as
+`frozenNotificationSignal`'s counterpart.  It is not — the frozen operation
+mirrors the bound-aware `notificationSignalBound` composition the live
+`.notificationSignal` arm actually runs, and on the bound shape the two
+disagree.  Reading the table was how you got the wrong answer.  The row is
+corrected, and `fo033` pins the disagreement so a comparison that returned
+`true` for everything could not pass the other six scenarios.
+
+**Claiming coverage now costs something.**  `frozenOpCoverage` already said, for
+every `SyscallId`, whether a frozen operation exists — and every divergence
+satisfied it, because the operation did exist.  It is a claim about existence.
+`frozenOpDifferentiallyChecked` is the other half, and
+`frozenOpCoverage_obliges_differential_check` interlocks them: a syscall with a
+frozen operation is either run beside its live counterpart or carries a stated
+reason it is not.  Decided over `SyscallId.all`, so a new constructor forces the
+choice rather than inheriting a default.  Two companion theorems keep the
+interlock honest in both directions — a scenario may only claim a syscall that
+has a frozen operation, and no syscall may be both run and excused, so an excuse
+left behind after its scenario lands cannot quietly re-open the escape hatch.
+
+Six pairs run today: notification signal and wait, endpoint send, receive, call
+and reply — every pair a recorded divergence touched.  The twelve owed scenarios
+are rows in `frozenOpUncheckedReason` with what they need, including the two
+whose live entries are not `Kernel`-shaped and want an adapter rather than a
+scenario.  A gap is a row someone wrote, not a row nobody noticed.
+
+## v0.33.88 — a derivation that has not landed yet is still a derivation
+
+Round 13 found a revoke that reports success while the authority it destroyed is
+in flight, and a capability-transfer gate that reads its authority from two
+places that were never tied together.
+
+**Revocation missed the transfers still in the sender's hands.**  A
+capability-bearing send that parks carries its derivation in the sender's
+`pendingMessage`; the CDT child edge appears only when a receiver collects it.
+`cspaceRevokeCdt` walks `descendantsOf` the revoked node, so it walked a subtree
+the pending transfer was not in — it reported success, and the later receive
+installed the snapshotted capability and added the child edge *after* the
+revocation.  The receiver kept authority the revoker had destroyed, and the CDT
+regrew under a node that was supposed to be gone.
+
+The v0.33.64 cut had already met the neighbouring shape and fixed it at the
+creator of the edge: `ipcTransferSingleCap` declines with `.sourceRevoked` when
+the source node has no live slot, which holds against slot-destroying operations
+nobody has written yet.  That guard does not fire here, because `cspaceRevokeCdt`
+revokes the *derived* subtree without destroying the source slot the parked
+message names — the source is still perfectly live, and its in-flight child is
+exactly what the caller asked to destroy.  Adding a third consumer of the
+pending-transfer predicate at the revoke's call sites would have patched this
+revoke; the set of operations that destroy a derivation is as open-ended as the
+set that destroys a slot.  So the fix sits at the operation that *defines* the
+guarantee: `revokePendingTransfersFrom` sweeps the parked senders and drops the
+carried derivations rooted at the revoked node or any of its descendants, and
+both wrappers — `cspaceRevokeCdt` and `cspaceRevokeCdtStreaming` — end with it.
+A revoke still reports success, because refusing would let a parked sender block
+revocation indefinitely; what changes is that there is nothing left to install.
+
+Consuming from a TCB is a write to the object store, so the seven-conjunct
+capability bundle has to survive it.  `revokePendingTransfersFrom_frame` proves
+the sweep touches TCBs only — the CDT and both keyed maps are unchanged, and
+every object is either untouched or a TCB rewritten to a TCB — and
+`revokePendingTransfersFrom_preserves_capabilityInvariantBundle` discharges all
+seven from that, since each conjunct quantifies over `.cnode` or `.reply`
+lookups.  It lives in the Invariant layer rather than next to the operation,
+because Operations cannot name the bundle.
+
+**The grant right was read from two places.**  `endpointSendDualWithCaps` and
+`endpointCallWithCaps` take the endpoint's rights as an argument *and* the
+message's `capsGranted` field, and used one for each arrival ordering: the
+immediate rendezvous consulted the argument, while a parked send left the field
+untouched for the later receive to read.  Round 6 established that the authority
+travels on the message precisely because the sender's endpoint capability is gone
+by the time a receiver dequeues a parked send — but nothing ever wrote it there.
+A caller passing granting rights on a message at the field's `false` default
+transferred capabilities on rendezvous and none after parking; one passing a
+message that *claimed* a grant its endpoint lacked transferred after parking and
+not on rendezvous.  Capability delivery decided by which side reached the endpoint
+first, which is the order-dependence round 6 removed from the receive side, and a
+caller-asserted authority the wrapper had no business honouring.  Not reachable
+from user space — every live caller derives the bit from the endpoint capability
+it looked up — but that made it a trusted-caller obligation that was neither
+written down nor enforced.  The four wrappers now stamp
+`capsGranted := endpointRights.mem .grant` into the message they hand the
+transition, so the two inputs are one, derived from the one that carries the
+authority.
+
+`chain12c` could not see either direction: its fixture sets `capsGranted` from
+the same rights it passes, so the two inputs never disagree there.
+`chain12hEndpointGrantDecidesBothOrderings` drives the property from the
+unstamped message and from the claimed one, and `chain12gRevokeConsumesPendingTransfer`
+pins the revoke against a control run showing the same transfer landing when
+nothing revokes it.
+
+**Registered, not papered over.**  Resolving an extra capability whose source slot
+has no CDT node yet mints one, which writes the global `cdtNextNode` counter while
+the send footprint holds the source CNode in read mode and declares no state-level
+write.  `UncoveredLockDomain.cdtNodeAllocation` names it with its owner, so the
+inventory's completeness theorem forces a deliberate deletion rather than an
+oversight, and `fineLockDisciplineComplete` stays false until it goes.
+
+## v0.33.87 — two defaults inverted, because a list of exceptions is a list of what someone thought of
+
+Round 12 found a downgrade of an endpoint, CNode, VSpace root or untyped
+originating tags on both the target and the actor while releasing nothing, and a
+field-write detector that a positional rebuild walks straight past.  Different
+files, same shape: a check that enumerates the cases it knows, and is therefore
+wrong about the next one.
+
+**`.declassify` originated unless it recognised the target as empty.**
+`declassifyBypassedTarget` read the two content-carrying kinds and kept the
+origination for everything else, on the reasoning that a skip must be licensed by
+positively established emptiness.  That reasoning is right for a *clear*, where an
+unjustified removal loses real provenance.  It is backwards for an origination,
+where the unjustified direction is the extra tag — and `declassifyObjectFromCore`
+admits every object kind that exists, so every kind nobody enumerated originated a
+causal predecessor for content that never existed.  Rounds 7 and 9 were the first
+two instances; this is the third, which is why the shape rather than the instance
+is what changed.
+
+The release is now established through `declassifyTargetHoldsContent` and the
+bypass is its complement.  A kind this model tracks no content for cannot satisfy
+the predicate, so it bypasses **by construction** — and a future kind that does
+carry content bypasses until someone adds it to `contentTrackedFields`, at which
+point `declassifyTargetHoldsContent_covers_every_tracked_field` stops elaborating
+and names the branch they owe.  The safe default is the one you get by forgetting.
+`declassifyBypassedTarget_of_untracked_kind` is the statement the old shape could
+not make.
+
+**The gate's detector recognised a spelling, not a write.**  `cfUpdateWritesField`
+required some *other* constructor argument to be a projection — what distinguishes
+`{ st with .. }` from a fresh literal.  A helper that destructures the
+`SystemState` and rebuilds it positionally passes bound variables for the
+unchanged fields, so its rewrite read as a fresh literal and the one-writer gate
+saw nothing.  A detector for a laundering channel cannot be satisfied by choosing
+a different way to write the same term, so the spelling test is gone: every `mk`
+whose watched argument is not the corresponding projection is a write.
+
+What that would otherwise sweep in is constructions, which write the field because
+they write every field.  Measured rather than assumed: the tree has five, four of
+them the structure's own generated machinery (now filtered on the *owner*, since
+`SystemState.mk._flat_ctor` is a `defn` the `.defnInfo` filter does not skip) and
+one real `Inhabited` instance, named in `STATE_CONSTRUCTORS` with the
+`FAIL_CLOSED_ARMS` bite — an entry that stops being reported must be deleted.  A
+structural test was tried first and rejected on evidence: "takes a `SystemState`
+argument" reads false for every monadic definition, whose state lives inside
+`Kernel α`.
+
+The self-test gains the plant that proves it.  The existing matcher witness still
+wrote `{ st with .. }` in its body, so it passed the old detector too; the new one
+rebuilds positionally with no projection anywhere, and it is **generated from the
+structure's own field list** — 26 fields is too many to keep in step by hand, and
+a plant that silently stopped elaborating would take the witness with it.
+Verified against the previous detector: it is missed there and caught here.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md
+
+## v0.33.86 — the invariant said half of what it meant, and every consumer paid for the other half
+
+Round 11 reported that the live `endpointReceiveDual` reads a queued sender's
+`pendingMessage` without requiring `some msg`, stores that `none` into the
+receiver, returns success, and lets `receiverTaintEdges` join the sender's
+provenance into a receiver that received nothing.
+
+That is true, and it is the *second* time: round 7 fixed the identical defect in
+`frozenQueuePopHead`.  Fixing the live consumer the same way would have been the
+third patch of one root cause, so this cut goes after the root.
+
+**`waitingThreadsPendingMessageNone` stated one direction of a two-directional
+relation.**  Its own docstring said so: "Note: `blockedOnSend` and `blockedOnCall`
+threads **MAY** have a pending message."  A thread parked to *collect* was pinned
+to hold nothing; a thread parked to *deliver* was pinned to nothing at all.  So
+"a parked sender is carrying its message" — true of every state the live park
+sites produce, since `endpointSendDual` and `endpointCall` both store `some msg`
+atomically with the block — was a **convention**, and every consumer that read a
+parked sender had to re-derive it defensively.  The two that did not are the two
+findings.
+
+The invariant now states both halves, and the predicate is renamed
+`blockedThreadsPendingMessageConsistent` because the old name described only the
+half it had.  The cost was three central store helpers and **two `rfl`s** at the
+park sites: the obligation is discharged by the value those sites already write.
+The malformed state is now unreachable rather than merely refused.
+
+**Closing it exposed the other direction failing.**  The executable mirror
+(`blockedThreadPendingMessageChecks`, new — the harness could not see either half
+before) immediately failed on a state built by live operations alone: a receiver
+that collects a message, then receives again with no sender waiting, becomes
+`.blockedOnReceive` **still holding the previous message**.  Blocking wrote only
+`ipcState`.  Reported before fixing, per the vulnerability rule: the exploitable
+form of this — re-unwrapping that stale message into fresh capability copies —
+was the P1 closed earlier in this PR at round 8, which gated the *install*; what
+remained was retention of the body.
+
+The block now clears atomically (`storeTcbIpcStateAndMessage … none`, the AK1-D
+pattern the rendezvous branch already used).  The payoff is visible in the proof:
+`endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent` carried
+`hReceiverMsg`, an assumption that the receiver held nothing, which **nothing in
+`ipcInvariantFull` established** — `.ready` is unconstrained, and a `.ready`
+thread holding an unconsumed message is exactly what a second receive produces.
+The theorem is unconditional now; the hypothesis, the twenty lines transporting
+it through `cleanupPreReceiveDonation` and the enqueue, and the sixty more
+threading it through `replyRecv` are gone, along with the three
+`_blockStoreIpc_establishes_*` helpers whose only caller was the non-atomic
+block.
+
+**The dequeue guard stays** as the fail-closed complement, for the states that
+carry no invariant — a below-API construction, a thawed snapshot — mirroring
+`frozenQueuePopHead` on the side where there is no invariant to lean on at all.
+`endpointQueuePopHead_send_sender_carries_message` is its unconditional converse,
+and it is what `receiverTaintEdges` can be read against below the invariant.
+
+Two fixtures modelled states the kernel cannot reach and were corrected with that
+rationale: the cross-core `blockedSenderState` parked a sender with no message,
+and the golden trace's post-dispatch check count moves 25 → 26 for the new check.
+`chain12f` pins the whole chain — the checker rejects the stripped state and
+accepts it with the message in place, the declared taint edge *does* still name
+that sender (so the transport refusal is what stands between the malformed state
+and an invented predecessor), the receive is refused, and the same receive
+delivers when the message is there.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md
+
+## v0.33.85 — what an anchor pins, and what a coverage walk actually reached
+
+Two gates, one failure each way.  The anchor-consistency gate was **inventing**
+contradictions between anchors that cannot contradict, and missing ones that do;
+the content-flow gate was **under-reading**, reporting coverage it had not
+established.  Both are soundness of the checker, not of the kernel — which is
+why they are worth a cut: a gate that cries wolf gets edited around, and a gate
+that under-reads is a false PASS on every finding beneath it.
+
+**An anchor is a pattern, a mode, and a scope — the gate was keeping one.**
+
+`_search_invocation` parsed `rg`'s flags to find the pattern and threw the rest
+away, so `rg -i foo F` and `rg foo F` collapsed to one `(pattern, target)` key.
+A file holding only `FOO` satisfies the first and not the second: they are
+consistent, and the gate called them a contradiction.  The flags that change the
+**match language** — `-i`, `-s`, `-S`, `-F`, `-w`, `-x` — are now retained as a
+mode, and `_mode_allows` decides whether a negative anchor's language is *no
+stricter* than the positive's, which is what a containment claim over literal
+runs needs.  A boundary-anchored negative (`-w`, `-x`) does not match mid-token,
+so containment implies nothing; `-S` is case-sensitivity that depends on the
+pattern's own spelling, which this gate does not model, so it refuses rather
+than guess.  `-F` also removes the regex: `^` is a literal character there, so
+it is no longer stripped, and the pattern is one literal run of its own text.
+
+The scope half is the opposite error.  `rg`'s positional arguments are files
+**or directories**, and the suites use both, but the comparison was string
+equality — so a negative over `SeLe4n/` was never checked against a positive
+over `SeLe4n/Foo.lean`, which is a real contradiction.  `_scope_contains` is
+directional on purpose: the reverse pair (positive over a directory, negative
+over one file in it) is satisfiable by a different file and must not be
+reported.
+
+**A walk that stops with an unexpanded frontier has not reached a fixed point.**
+
+`cfClosureGo` returned its `seen` set when the hop counter hit zero and said
+nothing about the frontier it had not expanded.  Every reachability verdict was
+therefore "no write within 6 hops", while checks (A)–(C3) claim "ever" — an
+inert arm whose payload or audit-trail write sat behind a seventh helper would
+have passed both.  The walk now reports `CF_TRUNCATED` and the gate fails hard
+on it.  Measured rather than assumed: the reach converges at ~25 hops
+(2 046–3 358 constants) in about 13 s with the classification unchanged, so the
+`--depth` default moves 6 → 200 as *fixed-point fuel* — a bound that exists so a
+pathological graph fails loudly instead of hanging, not a horizon.
+
+**Three dispatchers under one syscall name let a healthy arm mask a broken one.**
+
+`arm_roots` keyed its stems on the syscall, unioning `dispatchCapabilityOnly`,
+`dispatchWithCap` and `dispatchWithCapChecked`.  If the *checked* `.receive` arm
+— the route production takes — stopped reaching its `pendingMessage` write while
+the unchecked one still did, the union kept a content hit and check (B) reported
+success.  The key is now `dispatcher::arm`, so every live implementation of a
+content-moving syscall satisfies the classification on its own; the verdict line
+reports 34 live arms across 47 dispatcher implementations.
+
+Splitting the key surfaced the arms that exist in a dispatcher only to fail
+closed: `.declassify` and `.declassifySignal` have no unchecked form, because
+their authority *is* a policy and "unchecked" would mean "every downgrade is
+authorized" — `dispatchWithCap` implements both as
+`fun _ => .error .declassificationDenied`.  `FAIL_CLOSED_ARMS` names them, like
+`RETURN_FRAME_DELIVERY` and `AUDIT_APPEND_EXEMPT`, and carries the same bite: a
+listed implementation must reach **nothing**, content or trail.  An entry that
+starts reaching one is a refusal that stopped refusing — a worse defect than the
+masking the exemption exists to allow past.
+
+Both `--self-test` suites grew witnesses for the new mechanisms, since a gate
+that stops checking fails silently: four anchor pairs pinning the mode and scope
+decisions in both directions, and a `.receive`-resolves-in-two-dispatchers
+assertion that fails if the reach key ever collapses back to the syscall name.
+
+Tier 3 pins `_mode_allows`, `_scope_contains`, `arm_key`, `FAIL_CLOSED_ARMS` and
+`CF_TRUNCATED`.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
+## v0.33.84 — the half of the last fix that was still tagging the actor
+
+Round 7 stopped a bare `.declassify` of an **idle** target from originating onto
+that target: nothing was released, so tagging it invented a causal predecessor.
+That fix removed one of the event's two tags.
+
+`originationTags` emits **two** pairs per event — `(targetObject, t)` and
+`(sourceSubject, t)` — and the `bypassed` filter removes them by *key*, which
+cannot tell which event a `(subject, t)` pair came from.  So the actor kept a tag
+for content it never released.  That is worse than the target half, not better:
+`declassificationActorTaint` snapshots the **actor**, so the subject's *next*
+downgrade records the invented identity in `predecessorTags`, and the causal
+detector reports a laundering chain whose first link carried nothing.  Which is
+the exact failure SM9.D replaced the syntactic detector to avoid.
+
+**The two pairs are dropped together, per event, before they exist.**  A
+filter-by-key applied afterwards cannot express "this event contributed nothing",
+which is why round 7 could remove one half and leave the other.
+`originationTags` takes the no-release set and skips the whole event.
+
+**`noRelease` is a new field, not more entries in `bypassed`** — the two answer
+different questions.  A *bypass* says the released content went somewhere else:
+`.declassifySignal` really does deliver a badge, so its actor tag is earned and
+only the notification the delivery went around must not be tagged.  A
+*no-release* event released nothing anywhere, so neither tag is.  Folding them
+would either re-tag the notification `.declassifySignal` bypassed or un-tag a
+signaller that genuinely released.
+
+A pleasant consequence: `bypassed` is `[]` for every inert arm again, so
+`syscallTaintPlan_inert` gets its third conjunct back — round 7 had to weaken it.
+`originationTags_cons_noRelease` and `originationTags_cons_release` are stated as
+a pair, because suppression is an under-approximation and the first would also
+hold of a broken planner that emitted nothing ever.
+
+### `ChainNamesArchived` reported a bad operand as an authority failure
+
+The arm ANDed `auditMonitorAuthorized` with `timestamp < epoch` and sent both
+failures to `.illegalAuthority` — so an **authorized** monitor supplying a
+non-archived timestamp read as unauthorized.  `audit_read`'s error contract
+reserves `IllegalAuthority` for capability, configuration and caller causes and
+uses `InvalidArgument` for operands, and this contradicted it; a monitor could
+not tell a malformed request from a revoked credential.
+
+The gate and the operand check are sequential now.  Splitting them discloses
+nothing: a caller the gate admits already sees the whole trail, so "that
+timestamp is not archived" is not news to it — while an **unauthorized** caller
+still gets `.illegalAuthority` whatever the timestamp, which is the property the
+gate-first ordering exists for.  `chainArchivedVerdict_refuses_live_timestamp` is
+restated for an authorized monitor and returns `.invalidArgument`;
+`chainArchivedVerdict_denied_for_non_monitor` is unchanged and still covers the
+partial reader.  The Rust opcode doc said the old thing in one paragraph while
+the general contract said the new one three hundred lines down; both now agree.
+
+### And the snapshot named the wrong subject
+
+`maxTaintTags`' rationale said every event carries a `predecessorTags` copy of
+its **target's** tag list.  `declassificationActorTaint` reads
+`actor.subject.toObjId`, and that is what `declassifyStoreEvent` records — the
+target is tagged separately, *after* the event commits.  Reversed, it would let a
+reader conclude that downgrading a tainted target records its provenance even
+when the acting subject has none, which is the one thing the causal check must
+not claim.  The bound's cost paragraph now names the subject, which is also what
+makes the count argument right: eight is where a *subject* stops gaining
+information, not an object.
+
+## v0.33.83 — five gaps found by reading the seams the last cut opened
+
+**The CDT node counter was advanced unchecked during capability resolution.**
+`resolveExtraCaps` mints a derivation node per source slot and runs up to
+`maxExtraCaps` times per syscall, through the *unchecked* minter — so a resolver
+near `cdtNextNodeBounded` could carry the counter past it in one call, and a
+*blocking* send commits that resolver state before any unwrap runs.  A
+fixed-width runtime allocating node ids past the bound eventually reuses one, and
+a reused derivation node is a revocation that reaches the wrong children.
+
+Both resolvers now use `ensureCdtNodeForSlotChecked`, and each reports exhaustion
+in its own idiom: the ABI path drops the cap (seL4's silent drop, which is what
+it already does for an address it cannot resolve), the detailed path sets
+`partial`.  Dropping is fail-closed — a capability with no derivation node is not
+transferred, so nothing is installed untracked.
+
+**The frozen signal ignored bound delivery.**  With no ordinary waiter and a
+bound TCB parked on an endpoint, the live `notificationSignalBound` dequeues that
+TCB and delivers the badge into its `pendingMessage`.  The frozen path fell
+through to the storage branch: the bound thread stayed blocked, the badge sat on
+the notification, and — since SM9.D — the signaller's provenance was recorded on
+the notification rather than on the thread that was supposed to receive the
+content.  A snapshot that names the wrong recipient is not a snapshot of this
+kernel.
+
+It needed a primitive that did not exist: `frozenQueueRemove`, the counterpart of
+`endpointQueueRemoveDual`.  O(1) rather than a walk, because the model already
+maintains `queuePrev` on every push, so removal is head/tail fix-up plus at most
+two relinks; a thread with no `queuePPrev` is on no queue and is refused, the
+same guard `frozenQueuePushTail` applies in the other direction.  `FO-025` pins
+the delivery, the unblock, the provenance, and the negative that says the storage
+branch did not run.
+
+**The anchor gate was failing CI over satisfiable suites.**  `_literal_core`
+folded an unescaped `.` to a literal dot, so a positive `foo.bar` and a negative
+`foo\.bar` were reported as contradictory — yet a tree containing only `fooXbar`
+satisfies both.  `rg` documents `PATTERN` as a regex and `-F` as what makes
+metacharacters literal, and a gate that invents failures is as bad as one that
+misses them.
+
+Containment is now over the positive's literal **runs**: every string matching a
+pattern contains each run, so a negative whose forbidden literal sits inside one
+run is forbidden by every match — sound, and still catches an overlap that lies
+within a run even when the pattern carries a wildcard elsewhere.  What the fold
+was really catching is kept, honestly relabelled: a pair that contradicts under
+the module-separator reading the suites use everywhere, but not under the regex
+one, is reported as an **escaping ambiguity** naming the one-character fix,
+rather than as an unsatisfiability the gate cannot show.  The historical
+`TaintTable := SeLe4n.ObjId` pair is still planted and still caught — as
+ambiguous.  Two new witnesses pin the boundary from both sides: the satisfiable
+wildcard pair must not be flagged, and an in-run overlap must still be proven.
+
+**The content-flow gate resolved arm roots by stored name.**  Round 6 taught the
+*sweeps* to see private definitions; the *roots* still could not.  `cfRoots` names
+an arm's helpers by the stem a human wrote, while Lean stores `private def foo` as
+`_private.<Module>.<n>.foo` — so an arm delegating its only payload write to a
+directly-called private helper produced **no seed**, its reach came back empty,
+and an `.inert` classification could be accepted for an arm that moves content.
+The index is keyed on the user-facing name now, with generated auxiliaries
+attributed to their owner so a write Lean split into `foo.match_1` is still
+reachable under `foo`.
+
+The witness is the point: a third plant, private, wired into a synthetic arm's
+root list — so it is found only if resolution reached it, which a sweep over the
+whole environment would not show.  Verified to fail when the old filter is put
+back.
+
+**Three descriptions that had drifted from the code.**  The content-flow
+inventory said "seven content-moving arms" when the match below it classifies
+eight — omitting `.declassifySignal`, the arm whose whole point is that it moves
+content.  The non-recording count said 31 where 34 − 2 is 32, in four places.
+And `SystemState.declassificationTaint`'s field docstring still described a total
+function "like `Machine.Memory`", which stopped being true when the table became
+a canonical association list carrying its own well-formedness — and that
+paragraph is where a maintainer reads the storage, lookup-cost and invariant
+model, so a wrong answer there is wrong everywhere downstream.
+
+The "three receive-side theorems are deliberately GONE" block was recording a
+*fixed bug* as its justification ("a path that installs nothing" — it installs
+since round 6).  The reason that actually holds is the standing scope decision:
+a CNode holds no tracked content, so a CSpace root is not a taint carrier on
+either ordering.  Restoring those theorems is a scope change, not a wiring gap,
+and there is nothing left to wire.
+
+## v0.33.82 — a receive that dequeued nothing was installing capabilities
+
+**Security fix.**  A thread that had legitimately received one capability-bearing
+message could call `.receive` on an **idle** endpoint and get a *fresh copy* of
+that capability installed into a new receive slot — with no sender, and with no
+message consumed.  Repeat for as many slots as it has.
+
+The mechanism is a two-line seam.  `endpointReceiveDual`'s blocking branch
+returns the **receiver's own** thread id — there is no sender to name — and does
+not clear `pendingMessage`.  So a WithCaps wrapper that decides by looking at
+that field alone cannot tell a message delivered *by this call* from one the
+receiver has been holding since its last receive, and it unwrapped the stale one
+again.
+
+Nothing shipped: the wrapper is older than this PR but had no live caller, so
+until v0.33.77 routed `.receive` through it — and v0.33.80 `.replyRecv` — the
+defect was unreachable.  Both cuts are on this branch.  Reported before the fix
+per the project's vulnerability rule, with the reproduction:
+
+```
+step2 receive installed=1 slot0=true          ← legitimate transfer
+step3 BLOCKING receive: installed=1 slot1=true   ← duplicate, pre-fix
+step3 BLOCKING receive: installed=0 slot1=false  ← post-fix
+```
+
+**The send side always had this gate.**  `endpointSendDualWithCaps` reads
+`hasReceiver` from the endpoint's `receiveQ` *before* the send and refuses to
+unwrap without a rendezvous; the receive side simply never grew its mirror image,
+because nothing exercised it.  So the fix is that mirror: `receiveRendezvousSender?`
+reads the pre-state `sendQ` head, which is exactly what the bare transition
+branches on, and both WithCaps receives return the empty summary when it is
+`none`.  `endpointReceiveDualWithCaps{,OnCore}_blocked_installs_nothing` state it.
+
+It is a **function**, not a fourth inline read.  The live arms already re-derived
+the same expression three times for their `wokenSender?`, and four copies of one
+classification drifting apart is precisely what `signalDelivery` was introduced to
+stop after three rounds of exactly that.
+
+### The install's declared footprint was wrong too
+
+Found in the same seam: `ipcTransferSingleCap` mutates the receiver's CSpace root
+through `cspaceInsertSlot`, while `lockSet_endpointReceive` and
+`lockSet_replyRecv` declared that same CNode **read**-only.  Under SM3.C.9's fine
+locks a concurrent CSpace writer would share the alleged read lock and one update
+would be lost.
+
+Both footprints take an `installsCaps` flag that puts the member in **write**
+mode.  A mode on the existing member rather than another `lockSetExtendOpt`,
+because the receiver's CSpace root *is* the caller's — the receiver is the caller
+of `.receive`, and the arm passes `gate.cspaceRoot` — so the size and the
+acquisition order are untouched, every WCRT pin survives, and `false` reduces
+definitionally.  An outer optional would have merged to the same set while making
+the crude size bound count a member that cannot exist: the same fact, worse
+stated.
+
+`receiveInstallsCaps` resolves the flag from the pre-state — a sender to dequeue,
+carrying caps — so `lockSet_endpointReplyRecvOnCore` and the transition read the
+same fact rather than two that could drift.  The consistency theorems are stated
+over **every** value of the flag, not only the default, which is the round-6
+`.declassify` lesson applied before it could repeat; the size bounds and the
+`lockSetTransitions_within_bound` conjuncts move to the new arity together,
+because a partial application there is how an added member gets silently
+unbounded.  `lockSet_{endpointReceive,replyRecv}_capsInstall_write_mem` are the
+checkable forms.
+
+### The regression measures the property, not one call
+
+`chain12eReceiveWithoutSenderInstallsNothing` asserts both directions: the
+legitimate rendezvous still installs, and the receive against an idle endpoint
+does not — so a change that broke both the same way (never installing) cannot
+pass the negative alone.  It also pins the two facts that made the defect
+possible, so they stay visible: the receiver is still holding the delivered
+message, and the send queue really is empty at the second call.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md
+
+## v0.33.81 — three ways to invent a predecessor
+
+SM9.D replaced a *syntactic* laundering detector — one that matched domains and
+timestamps with no data dependency behind them — with a causal one.  The value of
+that replacement is entirely in the data dependency being real.  Three places
+were manufacturing one.
+
+**A bare downgrade of an idle transport tagged it anyway.**  `.declassify`
+carries no payload; it records that a downgrade of an object's label was
+authorized (`.declassifySignal` is the data-carrying one, added at SM9.C for
+exactly this distinction).  So the origination's premise — "the target is where
+the released content now lives" — holds only when the target *is* holding
+content.  Against an empty notification it did not: the fresh, unsaturated
+identity landed there anyway, a later unrelated signal **joined** rather than
+replaced it, `.notificationWait` carried it to the receiver, and a downgrade
+behind that receiver reported a causal predecessor for content that never
+existed.  That is the syntactic detector's failure mode reappearing inside the
+causal check, and it is not free either: `maxTaintTags` is 8, so invented
+identities crowd out real ones and can saturate a value to `top`, which matches
+every later identity.
+
+The target now goes in the plan's `bypassed` list when it is provably empty —
+bypassed, not cleared, so an object that *is* holding content keeps both the
+content and its provenance.  **Emptiness has to be positively established**:
+only the two content-carrying kinds are read (a notification with no pending
+badge, a TCB with no pending message), and every other target keeps the
+origination.  Skipping is an *under*-approximation, the one direction a detector
+must never take by accident, so `declassify_pending_notification_not_bypassed` is
+the load-bearing half — a notification holding a badge still gets the tag,
+because that is content the downgrade really released.
+
+`.declassify` is inert and records, which is why the plan's inert branch now
+carries a `bypassed` list at all; `declassifyBypassedTargets` is separate from
+`contentFlowBypassed` rather than an arm of it, so "an inert arm bypasses
+nothing" stays exactly true for the twenty-nine arms where it is.
+
+**A clear is a write, and the retype's clear had no lock.**  SM9.D.17 argued
+carefully that a taint write is serialised by the key's own object lock rather
+than by `stateLevelLock`, and then applied that rule to the flow sinks and the
+origination keys — skipping the third member of `taintWriteKeys`.
+`.lifecycleRetype` is the one arm that *clears* provenance, keyed on
+`args.targetObj`, and `lockSet_lifecycleRetype` named the caller, its root, the
+untyped source and the destination CNode: none of them that key.  So a retype and
+a delivery into the very object being re-purposed had provably disjoint
+footprints while updating the same entry, and the clear is the half that must not
+be lost — a replacement object inheriting a destroyed one's predecessor is a
+chain that outlives the object it described.
+
+The footprint takes the resolved target's own write lock, exactly as
+`lockSet_declassify` takes its target's, with the same `Option LockId` default so
+every capless pin survives by `rfl`.  `permittedKinds .lifecycleRetype` admits
+every kind for the same reason `.declassify` does — a retype re-purposes an
+object whose type the state decides — and the widening is paid for by
+`lockSet_lifecycleRetype_nonTarget_kinds`, which holds the fixed part to exactly
+four.  `lockSet_lifecycleRetype_size_le` and the aggregate's conjunct move to the
+new arity together: a partial application there is how an optional member gets
+silently unbounded, which is the defect SM9.C found in `notificationSignal`.
+
+**A frozen parked sender with no message was dequeued anyway.**
+`frozenQueuePopHead` validated the head's blocking *state* and nothing else, so a
+`.blockedOnSend` head carrying `pendingMessage := none` passed;
+`frozenEndpointReceive` stored that `none` in the receiver and joined the
+sender's provenance regardless.  The frozen send path always parks with a
+message, so such a head is a malformed snapshot in exactly the way a mismatched
+blocking state is — and a frozen state *is* hand-built, which is why the refusal
+belongs in the pop rather than in one caller's guard.  Same error, and the
+receive queue is untouched: a thread parked to receive correctly holds nothing.
+
+`FO-024` pins both directions — the message-less shape is refused, and the
+identical queue shape *with* a message still delivers, so the refusal is about
+the missing message and not about the hand-built queue.
+
+## v0.33.80 — the receive that was not spelled `.receive`
+
+v0.33.77 made capability delivery independent of who reached the endpoint first
+— for `.receive`.  `.replyRecv` is a receive too, and it was still on the bare
+per-core transition.
+
+That is not the obscure half.  `.replyRecv` is how an seL4-MCS server loop
+actually runs: `Recv` once, then `ReplyRecv` forever.  So a server received a
+client's capabilities on its **first** request — the one collected by the
+`.receive` — and silently none on every request after it, whenever the client
+parked before the server came back around.  A client that happened to arrive
+while the server was already blocked took the WithCaps send path and transferred
+normally, so the same two threads, the same endpoint and the same capability
+still produced a transfer or no transfer depending on scheduling; one arm
+narrower than before, and the arm servers spend their lives in.
+
+`replyRecvBody`'s receive leg now runs `endpointReceiveDualWithCapsOnCore`.  It
+takes the receiver's CSpace root and receive slot and **returns** the
+`CapTransferSummary` rather than staging it, because the arm owns the return
+frame: both dispatch arms stage `extraCaps` as the installed count instead of the
+hardcoded zero, the same honest figure `.send`, `.call` and `.receive` report.
+The authority is unchanged and is the sender's — `IpcMessage.capsGranted`,
+recorded when the message was built — which is what makes the two orderings ask
+the same question rather than merely both do something.
+
+The cross-core non-interference carriage moved with it:
+`endpointReceiveDualWithCapsOnCore` gained its own scheduler and register-bank
+frame lemmas, a confinement bound and an NI instantiation, and
+`replyRecvBodyWriteSet` reads the receive leg at the WithCaps post-state.  The
+declared per-core footprint is **unchanged**, because a capability install writes
+a CNode and no core at all — so every pin taken against the bare receive's write
+set still describes the live leg.
+
+### An inventory claim that had gone stale one round earlier
+
+`crossCoreTransitionIsLiveArm` marked the *bare* per-core receive a live arm, and
+the docstring said why: `.receive` invoked it directly, and it was
+`replyRecvBody`'s receive leg.  Round 6 falsified the first half and this cut
+falsifies the second, which left the inventory naming
+`endpointReceiveDualOnCore_crossCoreNonInterference` as the evidence for an arm
+that no longer calls it — the round-5 error exactly, in the entry round 8 had
+argued *into* the live set.  Its evidence field was worse than stale: it cited
+`syscallDelegates_receive`, whose statement has named the WithCaps form since
+round 6.
+
+So `.endpointReceiveDualWithCaps` is now its own entry and carries the live-arm
+claim, the delegation proof and the new NI theorem; the bare transition joins
+`.notificationSignal` and `.endpointReply` as a below-API entry with `syscall?`
+`none`.  Inventory 29 → 30, remote writers 23 → 24, live arms unchanged at 22 —
+the claim moved rather than multiplied, which is the check that says the demotion
+happened.  A suite negative pins that the bare entry is not a live arm and that
+the two `crossCoreLiveArmSyscall` answers did not both become `.receive`.
+
+### The regression measures the property, not one ordering's outcome
+
+`chain12dReplyRecvCapTransferArrivalOrder` runs both orderings of a
+capability-bearing request against a `.replyRecv` server from one starting state
+and compares them to **each other** — install count and result array — so a
+change that breaks both the same way cannot pass by moving one number.  Two
+load-bearing negatives: a non-granting sender transfers nothing in the queued
+ordering either, and the bare per-core receive, driven on the very state the
+fixed ordering succeeds from, installs nothing.  If the leg is ever routed back,
+the positive fails rather than the difference going unnoticed.
+
+`SMP_FINE_LOCK_MIGRATION_PLAN` §9.1 is closed.  Its "59 references" estimate
+counted prose; the real surgery was nine applications plus the non-interference
+carriage.  §9.2 stays open and untouched — this cut threaded the *receiver* side
+and never had to decide the sender-side fail-closed question.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §9.1
+
+## v0.33.79 — the gates were reading less than they reported
+
+Six findings, and five of them share a shape: an artefact that reports on the
+tree — a scanner, a timing report, a docstring — was quietly describing something
+narrower than what it claimed, and nothing could tell.
+
+**A slow-check report that could abort the run with no verdict.**
+`_report_slow_checks` did `printf … | sort -t'|' -k1,1nr | head -10`.  `sort`
+buffers its whole output before writing, so once the sorted text passes the
+64 KiB pipe buffer `head` closes the pipe mid-write and `sort` dies of SIGPIPE
+(141).  Every tier sources `test_lib.sh` under `set -euo pipefail`, where
+`pipefail` surfaces that 141 as the substitution's status and `errexit` aborts
+`finalize_report` **before** it prints the pass/fail summary — a run with enough
+slow checks (an overloaded runner, or a lowered `SLOW_CHECK_THRESHOLD_MS`) would
+exit 141 having decided nothing.  The pipeline is gone: `mapfile` from a process
+substitution drains `sort` completely and the truncation happens in bash, where
+nothing closes early.  The report also now says how many entries it dropped
+instead of silently showing ten.
+
+**The anchor gate read one branch shape backwards.**  `_negated_search` looked
+for `exit 1` anywhere after `then` and called every match an absence assertion.
+That is right for `if rg 'P' F; then echo …; exit 1; fi` and exactly wrong for
+`if rg 'P' F; then echo ok; else exit 1; fi`, where the failing exit is in the
+*else* branch and the check fails when the search finds **nothing**.  Pairing
+such a line with an ordinary positive anchor for the same pattern would have
+produced a false contradiction and blocked CI on a perfectly satisfiable suite —
+a gate that invents failures is as bad as one that misses them.  The branches are
+now separated and the polarity comes from *which* one exits: then-only → absent,
+else-only → present, both or neither → refused as unparsed.  `elif` is refused
+outright rather than guessed at.  The wrapper's polarity composes with the
+helper's (`is_neg = asserts_absent != is_negative_helper`), so all four
+combinations classify.
+
+**And it guessed option arity from shape.**  Any word starting with `-` was
+skipped and the next word taken as the pattern — right for a bare switch, wrong
+for every option carrying a separate value.  `rg -g '*.lean' forbidden SeLe4n`
+was filed under pattern `*.lean` with `forbidden` as a target: an anchor
+recorded against a key nothing could ever contradict, which is the failure mode
+this gate exists to catch.  Arity now comes from a table, **per tool**, because
+the two disagree on a letter the suites use: `-E` is `--extended-regexp` in
+`grep` (bare, live here as `grep -nwE`) and `--encoding` in `rg` (valued).  One
+shared table would either refuse the live `grep -nwE` or swallow rg's encoding
+argument.  Clustered shorts are accepted only when every letter is bare, `-e`'s
+value is recognised as the pattern, and an option in neither table is **refused**
+rather than parsed on a guess — an unknown flag has unknown arity, so the caller
+reports it unparsed and Tier 0 fails.  Five new self-test cases pin the else
+form, the else-form contradiction, `-g`, the unknown-flag refusal and the
+`grep -nwE` cluster.  Live classification: 2554 positive, 134 negative.
+
+**The content-flow probe could not see inside a compiler-generated auxiliary.**
+`cfInspectable` filtered on `isInternalDetail`, which is true of `.match_1`,
+`._proof_2` and the rest — so a function whose taint write happens inside a
+`match` arm was skipped along with the noise.  It now attributes each auxiliary
+to its **owner** (`cfOwnerName` strips the generated suffix) and inspects it if
+the owner is a real definition, reporting under the owner's name.  A second
+plant, `cfPlantedMatchingTaintWriter`, writes the field through a `match` arm and
+is asserted detected by `--self-test`, so the shape is pinned permanently rather
+than argued about.  Production result is unchanged — 34 arms, 8 moving content,
+2 recording — which is the point: the gate widened without moving the number it
+reports.
+
+**`DeclassificationTaint.tags` assumed a canonical order nothing enforced.**  The
+field doc said "ordered and duplicate-free"; `tags_bounded` was the only
+structural constraint, so the public constructor accepted any bounded list.
+`⟨false, [5,5,5,5,5,5,5,5], _⟩` is eight copies of one identity, and inserting a
+second *distinct* timestamp into it saturates the value to `top` — which matches
+every later identity, so a laundering verdict could be manufactured out of a
+value naming only two.  That is the implicit-invariant shape CLAUDE.md requires
+to be made structural, so `tagsCanonical` is now a field: strictly increasing,
+which is sortedness and duplicate-freeness in one predicate, and a `Prop` so
+definitional proof irrelevance keeps it invisible to equality.
+`insertTag_canonical` discharges the obligation through a `tagsAbove` floor
+auxiliary — the recursive call then already carries the bound the cons case
+needs, which is what keeps each branch of the three-way `insertTag` split to one
+line; `empty` and `top` discharge it by `trivial`.
+
+**Four stale rationales, corrected rather than deleted.**  Each described a
+weaker or simply different artefact than the one in the tree:
+
+* `TaintPropagation`'s header still placed the taint seam at
+  `API.syscallEntryChecked`.  It runs in both **dispatchers** now (v0.33.76) —
+  which is the whole point of that move, since `dispatchSyscall`'s own docstring
+  recommends it for production user-space entry, so an integrator who followed
+  that advice never reached the seam.
+* The same header listed "a send tags the endpoint" among the model's safe
+  over-approximations.  It does not, and has not since the model became
+  content-derived: an endpoint buffers no content of its own, so an endpoint
+  proxy would be both redundant and *less* precise — it would hand a receiver the
+  taint of every queued sender rather than of the one it consumed.
+  `senderTaintEdges_content_only` is the checkable form.
+* `joinAt`/`clearAt` claimed a closure chain they do not walk, and `maxTaintTags`
+  justified its bound by tags "exported to a monitor".  They are not exported;
+  the monitor receives opaque verdicts.  The bound's real justification — a
+  fail-closed saturation that can only over-approximate — is now what it says.
+* `audit_read`'s `chunk` parameter was documented as "the chunk index … ignored
+  otherwise", which stopped being true when the causal opcodes landed:
+  `ChainNamesEntry` reads it as the earlier **view index** and `ChainNamesArchived`
+  as an archived **timestamp**.  A monitor following the old contract would leave
+  it at zero and get a well-formed answer to the wrong question.
+
+## v0.33.78 — "before" is now enforced, not intended
+
+The uncovered-lock-domain inventory was **data alone**.  Five domains registered,
+each with an owner, a completeness theorem that fails if one is dropped — and
+nothing anywhere consulted it.  So "the per-key taint store lands before anything
+relies on key-local locking" was a sequencing intention recorded in prose, which
+is exactly the kind of ordering a later cut forgets.
+
+`fineLockDisciplineComplete` makes it a decidable predicate: the declared
+footprints may be relied on as a complete serialization discipline exactly when
+`declaredFootprintUncoveredDomains` is empty.  It is `false` today
+(`fineLockDisciplineComplete_is_false`), it can only become `true` by emptying the
+inventory (`fineLockDiscipline_requires_every_domain_covered`), and
+`taintPerKeyStore_blocks_fineLockDiscipline` names the entry PR #873's review
+pressed twice so a reader can check the dependency without reconstructing it from
+the list.
+
+A cut that enables SM3.C.9's fine locks while a domain is still registered now has
+to delete an entry it cannot honestly delete.
+
+**Why the per-key store itself is not in this cut, stated plainly.**  The model
+replaces `SystemState.declassificationTaint` whole, so two cores committing
+disjoint taint keys from their own pre-states would each write the whole field and
+the later commit would discard the other's provenance.  That is true — and it is
+equally true of `SystemState.objects` under `storeObject`, which every transition
+writes.  A per-key taint store shipped on its own would leave the identical lost
+update reachable through the object store, so the realisation is a property of the
+**commit**, not of one field: the two land together in the commit-partitioning cut
+(SM10.E / `SMP_FINE_LOCK_MIGRATION_PLAN` Track D) or neither does.  Nothing relies
+on key-local locking in the meantime — SM5.I's global entry ticket lock serialises
+every commit and `withLockSet` is deferred at the export bodies — and now nothing
+*can*, silently.
+
+The suite pins carry a load-bearing negative: the flag is computed from the
+inventory rather than hardcoded, measured by exhibiting an empty list that flips
+it, so the two positive checks cannot be satisfied by a constant `false`.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md
+
+## v0.33.77 — a capability transfer that depended on who arrived first
+
+`endpointSendDualWithCaps`' own docstring said what should happen: *"If no
+receiver was waiting (sender enqueued): caps stay in the message stored in the
+sender's TCB.  They will be unwrapped when a receiver later dequeues the
+sender."*  Nothing did.
+
+The live `.receive` arm ran the bare per-core receive, which moves a parked
+sender's `pendingMessage` across wholesale and installs none of the capabilities
+it carries.  `endpointReceiveDualWithCaps` — the transition that performs the
+install — existed, was verified, and had **no live caller**.  So the same two
+threads, the same endpoint and the same capability produced a transfer or no
+transfer depending on which side reached the endpoint first, and the arm reported
+`extraCaps = 0` however many capabilities the message still held.
+
+**The authority is the sender's, and it now travels with the message.**  This is
+the part that makes the two orderings genuinely agree rather than merely both do
+something.  Capability transfer is authorised by the *sender's* endpoint
+capability, and the two orderings ask about it at different times: on an
+immediate rendezvous the sender's capability is in hand, but when the send parks
+it is gone by the time a receiver dequeues the message — and the receiver's own
+endpoint capability is a different principal's authority, not a substitute.
+
+`IpcMessage.capsGranted` records the bit where the arms build the message, which
+is exactly what seL4 stores as `blockingIPCCanGrant` on the blocked sender's
+thread state.  It defaults to `false`, so a message built without an explicit
+grant decision transfers nothing.
+
+That also fixes `endpointReceiveDualWithCaps` itself, which consulted the
+*receiver's* endpoint rights: with a granting sender and a non-granting receiver
+the queued ordering would still have disagreed with the rendezvous one, one case
+narrower.  Its `endpointRights` parameter is gone — 119 sites, all mechanical —
+and the gate is `msg.capsGranted`.
+
+**The live wiring.**  `endpointReceiveDualWithCapsOnCore` is the per-core sibling
+the live arm needs, exactly as `endpointSendDualWithCapsOnCore` is the one the
+live `.send` arm runs.  Both `.receive` arms — unchecked and information-flow
+checked — route through it, and both now stage the transfer summary's **installed
+count** instead of a hardcoded zero.  The `syscallDelegates` obligation and the
+`dispatchArm_receive_matches_returnShape` pin moved with them.
+
+The enforcement inventory names the operation an arm *reaches*, so it moved too:
+`crossCoreEnforcementEntries` classifies `endpointReceiveDualWithCapsOnCore`, and
+a Tier-3 negative anchor plus a suite negative forbid the bare transition coming
+back as the classified arm.  The per-core routing gate found the reroute on its
+own before any of this was pinned, which is what it is for.
+
+**The regression measures the property, not one ordering's outcome.**
+`chain12c` runs both orderings from the same starting state and compares them to
+*each other* — install count and result array — so a future change that breaks
+both the same way cannot pass by moving one number.  It then drives the bare and
+the WithCaps per-core transitions side by side on the same parked state: the bare
+one installs nothing (the defect), the WithCaps one installs (the fix).  Four
+negatives pin that the sender's grant governs both orderings and that a
+non-granting sender transfers nothing either way.
+
+`receiverTaintEdges` declares no CSpace sink, and the *reason* changed: it was
+"the live receive installs nothing", which is no longer true.  The reason that
+remains is the standing scope decision — a CNode holds no tracked content, so it
+is not a taint carrier on either ordering (`senderTaintEdges_content_only`).  The
+deferral note that promised sinks "behind the WithCaps wiring" is gone with it.
+
+### Two sibling defects found on the way, registered rather than absorbed
+
+Both are pre-existing and were invisible while the receive installed nothing at
+all.  Recorded in `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` §9 with closure
+targets.
+
+**§9.1 — `.replyRecv`'s receive leg still drops queued capabilities.**  It runs
+inside `replyRecvBody`, which calls the bare per-core receive, so a caps-carrying
+send collected by a `.replyRecv` rather than a `.receive` still transfers
+nothing.  Closing it means threading the receiver's CSpace root, its receive slot
+and the summary through `replyRecvBody` — 59 references, 23 of them in the
+cross-core non-interference module — which is a coherent slice of its own, not a
+rider on this one.  The two arms' comments say plainly which one is still open.
+
+**§9.2 — `ipcUnwrapCaps` carries a `senderCspaceRoot` nothing reads.**  The
+revocation-precision fix (v0.33.59) moved the CDT parent onto the real source
+node the message carries, and the parameter has been unused ever since.  It is
+not simply deletable: it is what makes all three transfer paths perform a
+`lookupCspaceRoot senderId` and fail closed with `.invalidCapability`, the AK1-I
+NI-symmetry behaviour — so removing it removes an observable error and that
+decision belongs in the same cut as §9.1, which touches the same three paths.
+
+Verified: Tier 0, Tier 1 (including the routing and content-flow gates), all
+three Tier 2 suites, Tier 3, and eighteen executable suites.  Golden trace
+byte-identical, 233/233.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md
+
+## v0.33.76 — a kind inventory checked against one argument out of many
+
+**`lockSet_consistent_declassify` proved consistency for the capless shape and
+nothing else.**  SM9.D.17 gave `lockSet_declassify` a
+`targetLock : Option LockId` so the origination key rides the target object's own
+lock — the whole point of §3d, which keeps `stateLevelLock` off the content path.
+The consistency theorem was never given that argument, so it elaborated at the
+default `none` and said nothing about the shape a fine-lock consumer actually
+acquires.
+
+Meanwhile `permittedKinds .declassify` listed `[.tcb, .cnode, .objStore]` while
+`permittedKinds`' own contract is "the kinds that *could* appear over all
+argument values, including all possible `Option` cases".  The live arm hands
+`cap.target = .object targetId` to `declassifyObjectFromCore`, which commits a
+`storeObject` at that id; nothing narrows the object's type.  So a downgrade of
+an endpoint, a notification, a reply, a scheduling context, a VSpace root, an
+untyped region or a page frame put that kind into the resolved footprint —
+outside the inventory that downstream deadlock and consistency reasoning reads.
+
+Both halves are fixed together, because either alone is the wrong shape.  The
+inventory now admits every kind, with
+`permittedKinds_declassify_admits_every_kind` stating that as a checked value
+rather than as a comment; and `lockSet_consistent_declassify` takes the
+`targetLock` and holds for **every** one of them.
+
+Admitting every kind would give up the tightness the inventory exists for, so it
+does not: `lockSet_declassify_nonTarget_kinds` holds the members the transition
+*itself* takes to exactly `[.tcb, .cnode, .objStore]` — the caller's TCB, the
+caller's CSpace root, and the state-level lock the trail append needs.  A fourth
+member there is a failure even though the widened consistency theorem would still
+hold of it.
+
+The by-kind ladder is unaffected: acquisition order is by `LockKind.level`, a
+total order over all ten kinds, so admitting more kinds cannot introduce a cycle.
+
+`tests/LockSetSuite.lean` gains the value pin for `.declassify` and — noticed
+while writing it — for `.declassifySignal`, `.auditRead` and `.auditDrain`, none
+of which had one.
+
+Also: the unused `simp only [Option.map]` in
+`lockSet_declassifySignal_originationKeys_write_mem` is gone.  It was the tree's
+only build warning; both `lake build` and `lake build SeLe4n.Platform.Staged` are
+now warning-free.
+
+Refs: docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md
+
+## v0.33.75 — the seam an integrator never reached, and the walk every syscall paid for
+
+**The taint seam sat one layer above the function the docs recommend.**
+`dispatchSyscall`'s own docstring tells integrators that "for production
+user-space entry points, use `dispatchSyscallChecked`".  An integrator who took
+that advice called the dispatcher directly — and the provenance seam was applied
+by `syscallEntryChecked`, above it.  So a successful send or receive taken that
+way moved tagged content with no provenance following, and a successful retype
+kept the replaced object's tags on its replacement.  The recommendation was
+right; the seam was in the wrong place.
+
+It now sits at **both** dispatchers, applied to the state each was given, and
+both entries inherit it by delegating.  That makes the rule one sentence — *the
+taint seam is at the dispatcher* — instead of a list of entry points that each
+have to remember, and an entry written tomorrow inherits it.  The unchecked
+dispatcher carries it too: "unchecked" names what is not *gated*, and provenance
+is not a gate — it records where content came from whatever authority moved it,
+which matters more on the ungated route, not less.
+
+`dispatchSyscallChecked_applies_taint_plan` and `dispatchSyscall_applies_taint_plan`
+pin that **no success path skips it**: whatever route a successful dispatch takes
+— target-first resolve or rights-gated lookup, any of the 33 arms — the state it
+returns is the plan applied to what the invoke committed, keyed on the state the
+dispatcher was given.  Stated existentially over the committed state rather than
+as an equation against a named inner function, so it quantifies over every path
+rather than pinning one spelling.  `entryDecode_some_entry_dispatches` still pins
+the entry to the dispatcher; between them they say what the old entry-level
+equation said, one layer down and over every caller rather than over one.
+
+**And every successful syscall was walking the audit trail twice.**
+`newlyRecordedEvents` takes `pre.declassificationAuditLog.length` and then drops
+that many entries off the post-trail — two O(n) walks over a list bounded only by
+the SM9.A 256-entry cliff — and `applySyscallTaint` runs on every syscall.  An
+inert `.tcbSetPriority` and an ordinary `.send` were each paying up to ~512
+pointer chases for a diff that is provably empty for them.
+
+`TaintPlan.originates` now gates it, set from a new total
+`syscallRecordsDeclassification`.  Deliberately not the content-flow class: the
+two cut the surface differently and folding them would be wrong in both
+directions — `.declassify` moves no content between objects yet records the
+downgrade that must originate a tag, while `.notificationWait` moves content and
+records nothing.
+
+**The gating is licensed, not assumed.**  A future declassifying syscall that
+forgot the flag would originate nothing and lose every chain through it — a
+*missed* chain, the direction this module must never err in.  So the predicate is
+total on `SyscallId` (a new constructor cannot elaborate without an answer), its
+set is pinned as a value by `syscallRecordsDeclassification_iff`, and the Tier-1
+content-flow gate now walks the elaborated call graph from every dispatch arm and
+**fails the build** on any arm that reaches a writer of
+`declassificationAuditLog` while answering `false`.  Both directions fail:
+under-declaring is the unsound one, over-declaring means an arm pays the trail
+walk for a diff it can never fill.
+
+That check found `.auditDrain` immediately, and correctly — the drain rewrites
+the trail on every successful call.  It cannot *append*, though: it removes a
+prefix and advances the epoch by exactly what it removed.  Rather than assert
+that in the gate, `newlyRecordedEvents_of_drop` proves it for **both** branches
+(the zero-length drain leaves the epoch guard unfired, which an inventory
+forgets) and `newlyRecordedEvents_auditDrain` states it over the transition.  The
+gate's exemption cites that theorem and the probe asserts it is still in the
+environment, so the exemption cannot outlive its justification.
+
+Two theorems got *stronger* on the way: `applySyscallTaint_inert` and
+`taintWriteKeys_inert` no longer need a hypothesis about the trail.  The identity
+used to be conditional on the commit having recorded nothing; the plan now
+carries whether its syscall can record at all, so it is structural.
+
+`taintOriginationKeys` takes the plan too, keeping the declared write set and the
+actual write in lockstep rather than letting the declaration over-approximate.
+`taintOrigination_target` / `_actor` gain a `plan.originates = true` hypothesis —
+the honest statement, since a plan that says "cannot record" applied to a commit
+that did record originates nothing, and the Tier-1 gate is what makes that
+combination impossible in the live kernel.
+
+Verified: Tier 0, Tier 1, all three Tier 2 suites, Tier 3 (all checks passed),
+and the dispatch-sensitive suites (`syscall_dispatch`, `vspace_capability_binding`,
+`smp_ipc`, `operation_chain`, `model_integrity`, `smp_information_flow`).  The
+golden trace is byte-identical, 233/233.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md
+
+## v0.33.74 — two gates that could not read what they were checking
+
+Both findings this cut are the same shape one level down from the last one: a
+gate whose PASS line covered text it never opened.  Neither was a missing check;
+both were filters that dropped their subject before inspecting it.
+
+**The anchor gate required `rg` immediately after the label, so it never saw a
+shell-wrapped absence pin.**  Tier 3 spells roughly two dozen of its negatives as
+`run_check "INVARIANT" bash -c "! rg …"` and `run_check "…" bash -lc
+"if rg …; then …; exit 1; fi"` rather than through `run_negative_check`.  The
+parser's regex rejected every one of them, so they entered neither map — and a
+positive anchor opposing one could make Tier 3 unsatisfiable while the gate
+reported PASS.  That is the exact failure this gate was built to catch, reopened
+by the shape of its own parser.
+
+The parser now reads the command rather than assuming it: `shlex` with
+`punctuation_chars` splits the invocation the way bash does, so an unquoted
+operator is a token and a quoted alternation like
+`rg "…\.rc(AcceptAll|DenyAll)" …` stays one word.  Line continuations are folded
+first — six anchors put the file on the next line, and the old `\S+` matched the
+trailing backslash and filed them under the target `'\'`, where nothing could
+ever collide with them.  Every target of a multi-file search is now pinned, not
+just the first.
+
+**And what it cannot read now fails.**  A helper invocation that runs a search
+this parser cannot reduce to one (pattern, target) is a hard error, because "the
+gate could not read it" and "the gate checked it" must not produce the same PASS
+line.  The one tolerated case is a search whose result is *composed* — piped
+through `grep -v`, conjoined with `&&`, or read out of a process substitution.
+Those pin a property of the composition, not of a pattern, so they have no
+counterpart to contradict; there are eight, they are counted in the PASS line and
+named by `--list`, rather than dropped in silence.
+
+Coverage: 2 523 positive / 105 negative → 2 524 positive / **131** negative.
+
+**The content-flow gate skipped every private definition in the tree.**  Lean
+stores `private def foo` as `_private.<Module>.<n>.foo`, which answers
+`isInternal = true` — and both "one writer" sweeps filtered on exactly that.
+11 292 private constants were therefore never opened, 3 872 of them real
+definitions.  A private helper reachable from syscall dispatch could have
+rewritten `SystemState.declassificationTaint` — clearing or replacing provenance
+— while the gate reported that `applySyscallTaint` was the one writer.
+
+The discriminator now runs on the name a human wrote, recovered with
+`privateToUserName?`: `isInternalDetail` is true of *every* private constant, so
+applying it to the stored name drops precisely the definitions that must be
+admitted, while applying it to the user name keeps `Ns.helper` and drops
+`Ns.helper.match_1`, `.eq_1`, `._proof_1` and the other generated auxiliaries.
+The filter is strictly wider than the one it replaces.  Writers are reported
+under their readable name with private ones marked `private@…`, so a private
+constant cannot match the declared writer list by impersonating the name it
+mangles to.
+
+The self-test plants a **private** rogue writer that both rewrites the field and
+calls the declared API, and asserts both sweeps report it.  A public plant would
+not have shown anything: it passes against the blind filter too.
+
+No production writer changed — the widened sweep still finds exactly
+`applySyscallTaint`.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md
+
+## v0.33.73 — the gate that should have caught the anchors, and the third unvalidated source
+
+**The anchor-satisfiability gate was covering four suites out of nine, one of
+which does not exist.**  `ANCHOR_SCRIPTS` named `test_tier2_smoke.sh` — no such
+file — and omitted `test_tier2_{trace,determinism,negative}.sh`, both Tier 4
+suites and Tier 5.  A path that could not be read was skipped in silence, so the
+gate reported PASS over five live suites exactly as confidently as over the four
+it read.  A satisfiability gate that quietly covers less than it claims is worse
+than none: it turns "unverified" into "verified", which is what its PASS line
+invites a reader to conclude.
+
+The list is now **discovered** (`scripts/test_tier*.sh`), an unreadable path is a
+hard failure rather than a skip, and an empty discovery is a hard failure too —
+a glob that stops matching would otherwise check nothing and pass.  Coverage went
+from 2 520 anchors to 2 523 across all nine suites.
+
+**And it could not see the contradiction that actually shipped.**  Keys were
+compared exactly (modulo a leading `^`), so it caught `^theorem foo` against
+`theorem foo` and missed the pair that kept Tier 3 red for four commits:
+
+    run_check          '^abbrev TaintTable := SeLe4n.ObjId → DeclassificationTaint'
+    run_negative_check  'abbrev TaintTable := SeLe4n\.ObjId'
+
+Different strings — one spells the module separator `.`, the other `\.`, and the
+negative names only a prefix — same file, unsatisfiable together.  A positive
+anchor asserts that some line matching it exists; when a negative anchor's
+forbidden text is *literally contained* in that required text, the line the
+positive demands is one the negative rejects.  That is now checked by containment
+over literal cores, with patterns carrying a real wildcard yielding no core and
+being skipped rather than guessed at.  The historical pair is planted verbatim in
+`--self-test`, along with the missing-path and empty-discovery cases, so a future
+simplification cannot quietly stop catching any of them.
+
+**`frozenEndpointSend` never resolved its sender on the rendezvous path** — the
+third instance of one family, after the reply and the signal.  The blocking path
+always resolved it, so whether a nonexistent sender was refused depended on
+whether a receiver happened to be waiting; on the rendezvous ordering the message
+was delivered while the flow read the total table at an id naming nothing (empty
+provenance) or a non-TCB object (that object's provenance).  The lookup is now
+hoisted above the branch and shared, which removes the asymmetry structurally
+rather than adding a second guard that could drift from the first.
+
+This time the whole family was swept rather than the reported member:
+`frozenEndpointReceive` and `frozenEndpointCall` already resolve their sources,
+and the wait path sources from the notification the enclosing match resolved —
+so the send was the last one.  FO-023 pins both send orderings.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md
+
+## v0.33.72 — the signal's source, which the reply's fix should have covered
+
+`frozenNotificationSignal` never resolved its `signaller`, and both delivery
+branches feed it to `frozenTaintFlow`.  That is the same defect the previous cut
+fixed on `frozenEndpointReply`'s replier — a parameter this workstream added,
+whose whole purpose is to say where the content came from — caught one function
+short.  Fixing the symmetric case and stopping is how a class of defect survives
+being reported.
+
+It carries **one failure mode more** than the reply did, and it is the worse of
+the two.  `frozenTaintFlow` reads `declassificationTaint` at whatever `ObjId` it
+is handed: an absent signaller yields the total table's empty default, so the
+badge arrives having lost its predecessor; but an id naming some *other live
+object* yields that object's provenance, so the snapshot reports a predecessor
+the badge never had.  Losing a link makes the analysis miss a chain; inventing
+one makes it name a false origin.  A provenance table that can do either is not
+evidence, which is the standard the required frozen field was added to meet.
+
+The signaller must now resolve to a live TCB — checked after the notification is
+resolved, so a missing or non-notification target still answers `.objectNotFound`
+/ `.invalidCapability` on its own terms, and before either branch commits,
+because both apply the flow.  FO-023 pins both directions, including the
+non-TCB-object case that distinguishes inventing from losing; FO-014 signals
+from a live TCB, which is what it always meant.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md
+
+## v0.33.71 — five review findings, four of them about a claim the code did not keep
+
+**The unchecked syscall entry now applies the taint seam.**  `syscallEntryChecked`
+applied `applySyscallTaint`; `syscallEntry` returned straight from
+`dispatchSyscall`.  Those are not two flavours of the same thing — the modelled
+SVC route (`dispatchSynchronousException`) reaches the kernel through the
+unchecked one, so content tagged by an earlier declassification could pass
+through a send or receive taken by that route without its provenance following,
+and an unchecked `.lifecycleRetype` left a destroyed object's tags on its
+replacement.  The seam is now the same plan, pre-state and post-state shape on
+both entries, applied only on the success arm.  Three theorems moved with it, and
+two got *more* honest in the process: `syscallEntry_preserves_projection` and its
+NI wrapper now take their hypothesis about the **dispatch's** post-state rather
+than the entry's, which is what a caller actually knows — the seam's own
+invisibility is `applySyscallTaint_preserves_projection`, by `rfl`.
+
+**The declassifying signal takes a write lock on its signaller.**
+`lockSet_declassifySignal` extends `lockSet_notificationSignal`, which holds the
+caller **read**-only — correctly, because a plain signal records no event.  A
+declassifying one does, and the origination tags the signaller, so its taint key
+was written under a read lock.  `stateLevelLock` cannot cover it: §3d keeps that
+lock off the eight content-moving syscalls precisely so unrelated IPC does not
+serialise, which means an ordinary IPC writing the same TCB's taint holds only
+that TCB's lock.  Upgraded by merge — `insertOrMerge` takes the `AccessMode.lub`,
+so the size bound is unchanged — with the consistency tier moved to five
+optionals and `lockSet_declassifySignal_originationKeys_write_mem` pinning it.
+
+**A completed capability transfer stops reserving its source.**  The in-flight
+reservation added at v0.33.64 read *every* TCB's `pendingMessage`, and a
+rendezvous leaves the delivered message — `caps` array intact — in the
+receiver's TCB.  So the reservation outlived the transfer without bound: even
+after `cspaceRevokeCdt` removed the installed descendants, the source slot
+answered `.revocationRequired` until the receiver happened to overwrite its
+message, letting a receiver pin the sender's capability storage indefinitely.
+"Parked" is a property of the **sender**, so the scan is gated on
+`blockedOnSend` / `blockedOnCall`; from the rendezvous onward the CDT edges
+exist and `hasCdtChildren` is what covers it.  The two halves of
+`slotIsDerivationParent` now partition the lifetime instead of overlapping
+forever.  `chain12b` gained the regression: the guard releases, and the delete
+succeeds.
+
+**Two frozen operations stopped claiming deliveries they had not made.**
+`frozenNotificationSignal`'s waiter branch cleared `pendingBadge` and readied the
+waiter while storing no message — the badge vanished, and the comment said it
+arrived.  It now stores the badge-only `IpcMessage` the live path stores.  And
+`frozenEndpointReply` accepted a `replierId` absent from the frozen map, reading
+the total table's empty default for it, so a reply carrying declassified content
+reached its caller with no predecessor tag — the blind snapshot the required
+frozen field exists to prevent.  The composing thread must now resolve, checked
+**after** the authority gates so a wrong or missing reply cap still answers
+`.replyCapInvalid`.  Delegation is untouched: a delegated replier is a different
+*live* thread, which is what FO-004b and FO-005 now say.  FO-023 pins both.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md
+
+## v0.33.70 — two invariants that were only comments
+
+Two review findings on the keyed-taint-table cut, both of the same kind: a
+property the code depends on, stated in a docstring where nothing could check it.
+
+**The taint table's canonical form is now a field.**  `TaintTable` wrapped an
+unconstrained list under the comment *"at most one per object, never
+empty-valued"*, and the bound the keyed representation was adopted for — that
+`entries.length` counts objects carrying provenance rather than writes — rested
+on that sentence.  `TaintTable.mk` was public, so a duplicate or empty-valued row
+was constructible, and `SystemState` accepted it: unbounded lookup cost could
+return without any semantic taint changing.  `TaintEntries.Canonical` is now a
+**field of the structure**, discharged at the only two constructors (`empty` and
+`set`; `joinAt` and `clearAt` both route through `set`), with
+`TaintEntries.canonical_erase` / `noKey_erase` / `noKey_erase_self` closing it
+under erasure.  `TaintTable.entries_live` is the payoff, and the reason the field
+is not decorative: every row a table holds is one the lookup returns and none is
+empty, so the length claim is now carried rather than asserted.  The whole tree
+builds unchanged — the writer surface was two sites, so nothing cascaded.
+
+**The taint table's per-key realisation is now a registered lock domain.**  The
+content-moving syscalls declare each taint key's own object lock — deliberately,
+since `stateLevelLock` on those eight arms would serialise unrelated IPC on
+unrelated endpoints and break the tick-budget fit the IPC suites pin.  But the
+model replaces the field whole, so under SM3.C.9's fine locks two cores
+committing disjoint taint keys from their own pre-states would each write the
+whole field and the later commit would discard the other's provenance.  That
+obligation was recorded in `TaintPropagation`'s prose, which is something a cut
+enabling fine locks can enable without ever reading.  It is now
+`UncoveredLockDomain.taintTablePerKeyStore` (owner `SM10.E`), so the inventory's
+completeness theorem — quantified over the constructors — fails until the entry
+is deliberately deleted, which is only sound once the representation exists.
+Not a live race: SM5.I's global entry lock serialises every commit, and
+`SystemState.objects` carries the identical obligation for `storeObject` under
+the same discipline.  Inventory 4 → 5, with the suite counts and Tier-3 anchors
+moved with it.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md
+
+## v0.33.69 — the Tier 1 gates were asking the same question thousands of times
+
+Tier 1 took roughly thirty-four minutes, and thirty-three of them were two
+checks: `check_live_arm_per_core_routing.py` (13m40s, run twice) and
+`check_content_flow_coverage.py` (3m11s, run twice).  Neither was doing more
+work than the property required — each was doing the same work repeatedly, and
+nothing in the harness output said which one to look at.  Tier 1 now finishes in
+**27 seconds**, with every verdict byte-identical: 34 syscalls / 0 allowlisted /
+PASS, and 34 arms / 8 moving content / 26 inert.
+
+**Three redundancies, one shape.**  Each is a question whose answer does not
+depend on the context it was being asked in:
+
+- **`routeBootHits` walked an `Expr` DAG as a tree.**  An elaborated term is a
+  DAG with heavy sharing; a shared subterm was re-collected once per *path* that
+  reached it, and the `.app f a` recursion re-entered every proper prefix of each
+  application spine, so an n-argument call emitted its arguments O(n²) times.
+  Measured over the two-hop reach of six syscall roots: 333 254 pairs emitted
+  before, 610 after — **both yielding the same 301 distinct pairs**, neither
+  containing one the other lacked.  Findings are a `HashSet`, so the verdict only
+  ever depended on that distinct set.  The `Array ++ Array` concatenation went
+  with it: a single threaded accumulator copies nothing.
+- **`cfResolve` scanned all 126 700 constants per stem.**  The 34 arms name some
+  680 stems between them, and `run_cmd` bodies run in Lean's *interpreter* — so
+  this was ~86 million interpreted iterations, and Lean's own profiler put it
+  plainly: `interpretation took 79.9s` against 3 s for everything else in the
+  probe.  Replaced by one pass building a stem index, which is what the routing
+  gate's `byStem` had been doing all along.
+- **`cfWritesChannel` re-walked bodies with no prefilter and no memo.**  The
+  field-writer sweep directly above it already prefilters on the constructor's
+  presence — "an Expr that never names `SystemState.mk` cannot apply it" — and
+  the hit filter did not; nor did it share answers across arms whose reaches
+  overlap almost entirely.  Both fixed, plus a subterm cache in `cfScan` and
+  `cfUpdateWritesField` for the same DAG-as-tree reason as above.
+
+**Proof terms are no longer walked** (`routeExecutableValue`, `cfExecutableValue`).
+A `theorem` is forced to be `Prop`-valued and `Prop` is erased, so a proof
+executes nothing: it can neither route a syscall to a scheduler primitive nor
+move a field, and a definition reachable from an arm *solely* through a proof is
+not run by that arm.  This is not a narrowing of what the gates check — the
+content-flow gate's own sweeps already state the rule ("a theorem naming the API
+states a property of it, and a property cannot move a field") and simply had not
+applied it to their traversal, and the routing gate's printed remediation
+("route the arm through the per-core form, or allowlist it") is not something a
+developer can do to a lemma, which is the sign such a finding was never in its
+contract.  Stated honestly: with the DAG cache in place this buys **no**
+measurable time (6.2s vs 6.5s), and it is kept for the false-positive surface it
+removes, not for speed.  Verified detection-neutral by running both gates both
+ways — same production verdicts, same self-test detections.
+
+**The self-tests still detect what they are for**, which is the check that
+matters for a scanner: the routing gate flags all four boot-pinned arms in the
+pre-SMP map, and the content-flow gate finds its planted `TCB.priority` channel
+on the same 4 inert arms as before.
+
+**And the harness now reports what each check cost** (`test_lib.sh`).  A check
+taking a second or more prints its duration, and every tier ends with the ten
+slowest.  Two gates accounted for thirty-three of thirty-four minutes and the
+output looked identical either way; that is the gap that made this expensive to
+find rather than the gate code itself.  Applied on the first run: Tier 0 spends
+21.5s of its 33s in `check_identifier_naming.py` — a follow-on, now visible
+instead of latent.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.7
+
+## v0.33.68 — the taint table is keyed, so it is bounded by what it holds
+
+**The last open review thread, and the second architectural root of this
+workstream.**  `TaintTable` was `SeLe4n.ObjId → DeclassificationTaint`, so every
+write closed over the previous table and a lookup walked the chain: the table
+recorded *history* rather than state.  Two earlier cuts guarded against
+value-*preserving* writes, which made ordinary untainted traffic free and left
+the actual growth mode untouched — the store/consume cycle is value-*changing*
+in both directions.  A declassified badge stored on a notification, taken by
+`.notificationWait`, stored again: two closures per cycle, for ever, and lookups
+of unrelated objects walking all of it.
+
+The docstring defended the function form by citing `Machine.Memory : PAddr →
+UInt8`, and that citation was the flaw in the argument.  `Machine.Memory` is a
+specification of hardware that is never executed; this table is read and written
+by `applySyscallTaint` on the live syscall path.  A specification-shaped
+representation on an execution path was the mistake.
+
+**Keyed, under a total lookup.**  `TaintTable` is now a structure over an
+association list with a `CoeFun` doing the lookup, so every downstream site still
+reads `tbl oid` and every pointwise lemma — `set_self`, `set_ne`, `joinAt_*`,
+`clearAt_*` — is unchanged in statement.  The whole tree and the staged modules
+build with zero errors and zero warnings without a single call-site edit, which
+is the property the coercion was chosen for.
+
+The list is kept **canonical**: `set` with `DeclassificationTaint.empty` erases
+rather than storing an empty entry, so the length is the number of objects that
+currently carry provenance.  `clearAt` therefore genuinely shrinks the table
+instead of extending it — the difference between a bound and a leak.
+
+**Why not `RHTable`.**  The original reason for avoiding a hash table still
+holds and is now recorded where it belongs: `RHTable`'s lookup-after-write
+lemmas take `invExt` as a hypothesis, and `getElem?_erase_ne` a capacity bound as
+well, so a hash-backed table would have to carry that well-formedness — a
+seventeenth `proofLayerInvariantBundle` conjunct plus an obligation at every
+writer, which §6 of the plan decides against for all three SM9 mounts.  An
+association list needs no invariant; its lemmas are plain inductions.
+
+**The bound is stated, not asserted.**  `taintEntriesErase_length_le` and
+`taintEntriesErase_idem` are the two facts, `clearAt_set_entries` computes the
+composition (a clear at the key a set just wrote removes what it wrote, so both
+branches of `set` collapse to the same list), and `storeThenClear_no_growth`
+concludes: one full cycle leaves the table no larger than it started.  Stated on
+*entries*, which is what a lookup walks — so an object's read cost depends on how
+many objects carry provenance and never on how many times any of them has been
+written.
+
+Evidence: §12.8 drives five store/consume cycles from the empty table and asserts
+it ends with **no entries at all** — the old representation would have held ten
+closures — alongside the contrast that a stored tag survives, as exactly one
+entry however many times it is re-joined.  Tier-3 anchors on the structure, the
+erase, both bound theorems and the regression, plus a negative forbidding the
+`abbrev`-over-function form from returning.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
+## v0.33.67 — a laundering chain that spans an audit drain is queryable again
+
+**The last of the round-5 findings, and the one I had explicitly scoped out.**
+Round 3 added `chainNamesEntry` for a causal hop split out of adjacency by an
+interleaved event, and its docstring said plainly that it did *not* recover a
+predecessor that had left the view: "no view-local reader can query an entry it
+cannot see."  That was true of the mechanism and wrong as a conclusion.  A drain
+advances the epoch rather than renumbering, so a surviving entry's
+`predecessorTags` still names the archived timestamp — the kernel can answer;
+only the ABI had no way to ask.
+
+`AuditReadOp.chainNamesArchived (later timestamp)` at **opcode 29** (count 29 →
+30, mirrored in `sele4n-sys`) reuses the existing `[op, index, chunk]` triple:
+`index` is a view index, `chunk` is the archived timestamp.  It returns the same
+single opaque bit the other two verdicts return — whether the visible later
+entry's own recorded snapshot names that predecessor — so the tags themselves
+stay unexported.
+
+**The operand is a raw identity, so the gate had to carry the whole argument.**
+An index names an entry the projection has already cleared this reader to see; a
+bare number names anything, and answering for arbitrary timestamps would let a
+*partial* reader enumerate a visible entry's predecessor set.  So this arm is
+monitor-only, under exactly the gate that already discloses the epoch to
+`.status`.  That is sound because of a property the drain already has: it
+refuses unless its caller passes the monitor gate *and* sees the entire trail
+(`auditDrainViewComplete`), so an entry can only have been archived by a
+monitor-cleared caller who could read it, and answering discloses nothing this
+caller could not have read before the drain.
+
+**Where the obvious spelling would have opened a channel.**  Gating on the
+reader's *current* view — "you may ask if you can see the whole trail right now"
+— reads state, and would answer differently for two states with identical
+visible views but different hidden entries.  That is a count of what the reader
+cannot see, and `auditRead_determined_by_view` (the keystone the whole no-channel
+argument rests on) stops being provable.  The gate is therefore a function of
+`(ctx, monitorClearance, reader)` alone, and the theorem still goes through.
+
+Two further restrictions, both stated as theorems.  A timestamp at or past the
+epoch is refused (`chainArchivedVerdict_refuses_live_timestamp`): a still-present
+predecessor is opcode 28's question, asked through an index the projection
+checks, so this operation answers only about entries that have actually left the
+trail.  And the gate is checked **before** the index
+(`chainArchivedVerdict_denied_for_non_monitor`), so a refused caller learns
+nothing about the trail's extent — the drain's own two gates share one error for
+the same reason.
+
+Evidence: `chainArchivedVerdict_names_iff` characterises the word;
+`auditRead_stable_under_append` gains the arm (an append moves neither the epoch
+nor an index already in view); the §10.4/§11.7 round-trip lists, the ABI
+boundary assertions and the Rust conformance test all move to 30; the golden
+fixture's two opcode-count lines are regenerated.  Zero errors and zero warnings
+across the tree, staged modules and every suite; `test_rust.sh` green.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
+## v0.33.66 — a CSpace root is not a taint carrier, because the model cannot say when its tag dies
+
+**The stale-root finding could not be patched, because the carrier itself was
+the defect.**  A capability transfer tagged the receiver's CSpace root with the
+sender's provenance, and `.cspaceDelete` is `.inert` — so deleting the capability
+that carried a tag left the tag on the root, and the next unrelated transfer out
+of that CNode sourced it and attributed an old downgrade to an unrelated
+receiver.  A *specific, unsaturated* false predecessor, which is precisely what
+`staleTaint_is_not_saturation` says cannot exist.  The carrier did not cost
+precision; it falsified a stated property.
+
+**Why no clear rule works.**  `contentTrackedFields` names the two fields this
+model treats as content — `TCB.pendingMessage` and `Notification.pendingBadge` —
+and a CNode holds neither.  The model therefore cannot decide when a root's tag
+dies: clearing on delete over-clears (other capabilities in the same CNode may
+still carry provenance, so live chains would be dropped — the direction a
+detector must never err in), and not clearing is the finding.  Precision needs
+slot granularity, which is the scope widening already declined for badges.
+
+**And the carrier was redundant.**  A transfer moves *authority*, not content.
+Every flow that authority enables is declared where the content actually moves:
+a subject that receives a capability to a notification and later waits on it
+gets the edge at the wait, sourcing from the notification and whatever
+provenance it holds; one that receives an endpoint capability and receives
+through it gets the head-sender edge.  The authority hop needs no edge of its
+own.
+
+So the carrier is gone.  `capTransferTaintSinks`, its `sendCarriesCaps` gate and
+the three theorems asserting the root edges are **deleted rather than weakened**,
+with Tier-3 negatives pinning them out.  `senderTaintEdges` declares exactly one
+edge — the content edge to the rendezvous receiver — and
+`senderTaintEdges_content_only` is the checkable form of "no declared edge names
+a CSpace root".  The remaining gap is stated in the shape
+`capabilityBadgeChannel_out_of_scope` uses, and a future decision to track
+capability provenance at slot granularity has to delete that theorem.
+
+This closes rounds 2, 3, 4 and 5 of one thread at once.  Each earlier round
+patched a *consequence* of having a root carrier — the tag was written and read
+by nothing, then the root had to feed the consuming subject, then the two could
+not compose within one commit because `applyTaintFlow` reads every source from
+the pre-state.  Four rounds on one structure is the signal that the structure,
+not its wiring, was wrong.
+
+**Two claims get stronger.**  §12.8's coverage line was carved out while the
+CSpace sink existed ("every taint write key *except* the cap-transfer CNode");
+it is now the total claim, in both the caps-carrying and capless shapes.  And
+`taintWriteKeys_of_no_events` drops its exception: every taint write a
+non-appending syscall performs rides a declared write lock.  The registered
+footprint gap is unchanged and is now purely what it always was — an *object*
+write, `ipcUnwrapCaps` writing the receiver's root CNode with no declared lock,
+still pinned as `UncoveredLockDomain.capTransferReceiverCnode`.
+
+Evidence: §12.8 gains a negative asserting no rendezvous declares a CSpace-root
+sink or source in either shape, alongside the strengthened total coverage line;
+surface anchors swap the deleted theorems for the scope theorem; the
+content-flow gate is unchanged (34 arms, 8 moving content).  Zero errors and
+zero warnings across the tree, staged modules and every suite.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
+## v0.33.65 — a taint write is serialised by its own key's lock, and provenance survives the frozen operations
+
+Two coverage gaps in the SM9.D taint surface, both from review round 5, both
+where the model *declared* something it did not carry.
+
+**The declassify footprint could not lock the keys it writes.**  An authorized
+`.declassify` appends an audit event, and origination writes that event's
+identity into the taint table at two keys — the event's `targetObject` and the
+actor's TCB.  `lockSet_declassify` held the caller TCB in *read* mode, named no
+target at all, and the docstring justified both by pointing at the
+`stateLevelLock` write the trail append needs.
+
+That argument does not hold, and it is undone by the decision immediately above
+it: §3d of `TaintPropagation.lean` deliberately keeps `stateLevelLock` off the
+eight content-moving syscalls, because a globally contended lock on the IPC path
+is a design regression rather than a footprint refinement.  So `stateLevelLock`
+orders a declassification against other *state-level* writers and against
+nothing else, while an ordinary IPC writing the same object's taint holds only
+that object's lock.  Two such commits have provably disjoint footprints while
+both writing one taint key — 2PL admits them concurrently and one update is
+lost.
+
+`lockSet_declassify` now holds the caller TCB in **write** mode and carries the
+resolved target's own lock as a defaulted optional, so every pin taken before
+the member existed survives by `rfl`.  The target's lock is supplied by the
+caller because a `LockId` is `⟨kind, objId⟩` and the kind is a property of the
+state — the capability names `.object targetId` of any kind.
+`lockSet_declassify_originationKeys_write_mem` states both halves separately so
+the pair cannot collapse to one.
+
+`lockSet_declassify_size_le` is quantified over the new member and the
+`lockSetTransitions_within_bound` conjunct widened to match.  Left at partial
+application it would have bounded only the defaulted `none` shape while the
+resolved one — the shape the dispatch builds — went unbounded: exactly the
+defect the `notificationSignal` conjunct carried before SM9.C.
+
+**Frozen operations moved content and left provenance behind.**
+`FrozenSystemState.declassificationTaint` is a *required* field, and its
+docstring says why in the strongest terms available: a snapshot that dropped
+provenance would report a system in which every recorded downgrade is causally
+unconnected — the shape a laundering chain is precisely not — so the analysis a
+frozen snapshot exists to support would come back clean on a system that is not.
+Preserving the table across `freeze` bought that for the instant of the freeze
+only; the frozen IPC operations then wrote `pendingMessage` and `pendingBadge`
+while carrying the table through untouched, reproducing the same blind snapshot
+one operation later.
+
+All six content-moving frozen operations now propagate, mirroring the live
+content-derived model because they are the same transitions on the same
+channels: a sink joins its source's provenance (`frozenTaintFlow`) and a
+transport that hands its content on is cleared (`frozenTaintClear`).  A parked
+send propagates nothing — the message is still in the sender's own TCB, whose
+provenance is already the sender's — and the receive that collects it does.
+
+Two signatures changed to make that expressible.  `frozenNotificationSignal`
+gains the signaller, as the live `notificationSignal` has always had it: without
+naming the subject, the operation could not say where the content it introduces
+came from, and the frozen op is supposed to mirror its live counterpart.
+`frozenEndpointReply`'s replier stops being `_replierId`: authority still comes
+from the presented reply capability, but the *content* comes from the thread
+that composed it, which is what the parameter is now for.
+
+Evidence: FO-022 drives a tagged sender through send → receive and signal →
+wait, asserting a specific identity reaches a thread that never held it, that a
+parked send propagates nothing, and — the negative — that the consumed
+notification keeps none of it.  Tier-3 anchors on both guarantee theorems, the
+widened bound arity, the two frozen helpers, and a negative forbidding the
+replier from going back to unused.  Zero errors and zero warnings across the
+tree, staged modules and every suite.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
+## v0.33.64 — the orphan is closed at the creator, not at each destroyer
+
+**Fourth sighting of one defect, so this cut stops patching where it surfaces.**
+An IPC-transferred capability hangs off the source slot's CDT node, and
+`cspaceRevokeCdt` reaches it by resolving that node back to a slot.  Destroy the
+source slot while a transfer from it is parked and the copy lands beneath a
+parent nothing points at: authority no revoke can reach.
+
+The first three sightings were each patched at the operation that destroyed the
+slot — the transfer naming a synthetic source (v0.33.59 → v0.33.60), the delete
+guard blind to transfers in flight (v0.33.62), and now **retyping the CNode**,
+which destroys every slot it holds and checked nothing at all.  Review then
+found a fourth: the revoke sweep deletes descendant slots, and a transfer parked
+from one of those still lands.
+
+**Why the destroyers were the wrong place.**  Every CDT invariant in the model
+is stated node → slot.  `cdtCompleteness` says a node with a slot mapping points
+at a live object, and its docstring records that it is *"robust through
+`detachSlotFromCdt` because detached nodes lose their mapping (vacuously
+satisfying the condition)"*.  The converse — a node standing as a derivation
+parent must still have a live slot — is stated nowhere, so orphaning **satisfies**
+the invariant surface rather than violating it.  With no invariant to fail, each
+slot-destroying operation had to remember the check on its own, and that set is
+open-ended: three known, and a fourth only as far away as the next transition
+that frees a slot.
+
+**The creator is exactly one function.**  `ipcTransferSingleCap` is the single
+point at which an `.ipcTransfer` edge comes into existence.  It now looks the
+source node back up and, finding no slot, answers the new
+`CapTransferResult.sourceRevoked` and leaves the state untouched — the receiver
+gets one fewer capability, exactly as with `.grantDenied`.
+`ipcTransferSingleCap_installed_implies_live_source` states the guarantee, and
+it holds against every destroyer at once, including ones not yet written;
+`ipcTransferSingleCap_sourceRevoked_preserves_state` pins that the declining
+branch is a no-op.
+
+The check sits *after* the receiver-root and empty-slot resolution rather than
+ahead of it.  Placed first it would short-circuit before the receiver is
+validated, and `.ok` would stop witnessing a CNode at the receiver root —
+`ipcTransferSingleCap_ok_implies_cnode_at_root` and the object-shape frames all
+rest on that.  The check that declines to install belongs next to the install.
+
+**The guards stay, and are deliberately not the guarantee.**  `cspaceDeleteSlot`
+and the new CNode-retype arm both refuse through one shared predicate,
+`slotIsDerivationParent`, because `.revocationRequired` tells a caller to revoke
+first and that is a better answer than a capability that silently fails to
+arrive.  A second call site spelling the disjunction out again would be a second
+place for its two halves to drift.
+
+**Retype also stops branching on the replacement's shape.**  CNode → CNode
+skipped the CDT detach on the grounds that none was needed.  It was:
+`objectOfKernelType` — the only thing the live `.lifecycleRetype` dispatch builds
+a replacement with — yields `slots := UniqueSlotMap.empty`, so no slot survives
+either way, and skipping left mappings pointing into a CNode that no longer held
+the capability they were minted for.  A capability later placed at such a slot
+would inherit a destroyed one's derivation node, and revoking that node's
+ancestor would take the unrelated newcomer with it.  Past the guard the detach
+is unconditionally correct, so the arm no longer reads `newObj`.
+
+**Two fixtures were describing something the kernel now refuses.**  `chain12`
+and `chain14` built their transfer caps from bare node ids that no slot was
+bound to — precisely the orphan shape.  They now mint real derivation nodes via
+`ensureCdtNodeForSlot`, as `resolveExtraCaps` does.  The fixtures were wrong, not
+the check.
+
+**The anchor-satisfiability gate could not see half the anchors.**  Its parser
+accepted only single-quoted `rg` patterns while the suites use double quotes
+wherever the pattern contains a quote or an escaped dot, so those declarations
+were silently absent from both maps and an unsatisfiable tier would still have
+reported PASS.  It now reads both forms, unescaping double-quoted words the way
+bash does so `"\\."` and `"\."` compare equal, and the self-test plants a
+double-quoted contradiction whose two halves are spelled differently.  Visible
+anchors went from 2495 to 2502 positive and 98 to 99 negative on this cut's own
+additions alone.
+
+Evidence: `chain12b` gains the retype refusal plus a four-assertion pair that
+drives the same unwrap over a bound and a detached source — install versus
+`.sourceRevoked`, with the receiver slot and the CDT edge count both pinned;
+Tier-3 anchors on the shared predicate, both call sites, both guarantee
+theorems, and a negative forbidding the shape-branching comment from returning.
+Zero errors and zero warnings across the tree, staged modules and every suite.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §3.1
+
+## v0.33.63 — the code view is built once per run, not once per anchor
+
+**Every surface anchor rebuilt the comment-stripped overlay from scratch.**
+`lean_code_view_dir` cached its result in `LEAN_CODE_VIEW_DIR`, and its one
+caller read it as `view="$(lean_code_view_dir)"` — a command substitution, which
+runs in a subshell, so the assignment was discarded the instant the function
+returned.  The cache was written on every call and read on none.
+
+Measured: a warm re-sync of the overlay costs 0.217s, and the Tier 3 anchor
+suite routes 2564 of its 2695 checks through it — **9m16s** per run spent
+rebuilding a directory that had not changed, on top of the same cost paid again
+by every other tier that scans Lean source.  With the cache working, that run is
+3m26s.
+
+`_ensure_lean_code_view` sets the variable in the caller's scope and returns
+only a status, so `_run_with_view` can consult it directly; `lean_code_view_dir`
+remains as a thin path-printing wrapper for callers that want the directory as a
+value, and is now a cache read rather than a rebuild.
+
+**Why it is not exported.**  The cache is sound only for a process that does not
+change the tree, and one caller does exactly that: `test_code_view_wiring.sh` —
+the witness that pins this very mechanism — plants a fixture and then asserts an
+anchor finds it.  Exporting would hand that child a view built before its
+fixture existed, and the failure would present as the routing being broken
+rather than as a stale view.  So the variable stays shell-local, each process
+rebuilds once, and the witness additionally drops any inherited value so it
+cannot be re-broken from outside either.
+
+Evidence: the wiring witness passes all five checks; Tier 3 passes with its
+anchor set unchanged in content and verdict.
+
+Refs: CLAUDE.md §Key conventions ("Gates read code, prose reads prose")
+
+## v0.33.62 — the delete guard sees transfers in flight, not only children
+
+**A capability slot could be deleted while a transfer from it was still in
+flight, orphaning the transferred copy's derivation parent.**  The last
+remaining hole in the revocation-precision series, identified from two
+directions at once — while investigating why a v0.33.60 regression failed, and
+independently in review.
+
+**The window.**  `resolveExtraCaps` mints the source's derivation node and the
+message carries it; a blocking send then parks that message until a receiver
+arrives.  The CDT edge is recorded at the **unwrap**, so during the parked window
+the source slot has no child yet.  `cspaceDeleteSlot` refuses a slot with CDT
+children — a strong guard — but a pending transfer is not a child, so the delete
+was permitted, `cspaceDeleteSlotCore` detached the slot from its node, and the
+later unwrap installed the copy under a parent no slot points at.  Nothing could
+revoke it.
+
+**The fix, and why it is derived rather than stored.**
+`nodeHasPendingTransfer` reads the parked messages themselves — it scans TCB
+`pendingMessage`s for a `TransferCap` naming the node — and
+`cspaceDeleteSlot`'s guard becomes
+`hasCdtChildren st addr || slotHasPendingTransfer st addr`.
+
+A reservation counter in `SystemState` was the obvious alternative and is worse.
+It would have to be incremented at resolution and decremented at *every* path
+that discards a parked message — delivery, cancellation, thread teardown — and
+the two failure modes are both bad: a missed decrement leaks a slot that can
+never be deleted, a missed increment reopens exactly this hole.  Reading the
+messages cannot drift, because the reservation **is** the message: when a
+cancellation drops `pendingMessage`, the reservation disappears with it.  It also
+keeps `SystemState` — and therefore the invariant bundle — untouched.  The cost
+is an object-store scan, paid only when deleting a capability slot, never on the
+IPC path.
+
+`hasCdtChildren` keeps its exact meaning and the guard is the explicit
+disjunction, so neither predicate has to lie about what it covers.
+`cspaceDeleteSlot_refuses_pending_transfer` and
+`cspaceDeleteSlot_refuses_existing_children` state the two halves separately so
+the disjunction cannot silently collapse to one side.
+
+**Why the regression is load-bearing.**  `chain12b` parks a send and first
+asserts the source slot has **no CDT child** — which is what proves the
+children-only guard would have permitted the delete, and therefore that the new
+predicate is doing real work rather than shadowing an existing check.  Then the
+delete is refused, and an unrelated slot in the same CNode still deletes, pinning
+the guard as transfer-keyed rather than CNode-keyed.
+
+**Two evaluations removed from the syscall path.**  `applySyscallTaint` computed
+`originationTags (newlyRecordedEvents …)` twice — two O(n) list walks over a
+trail bounded at the SM9.A 256-entry cliff, on *every* syscall, inert plans
+included.  Bound once.
+
+`syscallEntryChecked` evaluated `tlbFillIpcBufferOnCore` **three** times, with a
+comment explaining that an intermediate binding would stop the carriage proofs
+from `split`ting.  That comment was right and I initially assumed it was
+over-cautious: Lean elaborates a non-dependent `let` in that position to
+`letFun`, which is a `have`, and the staged `FineLockFlow` proof failed on
+`split` exactly as predicted.  Resolved by absorbing it in the proof
+(`dsimp only` before the `split`) rather than reverting, so the triple
+evaluation is gone and the case analysis still works.  The comment now records
+the real constraint instead of the conclusion drawn from it.
+
+**Documentation.**  `docs/DEVELOPMENT.md` still described the audit-read ABI as
+ending at adjacent-pair opcode 27; it now documents `chainNamesEntry` at opcode
+28 and the count of 29, which a monitor needs when an unrelated event is
+interleaved between two causal hops.
+
+Evidence: four new `chain12b` assertions with their negatives; Tier-3 anchors on
+both guard halves and on the load-bearing negative.  Zero errors and zero
+warnings across the tree, staged modules and every suite.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §3
+
+## v0.33.61 — bound delivery becomes one classification; the receive stops claiming a transfer it never makes
+
+**Bound delivery produced three findings in three review rounds — the clear
+(round 4), the declared edge (round 6), the origination (round 7) — and each was
+patched where it surfaced.**  Three patches for one cause is the signal to stop
+patching.  The cause: all three consumers re-read `declassifiedSignalReceiver?`,
+which returns a `ThreadId` and therefore **cannot distinguish a bound target from
+a waiter** — precisely the distinction each of them needed.
+
+`SignalDelivery` now names the three outcomes, and every consumer derives from
+it:
+
+```lean
+inductive SignalDelivery where
+  | stored          -- no receiver: the badge lands on the notification
+  | toWaiter (w)    -- delivered directly; the notification ends empty
+  | toBound  (t)    -- delivered into the bound TCB; the notification untouched
+```
+
+`signalDelivery_bound_leaves_notification_alone` states all three agreeing at
+once — no clear, a bypass, and only the signaller's own content reaching the
+thread — with `signalDelivery_waiter_empties_notification` as its contrast.  A
+disagreement between the three is no longer something one can write.
+
+**A bypass is not a clear**, and round 7 needed that distinction to exist.
+`TaintPlan.bypassed` is a separate list because the two are opposites in what
+they preserve: a clear is destructive (the object held content, now holds none,
+so its provenance goes with it), while a bypass destroys nothing — the bound path
+writes the thread and never touches the notification, so a badge already stored
+there keeps both its content and its provenance while the *new* badge never
+landed there at all.  Folding them together would either wipe the stored badge's
+provenance (a missed chain) or tag a notification the badge went nowhere near (a
+false one).  `bypassedObject_not_originated` is the property.
+
+**The receive stops claiming a transfer the kernel does not perform.**  The live
+`.receive` arm runs `endpointReceiveDualOnCore`, which delivers the parked
+message wholesale and performs **no capability unwrap** — the arm says so in
+place and reports an installed count of zero.  `endpointReceiveDualWithCaps`
+exists, is verified, and has no live caller.  So the receive-side CSpace sinks
+added in v0.33.58 described an installation that never happens: they wrote the
+sender's provenance into a CNode no capability reached and, because a CSpace root
+fed the consuming subject, handed unrelated later downgrades an *unsaturated*
+predecessor — exactly what `staleTaint_is_not_saturation` forbids.
+
+Three theorems asserting that provenance are **deleted rather than weakened**
+(`taintPropagation_queued_receive_to_cspace`,
+`taintPropagation_cspace_taints_consumer`,
+`taintPropagation_transfer_taints_receiver`), with negative anchors pinning them
+out; `parkedCarriesCaps` lost its last consumer and went with them.  Capability
+provenance is still tracked where a transfer actually happens — the live send
+*does* unwrap, and `senderTaintEdges` declares the sinks there.  Wiring the
+receive through the WithCaps path, and restoring these behind it, is recorded in
+`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`.
+
+**The send gate now requires Grant.**  `ipcUnwrapCaps` answers `.grantDenied` for
+every capability when the endpoint capability lacks it, so a declared count alone
+was not evidence that anything would be installed.  §12.8's fixture gains a
+Grant-bearing endpoint capability at a slot of its own rather than the gate being
+weakened to suit a fixture built before it existed.
+
+**Two gates caught their own author.**  The anchor-satisfiability gate added in
+v0.33.58 caught this cut pinning the deleted theorems both present *and* absent —
+the exact contradiction it was written for.  Tier 3 caught a stale
+`srcRef : SlotRef` anchor left by v0.33.60's rename, which would otherwise have
+failed CI: Tier 0 ran before that commit, Tier 3 did not.  The lesson already
+recorded for the codebase map — *"last" means after the final green run, not
+after the edits you planned* — applies to anchors too.
+
+Evidence: information-flow suite 777 → **794**; zero errors and zero warnings
+across the tree, staged modules and every suite; Tier 3, the content-flow gate
+and its self-test all green.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
+## v0.33.60 — a transferred capability carries its derivation node, not a reusable slot address
+
+**The residual half of the revocation-precision fix.**  v0.33.59 made IPC
+capability transfer record its derivation edge from the real source *slot*
+instead of a synthetic one.  Review round 7 pointed out that a slot address is
+not stable across the window it has to survive, and it is right.
+
+**The window.**  A blocking send parks its message and the unwrap runs in a
+*later* syscall.  In between, any thread sharing the sender's CSpace can change
+what lives at that slot.  A slot address resolved at unwrap time names whatever
+occupies it *then*, so the transferred copy could be recorded as derived from an
+unrelated capability.  The SM5.I global entry lock does not help: it serialises
+each syscall, and the parked window spans syscalls.
+
+So v0.33.59 was strictly better but not complete — before it, *every* transfer
+was misattributed to one synthetic node; after it, only a transfer whose source
+slot changed during the parked window, and onto whatever now sat there.
+
+**The fix, and why it is the design the codebase already specified.**
+`TransferCap` now carries `srcNode : CdtNodeId` instead of `srcRef : SlotRef`.
+`resolveExtraCaps` mints the node at resolution — the moment the capability is
+actually looked up — and returns the state carrying it, so the derivation parent
+the message names exists in the state the transition commits from.
+`ipcTransferSingleCap` takes the node directly, which also removes one
+`ensureCdtNodeForSlot` call from its body.
+
+`CdtNodeId`'s own docstring states the contract this restores: *"nodes are
+stable across CSpace slot moves: slots point to nodes, and edges are between
+nodes (not slot addresses)."*  v0.33.59 contradicted it; this cut complies.
+`CdtNodeId` moves down into `Model/Object/Types.lean` for the same layering
+reason `SlotRef` did — `IpcMessage` sits below `Model/State.lean` and has to name
+it — and the namespace is unchanged, so no reference anywhere needed editing.
+
+**What the regression now pins.**  `chain12b` keeps both original verdicts
+(revoking the real source destroys the copy; revoking an unrelated slot does
+not) and adds the property node identity buys: a capability replaced *in place*
+keeps its slot's node, so a parked transfer stays attached to the identity it
+named and the revoke still reaches it.  The fixture mints its node exactly as
+`resolveExtraCaps` does, so the test measures the identity the revoke walk
+actually looks up rather than a hardcoded number.
+
+**A hazard the rename exposed, worth recording.**  Renaming the binder
+`senderSlot → srcNode` left thirteen theorem *statements* still saying
+`senderSlot`, which Lean silently auto-bound as a fresh implicit: they compiled
+while quantifying over an unrelated variable, with the explicit parameter dead.
+Nothing failed — the only signal was `unused variable`.  A warning was the sole
+evidence that thirteen theorems no longer said what they appeared to say.
+
+**Still open, and newly identified.**  `cspaceDeleteSlotCore` detaches a slot
+from its node, and `cspaceDeleteSlot` refuses a slot that already has CDT
+children — but a *parked* transfer is not yet a child, so a delete during the
+parked window is permitted and orphans the node the message names.  No revoke
+then reaches the copy.  Node identity is still the better position (it can no
+longer destroy an unrelated capability), but the delete guard needs to see
+in-flight transfers.  Recorded as tracked debt in the fine-lock plan.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §3
+
+## v0.33.59 — IPC capability transfer records its real derivation source (revocation precision)
+
+**A capability transferred over IPC was recorded as derived from the wrong
+slot, so revoking the source did not destroy the copy.**  Severity **High** —
+revocation of derived authority is a core capability-system guarantee.  Found
+during the SM9.D audit, reported before any fix landed, and closed here.
+
+**The defect.**  `resolveExtraCaps` resolved each extra capability address to a
+real `ref : SlotRef` and then pushed **only the capability**, discarding `ref`.
+With no source address in the message, `ipcUnwrapCapsLoop` hardcoded the
+derivation parent as `{ cnode := senderCspaceRoot, slot := Slot.ofNat 0 }`, and
+`ipcTransferSingleCap` recorded `addEdge (node of that synthetic slot) (node of
+dst) .ipcTransfer`.  CDT nodes are keyed by the **full** `SlotRef`
+(`ensureCdtNodeForSlot` mints a distinct node per distinct ref), so slot 0's
+node is not the real source's node.
+
+The live userspace revoke — `cspaceRevokeCdt`, the default for untrusted
+invocations — walks `descendantsOf (lookupCdtNodeOfSlot addr)`, the **real**
+slot's node.  Local `cspaceRevoke` only clears same-CNode siblings, so that CDT
+walk is the only cross-CNode reach.  Consequences, both reachable single-core
+with only `Grant` on the endpoint:
+
+* **Use-after-revoke.**  Revoking a capability held at any slot ≠ 0 never
+  reached its IPC-transferred children; the receiver kept authority the revoker
+  meant to destroy.
+* **Over-revocation.**  Every transferred capability, from any source, hung off
+  the one synthetic node, so revoking whatever really lived at the sender root's
+  slot 0 destroyed unrelated transferred capabilities.
+
+**The fix.**  The source slot now travels with the capability:
+
+```lean
+structure TransferCap where
+  cap    : Capability
+  srcRef : SlotRef
+```
+
+`IpcMessage.caps : Array Capability` becomes `Array TransferCap`,
+`resolveExtraCaps` keeps the `ref` it already resolves, and the unwrap loop
+passes `tc.srcRef`.  One array of pairs rather than two parallel arrays,
+because a `caps` array beside a `capSrcRefs` array would carry a same-length
+same-order invariant that nothing in the type states — the implicit-invariant
+shape this project requires to be structural.  A transfer capability cannot be
+half-built.
+
+The source slot has to live in the *message* rather than be recomputed at the
+unwrap, because the unwrap can happen in a **later** syscall: a blocking send
+parks its message in the sender's TCB and the transfer completes when a receiver
+arrives, at which point nothing about the original resolution is still in hand.
+
+**A layering move it required.**  `IpcMessage` is in `Model/Object/Types.lean`,
+`SlotRef` was in `Model/State.lean`, and `State.lean` imports `Model.Object` —
+so the field could not be written.  `SlotRef` moves down beside `CapTarget` and
+`Capability`, which is also where it belongs: an address into a CNode is part of
+the object model, not of whole-system state, and `LifecycleMetadata` already
+pairs it with `CapTarget`.  It is a self-contained leaf with no dependency on
+`State.lean`, and both modules are in `namespace SeLe4n.Model`, so
+`SeLe4n.Model.SlotRef` is unchanged and no reference anywhere needed editing.
+
+**Evidence, and why it is load-bearing.**  `chain12b` builds a sender whose
+payload capability sits at **slot 5** — so the real source and the old stand-in
+are different nodes — transfers it, and then revokes:
+
+* revoking **slot 5** (the real source) destroys the transferred copy;
+* revoking **slot 0** (unrelated, and the old synthetic address) leaves it alone.
+
+Both verdicts swap under the defect.  Re-running the scenario with the
+capability attributed to slot 0 fails on the negative — revoking an unrelated
+capability destroys the transferred one — which is the over-revocation half
+reproduced end to end through the real `cspaceRevokeCdt` walk.  Restoring the
+synthetic literal in the loop no longer even compiles: the proof surface now
+binds the per-capability source, so 26 sites reject it.
+
+Tier-3 anchors pin the structure, the loop's use of `tc.srcRef`, both regression
+verdicts, and — negatively — the synthetic address itself, since the type change
+makes it awkward rather than impossible to reconstruct.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §3
+
+## v0.33.58 — WS-SM SM9.D review round 4: simultaneity, the gate, the resurrected clear, the bound badge
+
+**Review round 4 (v0.33.58)** — four findings on the v0.33.57 cut, each verified
+against the code and closed.  Three are consequences of the round-3 fixes, and
+the pattern is now the story of this review series: every sharpening of the
+model exposes what the previous shape was hiding.
+
+**(1) The flow fold is simultaneous, so provenance did not chain.**
+`applyTaintFlow` reads *every* source from the pre-state table.  Round 3 added a
+root→subject edge keyed on the receiver's own CSpace root — but a capability
+transfer writes the sender's provenance to that same root in the *same* commit,
+and the subject edge still reads its pre value.  A courier whose provenance
+lived only on its own CSpace root could therefore hand over a capability and
+leave the receiver free to downgrade with no recorded predecessor: a **missed
+chain**, the direction a detector must never err in.  Closed by sourcing the
+receiving subject straight from the sender's root
+(`taintPropagation_transfer_taints_receiver`), in `capTransferTaintSinks` so
+both rendezvous orderings get it from one place.
+
+**(2) The CSpace sinks fired on messages carrying no capabilities.**  Both
+planners appended the transfer helper for every resolved delivery, so a plain
+message wrote the sender's provenance into a CNode no capability reached — and
+once finding (1)'s edge feeds the consuming subject, that over-approximation
+names an *unsaturated* predecessor for an unrelated later downgrade.  That is
+precisely the false positive `staleTaint_is_not_saturation` rules out, so
+over-approximating here breaks a stated property rather than merely costing
+precision.  The sinks are now gated on capabilities actually crossing, by the
+signal each ordering really has: `sendCarriesCaps` reads the caller's own
+`MessageInfo.extraCaps` (the count `resolveExtraCaps` iterates), and
+`parkedCarriesCaps` reads the parked message's `caps` array — the very array
+`endpointReceiveDualWithCaps` hands to `ipcUnwrapCaps`.
+
+**(3) Origination resurrected the transport it had just cleared.**  The final
+`applyOrigination` ran *after* `applyTaintClears`, and a `.declassifySignal`
+delivering straight to a waiter records the notification as its `targetObject`
+while storing no badge there — so the clear was immediately undone, leaving a
+fresh unsaturated identity on an object holding nothing, inheritable by the next
+unrelated badge through it.  The final pass now skips cleared keys; the *seed*
+keeps the full tag list, which is what carries the fresh event to the receiver
+that actually took the badge.  `taintWriteKeys` is unchanged, since it unions the
+cleared list in anyway.
+
+The new `applySyscallTaint_cleared_empty` is the checkable form, and it made two
+existing theorems **stronger**: `waitClearsNotificationTaint` and
+`retypedObject_taint_empty` both drop their `newlyRecordedEvents = []`
+hypothesis and now hold for an arbitrary pre/post pair.
+
+**(4) A bound delivery cleared a badge it had not delivered.**
+`boundDeliveryTarget?` requires only an empty *waiter list* and a bound TCB
+parked on an endpoint — it says nothing about `pendingBadge` — and
+`notificationSignalBound` writes into that TCB's `pendingMessage` without
+touching the notification at all.  So a notification that already held a badge
+kept it across the signal while its taint was cleared: a later
+`.notificationWait` would read that badge from an empty source and the downgrade
+behind it would record no predecessor.  Another missed chain, and the round-2
+docstring's justification ("a waiter and a pending badge are mutually exclusive")
+was true of the waiter path and false of the bound one.  `signalClearedNotification`
+now clears only where delivery provably empties the object.
+
+**An unsatisfiable anchor set, and the gate that now forbids one.**  Tier 3
+failed on the v0.33.57 head with a positive anchor requiring
+`theorem taintPropagation_send_to_endpoint`.  That theorem was **deleted** at
+v0.33.55 — an endpoint stopped being a taint sink — and the negative pins
+forbidding its return were added in the same cut, but the original positive
+anchors were left in place.  Lines 3647/3649 asserted the two endpoint-keyed
+theorems present while 3776/3777 asserted them absent: an anchor set no tree can
+satisfy.  The positives are removed and the anchors now name the content-derived
+replacements that actually exist (`taintPropagation_send_to_receiver`,
+`taintPropagation_receive_from_sender`).  The deleted names survive only in one
+explanatory comment, which the negative pins cannot see because the anchor
+helpers read the comment-stripped code view.
+
+The class mattered more than the instance: nothing compared the two anchor sets,
+so the contradiction was invisible until the **Full** lane ran, three commits
+downstream, and it presented as "the invariant surface regressed" rather than
+"two anchors disagree".  `scripts/check_anchor_consistency.py` now fails any
+pattern pinned both present and absent, with a `--self-test` that plants a
+contradiction (including the leading-`^` normalisation this failure hinged on),
+asserts a clean set passes, and asserts a commented-out anchor is not counted.
+It is **static**, so it runs in the Tier 0 fast lane and fires on the PR that
+introduces the contradiction.  Run against the failing commit it reports both
+pairs with line numbers; run against the current tree it reports 2472 positive
+and 91 negative anchors with no pattern pinned both ways.
+
+Evidence: ten new runtime assertions in `SmpInformationFlowSuite` §12.4/§12.8
+(787 → **797**), each with its negative — including a capless rendezvous that
+declares no CSpace sink and *is* fully write-locked, which pins the gate from
+both sides; Tier-3 anchors on every new theorem and assertion.  The golden
+fixture is unchanged: the edges are additive to the plan surface and no reported
+observable moves.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
+## v0.33.57 — CLAUDE.md / AGENTS.md: the workstream section becomes a status index
+
+The agent-guidance files had grown to **1303 lines / 352 KB**, of which the
+"Active workstream context" section alone was **449 lines / 308 KB — 88% of the
+file by character count**.  The phase table carried 214 KB in 22 rows, several of
+them single lines of 20–30 KB: per-sub-task landing notes, audit-pass
+refinements and review-cut narratives, appended cut after cut.
+
+That content is history, and this project already has three canonical places for
+it — `docs/WORKSTREAM_HISTORY.md` (which carries the same material in full,
+including the current "What's next"), `CHANGELOG.md`, and
+`docs/CLAUDE_HISTORY.md`.  The section had even said so itself, closing with
+"per-sub-task landing notes … live in [those files] — **not in this file**"
+while carrying exactly that.  Nothing is lost here: the detail was duplicated,
+not unique.
+
+**What the section is now** (449 → 119 lines; the file 352 KB → 52 KB):
+
+- A stated contract at the top — *status index, not a history* — naming the four
+  canonical sources and the rule that a row growing past one line of summary is
+  a sign the narrative belongs in them.
+- One compact table row per phase, preserving every phase's real status and
+  version range (verified against `CHANGELOG.md`, including the four SM9
+  sub-phases whose rows still read "this cut": SM9.A v0.33.42→50, SM9.B
+  v0.33.51, SM9.C v0.33.52, SM9.D v0.33.53→56).
+- A **standing constraints** subsection for the things that are current facts
+  about the tree rather than history, because those change what new code may
+  assume: the SM5.I global kernel-entry ticket lock and what it means for live
+  WCRT, the SM3.C.9 deferral and its plan, the SM4.C.11 `bootCoreId` pin, the
+  staged-module partition, and a pointer to `UncoveredLockDomain` — which
+  enumerates the registered lock gaps *in Lean*, where a completeness theorem
+  forces a new one to be registered, rather than in prose that goes stale.
+- WS-RA compressed to its ABI contract and its one open SM10.E obligation.
+
+No guidance rule, convention, or gate contract was changed or removed — only
+workstream narrative.  The mechanically-maintained blocks are untouched: the
+version line, the `Known large files` bullets, and the byte-identical
+`CLAUDE.md` / `AGENTS.md` mirroring all still pass their gates.
+
+## v0.33.56 — WS-SM SM9.D review round 3: both transfer orderings, provenance into subjects, the elided clear, the applied composition
+
+**Review round 3 (v0.33.56)** — five findings on the v0.33.55 cut, every one
+verified against the code and closed.  Two are consequences of the round-2
+fixes themselves, which is the useful kind of review: the model got sharper and
+the sharpening exposed what the previous shape had been hiding.
+
+**(1) The queued-transfer ordering lost the CNode sink.**  `senderTaintEdges`
+declares `capTransferTaintSinks` only in the branch where a receiver is already
+queued.  A *blocking* send has none — it parks — so it named no CSpace sink at
+all, while `endpointReceiveDualWithCaps` unwraps that parked message's
+capabilities into the receiver's CSpace when the **receive** runs, and the
+receive edge tagged only the receiver's TCB.  The two orderings of one transfer
+therefore disagreed about whether the receiver's CNode carries the provenance —
+the same ordering-asymmetry that would have lost hop 1 on the notification path
+half the time.  Closed by declaring the sink on the receive as well
+(`taintPropagation_queued_receive_to_cspace`), with the load-bearing negative
+that the parked-sender *send* plan declares no CSpace sink, so the new edge is a
+closure rather than a duplicate of one the sender already had.
+
+**(2) CSpace provenance never reached a subject.**  Round 2 made the transfer
+sink a source, so provenance flows root-to-root — but that is where it stopped.
+`declassificationActorTaint` snapshots the acting thread's own TCB, so a courier
+that shares a tagged CSpace could forward the installed capability and then
+downgrade with no recorded predecessor: the tag existed and no audit event could
+ever see it.  Consuming a message from an endpoint now taints the consumer from
+its own CSpace root (`taintPropagation_cspace_taints_consumer`), which closes
+the root→subject step and lets the chain reach the trail.
+
+**(3) The clear path was not elided.**  Round 2 guarded `joinAt` against
+value-preserving writes and left `clearAt` allocating a `set` closure
+unconditionally — and the *same* cut made clears frequent, since
+`contentFlowClears` fires on every `.notificationWait` and every
+direct-to-waiter signal, whose notification entry is empty on ordinary
+untainted traffic.  So the fix for the closure chain rebuilt it one function
+over.  `clearAt` now returns the table unchanged when there is nothing to forget
+(`clearAt_eq_of_empty`); `clearAt_self` / `clearAt_ne` are unaffected.
+
+**(4) The disjoint-write-set claim was a tautology.**
+`taintWriteKeys_disjoint_updates_independent` bound `planA`, used it only to
+feed the disjointness hypothesis, and concluded about `planB` alone — a
+restatement of `applySyscallTaint_frame_off_writeKeys`, presented as the
+model-level justification for declaring the taint write under the key's own
+lock.  It now **applies both plans** from a common state, and
+`taintWriteKeys_disjoint_order_independent` states the interleaving property the
+footprint argument actually needs: with disjoint write sets the outcome at a key
+does not depend on the order the two commits are applied in.  This is the third
+instance of the class in this workstream — after
+`retypeIcacheOp_cleans_scrub_extent` (v0.32.101) and the v0.33.16 splice arm —
+and the pattern is worth naming: a theorem whose hypotheses are richer than its
+conclusion consumes.
+
+**(5) The status row described the removed design.**  The SM9.D row's edge
+inventory still read "sender → endpoint and → rendezvous receiver, receiver ←
+endpoint and ← blocked sender" — the endpoint-proxy model the same row records
+as the stale-taint defect this workstream fixed.  Corrected in both mirrors to
+describe the content-derived edges.
+
+Evidence: four new runtime assertions in `SmpInformationFlowSuite` §12.4 (781 →
+**787**), each with its negative; Tier-3 anchors on the new theorems.  The golden
+fixture is unchanged — the new edges are additive and no reported observable
+moves — and the trace stays byte-identical.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
+## v0.33.55 — WS-SM SM9.D review cut: content-derived transport taint, the general causality verdict, consumed CSpace provenance
+
+**Review cut (v0.33.55)** — seven findings from two automated review rounds on
+the SM9.D landing, every one verified against the code and closed.  No theorem
+was false; three were real model defects (one of them a *missed* chain, the
+direction a detector must never err in), two were claims stronger than their
+evidence, one a scope boundary asserted rather than enforced, and one a
+hot-path cost.
+
+**(1) The capability-transfer provenance was written and never read.**
+`capTransferTaintSinks` tagged the receiver's CSpace root — correctly, because a
+CNode is shared and a second thread rooted there reads what the transfer
+installed — but **no** edge anywhere sourced from a CSpace root, so the tag was
+an unwired structure and a capability forwarded by an untainted courier dropped
+the chain.  Closed by making the sink also a source: the edge list gains
+`{sink := receiverRoot, source := senderRoot}`, with
+`taintPropagation_cspace_provenance_forwarded` the property.
+
+**(2) Transport taint is now content-derived.**  The endpoint and notification
+accumulated provenance and never lost it, so after one tainted message crossed
+an endpoint a later *unrelated* message handed its receiver the old identity — a
+specific, unsaturated false positive, which is exactly what
+`staleTaint_is_not_saturation` says must not exist and what the "residual is
+only saturation" claim (five sites) denied.  Rather than add a replace
+primitive, the model now says what each object actually holds: an **endpoint is
+not a taint sink at all** — it buffers no content (a parked message lives in the
+blocked sender's TCB) and a receiver reads `sendQ.head` directly, so the proxy
+was both redundant and less precise — and a **consumed notification is cleared**
+(`contentFlowClears`: a `.notificationWait` takes the whole badge; a signal
+delivered straight to a waiter stores none).  `taintPropagation_edge`'s
+hypothesis weakens from `cleared = []` to `sink ∉ cleared` accordingly;
+`taintPropagation_receive_from_endpoint` becomes `…_receive_from_sender`;
+`waitClearsNotificationTaint` is the new checkable fact.  Both stale-taint
+sources — a retype's replacement and a consumed transport — are now closed by a
+clear, so the residual really is saturation.
+
+**(3) The monitor could not query a non-adjacent causal hop.**
+`chainNamesPredecessor` (opcode 27) tests only `index` against `index - 1`, but
+`predecessorTags` may name **any** earlier event and
+`declassificationChainCausal` / `chainLaunders` run over an arbitrary
+non-contiguous subchain — so when another core appends an unrelated event
+between two hops, the laundering link became unqueryable even though Lean
+accepts it.  Closed by appending `AuditReadOp.chainNamesEntry` (opcode **28**,
+`auditReadOpcodeCount` 28 → 29, mirrored in `sele4n-sys`), which reads two
+arbitrary view-local indices and returns the same one opaque bit — never the
+tags — so `chainEntryVerdict_view_local` inherits the no-channel argument
+verbatim.  Appended, never renumbered: an ABI number is a contract.  It
+deliberately does **not** recover a drained predecessor; no view-local reader
+can query an entry it cannot see.
+
+**(4) A declassified second hop lost its own fresh tag.**  Flows read every
+source from the pre-state table, and origination ran *after* them, so
+`.declassifySignal`'s second hop — the notification → waiting-receiver delivery,
+an ordinary one — carried nothing, and a later downgrade by that receiver had no
+predecessor.  A **missed** chain.  Closed by seeding the flow-source table with
+this commit's own origination, a no-op for every syscall that records nothing.
+
+**(5) `.cspaceMint`'s `.inert` justification was factually wrong.**  The
+docstring grouped it with its siblings as a same-CNode self-loop, but
+`decodeCSpaceMintArgs` reads the badge and rights from the caller's message
+registers, so a mint writes caller-supplied bits into a CNode.  The
+classification is unchanged and correct — a capability badge is authority
+metadata, not the payload this model tracks — but the *reason* is now the scope
+boundary rather than a false claim: `contentTrackedFields` states the scope as a
+value and `capabilityBadgeChannel_out_of_scope` records the accepted channel as
+a theorem.
+
+**(6) The scope boundary is now enforced, not asserted.**  The content-flow gate
+scanned two channels and described that as derived; a cap-slot write was
+invisible to it by construction.  Its docstring now states the boundary and
+names the exclusion, and `check_scope_matches_lean` fails the gate if
+`CONTENT_CHANNELS` and `contentTrackedFields` ever disagree — so widening the
+scope takes two edits that must match rather than one silent one.
+
+**(7) Value-preserving taint writes are elided.**  `TaintTable` is a function, so
+every `joinAt` closed over the previous table and a lookup walked the chain —
+including the joins ordinary *untainted* IPC performs on every edge, which
+extended it forever on the syscall hot path.  `joinAt` now returns the table
+unchanged when the join changes nothing (`joinAt_eq_of_join_eq`); the existing
+`joinAt_self` / `joinAt_ne` laws are unaffected.
+
+Evidence: `SmpInformationFlowSuite` §12.4's fixture is re-keyed to a **blocked
+sender** (the endpoint-proxy fixture was testing the stale path itself) with
+both endpoint-untouched negatives, §12.8 recomputed on the content-derived edge
+list — where the registered cap-transfer CNode gap is now the *only* uncovered
+key — and the golden fixture gains `transportUntouched=`.  All 29 opcodes
+round-trip both sides; Tier-3 anchors pin the new symbols and forbid the
+endpoint-proxy forms from returning.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
+## v0.33.54 — WS-SM SM9.D audit cut: the reply leg, the field-writer sweep, the monitor's inference direction
+
+**Audit cut (v0.33.54)** — a code-first audit of the whole SM9.D landing,
+documentation distrusted by instruction; the live-path wiring, every declared
+edge, the algebra, the gate and the mount were re-derived against the code.
+Verdict: the propagation is genuinely live (extern → `syscallDispatchFromAbi` →
+`syscallEntryChecked` → the one write), every audited edge resolves exactly what
+its transition resolves (`receiveQ.head`, `sendQ.head`, `getReply? → caller`,
+`declassifiedSignalReceiver?`, `lookupCspaceRoot`, and the operand resolver is
+gate-identical to `syscallResolveCap` — same root, same depth, same resolver),
+the `DecidableEq` instance is sound under proof irrelevance, and no theorem was
+false.  Five findings, all closed in this cut.  (1) **The `.replyRecv` reply
+leg moved content with no declared edge** — the arm resolves
+`(rid, prevCaller)` via `resolveReplyRecvReply` and delivers the server's
+message registers to the recorded caller, so the steady-state server loop's
+second hop carried no taint: an under-approximation, the one direction a
+detector must never err in.  Closed by `replyRecvReplyLegEdges` (mirroring the
+resolver step for step — the MR0-present guard, `decodeReplyRecvArgs`, the
+caller's CSpace at the reply CPtr, the `.replyCap` shape — and sharing
+`replyTaintEdges` with the `.reply` arm so the two cannot drift),
+`taintPropagation_replyRecv_reply_to_prevCaller`, and §12.4's plan-level,
+apply-level and load-bearing-negative witnesses (the receive-leg pair alone
+provably misses the recorded caller).  (2) **The gate's one-writer claim was
+stronger than its check**: check (C) polices constants that *name* the taint
+API, so a definition writing `SystemState.declassificationTaint` directly in a
+`{ st with .. }` update — including a closed-term write, which for a provenance
+table is a silent whole-table clear, a laundering enabler — would have escaped
+it.  Closed by check (C2): the probe scans every definition's elaborated value
+for a constructor application that is an *update* (at least one other argument
+projects the same structure — what distinguishes `{ st with .. }` from a fresh
+boot/test literal) whose taint-field argument is not the field's own
+projection; the environment shows exactly one such writer
+(`applySyscallTaint`), `DECLARED_FIELD_WRITERS` pins it, and `--self-test` now
+also asserts the sweep *detects* that writer, so a sweep gone blind fails the
+self-test rather than reporting a clean tree.  (3) The self-test's failure
+diagnostic named the wrong planted channel (`TCB.ipcState` for
+`TCB.priority`).  (4) **The reconstruction theorem covered the direction the
+monitor does not use**: `chainVerdict_reconstructs_causal` proves causal ⇒
+every read is 1, while a monitor infers the other way; closed by
+`declassificationChainCausal_of_pairwise` and `chainVerdict_all_ok_causal`
+(every interior read `.ok 1` ⇒ the view is causal).  Also added:
+`join_comm_equiv_of_saturated`, so the commutativity law's coverage now leaves
+exactly one case unstated (one join saturated, the other not — in fact
+unreachable, recorded in the docstring rather than proven, since it needs a
+fold-symmetry induction the algebra does not otherwise owe).  (5) **A
+pre-existing SM3.B footprint gap, surfaced by the cap-transfer sink and
+reported rather than silently fixed**: on a caps-carrying rendezvous the live
+`.send`/`.call` run `ipcUnwrapCaps`, which writes the *receiver's* CSpace root
+— and `lockSet_endpointSend`/`lockSet_endpointCall` declare no CNode write at
+all (their one CNode member is the caller's root, read mode).  Not a live race
+(SM5.I's global entry lock serialises every commit; `withLockSet` is deferred,
+SM3.C.9), and closing it is an SM3.B decision with real cost (a conditional
+receiver-CNode member moves both signatures, the size bounds, and the
+resolved-footprint WCRT arithmetic the IPC suites pin), so it is registered
+the SM8.D round-11 way: `UncoveredLockDomain.capTransferReceiverCnode`
+(inventory 3 → 4, the `cases`-forced completeness firing as designed), the
+violation as a theorem whose deletion is the closure
+(`capTransfer_receiverCnode_write_undeclared`), and §12.8 recomputed on the
+REAL rendezvous edge list with the honest partition — every taint write key
+except the cap-transfer CNode is write-locked, and the gap is pinned
+positively so closing it breaks the line.  The §3d docstring's blanket
+coverage sentence is corrected to carve the sink out; the taint write at that
+key is exactly as covered as the object write it shadows, so the gap belongs
+to the footprint, not to the taint layer.
+
+Zero sorry/axiom; trace byte-identical; every suite, tier and the Rust workspace green.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
+## v0.33.53 — WS-SM SM9.D: causal declassification provenance — the laundering detector stops guessing
+
+SM8's laundering detector was **syntactic**: `declassificationChainLinked`
+matched domains and increasing timestamps with no data dependency behind it, so
+it fired on causally unrelated hops.  Scoping it to declassification *edges*
+would not have fixed it either — the chain the sub-phase exists to catch is
+*downgrade → **ordinary** delivery → downgrade*, and hop 2's input is related to
+hop 1's target by no declassification edge at all.  Causality follows content,
+so taint propagates through ordinary IPC.  All 19 SM9.D sub-tasks land here.
+
+**The value** (SM9.D.1 / SM9.D.13).  New production leaf
+`SeLe4n/Kernel/InformationFlow/Taint.lean`, importing only `Prelude` because
+`AuditRecord.lean` carries a `DeclassificationTaint` and sits below
+`Model/State.lean`.  The bound is a **refinement field**
+(`tags_bounded : tags.length ≤ maxTaintTags`), so `taint_bounded_structurally`
+holds of every value rather than only of recorded ones — the shape SM9.B's
+ledger established, and the reason there is **no seventeenth**
+`proofLayerInvariantBundle` conjunct and no capacity obligation on any writer.
+Overflow saturates **upward** (`taintSaturate_over_approximates`): for a
+detector, losing a real link is the unsafe direction, so `top` reports
+identities nobody held rather than dropping one that was.
+
+Two design facts are recorded rather than smoothed over.  The join is **not** a
+least upper bound once saturation is in play — `covers c (join a b)` given
+`covers c a` and `covers c b` is false in general — so the law ships as the
+disjunctive `covers_join_of_covers` plus `join_saturated_covers_all`, and
+commutativity / idempotence / associativity hold **up to `taintEquiv`** rather
+than on the nose.  And the table is a **total function**
+`ObjId → DeclassificationTaint`, not an `RHTable`: a hash table's
+lookup-after-insert law needs `invExt`, which would force exactly the bundle
+conjunct the refinement field avoids.
+
+**The mount** (SM9.D.2–.D.6).  The §6 checklist run for the fourth time, with
+the frozen field **required** (a silent drop is a compile error; six test
+literals updated), the `apiInvariantBundle_frozenDirectFull` conjunct, the
+`OffSchedulerAgrees` clause and all six builders, four boot frames, and the
+reusable carriage layer `proofLayerInvariantBundle_setDeclassificationTaint` —
+unconditional, and owed even with no conjunct of its own, since v0.32.151
+established that three conjuncts do not transport by `rfl` across an arbitrary
+field write.  The table is **outside** `ObservableState` for the reason SM8.C's
+trail is: provenance names `(object, declassification identity)` pairs, so
+projecting it would be a content channel out of exactly the boundary the audit
+polices (`declassificationTaint_write_preserves_projection`,
+`onCore_declassificationTaint`).
+
+**Totality is not the completeness argument** (SM9.D.7).
+`contentFlowClass : SyscallId → ContentFlowClass` is total with no wildcard, so
+a new syscall is a missing case at elaboration — necessary and **not
+sufficient**, since the arm can be added and be wrong.  Completeness is a
+**Tier-1 call-graph reach gate** (`scripts/check_content_flow_coverage.py`) that
+walks from each live dispatch arm and fails when an arm classified `.inert` or
+`.clearsProvenance` reaches an object *content* write, or when a
+`.movesContent` arm reaches none; `--self-test` plants a channel to prove the
+scan still bites.  Building it found two things worth recording: the first
+channel list named `Notification.state`, which also holds the waiter queue, so
+`.tcbSuspend` and `.lifecycleRetype` "reached content" through a queue sweep
+(the channel is `Notification.pendingBadge`); and `.notificationWait` reaches
+**no** object content write at all, because its badge goes to the caller's
+return register — so the gate's second check admits a `.movesContent` arm whose
+`syscallReturnShape` is not `.unit`, derived from the ABI rather than waived.
+
+**One write site, not twelve** (SM9.D.8–.D.11).  The plan's file list put the
+propagation *inside* each IPC transition.  It is instead **one write at the
+per-core entry**, `API.syscallEntryChecked`, applied to the state the dispatch
+committed and driven by a declared `TaintPlan`
+(`SeLe4n/Kernel/InformationFlow/TaintPropagation.lean`, production).  Every IPC
+transition is quantified over by roughly 1 900 references, and a field write
+inside one reopens all of them, while `applySyscallTaint_frame` leaves
+`authorizeDeclassificationOnCore_frame` and SM8.C's "writes only the trail"
+rule literally unchanged.  All the plan's edges are covered — sender → endpoint
+and → rendezvous receiver, receiver ← endpoint and ← blocked sender, replier →
+the reply object's recorded caller, signaller → notification → resolved
+receiver (through `declassifiedSignalReceiver?`, the **same** resolver SM9.C's
+second-hop gate and the SM9.B refusal seam use), and waiter ← notification,
+which is not optional: in the signal-before-wait ordering the tag sits on the
+notification and the *wait* is what moves the badge.  SM9.D.11's
+`capTransferTaintSinks` tags the receiver's **CNode**, a different object from
+its TCB — a CNode is shared, so a second thread rooted at the same CSpace reads
+what `ipcUnwrapCaps` installed without ever touching that TCB.
+
+**The retype clears** (SM9.D.12).  `lifecycleRetype` commits `storeObject` at
+the same id, so a *framed* retype would leave a destroyed object's tags on its
+replacement (`retypeClearsTaint`, `retypedObject_taint_empty`, with
+`staleTaint_is_not_saturation` keeping the residual claim true by exhibiting the
+two imprecisions as different things).  The plan's "frames for every non-content
+transition, ~12 files" is realised as **one** theorem and is stronger for it:
+with the propagation at the entry, `applySyscallTaint_inert` covers every inert
+syscall at once, including ones added later.
+
+**The recorded snapshot** (SM9.D.13a).  `DeclassificationEvent.predecessorTags`
+is **undefaulted** — a default would attribute an empty history to every event
+while compiling everywhere.  `sourceSubject` is derived from the SM9.C `actor`
+rather than stored a second time
+(`declassificationEvent_sourceSubject_is_actor`), and
+`recordDeclassifiedHopsFrom` threads the snapshot so hop 2 names hop 1 **within
+one transition**.  *Deviation, recorded*: the plan asked for the tags to be
+exported dominating-reader-only.  They are not exported **at all**, which is
+strictly stronger — they are global declassification identities, and any export
+re-opens what SM9.A's view-local indices close — and PR #870 round 6 had already
+made the live reader monitor-only, so "for partial readers" describes a class
+that cannot reach the entry.  What ships instead is the opaque verdict the plan
+wanted the tags *for*.
+
+**The detector, and a reader for it** (SM9.D.14–.D.16).
+`declassificationChainLinked` keeps its name and becomes the conjunction of the
+syntactic composition it always checked (`declassificationChainComposes`, kept
+under its own name so the false positive is *exhibited* rather than deleted) and
+the new `declassificationChainCausal`.  The **table**-derived alternative is
+retained as a refuted design (`chainCausalFromTable`, `chainCausalVerdict`),
+because re-evaluating a historical event against the *current* table invents
+links a retype has cleared and loses links acquired after the fact —
+`chainCausal_is_history_local` and `chainCausal_survives_subject_retype` are the
+two halves.  `declassificationChainLinked_is_syntactic` is **retired** (SM9.D
+makes it genuinely false) and replaced 1:1 by
+`declassificationChainLinked_is_causal`, with
+`DeclassificationRuleId.chainLinkageIsSyntactic → .chainLinkageIsCausal` keeping
+the rule count at 12 and Tier-3 negatives forbidding either name's return; the
+residual imprecision is stated rather than implied absent
+(`chainLaunders_residual_is_saturation`).
+
+And the detector is now **reachable**.  `AuditReadOp.chainNamesPredecessor`
+(opcode 27, `auditReadOpcodeCount` 27 → **28**, mirrored in `sele4n-sys`)
+returns one bit — does visible entry `index` name visible entry `index - 1` — so
+a monitor reading it at every index reconstructs
+`declassificationChainCausal` over its whole view
+(`chainVerdict_reconstructs_causal`).  Index `0` names no predecessor and is
+**refused** rather than answered `0`, since a `0` word would be
+indistinguishable from a genuine "no"; `chainVerdict_view_local` is why it opens
+no channel — the arm reads two entries the caller already holds and nothing
+else, in particular not the mutable table the tags were snapshotted from.
+Without this opcode SM9.D would have been an improvement only the model can see:
+SM8's `chainLaunders` had no consumer, and a *causal* detector nothing can query
+is the same thing one refinement further on.
+
+**The serialization subject, corrected mid-cut** (SM9.D.17).  The first
+implementation declared `stateLevelLock` (the `.objStore` singleton, hierarchy
+level 0) on all eight content-moving footprints plus the retype, reasoning by
+analogy with SM9.A's audit trail.  Running the suites refuted it: the
+`smp_ipc_suite` and `smp_notification_suite` fixtures pin the SM5.J WCRT
+property `|lockSet| · 3 · tCs` against a 1 ms tick, which admits at most five
+locks, and the extra member took the resolved call footprint to six — 1080 µs.
+The failure was pointing at something real.  A single globally-contended lock on
+`.send` / `.receive` / `.call` / `.reply` / `.replyRecv` /
+`.notificationSignal` / `.notificationWait` serialises *every* IPC in the system
+against every other; for a microkernel whose IPC path is the product, that is a
+design regression rather than a footprint refinement.
+
+And the codebase had already answered the question: `SystemState.objects` is a
+keyed table represented as one field, `storeObject` writes one key of it, and
+**no** `lockSet_<τ>` declares `objStoreLock` for that — `.objStore` is reserved
+for structural table operations, which is why `stateLevelLock` appears in
+exactly three footprints before this phase, all of them writing the audit
+**trail**, a `List` whose append genuinely does not decompose by key.  The taint
+table is keyed, so its writes ride the key's own lock exactly as the object
+store's do, and the hot path is unchanged.  What makes that declaration
+checkable rather than asserted is `taintWriteKeys` (flow sinks ⧺ cleared ⧺
+origination targets) and `applySyscallTaint_frame_off_writeKeys` — outside its
+write set a plan leaves the table literally unchanged — with
+`taintWriteKeys_disjoint_updates_independent` the two-plan form.
+`taintWriteKeys_of_no_events` closes the one case that needed care: origination
+writes the *actor's* TCB key, which the content-moving footprints hold only in
+read mode, and it is non-empty only when the commit appended to the trail —
+which only `.declassify` and `.declassifySignal` do, and both already carry
+`stateLevelLock` in write mode for the append.  *Implementation obligation,
+recorded rather than assumed*: the model writes the field whole, so the
+key-local reading is sound only if the runtime realises the table as per-object
+storage — precisely the obligation `SystemState.objects` already carries for
+`storeObject` under the same discipline, discharged the same way, at SM10.E.
+
+**Non-interference carriage** (SM9.D.18).  The propagation writes a field no
+observer projects, so `applySyscallTaint_confinedToCores_nil` is confinement to
+**no** core, and `applySyscallTaint_preserves_onCore` /
+`applySyscallTaint_preserves_proofLayerInvariantBundle` carry the per-core view
+and the sixteen bundle conjuncts.  No `CrossCoreTransition` entry moves and no
+cross-core inventory count changes.  Closed on the way past:
+`syscallEntryChecked_preserves_projection`'s dispatch hypothesis is generalised
+to quantify the post-state (the entry no longer returns the dispatch's state
+unchanged), and `entryDecode_some_entry_dispatches` is restated over the match —
+strictly stronger, so SM8.D round 12's anti-drift tie stays load-bearing.
+
+**Evidence.**  `tests/SmpInformationFlowSuite.lean` §12.1–§12.9 (726 → **776**
+runtime assertions), every group with a load-bearing negative, including the
+plan's SM9.E.2a acceptance scenario run for effect: hop 1 originates a tag on
+the object its content reached *and* on the subject that performed it, an
+**ordinary** delivery — no declassification edge — carries it to the next
+subject, hop 2's recorded snapshot therefore names hop 1, and `chainLaunders`
+reports laundering; with the plan's three negatives (a domain-only detector
+fires on a causally unrelated pair, an object-adjacency detector *misses* this
+very chain, and two same-domain second hops are distinguished by their
+snapshots) plus the lifecycle case — retype the carrier, and the later downgrade
+names nothing.  §1.13 anchors every declaration of both new modules by set
+difference; `tests/SmpSurfaceAnchors.lean` §12 carries the headline surface; the
+phase golden fixture gains five lines (regenerated, hash refreshed); Tier 3
+gains an SM9.D block with the two retirement negatives and a **positive** pin on
+the send footprint's base list, so re-adding the level-0 lock to the hot path
+breaks a gate.
+
+Axiom-clean (4384 environment constants swept across the eight information-flow
+modules); `main_trace_smoke` byte-identical; Rust workspace green (1139 unit +
+108 conformance tests, clippy clean).
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §SM9.D
+
 ## v0.33.52 — WS-SM SM9.C: data-carrying declassification — the first deliberately visible flow
 
 SM8.C shipped a live `.declassify` that authorizes a downgrade and records it

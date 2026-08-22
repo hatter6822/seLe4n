@@ -523,7 +523,15 @@ example : permittedKinds .cspaceMint = [.tcb, .cnode] := by decide
 example : permittedKinds .cspaceCopy = [.tcb, .cnode] := by decide
 example : permittedKinds .cspaceMove = [.tcb, .cnode] := by decide
 example : permittedKinds .cspaceDelete = [.tcb, .cnode] := by decide
-example : permittedKinds .lifecycleRetype = [.tcb, .cnode, .untyped] := by decide
+-- PR #873 round 7: `.lifecycleRetype` admits EVERY kind too, and for the same
+-- reason `.declassify` does below.  SM9.D.12 makes the retype the arm that
+-- *clears* taint at `args.targetObj`, so `lockSet_lifecycleRetype` carries that
+-- target's own lock — and a retype re-purposes an object whose kind the state,
+-- not the syscall, decides.  The fixed four stay pinned by
+-- `lockSet_lifecycleRetype_nonTarget_kinds`.
+example : permittedKinds .lifecycleRetype =
+    [.tcb, .cnode, .untyped,
+     .objStore, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page] := by decide
 example : permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot] := by decide
 example : permittedKinds .vspaceUnmap = [.tcb, .cnode, .vspaceRoot] := by decide
 example : permittedKinds .serviceRegister = [.tcb, .cnode, .endpoint] := by decide
@@ -541,6 +549,25 @@ example : permittedKinds .tcbResume = [.tcb, .cnode] := by decide
 example : permittedKinds .tcbSetPriority = [.tcb, .cnode, .schedContext] := by decide
 example : permittedKinds .tcbSetMCPriority = [.tcb, .cnode, .schedContext] := by decide
 example : permittedKinds .tcbSetIPCBuffer = [.tcb, .cnode, .vspaceRoot] := by decide
+-- PR #873 round 6: `.declassify` admits EVERY kind, and that is a statement
+-- about the arm rather than a relaxation.  The live arm hands
+-- `cap.target = .object targetId` to a transition that commits a `storeObject`
+-- at it, and SM9.D.17's `targetLock : Option LockId` carries that object's own
+-- lock into the resolved footprint — so a downgrade of an endpoint, a
+-- notification, a reply, a scheduling context, a VSpace root, an untyped region
+-- or a page frame contributes that kind.  Listing three left
+-- `lockSet_consistent_declassify` provable only at the default `none` while the
+-- resolved footprint could carry a kind the inventory did not admit.
+example : permittedKinds .declassify =
+    [.tcb, .cnode, .objStore,
+     .untyped, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page] := by decide
+-- ...and the fixed part stays three.  This is the tightness the widening would
+-- otherwise give up: a fourth member on the no-target shape is a failure even
+-- though the consistency theorem above would still hold of it.
+example : permittedKinds .declassifySignal =
+    [.tcb, .cnode, .notification, .endpoint, .objStore] := by decide
+example : permittedKinds .auditRead = [.tcb, .cnode, .objStore] := by decide
+example : permittedKinds .auditDrain = [.tcb, .cnode, .objStore] := by decide
 
 -- ============================================================================
 -- §6b — LockSet.union semantics
@@ -798,8 +825,21 @@ private def runPermittedKindsChecks : IO Unit := do
     (decide (permittedKinds .send = [.tcb, .cnode, .endpoint]))
   assertBool "permittedKinds .vspaceMap"
     (decide (permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot]))
+  -- PR #873 round 7: every kind, because the retype's taint clear keys on
+  -- `args.targetObj`, whose type the state decides.  The fixed four are pinned
+  -- separately by `lockSet_lifecycleRetype_nonTarget_kinds`.
   assertBool "permittedKinds .lifecycleRetype"
-    (decide (permittedKinds .lifecycleRetype = [.tcb, .cnode, .untyped]))
+    (decide (permittedKinds .lifecycleRetype =
+      [.tcb, .cnode, .untyped,
+       .objStore, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page]))
+  assertBool "NEGATIVE: the retype's fixed footprint is still exactly four kinds"
+    ((lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+        (ObjId.ofNat 30) none).pairs.all (fun p =>
+      decide (p.fst.kind ∈ [LockKind.tcb, LockKind.cnode, LockKind.untyped])))
+  assertBool "the resolved retype footprint carries the target's own write lock"
+    ((lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) (ObjId.ofNat 30)
+        (some (notificationLock (ObjId.ofNat 40)))).pairs.any (fun p =>
+      decide (p.fst = notificationLock (ObjId.ofNat 40) ∧ p.snd = AccessMode.write)))
   -- Audit-pass-3: .tcbSuspend now includes .schedContext (donation-cancel).
   -- WS-SM SM6.E: + .reply (the `.blockedOnReply` reply-link teardown).
   assertBool "permittedKinds .tcbSuspend"

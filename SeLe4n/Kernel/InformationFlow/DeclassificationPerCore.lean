@@ -163,8 +163,7 @@ def declassifyStoreOnCore
     | .error err => .error err
     | .ok () =>
         match recordDeclassificationChecked st.declassificationAuditLog
-            (declassificationEventOnCore c actor srcDomain dstDomain targetId
-              st.declassificationAuditEpoch st.declassificationAuditLog) with
+            (declassifyStoreEvent c actor srcDomain dstDomain targetId st) with
         | none => .error .auditLogCapacityExceeded
         | some log' =>
             match declassifyStore ctx declPolicy srcDomain dstDomain targetId obj st with
@@ -265,8 +264,7 @@ theorem declassifyStoreOnCore_ok_inv
   | ok u =>
   cases u
   obtain ⟨rec, hRec⟩ : ∃ r, recordDeclassificationChecked st.declassificationAuditLog
-      (declassificationEventOnCore c actor srcDomain dstDomain targetId
-        st.declassificationAuditEpoch st.declassificationAuditLog) = r := ⟨_, rfl⟩
+      (declassifyStoreEvent c actor srcDomain dstDomain targetId st) = r := ⟨_, rfl⟩
   rw [hRec] at hStep
   cases rec with
   | none => simp at hStep
@@ -624,7 +622,8 @@ theorem declassificationEventAttributable_not_state_stable :
           { srcDomain := ⟨1⟩, dstDomain := ⟨0⟩, targetObject := ⟨0⟩,
             authorizationBasis := .policyRule, timestamp := 0,
             originatingCore := bootCoreId,
-            actor := { subject := ⟨1⟩, domain := ⟨1⟩ } }, ?_, ?_⟩
+            actor := { subject := ⟨1⟩, domain := ⟨1⟩ },
+            predecessorTags := DeclassificationTaint.empty }, ?_, ?_⟩
   · simp [declassificationEventAttributable, declassificationSubjectOnCore,
       SchedulerState.setCurrentOnCore_currentOnCore_self]
   · have hIdle : (default : SystemState).scheduler.currentOnCore bootCoreId = none :=
@@ -851,19 +850,121 @@ theorem declassificationEvent_not_in_other_view (log : DeclassificationAuditLog)
 -- the chain is fully present in the global log (so an auditor can reconstruct
 -- it), and it is present in no single core's view (so a per-core audit cannot).
 
-/-- WS-SM SM8.C.2: **a declassification chain** — consecutive hops compose
+/-- WS-SM SM8.C.2: **the chain's syntactic shape** — consecutive hops compose
 (one hop's destination domain is the next hop's source) and run in recorded
 order (timestamps strictly increase).
 
-The timestamp clause is what makes this a *chain* rather than a set of
+The timestamp clause is what makes this a *sequence* rather than a set of
 compatible events: information can only flow along hops that happened in order,
-and §1's global counter is what lets hops on different cores be compared. -/
-def declassificationChainLinked : List DeclassificationEvent → Bool
+and §1's global counter is what lets hops on different cores be compared.
+
+**This is only half of `declassificationChainLinked`** (WS-SM SM9.D.14).  Up to
+SM9.D it *was* the whole of it, and that was the registered gap: matching
+domains and increasing timestamps establish that a chain is *possible*, never
+that it happened.  Split out under its own name rather than deleted, because it
+is what the audited producers establish unconditionally
+(`declassificationChain_recorded_across_cores`) — causality is the additional
+fact that the second subject actually received the first hop's content. -/
+def declassificationChainComposes : List DeclassificationEvent → Bool
   | [] => true
   | [_] => true
   | e₁ :: e₂ :: rest =>
       (e₁.dstDomain == e₂.srcDomain) && decide (e₁.timestamp < e₂.timestamp) &&
-        declassificationChainLinked (e₂ :: rest)
+        declassificationChainComposes (e₂ :: rest)
+
+/-- WS-SM SM9.D.14: **the causal half** — each hop's recorded snapshot names its
+predecessor.
+
+`DeclassificationEvent.predecessorTags` is the acting subject's declassification
+taint at the moment the event was produced, so `declassificationEventNames e₂ e₁`
+says: the subject that performed `e₂` was, at that moment, holding content
+released by `e₁`.  That is a *data dependency*, not a domain coincidence.
+
+Read from the event list and nowhere else.  A predicate that consulted the live
+taint table instead would change its verdict on a fixed pair of events as
+unrelated later activity moved the table — inventing links from tags acquired
+after the fact and losing real ones at a retype
+(`chainCausal_not_table_derived`). -/
+def declassificationChainCausal : List DeclassificationEvent → Bool
+  | [] => true
+  | [_] => true
+  | e₁ :: e₂ :: rest =>
+      declassificationEventNames e₂ e₁ && declassificationChainCausal (e₂ :: rest)
+
+/-- WS-SM SM8.C.2 / SM9.D.14: **a declassification chain** — the hops compose,
+run in recorded order, **and** each one names its predecessor.
+
+The conjunction is SM9.D's headline change.  Before it the detector was
+syntactic: `chainLaunders` reported every domain-compatible pair, so an operator
+investigating a report had to establish causality themselves and the
+over-approximation was unbounded in the number of unrelated subjects sharing a
+domain.  With the causal conjunct a report rests on provenance the kernel
+recorded, and the residual imprecision is exactly saturation
+(`causalChain_residual_over_approximation`). -/
+def declassificationChainLinked (chain : List DeclassificationEvent) : Bool :=
+  declassificationChainComposes chain && declassificationChainCausal chain
+
+/-- WS-SM SM9.D.14: a linked chain composes. -/
+theorem declassificationChainLinked_composes {chain : List DeclassificationEvent}
+    (h : declassificationChainLinked chain = true) :
+    declassificationChainComposes chain = true := by
+  simp only [declassificationChainLinked, Bool.and_eq_true] at h; exact h.1
+
+/-- WS-SM SM9.D.14: a linked chain is causal — the conjunct that makes the
+laundering detector something other than a domain matcher. -/
+theorem declassificationChainLinked_causal {chain : List DeclassificationEvent}
+    (h : declassificationChainLinked chain = true) :
+    declassificationChainCausal chain = true := by
+  simp only [declassificationChainLinked, Bool.and_eq_true] at h; exact h.2
+
+/-- WS-SM SM9.D.14: and the converse — both halves give a linked chain. -/
+theorem declassificationChainLinked_of_both {chain : List DeclassificationEvent}
+    (hC : declassificationChainComposes chain = true)
+    (hK : declassificationChainCausal chain = true) :
+    declassificationChainLinked chain = true := by
+  simp [declassificationChainLinked, hC, hK]
+
+/-- WS-SM SM9.D.14: **causality is pairwise** — every adjacent pair of a causal
+chain has the later event naming the earlier.
+
+The indexed form the soundness theorem reports, so a consumer reading a
+laundering report can point at the specific recorded snapshot that supports each
+link rather than at the recursive predicate. -/
+theorem declassificationChainCausal_pairwise :
+    ∀ (chain : List DeclassificationEvent), declassificationChainCausal chain = true →
+      ∀ (i : Nat) (h : i + 1 < chain.length),
+        declassificationEventNames (chain[i + 1]'h)
+          (chain[i]'(by omega)) = true
+  | [], _, i, h => by simp at h
+  | [_], _, i, h => by simp at h
+  | e₁ :: e₂ :: rest, hCausal, i, h => by
+      simp only [declassificationChainCausal, Bool.and_eq_true] at hCausal
+      cases i with
+      | zero => simpa using hCausal.1
+      | succ n =>
+        have hn : n + 1 < (e₂ :: rest).length := by
+          simp only [List.length_cons] at h ⊢; omega
+        have := declassificationChainCausal_pairwise (e₂ :: rest) hCausal.2 n hn
+        simpa using this
+
+/-- WS-SM SM9.D.14 (**the converse**): pairwise naming at every adjacent pair
+IS the causal predicate.  `declassificationChainCausal_pairwise` gives the
+forward direction; this is the one the monitor's inference actually runs —
+having read a `1` at every index, it concludes the view is causal — so without
+it "reconstructs" would describe only the direction the monitor does not use. -/
+theorem declassificationChainCausal_of_pairwise :
+    ∀ (chain : List DeclassificationEvent),
+      (∀ (i : Nat) (h : i + 1 < chain.length),
+        declassificationEventNames (chain[i + 1]'h) (chain[i]'(by omega)) = true) →
+      declassificationChainCausal chain = true
+  | [], _ => rfl
+  | [_], _ => rfl
+  | e₁ :: e₂ :: rest, hPair => by
+      simp only [declassificationChainCausal, Bool.and_eq_true]
+      refine ⟨by simpa using hPair 0 (by simp), ?_⟩
+      refine declassificationChainCausal_of_pairwise (e₂ :: rest) (fun i h => ?_)
+      have := hPair (i + 1) (by simp only [List.length_cons] at h ⊢; omega)
+      simpa using this
 
 /-- WS-SM SM8.C.2: the domain the chain starts from. -/
 def chainSourceDomain : List DeclassificationEvent → Option SecurityDomain
@@ -974,11 +1075,18 @@ theorem declassificationChain_recorded_across_cores
     (hStep₂ : declassifyStoreOnCore ctx declPolicy c₂ actor₂ b d target₂ obj₂ st₁ = .ok ((), st₂)) :
     ∃ e₁ e₂ : DeclassificationEvent,
       st₂.declassificationAuditLog = st.declassificationAuditLog ++ [e₁, e₂] ∧
-      declassificationChainLinked [e₁, e₂] = true ∧
+      declassificationChainComposes [e₁, e₂] = true ∧
       chainRecordedIn st₂.declassificationAuditLog [e₁, e₂] = true ∧
       chainIsCrossCore [e₁, e₂] = true ∧
       e₁.originatingCore = c₁ ∧ e₂.originatingCore = c₂ ∧
-      chainSourceDomain [e₁, e₂] = some a ∧ chainTargetDomain [e₁, e₂] = some d := by
+      chainSourceDomain [e₁, e₂] = some a ∧ chainTargetDomain [e₁, e₂] = some d ∧
+      -- WS-SM SM9.D.14: the causal half is the *hypothesis-bearing* one — see
+      -- the theorem below.  What two audited downgrades establish on their own
+      -- is that the chain composes; whether the second subject actually
+      -- received the first hop's content is a fact about the taint the entry
+      -- seam propagated, and the snapshot the second event carries is exactly
+      -- where that fact is recorded.
+      e₂.predecessorTags = declassificationActorTaint actor₂ st₁ := by
   obtain ⟨hLog₁, hLen₁⟩ := declassifyStoreOnCore_records_one ctx declPolicy c₁ actor₁ a b
     target₁ obj₁ st st₁ hStep₁
   obtain ⟨hLog₂, _⟩ := declassifyStoreOnCore_records_one ctx declPolicy c₂ actor₂ b d
@@ -990,10 +1098,10 @@ theorem declassificationChain_recorded_across_cores
   have hEpoch₁ := declassifyStoreOnCore_declassificationAuditEpoch_eq ctx declPolicy c₁ actor₁
     a b target₁ obj₁ st st₁ hStep₁
   refine ⟨declassifyStoreEvent c₁ actor₁ a b target₁ st,
-          declassifyStoreEvent c₂ actor₂ b d target₂ st₁, ?_, ?_, ?_, ?_, rfl, rfl, rfl, rfl⟩
+          declassifyStoreEvent c₂ actor₂ b d target₂ st₁, ?_, ?_, ?_, ?_, rfl, rfl, rfl, rfl, rfl⟩
   · rw [hLog₂, hLog₁]; simp [List.append_assoc]
   · -- the hops compose (`b` is both), and the second timestamp is the first plus one
-    simp [declassificationChainLinked, declassificationEventOnCore, hLen₁, hEpoch₁]
+    simp [declassificationChainComposes, declassificationEventOnCore, hLen₁, hEpoch₁]
   · refine (chainRecordedIn_iff _ _).mpr ?_
     intro e hMem
     rw [hLog₂, hLog₁]
@@ -1030,22 +1138,24 @@ theorem declassificationChain_recorded_across_cores_attributed
     (hStep₂ : declassifyStoreFromCore ctx declPolicy c₂ d target₂ obj₂ st₁ = .ok ((), st₂)) :
     ∃ e₁ e₂ : DeclassificationEvent,
       st₂.declassificationAuditLog = st.declassificationAuditLog ++ [e₁, e₂] ∧
-      declassificationChainLinked [e₁, e₂] = true ∧
+      declassificationChainComposes [e₁, e₂] = true ∧
       chainRecordedIn st₂.declassificationAuditLog [e₁, e₂] = true ∧
       chainIsCrossCore [e₁, e₂] = true ∧
       e₁.originatingCore = c₁ ∧ e₂.originatingCore = c₂ ∧
       declassificationEventAttributable ctx st₁ e₁ ∧
       chainSourceDomain [e₁, e₂] = some (ctx.threadDomainOf tid₁) ∧
-      chainTargetDomain [e₁, e₂] = some d := by
+      chainTargetDomain [e₁, e₂] = some d ∧
+      e₂.predecessorTags =
+        declassificationActorTaint (declassificationActorOf ctx tid₂) st₁ := by
   rw [declassifyStoreFromCore_eq_onCore ctx declPolicy c₁ b target₁ obj₁ st tid₁ hCur₁] at hStep₁
   rw [declassifyStoreFromCore_eq_onCore ctx declPolicy c₂ d target₂ obj₂ st₁ tid₂ hCur₂] at hStep₂
   subst hMid
-  obtain ⟨e₁, e₂, hLog, hLinked, hRec, hCross, hC₁, hC₂, hSrc, hDst⟩ :=
+  obtain ⟨e₁, e₂, hLog, hLinked, hRec, hCross, hC₁, hC₂, hSrc, hDst, hTags⟩ :=
     declassificationChain_recorded_across_cores ctx declPolicy c₁ c₂
       (declassificationActorOf ctx tid₁) (declassificationActorOf ctx tid₂)
       (ctx.threadDomainOf tid₁)
       (ctx.threadDomainOf tid₂) d target₁ target₂ obj₁ obj₂ st st₁ st₂ hne hStep₁ hStep₂
-  refine ⟨e₁, e₂, hLog, hLinked, hRec, hCross, hC₁, hC₂, ?_, hSrc, hDst⟩
+  refine ⟨e₁, e₂, hLog, hLinked, hRec, hCross, hC₁, hC₂, ?_, hSrc, hDst, hTags⟩
   -- hop 1's event is attributable in the state hop 1 produced (§3's headline)
   have hAttr := declassifyStoreFromCore_event_attributable ctx declPolicy c₁
     (ctx.threadDomainOf tid₂) target₁ obj₁ st st₁ tid₁ hCur₁
@@ -1173,12 +1283,201 @@ theorem crossCoreChain_launders_witness :
           [ { srcDomain := ⟨2⟩, dstDomain := ⟨1⟩, targetObject := ⟨901⟩,
               authorizationBasis := .policyRule, timestamp := 0,
               originatingCore := bootCoreId,
-              actor := { subject := ⟨1⟩, domain := ⟨2⟩ } }
+              actor := { subject := ⟨1⟩, domain := ⟨2⟩ },
+              predecessorTags := DeclassificationTaint.empty }
+          -- WS-SM SM9.D.14: the second hop **names the first** through its
+          -- recorded snapshot, which is what the causal conjunct now requires
+          -- of a linked chain.  A witness with an empty snapshot would fail
+          -- `declassificationChainLinked` outright — which is the point of the
+          -- conjunct, and why the witness had to be strengthened rather than
+          -- left alone.
           , { srcDomain := ⟨1⟩, dstDomain := ⟨0⟩, targetObject := ⟨902⟩,
               authorizationBasis := .policyRule, timestamp := 1,
               originatingCore := ⟨2, by decide⟩,
-              actor := { subject := ⟨2⟩, domain := ⟨1⟩ } } ],
+              actor := { subject := ⟨2⟩, domain := ⟨1⟩ },
+              predecessorTags := DeclassificationTaint.singleton 0 } ],
           by decide, by decide, by decide, by decide, by decide⟩
+
+-- ============================================================================
+-- §6b  WS-SM SM9.D.14 / SM9.D.15 — the detector is causal
+-- ============================================================================
+
+/-- WS-SM SM9.D.14 (**the refuted design**): the causal check computed from the
+*live* taint table instead of from the recorded snapshot.
+
+Defined so the design that does not work can be refuted rather than merely
+described.  It reads each event's acting subject out of the record and then asks
+the **current** table what that subject holds — which is wrong in both
+directions, and the two theorems below exhibit each. -/
+def chainCausalFromTable (st : SystemState) : List DeclassificationEvent → Bool
+  | [] => true
+  | [_] => true
+  | e₁ :: e₂ :: rest =>
+      (st.declassificationTaint e₂.sourceSubject).contains e₁.timestamp &&
+        chainCausalFromTable st (e₂ :: rest)
+
+/-- WS-SM SM9.D.14: the two candidate detectors as one state-indexed family, so
+"the recorded one does not read the state" and "the table-derived one does" are
+statements about the same object rather than two unrelated remarks. -/
+def chainCausalVerdict (fromTable : Bool) (st : SystemState)
+    (chain : List DeclassificationEvent) : Bool :=
+  if fromTable then chainCausalFromTable st chain else declassificationChainCausal chain
+
+/-- WS-SM SM9.D.14 (**`chainCausal_is_history_local`**): the recorded verdict on
+a fixed chain is the same in **every** state.
+
+The detector reads `predecessorTags` off the events themselves, so no later
+activity — no propagation, no drain, no retype — can move a verdict already
+reported.  That is what makes a laundering report a statement about the trail.
+
+Definitional, and deliberately so: the content is that its companion
+`chainCausal_not_table_derived` shows the *other* member of the same family
+fails exactly this statement. -/
+theorem chainCausal_is_history_local (chain : List DeclassificationEvent)
+    (st₁ st₂ : SystemState) :
+    chainCausalVerdict false st₁ chain = chainCausalVerdict false st₂ chain := rfl
+
+/-- A two-event chain whose second entry records **no** provenance — the shape
+both table-derived counterexamples are built on. -/
+private def causalWitnessSubject : SeLe4n.ThreadId := ⟨1⟩
+
+private def causalWitnessFirst : DeclassificationEvent :=
+  { srcDomain := ⟨2⟩, dstDomain := ⟨1⟩, targetObject := ⟨100⟩,
+    authorizationBasis := .policyRule, timestamp := 0, originatingCore := bootCoreId,
+    actor := { subject := ⟨9⟩, domain := ⟨2⟩ },
+    predecessorTags := DeclassificationTaint.empty }
+
+private def causalWitnessSecond (tags : DeclassificationTaint) : DeclassificationEvent :=
+  { srcDomain := ⟨1⟩, dstDomain := ⟨0⟩, targetObject := ⟨200⟩,
+    authorizationBasis := .policyRule, timestamp := 1, originatingCore := bootCoreId,
+    actor := { subject := causalWitnessSubject, domain := ⟨1⟩ },
+    predecessorTags := tags }
+
+/-- WS-SM SM9.D.14 (**`chainCausal_not_table_derived`**, invention half): a tag
+the subject acquires **after** the event invents a causal link that never
+existed.
+
+Two states differing in nothing but the taint table — same trail, same objects,
+same scheduler — disagree under the table-derived detector, while the recorded
+detector reports the same verdict in both.  Read the other way: a monitor that
+re-evaluated a historical report against current state would watch its own
+findings change under it. -/
+theorem chainCausal_not_table_derived :
+    ∃ (chain : List DeclassificationEvent) (st₁ st₂ : SystemState),
+      st₁.declassificationAuditLog = st₂.declassificationAuditLog ∧
+      st₂ = { st₁ with declassificationTaint := st₂.declassificationTaint } ∧
+      chainCausalVerdict false st₁ chain = chainCausalVerdict false st₂ chain ∧
+      chainCausalVerdict true st₁ chain ≠ chainCausalVerdict true st₂ chain := by
+  refine ⟨[causalWitnessFirst, causalWitnessSecond DeclassificationTaint.empty],
+          { (default : SystemState) with
+              declassificationTaint := SeLe4n.Kernel.TaintTable.empty },
+          { (default : SystemState) with
+              declassificationTaint :=
+                SeLe4n.Kernel.TaintTable.empty.joinAt causalWitnessSubject.toObjId
+                  (DeclassificationTaint.singleton 0) },
+          rfl, rfl, rfl, ?_⟩
+  decide
+
+/-- WS-SM SM9.D.14 (**`chainCausal_not_table_derived`**, loss half): a **retype**
+of the acting subject's TCB clears its taint (SM9.D.12), so a table-derived
+detector loses a genuine historical link — the more dangerous direction, since a
+laundering chain that really happened stops being reported.
+
+The recorded snapshot is unaffected, which is the whole reason it is a field of
+the record. -/
+theorem chainCausal_survives_subject_retype :
+    ∃ (chain : List DeclassificationEvent) (st₁ st₂ : SystemState),
+      st₂ = { st₁ with declassificationTaint :=
+        st₁.declassificationTaint.clearAt causalWitnessSubject.toObjId } ∧
+      chainCausalVerdict false st₁ chain = true ∧
+      chainCausalVerdict false st₂ chain = true ∧
+      chainCausalVerdict true st₁ chain = true ∧
+      chainCausalVerdict true st₂ chain = false := by
+  refine ⟨[causalWitnessFirst, causalWitnessSecond (DeclassificationTaint.singleton 0)],
+          { (default : SystemState) with
+              declassificationTaint :=
+                SeLe4n.Kernel.TaintTable.empty.joinAt causalWitnessSubject.toObjId
+                  (DeclassificationTaint.singleton 0) },
+          _, rfl, by decide, by decide, by decide, by decide⟩
+
+/-- WS-SM SM9.D.15 (**the sub-phase headline**): **`chainLaunders` is sound
+under causal provenance.**
+
+When the detector fires, the report is backed by four facts the kernel recorded
+rather than by a domain coincidence:
+
+* every hop was individually authorized (the kernel checked each at the time),
+* the composition was **not** authorized (which is the laundering),
+* the hops compose and run in recorded order, and
+* **each hop's acting subject was holding the previous hop's released content**
+  when it performed its own downgrade — the causal fact, read off the recorded
+  snapshots and reported pairwise so an operator can point at the evidence.
+
+The fourth conjunct is what SM9.D adds.  Before it `chainLaunders` reported
+every domain-compatible pair in the trail, so an operator had to establish
+causality by hand — the over-approximation the retired
+`declassificationChainLinked_is_syntactic` recorded.  The residual imprecision
+is now exactly saturation (`causalChain_residual_over_approximation`), which is
+the safe direction for a detector and is stated rather than implied absent. -/
+theorem chainLaunders_sound_under_causal_provenance (basePolicy : DomainFlowPolicy)
+    (declPolicy : DeclassificationPolicy) (chain : List DeclassificationEvent)
+    (h : chainLaunders basePolicy declPolicy chain = true) :
+    chainHopsAuthorized basePolicy declPolicy chain = true ∧
+    chainCompositionAuthorized basePolicy declPolicy chain = false ∧
+    2 ≤ chain.length ∧
+    declassificationChainComposes chain = true ∧
+    declassificationChainCausal chain = true ∧
+    (∀ (i : Nat) (hi : i + 1 < chain.length),
+      declassificationEventNames (chain[i + 1]'hi) (chain[i]'(by omega)) = true) := by
+  simp only [chainLaunders, Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at h
+  obtain ⟨⟨⟨hLinked, hHops⟩, hLen⟩, hComp⟩ := h
+  refine ⟨hHops, hComp, hLen, declassificationChainLinked_composes hLinked,
+          declassificationChainLinked_causal hLinked, ?_⟩
+  exact declassificationChainCausal_pairwise chain (declassificationChainLinked_causal hLinked)
+
+/-- WS-SM SM9.D.15 (**the residual, as a negative**): the detector still
+over-approximates — but only through **saturation**.
+
+A subject that has received content from more than `maxTaintTags` distinct
+downgrades carries the top of the order, which names every identity including
+ones it never received; a chain whose second hop carries a saturated snapshot is
+therefore reported without a specific recorded identity behind it.
+
+Stated as a theorem rather than left in prose because it is the exact boundary
+of the soundness claim above: what `chainLaunders` reports is either a recorded
+identity or a saturation, and never a domain coincidence.  The safe direction
+for a detector, and the reason `DeclassificationTaint` saturates upward instead
+of evicting. -/
+theorem causalChain_residual_over_approximation :
+    ∃ (basePolicy : DomainFlowPolicy) (declPolicy : DeclassificationPolicy)
+      (e₁ e₂ : DeclassificationEvent),
+      e₂.predecessorTags.saturated = true ∧
+      e₂.predecessorTags.tags = [] ∧
+      declassificationEventNames e₂ e₁ = true ∧
+      chainLaunders basePolicy declPolicy [e₁, e₂] = true := by
+  refine ⟨{ canFlow := fun src dst => decide (src.id = dst.id) },
+          { canDeclassify := fun src dst =>
+              (decide (src.id = 2) && decide (dst.id = 1)) ||
+              (decide (src.id = 1) && decide (dst.id = 0)) },
+          causalWitnessFirst, causalWitnessSecond DeclassificationTaint.top,
+          by decide, by decide, by decide, by decide⟩
+
+/-- WS-SM SM9.D.15 (**the retirement's replacement**): a syntactically perfect
+chain that no recorded snapshot supports is **refused**.
+
+This is the statement the retired `declassificationChainLinked_is_syntactic`
+made in the other direction: two downgrades whose domains compose and whose
+timestamps increase, targeting two unrelated objects, used to read as a chain.
+Now the second must name the first, and with empty snapshots it does not — so
+the false positive that motivated SM9.D is gone. -/
+theorem declassificationChainLinked_is_causal :
+    ∃ e₁ e₂ : DeclassificationEvent,
+      declassificationChainComposes [e₁, e₂] = true ∧
+      declassificationChainCausal [e₁, e₂] = false ∧
+      declassificationChainLinked [e₁, e₂] = false ∧
+      e₁.targetObject ≠ e₂.targetObject := by
+  refine ⟨causalWitnessFirst, causalWitnessSecond DeclassificationTaint.empty,
+          by decide, by decide, by decide, by decide⟩
 
 /-- WS-SM SM8.C.6: a gate that admits has a subject.  `endpointFlowCheckAtCore`
 returns `false` on a core running nothing, so naming the subject below is
@@ -1744,37 +2043,138 @@ theorem recordDeclassification_admits_ill_formed :
   refine ⟨[], { srcDomain := ⟨1⟩, dstDomain := ⟨0⟩, targetObject := ⟨0⟩,
                 authorizationBasis := .policyRule, timestamp := 7,
                 originatingCore := bootCoreId,
-                actor := { subject := ⟨1⟩, domain := ⟨1⟩ } }, rfl, rfl⟩
+                actor := { subject := ⟨1⟩, domain := ⟨1⟩ },
+                predecessorTags := DeclassificationTaint.empty }, rfl, rfl⟩
 
-/-- WS-SM SM8.C.2 (**the laundering detector's scope**): `declassificationChainLinked`
-is **syntactic**, and fires on events that are causally unrelated.
+/-- WS-SM SM9.D.15 (**the laundering detector's scope, after the retirement**):
+`chainLaunders` reports a chain only when the recorded snapshots support it —
+and the one thing it can still over-report is **saturation**.
 
-Two downgrades `a → b` and `b → d` are "linked" here when the middle domains
-match and the timestamps increase.  Nothing establishes that the second
-downgrade released information the first produced — the model has no
-data-dependency relation between events, so it cannot.
+**What this replaces.**  Up to SM9.D the scope theorem here was
+`declassificationChainLinked_is_syntactic`: a witness that two causally
+unrelated downgrades of two unrelated objects read as a chain, because linkage
+was matching domains and increasing timestamps and nothing else.  SM9.D.14
+conjoined `declassificationChainCausal` into the predicate, so that witness no
+longer holds — `declassificationChainLinked_is_causal` is the same pair,
+refused.  The retired name is forbidden by a Tier-3 negative anchor rather than
+merely deleted, so it cannot come back as a simplification.
 
-The over-approximation is in the safe direction for a *detector*: `chainLaunders`
-reports a composition the policy does not authorize wherever the syntactic shape
-is present, so it cannot miss a real laundering chain, and an operator
-investigating a report has to establish causality themselves.  It would be the
-unsafe direction for an *enforcement* gate, which is why nothing enforces on it.
+**What remains true**, and is stated rather than implied absent: an
+over-approximation survives, and it is exactly the saturating top of the taint
+order.  A subject that has received content from more than `maxTaintTags`
+distinct downgrades carries a snapshot naming *every* identity, so a chain
+through it is reported without a specific recorded identity behind it
+(`causalChain_residual_over_approximation`).  That is the safe direction — more
+reports, never a missed chain — and it is why `DeclassificationTaint` saturates
+upward instead of evicting a tag.
 
-Closing this needs a provenance relation on the object store (which object's
-content flowed into which), scoped to SM8.E. -/
-theorem declassificationChainLinked_is_syntactic :
-    ∃ e₁ e₂ : DeclassificationEvent,
-      declassificationChainLinked [e₁, e₂] = true ∧
-        e₁.targetObject ≠ e₂.targetObject ∧
-        e₁.originatingCore = e₂.originatingCore := by
-  refine ⟨{ srcDomain := ⟨2⟩, dstDomain := ⟨1⟩, targetObject := ⟨100⟩,
-            authorizationBasis := .policyRule, timestamp := 0,
-            originatingCore := bootCoreId,
-            actor := { subject := ⟨1⟩, domain := ⟨2⟩ } },
-          { srcDomain := ⟨1⟩, dstDomain := ⟨0⟩, targetObject := ⟨200⟩,
-            authorizationBasis := .policyRule, timestamp := 1,
-            originatingCore := bootCoreId,
-            actor := { subject := ⟨2⟩, domain := ⟨1⟩ } }, by decide, by decide, rfl⟩
+The second residual is worth naming beside it, because it is a *different*
+imprecision and one SM9.D.12 deliberately closed rather than accepted: taint
+outliving the object it describes.  A framed retype would leave a destroyed
+object's tags on its unrelated replacement, which is a false positive with
+nothing to do with saturation — `staleTaint_is_not_saturation` keeps the two
+apart, and the retype clears. -/
+theorem chainLaunders_residual_is_saturation :
+    (∃ (basePolicy : DomainFlowPolicy) (declPolicy : DeclassificationPolicy)
+        (e₁ e₂ : DeclassificationEvent),
+        e₂.predecessorTags.saturated = true ∧ e₂.predecessorTags.tags = [] ∧
+        chainLaunders basePolicy declPolicy [e₁, e₂] = true) ∧
+    (∃ e₁ e₂ : DeclassificationEvent,
+        declassificationChainComposes [e₁, e₂] = true ∧
+        declassificationChainLinked [e₁, e₂] = false) := by
+  obtain ⟨bp, dp, e₁, e₂, hSat, hTags, -, hLaunders⟩ :=
+    causalChain_residual_over_approximation
+  obtain ⟨f₁, f₂, hComposes, -, hRefused, -⟩ := declassificationChainLinked_is_causal
+  exact ⟨⟨bp, dp, e₁, e₂, hSat, hTags, hLaunders⟩, ⟨f₁, f₂, hComposes, hRefused⟩⟩
+
+/-- WS-SM SM9.D.14 (**the detector is reachable**): a monitor that reads the
+causality opcode at every index of its view reconstructs
+`declassificationChainCausal` over that view.
+
+The theorem that keeps SM9.D from being an improvement only the model can see.
+SM8's detector was model-level with no consumer, and a causal detector nothing
+can query would be the same thing one refinement further on; the export is one
+opaque bit per adjacent pair, never the recorded tags, so the reconstruction
+costs the reader nothing it was not already entitled to
+(`chainVerdict_view_local`).
+
+Stated over the reader's *view* rather than over the trail, because that is
+what the opcode indexes — for the configured monitor the two coincide, which is
+the deployment the laundering detector is for. -/
+theorem chainVerdict_reconstructs_causal (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (st : SystemState)
+    (hCausal : declassificationChainCausal
+      (auditLogVisibleTo ctx reader st.declassificationAuditLog) = true) :
+    ∀ i, 0 < i → i < (auditLogVisibleTo ctx reader st.declassificationAuditLog).length →
+      auditReadWord ctx monitorClearance reader st (.chainNamesPredecessor i) = .ok 1 := by
+  intro i hPos hLt
+  obtain ⟨n, rfl⟩ : ∃ n, i = n + 1 := ⟨i - 1, by omega⟩
+  have hNames := declassificationChainCausal_pairwise
+    (auditLogVisibleTo ctx reader st.declassificationAuditLog) hCausal n hLt
+  have hPrev : n < (auditLogVisibleTo ctx reader st.declassificationAuditLog).length := by omega
+  have hLater : (auditLogVisibleTo ctx reader st.declassificationAuditLog)[n + 1]? =
+      some ((auditLogVisibleTo ctx reader st.declassificationAuditLog)[n + 1]'hLt) :=
+    List.getElem?_eq_getElem hLt
+  have hEarlier : (auditLogVisibleTo ctx reader st.declassificationAuditLog)[(n + 1) - 1]? =
+      some ((auditLogVisibleTo ctx reader st.declassificationAuditLog)[n]'hPrev) := by
+    simp [List.getElem?_eq_getElem hPrev]
+  rw [chainVerdict_ok ctx monitorClearance reader st (n + 1) (by omega) _ _ hLater hEarlier]
+  simp [hNames]
+
+/-- WS-SM SM9.D.14 (**the monitor's own inference**): a `1` at every interior
+index means the view IS causal.  The direction `chainVerdict_reconstructs_causal`
+does not carry, and the one a monitor actually runs: it reads the words, then
+concludes the predicate. -/
+theorem chainVerdict_all_ok_causal (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (st : SystemState)
+    (hAll : ∀ i, 0 < i →
+      i < (auditLogVisibleTo ctx reader st.declassificationAuditLog).length →
+      auditReadWord ctx monitorClearance reader st (.chainNamesPredecessor i) = .ok 1) :
+    declassificationChainCausal
+      (auditLogVisibleTo ctx reader st.declassificationAuditLog) = true := by
+  refine declassificationChainCausal_of_pairwise _ (fun i h => ?_)
+  have hPrev : i < (auditLogVisibleTo ctx reader st.declassificationAuditLog).length := by
+    omega
+  have hWord := hAll (i + 1) (by omega) h
+  have hLater : (auditLogVisibleTo ctx reader st.declassificationAuditLog)[i + 1]? =
+      some ((auditLogVisibleTo ctx reader st.declassificationAuditLog)[i + 1]'h) :=
+    List.getElem?_eq_getElem h
+  have hEarlier : (auditLogVisibleTo ctx reader st.declassificationAuditLog)[(i + 1) - 1]? =
+      some ((auditLogVisibleTo ctx reader st.declassificationAuditLog)[i]'hPrev) := by
+    simp [List.getElem?_eq_getElem hPrev]
+  rw [chainVerdict_ok ctx monitorClearance reader st (i + 1) (by omega) _ _ hLater hEarlier]
+    at hWord
+  by_cases hN : declassificationEventNames
+      ((auditLogVisibleTo ctx reader st.declassificationAuditLog)[i + 1]'h)
+      ((auditLogVisibleTo ctx reader st.declassificationAuditLog)[i]'hPrev) = true
+  · exact hN
+  · simp [hN] at hWord
+
+/-- WS-SM SM9.D.14 (**the general query closes the adjacency gap**): for ANY two
+visible indices `earlier < later` — not only the adjacent pair — the opcode word
+is `1` exactly when the later entry names the earlier one.  This is the relation
+`declassificationChainCausal` / `chainLaunders` are built from, over an arbitrary
+non-contiguous subchain, so a hop an interleaved event split out of adjacency is
+now queryable where `chainNamesPredecessor` returned `0` on the wrong (adjacent)
+pair.  The reader cost is unchanged — one opaque bit about two entries the caller
+already holds (`chainEntryVerdict_view_local`), never the recorded tags. -/
+theorem chainEntryVerdict_names_iff (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (st : SystemState) (later earlier : Nat) (hLt : earlier < later)
+    (laterEvent earlierEvent : DeclassificationEvent)
+    (hLater :
+      (auditLogVisibleTo ctx reader st.declassificationAuditLog)[later]? = some laterEvent)
+    (hEarlier :
+      (auditLogVisibleTo ctx reader st.declassificationAuditLog)[earlier]? = some earlierEvent) :
+    auditReadWord ctx monitorClearance reader st (.chainNamesEntry later earlier) = .ok 1 ↔
+      declassificationEventNames laterEvent earlierEvent = true := by
+  rw [chainEntryVerdict_ok ctx monitorClearance reader st later earlier hLt
+    laterEvent earlierEvent hLater hEarlier]
+  cases hN : declassificationEventNames laterEvent earlierEvent with
+  | true => simp
+  | false => simp
 
 /-- WS-SM SM8.C.5 (**`authorizationBasis_perCore`'s scope**): the *verdict* is
 core-uniform, so the theorem's `∀ c` is a quantifier over a dimension the
@@ -2181,9 +2581,12 @@ inductive DeclassificationRuleId where
   /-- WS-SM SM8.C (§11): the trail's total order is a **checkable predicate**,
   not a type invariant — the V6-H primitive admits an ill-formed log. -/
   | timestampOrderIsCheckable
-  /-- WS-SM SM8.C.2 (§11): chain linkage is **syntactic** — matching domains and
-  increasing timestamps, with no data-dependency relation behind them. -/
-  | chainLinkageIsSyntactic
+  /-- WS-SM SM9.D.15 (§11, **replacing the retired `chainLinkageIsSyntactic`**):
+  chain linkage is **causal** — each hop's recorded snapshot names its
+  predecessor, so a report rests on provenance the kernel recorded rather than
+  on matching domains.  The residual over-approximation is saturation, and it
+  is exhibited rather than implied absent. -/
+  | chainLinkageIsCausal
   /-- WS-SM SM9.B (§11, **replacing the retired `refusalIsUnrecorded`**):
   refused declassifications are **counted and attributed** in the refusal
   ledger, and still cannot displace an authorized-downgrade entry in the trail.
@@ -2203,7 +2606,7 @@ def DeclassificationRuleId.all : List DeclassificationRuleId :=
   [ .compositionSoundness, .hopAuthorizationDoesNotCompose, .endpointOverrideIsNotABasis
   , .coreDimensionIsAuditOnly, .perCorePartition, .crossCoreChainNeedsGlobalLog
   , .attributionFromRunningSubject, .auditIsNotObservable
-  , .timestampOrderIsCheckable, .chainLinkageIsSyntactic
+  , .timestampOrderIsCheckable, .chainLinkageIsCausal
   , .refusalsAreCountedAndAttributed
   , .liveDeclassificationWritesOnlyTheTrail ]
 
@@ -2273,11 +2676,16 @@ def DeclassificationRuleId.evidenceProp : DeclassificationRuleId → Prop
       ∃ (log : DeclassificationAuditLog) (e : DeclassificationEvent),
         declassificationAuditLogWellFormed log = true ∧
           declassificationAuditLogWellFormed (recordDeclassification log e) = false
-  | .chainLinkageIsSyntactic =>
-      ∃ e₁ e₂ : DeclassificationEvent,
-        declassificationChainLinked [e₁, e₂] = true ∧
-          e₁.targetObject ≠ e₂.targetObject ∧
-          e₁.originatingCore = e₂.originatingCore
+  | .chainLinkageIsCausal =>
+      (∀ (basePolicy : DomainFlowPolicy) (declPolicy : DeclassificationPolicy)
+        (chain : List DeclassificationEvent),
+        chainLaunders basePolicy declPolicy chain = true →
+        ∀ (i : Nat) (hi : i + 1 < chain.length),
+          declassificationEventNames (chain[i + 1]'hi) (chain[i]'(by omega)) = true) ∧
+      (∃ (basePolicy : DomainFlowPolicy) (declPolicy : DeclassificationPolicy)
+        (e₁ e₂ : DeclassificationEvent),
+        e₂.predecessorTags.saturated = true ∧ e₂.predecessorTags.tags = [] ∧
+        chainLaunders basePolicy declPolicy [e₁, e₂] = true)
   | .refusalsAreCountedAndAttributed =>
       ∀ (ctx : LabelingContext) (c : CoreId) (syscallId : UInt32) (tid : SeLe4n.ThreadId)
         (ke : KernelError) (x0 : UInt64) (st : SystemState) (sid : SeLe4n.Model.SyscallId)
@@ -2343,7 +2751,14 @@ def declassificationRuleEvidence : (id : DeclassificationRuleId) → id.evidence
         declassifyStoreOnCore_state_trail_independent ctx declPolicy c actor srcDomain dstDomain targetId
           obj logA logB st stA stB hStepA hStepB
   | .timestampOrderIsCheckable => recordDeclassification_admits_ill_formed
-  | .chainLinkageIsSyntactic => declassificationChainLinked_is_syntactic
+  | .chainLinkageIsCausal =>
+      ⟨fun basePolicy declPolicy chain hLaunders =>
+         (chainLaunders_sound_under_causal_provenance basePolicy declPolicy chain
+           hLaunders).2.2.2.2.2,
+       by
+         obtain ⟨bp, dp, e₁, e₂, hSat, hTags, -, hLaunders⟩ :=
+           causalChain_residual_over_approximation
+         exact ⟨bp, dp, e₁, e₂, hSat, hTags, hLaunders⟩⟩
   | .refusalsAreCountedAndAttributed =>
       fun ctx c syscallId tid ke x0 st sid e hDecode hRecords =>
         declassificationRefusals_are_counted_and_attributed ctx c syscallId tid ke x0 st sid e
@@ -2367,7 +2782,7 @@ def declassificationRuleEvidenceName : DeclassificationRuleId → String
   | .attributionFromRunningSubject => niName! declassifyStoreFromCore_event_attributable
   | .auditIsNotObservable => niName! declassifyStoreOnCore_state_trail_independent
   | .timestampOrderIsCheckable => niName! recordDeclassification_admits_ill_formed
-  | .chainLinkageIsSyntactic => niName! declassificationChainLinked_is_syntactic
+  | .chainLinkageIsCausal => niName! chainLaunders_sound_under_causal_provenance
   | .refusalsAreCountedAndAttributed =>
       niName! declassificationRefusals_are_counted_and_attributed
   | .liveDeclassificationWritesOnlyTheTrail =>
@@ -2394,8 +2809,8 @@ def declassificationRuleStatement : DeclassificationRuleId → String
       "the committed state, modulo the trail, does not depend on the audit trail"
   | .timestampOrderIsCheckable =>
       "the trail's total order is a checkable predicate, not a type invariant"
-  | .chainLinkageIsSyntactic =>
-      "chain linkage is syntactic: matching domains and increasing timestamps"
+  | .chainLinkageIsCausal =>
+      "chain linkage is causal: each hop's recorded snapshot names its predecessor"
   | .refusalsAreCountedAndAttributed =>
       "refusals are counted and attributed, and cannot displace an authorized entry"
   | .liveDeclassificationWritesOnlyTheTrail =>

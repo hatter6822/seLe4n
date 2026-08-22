@@ -491,7 +491,7 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
 bundle view. -/
 example (st st' : SystemState) (ntfnId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hNWC : notificationWaiterConsistent st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
@@ -509,7 +509,7 @@ example (c : CoreId) : ipcInvariantFull_perCore (default : SystemState) c :=
 every core's bundle view, unconditionally over success/failure. -/
 example (st : SystemState) (ntfnId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (ec c : CoreId)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone (notificationSignalOnCore ntfnId badge ec st).1)
+    (hWtpmn' : blockedThreadsPendingMessageConsistent (notificationSignalOnCore ntfnId badge ec st).1)
     (hRCLRecip' : replyCallerLinkageReciprocal (notificationSignalOnCore ntfnId badge ec st).1)
     (hNWC : notificationWaiterConsistent st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st) :
@@ -524,7 +524,7 @@ off-scheduler agreement dichotomy). -/
 example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
     (st : SystemState)
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone (endpointReplyOnCore replier target msg ec st).1)
+    (hWtpmn' : blockedThreadsPendingMessageConsistent (endpointReplyOnCore replier target msg ec st).1)
     (hDOV' : donationOwnerValid (endpointReplyOnCore replier target msg ec st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st) :
     ipcInvariantFull (endpointReplyOnCore replier target msg ec st).1 :=
@@ -538,7 +538,7 @@ The disjunctive `hReplyIdValid` premise's reuse arm is exercised here. -/
 example (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
     (msg : IpcMessage) (rid : SeLe4n.ReplyId) (ec c : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
       (endpointReplyRecvOnCore endpointId receiver replyTarget msg (some rid) ec st).1)
     (hRCLRecip' : replyCallerLinkageReciprocal
       (endpointReplyRecvOnCore endpointId receiver replyTarget msg (some rid) ec st).1)
@@ -584,7 +584,7 @@ example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
     (hDualQueue' : dualQueueSystemInvariant st') (hBadge' : badgeWellFormed st')
-    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),

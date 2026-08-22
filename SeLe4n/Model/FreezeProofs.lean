@@ -1478,7 +1478,10 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
     -- WS-SM SM9.B.4: the refusal ledger is carried bitwise, so a frozen
     -- snapshot distinguishes "no declassification was attempted" from
     -- "attempts were made and refused" exactly as the live state does.
-    sst.declassificationRefusals = fst.declassificationRefusals
+    sst.declassificationRefusals = fst.declassificationRefusals ∧
+    -- WS-SM SM9.D.3: the taint side table is carried bitwise, so the causal
+    -- laundering analysis a frozen snapshot supports is the live one.
+    sst.declassificationTaint = fst.declassificationTaint
 
 /-- AK7-B (F-H02): The full variant implies the objects-only variant. -/
 theorem apiInvariantBundle_frozenDirectFull_implies_objectsOnly
@@ -1498,7 +1501,7 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
     apiInvariantBundle_frozenDirectFull (freeze ist) := by
   refine ⟨ist.state, hInv,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- Map fields (17)
   · exact fun oid => lookup_freeze_objects ist oid
   · exact fun irq => lookup_freeze_irqHandlers ist irq
@@ -1543,6 +1546,8 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact (freeze_preserves_declassificationAuditEpoch ist).symm
   -- WS-SM SM9.B.4: the refusal ledger carried bitwise
   · exact (freeze_preserves_declassificationRefusals ist).symm
+  -- WS-SM SM9.D.3: the taint side table carried bitwise
+  · exact (freeze_preserves_declassificationTaint ist).symm
 
 /-- R6-A.3: `FrozenMap.set` preserves the direct frozen invariant when the
     mutated object corresponds to a valid `SystemState` mutation.

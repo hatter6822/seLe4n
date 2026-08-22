@@ -81,6 +81,15 @@ def endpointSendDualWithCaps
     (senderCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
   fun st =>
+    -- PR #873 round 13: **the endpoint's grant right is stamped into the
+    -- message**, because the message is where both orderings read it.  The
+    -- immediate rendezvous below consulted `endpointRights` while a queued send
+    -- left `msg.capsGranted` untouched for the later unwrap to read, so a caller
+    -- that passed granting rights with the field's `false` default transferred
+    -- capabilities on rendezvous and none after parking -- capability delivery
+    -- decided by which side reached the endpoint first, the order-dependence
+    -- round 6 removed from the receive side.  One authority, recorded once, read
+    -- once.
     -- Check if a receiver is waiting BEFORE the send.
     -- AJ1-C (M-02): `endpointQueuePopHead_returns_head` proves the pre-inspected
     -- receiver matches the thread actually dequeued, ensuring capability transfer
@@ -89,7 +98,7 @@ def endpointSendDualWithCaps
     let hasReceiver := match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head.isSome
       | none    => false
-    match endpointSendDual endpointId sender msg st with
+    match endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem .grant } st with
     | .error e => .error e
     | .ok ((), st') =>
         if !hasReceiver || msg.caps.isEmpty then
@@ -107,8 +116,8 @@ def endpointSendDualWithCaps
             | some receiverId =>
               match lookupCspaceRoot st' receiverId with
               | some recvRoot =>
-                let grantRight := endpointRights.mem .grant
-                ipcUnwrapCaps msg senderCspaceRoot recvRoot receiverSlotBase grantRight st'
+                ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } senderCspaceRoot recvRoot
+                  receiverSlotBase (endpointRights.mem .grant) st'
               | none =>
                 -- AK1-I (I-M07 / MEDIUM, NI L-1): Symmetric with the
                 -- `endpointReceiveDualWithCaps` and `endpointCallWithCaps`
@@ -139,15 +148,22 @@ the receiver will get caps when a sender later arrives via
 def endpointReceiveDualWithCaps
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
-    (endpointRights : AccessRightSet)
     (receiverCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) : Kernel (SeLe4n.ThreadId × CapTransferSummary) :=
   fun st =>
     -- WS-SM SM6.D (#7.1 fold): forward the server-supplied reply object into the
     -- folded receive transition (atomic reply-linking on a Call rendezvous).
+    -- PR #873 round 8: **did this receive dequeue anything?**  Read before the
+    -- transition, exactly as `endpointSendDualWithCaps` reads `hasReceiver`
+    -- before the send.  Without it the blocking branch — which returns the
+    -- receiver's own id and leaves `pendingMessage` untouched — unwrapped a
+    -- *previously delivered* message a second time, installing an extra copy of
+    -- authority for a receive that consumed nothing.
+    let rendezvous := (receiveRendezvousSender? st endpointId).isSome
     match endpointReceiveDual endpointId receiver replyId st with
     | .error e => .error e
     | .ok (senderId, st') =>
+        if !rendezvous then .ok ((senderId, { results := #[] }), st') else
         -- Check if the receiver got a message (sender was dequeued)
         -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
         match st'.getTcb? receiver with
@@ -175,15 +191,42 @@ def endpointReceiveDualWithCaps
                   match lookupCspaceRoot st' senderId with
                   | none => .error .invalidCapability
                   | some senderRoot =>
-                    let grantRight := endpointRights.mem .grant
+                    -- PR #873 round 6: the grant right is the **sender's**, read
+                    -- off the message it sent.  It used to be the receiver's
+                    -- endpoint rights, which is a different principal's
+                    -- authority: seL4 gates capability transfer on the sender's
+                    -- endpoint capability, and consulting the receiver's here
+                    -- made the queued ordering disagree with the rendezvous one
+                    -- whenever a granting sender met a non-granting receiver.
                     match ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                        receiverSlotBase grantRight st' with
+                        receiverSlotBase msg.capsGranted st' with
                     | .error e => .error e
                     | .ok (summary, st'') => .ok ((senderId, summary), st'')
             | none =>
                 -- Receiver was enqueued (no sender available)
                 .ok ((senderId, { results := #[] }), st')
         | none => .ok ((senderId, { results := #[] }), st')
+
+/-- **M-D01 (PR #873 round 8): a receive that dequeued nothing installs
+nothing** — the single-core sibling of
+`endpointReceiveDualWithCapsOnCore_blocked_installs_nothing`, and the same
+security property.
+
+`endpointReceiveDual`'s blocking branch returns the receiver's own id and leaves
+`pendingMessage` untouched, so deciding by that field alone re-unwrapped a
+message the receiver had been holding since a previous receive — an extra copy of
+authority installed with no sender.  The gate is the endpoint's pre-state send
+queue, which is what the bare transition itself branches on. -/
+theorem endpointReceiveDualWithCaps_blocked_installs_nothing
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (st st' : SystemState) (senderId : SeLe4n.ThreadId)
+    (hBlocked : receiveRendezvousSender? st endpointId = none)
+    (hRecv : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
+    endpointReceiveDualWithCaps endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase st
+      = .ok ((senderId, { results := #[] }), st') := by
+  simp [endpointReceiveDualWithCaps, hRecv, hBlocked]
 
 /-- M-D01: Extended call with capability transfer. Composes `endpointCall`
 with `ipcUnwrapCaps` for the immediate-rendezvous path. Same structure as
@@ -194,11 +237,20 @@ def endpointCallWithCaps
     (callerCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
   fun st =>
+    -- PR #873 round 13: **the endpoint's grant right is stamped into the
+    -- message**, because the message is where both orderings read it.  The
+    -- immediate rendezvous below consulted `endpointRights` while a queued send
+    -- left `msg.capsGranted` untouched for the later unwrap to read, so a caller
+    -- that passed granting rights with the field's `false` default transferred
+    -- capabilities on rendezvous and none after parking -- capability delivery
+    -- decided by which side reached the endpoint first, the order-dependence
+    -- round 6 removed from the receive side.  One authority, recorded once, read
+    -- once.
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
     let hasReceiver := match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head.isSome
       | none    => false
-    match endpointCall endpointId caller msg st with
+    match endpointCall endpointId caller { msg with capsGranted := endpointRights.mem .grant } st with
     | .error e => .error e
     | .ok ((), st') =>
         if !hasReceiver || msg.caps.isEmpty then
@@ -211,8 +263,8 @@ def endpointCallWithCaps
             | some receiverId =>
               match lookupCspaceRoot st' receiverId with
               | some recvRoot =>
-                let grantRight := endpointRights.mem .grant
-                ipcUnwrapCaps msg callerCspaceRoot recvRoot receiverSlotBase grantRight st'
+                ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } callerCspaceRoot recvRoot
+                  receiverSlotBase (endpointRights.mem .grant) st'
               | none =>
                 -- WS-RC R1 (DEEP-IPC-03 / MEDIUM, NI L-1): Symmetric with
                 -- the `endpointSendDualWithCaps` and

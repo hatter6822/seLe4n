@@ -51,12 +51,15 @@ When the H3 hardware binding integrates runtime execution, FrozenOps is the
 intended runtime monad. Until then, it serves as proof-of-concept infrastructure.
 
 Defines the execution-phase monad for operating on `FrozenSystemState`.
-All lookups use `FrozenMap.get?` (index lookup + array access) and all
+All lookups use `FrozenMap.get?` (index lookup + array access) and value
 mutations use `FrozenMap.set` (in-place array update at existing index).
 
-The index map is never modified after freeze — it is immutable. All
-`Fin` accesses are within bounds by construction. No fuel or dynamic
-resizing is needed.
+The index map is immutable for every operation that only changes values, which
+is all of them but one: a wake has to enqueue into a bucket the snapshot may not
+hold, because the live `ensureRunnable` creates it. `frozenEnsureRunnable` uses
+`FrozenMap.insert`, which appends rather than refusing (PR #873 round 17); every
+stored index stays in range by `FrozenMap.insert_preserves_wellFormed`. All
+`Fin` accesses are within bounds by construction. No fuel is needed.
 
 ## Design
 
@@ -238,6 +241,107 @@ theorem frozenStoreNotificationChecked_ok_eq_frozenStoreNotification
   | some _ => rw [hLookup] at hOk; exact hOk
   | none => rw [hLookup] at hOk; cases hOk
 
+/-- **The frozen run queue's insert** (PR #873 round 15), mirroring the live
+`ensureRunnable`.
+
+`frozenChooseThread` selects exclusively by folding `scheduler.byPriority` and
+filtering on `.ready`.  Until this existed no frozen operation ever wrote that
+field, so a thread woken during the frozen phase became `.ready` and stayed
+permanently unselectable -- the live `ensureRunnable` put it back in a bucket
+and the frozen mirror did not.  The module docstring asserted the opposite and
+named `membership`, which `frozenChooseThread` does not read.
+
+**The bucket is created when it is missing** (round 17).  The first cut of this
+enqueued through `FrozenMap.set`, which answers `none` for an absent key, and
+answered `.illegalState` when the snapshot held no bucket at the woken thread's
+priority.  That is not the conservative reading it was written as: the live
+`ensureRunnable` creates the bucket through `RunQueue.insert`, so a passive
+server blocked at freeze time -- never runnable, therefore never in a bucket --
+made the frozen model refuse a transition the kernel performs.  A model that
+refuses what the kernel does is wrong in the same way as one that permits what
+the kernel refuses.
+
+The fixed key set was a property of `set`, not of the representation, so the
+enqueue goes through `FrozenMap.insert`, which appends.  `insert_get?_self`
+pins that the thread is then findable and `insert_preserves_wellFormed` that
+every stored index stays in range, which is what licensed growing the map.
+
+`membership` is untouched, deliberately: a `FrozenSet` carries `Unit` values, so
+its content *is* its key set and cannot change.  `frozenSchedule` already records
+it as a read-only census of the population at freeze time. -/
+def frozenEnsureRunnable (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    : Except KernelError FrozenSystemState :=
+  match frozenLookupTcb st tid with
+  | none => .error .objectNotFound
+  | some tcb =>
+      let prio : SeLe4n.Priority :=
+        match tcb.pipBoost with
+        | none => tcb.priority
+        | some boost => ⟨Nat.max tcb.priority.val boost.val⟩
+      let bucket := (st.scheduler.byPriority.get? prio).getD []
+      if bucket.contains tid then .ok st
+      else
+        .ok { st with scheduler := { st.scheduler with
+          byPriority := st.scheduler.byPriority.insert prio (bucket ++ [tid]) } }
+
+/-- **The frozen run queue's remove** (PR #873 round 15), mirroring the live
+`removeRunnable`: drop the thread from its bucket, and clear `current` if it was
+the running thread.
+
+Unlike the insert this cannot fail on a missing key -- a thread absent from every
+bucket is already not runnable, so removing it is the identity.  The buckets are
+searched rather than indexed by the thread's current priority, because a block
+can follow a priority change and the thread must leave the bucket it is actually
+in. -/
+def frozenRemoveRunnable (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    : FrozenSystemState :=
+  let cleared : FrozenSystemState :=
+    if st.scheduler.current == some tid then
+      { st with scheduler := { st.scheduler with current := none } }
+    else st
+  cleared.scheduler.byPriority.indexMap.toList.foldl
+    (fun acc kv =>
+      let bucket := (acc.scheduler.byPriority.get? kv.1).getD []
+      if bucket.contains tid then
+        match acc.scheduler.byPriority.set kv.1 (bucket.filter (· != tid)) with
+        | none => acc
+        | some bp => { acc with scheduler := { acc.scheduler with byPriority := bp } }
+      else acc)
+    cleared
+
+/-- **Link a dequeued caller to the server's reply object** (PR #873 round 17),
+mirroring `SystemState.linkCallerReply`.
+
+Both single-use barriers are kept, because both are what make the link
+unforgeable: a Reply already naming a caller is refused (`linkReply`'s barrier),
+and a caller already holding a reply object is refused, else the old Reply is
+orphaned with a stale `caller` and a later reply cap could resolve to it.
+
+The frozen receive needs this because a `.blockedOnCall` sender does not become
+runnable at rendezvous — it becomes `.blockedOnReply`, holding a link the reply
+transition later consumes. Without it the frozen receive woke the caller, which
+is a transition the live kernel never performs. -/
+def frozenLinkCallerReply (st : FrozenSystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) : Except KernelError FrozenSystemState :=
+  match st.objects.get? rid.toObjId with
+  | some (.reply r) =>
+      if r.caller.isNone then
+        match st.objects.set rid.toObjId (.reply { r with caller := some caller }) with
+        | none => .error .objectNotFound
+        | some objects' =>
+            let st1 : FrozenSystemState := { st with objects := objects' }
+            match frozenLookupTcb st1 caller with
+            | none => .error .objectNotFound
+            | some tcb =>
+                if tcb.replyObject.isNone then
+                  match st1.objects.set caller.toObjId
+                      (.tcb { tcb with replyObject := some rid }) with
+                  | none => .error .objectNotFound
+                  | some objects'' => .ok { st1 with objects := objects'' }
+                else .error .replyCapInvalid
+      else .error .replyCapInvalid
+  | _ => .error .replyCapInvalid
+
 /-- Q7-B: Store a TCB's IPC state in frozen state. -/
 def frozenStoreTcbIpcState (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
     (ipcState : ThreadIpcState) : Except KernelError FrozenSystemState :=
@@ -363,6 +467,72 @@ def frozenQueuePushTail (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
           match frozenQueuePushTailObjects st.objects endpointId isReceiveQ tid ep tcb with
           | .ok objects' => .ok { st with objects := objects' }
           | .error e => .error e
+  | some _ => .error .invalidCapability
+  | none => .error .objectNotFound
+
+/-- **WS-SM SM6.B (PR #873 round 8): unlink a thread from an endpoint queue.**
+
+The frozen counterpart of `endpointQueueRemoveDual`, and it did not exist — which
+is why `frozenNotificationSignal` had no bound-delivery branch to fall into and
+stored the badge on the notification instead, leaving the bound TCB blocked and
+recording the signaller's provenance on the wrong object.
+
+O(1) rather than a walk, because the model maintains `queuePrev`
+(`frozenQueuePushTailObjects` sets it on every push): the node's own neighbours
+are named by its links, so removal is head/tail fix-up plus at most two relinks.
+A thread with no `queuePPrev` is on no queue at all and is refused
+(`.illegalState`) rather than silently "removed" — the same guard
+`frozenQueuePushTail` applies in the opposite direction. -/
+def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st : FrozenSystemState)
+    : Except KernelError FrozenSystemState :=
+  match st.objects.get? endpointId with
+  | some (.endpoint ep) =>
+      match frozenLookupTcb st tid with
+      | none => .error .objectNotFound
+      | some tcb =>
+        if tcb.queuePPrev.isNone then .error .illegalState
+        else
+          let q := if isReceiveQ then ep.receiveQ else ep.sendQ
+          let q' : IntrusiveQueue :=
+            { head := if q.head == some tid then tcb.queueNext else q.head,
+              tail := if q.tail == some tid then tcb.queuePrev else q.tail }
+          let ep' : Endpoint := if isReceiveQ
+            then { ep with receiveQ := q' }
+            else { ep with sendQ := q' }
+          let tcb' := { tcb with queuePrev := none, queueNext := none, queuePPrev := none }
+          match st.objects.set endpointId (.endpoint ep') with
+          | none => .error .objectNotFound
+          | some o1 =>
+            match o1.set tid.toObjId (.tcb tcb') with
+            | none => .error .objectNotFound
+            | some o2 =>
+              -- Predecessor now points past the removed node.
+              let afterPrev : Option (FrozenMap SeLe4n.ObjId FrozenKernelObject) :=
+                match tcb.queuePrev with
+                | none => some o2
+                | some prevTid =>
+                  match o2.get? prevTid.toObjId with
+                  | some (.tcb prevTcb) =>
+                      o2.set prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
+                  | _ => none
+              match afterPrev with
+              | none => .error .objectNotFound
+              | some o3 =>
+                -- Successor's back-links move to the removed node's predecessor.
+                match tcb.queueNext with
+                | none => .ok { st with objects := o3 }
+                | some nextTid =>
+                  match o3.get? nextTid.toObjId with
+                  | some (.tcb nextTcb) =>
+                      match o3.set nextTid.toObjId (.tcb { nextTcb with
+                          queuePrev := tcb.queuePrev,
+                          queuePPrev := match tcb.queuePrev with
+                            | none => some .endpointHead
+                            | some prevTid => some (.tcbNext prevTid) }) with
+                      | some o4 => .ok { st with objects := o4 }
+                      | none => .error .objectNotFound
+                  | _ => .error .objectNotFound
   | some _ => .error .invalidCapability
   | none => .error .objectNotFound
 

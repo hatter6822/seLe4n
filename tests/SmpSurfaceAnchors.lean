@@ -20,6 +20,7 @@ import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
 import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
 import SeLe4n.Kernel.InformationFlow.DeclassificationPerCore
 import SeLe4n.Kernel.InformationFlow.FineLockFlow
+import SeLe4n.Kernel.InformationFlow.TaintPropagation
 
 /-!
 # WS-SM SM2.D.6 / SM8.E.1 — Verified-lock-primitive and information-flow anchors
@@ -1011,14 +1012,141 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _wk := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_wrong_kind
      have _ab := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_absent_target
      have _pb := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_invalid_target_policy_blind
-     decide (SeLe4n.Kernel.auditReadOpcodeCount = 27
+     decide (SeLe4n.Kernel.auditReadOpcodeCount = 30
        ∧ SeLe4n.Kernel.decodeAuditReadOp 25 0 0
            = some (.refusalReceiverChunkCount 0)
        ∧ SeLe4n.Kernel.decodeAuditReadOp 26 0 0 = some (.refusalReceiverChunk 0 0)))
 
+  -- ==========================================================================
+  -- §12  WS-SM SM9.D — causal declassification provenance
+  -- ==========================================================================
+
+  assertBool "SM9.D.1/.D.13: the taint value is bounded by its TYPE, and saturates upward"
+    (-- The bound is a refinement field, so it holds of every value rather than
+     -- only of recorded ones — the shape SM9.B's ledger established, and the
+     -- reason there is no seventeenth `proofLayerInvariantBundle` conjunct.
+     have _tb := @SeLe4n.Kernel.DeclassificationTaint.taint_bounded_structurally
+     -- Saturation is the deliberate *upward* over-approximation: for a
+     -- laundering detector, losing a real link is the unsafe direction.
+     have _sa := @SeLe4n.Kernel.DeclassificationTaint.taintSaturate_over_approximates
+     have _sc := @SeLe4n.Kernel.DeclassificationTaint.join_saturated_covers_all
+     have _ct := @SeLe4n.Kernel.DeclassificationTaint.covers_trans
+     have _cj := @SeLe4n.Kernel.DeclassificationTaint.covers_join_of_covers
+     decide (SeLe4n.Kernel.maxTaintTags = 8
+       ∧ (SeLe4n.Kernel.DeclassificationTaint.ofList [0,1,2,3,4,5,6,7]).saturated = false
+       ∧ ((SeLe4n.Kernel.DeclassificationTaint.ofList [0,1,2,3,4,5,6,7]).insert 8).saturated
+           = true))
+
+  assertBool "SM9.D.7: the content-flow classification is total and reach-checked"
+    (-- Total over `SyscallId` with no wildcard, so a new syscall is a missing
+     -- case at elaboration; but totality over the wrong domain proves nothing,
+     -- which is why the *completeness* of the classification is a Tier-1 reach
+     -- gate (`scripts/check_content_flow_coverage.py`) rather than a theorem.
+     have _ct := @SeLe4n.Kernel.contentFlowClass_total
+     have _cc := @SeLe4n.Kernel.contentFlowClass_clears_iff
+     have _cm := @SeLe4n.Kernel.contentFlowClass_moves_iff
+     decide (SeLe4n.Kernel.contentFlowClass .send = .movesContent
+       ∧ SeLe4n.Kernel.contentFlowClass .declassifySignal = .movesContent
+       ∧ SeLe4n.Kernel.contentFlowClass .lifecycleRetype = .clearsProvenance
+       ∧ SeLe4n.Kernel.contentFlowClass .tcbSuspend = .inert))
+
+  assertBool "SM9.D.8/.D.12: propagation follows content, and a retype forgets"
+    (-- Taint propagates through *ordinary* IPC delivery, which is the whole
+     -- scoping argument: a downgrade writes a badge, an ordinary delivery
+     -- moves it, and the next downgrade must still see it.
+     have _sr := @SeLe4n.Kernel.taintPropagation_send_to_receiver
+     have _rf := @SeLe4n.Kernel.taintPropagation_receive_from_sender
+     have _rc := @SeLe4n.Kernel.taintPropagation_reply_to_caller
+     have _sn := @SeLe4n.Kernel.taintPropagation_signal_to_notification
+     have _wn := @SeLe4n.Kernel.taintPropagation_wait_from_notification
+     -- PR #873 review: the transport's taint is CONTENT-DERIVED.  An endpoint
+     -- is not a sink (it holds no content), and a consumed notification is
+     -- cleared — so a reused transport cannot link unrelated messages.
+     have _cc := @SeLe4n.Kernel.contentFlowClears
+     have _wc := @SeLe4n.Kernel.waitClearsNotificationTaint
+     -- …and no declared sender edge names a CSpace root at all, so nothing
+     -- writes provenance onto an object whose content the model does not track
+     -- and therefore cannot clear.
+     have _cf := @SeLe4n.Kernel.senderTaintEdges_content_only
+     -- The tracked-content scope, and its one deliberate exclusion.
+     have _tf := @SeLe4n.Kernel.contentTrackedFields
+     have _bc := @SeLe4n.Kernel.capabilityBadgeChannel_out_of_scope
+     -- Retype **clears** rather than frames: it commits `storeObject` at the
+     -- same id, so a framed retype would leave a destroyed object's tags on
+     -- its replacement.
+     have _rt := @SeLe4n.Kernel.retypeClearsTaint
+     have _re := @SeLe4n.Kernel.retypedObject_taint_empty
+     have _sn2 := @SeLe4n.Kernel.staleTaint_is_not_saturation
+     -- The replyRecv REPLY leg (audit): the steady-state server loop's second
+     -- hop, resolved the way `resolveReplyRecvReply` resolves it and sharing
+     -- `replyTaintEdges` with the `.reply` arm so the two cannot drift.
+     have _rl := @SeLe4n.Kernel.replyRecvReplyLegEdges
+     have _rp := @SeLe4n.Kernel.taintPropagation_replyRecv_reply_to_prevCaller
+     -- Origination: the two ends of a recorded downgrade.
+     have _ot := @SeLe4n.Kernel.taintOrigination_target
+     have _oa := @SeLe4n.Kernel.taintOrigination_actor
+     -- PR #873 round 4: the flow fold is SIMULTANEOUS, so a transfer's
+     -- root-to-root edge cannot chain into a root-to-subject edge of the same
+     -- commit — the receiving subject is sourced from the sender's root directly.
+     have _sd := @SeLe4n.Kernel.signalDelivery
+     have _sb := @SeLe4n.Kernel.signalBypassedNotification
+     have _bl := @SeLe4n.Kernel.signalDelivery_bound_leaves_notification_alone
+     have _wl := @SeLe4n.Kernel.signalDelivery_waiter_empties_notification
+     have _bn := @SeLe4n.Kernel.bypassedObject_not_originated
+     -- A clear is final within its commit: the origination pass skips cleared
+     -- keys, so a delivered-onward transport cannot be re-tagged after emptying.
+     have _ce := @SeLe4n.Kernel.applySyscallTaint_cleared_empty
+     -- …and a BOUND delivery clears nothing, because it leaves the notification
+     -- holding whatever badge it already had.
+     have _sb := @SeLe4n.Kernel.signalClearedNotification_bound
+     have _sw := @SeLe4n.Kernel.signalClearedNotification_waiter
+     decide (SeLe4n.Kernel.TaintPlan.inert.edges = []
+       ∧ SeLe4n.Kernel.TaintPlan.inert.cleared = []))
+
+  assertBool "SM9.D.14: the laundering detector reads recorded history, not the live table"
+    (-- The causal conjunct is history-local: re-evaluating a historical event
+     -- against the *current* table invents links a retype has cleared and
+     -- loses links acquired after the fact, which is why the table-derived
+     -- alternative is retained as a refuted design rather than shipped.
+     have _hl := @SeLe4n.Kernel.chainCausal_is_history_local
+     have _nt := @SeLe4n.Kernel.chainCausal_not_table_derived
+     have _sr := @SeLe4n.Kernel.chainCausal_survives_subject_retype
+     have _ls := @SeLe4n.Kernel.chainLaunders_sound_under_causal_provenance
+     have _ro := @SeLe4n.Kernel.causalChain_residual_over_approximation
+     have _ic := @SeLe4n.Kernel.declassificationChainLinked_is_causal
+     have _rs := @SeLe4n.Kernel.chainLaunders_residual_is_saturation
+     -- The monitor's own inference direction (audit): every read 1 ⇒ causal.
+     have _cp := @SeLe4n.Kernel.declassificationChainCausal_of_pairwise
+     have _ca := @SeLe4n.Kernel.chainVerdict_all_ok_causal
+     have _cp := @SeLe4n.Kernel.declassificationChainCausal_pairwise
+     -- PR #873 review: the GENERAL verdict — the model relation runs over an
+     -- arbitrary non-contiguous subchain, so an adjacency-only query cannot
+     -- test a hop an interleaved event split out of adjacency.
+     have _ce := @SeLe4n.Kernel.chainEntryVerdict_ok
+     have _cr := @SeLe4n.Kernel.chainEntryVerdict_refused
+     have _cv := @SeLe4n.Kernel.chainEntryVerdict_view_local
+     have _cn := @SeLe4n.Kernel.chainEntryVerdict_names_iff
+     decide (SeLe4n.Kernel.declassificationChainCausal [] = true
+       ∧ SeLe4n.Kernel.DeclassificationRuleId.all.length = 12))
+
+  assertBool "SM9.D.17/.D.18: the key's own lock serialises, and the write is invisible"
+    (-- The write set is exactly the keys a plan names, and the table is
+     -- literally unchanged outside it — which is what licenses declaring the
+     -- propagation under the object locks the transition already holds rather
+     -- than under the coarse `.objStore` singleton, exactly as
+     -- `SystemState.objects`' own per-key writes are declared.
+     have _wk := @SeLe4n.Kernel.taintWriteKeys
+     have _fo := @SeLe4n.Kernel.applySyscallTaint_frame_off_writeKeys
+     have _di := @SeLe4n.Kernel.taintWriteKeys_disjoint_updates_independent
+     have _ne := @SeLe4n.Kernel.taintWriteKeys_of_no_events
+     -- The propagation writes a field no observer projects.
+     have _pp := @SeLe4n.Kernel.applySyscallTaint_preserves_projection
+     have _fr := @SeLe4n.Kernel.applySyscallTaint_frame
+     decide (SeLe4n.Kernel.taintFlowSinks SeLe4n.Kernel.TaintPlan.inert = []))
+
   IO.println "============================================================"
   IO.println "All SM2.D + SM3.E.8 + SM8.A + SM8.B + SM8.C + SM8.D + SM8.E + SM9.A + SM9.B + \
-SM9.C surface anchor checks PASS."
+SM9.C + SM9.D surface anchor checks PASS."
 
 end SeLe4n.Testing.SmpSurfaceAnchors
 

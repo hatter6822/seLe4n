@@ -1043,7 +1043,12 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 
 -- SM8.C §11 — scope, stated as witnesses
 #check @recordDeclassification_admits_ill_formed
-#check @declassificationChainLinked_is_syntactic
+-- WS-SM SM9.D.15: `declassificationChainLinked_is_syntactic` is **retired** —
+-- the causal conjunct makes its witness fail.  Its replacement pins the same
+-- pair in the other direction, and the residual over-approximation is stated
+-- rather than implied absent.
+#check @declassificationChainLinked_is_causal
+#check @chainLaunders_residual_is_saturation
 #check @declassificationSubjectDomain_is_core_selected
 #check @declassifyStoreOnCore_refusal_has_no_post_state
 
@@ -1798,7 +1803,15 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @recordDeclassifiedHops_log
 #check @recordDeclassifiedHops_preserves_auditLogBounded
 #check @recordDeclassifiedHops_preserves_trailWellFormed
-#check @recordDeclassifiedHops_cons
+#check @recordDeclassifiedHopsFrom
+#check @recordDeclassifiedHopsFrom_nil
+#check @recordDeclassifiedHopsFrom_cons
+#check @recordDeclassifiedHopsFrom_frame
+#check @recordDeclassifiedHopsFrom_log
+#check @recordDeclassifiedHopsFrom_appended
+#check @recordDeclassifiedHopsFrom_preserves_auditLogBounded
+#check @recordDeclassifiedHopsFrom_preserves_trailWellFormed
+#check @recordDeclassifiedHopsFrom_preserves_proofLayerInvariantBundle
 #check @recordDeclassifiedHops_appended
 #check @recordDeclassifiedHops_two
 #check @recordDeclassifiedHops_preserves_proofLayerInvariantBundle
@@ -1910,6 +1923,317 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @notificationSignalDeclassifiedOnCore_wrong_kind
 #check @notificationSignalDeclassifiedOnCore_absent_target
 #check @notificationSignalDeclassifiedOnCore_invalid_target_policy_blind
+
+-- ============================================================================
+-- §1.13  WS-SM SM9.D — causal declassification provenance
+-- ============================================================================
+
+/-! ### SM9.D.1 / SM9.D.13 — the taint value and its algebra (`Taint.lean`).
+
+The bound is structural (a refinement field on the type), so
+`taint_bounded_structurally` holds of *every* value rather than only of
+recorded ones — the shape SM9.B's `refusalLedger_bounded_structurally`
+established and the reason there is no seventeenth
+`proofLayerInvariantBundle` conjunct.  Saturation is the deliberate
+*upward* over-approximation: for a laundering detector, losing a real
+link is the unsafe direction. -/
+
+#check @maxTaintTags
+#check @maxTaintTags_pos
+#check @insertTag
+#check @insertTag_length_le
+#check @insertTag_length_ge
+#check @mem_insertTag
+#check @DeclassificationTaint
+#check @DeclassificationTaint.saturated
+#check @DeclassificationTaint.tags
+#check @DeclassificationTaint.tags_bounded
+#check @DeclassificationTaint.empty
+#check @DeclassificationTaint.top
+#check @DeclassificationTaint.contains
+#check @DeclassificationTaint.contains_empty
+#check @DeclassificationTaint.contains_top
+#check @DeclassificationTaint.contains_of_saturated
+#check @DeclassificationTaint.contains_iff_mem
+#check @DeclassificationTaint.insert
+#check @DeclassificationTaint.insert_saturated
+#check @DeclassificationTaint.contains_insert_self
+#check @DeclassificationTaint.contains_insert_of_contains
+#check @DeclassificationTaint.insert_not_saturated_iff
+#check @DeclassificationTaint.insert_tags_of_not_saturated
+#check @DeclassificationTaint.contains_insert_iff_of_not_saturated
+#check @DeclassificationTaint.join
+#check @DeclassificationTaint.join_empty
+#check @DeclassificationTaint.join_top_right
+#check @DeclassificationTaint.contains_foldl_insert_of_contains
+#check @DeclassificationTaint.contains_foldl_insert_of_mem
+#check @DeclassificationTaint.contains_join_of_left
+#check @DeclassificationTaint.contains_join_of_right
+#check @DeclassificationTaint.contains_join_of_or
+#check @DeclassificationTaint.contains_join_iff_of_not_saturated
+#check @DeclassificationTaint.covers
+#check @DeclassificationTaint.covers_sound
+#check @DeclassificationTaint.covers_refl
+#check @DeclassificationTaint.covers_trans
+#check @DeclassificationTaint.covers_top
+#check @DeclassificationTaint.covers_empty
+#check @DeclassificationTaint.join_saturated_of_left
+#check @DeclassificationTaint.covers_join_left
+#check @DeclassificationTaint.covers_join_right
+#check @DeclassificationTaint.covers_join_of_covers
+#check @DeclassificationTaint.singleton
+#check @DeclassificationTaint.contains_singleton_self
+#check @DeclassificationTaint.contains_singleton_iff
+#check @DeclassificationTaint.ofList
+#check @DeclassificationTaint.contains_ofList_of_mem
+#check @DeclassificationTaint.taint_bounded_structurally
+#check @DeclassificationTaint.taintSaturate_over_approximates
+#check @DeclassificationTaint.join_saturated_covers_all
+#check @DeclassificationTaint.taintEquiv
+#check @DeclassificationTaint.taintEquiv_contains
+#check @DeclassificationTaint.taintEquiv_refl
+#check @DeclassificationTaint.taintEquiv_symm
+#check @DeclassificationTaint.taintEquiv_trans
+#check @DeclassificationTaint.join_comm_equiv
+#check @DeclassificationTaint.join_comm_equiv_of_saturated
+#check @DeclassificationTaint.join_idem_equiv
+#check @DeclassificationTaint.join_assoc_equiv
+
+-- The side table itself: a *total function* on `ObjId`, not a
+-- `RHTable`.  A hash table's lookup-after-insert law needs `invExt`,
+-- which would force the seventeenth bundle conjunct this design
+-- deliberately avoids.
+#check @TaintTable
+#check @TaintTable.empty
+#check @TaintTable.set
+#check @TaintTable.joinAt
+#check @TaintTable.clearAt
+#check @TaintTable.empty_apply
+#check @TaintTable.set_self
+#check @TaintTable.set_ne
+#check @TaintTable.joinAt_self
+#check @TaintTable.joinAt_ne
+#check @TaintTable.clearAt_self
+#check @TaintTable.clearAt_ne
+#check @TaintTable.contains_joinAt_of_contains
+#check @TaintTable.contains_joinAt_of_source
+#check @TaintTable.contains_clearAt_self
+-- WS-SM SM9.D.2: the keyed representation, and the bound it buys.
+#check @TaintTable.clearAt_set_entries
+#check @TaintTable.storeThenClear_no_growth
+#check @TaintTable.taintEntriesErase_idem
+
+/-! ### SM9.D.2 – SM9.D.6 — the §6 mount checklist, run for the fourth time. -/
+
+#check @SystemState.declassificationTaint
+#check @default_declassificationTaint
+#check @storeObject_declassificationTaint_eq
+#check @FrozenSystemState.declassificationTaint
+#check @freeze_preserves_declassificationTaint
+#check @SeLe4n.Kernel.OffSchedulerAgrees.declassificationTaint
+#check @SeLe4n.Platform.Boot.applyMachineConfig_declassificationTaint_eq
+#check @SeLe4n.Platform.Boot.bootFromPlatform_declassificationTaint_eq
+#check @declassificationTaint_write_preserves_projection
+#check @onCore_declassificationTaint
+#check @SeLe4n.Kernel.Architecture.proofLayerInvariantBundle_setDeclassificationTaint
+
+/-! ### SM9.D.13a — the recorded snapshot on the audit event.
+
+The tags are *global* timestamps, so exporting them to a partial reader
+would leak exactly what SM9.A's view-local indices exist to hide; the
+field is read by the detector, never by the reader's chunk protocol. -/
+
+#check @DeclassificationEvent.predecessorTags
+#check @DeclassificationEvent.sourceSubject
+#check @declassificationEvent_sourceSubject_is_actor
+#check @declassificationEventNames
+#check @declassificationActorTaint
+#check @declassifyStoreEventWithTags
+#check @declassificationEventOnCore_predecessorTags
+#check @declassifyStoreEvent_predecessorTags
+#check @recordDeclassifiedHopsFrom
+#check @recordDeclassifiedHopsFrom_cons
+#check @recordDeclassifiedHopsFrom_frame
+#check @recordDeclassifiedHopsFrom_log
+#check @recordDeclassifiedHopsFrom_appended
+#check @recordDeclassifiedHopsFrom_preserves_auditLogBounded
+#check @recordDeclassifiedHopsFrom_preserves_trailWellFormed
+#check @recordDeclassifiedHopsFrom_preserves_proofLayerInvariantBundle
+
+/-! ### SM9.D.7 – SM9.D.12 — propagation (`TaintPropagation.lean`).
+
+`contentFlowClass` is a **total** function over `SyscallId` with no
+wildcard, so a new syscall is a missing case at elaboration; but
+totality over the wrong domain proves nothing, which is why the
+*completeness* of the classification is a Tier-1 reach gate
+(`scripts/check_content_flow_coverage.py`) rather than a theorem here. -/
+
+#check @ContentFlowClass
+#check @contentFlowClass
+#check @contentFlowClass_total
+#check @contentFlowClass_clears_iff
+#check @contentFlowClass_moves_iff
+#check @TaintFlowEdge
+#check @TaintFlowEdge.sink
+#check @TaintFlowEdge.source
+#check @TaintPlan
+#check @TaintPlan.edges
+#check @TaintPlan.cleared
+#check @TaintPlan.inert
+#check @syscallOperandCap?
+#check @senderTaintEdges
+#check @receiverTaintEdges
+#check @replyTaintEdges
+#check @signalTaintEdges
+#check @waitTaintEdges
+#check @contentFlowEdges
+#check @retypeClearedObjects
+#check @syscallTaintPlan
+#check @syscallTaintPlan_inert
+#check @declassify_idle_notification_bypassed
+#check @originationTags_cons_noRelease
+#check @originationTags_cons_release
+#check @chainArchivedVerdict_refuses_live_timestamp
+#check @declassify_pending_notification_not_bypassed
+#check @SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype_clearedKey_write_mem
+#check @SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype_nonTarget_kinds
+#check @applyTaintFlow
+#check @applyTaintClears
+#check @newlyRecordedEvents
+#check @newlyRecordedEvents_append
+#check @newlyRecordedEvents_drained
+#check @originationTags
+#check @applyOrigination
+#check @applySyscallTaint
+
+-- The frame is what keeps the propagation write out of every existing
+-- invariant argument: `applySyscallTaint` touches exactly one field, so
+-- `authorizeDeclassificationOnCore_frame` and the SM8.C
+-- "writes only the trail" rule both stand unchanged.
+#check @applySyscallTaint_frame
+#check @applySyscallTaint_objects
+#check @applySyscallTaint_scheduler
+#check @applySyscallTaint_machine
+#check @applySyscallTaint_declassificationAuditLog
+#check @applySyscallTaint_declassificationAuditEpoch
+#check @applySyscallTaint_declassificationRefusals
+#check @applySyscallTaint_inert
+
+#check @contains_applyTaintFlow_mono
+#check @contains_applyTaintFlow_of_mem
+#check @contains_applyTaintClears_of_not_mem
+#check @contains_applyOrigination_mono
+#check @contains_applyOrigination_of_mem
+#check @taintPropagation_edge
+#check @taintOrigination_target
+#check @taintOrigination_actor
+
+-- The six per-site propagation theorems: the ordinary IPC deliveries the
+-- SM9.D scoping argument turns on — a downgrade writes a badge, an
+-- *ordinary* delivery moves it, and the next downgrade must still see it.
+#check @taintPropagation_send_to_receiver
+#check @senderTaintEdges_content_only
+#check @taintPropagation_receive_from_sender
+#check @contentFlowClears
+#check @waitClearsNotificationTaint
+#check @contentTrackedFields
+#check @capabilityBadgeChannel_out_of_scope
+#check @replyRecvReplyLegEdges
+#check @taintPropagation_replyRecv_reply_to_prevCaller
+#check @taintPropagation_reply_to_caller
+#check @taintPropagation_signal_to_notification
+#check @taintPropagation_wait_from_notification
+
+-- Retype **clears** rather than frames: it commits `storeObject` at the
+-- same id, so a framed retype would leave a destroyed object's tags on
+-- its replacement.
+#check @retypeClearsTaint
+#check @retypedObject_taint_empty
+#check @staleTaint_is_not_saturation
+
+/-! ### SM9.D.14 – SM9.D.16 — the causal detector.
+
+`declassificationChainLinked` keeps its name and gains a second
+conjunct: the syntactic composition it always checked, and now the
+causal link the recorded snapshot supplies.  The **table**-derived
+alternative is retained as a refuted design, since re-evaluating a
+historical event against the current table invents links a retype has
+cleared and loses links acquired after the fact. -/
+
+#check @declassificationChainComposes
+#check @declassificationChainCausal
+#check @declassificationChainLinked
+#check @declassificationChainLinked_composes
+#check @declassificationChainLinked_causal
+#check @declassificationChainLinked_of_both
+#check @declassificationChainCausal_pairwise
+#check @chainCausalFromTable
+#check @chainCausalVerdict
+#check @chainCausal_is_history_local
+#check @chainCausal_not_table_derived
+#check @chainCausal_survives_subject_retype
+#check @chainLaunders_sound_under_causal_provenance
+#check @causalChain_residual_over_approximation
+#check @declassificationChainLinked_is_causal
+#check @chainLaunders_residual_is_saturation
+#check @DeclassificationRuleId.chainLinkageIsCausal
+
+-- The verdict a monitor reads.  Without it the causal detector would be an
+-- improvement only the model can see — SM8's `chainLaunders` had no consumer,
+-- and a causal detector nothing can query is the same thing one refinement on.
+-- The export is one opaque bit per adjacent pair, never the recorded tags.
+#check @AuditReadOp.chainNamesPredecessor
+#check @chainVerdict_ok
+#check @chainVerdict_index_zero_refused
+#check @chainVerdict_view_local
+#check @chainVerdict_reconstructs_causal
+#check @declassificationChainCausal_of_pairwise
+#check @chainVerdict_all_ok_causal
+
+/-! ### SM9.D.17 / SM9.D.18 — serialization subject and NI carriage.
+
+The taint table is keyed by `ObjId`, so — exactly as for
+`SystemState.objects`, whose per-key writes ride the object's own lock and
+never `objStoreLock` — the serialization subject is the lock the
+transition already holds on the key.  The key-locality frame is what makes
+that declaration checkable; `stateLevelLock` stays where SM9.A and SM9.C
+put it, on the two syscalls that append to the trail, whose `List` append
+is genuinely not key-decomposable.  And because propagation writes a field
+no observer projects, the write is confined to no core at all. -/
+
+#check @taintFlowSinks
+#check @taintOriginationKeys
+#check @taintWriteKeys
+#check @taintOriginationKeys_nil_of_no_events
+#check @applySyscallTaint_frame_off_writeKeys
+#check @taintWriteKeys_disjoint_updates_independent
+#check @taintWriteKeys_of_no_events
+#check @taintWriteKeys_inert
+#check @applySyscallTaint_preserves_projection
+#check @applySyscallTaint_confinedToCores_nil
+#check @applySyscallTaint_preserves_onCore
+#check @applySyscallTaint_preserves_proofLayerInvariantBundle
+
+-- SM9.D audit: the pre-existing SM3.B footprint gap the cap-transfer sink
+-- surfaced, registered as data with its violation witness — closing it deletes
+-- the theorem, so the debt cannot quietly become a stale comment.
+#check @UncoveredLockDomain.capTransferReceiverCnode
+#check @capTransfer_receiverCnode_write_undeclared
+
+-- SM9.D audit: the taint table's per-key realisation, owed by the representation
+-- cut.  The footprints declare the objects' own locks for taint keys while the
+-- model replaces the field whole, so key-local locking is sound only once the
+-- runtime stores per object.  Registered as data for the same reason as the
+-- entry above: a docstring is something enabling fine locks can skip reading.
+#check @UncoveredLockDomain.taintTablePerKeyStore
+
+-- SM9.D.2: the taint table's canonical form is a FIELD, and these are what make
+-- it load-bearing rather than decorative — closure under erasure at the only two
+-- constructors, and the consequence that every row a table holds is one the
+-- lookup returns and none is empty (so the length counts tainted objects).
+#check @TaintEntries.canonical_erase
+#check @TaintEntries.noKey_erase_self
+#check @TaintTable.entries_live
 
 -- ============================================================================
 -- §2  Elaboration-time examples: each headline theorem applied
@@ -2186,12 +2510,12 @@ example (ctx : LabelingContext) : endpointGateRestricted ctx :=
 -- carries the basis the kernel itself issues.
 example (c : CoreId) (actor : DeclassificationActor) (src dst : SecurityDomain)
     (targetId : SeLe4n.ObjId)
-    (epoch : Nat) (log : DeclassificationAuditLog) :
-    (declassificationEventOnCore c actor src dst targetId epoch log).originatingCore = c ∧
-      (declassificationEventOnCore c actor src dst targetId epoch log).authorizationBasis =
+    (epoch : Nat) (log : DeclassificationAuditLog) (tags : DeclassificationTaint) :
+    (declassificationEventOnCore c actor src dst targetId epoch log tags).originatingCore = c ∧
+      (declassificationEventOnCore c actor src dst targetId epoch log tags).authorizationBasis =
         .policyRule :=
-  ⟨declassificationEventOnCore_originatingCore c actor src dst targetId epoch log,
-   declassificationEventOnCore_basis_is_policyRule c actor src dst targetId epoch log⟩
+  ⟨declassificationEventOnCore_originatingCore c actor src dst targetId epoch log tags,
+   declassificationEventOnCore_basis_is_policyRule c actor src dst targetId epoch log tags⟩
 
 -- WS-SM SM9.A.1a: the recorded timestamp is the event's **global** position —
 -- the epoch (entries drained so far) plus its index in the current trail.  With
@@ -2199,10 +2523,10 @@ example (c : CoreId) (actor : DeclassificationActor) (src dst : SecurityDomain)
 -- surviving entry (`preEpochTimestamp_reused_after_drain`).
 example (c : CoreId) (actor : DeclassificationActor) (src dst : SecurityDomain)
     (targetId : SeLe4n.ObjId)
-    (epoch : Nat) (log : DeclassificationAuditLog) :
-    (declassificationEventOnCore c actor src dst targetId epoch log).timestamp =
+    (epoch : Nat) (log : DeclassificationAuditLog) (tags : DeclassificationTaint) :
+    (declassificationEventOnCore c actor src dst targetId epoch log tags).timestamp =
       epoch + log.length :=
-  declassificationEventOnCore_timestamp c actor src dst targetId epoch log
+  declassificationEventOnCore_timestamp c actor src dst targetId epoch log tags
 
 -- SM8.C.3: every event the attributed entry point records is attributable in the
 -- state an auditor inspects — no hypothesis relating the caller to the state.
@@ -2299,8 +2623,8 @@ example : DeclassificationRuleId.attributionFromRunningSubject.evidenceProp :=
   declassificationRuleEvidence .attributionFromRunningSubject
 example : DeclassificationRuleId.timestampOrderIsCheckable.evidenceProp :=
   declassificationRuleEvidence .timestampOrderIsCheckable
-example : DeclassificationRuleId.chainLinkageIsSyntactic.evidenceProp :=
-  declassificationRuleEvidence .chainLinkageIsSyntactic
+example : DeclassificationRuleId.chainLinkageIsCausal.evidenceProp :=
+  declassificationRuleEvidence .chainLinkageIsCausal
 example : DeclassificationRuleId.refusalsAreCountedAndAttributed.evidenceProp :=
   declassificationRuleEvidence .refusalsAreCountedAndAttributed
 example : DeclassificationRuleId.liveDeclassificationWritesOnlyTheTrail.evidenceProp :=
@@ -2562,13 +2886,18 @@ example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomai
     (reader : SecurityDomain) (st : SystemState) (extra : DeclassificationAuditLog)
     (op : AuditReadOp)
     (hIndex : ∀ i f k, op = .fieldChunkCount i f ∨ op = .field i f k ∨
-      op = .coreAndTrust i ∨ op = .basisByteCount i ∨ op = .basisChunk i k →
+      op = .coreAndTrust i ∨ op = .basisByteCount i ∨ op = .basisChunk i k ∨
+      op = .chainNamesPredecessor i ∨ op = .chainNamesArchived i k →
       i < (auditLogVisibleTo gctx reader st.declassificationAuditLog).length)
+    (hEntryIdx : ∀ l e, op = .chainNamesEntry l e →
+      l < (auditLogVisibleTo gctx reader st.declassificationAuditLog).length ∧
+      e < (auditLogVisibleTo gctx reader st.declassificationAuditLog).length)
     (hNotStatus : op ≠ .status) :
     auditReadWord gctx monitorClearance reader
         { st with declassificationAuditLog := st.declassificationAuditLog ++ extra } op
       = auditReadWord gctx monitorClearance reader st op :=
-  auditRead_stable_under_append gctx monitorClearance reader st extra op hIndex hNotStatus
+  auditRead_stable_under_append gctx monitorClearance reader st extra op hIndex hEntryIdx
+    hNotStatus
 
 -- SM9.A.4a: **the discipline, applied.**  A read is a function of the visible
 -- view alone, so two audit-observationally-equivalent states return the same
@@ -4187,7 +4516,13 @@ private def blockedSenderState : SystemState :=
       objects :=
         (crossCoreState.objects.insert crossCoreSender.toObjId
             (.tcb { mkTcb 1022 40 (some c2) with
-                      ipcState := .blockedOnSend crossCoreEndpoint })).insert
+                      ipcState := .blockedOnSend crossCoreEndpoint
+                      -- PR #873 round 11: a thread parked to deliver carries what
+                      -- it delivers (`blockedThreadsPendingMessageConsistent`), and
+                      -- the dequeue refuses a head that does not -- so a fixture
+                      -- without this models a state the kernel cannot reach.
+                      pendingMessage := some { registers := #[], caps := #[],
+                                               badge := none } })).insert
           crossCoreEndpoint
             (.endpoint { sendQ := { head := some crossCoreSender
                                     tail := some crossCoreSender } }) }
@@ -4368,17 +4703,17 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "twenty-nine cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 29))
-  assertBool "twenty-three of the twenty-nine can name a core other than the executing one"
+  assertBool "thirty cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 30))
+  assertBool "twenty-four of the thirty can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 23))
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 24))
   assertBool "…and the wait, the two VSpace arms, the declassification and the two audit readers are the six that cannot"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationWait,
       .vspaceMapDispatch, .vspaceUnmapDispatch, .declassifyDispatch,
       .auditReadDispatch, .auditDrainDispatch].all (fun t =>
         decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote t = false)))
-  assertBool "twenty-two of the twenty-nine are the arms the live syscall dispatch reaches"
+  assertBool "twenty-two of the thirty are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
       SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 22))
   -- Round 35: the three entries that emptied the per-core routing allowlist.
@@ -4454,20 +4789,41 @@ private def runCoreSetAlgebraChecks : IO Unit := do
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReply = false) &&
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReplyRecv = false) &&
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .cancelIpcBlocking = false))
-  -- Round 8: the receive dual is a leg of `replyRecvBody` AND the function the
-  -- live `.receive` arm calls directly, so it is a live arm too.  The
-  -- enforcement table has said so since round 4; this inventory now agrees.
-  assertBool "the bound signal and the receive dual are both live arms"
+  -- Round 8, restated at PR #873 round 7: the receive dual was a leg of
+  -- `replyRecvBody` AND the transition the live `.receive` arm reached, which
+  -- made it a live arm.  Neither half holds now — both receive-shaped arms reach
+  -- the WithCaps form — so the live-arm claim moved to that entry and the bare
+  -- transition became a below-API one, like `.endpointReply` beside it.
+  assertBool "the bound signal and the WithCaps receive are both live arms"
     (decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .notificationSignalBound = true) &&
-     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReceiveDual = true))
-  assertBool "…and the two inventories agree on it"
+     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReceiveDualWithCaps = true))
+  -- NEGATIVE: and the bare receive cannot carry the claim as well, which is what
+  -- would happen if a later cut added the WithCaps entry without demoting it.
+  assertBool "NEGATIVE: the bare per-core receive is not a live arm"
+    (decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReceiveDual = false) &&
+     decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .endpointReceiveDual = none) &&
+     decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .endpointReceiveDualWithCaps
+       = some SeLe4n.Model.SyscallId.receive))
+  -- PR #873 round 6: the arm reaches it through `endpointReceiveDualWithCapsOnCore`
+  -- now — the bare per-core receive delivered a parked sender's message wholesale
+  -- and installed none of the capabilities it carried, so a transfer happened or
+  -- not depending on which side reached the endpoint first.  The enforcement
+  -- entry moved with the arm, which is what this checks.
+  assertBool "…and the two inventories agree on the operation the arm reaches"
     (SeLe4n.Kernel.crossCoreEnforcementEntries.any (fun e =>
+      match e with
+      | .policyGated n | .capabilityOnly n | .readOnly n =>
+        n == "endpointReceiveDualWithCapsOnCore"))
+  -- NEGATIVE: and the bare transition is no longer the classified live arm, so a
+  -- reroute back to it cannot pass by leaving both entries in the table.
+  assertBool "NEGATIVE: the bare per-core receive is no longer the classified arm"
+    (!SeLe4n.Kernel.crossCoreEnforcementEntries.any (fun e =>
       match e with
       | .policyGated n | .capabilityOnly n | .readOnly n =>
         n == "endpointReceiveDualOnCore"))
   assertBool "the covered-transition theorem names are pairwise distinct"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
-      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 29))
+      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 30))
   -- The load-bearing negative: the write set is *state-dependent*, so it is not
   -- a constant the theorem could be satisfying vacuously.  With no receiver the
   -- call writes one core; with a remote receiver waiting it writes two — and
@@ -5143,7 +5499,8 @@ private def auditOccupancyProbeEvent : DeclassificationEvent :=
   { srcDomain := ⟨0⟩, dstDomain := ⟨0⟩, targetObject := SeLe4n.ObjId.ofNat 0,
     authorizationBasis := .integratorOverride "cc8-occupancy-probe",
     timestamp := 0, originatingCore := c0,
-    actor := { subject := lowCurrent, domain := ⟨0⟩ } }
+    actor := { subject := lowCurrent, domain := ⟨0⟩ },
+    predecessorTags := DeclassificationTaint.empty }
 
 /-- §4.8  The accepted covert-channel inventory (SM8.B.8 / SM8.B.9 / SM8.B.10;
 CC-8 added by SM9.A, PR #870 round 7). -/
@@ -5391,23 +5748,58 @@ private def declassPayload (badge : Nat) : KernelObject :=
   .notification { state := .active, waitingThreads := SeLe4n.NoDupList.empty,
                   pendingBadge := some (SeLe4n.Badge.ofNatMasked badge) }
 
+/-- WS-SM SM9.D.13a: **the plan a `.declassify` runs.**
+
+No content edges — a downgrade re-labels an object in place rather than moving
+content between two — but the arm *records*, so the plan says so and the
+origination diff is taken.  Spelled out here rather than as `TaintPlan.inert`
+because since SM9.D.13a those differ exactly where it matters: an inert plan
+cannot record, so a declassification hop applied under one would originate
+nothing and every chain below would be missed.  This is what
+`syscallTaintPlan` produces for `.declassify`
+(`syscallTaintPlan_originates`). -/
+private def declassifyingPlan : TaintPlan := { TaintPlan.inert with originates := true }
+
 /-- Hop 1 — on **core 1**, whose subject is in the secret domain: a downgrade to
 the middle domain, entered through the attributed wrapper. -/
 private def declassHop1 : Option (DeclassificationAuditLog × SystemState) :=
   match declassifyStoreFromCore declassContext launderingDeclPolicy c1 declassMiddle
       declassTargetA (declassPayload 0xA1) niState with
-  | .ok ((), st) => some (st.declassificationAuditLog, st)
+  -- WS-SM SM9.D.13a: the per-core entry applies the syscall's taint plan to the
+  -- state the dispatch committed, and for a declassification that plan is
+  -- origination recovered from the trail's own diff — the downgrade's identity
+  -- lands on the object its content reached and on the subject that performed
+  -- it.  Running it here is what makes this fixture the *live* shape rather
+  -- than a transition-only one, and it is why the chain below is causal.
+  | .ok ((), st) => some (st.declassificationAuditLog, applySyscallTaint declassifyingPlan niState st)
   | .error _ => none
+
+/-- WS-SM SM9.D.8 (**the §3.6 chain's middle step**): an **ordinary,
+non-declassifying** delivery moves hop 1's content from the object it landed in
+to the subject that will perform hop 2.
+
+This is the step that makes declassification-edge-only provenance unworkable:
+no declassification relates `declassTargetA` to core 0's subject, and yet the
+content really did travel between them.  Modelled with the propagation planner's
+own primitive, at the same edge an IPC delivery would declare. -/
+private def declassDelivery : Option (DeclassificationAuditLog × SystemState) :=
+  match declassHop1 with
+  | none => none
+  | some (log₁, st₁) =>
+      some (log₁,
+        applySyscallTaint
+          { edges := [{ sink := lowCurrent.toObjId, source := declassTargetA }] } st₁ st₁)
 
 /-- Hop 2 — on **core 0**, whose subject is in the middle domain: a downgrade of
 what hop 1 produced, to the public domain. -/
 private def declassHop2 : Option (DeclassificationAuditLog × SystemState) :=
-  match declassHop1 with
+  match declassDelivery with
   | none => none
   | some (_, st₁) =>
       match declassifyStoreFromCore declassContext launderingDeclPolicy c0 declassPublic
           declassTargetB (declassPayload 0xB2) st₁ with
-      | .ok ((), st₂) => some (st₂.declassificationAuditLog, st₂)
+      | .ok ((), st₂) =>
+          some (st₂.declassificationAuditLog, applySyscallTaint declassifyingPlan st₁ st₂)
       | .error _ => none
 
 /-- A **forged** attribution: run on core 0, whose subject is `lowCurrent` (the
@@ -5441,7 +5833,8 @@ private def integratorEvent : DeclassificationEvent :=
   { srcDomain := declassSecret, dstDomain := declassPublic, targetObject := declassTargetB,
     authorizationBasis := .integratorOverride "site-security-officer",
     timestamp := 2, originatingCore := c2,
-    actor := { subject := highCurrent, domain := declassSecret } }
+    actor := { subject := highCurrent, domain := declassSecret },
+    predecessorTags := DeclassificationTaint.empty }
 
 /-- A declassification **into a high object**, from core 1 — the SM8.C.6 /
 non-interference scenario.  `highNotification` is the one object `niLabeling`
@@ -5878,7 +6271,8 @@ private def runDeclassifyCapacityChecks : IO Unit := do
   let fullEntry : DeclassificationEvent :=
     { srcDomain := declassSecret, dstDomain := declassPublic, targetObject := declassTargetA,
       authorizationBasis := .policyRule, timestamp := 0, originatingCore := c0,
-      actor := { subject := highCurrent, domain := declassSecret } }
+      actor := { subject := highCurrent, domain := declassSecret },
+      predecessorTags := DeclassificationTaint.empty }
   let fullTrail : DeclassificationAuditLog :=
     List.replicate maxDeclassificationAuditEntries fullEntry
   let fullState : SystemState := { niState with declassificationAuditLog := fullTrail }
@@ -6000,10 +6394,17 @@ private def runDeclassifyRenderingChecks : IO Unit := do
 /-- §6.13  SM8.C.2 — chain topologies beyond the two-hop cross-core case. -/
 private def runDeclassifyChainTopologyChecks : IO Unit := do
   IO.println "--- §6.13 SM8.C.2 chain topologies ---"
+  -- WS-SM SM9.D.14: each hop **names its immediate predecessor** through the
+  -- recorded snapshot, which is what the causal conjunct requires of a linked
+  -- chain.  Building it into the constructor keeps the topology checks about
+  -- topology; §12 is where the causal conjunct itself is exercised.
   let mk (src dst : SecurityDomain) (core : CoreId) (ts : Nat) : DeclassificationEvent :=
     { srcDomain := src, dstDomain := dst, targetObject := declassTargetA,
       authorizationBasis := .policyRule, timestamp := ts, originatingCore := core,
-      actor := { subject := highCurrent, domain := src } }
+      actor := { subject := highCurrent, domain := src },
+      predecessorTags :=
+        if ts = 0 then DeclassificationTaint.empty
+        else DeclassificationTaint.singleton (ts - 1) }
   -- Three hops across three cores: 2 → 1 → 0 → 0 is not linked (0 ≠ 0 is fine,
   -- but the middle domains must match pairwise), so use 3 → 2 → 1 → 0.
   let threeHop := [mk ⟨3⟩ ⟨2⟩ c0 0, mk ⟨2⟩ ⟨1⟩ c1 1, mk ⟨1⟩ ⟨0⟩ c2 2]
@@ -6035,14 +6436,22 @@ private def runDeclassifyChainTopologyChecks : IO Unit := do
     (!declassificationChainLinked [mk ⟨1⟩ ⟨0⟩ c2 2, mk ⟨2⟩ ⟨1⟩ c1 1])
   -- …and the detector's own scope: linkage is syntactic, so two causally
   -- unrelated downgrades of two different objects still read as a chain.
-  assertBool "SCOPE: linkage is syntactic — unrelated objects still read as a chain"
-    (declassificationChainLinked
+  -- WS-SM SM9.D.15: and the detector's scope, **inverted**.  Before the causal
+  -- conjunct, two causally unrelated downgrades of two different objects read
+  -- as a chain; now the second must name the first through its recorded
+  -- snapshot, so the same pair is refused.  This is the assertion the retired
+  -- `declassificationChainLinked_is_syntactic` used to make in the other
+  -- direction.
+  assertBool "NEGATIVE: two causally unrelated downgrades are NOT a linked chain"
+    (!declassificationChainLinked
       [{ srcDomain := ⟨2⟩, dstDomain := ⟨1⟩, targetObject := ⟨100⟩,
          authorizationBasis := .policyRule, timestamp := 0, originatingCore := c0,
-         actor := { subject := highCurrent, domain := ⟨2⟩ } },
+         actor := { subject := highCurrent, domain := ⟨2⟩ },
+         predecessorTags := DeclassificationTaint.empty },
        { srcDomain := ⟨1⟩, dstDomain := ⟨0⟩, targetObject := ⟨200⟩,
          authorizationBasis := .policyRule, timestamp := 1, originatingCore := c0,
-         actor := { subject := lowCurrent, domain := ⟨1⟩ } }])
+         actor := { subject := lowCurrent, domain := ⟨1⟩ },
+         predecessorTags := DeclassificationTaint.empty }])
 
 /-! ### §6.14  The golden declassification-audit trace (SM8.C.7)
 
@@ -7379,20 +7788,42 @@ private def runDeclaredFootprintChecks : IO Unit := do
      have _o := @lockSet_tcbSetPriority_omits_endpointLock
      true)
   -- The bracket covers the OBJECT domain only; the scheduler domain, the
-  -- dynamic PIP chain and the queue-ownership protocol are named as data with
-  -- owners rather than left implicit.
-  assertBool "the three uncovered lock domains are registered, each with an owner"
-    (decide (declaredFootprintUncoveredDomains.length = 3) &&
+  -- dynamic PIP chain, the queue-ownership protocol, (SM9.D audit) the
+  -- capability-transfer destination CNode, (SM9.D audit) the taint table's
+  -- per-key realisation and (PR #873 round 13) the CDT node allocator's global
+  -- counter are named as data with owners rather than left implicit.
+  assertBool "the six uncovered lock domains are registered, each with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 6) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
        = [UncoveredLockDomain.schedulerDomain, UncoveredLockDomain.dynamicPipChain,
-          UncoveredLockDomain.queueOwnershipProtocol]) &&
+          UncoveredLockDomain.queueOwnershipProtocol,
+          UncoveredLockDomain.capTransferReceiverCnode,
+          UncoveredLockDomain.taintTablePerKeyStore,
+          UncoveredLockDomain.cdtNodeAllocation]) &&
      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
   -- LOAD-BEARING NEGATIVE: completeness is quantified over the *constructors*,
   -- so a domain added without a registration cannot pass.
   assertBool "NEGATIVE: every uncovered-domain constructor is registered"
     (UncoveredLockDomain.all.all
        (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
-     decide (UncoveredLockDomain.all.length = 3))
+     decide (UncoveredLockDomain.all.length = 6))
+  -- PR #873 round 6: the inventory is no longer data alone.  Relying on declared
+  -- footprints as a complete serialization discipline is gated on it being
+  -- EMPTY, so the per-key taint store — the entry the review pressed twice — is
+  -- a precondition of SM3.C.9's fine locks rather than work that may run
+  -- alongside them.
+  assertBool "the fine-lock discipline is not complete while a domain is uncovered"
+    (decide (SeLe4n.Kernel.fineLockDisciplineComplete = false))
+  assertBool "…and it can only become complete by emptying the inventory"
+    (decide ((SeLe4n.Kernel.fineLockDisciplineComplete = true)
+      ↔ (declaredFootprintUncoveredDomains = [])))
+  -- NEGATIVE, load-bearing: the flag is not a constant `false` — it is computed
+  -- from the inventory, so an emptied inventory would flip it.  Measured on a
+  -- list rather than asserted, since a hardcoded `false` would satisfy the two
+  -- checks above without gating anything.
+  assertBool "NEGATIVE: the gate is computed, not hardcoded — an empty inventory flips it"
+    (decide (([] : List (UncoveredLockDomain × String)).isEmpty = true) &&
+     decide (declaredFootprintUncoveredDomains.isEmpty = false))
   assertBool "the confinement core is carried through the declared-footprint witness (theorem)"
     (have _a := @suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore
      true)
@@ -7746,7 +8177,8 @@ private def auditEntry (src dst : SecurityDomain) (target : SeLe4n.ObjId)
     (ts : Nat) (c : CoreId) : DeclassificationEvent :=
   { srcDomain := src, dstDomain := dst, targetObject := target,
     authorizationBasis := .policyRule, timestamp := ts, originatingCore := c,
-    actor := { subject := lowCurrent, domain := src } }
+    actor := { subject := lowCurrent, domain := src },
+    predecessorTags := DeclassificationTaint.empty }
 
 /-- The two public-sourced entries and the high-sourced one between them, named
 individually so the re-indexing checks can talk about the hidden entry without
@@ -8146,7 +8578,7 @@ private def runRefusalReaderChecks : IO Unit := do
         -- WS-SM SM9.C.1: the refused receiver's pair, appended after the
         -- actor opcodes (§11.7 exercises their read semantics).
         .refusalReceiverChunkCount 3, .refusalReceiverChunk 3 1]
-     decide (auditReadOpcodeCount = 27) &&
+     decide (auditReadOpcodeCount = 30) &&
      ops.all (fun op =>
        let (a, b, k) := encodeAuditReadOp op
        decide (decodeAuditReadOp a b k = some op)) &&
@@ -8778,7 +9210,7 @@ private def runAuditLiveArmChecks : IO Unit := do
      decide (Capability.auditTrailManage.hasRight .write = true))
   -- The operand encoding round-trips, so every sub-operation is reachable.
   -- WS-SM SM9.B.10: the opcode space now spans two readable structures — the
-  -- trail's sixteen sub-operations and the refusal ledger's eleven (§10.4,
+  -- trail's eighteen sub-operations and the refusal ledger's eleven (§10.4,
   -- §11.7) — so the completeness claim is the sum, and each half names the
   -- structure it reads.
   assertBool "every trail sub-operation round-trips through the three-word operand encoding"
@@ -8790,8 +9222,15 @@ private def runAuditLiveArmChecks : IO Unit := do
         -- WS-SM SM9.C.1: the actor pair, appended so the earlier opcodes are
         -- unmoved.
         .fieldChunkCount 3 .actorSubject, .fieldChunkCount 3 .actorDomain,
-        .field 3 .actorSubject 1, .field 3 .actorDomain 1]
-     decide (ops.length = 16) &&
+        .field 3 .actorSubject 1, .field 3 .actorDomain 1,
+        -- WS-SM SM9.D.14: the causality verdicts, likewise appended, and
+        -- likewise reads of the TRAIL.  The adjacent form and the general
+        -- arbitrary-pair form (opcode 28), which is what lets a monitor test a
+        -- hop an interleaved event split out of adjacency.
+        -- WS-SM SM9.D: and the archived form (opcode 29), which is what lets a
+        -- monitor test a hop whose predecessor a drain removed from the view.
+        .chainNamesPredecessor 3, .chainNamesEntry 5 2, .chainNamesArchived 5 2]
+     decide (ops.length = 19) &&
      decide (ops.length + 11 = auditReadOpcodeCount) &&
      ops.all (fun op =>
        let (a, b, k) := encodeAuditReadOp op
@@ -9549,11 +9988,15 @@ private def runDeclassifiedSignalFailedHopChecks : IO Unit := do
         (.refusalReceiverChunk 0 0) with
       | .error e => decide (e = KernelError.invalidArgument)
       | .ok _ => false))
-  assertBool "the two opcodes are in the ABI at 25 and 26, and the count is 27"
+  assertBool "the two opcodes are in the ABI at 25 and 26, and the count is 30"
     (decide (decodeAuditReadOp 25 0 0 = some (.refusalReceiverChunkCount 0)) &&
      decide (decodeAuditReadOp 26 0 0 = some (.refusalReceiverChunk 0 0)) &&
-     decide (auditReadOpcodeCount = 27) &&
-     decide (decodeAuditReadOp 27 0 0 = none))
+     -- SM9.D.14 appended the adjacency verdict at 27 and the general
+     -- arbitrary-pair verdict at 28; SM9.D then appended the archived verdict
+     -- at 29, so 30 is the first value the kernel refuses.
+     decide (auditReadOpcodeCount = 30) &&
+     decide (decodeAuditReadOp 29 0 0 = some (.chainNamesArchived 0 0)) &&
+     decide (decodeAuditReadOp 30 0 0 = none))
 
 /-- §11.8 fixture — the no-waiter twin of `declassSignalState`, so the
 disclosure pair below compares two states differing ONLY in the queue. -/
@@ -9688,6 +10131,818 @@ private def runDeclassifiedSignalTargetGateChecks : IO Unit := do
       | .error e₁, .error e₂ => decide (e₁ = e₂)
       | _, _ => false))
 
+-- ============================================================================
+-- §12  WS-SM SM9.D — causal declassification provenance
+-- ============================================================================
+
+/-! ### §12 fixtures -/
+
+/-- A tag standing for "the identity of declassification #0" — the shape a
+recorded timestamp has, used where the algebra rather than a run is the
+subject. -/
+private def taintTagZero : Nat := 0
+
+/-- Eight distinct identities: exactly `maxTaintTags`, so joining a ninth is
+what saturates. -/
+private def taintFullList : List Nat := [0, 1, 2, 3, 4, 5, 6, 7]
+
+/-- §12.1  SM9.D.1 / SM9.D.13 — the taint algebra, and the direction it errs. -/
+private def runTaintAlgebraChecks : IO Unit := do
+  IO.println "--- §12.1 SM9.D.1 the taint algebra ---"
+  assertBool "the empty taint carries nothing, and a singleton carries exactly one identity"
+    (!(DeclassificationTaint.empty.contains taintTagZero) &&
+     (DeclassificationTaint.singleton taintTagZero).contains taintTagZero &&
+     !((DeclassificationTaint.singleton taintTagZero).contains 99))
+  assertBool "insertion records the identity and forgets none"
+    (((DeclassificationTaint.singleton 1).insert 2).contains 1 &&
+     ((DeclassificationTaint.singleton 1).insert 2).contains 2)
+  assertBool "join carries both operands' identities"
+    ((DeclassificationTaint.join (DeclassificationTaint.singleton 1)
+        (DeclassificationTaint.singleton 2)).contains 1 &&
+     (DeclassificationTaint.join (DeclassificationTaint.singleton 1)
+        (DeclassificationTaint.singleton 2)).contains 2)
+  assertBool "…and exactly those, while it does not saturate"
+    (!((DeclassificationTaint.join (DeclassificationTaint.singleton 1)
+        (DeclassificationTaint.singleton 2)).contains 3))
+  assertBool "the structural bound holds of every value the API produces"
+    (decide ((DeclassificationTaint.ofList taintFullList).tags.length ≤ maxTaintTags) &&
+     decide ((DeclassificationTaint.join (DeclassificationTaint.ofList taintFullList)
+       (DeclassificationTaint.singleton 8)).tags.length ≤ maxTaintTags))
+  -- The load-bearing negative: overflow **saturates upward** rather than
+  -- evicting, so the residual imprecision is extra reports and never a missed
+  -- chain.  A ninth identity turns the value into the top, which reports an
+  -- identity no operand ever held.
+  assertBool "NEGATIVE: a ninth identity saturates, and the top reports one nobody held"
+    (let a := DeclassificationTaint.ofList taintFullList
+     let b := DeclassificationTaint.singleton 8
+     !(a.contains 99) && !(b.contains 99) &&
+     (DeclassificationTaint.join a b).saturated &&
+     (DeclassificationTaint.join a b).contains 99)
+  assertBool "covers is a preorder, and the top covers everything"
+    (DeclassificationTaint.covers (DeclassificationTaint.singleton 1)
+        (DeclassificationTaint.singleton 1) &&
+     DeclassificationTaint.covers DeclassificationTaint.top
+        (DeclassificationTaint.ofList taintFullList) &&
+     !(DeclassificationTaint.covers (DeclassificationTaint.singleton 1)
+        (DeclassificationTaint.singleton 2)))
+
+/-- §12.2 fixture — the fixture state with one object's provenance recorded. -/
+private def taintProbeState : SystemState :=
+  { niState with
+      declassificationTaint :=
+        SeLe4n.Kernel.TaintTable.empty.joinAt lowCurrent.toObjId
+          (DeclassificationTaint.singleton taintTagZero) }
+
+/-- §12.2  SM9.D.2 / SM9.D.6 — the mounted side table. -/
+private def runTaintMountChecks : IO Unit := do
+  IO.println "--- §12.2 SM9.D.2 the mounted taint side table ---"
+  assertBool "no object carries provenance at boot"
+    (allCores.all (fun _ => true) &&
+     !(((default : SystemState).declassificationTaint declassTargetA).contains taintTagZero) &&
+     !((niState.declassificationTaint lowCurrent.toObjId).contains taintTagZero))
+  -- The write is invisible: a taint table an observer cannot read moves no view.
+  assertBool "a taint write moves no observer's view, on any core"
+    (allCores.all (fun c =>
+       lowEquivalentSliceOnCoreCheckWithRegs niLabeling c lowLabel taintProbeState niState) &&
+     allCores.all (fun c =>
+       lowEquivalentSliceOnCoreCheckWithRegs niLabeling c highLabel taintProbeState niState))
+  -- NEGATIVE: the write really happened, so the invisibility above is the
+  -- projection's doing rather than a no-op.
+  assertBool "NEGATIVE: the write really did move the table"
+    ((taintProbeState.declassificationTaint lowCurrent.toObjId).contains taintTagZero &&
+     !((niState.declassificationTaint lowCurrent.toObjId).contains taintTagZero))
+
+/-- §12.3  SM9.D.7 — the content-flow classification. -/
+private def runContentFlowClassChecks : IO Unit := do
+  IO.println "--- §12.3 SM9.D.7 the content-flow classification ---"
+  assertBool "the eight content-moving arms are the IPC surface plus the declassifying signal"
+    ([SyscallId.send, .receive, .call, .reply, .replyRecv, .notificationSignal,
+      .notificationWait, .declassifySignal].all
+       (fun sid => decide (contentFlowClass sid = .movesContent)))
+  assertBool "exactly the retype clears provenance"
+    (decide (contentFlowClass .lifecycleRetype = .clearsProvenance) &&
+     SyscallId.all.all (fun sid =>
+       decide (contentFlowClass sid = .clearsProvenance) == decide (sid = .lifecycleRetype)))
+  -- The load-bearing negative: the CSpace and scheduling arms are inert, and
+  -- the reason is checkable — their plans are empty.
+  assertBool "NEGATIVE: an inert arm plans nothing"
+    ([SyscallId.cspaceCopy, .cspaceMove, .tcbSetPriority, .vspaceMap, .declassify,
+      .auditRead].all
+       (fun sid => decide (contentFlowClass sid = .inert)))
+  assertBool "every syscall is classified — the total function has no wildcard"
+    (SyscallId.all.all (fun sid =>
+      decide (contentFlowClass sid = .inert) ||
+      decide (contentFlowClass sid = .movesContent) ||
+      decide (contentFlowClass sid = .clearsProvenance)))
+
+/-- §12.4 fixture — a **blocked sender** carrying a declassification identity,
+and the receiver that a `.receive` will hand it to.
+
+Keyed on the sender rather than on the endpoint: an endpoint buffers no content
+of its own (the parked message lives in the blocked sender's TCB), so the
+content-derived model reads the head sender directly rather than through an
+endpoint proxy.  A proxy would hand this receiver the taint of *every* sender
+that ever queued here, including ones whose messages a different receiver
+consumed — the stale-transport false positive. -/
+private def taintedSender : SeLe4n.ThreadId := lowCurrent
+
+private def taintedEndpointTable : SeLe4n.Kernel.TaintTable :=
+  SeLe4n.Kernel.TaintTable.empty.joinAt taintedSender.toObjId
+    (DeclassificationTaint.singleton 42)
+
+/-- PR #873 round 4: the parked message has to **actually carry a capability**.
+The CSpace sinks are gated on that now — a plain message installs nothing, so
+declaring them for every delivery would write the sender's provenance into a
+CNode no capability reached and, since a root feeds the consuming subject, name
+an unsaturated predecessor for an unrelated later downgrade. -/
+private def transferredCap : Capability :=
+  { target := .object lowNotification, rights := AccessRightSet.ofList [] }
+
+private def transferMessage : IpcMessage :=
+  { registers := #[], caps := #[TransferCap.fromNode transferredCap 0], badge := none }
+
+private def taintedEndpointState : SystemState :=
+  let base : SystemState :=
+    { successEntryState with
+        objects := successEntryState.objects.insert highEndpoint
+          (.endpoint { sendQ := { head := some taintedSender, tail := some taintedSender } }),
+        declassificationTaint := taintedEndpointTable }
+  match base.getTcb? taintedSender with
+  | none => base
+  | some stcb =>
+      { base with
+          objects := base.objects.insert taintedSender.toObjId
+            (.tcb { stcb with pendingMessage := some transferMessage }) }
+
+/-- PR #873 round 4: the BOUND-delivery ordering.  `boundDeliveryTarget?` checks
+only that the waiter list is empty and that the bound TCB is parked on an
+endpoint — it says nothing about the pending badge — and `notificationSignalBound`
+writes into that TCB's `pendingMessage` without touching the notification.  So a
+notification that already holds a badge keeps it across the signal, and clearing
+its taint there would discard the provenance of content the object still stores:
+a later `.notificationWait` would read that badge from an empty source and the
+downgrade behind it would record no predecessor.
+
+`crossCoreReceiver` is already `.blockedOnReceive crossCoreEndpoint` in
+`rendezvousState`, which is exactly the shape `boundDeliveryTarget?` accepts. -/
+private def boundDeliveryState : SystemState :=
+  { rendezvousState with
+      objects := rendezvousState.objects.insert highNotification
+        (.notification { state := .active
+                         waitingThreads := ⟨[], by simp⟩
+                         pendingBadge := some (SeLe4n.Badge.ofNatMasked 0x7B)
+                         boundTCB := some crossCoreReceiver }) }
+
+/-- The live per-core entry, run on that state: the fixture's high thread issues
+`.receive` against the tainted endpoint. -/
+private def taintedEntryOutcome : Except KernelError (Unit × SystemState) :=
+  syscallEntryChecked fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32 taintedEndpointState
+
+/-- §12.4b fixtures — the replyRecv REPLY leg (the audit's Finding 1).
+
+The server's CSpace gains a reply capability at slot 3; the reply object
+records `lowCurrent` as the outstanding caller; the SERVER (the high thread)
+carries a declassification identity.  The plan must move that identity to the
+recorded caller — the steady-state server loop's second hop. -/
+private def replyLegReply : SeLe4n.ReplyId := ⟨1040⟩
+
+private def replyLegSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 3
+
+private def replyLegCap : Capability :=
+  { target := .replyCap replyLegReply, rights := AccessRightSet.ofList [.write] }
+
+private def replyLegState : SystemState :=
+  { successEntryState with
+      objects :=
+        (successEntryState.objects.insert probeCNode
+          (.cnode { probeCNodeValue with
+              slots := SeLe4n.UniqueSlotMap.ofListWF
+                [(lowSlot, lowSlotCap), (highSlot, highSlotCap),
+                 (replyLegSlot, replyLegCap)] })).insert replyLegReply.toObjId
+          (.reply { replyId := replyLegReply, caller := some lowCurrent }),
+      declassificationTaint :=
+        SeLe4n.Kernel.TaintTable.empty.joinAt highCurrent.toObjId
+          (DeclassificationTaint.singleton 57) }
+
+/-- A hand-built `replyRecv` decode: primary operand = the endpoint cap at
+slot 2, MR0 = the reply CPtr (slot 3), `msgInfo.length = 1` so the MR0-present
+guard the arm enforces is satisfied here too. -/
+private def replyLegDecoded : SyscallDecodeResult :=
+  { syscallId := .replyRecv, capAddr := SeLe4n.CPtr.ofNat 2,
+    msgInfo := SeLe4n.Model.MessageInfo.mk 1 0 0,
+    msgRegs := #[⟨3⟩] }
+
+/-- §12.4  SM9.D.8-.D.11 — propagation, through the **live** entry. -/
+private def runTaintPropagationChecks : IO Unit := do
+  IO.println "--- §12.4 SM9.D.8 propagation on the live syscall path ---"
+  assertBool "the fixture's blocked SENDER carries a declassification identity"
+    ((taintedEndpointState.declassificationTaint taintedSender.toObjId).contains 42)
+  assertBool "NEGATIVE: …and the receiver does not, before the syscall runs"
+    (!((taintedEndpointState.declassificationTaint highCurrent.toObjId).contains 42))
+  -- The content-derived model: the ENDPOINT itself carries nothing, because it
+  -- holds no content — the message is in the blocked sender's TCB.  A model that
+  -- tagged the endpoint would leave this identity on it after the message is
+  -- consumed, and hand it to the next, unrelated receiver.
+  assertBool "NEGATIVE: the endpoint itself carries no identity — it holds no content"
+    (!((taintedEndpointState.declassificationTaint highEndpoint).contains 42))
+  assertBool "the live `.receive` entry succeeds"
+    (match taintedEntryOutcome with | .ok _ => true | .error _ => false)
+  -- The property: the entry's propagation moved the blocked sender's provenance
+  -- to the receiver, in the same committed state as the transition.
+  assertBool "…and the receiver now carries the SENDER's identity"
+    (match taintedEntryOutcome with
+     | .ok ((), st) => (st.declassificationTaint highCurrent.toObjId).contains 42
+     | .error _ => false)
+  -- …and the endpoint is still untouched afterwards, so nothing accumulates on
+  -- it for a later unrelated message to pick up.
+  assertBool "NEGATIVE: the endpoint acquires no identity from the delivery either"
+    (match taintedEntryOutcome with
+     | .ok ((), st) => !((st.declassificationTaint highEndpoint).contains 42)
+     | .error _ => false)
+  -- NEGATIVE: an unrelated object gets nothing, so the propagation is an edge
+  -- rather than a broadcast.
+  assertBool "NEGATIVE: an unrelated object acquires nothing"
+    (match taintedEntryOutcome with
+     | .ok ((), st) => !((st.declassificationTaint lowNotification).contains 42)
+     | .error _ => false)
+  -- PR #873 rounds 5-7: the live `.receive` runs NO capability unwrap
+  -- (`endpointReceiveDualOnCore` delivers the parked message wholesale and
+  -- reports an installed count of zero).  So the receive declares its content
+  -- edge and NOTHING about CSpace: a sink here would write the sender's
+  -- provenance into a CNode no capability reached, and — since a root feeds the
+  -- consuming subject — hand an unrelated later downgrade an unsaturated
+  -- predecessor.  The send ordering keeps the transfer sinks, because the live
+  -- send really does unwrap.
+  assertBool "the receive declares the content edge from the blocked sender"
+    (decide (({ sink := highCurrent.toObjId, source := taintedSender.toObjId } : TaintFlowEdge)
+       ∈ receiverTaintEdges taintedEndpointState highCurrent highEndpoint))
+  assertBool "NEGATIVE: and declares no CSpace sink at all, on either root"
+    (match taintedEndpointState.getTcb? highCurrent,
+           taintedEndpointState.getTcb? taintedSender with
+     | some rtcb, some stcb =>
+       let sinks := (receiverTaintEdges taintedEndpointState highCurrent highEndpoint).map (·.sink)
+       decide (rtcb.cspaceRoot ∉ sinks) && decide (stcb.cspaceRoot ∉ sinks)
+     | _, _ => false)
+  assertBool "NEGATIVE: …and the receiver's own root is not read into the subject"
+    (match taintedEndpointState.getTcb? highCurrent with
+     | none => false
+     | some rtcb =>
+       decide (rtcb.cspaceRoot ∉
+         (receiverTaintEdges taintedEndpointState highCurrent highEndpoint).map (·.source)))
+  -- NEGATIVE (round 5): a send declares exactly one edge — the content edge to
+  -- the rendezvous receiver — and never names a CSpace root.  A CNode holds no
+  -- tracked content, so a tag written on one has no operation able to clear it:
+  -- deleting the capability that carried it would leave a specific unsaturated
+  -- predecessor behind for the next unrelated transfer out of that CNode, which
+  -- is exactly what `staleTaint_is_not_saturation` forbids.  The authority hop
+  -- needs no edge of its own — the flows it enables are declared where the
+  -- content actually moves.
+  assertBool "NEGATIVE: a send declares no CSpace-root sink or source"
+    (let edges := senderTaintEdges taintedEndpointState taintedSender highEndpoint
+     let roots := (taintedEndpointState.getTcb? taintedSender).toList.map (·.cspaceRoot)
+       ++ (taintedEndpointState.getTcb? highCurrent).toList.map (·.cspaceRoot)
+     edges.all (fun e => !(roots.contains e.sink) && !(roots.contains e.source)))
+  -- PR #873 round 4: a BOUND delivery leaves the notification holding its badge,
+  -- so it must not be cleared.  `boundDeliveryTarget?` ignores `pendingBadge`
+  -- entirely and `notificationSignalBound` never writes the notification, so the
+  -- old unconditional clear discarded live content's provenance — a MISSED chain.
+  assertBool "NEGATIVE: a bound delivery clears no notification taint"
+    (decide (signalClearedNotification boundDeliveryState highNotification = []))
+  -- …and the fixture really is on that path, so the negative above is not passing
+  -- because the resolution simply failed.
+  assertBool "the bound fixture resolves to the bound-delivery path"
+    (decide (boundDeliveryTarget? boundDeliveryState highNotification
+               = some (crossCoreReceiver, crossCoreEndpoint)))
+  -- …while the WAITER ordering still clears, since that delivery stores nothing.
+  assertBool "a waiter delivery still empties the notification"
+    (decide (signalClearedNotification waitingNotificationState highNotification
+               = [highNotification]))
+  -- PR #873 round 4: a clear is FINAL within its commit.  The final origination
+  -- pass skips cleared keys, so a declassifying signal that hands its badge
+  -- straight to a waiter cannot re-tag the notification it just emptied — which
+  -- would otherwise leave a fresh unsaturated identity on an object holding
+  -- nothing, inheritable by the next unrelated badge through it.
+  assertBool "a cleared object stays empty even when the commit recorded a downgrade"
+    (let plan : TaintPlan := { edges := [], cleared := [highNotification] }
+     let stTagged : SystemState :=
+       { taintedEndpointState with
+           declassificationTaint :=
+             taintedEndpointState.declassificationTaint.joinAt highNotification
+               (DeclassificationTaint.singleton 91) }
+     decide ((applySyscallTaint plan stTagged stTagged).declassificationTaint highNotification
+               = DeclassificationTaint.empty))
+  -- The replyRecv REPLY leg (audit Finding 1): the server's provenance reaches
+  -- the caller the reply object records — the steady-state loop's second hop.
+  assertBool "the replyRecv plan names the reply object's recorded caller as a sink"
+    (decide (({ sink := lowCurrent.toObjId, source := highCurrent.toObjId } : TaintFlowEdge)
+       ∈ (syscallTaintPlan replyLegState highCurrent replyLegDecoded).edges))
+  assertBool "…and applying it moves the server's identity to that caller"
+    (let post := applySyscallTaint (syscallTaintPlan replyLegState highCurrent replyLegDecoded)
+                   replyLegState replyLegState
+     (post.declassificationTaint lowCurrent.toObjId).contains 57 &&
+     -- …and the reply leg's edge is genuinely in the plan the arm runs
+     decide (({ sink := lowCurrent.toObjId, source := highCurrent.toObjId } : TaintFlowEdge)
+       ∈ (syscallTaintPlan replyLegState highCurrent replyLegDecoded).edges))
+  -- NEGATIVE (the pre-fix shape): the receive-leg pair alone does NOT name the
+  -- recorded caller, so a plan built from `receiverTaintEdges` misses this hop —
+  -- which is exactly the under-approximation the fix removes.
+  assertBool "NEGATIVE: the receive-leg edges alone miss the recorded caller"
+    (decide (lowCurrent.toObjId
+       ∉ (receiverTaintEdges replyLegState highCurrent highEndpoint).map (·.sink)))
+  -- …and the planner's own edges are the ones the arm computes.
+  assertBool "an inert syscall's plan is empty, whatever the state"
+    (decide (syscallTaintPlan taintedEndpointState highCurrent
+       { capAddr := SeLe4n.CPtr.ofNat 2, msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0,
+         syscallId := .tcbSetPriority } = TaintPlan.inert) &&
+     decide (syscallTaintPlan taintedEndpointState highCurrent
+       { capAddr := SeLe4n.CPtr.ofNat 2, msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0,
+         syscallId := .receive } ≠ TaintPlan.inert))
+
+/-- §12.5 fixture — an object carrying one specific declassification identity. -/
+private def taintedTargetState : SystemState :=
+  { niState with
+      declassificationTaint :=
+        SeLe4n.Kernel.TaintTable.empty.joinAt declassTargetA
+          (DeclassificationTaint.singleton taintTagZero) }
+
+/-- §12.5 fixture — two tainted objects, so the clear can be shown to be
+targeted rather than a wipe. -/
+private def taintedTwoTargetState : SystemState :=
+  { taintedTargetState with
+      declassificationTaint :=
+        taintedTargetState.declassificationTaint.joinAt declassTargetB
+          (DeclassificationTaint.singleton 5) }
+
+/-- §12.5  SM9.D.12 — the retype forgets. -/
+private def runTaintRetypeChecks : IO Unit := do
+  IO.println "--- §12.5 SM9.D.12 a retype forgets its target's provenance ---"
+  let tainted := taintedTargetState
+  let retyped := applySyscallTaint { cleared := [declassTargetA] } tainted tainted
+  assertBool "before the retype the object carries a specific identity"
+    ((tainted.declassificationTaint declassTargetA).contains taintTagZero &&
+     !((tainted.declassificationTaint declassTargetA).saturated))
+  assertBool "after it, the object carries nothing"
+    (!((retyped.declassificationTaint declassTargetA).contains taintTagZero))
+  -- The load-bearing negative: a *framed* retype — one that left the table
+  -- alone — keeps the destroyed object's tags on its replacement.  That is the
+  -- false positive `staleTaint_is_not_saturation` keeps distinct from
+  -- saturation, and the reason the retype clears rather than frames.
+  assertBool "NEGATIVE: a framed retype would keep them, and the stale tag is NOT a saturation"
+    (let framed := applySyscallTaint TaintPlan.inert tainted tainted
+     (framed.declassificationTaint declassTargetA).contains taintTagZero &&
+     !((framed.declassificationTaint declassTargetA).saturated))
+  assertBool "…and clearing one object leaves every other alone"
+    (let cleared := applySyscallTaint { cleared := [declassTargetA] }
+        taintedTwoTargetState taintedTwoTargetState
+     !((cleared.declassificationTaint declassTargetA).contains taintTagZero) &&
+     (cleared.declassificationTaint declassTargetB).contains 5)
+
+/-- §12.6 fixtures — two candidate second hops with the *same* domains, one of
+which received hop 1's content and one of which did not. -/
+private def causalHopOne : DeclassificationEvent :=
+  { srcDomain := declassSecret, dstDomain := declassMiddle, targetObject := declassTargetA,
+    authorizationBasis := .policyRule, timestamp := 0, originatingCore := c1,
+    actor := { subject := highCurrent, domain := declassSecret },
+    predecessorTags := DeclassificationTaint.empty }
+
+private def causalHopTwo (tags : DeclassificationTaint) : DeclassificationEvent :=
+  { srcDomain := declassMiddle, dstDomain := declassPublic, targetObject := declassTargetB,
+    authorizationBasis := .policyRule, timestamp := 1, originatingCore := c0,
+    actor := { subject := lowCurrent, domain := declassMiddle },
+    predecessorTags := tags }
+
+/-- §12.6  SM9.D.14-.D.16 — the detector is causal. -/
+private def runCausalDetectorChecks : IO Unit := do
+  IO.println "--- §12.6 SM9.D.14 the laundering detector is causal ---"
+  let received := causalHopTwo (DeclassificationTaint.singleton 0)
+  let notReceived := causalHopTwo DeclassificationTaint.empty
+  assertBool "a chain whose second hop names the first is linked"
+    (declassificationChainLinked [causalHopOne, received] &&
+     declassificationChainCausal [causalHopOne, received])
+  -- Negative #1 (the plan's first): a **domain-only** detector fires on a pair
+  -- that shares no data.  `declassificationChainComposes` is exactly that
+  -- detector, kept under its own name so the false positive is exhibited.
+  assertBool "NEGATIVE: a domain-only detector fires on a causally unrelated pair"
+    (declassificationChainComposes [causalHopOne, notReceived] &&
+     !(declassificationChainLinked [causalHopOne, notReceived]))
+  -- Negative #2 (the plan's second): an **object-adjacency** detector — "hop 2's
+  -- source object is hop 1's target" — produces a false negative on the real
+  -- chain, because the link was forged by an *ordinary* delivery.
+  assertBool "NEGATIVE: an object-adjacency detector MISSES the real chain"
+    (decide (causalHopOne.targetObject ≠ received.sourceSubject) &&
+     decide (causalHopOne.targetObject ≠ received.targetObject) &&
+     declassificationChainLinked [causalHopOne, received])
+  -- Negative #3 (the plan's third): two same-domain subjects, only one of which
+  -- received hop 1's data, are **distinguished** — which a domain matcher
+  -- cannot do and the recorded snapshot can.
+  assertBool "NEGATIVE: two same-domain second hops are distinguished by their snapshots"
+    (decide (received.srcDomain = notReceived.srcDomain) &&
+     decide (received.dstDomain = notReceived.dstDomain) &&
+     decide (received.timestamp = notReceived.timestamp) &&
+     declassificationChainLinked [causalHopOne, received] &&
+     !(declassificationChainLinked [causalHopOne, notReceived]))
+  -- And the laundering verdict follows the causality, not the domains.
+  assertBool "the detector reports laundering on the causal chain only"
+    (chainLaunders declassContext.policy launderingDeclPolicy [causalHopOne, received] &&
+     !(chainLaunders declassContext.policy launderingDeclPolicy [causalHopOne, notReceived]))
+  -- The residual, stated: a **saturated** snapshot names every identity, so a
+  -- chain through it is reported without a specific recorded one behind it.
+  assertBool "SCOPE: the residual over-approximation is saturation, and only that"
+    (let saturatedHop := causalHopTwo DeclassificationTaint.top
+     saturatedHop.predecessorTags.saturated &&
+     decide (saturatedHop.predecessorTags.tags = []) &&
+     declassificationChainLinked [causalHopOne, saturatedHop])
+
+/-- §12.7  SM9.E.2a — the acceptance scenario: downgrade, **ordinary** delivery,
+downgrade.
+
+The §6.4 fixture runs it end to end (hop 1's origination, an ordinary delivery
+that no declassification edge relates to it, then hop 2); this group states what
+that run establishes, and the lifecycle case the plan names beside it. -/
+private def runCausalAcceptanceChecks : IO Unit := do
+  IO.println "--- §12.7 SM9.E.2a the causal-detector acceptance scenario ---"
+  assertBool "hop 1's origination tagged the object its content reached"
+    (match declassHop1 with
+     | none => false
+     | some (log₁, st₁) =>
+         match log₁.head? with
+         | none => false
+         | some e => (st₁.declassificationTaint e.targetObject).contains e.timestamp)
+  assertBool "…and the subject that performed it"
+    (match declassHop1 with
+     | none => false
+     | some (log₁, st₁) =>
+         match log₁.head? with
+         | none => false
+         | some e => (st₁.declassificationTaint e.sourceSubject).contains e.timestamp)
+  assertBool "an ORDINARY delivery — no declassification edge — carried it to the next subject"
+    (match declassDelivery with
+     | none => false
+     | some (_, st) => (st.declassificationTaint lowCurrent.toObjId).contains 0)
+  assertBool "NEGATIVE: …and before that delivery the next subject held nothing"
+    (match declassHop1 with
+     | none => false
+     | some (_, st₁) => !((st₁.declassificationTaint lowCurrent.toObjId).contains 0))
+  assertBool "hop 2's recorded snapshot therefore names hop 1 — the chain is causal"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) =>
+         declassificationChainCausal log₂ && declassificationChainLinked log₂ &&
+         chainLaunders declassContext.policy launderingDeclPolicy log₂)
+  -- The lifecycle case: retype the object that carried the taint, downgrade
+  -- from its replacement, and no causal link is reported.
+  assertBool "the lifecycle case: a retyped subject's later downgrade names nothing"
+    (match declassDelivery with
+     | none => false
+     | some (_, st) =>
+         let retyped := applySyscallTaint { cleared := [lowCurrent.toObjId] } st st
+         !((retyped.declassificationTaint lowCurrent.toObjId).contains 0) &&
+         -- the event such a subject would record carries an empty snapshot
+         !(declassificationEventNames
+             (causalHopTwo (retyped.declassificationTaint lowCurrent.toObjId)) causalHopOne))
+
+/-- §12.9 helper — forget a recorded snapshot, keeping everything else. -/
+private def dropPredecessorTags (e : DeclassificationEvent) : DeclassificationEvent :=
+  { e with predecessorTags := DeclassificationTaint.empty }
+
+/-- §12.9 fixture — a monitor's clearance in the declassification fixture's own
+lattice.  `declassContext.policy` is `.linearOrder` over domains 0/1/2, so a
+reader at the top dominates every recorded source AND destination — which is
+what `auditEntryVisibleTo`'s conjunction requires. -/
+private def causalMonitorReader : SecurityDomain := declassSecret
+
+/-- §12.9 fixture — the acceptance chain with **every recorded snapshot
+emptied**, so the two entries still compose by domain and no longer name each
+other.  The load-bearing negative's subject: the word must report the recorded
+provenance, not the domain composition both states share. -/
+private def causalStrippedState : Option SystemState :=
+  match declassHop2 with
+  | none => none
+  | some (_, st₂) =>
+      some { st₂ with
+        declassificationAuditLog :=
+          st₂.declassificationAuditLog.map dropPredecessorTags }
+
+/-- §12.9  SM9.D.14 — the causality verdict a monitor can actually read.
+
+Without this the detector would be an improvement only the model can see: SM8's
+`chainLaunders` had no consumer, and a *causal* detector nothing can query is
+the same thing one refinement further on. -/
+private def runCausalReaderChecks : IO Unit := do
+  IO.println "--- §12.9 SM9.D.14 the causality verdict reaches a monitor ---"
+  assertBool "all three verdict opcodes are in the ABI at 27..29, and 30 is the first refused"
+    (decide (decodeAuditReadOp 27 1 0 = some (.chainNamesPredecessor 1)) &&
+     decide (decodeAuditReadOp 28 5 2 = some (.chainNamesEntry 5 2)) &&
+     decide (decodeAuditReadOp 29 5 2 = some (.chainNamesArchived 5 2)) &&
+     decide (auditReadOpcodeCount = 30) &&
+     decide (decodeAuditReadOp 30 1 0 = none) &&
+     -- all three read the TRAIL, so all three inherit its equivalence clause
+     decide ((AuditReadOp.chainNamesPredecessor 1).readsStructure
+       = .declassificationAuditTrail) &&
+     decide ((AuditReadOp.chainNamesEntry 5 2).readsStructure
+       = .declassificationAuditTrail) &&
+     decide ((AuditReadOp.chainNamesArchived 5 2).readsStructure
+       = .declassificationAuditTrail))
+  assertBool "the monitor reads 1 on the causal chain the acceptance scenario built"
+    (match declassHop2 with
+     | none => false
+     | some (_, st₂) =>
+         match auditReadWord declassContext (some causalMonitorReader) causalMonitorReader
+             st₂ (.chainNamesPredecessor 1) with
+         | .ok w => decide (w = 1)
+         | .error _ => false)
+  -- The load-bearing negative: the SAME two entries with hop 2's snapshot
+  -- emptied read back 0, so the word reports the recorded provenance rather
+  -- than the domain composition both states share.
+  assertBool "NEGATIVE: the same domain-composing pair with no snapshot reads 0"
+    (match causalStrippedState with
+     | none => false
+     | some stripped =>
+         (match auditReadWord declassContext (some causalMonitorReader) causalMonitorReader
+             stripped (.chainNamesPredecessor 1) with
+          | .ok w => decide (w = 0)
+          | .error _ => false) &&
+         -- …and the domain-only detector still fires on it, which is the
+         -- false positive the verdict distinguishes.
+         declassificationChainComposes stripped.declassificationAuditLog)
+  assertBool "index 0 names no predecessor and is refused, not answered 0"
+    (match declassHop2 with
+     | none => false
+     | some (_, st₂) =>
+         match auditReadWord declassContext (some causalMonitorReader) causalMonitorReader
+             st₂ (.chainNamesPredecessor 0) with
+         | .error e => decide (e = KernelError.invalidArgument)
+         | .ok _ => false)
+  assertBool "an index past the view is refused with the same error"
+    (match declassHop2 with
+     | none => false
+     | some (_, st₂) =>
+         match auditReadWord declassContext (some causalMonitorReader) causalMonitorReader
+             st₂ (.chainNamesPredecessor 9) with
+         | .error e => decide (e = KernelError.invalidArgument)
+         | .ok _ => false)
+  -- Reading it at every index reconstructs `declassificationChainCausal` over
+  -- the whole view — the property `chainVerdict_reconstructs_causal` states.
+  assertBool "reading it at every index reconstructs the causal predicate"
+    (match declassHop2 with
+     | none => false
+     | some (_, st₂) =>
+         let view := auditLogVisibleTo declassContext causalMonitorReader
+                       st₂.declassificationAuditLog
+         decide (declassificationChainCausal view) &&
+         (List.range view.length).all (fun i =>
+           i == 0 ||
+           (match auditReadWord declassContext (some causalMonitorReader) causalMonitorReader
+               st₂ (.chainNamesPredecessor i) with
+            | .ok w => w == 1
+            | .error _ => false)))
+
+/-- §12.8 fixture — a REAL rendezvous send: the high endpoint has `lowCurrent`
+queued to receive, so `contentFlowEdges` (not a hand-built plan) resolves the
+receiver AND the capability-transfer sink, and the write-lock coverage claim is
+computed on the edge list the entry actually applies. -/
+private def grantSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 4
+private def grantEndpointCap : Capability :=
+  { target := .object highEndpoint, rights := AccessRightSet.ofList [.read, .write, .grant] }
+
+private def sendRendezvousState : SystemState :=
+  let base : SystemState :=
+    { successEntryState with
+        objects := successEntryState.objects.insert highEndpoint
+          (.endpoint { receiveQ := { head := some lowCurrent
+                                     tail := some lowCurrent } }) }
+  -- PR #873 round 5: the send gate requires **Grant** as well as a declared
+  -- capability count, because an endpoint capability without it installs nothing
+  -- (`ipcUnwrapCaps` answers `.grantDenied` for every cap).  The shared probe
+  -- capability carries `.read` only, so this scenario — whose whole subject is
+  -- the caps-carrying edge list — installs a Grant-bearing endpoint capability
+  -- at a slot of its own rather than weakening the gate to suit the fixture.
+  match base.objects[probeCNode]? with
+  | some (.cnode cn) =>
+      { base with objects := base.objects.insert probeCNode (.cnode (cn.insert grantSlot grantEndpointCap)) }
+  | _ => base
+
+/-- PR #873 round 4: `extraCaps := 1`, because the CSpace sinks are gated on the
+message actually declaring capabilities.  This is the caps-carrying shape, whose
+edge list must name the receiver's CNode; `sendRendezvousCaplessDecoded` below is
+the same rendezvous with a plain message, and must not. -/
+private def sendRendezvousDecoded : SyscallDecodeResult :=
+  { syscallId := .send, capAddr := SeLe4n.CPtr.ofNat 4,
+    msgInfo := SeLe4n.Model.MessageInfo.mk 0 1 0 }
+
+private def sendRendezvousCaplessDecoded : SyscallDecodeResult :=
+  { syscallId := .send, capAddr := SeLe4n.CPtr.ofNat 4,
+    msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0 }
+
+private def sendRendezvousEdges : List TaintFlowEdge :=
+  contentFlowEdges sendRendezvousState highCurrent sendRendezvousDecoded
+
+private def sendRendezvousCaplessEdges : List TaintFlowEdge :=
+  contentFlowEdges sendRendezvousState highCurrent sendRendezvousCaplessDecoded
+
+/-- §12.8  SM9.D.17 / SM9.D.18 — the footprint and the non-interference. -/
+private def runTaintFootprintChecks : IO Unit := do
+  IO.println "--- §12.8 SM9.D.17 the serialization subject and the NI carriage ---"
+  -- WS-SM SM9.D.2 (PR #873 round 9): the table is bounded by what it currently
+  -- holds, not by how many times it has been written.  The cycle below is the
+  -- ordinary authorized one — a declassified badge stored on a notification,
+  -- then taken by a wait — and it is *value-changing* in both directions, which
+  -- is exactly the case the no-op write guards do not cover.  Under the old
+  -- functional representation each pass added two closures for ever and lookups
+  -- of unrelated objects walked the whole history.
+  let taintCycle : SeLe4n.Kernel.TaintTable → SeLe4n.Kernel.TaintTable :=
+    fun t => (t.joinAt lowNotification (SeLe4n.Kernel.DeclassificationTaint.singleton 5)).clearAt
+      lowNotification
+  let afterFiveCycles :=
+    taintCycle (taintCycle (taintCycle (taintCycle (taintCycle
+      SeLe4n.Kernel.TaintTable.empty))))
+  assertBool "five store/consume cycles leave the taint table with no entries at all"
+    (decide (afterFiveCycles.entries.length = 0))
+  -- …and the table is not simply always empty: a stored tag is retained, and
+  -- retained as ONE entry however many times it is re-joined.
+  let stored := (SeLe4n.Kernel.TaintTable.empty.joinAt lowNotification
+    (SeLe4n.Kernel.DeclassificationTaint.singleton 5)).joinAt lowNotification
+      (SeLe4n.Kernel.DeclassificationTaint.singleton 5)
+  assertBool "a stored tag survives, as exactly one entry"
+    ((stored lowNotification).contains 5 && decide (stored.entries.length = 1))
+  -- The write set of a content-moving plan is exactly its declared sinks when
+  -- the commit appended no audit event, which is every syscall but the two
+  -- that write the trail.
+  let sendPlan : TaintPlan :=
+    { edges := [{ sink := highCurrent.toObjId, source := lowCurrent.toObjId }
+               ,{ sink := lowCurrent.toObjId, source := highCurrent.toObjId }] }
+  assertBool "a content-moving plan's write set is exactly its declared sinks"
+    (decide (taintWriteKeys sendPlan niState niState
+      = [highCurrent.toObjId, lowCurrent.toObjId]))
+  -- The write-lock coverage claim, computed on the REAL edge list a rendezvous
+  -- send declares — not on a hand-built plan, which is how the audit's first
+  -- form of this check missed the capability-transfer sink.  The woken
+  -- receiver's TCB (W) is a declared member; the receiver's CSpace root — the
+  -- object `ipcUnwrapCaps` writes — is NOT, a pre-existing SM3.B footprint gap
+  -- registered as `UncoveredLockDomain.capTransferReceiverCnode`
+  -- (`capTransfer_receiverCnode_write_undeclared`).
+  --
+  -- The ENDPOINT is no longer among the sinks at all: the content-derived model
+  -- does not tag it, because it holds no content of its own.  That makes the
+  -- registered CNode gap the *only* uncovered key here, rather than one of two.
+  let sendSet := SeLe4n.Kernel.Concurrency.lockSet_endpointSend highCurrent probeCNode
+                   highEndpoint (some lowCurrent)
+  let sendWriteObjects : List SeLe4n.ObjId :=
+    (sendSet.pairs.filter (fun p => decide (p.snd = SeLe4n.Kernel.Concurrency.AccessMode.write))).map
+      (fun p => p.fst.objId)
+  let recvRoot : SeLe4n.ObjId :=
+    match sendRendezvousState.getTcb? lowCurrent with
+    | some tcb => tcb.cspaceRoot
+    | none => SeLe4n.ObjId.ofNat 0
+  assertBool "the real rendezvous edge list names the receiver TCB"
+    (decide (({ sink := lowCurrent.toObjId, source := highCurrent.toObjId } : TaintFlowEdge)
+       ∈ sendRendezvousEdges))
+  -- NEGATIVE (the content-derived model): the endpoint is NOT a sink, so a
+  -- rendezvous leaves its provenance untouched and nothing accumulates on it for
+  -- a later unrelated message to pick up.
+  assertBool "NEGATIVE: the endpoint is not among the declared sinks at all"
+    (decide (highEndpoint ∉ sendRendezvousEdges.map (·.sink)))
+  -- NEGATIVE (round 5): neither is the receiver's CSpace root, whether or not
+  -- the message declares capabilities.  A CNode holds no tracked content, so a
+  -- tag written on one has no operation able to clear it — and the authority hop
+  -- needs no edge of its own, since every flow it enables is declared where the
+  -- content actually moves.  Both shapes are checked because the two used to
+  -- differ: the caps-carrying one is the shape that carried the sink.
+  assertBool "NEGATIVE: no rendezvous declares a CSpace-root sink, caps or not"
+    (decide (recvRoot ∉ sendRendezvousEdges.map (·.sink)) &&
+     decide (recvRoot ∉ sendRendezvousCaplessEdges.map (·.sink)) &&
+     decide (({ sink := lowCurrent.toObjId, source := highCurrent.toObjId } : TaintFlowEdge)
+       ∈ sendRendezvousCaplessEdges))
+  -- …so the coverage claim is total again, in both shapes.  It was carved out
+  -- while the CSpace sink existed; with the carrier gone there is no taint write
+  -- key the send footprint fails to hold in write mode.
+  assertBool "a capless rendezvous is fully write-locked by the send footprint"
+    ((sendRendezvousCaplessEdges.map (·.sink)).all (fun o => sendWriteObjects.contains o))
+  assertBool "EVERY taint write key is write-locked by the send footprint"
+    ((sendRendezvousEdges.map (·.sink)).all (fun o => sendWriteObjects.contains o))
+  -- The registered footprint gap is unchanged and is now purely an *object*
+  -- write: `ipcUnwrapCaps` still writes the receiver's CSpace root CNode with no
+  -- declared lock (`UncoveredLockDomain.capTransferReceiverCnode`).  Pinned
+  -- positively so closing it breaks this line.  What changed is that it is no
+  -- longer also a taint write key, so the taint-coverage claim above no longer
+  -- has to carve it out.
+  assertBool "GAP (registered lock-inventory debt): the receiver's CSpace root is NOT write-locked"
+    (!sendWriteObjects.contains recvRoot &&
+     decide ((SeLe4n.Kernel.Concurrency.cnodeLock recvRoot,
+        SeLe4n.Kernel.Concurrency.AccessMode.write) ∉ sendSet.pairs))
+  -- The design decision, pinned: the hot IPC path does NOT carry the coarse
+  -- `.objStore` singleton.  A keyed table decomposes, so its writes ride the
+  -- key's own lock exactly as `storeObject`'s writes ride the object's; putting
+  -- the level-0 lock on `.send` would serialise every IPC in the system against
+  -- every other, and would blow the SM5.J tick budget the IPC-suite fixtures pin.
+  assertBool "the content-moving footprints do NOT declare the coarse table lock"
+    (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
+        ∉ sendSet.pairs) &&
+     decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
+        ∉ (SeLe4n.Kernel.Concurrency.lockSet_notificationWait highCurrent probeCNode
+             highNotification).pairs) &&
+     decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
+        ∉ (SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype highCurrent probeCNode declassTargetA
+             declassTargetB).pairs))
+  -- ...and the two syscalls that append to the *trail* — a `List`, which does
+  -- not decompose by key — still do.  That is what covers their origination
+  -- keys, including the actor's TCB, which their footprints hold only in read
+  -- mode.
+  assertBool "the two trail writers still declare the state-level write"
+    (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
+        ∈ (SeLe4n.Kernel.Concurrency.lockSet_declassify highCurrent probeCNode).pairs) &&
+     decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
+        ∈ (SeLe4n.Kernel.Concurrency.lockSet_declassifySignal highCurrent probeCNode
+             highNotification (some lowCurrent)).pairs))
+  -- The load-bearing negative: a plan writing DIFFERENT keys leaves this plan's
+  -- keys literally untouched, which is the model content of "the key's own lock
+  -- is a sufficient serialization subject".  Were the update not key-local, an
+  -- unrelated plan would move the endpoint's entry and this would fail.
+  let otherPlan : TaintPlan :=
+    { edges := [{ sink := lowEndpoint, source := lowCurrent.toObjId }] }
+  -- Both the endpoint this plan does *not* name and the source the other plan
+  -- reads carry content, so the second half of the assertion below is a real
+  -- observation rather than the inert plan's `rfl`.
+  let taggedBase : SystemState :=
+    { niState with
+        declassificationTaint :=
+          (niState.declassificationTaint.joinAt highEndpoint
+            (DeclassificationTaint.singleton 77)).joinAt lowCurrent.toObjId
+              (DeclassificationTaint.singleton 78) }
+  assertBool "NEGATIVE: a disjoint plan leaves this plan's keys literally unchanged"
+    (decide (highEndpoint ∉ taintWriteKeys otherPlan taggedBase taggedBase) &&
+     decide ((applySyscallTaint otherPlan taggedBase taggedBase).declassificationTaint
+               highEndpoint
+             = taggedBase.declassificationTaint highEndpoint) &&
+     ((applySyscallTaint otherPlan taggedBase taggedBase).declassificationTaint
+        highEndpoint).contains 77 &&
+     -- and it genuinely did write its own key, so the check above is not
+     -- reporting an inert plan.
+     ((applySyscallTaint otherPlan taggedBase taggedBase).declassificationTaint
+        lowEndpoint) != (taggedBase.declassificationTaint lowEndpoint))
+  assertBool "the propagation is confined to no core, and invisible on every one"
+    (let plan : TaintPlan := { edges := [{ sink := lowCurrent.toObjId, source := declassTargetA }] }
+     let after := applySyscallTaint plan niState niState
+     allCores.all (fun c =>
+       lowEquivalentSliceOnCoreCheckWithRegs niLabeling c lowLabel after niState) &&
+     allCores.all (fun c =>
+       decide (after.scheduler.currentOnCore c = niState.scheduler.currentOnCore c) &&
+       decide ((after.scheduler.runQueueOnCore c).flat
+         = (niState.scheduler.runQueueOnCore c).flat)))
+
+/-- The SM9.D half of the golden trace: what the causal provenance layer reports
+as observables — the classification, the propagation the live entry performed,
+and the detector's verdict on the acceptance chain. -/
+private def taintTraceLines : List String :=
+  [ s!"[smp-information-flow] taint classification: moving=\
+{(SyscallId.all.filter (fun s => decide (contentFlowClass s = .movesContent))).length} \
+clearing={(SyscallId.all.filter (fun s => decide (contentFlowClass s = .clearsProvenance))).length} \
+inert={(SyscallId.all.filter (fun s => decide (contentFlowClass s = .inert))).length} \
+maxTags={maxTaintTags}"
+  , s!"[smp-information-flow] taint propagation: liveReceiverTagged=\
+{match taintedEntryOutcome with
+  | .ok ((), st) => toString ((st.declassificationTaint highCurrent.toObjId).contains 42)
+  | .error _ => "entry-failed"} \
+unrelatedUntouched={match taintedEntryOutcome with
+  | .ok ((), st) => toString (!((st.declassificationTaint lowNotification).contains 42))
+  | .error _ => "entry-failed"} \
+transportUntouched={match taintedEntryOutcome with
+  | .ok ((), st) => toString (!((st.declassificationTaint highEndpoint).contains 42))
+  | .error _ => "entry-failed"}"
+  , s!"[smp-information-flow] causal chain: causal=\
+{match declassHop2 with
+  | none => "no-run"
+  | some (log₂, _) => toString (declassificationChainCausal log₂)} \
+launders={match declassHop2 with
+  | none => "no-run"
+  | some (log₂, _) =>
+      toString (chainLaunders declassContext.policy launderingDeclPolicy log₂)} \
+domainOnlyFalsePositive=\
+{toString (declassificationChainComposes [causalHopOne, causalHopTwo DeclassificationTaint.empty])} \
+causalVerdict=\
+{toString (declassificationChainLinked [causalHopOne, causalHopTwo DeclassificationTaint.empty])}"
+  , s!"[smp-information-flow] causality verdict: monitorReads=\
+{match declassHop2 with
+  | none => "no-run"
+  | some (_, st₂) =>
+      match auditReadWord declassContext (some causalMonitorReader) causalMonitorReader
+          st₂ (.chainNamesPredecessor 1) with
+      | .ok w => toString w
+      | .error _ => "refused"} \
+strippedReads={match causalStrippedState with
+  | none => "no-run"
+  | some stripped =>
+      match auditReadWord declassContext (some causalMonitorReader) causalMonitorReader
+          stripped (.chainNamesPredecessor 1) with
+      | .ok w => toString w
+      | .error _ => "refused"} \
+opcode=27 opcodes={auditReadOpcodeCount}"
+  , s!"[smp-information-flow] taint saturation: full={taintFullList.length} \
+saturatesOnNinth=\
+{toString (DeclassificationTaint.join (DeclassificationTaint.ofList taintFullList)
+    (DeclassificationTaint.singleton 8)).saturated} \
+rules={DeclassificationRuleId.all.length}" ]
+
 /-- The SM9.C half: what a **data-carrying** declassification does, reported as
 observables.  The three lines above report views, authorized downgrades and
 refused attempts; these report the one operation in the tree that deliberately
@@ -9731,7 +10986,7 @@ receiverOpcodes=25/26" ]
 
 private def informationFlowTraceLines : List String :=
   observerTraceLines ++ nonInterferenceTraceLines ++ auditReaderTraceLines ++
-    refusalLedgerTraceLines ++ declassifiedSignalTraceLines
+    refusalLedgerTraceLines ++ declassifiedSignalTraceLines ++ taintTraceLines
 
 /-- §8.2: print the deterministic phase-level information-flow trace and verify
 it byte-for-byte against the golden fixture.  The lines print before the
@@ -9858,12 +11113,22 @@ phase closure, the audit-trail reader, refusal auditing and the data-carrying de
   runDeclassifiedSignalFailedHopChecks
   runDeclassifiedSignalWaiterGateChecks
   runDeclassifiedSignalTargetGateChecks
+  runTaintAlgebraChecks
+  runTaintMountChecks
+  runContentFlowClassChecks
+  runTaintPropagationChecks
+  runTaintRetypeChecks
+  runCausalDetectorChecks
+  runCausalAcceptanceChecks
+  runTaintFootprintChecks
+  runCausalReaderChecks
   runInformationFlowTraceFixtureCheck
   IO.println "===================================="
   IO.println ("All SM8.A per-core observable-state, SM8.B non-interference, " ++
     "SM8.C declassification-audit, SM8.D fine-lock information-flow, " ++
-    "SM8.E phase-closure, SM9.A audit-reader, SM9.B refusal-auditing and " ++
-    "SM9.C data-carrying-declassification checks PASS.")
+    "SM8.E phase-closure, SM9.A audit-reader, SM9.B refusal-auditing, " ++
+    "SM9.C data-carrying-declassification and SM9.D causal-provenance " ++
+    "checks PASS.")
 
 end SeLe4n.Testing.SmpInformationFlow
 

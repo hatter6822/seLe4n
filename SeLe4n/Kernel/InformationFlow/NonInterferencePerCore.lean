@@ -1172,22 +1172,26 @@ theorem endpointSendDual_confinedToBootCore (st st' : SystemState)
       cases hHead : ep.receiveQ.head with
       | some _ =>
         simp only [hHead] at hStep
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping, so there is one more split than there used to be.
         split at hStep
         · simp at hStep
-        · next receiver headTcb st1 hPop =>
-          split at hStep
+        · split at hStep
           · simp at hStep
-          · next st2 hStore =>
-            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-            obtain ⟨_, hEq⟩ := hStep
-            subst hEq
-            refine observableSlotsConfinedToCore_trans
-              (endpointQueuePopHead_confinedToCore endpointId true st st1 receiver
-                (headTcb := headTcb) bootCoreId hPop) ?_
-            refine observableSlotsConfinedToCore_trans
-              (storeTcbReceiveComplete_confinedToCore st1 st2 receiver (some msg)
-                bootCoreId hStore) ?_
-            exact ensureRunnable_confinedToBootCore st2 receiver
+          · next receiver headTcb st1 hPop =>
+            split at hStep
+            · simp at hStep
+            · next st2 hStore =>
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep
+              subst hEq
+              refine observableSlotsConfinedToCore_trans
+                (endpointQueuePopHead_confinedToCore endpointId true st st1 receiver
+                  (headTcb := headTcb) bootCoreId hPop) ?_
+              refine observableSlotsConfinedToCore_trans
+                (storeTcbReceiveComplete_confinedToCore st1 st2 receiver (some msg)
+                  bootCoreId hStore) ?_
+              exact ensureRunnable_confinedToBootCore st2 receiver
       | none =>
         simp only [hHead] at hStep
         split at hStep
@@ -1344,11 +1348,11 @@ theorem endpointReceiveDual_confinedToBootCore (st st' : SystemState)
             simp only [hEnq] at hStep
             have hEnqC := endpointQueueEnqueue_confinedToCore endpointId true receiver stClean st1
               bootCoreId hEnq
-            cases hStore : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+            cases hStore : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
             | error e => simp [hStore] at hStep
             | ok st2 =>
               simp only [hStore] at hStep
-              have hStoreC := storeTcbIpcState_confinedToCore st1 st2 receiver _ bootCoreId hStore
+              have hStoreC := storeTcbIpcStateAndMessage_confinedToCore st1 st2 receiver _ _ bootCoreId hStore
               cases hGet : st2.getTcb? receiver with
               | none =>
                 simp only [hGet, Except.ok.injEq, Prod.mk.injEq] at hStep

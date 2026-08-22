@@ -298,29 +298,46 @@ and capabilities are word-bounded to `machineWordBits` (64 bits). -/
 def badgeWellFormed (st : SystemState) : Prop :=
   notificationBadgesWellFormed st ∧ capabilityBadgesWellFormed st
 
-/-- V3-G1 (M-PRF-5): Threads blocked on receive or notification must have
-    `pendingMessage = none`. When a thread enters a blocking state (receive
-    or notification wait), no message has been delivered yet — the message
-    will be written when the thread is woken by a corresponding send/signal.
-    This invariant captures the safety-critical property that wake paths
-    can unconditionally overwrite `pendingMessage` without losing data.
+/-- V3-G1 (M-PRF-5): **`pendingMessage` agrees with the blocking state, in both
+    directions.**
 
-    The blocking states covered are:
-    - `blockedOnReceive`: waiting for IPC send from another thread
-    - `blockedOnNotification`: waiting for notification signal
+    A thread parked to *collect* holds nothing; a thread parked to *deliver*
+    holds what it is delivering:
 
-    Note: `blockedOnSend` and `blockedOnCall` threads MAY have a pending
-    message — they carry the outgoing message in `pendingMessage` while
-    queued, which `endpointReceiveDual` reads upon rendezvous.
-    `blockedOnReply` threads have `pendingMessage = none` (cleared by the
-    receive path), but are not constrained here since `.ready` and other
-    non-receiver states are unconditionally `True`. -/
-def waitingThreadsPendingMessageNone (st : SystemState) : Prop :=
+    - `blockedOnReceive` (waiting for a send) — `pendingMessage = none`
+    - `blockedOnNotification` (waiting for a signal) — `pendingMessage = none`
+    - `blockedOnSend` (queued to deliver) — `pendingMessage.isSome`
+    - `blockedOnCall` (queued to deliver, awaiting a reply) — `pendingMessage.isSome`
+
+    The receiver direction is the older half: no message has been delivered
+    yet, so a wake path may overwrite `pendingMessage` without losing data.
+
+    The sender direction was added at PR #873 round 11, and the reason is worth
+    stating because its absence was load-bearing.  This docstring used to read
+    "`blockedOnSend` and `blockedOnCall` threads MAY have a pending message",
+    which made "a parked sender is carrying its message" a *convention*: true of
+    every state the live park sites produce (`endpointSendDual` /
+    `endpointCall` both store `some msg` atomically with the block), but not
+    something any consumer could rely on.  So every consumer that read a parked
+    sender had to re-derive it defensively, and each one that did not was a
+    defect — `frozenQueuePopHead` handing a receiver `none` while the provenance
+    join claimed a delivery (round 7), then `endpointReceiveDual` doing the same
+    on the live path (round 11).  Stating it here makes the malformed state
+    unreachable rather than merely refused, so a consumer that forgets to check
+    is no longer wrong.
+
+    `blockedOnReply` threads do hold `pendingMessage = none` in practice (the
+    receive path clears it) but are deliberately not constrained: nothing reads
+    a reply-blocked thread's message, so pinning it would add a preservation
+    obligation with no consumer. -/
+def blockedThreadsPendingMessageConsistent (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
     st.objects[tid.toObjId]? = some (.tcb tcb) →
     match tcb.ipcState with
     | .blockedOnReceive _ => tcb.pendingMessage = none
     | .blockedOnNotification _ => tcb.pendingMessage = none
+    | .blockedOnSend _ => tcb.pendingMessage.isSome
+    | .blockedOnCall _ => tcb.pendingMessage.isSome
     | _ => True
 
 /-- Full IPC invariant including system-level dual-queue structural
@@ -333,8 +350,9 @@ WS-H12d: `allPendingMessagesBounded` ensures every pending message stored in
 a TCB satisfies `maxMessageRegisters`/`maxExtraCaps` bounds.
 WS-F5/D1d: `badgeWellFormed` ensures all badges in notifications and
 capabilities are word-bounded.
-V3-G6: `waitingThreadsPendingMessageNone` ensures threads in blocked receiver
-states have `pendingMessage = none`.
+V3-G6: `blockedThreadsPendingMessageConsistent` ties `pendingMessage` to the
+blocking state in both directions -- a thread parked to collect holds nothing, a
+thread parked to deliver holds what it is delivering.
 V3-K: `endpointQueueNoDup` ensures no self-loops and send/receive queue head
 disjointness.
 V3-J: `ipcStateQueueMembershipConsistent` ensures every blocked thread is
@@ -444,6 +462,10 @@ theorem endpointQueuePopHead_returns_head
     | none => simp [hLk] at hPop
     | some headTcb =>
       simp only [hLk] at hPop
+      -- PR #873 round 11: the send-queue message-presence guard --
+      -- a head that fails it errors, so it is not this `.ok`.
+      split at hPop
+      · simp at hPop
       revert hPop
       cases hStore : storeObject endpointId _ st with
       | error e => simp
@@ -491,6 +513,10 @@ theorem endpointQueuePopHead_returns_pre_tcb
     | none => simp [hLk] at hPop
     | some tcb =>
       simp only [hLk] at hPop
+      -- PR #873 round 11: the send-queue message-presence guard --
+      -- a head that fails it errors, so it is not this `.ok`.
+      split at hPop
+      · simp at hPop
       revert hPop
       cases hStore : storeObject endpointId _ st with
       | error e => simp
@@ -521,6 +547,79 @@ theorem endpointQueuePopHead_returns_pre_tcb
                 simp only [Except.ok.injEq, Prod.mk.injEq]
                 rintro ⟨rfl, rfl, _⟩
                 exact lookupTcb_some_objects st headTid tcb hLk
+
+/-- WS-SM SM6 (PR #873 round 11): **a dequeued sender is carrying its message.**
+
+The converse of the guard in `endpointQueuePopHead`, and the fact the receive
+path needs: a send-queue dequeue that succeeds hands its caller a `TCB` whose
+`pendingMessage` is present, so the delivery it feeds moves real content and the
+provenance edge `receiverTaintEdges` declares has content to join.
+
+This is the *unconditional* form: it holds of every state, invariant or not,
+because the dequeue refuses the malformed head rather than relying on the
+invariant to exclude it.  For states that do satisfy `ipcInvariantFull` the fact
+is available a second way -- `blockedThreadsPendingMessageConsistent` requires
+`.blockedOnSend` / `.blockedOnCall` to carry a message -- and that is the
+carrier the receive paths should be read against; this theorem is what lets a
+consumer below the invariant (a thawed snapshot, a below-API construction) reach
+the same conclusion.  Stated on the returned TCB rather than the queue head
+because that is the value both receives read the message out of. -/
+theorem endpointQueuePopHead_send_sender_carries_message
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st : SystemState)
+    (ep : Endpoint) (tid : SeLe4n.ThreadId) (headTcb : TCB) (st' : SystemState)
+    (hSend : isReceiveQ = false)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
+    headTcb.pendingMessage.isSome := by
+  have hMsg : ∀ t : TCB,
+      ¬((!isReceiveQ && t.pendingMessage.isNone) = true) → t.pendingMessage.isSome := by
+    intro t h
+    cases hp : t.pendingMessage with
+    | none => rw [hSend, hp] at h; simp at h
+    | some m => simp
+  unfold endpointQueuePopHead at hPop
+  rw [hObj] at hPop; simp only at hPop
+  cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+  | none => simp [hHead] at hPop
+  | some headTid =>
+    simp only [hHead] at hPop
+    cases hLk : lookupTcb st headTid with
+    | none => simp [hLk] at hPop
+    | some tcb =>
+      simp only [hLk] at hPop
+      split at hPop
+      · simp at hPop
+      · rename_i hGuard
+        revert hPop
+        cases hStore : storeObject endpointId _ st with
+        | error e => simp
+        | ok pair =>
+          simp only []
+          cases tcb.queueNext with
+          | none =>
+            simp only []
+            cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+            | error e => simp
+            | ok st3 =>
+              simp only [Except.ok.injEq, Prod.mk.injEq]
+              rintro ⟨_, rfl, _⟩
+              exact hMsg tcb hGuard
+          | some nextTid =>
+            simp only []
+            cases hLkNext : lookupTcb pair.2 nextTid with
+            | none => simp
+            | some nextTcb =>
+              simp only []
+              cases hLink : storeTcbQueueLinks pair.2 nextTid _ _ _ with
+              | error e => simp
+              | ok st2 =>
+                simp only []
+                cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+                | error e => simp
+                | ok st3 =>
+                  simp only [Except.ok.injEq, Prod.mk.injEq]
+                  rintro ⟨_, rfl, _⟩
+                  exact hMsg tcb hGuard
 
 -- ============================================================================
 -- Scheduler invariant bundle preservation
@@ -1200,7 +1299,7 @@ def ipcStateQueueConsistent (st : SystemState) : Prop :=
     | _ => True
 
 -- ============================================================================
--- V3-G (M-PRF-5): waitingThreadsPendingMessageNone invariant
+-- V3-G (M-PRF-5): blockedThreadsPendingMessageConsistent invariant
 -- (Definition moved above ipcInvariantFull for forward-reference resolution)
 -- ============================================================================
 
@@ -1983,7 +2082,7 @@ historical `uniqueWaiters` state-level predicate (and its `_holds` /
 `_trivial` discharge helpers) were deleted in the close-out. -/
 def ipcInvariantCore (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
-  badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧
+  badgeWellFormed st ∧ blockedThreadsPendingMessageConsistent st ∧
   endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st ∧
   queueNextBlockingConsistent st ∧ queueHeadBlockedConsistent st ∧
   blockedThreadTimeoutConsistent st ∧
@@ -2006,7 +2105,7 @@ reciprocal link — can be sequenced through the core before `linkCallerReply` /
 `consumeCallerReply` re-establish the linkage on the final state. -/
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
-  badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧
+  badgeWellFormed st ∧ blockedThreadsPendingMessageConsistent st ∧
   endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st ∧
   queueNextBlockingConsistent st ∧ queueHeadBlockedConsistent st ∧
   blockedThreadTimeoutConsistent st ∧
@@ -2085,7 +2184,7 @@ structure IpcInvariantFull (st : SystemState) : Prop where
   dualQueueSystemInvariant : dualQueueSystemInvariant st
   allPendingMessagesBounded : allPendingMessagesBounded st
   badgeWellFormed : badgeWellFormed st
-  waitingThreadsPendingMessageNone : waitingThreadsPendingMessageNone st
+  blockedThreadsPendingMessageConsistent : blockedThreadsPendingMessageConsistent st
   endpointQueueNoDup : endpointQueueNoDup st
   ipcStateQueueMembershipConsistent : ipcStateQueueMembershipConsistent st
   queueNextBlockingConsistent : queueNextBlockingConsistent st
@@ -2132,9 +2231,9 @@ elaborator. -/
     _root_.SeLe4n.Kernel.badgeWellFormed st :=
   h.2.2.2.1
 
-@[simp] theorem waitingThreadsPendingMessageNone {st : SystemState}
+@[simp] theorem blockedThreadsPendingMessageConsistent {st : SystemState}
     (h : ipcInvariantFull st) :
-    _root_.SeLe4n.Kernel.waitingThreadsPendingMessageNone st :=
+    _root_.SeLe4n.Kernel.blockedThreadsPendingMessageConsistent st :=
   h.2.2.2.2.1
 
 @[simp] theorem endpointQueueNoDup {st : SystemState}
@@ -2227,8 +2326,8 @@ theorem allPendingMessagesBounded {st : SystemState} (h : ipcInvariantCore st) :
     _root_.SeLe4n.Kernel.allPendingMessagesBounded st := h.2.2.1
 theorem badgeWellFormed {st : SystemState} (h : ipcInvariantCore st) :
     _root_.SeLe4n.Kernel.badgeWellFormed st := h.2.2.2.1
-theorem waitingThreadsPendingMessageNone {st : SystemState} (h : ipcInvariantCore st) :
-    _root_.SeLe4n.Kernel.waitingThreadsPendingMessageNone st := h.2.2.2.2.1
+theorem blockedThreadsPendingMessageConsistent {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.blockedThreadsPendingMessageConsistent st := h.2.2.2.2.1
 theorem endpointQueueNoDup {st : SystemState} (h : ipcInvariantCore st) :
     _root_.SeLe4n.Kernel.endpointQueueNoDup st := h.2.2.2.2.2.1
 theorem ipcStateQueueMembershipConsistent {st : SystemState} (h : ipcInvariantCore st) :
@@ -2262,7 +2361,7 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
   · intro h
     exact ⟨h.ipcInvariant, h.dualQueueSystemInvariant,
            h.allPendingMessagesBounded, h.badgeWellFormed,
-           h.waitingThreadsPendingMessageNone, h.endpointQueueNoDup,
+           h.blockedThreadsPendingMessageConsistent, h.endpointQueueNoDup,
            h.ipcStateQueueMembershipConsistent,
            h.queueNextBlockingConsistent, h.queueHeadBlockedConsistent,
            h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
@@ -2274,7 +2373,7 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
   · intro h
     exact ⟨h.ipcInvariant, h.dualQueueSystemInvariant,
            h.allPendingMessagesBounded, h.badgeWellFormed,
-           h.waitingThreadsPendingMessageNone, h.endpointQueueNoDup,
+           h.blockedThreadsPendingMessageConsistent, h.endpointQueueNoDup,
            h.ipcStateQueueMembershipConsistent,
            h.queueNextBlockingConsistent, h.queueHeadBlockedConsistent,
            h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
@@ -3871,14 +3970,14 @@ theorem cleanupPreReceiveDonation_preserves_badgeWellFormed
           (returnDonatedSchedContext_cnode_backward st st' receiver scId originalOwner hObjInv hRet oid cn hCn)
           hLookup hBadge
 
-/-- AI4-A: cleanupPreReceiveDonation preserves waitingThreadsPendingMessageNone.
+/-- AI4-A: cleanupPreReceiveDonation preserves blockedThreadsPendingMessageConsistent.
 The invariant quantifies over TCBs checking ipcState and pendingMessage, both
 unchanged by returnDonatedSchedContext (only schedContextBinding is modified). -/
-theorem cleanupPreReceiveDonation_preserves_waitingThreadsPendingMessageNone
+theorem cleanupPreReceiveDonation_preserves_blockedThreadsPendingMessageConsistent
     (st : SystemState) (receiver : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
-    (hInv : waitingThreadsPendingMessageNone st) :
-    waitingThreadsPendingMessageNone (cleanupPreReceiveDonation st receiver) := by
+    (hInv : blockedThreadsPendingMessageConsistent st) :
+    blockedThreadsPendingMessageConsistent (cleanupPreReceiveDonation st receiver) := by
   exact cleanupPreReceiveDonation_frame_helper st receiver hInv
     fun scId originalOwner st' hRet => by
       intro tid tcb' hTcb'

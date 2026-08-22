@@ -544,7 +544,7 @@ theorem notificationSignalOnCore_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
       (notificationSignalOnCore notificationId badge executingCore st).1)
     (hRCLRecip' : replyCallerLinkageReciprocal
       (notificationSignalOnCore notificationId badge executingCore st).1)
@@ -562,7 +562,7 @@ theorem notificationSignalOnCore_preserves_ipcInvariantFull
   · rw [hPre]; exact hInv
   · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
       (notificationSignal_preserves_ipcInvariantFull st r1 notificationId badge hInv hObjInv
-        (waitingThreadsPendingMessageNone_of_getElem_eq
+        (blockedThreadsPendingMessageConsistent_of_getElem_eq
           (fun oid => (hAgree.objects oid).symm) hWtpmn')
         (replyCallerLinkageReciprocal_of_getElem_eq
           (fun oid => (hAgree.objects oid).symm) hRCLRecip')
@@ -579,7 +579,7 @@ theorem notificationWaitOnCore_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
       (notificationWaitOnCore notificationId waiter executingCore st).1)
     (hRCLRecip' : replyCallerLinkageReciprocal
       (notificationWaitOnCore notificationId waiter executingCore st).1)
@@ -602,7 +602,7 @@ theorem notificationWaitOnCore_preserves_ipcInvariantFull
   · rw [hPre]; exact hInv
   · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
       (notificationWait_preserves_ipcInvariantFull st r1 notificationId waiter result hInv hObjInv
-        (waitingThreadsPendingMessageNone_of_getElem_eq
+        (blockedThreadsPendingMessageConsistent_of_getElem_eq
           (fun oid => (hAgree.objects oid).symm) hWtpmn')
         (replyCallerLinkageReciprocal_of_getElem_eq
           (fun oid => (hAgree.objects oid).symm) hRCLRecip')
@@ -626,7 +626,7 @@ theorem notificationSignalOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
       (notificationSignalOnCore notificationId badge executingCore st).1)
     (hRCLRecip' : replyCallerLinkageReciprocal
       (notificationSignalOnCore notificationId badge executingCore st).1)
@@ -651,7 +651,7 @@ theorem notificationWaitOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
       (notificationWaitOnCore notificationId waiter executingCore st).1)
     (hRCLRecip' : replyCallerLinkageReciprocal
       (notificationWaitOnCore notificationId waiter executingCore st).1)

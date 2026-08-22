@@ -15,6 +15,401 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
+**WS-SM SM9.D — causal declassification provenance: LANDED.  The laundering
+detector stops guessing.**
+
+SM8's `declassificationChainLinked` was **syntactic**: it matched domains and
+increasing timestamps with no data dependency behind it, so it fired on causally
+unrelated hops.  Scoping it to declassification *edges* would not have fixed it
+either — the chain the sub-phase exists to catch is *downgrade → **ordinary**
+delivery → downgrade*, and hop 2's input is related to hop 1's target by no
+declassification edge at all.  Causality follows content, so taint propagates
+through ordinary IPC.
+
+The phase's largest sub-phase, delivered as one coherent slice.  Two new
+production modules — `InformationFlow/Taint.lean` (the value and its algebra, a
+leaf importing only `Prelude`, because `AuditRecord.lean` carries a
+`DeclassificationTaint` and sits below `Model/State.lean`) and
+`InformationFlow/TaintPropagation.lean` (the plan a syscall runs, and the one
+write that applies it).  Zero `sorry`/`axiom` (4384 environment constants swept
+across the eight information-flow modules); the `main_trace_smoke` fixture is
+byte-identical.
+
+**D.1 / D.13 — the value.**  The bound is a **refinement field**
+(`tags_bounded : tags.length ≤ maxTaintTags`), so `taint_bounded_structurally`
+holds of every value rather than only of recorded ones — the shape SM9.B's
+ledger established, and the reason there is **no seventeenth**
+`proofLayerInvariantBundle` conjunct and no capacity obligation on any writer.
+Overflow saturates **upward** (`taintSaturate_over_approximates`): for a
+detector, losing a real link is the unsafe direction, so `top` reports
+identities nobody held rather than dropping one that was.  Two design facts are
+recorded rather than smoothed over.  First, the join is **not** a least upper
+bound once saturation is in play: `covers c (join a b)` given `covers c a` and
+`covers c b` is *false* in general (a `c` holding eight tags and a `join` that
+saturated are incomparable in the wrong direction), so the law ships as the
+disjunctive `covers_join_of_covers` plus `join_saturated_covers_all`, and the
+commutativity / idempotence / associativity laws hold **up to `taintEquiv`**
+rather than on the nose (the tag list is order-normalised by `insertTag`, but a
+saturating join discards the list).  Second, the table is a **total function**
+`ObjId → DeclassificationTaint`, not an `RHTable`: a hash table's
+lookup-after-insert law needs `invExt`, which would force exactly the bundle
+conjunct the refinement field avoids.
+
+**D.2 – D.6 — the mount.**  The §6 checklist run for the fourth time, with the
+frozen field **required** (a silent drop is a compile error; six test literals
+updated), the `apiInvariantBundle_frozenDirectFull` conjunct, the
+`OffSchedulerAgrees` clause and all six builders, four boot frames, and the
+reusable carriage layer `proofLayerInvariantBundle_setDeclassificationTaint`
+(unconditional — the taint table has no conjunct of its own, but v0.32.151
+established that three conjuncts do not transport by `rfl` across an arbitrary
+field write, so the layer is owed regardless).  Information flow: the table is
+**outside** `ObservableState`, and the exclusion points the same way SM8.C's
+does for the trail — provenance names `(object, declassification identity)`
+pairs, so projecting it would be a content channel out of exactly the boundary
+the audit polices.  `declassificationTaint_write_preserves_projection := rfl`
+and `onCore_declassificationTaint` are the witnesses.
+
+**D.7 — the classification, and why totality is not the completeness
+argument.**  `contentFlowClass : SyscallId → ContentFlowClass` is total with no
+wildcard, so a new syscall is a missing case at elaboration.  That is necessary
+and **not sufficient**, exactly as the plan's §3.6 says: the arm can be added
+and be wrong.  Completeness is a **Tier-1 reach gate**
+(`scripts/check_content_flow_coverage.py`) that walks the call graph from each
+live dispatch arm and fails when an arm classified `.inert` or
+`.clearsProvenance` reaches an object *content* write, or when a
+`.movesContent` arm reaches none — with `--self-test` planting a channel to
+prove the scan still bites.  Building it found two things worth recording: the
+first channel list named `Notification.state`, which also holds the waiter
+queue, so `.tcbSuspend` and `.lifecycleRetype` "reached content" through a
+queue sweep (the channel is `Notification.pendingBadge`); and
+`.notificationWait` reaches **no** object content write at all, because its
+badge goes to the caller's return register — so the gate's second check admits
+a `.movesContent` arm whose `syscallReturnShape` is not `.unit`, derived from
+the ABI rather than waived.
+
+**D.8 – D.11 — propagation, at one site rather than twelve.**  The plan's file
+list put the propagation *inside* each IPC transition.  It is instead **one
+write at each dispatcher**, `API.dispatchSyscall` and
+`API.dispatchSyscallChecked`, applied to the state that dispatcher was given and
+driven by a declared `TaintPlan`; both entries inherit it by delegating.  (It sat
+at `syscallEntryChecked` until PR #873 round 6, one layer above the function
+`dispatchSyscall`'s own docstring recommends for production user-space entry —
+so an integrator who followed that advice never reached the seam.  Moving it down
+makes every entry inherit it, including one written tomorrow, and
+`dispatchSyscallChecked_applies_taint_plan` pins that no success path skips it.)  The reason is the
+invariant surface: every IPC transition is quantified over by roughly 1 900
+references, and a field write inside one of them reopens all of them, while
+`applySyscallTaint_frame` (one field, six projections) leaves
+`authorizeDeclassificationOnCore_frame` and SM8.C's "writes only the trail"
+rule literally unchanged.  The plan's edges are all covered — sender → the
+rendezvous receiver, receiver ← the blocked sender at `sendQ.head`, replier →
+the reply object's recorded caller, signaller → notification → resolved
+receiver (through `declassifiedSignalReceiver?`, the *same* resolver SM9.C's
+second-hop gate and the SM9.B refusal seam use), and waiter ← notification,
+which is not optional: in the signal-before-wait ordering the tag sits on the
+notification and the **wait** is what moves the badge, so omitting it loses hop
+1 in one of the two orderings.
+
+An **endpoint is not a taint sink at all** (v0.33.55): it buffers no content of
+its own — a parked message lives in the blocked sender's TCB, and a receiver
+reads the head sender directly — so an endpoint proxy would be redundant *and*
+less precise, handing a receiver the taint of every sender that ever queued
+there rather than the one it consumed.  A consumed transport is **cleared**
+instead (`contentFlowClears`), which is what makes an object's taint describe the
+content it currently holds.
+
+D.11's capability transfer is `capTransferTaintSinks`: a transferred capability
+lands in the *receiver's CNode*, a different object from its TCB, and a CNode is
+shared — a second thread rooted at the same CSpace reads what the transfer
+installed without ever touching that TCB.  The helper declares three edges, and
+each closes a distinct gap found in review: the receiver's root is tagged with
+the sender's content and with the sender's *root* (so a forwarded capability
+carries its chain, v0.33.55), and the receiving **subject** is tagged from the
+sender's root directly (v0.33.58) — necessary because `applyTaintFlow` reads
+every source from the pre-state, so a root→root edge and a root→subject edge in
+the same commit do not compose.
+
+The sinks are **gated on capabilities actually crossing** (v0.33.58), by the
+signal each ordering has: a send reads its own `MessageInfo.extraCaps`, a receive
+reads the parked message's `caps` array.  The earlier unconditional declaration
+rested on "over-approximation is safe", which stopped being true once a CSpace
+root fed a subject: a plain message would then hand an unrelated later downgrade
+an *unsaturated* predecessor — exactly what `staleTaint_is_not_saturation`
+forbids.
+
+**D.12 — the retype clears.**  `lifecycleRetype` commits `storeObject` at the
+same id, so a *framed* retype leaves a destroyed object's tags on its
+replacement.  `retypeClearsTaint` / `retypedObject_taint_empty` close it, and
+`staleTaint_is_not_saturation` keeps D.15's residual claim true by exhibiting
+the two imprecisions as different things.  The plan's "frames for every
+non-content transition, ~12 files" is realised as **one** theorem rather than
+twelve, and is stronger for it: with the propagation at the dispatcher, an inert
+syscall's plan is `TaintPlan.inert` and `applySyscallTaint_inert` says its
+commit leaves the table untouched — for every inert syscall at once, including
+ones added later.  Since SM9.D.13a that theorem carries **no hypothesis about
+the trail**: the plan records whether its syscall can append at all, so the
+identity is structural rather than conditional on the commit having recorded
+nothing.
+
+**D.13a — the recorded snapshot.**  `DeclassificationEvent.predecessorTags` is
+**undefaulted**: a default would attribute an empty history to every event
+while compiling everywhere.  `sourceSubject` is an `abbrev` derived from the
+SM9.C `actor` rather than a second stored field, since two stored copies can
+disagree (`declassificationEvent_sourceSubject_is_actor`).  The multi-hop
+recorder threads the snapshot (`recordDeclassifiedHopsFrom`), so hop 2 names
+hop 1 **within one transition** — `recordDeclassifiedHops_two` and
+`declassifiedSignal_audits_each_hop` now carry that conjunct.  **Deviation,
+recorded**: the plan asked for the tags to be exported *dominating-reader-only*
+with an opaque verdict for partial readers.  The tags are not exported **at
+all**, which is strictly stronger — they are global declassification
+identities, and any export re-opens exactly what SM9.A's view-local indices
+close — and PR #870 round 6 had already made the live reader monitor-only, so
+"for partial readers" describes a class that cannot reach the entry.  What
+ships instead is the opaque verdict itself (D.14 below), which is what the plan
+wanted the tags *for*.
+
+**D.14 – D.16 — the detector, and a reader for it.**
+`declassificationChainLinked` keeps its name and becomes the conjunction of the
+syntactic composition it always checked (`declassificationChainComposes`, kept
+under its own name so the false positive is exhibited rather than deleted) and
+the new `declassificationChainCausal`.  The **table**-derived alternative is
+retained as a refuted design (`chainCausalFromTable`, `chainCausalVerdict`,
+`chainCausal_not_table_derived`), because re-evaluating a historical event
+against the *current* table invents links a retype has cleared and loses links
+acquired after the fact — `chainCausal_is_history_local` and
+`chainCausal_survives_subject_retype` are the two halves.
+`declassificationChainLinked_is_syntactic` is **retired** (SM9.D makes it
+genuinely false) and replaced 1:1 by `declassificationChainLinked_is_causal`,
+with `DeclassificationRuleId.chainLinkageIsSyntactic → .chainLinkageIsCausal`
+keeping the rule count at 12 and a Tier-3 negative forbidding either name's
+return.  The residual imprecision is stated rather than implied absent:
+`chainLaunders_residual_is_saturation` and
+`causalChain_residual_over_approximation`.  **And the detector is now
+reachable**: `AuditReadOp.chainNamesPredecessor` (opcode 27, count 27 → **28**,
+mirrored in `sele4n-sys`) returns one bit — does visible entry `index` name
+visible entry `index - 1` — so a monitor reading it at every index
+reconstructs `declassificationChainCausal` over its whole view
+(`chainVerdict_reconstructs_causal`).  Index `0` names no predecessor and is
+refused rather than answered `0`, since a `0` word would be indistinguishable
+from a genuine "no".  `chainVerdict_view_local` is why it opens no channel: the
+arm reads two entries the caller already holds and nothing else — in
+particular not the mutable table the tags were snapshotted from, which is the
+same fact `chainCausal_is_history_local` states one layer up.  Without this
+opcode SM9.D would have been an improvement only the model can see: SM8's
+`chainLaunders` had no consumer, and a *causal* detector nothing can query is
+the same thing one refinement further on.
+
+**D.17 — the serialization subject, corrected mid-cut.**  The first
+implementation declared `stateLevelLock` (the `.objStore` singleton, hierarchy
+level 0) on all eight content-moving footprints plus the retype, reasoning by
+analogy with SM9.A's audit trail.  Running the suites refuted it: the
+`smp_ipc_suite` and `smp_notification_suite` fixtures pin the SM5.J WCRT
+property `|lockSet| · 3 · tCs` against a 1 ms tick, which admits at most five
+locks, and the extra member took the resolved call footprint to six — 1080 µs.
+The failure was pointing at something real.  A single globally-contended lock
+on `.send` / `.receive` / `.call` / `.reply` / `.replyRecv` /
+`.notificationSignal` / `.notificationWait` serialises *every* IPC in the
+system against every other; for a microkernel whose IPC path is the product,
+that is a design regression rather than a footprint refinement.  And the
+codebase had already answered the question: `SystemState.objects` is a keyed
+table represented as one field, `storeObject` writes one key of it, and **no**
+`lockSet_<τ>` declares `objStoreLock` for that — `.objStore` is reserved for
+structural table operations, which is why `stateLevelLock` appears in exactly
+three footprints before this phase, all of them writing the audit **trail**, a
+`List` whose append genuinely does not decompose by key.  The taint table is
+keyed, so its writes ride the key's own lock exactly as the object store's do,
+and the hot path is unchanged.  What makes that declaration checkable rather
+than asserted is `taintWriteKeys` (flow sinks ⧺ cleared ⧺ origination targets)
+and `applySyscallTaint_frame_off_writeKeys` — outside its write set a plan
+leaves the table literally unchanged — with
+`taintWriteKeys_disjoint_updates_independent` the two-plan form.
+`taintWriteKeys_of_no_events` closes the one case that needed care: origination
+writes the *actor's* TCB key, which the content-moving footprints hold only in
+read mode, and it is non-empty only when the commit appended to the trail —
+which only `.declassify` and `.declassifySignal` do, and both already carry
+`stateLevelLock` in write mode for the append.  **Implementation obligation,
+recorded rather than assumed**: the model writes the field whole, so the
+key-local reading is sound only if the runtime realises the table as per-object
+storage.  That is precisely the obligation `SystemState.objects` already
+carries for `storeObject` under the same discipline, and it is discharged the
+same way, by the representation, at SM10.E.
+
+**D.18 — NI carriage.**  The propagation writes a field no observer projects,
+so `applySyscallTaint_confinedToCores_nil` is confinement to **no** core, and
+`applySyscallTaint_preserves_onCore` /
+`applySyscallTaint_preserves_proofLayerInvariantBundle` carry the per-core view
+and the sixteen bundle conjuncts.  Because the write set is empty at the
+observable level, no `CrossCoreTransition` entry moves and no cross-core
+inventory count changes.  Closed on the way past:
+`syscallEntryChecked_preserves_projection`'s dispatch hypothesis is
+generalised to quantify the post-state (the entry no longer returns the
+dispatch's state unchanged), and `entryDecode_some_entry_dispatches` is
+restated over the match — strictly stronger, and the anti-drift tie SM8.D's
+round 12 added stays load-bearing.
+
+**Evidence.**  `tests/SmpInformationFlowSuite.lean` §12.1–§12.9 (**776**
+runtime assertions, the executable's own PASS tally — believe it over this
+sentence), every group with a load-bearing negative, including the plan's
+§SM9.E.2a acceptance scenario run for effect: hop 1 originates a tag on the
+object its content reached *and* on the subject that performed it, an
+**ordinary** delivery — no declassification edge — carries it to the next
+subject, hop 2's recorded snapshot therefore names hop 1, and
+`chainLaunders` reports laundering; with the plan's three negatives (a
+domain-only detector fires on a causally unrelated pair, an object-adjacency
+detector *misses* this very chain, and two same-domain second hops are
+distinguished by their snapshots) plus the lifecycle case (retype the carrier,
+and the later downgrade names nothing).  §1.13 anchors every declaration of
+both new modules by set difference; `tests/SmpSurfaceAnchors.lean` §12 carries
+the headline surface; the phase golden fixture gains five lines (regenerated,
+hash refreshed); Tier 3 gains an SM9.D block with the two retirement negatives
+and a positive pin on the send footprint's base list, so re-adding the level-0
+lock to the hot path breaks a gate.
+
+**Audit cut (v0.33.54)** — a code-first audit of the whole SM9.D landing,
+documentation distrusted by instruction; the live-path wiring, every declared
+edge, the algebra, the gate and the mount were re-derived against the code.
+Verdict: the propagation is genuinely live (extern → `syscallDispatchFromAbi` →
+`syscallEntryChecked` → the one write), every audited edge resolves exactly what
+its transition resolves (`receiveQ.head`, `sendQ.head`, `getReply? → caller`,
+`declassifiedSignalReceiver?`, `lookupCspaceRoot`, and the operand resolver is
+gate-identical to `syscallResolveCap` — same root, same depth, same resolver),
+the `DecidableEq` instance is sound under proof irrelevance, and no theorem was
+false.  Five findings, all closed in this cut.  (1) **The `.replyRecv` reply
+leg moved content with no declared edge** — the arm resolves
+`(rid, prevCaller)` via `resolveReplyRecvReply` and delivers the server's
+message registers to the recorded caller, so the steady-state server loop's
+second hop carried no taint: an under-approximation, the one direction a
+detector must never err in.  Closed by `replyRecvReplyLegEdges` (mirroring the
+resolver step for step — the MR0-present guard, `decodeReplyRecvArgs`, the
+caller's CSpace at the reply CPtr, the `.replyCap` shape — and sharing
+`replyTaintEdges` with the `.reply` arm so the two cannot drift),
+`taintPropagation_replyRecv_reply_to_prevCaller`, and §12.4's plan-level,
+apply-level and load-bearing-negative witnesses (the receive-leg pair alone
+provably misses the recorded caller).  (2) **The gate's one-writer claim was
+stronger than its check**: check (C) polices constants that *name* the taint
+API, so a definition writing `SystemState.declassificationTaint` directly in a
+`{ st with .. }` update — including a closed-term write, which for a provenance
+table is a silent whole-table clear, a laundering enabler — would have escaped
+it.  Closed by check (C2): the probe scans every definition's elaborated value
+for a constructor application that is an *update* (at least one other argument
+projects the same structure — what distinguishes `{ st with .. }` from a fresh
+boot/test literal) whose taint-field argument is not the field's own
+projection; the environment shows exactly one such writer
+(`applySyscallTaint`), `DECLARED_FIELD_WRITERS` pins it, and `--self-test` now
+also asserts the sweep *detects* that writer, so a sweep gone blind fails the
+self-test rather than reporting a clean tree.  (3) The self-test's failure
+diagnostic named the wrong planted channel (`TCB.ipcState` for
+`TCB.priority`).  (4) **The reconstruction theorem covered the direction the
+monitor does not use**: `chainVerdict_reconstructs_causal` proves causal ⇒
+every read is 1, while a monitor infers the other way; closed by
+`declassificationChainCausal_of_pairwise` and `chainVerdict_all_ok_causal`
+(every interior read `.ok 1` ⇒ the view is causal).  Also added:
+`join_comm_equiv_of_saturated`, so the commutativity law's coverage now leaves
+exactly one case unstated (one join saturated, the other not — in fact
+unreachable, recorded in the docstring rather than proven, since it needs a
+fold-symmetry induction the algebra does not otherwise owe).  (5) **A
+pre-existing SM3.B footprint gap, surfaced by the cap-transfer sink and
+reported rather than silently fixed**: on a caps-carrying rendezvous the live
+`.send`/`.call` run `ipcUnwrapCaps`, which writes the *receiver's* CSpace root
+— and `lockSet_endpointSend`/`lockSet_endpointCall` declare no CNode write at
+all (their one CNode member is the caller's root, read mode).  Not a live race
+(SM5.I's global entry lock serialises every commit; `withLockSet` is deferred,
+SM3.C.9), and closing it is an SM3.B decision with real cost (a conditional
+receiver-CNode member moves both signatures, the size bounds, and the
+resolved-footprint WCRT arithmetic the IPC suites pin), so it is registered
+the SM8.D round-11 way: `UncoveredLockDomain.capTransferReceiverCnode`
+(inventory 3 → 4, the `cases`-forced completeness firing as designed), the
+violation as a theorem whose deletion is the closure
+(`capTransfer_receiverCnode_write_undeclared`), and §12.8 recomputed on the
+REAL rendezvous edge list with the honest partition — every taint write key
+except the cap-transfer CNode is write-locked, and the gap is pinned
+positively so closing it breaks the line.  The §3d docstring's blanket
+coverage sentence is corrected to carve the sink out; the taint write at that
+key is exactly as covered as the object write it shadows, so the gap belongs
+to the footprint, not to the taint layer.
+
+**Revocation precision — one defect, five sightings, closed in two halves
+(v0.33.59 → v0.33.88).**  Review of the SM9.D cut surfaced an IPC-transferred
+capability whose CDT parent was a synthetic slot, and each subsequent round
+found another operation that could leave a transferred copy hanging beneath a
+node no slot points at — where `cspaceRevokeCdt`, which resolves through
+`cdtNodeSlot`, can never reach it.  The transfer naming a synthetic source
+closed at v0.33.59→60 (the message carries the real derivation node); the
+delete guard blind to transfers in flight closed at v0.33.62; CNode retype,
+which destroys every slot it holds and checked nothing, and the revoke sweep,
+which deletes descendant slots a transfer may still be parked from, closed at
+v0.33.64.
+
+The root is that every CDT invariant is stated node → slot — `cdtCompleteness`
+is explicitly *"robust through `detachSlotFromCdt`"* — so orphaning satisfies
+the invariant surface instead of violating it, leaving each slot-destroying
+operation to remember the check on its own.  v0.33.64 therefore moves the
+guarantee to the single creator of an `.ipcTransfer` edge:
+`ipcTransferSingleCap` declines with `CapTransferResult.sourceRevoked` when the
+source node has no slot, which covers every destroyer at once
+(`ipcTransferSingleCap_installed_implies_live_source`).  The per-operation
+guards remain as ergonomics, reading one shared `slotIsDerivationParent`.  An
+invariant stating parent-liveness directly — so a future destroyer fails at
+elaboration rather than at runtime — is recorded against PR 5 in
+[`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`](planning/SMP_FINE_LOCK_MIGRATION_PLAN.md)
+§3.1.
+
+A fifth sighting (v0.33.88) showed where that creator-side check *stops*: it
+keys on the **source slot's** liveness, and revoking a derived subtree keeps the
+source slot — the source is exactly what the revoker retains — so
+`sourceRevoked` never fires and the in-flight child of a revoked parent lands
+after the revoke reports success.  Revocation therefore carries the other half:
+`revokePendingTransfersFrom` drops the derivations still parked in senders'
+`pendingMessage` beneath the revoked node or any descendant, and both
+`cspaceRevokeCdt` and `cspaceRevokeCdtStreaming` end with it.  The revoke still
+succeeds — refusing would let a parked sender block revocation indefinitely —
+and `revokePendingTransfersFrom_preserves_capabilityInvariantBundle` discharges
+all seven conjuncts from a frame proving the sweep rewrites TCBs to TCBs and
+leaves the CDT untouched.  The creator refuses a derivation whose *source* is
+gone; the revoke destroys one whose *parent edge* was revoked.  Neither implies
+the other.
+
+**The frozen/live correspondence became a computation (v0.33.89).**  Five of
+this branch's review findings were one defect: a frozen operation had drifted
+from the live transition it mirrors.  The 24 frozen operations declared their
+counterparts in a docstring table and a `mirrors X` sentence apiece, and the
+frozen suite exercised each operation *alone*, asserting against what its author
+had read in the live code — so a drift stayed green until a person noticed.  The
+table was itself wrong: row 5 named `notificationSignal` while the operation
+mirrors the bound-aware composition the live arm runs.
+
+`FrozenOps/Agreement.lean` runs the live transition on a `SystemState` and the
+frozen one on its `freeze`, and compares object stores, taint tables, current
+thread — and refusals, since a frozen operation accepting what the live one
+refuses is a divergence no state comparison can see.  Six pairs run today (the
+notification and endpoint transitions every recorded divergence touched), and
+`frozenOpCoverage_obliges_differential_check` interlocks the new coverage with
+the existing one: a syscall with a frozen operation is either run beside its
+live counterpart or carries a stated reason, decided over `SyscallId.all` so a
+new constructor forces the choice.
+
+**The harness caught its first divergence, and it was the whole run queue
+(v0.33.91).**  No frozen operation ever wrote `scheduler.byPriority` — the only
+field `frozenChooseThread` selects from — so wakes left threads `.ready` and
+permanently unselectable, and `frozenSuspendThread` left a suspended thread in
+its bucket still marked `.ready`.  Two docstrings asserted the opposite and named
+`membership`, which selection never reads; that is why the gap survived five
+review rounds.
+
+`frozenEnsureRunnable` / `frozenRemoveRunnable` now mirror the live
+`ensureRunnable` / `removeRunnable` at every wake, block and suspend, failing
+closed where the frozen fixed-key map cannot express the insert.  The six
+per-suite copies of the frozen-state fixture — all of which left the scheduler
+empty, modelling a state the live kernel cannot reach — collapse to one
+`SeLe4n.Testing.frozenStateOf`, and `Builder.markRunnable` closes the matching
+gap on the live side: the builder could create threads but not make any of them
+runnable.
+
+Plan: [`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md)
+§SM9.D.  Next: SM9.E tests and phase closure.
+
+---
+
 **WS-SM SM9.C — data-carrying declassification: LANDED.  The first
 deliberately *visible* flow, bounded and recorded.**
 
@@ -9560,7 +9955,7 @@ tracked **AK7-E.hygiene** (handler signature tightening) is now RESOLVED via AL8
 
 - **Phase AK3 COMPLETE** (v0.29.3): Architecture — ASID, W^X, EOI, Decode. 13 sub-tasks (AK3-A..AK3-M) addressing 1 CRITICAL, 3 HIGH, 10 MEDIUM, 9 LOW architecture findings. AK3-A (A-C01/CRITICAL): `AsidPool.activeAsids` ground-truth set + rollover scan that fails closed when no ASID free — replaces buggy unconditional `ASID.mk 1` return that broke TLB isolation; `wellFormed` 7-conjunct predicate; `AsidPool.allocate_result_fresh` proves the new ASID is never currently-active. AK3-B (A-H01/HIGH): Four-layer W^X defense — `fromPagePermissions : Option`, `ARMv8VSpace.mapPage` gate, `VSpaceRoot.mapPage` gate, existing wrapper gate; composition theorem `wxInvariant_fourLayer_defense`. AK3-C (A-H02/HIGH): `AckError` inductive distinguishes spurious / outOfRange / handled; `interruptDispatchSequence` emits EOI except on spurious; Rust HAL mirrored with `AckResult` — prevents GIC lockup on errata. AK3-D (A-H03/HIGH): Free-list-reuse branch bumps generation. AK3-E (A-M01/MEDIUM): `decodeVSpaceMapArgsChecked` PA bounds wrapper. AK3-F (A-M02/MEDIUM): `validateIpcBufferAddress` end-PA check. AK3-G (A-M04/MEDIUM, PARTIAL+DOC): `CacheBarrierKind` inductive + `cacheCoherentForExecutable` predicate. AK3-H (A-M05/MEDIUM): `countsPerTickPositive` predicate. AK3-I (A-M06/MEDIUM, DEFER+DOC): `tlbBarrierComplete` TPI-DOC-AK3I. AK3-J (A-M07/MEDIUM): `decodeSchedContextConfigureArgsChecked` validates priority/domain/budget/period. AK3-K (A-M08, A-M09/MEDIUM, DEFER+DOC): MMU ordering doc. AK3-L (A-M10/MEDIUM): `MachineState.eoiPending` audit trail + `eoiPendingEmpty` kernel-exit predicate. AK3-M (A-L1..A-L9/LOW): batch documentation. Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` + `cargo test --workspace` (368 tests) + zero sorry/axiom. See `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md`
 
-- **Phase AK1 COMPLETE** (v0.29.1): IPC Fail-Closed & Rendezvous State — 10 sub-tasks (AK1-A through AK1-J) addressing 2 HIGH, 7 MEDIUM, 6 LOW findings. AK1-A (I-H01/HIGH): `cleanupPreReceiveDonationChecked` error-propagating variant added in `IPC/Operations/Endpoint.lean`; `endpointReceiveDual` no-sender blocking path now uses checked variant so `returnDonatedSchedContext` failures propagate as kernel errors instead of being silently absorbed; bridge lemma `cleanupPreReceiveDonationChecked_ok_eq_cleanup` + `cleanupPreReceiveDonationChecked_ok_of_non_donated` (non-donated case) + new `returnDonatedSchedContext_ok_under_invariants` (donated case, fully machine-verified — three sequential `storeObject` + two `lookupTcb` via type-disjointness helper `schedContext_ne_tcb_at_objId` and `donationOwnerValid_excludes_self_donation`); top-level `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull` now DERIVES both branches directly from `ipcInvariantFull` (extracts `donationOwnerValid` via `hInv.2.2.2.2.2.2.2.2.2.2.2.1`) rather than requiring a separate caller-supplied witness; only non-reservation remains as an explicit hypothesis. 13 preservation theorems cascaded via outer-case-split pattern in `Invariant/Defs.lean` / `EndpointPreservation.lean` / `Structural.lean` / `InformationFlow/Invariant/Operations.lean`. AK1-B (I-H02/HIGH): `endpointReply`/`endpointReplyRecv` fail closed with `.replyCapInvalid` on `replyTarget = none` (previously admitted any replier on invariant drift — confused-deputy risk); soundness bridge `blockedOnReplyHasTarget_implies_some_replyTarget` discharges "no behavior change under `ipcInvariantFull`"; preservation proofs in 5 files updated. AK1-C (I-M01/MEDIUM): `endpointCall` rendezvous path now atomically clears caller's `pendingMessage` via `storeTcbIpcStateAndMessage caller (.blockedOnReply _ _) none` — prevents stale-message leak on protocol regression; cascaded through 5 preservation theorems (call-path proofs in CallReplyRecv.lean). AK1-D (I-M02/MEDIUM): `endpointReceiveDual` rendezvous path atomically sets receiver `(ipcState := .ready, pendingMessage := senderMsg)` via `storeTcbIpcStateAndMessage receiver .ready senderMsg` — prevents violation of `waitingThreadsPendingMessageNone` on edge cases where the receiver held a residual `.blockedOnReceive` state; cascaded through 12 preservation theorems (4 in `EndpointPreservation.lean`, 7 in `Structural.lean`, 1 NI in `InformationFlow/Invariant/Operations.lean`); new helpers `storeTcbIpcStateAndMessage_tcb_forward` (`SchedulerLemmas.lean`) + `storeTcbIpcStateAndMessage_ready_preserves_ipcSchedulerContractPredicates` (`EndpointPreservation.lean` — specialised contracts preservation for `.ready` target); dead `hReceiverNotBlocked` hypothesis dropped from `endpointReceiveDual_preserves_waitingThreadsPendingMessageNone`; caller `endpointReplyRecv_preserves_waitingThreadsPendingMessageNone` updated. AK1-E (I-M03/MEDIUM): `ensureRunnable` uses `ipcEffectiveRunQueuePriority` on wake paths; new correctness lemmas `ensureRunnable_inserts_at_effective_priority`, `ensureRunnable_honors_pipBoost`, `notificationSignal_respects_pipBoost` formally witness the PIP-honoring bucket insert. AK1-F (I-M04/MEDIUM): `blockingServer_isSome_iff_blockedOnReply_some` biconditional + `blockingServer_some_implies_blockedOnReply` corollary in `BlockingGraph.lean` — formally precise dispatch on the `timeoutThread` PIP-revert path; post-audit `pipBoost_attached_only_on_reply_blocked` abbrev alias exposes the plan-named symbol. AK1-H (I-M06/MEDIUM): `timeoutThread_succeeds_under_preconditions` composition theorem in `IPC/Operations/Timeout.lean` — formal closure chain from `endpointQueueRemove`'s unreachability lemmas up to the timer-tick caller. AK1-I (I-M07/MEDIUM, NI L-1): NI regression test added to `tests/InformationFlowSuite.lean` asserting consistent outcome for the shared `ipcUnwrapCaps` subroutine invoked by both cap-transfer callers; post-audit strengthening adds a second scenario that explicitly triggers the `lookupCspaceRoot = none` branch via TCB splice-out, asserting the symmetric `.error .invalidCapability` arm shape between `endpointSendDualWithCaps` and `endpointReceiveDualWithCaps`. AK1-G (I-M05/MEDIUM): `ipcUnwrapCapsLoop` annotated as internal recursion helper; full `private` modifier not possible because preservation theorems externally referenced; static "only called with `idx := 0` from `ipcUnwrapCaps`" documented with verification grep pattern; post-audit `example`-level static assertion in `CapTransfer.lean` verifies the exact `(idx := 0, accResults := #[])` call shape — compiles only if the internal invariant holds. AK1-J (I-L1..I-L6, IPC INFO): LOW-tier IPC batch documentation added at top of `IPC/Operations/Endpoint.lean` covering donation defensive branches, stale `.timedOut`, reply-badge semantics, `Badge.bor` safety, replenish-queue leave semantics, `ipcInvariant` rename / `.endpointQueueEmpty` error-variant cleanup deferrals to AK10. Test: `MainTraceHarness.lean` CIC-010 scenario updated to provide explicit `replyTarget := some replierTid`; trace fixture unchanged. Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` + zero sorry/axiom. See `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md`
+- **Phase AK1 COMPLETE** (v0.29.1): IPC Fail-Closed & Rendezvous State — 10 sub-tasks (AK1-A through AK1-J) addressing 2 HIGH, 7 MEDIUM, 6 LOW findings. AK1-A (I-H01/HIGH): `cleanupPreReceiveDonationChecked` error-propagating variant added in `IPC/Operations/Endpoint.lean`; `endpointReceiveDual` no-sender blocking path now uses checked variant so `returnDonatedSchedContext` failures propagate as kernel errors instead of being silently absorbed; bridge lemma `cleanupPreReceiveDonationChecked_ok_eq_cleanup` + `cleanupPreReceiveDonationChecked_ok_of_non_donated` (non-donated case) + new `returnDonatedSchedContext_ok_under_invariants` (donated case, fully machine-verified — three sequential `storeObject` + two `lookupTcb` via type-disjointness helper `schedContext_ne_tcb_at_objId` and `donationOwnerValid_excludes_self_donation`); top-level `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull` now DERIVES both branches directly from `ipcInvariantFull` (extracts `donationOwnerValid` via `hInv.2.2.2.2.2.2.2.2.2.2.2.1`) rather than requiring a separate caller-supplied witness; only non-reservation remains as an explicit hypothesis. 13 preservation theorems cascaded via outer-case-split pattern in `Invariant/Defs.lean` / `EndpointPreservation.lean` / `Structural.lean` / `InformationFlow/Invariant/Operations.lean`. AK1-B (I-H02/HIGH): `endpointReply`/`endpointReplyRecv` fail closed with `.replyCapInvalid` on `replyTarget = none` (previously admitted any replier on invariant drift — confused-deputy risk); soundness bridge `blockedOnReplyHasTarget_implies_some_replyTarget` discharges "no behavior change under `ipcInvariantFull`"; preservation proofs in 5 files updated. AK1-C (I-M01/MEDIUM): `endpointCall` rendezvous path now atomically clears caller's `pendingMessage` via `storeTcbIpcStateAndMessage caller (.blockedOnReply _ _) none` — prevents stale-message leak on protocol regression; cascaded through 5 preservation theorems (call-path proofs in CallReplyRecv.lean). AK1-D (I-M02/MEDIUM): `endpointReceiveDual` rendezvous path atomically sets receiver `(ipcState := .ready, pendingMessage := senderMsg)` via `storeTcbIpcStateAndMessage receiver .ready senderMsg` — prevents violation of `blockedThreadsPendingMessageConsistent` on edge cases where the receiver held a residual `.blockedOnReceive` state; cascaded through 12 preservation theorems (4 in `EndpointPreservation.lean`, 7 in `Structural.lean`, 1 NI in `InformationFlow/Invariant/Operations.lean`); new helpers `storeTcbIpcStateAndMessage_tcb_forward` (`SchedulerLemmas.lean`) + `storeTcbIpcStateAndMessage_ready_preserves_ipcSchedulerContractPredicates` (`EndpointPreservation.lean` — specialised contracts preservation for `.ready` target); dead `hReceiverNotBlocked` hypothesis dropped from `endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent`; caller `endpointReplyRecv_preserves_blockedThreadsPendingMessageConsistent` updated. AK1-E (I-M03/MEDIUM): `ensureRunnable` uses `ipcEffectiveRunQueuePriority` on wake paths; new correctness lemmas `ensureRunnable_inserts_at_effective_priority`, `ensureRunnable_honors_pipBoost`, `notificationSignal_respects_pipBoost` formally witness the PIP-honoring bucket insert. AK1-F (I-M04/MEDIUM): `blockingServer_isSome_iff_blockedOnReply_some` biconditional + `blockingServer_some_implies_blockedOnReply` corollary in `BlockingGraph.lean` — formally precise dispatch on the `timeoutThread` PIP-revert path; post-audit `pipBoost_attached_only_on_reply_blocked` abbrev alias exposes the plan-named symbol. AK1-H (I-M06/MEDIUM): `timeoutThread_succeeds_under_preconditions` composition theorem in `IPC/Operations/Timeout.lean` — formal closure chain from `endpointQueueRemove`'s unreachability lemmas up to the timer-tick caller. AK1-I (I-M07/MEDIUM, NI L-1): NI regression test added to `tests/InformationFlowSuite.lean` asserting consistent outcome for the shared `ipcUnwrapCaps` subroutine invoked by both cap-transfer callers; post-audit strengthening adds a second scenario that explicitly triggers the `lookupCspaceRoot = none` branch via TCB splice-out, asserting the symmetric `.error .invalidCapability` arm shape between `endpointSendDualWithCaps` and `endpointReceiveDualWithCaps`. AK1-G (I-M05/MEDIUM): `ipcUnwrapCapsLoop` annotated as internal recursion helper; full `private` modifier not possible because preservation theorems externally referenced; static "only called with `idx := 0` from `ipcUnwrapCaps`" documented with verification grep pattern; post-audit `example`-level static assertion in `CapTransfer.lean` verifies the exact `(idx := 0, accResults := #[])` call shape — compiles only if the internal invariant holds. AK1-J (I-L1..I-L6, IPC INFO): LOW-tier IPC batch documentation added at top of `IPC/Operations/Endpoint.lean` covering donation defensive branches, stale `.timedOut`, reply-badge semantics, `Badge.bor` safety, replenish-queue leave semantics, `ipcInvariant` rename / `.endpointQueueEmpty` error-variant cleanup deferrals to AK10. Test: `MainTraceHarness.lean` CIC-010 scenario updated to provide explicit `replyTarget := some replierTid`; trace fixture unchanged. Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` + zero sorry/axiom. See `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md`
 
 ### WS-AJ: Post-Audit Comprehensive Remediation (v0.28.0 Audit)
 
@@ -9630,7 +10025,7 @@ tracked **AK7-E.hygiene** (handler signature tightening) is now RESOLVED via AL8
 
 - **Phase AF6 COMPLETE** (v0.25.27): Rust ABI Fixes & Documentation Closure — 7 sub-tasks (AF6-A through AF6-G). AF6-A (AF-20, MED-R1): Added `UnknownKernelError` variant (discriminant 255) to `KernelError` enum — unrecognized error codes now map to semantically correct `UnknownKernelError` instead of `InvalidSyscallNumber`; updated `from_u32`, Display impl, decode fallback, and conformance tests. AF6-B (AF-21, MED-R2): Added `endpoint_reply_recv_checked` — returns `Err(IpcTruncationError::ReplyMessageTooLong)` if `msg.length() > 3` instead of silent truncation; added `IpcTruncationError` enum; original `endpoint_reply_recv` preserved with deprecation note. AF6-C (AF-35, AF-36): Fixed stale doc comments — `sele4n-types/src/lib.rs` updated from "43-variant" to "45-variant" and "20-variant" to "25-variant"; `decode.rs` error range comments updated from "0–42" to "0–43" and "≥43" to "≥44". AF6-D (AF-37): Added `SchedContext` marker type to `sele4n-sys/src/cap.rs` — enables `Cap<SchedContext>` phantom-typed capability handles; sealed trait impls and conformance test added. AF6-E (AF-38): Made `IpcMessage.length` field private (`pub(crate)` → private) — added `length()` accessor, `new_with_length()` validated constructor; all internal callers updated to use `msg.length()`. AF6-F (AF-46): Added `shellcheck` installation to CI workflow (`lean_action_ci.yml`) — Tier 0 hygiene shell lint now enforced in CI instead of silently skipped. AF6-G: Full documentation synchronization — WORKSTREAM_HISTORY.md, DEVELOPMENT.md, CLAIM_EVIDENCE_INDEX.md, README.md version bump, CLAUDE.md active workstream update, GitBook chapters synchronized, codebase_map.json regenerated. Zero sorry/axiom. **WS-AF PORTFOLIO COMPLETE** (6 phases, 49 sub-tasks, v0.25.22–v0.25.27).
 
-- **Phase AF5 COMPLETE** (v0.25.26): IPC, Capability, Lifecycle & Documentation — 10 sub-tasks (AF5-A through AF5-J). AF5-A (AF-12): Fixed stale `pendingMessage = none` documentation in `notificationSignal` — comment now cross-references `waitingThreadsPendingMessageNone` invariant (proven in AC1-A). AF5-B (AF-04): Documented timeout sentinel H3 migration path. AF5-C (AF-06): Documented `endpointQueueRemove` direct `RHTable.insert` rationale with AE4-E unreachability proof cross-reference. AF5-D (AF-15): Documented Badge Nat round-trip safety via `ofNatMasked` 64-bit masking. AF5-E (AF-39): Documented `donationChainAcyclic` 2-cycle scope with IPC protocol structural argument for longer cycles. AF5-F (AF-26): Documented tuple projection maintenance burden in Builder.lean and Capability/Invariant/Defs.lean (deferred to WS-V). AF5-G (AF-27): Documented `cspaceResolvePath` vs `resolveCapAddress` resolution layers. AF5-H (AF-28): Documented `suspendThread` TCB re-lookup rationale after `cancelIpcBlocking`. AF5-I (AF-43/AF-48): Fixed FrozenOps operation count from stale "21" to correct "24" (added 4 missing table entries: frozenCspaceLookupSlot, frozenSetPriority, frozenSetMCPriority, frozenSetIPCBuffer); removed duplicate `cdt_only_preserves_projection` and `ensureCdtNodeForSlot_preserves_projection` definitions from InformationFlow/Invariant/Operations.lean (consolidated to primed canonical versions). AF5-J (AF-31): Documented high-heartbeat proof fragility (1.6M/800K) with mitigation strategies. Zero sorry/axiom.
+- **Phase AF5 COMPLETE** (v0.25.26): IPC, Capability, Lifecycle & Documentation — 10 sub-tasks (AF5-A through AF5-J). AF5-A (AF-12): Fixed stale `pendingMessage = none` documentation in `notificationSignal` — comment now cross-references `blockedThreadsPendingMessageConsistent` invariant (proven in AC1-A). AF5-B (AF-04): Documented timeout sentinel H3 migration path. AF5-C (AF-06): Documented `endpointQueueRemove` direct `RHTable.insert` rationale with AE4-E unreachability proof cross-reference. AF5-D (AF-15): Documented Badge Nat round-trip safety via `ofNatMasked` 64-bit masking. AF5-E (AF-39): Documented `donationChainAcyclic` 2-cycle scope with IPC protocol structural argument for longer cycles. AF5-F (AF-26): Documented tuple projection maintenance burden in Builder.lean and Capability/Invariant/Defs.lean (deferred to WS-V). AF5-G (AF-27): Documented `cspaceResolvePath` vs `resolveCapAddress` resolution layers. AF5-H (AF-28): Documented `suspendThread` TCB re-lookup rationale after `cancelIpcBlocking`. AF5-I (AF-43/AF-48): Fixed FrozenOps operation count from stale "21" to correct "24" (added 4 missing table entries: frozenCspaceLookupSlot, frozenSetPriority, frozenSetMCPriority, frozenSetIPCBuffer); removed duplicate `cdt_only_preserves_projection` and `ensureCdtNodeForSlot_preserves_projection` definitions from InformationFlow/Invariant/Operations.lean (consolidated to primed canonical versions). AF5-J (AF-31): Documented high-heartbeat proof fragility (1.6M/800K) with mitigation strategies. Zero sorry/axiom.
 
 - **Phase AF4 COMPLETE** (v0.25.25): Information Flow, Cross-Subsystem & SchedContext — 8 sub-tasks (AF4-A through AF4-H). AF4-A (AF-16, MED-IF1): Replaced `native_decide` with `decide` in `enforcementBoundary_is_complete` (Wrappers.lean) — removes Lean runtime evaluator from TCB for 25-element SyscallId enumeration; compile time slightly increased but proof now kernel-checked. AF4-B (AF-17, MED-CS1): Replaced `native_decide` with `decide` in `crossSubsystem_pairwise_coverage_complete` (CrossSubsystem.lean) — 15-element pairwise disjointness proof now kernel-checked; coordinated with AF1-B 10-predicate count. AF4-B+: Bonus fix — replaced third `native_decide` in `crossSubsystemInvariant_default` (CrossSubsystem.lean) for `objectIndex.length = 0` proof. Zero `native_decide` remains in production code. AF4-C (AF-07, MED-CS2): Expanded `collectQueueMembers` fuel-sufficiency documentation with formal argument sketch connecting `tcbQueueChainAcyclic` to fuel bound — acyclicity implies chain visits each thread at most once, `noStaleEndpointQueueReferences` implies each thread ∈ `objectIndex`, therefore chain length ≤ `objects.size` = fuel. AF4-D (AF-18, MED-SV1): Documented `serviceHasPathTo` conservative fuel-exhaustion semantics — returns `true` on fuel=0 for safe cycle detection; false positive rejects valid edge, false negative would allow cycle; proven correct under `serviceBfsFuel_sound` and `serviceBfsFuel_sufficient` (in `Service/Invariant/Acyclicity.lean`). AF4-E (AF-33): Added seL4 separation kernel design cross-reference for `LabelingContextValid` deployment requirement — boot-time configuration trusted, runtime enforcement via capability checks + NI projection; created `labelingContextValid_is_deployment_requirement` witness theorem (AE5-F gap closure). AF4-F (AF-08, MED-SC1/SX-01): Documented CBS 8× bandwidth bound precision gap — `totalConsumed ≤ 8 × budget` holds due to worst-case replenishment accumulation; ideal 1× bound requires proving replenishment budget partitioning; per-object `budgetWithinBounds` prevents actual overrun regardless. AF4-G (AF-30/AF-47, SX-02): Documented `schedContextYieldTo` kernel-internal design — operates below capability layer (callers responsible for access validation), pure function with identity fallback on missing objects, invariant preservation via `schedContextYieldTo_crossSubsystemInvariant_bridge`. AF4-H: Gate verification — `lake build` (256 jobs), `test_full.sh` (Tier 0–3), zero sorry/axiom, `codebase_map.json` regenerated. Zero sorry/axiom.
 
@@ -9663,7 +10058,7 @@ tracked **AK7-E.hygiene** (handler signature tightening) is now RESOLVED via AL8
 - **Phase AC4 COMPLETE** (v0.25.8): Architecture & Platform Tightening — 5 sub-tasks (AC4-A through AC4-E). A-04: `physicalAddressBound` (VSpace.lean) documented as proof-layer default only — production code uses `vspaceMapPageCheckedWithFlushFromState` (state-aware variant reads `st.machine.physicalAddressWidth`). 2 regression tests: AC4-A-01 verifies address at 2^44 rejected on RPi5 (44-bit PA), AC4-A-02 verifies address at 2^44-1 accepted. F-02: `AccessRightSet` constructor safety model documented — raw `mk` is TCB-internal, 5 safe constructors with validity theorems, operational safety argument for `mem`/`subset`/`inter`/`union`. `union`/`inter` AC4-B notes on raw `⟨bits⟩` return semantics. F-01: Typed Identifier Safety Model added to Prelude.lean — documents unbounded `Nat` design rationale (proof ergonomics), ABI boundary validation chain (`RegisterDecode` + `SyscallArgDecode`), internal kernel trust model, hardware deployment contract (`isWord64`/`isWord64Dec`). IF-01: Enforcement boundary completeness witness — `SyscallId.all` (25 variants), `all_length` compile-time check (`= count := by rfl`), `all_complete` membership proof (`cases s <;> decide`), `syscallIdToEnforcementName` (SyscallId → String bridge verified against API dispatch for semantic accuracy), `enforcementBoundaryComplete` (Bool check), `enforcementBoundary_is_complete` (`native_decide` theorem — fails at compile time if any SyscallId variant is missing from enforcement boundary). Enforcement boundary expanded 30→33 entries with 3 dedicated capability-only entries: `vspaceMapPageCheckedWithFlushFromState`, `vspaceUnmapPageWithFlush`, `revokeService`. Full `lake build` + `test_full.sh` (Tier 0–3) pass. Zero sorry/axiom.
 - **Phase AC3 COMPLETE** (v0.25.7): IPC Atomicity & Invariant Strengthening — 6 sub-tasks (AC3-A through AC3-F). I-02: `donateSchedContext` (2 `storeObject` mutations) and `returnDonatedSchedContext` (3 `storeObject` mutations) atomicity contracts documented, monad-level atomicity argument (`.error` carries no state; `Except.bind` discards intermediates), hardware-level atomicity (interrupts disabled during kernel transitions). I-02 proof: `donateSchedContext_ok_implies_sc_bound` (precondition witness — SchedContext found and bound to client) and `donateSchedContext_ok_server_donated` (postcondition witness — server TCB has `.donated` binding in post-state, proving both `storeObject` calls succeeded). I-04: `Badge.bor` unbounded-Nat intermediate documented — `ofNatMasked` applies `% machineWordMax`, `bor_valid` theorem proves result validity. API-01: `resolveExtraCaps` silent-drop behavior documented — seL4-compatible semantics, resolved count reflects actual resolutions not attempts. New chain34 test exercises cap resolution with 3 addresses (2 valid, 1 empty slot) verifying silent-drop produces count=2. F-03: `storeObjectChecked` capacity-enforcing variant of `storeObject` added — rejects new insertions at `maxObjects` capacity, allows in-place updates. 3 theorems: `storeObjectChecked_preserves_objectIndexBounded`, `storeObjectChecked_existing_eq_storeObject`, `storeObjectChecked_headroom_eq_storeObject`. Full 232-job `lake build` + `test_smoke.sh` pass. Zero sorry/axiom.
 - **Phase AC2 COMPLETE** (v0.25.6): Scheduler & SchedContext Hardening — 7 sub-tasks (AC2-A through AC2-G). S-02/SC-01: `timeoutBlockedThreads` O(n) cost documented with quantified worst-case analysis and future optimization path (per-SchedContext bound-thread index). S-03: `blockingChain` fuel-truncation behavior documented — fuel default (`objectIndex.length`), invariant dependency (`blockingAcyclic`), truncation consequences on cycle. S-04: `timerTick` and `timerTickBudget` migrated from hardcoded `defaultTimeSlice` to configurable `st.scheduler.configDefaultTimeSlice` — Core.lean (2 function bodies), Preservation.lean (18 proof sites updated with `hConfigTS : st.scheduler.configDefaultTimeSlice > 0` hypothesis), TraceModel.lean (`maxBudgetInBand` unbound thread budget), InformationFlow/Invariant/Operations.lean (`tcbReset`). S-05: `switchDomain` dual-state pattern documented — reads from `st`, returns `stSaved`, with formal reference to `saveOutgoingContext_scheduler` theorem. S-06: RunQueue flat-list complexity documented with O(1)/O(k)/O(n)/O(p) breakdown and RPi5 acceptability rationale. F-04: `KernelError` catch-all lint convention added (doc-comment + DEVELOPMENT.md coding convention). Audit-driven coding conventions section added to DEVELOPMENT.md (KernelError hygiene, multi-step mutation atomicity, identifier Nat unboundedness). Performance characteristics table added to DEVELOPMENT.md. `codebase_map.json` regenerated. Full 232-job `lake build` + `test_full.sh` (Tier 0–3) pass. Zero sorry/axiom.
-- **Phase AC1 COMPLETE** (v0.25.5): High-Severity Fixes — 9 sub-tasks (AC1-A through AC1-I). S-01: `hasSufficientBudget` changed from fail-open to fail-closed (defense-in-depth; `| _ => false` instead of `| _ => true`). I-01: Circular import dependency broken — 7 primitive `waitingThreadsPendingMessageNone` helpers extracted from Structural.lean to new `WaitingThreadHelpers.lean`; 3 operation-level theorems (`notificationSignal_preserves_*`, `notificationWait_preserves_*`, `notificationWake_pendingMessage_was_none`) moved from Structural.lean to NotificationPreservation.lean with full machine-checked proofs (replacing comment cross-references). C-01: Production syscall dispatch wired through `cspaceMintWithCdt` (CDT-tracked) — `dispatchWithCap` → `cspaceMintWithCdt`, `cspaceMintChecked` → `cspaceMintWithCdt`. Minted capabilities are now revocable via `cspaceRevoke`. NI proof updated with CDT-pipeline preservation (`cdt_only_preserves_projection'`, `ensureCdtNodeForSlot_preserves_projection'`). `cspaceMint` retained as CDT-untracked base operation for internal composition and proof decomposition. `@[deprecated]` evaluated but rejected (14 suppression annotations across proof surface outweighed signal value). Preservation proofs verified (Preservation.lean, WCRT, CrossSubsystem all build unchanged). 7 negative regression tests added (AC1-G: 5 budget fail-closed, AC1-H: 2 CDT tracking). Zero sorry/axiom.
+- **Phase AC1 COMPLETE** (v0.25.5): High-Severity Fixes — 9 sub-tasks (AC1-A through AC1-I). S-01: `hasSufficientBudget` changed from fail-open to fail-closed (defense-in-depth; `| _ => false` instead of `| _ => true`). I-01: Circular import dependency broken — 7 primitive `blockedThreadsPendingMessageConsistent` helpers extracted from Structural.lean to new `WaitingThreadHelpers.lean`; 3 operation-level theorems (`notificationSignal_preserves_*`, `notificationWait_preserves_*`, `notificationWake_pendingMessage_was_none`) moved from Structural.lean to NotificationPreservation.lean with full machine-checked proofs (replacing comment cross-references). C-01: Production syscall dispatch wired through `cspaceMintWithCdt` (CDT-tracked) — `dispatchWithCap` → `cspaceMintWithCdt`, `cspaceMintChecked` → `cspaceMintWithCdt`. Minted capabilities are now revocable via `cspaceRevoke`. NI proof updated with CDT-pipeline preservation (`cdt_only_preserves_projection'`, `ensureCdtNodeForSlot_preserves_projection'`). `cspaceMint` retained as CDT-untracked base operation for internal composition and proof decomposition. `@[deprecated]` evaluated but rejected (14 suppression annotations across proof surface outweighed signal value). Preservation proofs verified (Preservation.lean, WCRT, CrossSubsystem all build unchanged). 7 negative regression tests added (AC1-G: 5 budget fail-closed, AC1-H: 2 CDT tracking). Zero sorry/axiom.
 
 ### WS-AB: Deferred Operations (COMPLETE)
 
@@ -10030,18 +10425,18 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
   V3-E loop composition: `ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle` (fuel-indexed
   induction) + `ipcUnwrapCaps_preserves_capabilityInvariantBundle` (unified Bool-parametric)
   closing M-PRF-2 capability transfer chain gap. `resolveCapAddress_callers_check_rights`
-  dispatch chain rights theorem in API.lean (M-PRF-3). `notificationSignal_preserves_waitingThreadsPendingMessageNone`
+  dispatch chain rights theorem in API.lean (M-PRF-3). `notificationSignal_preserves_blockedThreadsPendingMessageConsistent`
   via `cases`-based path decomposition (M-PRF-5). `notificationWake_pendingMessage_was_none`
   blocking-state implies `pendingMessage = none` (L-IPC-1). 7 primitive + 7 operation-level
-  preservation lemmas for `waitingThreadsPendingMessageNone` covering all IPC operations:
+  preservation lemmas for `blockedThreadsPendingMessageConsistent` covering all IPC operations:
   `notificationWait`, `notificationSignal`, `endpointSendDual`, `endpointReceiveDual`,
   `endpointCall`, `endpointReply`, `endpointReplyRecv`. Critical semantic fix: `blockedOnCall` removed from
   invariant-constrained states (callers legitimately carry outgoing messages).
   Two backward lemmas added: `storeTcbQueueLinks_tcb_pendingMessage_backward`,
-  `endpointQueueEnqueue_tcb_pendingMessage_backward`. V3-G6: `waitingThreadsPendingMessageNone`
+  `endpointQueueEnqueue_tcb_pendingMessage_backward`. V3-G6: `blockedThreadsPendingMessageConsistent`
   integrated as 5th conjunct of `ipcInvariantFull` (was 4-conjunct). All bundle
   preservation theorems, extractors, default proofs, and `ipcInvariantFull_compositional`
-  updated. New extractor: `coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone`.
+  updated. New extractor: `coreIpcInvariantBundle_to_blockedThreadsPendingMessageConsistent`.
   **V3-J/K/J-cross integration**: `ipcStateQueueMembershipConsistent` (L-IPC-3),
   `endpointQueueNoDup` (L-LIFE-1), `queueNextBlockingConsistent`, and
   `queueHeadBlockedConsistent` integrated as 6th/7th/8th/9th conjuncts of

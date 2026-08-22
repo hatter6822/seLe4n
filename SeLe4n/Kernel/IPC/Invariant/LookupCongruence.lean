@@ -199,10 +199,10 @@ theorem ipcInvariant_of_getElem_eq {s1 s2 : SystemState}
   rw [hEq] at hObj
   exact h oid ntfn hObj
 
-/-- SM6.D: pointwise-lookup transport of `waitingThreadsPendingMessageNone`. -/
-theorem waitingThreadsPendingMessageNone_of_getElem_eq {s1 s2 : SystemState}
+/-- SM6.D: pointwise-lookup transport of `blockedThreadsPendingMessageConsistent`. -/
+theorem blockedThreadsPendingMessageConsistent_of_getElem_eq {s1 s2 : SystemState}
     (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : waitingThreadsPendingMessageNone s1) : waitingThreadsPendingMessageNone s2 := by
+    (h : blockedThreadsPendingMessageConsistent s1) : blockedThreadsPendingMessageConsistent s2 := by
   intro tid tcb hObj
   rw [hEq] at hObj
   exact h tid tcb hObj
@@ -404,7 +404,7 @@ theorem ipcInvariantFull_of_getElem_eq {s1 s2 : SystemState}
    dualQueueSystemInvariant_of_getElem_eq hEq h.dualQueueSystemInvariant,
    allPendingMessagesBounded_of_getElem_eq hEq h.allPendingMessagesBounded,
    badgeWellFormed_of_getElem_eq hEq h.badgeWellFormed,
-   waitingThreadsPendingMessageNone_of_getElem_eq hEq h.waitingThreadsPendingMessageNone,
+   blockedThreadsPendingMessageConsistent_of_getElem_eq hEq h.blockedThreadsPendingMessageConsistent,
    endpointQueueNoDup_of_getElem_eq hEq h.endpointQueueNoDup,
    ipcStateQueueMembershipConsistent_of_getElem_eq hEq h.ipcStateQueueMembershipConsistent,
    queueNextBlockingConsistent_of_getElem_eq hEq h.queueNextBlockingConsistent,
@@ -479,13 +479,21 @@ structure OffSchedulerAgrees (s1 s2 : SystemState) : Prop where
       substitution hide an overwrite. -/
   declassificationRefusals :
     s2.declassificationRefusals = s1.declassificationRefusals
+  /-- WS-SM SM9.D.5: the declassification **taint side table** agrees.
+
+      The provenance analogue of the two clauses above, and load-bearing for the
+      same reason: a scheduler substitution that silently re-keyed an object's
+      taint would move a recorded downgrade's causal ancestry, so a chain the
+      detector reports would name a different subject's history. -/
+  declassificationTaint :
+    s2.declassificationTaint = s1.declassificationTaint
 
 namespace OffSchedulerAgrees
 
 /-- Reflexivity. -/
 theorem refl (st : SystemState) : OffSchedulerAgrees st st :=
   ⟨fun _ => rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
-   rfl, rfl, rfl, rfl, rfl, rfl⟩
+   rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- Symmetry. -/
 theorem symm {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
@@ -496,7 +504,8 @@ theorem symm {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
    h.cdtSlotNode.symm, h.cdtNodeSlot.symm, h.cdtNextNode.symm, h.scThreadIndex.symm,
    h.tlb.symm, h.objStoreLock.symm, h.perCoreTlb.symm, h.perCoreICache.symm,
    h.pendingIcacheMaintenance.symm, h.declassificationAuditLog.symm,
-   h.declassificationAuditEpoch.symm, h.declassificationRefusals.symm⟩
+   h.declassificationAuditEpoch.symm, h.declassificationRefusals.symm,
+   h.declassificationTaint.symm⟩
 
 /-- Transitivity. -/
 theorem trans {s1 s2 s3 : SystemState}
@@ -515,7 +524,8 @@ theorem trans {s1 s2 s3 : SystemState}
    hSecond.pendingIcacheMaintenance.trans hFirst.pendingIcacheMaintenance,
    hSecond.declassificationAuditLog.trans hFirst.declassificationAuditLog,
    hSecond.declassificationAuditEpoch.trans hFirst.declassificationAuditEpoch,
-   hSecond.declassificationRefusals.trans hFirst.declassificationRefusals⟩
+   hSecond.declassificationRefusals.trans hFirst.declassificationRefusals,
+   hSecond.declassificationTaint.trans hFirst.declassificationTaint⟩
 
 end OffSchedulerAgrees
 
@@ -528,7 +538,7 @@ off-scheduler. -/
 theorem offSchedulerAgrees_scheduler_update (st : SystemState) (σ : SchedulerState) :
     OffSchedulerAgrees st { st with scheduler := σ } :=
   ⟨fun _ => rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
-   rfl, rfl, rfl, rfl, rfl, rfl⟩
+   rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- SM6.D: `ensureRunnable` (the single-core boot enqueue) agrees with its
 input off-scheduler. -/
@@ -564,7 +574,7 @@ theorem enqueueRunnableOnCore_offSchedulerAgrees_of_ready
     (hInv : st.objects.invExt) :
     OffSchedulerAgrees st (enqueueRunnableOnCore st c tid) := by
   refine ⟨fun oid => enqueueRunnableOnCore_objects_getElem_eq_of_ready st c tid tcb hTcb hReady hInv oid,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   all_goals simp only [enqueueRunnableOnCore, hTcb]
   all_goals split <;> rfl
 
@@ -608,7 +618,7 @@ theorem storeObject_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
     hRel.cdtNodeSlot, hRel.cdtNextNode, hRel.scThreadIndex, hRel.tlb, hRel.objStoreLock,
     hRel.perCoreTlb, hRel.perCoreICache, hRel.pendingIcacheMaintenance,
     hRel.declassificationAuditLog, hRel.declassificationAuditEpoch,
-    hRel.declassificationRefusals⟩
+    hRel.declassificationRefusals, hRel.declassificationTaint⟩
   · simp only [hRel.objectIndexSet, hRel.objectIndex]
   · simp only [hRel.objectIndexSet]
   · simp only [hRel.lifecycle]

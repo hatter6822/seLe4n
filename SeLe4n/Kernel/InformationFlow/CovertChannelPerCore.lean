@@ -90,7 +90,7 @@ syscalls whose arm SM6 re-routed through a cross-core wrapper.
 Read off `API.dispatchWithCapChecked` / `dispatchCapabilityOnly` arm by arm, not
 from the plan: `.call` runs `endpointCallCrossCoreDispatchChecked`, `.reply` runs
 `endpointReplyCrossCoreDispatchChecked`, `.replyRecv` runs `replyRecvBody` (the
-two-leg composition), `.receive` runs the per-core `endpointReceiveDualOnCore`,
+two-leg composition), `.receive` runs the per-core `endpointReceiveDualWithCapsOnCore`,
 the two notification arms run their bound / wait cross-core dispatches, and
 `.tcbSuspend` runs `suspendThreadOnCore`.
 
@@ -100,20 +100,25 @@ re-routes *where* a transition lands, never *what authority* it demands — and
 
 **Read `.policyGated` as a property of the arm, not of the named function.**
 Two of these entries name an operation that performs no flow check itself:
-`.receive` runs the *unchecked* `endpointReceiveDualOnCore` because its enclosing
+`.receive` runs the *unchecked* `endpointReceiveDualWithCapsOnCore` because its enclosing
 arm has already rejected a denied `endpoint→receiver` flow with `.flowDenied`
 before reaching it, and `replyRecvBody` likewise runs under the arm's
 `securityFlowsTo` guard on `replier→prevCaller`.  That is the same convention the
 canonical boundary uses (`cspaceDelete` names `cspaceDeleteSlot`, not a
 `…Checked` wrapper): the entry names the operation reached, the class records how
 authority is derived on the path that reaches it.  Stated here because
-`.policyGated "endpointReceiveDualOnCore"` would otherwise read as a claim that
+`.policyGated "endpointReceiveDualWithCapsOnCore"` would otherwise read as a claim that
 the function gates, which it does not. -/
 def crossCoreEnforcementEntries : List EnforcementClass :=
   [ .policyGated "endpointCallCrossCoreDispatchChecked"
   , .policyGated "endpointReplyCrossCoreDispatchChecked"
   , .policyGated "replyRecvBody"
-  , .policyGated "endpointReceiveDualOnCore"
+  -- PR #873 round 6: the `.receive` arm was routed off the bare per-core
+  -- receive, which delivered a parked sender's message wholesale and installed
+  -- none of the capabilities it was carrying — so a transfer happened or not
+  -- depending on which side reached the endpoint first.  The live operation is
+  -- now the WithCaps wrapper.
+  , .policyGated "endpointReceiveDualWithCapsOnCore"
   , .policyGated "notificationSignalBoundCrossCoreDispatchChecked"
   , .policyGated "notificationWaitCrossCoreDispatchChecked"
   , .capabilityOnly "suspendThreadOnCore"
@@ -228,7 +233,7 @@ def syscallIdToEnforcementNamePerCore : SyscallId → String
   | .call                => "endpointCallCrossCoreDispatchChecked"
   | .reply               => "endpointReplyCrossCoreDispatchChecked"
   | .replyRecv           => "replyRecvBody"
-  | .receive             => "endpointReceiveDualOnCore"
+  | .receive             => "endpointReceiveDualWithCapsOnCore"
   | .notificationSignal  => "notificationSignalBoundCrossCoreDispatchChecked"
   | .notificationWait    => "notificationWaitCrossCoreDispatchChecked"
   | .tcbSuspend          => "suspendThreadOnCore"
@@ -1766,8 +1771,8 @@ theorem syscallEntry_preserves_projectionOnCore (ctx : LabelingContext)
     (observer : IfObserver) (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
     (st st' : SystemState)
     (hOk : syscallEntry layout regCount st = .ok ((), st'))
-    (hDispatchProj : ∀ decoded tid, dispatchSyscall decoded tid st = .ok ((), st') →
-      projectState ctx observer st' = projectState ctx observer st)
+    (hDispatchProj : ∀ decoded tid stPost, dispatchSyscall decoded tid st = .ok ((), stPost) →
+      projectState ctx observer stPost = projectState ctx observer st)
     (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
     lowEquivalent_smp ctx observer st' st :=
   lowEquivalent_smp_of_projection_and_confinement ctx observer
@@ -1784,8 +1789,8 @@ theorem syscallEntry_success_perCore_NI (ctx : LabelingContext) (observer : IfOb
     (hOk : syscallEntry layout regCount st = .ok ((), st'))
     (hCurrentHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
       threadObservable ctx observer t = false)
-    (hDispatchProj : ∀ decoded tid, dispatchSyscall decoded tid st = .ok ((), st') →
-      projectState ctx observer st' = projectState ctx observer st)
+    (hDispatchProj : ∀ decoded tid stPost, dispatchSyscall decoded tid st = .ok ((), stPost) →
+      projectState ctx observer stPost = projectState ctx observer st)
     (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv

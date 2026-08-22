@@ -38,6 +38,10 @@ theorem endpointQueuePopHead_scheduler_eq
         | none => simp
         | some headTcb =>
           simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair => simp only []; cases hNext : headTcb.queueNext with
@@ -93,6 +97,10 @@ theorem endpointQueuePopHead_endpoint_backward_ne
         | none => simp
         | some headTcb =>
           simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair => simp only []; cases hNext : headTcb.queueNext with
@@ -150,6 +158,10 @@ theorem endpointQueuePopHead_endpoint_forward
         | none => simp
         | some headTcbR =>
           simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
           cases headTcbR.queueNext with
           | none =>
             simp only []
@@ -222,6 +234,10 @@ theorem endpointQueuePopHead_notification_backward
         | none => simp
         | some headTcb =>
           simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair => simp only []; cases hNext : headTcb.queueNext with
@@ -285,6 +301,10 @@ theorem endpointQueuePopHead_tcb_forward
         | none => simp
         | some headTcb =>
           simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
@@ -344,6 +364,10 @@ theorem endpointQueuePopHead_tcb_ipcState_backward
         | none => simp
         | some headTcb =>
           simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
@@ -414,6 +438,10 @@ theorem endpointQueuePopHead_preserves_reply
         | none => simp
         | some headTcb =>
           simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
@@ -475,6 +503,10 @@ theorem endpointQueuePopHead_tcb_pendingReceiveReply_backward
         | none => simp
         | some headTcb =>
           simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
@@ -2149,6 +2181,22 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
         | some _ =>
+            -- **The sender has to exist even when nothing looks it up**
+            -- (PR #873 round 17).  On this arm the message goes straight from
+            -- the argument into the receiver's TCB, so `sender` was never
+            -- resolved: a caller naming a nonexistent thread, or a non-TCB
+            -- object, delivered anyway and the receiver held a message
+            -- attributed to it.  Only the parking arm below failed, and only
+            -- because it happens to store into the sender's own TCB.
+            --
+            -- The frozen mirror resolved the sender on both arms, so the two
+            -- disagreed on a concrete rendezvous input.  The frozen behaviour is
+            -- the correct one -- a delivery attributed to a thread that does not
+            -- exist is not one anybody can reason about -- so the live path is
+            -- what changes.
+            match st.getTcb? sender with
+            | none => .error .objectNotFound
+            | some _ =>
             -- WS-L1/L1-A: PopHead now returns (ThreadId × TCB × SystemState)
             -- Note: _tcb has stale queue links (WS-L1/L1-A); use st' for current state
             match endpointQueuePopHead endpointId true st with
@@ -2171,6 +2219,46 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                 | .ok st'' => .ok ((), removeRunnable st'' sender)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
+
+/-- WS-SM SM6 (PR #873 round 8): **the sender a receive will dequeue, or `none`
+if it will block.**
+
+Read from the endpoint's send queue at the *pre*-state, which is exactly what
+`endpointReceiveDual` and `endpointReceiveDualOnCore` branch on — so this is the
+receive's rendezvous classification, not an approximation of it.
+
+**Why it has to be a function.**  `endpointSendDualWithCaps` has always had this
+gate on its own side (`hasReceiver`, read from `receiveQ.head` before the send)
+and the receive side never did, because the receive-side unwrap had no live
+caller to expose it.  Once PR #873 wired `.receive` and `.replyRecv` through the
+WithCaps receive, the missing gate became a capability-duplication defect: the
+blocking branch returns the *receiver's own* id and leaves `pendingMessage`
+untouched, so a receiver still holding a previously delivered caps-bearing
+message had those capabilities unwrapped **again** — an extra copy of authority
+installed by a receive that dequeued nothing.
+
+The live arms already re-derived this same read three times inline (each one's
+`wokenSender?`), which is the shape that lets four copies drift apart; naming it
+once is the `signalDelivery` remedy applied to the receive. -/
+def receiveRendezvousSender? (st : SystemState) (endpointId : SeLe4n.ObjId) :
+    Option SeLe4n.ThreadId :=
+  (st.getEndpoint? endpointId).bind (·.sendQ.head)
+
+/-- WS-SM SM6 (PR #873 round 8): **will this receive install capabilities?**
+
+The condition the WithCaps receive actually branches on, read from the same
+pre-state: a sender is there to dequeue, and the message it parked carries caps.
+Exists so the *declared lock footprint* can be resolved from the same fact the
+transition uses — `lockSet_endpointReceive` / `lockSet_replyRecv` hold the
+receiver's own CSpace root in **write** mode exactly when this is `true`, because
+that is when `ipcTransferSingleCap` writes it. -/
+def receiveInstallsCaps (st : SystemState) (endpointId : SeLe4n.ObjId) : Bool :=
+  match receiveRendezvousSender? st endpointId with
+  | none => false
+  | some sender =>
+    match (st.getTcb? sender).bind (·.pendingMessage) with
+    | none => false
+    | some msg => !msg.caps.isEmpty
 
 /-- WS-F1/WS-E4/M-01: Receive from endpoint using intrusive dual-queue semantics
 with IPC message transfer.
@@ -2224,7 +2312,7 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                     | .blockedOnCall _ => true
                     | _ => false)
                 -- AK1-D (I-M02 / MEDIUM): Atomic receiver (ipcState,
-                -- pendingMessage) update. The `waitingThreadsPendingMessageNone`
+                -- pendingMessage) update. The `blockedThreadsPendingMessageConsistent`
                 -- invariant requires any `.blockedOnReceive` /
                 -- `.blockedOnNotification` thread to have `pendingMessage =
                 -- none`. If the receiver entered this rendezvous path in a
@@ -2236,7 +2324,7 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                 -- `storeTcbIpcStateAndMessage _ .ready senderMsg` atomically
                 -- sets both fields, yielding a post-state where the receiver
                 -- is `.ready` (ipcState is unconstrained by
-                -- `waitingThreadsPendingMessageNone`). Fail-closed by
+                -- `blockedThreadsPendingMessageConsistent`). Fail-closed by
                 -- construction.
                 if senderWasCall then
                   -- Call path: sender transitions to blockedOnReply, NOT ready
@@ -2285,7 +2373,17 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
               match endpointQueueEnqueue endpointId true receiver stClean with
               | .error e => .error e
               | .ok st' =>
-                  match storeTcbIpcState st' receiver (.blockedOnReceive endpointId) with
+                  -- PR #873 round 11: clear `pendingMessage` **atomically** with the
+                  -- block.  A receiver that already collected a message stays
+                  -- `.ready` holding it, and blocking without the clear carried that
+                  -- stale message into `.blockedOnReceive` -- violating
+                  -- `blockedThreadsPendingMessageConsistent`, whose whole point is that
+                  -- a wake path may overwrite `pendingMessage` without losing data, and
+                  -- leaving the body of a consumed message readable on a parked thread.
+                  -- It also made the receive's preservation theorem depend on an
+                  -- `hReceiverMsg` hypothesis nothing established.  Same AK1-D atomic
+                  -- store the rendezvous branch uses.
+                  match storeTcbIpcStateAndMessage st' receiver (.blockedOnReceive endpointId) none with
                   | .error e => .error e
                   | .ok st'' =>
                       -- WS-SM SM6.D (#7.1 fold): server-first stash — record the
@@ -2956,14 +3054,23 @@ private theorem tid_not_reserved_of_enqueue
 
 /-- WS-L3/L3-A3: Composed round-trip theorem: if a thread is enqueued into an
 empty queue and then popHead is called on the same queue, popHead succeeds
-returning the same thread. -/
+returning the same thread.
+
+PR #873 round 11: on the **send** queue the round trip also needs the enqueued
+thread to be carrying its message, because `endpointQueuePopHead` now refuses a
+message-less parked sender — every send-queue dequeue in this kernel is a
+delivery.  The receive-queue direction is unconditional as before, which is what
+the left disjunct says; the hypothesis is read off the post-enqueue state because
+that is the state the dequeue inspects. -/
 theorem endpointQueueEnqueue_then_popHead_succeeds
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) (st st' : SystemState) (ep : Endpoint)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hEmptyTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail = none)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st')
+    (hCarries : ∀ tcb, st'.objects[tid.toObjId]? = some (.tcb tcb) →
+      isReceiveQ = true ∨ tcb.pendingMessage.isSome) :
     ∃ tcb'' st'', endpointQueuePopHead endpointId isReceiveQ st' = .ok (tid, tcb'', st'') := by
   obtain ⟨ep', hEp', hHead', _⟩ := endpointQueueEnqueue_empty_sets_head
     endpointId isReceiveQ tid st st' ep hObj hEmptyTail hObjInv hStep
@@ -3014,7 +3121,15 @@ theorem endpointQueueEnqueue_then_popHead_succeeds
     | ok pair2 =>
       obtain ⟨_, st2⟩ := pair2
       simp only []
-      exact ⟨tcb', st2, rfl⟩
+      -- PR #873 round 11: discharge the send-queue message-presence guard.
+      have hG : (!isReceiveQ && tcb'.pendingMessage.isNone) = false := by
+        rcases hCarries tcb' hTcb' with h | h
+        · simp [h]
+        · cases hp : tcb'.pendingMessage with
+          | none => rw [hp] at h; simp at h
+          | some m => simp
+      refine ⟨tcb', st2, ?_⟩
+      simp [hG]
 
 -- ============================================================================
 -- Z6-K/M: Transport lemmas for endpointQueueRemove

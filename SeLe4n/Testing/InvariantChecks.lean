@@ -273,6 +273,37 @@ private def blockedOnReceiveNotRunnableChecks (objectIds : List SeLe4n.ObjId) (s
         | _ => acc
     | none => acc) []
 
+/-- V3-G1 (PR #873 round 11): the executable mirror of
+`blockedThreadsPendingMessageConsistent` — `pendingMessage` agrees with the
+blocking state in both directions.
+
+A thread parked to *collect* holds nothing; a thread parked to *deliver* holds
+what it is delivering.  The delivering half is the one the harness could not see
+before: the Lean invariant said `True` of `.blockedOnSend` / `.blockedOnCall`, so
+a message-less parked sender passed every executable check while making the next
+receive hand its receiver `none` and report success.  Both halves are checked
+here so a trace that produces one is caught where it is produced rather than at
+the dequeue that consumes it. -/
+private def blockedThreadPendingMessageChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
+  objectIds.foldr (fun oid acc =>
+    match st.getTcb? ⟨oid.toNat⟩ with
+    | some tcb =>
+        match tcb.ipcState with
+        | .blockedOnReceive _ =>
+            (s!"blockedOnReceive holds no message: tid={tcb.tid.toNat}",
+              tcb.pendingMessage.isNone) :: acc
+        | .blockedOnNotification _ =>
+            (s!"blockedOnNotification holds no message: tid={tcb.tid.toNat}",
+              tcb.pendingMessage.isNone) :: acc
+        | .blockedOnSend _ =>
+            (s!"blockedOnSend carries its message: tid={tcb.tid.toNat}",
+              tcb.pendingMessage.isSome) :: acc
+        | .blockedOnCall _ =>
+            (s!"blockedOnCall carries its message: tid={tcb.tid.toNat}",
+              tcb.pendingMessage.isSome) :: acc
+        | _ => acc
+    | none => acc) []
+
 /-- WS-F7/D1b: If a thread is currently dispatched, its TCB domain must match the
 scheduler's `activeDomain`. Violation would break domain-based temporal isolation. -/
 private def currentThreadInActiveDomainB (st : SystemState) : Bool :=
@@ -377,6 +408,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ cdtChildMapConsistentCheck st
     ++ cdtParentMapConsistentCheck st
     ++ blockedOnSendNotRunnableChecks objectIds st
+    ++ blockedThreadPendingMessageChecks objectIds st
     ++ blockedOnReceiveNotRunnableChecks objectIds st
     ++ uniqueWaitersCheck objectIds st
     ++ threadStateConsistentChecks objectIds st

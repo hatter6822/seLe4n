@@ -1796,7 +1796,7 @@ run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterferenc
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # SM9.A.4b took the inventory 26 -> 28 with the two audit readers, both of
 # which take an executing core and carry an EMPTY write set.
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 29' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 30' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # PR #861 review round 34: the context-restore gate lives in WRAPPERS, never
 # inside the transitions.  An in-transition `if contextRestoreSeamLive` reduces
@@ -2089,7 +2089,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 run_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 29' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 30' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # Round 14: all three SchedContext arms this cut made remote writers are audited.
 # The negative is the point — `crossCoreRemoteWriterPendingAudit` was the counted
 # gap while two were unproven, and it must not come back as an empty list, which
@@ -2328,7 +2328,10 @@ run_negative_check "INVARIANT" rg -n 'declassifyStoreOnCore|authorizeDeclassific
 run_check "INVARIANT" rg -n 'declassifyObjectFromCore \(liftLegacyContext ctx\)' SeLe4n/Kernel/API.lean
 # SM8.C §11/§12: scope witnesses and run-level completeness.
 run_check "INVARIANT" rg -n '^theorem recordDeclassification_admits_ill_formed' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassificationChainLinked_is_syntactic' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# (SM8.C's `declassificationChainLinked_is_syntactic` was retired by SM9.D,
+# which makes it genuinely false; its successor is anchored — with the
+# retirement negative — in the SM9.D block below.)
+run_check "INVARIANT" rg -n '^theorem declassificationChainLinked_is_causal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^theorem declassificationSubjectDomain_is_core_selected' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_refusal_has_no_post_state' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^def declassifyRun' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
@@ -3267,10 +3270,14 @@ run_check "INVARIANT" rg -n '^theorem refusalLedger_partial_reader_learns_nothin
 run_check "INVARIANT" rg -n '^theorem refusalLedger_gate_is_configuration_derived' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem refusalLedger_records_gate_unsound' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem refusalRead_requires_monitor_at_entry' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-# The ABI mirror, both sides: 12 trail opcodes + 9 refusal opcodes + WS-SM
-# SM9.C.1's 4 actor opcodes = 25.
-run_check "INVARIANT" rg -n '^def auditReadOpcodeCount : Nat := 27' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n 'AUDIT_READ_OPCODE_COUNT: u64 = 27' rust/sele4n-sys/src/audit.rs
+# The ABI mirror, both sides.  The count is the decoder's boundary in opcode
+# slots, not the number of `AuditReadOp` constructors — several carry an index
+# and a chunk — so it is pinned as a number against both sides rather than
+# re-derived from the enum.  This is the ONE place it is pinned: a second copy
+# added next to a new opcode's anchors is how it last went stale, sitting at 29
+# after the Lean side moved to 30.
+run_check "INVARIANT" rg -n '^def auditReadOpcodeCount : Nat := 30' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n 'AUDIT_READ_OPCODE_COUNT: u64 = 30' rust/sele4n-sys/src/audit.rs
 # WS-SM SM9.C.1: and the count is the DECODER's boundary on the Rust side, not
 # a restatement of the enum's own last variant — which is what let this mirror
 # sit at 21 while Lean moved to 25, invisible to every Rust test.
@@ -3347,7 +3354,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines' tests/SmpInfo
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=34 opcodes=27 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=34 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification
@@ -3569,6 +3576,918 @@ run_check "INVARIANT" rg -n 'NEGATIVE: a wrong-kind target no longer reports the
 run_check "INVARIANT" rg -n 'an absent target answers objectNotFound, policy-blind' tests/SmpInformationFlowSuite.lean
 # The gate lives in the transition, ahead of the plan — pin the match order.
 run_check "INVARIANT" rg -n 'match st.getNotification\? notificationId with' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+
+# ============================================================================
+# WS-SM SM9.D — causal declassification provenance
+# (plan SMP_DECLASSIFICATION_COMPLETION_PLAN.md §5 SM9.D.1 … SM9.D.18).
+# ============================================================================
+# SM8's laundering detector was SYNTACTIC: it matched domains, so it fired on
+# causally unrelated hops and — scoped to declassification *edges* — missed the
+# real chain, in which an ORDINARY delivery moves the content between two
+# downgrades.  SM9.D replaces domain matching with recorded provenance.
+
+# SM9.D.1: the taint value, in a PRODUCTION leaf below `AuditRecord.lean` (the
+# audit event carries one, and that module sits below `Model/State.lean`).
+run_check "INVARIANT" rg -n '^structure DeclassificationTaint where' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^def maxTaintTags : Nat := 8' SeLe4n/Kernel/InformationFlow/Taint.lean
+# The bound is a REFINEMENT FIELD, so it holds of every value rather than only
+# of recorded ones — which is why there is no seventeenth
+# `proofLayerInvariantBundle` conjunct (the shape SM9.B's ledger established).
+run_check "INVARIANT" rg -n 'tags_bounded : tags.length ≤ maxTaintTags' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem taint_bounded_structurally' SeLe4n/Kernel/InformationFlow/Taint.lean
+# Overflow saturates UPWARD: for a detector, over-approximation is the safe
+# direction — losing a real link is what must not happen.
+run_check "INVARIANT" rg -n '^theorem taintSaturate_over_approximates' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem join_saturated_covers_all' SeLe4n/Kernel/InformationFlow/Taint.lean
+# The side table is a KEYED association list under a total lookup, not an
+# `RHTable`: a hash table's lookup-after-insert law needs `invExt`, which would
+# force the bundle conjunct this design avoids.  The canonical form — at most one
+# row per object, none empty-valued — is a FIELD, so the length claim holds of
+# every value of the type rather than only of the ones the API builds.
+#
+# This pin replaced one requiring the old `abbrev TaintTable := ObjId → …`, which
+# sat here contradicting the negative check below (added with the keyed cut) —
+# the two could not both pass, so the tier failed until one was corrected.
+run_check "INVARIANT" rg -n '^structure TaintTable where' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^  canonical : TaintEntries\.Canonical entries' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem TaintEntries\.canonical_erase' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem entries_live' SeLe4n/Kernel/InformationFlow/Taint.lean
+
+# SM9.D.2 – SM9.D.6: the §6 `SystemState` mount checklist, run for the fourth
+# time.  The frozen field is REQUIRED (a silent drop is a compile error) and the
+# bundle carriage is unconditional (v0.32.151: three conjuncts do not transport
+# by `rfl` across an arbitrary field write).
+run_check "INVARIANT" rg -n 'declassificationTaint : SeLe4n.Kernel.TaintTable' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n 'declassificationTaint : SeLe4n.Kernel.TaintTable' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem freeze_preserves_declassificationTaint' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_declassificationTaint_eq' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatform_declassificationTaint_eq' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n 'declassificationTaint :$' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setDeclassificationTaint' SeLe4n/Kernel/Architecture/Invariant.lean
+# Information flow: the table is OUTSIDE `ObservableState`.  Provenance names
+# `(object, declassification identity)` pairs, so projecting it would be a
+# content channel out of exactly the boundary the audit polices.
+run_check "INVARIANT" rg -n '^theorem declassificationTaint_write_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem onCore_declassificationTaint' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+
+# SM9.D.13a: the recorded snapshot on the audit event.  UNDEFAULTED, because a
+# default would attribute an empty history to every event while compiling
+# everywhere; and the tags are GLOBAL identities, so the field is read by the
+# detector and never exported through SM9.A's chunk protocol.
+run_check "INVARIANT" rg -n 'predecessorTags : DeclassificationTaint' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^def declassificationEventNames' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^abbrev declassificationActorTaint' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^abbrev declassifyStoreEventWithTags' SeLe4n/Kernel/InformationFlow/Declassification.lean
+# The multi-hop recorder threads the snapshot, so hop 2 names hop 1 within one
+# transition — the property `recordDeclassifiedHops_two` now carries.
+run_check "INVARIANT" rg -n '^def recordDeclassifiedHopsFrom' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n 'declassificationEventNames e₂ e₁ = true' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+
+# SM9.D.7 – SM9.D.11: the propagation sites, as DATA with a total
+# classification.  Totality over `SyscallId` is necessary and not sufficient —
+# a new syscall must add an arm, but the arm can be wrong — so the
+# COMPLETENESS of the classification is a Tier-1 reach gate over the call
+# graph, not a theorem.
+run_check "INVARIANT" rg -n '^inductive ContentFlowClass where' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def contentFlowClass : SyscallId → ContentFlowClass' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem contentFlowClass_total' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^DECLARED_TAINT_WRITERS = ' scripts/check_content_flow_coverage.py
+run_check "INVARIANT" rg -n '^CONTENT_CHANNELS = ' scripts/check_content_flow_coverage.py
+run_check "BUILD" rg -n 'check_content_flow_coverage.py' scripts/test_tier1_build.sh
+run_check "BUILD" rg -n 'check_content_flow_coverage.py. --self-test' scripts/test_tier1_build.sh
+# Taint follows CONTENT, so it propagates through ordinary IPC delivery — the
+# hop the SM8 edge-scoped design could not see.
+#
+# The two endpoint-keyed forms are deliberately ABSENT and pinned as such below:
+# an endpoint holds no content of its own, so it is not a taint sink and not a
+# taint source.  Their replacements are the content-derived pair — the sender
+# reaches the rendezvous receiver, and a receiver reads the blocked sender at
+# `sendQ.head` directly.  Keeping a positive anchor on a deleted theorem beside
+# the negative that forbids it makes the tier unsatisfiable, which is how this
+# pair was found.
+run_check "INVARIANT" rg -n '^theorem taintPropagation_send_to_receiver' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_receive_from_sender' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_reply_to_caller' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_signal_to_notification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_wait_from_notification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintOrigination_target' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintOrigination_actor' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# The diff recovery is characterised in both directions: a pure append IS the
+# appended suffix, and a commit that advanced the epoch (the drain) originates
+# nothing — so "recovered from the trail's own diff" is checked, not read off
+# `drop`'s behaviour on a shortened list.
+run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_append' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_drained' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# SM9.D.12: the retype CLEARS rather than frames — it commits `storeObject` at
+# the same id, so a framed retype would leave a destroyed object's tags on its
+# replacement.  The two imprecisions must not be conflated.
+run_check "INVARIANT" rg -n '^theorem retypeClearsTaint' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem retypedObject_taint_empty' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem staleTaint_is_not_saturation' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# The live write sites: BOTH dispatchers, applied to the state each was given.
+# PR #873 round 6 moved the seam down from the two entries, because
+# `dispatchSyscall`'s docstring points integrators at `dispatchSyscallChecked`
+# for production entry and a seam above it was one an integrator never reached.
+run_check "INVARIANT" rg -n 'applySyscallTaint' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_applies_taint_plan' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscall_applies_taint_plan' SeLe4n/Kernel/API.lean
+# That the entries do NOT re-apply it is enforced where it can be enforced
+# exactly: `DECLARED_TAINT_CONSUMERS` in the Tier-1 content-flow gate names the
+# two dispatchers and fails on any other constant that reaches the taint API, so
+# a second application at an entry is a build failure rather than a text pin.
+run_check "INVARIANT" rg -n 'SeLe4n.Kernel.dispatchSyscallChecked' scripts/check_content_flow_coverage.py
+
+# PR #873 round 6: relying on declared footprints as a complete serialization
+# discipline is GATED on the uncovered-domain inventory being empty, so the
+# per-key taint store (and every other registered domain) is a precondition of
+# SM3.C.9's fine locks rather than work that may land alongside them.
+run_check "INVARIANT" rg -n '^def fineLockDisciplineComplete' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem fineLockDisciplineComplete_is_false' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem fineLockDiscipline_requires_every_domain_covered' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem taintPerKeyStore_blocks_fineLockDiscipline' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+
+# PR #873 round 6: **a queued capability transfer installs, like a rendezvous
+# one.**  The `.receive` arm ran the bare per-core receive, which delivers a
+# parked sender's message wholesale and installs none of the capabilities it
+# carries, while an immediate rendezvous transferred them — so IPC semantics
+# depended on which side reached the endpoint first.  The authority is the
+# SENDER's, carried on the message (`capsGranted`), because the sender's endpoint
+# capability is gone by the time a receiver dequeues a parked send.
+run_check "INVARIANT" rg -n '  capsGranted : Bool' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def endpointReceiveDualWithCapsOnCore' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_no_caps' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n 'endpointReceiveDualWithCapsOnCore epId tid replyIdOpt' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'capsGranted := cap.rights.mem .grant' SeLe4n/Kernel/API.lean
+# The enforcement inventory names the operation the arm REACHES, so it moved with
+# the reroute — and the bare transition must not come back as the classified arm.
+run_check "INVARIANT" rg -n 'policyGated "endpointReceiveDualWithCapsOnCore"' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_negative_check "INVARIANT" rg -n 'policyGated "endpointReceiveDualOnCore"' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+# The receive-side grant gate is the message's, not the receiver's endpoint
+# rights: consulting the receiver's is a different principal's authority and left
+# the orderings disagreeing when a granting sender met a non-granting receiver.
+run_check "INVARIANT" rg -n 'receiverSlotBase msg.capsGranted' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+run_negative_check "INVARIANT" rg -n 'endpointReceiveDualWithCaps endpointId receiver replyId endpointRights' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+# The regression that measures the property rather than one ordering's outcome.
+run_check "INVARIANT" rg -n 'ipcCapTransferArrivalOrder' tests/OperationChainSuite.lean
+
+# PR #873 round 7: **and the same for `.replyRecv`**, the arm that is a receive
+# without being spelled `.receive`.  Its receive leg ran inside `replyRecvBody`
+# on the BARE per-core transition, so an seL4-MCS server loop (`Recv` once, then
+# `ReplyRecv` forever) received capabilities on its first request and silently
+# none afterwards.  The body now takes the receiver's CSpace root and receive
+# slot and RETURNS the transfer summary, so `extraCaps` is the installed count.
+run_check "INVARIANT" rg -n 'endpointReceiveDualWithCapsOnCore epId tid \(some rid\)' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'endpointReceiveDualOnCore epId tid \(some rid\)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'replyRecvBody epId tid rid prevCaller msg gate.cspaceRoot' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'replyRecvCapTransferArrivalOrder' tests/OperationChainSuite.lean
+
+# PR #873 round 8 (SECURITY): **a receive that dequeued nothing installs
+# nothing.**  The blocking branch returns the receiver's OWN id and leaves
+# `pendingMessage` untouched, so deciding by that field alone re-unwrapped a
+# message the receiver had held since its last receive — an extra copy of
+# authority minted with no sender.  The gate is the endpoint's pre-state send
+# queue, which is what the bare transition itself branches on.
+run_check "INVARIANT" rg -n '^def receiveRendezvousSender\?' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^def receiveInstallsCaps' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_blocked_installs_nothing' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCaps_blocked_installs_nothing' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+run_check "INVARIANT" rg -n 'receiveWithoutSenderInstallsNothing' tests/OperationChainSuite.lean
+# And the install's declared footprint: `ipcTransferSingleCap` writes the
+# receiver's own CSpace root, which both receive-shaped footprints declared READ.
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_capsInstall_write_mem' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_capsInstall_write_mem' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n 'receiveInstallsCaps st endpointObjId' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# The inventory must name the function the dispatch calls: both receive-shaped
+# live arms reach the WithCaps form now, so the bare transition is a below-API
+# entry and the live-arm claim sits on the new one.  The negative forbids the
+# claim drifting back onto the bare transition.
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '\| \.endpointReceiveDualWithCaps => \.delegationProof \.receive' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -n '\| \.endpointReceiveDual => \.delegationProof \.receive' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+
+# PR #873 round 6 (SM9.D.13a): the origination diff is SKIPPED for the arms that
+# provably cannot append.  `newlyRecordedEvents` costs two O(n) walks of a trail
+# bounded only at the 256-entry cliff, and it ran on every successful syscall.
+# The skip is licensed by a total classifier whose set is a checked value, and
+# whose answer the Tier-1 content-flow gate verifies against the call graph.
+run_check "INVARIANT" rg -n '^def syscallRecordsDeclassification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem syscallRecordsDeclassification_iff' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem syscallRecordsDeclassification_independent_of_class' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def planOriginationTags' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '  originates : Bool' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem planOriginationTags_eq_of_no_events' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'theorem syscallTaintPlan_originates' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# The drain writes the trail and still originates nothing — the load-bearing
+# exemption behind `.auditDrain` answering `false`, and what the Tier-1 gate
+# requires to be present before it honours that exemption.  Both branches:
+# a non-empty drain moves the epoch, a zero-length one does not.
+# PR #873 round 6: `.declassify`'s target can be an object of ANY kind, so the
+# kind inventory admits every one — and the consistency theorem is stated over
+# EVERY `targetLock`, not only the default `none` it used to be provable at.
+# `lockSet_declassify_nonTarget_kinds` is what keeps the fixed part tight.
+run_check "INVARIANT" rg -n '^theorem permittedKinds_declassify_admits_every_kind' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_declassify_nonTarget_kinds' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n 'cnRoot : ObjId\) \(targetLock : Option LockId := none\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_of_drop' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_auditDrain' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'AUDIT_APPEND_EXEMPT' scripts/check_content_flow_coverage.py
+run_check "INVARIANT" rg -n 'CF_AUDIT_ARM' scripts/check_content_flow_coverage.py
+# The gates must see private definitions: Lean mangles `private def` to
+# `_private.…`, which answers `isInternal`, and both one-writer sweeps filtered
+# on exactly that.
+run_check "INVARIANT" rg -n 'privateToUserName' scripts/check_content_flow_coverage.py
+run_negative_check "INVARIANT" rg -n 'if n.isInternal' scripts/check_content_flow_coverage.py
+
+# SM9.D.14 – SM9.D.16: the detector.  `declassificationChainLinked` keeps its
+# name and gains the causal conjunct; the TABLE-derived alternative is retained
+# as a REFUTED design, since re-evaluating a historical event against the
+# current table invents links a retype has cleared and loses links acquired
+# after the fact.
+run_check "INVARIANT" rg -n '^def declassificationChainCausal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def chainCausalFromTable' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainCausal_is_history_local' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainCausal_not_table_derived' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainCausal_survives_subject_retype' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainLaunders_sound_under_causal_provenance' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem causalChain_residual_over_approximation' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationChainLinked_is_causal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainLaunders_residual_is_saturation' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# The verdict a monitor reads — one OPAQUE bit per adjacent pair, never the
+# recorded tags (global declassification identities, which the view-local entry
+# indices exist to hide).  Without it the causal detector would be an
+# improvement only the model can see.
+run_check "INVARIANT" rg -n 'chainNamesPredecessor \(index : Nat\)' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainVerdict_ok' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainVerdict_index_zero_refused' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainVerdict_view_local' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainVerdict_reconstructs_causal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n 'ChainNamesPredecessor = 27' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n 'the causality verdict reaches a monitor' tests/SmpInformationFlowSuite.lean
+# PR #873 review: the GENERAL causality verdict.  `predecessorTags` may name any
+# earlier event and `declassificationChainCausal` runs over an arbitrary
+# non-contiguous subchain, so an adjacency-only query cannot test a hop an
+# interleaved event split out of adjacency.  Opcode 28 is appended (never a
+# renumber — an ABI number is a contract) and reads two view-local indices.
+run_check "INVARIANT" rg -n 'chainNamesEntry \(later earlier : Nat\)' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_ok' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_refused' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_view_local' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_names_iff' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n 'ChainNamesEntry = 28' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n 'NEGATIVE: the same domain-composing pair with no snapshot reads 0' tests/SmpInformationFlowSuite.lean
+run_check "TRACE" rg -n 'causality verdict: monitorReads=' tests/fixtures/smp_information_flow.expected
+# PR #873 review round 5: capability provenance is OUT OF SCOPE, consistently.
+# A CNode holds no tracked content, so a tag written on a CSpace root has no
+# operation able to clear it — deleting the capability that carried it leaves a
+# specific unsaturated predecessor behind, which `staleTaint_is_not_saturation`
+# forbids.  It was also redundant: a transfer moves authority, and every content
+# flow the authority enables is declared where that content actually moves.
+run_check "INVARIANT" rg -n '^theorem senderTaintEdges_content_only' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+
+# PR #873 round 9: the taint table is keyed, so it is bounded by the objects
+# that currently carry provenance rather than by how many writes have happened.
+# A function-backed table recorded history: the ordinary store/consume cycle is
+# value-changing in both directions, so the no-op write guards never covered it.
+run_check "INVARIANT" rg -n '^structure TaintTable where' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^def taintEntriesErase' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem storeThenClear_no_growth' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem clearAt_set_entries' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n 'five store/consume cycles leave the taint table with no entries at all' tests/SmpInformationFlowSuite.lean
+# NEGATIVE: the function representation must not come back — it is what made the
+# table a record of every write.
+run_negative_check "INVARIANT" rg -n 'abbrev TaintTable := SeLe4n\.ObjId' SeLe4n/Kernel/InformationFlow/Taint.lean
+
+# PR #873 review round 5: a laundering chain that spans an audit drain is
+# queryable again.  Monitor-only and gated on `auditMonitorAuthorized` alone —
+# a gate that read the reader's current view would answer differently for two
+# states with identical views but different hidden entries, which is a count of
+# what the reader cannot see.
+run_check "INVARIANT" rg -n '\| chainNamesArchived \(later timestamp : Nat\)' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_names_iff' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_denied_for_non_monitor' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_refuses_live_timestamp' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+# The count itself is pinned once, with the ABI mirror above; only this
+# opcode's own value belongs here.
+run_check "INVARIANT" rg -n 'ChainNamesArchived = 29' rust/sele4n-sys/src/audit.rs
+# NEGATIVE: the carrier and its gate must not come back.
+run_negative_check "INVARIANT" rg -n '^def capTransferTaintSinks' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_negative_check "INVARIANT" rg -n '^theorem taintPropagation_send_to_receiver_cspace' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_negative_check "INVARIANT" rg -n '^theorem taintPropagation_cspace_provenance_forwarded' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 review round 3: the two orderings of a capability transfer must agree,
+# and the CSpace provenance must reach a SUBJECT or it can never reach an audit
+# event.  A parked sender names no receiver, so the receive declares the CNode
+# sink itself; and consuming a message taints the consumer from its own root.
+# …and the clear path is elided like the join path: `contentFlowClears` fires on
+# every wait and every direct-to-waiter signal, so an unguarded clear would
+# rebuild the closure chain the join elision removed.
+run_check "INVARIANT" rg -n '^theorem clearAt_eq_of_empty' SeLe4n/Kernel/InformationFlow/Taint.lean
+# …and the disjoint-write-set claim APPLIES both plans rather than restating the
+# frame lemma (the tautology class this workstream has now hit three times).
+run_check "INVARIANT" rg -n '^theorem taintWriteKeys_disjoint_order_independent' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873: IPC capability transfer records its derivation edge from the slot the
+# capability was REALLY resolved from.  CDT nodes are keyed by the full SlotRef,
+# so the previous synthetic parent (slot 0 of the sender's root) put every
+# transferred copy under a node that revoking the true source never visits: the
+# copy survived a revoke meant to destroy it, and an unrelated capability at the
+# stand-in address was destroyed by a revoke that had nothing to do with it.
+run_check "INVARIANT" rg -n '^structure TransferCap' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'srcNode : CdtNodeId' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'caps : Array TransferCap' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'ipcTransferSingleCap tc.cap tc.srcNode' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+# …and a reusable slot ADDRESS must not come back as the carried identity: a
+# parked send outlives the slot, so an address names whatever occupies it later.
+run_negative_check "INVARIANT" rg -n 'srcRef : SlotRef' SeLe4n/Model/Object/Types.lean
+# The synthetic parent must not come back.  The type change makes it awkward
+# rather than impossible — a caller could still synthesise a SlotRef — so the
+# address itself is pinned out of the transfer path.
+run_negative_check "INVARIANT" rg -n 'cnode := senderCspaceRoot, slot := SeLe4n.Slot.ofNat 0' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+run_negative_check "INVARIANT" rg -n 'cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+# …and the end-to-end regression: revoking the REAL source destroys the
+# transferred copy, while revoking the old stand-in address does not.  Both
+# verdicts swap under the defect, which is what makes the pair load-bearing.
+run_check "INVARIANT" rg -n 'chain12b: revoking the real source destroys the transferred cap' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'chain12b: revoking an unrelated slot leaves the transferred cap alone' tests/OperationChainSuite.lean
+# PR #873 review rounds 4-7: bound delivery is ONE classification, not three
+# re-derivations.  The clear, the declared edges and the origination filter each
+# used to re-read `declassifiedSignalReceiver?` — which cannot tell a bound
+# target from a waiter — and disagreed three times in three rounds.
+run_check "INVARIANT" rg -n '^inductive SignalDelivery where' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def signalDelivery ' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def signalBypassedNotification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem signalDelivery_bound_leaves_notification_alone' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem signalDelivery_waiter_empties_notification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# A bypass is NOT a clear: the notification keeps a stored badge and its
+# provenance, but the fresh event is not originated onto it.
+run_check "INVARIANT" rg -n 'bypassed : List SeLe4n.ObjId' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem bypassedObject_not_originated' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 round 7: a BARE downgrade releases nothing into an IDLE target, so it
+# originates nothing there.  `.declassify` carries no payload, and against an
+# empty notification the tag was fictitious — a later unrelated signal joined it,
+# `.notificationWait` carried it on, and a downgrade behind that receiver named a
+# predecessor for content that never existed.  The second check is the direction
+# that keeps the skip from becoming an under-approximation.
+run_check "INVARIANT" rg -n '^def declassifyBypassedTarget ' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def declassifyBypassedTargets ' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem declassify_idle_notification_bypassed' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem declassify_pending_notification_not_bypassed' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 round 9: and the ACTOR half.  Round 7 suppressed the target pair and
+# left `(sourceSubject, timestamp)` standing, so the subject kept an identity it
+# never released — and `declassificationActorTaint` snapshots the ACTOR, so its
+# next downgrade recorded that identity as a predecessor.  A no-release event now
+# contributes neither pair, dropped per event rather than filtered by key.
+run_check "INVARIANT" rg -n '  noRelease : List SeLe4n.ObjId' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem originationTags_cons_noRelease' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem originationTags_cons_release' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 round 9: a non-archived timestamp is a malformed OPERAND, not an
+# authority failure — the gate is checked first, so an unauthorized caller still
+# learns nothing about the trail's extent.
+run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_refuses_live_timestamp' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_negative_check "INVARIANT" rg -n '&& decide \(timestamp <' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+# PR #873 round 10: four gate-soundness corrections.  Two stop the anchor gate
+# inventing failures (a search MODE and a search SCOPE are part of what an
+# anchor pins), and two stop the content-flow gate under-reading (a walk that
+# stops with an unexpanded frontier, and three dispatchers merged under one
+# syscall name so a healthy arm masked a broken sibling).
+run_check "INVARIANT" rg -n '^def _mode_allows' scripts/check_anchor_consistency.py
+run_check "INVARIANT" rg -n '^def _scope_contains' scripts/check_anchor_consistency.py
+run_check "INVARIANT" rg -n '^def arm_key' scripts/check_content_flow_coverage.py
+run_check "INVARIANT" rg -n 'FAIL_CLOSED_ARMS' scripts/check_content_flow_coverage.py
+run_check "INVARIANT" rg -n 'CF_TRUNCATED' scripts/check_content_flow_coverage.py
+# PR #873 round 11: `pendingMessage` agrees with the blocking state in BOTH
+# directions.  The invariant used to constrain only the two collecting states and
+# say `True` of the two delivering ones, which made "a parked sender carries its
+# message" a convention every consumer had to re-derive -- and the consumers that
+# forgot were the round-7 frozen dequeue and the round-11 live one.  Four pins:
+# the invariant's delivering half, its executable mirror (the harness could not
+# see the violation either), the dequeue's fail-closed complement for states that
+# carry no invariant, and the converse theorem `receiverTaintEdges` reads against.
+run_check "INVARIANT" rg -n '\.blockedOnSend _ => tcb\.pendingMessage\.isSome' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '\.blockedOnCall _ => tcb\.pendingMessage\.isSome' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n 'blockedThreadPendingMessageChecks' SeLe4n/Testing/InvariantChecks.lean
+run_check "INVARIANT" rg -n 'headTcb\.pendingMessage\.isNone' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_send_sender_carries_message' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n 'receiveRefusesMessagelessParkedSender' tests/OperationChainSuite.lean
+# PR #873 round 12: two defaults inverted, for the same reason each time -- a set
+# of remembered exceptions is a list of the cases someone thought of.  The
+# downgrade's origination is now established from the target actually holding
+# tracked content, so a kind this model tracks none for bypasses by construction;
+# and the field-write detector no longer infers "this is an update" from a
+# projection being present, so no spelling of the rebuild can hide a second
+# writer.  The negatives pin that neither default comes back.
+run_check "INVARIANT" rg -n '^def declassifyTargetHoldsContent' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem declassifyBypassedTarget_of_untracked_kind' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem declassifyTargetHoldsContent_covers_every_tracked_field' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'cfPlantedRebuildTaintWriter' scripts/check_content_flow_coverage.py
+run_check "INVARIANT" rg -n 'STATE_CONSTRUCTORS' scripts/check_content_flow_coverage.py
+run_negative_check "INVARIANT" rg -n 'let isUpdate' scripts/check_content_flow_coverage.py
+# And the other half of the same relation, which the executable mirror exposed: a
+# receive that blocks clears the message it is not going to deliver.  The negative
+# is load-bearing -- a bare `storeTcbIpcState` there is the shape that carried a
+# consumed message into `.blockedOnReceive` and made the preservation theorem
+# depend on an `hReceiverMsg` hypothesis nothing established.
+run_check "INVARIANT" rg -n 'storeTcbIpcStateAndMessage st. receiver \(\.blockedOnReceive endpointId\) none' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n 'storeTcbIpcStateAndMessage st. receiver \(\.blockedOnReceive endpointId\) none' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_negative_check "INVARIANT" rg -n 'storeTcbIpcState st. receiver \(\.blockedOnReceive endpointId\)' SeLe4n/Kernel/IPC/DualQueue/Transport.lean SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# PR #873 round 13: **an in-flight derivation is a derived capability.**  A
+# capability-bearing send that parks carries its derivation in the sender's
+# `pendingMessage` and becomes a CDT child only when a receiver collects it, so a
+# revoke walked a subtree the pending transfer was not in, reported success, and
+# the later receive installed the snapshot and added the child edge AFTER the
+# revocation.  The fix is at the operation that defines the guarantee rather than
+# at a third reader of the pending-transfer predicate: both revoke wrappers end by
+# consuming the carried derivations, over the revoked root and its whole subtree.
+run_check "INVARIANT" rg -n '^def revokePendingTransfersFrom' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_frame' SeLe4n/Kernel/Capability/Operations.lean
+# PR #873 round 17: that consumption was an epilogue appended at each entry
+# point, and there were FOUR hand-written traversals to append it to.  Two got
+# it; a successful `cspaceRevokeCdtStrict` or `cspaceRevokeCdtTransactional`
+# returned its folded state with the derivation still parked, and the receiver's
+# later collect installed it.  The entry points are now one scaffold at four
+# traversals, so the prologue and the epilogue are not a variant's to write.
+run_check "INVARIANT" rg -n '^def revokeCdtScaffold' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n 'revokePendingTransfersFrom out.state \(rootNode :: out.revokedNodes\)' SeLe4n/Kernel/Capability/Operations.lean
+# The tie is definitional -- four `rfl`s, so a variant that stopped being the
+# scaffold would fail to elaborate rather than fail to be listed.
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_routes_through_scaffold' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStreaming_routes_through_scaffold' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStrict_routes_through_scaffold' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtTransactional_routes_through_scaffold' SeLe4n/Kernel/Capability/Operations.lean
+# Held over an arbitrary traversal, so it covers the four that exist and the ones
+# that do not exist yet.
+run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_ok_consumed_or_nothing_derived' SeLe4n/Kernel/Capability/Operations.lean
+# The exact pre-fix return of both reporting variants: the fold's state handed
+# back with no consumption.  Load-bearing negative -- this is the shape that let
+# a revoke report success while the capability was still on its way.
+run_negative_check "INVARIANT" rg -n 'ok \(\{ report with deletedSlots := report.deletedSlots.reverse \}, stFinal\)' SeLe4n/Kernel/Capability/Operations.lean
+# Consuming from a TCB is a write to the object store, so the seven-conjunct
+# capability bundle has to survive it -- proved, not assumed, and in the Invariant
+# layer because Operations cannot name the bundle.
+run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+# The transactional variant had NO preservation theorem: the strict one restated
+# its fold inline instead of naming it, so there was nothing for a second variant
+# over the same fold to reuse.
+run_check "INVARIANT" rg -n '^theorem revokeCdtReportingStep_preserves' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtTransactional_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+# And the regression names revocation rather than one function: it ran
+# `cspaceRevokeCdt` alone, which is why it could not see the other three.
+run_check "INVARIANT" rg -n 'revokeConsumesPendingTransfer' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n '^private def revocationEntryPoints' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'revocationEntryPoints.length == 4' tests/OperationChainSuite.lean
+# And the send-side half of round 6's ordering independence.  The wrappers took
+# the grant authority TWICE -- the `endpointRights` argument for the rendezvous
+# arm, `msg.capsGranted` for the parked one -- and never tied them, so a caller
+# passing granting rights on a message at the field's default transferred on
+# rendezvous and nothing after parking, and one passing a CLAIMED grant on a
+# non-granting endpoint transferred after parking.  Deriving the field from the
+# endpoint's rights makes the two inputs one, in both directions.
+run_check "INVARIANT" rg -n 'endpointSendDual endpointId sender \{ msg with capsGranted := endpointRights.mem .grant \}' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+run_check "INVARIANT" rg -n 'endpointCall endpointId caller \{ msg with capsGranted := endpointRights.mem .grant \}' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+run_check "INVARIANT" rg -n 'endpointSendDualOnCore endpointId sender \{ msg with capsGranted := endpointRights.mem .grant \}' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_check "INVARIANT" rg -n 'endpointCallOnCore endpointId caller \{ msg with capsGranted := endpointRights.mem .grant \}' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+# The regression drives the property from the UNSTAMPED message `chain12c`'s
+# fixture deliberately does not prepare -- `chain12c` sets the field from the same
+# rights it passes, so it cannot see the two inputs disagree.
+run_check "INVARIANT" rg -n 'endpointGrantDecidesBothOrderings' tests/OperationChainSuite.lean
+# The CDT node allocator's global counter is the footprint gap the caps path
+# opened: minting a node for a source slot writes `cdtNextNode` while the send's
+# declared footprint holds the source CNode in READ mode and declares no
+# state-level write.  Registered rather than papered over, so enabling fine locks
+# has to delete the entry deliberately.
+run_check "INVARIANT" rg -n 'cdtNodeAllocation' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '\(\.cdtNodeAllocation, "' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# PR #873 round 14: **the frozen/live correspondence, as something that runs.**
+# Each frozen operation re-implements a live transition, and which one it
+# re-implements was recorded in a markdown table and a `mirrors X` sentence.
+# Nothing ran either, so a frozen operation could drift and stay green -- which
+# is how five separate divergences reached review rather than the build.  The
+# table was itself wrong: row 5 named `notificationSignal` while the operation
+# mirrors the bound-aware composition the live arm runs.
+run_check "INVARIANT" rg -n '^def frozenObjectAgrees' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^def frozenStateAgrees' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^def frozenRunAgrees' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# The interlock: `frozenOpCoverage` says a frozen operation EXISTS for a
+# syscall, which every divergence also satisfied.  Claiming it now obliges
+# either a differential scenario or a stated reason, decided over
+# `SyscallId.all` so a new constructor forces the choice.
+run_check "INVARIANT" rg -n '^def frozenOpDifferentiallyChecked' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# PR #873 round 17: keyed by SYSCALL, one scenario satisfied a whole syscall --
+# `.send` read "checked" on a fixture with no receiver waiting while the
+# rendezvous branch had never been compared.  The unit of the claim is now the
+# unit of the transition, and the per-syscall view is derived from it rather
+# than asserted beside it.
+run_check "INVARIANT" rg -n '^inductive FrozenOpBranch' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^def frozenBranchDifferentiallyChecked' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^theorem frozenBranch_checked_or_reasoned' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^theorem frozenBranchUncheckedReason_only_when_unchecked' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# The vacuity guard: without it a syscall with no branches listed satisfies the
+# `all` and claims to be checked.
+run_check "INVARIANT" rg -n 'FrozenOpBranch.all.any \(fun b => b.syscall == sid\)' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# A `.blockedOnCall` head is parked for its reply, not woken: the branch the
+# frozen receive could not previously express, since it took no reply id.
+run_check "INVARIANT" rg -n 'senderWasCall' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^def frozenLinkCallerReply' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n 'differentialReceiveFromBlockedCallerAgrees' tests/FrozenOpsSuite.lean
+# PR #873 round 17: on a rendezvous the message goes straight from the argument
+# into the receiver's TCB, so the live send never resolved `sender` -- a caller
+# naming a nonexistent thread delivered anyway and the receiver held a message
+# attributed to it.  Only the parking arm failed, and only because it happens to
+# store into the sender's own TCB.  The frozen mirror refused on both arms, and
+# the frozen behaviour was the correct one, so the live path is what changed.
+run_check "INVARIANT" rg -n 'match st.getTcb\? sender with' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+# …and the per-core mirror in lockstep, which is what the refinement theorem ties.
+run_check "INVARIANT" rg -n 'match st.getTcb\? sender with' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_check "INVARIANT" rg -n 'differentialSendFromAbsentSenderAgrees' tests/FrozenOpsSuite.lean
+# PR #873 audit: the branch above was CLAIMED checked while its scenario compared
+# only the refusal ordering, and the known divergence sat on the delivery
+# ordering -- live `storeTcbReceiveComplete` clears the receiver's stashed reply
+# object (D3/F-1) where the frozen mirror kept it.  The mirror is now field-exact
+# and the delivery ordering is compared with the stash seeded.
+run_check "INVARIANT" rg -n 'pendingMessage := some msg, pendingReceiveReply := none' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n 'differentialSendRendezvousDeliversAgrees' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'the live delivery clears the stash' tests/FrozenOpsSuite.lean
+# The consuming waiter is the calling thread: it never blocked, so the live
+# `notificationWait` leaves the scheduler alone and the frozen mirror must too.
+run_negative_check "INVARIANT" rg -n 'fun stR => frozenEnsureRunnable stR waiter' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^theorem frozenOpCoverage_obliges_differential_check' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^theorem frozenOpDifferentiallyChecked_implies_covered' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# An excuse left behind after the scenario lands would re-open the escape hatch.
+run_check "INVARIANT" rg -n '^theorem frozenOpUncheckedReason_only_when_unchecked' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# The scenarios, and the negative that makes them evidence rather than
+# decoration: a comparison returning `true` for everything would pass all six.
+run_check "INVARIANT" rg -n 'differentialNotificationSignalAgrees' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'differentialRefusalsAgree' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'differentialComparisonHasBite' tests/FrozenOpsSuite.lean
+# The corrected row.  The wrong one must not come back.
+run_prose_check "INVARIANT" rg -n 'frozenNotificationSignal.*notificationSignalBound' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_prose_negative_check "INVARIANT" rg -n '\| 5 \| .frozenNotificationSignal.*\| .notificationSignal. ' SeLe4n/Kernel/FrozenOps/Operations.lean
+# PR #873 round 14: **the authority is checked where the resource is committed.**
+# Resolving an extra capability mints a persistent CDT node and marks its slot
+# as having a transfer in flight; Grant was consulted only later, at the unwrap.
+# So a sender holding Write but not Grant spent the bounded node counter on
+# every send, and `cspaceDeleteSlot` / the CNode retype answered
+# `.revocationRequired` for a derivation the unwrap was always going to deny.
+# The contract is definitional -- the state is untouched, not merely the caps
+# denied -- so it is `rfl` rather than a scenario.
+run_check "INVARIANT" rg -n '^theorem resolveExtraCaps_ungranted' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem resolveExtraCapsDetailed_ungranted' SeLe4n/Kernel/API.lean
+# And each live arm passes the endpoint capability's own bit, which the
+# delegation theorems restate and therefore prove rather than assert.
+run_check "INVARIANT" rg -n 'resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth \(cap.rights.mem .grant\)' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st' SeLe4n/Kernel/API.lean
+# The anchor gate's two fail-open holes, which are one defect: "I could not
+# analyse this" was read as "this is fine".  A category label outside the
+# parser's grammar made the helper line miss detection entirely, so the anchor
+# left the comparison while the gate reported PASS; and a fixed-string positive
+# against a regex negative returned no literal core, which was read as no
+# contradiction even though the literal the positive demands is matched by the
+# negative's wildcard.
+run_check "BUILD" rg -n 'HELPER_NAME_RE' scripts/check_anchor_consistency.py
+run_check "BUILD" rg -n '^def _regex_matches_literal' scripts/check_anchor_consistency.py
+# PR #873 round 15: **the frozen scheduler kept no run queue.**  No frozen
+# operation ever wrote `scheduler.byPriority`, which is the only field
+# `frozenChooseThread` selects from -- so a woken thread was `.ready` and
+# permanently unselectable, and a suspended one stayed in its bucket still
+# marked `.ready`.  The docstring asserted the opposite and named `membership`,
+# a `FrozenSet` whose keys cannot change and which selection never reads.
+run_check "INVARIANT" rg -n '^def frozenEnsureRunnable' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenRemoveRunnable' SeLe4n/Kernel/FrozenOps/Core.lean
+# The builder could not express a runnable thread at all, which is why every
+# frozen test started from a state the live kernel cannot produce.
+run_check "INVARIANT" rg -n '^def markRunnable' SeLe4n/Model/Builder.lean
+# Every wake enqueues and every block dequeues -- the pairs the live transitions
+# maintain with `ensureRunnable` / `removeRunnable`.
+run_check "INVARIANT" rg -n 'frozenEnsureRunnable' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n 'frozenRemoveRunnable' SeLe4n/Kernel/FrozenOps/Operations.lean
+# The relation compares the buckets, not just the current thread; comparing
+# `current` alone is what let the wake divergence through the differential
+# scenarios that were built to catch exactly this class.
+run_check "INVARIANT" rg -n 'let queueAgree' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# The reply scenario asserts BOTH sides succeed before comparing them: it used to
+# agree because both refused with `.replyCapInvalid`, which is agreement about
+# nothing happening.
+run_check "INVARIANT" rg -n 'FO-031 control: the live reply succeeds' tests/FrozenOpsSuite.lean
+# The corrected claims must not come back.
+run_prose_negative_check "INVARIANT" rg -n 'run queue manipulation is skipped' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_prose_negative_check "INVARIANT" rg -n 'run queue insertion.{0,12}is skipped' SeLe4n/Kernel/FrozenOps/Operations.lean
+# PR #873 round 16: **the relation stopped being an inclusion list.**  Every
+# finding against it was "you forgot to compare X" -- the per-object lock, the
+# returned value -- which is the enumerate-what-you-remembered shape this branch
+# has been closing all along.  The re-represented variants are destructured, so
+# a field nobody compares is an unused binding and a new field breaks the
+# pattern; the returned values are compared through a relation the caller must
+# supply rather than matched away as `_`.
+run_check "INVARIANT" rg -n 'flock == llock' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n 'resultAgrees fa la' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# A frozen operation is the SYSCALL, not the bare transition: with no dispatcher
+# it applies the provenance step inline, while the live kernel applies it after
+# the transition at the seam.  Comparing against a bare transition compared two
+# layers and passed only while every taint was empty.
+run_check "INVARIANT" rg -n '^private def liveWithTaint' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'differentialTaintedSignalAgrees' tests/FrozenOpsSuite.lean
+# …and the coverage claim is checked against the list the runner executes, in
+# both directions, so it can no longer be true of a scenario that does not exist.
+run_check "INVARIANT" rg -n '^private def differentialScenarios' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'differentialRegistryMatchesClaim' tests/FrozenOpsSuite.lean
+# The anchor gate carries file filters into the comparison: `-g '"'"'*.md'"'"'` and
+# `-g '"'"'*.lean'"'"' search disjoint files and cannot contradict, while an unfiltered
+# negative covers any filtered positive.
+run_check "BUILD" rg -n '_FILE_FILTER_OPTIONS' scripts/check_anchor_consistency.py
+# PR #873 round 17: the content-flow gate's arm splitter recognised only a
+# constructor immediately followed by `=>`, so a grouped arm
+# (`| .auditRead | .auditDrain =>`) produced no reach key for either -- and its
+# text was attributed to the preceding arm.  The missing-arm check was satisfied
+# by the dispatcher that spells them separately, so the grouped pair was never
+# verified fail-closed.  `recording_classification` in the same file already
+# expanded groups: two parsers over one syntax, one of them right.
+run_check "BUILD" rg -n '^def split_dispatch_arms' scripts/check_content_flow_coverage.py
+run_check "BUILD" rg -n 'the arm splitter dropped a grouped arm' scripts/check_content_flow_coverage.py
+# Sequence-coded test identifiers must not come back in the renamed scenarios.
+run_negative_check "INVARIANT" rg -n 'private def fo0(2[2-9]|3[0-3])_' tests/FrozenOpsSuite.lean
+run_negative_check "INVARIANT" rg -n 'private def chain12[b-h][A-Z]' tests/OperationChainSuite.lean
+# PR #873 round 17: **the frozen wake refused a transition the kernel performs.**
+# The enqueue went through `FrozenMap.set`, which answers `none` for an absent
+# key, so a thread woken at a priority holding no bucket got `.illegalState` --
+# while the live `ensureRunnable` creates the bucket through `RunQueue.insert`.
+# A passive server blocked at freeze time is exactly that case.  The fixed key
+# set was a property of `set`, not of the representation: `data` is an `Array`
+# and `indexMap` an `RHTable`, and both grow.
+run_check "INVARIANT" rg -n '^def FrozenMap.insert' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem FrozenMap.insert_get\?_self' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem FrozenMap.insert_preserves_wellFormed' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n 'st.scheduler.byPriority.insert prio' SeLe4n/Kernel/FrozenOps/Core.lean
+# The refusal must not come back.
+run_negative_check "INVARIANT" rg -n 'byPriority.set prio' SeLe4n/Kernel/FrozenOps/Core.lean
+# Every actor in the differential scenarios sat at priority 0, so the missing-key
+# branch never ran and the harness built to catch frozen/live divergence could
+# not see this one.  The control asserts the bucket really is absent first.
+run_check "INVARIANT" rg -n 'differentialWakeAtUnqueuedPriorityAgrees' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'FO-034: control' tests/FrozenOpsSuite.lean
+# PR #873 round 17: the taint side table's contract named `syscallEntryChecked`
+# as its writer's seam.  Round 6 moved the write down to the dispatchers because
+# the unchecked one reached the transitions without passing through it, and the
+# contract went on naming the old layer for eleven rounds.  It now names the
+# seams the content-flow gate checks.
+run_prose_check "INVARIANT" rg -n 'dispatchSyscallChecked., each applying it' SeLe4n/Model/State.lean
+run_prose_check "INVARIANT" rg -n 'check_content_flow_coverage.py. validates each' SeLe4n/Model/State.lean
+run_prose_check "INVARIANT" rg -n 'run at both dispatchers' SeLe4n/Kernel/Architecture/Invariant.lean
+# The single-seam claim must not come back at either site.
+run_prose_negative_check "INVARIANT" rg -n 'at the per-core syscall entry' SeLe4n/Model/State.lean
+run_prose_negative_check "INVARIANT" rg -n 'run at .API.syscallEntryChecked' SeLe4n/Kernel/Architecture/Invariant.lean
+# PR #873 round 7: a CLEAR is a taint write too, so the retype's cleared key
+# rides its own object lock — the third member of `taintWriteKeys` the key-local
+# declaration had skipped.  The fixed four stay pinned separately.
+run_check "INVARIANT" rg -n '^theorem lockSet_lifecycleRetype_clearedKey_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_lifecycleRetype_nonTarget_kinds' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem permittedKinds_lifecycleRetype_admits_every_kind' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# PR #873 round 7: a frozen parked sender must carry its message — the state
+# check alone let a `.blockedOnSend` head with no `pendingMessage` be dequeued,
+# after which the receiver got `none` and the sender's provenance anyway.
+run_check "INVARIANT" rg -n 'headTcb.pendingMessage.isSome' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n 'frozenParkedSenderCarriesItsMessage' tests/FrozenOpsSuite.lean
+# No receive declares a CSpace sink, and PR #873 round 8 corrected the reason:
+# not "the live receive installs nothing" — it has installed since round 6 — but
+# the standing scope decision that a CNode holds no tracked content
+# (`senderTaintEdges_content_only`).  The three are pinned OUT because declaring
+# them would hand an unrelated later downgrade an unsaturated predecessor; only
+# a scope change that tracks capability provenance can restore them, on BOTH
+# orderings at once.
+run_negative_check "INVARIANT" rg -n 'theorem taintPropagation_queued_receive_to_cspace' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_negative_check "INVARIANT" rg -n 'theorem taintPropagation_cspace_taints_consumer' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_negative_check "INVARIANT" rg -n 'def parkedCarriesCaps' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# The send-side Grant gate is NOT pinned here any more.  It lived inside
+# `sendCarriesCaps`, which the content-derived cut deleted and which the negative
+# check below pins out — so requiring its text in this file contradicted that
+# check and could not pass.  The gate itself is unchanged; it is a property of
+# the IPC transition, and this file no longer restates it.
+# PR #873 round 8: the delete guard sees transfers IN FLIGHT, not only children.
+# Between a blocking send and the unwrap that completes it the source slot has no
+# CDT child yet, so a children-only guard permitted the delete, the slot was
+# detached from its node, and the transferred copy landed under a parent no slot
+# pointed at — unreachable by any revoke.
+run_check "INVARIANT" rg -n '^def nodeHasPendingTransfer' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def slotHasPendingTransfer' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_refuses_pending_transfer' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_refuses_existing_children' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n 'hasCdtChildren st addr \|\| slotHasPendingTransfer st addr' SeLe4n/Kernel/Capability/Operations.lean
+
+# The derivation-parent predicate has two callers — the slot delete and the
+# CNode retype — and they must read the same one, so both the factored
+# predicate and each caller's use of it are pinned.
+run_check "INVARIANT" rg -n '^def slotIsDerivationParent' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def cnodeHasDerivationParentSlot' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n 'if slotIsDerivationParent st addr then' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n 'if cnodeHasDerivationParentSlot st target cn then' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+
+# The guarantee those guards are the ergonomics for: the single creator of an
+# `.ipcTransfer` edge declines when the source node has no slot, so no
+# destroyer — present or future — can leave an unrevokable child behind.
+run_check "INVARIANT" rg -n '^  \| sourceRevoked$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_installed_implies_live_source' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_sourceRevoked_preserves_state' SeLe4n/Kernel/Capability/Operations.lean
+# PR #873 round 18: that check asked whether the node still MAPPED to a slot, on
+# the premise that every destroyer severs the mapping.  Delete, CNode retype and
+# the descendant sweep do; the LOCAL sibling sweep does not -- `revokeTargetLocal`
+# empties every sibling naming the revoked target while `revokeAndClearRefsState`
+# deliberately preserves the CDT maps.  So the mapping outlived the capability, a
+# transfer parked against a swept sibling installed, and nothing could revoke the
+# copy afterwards: `cspaceRevokeCdt` on an empty slot fails at `cspaceLookupSlot`.
+run_check "INVARIANT" rg -n '^def cdtNodeIsRevocable' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n 'match cdtNodeIsRevocable st srcNode with' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_installed_implies_revocable_source' SeLe4n/Kernel/Capability/Operations.lean
+# The condition is revocation's own precondition, not a second opinion about it:
+# a change to what revocation requires breaks these rather than widening the check.
+run_check "INVARIANT" rg -n '^theorem cspaceRevoke_ok_implies_slot_occupied' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cdtNodeIsRevocable_false_revoke_refuses' SeLe4n/Kernel/Capability/Operations.lean
+# The mapping-only test must not come back at the install site.
+run_negative_check "INVARIANT" rg -n 'match SystemState.lookupCdtSlotOfNode st srcNode with' SeLe4n/Kernel/Capability/Operations.lean
+# The regression carries both load-bearing negatives: the mapping survives the
+# sweep (so the old check would have passed) and the in-flight consumption does
+# not reach a swept sibling (so this is a second hole, not the first restated).
+run_check "INVARIANT" rg -n '^private def revokeSweptSiblingBlocksPendingTransfer' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'the CDT mapping outlived the capability' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'the consumption sweep did not reach it' tests/OperationChainSuite.lean
+# NEGATIVE: the CNode retype arm must not go back to branching on the
+# replacement's shape — both shapes destroy the old slots, so both must detach.
+run_negative_check "INVARIANT" rg -n 'CNode → CNode: no CDT cleanup needed' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+# The load-bearing negative: the parked source provably has NO CDT child, so the
+# old guard would have permitted the delete and the new predicate is doing the work.
+run_check "INVARIANT" rg -n 'chain12b: NEGATIVE . the parked source has no CDT child yet' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'chain12b: deleting the source of a parked transfer is REFUSED' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'chain12b: NEGATIVE . an unrelated slot in the same CNode still deletes' tests/OperationChainSuite.lean
+# PR #873 review round 4: the flow fold reads every source from the PRE-state, so
+# a transfer's root-to-root edge cannot chain into a root-to-subject edge within
+# one commit.  The receiving subject is therefore sourced from the sender's root
+# directly, or a courier's provenance never reaches a downgrading subject.
+# …and the CSpace sinks are GATED on capabilities actually crossing.  Ungated,
+# a plain message writes the sender's provenance into a CNode no capability
+# reached, and — since a root now feeds the consuming subject — an unrelated
+# later downgrade could name it as an UNSATURATED predecessor, which is exactly
+# what `staleTaint_is_not_saturation` rules out.
+run_negative_check "INVARIANT" rg -n '^def sendCarriesCaps' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a send declares no CSpace-root sink or source' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: no rendezvous declares a CSpace-root sink, caps or not' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'EVERY taint write key is write-locked by the send footprint' tests/SmpInformationFlowSuite.lean
+# …a clear is FINAL within its commit: the final origination pass skips cleared
+# keys, so a declassifying signal that delivers straight to a waiter cannot
+# re-tag the transport it just emptied.
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_cleared_empty' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'a cleared object stays empty even when the commit recorded a downgrade' tests/SmpInformationFlowSuite.lean
+# …and a BOUND delivery clears NOTHING.  `boundDeliveryTarget?` ignores
+# `pendingBadge` and `notificationSignalBound` never writes the notification, so
+# an unconditional clear discarded the provenance of a badge the object still
+# holds — a MISSED chain, the direction a detector must never err in.
+run_check "INVARIANT" rg -n '^def signalClearedNotification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a bound delivery clears no notification taint' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'a waiter delivery still empties the notification' tests/SmpInformationFlowSuite.lean
+# PR #873 review: the CONTENT-DERIVED transport model.  A transport's taint
+# reflects the content it currently holds: an endpoint is not a sink at all (it
+# buffers no content — the message is in the blocked sender's TCB, and the
+# receiver reads the head sender directly), and a consumed notification is
+# cleared.  Without this a reused endpoint links causally-unrelated messages —
+# a false positive that is NOT saturation.
+run_check "INVARIANT" rg -n '^def contentFlowClears' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem waitClearsNotificationTaint' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_receive_from_sender' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the endpoint is not among the declared sinks at all' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the endpoint itself carries no identity' tests/SmpInformationFlowSuite.lean
+run_check "TRACE" rg -n 'transportUntouched=' tests/fixtures/smp_information_flow.expected
+# …and the endpoint-proxy forms must not come back: they ARE the stale-transport
+# false positive, so a regression that re-adds an endpoint sink or an
+# endpoint-sourced receive would restore it.
+run_negative_check "INVARIANT" rg -n 'theorem taintPropagation_send_to_endpoint' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_negative_check "INVARIANT" rg -n 'theorem taintPropagation_receive_from_endpoint' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# PR #873 review: the tracked-content SCOPE, stated as a value and tied to the
+# gate's own channel list, with the one deliberate exclusion (a capability badge
+# is authority metadata, not payload) recorded as a theorem rather than prose.
+run_check "INVARIANT" rg -n '^def contentTrackedFields' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem capabilityBadgeChannel_out_of_scope' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "BUILD" rg -n 'def check_scope_matches_lean' scripts/check_content_flow_coverage.py
+# PR #873 review: the hot-path elision — a value-preserving join must not extend
+# the table's closure chain, which ordinary untainted IPC would otherwise do on
+# every edge.
+run_check "INVARIANT" rg -n '^theorem joinAt_eq_of_join_eq' SeLe4n/Kernel/InformationFlow/Taint.lean
+# SM9.D.9 (audit): the replyRecv REPLY leg — the steady-state server loop's
+# second hop, which a receive-leg-only plan under-approximates (the unsafe
+# direction for a detector).  The resolution mirrors `resolveReplyRecvReply`
+# step for step, sharing `replyTaintEdges` with the `.reply` arm so the two
+# cannot drift.
+run_check "INVARIANT" rg -n '^def replyRecvReplyLegEdges' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_replyRecv_reply_to_prevCaller' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'the replyRecv plan names the reply object.s recorded caller as a sink' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the receive-leg edges alone miss the recorded caller' tests/SmpInformationFlowSuite.lean
+# SM9.D.14 (audit): the monitor's own inference direction — every read 1 ⇒ the
+# view is causal — alongside the forward reconstruction.
+run_check "INVARIANT" rg -n '^theorem declassificationChainCausal_of_pairwise' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainVerdict_all_ok_causal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# PR #873 review: the flow sources are SEEDED with this commit's own origination,
+# so a syscall that both declassifies and delivers (`.declassifySignal`, whose
+# second hop is an ordinary delivery) carries the fresh event's tag to the object
+# the delivery reached.  Reading the raw pre-table there loses the successor —
+# a MISSED chain, the direction a detector must never err in.
+run_check "INVARIANT" rg -n 'applyOrigination \(planOriginationTags plan pre post\)' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# SM9.D.17 (audit): the pre-existing cap-transfer footprint gap — the receiver's
+# CSpace root, which `ipcUnwrapCaps` writes with no declared CNode write lock —
+# as a registered domain (owner recorded in the inventory itself) with its
+# violation witness and the honest §12.8 partition.
+run_check "INVARIANT" rg -n 'capTransferReceiverCnode' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem capTransfer_receiverCnode_write_undeclared' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'GAP .registered lock-inventory debt.: the receiver.s CSpace root is NOT write-locked' tests/SmpInformationFlowSuite.lean
+# The carve-out is gone: with the cap-transfer sink deleted, the receiver's
+# CSpace root is no longer a taint write key at all, so the send's coverage claim
+# is unconditional.  The registered domain above still records the underlying
+# footprint gap, which is a fact about `ipcUnwrapCaps`, not about taint.
+run_check "INVARIANT" rg -n 'EVERY taint write key is write-locked by the send footprint' tests/SmpInformationFlowSuite.lean
+
+# WS-SM SM9.D.17 (audit): the taint table's per-key realisation is a registered
+# domain rather than a paragraph.  The footprints declare each taint key's own
+# object lock while the model replaces the field whole, so key-local locking is
+# sound only once the runtime stores per object — owed by the representation cut.
+# Registered so that enabling fine locks has to delete the entry deliberately.
+run_check "INVARIANT" rg -n 'taintTablePerKeyStore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The owner string is pinned as *present*, not as a literal: spelling the
+# workstream code here would put it in a non-documentation file, which the
+# identifier-naming gate forbids.  That it is non-empty is checked properly, by
+# the suite's `declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty)`.
+run_check "INVARIANT" rg -n '\(\.taintTablePerKeyStore, "' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# SM9.D.7 (audit): the gate's direct-field-writer sweep — check (C) names only
+# constants that USE the taint API; (C2) scans every definition for a direct
+# write of `declassificationTaint` through the structure's constructor, in any
+# spelling (PR #873 round 12 dropped the `{ st with .. }` test that a positional
+# rebuild walked past), and the self-test asserts the sweep detects the one
+# declared writer so blindness cannot pass.
+run_check "BUILD" rg -n 'DECLARED_FIELD_WRITERS' scripts/check_content_flow_coverage.py
+run_check "BUILD" rg -n 'CF_FIELD_WRITER' scripts/check_content_flow_coverage.py
+run_check "BUILD" rg -n 'cfWritesField' scripts/check_content_flow_coverage.py
+# The rule inventory records the NEW claim in place of the retired one; the
+# count is unchanged, so the replacement is 1:1 rather than an addition.
+run_check "INVARIANT" rg -n 'chainLinkageIsCausal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationRules_count : DeclassificationRuleId.all.length = 12' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# The RETIRED claim must not come back: SM8.C's `…_is_syntactic` asserted
+# exactly what SM9.D falsifies, and its rule id with it.
+run_negative_check "INVARIANT" rg -n 'declassificationChainLinked_is_syntactic' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_negative_check "INVARIANT" rg -n 'chainLinkageIsSyntactic' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+
+# SM9.D.17: the SERIALIZATION SUBJECT.  The taint table is keyed by `ObjId`, so
+# — exactly as for `SystemState.objects`, whose per-key writes ride the
+# object's own lock and never `objStoreLock` — the subject is the lock the
+# transition already holds on the key.  Putting the level-0 singleton on the
+# eight content-moving syscalls would serialise every IPC in the system against
+# every other and blow the SM5.J tick budget the IPC fixtures pin, so the
+# absence of that lock on the hot path is pinned NEGATIVELY.
+run_check "INVARIANT" rg -n '^def taintWriteKeys' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_frame_off_writeKeys' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+
+# The origination keys are serialised by their own object locks, not by the
+# trail's state-level lock: `stateLevelLock` orders this transition against
+# other state-level writers only, while an ordinary IPC writing the same taint
+# key holds that key's lock and no state-level lock at all.
+run_check "INVARIANT" rg -n '^theorem lockSet_declassify_originationKeys_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n 'targetLock : Option LockId' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# The aggregate bound must quantify over the new member, or the resolved shape
+# is silently unbounded at the defaulted `none` — the SM9.C notificationSignal defect.
+run_check "INVARIANT" rg -n 'lockSet_declassify a b t\).size' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+
+# Provenance follows content through the frozen operations, not only across the
+# freeze itself — a snapshot that stopped propagating one operation later would
+# report every recorded downgrade as causally unconnected.
+run_check "INVARIANT" rg -n '^private def frozenTaintFlow' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^private def frozenTaintClear' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n 'signaller : SeLe4n\.ThreadId' SeLe4n/Kernel/FrozenOps/Operations.lean
+# NEGATIVE: the replier is the content source of a frozen reply, so it must not
+# go back to being an unused parameter.
+run_negative_check "INVARIANT" rg -n 'frozenEndpointReply \(_replierId' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^theorem taintWriteKeys_disjoint_updates_independent' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintWriteKeys_of_no_events' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# Pinned positively at the send's base list, whose last member is the endpoint:
+# appending the level-0 singleton here is exactly the regression, and it breaks
+# this anchor.  (`stateLevelLock` still appears in the file — on the three
+# footprints that write the audit TRAIL, whose `List` append does not
+# decompose by key — so a file-wide negative would be wrong.)
+run_check "INVARIANT" rg -n '^       \(endpointLock endpointObjId, .write\)\]\)$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem taintWriteKeys_inert' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# SM9.D.18: the propagation is framed to one field and visible to no observer,
+# so every existing invariant argument and every NI result stands unchanged.
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_frame' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_projection' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_confinedToCores_nil' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_onCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+
+# SM9.D tests: the eight runtime groups, their load-bearing negatives, the
+# surface anchors and the golden-fixture lines.
+run_check "INVARIANT" rg -n 'NEGATIVE: a ninth identity saturates, and the top reports one nobody held' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a domain-only detector fires on a causally unrelated pair' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: an object-adjacency detector MISSES the real chain' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'an ORDINARY delivery — no declassification edge — carried it to the next subject' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a framed retype would keep them, and the stale tag is NOT a saturation' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the content-moving footprints do NOT declare the coarse table lock' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a disjoint plan leaves this plan.s keys literally unchanged' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'SCOPE: the residual over-approximation is saturation, and only that' tests/SmpInformationFlowSuite.lean
+run_check "TRACE" rg -n 'taint classification: moving=' tests/fixtures/smp_information_flow.expected
+run_check "TRACE" rg -n 'taint propagation: liveReceiverTagged=' tests/fixtures/smp_information_flow.expected
+run_check "TRACE" rg -n 'causal chain: causal=' tests/fixtures/smp_information_flow.expected
+run_check "TRACE" rg -n 'taint saturation: full=8' tests/fixtures/smp_information_flow.expected
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
 run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean

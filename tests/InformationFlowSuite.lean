@@ -1354,7 +1354,8 @@ def runInformationFlowChecks : IO Unit := do
     { srcDomain := ⟨2⟩, dstDomain := ⟨0⟩, targetObject := ⟨902⟩,
       authorizationBasis := .policyRule,
       timestamp := 0, originatingCore := bootCoreId,
-      actor := { subject := ⟨1⟩, domain := ⟨2⟩ } }
+      actor := { subject := ⟨1⟩, domain := ⟨2⟩ },
+      predecessorTags := SeLe4n.Kernel.DeclassificationTaint.empty }
   let emptyLog : SeLe4n.Kernel.DeclassificationAuditLog := []
   let log1 := SeLe4n.Kernel.recordDeclassification emptyLog event
   expect "recording to empty log yields length 1"
@@ -1365,7 +1366,8 @@ def runInformationFlowChecks : IO Unit := do
     { srcDomain := ⟨3⟩, dstDomain := ⟨1⟩, targetObject := ⟨903⟩,
       authorizationBasis := .integratorOverride "system-integrator-override",
       timestamp := 1, originatingCore := bootCoreId,
-      actor := { subject := ⟨2⟩, domain := ⟨3⟩ } }
+      actor := { subject := ⟨2⟩, domain := ⟨3⟩ },
+      predecessorTags := SeLe4n.Kernel.DeclassificationTaint.empty }
   let log2 := SeLe4n.Kernel.recordDeclassification log1 event2
   expect "second record yields length 2"
     (log2.length = 2)
@@ -1468,7 +1470,8 @@ def runInformationFlowChecks : IO Unit := do
             { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
               slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)] })
         |>.buildChecked)
-    let msgWithCaps : IpcMessage := { registers := #[], caps := #[cap1], badge := none }
+    let msgWithCaps : IpcMessage :=
+      { registers := #[], caps := #[TransferCap.fromNode cap1 0], badge := none }
     let result := SeLe4n.Kernel.ipcUnwrapCaps msgWithCaps senderCNode nonCNodeRoot
       (SeLe4n.Slot.ofNat 0) true st
     expect "ipcUnwrapCaps with non-CNode root yields consistent outcome"
@@ -1579,7 +1582,7 @@ def runInformationFlowChecks : IO Unit := do
         -- → `lookupTcb`), the wrapper propagates an error. The wrapper MUST
         -- NOT return `.ok` — that would be the pre-R1 covert-channel shape.
         let msgWithCaps : IpcMessage :=
-          { registers := #[], caps := #[cap1], badge := none }
+          { registers := #[], caps := #[TransferCap.fromNode cap1 0], badge := none }
         let callResult := SeLe4n.Kernel.endpointCallWithCaps epId callerTid
           msgWithCaps (AccessRightSet.ofList [.write, .grant]) callerCNode
           (SeLe4n.Slot.ofNat 0) stFaulty

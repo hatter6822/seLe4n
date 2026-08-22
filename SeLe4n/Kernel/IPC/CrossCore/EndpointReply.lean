@@ -218,7 +218,11 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
             match endpointQueueEnqueue endpointId true receiver stClean with
             | .error e => (st, .error e)
             | .ok st' =>
-                match storeTcbIpcState st' receiver (.blockedOnReceive endpointId) with
+                -- PR #873 round 11: clear `pendingMessage` atomically with the block,
+                -- exactly as the single-core `endpointReceiveDual` does -- a receiver
+                -- that already collected a message would otherwise carry it into
+                -- `.blockedOnReceive`, breaking `blockedThreadsPendingMessageConsistent`.
+                match storeTcbIpcStateAndMessage st' receiver (.blockedOnReceive endpointId) none with
                 | .error e => (st, .error e)
                 | .ok st'' =>
                     -- WS-SM SM6.D (#7.2 fold): server-first stash — record the
@@ -251,6 +255,128 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
       -- absent one with `.objectNotFound` (mirrors `endpointCallOnCore`).
       if (st.objects[endpointId]?).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
+
+/-- **WS-SM SM6 (PR #873 round 6): the per-core receive that installs the
+capabilities a parked send was carrying.**
+
+The cross-core sibling of `endpointReceiveDualWithCaps`, and the one the live
+`.receive` arm runs — exactly as `endpointSendDualWithCapsOnCore` is the sibling
+of `endpointSendDualWithCaps` and the one the live `.send` arm runs.
+
+**Why it had to exist.**  `endpointSendDualWithCaps`' own docstring already said
+what should happen: "If no receiver was waiting (sender enqueued): caps stay in
+the message stored in the sender's TCB.  *They will be unwrapped when a receiver
+later dequeues the sender.*"  Nothing did.  The live `.receive` ran the bare
+`endpointReceiveDualOnCore`, which moves the parked sender's `pendingMessage`
+across wholesale and installs nothing, while an immediate rendezvous transferred
+the capabilities — so whether a capability arrived depended on which side reached
+the endpoint first.  The verified receive-side transition existed and had no live
+caller; this is that transition on the per-core base the live arm needs.
+
+**Whose grant right.**  The message's own (`IpcMessage.capsGranted`), recorded by
+the sender when it built the message from its endpoint capability.  Not the
+receiver's endpoint rights, which is what the single-core sibling used to consult:
+that is a different principal's authority, and consulting it here would have left
+the orderings disagreeing whenever a granting sender met a non-granting receiver
+— the same order-dependence one case narrower.
+
+Returns the post-state, the dequeued sender, the transfer summary, and the
+receive's cross-core SGI.  The AK1-I fail-closed `.invalidCapability` on a sender
+with no CSpace root is preserved, keeping the NI symmetry all three transfer
+paths share. -/
+def endpointReceiveDualWithCapsOnCore
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) :
+    SystemState ×
+      Except KernelError
+        (SeLe4n.ThreadId × CapTransferSummary × Option (CoreId × SgiKind)) :=
+  match endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+  | (st', .error e) => (st', .error e)
+  | (st', .ok (senderId, sgi)) =>
+      -- PR #873 round 8: **a receive that dequeued nothing installs nothing.**
+      -- `receiveRendezvousSender?` is read at the pre-state, which is what the
+      -- transition above branches on.  Testing `pendingMessage` alone was the
+      -- capability-duplication defect: the blocking branch returns the receiver's
+      -- own id and does not clear that field, so a receiver still holding a
+      -- previously delivered caps-bearing message had those capabilities
+      -- unwrapped a second time into a fresh receive slot — an extra copy of
+      -- authority minted by a receive that consumed no message.
+      if (receiveRendezvousSender? st endpointId).isNone then
+        (st', .ok (senderId, { results := #[] }, sgi))
+      else
+      -- A receiver that *enqueued* has no delivered message, and a delivered
+      -- message with no caps has nothing to install; both are the empty summary.
+      match st'.getTcb? receiver with
+      | none => (st', .ok (senderId, { results := #[] }, sgi))
+      | some receiverTcb =>
+        match receiverTcb.pendingMessage with
+        | none => (st', .ok (senderId, { results := #[] }, sgi))
+        | some msg =>
+          if msg.caps.isEmpty then (st', .ok (senderId, { results := #[] }, sgi))
+          else
+            match lookupCspaceRoot st' senderId with
+            | none => (st', .error .invalidCapability)
+            | some senderRoot =>
+              match ipcUnwrapCaps msg senderRoot receiverCspaceRoot receiverSlotBase
+                  msg.capsGranted st' with
+              | .error e => (st', .error e)
+              | .ok (summary, st'') => (st'', .ok (senderId, summary, sgi))
+
+/-- WS-SM SM6 (PR #873 round 6): with nothing to install, the WithCaps per-core
+receive is exactly the bare per-core receive — so every capless pin taken against
+the bare transition still describes the live arm. -/
+theorem endpointReceiveDualWithCapsOnCore_no_caps
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st st' : SystemState)
+    (senderId : SeLe4n.ThreadId) (sgi : Option (CoreId × SgiKind))
+    (hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st
+      = (st', .ok (senderId, sgi)))
+    (hNoCaps : ∀ tcb, st'.getTcb? receiver = some tcb →
+      ∀ m, tcb.pendingMessage = some m → m.caps.isEmpty = true) :
+    endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore st
+      = (st', .ok (senderId, { results := #[] }, sgi)) := by
+  unfold endpointReceiveDualWithCapsOnCore
+  simp only [hRecv]
+  cases hTcb : st'.getTcb? receiver with
+  | none => simp
+  | some tcb =>
+    cases hMsg : tcb.pendingMessage with
+    | none => simp [hMsg]
+    | some m => simp [hMsg, hNoCaps tcb hTcb m hMsg]
+
+/-- **WS-SM SM6 (PR #873 round 8): a receive that dequeued nothing installs
+nothing.**
+
+The security property, stated where it can be checked.  `endpointReceiveDual*`'s
+blocking branch returns the *receiver's own* id and leaves `pendingMessage`
+untouched, so a wrapper that decides by looking at that field alone cannot tell a
+fresh delivery from one the receiver has been holding since its last receive.
+While `.receive` installed nothing that was harmless; once PR #873 routed the
+live arms through this transition it became capability duplication — a receiver
+holding one caps-bearing message could re-unwrap it into a new receive slot on
+every subsequent receive against an idle endpoint, minting copies of authority
+without a sender.
+
+The gate is the endpoint's own pre-state send queue, which is exactly what the
+bare transition branches on, so this is a fact about the two agreeing rather than
+a guard bolted on beside them. -/
+theorem endpointReceiveDualWithCapsOnCore_blocked_installs_nothing
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st st' : SystemState)
+    (senderId : SeLe4n.ThreadId) (sgi : Option (CoreId × SgiKind))
+    (hBlocked : receiveRendezvousSender? st endpointId = none)
+    (hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st
+      = (st', .ok (senderId, sgi))) :
+    endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore st
+      = (st', .ok (senderId, { results := #[] }, sgi)) := by
+  unfold endpointReceiveDualWithCapsOnCore
+  simp [hRecv, hBlocked]
 
 /-- WS-SM SM6.C.5 (plan §3.1): reply-and-receive across cores.
 
@@ -376,10 +502,17 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
   -- WS-SM SM6.D: replyRecv consumes the prior caller's Reply object and re-links
   -- it to the next caller — the reply object is `target.replyObject`; resolving it
   -- from `st` puts the per-object reply write-lock in the footprint.
+  -- PR #873 round 8: the receive leg installs capabilities when the sender it
+  -- dequeues parked a caps-bearing message, and `ipcTransferSingleCap` writes the
+  -- receiver's own CSpace root to do it — so the resolved footprint holds that
+  -- root in WRITE mode exactly then.  Resolved from `st` by the same predicate
+  -- the transition branches on, so the declared footprint and the transition
+  -- cannot disagree about when the write happens.
   lockSet_replyRecv replier cnodeRootObjId target endpointObjId newSender?
     ((endpointReplyDonation? st replier).map (·.1))
     ((endpointReplyDonation? st replier).map (·.2))
     ((st.getTcb? target).bind (·.replyObject))
+    (receiveInstallsCaps st endpointObjId)
 
 -- ============================================================================
 -- §3  Path reduction lemmas (full characterisation of each control path)
@@ -626,7 +759,7 @@ theorem lockSet_endpointReplyRecvOnCore_correct
     ∀ p ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).pairs,
       p.fst.kind ∈ permittedKinds .replyRecv := by
   unfold lockSet_endpointReplyRecvOnCore
-  exact lockSet_consistent_replyRecv replier cnodeRootObjId target endpointObjId _ _ _ _
+  exact lockSet_consistent_replyRecv replier cnodeRootObjId target endpointObjId _ _ _ _ _
 
 -- ============================================================================
 -- §6  SM6.C.4 / SM6.C.6 — Reply payload delivery + reply-state lifecycle
@@ -812,6 +945,53 @@ theorem lockSet_endpointReceive_reply_write_mem
       ∈ (lockSet_endpointReceive callerTid cnRoot endpointObjId senderTid (some rid)).pairs := by
   unfold lockSet_endpointReceive
   exact self_write_mem_insertOrMerge _ (replyLock rid)
+
+/-- **WS-SM SM3.B (PR #873 round 8): a capability-installing receive holds the
+receiver's CSpace root in WRITE mode.**
+
+The checkable form of the round-8 finding.  Both receive-shaped arms reach
+`ipcTransferSingleCap`, which mutates the receiver's root CNode through
+`cspaceInsertSlot`, while the footprint declared that same CNode `.read` — so
+once SM3.C.9 consumes these footprints a concurrent CSpace writer could share the
+alleged read lock and one update would be lost.
+
+Stated at `installsCaps := true`, which is the shape
+`receiveInstallsCaps` resolves to exactly when the dequeued sender parked a
+caps-bearing message.  At `false` the member stays `.read`, which is why this is
+a mode on the existing member rather than a new one: the size and the acquisition
+order are untouched. -/
+theorem lockSet_endpointReceive_capsInstall_write_mem
+    (callerTid : SeLe4n.ThreadId) (cnRoot endpointObjId : SeLe4n.ObjId)
+    (senderTid : Option SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) :
+    (cnodeLock cnRoot, AccessMode.write)
+      ∈ (lockSet_endpointReceive callerTid cnRoot endpointObjId senderTid replyId
+          (installsCaps := true)).pairs := by
+  unfold lockSet_endpointReceive lockSetOfList
+  simp only [List.foldl, if_true]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+        (LockSet.mem_insertOrMerge_write_self _ _)))
+
+/-- **WS-SM SM3.B (PR #873 round 8): and so does `.replyRecv`'s receive leg** —
+the same transition, so the same write, so the same declared mode. -/
+theorem lockSet_replyRecv_capsInstall_write_mem
+    (callerTid : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
+    (endpointObjId : SeLe4n.ObjId) (newSenderTid : Option SeLe4n.ThreadId)
+    (donatedScId : Option SeLe4n.SchedContextId)
+    (donatedOwnerTid : Option SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) :
+    (cnodeLock cnRoot, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnRoot target endpointObjId newSenderTid
+          donatedScId donatedOwnerTid replyId (installsCaps := true)).pairs := by
+  unfold lockSet_replyRecv lockSetOfList
+  simp only [List.foldl, if_true]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _
+        (mem_write_lockSetExtendOpt _ _ _
+          (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+            (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+              (LockSet.mem_insertOrMerge_write_self _ _))))))
 
 /-- WS-SM SM6.D (PR #822 review 6J-NL9): the per-object reply **write** lock is a
 declared member of the `.call` lock-set footprint once the linked reply object is

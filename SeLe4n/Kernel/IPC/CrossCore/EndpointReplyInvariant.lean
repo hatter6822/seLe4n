@@ -291,7 +291,7 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
       (endpointReplyOnCore replier target msg executingCore st).1)
     (hDOV' : donationOwnerValid
       (endpointReplyOnCore replier target msg executingCore st).1)
@@ -308,7 +308,7 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull
   · rw [hPre]; exact hInv
   · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
       (endpointReply_preserves_ipcInvariantFull st r1 expected target msg hInv hObjInv
-        (waitingThreadsPendingMessageNone_of_getElem_eq
+        (blockedThreadsPendingMessageConsistent_of_getElem_eq
           (fun oid => (hAgree.objects oid).symm) hWtpmn')
         hAllBudgetsNone
         (donationOwnerValid_of_getElem_eq (fun oid => (hAgree.objects oid).symm) hDOV')
@@ -322,7 +322,7 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
       (endpointReplyOnCore replier target msg executingCore st).1)
     (hDOV' : donationOwnerValid
       (endpointReplyOnCore replier target msg executingCore st).1)
@@ -459,14 +459,14 @@ theorem endpointReceiveDualOnCore_passiveServerIdleFrameOnCore
               (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
           have hF1 := hFClean.trans (endpointQueueEnqueue_passiveServerIdleFrameOnCore endpointId
             true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq)
-          cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+          cases hIpc : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
           | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
           | ok st2 =>
             simp only
             have hObjInv2 : st2.objects.invExt :=
-              storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInvEnq hIpc
-            have hF2 := hF1.trans (storeTcbIpcState_passiveServerIdleFrameOnCore st1 st2 receiver
-              (.blockedOnReceive endpointId) (Or.inl (Or.inr (Or.inl ⟨endpointId, Or.inl rfl⟩)))
+              storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 receiver _ _ hObjInvEnq hIpc
+            have hF2 := hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st1 st2 receiver
+              (.blockedOnReceive endpointId) none (Or.inl (Or.inr (Or.inl ⟨endpointId, Or.inl rfl⟩)))
               hObjInvEnq hIpc)
             cases hGetR : st2.getTcb? receiver with
             | none =>
@@ -485,7 +485,7 @@ theorem endpointReceiveDualOnCore_passiveServerIdleFrameOnCore
                   simp only
                   have hRecvObj := (getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
                   have hRTcbIpc : rTcb.ipcState = .blockedOnReceive endpointId :=
-                    storeTcbIpcState_ipcState_eq st1 st2 receiver _ hObjInvEnq hIpc rTcb hRecvObj
+                    storeTcbIpcStateAndMessage_ipcState_eq st1 st2 receiver _ _ hObjInvEnq hIpc rTcb hRecvObj
                   have hF3 := hF2.trans (storeObject_modifiedTcb_passiveServerIdleFrameOnCore st2
                     stStashed receiver.toObjId rTcb { rTcb with pendingReceiveReply := replyId }
                     hRecvObj rfl
@@ -615,7 +615,7 @@ theorem endpointReceiveDualOnCore_post_agrees
         | error e => left; rfl
         | ok st1 =>
           simp only
-          cases hStore1 : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+          cases hStore1 : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
           | error e => left; rfl
           | ok st2 =>
             simp only
@@ -660,7 +660,7 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
       (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
     (hRCLRecip' : replyCallerLinkageReciprocal
       (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
@@ -698,7 +698,7 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull
   · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
       (endpointReceiveDual_preserves_ipcInvariantFull endpointId receiver sender replyId st r1
         hInv hObjInv
-        (waitingThreadsPendingMessageNone_of_getElem_eq
+        (blockedThreadsPendingMessageConsistent_of_getElem_eq
           (fun oid => (hAgree.objects oid).symm) hWtpmn')
         hAllBudgetsNone
         (replyCallerLinkageReciprocal_of_getElem_eq
@@ -717,7 +717,7 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
       (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
     (hRCLRecip' : replyCallerLinkageReciprocal
       (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
@@ -859,7 +859,7 @@ pulls back to a pre-state TCB agreeing on `pendingReceiveReply` and
 `timeoutBudget`, and is either woken `.ready` or agrees on
 `ipcState`/`pendingMessage` too.  This is the lever that carries the receive
 leg's thread-shaped pre-state facts (`hReceiverReady`, `hReceiverNotRecv`,
-`allTimeoutBudgetsNone`, `waitingThreadsPendingMessageNone`, the stash
+`allTimeoutBudgetsNone`, `blockedThreadsPendingMessageConsistent`, the stash
 clause of `replyIdEstablishFresh`) across the reply leg. -/
 theorem endpointReplyOnCore_tcb_backward
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
@@ -1151,7 +1151,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
       (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1)
     (hRCLRecip' : replyCallerLinkageReciprocal
       (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1)
@@ -1203,13 +1203,13 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
         executingCore st hObjInv
       rw [hStEq] at hEpBwd
       have hDOVMid1 : donationOwnerValid st1 := by rw [← hStEq]; exact hDOVMid
-      have hWtpmnMid : waitingThreadsPendingMessageNone st1 := by
+      have hWtpmnMid : blockedThreadsPendingMessageConsistent st1 := by
         intro tid tcb hRaw
         obtain ⟨ty, hty, _, _, hDisj⟩ :=
           hTcbBwd tid tcb ((getTcb?_eq_some_iff st1 tid tcb).mpr hRaw)
         rcases hDisj with hReady | ⟨hIpcEq, hPendEq⟩
         · simp only [hReady]
-        · have hPre := hInv.waitingThreadsPendingMessageNone tid ty
+        · have hPre := hInv.blockedThreadsPendingMessageConsistent tid ty
             ((getTcb?_eq_some_iff st tid ty).mp hty)
           rw [hIpcEq, hPendEq]
           exact hPre
@@ -1290,7 +1290,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
       (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1)
     (hRCLRecip' : replyCallerLinkageReciprocal
       (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1)
