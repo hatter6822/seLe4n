@@ -51,12 +51,15 @@ When the H3 hardware binding integrates runtime execution, FrozenOps is the
 intended runtime monad. Until then, it serves as proof-of-concept infrastructure.
 
 Defines the execution-phase monad for operating on `FrozenSystemState`.
-All lookups use `FrozenMap.get?` (index lookup + array access) and all
+All lookups use `FrozenMap.get?` (index lookup + array access) and value
 mutations use `FrozenMap.set` (in-place array update at existing index).
 
-The index map is never modified after freeze — it is immutable. All
-`Fin` accesses are within bounds by construction. No fuel or dynamic
-resizing is needed.
+The index map is immutable for every operation that only changes values, which
+is all of them but one: a wake has to enqueue into a bucket the snapshot may not
+hold, because the live `ensureRunnable` creates it. `frozenEnsureRunnable` uses
+`FrozenMap.insert`, which appends rather than refusing (PR #873 round 17); every
+stored index stays in range by `FrozenMap.insert_preserves_wellFormed`. All
+`Fin` accesses are within bounds by construction. No fuel is needed.
 
 ## Design
 
@@ -248,14 +251,20 @@ permanently unselectable -- the live `ensureRunnable` put it back in a bucket
 and the frozen mirror did not.  The module docstring asserted the opposite and
 named `membership`, which `frozenChooseThread` does not read.
 
-**What the representation allows.**  `byPriority` is a `FrozenMap` keyed by
-priority, and `FrozenMap.set` answers `none` for an absent key -- the frozen key
-set is fixed by construction, the same property that keeps `lifecycleRetype` out
-of `frozenOpCoverage`.  So a thread can be enqueued only into a bucket that
-existed at freeze time.  That covers the case this is for: a thread runnable at
-freeze, which blocked and is now woken.  A thread whose bucket never existed
-cannot be enqueued at all, and this **fails closed** rather than marking it
-`.ready` and leaving it unselectable, which is the divergence being removed.
+**The bucket is created when it is missing** (round 17).  The first cut of this
+enqueued through `FrozenMap.set`, which answers `none` for an absent key, and
+answered `.illegalState` when the snapshot held no bucket at the woken thread's
+priority.  That is not the conservative reading it was written as: the live
+`ensureRunnable` creates the bucket through `RunQueue.insert`, so a passive
+server blocked at freeze time -- never runnable, therefore never in a bucket --
+made the frozen model refuse a transition the kernel performs.  A model that
+refuses what the kernel does is wrong in the same way as one that permits what
+the kernel refuses.
+
+The fixed key set was a property of `set`, not of the representation, so the
+enqueue goes through `FrozenMap.insert`, which appends.  `insert_get?_self`
+pins that the thread is then findable and `insert_preserves_wellFormed` that
+every stored index stays in range, which is what licensed growing the map.
 
 `membership` is untouched, deliberately: a `FrozenSet` carries `Unit` values, so
 its content *is* its key set and cannot change.  `frozenSchedule` already records
@@ -272,14 +281,8 @@ def frozenEnsureRunnable (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
       let bucket := (st.scheduler.byPriority.get? prio).getD []
       if bucket.contains tid then .ok st
       else
-        match st.scheduler.byPriority.set prio (bucket ++ [tid]) with
-        -- The snapshot has no bucket at this priority, so it cannot represent
-        -- the thread becoming runnable.  Refusing is the only answer that does
-        -- not lie: marking it `.ready` would leave it permanently unselectable,
-        -- which is the divergence this exists to remove.
-        | none => .error .illegalState
-        | some bp =>
-            .ok { st with scheduler := { st.scheduler with byPriority := bp } }
+        .ok { st with scheduler := { st.scheduler with
+          byPriority := st.scheduler.byPriority.insert prio (bucket ++ [tid]) } }
 
 /-- **The frozen run queue's remove** (PR #873 round 15), mirroring the live
 `removeRunnable`: drop the thread from its bucket, and clear `current` if it was

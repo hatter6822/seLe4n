@@ -958,6 +958,39 @@ private def differentialRefusalsAgree : IO Unit := do
       (liveWithTaint .notificationWait diffA (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.notificationWait missing diffA) ist.state))
 
+/-- FO-034: **waking a thread whose priority has no bucket.**
+
+Every actor in the scenarios above sits at priority 0, so a wake always found a
+bucket already there and the frozen enqueue's missing-key branch never ran.  It
+answered `.illegalState`, on the reading that a snapshot with no bucket at that
+priority could not represent the thread becoming runnable -- but the live
+`ensureRunnable` creates the bucket through `RunQueue.insert`, so the frozen
+model refused a transition the kernel performs.  A passive server blocked at
+freeze time, never runnable and therefore in no bucket, is that case.
+
+The bound TCB is parked at a priority no runnable thread holds, so the signal's
+wake has to create the bucket on both sides. -/
+private def differentialWakeAtUnqueuedPriorityAgrees : IO Unit := do
+  let badge := SeLe4n.Badge.ofNatMasked 77
+  let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
+  let ntfn : Notification :=
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+      boundTCB := some diffA }
+  -- Priority 5: `diffTcb 63`, the only runnable thread, is at 0, so nothing put
+  -- a bucket here and the wake is the first thing that needs one.
+  let parkedServer : TCB := { diffTcb 62 with priority := ⟨5⟩, ipcState := .blockedOnReceive diffEpId, queuePPrev := some .endpointHead }
+  let ist := diffAddTcb (diffAddTcb (diffAddNotification
+    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
+      [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)]) diffEpId ep) diffNotifId ntfn)
+    parkedServer) (diffTcb 63)
+  expect "FO-034: control — the woken thread's priority has no bucket to start with"
+    ((freeze ist).scheduler.byPriority.get? ⟨5⟩ |>.isNone)
+  expect "FO-034: the frozen wake creates the bucket the live wake creates"
+    (frozenRunAgrees unitResultAgrees
+      (frozenNotificationSignal diffNotifId diffB badge (freeze ist))
+      (liveWithTaint .notificationSignal diffB (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.notificationSignalBound diffNotifId badge) ist.state))
+
 /-- **The registry the runner executes**, paired with the syscall each scenario
 covers.
 
@@ -969,6 +1002,7 @@ claim is now checked against this list -- which is also the list the runner runs
 so the two cannot describe different sets. -/
 private def differentialScenarios : List (SyscallId × IO Unit) :=
   [ (.notificationSignal, differentialNotificationSignalAgrees),
+    (.notificationSignal, differentialWakeAtUnqueuedPriorityAgrees),
     (.notificationWait,   differentialNotificationWaitAgrees),
     (.send,               differentialEndpointSendAgrees),
     (.receive,            differentialEndpointReceiveAgrees),

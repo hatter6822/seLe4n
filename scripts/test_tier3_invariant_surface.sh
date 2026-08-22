@@ -4158,6 +4158,35 @@ run_check "BUILD" rg -n '_FILE_FILTER_OPTIONS' scripts/check_anchor_consistency.
 # Sequence-coded test identifiers must not come back in the renamed scenarios.
 run_negative_check "INVARIANT" rg -n 'private def fo0(2[2-9]|3[0-3])_' tests/FrozenOpsSuite.lean
 run_negative_check "INVARIANT" rg -n 'private def chain12[b-h][A-Z]' tests/OperationChainSuite.lean
+# PR #873 round 17: **the frozen wake refused a transition the kernel performs.**
+# The enqueue went through `FrozenMap.set`, which answers `none` for an absent
+# key, so a thread woken at a priority holding no bucket got `.illegalState` --
+# while the live `ensureRunnable` creates the bucket through `RunQueue.insert`.
+# A passive server blocked at freeze time is exactly that case.  The fixed key
+# set was a property of `set`, not of the representation: `data` is an `Array`
+# and `indexMap` an `RHTable`, and both grow.
+run_check "INVARIANT" rg -n '^def FrozenMap.insert' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem FrozenMap.insert_get\?_self' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem FrozenMap.insert_preserves_wellFormed' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n 'st.scheduler.byPriority.insert prio' SeLe4n/Kernel/FrozenOps/Core.lean
+# The refusal must not come back.
+run_negative_check "INVARIANT" rg -n 'byPriority.set prio' SeLe4n/Kernel/FrozenOps/Core.lean
+# Every actor in the differential scenarios sat at priority 0, so the missing-key
+# branch never ran and the harness built to catch frozen/live divergence could
+# not see this one.  The control asserts the bucket really is absent first.
+run_check "INVARIANT" rg -n 'differentialWakeAtUnqueuedPriorityAgrees' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'FO-034: control' tests/FrozenOpsSuite.lean
+# PR #873 round 17: the taint side table's contract named `syscallEntryChecked`
+# as its writer's seam.  Round 6 moved the write down to the dispatchers because
+# the unchecked one reached the transitions without passing through it, and the
+# contract went on naming the old layer for eleven rounds.  It now names the
+# seams the content-flow gate checks.
+run_prose_check "INVARIANT" rg -n 'dispatchSyscallChecked., each applying it' SeLe4n/Model/State.lean
+run_prose_check "INVARIANT" rg -n 'check_content_flow_coverage.py. validates each' SeLe4n/Model/State.lean
+run_prose_check "INVARIANT" rg -n 'run at both dispatchers' SeLe4n/Kernel/Architecture/Invariant.lean
+# The single-seam claim must not come back at either site.
+run_prose_negative_check "INVARIANT" rg -n 'at the per-core syscall entry' SeLe4n/Model/State.lean
+run_prose_negative_check "INVARIANT" rg -n 'run at .API.syscallEntryChecked' SeLe4n/Kernel/Architecture/Invariant.lean
 # PR #873 round 7: a CLEAR is a taint write too, so the retype's cleared key
 # rides its own object lock — the third member of `taintWriteKeys` the key-local
 # declaration had skipped.  The fixed four stay pinned separately.

@@ -92,7 +92,8 @@ bounds (the latter cannot happen for well-constructed frozen maps). -/
 
 /-- Q5-A: Runtime mutation: in-place array update at an existing index.
 Returns `none` if the key has no index (key not in frozen map).
-Does NOT add new keys — frozen maps have a fixed key set. -/
+Does NOT add new keys — use `FrozenMap.insert` when the caller must be able to
+create one, as a run-queue enqueue must. -/
 def FrozenMap.set [BEq κ] [Hashable κ] [LawfulBEq κ] (fm : FrozenMap κ ν) (k : κ) (v : ν)
     : Option (FrozenMap κ ν) :=
   match fm.indexMap.get? k with
@@ -101,6 +102,29 @@ def FrozenMap.set [BEq κ] [Hashable κ] [LawfulBEq κ] (fm : FrozenMap κ ν) (
     if h : idx < fm.data.size then
       some { data := fm.data.set (⟨idx, h⟩ : Fin fm.data.size) v, indexMap := fm.indexMap }
     else none
+
+/-- **Runtime insertion** (PR #873 round 17): set the key, appending it when it
+is absent.
+
+`set` refuses an absent key, and a frozen operation that needed a new key had no
+choice but to fail: `frozenEnsureRunnable` answered `.illegalState` when the
+snapshot held no bucket at the woken thread's priority, while the live
+`ensureRunnable` creates one through `RunQueue.insert`.  A model that refuses a
+transition the kernel performs is not a conservative model, it is a wrong one.
+
+The fixed key set was a property of `set`, not of the representation: `data` is
+an `Array` and `indexMap` an `RHTable`, both of which grow.  Appending preserves
+well-formedness because every index already stored stays below the old size,
+which is below the new one — see `insert_preserves_wellFormed`.
+
+The append branch also covers a key whose stored index is out of range (which
+`wellFormed` excludes, and which `get?` would answer `none` for): re-pointing it
+at a fresh valid slot repairs the map rather than propagating the stale index. -/
+def FrozenMap.insert [BEq κ] [Hashable κ] [LawfulBEq κ] (fm : FrozenMap κ ν) (k : κ) (v : ν)
+    : FrozenMap κ ν :=
+  match fm.set k v with
+  | some fm' => fm'
+  | none => { data := fm.data.push v, indexMap := fm.indexMap.insert k fm.data.size }
 
 /-- Q5-A: Number of entries in a frozen map. -/
 @[inline] def FrozenMap.size [BEq κ] [Hashable κ] [LawfulBEq κ] (fm : FrozenMap κ ν) : Nat :=
@@ -161,6 +185,73 @@ theorem FrozenMap.set_none [BEq κ] [Hashable κ] [LawfulBEq κ]
     (fm : FrozenMap κ ν) (k : κ) (v : ν) (h : fm.indexMap.get? k = none) :
     fm.set k v = none := by
   unfold FrozenMap.set; simp [h]
+
+/-- **`insert` reads back what it wrote** (PR #873 round 17).
+
+The point of the operation: a caller that inserts a key can then find it.  This
+is what makes `frozenEnsureRunnable` mean something -- a thread enqueued into a
+bucket that did not exist is selectable by `frozenChooseThread`, rather than
+`.ready` and permanently invisible. -/
+theorem FrozenMap.insert_get?_self [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (fm : FrozenMap κ ν) (k : κ) (v : ν) (hExt : fm.indexMap.invExt) :
+    (fm.insert k v).get? k = some v := by
+  unfold FrozenMap.insert
+  cases hSet : fm.set k v with
+  | some fm' =>
+    simp only []
+    unfold FrozenMap.set at hSet
+    split at hSet
+    · cases hSet
+    · rename_i idx hIdx
+      split at hSet
+      · rename_i hLt
+        cases hSet
+        unfold FrozenMap.get?
+        simp [hIdx, Array.size_set, hLt]
+      · cases hSet
+  | none =>
+    simp only []
+    unfold FrozenMap.get?
+    rw [fm.indexMap.get_after_insert_eq k fm.data.size hExt]
+    simp [Array.size_push]
+
+/-- **`insert` keeps every stored index in range** (PR #873 round 17).
+
+Appending cannot invalidate an index: every one already stored is below the old
+size, which is below the new one, and the single new index *is* the old size.
+This is what licenses growing a frozen map at all -- the property the
+representation was assumed to need a fixed key set to hold. -/
+theorem FrozenMap.insert_preserves_wellFormed [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (fm : FrozenMap κ ν) (k : κ) (v : ν)
+    (hExt : fm.indexMap.invExt) (hWF : fm.wellFormed) :
+    (fm.insert k v).wellFormed := by
+  unfold FrozenMap.insert
+  cases hSet : fm.set k v with
+  | some fm' =>
+    simp only []
+    unfold FrozenMap.set at hSet
+    split at hSet
+    · cases hSet
+    · rename_i idx hIdx
+      split at hSet
+      · cases hSet
+        intro k' idx' hGet
+        simpa [Array.size_set] using hWF k' idx' hGet
+      · cases hSet
+  | none =>
+    simp only []
+    intro k' idx' hGet
+    simp only [Array.size_push]
+    by_cases hEq : (k == k') = true
+    · have hSelf := fm.indexMap.get_after_insert_eq k fm.data.size hExt
+      have hK : k = k' := eq_of_beq hEq
+      subst hK
+      rw [hSelf] at hGet
+      cases hGet
+      omega
+    · rw [fm.indexMap.get_after_insert_ne k k' fm.data.size hEq hExt] at hGet
+      have := hWF k' idx' hGet
+      omega
 
 -- ============================================================================
 -- Q5-B: FrozenKernelObject — Per-Object Frozen Representations

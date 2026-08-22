@@ -1219,8 +1219,8 @@ private theorem ipcSchedulerCouplingInvariantBundle_setDeclassificationTaint
 `declassificationTaint` — **unconditional**, because no conjunct reads the field.
 
 Stated once for *any* taint writer, so the live propagation seam
-(`InformationFlow.applySyscallTaint`, run at `API.syscallEntryChecked`) and any
-future one discharge it the same way. -/
+(`InformationFlow.applySyscallTaint`, run at both dispatchers — `dispatchSyscall`
+and `dispatchSyscallChecked`) and any future one discharge it the same way. -/
 theorem proofLayerInvariantBundle_setDeclassificationTaint (st : SystemState)
     (T : SeLe4n.Kernel.TaintTable)
     (h : proofLayerInvariantBundle st) :

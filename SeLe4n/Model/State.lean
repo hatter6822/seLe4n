@@ -1029,14 +1029,22 @@ structure SystemState where
       anything to say about it.
 
       **Lifecycle**: empty at boot; written **only** by
-      `InformationFlow.applySyscallTaint` at the per-core syscall entry
-      (`API.syscallEntryChecked`), which is the SM7.F.5 seam one step later —
-      the plan computes the content-flow edges from the pre-state and the
-      decoded syscall, and the origination edges from the audit trail's own
-      diff, so a new declassifying syscall originates tags without a new
-      planner.  `storeObject` frames it
-      (`storeObject_declassificationTaint_eq`), which is what makes that single
-      writer a checkable fact rather than a reading of the call graph.
+      `InformationFlow.applySyscallTaint`, at the dispatcher seam — in
+      `API.dispatchSyscall` *and* `API.dispatchSyscallChecked`, each applying it
+      to its own post-state.  It sat one layer up, at `API.syscallEntryChecked`,
+      until PR #873 round 6 found that the unchecked dispatcher reached the
+      transitions without passing through it; this contract kept naming the old
+      location for eleven rounds, which is why it now names the seams the gate
+      checks rather than a layer someone remembered.  The plan computes the
+      content-flow edges from the pre-state and the decoded syscall, and the
+      origination edges from the audit trail's own diff, so a new declassifying
+      syscall originates tags without a new planner.
+
+      Two things keep "only" true rather than asserted: `storeObject` frames the
+      field (`storeObject_declassificationTaint_eq`), so no transition can write
+      it in passing; and `scripts/check_content_flow_coverage.py` validates each
+      dispatcher arm independently, so an arm that reaches a transition without
+      the seam fails the gate rather than this sentence going stale again.
 
       **Capacity**: none is owed.  Each entry is bounded by its **type**
       (`DeclassificationTaint.tags_bounded`), so no writer carries a capacity

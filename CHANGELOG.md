@@ -1,3 +1,45 @@
+## v0.33.94 — the frozen model refused what the kernel does
+
+`frozenEnsureRunnable` enqueued through `FrozenMap.set`, which answers `none` for
+an absent key, and returned `.illegalState` when the snapshot held no bucket at
+the woken thread's priority. That was written as the conservative reading — a
+snapshot that cannot represent the thread becoming runnable should refuse rather
+than lie. It is not conservative: the live `ensureRunnable` creates the bucket
+through `RunQueue.insert`, so a passive server blocked at freeze time — never
+runnable, therefore in no bucket — made the frozen model refuse a wake the kernel
+performs. A model that refuses what the kernel does is wrong in the same way as
+one that permits what the kernel refuses.
+
+**The fixed key set was a property of `set`, not of the representation.** A
+`FrozenMap` is an `Array` of values and an `RHTable` of indices, and both grow.
+`FrozenMap.insert` appends; `insert_get?_self` pins that the key reads back what
+was written, and `insert_preserves_wellFormed` that every stored index stays in
+range — every one already stored is below the old size, which is below the new
+one, and the single new index *is* the old size. That is what licenses growing a
+frozen map at all.
+
+**The differential harness could not see this.** Every actor in the frozen/live
+scenarios sits at priority 0, so a wake always found a bucket already there and
+the missing-key branch never ran. FO-034 parks a server at a priority no runnable
+thread holds, asserts as a control that the bucket really is absent, and then
+compares the wake. It fails against the refusing version and passes against this
+one.
+
+**And the taint table's contract named the wrong seam.** It said the field was
+written by `applySyscallTaint` at `API.syscallEntryChecked`. Round 6 moved that
+write one layer down, to `dispatchSyscall` and `dispatchSyscallChecked`, because
+the unchecked dispatcher reached the transitions without passing through the
+entry — and the contract went on naming the old layer for eleven rounds. It now
+names both dispatchers and cites what keeps "only one writer" true rather than
+asserted: `storeObject_declassificationTaint_eq` frames the field, and
+`check_content_flow_coverage.py` validates each dispatcher arm independently, so
+a drifting arm fails a gate instead of a sentence going stale again. The same
+stale citation in `Architecture/Invariant.lean` is corrected with it.
+
+Found in review of PR #873 (round 17).
+
+Refs: docs/WORKSTREAM_HISTORY.md SM9.D
+
 ## v0.33.93 — revocation stopped being four copies of one algorithm
 
 `revokePendingTransfersFrom` — the in-flight consumption added at v0.33.88 —

@@ -62,8 +62,13 @@ than misleading its next reader.
 |23 | `frozenSetMCPriority`        | `setMCPriorityOp`          | SchedContext |
 |24 | `frozenSetIPCBuffer`         | `setIPCBufferOp`           | Architecture |
 
-**Lifecycle operations** (`lifecycleRetype`) are builder-only — they add new
-keys, which is incompatible with the frozen map's fixed key set.
+**Lifecycle operations** (`lifecycleRetype`) are builder-only — but not, since
+PR #873 round 17, because a frozen map cannot gain a key: `FrozenMap.insert`
+appends, which is what let the run-queue enqueue create a bucket.  What retype
+still needs and the representation still lacks is *removal* — it erases the
+replaced VSpace root's `asidTable` entry, and there is no `FrozenMap.erase`.
+Adding one is a shrink, so it renumbers every index above the hole; that is a
+separate piece of work, not a corollary of the append.
 -/
 
 namespace SeLe4n.Kernel.FrozenOps
@@ -1268,8 +1273,10 @@ def frozenSetIPCBuffer (targetTid : SeLe4n.ThreadId)
     without a frozen operation (or vice versa) produces a type error.
 
     Lifecycle operations (`lifecycleRetype`) are intentionally excluded — they
-    modify the key set, which is incompatible with frozen maps. Service
-    registration/revocation are also builder-only.  `tcbSetAffinity` (WS-SM SM5.H.4)
+    *remove* keys (the replaced VSpace root's `asidTable` entry), and a frozen
+    map has no `erase`: a shrink renumbers every index above the hole, unlike
+    the append `FrozenMap.insert` performs. Service registration/revocation are
+    also builder-only for the same reason.  `tcbSetAffinity` (WS-SM SM5.H.4)
     is excluded because the operation is defined by its run-queue + replenish-queue
     *migration* (live scheduler state), which the frozen snapshot phase does not
     model — the production op is complete and verified in the non-frozen path. -/
