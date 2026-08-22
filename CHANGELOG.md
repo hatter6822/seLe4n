@@ -1,3 +1,67 @@
+## v0.33.92 — the relation stopped being a list of what someone remembered
+
+Six findings against the differential harness, and five of them were one shape:
+the agreement relation enumerated what to compare, so every review round found
+another thing it had forgotten. That is the enumerate-the-exceptions defect this
+branch has been closing since round 7, this time in the mechanism built to catch
+it.
+
+**The comparison is no longer an inclusion list.** The two re-represented object
+variants are destructured rather than sampled, so a field nobody compares is an
+unused binding the linter reports and a field added to either structure breaks
+the pattern until someone decides about it. That immediately recovered the
+per-object `RwLockState`, which both frozen structures carry *precisely* so
+freezing preserves it and which the sampled version omitted — a frozen operation
+acquiring or releasing one differently from its live counterpart used to pass.
+And the returned values are compared through a relation the caller supplies
+rather than matched away as `_`: a `frozenNotificationWait` answering the wrong
+badge, or a `frozenEndpointReceive` naming the wrong sender, agreed before, and
+those values are transition semantics.
+
+**A frozen operation is the syscall, not the bare transition.** With no
+dispatcher in the frozen phase it applies the provenance step inline, while the
+live kernel applies it afterwards at the seam. Comparing against a bare live
+transition compared two different layers, and passed only because every taint in
+the fixtures was empty — it would have started failing on the first realistic
+tagged input and reported the harness rather than the kernel. `liveWithTaint`
+composes the missing half so both sides are the syscall, the scenarios carry a
+CSpace so the live plan resolves the same operand the frozen one acts on, and a
+tagged fixture makes the step observable: the actor carries provenance, the two
+sides agree, and the recipient inherits the tag. Without the CSpace the live plan
+resolved no operand and planned nothing, which is how the layer mismatch stayed
+invisible.
+
+**A coverage claim nothing executes is not coverage.**
+`frozenOpDifferentiallyChecked` was a hand-maintained table the suite never read:
+setting an arm `true` satisfied all three interlock theorems whether a comparison
+existed or not, and deleting a scenario left the claim standing. The claim is now
+checked against the list the runner actually runs, in both directions.
+
+**The anchor gate stopped inventing contradictions.** `-g` and `-t` narrow which
+files are searched, and the options were consumed and dropped — so
+`rg -g '*.md' foo D` and `rg -g '*.lean' foo D`, which look at disjoint files,
+collapsed to one key and failed CI on a satisfiable suite. Filters now ride in
+the comparison, directionally like scope containment: an unfiltered negative
+searches everything and covers any filtered positive, a filtered negative
+forbids nothing outside its own files, and anything else refuses to compare
+rather than guessing whether two glob languages overlap. Both directions are in
+the self-test.
+
+**And the new test identifiers carry no sequence codes.** `fo026`–`fo033` and
+`chain12b`–`chain12h` encoded task numbers, which the naming rule forbids in new
+code and whose own remedy example is renaming a numbered test. They now say what
+they check, and negative anchors keep the numbering from returning.
+
+Recorded, not fixed here: the frozen send validates its sender on both branches
+while the live `endpointSendDual` validates it only when parking, so a rendezvous
+can commit a delivery on behalf of a thread that does not exist and the
+provenance step then reads that absent thread's empty default. Verified by probe
+(live succeeds and delivers, frozen refuses). The live check is the right fix and
+its proof cost was measured — 24 goals across one file, mechanically repairable,
+plus further sites in the structural suites — but it is a change to a hot IPC
+transition with a large invariant surface and belongs in its own cut rather than
+appended to this one.
+
 ## v0.33.91 — the frozen scheduler had no run queue
 
 The differential harness from v0.33.89 caught its first divergence, and it is a

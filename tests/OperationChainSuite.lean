@@ -753,7 +753,7 @@ is deliberately resolved from **slot 5**, so the real source and the old
 stand-in are different nodes; the positive check is that revoking slot 5 empties
 the receiver's slot, and the negative is that revoking slot 0 — which held an
 unrelated capability — leaves it alone.  Under the defect the two verdicts swap. -/
-private def chain12bIpcCapTransferRevocable : IO Unit := do
+private def ipcCapTransferRevocable : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨3250⟩
   let sender : SeLe4n.ThreadId := ⟨3260⟩
   let receiver : SeLe4n.ThreadId := ⟨3261⟩
@@ -966,7 +966,7 @@ produced a transfer or no transfer depending on scheduling.
 Both orderings are run here against the same starting state and the outcomes are
 compared to each other, not to a hardcoded expectation: a future change that
 breaks *both* the same way cannot pass this by moving one number. -/
-private def chain12cIpcCapTransferArrivalOrder : IO Unit := do
+private def ipcCapTransferArrivalOrder : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨3350⟩
   let sender : SeLe4n.ThreadId := ⟨3360⟩
   let receiver : SeLe4n.ThreadId := ⟨3361⟩
@@ -1100,7 +1100,7 @@ capabilities on its first request and silently none afterwards.
 
 Both orderings are run from the same starting state and compared to each other,
 so a change that breaks both the same way cannot pass by moving one number. -/
-private def chain12dReplyRecvCapTransferArrivalOrder : IO Unit := do
+private def replyRecvCapTransferArrivalOrder : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨3450⟩
   let server : SeLe4n.ThreadId := ⟨3460⟩
   let prevCaller : SeLe4n.ThreadId := ⟨3461⟩
@@ -1230,7 +1230,7 @@ endpoint, minting copies of authority with no sender involved.
 Measured as the property, not one call's outcome: the legitimate rendezvous must
 still install, and the receive that dequeues nothing must not — a change that
 broke both the same way (never installing) would pass the negative alone. -/
-private def chain12eReceiveWithoutSenderInstallsNothing : IO Unit := do
+private def receiveWithoutSenderInstallsNothing : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨3550⟩
   let sender : SeLe4n.ThreadId := ⟨3560⟩
   let receiver : SeLe4n.ThreadId := ⟨3561⟩
@@ -1318,7 +1318,7 @@ receiver that received nothing — a causal predecessor for content never
 delivered.  The negative is load-bearing: the assertions below pin that the
 declared edge *does* name this sender, so the transport refusal is the only thing
 standing between the malformed state and an invented predecessor. -/
-private def chain12fReceiveRefusesMessagelessParkedSender : IO Unit := do
+private def receiveRefusesMessagelessParkedSender : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨3650⟩
   let sender : SeLe4n.ThreadId := ⟨3660⟩
   let receiver : SeLe4n.ThreadId := ⟨3661⟩
@@ -1428,7 +1428,7 @@ success (refusing would let a parked sender block revocation indefinitely), and
 the capability must not arrive.  The control run shows the same transfer landing
 when no revoke intervenes, so the test is measuring the revoke rather than a
 transfer that never worked. -/
-private def chain12gRevokeConsumesPendingTransfer : IO Unit := do
+private def revokeConsumesPendingTransfer : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨3750⟩
   let sender : SeLe4n.ThreadId := ⟨3760⟩
   let receiver : SeLe4n.ThreadId := ⟨3761⟩
@@ -1524,7 +1524,7 @@ So this drives the same property from the *unstamped* message the fixture
 deliberately does not prepare.  The wrapper derives the bit from the one input
 that carries the authority, which is what makes the two orderings the same
 transfer rather than two that happen to agree when the caller sets both. -/
-private def chain12hEndpointGrantDecidesBothOrderings : IO Unit := do
+private def endpointGrantDecidesBothOrderings : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨3800⟩
   let sender : SeLe4n.ThreadId := ⟨3810⟩
   let receiver : SeLe4n.ThreadId := ⟨3811⟩
@@ -3121,13 +3121,13 @@ private def runOperationChainSuite : IO Unit := do
   chain10RegisterDecodeMultiSyscall
   chain11RegisterDecodeIpcTransfer
   chain12IpcCapTransfer
-  chain12bIpcCapTransferRevocable
-  chain12cIpcCapTransferArrivalOrder
-  chain12dReplyRecvCapTransferArrivalOrder
-  chain12eReceiveWithoutSenderInstallsNothing
-  chain12fReceiveRefusesMessagelessParkedSender
-  chain12gRevokeConsumesPendingTransfer
-  chain12hEndpointGrantDecidesBothOrderings
+  ipcCapTransferRevocable
+  ipcCapTransferArrivalOrder
+  replyRecvCapTransferArrivalOrder
+  receiveWithoutSenderInstallsNothing
+  receiveRefusesMessagelessParkedSender
+  revokeConsumesPendingTransfer
+  endpointGrantDecidesBothOrderings
   chain13IpcCapTransferNoGrant
   chain14IpcBadgeAndCapTransfer
   chain15StrictRevokeDeepChain

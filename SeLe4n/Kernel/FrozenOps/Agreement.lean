@@ -79,12 +79,19 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
   | .untyped a,      .untyped b      => a == b
   | .schedContext a, .schedContext b => a == b
   | .reply a,        .reply b        => a == b
-  | .cnode a,        .cnode b        =>
-      a.depth == b.depth && a.guardWidth == b.guardWidth
-        && a.guardValue == b.guardValue && a.radixWidth == b.radixWidth
-        && frozenCNodeSlotsAgree a b
-  | .vspaceRoot a,   .vspaceRoot b   =>
-      a.asid == b.asid && frozenVSpaceMappingsAgree a b
+  -- PR #873 round 16: the two re-represented variants are **destructured**, not
+  -- sampled.  Listing the fields to compare is how `lock` came to be omitted --
+  -- both frozen structures carry it precisely so freezing preserves it, so a
+  -- frozen operation acquiring or releasing one differently from its live
+  -- counterpart passed.  A binding here that goes unused is a field nobody
+  -- compared, which the unused-variable linter reports; adding a field to
+  -- either structure breaks this pattern until someone decides about it.
+  | .cnode (fc@⟨fd, fgw, fgv, frw, _fslots, flock⟩),
+    .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, llock⟩) =>
+      fd == ld && fgw == lgw && fgv == lgv && frw == lrw && flock == llock
+        && frozenCNodeSlotsAgree fc lc
+  | .vspaceRoot (fv@⟨fasid, _fm, flock⟩), .vspaceRoot (lv@⟨lasid, _lm, llock⟩) =>
+      fasid == lasid && flock == llock && frozenVSpaceMappingsAgree fv lv
   | _, _ => false
 
 /-- State-level agreement over everything both phases model.
@@ -156,12 +163,17 @@ one refuses is a divergence the state comparison never sees, because there is no
 live state to compare against — and a frozen guard that went missing is exactly
 how a parked sender with no message reached the frozen dequeue. -/
 def frozenRunAgrees {α β : Type}
+    (resultAgrees : α → β → Bool)
     (fr : Except KernelError (α × FrozenSystemState))
     (lr : Except KernelError (β × SystemState)) : Bool :=
   match fr, lr with
   | .error e, .error e' => e == e'
-  | .ok (_, fs), .ok (_, ls) => frozenStateAgrees fs ls
+  | .ok (fa, fs), .ok (la, ls) => resultAgrees fa la && frozenStateAgrees fs ls
   | _, _ => false
+
+/-- The result relation for the transitions that answer `Unit`: nothing to
+compare, and saying so takes an argument rather than a wildcard. -/
+def unitResultAgrees : Unit → Unit → Bool := fun _ _ => true
 
 /-! ## The obligation: claiming coverage means running both
 

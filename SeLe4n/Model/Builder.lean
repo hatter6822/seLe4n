@@ -335,6 +335,24 @@ def markRunnable (ist : IntermediateState) (tid : SeLe4n.ThreadId)
   hPerObjectMappings := ist.hPerObjectMappings
   hLifecycleConsistent := ist.hLifecycleConsistent
 
+/-- **Seed an object's declassification provenance.**
+
+`declassificationTaint` is named by none of the four builder obligations — it is
+a `TaintTable`, not one of the RHTables `allTablesInvExtK` quantifies over, and
+the per-object and lifecycle obligations do not mention it — so every proof
+carries over unchanged.  Stated as its own operation rather than left to a record
+update at the use site: updating `IntermediateState.state` in place makes Lean
+re-check the whole nested `hAllTables` conjunction against the new term, which
+does not terminate within the default heartbeat budget. -/
+def withTaint (ist : IntermediateState) (oid : SeLe4n.ObjId)
+    (t : SeLe4n.Kernel.DeclassificationTaint) : IntermediateState where
+  state := { ist.state with
+               declassificationTaint := ist.state.declassificationTaint.set oid t }
+  hAllTables := ist.hAllTables
+  hPerObjectSlots := ist.hPerObjectSlots
+  hPerObjectMappings := ist.hPerObjectMappings
+  hLifecycleConsistent := ist.hLifecycleConsistent
+
 -- ============================================================================
 -- Q3-B.7: mapPage — insert a page mapping into a VSpaceRoot
 -- ============================================================================

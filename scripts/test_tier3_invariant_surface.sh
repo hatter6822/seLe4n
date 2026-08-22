@@ -3728,7 +3728,7 @@ run_negative_check "INVARIANT" rg -n 'policyGated "endpointReceiveDualOnCore"' S
 run_check "INVARIANT" rg -n 'receiverSlotBase msg.capsGranted' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
 run_negative_check "INVARIANT" rg -n 'endpointReceiveDualWithCaps endpointId receiver replyId endpointRights' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
 # The regression that measures the property rather than one ordering's outcome.
-run_check "INVARIANT" rg -n 'chain12cIpcCapTransferArrivalOrder' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'ipcCapTransferArrivalOrder' tests/OperationChainSuite.lean
 
 # PR #873 round 7: **and the same for `.replyRecv`**, the arm that is a receive
 # without being spelled `.receive`.  Its receive leg ran inside `replyRecvBody`
@@ -3739,7 +3739,7 @@ run_check "INVARIANT" rg -n 'chain12cIpcCapTransferArrivalOrder' tests/Operation
 run_check "INVARIANT" rg -n 'endpointReceiveDualWithCapsOnCore epId tid \(some rid\)' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'endpointReceiveDualOnCore epId tid \(some rid\)' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'replyRecvBody epId tid rid prevCaller msg gate.cspaceRoot' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n 'chain12dReplyRecvCapTransferArrivalOrder' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'replyRecvCapTransferArrivalOrder' tests/OperationChainSuite.lean
 
 # PR #873 round 8 (SECURITY): **a receive that dequeued nothing installs
 # nothing.**  The blocking branch returns the receiver's OWN id and leaves
@@ -3751,7 +3751,7 @@ run_check "INVARIANT" rg -n '^def receiveRendezvousSender\?' SeLe4n/Kernel/IPC/D
 run_check "INVARIANT" rg -n '^def receiveInstallsCaps' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_blocked_installs_nothing' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCaps_blocked_installs_nothing' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
-run_check "INVARIANT" rg -n 'chain12eReceiveWithoutSenderInstallsNothing' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'receiveWithoutSenderInstallsNothing' tests/OperationChainSuite.lean
 # And the install's declared footprint: `ipcTransferSingleCap` writes the
 # receiver's own CSpace root, which both receive-shaped footprints declared READ.
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_capsInstall_write_mem' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
@@ -3967,7 +3967,7 @@ run_check "INVARIANT" rg -n '\.blockedOnCall _ => tcb\.pendingMessage\.isSome' S
 run_check "INVARIANT" rg -n 'blockedThreadPendingMessageChecks' SeLe4n/Testing/InvariantChecks.lean
 run_check "INVARIANT" rg -n 'headTcb\.pendingMessage\.isNone' SeLe4n/Kernel/IPC/DualQueue/Core.lean
 run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_send_sender_carries_message' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n 'chain12fReceiveRefusesMessagelessParkedSender' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'receiveRefusesMessagelessParkedSender' tests/OperationChainSuite.lean
 # PR #873 round 12: two defaults inverted, for the same reason each time -- a set
 # of remembered exceptions is a list of the cases someone thought of.  The
 # downgrade's origination is now established from the target actually holding
@@ -4004,7 +4004,7 @@ run_check "INVARIANT" rg -n 'revokePendingTransfersFrom stDone' SeLe4n/Kernel/Ca
 # capability bundle has to survive it -- proved, not assumed, and in the Invariant
 # layer because Operations cannot name the bundle.
 run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
-run_check "INVARIANT" rg -n 'chain12gRevokeConsumesPendingTransfer' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'revokeConsumesPendingTransfer' tests/OperationChainSuite.lean
 # And the send-side half of round 6's ordering independence.  The wrappers took
 # the grant authority TWICE -- the `endpointRights` argument for the rendezvous
 # arm, `msg.capsGranted` for the parked one -- and never tied them, so a caller
@@ -4019,7 +4019,7 @@ run_check "INVARIANT" rg -n 'endpointCallOnCore endpointId caller \{ msg with ca
 # The regression drives the property from the UNSTAMPED message `chain12c`'s
 # fixture deliberately does not prepare -- `chain12c` sets the field from the same
 # rights it passes, so it cannot see the two inputs disagree.
-run_check "INVARIANT" rg -n 'chain12hEndpointGrantDecidesBothOrderings' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'endpointGrantDecidesBothOrderings' tests/OperationChainSuite.lean
 # The CDT node allocator's global counter is the footprint gap the caps path
 # opened: minting a node for a source slot writes `cdtNextNode` while the send's
 # declared footprint holds the source CNode in READ mode and declares no
@@ -4048,9 +4048,9 @@ run_check "INVARIANT" rg -n '^theorem frozenOpDifferentiallyChecked_implies_cove
 run_check "INVARIANT" rg -n '^theorem frozenOpUncheckedReason_only_when_unchecked' SeLe4n/Kernel/FrozenOps/Agreement.lean
 # The scenarios, and the negative that makes them evidence rather than
 # decoration: a comparison returning `true` for everything would pass all six.
-run_check "INVARIANT" rg -n 'fo026_differentialNotificationSignal' tests/FrozenOpsSuite.lean
-run_check "INVARIANT" rg -n 'fo032_differentialRefusalsAgree' tests/FrozenOpsSuite.lean
-run_check "INVARIANT" rg -n 'fo033_differentialComparisonHasBite' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'differentialNotificationSignalAgrees' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'differentialRefusalsAgree' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'differentialComparisonHasBite' tests/FrozenOpsSuite.lean
 # The corrected row.  The wrong one must not come back.
 run_prose_check "INVARIANT" rg -n 'frozenNotificationSignal.*notificationSignalBound' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_prose_negative_check "INVARIANT" rg -n '\| 5 \| .frozenNotificationSignal.*\| .notificationSignal. ' SeLe4n/Kernel/FrozenOps/Operations.lean
@@ -4103,6 +4103,32 @@ run_check "INVARIANT" rg -n 'FO-031 control: the live reply succeeds' tests/Froz
 # The corrected claims must not come back.
 run_prose_negative_check "INVARIANT" rg -n 'run queue manipulation is skipped' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_prose_negative_check "INVARIANT" rg -n 'run queue insertion.{0,12}is skipped' SeLe4n/Kernel/FrozenOps/Operations.lean
+# PR #873 round 16: **the relation stopped being an inclusion list.**  Every
+# finding against it was "you forgot to compare X" -- the per-object lock, the
+# returned value -- which is the enumerate-what-you-remembered shape this branch
+# has been closing all along.  The re-represented variants are destructured, so
+# a field nobody compares is an unused binding and a new field breaks the
+# pattern; the returned values are compared through a relation the caller must
+# supply rather than matched away as `_`.
+run_check "INVARIANT" rg -n 'flock == llock' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n 'resultAgrees fa la' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# A frozen operation is the SYSCALL, not the bare transition: with no dispatcher
+# it applies the provenance step inline, while the live kernel applies it after
+# the transition at the seam.  Comparing against a bare transition compared two
+# layers and passed only while every taint was empty.
+run_check "INVARIANT" rg -n '^private def liveWithTaint' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'differentialTaintedSignalAgrees' tests/FrozenOpsSuite.lean
+# …and the coverage claim is checked against the list the runner executes, in
+# both directions, so it can no longer be true of a scenario that does not exist.
+run_check "INVARIANT" rg -n '^private def differentialScenarios' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'differentialRegistryMatchesClaim' tests/FrozenOpsSuite.lean
+# The anchor gate carries file filters into the comparison: `-g '"'"'*.md'"'"'` and
+# `-g '"'"'*.lean'"'"' search disjoint files and cannot contradict, while an unfiltered
+# negative covers any filtered positive.
+run_check "BUILD" rg -n '_FILE_FILTER_OPTIONS' scripts/check_anchor_consistency.py
+# Sequence-coded test identifiers must not come back in the renamed scenarios.
+run_negative_check "INVARIANT" rg -n 'private def fo0(2[2-9]|3[0-3])_' tests/FrozenOpsSuite.lean
+run_negative_check "INVARIANT" rg -n 'private def chain12[b-h][A-Z]' tests/OperationChainSuite.lean
 # PR #873 round 7: a CLEAR is a taint write too, so the retype's cleared key
 # rides its own object lock — the third member of `taintWriteKeys` the key-local
 # declaration had skipped.  The fixed four stay pinned separately.
@@ -4113,7 +4139,7 @@ run_check "INVARIANT" rg -n '^theorem permittedKinds_lifecycleRetype_admits_ever
 # check alone let a `.blockedOnSend` head with no `pendingMessage` be dequeued,
 # after which the receiver got `none` and the sender's provenance anyway.
 run_check "INVARIANT" rg -n 'headTcb.pendingMessage.isSome' SeLe4n/Kernel/FrozenOps/Operations.lean
-run_check "INVARIANT" rg -n 'fo024_parkedSenderCarriesItsMessage' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'frozenParkedSenderCarriesItsMessage' tests/FrozenOpsSuite.lean
 # No receive declares a CSpace sink, and PR #873 round 8 corrected the reason:
 # not "the live receive installs nothing" — it has installed since round 6 — but
 # the standing scope decision that a CNode holds no tracked content

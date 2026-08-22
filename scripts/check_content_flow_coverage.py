@@ -125,6 +125,20 @@ DECLARED_TAINT_CONSUMERS = {
     "SeLe4n.Kernel.dispatchSyscallChecked",
     "SeLe4n.Kernel.dispatchSyscall",
     "SeLe4n.Kernel.TaintTable.empty",
+    # PR #873 round 16: the builder's provenance seed.  The one-writer rule
+    # governs the **propagation** surface -- within a running system only
+    # `applySyscallTaint` moves provenance -- and a builder-phase constructor is
+    # the other side of that boundary, as `Builder.createObject` writes
+    # `objects` without being an object-store transition.
+    #
+    # It is here because provenance has exactly one genesis: origination by a
+    # recording syscall.  Propagation moves what already exists, so from a state
+    # where every tag is empty no propagation step is observable at all — which
+    # is why the frozen/live taint-layer mismatch survived until a differential
+    # scenario could start from a tagged state.  Without a seed the propagation
+    # surface is untestable, and an untestable surface is how this branch's
+    # divergences kept reaching review.
+    "SeLe4n.Model.Builder.withTaint",
 }
 
 # WS-SM SM9.D.17 (audit): the definitions allowed to write
@@ -212,7 +226,19 @@ SELF_TEST_ROGUE_REBUILD = "cfPlantedRebuildTaintWriter"
 
 # Definitions that build a `SystemState` from nothing rather than rewrite one.
 # See `cfStateConstructors` in the probe for why this is a named list.
-STATE_CONSTRUCTORS = ["SeLe4n.Model.instInhabitedSystemState"]
+#
+# PR #873 round 16 adds the builder's provenance seed.  The one-writer rule is
+# about the *propagation* surface -- within a running system only
+# `applySyscallTaint` may move provenance -- and a builder-phase constructor is
+# the other side of that boundary, exactly as `Builder.createObject` writes
+# `objects` without being an object-store transition.  It earns its place rather
+# than being excused: without a way to build a state that already carries
+# provenance, no test can exercise the propagation step at all, which is how the
+# frozen/live taint-layer mismatch stayed invisible until round 16.  The
+# staleness check below fails if a name here stops matching a real definition,
+# so this list cannot rot into a set of excuses for code that no longer exists.
+STATE_CONSTRUCTORS = ["SeLe4n.Model.instInhabitedSystemState",
+                      "SeLe4n.Model.Builder.withTaint"]
 
 SELF_TEST_ROGUE_SRC = f"""
 private def {SELF_TEST_ROGUE} (st : SeLe4n.Model.SystemState) :

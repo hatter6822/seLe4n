@@ -199,6 +199,13 @@ _OPTION_TABLES = {
 }
 _PATTERN_OPTIONS = {"-e", "--regexp"}
 
+# Options that NARROW which files are searched.  Two anchors carrying different
+# ones can both hold — `-g '*.md'` and `-g '*.lean'` over one directory search
+# disjoint files — so they must reach the comparison rather than be consumed and
+# forgotten.
+_FILE_FILTER_OPTIONS = {"-g", "--glob", "--iglob", "-t", "--type", "-T",
+                        "--type-not", "--glob-case-insensitive"}
+
 # PR #873 round 10: the flags that change the **match language**, not just the
 # output.  They were parsed and thrown away, so `rg -i foo F` and `rg foo F`
 # collapsed to one `(pattern, target)` key and a file containing only `FOO` —
@@ -231,7 +238,9 @@ def _mode_allows(p_mode: frozenset, n_mode: frozenset) -> bool:
       by any line whose case differs — the reviewer's `rg -i foo` / `rg foo`
       pair, satisfied together by a file holding only `FOO`;
     * `-S` (smart case) is case-sensitivity that depends on the pattern's own
-      spelling, which this gate does not model, so it refuses rather than guess.
+      spelling, which this gate does not model, so it refuses rather than guess;
+    * differing **file filters** (`-g`, `-t`) mean the two searches may be
+      looking at disjoint files, so no contradiction can be proven.
 
     The converse directions are all sound: a *more* permissive negative, or a
     boundary-anchored positive, only narrows what the positive can be satisfied
@@ -241,6 +250,24 @@ def _mode_allows(p_mode: frozenset, n_mode: frozenset) -> bool:
     if "S" in p_mode or "S" in n_mode:
         return False
     if "i" in p_mode and "i" not in n_mode:
+        return False
+    # PR #873 round 16: **the negative's file set must cover the positive's.**
+    # `-g`, `-t` and friends narrow which files are searched, so `rg -g '*.md'
+    # foo D` and `rg -g '*.lean' foo D` are satisfiable together over one
+    # directory -- they look at disjoint files.  The options were consumed and
+    # dropped, collapsing both to the same (pattern, target, mode) and reporting
+    # a contradiction that would fail CI on a sound suite.
+    #
+    # Directional, like `_scope_contains` and for the same reason: an unfiltered
+    # negative searches everything and so covers any filtered positive, while a
+    # filtered negative forbids nothing outside its own files and cannot
+    # contradict an unfiltered positive.  Identical filters are the same set.
+    # Anything else is two glob languages whose overlap this gate does not
+    # model, and a difference it cannot reason about stops the comparison rather
+    # than being assumed away.
+    p_filters = {m for m in p_mode if m.startswith("filter:")}
+    n_filters = {m for m in n_mode if m.startswith("filter:")}
+    if n_filters and n_filters != p_filters:
         return False
     return True
 
@@ -297,6 +324,7 @@ def _search_invocation(argv: list[str]):
     valued, bare = _OPTION_TABLES[argv[0]]
     i, pattern = 1, None
     mode: set[str] = set()
+    filters: set[str] = set()
     while i < len(argv) and argv[i].startswith("-") and argv[i] != "--":
         tok = argv[i]
         # `-v` inverts the match, so the invocation succeeds on the lines that do
@@ -314,6 +342,13 @@ def _search_invocation(argv: list[str]):
                 if pattern is not None:
                     return None          # two patterns: not one pinned string
                 pattern = tok.split("=", 1)[1]
+            elif name in _FILE_FILTER_OPTIONS:
+                # PR #873 round 16: a file filter NARROWS the search, so two
+                # anchors carrying different ones may be searching disjoint
+                # files and cannot contradict.  Consuming the value and
+                # forgetting it made `-g '*.md'` and `-g '*.lean'` compare as
+                # the same target.
+                filters.add(f"{name}={tok.split('=', 1)[1]}")
             i += 1
             continue
         if tok in valued:
@@ -323,6 +358,8 @@ def _search_invocation(argv: list[str]):
                 if pattern is not None:
                     return None
                 pattern = argv[i + 1]
+            elif tok in _FILE_FILTER_OPTIONS:
+                filters.add(f"{tok}={argv[i + 1]}")
             i += 2
             continue
         if tok in bare:
@@ -349,6 +386,11 @@ def _search_invocation(argv: list[str]):
     if "s" in mode:
         mode.discard("i")
         mode.discard("s")
+    # PR #873 round 16: file filters ride in the mode, so `_mode_allows` refuses
+    # to compare two anchors whose filters differ — they may be searching
+    # disjoint files, and a difference this gate cannot reason about must stop
+    # the comparison rather than be dropped from it.
+    mode |= {f"filter:{x}" for x in sorted(filters)}
     return pattern, targets, frozenset(mode)
 
 
@@ -1330,6 +1372,40 @@ def self_test() -> int:
             )
             return 1
 
+        # PR #873 round 16: two anchors carrying DIFFERENT file filters search
+        # disjoint files and cannot contradict; the options used to be consumed
+        # and dropped, so both collapsed to one key and CI failed on a sound
+        # suite.
+        glob_p = d / "globs.sh"
+        glob_p.write_text(
+            "run_check \"INVARIANT\" rg -g '*.md' 'theta' D\n"
+            "run_negative_check \"INVARIANT\" rg -g '*.lean' 'theta' D\n")
+        both, *_ = find_contradictions([str(glob_p)])
+        if both:
+            print(
+                f"FAIL: --self-test — anchors with disjoint file filters were "
+                f"reported contradictory (got {both}); `-g '*.md'` and "
+                f"`-g '*.lean'` search different files.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …but an UNFILTERED negative searches everything, so it does cover a
+        # filtered positive and the contradiction stands.
+        glob_cover_p = d / "globs_cover.sh"
+        glob_cover_p.write_text(
+            "run_check \"INVARIANT\" rg -g '*.md' 'theta' E\n"
+            "run_negative_check \"INVARIANT\" rg 'theta' E\n")
+        both, *_ = find_contradictions([str(glob_cover_p)])
+        if both != [("theta", "E")]:
+            print(
+                f"FAIL: --self-test — an unfiltered negative failed to "
+                f"contradict a filtered positive (got {both}); searching every "
+                f"file covers searching some of them.",
+                file=sys.stderr,
+            )
+            return 1
+
         # Every target of a multi-file search is pinned, not just the first.
         multi_p = d / "multi.sh"
         multi_p.write_text(
@@ -1350,7 +1426,9 @@ def self_test() -> int:
         "target, through an `else exit 1` presence check and past a "
         "value-taking option; a filtered search was counted rather than "
         "compared, an unreadable command and an unknown option each failed the "
-        "gate, an unrecognised category label failed rather than vanishing, a "
+        "gate, disjoint file filters were not compared while an unfiltered "
+        "negative still contradicted a filtered positive, an unrecognised "
+        "category label failed rather than vanishing, a "
         "fixed-string positive was compared against a regex negative that "
         "matches its literal while the reverse pairing stayed satisfiable, "
         "`grep -nwE` was read as bare switches, an unescaped `.` was read "

@@ -468,7 +468,7 @@ that only for the instant of the freeze.  These assertions are the ones that
 fail if the frozen operations go back to carrying the table through unchanged:
 each measures a *specific* identity reaching a thread that never held it, plus
 the negative that says the transport does not keep what it handed on. -/
-private def fo022_frozenProvenanceFollowsContent : IO Unit := do
+private def frozenProvenanceFollowsContent : IO Unit := do
   let senderTcb := mkTcb 3
   let receiverTcb := mkTcb 4
   let ep : Endpoint := { sendQ := {}, receiveQ := {} }
@@ -520,7 +520,7 @@ delivery it had not made.
 Both were surfaced by the provenance carriage rather than caused by it — the
 taint flow asserts that content reached somewhere, which is only honest if the
 content is actually there and its source is actually readable. -/
-private def fo023_frozenDeliveryIsHonest : IO Unit := do
+private def frozenDeliveryIsHonest : IO Unit := do
   -- (a) A signalled waiter receives the BADGE, not just the wake.  This branch
   -- cleared `pendingBadge` and readied the waiter while storing no message, so
   -- the badge vanished — while the flow below recorded it as delivered.
@@ -611,7 +611,7 @@ never delivered.
 The state is malformed rather than reachable — the frozen send path parks with
 `pendingMessage := some msg` — which is exactly why it has to be refused
 structurally: a hand-built snapshot is what a frozen state IS. -/
-private def fo024_parkedSenderCarriesItsMessage : IO Unit := do
+private def frozenParkedSenderCarriesItsMessage : IO Unit := do
   let epParked : Endpoint := { sendQ := { head := some ⟨3⟩, tail := some ⟨3⟩ }, receiveQ := {} }
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
   -- The malformed snapshot: parked to send, holding nothing.
@@ -651,7 +651,7 @@ than on the thread that was supposed to receive the content.
 Delivery and provenance are separate ways to get this wrong, so both are
 asserted, together with the negative that says the storage branch did *not*
 run. -/
-private def fo025_frozenBoundNotificationDelivery : IO Unit := do
+private def frozenBoundNotificationDelivery : IO Unit := do
   let epId      : SeLe4n.ObjId := ⟨40⟩
   let notifId   : SeLe4n.ObjId := ⟨41⟩
   let bound     : SeLe4n.ThreadId := ⟨42⟩
@@ -716,13 +716,34 @@ actually called; `fo033` pins exactly that. -/
 threads.  Small enough to read, and containing every kind the recorded
 divergences touched. -/
 private def diffTcb (n : Nat) : TCB :=
-  { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+  { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨64⟩,
     vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
 
 private def diffEpId    : SeLe4n.ObjId := ⟨60⟩
 private def diffNotifId : SeLe4n.ObjId := ⟨61⟩
 private def diffA       : SeLe4n.ThreadId := ⟨62⟩
 private def diffB       : SeLe4n.ThreadId := ⟨63⟩
+private def diffCnId    : SeLe4n.ObjId := ⟨64⟩
+
+/-- The actors share one CSpace root holding the operand capability at slot 0.
+
+Without it the live side resolves no operand — `contentFlowEdges` goes through
+`syscallOperandCap?`, which reads the caller's CSpace — so its taint plan is
+empty and the provenance step compares as a no-op against a frozen operation
+that performs one.  The scenarios would then agree only because every taint was
+empty, which is agreement about nothing. -/
+private def diffAddCSpace (ist : IntermediateState)
+    (caps : List (SeLe4n.Slot × Capability)) : IntermediateState :=
+  Builder.createObject ist diffCnId
+    (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+              slots := SeLe4n.UniqueSlotMap.ofListWF caps })
+    (fun _ h => by cases h; exact (SeLe4n.UniqueSlotMap.ofListWF caps).hWF)
+    (fun _ h => nomatch h)
+
+/-- The capability naming `oid`, as an actor's CSpace would hold it. -/
+private def diffObjCap (oid : SeLe4n.ObjId) : Capability :=
+  { target := .object oid,
+    rights := AccessRightSet.ofList [.read, .write, .grant], badge := none }
 
 /-! The three adders below take the object's *structure* rather than a
 `KernelObject`, so the builder's CNode-slot and VSpace-mapping obligations are
@@ -759,10 +780,41 @@ private def diffAddReply (ist : IntermediateState) (rid : SeLe4n.ReplyId)
     (r : SeLe4n.Kernel.Reply) : IntermediateState :=
   Builder.createObject ist rid.toObjId (.reply r) (fun _ h => nomatch h) (fun _ h => nomatch h)
 
+/-! ### Comparing like layers
+
+A frozen operation is the syscall, not the bare transition: with no dispatcher in
+the frozen phase it applies the provenance step inline, while the live kernel
+applies it afterwards at the seam (`applySyscallTaint` in `dispatchSyscall*`).
+Comparing a frozen operation against a bare live transition therefore compares
+two different layers — and passes only while every taint is empty, which is
+exactly what `mkEmptyIntermediateState` gives.  It would have started failing on
+the first realistic tagged input, and reported the harness rather than the
+kernel.
+
+`liveWithTaint` composes the missing half, so both sides are the syscall.  The
+tagged fixture below makes the comparison non-vacuous: with the actor carrying
+provenance, an omitted or misdirected taint step changes the result. -/
+
+/-- The decoded operands the taint plan reads, for a scenario driving `sid`. -/
+private def diffDecoded (sid : SyscallId) (capAddr : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 0)
+    : SyscallDecodeResult :=
+  { capAddr := capAddr, msgInfo := { label := 0, length := 0, extraCaps := 0 }, syscallId := sid }
+
+/-- The live transition **plus** the provenance step the seam applies after it —
+the whole of what the frozen operation does in one call. -/
+private def liveWithTaint {α : Type} (sid : SyscallId) (actor : SeLe4n.ThreadId)
+    (capAddr : SeLe4n.CPtr) (run : SystemState → Except KernelError (α × SystemState))
+    (st : SystemState) : Except KernelError (α × SystemState) :=
+  match run st with
+  | .error e => .error e
+  | .ok (a, post) =>
+      .ok (a, SeLe4n.Kernel.applySyscallTaint
+                (SeLe4n.Kernel.syscallTaintPlan st actor (diffDecoded sid capAddr)) st post)
+
 /-- FO-026: the signal, against the live entry the `.notificationSignal` arm
 runs.  A notification with no ordinary waiter and a bound TCB parked on an
 endpoint — the shape whose frozen handling diverged twice. -/
-private def fo026_differentialNotificationSignal : IO Unit := do
+private def differentialNotificationSignalAgrees : IO Unit := do
   let badge := SeLe4n.Badge.ofNatMasked 77
   let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
   let ntfn : Notification :=
@@ -770,63 +822,69 @@ private def fo026_differentialNotificationSignal : IO Unit := do
       boundTCB := some diffA }
   let boundTcb : TCB := { diffTcb 62 with ipcState := .blockedOnReceive diffEpId, queuePPrev := some .endpointHead }
   let ist := diffAddTcb (diffAddTcb (diffAddNotification
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId ep) diffNotifId ntfn) boundTcb) (diffTcb 63)
+    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)]) diffEpId ep) diffNotifId ntfn) boundTcb) (diffTcb 63)
   expect "FO-026: the frozen signal agrees with the live bound-aware signal"
-    (frozenRunAgrees
+    (frozenRunAgrees unitResultAgrees
       (frozenNotificationSignal diffNotifId diffB badge (freeze ist))
-      (SeLe4n.Kernel.notificationSignalBound diffNotifId badge ist.state))
+      (liveWithTaint .notificationSignal diffB (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.notificationSignalBound diffNotifId badge) ist.state))
 
 /-- FO-027: the wait, against `notificationWait`.  A notification holding a badge
 so the consuming branch runs rather than the blocking one. -/
-private def fo027_differentialNotificationWait : IO Unit := do
+private def differentialNotificationWaitAgrees : IO Unit := do
   let ntfn : Notification :=
     { state := .active, waitingThreads := SeLe4n.NoDupList.empty,
       pendingBadge := some (SeLe4n.Badge.ofNatMasked 9) }
   let ist := diffAddTcb
-    (diffAddNotification mkEmptyIntermediateState diffNotifId ntfn) (diffTcb 62)
+    (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
+      diffNotifId ntfn) (diffTcb 62)
   expect "FO-027: the frozen wait agrees with the live wait"
-    (frozenRunAgrees
+    (frozenRunAgrees (fun a b => a == b)
       (frozenNotificationWait diffNotifId diffA (freeze ist))
-      (SeLe4n.Kernel.notificationWait diffNotifId diffA ist.state))
+      (liveWithTaint .notificationWait diffA (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.notificationWait diffNotifId diffA) ist.state))
 
 /-- FO-028: the send, against `endpointSendDual`, with no receiver waiting — the
 parking branch, whose frozen mirror grew the message-presence guard. -/
-private def fo028_differentialEndpointSend : IO Unit := do
+private def differentialEndpointSendAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨5⟩], caps := #[], badge := none }
   let ist := diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) (diffTcb 62)) (diffTcb 63)
+    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId {}) (diffTcb 62)) (diffTcb 63)
   expect "FO-028: the frozen send agrees with the live send"
-    (frozenRunAgrees
+    (frozenRunAgrees unitResultAgrees
       (frozenEndpointSend diffEpId diffA msg (freeze ist))
-      (SeLe4n.Kernel.endpointSendDual diffEpId diffA msg ist.state))
+      (liveWithTaint .send diffA (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointSendDual diffEpId diffA msg) ist.state))
 
 /-- FO-029: the receive, against `endpointReceiveDual`, dequeuing a parked
 sender that carries its message — the rendezvous the round-11 guard admits. -/
-private def fo029_differentialEndpointReceive : IO Unit := do
+private def differentialEndpointReceiveAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨7⟩], caps := #[], badge := none }
   let ep : Endpoint := { sendQ := { head := some diffA, tail := some diffA }, receiveQ := {} }
   let parked : TCB := { diffTcb 62 with ipcState := .blockedOnSend diffEpId, pendingMessage := some msg, queuePPrev := some .endpointHead }
   let ist := diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId ep) parked) (diffTcb 63)
+    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parked) (diffTcb 63)
   expect "FO-029: the frozen receive agrees with the live receive"
-    (frozenRunAgrees
+    (frozenRunAgrees (fun a b => a == b)
       (frozenEndpointReceive diffEpId diffB (freeze ist))
-      (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB none ist.state))
+      (liveWithTaint .receive diffB (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB none) ist.state))
 
 /-- FO-030: the call, against `endpointCall`, with no receiver — the parking
 branch again, on the arm that also stages a reply. -/
-private def fo030_differentialEndpointCall : IO Unit := do
+private def differentialEndpointCallAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨11⟩], caps := #[], badge := none }
   let ist := diffAddTcb (diffAddTcb
-    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) (diffTcb 62)) (diffTcb 63)
+    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId {}) (diffTcb 62)) (diffTcb 63)
   expect "FO-030: the frozen call agrees with the live call"
-    (frozenRunAgrees
+    (frozenRunAgrees unitResultAgrees
       (frozenEndpointCall diffEpId diffA msg (freeze ist))
-      (SeLe4n.Kernel.endpointCall diffEpId diffA msg ist.state))
+      (liveWithTaint .call diffA (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointCall diffEpId diffA msg) ist.state))
 
 /-- FO-031: the reply, against `endpointReply`, delivering to a caller parked in
 `.blockedOnCall`. -/
-private def fo031_differentialEndpointReply : IO Unit := do
+private def differentialEndpointReplyAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨13⟩], caps := #[], badge := none }
   -- The reply's authority is the presented reply capability, so the fixture has
   -- to carry the whole link: the target parked in `.blockedOnReply` with its
@@ -845,22 +903,88 @@ private def fo031_differentialEndpointReply : IO Unit := do
   expect "FO-031 control: and so does the frozen one"
     (frozenEndpointReply diffB diffA rid msg (freeze ist)).toOption.isSome
   expect "FO-031: the frozen reply agrees with the live reply"
-    (frozenRunAgrees
+    (frozenRunAgrees unitResultAgrees
       (frozenEndpointReply diffB diffA rid msg (freeze ist))
-      (SeLe4n.Kernel.endpointReply diffB diffA msg ist.state))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointReply diffB diffA msg) ist.state))
+
+/-- The same signal, from an actor that **carries provenance**.
+
+With every taint empty the comparison above says nothing about the provenance
+step: an omitted or misdirected one is invisible.  Seeding the signalling
+thread's tag makes the step observable, so this is what stops the like-layer
+composition from being decoration. -/
+private def differentialTaintedSignalAgrees : IO Unit := do
+  let badge := SeLe4n.Badge.ofNatMasked 77
+  let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
+  let ntfn : Notification :=
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+      boundTCB := some diffA }
+  let boundTcb : TCB := { diffTcb 62 with ipcState := .blockedOnReceive diffEpId, queuePPrev := some .endpointHead }
+  let ist0 := diffAddTcb (diffAddTcb (diffAddNotification
+    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
+        [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)]) diffEpId ep)
+      diffNotifId ntfn) boundTcb) (diffTcb 63)
+  -- The signaller carries a tag.  `declassificationTaint` is named by none of
+  -- the four builder obligations, so seeding it leaves every proof unchanged.
+  let tagged : SeLe4n.Kernel.DeclassificationTaint :=
+    SeLe4n.Kernel.DeclassificationTaint.singleton 7
+  let ist : IntermediateState := Builder.withTaint ist0 diffB.toObjId tagged
+  expect "tagged control: the signalling thread really carries provenance"
+    (!(ist.state.declassificationTaint diffB.toObjId == SeLe4n.Kernel.DeclassificationTaint.empty))
+  expect "tagged: the frozen signal agrees with the live syscall, provenance included"
+    (frozenRunAgrees unitResultAgrees
+      (frozenNotificationSignal diffNotifId diffB badge (freeze ist))
+      (liveWithTaint .notificationSignal diffB (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.notificationSignalBound diffNotifId badge) ist.state))
+  -- …and the provenance actually moved, so the agreement is about a step that
+  -- happened rather than two no-ops matching.
+  expect "tagged control: the badge's recipient inherited the signaller's tag"
+    (match frozenNotificationSignal diffNotifId diffB badge (freeze ist) with
+     | .ok ((), fs) => !(fs.declassificationTaint diffA.toObjId == SeLe4n.Kernel.DeclassificationTaint.empty)
+     | .error _ => false)
 
 /-- FO-032: **refusals agree too.**  A frozen operation that accepts what the
 live one refuses is a divergence no state comparison can see, there being no
 live state to compare against — and a missing frozen guard is exactly how a
 message-less parked sender reached the frozen dequeue.  Both sides are handed a
 notification id that names no object. -/
-private def fo032_differentialRefusalsAgree : IO Unit := do
+private def differentialRefusalsAgree : IO Unit := do
   let missing : SeLe4n.ObjId := ⟨999⟩
   let ist := diffAddTcb mkEmptyIntermediateState (diffTcb 62)
   expect "FO-032: both refuse an absent notification, with the same error"
-    (frozenRunAgrees
+    (frozenRunAgrees (fun a b => a == b)
       (frozenNotificationWait missing diffA (freeze ist))
-      (SeLe4n.Kernel.notificationWait missing diffA ist.state))
+      (liveWithTaint .notificationWait diffA (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.notificationWait missing diffA) ist.state))
+
+/-- **The registry the runner executes**, paired with the syscall each scenario
+covers.
+
+`frozenOpDifferentiallyChecked` was a hand-maintained table nothing consumed:
+setting an arm `true` satisfied all three interlock theorems whether or not a
+comparison existed, and deleting a scenario left the claim standing.  A coverage
+claim no execution backs is the shape this whole harness exists to remove, so the
+claim is now checked against this list -- which is also the list the runner runs,
+so the two cannot describe different sets. -/
+private def differentialScenarios : List (SyscallId × IO Unit) :=
+  [ (.notificationSignal, differentialNotificationSignalAgrees),
+    (.notificationWait,   differentialNotificationWaitAgrees),
+    (.send,               differentialEndpointSendAgrees),
+    (.receive,            differentialEndpointReceiveAgrees),
+    (.call,               differentialEndpointCallAgrees),
+    (.reply,              differentialEndpointReplyAgrees) ]
+
+/-- The claim and the scenarios name the same syscalls, in both directions: a
+scenario for a syscall the table does not claim, or a claim with no scenario,
+fails here. -/
+private def differentialRegistryMatchesClaim : IO Unit := do
+  let covered := differentialScenarios.map Prod.fst
+  expect "registry: every differentially-checked syscall has a scenario"
+    (SyscallId.all.all (fun sid =>
+      !(SeLe4n.Kernel.FrozenOps.frozenOpDifferentiallyChecked sid) || covered.contains sid))
+  expect "registry: every scenario covers a syscall the claim names"
+    (covered.all (fun sid => SeLe4n.Kernel.FrozenOps.frozenOpDifferentiallyChecked sid))
 
 /-- FO-033: **the comparison has bite, and the table was wrong.**
 
@@ -870,7 +994,7 @@ mirrors the bound-aware composition the live `.notificationSignal` arm runs, and
 on the bound shape the two disagree.  Asserting that disagreement is what makes
 the six scenarios above evidence rather than decoration — a comparison that
 returned `true` for everything would pass them all. -/
-private def fo033_differentialComparisonHasBite : IO Unit := do
+private def differentialComparisonHasBite : IO Unit := do
   let badge := SeLe4n.Badge.ofNatMasked 77
   let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
   let ntfn : Notification :=
@@ -880,7 +1004,7 @@ private def fo033_differentialComparisonHasBite : IO Unit := do
   let ist := diffAddTcb (diffAddTcb (diffAddNotification
     (diffAddEndpoint mkEmptyIntermediateState diffEpId ep) diffNotifId ntfn) boundTcb) (diffTcb 63)
   expect "FO-033: NEGATIVE — the table-named counterpart does NOT agree"
-    (!(frozenRunAgrees
+    (!(frozenRunAgrees unitResultAgrees
         (frozenNotificationSignal diffNotifId diffB badge (freeze ist))
         (SeLe4n.Kernel.notificationSignal diffNotifId badge ist.state)))
 
@@ -923,17 +1047,14 @@ def main : IO Unit := do
   fo020_frozenCspaceMint
   IO.println "--- U-H01: Multi-round IPC Regression ---"
   fo021_popThenPushRegression
-  fo022_frozenProvenanceFollowsContent
-  fo023_frozenDeliveryIsHonest
-  fo024_parkedSenderCarriesItsMessage
-  fo025_frozenBoundNotificationDelivery
+  frozenProvenanceFollowsContent
+  frozenDeliveryIsHonest
+  frozenParkedSenderCarriesItsMessage
+  frozenBoundNotificationDelivery
   IO.println "--- Frozen/live differential agreement ---"
-  fo026_differentialNotificationSignal
-  fo027_differentialNotificationWait
-  fo028_differentialEndpointSend
-  fo029_differentialEndpointReceive
-  fo030_differentialEndpointCall
-  fo031_differentialEndpointReply
-  fo032_differentialRefusalsAgree
-  fo033_differentialComparisonHasBite
+  differentialRegistryMatchesClaim
+  differentialScenarios.forM (fun s => s.2)
+  differentialTaintedSignalAgrees
+  differentialRefusalsAgree
+  differentialComparisonHasBite
   IO.println "=== All Q7 frozen ops tests passed (31 scenarios) ==="

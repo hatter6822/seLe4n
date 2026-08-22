@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm9d-causal-declassification-ppwxud",
-      "commit_sha": "547b3936ecb79b302d0be1f4d04945b57703d6bc",
-      "tree_sha": "0144e640a09831e62e50e1580395ef74147ae57c",
-      "committed_at_utc": "2026-08-21T22:45:58+00:00"
+      "commit_sha": "4e5cca2f589c7fe4342fa95ceef007b14a4bccc3",
+      "tree_sha": "17ffe5b1092f8a98aa30e995e29902e28f9053d8",
+      "committed_at_utc": "2026-08-21T23:41:59+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e758d499139a86c847b4b979a556b86d15d0323ea29589e70f075d1021e0cd1b"
+    "source_digest": "ca1b7a0ac1c65ea594208c72afa5f85185bdc1c3e736c262519d2dc85622e548"
   },
   "summary": {
     "module_count": 355,
-    "declaration_count": 16882
+    "declaration_count": 16892
   },
   "readme_sync": {
-    "version": "0.33.91",
+    "version": "0.33.92",
     "lean_toolchain": "v4.28.0",
     "production_files": 286,
-    "production_loc": 285945,
+    "production_loc": 285975,
     "test_files": 69,
-    "test_loc": 62966,
+    "test_loc": 63087,
     "proved_theorem_lemma_decls": 9578,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -50385,7 +50385,7 @@
     {
       "module": "SeLe4n.Kernel.FrozenOps.Agreement",
       "path": "SeLe4n/Kernel/FrozenOps/Agreement.lean",
-      "declaration_count": 11,
+      "declaration_count": 12,
       "declarations": [
         {
           "kind": "namespace",
@@ -50430,7 +50430,7 @@
         {
           "kind": "def",
           "name": "frozenStateAgrees",
-          "line": 99,
+          "line": 106,
           "called": [
             "DeclassificationTaint",
             "FrozenSystemState",
@@ -50450,7 +50450,7 @@
         {
           "kind": "def",
           "name": "frozenRunAgrees",
-          "line": 158,
+          "line": 165,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -50460,8 +50460,14 @@
         },
         {
           "kind": "def",
+          "name": "unitResultAgrees",
+          "line": 176,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "frozenOpDifferentiallyChecked",
-          "line": 184,
+          "line": 196,
           "called": [
             "SyscallId",
             "notificationSignal",
@@ -50471,7 +50477,7 @@
         {
           "kind": "def",
           "name": "frozenOpUncheckedReason",
-          "line": 196,
+          "line": 208,
           "called": [
             "SyscallId",
             "cspaceMint",
@@ -50483,7 +50489,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_obliges_differential_check",
-          "line": 225,
+          "line": 237,
           "called": [
             "all",
             "frozenOpCoverage",
@@ -50495,7 +50501,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpDifferentiallyChecked_implies_covered",
-          "line": 235,
+          "line": 247,
           "called": [
             "all",
             "frozenOpCoverage",
@@ -50505,7 +50511,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpUncheckedReason_only_when_unchecked",
-          "line": 243,
+          "line": 255,
           "called": [
             "all",
             "frozenOpDifferentiallyChecked",
@@ -174807,7 +174813,7 @@
     {
       "module": "SeLe4n.Model.Builder",
       "path": "SeLe4n/Model/Builder.lean",
-      "declaration_count": 25,
+      "declaration_count": 26,
       "declarations": [
         {
           "kind": "namespace",
@@ -175097,8 +175103,19 @@
         },
         {
           "kind": "def",
+          "name": "withTaint",
+          "line": 347,
+          "called": [
+            "DeclassificationTaint",
+            "IntermediateState",
+            "ObjId",
+            "set"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "mapPage",
-          "line": 346,
+          "line": 364,
           "called": [
             "IntermediateState",
             "ObjId",
@@ -175118,7 +175135,7 @@
         {
           "kind": "theorem",
           "name": "mapPage_wxCompliant",
-          "line": 383,
+          "line": 401,
           "called": [
             "IntermediateState",
             "ObjId",
@@ -204680,7 +204697,7 @@
     {
       "module": "tests.FrozenOpsSuite",
       "path": "tests/FrozenOpsSuite.lean",
-      "declaration_count": 50,
+      "declaration_count": 58,
       "declarations": [
         {
           "kind": "namespace",
@@ -205131,7 +205148,7 @@
         },
         {
           "kind": "def",
-          "name": "fo022_frozenProvenanceFollowsContent",
+          "name": "frozenProvenanceFollowsContent",
           "line": 471,
           "called": [
             "Endpoint",
@@ -205157,7 +205174,7 @@
         },
         {
           "kind": "def",
-          "name": "fo023_frozenDeliveryIsHonest",
+          "name": "frozenDeliveryIsHonest",
           "line": 523,
           "called": [
             "Endpoint",
@@ -205187,7 +205204,7 @@
         },
         {
           "kind": "def",
-          "name": "fo024_parkedSenderCarriesItsMessage",
+          "name": "frozenParkedSenderCarriesItsMessage",
           "line": 614,
           "called": [
             "Endpoint",
@@ -205206,7 +205223,7 @@
         },
         {
           "kind": "def",
-          "name": "fo025_frozenBoundNotificationDelivery",
+          "name": "frozenBoundNotificationDelivery",
           "line": 654,
           "called": [
             "Endpoint",
@@ -205276,8 +205293,41 @@
         },
         {
           "kind": "def",
+          "name": "diffCnId",
+          "line": 726,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "diffAddCSpace",
+          "line": 735,
+          "called": [
+            "Capability",
+            "IntermediateState",
+            "Slot",
+            "createObject",
+            "diffCnId",
+            "ofListWF"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "diffObjCap",
+          "line": 744,
+          "called": [
+            "Capability",
+            "ObjId",
+            "badge",
+            "none",
+            "ofList"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "diffAddTcb",
-          "line": 740,
+          "line": 761,
           "called": [
             "IntermediateState",
             "TCB",
@@ -205289,7 +205339,7 @@
         {
           "kind": "def",
           "name": "diffAddEndpoint",
-          "line": 750,
+          "line": 771,
           "called": [
             "Endpoint",
             "IntermediateState",
@@ -205300,7 +205350,7 @@
         {
           "kind": "def",
           "name": "diffAddNotification",
-          "line": 754,
+          "line": 775,
           "called": [
             "IntermediateState",
             "Notification",
@@ -205311,7 +205361,7 @@
         {
           "kind": "def",
           "name": "diffAddReply",
-          "line": 758,
+          "line": 779,
           "called": [
             "IntermediateState",
             "Reply",
@@ -205322,20 +205372,50 @@
         },
         {
           "kind": "def",
-          "name": "fo026_differentialNotificationSignal",
-          "line": 765,
+          "name": "diffDecoded",
+          "line": 799,
+          "called": [
+            "CPtr",
+            "SyscallDecodeResult",
+            "SyscallId",
+            "length",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "liveWithTaint",
+          "line": 805,
+          "called": [
+            "CPtr",
+            "KernelError",
+            "SyscallId",
+            "SystemState",
+            "ThreadId",
+            "applySyscallTaint",
+            "diffDecoded",
+            "st",
+            "syscallTaintPlan"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "differentialNotificationSignalAgrees",
+          "line": 817,
           "called": [
             "Endpoint",
             "Notification",
             "TCB",
             "badge",
             "diffA",
+            "diffAddCSpace",
             "diffAddEndpoint",
             "diffAddNotification",
             "diffAddTcb",
             "diffB",
             "diffEpId",
             "diffNotifId",
+            "diffObjCap",
             "diffTcb",
             "empty",
             "expect",
@@ -205343,69 +205423,84 @@
             "frozenNotificationSignal",
             "frozenRunAgrees",
             "head",
+            "liveWithTaint",
             "mkEmptyIntermediateState",
             "none",
+            "notificationSignal",
             "notificationSignalBound",
+            "ofNat",
             "ofNatMasked",
-            "tail"
+            "tail",
+            "unitResultAgrees"
           ]
         },
         {
           "kind": "def",
-          "name": "fo027_differentialNotificationWait",
-          "line": 781,
+          "name": "differentialNotificationWaitAgrees",
+          "line": 834,
           "called": [
             "Notification",
             "diffA",
+            "diffAddCSpace",
             "diffAddNotification",
             "diffAddTcb",
             "diffNotifId",
+            "diffObjCap",
             "diffTcb",
             "empty",
             "expect",
             "freeze",
             "frozenNotificationWait",
             "frozenRunAgrees",
+            "liveWithTaint",
             "mkEmptyIntermediateState",
             "notificationWait",
+            "ofNat",
             "ofNatMasked"
           ]
         },
         {
           "kind": "def",
-          "name": "fo028_differentialEndpointSend",
-          "line": 794,
+          "name": "differentialEndpointSendAgrees",
+          "line": 849,
           "called": [
             "IpcMessage",
             "badge",
             "diffA",
+            "diffAddCSpace",
             "diffAddEndpoint",
             "diffAddTcb",
             "diffEpId",
+            "diffObjCap",
             "diffTcb",
             "endpointSendDual",
             "expect",
             "freeze",
             "frozenEndpointSend",
             "frozenRunAgrees",
+            "liveWithTaint",
             "mkEmptyIntermediateState",
-            "none"
+            "none",
+            "ofNat",
+            "unitResultAgrees"
           ]
         },
         {
           "kind": "def",
-          "name": "fo029_differentialEndpointReceive",
-          "line": 805,
+          "name": "differentialEndpointReceiveAgrees",
+          "line": 861,
           "called": [
             "Endpoint",
             "IpcMessage",
             "TCB",
             "badge",
             "diffA",
+            "diffAddCSpace",
             "diffAddEndpoint",
             "diffAddTcb",
             "diffB",
             "diffEpId",
+            "diffObjCap",
             "diffTcb",
             "endpointReceiveDual",
             "expect",
@@ -205413,36 +205508,43 @@
             "frozenEndpointReceive",
             "frozenRunAgrees",
             "head",
+            "liveWithTaint",
             "mkEmptyIntermediateState",
             "none",
+            "ofNat",
             "tail"
           ]
         },
         {
           "kind": "def",
-          "name": "fo030_differentialEndpointCall",
-          "line": 818,
+          "name": "differentialEndpointCallAgrees",
+          "line": 875,
           "called": [
             "IpcMessage",
             "badge",
             "diffA",
+            "diffAddCSpace",
             "diffAddEndpoint",
             "diffAddTcb",
             "diffEpId",
+            "diffObjCap",
             "diffTcb",
             "endpointCall",
             "expect",
             "freeze",
             "frozenEndpointCall",
             "frozenRunAgrees",
+            "liveWithTaint",
             "mkEmptyIntermediateState",
-            "none"
+            "none",
+            "ofNat",
+            "unitResultAgrees"
           ]
         },
         {
           "kind": "def",
-          "name": "fo031_differentialEndpointReply",
-          "line": 829,
+          "name": "differentialEndpointReplyAgrees",
+          "line": 887,
           "called": [
             "IpcMessage",
             "ReplyId",
@@ -205460,15 +205562,59 @@
             "freeze",
             "frozenEndpointReply",
             "frozenRunAgrees",
+            "liveWithTaint",
             "mkEmptyIntermediateState",
             "none",
-            "replyId"
+            "ofNat",
+            "replyId",
+            "unitResultAgrees"
           ]
         },
         {
           "kind": "def",
-          "name": "fo032_differentialRefusalsAgree",
-          "line": 857,
+          "name": "differentialTaintedSignalAgrees",
+          "line": 917,
+          "called": [
+            "DeclassificationTaint",
+            "Endpoint",
+            "IntermediateState",
+            "Notification",
+            "TCB",
+            "badge",
+            "diffA",
+            "diffAddCSpace",
+            "diffAddEndpoint",
+            "diffAddNotification",
+            "diffAddTcb",
+            "diffB",
+            "diffEpId",
+            "diffNotifId",
+            "diffObjCap",
+            "diffTcb",
+            "empty",
+            "expect",
+            "freeze",
+            "frozenNotificationSignal",
+            "frozenRunAgrees",
+            "head",
+            "liveWithTaint",
+            "mkEmptyIntermediateState",
+            "none",
+            "notificationSignal",
+            "notificationSignalBound",
+            "ofNat",
+            "ofNatMasked",
+            "singleton",
+            "tail",
+            "toObjId",
+            "unitResultAgrees",
+            "withTaint"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "differentialRefusalsAgree",
+          "line": 952,
           "called": [
             "ObjId",
             "diffA",
@@ -205478,14 +205624,43 @@
             "freeze",
             "frozenNotificationWait",
             "frozenRunAgrees",
+            "liveWithTaint",
             "mkEmptyIntermediateState",
+            "notificationWait",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "differentialScenarios",
+          "line": 970,
+          "called": [
+            "SyscallId",
+            "differentialEndpointCallAgrees",
+            "differentialEndpointReceiveAgrees",
+            "differentialEndpointReplyAgrees",
+            "differentialEndpointSendAgrees",
+            "differentialNotificationSignalAgrees",
+            "differentialNotificationWaitAgrees",
+            "notificationSignal",
             "notificationWait"
           ]
         },
         {
           "kind": "def",
-          "name": "fo033_differentialComparisonHasBite",
-          "line": 873,
+          "name": "differentialRegistryMatchesClaim",
+          "line": 981,
+          "called": [
+            "all",
+            "contains",
+            "expect",
+            "frozenOpDifferentiallyChecked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "differentialComparisonHasBite",
+          "line": 997,
           "called": [
             "Endpoint",
             "Notification",
@@ -205509,14 +205684,19 @@
             "none",
             "notificationSignal",
             "ofNatMasked",
-            "tail"
+            "tail",
+            "unitResultAgrees"
           ]
         },
         {
           "kind": "def",
           "name": "main",
-          "line": 890,
+          "line": 1014,
           "called": [
+            "differentialComparisonHasBite",
+            "differentialRefusalsAgree",
+            "differentialRegistryMatchesClaim",
+            "differentialTaintedSignalAgrees",
             "fo001_lookupExisting",
             "fo002_lookupMissing",
             "fo003_storeObject",
@@ -205540,18 +205720,10 @@
             "fo019_frozenSchedule",
             "fo020_frozenCspaceMint",
             "fo021_popThenPushRegression",
-            "fo022_frozenProvenanceFollowsContent",
-            "fo023_frozenDeliveryIsHonest",
-            "fo024_parkedSenderCarriesItsMessage",
-            "fo025_frozenBoundNotificationDelivery",
-            "fo026_differentialNotificationSignal",
-            "fo027_differentialNotificationWait",
-            "fo028_differentialEndpointSend",
-            "fo029_differentialEndpointReceive",
-            "fo030_differentialEndpointCall",
-            "fo031_differentialEndpointReply",
-            "fo032_differentialRefusalsAgree",
-            "fo033_differentialComparisonHasBite"
+            "frozenBoundNotificationDelivery",
+            "frozenDeliveryIsHonest",
+            "frozenParkedSenderCarriesItsMessage",
+            "frozenProvenanceFollowsContent"
           ]
         }
       ]
@@ -214392,7 +214564,7 @@
         },
         {
           "kind": "def",
-          "name": "chain12bIpcCapTransferRevocable",
+          "name": "ipcCapTransferRevocable",
           "line": 756,
           "called": [
             "AccessRightSet",
@@ -214438,7 +214610,7 @@
         },
         {
           "kind": "def",
-          "name": "chain12cIpcCapTransferArrivalOrder",
+          "name": "ipcCapTransferArrivalOrder",
           "line": 969,
           "called": [
             "AccessRightSet",
@@ -214481,7 +214653,7 @@
         },
         {
           "kind": "def",
-          "name": "chain12dReplyRecvCapTransferArrivalOrder",
+          "name": "replyRecvCapTransferArrivalOrder",
           "line": 1103,
           "called": [
             "AccessRightSet",
@@ -214527,7 +214699,7 @@
         },
         {
           "kind": "def",
-          "name": "chain12eReceiveWithoutSenderInstallsNothing",
+          "name": "receiveWithoutSenderInstallsNothing",
           "line": 1233,
           "called": [
             "AccessRightSet",
@@ -214568,7 +214740,7 @@
         },
         {
           "kind": "def",
-          "name": "chain12fReceiveRefusesMessagelessParkedSender",
+          "name": "receiveRefusesMessagelessParkedSender",
           "line": 1321,
           "called": [
             "AccessRightSet",
@@ -214604,7 +214776,7 @@
         },
         {
           "kind": "def",
-          "name": "chain12gRevokeConsumesPendingTransfer",
+          "name": "revokeConsumesPendingTransfer",
           "line": 1431,
           "called": [
             "AccessRightSet",
@@ -214646,7 +214818,7 @@
         },
         {
           "kind": "def",
-          "name": "chain12hEndpointGrantDecidesBothOrderings",
+          "name": "endpointGrantDecidesBothOrderings",
           "line": 1527,
           "called": [
             "AccessRightSet",
@@ -215271,13 +215443,6 @@
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
             "chain12IpcCapTransfer",
-            "chain12bIpcCapTransferRevocable",
-            "chain12cIpcCapTransferArrivalOrder",
-            "chain12dReplyRecvCapTransferArrivalOrder",
-            "chain12eReceiveWithoutSenderInstallsNothing",
-            "chain12fReceiveRefusesMessagelessParkedSender",
-            "chain12gRevokeConsumesPendingTransfer",
-            "chain12hEndpointGrantDecidesBothOrderings",
             "chain13IpcCapTransferNoGrant",
             "chain14IpcBadgeAndCapTransfer",
             "chain15StrictRevokeDeepChain",
@@ -215309,6 +215474,13 @@
             "chain7VSpaceMultiAsidSharedPage",
             "chain8IpcInterleavedSendOrdering",
             "chain9LifecycleCascadingRevokeAndAttenuation",
+            "endpointGrantDecidesBothOrderings",
+            "ipcCapTransferArrivalOrder",
+            "ipcCapTransferRevocable",
+            "receiveRefusesMessagelessParkedSender",
+            "receiveWithoutSenderInstallsNothing",
+            "replyRecvCapTransferArrivalOrder",
+            "revokeConsumesPendingTransfer",
             "schedulerStressChecks"
           ]
         },
