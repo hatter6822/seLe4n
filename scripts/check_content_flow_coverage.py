@@ -824,6 +824,38 @@ def dispatcher_of(key: str) -> str:
     return key.split("::", 1)[0] if "::" in key else ""
 
 
+def split_dispatch_arms(body: str) -> list[tuple[str, str]]:
+    """Every `| .<name> =>` arm of a dispatcher body, one entry per constructor.
+
+    A single arm may name several: `| .auditRead | .auditDrain => …`.  Both run
+    the same body, so both get an entry over that body.
+
+    PR #873 round 17: the splitter recognised only a constructor *immediately*
+    followed by `=>`, so a grouped arm produced no entry for either constructor
+    — and its text stayed inside the preceding arm, attributing code to an arm
+    that does not run it.  The unchecked dispatcher groups its two audit arms, so
+    neither `dispatchWithCap::auditRead` nor `::auditDrain` existed; the
+    missing-arm check was satisfied by the *checked* dispatcher's separate
+    implementations, and the gate never verified that the unchecked pair stays
+    fail-closed.
+
+    `recording_classification` already expanded groups.  Two parsers over the
+    same syntax, one of them right, is how this survived — so the splitting is a
+    named function with its own witness (`--self-test`) rather than a regex
+    inlined at one of its two call sites.
+    """
+    parts = re.split(
+        r"\n\s*\|\s*((?:\.[A-Za-z][A-Za-z0-9']*\s*\|\s*)*"
+        r"\.[A-Za-z][A-Za-z0-9']*)\s*=>",
+        body)
+    out: list[tuple[str, str]] = []
+    for i in range(1, len(parts) - 1, 2):
+        arms, text = parts[i], parts[i + 1]
+        for arm in re.findall(r"\.([A-Za-z][A-Za-z0-9']*)", arms):
+            out.append((arm, text))
+    return out
+
+
 def arm_roots() -> dict[str, set[str]]:
     """Root stems per `(dispatcher, arm)`, read off the dispatch arms' own text.
 
@@ -846,10 +878,7 @@ def arm_roots() -> dict[str, set[str]]:
         nxt = re.search(r"\n(?:private )?(?:def|theorem|abbrev|instance)\s", body[1:])
         if nxt is not None:
             body = body[: nxt.start() + 1]
-        # Arms are `| .<name> =>` at the match's own indentation.
-        parts = re.split(r"\n\s*\|\s*\.([A-Za-z][A-Za-z0-9']*)\s*=>", body)
-        for i in range(1, len(parts) - 1, 2):
-            arm, text = parts[i], parts[i + 1]
+        for arm, text in split_dispatch_arms(body):
             ids = set(re.findall(r"\b([a-z][A-Za-z0-9_']{3,})\b", text))
             roots.setdefault(arm_key(dispatcher, arm), set()).update(ids)
     if not roots:
@@ -1080,6 +1109,36 @@ def main() -> int:
         print(f"  taint writers: {len(writers)}")
 
     if args.self_test:
+        # PR #873 round 17: the arm splitter recognised only a constructor
+        # immediately followed by `=>`, so a grouped arm produced no entry for
+        # either constructor and its text was attributed to the preceding arm.
+        # Planted rather than asserted against the live tree, because the live
+        # tree only exhibits the shape while some dispatcher happens to group its
+        # arms — a witness that stops witnessing when the source is reformatted
+        # is the kind of check this gate exists to replace.
+        grouped_body = (
+            "\n  | .alpha => alphaHelper st\n"
+            "  | .auditRead | .auditDrain => auditHelper st\n"
+            "  | .omega => omegaHelper st\n")
+        split = dict(split_dispatch_arms(grouped_body))
+        if "auditRead" not in split or "auditDrain" not in split:
+            print("FAIL: --self-test — the arm splitter dropped a grouped arm")
+            print("      (`| .auditRead | .auditDrain =>`).  Neither constructor")
+            print("      gets a reach key, so the missing-arm check is satisfied by")
+            print("      whichever dispatcher spells them separately and the grouped")
+            print("      pair is never verified fail-closed.")
+            return 1
+        if "auditHelper" not in split.get("auditRead", ""):
+            print("FAIL: --self-test — a grouped arm's entries do not carry the")
+            print("      arm's own body, so each alternative would be classified")
+            print("      against code it does not run.")
+            return 1
+        if "auditHelper" in split.get("alpha", ""):
+            print("FAIL: --self-test — a grouped arm's text leaked into the")
+            print("      PRECEDING arm, attributing a reach to code that arm never")
+            print("      executes.  That is how the old splitter failed: it did not")
+            print("      terminate the previous arm at an unrecognised `|`.")
+            return 1
         planted = [k for k in roots if cls[arm_of(k)] == "inert" and hits.get(k, 0) > 0]
         if not planted:
             print("FAIL: --self-test planted `TCB.priority` as a content channel and the")

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm9d-causal-declassification-ppwxud",
-      "commit_sha": "f38b89933df338378da54511d481c3822338c9a5",
-      "tree_sha": "e9d66b75719dd6f63d1d8a818b473a38a1d72155",
-      "committed_at_utc": "2026-08-22T02:15:53+00:00"
+      "commit_sha": "a6cd8b2c422a50fbed262a6b19990280b05b4e22",
+      "tree_sha": "307eadf749530d62bc40f7a29306f8b295a4f9d4",
+      "committed_at_utc": "2026-08-22T02:27:48+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 16934
   },
   "readme_sync": {
-    "version": "0.33.96",
+    "version": "0.33.97",
     "lean_toolchain": "v4.28.0",
     "production_files": 286,
     "production_loc": 286541,

@@ -4175,6 +4175,15 @@ run_check "INVARIANT" rg -n 'differentialRegistryMatchesClaim' tests/FrozenOpsSu
 # `-g '"'"'*.lean'"'"' search disjoint files and cannot contradict, while an unfiltered
 # negative covers any filtered positive.
 run_check "BUILD" rg -n '_FILE_FILTER_OPTIONS' scripts/check_anchor_consistency.py
+# PR #873 round 17: the content-flow gate's arm splitter recognised only a
+# constructor immediately followed by `=>`, so a grouped arm
+# (`| .auditRead | .auditDrain =>`) produced no reach key for either -- and its
+# text was attributed to the preceding arm.  The missing-arm check was satisfied
+# by the dispatcher that spells them separately, so the grouped pair was never
+# verified fail-closed.  `recording_classification` in the same file already
+# expanded groups: two parsers over one syntax, one of them right.
+run_check "BUILD" rg -n '^def split_dispatch_arms' scripts/check_content_flow_coverage.py
+run_check "BUILD" rg -n 'the arm splitter dropped a grouped arm' scripts/check_content_flow_coverage.py
 # Sequence-coded test identifiers must not come back in the renamed scenarios.
 run_negative_check "INVARIANT" rg -n 'private def fo0(2[2-9]|3[0-3])_' tests/FrozenOpsSuite.lean
 run_negative_check "INVARIANT" rg -n 'private def chain12[b-h][A-Z]' tests/OperationChainSuite.lean

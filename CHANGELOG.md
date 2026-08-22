@@ -1,3 +1,34 @@
+## v0.33.97 — two parsers over one syntax, one of them right
+
+The content-flow gate's dispatcher-arm splitter recognised only a constructor
+*immediately* followed by `=>`. A grouped arm — `| .auditRead | .auditDrain =>`,
+which is how the unchecked dispatcher writes its audit pair — produced no reach
+key for either constructor, and its text stayed inside the **preceding** arm,
+attributing a reach to code that arm never runs. Measured: 47 dispatcher
+implementations parsed before, 49 after, with `dispatchWithCap::auditRead` and
+`::auditDrain` the two that did not exist.
+
+The consequence is precise. The missing-arm check was satisfied by the *checked*
+dispatcher, which spells the same two arms separately, so the gate never verified
+that the unchecked pair stays fail-closed: either grouped arm could begin reaching
+an audit or content writer without checks (A) or (C3) seeing it.
+
+`recording_classification`, twenty lines below in the same file, already expanded
+grouped arms. Two parsers over the same syntax with only one of them right is how
+this survived, so the splitting is now a named `split_dispatch_arms` with its own
+witness rather than a regex inlined at one of its two call sites.
+
+The witness is a **plant**, not an assertion against the live tree: a synthetic
+body with a grouped arm, checking that both constructors get an entry, that each
+carries the arm's own body, and that the group's text did not leak into the
+preceding arm. Asserting against the real API would stop witnessing the moment
+someone reformatted the dispatcher — a check that quietly stops checking is the
+shape this gate exists to replace. Probed against the old regex: it fails.
+
+Found in review of PR #873 (round 17).
+
+Refs: docs/WORKSTREAM_HISTORY.md SM9.D
+
 ## v0.33.96 — one scenario was standing in for a whole syscall
 
 `frozenOpDifferentiallyChecked` was keyed by `SyscallId`. Round 16 tied it to an
