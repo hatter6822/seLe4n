@@ -15,6 +15,86 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
+**Current sub-phase: SM9.E tests + closure LANDED (v0.33.100) — WS-SM phase
+SM9 is CLOSED.**
+
+SM9.E adds no transition and no module; its subject is whether the phase's own
+acceptance criteria run end to end and stay pinned — and building it found one
+criterion that quietly did not.
+
+**SM9.E.2 — the seam's boundary coverage, made real.**  Every dispatch-level
+"END TO END" check in the information-flow suite was exercising the checked
+entry's *outermost* refusal: the AI5-C insecure-default heuristic samples
+entity ids 0, 1 and 42 across all four labeling classes, the suite's contexts
+label only their fixture entities, so `syscallEntryChecked` refused
+`.policyDenied` before any dispatch ran — and no test had ever pushed a
+*declassification* refusal through `syscallDispatchFromAbi`.  The new §13.2
+group runs a deployment the probe serves (one probed id labelled non-public)
+with a policy authorizing the declassifying signal's first hop only: the
+denied `.declassifySignal` travels the boundary the hardware calls, returns
+exactly the receiver refusal's error frame, and commits a ledger record naming
+the signal syscall, `.declassificationDeniedAtReceiver`, the resolved receiver
+and the operand — beside a denied `.declassify` control at the same state
+whose refusal is the policy gate's own, recorded receiverless.  The two
+pre-existing dispatch-level checks now pin `.policyDenied` explicitly, so the
+refusal class each dispatch-level check exercises is part of its assertion
+rather than an accident of its fixture — the guard refusals of a declassifying
+syscall are themselves seam-recorded, which is what a misdeployed system's
+monitor needs, and the deep composition is where the wording said it was.
+
+**SM9.E.2 — the epoch, exercised rather than asserted.**  §9.8's cliff drains
+the trail to empty, so its freshness claim had no survivor to collide with,
+and §9.6 computed the collision arithmetically.  The new §13.1 group drains
+one entry of three, records through the live transition, and reads the
+freshness off the recorded entry: stamped 3, the survivors carry 1 and 2, and
+the retired pre-epoch `log.length` rule would have stamped 2 — a survivor's
+timestamp.  The 256-entry cliff itself (§9.8: fill → refuse → read → drain →
+declassify again) and the causal acceptance chain (§12.7: downgrade →
+**ordinary** delivery → downgrade, with the three load-bearing negatives and
+the retype lifecycle case) landed with their sub-phases; the closure pins
+their criterion lines in Tier-3 so a weakened scenario fails the tier, not
+just the run.
+
+**SM9.E.3 — the acceptance scenarios, pinned.**  Two golden fixtures with
+in-suite byte-for-byte verification and `.sha256` companions walked by the
+Tier-2 gate: `declassification_reader.expected` (the cliff end to end, the
+survivor scenario, and the seam's two-syscall boundary coverage — counts,
+discriminants and verdicts only) and `declassification_taint.expected` (the
+causal chain, its three negative verdicts, the lifecycle case, saturation's
+upward residual, and the monitor's readable verdict with its snapshot-stripped
+negative control).  Regeneration rows and the five-tag workflow are in
+`tests/fixtures/README.md`.
+
+**SM9.E.4 / SM9.E.5 — anchors and the sweep.**  A Tier-3 SM9.E block (the new
+runtime groups' labels, the fixtures, their hashes, the pinned refusal
+classes, and the acceptance values); the §13 closure block in
+`tests/SmpSurfaceAnchors.lean` holding the four sub-phase headliners together
+(`auditDrain_requires_full_dominance`,
+`declassificationRefusals_are_counted_and_attributed` with
+`refusalWrite_cannot_exhaust_trail`, the two-hop transition standing in for
+`declassificationRelativeNonInterference` — which lives above `API.lean`,
+outside that file's import set, and is anchored in the runtime suite — and
+`chainLaunders_sound_under_causal_provenance`).  The retirement negatives
+(SM9.B.10's `refusalIsUnrecorded`, SM9.D.15's
+`declassificationChainLinked_is_syntactic`) and the hardcoded-`.declassify`
+seam-filter negative landed with their sub-phases and stand in those Tier-3
+blocks.  `check_module_axioms.py --all-smp-information-flow` sweeps 4751
+environment constants across the eight information-flow modules, axiom-clean;
+SM9.E registers no new module because it adds none.
+
+**SM9.E.6 — the operator consequence, shipped.**  The plan's acceptance gate
+required the drain-dominance consequence to be stated in shipped documentation
+rather than only in the plan: a deployment whose monitor does not dominate
+every recorded source domain cannot drain, and the 256-entry cliff returns for
+it — the conservative default, and the operator's to know about.  It now is —
+in the spec's workstream cell and the proof map's SM9.A drain bullet.
+
+Plan: [`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md)
+§SM9.E.  Next: SM10 release closure (→ v1.0.0),
+[`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md).
+
+---
+
 **WS-SM SM9.D — causal declassification provenance: LANDED.  The laundering
 detector stops guessing.**
 

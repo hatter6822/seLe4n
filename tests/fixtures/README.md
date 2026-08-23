@@ -21,6 +21,8 @@ explicit hash refresh in the same commit.
 | `smp_declassification_audit.expected` | `smp_declassification_audit.expected.sha256` | `tests/SmpInformationFlowSuite.lean` (WS-SM SM8.C.7 — the deterministic declassification-audit trace: a run of authorized downgrades through the live `.declassify` transition and the mounted trail, reporting each recorded entry's core, domains, target and basis, the per-core partition of the log, and the three fail-closed refusals — unconfigured policy, idle core, absent target) |
 | `smp_fine_lock_contention.expected` | `smp_fine_lock_contention.expected.sha256` | `tests/SmpInformationFlowSuite.lean` (WS-SM SM8.D.6 — the deterministic lock-contention trace: the per-object lock erased from every core's projection, a real contended execution with its delay, wait depth and channel code, the blocked reader's temporal figures, both integrity directions, and the two bracketed live syscall entries) |
 | `smp_information_flow.expected` | `smp_information_flow.expected.sha256` | `tests/SmpInformationFlowSuite.lean` (WS-SM SM8.E.2 — the phase-level information-flow trace: what an observer at `(core, label)` sees of the four-thread/four-core fixture, per-core independence, CNode slot redaction across three clearances, a live high-object signal and its low-object negative control, the cross-core write sets, and the sizes of the enforcement boundary, the non-interference coverage and the accepted covert-channel inventory; since WS-SM SM9.A also the audit trail's **read** side, which is otherwise unrecorded because the trail is deliberately outside `ObservableState` — the clearance-filtered view at both reader classes, the two-reader-class timestamp export (global identity for a monitor, view-local index for a partial reader), the atomic status word, the chunk protocol's accepted and refused widths, the drain at a monitor and its refusal at a partial reader, the unconfigured deployment's absent reader, and the two audit syscalls' ABI numbers) |
+| `declassification_reader.expected` | `declassification_reader.expected.sha256` | `tests/SmpInformationFlowSuite.lean` (WS-SM SM9.E.3 — the reader-side acceptance trace: the 256-entry cliff run end to end through the live transitions (fill to capacity, the fail-closed refusal's discriminant, the monitor's full drain, the recovery downgrade with its fresh timestamp), the epoch exercised against surviving entries after a partial drain (the recorded stamp collides with no survivor while the retired pre-epoch rule provably would), and the refusal seam's coverage of BOTH declassifying syscalls at `syscallDispatchFromAbi` — the denied signal's recorded reason and resolved receiver beside the denied declassify's policy refusal) |
+| `declassification_taint.expected` | `declassification_taint.expected.sha256` | `tests/SmpInformationFlowSuite.lean` (WS-SM SM9.E.3 — the taint-side acceptance trace: the causal chain (a downgrade tags its target, an ORDINARY delivery carries the tag, the next downgrade's snapshot names its predecessor), the three load-bearing negative verdicts (a domain-only detector's false positive, an object-adjacency detector's false negative, two same-domain subjects distinguished by their snapshots), the lifecycle case (a retyped subject's later downgrade names nothing), saturation's upward over-approximation, and the monitor's readable causality verdict with its snapshot-stripped negative control) |
 | `syscall_return_abi.expected` | `syscall_return_abi.expected.sha256` | `tests/SyscallReturnAbiSuite.lean` (WS-RA RA.E.4 — the deterministic return-ABI trace, computed from the live `syscallDispatchFromAbi` decisions: the ABI version, a `Unit` syscall's zero frame decoding as a value, the signal-before-wait badge delivered in `x0`, the blocked outcome's tag, an ABI-mismatch error riding the offset `x1` label, the all-56-discriminant label round trip, the full-width badge frame, and WS-SM SM9.A.10's two audit accessors returning their computed word rather than the caller's own `x0`.  Any change in the return convention — the frame layout, the label offset, the outcome tags — diverges the fixture) |
 
 The Tier 2 trace gate (`scripts/test_tier2_trace.sh`) walks every
@@ -72,9 +74,9 @@ fixture fails CI with a uniform remediation message.
      > tests/fixtures/smp_tlb_shootdown.expected
    ```
 
-   The information-flow suite emits **three** fixtures, one per tag, and
+   The information-flow suite emits **five** fixtures, one per tag, and
    the same escaping rule applies to each (WS-SM SM8.C.7 / SM8.D.6 /
-   SM8.E.2):
+   SM8.E.2 / SM9.E.3):
 
    ```bash
    lake exe smp_information_flow_suite | grep '^\[smp-declassification\]' \
@@ -83,6 +85,10 @@ fixture fails CI with a uniform remediation message.
      > tests/fixtures/smp_fine_lock_contention.expected
    lake exe smp_information_flow_suite | grep '^\[smp-information-flow\]' \
      > tests/fixtures/smp_information_flow.expected
+   lake exe smp_information_flow_suite | grep '^\[declassification-reader\]' \
+     > tests/fixtures/declassification_reader.expected
+   lake exe smp_information_flow_suite | grep '^\[declassification-taint\]' \
+     > tests/fixtures/declassification_taint.expected
    ```
 
 2. Recompute the SHA-256 companion in the format `sha256sum` writes by
@@ -101,6 +107,10 @@ fixture fails CI with a uniform remediation message.
    sha256sum smp_fine_lock_contention.expected \
      > smp_fine_lock_contention.expected.sha256
    sha256sum smp_information_flow.expected  > smp_information_flow.expected.sha256
+   sha256sum declassification_reader.expected \
+     > declassification_reader.expected.sha256
+   sha256sum declassification_taint.expected \
+     > declassification_taint.expected.sha256
    ```
 
 3. Verify both files agree:

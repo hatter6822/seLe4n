@@ -1,0 +1,5 @@
+[declassification-reader] cliff fill: capacity=256 filled=256 atCapacityRefusal=54
+[declassification-reader] cliff drain: preDrainVisible=256 postDrainEntries=0 epochAfterDrain=256
+[declassification-reader] cliff recovery: postDrainRecords=1 freshTimestamp=256 wellFormed=true
+[declassification-reader] epoch survivors: survivorStamps=[1, 2] recordedStamp=3 survivorCollision=false preEpochStampWouldCollide=true
+[declassification-reader] seam boundary: signalReason=56 signalReceiver=1021 declassifyReason=14 recordingSyscalls=2

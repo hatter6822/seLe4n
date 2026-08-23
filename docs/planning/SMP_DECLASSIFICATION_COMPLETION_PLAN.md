@@ -8,8 +8,9 @@
 > **Target releases**: v0.33.24 → v0.34.x
 > **Calendar estimate**: 12-16 weeks
 > **Sub-task count**: 61 across ~21-26 PRs
-> **Status**: IN FLIGHT — SM9.A LANDED (v0.33.37 → v0.33.50), SM9.B LANDED,
-> SM9.C LANDED, SM9.D LANDED
+> **Status**: **CLOSED (v0.33.100)** — SM9.A LANDED (v0.33.37 → v0.33.50),
+> SM9.B LANDED, SM9.C LANDED, SM9.D LANDED, SM9.E LANDED (v0.33.100; the
+> acceptance gate below is fully ticked, each box carrying its evidence)
 
 ## 1. Phase goal
 
@@ -1933,7 +1934,24 @@ coverage sentence is corrected to carve the sink out; the taint write at that
 key is exactly as covered as the object write it shadows, so the gap belongs
 to the footprint, not to the taint layer.
 
-### SM9.E — Tests + closure (7 sub-tasks)
+### SM9.E — Tests + closure (7 sub-tasks) — **LANDED**
+
+**LANDED (v0.33.100).**  E.1, E.2a, most of E.2, and the sub-phase Tier-3
+blocks with both retirement negatives and the hardcoded-seam-filter negative
+had already landed *with* SM9.A–SM9.D (the runtime groups §9–§12, the §9.8
+cliff, the §12.6/§12.7 causal acceptance).  What this cut added: the epoch
+**exercised** against surviving entries through the live transition (§13.1 —
+§9.8's full drain leaves no survivor to collide with); the denied
+`.declassifySignal` through `syscallDispatchFromAbi` with the resolved
+receiver in the committed record (§13.2), which also found that every
+pre-existing dispatch-level check had been exercising only the checked
+entry's outermost `.policyDenied` guard (the AI5-C probe fires on
+fixture-scoped labelings) — those checks now pin their refusal class
+explicitly; the two E.3 golden fixtures with in-suite byte-for-byte
+verification; the E.4 closure anchors (Tier-3 SM9.E block + the
+surface-anchor §13 block); the E.5 sweep (no new module to register); and the
+E.6 documentation set, including the drain-dominance operator consequence in
+the shipped spec and proof map.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
@@ -2086,17 +2104,21 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 
 ## 9. Acceptance gate
 
-- [ ] A clearance-filtered reader exists; a dominating monitor can drain the
+- [x] A clearance-filtered reader exists; a dominating monitor can drain the
       trail; the 256-entry cliff is demonstrably gone (SM9.E.2 scenario).
-- [ ] The reader is gated on a **`.auditTrail` capability**, not merely on a
+      (DONE — SM9.A v0.33.42→50: the cliff run for effect in suite §9.8; the SM9.E.2 survivor scenario §13.1 and the reader fixture pin it at v0.33.100)
+- [x] The reader is gated on a **`.auditTrail` capability**, not merely on a
       right, and an unconfigured deployment has no audit reader at all.
-- [ ] **Drain requires full dominance**, and the operator consequence is stated
+      (DONE — SM9.A.9 `extractAuditAuthority_rejects_non_audit_capability`; the unconfigured deployment refused at the live arm, suite §9.7)
+- [x] **Drain requires full dominance**, and the operator consequence is stated
       in the shipped documentation rather than only here: a deployment whose
       monitor does not dominate every recorded `srcDomain` cannot drain, and
       the 256-entry cliff returns for it.  That is the conservative default,
       and it is the operator's to know about.
-- [ ] `drainGeneration` is observer-scoped; the global-counter form is refuted
+      (DONE — `auditDrain_requires_full_dominance`; the operator consequence shipped at v0.33.100 in `SELE4N_SPEC.md`'s workstream cell and GitBook 12's SM9.A drain bullet)
+- [x] `drainGeneration` is observer-scoped; the global-counter form is refuted
       by a negative rather than merely avoided.
+      (DONE — `auditReadStatus_generation_observer_scoped` + the refuted global counter, suite §9.3/§9.9)
 - [x] Refusals are counted and attributed, and provably cannot displace an
       authorized-downgrade entry (SM9.B: `declassificationRefusals_are_counted_and_attributed`,
       `refusalWrite_declassificationAuditLog_eq`, `refusalWrite_cannot_exhaust_trail`).
@@ -2105,71 +2127,92 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
       `.auditLogCapacityExceeded` for the monitor — the occupancy channel is
       closed by the read gate, not by discarding the only durable evidence that
       an authorized downgrade hit the 256-entry cliff (SM9.B, suite §10.6).
-- [ ] A data-carrying declassification exists, with
+- [x] A data-carrying declassification exists, with
       `declassificationRelativeNonInterference` in both halves.
-- [ ] Timestamps survive drains: after a drain, a fresh event's timestamp
+      (DONE — SM9.C v0.33.52: `declassificationRelativeNonInterference`, both halves over one footprint, suite §11.4)
+- [x] Timestamps survive drains: after a drain, a fresh event's timestamp
       collides with no surviving entry, and the well-formedness contract names
       the epoch rather than claiming index-anchoring.
-- [ ] Every value the reader exports — record fields **and** `status` — is
+      (DONE — the SM9.A.1a epoch; exercised with survivors present at SM9.E §13.1, v0.33.100)
+- [x] Every value the reader exports — record fields **and** `status` — is
       reconstructible from its chunks, not merely small enough to fit one
       return word; and a partial reader cannot infer hidden-entry counts from
       an exported index.
+      (DONE — `auditReadField_reconstructs` / `auditReadBasis_reconstructs_designation`; `auditReadIndex_is_view_local` + `auditRead_hides_global_position`)
 - [x] Every visibility gate is computed from something that does not age out
       from under it: the refusal ledger's gate is configuration, not the ring's
       surviving rows (SM9.B: `refusalLedger_gate_is_configuration_derived`,
       with `refusalLedger_records_gate_unsound` keeping the eviction
       counterexample refuted).
-- [ ] A retyped object carries no taint from its predecessor, with a lifecycle
+- [x] A retyped object carries no taint from its predecessor, with a lifecycle
       test rather than a frame lemma.
-- [ ] The causal verdict on a fixed pair of events is stable under later
+      (DONE — SM9.D.12 `retypeClearsTaint`; the lifecycle case run in suite §12.5 and §12.7)
+- [x] The causal verdict on a fixed pair of events is stable under later
       unrelated activity, including a retype of the subject.
-- [ ] Every completeness gate is keyed to a taxonomy that is exhaustive
+      (DONE — `chainCausal_is_history_local`, `chainCausal_survives_subject_retype`)
+- [x] Every completeness gate is keyed to a taxonomy that is exhaustive
       *independently* of the gate — `KernelOperation.all` for content flow,
       `ReadableStructure` fused with the reader for visibility — so a new live
       transition or a new readable field cannot decline to join it.
-- [ ] SM9.C.0 is closed: the notification wait path delivers the badge, so a
+      (DONE — `contentFlowClass_total` over `SyscallId` plus the Tier-1 reach gate; `AuditReadOp` fused with `ReadableStructure`)
+- [x] SM9.C.0 is closed: the notification wait path delivers the badge, so a
       data-carrying declassification is not built over a path that loses data in
       one of its two orderings.
-- [ ] The declassifying signal authorizes its **resolved destination**, not only
+      (DONE — suite §11.3: the badge really crosses, in both orderings)
+- [x] The declassifying signal authorizes its **resolved destination**, not only
       its notification, and the audit event names that destination — the
       v0.31.73 leak is not re-opened under declassification authority.
-- [ ] A two-hop delivery within one transition is **detected as a chain**: the
+      (DONE — `declassifiedSignal_gates_resolved_receiver` + `_audits_actual_destination`, suite §11.2/§11.9)
+- [x] A two-hop delivery within one transition is **detected as a chain**: the
       second event names the first, so the design's own scenario is not rejected
       by its own detector.
-- [ ] Taint propagates on **both** notification orderings, so the causal
+      (DONE — `secondHopEvent_names_firstHop`; the §12.7 acceptance run)
+- [x] Taint propagates on **both** notification orderings, so the causal
       scenario holds whether the signal or the wait comes first.
-- [ ] Every content-moving sub-transition reachable from a live arm is
+      (DONE — SM9.D.10: `taintPropagation_signal_to_notification` / `_wait_from_notification`)
+- [x] Every content-moving sub-transition reachable from a live arm is
       classified, established by **reach** (the call-graph gate) and not by
       totality over a type that does not enumerate them.
-- [ ] An event's **actor** and its **flow source** are separate fields, so a
+      (DONE — `scripts/check_content_flow_coverage.py`, the Tier-1 call-graph reach gate)
+- [x] An event's **actor** and its **flow source** are separate fields, so a
       second-hop record never asserts that a high subject is mid.
-- [ ] A refused second hop names the **resolved receiver**, not the original
+      (DONE — `attributionFromRunningSubject_over_actor`, `secondHop_actor_differs_from_flowSource`)
+- [x] A refused second hop names the **resolved receiver**, not the original
       capability operand.
+      (DONE — `refusalRecord_names_failed_hop`; end to end through `syscallDispatchFromAbi` at SM9.E §13.2, v0.33.100)
 - [x] A refusal read that races a `recordRefusal` is **detected**, not silently
       assembled from two attempts (SM9.B:
       `refusalRead_bracketed_detects_overwrite`, with
       `auditStatus_does_not_detect_refusal_write` the negative that the trail's
       own token does not serve).
-- [ ] `.auditRead` and `.auditDrain` return their computed word to the caller —
+- [x] `.auditRead` and `.auditDrain` return their computed word to the caller —
       verified end to end through `syscallDispatchFromAbi`, not just at the
       transition — which requires WS-RA to have landed.
-- [ ] No field derived from hidden state reaches a partial reader, including
+      (DONE — SM9.A.10 on WS-RA's return path; `SyscallReturnAbiSuite` §10a–§10e)
+- [x] No field derived from hidden state reaches a partial reader, including
       fields added to fix something else.
-- [ ] Every readable structure has an equivalence clause and a hidden-write
+      (DONE — `predecessorTags_dominating_only`, `partialReader_gets_opaque_causality`)
+- [x] Every readable structure has an equivalence clause and a hidden-write
       non-interference argument (§3.7), enforced by `auditReadOp_structure_total`
       and `auditObservationalEquivalence_clause_total` — **not** by a `mem_all`
       list, which §3.7 refutes.
-- [ ] Both declassifying syscalls reach the refusal seam, enforced by the total
+      (DONE — `auditReadOp_structure_total`, `auditObservationalEquivalence_clause_total`)
+- [x] Both declassifying syscalls reach the refusal seam, enforced by the total
       `refusalSeamClass_total` and exercised by a denied `.declassifySignal`.
-- [ ] The laundering detector is **causal**: the §3.6 chain (downgrade →
+      (DONE — `refusalSeamClass_total`; the denied `.declassifySignal` exercised through the dispatch boundary at SM9.E §13.2, v0.33.100, pinned by the reader fixture's seam line)
+- [x] The laundering detector is **causal**: the §3.6 chain (downgrade →
       ordinary delivery → downgrade) is detected, the syntactic-scope theorem is
       retired rather than weakened, and the residual saturation-induced
       over-approximation is pinned by its own negative.
-- [ ] `KernelOperation.all` grew by exactly one, with `mem_all` and all three
+      (DONE — `chainLaunders_sound_under_causal_provenance`; the syntactic theorem retired with a Tier-3 negative; `causalChain_residual_over_approximation` pins the residual)
+- [x] `KernelOperation.all` grew by exactly one, with `mem_all` and all three
       counts moved.
-- [ ] Zero `sorry`/`axiom`; `check_module_axioms.py --all-smp-information-flow`
+      (RESOLVED OTHERWISE — per §4 SM9.C.7: a `KernelOperation` constructor would have reported the visible flow as projection-preserving, so the inventory that grew is `CrossCoreTransition` 28→29; `kernelOperation_count` stays 35 with a Tier-3 exclusion negative)
+- [x] Zero `sorry`/`axiom`; `check_module_axioms.py --all-smp-information-flow`
       green including every new module.
-- [ ] Tier 0..3 green; trace fixture diffs explained.
+      (DONE — 4751 environment constants axiom-clean across the eight information-flow modules at v0.33.100)
+- [x] Tier 0..3 green; trace fixture diffs explained.
+      (DONE at v0.33.100 — the two acceptance fixtures are new with this closure; no pre-existing fixture moved)
 
 ## 10. Cross-references
 

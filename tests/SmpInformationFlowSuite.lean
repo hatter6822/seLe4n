@@ -8454,14 +8454,26 @@ private def runRefusalSeamWriteChecks : IO Unit := do
   -- End to end through the boundary the hardware calls.  The outcome is the
   -- error frame computed from `ke` alone — bit-identical to what this arm
   -- returned before the ledger existed — and the committed state carries the
-  -- record.
+  -- record.  The refusal exercised HERE is the checked entry's outermost one:
+  -- this suite's labeling deliberately labels only its fixture entities, so
+  -- the AI5-C insecure-default probe (ids 0, 1, 42, all four classes) fires
+  -- and the entry refuses `.policyDenied` before any dispatch runs.  Pinned
+  -- explicitly — the seam must record the guard refusals of a declassifying
+  -- syscall too, or a misdeployed system's failed downgrades would be the one
+  -- class a monitor cannot see.  The *policy-path* refusals travel the same
+  -- boundary in §13.2, under a deployment the probe serves.
   assertBool "END TO END: the boundary commits the record and returns the plain error frame"
     (match Platform.FFI.syscallDispatchFromAbi ctx c1 declassId 0 5 0 0 0 0 0 0 niState with
      | .error _ => false
      | .ok (outcome, committed) =>
          (match outcome with
-          | .returns _ => true
+          | .returns f => decide (f = Architecture.errorFrame KernelError.policyDenied)
           | .blocks => false) &&
+         (match committed.declassificationRefusals.recent.get
+             niState.declassificationRefusals.nextSlot with
+          | some r => decide (r.reason = KernelError.policyDenied) &&
+                      decide (r.syscall = SyscallId.declassify)
+          | none => false) &&
          decide (committed.declassificationRefusals.version = 1) &&
          decide (committed.declassificationRefusals.attemptCount.val = 1) &&
          decide (committed.declassificationAuditLog = niState.declassificationAuditLog))
@@ -8720,11 +8732,15 @@ private def runRefusalAcceptanceChecks : IO Unit := do
      | .ok _ => false)
   -- The acceptance composition, run at the boundary the hardware calls and the
   -- entry the monitor calls, under ONE deployment context: the kernel refuses
-  -- the downgrade, commits the attributed record, hands the caller exactly the
+  -- the syscall, commits the attributed record, hands the caller exactly the
   -- error frame its reason computes — and the monitor's core reads that same
   -- reason back through the live entry.  The frame equality is the load-bearing
   -- half: the caller's whole return frame is `errorFrame` of the recorded
-  -- reason, so nothing about the ledger rides it.
+  -- reason, so nothing about the ledger rides it.  At THIS fixture the refusal
+  -- is the entry's outermost guard (`.policyDenied` — the AI5-C probe fires on
+  -- this suite's fixture-scoped labeling), pinned so the class of refusal each
+  -- dispatch-level check exercises is explicit; the genuine downgrade
+  -- refusals travel the same boundary in §13.2.
   assertBool "END TO END: the committed refusal reads back live, and the caller's frame is exactly its reason's"
     (match Platform.FFI.syscallDispatchFromAbi auditMonitorLabeling c1
         (SyscallId.declassify.toNat.toUInt32) 0 5 0 0 0 0 0 0 auditMixedState with
@@ -8737,6 +8753,7 @@ private def runRefusalAcceptanceChecks : IO Unit := do
              (match outcome with
               | .returns f => decide (f = Architecture.errorFrame recorded.reason)
               | .blocks => false) &&
+             decide (recorded.reason = KernelError.policyDenied) &&
              decide (recorded.syscall = SyscallId.declassify) &&
              decide (recorded.subject = highCurrent) &&
              (match auditReadFromCore auditGenericCtx
@@ -11015,10 +11032,463 @@ grep '^\\[smp-information-flow\\]' > {informationFlowTraceFixturePath}"
     IO.println s!"          (then refresh {informationFlowTraceFixturePath}.sha256)"
     throw (IO.userError "information-flow trace fixture mismatch")
 
+-- ============================================================================
+-- §13  WS-SM SM9.E — tests + closure: the acceptance scenarios, pinned
+-- ============================================================================
+--
+-- SM9.E adds no transition and no module.  Its subject is the phase's own
+-- acceptance criteria, run end to end and held byte-for-byte: the epoch
+-- EXERCISED against surviving entries rather than asserted arithmetically
+-- (§13.1 — §9.8's cliff drains everything, so its trail has no survivor to
+-- collide with), the refusal seam covering BOTH declassifying syscalls at the
+-- boundary the hardware calls (§13.2 — §10.3 dispatches only `.declassify`,
+-- §11.7 exercises only the seam function), and the reader-side and taint-side
+-- golden traces that pin those verdicts (§13.3, §13.4).
+
+/-- §13.1 fixture — a partial drain of the mixed trail: the monitor removes one
+entry, two survive (timestamps 1 and 2), and the epoch advances to 1. -/
+private def survivorDrainOutcome : Option SystemState :=
+  match auditDrainVisiblePrefix auditGenericCtx
+      auditMonitorLabeling.auditMonitorClearance c1 1 auditMixedState with
+  | .ok (_, st) => some st
+  | .error _ => none
+
+/-- §13.1 fixture — the LIVE downgrade recorded after that drain.  The epoch
+producer stamps it `epoch + length = 3`; the pre-epoch rule would have stamped
+it `length = 2`, which the surviving last entry still carries. -/
+private def survivorRecordedOutcome : Option SystemState :=
+  match survivorDrainOutcome with
+  | none => none
+  | some st =>
+      match declassifyObjectFromCore auditGenericCtx
+          auditMonitorLabeling.declassificationPolicy c1 lowNotification st with
+      | .ok ((), st') => some st'
+      | .error _ => none
+
+/-- §13.3 fixtures — the cliff scenario's three stations, computed once so the
+golden trace and any assertion read the same run: the trail filled to capacity
+through the live transition, the monitor's full drain, and the recovery
+downgrade the drain re-enables. -/
+private def cliffFilledOutcome : Option SystemState :=
+  match declassifyRun (liftLegacyContext auditMonitorLabeling)
+      auditMonitorLabeling.declassificationPolicy
+      (List.replicate maxDeclassificationAuditEntries
+        ({ core := c1, targetId := lowNotification } : DeclassificationRequest))
+      niState with
+  | .ok ((), st) => some st
+  | .error _ => none
+
+private def cliffDrainedOutcome : Option SystemState :=
+  match cliffFilledOutcome with
+  | none => none
+  | some st =>
+      match auditDrainVisiblePrefix (liftLegacyContext auditMonitorLabeling)
+          auditMonitorLabeling.auditMonitorClearance c1
+          maxDeclassificationAuditEntries st with
+      | .ok (_, st') => some st'
+      | .error _ => none
+
+private def cliffRecoveredOutcome : Option SystemState :=
+  match cliffDrainedOutcome with
+  | none => none
+  | some st =>
+      match declassifyObjectFromCore (liftLegacyContext auditMonitorLabeling)
+          auditMonitorLabeling.declassificationPolicy c1 lowNotification st with
+      | .ok ((), st') => some st'
+      | .error _ => none
+
+/-- §13.1  SM9.E.2 — the epoch EXERCISED: a live recording after a partial
+drain is stamped a timestamp no surviving entry carries.
+
+§9.6 computes what the next timestamp *would* be and §9.8 runs the cliff with
+a full drain, whose post-drain trail has no survivor to collide with.  This
+group is the remaining shape the plan names: survivors PRESENT, the recording
+performed through the live transition, and the freshness read off the recorded
+entry itself. -/
+private def runPostDrainRecordingFreshnessChecks : IO Unit := do
+  IO.println "--- §13.1 the epoch exercised: a post-drain recording vs the survivors ---"
+  assertBool "the partial drain leaves the two survivors, at epoch 1"
+    (match survivorDrainOutcome with
+     | none => false
+     | some st =>
+         decide (st.declassificationAuditEpoch = 1) &&
+         decide (st.declassificationAuditLog.map (·.timestamp) = [1, 2]))
+  assertBool "the LIVE recording after it is stamped 3 — a timestamp NO survivor carries"
+    (match survivorRecordedOutcome with
+     | none => false
+     | some st =>
+         (match st.declassificationAuditLog.getLast? with
+          | some e =>
+              decide (e.timestamp = 3) &&
+              st.declassificationAuditLog.dropLast.all
+                (fun s => decide (s.timestamp ≠ e.timestamp))
+          | none => false) &&
+         declassificationTrailWellFormed st)
+  assertBool "NEGATIVE: the pre-epoch rule would have stamped it 2 — a SURVIVOR's timestamp"
+    (match survivorDrainOutcome with
+     | none => false
+     | some st =>
+         let preEpochStamp := st.declassificationAuditLog.length
+         st.declassificationAuditLog.any (fun s => decide (s.timestamp = preEpochStamp)))
+  assertBool "…so the recorded trail still names every event uniquely"
+    (match survivorRecordedOutcome with
+     | none => false
+     | some st => decide ((st.declassificationAuditLog.map (·.timestamp)).Nodup))
+
+/-- §13.2 fixture — the deployment whose declassification policy authorizes the
+signal's FIRST hop only, stated over the embedded legacy domains the boundary
+resolves: the secret-trusted subject (domain 3) may downgrade into the
+high-untrusted notification (domain 2), and nothing may go further.  Both hops
+are genuine downgrades under the faithful legacy lattice (trust is lost on the
+first, confidentiality on the second), so the second — onward to the public
+waiter — is refused by the policy, at the receiver's own gate. -/
+private def signalReceiverDeniedLabeling : LabelingContext :=
+  { niLabeling with
+      threadLabelOf := fun tid =>
+        if tid = highCurrent then SecurityLabel.kernelTrusted
+        else if tid = crossCoreWaiter then SecurityLabel.publicLabel
+        -- The inherited labeler keeps the AI5-C insecure-default probe
+        -- defeated; the two threads the scenario reads are pinned above.
+        else niLabeling.threadLabelOf tid
+      objectLabelOf := fun oid =>
+        if oid = highNotification then
+          { confidentiality := .high, integrity := .untrusted }
+        -- Object 0 is inert to the scenario and defeats the AI5-C
+        -- insecure-default probe, which samples ids 0, 1 and 42 across all
+        -- four entity classes and fires only when EVERY sample is public —
+        -- so the checked entry serves this deployment rather than refusing
+        -- it outright with `.policyDenied`.
+        else if oid = SeLe4n.ObjId.ofNat 0 then SecurityLabel.kernelTrusted
+        else niLabeling.objectLabelOf oid
+      declassificationPolicy :=
+        { canDeclassify := fun src dst =>
+            decide (src = embedLegacyLabel SecurityLabel.kernelTrusted) &&
+            decide (dst = embedLegacyLabel
+              { confidentiality := .high, integrity := .untrusted }) } }
+
+/-- §13.2 fixture — the deny-all control deployment: the same labelers (the
+probe is defeated the same way), with NO declassification policy configured,
+so the `.declassify` control's refusal is `.declassificationDenied` itself. -/
+private def declassifyDenyAllLabeling : LabelingContext :=
+  { signalReceiverDeniedLabeling with
+      declassificationPolicy := { canDeclassify := fun _ _ => false } }
+
+/-- §13.2 fixture — the seam CSpace with a second slot: a write capability to
+the PUBLIC notification, so the `.declassify` control below reaches the policy
+gate (its refusal is the deny-all policy's own, not a resolution failure). -/
+private def seamLowTargetSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 3
+
+private def seamBoundaryState : SystemState :=
+  match declassSeamState.objects[declassCapCNode]? with
+  | some (.cnode cn) =>
+      { declassSeamState with
+          objects := declassSeamState.objects.insert declassCapCNode
+            (.cnode (cn.insert seamLowTargetSlot
+              { target := .object lowNotification,
+                rights := AccessRightSet.ofList [.write] })) }
+  | _ => declassSeamState
+
+/-- §13.2 fixture — the denied `.declassifySignal`, through the boundary the
+hardware calls: msgInfo 1 (one message register, the badge), x0 = 2 (the slot
+holding the notification's write capability).  The plan authorizes hop 1 and
+refuses hop 2, so the committed record must carry the resolved receiver. -/
+private def deniedSignalDispatchOutcome :
+    Except KernelError (Architecture.SyscallOutcome × SystemState) :=
+  Platform.FFI.syscallDispatchFromAbi signalReceiverDeniedLabeling c1
+    (SyscallId.declassifySignal.toNat.toUInt32) 1 2 1 0x5C 0 0 0 0
+    seamBoundaryState
+
+/-- §13.2 fixture — the denied `.declassify` at the SAME state: the deny-all
+control deployment refuses every downgrade, and the capability at slot 3
+resolves to the public notification, so the refusal is the policy gate's own
+`.declassificationDenied` rather than a resolution failure. -/
+private def deniedDeclassifyDispatchOutcome :
+    Except KernelError (Architecture.SyscallOutcome × SystemState) :=
+  Platform.FFI.syscallDispatchFromAbi declassifyDenyAllLabeling c1
+    (SyscallId.declassify.toNat.toUInt32) 0 3 0 0 0 0 0 0 seamBoundaryState
+
+/-- §13.2  SM9.E.2 — the refusal seam covers BOTH declassifying syscalls, at
+the boundary the hardware calls.
+
+§10.3 dispatches a denied `.declassify` and §11.7 exercises the seam function's
+receiver fill; this group is the composition the plan names: a denied
+`.declassifySignal` THROUGH `syscallDispatchFromAbi`, its record carrying the
+resolved receiver, beside the denied `.declassify` control at the same state —
+so "both declassifying syscalls reach the seam" is a fact about the boundary,
+not only about the classification table. -/
+private def runDeclassifyingSeamBoundaryChecks : IO Unit := do
+  IO.println "--- §13.2 the refusal seam covers both declassifying syscalls at the boundary ---"
+  assertBool "the denied signal's frame is exactly the receiver refusal's error frame"
+    (match deniedSignalDispatchOutcome with
+     | .ok (.returns f, _) =>
+         decide (f = Architecture.errorFrame KernelError.declassificationDeniedAtReceiver)
+     | _ => false)
+  assertBool "…and the committed record names the signal syscall, the receiver and the operand"
+    (match deniedSignalDispatchOutcome with
+     | .ok (_, committed) =>
+         (match committed.declassificationRefusals.recent.get
+             seamBoundaryState.declassificationRefusals.nextSlot with
+          | some r =>
+              decide (r.syscall = SyscallId.declassifySignal) &&
+              decide (r.reason = KernelError.declassificationDeniedAtReceiver) &&
+              decide (r.refusedReceiver = some crossCoreWaiter) &&
+              decide (r.requestedTarget = SeLe4n.CPtr.ofNat 2) &&
+              decide (r.subject = highCurrent)
+          | none => false)
+     | _ => false)
+  assertBool "the denied declassify at the same state is the POLICY's refusal, recorded receiverless"
+    (match deniedDeclassifyDispatchOutcome with
+     | .ok (.returns f, committed) =>
+         decide (f = Architecture.errorFrame KernelError.declassificationDenied) &&
+         (match committed.declassificationRefusals.recent.get
+             seamBoundaryState.declassificationRefusals.nextSlot with
+          | some r =>
+              decide (r.syscall = SyscallId.declassify) &&
+              decide (r.reason = KernelError.declassificationDenied) &&
+              decide (r.refusedReceiver = none)
+          | none => false)
+     | _ => false)
+  assertBool "NEGATIVE: neither refusal wrote the trail — the ledger and the trail stay disjoint"
+    (match deniedSignalDispatchOutcome, deniedDeclassifyDispatchOutcome with
+     | .ok (_, c₁), .ok (_, c₂) =>
+         decide (c₁.declassificationAuditLog = seamBoundaryState.declassificationAuditLog) &&
+         decide (c₂.declassificationAuditLog = seamBoundaryState.declassificationAuditLog)
+     | _, _ => false)
+  assertBool "the seam's classification admits exactly the two declassifying syscalls"
+    (decide (refusalSeamClass .declassify = .records) &&
+     decide (refusalSeamClass .declassifySignal = .records) &&
+     decide ((SyscallId.all.filter (fun s => refusalSeamClass s == .records)).length = 2))
+
+/-- §13.3 — the reader-side golden trace: the cliff acceptance scenario and the
+seam's boundary coverage, as counts and verdicts.  Every value is produced by
+the live transitions the scenario runs, so the fixture pins the acceptance
+criteria themselves rather than restating them. -/
+private def declassificationReaderTraceLines : List String :=
+  [ s!"[declassification-reader] cliff fill: capacity={maxDeclassificationAuditEntries} \
+filled={match cliffFilledOutcome with
+  | some st => toString st.declassificationAuditLog.length
+  | none => "fill-failed"} \
+atCapacityRefusal={match cliffFilledOutcome with
+  | some st =>
+      match declassifyObjectFromCore (liftLegacyContext auditMonitorLabeling)
+          auditMonitorLabeling.declassificationPolicy c1 lowNotification st with
+      | .error e => toString (SeLe4n.Model.KernelError.toDiscriminant e)
+      | .ok _ => "unexpected-ok"
+  | none => "fill-failed"}"
+  , s!"[declassification-reader] cliff drain: preDrainVisible={match cliffFilledOutcome with
+  | some st =>
+      match auditReadFromCore (liftLegacyContext auditMonitorLabeling)
+          auditMonitorLabeling.auditMonitorClearance c1 .status st with
+      | .ok (w, _) => toString (auditStatusVisibleLength w)
+      | .error _ => "refused"
+  | none => "fill-failed"} \
+postDrainEntries={match cliffDrainedOutcome with
+  | some st => toString st.declassificationAuditLog.length
+  | none => "drain-failed"} \
+epochAfterDrain={match cliffDrainedOutcome with
+  | some st => toString st.declassificationAuditEpoch
+  | none => "drain-failed"}"
+  , s!"[declassification-reader] cliff recovery: postDrainRecords={match cliffRecoveredOutcome with
+  | some st => toString st.declassificationAuditLog.length
+  | none => "recovery-failed"} \
+freshTimestamp={match cliffRecoveredOutcome with
+  | some st =>
+      match st.declassificationAuditLog.getLast? with
+      | some e => toString e.timestamp
+      | none => "empty"
+  | none => "recovery-failed"} \
+wellFormed={match cliffRecoveredOutcome with
+  | some st => toString (declassificationTrailWellFormed st)
+  | none => "recovery-failed"}"
+  , s!"[declassification-reader] epoch survivors: survivorStamps={match survivorDrainOutcome with
+  | some st => toString (st.declassificationAuditLog.map
+      (fun e : DeclassificationEvent => e.timestamp))
+  | none => "drain-failed"} \
+recordedStamp={match survivorRecordedOutcome with
+  | some st =>
+      match st.declassificationAuditLog.getLast? with
+      | some e => toString e.timestamp
+      | none => "empty"
+  | none => "record-failed"} \
+survivorCollision={match survivorRecordedOutcome with
+  | some st =>
+      match st.declassificationAuditLog.getLast? with
+      | some e =>
+          toString (st.declassificationAuditLog.dropLast.any
+            (fun s => decide (s.timestamp = e.timestamp)))
+      | none => "empty"
+  | none => "record-failed"} \
+preEpochStampWouldCollide={match survivorDrainOutcome with
+  | some st =>
+      toString (st.declassificationAuditLog.any
+        (fun s => decide (s.timestamp = st.declassificationAuditLog.length)))
+  | none => "drain-failed"}"
+  , s!"[declassification-reader] seam boundary: signalReason={match deniedSignalDispatchOutcome with
+  | .ok (_, committed) =>
+      match committed.declassificationRefusals.recent.get
+          seamBoundaryState.declassificationRefusals.nextSlot with
+      | some r => toString (SeLe4n.Model.KernelError.toDiscriminant r.reason)
+      | none => "no-record"
+  | .error _ => "dispatch-failed"} \
+signalReceiver={match deniedSignalDispatchOutcome with
+  | .ok (_, committed) =>
+      match committed.declassificationRefusals.recent.get
+          seamBoundaryState.declassificationRefusals.nextSlot with
+      | some r =>
+          match r.refusedReceiver with
+          | some t => toString t.toNat
+          | none => "none"
+      | none => "no-record"
+  | .error _ => "dispatch-failed"} \
+declassifyReason={match deniedDeclassifyDispatchOutcome with
+  | .ok (_, committed) =>
+      match committed.declassificationRefusals.recent.get
+          seamBoundaryState.declassificationRefusals.nextSlot with
+      | some r => toString (SeLe4n.Model.KernelError.toDiscriminant r.reason)
+      | none => "no-record"
+  | .error _ => "dispatch-failed"} \
+recordingSyscalls={(SyscallId.all.filter (fun s => refusalSeamClass s == .records)).length}" ]
+
+private def declassificationReaderFixturePath : String :=
+  "tests/fixtures/declassification_reader.expected"
+
+/-- §13.3: print the deterministic reader-side acceptance trace and verify it
+byte-for-byte against the golden fixture.  The lines print before the (strict)
+verification, so the fixture is regenerable via
+`lake exe smp_information_flow_suite | grep '^\[declassification-reader\]'`
+(the brackets MUST be escaped — unescaped they form a regex character class). -/
+private def runDeclassificationReaderFixtureCheck : IO Unit := do
+  IO.println "--- §13.3 deterministic reader-side acceptance trace (golden fixture)"
+  for l in declassificationReaderTraceLines do
+    IO.println l
+  let expectedContent := String.intercalate "\n" declassificationReaderTraceLines ++ "\n"
+  let fixtureExists ← System.FilePath.pathExists declassificationReaderFixturePath
+  if !fixtureExists then
+    IO.println s!"  FAIL: golden fixture {declassificationReaderFixturePath} not found"
+    throw (IO.userError s!"missing fixture {declassificationReaderFixturePath}")
+  let actual ← IO.FS.readFile declassificationReaderFixturePath
+  if actual == expectedContent then
+    IO.println s!"  PASS: reader-side acceptance trace matches golden fixture \
+{declassificationReaderFixturePath}"
+  else
+    IO.println s!"  FAIL: reader-side acceptance trace differs from golden fixture \
+{declassificationReaderFixturePath}"
+    IO.println "        the live trace is printed above; regenerate with:"
+    IO.println s!"          lake exe smp_information_flow_suite | \
+grep '^\\[declassification-reader\\]' > {declassificationReaderFixturePath}"
+    IO.println s!"          (then refresh {declassificationReaderFixturePath}.sha256)"
+    throw (IO.userError "reader-side acceptance trace fixture mismatch")
+
+/-- §13.4 — the taint-side golden trace: the causal-detector acceptance chain
+(§3.6's downgrade → ORDINARY delivery → downgrade), its three load-bearing
+negative verdicts, the lifecycle case and the monitor's readable verdict, as
+counts and verdicts over the same fixtures §12.6–§12.9 assert on. -/
+private def declassificationTaintTraceLines : List String :=
+  [ s!"[declassification-taint] causal chain: hopOneTagsTarget={match declassHop1 with
+  | none => "no-run"
+  | some (log₁, st₁) =>
+      match log₁.head? with
+      | some e => toString ((st₁.declassificationTaint e.targetObject).contains e.timestamp)
+      | none => "empty"} \
+preDeliveryClean={match declassHop1 with
+  | none => "no-run"
+  | some (_, st₁) =>
+      toString (!((st₁.declassificationTaint lowCurrent.toObjId).contains 0))} \
+deliveryCarries={match declassDelivery with
+  | none => "no-run"
+  | some (_, st) => toString ((st.declassificationTaint lowCurrent.toObjId).contains 0)}"
+  , s!"[declassification-taint] causal verdicts: causal={match declassHop2 with
+  | none => "no-run"
+  | some (log₂, _) => toString (declassificationChainCausal log₂)} \
+launders={match declassHop2 with
+  | none => "no-run"
+  | some (log₂, _) =>
+      toString (chainLaunders declassContext.policy launderingDeclPolicy log₂)} \
+domainOnlyFalsePositive=\
+{toString (declassificationChainComposes
+    [causalHopOne, causalHopTwo DeclassificationTaint.empty] &&
+  !(declassificationChainLinked
+    [causalHopOne, causalHopTwo DeclassificationTaint.empty]))} \
+adjacencyFalseNegative=\
+{toString (decide (causalHopOne.targetObject
+    ≠ (causalHopTwo (DeclassificationTaint.singleton 0)).sourceSubject) &&
+  declassificationChainLinked
+    [causalHopOne, causalHopTwo (DeclassificationTaint.singleton 0)])} \
+snapshotsDistinguishSameDomain=\
+{toString (declassificationChainLinked
+    [causalHopOne, causalHopTwo (DeclassificationTaint.singleton 0)] &&
+  !(declassificationChainLinked
+    [causalHopOne, causalHopTwo DeclassificationTaint.empty]))}"
+  , s!"[declassification-taint] lifecycle: retypedTagCleared={match declassDelivery with
+  | none => "no-run"
+  | some (_, st) =>
+      let retyped := applySyscallTaint { cleared := [lowCurrent.toObjId] } st st
+      toString (!((retyped.declassificationTaint lowCurrent.toObjId).contains 0))} \
+retypedSubjectNamesNothing={match declassDelivery with
+  | none => "no-run"
+  | some (_, st) =>
+      let retyped := applySyscallTaint { cleared := [lowCurrent.toObjId] } st st
+      toString (!(declassificationEventNames
+        (causalHopTwo (retyped.declassificationTaint lowCurrent.toObjId)) causalHopOne))}"
+  , s!"[declassification-taint] saturation: maxTags={maxTaintTags} \
+ninthSaturates=\
+{toString (DeclassificationTaint.join (DeclassificationTaint.ofList taintFullList)
+    (DeclassificationTaint.singleton 8)).saturated} \
+saturatedNamesRecorded={(DeclassificationTaint.top.tags).length} \
+saturatedStillLinks=\
+{toString (declassificationChainLinked
+    [causalHopOne, causalHopTwo DeclassificationTaint.top])}"
+  , s!"[declassification-taint] monitor verdict: word={match declassHop2 with
+  | none => "no-run"
+  | some (_, st₂) =>
+      match auditReadWord declassContext (some causalMonitorReader) causalMonitorReader
+          st₂ (.chainNamesPredecessor 1) with
+      | .ok w => toString w
+      | .error _ => "refused"} \
+strippedWord={match causalStrippedState with
+  | none => "no-run"
+  | some stripped =>
+      match auditReadWord declassContext (some causalMonitorReader) causalMonitorReader
+          stripped (.chainNamesPredecessor 1) with
+      | .ok w => toString w
+      | .error _ => "refused"} \
+verdictOpcodes=3 opcodeCount={auditReadOpcodeCount}" ]
+
+private def declassificationTaintFixturePath : String :=
+  "tests/fixtures/declassification_taint.expected"
+
+/-- §13.4: print the deterministic taint-side acceptance trace and verify it
+byte-for-byte against the golden fixture.  The lines print before the (strict)
+verification, so the fixture is regenerable via
+`lake exe smp_information_flow_suite | grep '^\[declassification-taint\]'`
+(the brackets MUST be escaped — unescaped they form a regex character class). -/
+private def runDeclassificationTaintFixtureCheck : IO Unit := do
+  IO.println "--- §13.4 deterministic taint-side acceptance trace (golden fixture)"
+  for l in declassificationTaintTraceLines do
+    IO.println l
+  let expectedContent := String.intercalate "\n" declassificationTaintTraceLines ++ "\n"
+  let fixtureExists ← System.FilePath.pathExists declassificationTaintFixturePath
+  if !fixtureExists then
+    IO.println s!"  FAIL: golden fixture {declassificationTaintFixturePath} not found"
+    throw (IO.userError s!"missing fixture {declassificationTaintFixturePath}")
+  let actual ← IO.FS.readFile declassificationTaintFixturePath
+  if actual == expectedContent then
+    IO.println s!"  PASS: taint-side acceptance trace matches golden fixture \
+{declassificationTaintFixturePath}"
+  else
+    IO.println s!"  FAIL: taint-side acceptance trace differs from golden fixture \
+{declassificationTaintFixturePath}"
+    IO.println "        the live trace is printed above; regenerate with:"
+    IO.println s!"          lake exe smp_information_flow_suite | \
+grep '^\\[declassification-taint\\]' > {declassificationTaintFixturePath}"
+    IO.println s!"          (then refresh {declassificationTaintFixturePath}.sha256)"
+    throw (IO.userError "taint-side acceptance trace fixture mismatch")
+
 def runSmpInformationFlowChecks : IO Unit := do
-  IO.println "WS-SM SM8.A / SM8.B / SM8.C / SM8.D / SM8.E / SM9.A / SM9.B / SM9.C — per-core \
-observable state, non-interference, declassification audit, fine-lock information flow, \
-phase closure, the audit-trail reader, refusal auditing and the data-carrying declassification"
+  IO.println "WS-SM SM8.A / SM8.B / SM8.C / SM8.D / SM8.E / SM9.A / SM9.B / SM9.C / SM9.D / \
+SM9.E — per-core observable state, non-interference, declassification audit, fine-lock \
+information flow, phase closure, the audit-trail reader, refusal auditing, the data-carrying \
+declassification, causal provenance and the acceptance scenarios"
   IO.println "===================================="
   runFixtureChecks
   runObserverChecks
@@ -11098,12 +11568,14 @@ phase closure, the audit-trail reader, refusal auditing and the data-carrying de
   runAuditLiveArmChecks
   runAuditCapacityCliffChecks
   runAuditDrainSignalChecks
+  runPostDrainRecordingFreshnessChecks
   runRefusalLedgerChecks
   runRefusalSeamClassChecks
   runRefusalSeamWriteChecks
   runRefusalReaderChecks
   runRefusalGateChecks
   runRefusalAcceptanceChecks
+  runDeclassifyingSeamBoundaryChecks
   runDeclassifiedSignalHopChecks
   runDeclassifiedSignalReceiverGateChecks
   runDeclassifiedSignalDeliveryChecks
@@ -11123,12 +11595,14 @@ phase closure, the audit-trail reader, refusal auditing and the data-carrying de
   runTaintFootprintChecks
   runCausalReaderChecks
   runInformationFlowTraceFixtureCheck
+  runDeclassificationReaderFixtureCheck
+  runDeclassificationTaintFixtureCheck
   IO.println "===================================="
   IO.println ("All SM8.A per-core observable-state, SM8.B non-interference, " ++
     "SM8.C declassification-audit, SM8.D fine-lock information-flow, " ++
     "SM8.E phase-closure, SM9.A audit-reader, SM9.B refusal-auditing, " ++
-    "SM9.C data-carrying-declassification and SM9.D causal-provenance " ++
-    "checks PASS.")
+    "SM9.C data-carrying-declassification, SM9.D causal-provenance and " ++
+    "SM9.E acceptance-scenario checks PASS.")
 
 end SeLe4n.Testing.SmpInformationFlow
 

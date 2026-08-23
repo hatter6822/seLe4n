@@ -2948,6 +2948,12 @@ to exclude — so the fix is a reader and a drain, not a softer bound.
   the rows the trail holds: drain a trail to `[]` and a rows-derived predicate
   goes vacuously true exactly where it matters, which
   `auditMonitorGate_records_derived_unsound` keeps refuted.
+  **The operator consequence (SM9.E)**: a deployment whose configured audit
+  monitor does not dominate every recorded source domain cannot drain the
+  trail at all, and the 256-entry fail-closed cliff returns for it.  That is
+  the conservative default, not an oversight — a deployment that needs a
+  drainable trail must configure `auditMonitorClearance` to dominate every
+  domain its policy lets declassify.
 * **The reader-visibility discipline** (SM9.A.4a).  Adding a reader changes what
   is observable, and `lowEquivalent` compares `ObservableState`, which does not
   contain the trail — so "low-equivalent states give identical visible views" is
@@ -3542,6 +3548,50 @@ positively so closing it breaks the line.  The §3d docstring's blanket
 coverage sentence is corrected to carve the sink out; the taint write at that
 key is exactly as covered as the object write it shadows, so the gap belongs
 to the footprint, not to the taint layer.
+
+### Layer 3 under SMP — declassification tests and closure (WS-SM SM9.E)
+
+SM9.E (v0.33.100) closes the phase.  It adds no transition and no new module;
+its subject is whether the phase's own acceptance criteria run end to end and
+stay pinned — and building it found one that quietly did not.
+
+* **The seam's boundary coverage, made real** (SM9.E.2).  Every dispatch-level
+  "END TO END" check in the information-flow suite was exercising the checked
+  entry's *outermost* refusal: the insecure-default heuristic samples entity
+  ids 0, 1 and 42 across all four labeling classes, the suite's contexts label
+  only their fixture entities, so `syscallEntryChecked` refused `policyDenied`
+  before any dispatch ran.  The new §13.2 runtime group runs a deployment the
+  probe serves with a policy authorizing the declassifying signal's first hop
+  only: the denied `declassifySignal` travels `syscallDispatchFromAbi` end to
+  end, returns exactly the receiver refusal's error frame, and commits a
+  ledger record naming the syscall, `declassificationDeniedAtReceiver`, the
+  **resolved receiver** and the operand — beside a denied `declassify` control
+  at the same state whose refusal is the policy gate's own, recorded
+  receiverless.  The pre-existing dispatch-level checks now pin `policyDenied`
+  explicitly, so the refusal class each check exercises is part of its
+  assertion.
+* **The epoch, exercised rather than asserted** (SM9.E.2).  The §9.8 cliff
+  drains the trail to empty, so its freshness claim had no survivor to collide
+  with.  The new §13.1 group drains one entry of three, records through the
+  live transition, and reads the freshness off the recorded entry: stamped 3,
+  the survivors carry 1 and 2, and the retired pre-epoch `log.length` rule
+  would have stamped 2 — a survivor's timestamp.
+* **The acceptance scenarios, pinned** (SM9.E.3).  Two golden fixtures with
+  in-suite byte-for-byte verification and `.sha256` companions:
+  `declassification_reader.expected` (the 256-entry cliff end to end, the
+  survivor scenario, the seam's two-syscall boundary coverage) and
+  `declassification_taint.expected` (the causal chain, its three load-bearing
+  negative verdicts, the retype lifecycle case, saturation's upward residual,
+  and the monitor's readable verdict with its snapshot-stripped negative
+  control).
+* **Anchors and the sweep** (SM9.E.4, SM9.E.5).  A Tier-3 SM9.E block pins the
+  new groups' labels, the fixtures, their hashes and the acceptance values;
+  the surface-anchor suite's closure block holds the four sub-phase headliners
+  together.  The axiom sweep is clean across all eight information-flow
+  modules; SM9.E registers no new module because it adds none.
+
+Runtime coverage: `lake exe smp_information_flow_suite` §13.1–§13.4, with the
+§9–§12 groups landed by SM9.A–SM9.D.
 
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 
