@@ -1,3 +1,69 @@
+## v0.33.100 — the acceptance criteria run end to end, and one of them was not
+
+SM9.E closes WS-SM phase SM9. The phase's acceptance scenarios now run as live
+compositions and are pinned byte-for-byte as golden fixtures, and building them
+found one claim that was quietly weaker than its wording: every dispatch-level
+"END TO END" check in the information-flow suite was exercising the checked
+entry's *outermost* refusal — the AI5-C insecure-default probe fires on the
+suite's fixture-scoped labeling and refuses `.policyDenied` before any
+dispatch runs — so no test had ever pushed a *declassification* refusal
+through `syscallDispatchFromAbi`.
+
+**The seam's boundary coverage, made real (§13.2).** A deployment the probe
+serves (one probed id labelled non-public), a policy authorizing the
+declassifying signal's first hop only, and the seam CSpace: the denied
+`.declassifySignal` now travels the boundary the hardware calls, returns
+exactly the receiver refusal's error frame, and commits a ledger record naming
+syscall 33, `.declassificationDeniedAtReceiver`, the resolved receiver and the
+operand — beside a denied `.declassify` control at the same state whose
+refusal is the policy gate's own. The two pre-existing dispatch-level checks
+now pin `.policyDenied` explicitly, so the class of refusal every
+dispatch-level check exercises is part of its assertion rather than an
+accident of its fixture.
+
+**The epoch, exercised rather than asserted (§13.1).** §9.8's cliff drains the
+trail to empty, so its post-drain freshness claim had no survivor to collide
+with; §9.6 computed the collision arithmetically. The new group drains one
+entry of three, records through the live transition, and reads the freshness
+off the recorded entry: stamped 3, the survivors carry 1 and 2, and the
+retired pre-epoch rule would have stamped 2 — a survivor's timestamp.
+
+**The acceptance scenarios, pinned (SM9.E.3).** Two new golden fixtures with
+in-suite byte-for-byte verification: `declassification_reader.expected` (the
+256-entry cliff end to end — fill, the fail-closed refusal, the monitor's
+drain, the recovery with its fresh timestamp — plus the survivor scenario and
+the seam's two-syscall boundary coverage) and `declassification_taint.expected`
+(the causal chain, its three load-bearing negative verdicts, the lifecycle
+retype case, saturation's upward residual, and the monitor's readable verdict
+with its snapshot-stripped negative control).
+
+Closure plumbing: a Tier-3 SM9.E anchor block, the SM9.E closure block in the
+surface-anchor suite (the four sub-phase headliners standing together), the
+drain-dominance operator consequence stated in the shipped spec and proof map
+(a deployment whose monitor does not dominate every recorded source domain
+cannot drain, and the 256-entry cliff returns for it — the conservative
+default, now the operator's to know about), and the documentation set synced
+with the phase marked CLOSED.
+
+**Review round (same cut): the acceptance chain's remaining synthetic
+stations, made live.** The causal scenario's ordinary delivery was the
+propagation planner's own primitive at the edge an IPC delivery would declare
+— honest about the model, blind to the integration: had the live delivery
+stopped propagating provenance, the golden trace would have stayed green. The
+middle step now runs a real `.notificationWait` through the checked entry,
+whose taint seam moves the tag and clears the transport. The lifecycle case
+was likewise a manual clear plus a synthetic second hop; it is now four live
+stations — the retype through the checked entry (the seam performs the
+clear), an ordinary refill of the replacement, its delivery, and the real
+downgrade — whose recorded event carries an empty snapshot, so the pair still
+composes by domain and only the causal conjunct knows the retype broke the
+chain. A hand-built propagation edge in the acceptance fixtures is now a
+Tier-3 negative. Same round: the SM9 closure status carried into
+`docs/DEVELOPMENT.md`'s active-workstream entry, which the closure cut had
+missed.
+
+Refs: docs/WORKSTREAM_HISTORY.md SM9.E
+
 ## v0.33.99 — the audit compared the ordering the claim was resting on
 
 A full-tree audit of the branch (SM9.D and every review fix, code against code

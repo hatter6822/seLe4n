@@ -1144,9 +1144,50 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _fr := @SeLe4n.Kernel.applySyscallTaint_frame
      decide (SeLe4n.Kernel.taintFlowSinks SeLe4n.Kernel.TaintPlan.inert = []))
 
+  -- ==========================================================================
+  -- §13  WS-SM SM9.E — tests + closure
+  -- ==========================================================================
+
+  assertBool "SM9.E: the four sub-phase headliners stand together — the phase closes on all of them"
+    (-- SM9.A: a monitor can drain, and only under full dominance — the
+     -- 256-entry cliff is recoverable exactly where recovery is sound.
+     have _dr := @SeLe4n.Kernel.auditDrain_requires_full_dominance
+     have _dw := @SeLe4n.Kernel.auditDrain_preserves_wellFormed_at_epoch
+     have _dc := @SeLe4n.Kernel.auditDrain_fully_clears_for_dominating_reader
+     -- SM9.B: refusals are counted and attributed, and provably cannot
+     -- displace an authorized-downgrade entry.
+     have _rc := @SeLe4n.Kernel.declassificationRefusals_are_counted_and_attributed
+     have _rx := @SeLe4n.Platform.FFI.refusalWrite_cannot_exhaust_trail
+     -- SM9.C: the phase headline `declassificationRelativeNonInterference`
+     -- lives in `NonInterferenceCrossCore`, outside this file's import set
+     -- (the §11 note above); it is anchored in `SmpInformationFlowSuite`
+     -- §1.12, exercised in §11.4, and pinned by Tier-3.  What stands here is
+     -- the two-hop transition the statement is about.
+     have _ds := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore
+     have _dp := @SeLe4n.Kernel.declassifiedSignalPlan
+     -- SM9.D: the laundering verdict is sound under causal provenance,
+     -- replacing the retired syntactic scope theorem.
+     have _cl := @SeLe4n.Kernel.chainLaunders_sound_under_causal_provenance
+     true)
+
+  assertBool "SM9.E.2: the epoch discipline and the seam's coverage of both declassifying syscalls"
+    (-- The timestamp producer offsets by the epoch; the pre-epoch rule's reuse
+     -- after a drain is kept REFUTED, not merely avoided.
+     have _tf := @SeLe4n.Kernel.auditTimestampsFrom
+     have _pr := @SeLe4n.Kernel.preEpochTimestamp_reused_after_drain
+     have _me := @SeLe4n.Kernel.auditDrain_monotone_epoch
+     -- Both declassifying syscalls classify `.records` at the refusal seam,
+     -- and the classification is total — the boundary composition is §13.2 of
+     -- the runtime suite, pinned byte-for-byte by its golden fixture.
+     have _ri := @SeLe4n.Kernel.refusalSeamClass_records_iff
+     decide (SeLe4n.Kernel.refusalSeamClass .declassify = .records
+       ∧ SeLe4n.Kernel.refusalSeamClass .declassifySignal = .records
+       ∧ (SeLe4n.Model.SyscallId.all.filter
+           (fun s => SeLe4n.Kernel.refusalSeamClass s == .records)).length = 2))
+
   IO.println "============================================================"
   IO.println "All SM2.D + SM3.E.8 + SM8.A + SM8.B + SM8.C + SM8.D + SM8.E + SM9.A + SM9.B + \
-SM9.C + SM9.D surface anchor checks PASS."
+SM9.C + SM9.D + SM9.E surface anchor checks PASS."
 
 end SeLe4n.Testing.SmpSurfaceAnchors
 

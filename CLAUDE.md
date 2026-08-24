@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.33.99.
+Lean 4.28.0 toolchain, Lake build system, version 0.33.100.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -804,7 +804,8 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 | SM9.B | LANDED | v0.33.51 | Refusal auditing — the trail's blind spot (refused downgrades), closed |
 | SM9.C | LANDED | v0.33.52 | Data-carrying declassification — the first deliberately visible flow |
 | SM9.D | LANDED | v0.33.53→56 | Causal declassification provenance — the laundering detector stops guessing |
-| SM9 | IN FLIGHT | — | Declassification completion (A–D landed; E = tests + closure) |
+| SM9.E | LANDED | v0.33.100 | Tests + closure: acceptance scenarios run live and pinned as golden fixtures; seam boundary coverage of both declassifying syscalls; the epoch exercised with survivors |
+| SM9 | CLOSED | v0.33.100 | Declassification completion — reader, refusal auditing, data-carrying signal, causal provenance, acceptance fixtures |
 | SM10 | PENDING | — | Release closure (→ v1.0.0) |
 
 **Plans**: master overview at

@@ -4489,6 +4489,70 @@ run_check "TRACE" rg -n 'taint propagation: liveReceiverTagged=' tests/fixtures/
 run_check "TRACE" rg -n 'causal chain: causal=' tests/fixtures/smp_information_flow.expected
 run_check "TRACE" rg -n 'taint saturation: full=8' tests/fixtures/smp_information_flow.expected
 
+# ============================================================================
+# WS-SM SM9.E — tests + closure
+# (plan SMP_DECLASSIFICATION_COMPLETION_PLAN.md §4 SM9.E.1 … SM9.E.6).
+# ============================================================================
+# SM9.E adds no transition and no module.  Its subject is the phase's own
+# acceptance criteria, run end to end and pinned byte-for-byte: the epoch
+# EXERCISED against surviving entries, the refusal seam covering BOTH
+# declassifying syscalls at the dispatch boundary, and the two
+# acceptance-scenario golden fixtures.  The two retirement negatives the plan
+# lists under this sub-phase — SM9.B.10's `refusalIsUnrecorded` and SM9.D.15's
+# `declassificationChainLinked_is_syntactic` — and the negative against a
+# hardcoded `.declassify` seam filter landed with their sub-phases and stand
+# in the SM9.B / SM9.D blocks above.
+
+# SM9.E.2: the epoch exercised — the runtime group whose recording runs LIVE
+# against a partially-drained trail with survivors present.
+run_check "INVARIANT" rg -n '^  runPostDrainRecordingFreshnessChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the LIVE recording after it is stamped 3' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the pre-epoch rule would have stamped it 2' tests/SmpInformationFlowSuite.lean
+# SM9.E.2: the seam's boundary coverage, and the pinned refusal classes.  The
+# two pre-existing dispatch-level checks exercise the checked entry's
+# OUTERMOST refusal and now say so explicitly, so the class of refusal every
+# dispatch-level check covers is part of its assertion.
+run_check "INVARIANT" rg -n '^  runDeclassifyingSeamBoundaryChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the denied signal.s frame is exactly the receiver refusal.s error frame' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the denied declassify at the same state is the POLICY.s refusal, recorded receiverless' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: neither refusal wrote the trail' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the seam.s classification admits exactly the two declassifying syscalls' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'recorded.reason = KernelError.policyDenied' tests/SmpInformationFlowSuite.lean
+
+# SM9.E.2a: the causal acceptance scenario landed with SM9.D; the closure pins
+# its criterion lines — the causal chain, the lifecycle case, and the
+# same-domain distinction only recorded snapshots can make.  PR #874 review:
+# the chain's middle step and the whole lifecycle case run through the LIVE
+# checked entry (whose taint seam is the behaviour under test), so a hand-built
+# propagation edge in the acceptance fixtures is a refuted shape.
+run_check "INVARIANT" rg -n 'hop 2.s recorded snapshot therefore names hop 1' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'syscallEntryChecked declassChainEntryLabeling' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the live retype cleared the tainted object.s provenance' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the lifecycle case: the downgrade from the replacement names nothing' tests/SmpInformationFlowSuite.lean
+run_negative_check "INVARIANT" rg -n 'edges := ..sink := lowCurrent.toObjId, source := declassTargetA' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: two same-domain second hops are distinguished by their snapshots' tests/SmpInformationFlowSuite.lean
+
+# SM9.E.3: the two golden fixtures, their hash companions, their in-suite
+# byte-for-byte checks, and the acceptance values they pin.
+run_check "TRACE" rg -n '^\[declassification-reader\]' tests/fixtures/declassification_reader.expected
+run_check "TRACE" rg -n 'declassification_reader\.expected' tests/fixtures/declassification_reader.expected.sha256
+run_check "TRACE" rg -n '^\[declassification-taint\]' tests/fixtures/declassification_taint.expected
+run_check "TRACE" rg -n 'declassification_taint\.expected' tests/fixtures/declassification_taint.expected.sha256
+run_check "INVARIANT" rg -n '^  runDeclassificationReaderFixtureCheck' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runDeclassificationTaintFixtureCheck' tests/SmpInformationFlowSuite.lean
+run_check "TRACE" rg -n 'cliff fill: capacity=256 filled=256' tests/fixtures/declassification_reader.expected
+run_check "TRACE" rg -n 'cliff recovery: postDrainRecords=1 freshTimestamp=256 wellFormed=true' tests/fixtures/declassification_reader.expected
+run_check "TRACE" rg -n 'epoch survivors: survivorStamps=.1, 2. recordedStamp=3 survivorCollision=false' tests/fixtures/declassification_reader.expected
+run_check "TRACE" rg -n 'seam boundary: signalReason=56 signalReceiver=1021 declassifyReason=14 recordingSyscalls=2' tests/fixtures/declassification_reader.expected
+run_check "TRACE" rg -n 'causal verdicts: causal=true launders=true domainOnlyFalsePositive=true adjacencyFalseNegative=true snapshotsDistinguishSameDomain=true' tests/fixtures/declassification_taint.expected
+run_check "TRACE" rg -n 'lifecycle: liveRetypeCleared=true replacementDeliveryClean=true replacementDowngradeNamesNothing=true' tests/fixtures/declassification_taint.expected
+run_check "TRACE" rg -n 'monitor verdict: word=1 strippedWord=0' tests/fixtures/declassification_taint.expected
+
+# SM9.E.4: the closure block in the surface-anchor suite — the four sub-phase
+# headliners standing together, and the seam-coverage facts decided there.
+run_check "INVARIANT" rg -n 'the four sub-phase headliners stand together' tests/SmpSurfaceAnchors.lean
+run_check "INVARIANT" rg -n 'the epoch discipline and the seam.s coverage of both declassifying syscalls' tests/SmpSurfaceAnchors.lean
+
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
 run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^def maxExtraCaps' SeLe4n/Model/Object/Types.lean
