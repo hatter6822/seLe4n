@@ -5774,21 +5774,141 @@ private def declassHop1 : Option (DeclassificationAuditLog × SystemState) :=
   | .ok ((), st) => some (st.declassificationAuditLog, applySyscallTaint declassifyingPlan niState st)
   | .error _ => none
 
+/-- PR #874 review — the labeling the live entries below run under.  Every
+scenario entity is public, so the checked wait and signal gates pass
+reflexively and the GENERIC `declassContext` stays the only source of the
+chain's domains; object 0 (inert to the scenario) is labelled trusted so the
+AI5-C insecure-default probe is defeated and the entry serves the deployment
+instead of refusing `.policyDenied` before the taint seam runs. -/
+private def declassChainEntryLabeling : LabelingContext :=
+  { objectLabelOf := fun oid =>
+      if oid = SeLe4n.ObjId.ofNat 0 then SecurityLabel.kernelTrusted
+      else SecurityLabel.publicLabel
+    threadLabelOf := fun _ => SecurityLabel.publicLabel
+    endpointLabelOf := fun _ => SecurityLabel.publicLabel
+    serviceLabelOf := fun _ => SecurityLabel.publicLabel }
+
+/-- PR #874 review — a single-level CSpace for the chain's live entries: slot 2
+carries read+write on `declassTargetA` (the wait and the refill signal), slot 4
+carries the retype authority on it (the lifecycle case). -/
+private def declassChainCNode : SeLe4n.ObjId := ⟨1033⟩
+
+private def declassChainCNodeValue : CNode :=
+  { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := SeLe4n.UniqueSlotMap.ofListWF
+      [(SeLe4n.Slot.ofNat 2,
+        { target := .object declassTargetA,
+          rights := AccessRightSet.ofList [.read, .write] }),
+       (SeLe4n.Slot.ofNat 4,
+        { target := .object declassTargetA,
+          rights := AccessRightSet.ofList [.retype] })] }
+
+/-- PR #874 review — stage a syscall in a thread's registers exactly as the
+boundary would: `x0` the capability pointer, `x1` the msgInfo word, `x2`-`x4`
+the message registers, `x7` the syscall id — and re-root the thread's CSpace at
+the chain's CNode so the pointer resolves. -/
+private def declassChainStage (tid : SeLe4n.ThreadId)
+    (sysId capPtr msgInfo m0 m1 m2 : Nat) (st : SystemState) : SystemState :=
+  match st.getTcb? tid with
+  | none => st
+  | some tcb =>
+      { st with
+          objects :=
+            (st.objects.insert declassChainCNode (.cnode declassChainCNodeValue)).insert
+              tid.toObjId
+              (.tcb { tcb with
+                  cspaceRoot := declassChainCNode
+                  registerContext :=
+                    { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
+                      gpr := fun r =>
+                        if r.val == 0 then ⟨capPtr⟩
+                        else if r.val == 1 then ⟨msgInfo⟩
+                        else if r.val == 2 then ⟨m0⟩
+                        else if r.val == 3 then ⟨m1⟩
+                        else if r.val == 4 then ⟨m2⟩
+                        else if r.val == 7 then ⟨sysId⟩
+                        else ⟨0⟩ } }) }
+
 /-- WS-SM SM9.D.8 (**the §3.6 chain's middle step**): an **ordinary,
 non-declassifying** delivery moves hop 1's content from the object it landed in
 to the subject that will perform hop 2.
 
 This is the step that makes declassification-edge-only provenance unworkable:
 no declassification relates `declassTargetA` to core 0's subject, and yet the
-content really did travel between them.  Modelled with the propagation planner's
-own primitive, at the same edge an IPC delivery would declare. -/
+content really did travel between them.
+
+PR #874 review: run through the LIVE checked entry, not the propagation
+planner's primitive.  Core 0's subject issues a real `.notificationWait`
+against the notification hop 1 stored — the signal-first ordering, so the
+badge is consumed immediately — and the entry's own taint seam moves the tag
+and clears the transport.  A hand-built edge would have stayed green if the
+live delivery stopped propagating provenance; this cannot. -/
 private def declassDelivery : Option (DeclassificationAuditLog × SystemState) :=
   match declassHop1 with
   | none => none
   | some (log₁, st₁) =>
-      some (log₁,
-        applySyscallTaint
-          { edges := [{ sink := lowCurrent.toObjId, source := declassTargetA }] } st₁ st₁)
+      match syscallEntryChecked declassChainEntryLabeling SeLe4n.arm64DefaultLayout c0 32
+          (declassChainStage lowCurrent SyscallId.notificationWait.toNat 2 0 0 0 0 st₁) with
+      | .ok ((), st) => some (log₁, st)
+      | .error _ => none
+
+/-- PR #874 review — **the lifecycle case, every station live** (SM9.E.2a):
+retype the object that carried hop 1's taint, refill its replacement with
+ordinary content, deliver, and downgrade — and confirm no causal link is
+reported.
+
+Station 1: core 1's subject (hop 1's actor, holding the retype authority)
+retypes `declassTargetA` through the live entry.  The entry's taint seam is
+what clears the destroyed object's provenance (`contentFlowClass
+.lifecycleRetype = .clearsProvenance`), so running the transition directly
+would skip exactly the behaviour under test. -/
+private def declassLifecycleRetyped : Option SystemState :=
+  match declassHop1 with
+  | none => none
+  | some (_, st₁) =>
+      match syscallEntryChecked declassChainEntryLabeling SeLe4n.arm64DefaultLayout c1 32
+          (declassChainStage highCurrent SyscallId.lifecycleRetype.toNat 4 3
+            declassTargetA.toNat KernelObjectType.notification.toNat 0 st₁) with
+      | .ok ((), st) => some st
+      | .error _ => none
+
+/-- Station 2: core 0's subject signals the REPLACEMENT with ordinary content
+(badge `0xC3`) through the live entry.  The signaller is untainted, so the
+replacement stays untainted — the content that will reach hop 2 genuinely
+comes from the replacement, with no provenance behind it. -/
+private def declassLifecycleRefilled : Option SystemState :=
+  match declassLifecycleRetyped with
+  | none => none
+  | some st =>
+      match syscallEntryChecked declassChainEntryLabeling SeLe4n.arm64DefaultLayout c0 32
+          (declassChainStage lowCurrent SyscallId.notificationSignal.toNat 2 1 0xC3 0 0 st) with
+      | .ok ((), st') => some st'
+      | .error _ => none
+
+/-- Station 3: the same subject waits and consumes that content live —
+the delivery that would have carried hop 1's tag had the retype not
+cleared it. -/
+private def declassLifecycleDelivered : Option SystemState :=
+  match declassLifecycleRefilled with
+  | none => none
+  | some st =>
+      match syscallEntryChecked declassChainEntryLabeling SeLe4n.arm64DefaultLayout c0 32
+          (declassChainStage lowCurrent SyscallId.notificationWait.toNat 2 0 0 0 0 st) with
+      | .ok ((), st') => some st'
+      | .error _ => none
+
+/-- Station 4: the REAL downgrade from the replacement's content — the same
+attributed transition as hop 2, recording whatever provenance the subject
+actually holds.  Its event is what the no-link verdict is read from. -/
+private def declassLifecycleHopTwo : Option (DeclassificationAuditLog × SystemState) :=
+  match declassLifecycleDelivered with
+  | none => none
+  | some st =>
+      match declassifyStoreFromCore declassContext launderingDeclPolicy c0 declassPublic
+          declassTargetB (declassPayload 0xB2) st with
+      | .ok ((), st') =>
+          some (st'.declassificationAuditLog, applySyscallTaint declassifyingPlan st st')
+      | .error _ => none
 
 /-- Hop 2 — on **core 0**, whose subject is in the middle domain: a downgrade of
 what hop 1 produced, to the public domain. -/
@@ -10606,17 +10726,39 @@ private def runCausalAcceptanceChecks : IO Unit := do
      | some (log₂, _) =>
          declassificationChainCausal log₂ && declassificationChainLinked log₂ &&
          chainLaunders declassContext.policy launderingDeclPolicy log₂)
-  -- The lifecycle case: retype the object that carried the taint, downgrade
-  -- from its replacement, and no causal link is reported.
-  assertBool "the lifecycle case: a retyped subject's later downgrade names nothing"
-    (match declassDelivery with
+  -- The lifecycle case, every station live (PR #874 review): retype the
+  -- object that carried the taint through the checked entry — whose taint
+  -- seam performs the clear — refill the REPLACEMENT with ordinary content,
+  -- deliver it, and run the real downgrade.  The recorded event carries an
+  -- empty snapshot, so no causal link is reported even though the domains
+  -- still compose.
+  assertBool "the live retype cleared the tainted object's provenance"
+    (match declassHop1, declassLifecycleRetyped with
+     | some (_, st₁), some st =>
+         (st₁.declassificationTaint declassTargetA).contains 0 &&
+         !((st.declassificationTaint declassTargetA).contains 0)
+     | _, _ => false)
+  assertBool "…and the replacement's delivery hands the subject NO provenance"
+    (match declassLifecycleDelivered with
      | none => false
-     | some (_, st) =>
-         let retyped := applySyscallTaint { cleared := [lowCurrent.toObjId] } st st
-         !((retyped.declassificationTaint lowCurrent.toObjId).contains 0) &&
-         -- the event such a subject would record carries an empty snapshot
-         !(declassificationEventNames
-             (causalHopTwo (retyped.declassificationTaint lowCurrent.toObjId)) causalHopOne))
+     | some st =>
+         decide ((st.declassificationTaint lowCurrent.toObjId).tags = []) &&
+         !((st.declassificationTaint lowCurrent.toObjId).saturated))
+  assertBool "the lifecycle case: the downgrade from the replacement names nothing"
+    (match declassLifecycleHopTwo with
+     | none => false
+     | some (log₂, _) =>
+         (match log₂.getLast?, log₂.head? with
+          | some e₂, some e₁ =>
+              decide (e₂.predecessorTags.tags = []) &&
+              !(e₂.predecessorTags.saturated) &&
+              !(declassificationEventNames e₂ e₁)
+          | _, _ => false) &&
+         -- …which is the domain-only detector's false positive made flesh:
+         -- the pair still composes by domain, and only the causal conjunct
+         -- knows the retype broke the chain.
+         declassificationChainComposes log₂ &&
+         !(declassificationChainLinked log₂))
 
 /-- §12.9 helper — forget a recorded snapshot, keeping everything else. -/
 private def dropPredecessorTags (e : DeclassificationEvent) : DeclassificationEvent :=
@@ -11419,17 +11561,20 @@ snapshotsDistinguishSameDomain=\
     [causalHopOne, causalHopTwo (DeclassificationTaint.singleton 0)] &&
   !(declassificationChainLinked
     [causalHopOne, causalHopTwo DeclassificationTaint.empty]))}"
-  , s!"[declassification-taint] lifecycle: retypedTagCleared={match declassDelivery with
+  , s!"[declassification-taint] lifecycle: liveRetypeCleared={match declassHop1,
+      declassLifecycleRetyped with
+  | some (_, st₁), some st =>
+      toString ((st₁.declassificationTaint declassTargetA).contains 0 &&
+        !((st.declassificationTaint declassTargetA).contains 0))
+  | _, _ => "no-run"} \
+replacementDeliveryClean={match declassLifecycleDelivered with
   | none => "no-run"
-  | some (_, st) =>
-      let retyped := applySyscallTaint { cleared := [lowCurrent.toObjId] } st st
-      toString (!((retyped.declassificationTaint lowCurrent.toObjId).contains 0))} \
-retypedSubjectNamesNothing={match declassDelivery with
+  | some st => toString (decide ((st.declassificationTaint lowCurrent.toObjId).tags = []))} \
+replacementDowngradeNamesNothing={match declassLifecycleHopTwo with
   | none => "no-run"
-  | some (_, st) =>
-      let retyped := applySyscallTaint { cleared := [lowCurrent.toObjId] } st st
-      toString (!(declassificationEventNames
-        (causalHopTwo (retyped.declassificationTaint lowCurrent.toObjId)) causalHopOne))}"
+  | some (log₂, _) =>
+      toString (declassificationChainComposes log₂ &&
+        !(declassificationChainLinked log₂))}"
   , s!"[declassification-taint] saturation: maxTags={maxTaintTags} \
 ninthSaturates=\
 {toString (DeclassificationTaint.join (DeclassificationTaint.ofList taintFullList)

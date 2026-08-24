@@ -4521,9 +4521,15 @@ run_check "INVARIANT" rg -n 'recorded.reason = KernelError.policyDenied' tests/S
 
 # SM9.E.2a: the causal acceptance scenario landed with SM9.D; the closure pins
 # its criterion lines — the causal chain, the lifecycle case, and the
-# same-domain distinction only recorded snapshots can make.
+# same-domain distinction only recorded snapshots can make.  PR #874 review:
+# the chain's middle step and the whole lifecycle case run through the LIVE
+# checked entry (whose taint seam is the behaviour under test), so a hand-built
+# propagation edge in the acceptance fixtures is a refuted shape.
 run_check "INVARIANT" rg -n 'hop 2.s recorded snapshot therefore names hop 1' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'the lifecycle case: a retyped subject.s later downgrade names nothing' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'syscallEntryChecked declassChainEntryLabeling' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the live retype cleared the tainted object.s provenance' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the lifecycle case: the downgrade from the replacement names nothing' tests/SmpInformationFlowSuite.lean
+run_negative_check "INVARIANT" rg -n 'edges := ..sink := lowCurrent.toObjId, source := declassTargetA' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: two same-domain second hops are distinguished by their snapshots' tests/SmpInformationFlowSuite.lean
 
 # SM9.E.3: the two golden fixtures, their hash companions, their in-suite
@@ -4539,7 +4545,7 @@ run_check "TRACE" rg -n 'cliff recovery: postDrainRecords=1 freshTimestamp=256 w
 run_check "TRACE" rg -n 'epoch survivors: survivorStamps=.1, 2. recordedStamp=3 survivorCollision=false' tests/fixtures/declassification_reader.expected
 run_check "TRACE" rg -n 'seam boundary: signalReason=56 signalReceiver=1021 declassifyReason=14 recordingSyscalls=2' tests/fixtures/declassification_reader.expected
 run_check "TRACE" rg -n 'causal verdicts: causal=true launders=true domainOnlyFalsePositive=true adjacencyFalseNegative=true snapshotsDistinguishSameDomain=true' tests/fixtures/declassification_taint.expected
-run_check "TRACE" rg -n 'lifecycle: retypedTagCleared=true retypedSubjectNamesNothing=true' tests/fixtures/declassification_taint.expected
+run_check "TRACE" rg -n 'lifecycle: liveRetypeCleared=true replacementDeliveryClean=true replacementDowngradeNamesNothing=true' tests/fixtures/declassification_taint.expected
 run_check "TRACE" rg -n 'monitor verdict: word=1 strippedWord=0' tests/fixtures/declassification_taint.expected
 
 # SM9.E.4: the closure block in the surface-anchor suite — the four sub-phase

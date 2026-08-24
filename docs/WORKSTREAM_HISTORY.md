@@ -89,6 +89,20 @@ every recorded source domain cannot drain, and the 256-entry cliff returns for
 it — the conservative default, and the operator's to know about.  It now is —
 in the spec's workstream cell and the proof map's SM9.A drain bullet.
 
+**Review round (same cut) — the acceptance chain's remaining synthetic
+stations, made live.**  The PR review observed that the causal scenario's
+ordinary delivery and its lifecycle case ran on the propagation planner's own
+primitives, so both could stay green while the live integration broke.  The
+delivery is now a real `.notificationWait` through `syscallEntryChecked`
+(whose taint seam moves the tag and clears the transport), and the lifecycle
+case is four live stations — retype through the checked entry, ordinary
+refill of the replacement, delivery, real downgrade — with the no-link
+verdict read off the recorded event, the domains still composing, and a
+hand-built propagation edge in the acceptance fixtures pinned as a Tier-3
+negative.  Same round: the SM9 closure status carried into
+`docs/DEVELOPMENT.md`'s active-workstream entry, which the closure cut had
+missed.
+
 Plan: [`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md)
 §SM9.E.  Next: SM10 release closure (→ v1.0.0),
 [`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md).

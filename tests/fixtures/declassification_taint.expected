@@ -1,5 +1,5 @@
 [declassification-taint] causal chain: hopOneTagsTarget=true preDeliveryClean=true deliveryCarries=true
 [declassification-taint] causal verdicts: causal=true launders=true domainOnlyFalsePositive=true adjacencyFalseNegative=true snapshotsDistinguishSameDomain=true
-[declassification-taint] lifecycle: retypedTagCleared=true retypedSubjectNamesNothing=true
+[declassification-taint] lifecycle: liveRetypeCleared=true replacementDeliveryClean=true replacementDowngradeNamesNothing=true
 [declassification-taint] saturation: maxTags=8 ninthSaturates=true saturatedNamesRecorded=0 saturatedStillLinks=true
 [declassification-taint] monitor verdict: word=1 strippedWord=0 verdictOpcodes=3 opcodeCount=30

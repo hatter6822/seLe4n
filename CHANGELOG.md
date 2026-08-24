@@ -45,6 +45,23 @@ cannot drain, and the 256-entry cliff returns for it — the conservative
 default, now the operator's to know about), and the documentation set synced
 with the phase marked CLOSED.
 
+**Review round (same cut): the acceptance chain's remaining synthetic
+stations, made live.** The causal scenario's ordinary delivery was the
+propagation planner's own primitive at the edge an IPC delivery would declare
+— honest about the model, blind to the integration: had the live delivery
+stopped propagating provenance, the golden trace would have stayed green. The
+middle step now runs a real `.notificationWait` through the checked entry,
+whose taint seam moves the tag and clears the transport. The lifecycle case
+was likewise a manual clear plus a synthetic second hop; it is now four live
+stations — the retype through the checked entry (the seam performs the
+clear), an ordinary refill of the replacement, its delivery, and the real
+downgrade — whose recorded event carries an empty snapshot, so the pair still
+composes by domain and only the causal conjunct knows the retype broke the
+chain. A hand-built propagation edge in the acceptance fixtures is now a
+Tier-3 negative. Same round: the SM9 closure status carried into
+`docs/DEVELOPMENT.md`'s active-workstream entry, which the closure cut had
+missed.
+
 Refs: docs/WORKSTREAM_HISTORY.md SM9.E
 
 ## v0.33.99 — the audit compared the ordering the claim was resting on
