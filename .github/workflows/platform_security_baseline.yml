@@ -111,7 +111,7 @@ jobs:
       # un-split by the `codeql-action` Dependabot group; see
       # docs/CI_POLICY.md §9.1.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
         with:
           languages: actions
 
@@ -126,4 +126,4 @@ jobs:
       # them, because `security-events: write` is unavailable in that
       # context.  See docs/CI_POLICY.md §8.
       - name: Run CodeQL analysis (blocking; see docs/CI_POLICY.md §8)
-        uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
