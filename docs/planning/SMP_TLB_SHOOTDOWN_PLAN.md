@@ -1,9 +1,10 @@
 # SM7 — TLB / Cache Shootdown (WS-SM Phase 7)
 
 > **Phase**: SM7 of WS-SM
+> **Status**: LANDED (v0.32.72 → v0.32.151; SM7.D closed at model level, SM7.F.5 at v0.32.150–151) — per the in-body landing notes
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
-> **Target releases**: v0.91.0 .. v0.95.x (parallel with SM8)
+> **Target releases (original estimate)**: v0.91.0 .. v0.95.x (parallel with SM8)
 > **Calendar estimate**: 5-8 weeks
 > **Sub-task count**: 40-55 across ~15-22 PRs
 

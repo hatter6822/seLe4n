@@ -1,9 +1,10 @@
 # SM6 — Cross-Core IPC (WS-SM Phase 6)
 
 > **Phase**: SM6 of WS-SM
+> **Status**: LANDED (v0.31.65 → v0.32.68) — sub-phases A–F per the in-body landing notes
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
-> **Target releases**: v0.83.0 .. v0.90.x
+> **Target releases (original estimate)**: v0.83.0 .. v0.90.x
 > **Calendar estimate**: 8-12 weeks
 > **Sub-task count**: 60-80 across ~22-32 PRs
 

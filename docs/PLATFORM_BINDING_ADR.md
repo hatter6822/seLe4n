@@ -43,7 +43,15 @@ specific implementation on Raspberry Pi 5 (H3). The question was whether to:
 
 The `Platform/` namespace provides:
 
-- **Clean import boundaries:** `SeLe4n.Kernel.*` never imports `SeLe4n.Platform.*`.
+- **Clean import boundaries (superseded by WS-SM):** at ADR time,
+  `SeLe4n.Kernel.*` never imported `SeLe4n.Platform.*`. The live SMP entry
+  seams have since inverted this deliberately — ten Kernel modules import
+  Platform (8× `Platform.FFI`, 2× `Platform.Boot`, 1× `Platform.RPi5.Contract`;
+  e.g. `Kernel/SyscallDispatchEntry.lean`, `Kernel/Concurrency/Runtime.lean`,
+  `Kernel/PerCoreTimerEntry.lean`) because the `@[export]` dispatch/timer/
+  runtime entries are Kernel-owned and must reach the FFI bridge. The
+  enforced partition today is production-vs-staged
+  (`scripts/check_production_staging_partition.sh`), not Kernel-vs-Platform.
   Platform modules import `Kernel.Architecture.*` to instantiate contracts.
 - **Multiple build targets without repo splits:** Lake handles `SeLe4n`,
   `Platform.Sim`, and `Platform.RPi5` as discoverable library modules.

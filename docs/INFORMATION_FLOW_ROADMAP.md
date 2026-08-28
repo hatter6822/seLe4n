@@ -74,7 +74,7 @@ The implementation is internally consistent and all proofs are sound, but the
 lattice does not implement standard BLP+BIBA. See `Policy.lean` for
 the updated documentation.
 
-## IF-M2 — Two-run relational state framework
+## IF-M2 — Two-run relational state framework ✅ completed
 
 Deliverables:
 
@@ -97,8 +97,11 @@ Deliverables:
   - endpoint send/receive/await,
   - one capability mutation path,
 - classify explicit declassification points (if any).  **Answered by WS-SM
-  SM8.C**: there is exactly one, the `.declassify` syscall, and every downgrade
-  it authorizes is recorded in an attributed, bounded, fail-closed audit trail.
+  SM8.C and completed by SM9.C**: there are exactly two — the `.declassify`
+  syscall (authorization only, moves no data) and the data-carrying
+  `.declassifySignal` (SM9.C) — and every downgrade either authorizes is
+  recorded in an attributed, bounded, fail-closed audit trail (refusals in
+  the SM9.B ledger).
 - bound the accepted timing channels rather than only registering them.
   **Answered for the lock-contention channel (CC-5) by WS-SM SM8.D** (v0.33.9):
   `lockContention_delay_bounded` caps a contending core's observation at
@@ -185,9 +188,11 @@ Delivered anchors (WS-E5 closeout):
 - `enforcementBoundary` — canonical operation classification table, 17 entries
   (3 policy-gated) **as M-07 delivered it**; it has grown with every later
   phase and the live count is pinned by `enforcementBoundaryExtended_count`
-  (42 entries / 12 policy-gated / 26 capability-only at WS-SM SM9.A.11),
+  (43 entries / 13 policy-gated / 26 capability-only / 4 read-only since
+  WS-SM SM9.C.8),
 - denial-preserves-state theorems for all 3 base checked operations (7 in extended boundary),
-  since completed to all 12 policy-gated entries by WS-SM SM8.C,
+  since completed across the policy-gated entries (12 by WS-SM SM8.C; the
+  13th, the data-carrying declassification, by SM9.C),
 - `enforcement_sufficiency_*` — gateway equivalence theorems for all checked operations.
 
 ## WS-F3 closeout — Information-flow completeness ✅ completed

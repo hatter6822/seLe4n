@@ -8,7 +8,7 @@
 > **Target releases**: v0.33.24 → v0.34.x
 > **Calendar estimate**: 12-16 weeks
 > **Sub-task count**: 61 across ~21-26 PRs
-> **Status**: **CLOSED (v0.33.100)** — SM9.A LANDED (v0.33.37 → v0.33.50),
+> **Status**: **CLOSED (v0.33.100)** — SM9.A LANDED (v0.33.42 → v0.33.50; v0.33.37–41 were the WS-RA prerequisite cuts),
 > SM9.B LANDED, SM9.C LANDED, SM9.D LANDED, SM9.E LANDED (v0.33.100; the
 > acceptance gate below is fully ticked, each box carrying its evidence)
 

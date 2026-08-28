@@ -5,11 +5,12 @@
 //! kernel model exactly:
 //!
 //! - **15 newtype identifiers**: `ObjId`, `ThreadId`, `CPtr`, `Slot`,
-//!   `SchedContextId`, etc. (AK4-C / R-ABI-L2 — `SchedContextId` added in v0.29.8).
-//! - **`KernelError`**: 50-variant error enum matching `SeLe4n.Model.KernelError`
-//!   (49 kernel variants at discriminants 0–48, plus `UnknownKernelError` sentinel at 255)
+//!   `SchedContextId`, etc. (AK4-C / R-ABI-L2 — `SchedContextId` added in v0.29.8;
+//!   `RegValue` is a register-value wrapper counted separately).
+//! - **`KernelError`**: 58-variant error enum matching `SeLe4n.Model.KernelError`
+//!   (57 kernel variants at discriminants 0–56, plus `UnknownKernelError` sentinel at 255)
 //! - **`AccessRight` / `AccessRights`**: Capability rights with bitmask operations
-//! - **`SyscallId`**: 25-variant syscall identifier enum
+//! - **`SyscallId`**: 34-variant syscall identifier enum
 //!
 //! # Safety
 //!

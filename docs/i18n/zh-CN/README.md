@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.33.101-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.33.102-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -58,8 +58,8 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核。每一个内核�
 - **可组合的性能对象** —— CPU 时间是一等内核对象。`SchedContext` 将预算、周期、优先级、截止期限和域封装为可复用的调度上下文，线程通过能力绑定到该对象。CBS（恒定带宽服务器）调度提供经过证明的带宽隔离（`cbs_bandwidth_bounded` 定理）
 - **被动服务器** —— 空闲服务器在 IPC 期间借用客户端的 `SchedContext`，不服务时消耗零 CPU。`donationChainAcyclic` 不变量防止循环捐赠链
 - **预算驱动的 IPC 超时** —— 阻塞操作受调用方预算约束。超时后，线程从端点队列中移出并重新入队
-- **优先级继承协议** —— 传递性优先级传播，具有机器验证的无死锁保证（`blockingChainAcyclic`）和有界链深度，防止无界优先级反转
-- **有界延迟定理** —— 机器验证的 WCRT 上界：`WCRT = D × L_max + N × (B + P)`，在 7 个活性模块中证明，覆盖预算单调性、补充时序、让出语义、频带耗尽和域轮转
+- **优先级继承协议** —— 传递性优先级传播，具有机器验证的无死锁保证（`blockingAcyclic`）和有界链深度，防止无界优先级反转
+- **有界延迟定理** —— 机器验证的 WCRT 上界：`WCRT = D × L_max + N × (B + P)`，在 8 个活性模块中证明，覆盖预算单调性、补充时序、让出语义、频带耗尽和域轮转
 
 ### 数据结构与 IPC
 
@@ -69,9 +69,9 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核。每一个内核�
 
 ### 安全与验证
 
-- **N 域信息流** —— 参数化的流策略，将 seL4 的二元分区泛化。30 条目执行边界，配有逐操作的非干扰证明（32 构造子 `NonInterferenceStep` 归纳类型）
-- **组合证明层** —— `proofLayerInvariantBundle` 将 10 个子系统不变量（调度器、能力、IPC、生命周期、服务、VSpace、跨子系统、TLB 和 CBS 扩展）组合为单一顶层义务，从引导到所有操作均经过验证
-- **两阶段状态架构** —— 带不变量见证的构建阶段流向冻结的不可变表示，具有经过证明的查找等价性。20 个冻结操作镜像活跃 API
+- **N 域信息流** —— 参数化的流策略，将 seL4 的二元分区泛化。43 条目执行边界，配有逐操作的非干扰证明（35 构造子 `NonInterferenceStep` 归纳类型），以及有界、失效即封闭（fail-closed）的降密审计追踪，配备能力门控的读取器
+- **组合证明层** —— `proofLayerInvariantBundle` 将 16 个子系统不变量束（调度器核心 + CBS 扩展、能力、IPC + IPC–调度器耦合、生命周期、服务、VSpace、跨子系统、TLB 一致性、通知等待者一致性、TLB 击落 pending/ack 上界、每核 TLB 失效与 I-cache 一致性，以及降密审计日志上界）组合为单一顶层义务，从引导到所有操作均经过验证
+- **两阶段状态架构** —— 带不变量见证的构建阶段流向冻结的不可变表示，具有经过证明的查找等价性。24 个冻结操作镜像活跃 API
 - **完整操作集** —— 所有 seL4 操作均已实现并保持不变量，包括 5 个延迟操作（suspend/resume、setPriority/setMCPriority、setIPCBuffer）
 - **服务编排** —— 内核级组件生命周期管理，带依赖图和经过证明的无环性（seLe4n 扩展，seL4 中不存在）
 
@@ -83,14 +83,14 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核。每一个内核�
 
 | 属性 | 值 |
 |------|------|
-| **版本** | `0.25.5` |
+| **版本** | `0.33.102` |
 | **Lean 工具链** | `v4.28.0` |
-| **生产代码行数** | 83,286 行，分布于 132 个文件 |
-| **测试代码行数** | 10,564 行，分布于 15 个测试套件 |
-| **已证明的声明** | 2,447 个定理/引理声明（零 sorry/axiom） |
+| **生产代码行数** | 286,841 行，分布于 286 个文件 |
+| **测试代码行数** | 64,078 行，分布于 69 个测试套件 |
+| **已证明的声明** | 9,601 个定理/引理声明（零 sorry/axiom） |
 | **目标硬件** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **规范审计** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) —— 1.0 前综合审计（202 项发现；已由 WS-AK AK1–AK10 修复） |
-| **最新审计** | [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) —— 1.0 前加固审计（3 CRIT、24 HIGH、71 MED、58 LOW、40 INFO —— 按 §0.4 初始评分） |
+| **规范审计** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) —— 1.0 前综合审计（202 项发现；已由 WS-AK AK1–AK10 修复；已归档） |
+| **最新审计** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) —— WS-AN 收尾后进行的 1.0 前就绪审计（接替现已归档、由 WS-AN AN0–AN12 修复的 [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md)）。WS-RC R0..R5 已于 v0.31.2 落地；WS-RC R6..R14 已按 SM0.Q.1 吸收映射并入 WS-SM（见 [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)）。当前活跃的工作流计划：[`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)。 |
 | **代码库映射** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) —— 机器可读的声明清单 |
 
 指标由 `./scripts/generate_codebase_map.py` 从代码库中提取，存储在
@@ -150,7 +150,7 @@ seLe4n 按分层契约组织，每一层都包含可执行的状态转换和经�
 ├──────────────────────────────────────────────────────────────────────┤
 │             Foundations  (Prelude, Machine, MachineConfig)           │
 ├──────────────────────────────────────────────────────────────────────┤
-│          Platform  (Contract, Sim, RPi5)  ← H3-prep bindings         │
+│        Platform  (Contract, Sim, RPi5)  ← production bindings        │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -182,7 +182,7 @@ SeLe4n/
 │   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
 ├── Testing/                     Test harness, state builder, invariant checks
 Main.lean                        Executable entry point
-tests/                           15 test suites
+tests/                           Executable test suites + fixtures
 ```
 
 每个子系统遵循 **Operations/Invariant 分离**原则：状态转换位于 `Operations.lean`，证明位于 `Invariant.lean`。统一的 `apiInvariantBundle` 将所有子系统不变量聚合为单一的证明义务。完整的逐文件清单参见 [`docs/codebase_map.json`](../../../docs/codebase_map.json)。
@@ -194,32 +194,19 @@ tests/                           15 test suites
 | **调度** | C 实现的偶发服务器（MCS） | CBS 调度，具有机器验证的 `cbs_bandwidth_bounded` 定理；`SchedContext` 作为能力控制的内核对象 |
 | **被动服务器** | 通过 C 实现的 SchedContext 捐赠 | 经过验证的捐赠机制，具有 `donationChainAcyclic` 不变量 |
 | **IPC** | 单链表端点队列 | 侵入式双向队列，支持 O(1) 队中移除；预算驱动的超时机制 |
-| **信息流** | 二元高/低分区 | N 域可配置策略，具有 30 条目执行边界和逐操作非干扰证明 |
+| **信息流** | 二元高/低分区 | N 域可配置策略，具有 43 条目执行边界（数量由 `enforcementBoundaryExtended_count` 锁定）、逐操作非干扰证明，以及针对每次授权降密的能力门控审计追踪 |
 | **优先级继承** | C 实现的 PIP（MCS 分支） | 机器验证的传递性 PIP，具有无死锁保证和参数化 WCRT 上界 |
-| **有界延迟** | 无形式化 WCRT 上界 | `WCRT = D × L_max + N × (B + P)`，在 7 个活性模块中证明 |
+| **有界延迟** | 无形式化 WCRT 上界 | `WCRT = D × L_max + N × (B + P)`，在 8 个活性模块中证明 |
 | **对象存储** | 链表和数组 | 经过验证的 Robin Hood 哈希表（`RHTable`/`RHSet`），O(1) 热路径 |
 | **服务管理** | 不在内核中 | 一等服务编排，带依赖图和无环性证明 |
-| **证明方法论** | Isabelle/HOL，事后验证 | Lean 4 类型检查器，证明与转换并置（2,447 个定理，零 sorry/axiom） |
+| **证明方法论** | Isabelle/HOL，事后验证 | Lean 4 类型检查器，证明与转换并置——零 sorry/axiom（已证明声明数见[当前状态](#当前状态)表） |
 | **平台抽象** | C 级 HAL | `PlatformBinding` 类型类，带类型化边界契约 |
 
 ## 下一步
 
-所有软件层面的工作流（WS-B 至 WS-AB）均已完成。完整历史记录见
-[`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)。
+当前活跃的工作流是 **WS-SM**（SMP 多核完成），它将 WS-RC 剩余的修复阶段并入 SMP 专属的 SM0–SM10 阶段计划，并将在 **v1.0.0** 收官，交付可在 Raspberry Pi 5 上引导的经过验证的 SMP 微内核。SM0–SM9 各阶段均已落地——基础性 SMP 类型与锁层级、Rust HAL 的 SMP 启动、经过验证的锁原语、每对象锁、每核调度器状态与调度、跨核 IPC、TLB 击落与缓存维护、SMP 信息流，以及降密完成（SM9，于 v0.33.100 收尾）。剩余阶段为 **SM10**（发布收尾 → v1.0.0）。系统调用返回 ABI 工作流（**WS-RA**）已完成。
 
-### 已完成的工作流
-
-| 工作流 | 范围 | 版本 |
-|--------|------|------|
-| **WS-AB** | 延迟操作与活性——suspend/resume、setPriority/setMCPriority、setIPCBuffer、优先级继承协议、有界延迟定理（6 阶段，90 个任务） | v0.24.0–v0.25.5 |
-| **WS-Z** | 可组合性能对象——`SchedContext` 作为第 7 个内核对象、CBS 预算引擎、补充队列、被动服务器捐赠、超时端点（10 阶段，213 个任务） | v0.23.0–v0.23.21 |
-| **WS-B – WS-Y** | 核心内核子系统、Robin Hood 哈希表、基数树、冻结状态、信息流、服务编排、平台契约 | v0.9.0–v0.22.x |
-
-详细计划：[WS-AB](../../../docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
-
-### 下一个主要里程碑
-
-**Raspberry Pi 5 硬件绑定** —— ARMv8 页表遍历、GIC-400 中断路由、引导序列。此前的审计和里程碑结项报告已归档至 [`docs/dev_history/`](../../../docs/dev_history/README.md)。
+主计划：[`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)，各阶段计划位于 `docs/planning/SMP_*.md`。权威的逐阶段记录——包含所有已完成的工作流组合（WS-B 至 WS-AB、WS-AE 至 WS-AN、WS-RC R0–R5、WS-RA）——见 [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)；此前的审计和里程碑结项报告已归档至 [`docs/dev_history/`](../../../docs/dev_history/README.md)。
 
 ---
 

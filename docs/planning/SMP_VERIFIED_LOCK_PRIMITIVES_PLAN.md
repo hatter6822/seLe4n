@@ -1,9 +1,10 @@
 # SM2 — Verified Lock Primitives (WS-SM Phase 2)
 
 > **Phase**: SM2 of WS-SM
+> **Status**: LANDED (v0.31.9) — memory model, TicketLock, RwLock, FFI bridge, refinement (SM2.C deferred items closed via SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md; SM2.E panic-hang remediation landed)
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
-> **Target releases**: v0.33.0 .. v0.45.x (parallel with SM1)
+> **Target releases (original estimate)**: v0.33.0 .. v0.45.x (parallel with SM1)
 > **Calendar estimate**: 16-22 weeks
 > **Sub-task count**: 70-95 across ~28-40 PRs
 

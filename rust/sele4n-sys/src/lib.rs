@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Safe high-level syscall wrappers for the seLe4n verified microkernel.
 //!
-//! This crate provides ergonomic, fully safe wrappers around all 25 seLe4n
+//! This crate provides ergonomic, fully safe wrappers around all 34 seLe4n
 //! syscalls. Each wrapper encodes typed arguments into the ARM64 register ABI,
 //! invokes the syscall via `sele4n_abi::invoke_syscall`, and decodes the result.
 //!
@@ -9,12 +9,17 @@
 //!
 //! - `ipc` — IPC operations: endpoint send/receive/call/reply,
 //!   notification signal/wait, reply+receive compound operation
-//! - `cspace` — CSpace operations: mint, copy, move, delete
+//! - `cspace` — CSpace operations: mint, copy, move, delete, reply-cap mint
 //! - `lifecycle` — Object lifecycle: retype with type tag validation
 //! - `vspace` — VSpace operations: map (with W^X enforcement), unmap
 //! - `service` — Service registry: register, revoke, query
-//! - `tcb` — TCB operations: suspend, resume, set priority/MCP, set IPC buffer
+//! - `tcb` — TCB operations: suspend, resume, set priority/MCP, set IPC
+//!   buffer, set affinity, bind/unbind notification
 //! - `sched_context` — SchedContext operations: configure, bind, unbind
+//! - `declassify` — Authorized cross-domain downgrades: `declassify`,
+//!   data-carrying `declassify_signal` (WS-SM SM9.C)
+//! - `audit` — Declassification audit trail: privileged read, chunked
+//!   fold, drain (WS-SM SM9.A)
 //! - `cap` — Phantom-typed capability handles (`Cap<Obj, Rts>`)
 //!
 //! # Safety

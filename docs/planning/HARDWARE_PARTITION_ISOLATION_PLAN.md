@@ -1,16 +1,20 @@
-# WS-W: Hardware Partition Isolation — ARM CCA + MPAM Integration Plan
+# Hardware Partition Isolation — ARM CCA + MPAM Integration Plan
 
-**Status**: PLANNED
-**Target versions**: v0.22.0–v0.22.9
+**Status**: PLANNED (unscheduled; workstream ID to be assigned at
+opening — the plan's original "WS-W" designation was since used by the
+completed v0.22.10 pre-release audit remediation workstream, and its
+original v0.22.0–v0.22.9 target range predates the current tree)
 **Hardware target**: Raspberry Pi 5 successor SoCs (BCM2712 successor with ARMv9-A)
-**Prerequisite**: WS-U complete (v0.21.7), RPi5 hardware binding foundation
+**Prerequisite**: RPi5 hardware binding foundation (complete since WS-AG);
+post-v1.0.0 scheduling
 **Sub-task count**: 130 atomic units across 10 phases
 **Axiom budget**: 1 (`realmMemoryIsolation` — hardware GPT guarantee)
 
 ## 1. Motivation
 
-seLe4n's information flow model (`Projection.lean`) documents four
-accepted covert channels beyond software-only mitigation:
+seLe4n's information flow model documents accepted covert channels beyond
+software-only mitigation (the registry has since grown to CC-1..CC-8; the
+four below are the ones this plan targets):
 
 | ID | Channel | Current Status | Target Status |
 |----|---------|----------------|---------------|

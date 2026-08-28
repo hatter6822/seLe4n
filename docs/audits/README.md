@@ -32,7 +32,7 @@ Once the workstream closes:
    "Latest audit" link points at the next active audit (or its archived
    location while there is no successor).
 
-## Files currently live (v0.30.11 pre-1.0 cut, WS-RC IN FLIGHT)
+## Files currently live (v0.30.11 pre-1.0 cut; WS-RC CLOSED at v0.31.2 — R6..R14 absorbed into WS-SM)
 
 - `AUDIT_v0.30.11_COMPREHENSIVE.md` — **active pre-1.0 readiness audit
   cut (2026-04-26)**. Succeeds `AUDIT_v0.30.6_COMPREHENSIVE.md` (now

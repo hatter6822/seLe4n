@@ -8,7 +8,7 @@
 //!
 //! ## Mirror discipline
 //!
-//! `SyscallId` here mirrors the 26-variant enum in
+//! `SyscallId` here mirrors the 34-variant enum in
 //! `sele4n-types/src/syscall.rs`.  We do NOT depend on `sele4n-types`
 //! in the runtime build (the HAL crate is the lowest-level workspace
 //! member with zero runtime dependencies, by design — see
@@ -82,7 +82,7 @@ impl DispatchError {
     }
 }
 
-/// AN9-F: 26-variant syscall ID enum mirroring
+/// AN9-F: 34-variant syscall ID enum mirroring
 /// `sele4n-types::SyscallId`.  Discriminants align with the Lean
 /// `SyscallId.toNat` encoding so a `u64` syscall id read from the
 /// trap frame's `x7` register decodes identically on both sides.

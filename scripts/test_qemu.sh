@@ -81,6 +81,12 @@ if ! rustup target list --installed 2>/dev/null | grep -q "${RUST_TARGET}"; then
     }
 fi
 
+# ── Temp logs (created before first use; cleaned up on exit) ──────────────
+QEMU_LOG=$(mktemp /tmp/qemu_boot_XXXXXX.log)
+QEMU_BUILD_LOG=$(mktemp /tmp/qemu_build_XXXXXX.log)
+cleanup() { rm -f "${QEMU_LOG}" "${QEMU_BUILD_LOG}"; }
+trap cleanup EXIT
+
 # ── Build kernel binary ───────────────────────────────────────────────────
 log_section "BUILD" "Building kernel binary for ${RUST_TARGET}..."
 cd "${RUST_DIR}"
@@ -101,13 +107,7 @@ fi
 
 log_section "BUILD" "Kernel binary built: $(wc -c < "${KERNEL_BIN}") bytes"
 
-# ── QEMU boot test ────────────────────────────────────────────────────────
-QEMU_LOG=$(mktemp /tmp/qemu_boot_XXXXXX.log)
-QEMU_BUILD_LOG=$(mktemp /tmp/qemu_build_XXXXXX.log)
-
-# Ensure temp files are cleaned up on exit/signal
-cleanup() { rm -f "${QEMU_LOG}" "${QEMU_BUILD_LOG}"; }
-trap cleanup EXIT
+# ── QEMU boot test (temp logs created above, before first use) ────────────
 
 log_section "TRACE" "RUN: QEMU boot test (timeout: ${QEMU_TIMEOUT}s)"
 

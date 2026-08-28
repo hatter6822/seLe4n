@@ -28,10 +28,17 @@ reviewers can quickly detect misuse and contributors can reason about what is sa
   `InterruptBoundaryContract`.
 - `SeLe4n/Platform/Sim/*` provides simulation-target platform contracts
   (permissive/restrictive) for trace harness and test execution.
-- `SeLe4n/Platform/RPi5/*` provides Raspberry Pi 5 platform-specific contract
-  stubs (BCM2712 memory map, ARM64 config, RAM-only access contract).
-- Platform modules import `SeLe4n/Kernel/Architecture/Assumptions.lean` but
-  are not imported by any `SeLe4n/Kernel/` module.
+- `SeLe4n/Platform/RPi5/*` provides the Raspberry Pi 5 platform binding —
+  substantive since H3/WS-AG (8 modules: BCM2712 memory map, ARM64 config,
+  MMIO adapter, the production-wired boot VSpace in `VSpaceBoot.lean`,
+  per-core runtime contracts), no longer stubs.
+- Platform modules import `SeLe4n/Kernel/Architecture/Assumptions.lean`. The
+  original one-way rule (no `SeLe4n/Kernel/` module imports Platform) was
+  deliberately relaxed by WS-SM's live entry seams: the Kernel-owned
+  `@[export]` dispatch/timer/runtime entries import `Platform.FFI` /
+  `Platform.Boot` (see the Platform Binding ADR for the inventory). The
+  enforced partition is production-vs-staged
+  (`scripts/check_production_staging_partition.sh`).
 
 ### Test-only fixtures (non-production)
 

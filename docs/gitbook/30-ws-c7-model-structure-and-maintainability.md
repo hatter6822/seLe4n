@@ -30,7 +30,9 @@ These three issues hurt maintainability: architecture behavior depended on magic
 
 **Compatibility:**
 - `BootstrapBuilder.build` seeds `objectIndex` from declared object entries.
-- Existing `ServiceId` literals continue to work via `OfNat`.
+- `ServiceId` literals worked via `OfNat` at the time of this ADR; WS-H14e later
+  removed the `OfNat` instances project-wide in favor of explicit `.ofNat`
+  constructors (see chapter 03).
 - Tier 3 anchors assert `resolveAsidRoot` + `objectIndex` usage.
 
 ## Evolution

@@ -3,7 +3,7 @@
 ## Overview
 
 `libsele4n` is a `no_std` Rust userspace library providing safe, typed wrappers
-around all 25 seLe4n syscalls. It mirrors the verified Lean ABI surface exactly,
+around all 34 seLe4n syscalls. It mirrors the verified Lean ABI surface exactly,
 enabling Rust userspace programs to invoke kernel operations with compile-time
 type safety and zero `unsafe` code outside the syscall trap instruction.
 
@@ -27,12 +27,12 @@ Core type definitions with zero `unsafe` and zero external dependencies:
   `Priority`, `Deadline`, `Irq`, `ServiceId`, `InterfaceId`, `Badge`, `Asid`,
   `VAddr`, `PAddr`, `RegValue` — inner fields are `pub(crate)` with `.raw()`
   accessors (R8-E/L-11 encapsulation)
-- **`KernelError`**: 49-variant `#[non_exhaustive]` enum (1:1 with Lean
+- **`KernelError`**: 58-variant `#[non_exhaustive]` enum — 57 kernel variants at discriminants 0–56 plus the `UnknownKernelError` sentinel at 255 (1:1 with Lean
   `KernelError`; AG3: +VmFault, +UserException, +HardwareFault, +NotSupported, +InvalidIrq)
 - **`AccessRight` / `AccessRights`**: 5-right bitmask (O(1) operations).
   `TryFrom<u8>` rejects invalid bytes with bits 5–7 set (U3-D)
 - **`AccessRightsError`**: Error type for invalid `AccessRights` construction
-- **`SyscallId`**: 26-variant enum (0–25), including notificationSignal, notificationWait, replyRecv (V2-A/D), schedContextConfigure/Bind/Unbind (AA1/Z5), tcbSuspend/Resume (D1), tcbSetPriority/SetMCPriority (D2), tcbSetIPCBuffer (D3), tcbSetAffinity (WS-SM SM5.H.4)
+- **`SyscallId`**: 34-variant enum (0–33), including notificationSignal, notificationWait, replyRecv (V2-A/D), schedContextConfigure/Bind/Unbind (AA1/Z5), tcbSuspend/Resume (D1), tcbSetPriority/SetMCPriority (D2), tcbSetIPCBuffer (D3), tcbSetAffinity (WS-SM SM5.H.4), tcbBindNotification/Unbind (SM6.B), mintReplyCap (SM6.C), vspaceUnifyInstruction (SM7.D), and the SM9 declassification family — declassify (30), auditRead (31), auditDrain (32), declassifySignal (33)
 
 ### sele4n-abi
 
@@ -62,13 +62,14 @@ Safe high-level wrappers across the syscall surface:
 | Subsystem | Operations |
 |-----------|-----------|
 | IPC | `endpoint_send`, `endpoint_receive`, `endpoint_receive_with_reply`, `endpoint_call`, `endpoint_reply`, `notification_signal`, `notification_wait` (returns the signalled badge since WS-RA v0.33.37), `endpoint_reply_recv` (+ `_checked`) |
-| CSpace | `cspace_mint`, `cspace_copy`, `cspace_move`, `cspace_delete` |
+| CSpace | `cspace_mint`, `cspace_copy`, `cspace_move`, `cspace_delete`, `mint_reply_cap` |
 | Lifecycle | `lifecycle_retype`, `retype_tcb`, `retype_endpoint`, `retype_notification`, `retype_cnode`, `retype_vspace_root` |
 | VSpace | `vspace_map` (W^X pre-check; + `_read_only` / `_read_write` / `_read_execute` presets), `vspace_unmap`, `vspace_unify_instruction` |
 | Service | `service_register`, `service_revoke`, `service_query` (returns the resolved service id since WS-RA v0.33.37) |
 | SchedContext | `sched_context_configure`, `sched_context_bind`, `sched_context_unbind` |
-| TCB | `tcb_suspend`, `tcb_resume`, `tcb_set_priority`, `tcb_set_mcp`, `tcb_set_ipc_buffer`, `tcb_set_affinity` |
-| Information flow | `declassify` |
+| TCB | `tcb_suspend`, `tcb_resume`, `tcb_set_priority`, `tcb_set_mcp`, `tcb_set_ipc_buffer`, `tcb_set_affinity`, `tcb_bind_notification`, `tcb_unbind_notification` |
+| Information flow | `declassify`, `declassify_signal` (data-carrying, SM9.C) |
+| Audit trail | `audit_read`, `audit_fold_chunks`, `audit_drain`, `audit_drain_all`, `audit_read_raw` (SM9.A/B reader + drain behind the monitor gate) |
 
 ### Phantom-Typed Capabilities
 
@@ -132,8 +133,8 @@ parameter.
 - **4 Lean cross-validation vectors** (XVAL-001..004 in MainTraceHarness)
 - CI: `scripts/test_rust.sh` integrated into `test_smoke.sh` (Tier 2).
   AA2: Rust toolchain SHA-pinned via `dtolnay/rust-toolchain` (v1, 1.94.1)
-- AA1 ABI drift detection: variant count assertions for KernelError (49) and
-  SyscallId (25), TypeTag (7), compile-time constant checks for MAX_LABEL,
+- AA1 ABI drift detection: variant count assertions for KernelError (57 + sentinel),
+  SyscallId (34), TypeTag (8), compile-time constant checks for MAX_LABEL,
   MAX_MSG_LENGTH, MAX_EXTRA_CAPS
 - AG2-A domain conformance: MAX_DOMAIN matches Lean `numDomainsVal = 16`
   (zero-indexed 0..=15), exhaustive valid/invalid domain boundary tests
@@ -149,7 +150,7 @@ ARM Architecture Reference Manual.
 |--------|---------|-----------|
 | `cpu` | CPU instructions | `wfe`, `wfi`, `nop`, `eret`, `current_core_id`, **`MPIDR_CORE_ID_MASK_SYM`** shared linker symbol (AN8-B v0.30.9 — H-18), **`wfe_bounded(max_ticks)`** + `WFE_DEFAULT_TIMEOUT_TICKS` (AN9-G v0.30.10 — DEF-R-HAL-L17); **`sev` / `sevl` wrappers + `idle_wait` / `idle_wait_bounded` per-core idle primitives + ~140-line SEV / WFE coordination docstring** (WS-SM SM1.I.3 + SM1.I.5 v0.31.8 — local event register semantics, IS-domain broadcast scope, kernel policy for SEV emission) |
 | `barriers` | Memory barriers | `dmb_ish/sy`, `dsb_ish/sy`, `isb`, **`dsb_ishst`**, **`dsb_osh`**, **`dsb_oshst`** + parameterised **`BarrierKind`** enum with `emit()` + composite emitters `emit_armv8_page_table_update` / `emit_tlb_invalidation_bracket` / `emit_mmio_cross_cluster_barrier` (AN9-H/I v0.30.10 — DEF-R-HAL-L18/L19) |
-| `svc_dispatch` | SVC typed dispatch | `SyscallArgs::from_trap_frame`, 26-variant `SyscallId` enum (mirrors `sele4n-types`, cross-checked by `syscall_id_mirror_matches_sele4n_types`), `dispatch_svc(id, args) -> Result<u64, DispatchError>` (AN9-F v0.30.10 — DEF-R-HAL-L14; replaces `NOT_IMPLEMENTED` SVC stub) |
+| `svc_dispatch` | SVC typed dispatch | `SyscallArgs::from_trap_frame`, 34-variant `SyscallId` enum (mirrors `sele4n-types`, cross-checked by `syscall_id_mirror_matches_sele4n_types`), `dispatch_svc(id, args) -> Result<u64, DispatchError>` (AN9-F v0.30.10 — DEF-R-HAL-L14; replaces `NOT_IMPLEMENTED` SVC stub) |
 | `psci` | Power State Coordination Interface | `cpu_on`, `cpu_off`, `affinity_info` (+ `AffinityInfoState`), `psci_version` (+ `PsciVersion`), `migrate_info_type` (+ `MigrateInfoType`), `system_off`, `system_reset` — full DEN0022D §5 surface with compile-time function-id pinning (Fast call + SMC32/64 + OEN=4) (AN9-J.1 v0.30.10 — DEF-R-HAL-L20 + WS-SM SM1.A v0.31.9) |
 | `smp` | Secondary-core bring-up | `SMP_ENABLED: AtomicBool` (default `false` at module load; Phase 5 stores parsed cmdline value), `CORE_READY: [AtomicBool; 4]`, `bring_up_secondaries`, **`bring_up_secondaries_with_limit(max_cores)`** (WS-SM SM1.D.6 v0.31.6 — limit-aware variant), `rust_secondary_main` (SM1.C full per-core init pipeline: MMU → VBAR → GIC → timer → IRQ → Lean kernel via `lean_secondary_kernel_main`); SM1.B back-compat re-exports of `PerCpuData`, `PER_CPU_DATA`, `PER_CPU_DATA_SLOT_SIZE*`, `per_cpu_slot_addr` (AN9-J v0.30.10 — DEF-R-HAL-L20; SM1.C v0.31.5 closes SMP-C2; SM1.D v0.31.6 wires the cmdline-driven Phase 5; v1.0.0 ships SMP enabled by default via `CmdlineConfig::default()`) |
 | `cmdline` | DTB cmdline parser + Phase 5 helpers | `CmdlineConfig { smp_enabled: bool, smp_max_cores: usize }` with `Default::default() = { true, 4 }` (SM1.D.3 — decision #7 puts SMP on by default at v1.0.0 "once SM5 lands"; SM5.I landed at v0.32.142, so the default returned to opt-OUT, having been opt-IN from v0.32.136); `parse_cmdline(s: &str) -> CmdlineConfig` (robust key=value / quoted / flag-only token parser; unknown keys ignored, malformed values keep default); self-contained DTB walker (`parse_fdt_header`, `validate_fdt_header`, `find_bootargs_in_dtb`, `extract_bootargs_into`, `extract_bootargs_from_blob_into`) with `FDT_WALK_FUEL = 4096` / `FDT_MAX_DEPTH = 32` / `MAX_DTB_SIZE = 2 MiB` / `FDT_PARSER_VERSION = 17` bounds; only direct `/chosen/bootargs` matched (depth-bounded — audit-pass-1 closes the `/chosen/sub/bootargs` exploit); `checked_add` arithmetic throughout for overflow safety; one-shot `parse_cmdline_from_dtb(dtb_ptr: u64) -> CmdlineConfig` (Phase 5 entry); `apply_cmdline_and_start_smp(&CmdlineConfig) -> u32` (writes SMP_ENABLED + dispatches `bring_up_secondaries_with_limit`); audit-pass-1 `pub(crate) fn apply_cmdline_and_start_smp_inner` for test isolation (WS-SM SM1.D v0.31.6) |

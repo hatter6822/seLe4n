@@ -59,7 +59,7 @@ in Projection.lean) is intentionally retained.
 - `ipcInvariantFull` preservation for WithCaps wrapper operations (M-IPC-3).
 - `descendantsOf_fuel_sufficiency` with 8 BFS lemmas (M-CAP-2).
 - `buildCNodeRadix_lookup_equiv` bidirectional equivalence (M-DS-3).
-- `insert_maxPriority_consistency` for RunQueue (M-SCH-1).
+- `insert_maxPriority_consistency` for RunQueue (M-SCH-1; since retired in a later RunQueue consolidation).
 
 **WS-T/T5 additions (v0.20.4) — Lifecycle & Cross-Subsystem:**
 
@@ -102,12 +102,12 @@ Component level:
 - `queueCurrentConsistent` (WS-H12b: inverted to `current ∉ runnable`, matching seL4 dequeue-on-dispatch)
 - `currentTimeSlicePositive` (WS-H12b: current thread time slice positive, since current is not in run queue)
 - `schedulerPriorityMatch` (WS-H12b: priority consistency for run queue threads)
-- `runQueueThreadPriorityConsistent` (WS-H16/A-19: bi-directional consistency between RunQueue membership and `threadPriority` mapping, with `runQueueThreadPriorityConsistent_default` theorem)
+- `runQueueThreadPriorityConsistent` (WS-H16/A-19: bi-directional consistency between RunQueue membership and `threadPriority` mapping; the Prop-level predicate and its `_default` theorem were later retired — the runtime checker `runQueueThreadPriorityConsistentB` in `Testing/InvariantChecks.lean` is the surviving witness)
 
 Data structure:
 
 - `RunQueue` (`Scheduler/RunQueue.lean`, WS-G4 + WS-H6) — priority-bucketed run queue with bidirectional structural invariants `flat_wf` and `flat_wf_rev`, plus bridge lemmas `membership_implies_flat` and `mem_toList_iff_mem` between O(1) `Std.HashSet` membership and `flat : List ThreadId`/`toList` reasoning. `chooseBestInBucket` bucket-first scheduling: O(k) max-priority bucket scan with full-list fallback. `remove` computes filtered bucket once for both `byPriority` and `maxPriority` (v0.12.15 refinement). Implicit `membership` ↔ `threadPriority` consistency maintained by insert/remove API (runtime-verified by `runQueueThreadPriorityConsistentB`).
-- 13 bridge lemmas: `mem_insert`, `mem_remove`, `mem_rotateHead`, `mem_rotateToBack`, `not_mem_empty`, `toList_insert_not_mem`, `toList_filter_insert_neg`, `toList_filter_remove_neg`, `not_mem_toList_of_not_mem`, `not_mem_remove_toList`, `mem_toList_rotateToBack_self`, `toList_rotateToBack_nodup`, `mem_toList_rotateToBack_ne`.
+- Bridge lemmas (13 at WS-H6; `mem_rotateHead`, `mem_toList_rotateToBack_self` and `mem_toList_rotateToBack_ne` were since retired with the `rotateToBack` consolidation): `mem_insert`, `mem_remove`, `mem_rotateToBack`, `not_mem_empty`, `toList_insert_not_mem`, `toList_filter_insert_neg`, `toList_filter_remove_neg`, `not_mem_toList_of_not_mem`, `not_mem_remove_toList`, `toList_rotateToBack_nodup`.
 
 Bundle level:
 
@@ -190,8 +190,7 @@ Bundle level:
   to `UniqueSlotMap.hWF`, and the `replyCapPointsToValidReply` conjunct — every
   `.replyCap rid` in a CNode slot resolves through `getReply?` to a live Reply
   object, no dangling reply caps — was added at PR #822 Phase H #1.a)
-- `capabilityInvariantBundleWithCdtMaps` (S3-D: base bundle + `cdtMapsConsistent`)
-- `capabilityInvariantBundleFull` (S3-D: base bundle + `cdtMapsConsistent` + `cdtMintCompleteness`)
+- `capabilityInvariantBundleWithCdtMaps` / `capabilityInvariantBundleFull` (S3-D; both superseded bundles were removed in U7-E — the surviving forms are `capabilityInvariantBundle` and `capabilityInvariantBundleWithMintCompleteness`, `Capability/Invariant/Defs.lean`)
 
 CDT edge operations (S3-B/C):
 
@@ -200,7 +199,7 @@ CDT edge operations (S3-B/C):
 - `removeEdge_surviving_child_ne` — surviving edges have child ≠ removed child (forest property)
 - `removeEdge_preserves_cdtMapsConsistent` — removal preserves consistency (postcondition pattern)
 - `revokeDerivationEdge` — public CDT wrapper for removeEdge
-- `severDerivationEdge` — kernel-level operation for fine-grained single-edge CDT revocation
+- `severDerivationEdge` — kernel-level operation for fine-grained single-edge CDT revocation (removed in W3-C; revocation flows through the `cspaceRevokeCdt*` family today)
 
 CDT maps consistency preservation (S3-D):
 
@@ -1492,7 +1491,7 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 - `endpointFlowPolicyWellFormed` predicate with `endpointFlowCheck_reflexive`, `endpointFlowCheck_transitive`,
 - All NI theorems updated for `machineRegs` field.
 
-## 12. Untyped memory invariants (WS-F2)
+## 33. Untyped memory invariants (WS-F2)
 
 Component level:
 
@@ -1657,7 +1656,7 @@ Supporting infrastructure:
 
 **Design invariant:** Original `projectState` definition is unchanged — all existing NI theorems in `Invariant.lean` (1448 lines) remain untouched. `projectStateFast` provides the performance path with proven equivalence.
 
-## 21. WS-H14 type safety & Prelude foundations
+## 20. WS-H14 type safety & Prelude foundations
 
 **Typeclass instance hardening (A-03):**
 
@@ -1698,7 +1697,7 @@ For each of the 16 identifier types:
 - `*.valid_iff_not_reserved` — equivalence between validity and non-reservation.
 - `*.sentinel_not_valid` — sentinel is never valid (for all 4 sentinel-bearing types).
 
-## 20. WS-H10 security model foundations
+## 21. WS-H10 security model foundations
 
 **MachineState projection (C-05/A-38):**
 
@@ -2031,7 +2030,7 @@ structural properties rather than just symbol existence:
 - `schedulerInvariantBundleFull` includes `timeSlicePositive`, `edfCurrentHasEarliestDeadline`, `contextMatchesCurrent`
 - `NonInterferenceStep` has ≥20 constructors
 - `objectIndexLive` definition and theorems exist
-- `runQueueThreadPriorityConsistent` definition and default theorem exist
+- `runQueueThreadPriorityConsistent` definition and default theorem exist (both since retired; the runtime checker `runQueueThreadPriorityConsistentB` survives)
 - `runWSH16LifecycleChecks` test function exists
 - `schedule` uses O(1) `runQueue` membership
 
@@ -2285,7 +2284,7 @@ The WS-K portfolio delivered 44+ new theorems across 4 proof categories:
 - `PagePermissions_ofNat_toNat_roundtrip`
 - `lifecycleRetypeDirect_equivalence`, `lifecycleRetypeDirect_error`
 
-## 30. WS-L3 IPC proof strengthening (v0.16.11)
+## 34. WS-L3 IPC proof strengthening (v0.16.11)
 
 WS-L3 added 22 new theorems and 1 new invariant definition to strengthen
 formal assurance of the IPC dual-queue subsystem.
@@ -3587,8 +3586,8 @@ stay pinned — and building it found one that quietly did not.
 * **Anchors and the sweep** (SM9.E.4, SM9.E.5).  A Tier-3 SM9.E block pins the
   new groups' labels, the fixtures, their hashes and the acceptance values;
   the surface-anchor suite's closure block holds the four sub-phase headliners
-  together.  The axiom sweep is clean across all eight information-flow
-  modules; SM9.E registers no new module because it adds none.
+  together.  The axiom sweep is clean across all thirteen registered
+  information-flow modules; SM9.E registers no new module because it adds none.
 
 Runtime coverage: `lake exe smp_information_flow_suite` §13.1–§13.4, with the
 §9–§12 groups landed by SM9.A–SM9.D.
@@ -3843,7 +3842,7 @@ from two comprehensive v0.18.7 audits. Key trust boundary documentation:
 See [`docs/spec/SELE4N_SPEC.md` §10.1](../spec/SELE4N_SPEC.md) for the canonical
 trust boundary specification.
 
-## 23. Hardware preparation — memory scrubbing and TLB enforcement (WS-S Phase S6)
+## 35. Hardware preparation — memory scrubbing and TLB enforcement (WS-S Phase S6)
 
 **Memory scrubbing** (`Machine.lean`, `Lifecycle/Operations.lean`):
 - `zeroMemoryRange` — zeros a contiguous physical memory range.
@@ -4164,7 +4163,7 @@ kernel-wide invariant bundle.
 - Pairwise disjointness witnesses increased from 10 to **14** (4 new witnesses covering SchedContext field interactions with scheduler, IPC, lifecycle, and service fields)
 - 3 new frame lemmas: `schedContextStoreConsistent_frame`, `schedContextNotDualBound_frame`, `schedContextRunQueueConsistent_frame`
 
-## 30. Documentation & Closure (WS-Z Phase Z10)
+## 36. Documentation & Closure (WS-Z Phase Z10)
 
 Phase Z10 synchronizes all documentation with the WS-Z composable performance
 object architecture delivered across phases Z1–Z9 (213 sub-tasks, v0.23.0–v0.23.21).
@@ -4215,7 +4214,7 @@ walking the blocking chain and elevating each server's effective priority to
 the maximum of all clients transitively waiting for it.
 
 **Design**: The TCB gains a `pipBoost : Option Priority` field. The
-`effectivePriority` function computes `max(scPrio, pipBoost)`, composing
+`effectivePriority` function (WS-Z era; deprecated at R5.C.1 in favor of the total `effectiveSchedParams` — see the R5 note in §3) computes `max(scPrio, pipBoost)`, composing
 additively with SchedContext donation — all existing Z4 proofs are preserved
 by construction (field defaults to `none`).
 

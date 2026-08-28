@@ -96,4 +96,7 @@ Hardening changes are validated by the standard gates:
 Tier 3 invariant surface anchors additionally check for:
 
 - setup-script checksum verification symbols,
-- SHA-pinning of all GitHub Actions workflow references.
+- SHA-pinning of GitHub Actions workflow references (Tier 3 positively
+  anchors the four original workflows; the all-workflows guarantee — every
+  `uses:` in `.github/workflows/` SHA-pinned, `codebase_map_sync.yml`
+  included — is Tier 0's directory-wide negative scan).

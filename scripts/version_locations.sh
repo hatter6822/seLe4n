@@ -122,16 +122,18 @@ for _lang in ar de es fr hi ja ko pt-BR ru uk zh-CN; do
 done
 unset _lang
 
-# --- i18n README Version table rows (only de + fr carry the metadata row) ---
-_reg 'docs/i18n/de/README.md' \
-     's/(\*\*Version\*\* \| `)[0-9]+[.][0-9]+[.][0-9]+(`)/\1@NEW@\2/' \
-     '\*\*Version\*\* \| `@VER@`' \
-     'docs/i18n/de/README.md Version table row'
-
-_reg 'docs/i18n/fr/README.md' \
-     's/(\*\*Version\*\* \| `)[0-9]+[.][0-9]+[.][0-9]+(`)/\1@NEW@\2/' \
-     '\*\*Version\*\* \| `@VER@`' \
-     'docs/i18n/fr/README.md Version table row'
+# --- i18n README Version table rows (all 11 locales carry the row; the
+# label is translated, so the pattern keys on the unique `** | `X.Y.Z``
+# row shape rather than the word "Version". Registered for all locales
+# since the v0.33.102 documentation audit found 9 unregistered rows
+# drifting at v0.25.5-era values beside gate-synced badges.) -----------------
+for _lang in ar de es fr hi ja ko pt-BR ru uk zh-CN; do
+  _reg "docs/i18n/${_lang}/README.md" \
+       's/(\*\* \| `)[0-9]+[.][0-9]+[.][0-9]+(`)/\1@NEW@\2/' \
+       '\*\* \| `@VER@`' \
+       "docs/i18n/${_lang}/README.md Version table row"
+done
+unset _lang
 
 # --- GitBook ----------------------------------------------------------------
 _reg 'docs/gitbook/README.md' \

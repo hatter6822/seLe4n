@@ -1,9 +1,10 @@
 # SM5 — Per-Core Scheduler (WS-SM Phase 5)
 
 > **Phase**: SM5 of WS-SM
+> **Status**: LANDED (v0.31.38 → v0.31.64) — sub-phases A–K per the in-body landing notes
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
-> **Target releases**: v0.71.0 .. v0.82.x
+> **Target releases (original estimate)**: v0.71.0 .. v0.82.x
 > **Calendar estimate**: 12-16 weeks
 > **Sub-task count**: 75-95 across ~28-38 PRs
 

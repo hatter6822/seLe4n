@@ -76,10 +76,10 @@ seLe4n does not replicate seL4's proof corpus. Instead, it takes a fundamentally
 | **Proof language** | Isabelle/HOL (post-hoc refinement) | Lean 4 (co-located, same-language) | Eliminates spec-implementation gap |
 | **IPC queues** | Single linked list per endpoint | Intrusive dual-queue with `queuePPrev` | O(1) mid-queue removal |
 | **Information flow** | Binary high/low partition | N-domain configurable flow policy | Richer security policies |
-| **CDT** | Mutable doubly-linked list | Node-stable with HashMap `childMap` | Eliminates dangling pointers |
+| **CDT** | Mutable doubly-linked list | Node-stable with `RHTable` `childMap`/`parentMap` indices | Eliminates dangling pointers |
 | **Scheduler** | Priority round-robin | Priority-bucketed + EDF with domain partitioning | O(1) operations, temporal isolation |
 | **Service management** | Not in kernel | Service orchestration layer | Dependency graphs, partial-failure |
-| **Data structures** | Arrays and linked lists | `Std.HashMap`/`Std.HashSet` throughout | O(1) hot paths |
+| **Data structures** | Arrays and linked lists | Verified Robin Hood tables (`RHTable`/`RHSet`) throughout | O(1) hot paths |
 | **Error handling** | Some paths use assertions | All paths return typed errors | Complete modeled error coverage |
 
 ## 5. Key terminology

@@ -36,6 +36,55 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 
 ## 2. Module responsibilities by file
 
+> **Freshness note**: the per-file inventory below records the pre-SMP tree
+> in detail and stays accurate for those files; the filesystem and
+> [`docs/codebase_map.json`](../../docs/codebase_map.json) are the
+> authoritative, machine-generated file list (the tree changes faster than
+> this chapter can track). The WS-SM/WS-RA-era surface is summarized in the
+> "SMP-era subsystems" section directly below and detailed in chapter 12.
+
+### SMP-era subsystems (WS-SM / WS-RA, v0.31.x–v0.33.x)
+
+Directory-level map of the surface added after this chapter's per-file
+inventory was written:
+
+- `SeLe4n/Kernel/Concurrency/` — SMP foundations: `Types.lean` (`CoreId`,
+  `numCores`, `SharingDomain`), `MemoryModel.lean`, `Locks/` (verified
+  `TicketLock`, `RwLock` + refinement, `Kind.lean` lock hierarchy levels
+  0–9, `LockSet` two-phase locking, `Deadlock.lean`/`Serializability.lean`
+  with their inventories), `Sgi.lean`, `Runtime.lean` (live entry seams),
+  `Anchors.lean`.
+- `SeLe4n/Kernel/Scheduler/Operations/PerCore*.lean` — the SM5 per-core
+  scheduler: selection, switch, wake, timer tick, idle, PIP, domain, CBS
+  (`PerCoreCbs`), WCRT (`PerCoreWcrt`), plus
+  `Scheduler/Invariant/PerCore*.lean` and
+  `Scheduler/PriorityInheritance/PerCore.lean`.
+- `SeLe4n/Kernel/IPC/CrossCore/` + `IPC/Invariant/PerCoreBundle*.lean` —
+  SM6 cross-core IPC: endpoint call/reply, notification signal,
+  cancellation, and the `ipcInvariantFull_perCore` bundle.
+- `SeLe4n/Kernel/Architecture/` SMP additions — `TlbShootdown*.lean`
+  (SM7 protocol, Theorem 3.3.1), `PerCoreTlbModel.lean`,
+  `PerCoreCacheModel.lean`, `TlbiForSharing.lean`, `AsidManager.lean`
+  (production since SM7), `SyscallReturn.lean` (WS-RA return frame),
+  `IpcBufferRead.lean`.
+- `SeLe4n/Kernel/InformationFlow/` SMP additions — `*PerCore.lean`
+  (SM8 observable state, non-interference, declassification, covert
+  channels), `FineLockFlow.lean` (SM8.D + `UncoveredLockDomain`
+  registry), `AuditRecord.lean`/`AuditRead.lean` (SM8.C/SM9.A trail +
+  reader), `RefusalRecord.lean` (SM9.B), `DeclassifiedSignal.lean`
+  (SM9.C), `Taint.lean`/`TaintPropagation.lean` (SM9.D causal
+  provenance).
+- `SeLe4n/Kernel/SyscallDispatchEntry.lean`, `SecondaryEntry.lean`,
+  `PerCoreTimerEntry.lean` — the live `@[export]` dispatch/boot/timer
+  seams the Rust HAL resolves against.
+- `SeLe4n/Kernel/FrozenOps/` — the 24 frozen operations mirroring the
+  live API; `SeLe4n/Kernel/CrossSubsystem.lean` +
+  `CrossSubsystemPerCore*.lean` — cross-subsystem invariants.
+- `SeLe4n/Platform/` — `FFI.lean` (72 `@[extern]` declarations, the Lean ↔
+  Rust bridge), `DeviceTree.lean` (FDT parsing), `Boot.lean`,
+  `Staged.lean` (CI build anchor for staged modules),
+  `RPi5/{MmioAdapter,VSpaceBoot,ProofHooks,RuntimeContractPerCore}.lean`.
+
 ### Foundations
 
 - `SeLe4n/Prelude.lean`
@@ -116,8 +165,9 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `syscallEntry` — top-level register-sourced user-space entry point,
   - `lookupThreadRegisterContext` — TCB register context extraction,
   - `dispatchSyscall` — routes decoded arguments through `SyscallGate`/`syscallInvoke`,
-  - `dispatchWithCap` — per-syscall routing for all 20 kernel operations (13 base +
-    4 IPC compound + 3 SchedContext); accepts `SyscallDecodeResult` (WS-K-C);
+  - `dispatchWithCap` — per-syscall routing for all 34 `SyscallId` variants
+    (13 base + IPC compound + SchedContext + TCB/notification + the SM9
+    declassification/audit family); accepts `SyscallDecodeResult` (WS-K-C);
     IPC message body population from decoded registers via `extractMessageRegisters`
     (WS-K-E); SchedContext ops via `dispatchCapabilityOnly` (WS-Z5). *(WS-Q1:
     `ServiceConfig`-sourced policy for service start/stop removed — registry-only model.)*
@@ -134,8 +184,8 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 - `SeLe4n/Model/Object.lean` (re-export hub)
   - `Object/Types.lean` — capability rights/targets, TCB structure + IPC state +
     intrusive queue link hooks (`queuePrev`/`queuePPrev`/`queueNext`), endpoint
-    protocol fields, Notification, UntypedObject, `SyscallId` inductive (13
-    modeled syscalls with round-trip/injectivity proofs), `MessageInfo` structure
+    protocol fields, Notification, UntypedObject, `SyscallId` inductive (34
+    modeled syscalls — 13 at WS-J1 — with round-trip/injectivity proofs), `MessageInfo` structure
     (seL4 message-info bit-field layout), `SyscallDecodeResult` with `msgRegs : Array RegValue` field (WS-J1-B; extended WS-K-A v0.16.0).
   - `Object/Structures.lean` — CNode `RHTable Slot Capability` verified Robin Hood
     hash table slot store (WS-G5, WS-N4), VSpaceRoot `Std.HashMap VAddr (PAddr × PagePermissions)`
@@ -239,7 +289,8 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `Invariant/QueueNextBlocking.lean` — V3-J-cross: queueNext blocking consistency proofs.
   - `Invariant/Structural.lean` — `dualQueueSystemInvariant` with `intrusiveQueueWellFormed`,
     `tcbQueueLinkIntegrity` (WS-H5), `ipcStateQueueConsistent` (WS-L3),
-    ipcInvariantFull 9-conjunct composition theorems.
+    `ipcInvariantFull` composition theorems (9 conjuncts at WS-L3; 20 today,
+    the first 15 forming `ipcInvariantCore` — `IPC/Invariant/Defs.lean`).
 
 **WS-L optimizations** (v0.16.9–v0.16.13): IPC hot-path performance — eliminated
 4 redundant TCB lookups by passing pre-dequeue TCB from `endpointQueuePopHead`
@@ -354,7 +405,7 @@ determinism. See `Service/Operations.lean` for the full design rationale.
   - `registerDecodeConsistent` predicate bridging decode layer to kernel object
     store validity (WS-J1-D).
 
-### Platform layer (H3-prep)
+### Platform layer
 
 - `SeLe4n/Platform/Contract.lean`
   - `PlatformBinding` typeclass: formal interface for hardware targets bundling
@@ -383,9 +434,10 @@ determinism. See `Service/Operations.lean` for the full design rationale.
     N-domain `SecurityDomain`/`DomainFlowPolicy`, BIBA lattice alternatives,
     `DeclassificationPolicy` with enforcement operation (WS-H10).
 - `SeLe4n/Kernel/InformationFlow/Projection.lean`
-  - observer projection helpers, `ObservableState` with 9 fields including
-    domain-gated `machineRegs` (WS-H10), domain timing metadata (WS-H8),
-    `lowEquivalent` relation scaffold with refl/symm/trans.
+  - observer projection helpers, `ObservableState` with 12 fields including
+    domain-gated `machineRegs` (WS-H10), domain timing metadata
+    (`domainTimeRemaining`, `domainScheduleIndex`, WS-H8), `memory`, and
+    the `lowEquivalent` relation scaffold with refl/symm/trans.
 - `SeLe4n/Kernel/InformationFlow/Enforcement.lean` (re-export hub)
   - `Enforcement/Wrappers.lean` — 7 policy-checked wrappers (`endpointSendDualChecked`,
     `endpointReceiveDualChecked`, `cspaceMintChecked`, `cspaceCopyChecked`,
@@ -397,7 +449,7 @@ determinism. See `Service/Operations.lean` for the full design rationale.
   - `Invariant/Helpers.lean` — shared NI proof infrastructure.
   - `Invariant/Operations.lean` — 80 NI preservation theorems covering >80% of
     kernel operations (WS-H9/H10 and subsequent workstreams).
-  - `Invariant/Composition.lean` — 32-constructor `NonInterferenceStep` inductive
+  - `Invariant/Composition.lean` — 35-constructor `NonInterferenceStep` inductive
     (WS-J1-D: `syscallDecodeError`, `syscallDispatchHigh`;
     WS-K-G: `lifecycleRevokeDeleteRetype`);
     `composedNonInterference_trace`; `declassifyStore_NI`;
@@ -418,10 +470,11 @@ determinism. See `Service/Operations.lean` for the full design rationale.
 
 - `SeLe4n/Kernel/API.lean`
   - Unified public API with two layers: (1) raw internal kernel operations
-    for trusted kernel paths, and (2) capability-gated `api*` syscall wrappers
-    (WS-H15c) that model the seL4 CSpace-lookup + rights-check pattern for
-    user-space invocations. Includes `SyscallGate`, `syscallLookupCap`,
-    `syscallInvoke`, 13 `api*` entry points, and 3 soundness theorems.
+    for trusted kernel paths, and (2) the capability-gated dispatch pipeline
+    (`SyscallGate` → `syscallLookupCap` → `syscallInvoke` → `dispatchWithCap`)
+    that models the seL4 CSpace-lookup + rights-check pattern for user-space
+    invocations, with 3 soundness theorems. (The WS-H15c-era `api*` wrapper
+    layer was removed in S5-A; the pipeline is the single dispatch surface.)
 - `Main.lean`
   - concrete scenario execution and trace output validated by fixture checks.
 
