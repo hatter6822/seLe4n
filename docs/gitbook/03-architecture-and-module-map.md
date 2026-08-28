@@ -80,7 +80,7 @@ inventory was written:
 - `SeLe4n/Kernel/FrozenOps/` — the 24 frozen operations mirroring the
   live API; `SeLe4n/Kernel/CrossSubsystem.lean` +
   `CrossSubsystemPerCore*.lean` — cross-subsystem invariants.
-- `SeLe4n/Platform/` — `FFI.lean` (72 `@[extern]` declarations, the Lean ↔
+- `SeLe4n/Platform/` — `FFI.lean` (66 `@[extern]` declarations counted on the comment-free code view, the Lean ↔
   Rust bridge), `DeviceTree.lean` (FDT parsing), `Boot.lean`,
   `Staged.lean` (CI build anchor for staged modules),
   `RPi5/{MmioAdapter,VSpaceBoot,ProofHooks,RuntimeContractPerCore}.lean`.

@@ -1751,7 +1751,7 @@ abstract Lean kernel model to concrete ARM64 hardware:
 │  - Invariants: cross-subsystem, IPC, scheduler, etc.     │
 ├──────────────────────────────────────────────────────────┤
 │  FFI Bridge (@[extern] declarations)                     │
-│  - SeLe4n/Platform/FFI.lean (72 @[extern] functions)     │
+│  - SeLe4n/Platform/FFI.lean (66 @[extern] functions)     │
 │  - C calling convention, Lean ↔ Rust type mapping        │
 ├──────────────────────────────────────────────────────────┤
 │  Rust HAL (sele4n-hal crate)                             │
@@ -3662,7 +3662,7 @@ checked wrappers retain the plain variants.
 
 At audit time `FFI.lean` declared 17 `@[extern]` Lean functions mapping to
 the Rust HAL (`sele4n-hal/src/ffi.rs`) that no production module imported.
-**This finding is closed**: `FFI.lean` now carries 72 `@[extern]`
+**This finding is closed**: `FFI.lean` now carries 66 `@[extern]`
 declarations and is imported by production modules — among them
 `Kernel/SyscallDispatchEntry.lean` (the live SVC bridge, `@[export
 lean_syscall_dispatch_cross_core]`), `Kernel/Concurrency/Runtime.lean` and

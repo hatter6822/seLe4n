@@ -279,7 +279,7 @@ int main(void) {
 }
 ```
 
-**Expected output:** `[PASS] 25 SyscallId variants, dispatch routes
+**Expected output:** `[PASS] 34 SyscallId variants, dispatch routes
 correctly`.
 
 **Failure diagnostic:** if a syscall routes to the wrong handler,

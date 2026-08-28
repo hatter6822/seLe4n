@@ -359,11 +359,13 @@ The kernel NI guarantees do not extend to service orchestration semantics.
 - [ ] **Endpoint overrides reviewed for availability** (SM8.C) -- a widening
   `endpointPolicy` override cannot leak (the gate conjoins), but a narrowing one
   can refuse traffic policy intended to allow; review §2.x
-- [ ] **Declassification policy decided** (SM8.C) -- the default is deny-all and
-  `.declassify` is refused outright; if a trusted downgrader is configured, size
-  the 256-entry audit trail against the expected downgrade rate and treat
-  `.auditLogCapacityExceeded` as an alert (no trail-reading interface ships in
-  this release)
+- [ ] **Declassification policy decided** (SM8.C/SM9) -- the default is deny-all
+  and `.declassify` is refused outright; if a trusted downgrader is configured,
+  treat `.auditLogCapacityExceeded` as an alert AND provision the read/drain
+  path (§2.3): grant the monitor a `CapTarget.auditTrail` capability, configure
+  `auditMonitorClearance` to dominate every domain the policy lets declassify,
+  and run a drain process -- an unconfigured deployment keeps the 256-per-boot
+  fail-closed cliff
 - [ ] **Security advisory reviewed** -- read `docs/SECURITY_ADVISORY.md`
   (SA-1: starvation, SA-2: labeling, SA-3: covert channel)
 - [ ] **Test suite passed** -- run `./scripts/test_full.sh` with production

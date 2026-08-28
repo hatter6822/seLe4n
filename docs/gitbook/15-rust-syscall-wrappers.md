@@ -46,10 +46,10 @@ ARM64 register ABI layer with exactly one `unsafe` block:
   `clobber_abi("C")` to declare all caller-saved registers clobbered (U3-A)
 - **`RegisterFile`**: Safe bounds-checked wrapper for the 7-element register
   array; `get()`/`set()` return `Option` (U3-G)
-- **Per-syscall argument structures**: CSpace (4), Lifecycle (1), VSpace (2),
-  Service (3), SchedContext (3: Configure, Bind, Unbind), TCB (5: Suspend, Resume,
-  SetPriority, SetMCPriority, SetIPCBuffer)
-- **`TypeTag`**: 7 retype variants (TCB=0, Endpoint=1, ..., Untyped=5, SchedContext=6)
+- **Per-syscall argument structures**: CSpace, Lifecycle, VSpace, Service,
+  SchedContext, TCB, notification, receive/replyRecv and audit families —
+  27 `*Args` structures in the current tree (5 at the layer's introduction)
+- **`TypeTag`**: 8 retype variants (TCB=0, Endpoint=1, ..., Untyped=5, SchedContext=6, Reply=7)
 - **`PagePerms`**: Permission bitmask with W^X enforcement
 - **`IpcBuffer`**: Overflow message registers (4–119) for messages exceeding
   the 4 inline ARM64 registers. Compile-time layout assertions verify 960-byte
