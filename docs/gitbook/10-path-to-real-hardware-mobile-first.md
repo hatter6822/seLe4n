@@ -86,11 +86,14 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   helper `init_mmu_per_core`), `boot::install_exception_vectors`
   (shared with primary's `rust_boot_main`),
   `gic::init_cpu_interface_secondary`, `timer::init_timer_secondary`
-  (preserving the primary's monotonic `TICK_COUNT`), IRQ unmask,
-  then `lean_secondary_kernel_main(context_id)`.  Lean side: new
+  (preserving the primary's monotonic `TICK_COUNT`), then
+  `lean_secondary_kernel_main(context_id)` and IRQ unmask.  Lean side:
   module `SeLe4n/Kernel/SecondaryEntry.lean` with
-  `@[export lean_secondary_kernel_main]` placeholder
-  (`pure ()` at SM1.C; SM5 replaces with per-core scheduler entry).
+  `@[export lean_secondary_kernel_main]` (a `pure ()` placeholder at
+  SM1.C; since the SM5.C.5 seam completion the body is definitionally
+  the per-core reschedule entry — bring-up is the core's first
+  reschedule — bracketed in `kernel_entry::with_kernel_entry` and
+  ordered before IRQ unmask).
   Three new `build.rs` scanners pin the primary/secondary symmetry
   at the call-site level.  32 new HAL unit tests + 12 new Lean
   assertions in `SmpFoundationsSuite.lean` (surface anchors,

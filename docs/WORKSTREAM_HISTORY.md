@@ -15,8 +15,88 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
-**Current sub-phase: SM9.E tests + closure LANDED (v0.33.100) — WS-SM phase
-SM9 is CLOSED.**
+**Current cut: the SM5 runtime-seam completion LANDED (v0.34.1) — every
+seam the SM5 docstrings promised between the verified per-core scheduler
+and the hardware IRQ path is closed.  SM10 (release closure → v1.0.0) is
+next.**
+
+A pre-SM10 sweep of the WS-SM headline findings (SMP-C1..C4, SMP-H1..H4,
+the MED/LOW set) confirmed every closure in place — and surfaced three
+runtime seams that SM5 had promised in prose but never landed, each one a
+proven transition with no consumer.  All three are now live, plus the
+serialisation gap the third one exposed:
+
+**The IRQ vector redirect.**  `trap.S`'s two IRQ vectors still branched to
+the single-core legacy `handle_irq`, whose timer branch only re-armed the
+comparator — `timer::per_core_timer_tick_isr`, the SM5.I ISR that drives
+the verified `timerTickOnCore` under the kernel-entry lock, had no caller
+from the vector, so the verified per-core scheduler was disconnected from
+hardware timer interrupts.  Both vectors now branch to
+`handle_irq_per_core` (which subsumes the legacy handler: per-core tick
+recording + re-arm + the Lean tick, full-IAR SGI dispatch, per-core
+attribution), the legacy `handle_irq` is removed, and
+`build.rs::scan_trap_s_irq_vector_redirect` pins the redirect.
+
+**The `.reschedule` receiver.**  SGI INTID 0 had no registered handler: a
+cross-core wake's poke woke the target from `wfe` and landed on the
+no-handler log arm, demoting every wake to wake-on-next-tick.  The
+verified receiver (`handleRescheduleSgiOnCore` — budget-aware re-choose,
+preempt only when the candidate strictly outranks current, SM5.C.5 with
+full preservation) existed with no runtime consumer.  It now drives a new
+fail-closed pure step `perCoreRescheduleStep`
+(`Scheduler/Operations/PerCoreRunLoop.lean`, beside the tick step, with
+`_invalid_core`/`_ok`/`_error`/`_preserves_objects_invExt`/
+`_preserves_runQueue_wellFormed`/`_switches_current`) behind a thin atomic
+entry `perCoreRescheduleEntry` (`@[export lean_per_core_reschedule]`,
+`Kernel/PerCoreRescheduleEntry.lean`), invoked by
+`trap.rs::reschedule_sgi_handler` under `with_kernel_entry` and registered
+at boot phase 3 beside the shootdown and haltAll handlers
+(`scan_reschedule_sgi_seam_intact` pins the seam end to end).
+
+**The secondary bring-up body.**  `secondaryKernelMain` was still the
+SM1.C `pure ()` placeholder its own docstring said SM5 would replace.  The
+replacement is definitional reuse, not a bespoke transition: **bring-up is
+the core's first reschedule** — `secondaryKernelMain :=
+perCoreRescheduleEntry`, pinned by the `rfl` marker
+`secondaryKernelMain_eq_perCoreRescheduleEntry` (+ `secondaryKernelMain_def`
+for the full body shape), so a freshly-onlined core (whose
+`currentOnCore = none` admits any budget-eligible candidate through the
+outranks gate) dispatches its highest-priority runnable — its idle thread
+when nothing else is assigned — through the same verified step the SGI
+receiver runs, and the two seams cannot drift apart.
+
+**The serialisation the new body demanded.**  A committing bring-up entry
+must hold the kernel-entry lock (sibling cores are already ticking), and a
+bracketed entry must not be interruptible by a tick that queues behind its
+own core's ticket (the lock is not reentrant).  `rust_secondary_main`
+therefore runs the entry inside `kernel_entry::with_kernel_entry` and
+**before** `enable_irq` — the same IRQs-masked-while-held discipline every
+other entry observes; the bracket's shootdown self-service has nothing to
+discharge because a not-yet-IRQ-ready core is excluded from every round.
+The bracketed-entry roster is now five (syscall dispatch, per-core tick,
+`.reschedule` receiver, secondary bring-up, cross-core suspend); the
+primary's `lean_kernel_main` install-ordering obligation is recorded
+against SM10.E in the release-closure plan, `Platform/FFI.lean` and
+`kernel_entry.rs`.
+
+Alongside: the `timer::handle_timer_interrupt` misnomer (a function that
+never existed) corrected to the real chain at all four sites;
+`Concurrency/Assumptions.lean`'s stale audit-by-source-read paragraph
+updated to the SM0.C Anchors build-enforcement it was superseded by;
+`SmpFoundationsSuite` §2.17 re-pinned from placeholder semantics to the
+seam identity (run live: the empty-queue bring-up commit is the identity,
+out-of-range ids fail closed); tier-3 anchors extended with the reschedule
+step/entry surface.  Rust gate: 1140 unit + 108 conformance tests, fmt and
+clippy clean.
+
+Plan: [`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`](planning/SMP_PER_CORE_SCHEDULER_PLAN.md)
+§SM5.C (landing note).  Next: SM10 release closure (→ v1.0.0),
+[`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md).
+
+---
+
+**WS-SM SM9.E — tests + closure: LANDED (v0.33.100) — WS-SM phase SM9 is
+CLOSED.**
 
 SM9.E adds no transition and no module; its subject is whether the phase's own
 acceptance criteria run end to end and stay pinned — and building it found one

@@ -113,9 +113,11 @@ into the full per-core boot sequence — MMU enable
 (`init_mmu_secondary` via shared `init_mmu_per_core`), exception
 vectors (`install_exception_vectors` shared with primary), GIC CPU
 interface (`init_cpu_interface_secondary`), per-core timer
-(`init_timer_secondary`), IRQ unmask, then jump into the Lean kernel
-via `secondaryKernelMain` (placeholder at SM1.C; SM5 replaces with
-per-core scheduler entry).
+(`init_timer_secondary`), then the Lean kernel bring-up entry
+`secondaryKernelMain` — definitionally the core's first reschedule
+(the verified `handleRescheduleSgiOnCore` transition, run inside the
+kernel-entry lock with IRQs still masked) — then IRQ unmask and an
+interrupt-driven idle.
 SM1.D adds Phase 5 to `rust_boot_main`: a full self-contained DTB
 walker parses `/chosen/bootargs`, produces a typed `CmdlineConfig`,
 and dispatches to `bring_up_secondaries_with_limit` to spawn the

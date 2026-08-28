@@ -46,9 +46,11 @@ recovered SGIs paired with the state they came from without a second read — bu
 `modifyGet` is a read then a write, not a cross-core atomic, so this is *not* on
 its own safe against a concurrent commit on another core (see
 `Platform.FFI.modifyGetKernelState`).  **The kernel-entry lock supplies that
-exclusion as of SM5.I (v0.32.142)**: `timer::handle_timer_interrupt` runs this
-entry inside `kernel_entry::with_kernel_entry`, so the read-tick-commit is one
-critical section against every other kernel entry — the syscall dispatch and the
+exclusion as of SM5.I (v0.32.142)**: `timer::per_core_timer_tick_isr` (reached
+from `trap.rs::handle_irq_per_core`'s timer branch) runs this entry inside
+`kernel_entry::with_kernel_entry`, so the read-tick-commit is one critical
+section against every other kernel entry — the syscall dispatch, the
+`.reschedule` SGI receiver, the secondary bring-up reschedule and the
 cross-core suspend included.  The lock is the SM2 verified `TicketLock` (FIFO,
 so a tick cannot be starved by a neighbour's syscall loop), it is acquired
 outside `SHOOTDOWN_ROUND_LOCK`, and its spin self-services this core's pending

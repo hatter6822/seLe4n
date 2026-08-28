@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.34.0` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 286,842 across 286 Lean files |
-| **Test LoC** | 64,078 across 69 Lean test suites |
-| **Proved declarations** | 9,601 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 287,118 across 287 Lean files |
+| **Test LoC** | 64,115 across 69 Lean test suites |
+| **Proved declarations** | 9,608 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — the active pre-1.0 baseline family (WS-RC R0–R5 landed at v0.31.2; R6–R14 absorbed into WS-SM per SM0.Q). Prior audits (v0.27.6 and earlier, remediated via WS-AI and successors) are archived in `docs/dev_history/audits/`. |
 | **Current workstream** | **WS-RA (Syscall Return ABI) — COMPLETE; both return orderings staged end to end.**  The kernel returns seL4's ARM64 frame exactly: `x0` = badge or primary result at full 64-bit width, `x1` = `MessageInfo` whose **offset** label carries the error (`0` = success, `d + 1` = `KernelError` discriminant `d` — offset because discriminant `0` is a real error), `x2`-`x5` = message registers.  The bit-63 status protocol (`encodeOk`/`encodeError`) and the vestigial `syscall_dispatch_inner` export are retired; `SYSCALL_ABI_VERSION = 2` is pinned in Lean, `sele4n-types` and the HAL.  `syscallDispatchFromAbi : Kernel SyscallOutcome` decides `returns frame` / `blocks` from the caller's post-state; value arms stage via `Architecture.writeReturnFrameToTcb` (`.notificationWait`'s badge — the SM9.C.0 closure, delivered end to end in the signal-before-wait ordering — `.receive`/`.replyRecv` consume deliveries, `.serviceQuery`'s resolved `ServiceId`); `Unit` frames are constructed, never read from staged registers; the frame crosses the FFI through the per-core return-frame mailbox and the trap layer restores all six registers (a blocked caller has no return frame; until the SM10.E context restore installs a successor, the trap layer poisons its frame with the fail-closed blocked-resume sentinel — label `0xFFFFF`, decoded as `UnknownKernelError`, never success — per the PR #866 review).  Review round 2 (v0.33.40): the synthesized `extraCaps` reports the capabilities **actually installed** by the transfer (never the requested count — a grant-denied transfer reports zero), the mailbox/entry-lock core index is the boot-validated TPIDR logical id, and `service_query` returns the typed `ServiceId`.  **Completed at v0.33.38**: RA.B.5b's blocked-waiter staging landed at the unblocking arms (eleven sites through `stageWokenDelivery`/`stageWokenSendCompletion`, zero IPC transitions touched; `blockedReturn_staged_in_waiter_frame` + `blockedUnitReturn_staged_in_sender_frame`; five end-to-end two-core suite scenarios) and RA.B.8's per-arm `dispatchArm_matches_returnShape` value family with the unit half structural (`frameForShape_unit` constructs, never reads).  SM10.E owes only frame *delivery* at the context restore plus the cancellation/timeout error-frame staging.  Plan: [`SYSCALL_RETURN_ABI_PLAN.md`](../planning/SYSCALL_RETURN_ABI_PLAN.md). |
@@ -1888,12 +1888,15 @@ bridges abstract timer ticks to the ARM Generic Timer:
 The Rust timer driver (`sele4n-hal/src/timer.rs`) uses system register
 accessors and counter-relative reprogramming for evenly-spaced interrupts.
 
-**AI1-C (v0.27.7)**: The timer tick accounting path has been unified. The IRQ
-handler (`trap.rs::handle_irq`) only re-arms the hardware timer via
-`reprogram_timer()`. Tick counting is performed exclusively by
-`ffi_timer_reprogram()` (`ffi.rs`), which the Lean kernel controls. This
-eliminates the M-26 dual-path bug where both the IRQ handler and FFI bridge
-incremented the tick count, causing double-counting on hardware.
+**AI1-C (v0.27.7), per-core since SM5**: The timer tick accounting path has
+been unified. The IRQ path (`trap.rs::handle_irq_per_core` →
+`timer::per_core_timer_tick_isr`) only re-arms the hardware timer via
+`reprogram_timer()` and records the per-core diagnostic tick counter; it also
+drives the verified Lean per-core scheduler tick under the kernel-entry lock.
+Global tick counting is performed exclusively by `ffi_timer_reprogram()`
+(`ffi.rs`), which the Lean kernel controls. This eliminates the M-26 dual-path
+bug where both the IRQ handler and FFI bridge incremented the tick count,
+causing double-counting on hardware.
 
 #### 6.5.4 Memory Management (ARMv8)
 

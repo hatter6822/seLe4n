@@ -80,14 +80,31 @@ fn main() {
     // DSB; this scanner ensures the source still honours it.
     scan_gic_rs_send_sgi_emits_dsb_ish();
 
-    // WS-SM SM1.I.1 (per-core IRQ handler contract): verify
+    // WS-SM SM1.I.1 / SM5 (per-core IRQ handler contract): verify
     // `trap.rs::handle_irq_per_core` exists and routes through the
-    // per-core stats record path.  SM5 will swap the assembly entry
-    // vector from `handle_irq` to `handle_irq_per_core`; if a future
-    // refactor removed or renamed the function, the SM5 swap would
-    // fail at link time.  This scanner forces the contract earlier
-    // (at elaboration) with an actionable diagnostic.
+    // per-core stats record path and the per-core CNTP ISR seam.  It is
+    // the live IRQ path (`trap.S`'s IRQ vectors branch to it); if a
+    // future refactor removed or renamed the function, the assembly
+    // branch would fail at link time.  This scanner forces the contract
+    // earlier (at elaboration) with an actionable diagnostic.
     scan_trap_rs_handle_irq_per_core_intact();
+
+    // WS-SM SM5 (IRQ vector redirect contract): verify `trap.S`'s IRQ
+    // vectors branch to `handle_irq_per_core` and that no vector still
+    // branches to a bare `handle_irq` (the removed single-core legacy
+    // entry).  A regression that re-pointed a vector at a handler
+    // without the per-core scheduler seam would silently disconnect
+    // the verified per-core timer tick and the `.reschedule` receiver
+    // from the hardware IRQ path.
+    scan_trap_s_irq_vector_redirect();
+
+    // WS-SM SM5.C.5 (reschedule receiver contract): verify the
+    // `.reschedule` SGI seam is intact end to end on the Rust side —
+    // `trap.rs` defines the handler + its kernel-entry bracket, and
+    // `boot.rs` registers it at boot.  A regression that dropped the
+    // registration would silently demote every cross-core wake to
+    // wake-on-next-tick (the SGI would land on the no-op table arm).
+    scan_reschedule_sgi_seam_intact();
 
     // WS-SM SM2.D.5 (verified-lock FFI bridge contract): verify the
     // SM2.D lock-bridge module is present and every required FFI
@@ -467,8 +484,15 @@ fn scan_smp_rs_invokes_secondary_init_helpers() {
         ("init_mmu_secondary(", "Step 1: MMU enable"),
         ("init_cpu_interface_secondary(", "Step 3: GIC CPU interface"),
         ("init_timer_secondary(", "Step 4: Timer arm"),
-        ("enable_irq(", "Step 5: IRQ unmask"),
-        ("lean_secondary_kernel_main", "Step 6: Lean kernel entry"),
+        (
+            "lean_secondary_kernel_main",
+            "Step 5: Lean kernel bring-up entry",
+        ),
+        (
+            "with_kernel_entry(",
+            "Step 5: kernel-entry bracket around the bring-up entry",
+        ),
+        ("enable_irq(", "Step 6: IRQ unmask"),
     ];
 
     let mut missing: Vec<&str> = Vec::new();
@@ -755,22 +779,23 @@ fn scan_gic_rs_send_sgi_emits_dsb_ish() {
     }
 }
 
-/// **WS-SM SM1.I.1**: verify `trap.rs::handle_irq_per_core` is intact.
+/// **WS-SM SM1.I.1 / SM5**: verify `trap.rs::handle_irq_per_core` is
+/// intact.
 ///
-/// SM1.I.1 adds the per-core IRQ handler entry as the SM5 landing seam
-/// — SM5 will redirect `trap.S`'s IRQ assembly entry from `handle_irq`
-/// to `handle_irq_per_core`.  This scanner forces the contract at
-/// elaboration time:
+/// `handle_irq_per_core` is the live IRQ path — `trap.S`'s IRQ vectors
+/// branch to it (the redirect the SM1.I.1 seam was staged for; pinned
+/// by `scan_trap_s_irq_vector_redirect`).  This scanner forces the
+/// contract at elaboration time:
 ///
 ///   1. The function `pub extern "C" fn handle_irq_per_core` exists
-///      (a regression that removed or renamed it would fail SM5's
-///      assembly swap at link time; we catch it earlier).
+///      (a regression that removed or renamed it would fail the
+///      assembly branch at link time; we catch it earlier).
 ///   2. The `#[no_mangle]` attribute is preserved (otherwise the
 ///      assembly entry cannot resolve the symbol at link time).
 ///   3. The body invokes `crate::per_cpu_stats::record_irq_dispatch`
 ///      so per-core IRQ attribution is wired (this is the
 ///      substantive SM1.I.1 contract; a refactor that dropped the
-///      counter increment would silently break SM5+ per-core
+///      counter increment would silently break per-core
 ///      diagnostics).
 ///   4. The body invokes
 ///      `crate::per_cpu::current_core_id_from_tpidr` so the
@@ -803,9 +828,8 @@ fn scan_trap_rs_handle_irq_per_core_intact() {
         panic!(
             "WS-SM SM1.I.1 regression: `{path}` no longer defines \
              `pub extern \"C\" fn handle_irq_per_core(...)`.  This is the \
-             SM5 landing seam — SM5 will redirect `trap.S`'s IRQ entry to \
-             this function.  Restore the function or update the scanner if \
-             SM5 has landed and the contract changed."
+             live IRQ path — `trap.S`'s IRQ vectors branch to it.  \
+             Restore the function."
         );
     };
 
@@ -826,9 +850,9 @@ fn scan_trap_rs_handle_irq_per_core_intact() {
         panic!(
             "WS-SM SM1.I.1 regression: `{path}::handle_irq_per_core` no longer \
              has the `#[no_mangle]` attribute.  Without it, the assembly entry \
-             vector (SM5 will redirect to this function) cannot resolve the \
-             symbol at link time.  Restore `#[no_mangle]` immediately above the \
-             function declaration."
+             vector (`trap.S`'s IRQ entries branch to this function) cannot \
+             resolve the symbol at link time.  Restore `#[no_mangle]` \
+             immediately above the function declaration."
         );
     }
 
@@ -866,6 +890,157 @@ fn scan_trap_rs_handle_irq_per_core_intact() {
              This is the seam that drives the verified Lean per-core scheduler \
              timer tick (`Kernel.timerTickOnCore`).  Restore the call in the \
              `intid == TIMER_PPI_ID` branch."
+        );
+    }
+}
+
+/// **WS-SM SM5**: verify `trap.S`'s IRQ vectors branch to the per-core
+/// IRQ handler.
+///
+/// The redirect from the single-core legacy entry to
+/// `handle_irq_per_core` is what connects the hardware IRQ path to the
+/// verified per-core scheduler (the SM5.D.1 timer-tick seam and the
+/// SM5.C.5 `.reschedule` receiver both hang off the per-core handler's
+/// dispatch closure).  Two textual checks codify the contract:
+///
+///   1. `bl handle_irq_per_core` appears at least twice (the EL0 and
+///      EL1 IRQ vectors).
+///   2. No `bl handle_irq` line targets anything other than
+///      `handle_irq_per_core` — the single-core legacy entry was
+///      removed with the redirect, so a bare `bl handle_irq` would be
+///      an unresolved symbol reintroducing the pre-SM5 split brain.
+fn scan_trap_s_irq_vector_redirect() {
+    let path = "src/trap.S";
+    println!("cargo:rerun-if-changed={path}");
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => panic!("WS-SM SM5 scanner: failed to read {path}: {e}"),
+    };
+
+    // Strip `//` line comments so prose mentions don't satisfy (or
+    // trip) the checks.
+    let stripped: String = contents
+        .lines()
+        .map(|line| {
+            if let Some(idx) = line.find("//") {
+                &line[..idx]
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let per_core_branches = stripped.matches("bl      handle_irq_per_core").count()
+        + stripped.matches("bl handle_irq_per_core").count();
+    if per_core_branches < 2 {
+        panic!(
+            "WS-SM SM5 regression: `{path}` must branch to \
+             `handle_irq_per_core` from both IRQ vectors \
+             (`__el0_irq_entry` and `__el1_irq_entry`); found \
+             {per_core_branches} branch(es).  The per-core handler is \
+             the seam that drives the verified per-core scheduler from \
+             hardware IRQs."
+        );
+    }
+
+    // A `bl handle_irq` token NOT followed by `_per_core` is the
+    // removed legacy entry.
+    for line in stripped.lines() {
+        let Some(idx) = line.find("bl") else { continue };
+        let target = line[idx + 2..].trim();
+        if target == "handle_irq" {
+            panic!(
+                "WS-SM SM5 regression: `{path}` branches to the removed \
+                 single-core `handle_irq`.  Both IRQ vectors must branch \
+                 to `handle_irq_per_core`."
+            );
+        }
+    }
+}
+
+/// **WS-SM SM5.C.5**: verify the `.reschedule` SGI receiver seam is
+/// intact end to end on the Rust side.
+///
+///   1. `trap.rs` defines `reschedule_sgi_handler` and brackets its
+///      Lean call (`lean_per_core_reschedule`) in
+///      `kernel_entry::with_kernel_entry` — an unbracketed commit
+///      racing another core's entry loses one transition whole.
+///   2. `trap.rs` defines `register_reschedule_sgi_handler` (the
+///      write-once boot registration wrapper).
+///   3. `boot.rs` calls `register_reschedule_sgi_handler` — without
+///      the registration, every cross-core wake silently demotes to
+///      wake-on-next-tick (the SGI lands on the no-op table arm).
+fn scan_reschedule_sgi_seam_intact() {
+    let trap_path = "src/trap.rs";
+    let boot_path = "src/boot.rs";
+    let strip = |contents: &str| -> String {
+        contents
+            .lines()
+            .map(|line| {
+                if let Some(idx) = line.find("//") {
+                    &line[..idx]
+                } else {
+                    line
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let trap = match std::fs::read_to_string(trap_path) {
+        Ok(s) => strip(&s),
+        Err(e) => panic!("WS-SM SM5.C.5 scanner: failed to read {trap_path}: {e}"),
+    };
+    let boot = match std::fs::read_to_string(boot_path) {
+        Ok(s) => strip(&s),
+        Err(e) => panic!("WS-SM SM5.C.5 scanner: failed to read {boot_path}: {e}"),
+    };
+
+    let Some(handler_start) = trap.find("fn reschedule_sgi_handler(") else {
+        panic!(
+            "WS-SM SM5.C.5 regression: `{trap_path}` no longer defines \
+             `reschedule_sgi_handler`.  This is the receiver seam of the \
+             cross-core wake protocol; restore the handler."
+        );
+    };
+    let handler_end = trap[handler_start..]
+        .find("\npub unsafe fn register_reschedule_sgi_handler")
+        .map(|off| handler_start + off)
+        .unwrap_or(trap.len());
+    let handler_body = &trap[handler_start..handler_end];
+    if !handler_body.contains("with_kernel_entry") {
+        panic!(
+            "WS-SM SM5.C.5 regression: `{trap_path}::reschedule_sgi_handler` \
+             no longer brackets its Lean call in \
+             `kernel_entry::with_kernel_entry`.  The reschedule commits \
+             kernel state; an unbracketed commit racing another core's \
+             entry loses one transition whole.  Restore the bracket."
+        );
+    }
+    if !handler_body.contains("lean_per_core_reschedule") {
+        panic!(
+            "WS-SM SM5.C.5 regression: `{trap_path}::reschedule_sgi_handler` \
+             no longer drives the Lean reschedule entry \
+             (`lean_per_core_reschedule`).  Restore the hw_target-gated \
+             call so the verified `handleRescheduleSgiOnCore` transition \
+             runs on SGI receipt."
+        );
+    }
+    if !trap.contains("pub unsafe fn register_reschedule_sgi_handler") {
+        panic!(
+            "WS-SM SM5.C.5 regression: `{trap_path}` no longer defines \
+             `register_reschedule_sgi_handler`.  Restore the write-once \
+             boot registration wrapper."
+        );
+    }
+    if !boot.contains("register_reschedule_sgi_handler") {
+        panic!(
+            "WS-SM SM5.C.5 regression: `{boot_path}` no longer registers \
+             the `.reschedule` SGI handler at boot (phase 3).  Without \
+             the registration every cross-core wake silently demotes to \
+             wake-on-next-tick.  Restore the \
+             `crate::trap::register_reschedule_sgi_handler()` call."
         );
     }
 }

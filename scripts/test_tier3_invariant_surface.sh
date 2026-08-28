@@ -5197,8 +5197,11 @@ EOF'
 # AN12-B inventory hardening theorems (NoDup witnesses, 6-way ArchAssumption
 # distinctness, Anchors module).  WS-SM SM1.B.5 adds the per-CPU FFI
 # wrapper surface (Concurrency.Runtime + Platform.FFI.ffiCurrentCoreId).
-# WS-SM SM1.C.6 adds the secondary-core kernel-entry placeholder
-# (Kernel.SecondaryEntry.secondaryKernelMain + marker theorem).
+# WS-SM SM1.C.6 / SM5.C.5 adds the secondary-core kernel entry
+# (Kernel.SecondaryEntry.secondaryKernelMain — definitionally the
+# per-core reschedule entry since the SM5.C.5 seam completion — with
+# the seam-identity + body-shape marker theorems and the verified
+# perCoreRescheduleStep it commits).
 # WS-SM SM1.E.4 adds the typed TLBI dispatcher wrapper
 # (Architecture.TlbiForSharing + tag encoding theorems).
 # WS-SM SM1.F.6 adds the SGI primitive FFI bindings
@@ -5308,9 +5311,20 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.Concurrency.currentCoreId
 #check @SeLe4n.Kernel.Concurrency.currentCoreId_in_range_marker
 #check @SeLe4n.Kernel.Concurrency.instInhabitedCoreId
--- SM1.C.6 — Secondary-core kernel-entry placeholder (closes SMP-C2 Lean side)
+-- SM1.C.6 / SM5.C.5 — Secondary-core kernel entry (closes SMP-C2 Lean side;
+-- bring-up is definitionally the core's first reschedule)
 #check @SeLe4n.Kernel.secondaryKernelMain
-#check @SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker
+#check @SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry
+#check @SeLe4n.Kernel.secondaryKernelMain_def
+#check @SeLe4n.Kernel.perCoreRescheduleEntry
+#check @SeLe4n.Kernel.perCoreRescheduleEntry_def
+#check @SeLe4n.Kernel.perCoreRescheduleStep
+#check @SeLe4n.Kernel.perCoreRescheduleStep_invalid_core
+#check @SeLe4n.Kernel.perCoreRescheduleStep_ok
+#check @SeLe4n.Kernel.perCoreRescheduleStep_error
+#check @SeLe4n.Kernel.perCoreRescheduleStep_preserves_objects_invExt
+#check @SeLe4n.Kernel.perCoreRescheduleStep_preserves_runQueue_wellFormed
+#check @SeLe4n.Kernel.perCoreRescheduleStep_switches_current
 -- SM1.E.4 — Typed TLBI dispatcher wrapper (post-SM7 cross-core call sites)
 #check @SeLe4n.Kernel.Architecture.TlbInvalidation
 #check @SeLe4n.Kernel.Architecture.TlbInvalidation.toOpTag

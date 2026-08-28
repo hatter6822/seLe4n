@@ -945,15 +945,27 @@ def updateKernelState (f : SystemState → SystemState) : BaseIO Unit :=
     closed by serialising kernel entry, not by this combinator.
 
     **Serialisation is present (SM5.I, v0.32.142).**  Every kernel entry that
-    reaches this combinator runs inside
+    commits state runs inside
     `rust/sele4n-hal/src/kernel_entry.rs`'s `with_kernel_entry` bracket, so the
     read and the write are one critical section against every other kernel
-    entry.  All three entries are bracketed —
+    entry.  All five committing entries are bracketed —
     `lean_syscall_dispatch_cross_core` (`svc_dispatch::dispatch_svc`),
-    `lean_per_core_timer_tick` (`timer::handle_timer_interrupt`) and
-    `suspend_thread_cross_core` (`ffi::sele4n_suspend_thread`).  The bring-up
-    entries (`lean_kernel_main`, `lean_secondary_kernel_main`) are deliberately
-    outside it: they run before their core takes part in concurrent entry.
+    `lean_per_core_timer_tick` (`timer::per_core_timer_tick_isr`, from
+    `trap.rs::handle_irq_per_core`'s timer branch),
+    `lean_per_core_reschedule` (`trap.rs::reschedule_sgi_handler`, the
+    `.reschedule` SGI receiver),
+    `lean_secondary_kernel_main` (`smp.rs::rust_secondary_main`, the bring-up
+    reschedule — bracketed *and* invoked before `enable_irq` on its core, so a
+    tick cannot re-enter the non-reentrant lock on the same core) and
+    `suspend_thread_cross_core` (`ffi::sele4n_suspend_thread`).  The primary
+    bring-up entry (`lean_kernel_main`, the SM10.E image target's boot seam) is
+    the one committing path outside the bracket: its `initialiseKernelState`
+    install runs while secondaries may already be executing bracketed entries,
+    so SM10.E MUST either order the install before Phase 5 releases the
+    secondaries or take this same bracket — an unbracketed install racing a
+    bracketed tick can be overwritten by a commit derived from the
+    pre-install state (the lost-commit shape above).  Recorded as an SM10.E
+    obligation in `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`.
 
     The lock is the SM2 verified `TicketLock`, so entry is FIFO and no core
     starves; it is acquired strictly **outside** `SHOOTDOWN_ROUND_LOCK`; and its

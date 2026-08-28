@@ -37,12 +37,21 @@ import SeLe4n.Kernel.Concurrency.Sgi
 -- Rust per-CPU base) on every push.  Reachability: production import
 -- closure runs through here even before per-core scheduler state lands
 -- at SM5.
--- WS-SM SM1.C.6: secondary-core kernel-entry placeholder.  Pulled into
+-- WS-SM SM5.C.5: per-core reschedule kernel entry — the receiver seam of
+-- the cross-core wake protocol (`@[export lean_per_core_reschedule]`,
+-- resolved by the Rust `.reschedule` SGI handler
+-- `trap.rs::reschedule_sgi_handler`) and the definitional body of the
+-- secondary bring-up entry.  Pulled into Staged so CI builds the seam and
+-- keeps the C-callable wrapper emitted on every push.
+import SeLe4n.Kernel.PerCoreRescheduleEntry
+-- WS-SM SM1.C.6 / SM5.C.5: secondary-core kernel entry.  Pulled into
 -- Staged so CI verifies the `@[export lean_secondary_kernel_main]`
 -- attribute keeps emitting a C-callable wrapper that the Rust HAL's
--- `rust_secondary_main` (smp.rs Step 6) resolves at link time.  At
--- SM1.C the body is `pure ()`; SM5 replaces it with the per-core
--- scheduler entry.
+-- `rust_secondary_main` (smp.rs Step 5, inside
+-- `kernel_entry::with_kernel_entry`, before `enable_irq`) resolves at
+-- link time.  The SM1.C `pure ()` placeholder body is replaced: bring-up
+-- is definitionally the core's first reschedule
+-- (`secondaryKernelMain_eq_perCoreRescheduleEntry`).
 import SeLe4n.Kernel.SecondaryEntry
 -- WS-SM SM1.E.4: typed `tlbiForSharing` FFI wrapper.
 -- PRODUCTION since SM7.B: `SyscallDispatchEntry.completeShootdownRounds`

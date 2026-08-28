@@ -11,7 +11,7 @@
 //! ## Interrupt Flow
 //!
 //! 1. Hardware asserts IRQ line
-//! 2. CPU takes exception to EL1 IRQ vector → `handle_irq` (trap.rs)
+//! 2. CPU takes exception to EL1 IRQ vector → `handle_irq_per_core` (trap.rs)
 //! 3. `acknowledge_irq()` reads GICC_IAR → returns INTID
 //! 4. Dispatch based on INTID (timer PPI 30 → timer handler, etc.)
 //! 5. `end_of_interrupt()` writes GICC_EOIR → signals completion
@@ -1092,9 +1092,9 @@ pub const fn iar_source_cpu(iar: u32) -> u8 {
 /// Handle an IRQ from the GIC: acknowledge → EOI → dispatch (handler
 /// runs with the interrupt already retired in the GIC).
 ///
-/// Called from `handle_irq` in trap.rs. The dispatch callback receives
-/// the INTID and should handle the interrupt (e.g., reprogram timer,
-/// signal notification).
+/// Called from `handle_irq_per_core` in trap.rs. The dispatch callback
+/// receives the INTID and should handle the interrupt (e.g., reprogram
+/// timer, signal notification).
 ///
 /// # AN8-C (H-19) — Ordering rationale
 ///

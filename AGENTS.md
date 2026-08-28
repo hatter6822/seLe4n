@@ -821,7 +821,11 @@ code may assume:
 - **Kernel entry is serialised by one global ticket lock** (SM5.I, v0.32.142,
   `rust/sele4n-hal/src/kernel_entry.rs`), acquired outside
   `SHOOTDOWN_ROUND_LOCK` and self-servicing pending shootdowns while spinning.
-  It brackets all three state-committing entries.  Live WCRT is therefore weaker
+  It brackets all five state-committing entries (syscall dispatch, per-core
+  timer tick, `.reschedule` SGI receiver, secondary bring-up entry, cross-core
+  suspend); the primary's `lean_kernel_main` boot install remains outside and
+  its ordering is an SM10.E obligation (see kernel_entry.rs module docs).
+  Live WCRT is therefore weaker
   than `PerCoreWcrt.lean`'s fine-lock bound, which remains a statement about the
   intended discipline.
 - **SM3.C.9 is deferred**: the `@[export]` bodies are not yet wrapped in

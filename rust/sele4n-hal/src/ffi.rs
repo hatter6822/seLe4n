@@ -76,10 +76,11 @@ pub extern "C" fn ffi_timer_read_counter() -> u64 {
 /// Sets CNTP_CVAL_EL0 = current counter + stored interval, then increments
 /// the tick counter. Called from the Lean kernel's timer tick handler.
 ///
-/// AI1-C/M-26: This is the **canonical** tick accounting path. The IRQ handler
-/// (`trap.rs::handle_irq`) only re-arms the hardware timer; it does NOT
-/// increment the tick count. All tick accounting flows through this FFI
-/// entry point, which the Lean kernel controls.
+/// AI1-C/M-26: This is the **canonical** tick accounting path. The IRQ path
+/// (`trap.rs::handle_irq_per_core` → `timer::per_core_timer_tick_isr`) only
+/// re-arms the hardware timer and records the per-core diagnostic counter; it
+/// does NOT increment the global tick count. All global tick accounting flows
+/// through this FFI entry point, which the Lean kernel controls.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTimerReprogram`
 #[no_mangle]

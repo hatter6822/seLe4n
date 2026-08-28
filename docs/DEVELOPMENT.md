@@ -9,7 +9,21 @@ It is aligned to the **current project state**:
 
 - **active workstream:** **WS-SM (SMP multi-core completion) IN FLIGHT**
   (v0.31.2 → v1.0.0; closes with a bootable verified SMP microkernel on
-  Raspberry Pi 5).  Interleaved: **WS-RA (Syscall Return ABI) core LANDED
+  Raspberry Pi 5).  **Latest cut (v0.34.1): the SM5 runtime-seam completion**
+  — the three seams SM5's docstrings promised between the verified per-core
+  scheduler and the hardware IRQ path are closed: `trap.S`'s IRQ vectors
+  branch to `handle_irq_per_core` (the legacy single-core `handle_irq`
+  removed; the timer PPI drives the verified `timerTickOnCore` under the
+  kernel-entry lock), the `.reschedule` SGI receiver is live end to end
+  (`perCoreRescheduleStep` over the verified `handleRescheduleSgiOnCore`,
+  `@[export lean_per_core_reschedule]`, registered at boot for INTID 0), and
+  the secondary bring-up entry is definitionally the core's first reschedule
+  (`secondaryKernelMain_eq_perCoreRescheduleEntry`), bracketed in
+  `kernel_entry::with_kernel_entry` and ordered before `enable_irq`; the
+  bracketed committing-entry roster is now five, and the primary
+  `lean_kernel_main` install-ordering obligation is registered against
+  SM10.E.  SM10 (release closure → v1.0.0) is the remaining phase.
+  Interleaved: **WS-RA (Syscall Return ABI) core LANDED
   (v0.33.37)** — the kernel returns the full seL4 ARM64 frame end to end (`x0`
   = badge/primary result at full 64-bit width; `x1` = `MessageInfo` whose
   label carries the error at `discriminant + 1`, so label 0 = success and no

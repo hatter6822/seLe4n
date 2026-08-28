@@ -147,10 +147,17 @@ __el0_sync_entry:
 // =========================================================================
 // EL0 IRQ — interrupt from user mode
 // =========================================================================
+// WS-SM SM5: routed to the per-core IRQ handler (`handle_irq_per_core`),
+// which reads the executing core's id from TPIDR_EL1, records per-core
+// IRQ statistics, drives the verified Lean per-core scheduler timer tick
+// on the timer PPI, and dispatches SGIs with genuine source-CPU
+// attribution.  This replaced the single-core `handle_irq` when the SM5
+// per-core scheduler state landed (the redirect the SM1.I.1 seam was
+// staged for).  Pinned by `build.rs::scan_trap_s_irq_vector_redirect`.
 .global __el0_irq_entry
 __el0_irq_entry:
     save_context
-    bl      handle_irq
+    bl      handle_irq_per_core
     restore_context
 
 // =========================================================================
@@ -180,10 +187,11 @@ __el1_sync_entry:
 // =========================================================================
 // EL1 IRQ — interrupt while in kernel
 // =========================================================================
+// WS-SM SM5: same per-core routing as `__el0_irq_entry` above.
 .global __el1_irq_entry
 __el1_irq_entry:
     save_context
-    bl      handle_irq
+    bl      handle_irq_per_core
     restore_context
 
 // =========================================================================

@@ -7,34 +7,56 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM SM5+ (SM1.C.6 placeholder secondary kernel
--- entry; consumed when the per-core scheduler lands at SM5)
+-- STATUS: staged for WS-SM (SM1.C.6 secondary-core kernel entry; live
+-- per-core scheduler bring-up body since the SM5.C.5 receiver seam landed)
 import SeLe4n.Kernel.Concurrency.Types
+import SeLe4n.Kernel.PerCoreRescheduleEntry
 import SeLe4n.Platform.FFI
 
 /-!
-# WS-SM SM1.C.6 — Secondary-core kernel entry
+# WS-SM SM1.C.6 / SM5.C.5 — Secondary-core kernel entry
 
 This module provides the Lean-side entry point that the Rust HAL's
 `rust_secondary_main` (see `rust/sele4n-hal/src/smp.rs`) calls into
 after completing the per-core hardware-init sequence (MMU, VBAR, GIC
-CPU interface, timer, IRQ unmask).
+CPU interface, timer) and **before** unmasking IRQs on the core.
 
-## SM1.C.6 placeholder semantics
+## Bring-up semantics: the core's first reschedule
 
-At SM1.C the function is intentionally a pass-through that returns
-`pure ()`.  The Rust caller falls into a low-power `wfe` idle loop
-after this returns, so a secondary core that reaches SM1.C arrives
-fully-initialised and parks until either:
+At SM1.C this function was a deliberate `pure ()` pass-through — the
+per-core scheduler state it would enter did not exist yet.  SM5 built that
+state (per-core run queues, idle TCBs, the verified selection / switch /
+reschedule transitions), and this entry now runs it: the body is
+definitionally the per-core reschedule entry
+(`perCoreRescheduleEntry`, the `.reschedule` SGI receiver), because bring-up
+**is** the core's first reschedule.
 
-  1. SM5 replaces this body with the per-core scheduler entry, or
-  2. SM7 cross-core IPC sends an SGI that wakes the parked core.
+A freshly-onlined core has `currentOnCore c = none`
+(`bootFromPlatform_smp_currentAllNone`), so the reschedule's
+`candidateOutranksCurrentOnCore` gate admits any budget-eligible candidate
+and the verified `handleRescheduleSgiOnCore` transition dispatches the
+highest-priority runnable thread assigned to this core — the core's idle
+thread when nothing else is enqueued (the idle-installing boot path parks
+`idleThreadId c` in core `c`'s run queue at priority 0), or the identity
+when the run queue is empty (the state then keeps the legacy
+`current = none` idle representation until the first wake or tick).  One
+verified step serves the bring-up and SGI-receiver seams; the bring-up
+correctness witness is `perCoreRescheduleStep_switches_current`, and there
+is no bespoke bring-up transition to prove or to drift.
 
-Returning immediately at SM1.C is **deliberate**:  the per-core
-scheduler state, idle TCB, and runnable thread set do not exist until
-SM5 lands.  Spinning here without runnable work would defer the
-secondary's first opportunity to receive an IRQ (the WFE in the Rust
-caller is interruptible, but a Lean-side spin is not).
+## Runtime lock discipline (why the Rust caller brackets and orders this)
+
+The entry commits kernel state through an `IO.Ref.modify` — a read then a
+write, not a cross-core atomic — while sibling cores are already executing
+bracketed kernel entries (their timer ticks and SGIs).  The Rust caller
+therefore wraps this call in `kernel_entry::with_kernel_entry`, and invokes
+it **before** `enable_irq` on this core: with IRQs still masked, a per-core
+timer tick cannot interrupt the bracketed bring-up entry and re-enter the
+non-reentrant kernel-entry lock on the same core (the same
+IRQs-masked-while-held discipline every other kernel entry observes).  A
+core that has not yet published `CORE_IRQ_READY` is excluded from every
+shootdown round, so the bracket's self-service spin has no obligation to
+discharge and the acquisition terminates.
 
 ## Lean → Rust ABI contract
 
@@ -47,21 +69,23 @@ extern would fail at link time.
 
 ## Build reachability
 
-This module is in the production import closure via
-`SeLe4n/Platform/Staged.lean` (added to the staged-module allowlist
-per the WS-RC R12.B partition gate).  CI builds the bridge on every
-push; SM5 will move it from staged → production-reached when per-core
-scheduler state lands.
+This module is in the CI import closure via
+`SeLe4n/Platform/Staged.lean` (staged-module allowlist per the WS-RC
+R12.B partition gate).  Like `PerCoreRescheduleEntry` — and unlike the
+timer-tick entry — the body references no `@[extern]` symbol, so linking
+it demands nothing from the Rust HAL.
 
 ## Anti-cycle note
 
 `Concurrency.Types` is foundational (no `Platform.*` deps).
 `Platform.FFI` imports `Platform.Boot`, which transitively imports
-`Platform.Contract` → `Concurrency.Types`.  This file imports both:
+`Platform.Contract` → `Concurrency.Types`.  This file imports both
+(plus `Kernel.PerCoreRescheduleEntry`, which sits above `Platform.FFI`):
 
 ```
 Concurrency.Types  ← Platform.Contract  ← Platform.Boot
                                         ← Platform.FFI
+                                        ← PerCoreRescheduleEntry
                                         ← SecondaryEntry (this file)
 ```
 
@@ -72,50 +96,43 @@ would break layering — `Concurrency.*` must not depend on
 
 namespace SeLe4n.Kernel
 
-/-- **WS-SM SM1.C.6** (closes SMP-C2 Lean side): Secondary-core
+/-- **WS-SM SM1.C.6 / SM5.C.5** (closes SMP-C2 Lean side): Secondary-core
 kernel entry.
 
-Called from Rust `smp.rs::rust_secondary_main` once per secondary
-core after the per-core hardware-init sequence (MMU, VBAR, GIC,
-timer, IRQ unmask) completes.
+Called from Rust `smp.rs::rust_secondary_main` once per secondary core,
+inside `kernel_entry::with_kernel_entry` and before `enable_irq`, after the
+per-core hardware-init sequence (MMU, VBAR, GIC, timer) completes.
 
 The `coreId` argument is the PSCI `context_id` (1..=`MAX_SECONDARY_CORES`
-on RPi5; the `Fin numCores` range invariant is verified by
-`Concurrency.currentCoreId` at the first per-core kernel-state lookup
-SM5+ wires up).
+on RPi5); the verified step decodes it fail-closed
+(`perCoreRescheduleStep_invalid_core`), so an out-of-range id commits
+nothing.
 
-**SM1.C semantics**: this function returns `pure ()` immediately.
-The Rust caller idles on `wfe` after this returns.  SM5 will replace
-the body with the per-core scheduler entry (selecting from the
-runnable thread set, dispatching, and handling per-core tick IRQs).
-
-**SM5 transition**: the body will switch from `pure ()` to
-something like:
-
-```lean
-do
-  let st ← getKernelState
-  let coreId ← Concurrency.currentCoreId  -- typed CoreId
-  let st' := perCoreSchedulerEntry coreId st
-  initialiseKernelState st'
-```
-
-reusing the verified `Kernel` monad to update kernel state under
-the per-core scheduler's transition. -/
+The body is definitionally the per-core reschedule entry — bring-up is the
+core's first reschedule (see the module docstring). -/
 @[export lean_secondary_kernel_main]
-def secondaryKernelMain (_coreId : UInt64) : BaseIO Unit :=
-  pure ()
+def secondaryKernelMain (coreId : UInt64) : BaseIO Unit :=
+  perCoreRescheduleEntry coreId
 
-/-- **WS-SM SM1.C.6** structural marker: `secondaryKernelMain`
-totality.
+/-- **WS-SM SM5.C.5** structural marker: the secondary bring-up entry IS the
+reschedule entry — `rfl`, because that is the literal definition.  This is
+the substantive scheduler-entry correctness witness the SM1.C.6 placeholder
+marker (`secondaryKernelMain_returns_unit_marker`, retired with the
+placeholder) promised: through `perCoreRescheduleEntry_def`, the bring-up
+entry atomically commits the verified `perCoreRescheduleStep`, whose
+dispatch witness is `perCoreRescheduleStep_switches_current`.  Pinning the
+equality here means the two seams cannot drift apart: any future change to
+bring-up semantics must go through the shared verified step. -/
+theorem secondaryKernelMain_eq_perCoreRescheduleEntry (coreId : UInt64) :
+    secondaryKernelMain coreId = perCoreRescheduleEntry coreId := rfl
 
-A trivial witness used as a surface anchor — the function takes a
-`UInt64` and returns `BaseIO Unit`, and the return value is always
-`()`.  Pinning this here lets downstream Tier-3 scans verify the
-SM1.C placeholder semantics are preserved (SM5 will replace this
-theorem with a substantive scheduler-entry correctness witness). -/
-theorem secondaryKernelMain_returns_unit_marker (coreId : UInt64) :
-    secondaryKernelMain coreId = pure () := by
-  rfl
+/-- **WS-SM SM5.C.5**: the bring-up entry unfolds to the atomic commit of the
+verified reschedule step (the composition of
+`secondaryKernelMain_eq_perCoreRescheduleEntry` with
+`perCoreRescheduleEntry_def`, stated directly so tier-3 surface scans can
+pin the full body shape at one name). -/
+theorem secondaryKernelMain_def (coreId : UInt64) :
+    secondaryKernelMain coreId =
+      Platform.FFI.updateKernelState (fun st => perCoreRescheduleStep st coreId) := rfl
 
 end SeLe4n.Kernel

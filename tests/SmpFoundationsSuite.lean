@@ -163,9 +163,19 @@ open SeLe4n.Platform.RPi5
 #check @SeLe4n.Kernel.Concurrency.currentCoreId_in_range_marker
 #check @SeLe4n.Kernel.Concurrency.instInhabitedCoreId
 
-/-! ## SM1.C.6 — Secondary-core kernel entry (closes SMP-C2 Lean side) -/
+/-! ## SM1.C.6 / SM5.C.5 — Secondary-core kernel entry (closes SMP-C2 Lean side) -/
 #check @SeLe4n.Kernel.secondaryKernelMain
-#check @SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker
+#check @SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry
+#check @SeLe4n.Kernel.secondaryKernelMain_def
+#check @SeLe4n.Kernel.perCoreRescheduleEntry
+#check @SeLe4n.Kernel.perCoreRescheduleEntry_def
+#check @SeLe4n.Kernel.perCoreRescheduleStep
+#check @SeLe4n.Kernel.perCoreRescheduleStep_invalid_core
+#check @SeLe4n.Kernel.perCoreRescheduleStep_ok
+#check @SeLe4n.Kernel.perCoreRescheduleStep_error
+#check @SeLe4n.Kernel.perCoreRescheduleStep_preserves_objects_invExt
+#check @SeLe4n.Kernel.perCoreRescheduleStep_preserves_runQueue_wellFormed
+#check @SeLe4n.Kernel.perCoreRescheduleStep_switches_current
 
 /-! ## SM1.E.4 — Sharing-domain-routed TLBI dispatcher Lean wrapper -/
 #check @SeLe4n.Platform.FFI.ffiTlbiForSharing
@@ -326,28 +336,49 @@ example : SeLe4n.Kernel.Concurrency.bootCoreId.val
   SeLe4n.Kernel.Concurrency.currentCoreId_in_range_marker
     SeLe4n.Kernel.Concurrency.bootCoreId
 
--- §2.17 — SM1.C.6 secondaryKernelMain Lean entry placeholder
+-- §2.17 — SM1.C.6 / SM5.C.5 secondaryKernelMain Lean entry
 -- The function must accept a UInt64 (the PSCI context_id) and return
--- `BaseIO Unit`.  At SM1.C the body is `pure ()`; the
--- `secondaryKernelMain_returns_unit_marker` theorem witnesses this.
+-- `BaseIO Unit`.  Since the SM5.C.5 receiver seam landed, the body is
+-- definitionally the per-core reschedule entry — bring-up is the core's
+-- first reschedule — witnessed by
+-- `secondaryKernelMain_eq_perCoreRescheduleEntry`, and the full body
+-- shape (atomic commit of the verified `perCoreRescheduleStep`) by
+-- `secondaryKernelMain_def`.
 --
 -- Note: `BaseIO Unit` is not Decidable-equality (function types
 -- generally aren't), so these examples produce structural Prop
 -- witnesses rather than going through `decide`.  The witness is
--- discharged by `rfl` inside the marker theorem.
+-- discharged by `rfl` inside the marker theorems.
 example (coreId : UInt64) :
-    SeLe4n.Kernel.secondaryKernelMain coreId = pure () :=
-  SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker coreId
--- Concrete-instance check at boot-core context id (0).
-example : SeLe4n.Kernel.secondaryKernelMain 0 = pure () :=
-  SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 0
--- Concrete-instance check at each secondary context id (1, 2, 3).
-example : SeLe4n.Kernel.secondaryKernelMain 1 = pure () :=
-  SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 1
-example : SeLe4n.Kernel.secondaryKernelMain 2 = pure () :=
-  SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 2
-example : SeLe4n.Kernel.secondaryKernelMain 3 = pure () :=
-  SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 3
+    SeLe4n.Kernel.secondaryKernelMain coreId
+      = SeLe4n.Kernel.perCoreRescheduleEntry coreId :=
+  SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry coreId
+example (coreId : UInt64) :
+    SeLe4n.Kernel.secondaryKernelMain coreId
+      = SeLe4n.Platform.FFI.updateKernelState
+          (fun st => SeLe4n.Kernel.perCoreRescheduleStep st coreId) :=
+  SeLe4n.Kernel.secondaryKernelMain_def coreId
+-- Concrete-instance checks at each secondary context id (1, 2, 3) and
+-- the boot-core context id (0): the seam identity holds at every core.
+example : SeLe4n.Kernel.secondaryKernelMain 0
+    = SeLe4n.Kernel.perCoreRescheduleEntry 0 :=
+  SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry 0
+example : SeLe4n.Kernel.secondaryKernelMain 1
+    = SeLe4n.Kernel.perCoreRescheduleEntry 1 :=
+  SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry 1
+example : SeLe4n.Kernel.secondaryKernelMain 2
+    = SeLe4n.Kernel.perCoreRescheduleEntry 2 :=
+  SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry 2
+example : SeLe4n.Kernel.secondaryKernelMain 3
+    = SeLe4n.Kernel.perCoreRescheduleEntry 3 :=
+  SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry 3
+-- Fail-closed decode: an out-of-range PSCI context_id commits nothing
+-- (the verified step is the identity there), pinned at the first
+-- out-of-range id.
+example (st : SeLe4n.Model.SystemState) :
+    SeLe4n.Kernel.perCoreRescheduleStep st
+      (UInt64.ofNat SeLe4n.Kernel.Concurrency.numCores) = st :=
+  SeLe4n.Kernel.perCoreRescheduleStep_invalid_core st _ (by decide)
 
 -- §2.18 — SM1.E.4 TLBI dispatcher tag encoding witnesses
 -- Every variant of TlbInvalidation maps to a distinct op tag in [0, 4),
@@ -699,51 +730,57 @@ private def runCurrentCoreIdChecks : IO Unit := do
       decide (c.val < SeLe4n.Kernel.Concurrency.numCores)))
 
 private def runSecondaryKernelMainChecks : IO Unit := do
-  -- WS-SM SM1.C.6: secondary-core kernel-entry placeholder.
+  -- WS-SM SM1.C.6 / SM5.C.5: secondary-core kernel entry.
   --
   -- The Lean entry point is the `@[export lean_secondary_kernel_main]`
-  -- function consumed by the Rust HAL's `rust_secondary_main`.  At
-  -- SM1.C the body is `pure ()`; we verify the structural property
-  -- via the `secondaryKernelMain_returns_unit_marker` theorem (which
-  -- is `rfl` because `pure ()` is the actual function body).  SM5+
-  -- replaces both the body and this proof with substantive
-  -- scheduler-entry correctness checks.
+  -- function consumed by the Rust HAL's `rust_secondary_main`.  Since
+  -- the SM5.C.5 receiver seam landed, the body is definitionally the
+  -- per-core reschedule entry (bring-up is the core's first
+  -- reschedule); we verify the structural property via the
+  -- `secondaryKernelMain_eq_perCoreRescheduleEntry` /
+  -- `secondaryKernelMain_def` marker theorems (both `rfl` against the
+  -- actual function body).
   --
   -- Note: `BaseIO Unit` is not Decidable-equality, so we cannot use
   -- `decide` to compare two `BaseIO` actions.  Instead we exercise:
-  --   1. The marker-theorem call (typechecks ⟹ structural witness OK).
+  --   1. The marker-theorem calls (typecheck ⟹ structural witness OK).
   --   2. The runtime `BaseIO` execution (no fault ⟹ host-callable).
-  IO.println "--- §2.17 SM1.C.6 secondaryKernelMain entry placeholder ---"
-  -- Marker theorem discharges by `rfl` for every UInt64 input — we
-  -- type-check the call to confirm the theorem is in scope and
-  -- structurally total.  A regression that broke the placeholder
-  -- semantics (e.g., changed the body to something other than
-  -- `pure ()`) would fail to elaborate the marker theorem at the
-  -- module level, failing the build before this suite runs.
+  IO.println "--- §2.17 SM1.C.6/SM5.C.5 secondaryKernelMain entry ---"
+  -- Marker theorems discharge by `rfl` for every UInt64 input — we
+  -- type-check the calls to confirm the theorems are in scope and
+  -- structurally total.  A regression that broke the seam identity
+  -- (e.g., gave bring-up a bespoke body that drifts from the
+  -- reschedule receiver) would fail to elaborate the marker theorem
+  -- at the module level, failing the build before this suite runs.
   let _proof_0 :=
-    SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 0
+    SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry 0
   let _proof_1 :=
-    SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 1
+    SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry 1
   let _proof_2 :=
-    SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 2
+    SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry 2
   let _proof_3 :=
-    SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 3
-  assertBool "secondaryKernelMain_returns_unit_marker reachable on every context_id 0..3"
+    SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry 3
+  let _proof_body := SeLe4n.Kernel.secondaryKernelMain_def 0
+  assertBool "secondaryKernelMain seam-identity marker reachable on every context_id 0..3"
     true
   -- Actually execute the BaseIO action at runtime to confirm it
-  -- doesn't fault.  Returns Unit on the simulation path (no FFI
-  -- call, no hardware access).  A regression that introduced a
-  -- panic, IO action, or non-terminating loop in the placeholder
-  -- would surface here.
+  -- doesn't fault.  On the host the commit runs the verified
+  -- `perCoreRescheduleStep` against the default-initialised
+  -- kernel-state ref: every run queue is empty, so
+  -- `chooseThreadEffectiveOnCore` returns `none` and the handler is
+  -- the identity (`handleRescheduleSgiOnCore_idle_when_none`) — the
+  -- commit installs the state unchanged.  A regression that
+  -- introduced a panic, a non-terminating loop, or a spurious
+  -- dispatch on the empty-queue path would surface here.
   let _ ← SeLe4n.Kernel.secondaryKernelMain 0
   let _ ← SeLe4n.Kernel.secondaryKernelMain 1
   let _ ← SeLe4n.Kernel.secondaryKernelMain 2
   let _ ← SeLe4n.Kernel.secondaryKernelMain 3
   assertBool "secondaryKernelMain runtime invocation on context_ids 0..3" true
   -- Boundary inputs: confirm the function tolerates extreme context_id
-  -- values without aborting.  At SM1.C the body ignores the argument;
-  -- if SM5+ adds a range check it should fail closed via the typed
-  -- `CoreId` wrapper, not by panicking in `secondaryKernelMain`.
+  -- values without aborting.  The verified step decodes the id
+  -- fail-closed (`perCoreRescheduleStep_invalid_core`): an
+  -- out-of-range id commits the state unchanged rather than panicking.
   let _ ← SeLe4n.Kernel.secondaryKernelMain (UInt64.ofNat (Nat.pow 2 32))
   let _ ← SeLe4n.Kernel.secondaryKernelMain (UInt64.ofNat (Nat.pow 2 63))
   let _ ← SeLe4n.Kernel.secondaryKernelMain UInt64.size.toUInt64

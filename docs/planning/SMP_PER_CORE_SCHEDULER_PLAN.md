@@ -427,6 +427,23 @@ similar to SM0/SM1 patterns.)
 | SM5.C.11 | SGI delivery latency bound | M |
 | SM5.C.12 | Cross-core wake round-trip tests | L |
 
+> **WS-SM SM5.C LANDED at v0.31.40** (all 12 sub-tasks; three audit
+> passes — see the CLAIM_EVIDENCE_INDEX entry for the per-claim
+> record).  **SM5.C.5 receiver runtime seam completed with the SM5
+> seam-completion cut**: the verified `handleRescheduleSgiOnCore` is
+> now driven at runtime by the fail-closed `perCoreRescheduleStep`
+> (`Scheduler/Operations/PerCoreRunLoop.lean`) behind the
+> `@[export lean_per_core_reschedule]` entry
+> (`Kernel/PerCoreRescheduleEntry.lean`), which the Rust
+> `.reschedule` SGI handler (`trap.rs::reschedule_sgi_handler`,
+> registered at boot for INTID 0) invokes under the kernel-entry
+> lock.  The same step is the secondary bring-up body
+> (`secondaryKernelMain_eq_perCoreRescheduleEntry` — bring-up is the
+> core's first reschedule), and `trap.S`'s IRQ vectors were
+> redirected to `handle_irq_per_core` in the same cut (pinned by
+> `build.rs::scan_trap_s_irq_vector_redirect` /
+> `scan_reschedule_sgi_seam_intact`).
+
 ### SM5.D — Per-core timer tick (4 PRs, 10 sub-tasks)
 
 | Sub | Description | Est |

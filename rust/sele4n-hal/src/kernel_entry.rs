@@ -27,23 +27,34 @@
 //!
 //! # What it protects
 //!
-//! Every Lean entry that commits kernel state — all three:
+//! Every Lean entry that commits kernel state — all five:
 //!
 //! | Lean export | Rust bracket |
 //! |---|---|
 //! | `lean_syscall_dispatch_cross_core` | `svc_dispatch::dispatch_svc` |
-//! | `lean_per_core_timer_tick`         | `timer::handle_timer_interrupt` |
+//! | `lean_per_core_timer_tick`         | `timer::per_core_timer_tick_isr` |
+//! | `lean_per_core_reschedule`         | `trap::reschedule_sgi_handler` |
+//! | `lean_secondary_kernel_main`       | `smp::rust_secondary_main` |
 //! | `suspend_thread_cross_core`        | `ffi::sele4n_suspend_thread` |
 //!
-//! The third is the one to watch for: it reaches Lean through
+//! The last is the one to watch for: it reaches Lean through
 //! `sele4n_suspend_thread` rather than a `lean_*` symbol, so a sweep
 //! for `lean_` does not find it. A lost suspend is a thread that keeps
 //! running after its caller was told it stopped.
 //!
-//! `lean_kernel_main` and `lean_secondary_kernel_main` are deliberately
-//! **not** bracketed: they are bring-up entries that run before their
-//! core participates in concurrent kernel entry, and `lean_kernel_main`
-//! runs before any secondary exists at all.
+//! The secondary bring-up entry is bracketed *and* ordered: it runs
+//! before `enable_irq` on its core, so a tick cannot preempt the
+//! bracket and queue behind a ticket its own core holds (this lock is
+//! not reentrant) — the same IRQs-masked-while-held discipline the trap
+//! handlers get from `PSTATE.I` staying set until exception return.
+//!
+//! `lean_kernel_main` (the primary's boot seam, owed by the SM10.E
+//! image target) is the one committing path outside the bracket today.
+//! Phase 6 runs it after Phase 5 has released the secondaries, so its
+//! `initialiseKernelState` install would race their bracketed ticks:
+//! SM10.E MUST either order the install before secondary release or
+//! take this bracket around it (recorded in
+//! `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`).
 //!
 //! `syscall_dispatch_inner` and `suspend_thread_inner` are the legacy
 //! boot-pinned seams the cross-core entries replaced; they are not

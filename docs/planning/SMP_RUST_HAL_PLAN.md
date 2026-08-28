@@ -1106,13 +1106,19 @@ Lean kernel with the same hardware posture as the primary):
   fails the build if any is silently dropped.
 - **SM1.C.6** Lean `secondaryKernelMain : UInt64 → BaseIO Unit`
   with `@[export lean_secondary_kernel_main]` — new module
-  `SeLe4n/Kernel/SecondaryEntry.lean`.  At SM1.C the body is
-  `pure ()` (deliberate placeholder; SM5 replaces with the
-  per-core scheduler entry).  Surface-anchor theorem
-  `secondaryKernelMain_returns_unit_marker` proves the placeholder
+  `SeLe4n/Kernel/SecondaryEntry.lean`.  At SM1.C the body was
+  `pure ()` (deliberate placeholder; the per-core scheduler state it
+  would enter did not exist yet).  Surface-anchor theorem
+  `secondaryKernelMain_returns_unit_marker` proved the placeholder
   semantics by `rfl` for downstream Tier-3 scans.  Module reached
   via `SeLe4n/Platform/Staged.lean`; added to the staged-module
-  allowlist per WS-RC R12.B.
+  allowlist per WS-RC R12.B.  **Replacement LANDED with the SM5.C.5
+  seam completion**: the body is now definitionally the per-core
+  reschedule entry (`secondaryKernelMain_eq_perCoreRescheduleEntry`
+  over the verified `perCoreRescheduleStep`), the Rust caller
+  brackets it in `kernel_entry::with_kernel_entry` and orders it
+  before `enable_irq`, and the placeholder marker was retired for
+  the seam-identity + body-shape markers.
 - **SM1.C.7..C.11** Documentation-only sub-tasks — per-core stack
   reservation (link.ld already in place; verified unchanged),
   MMU page-table reuse rationale (`mmu.rs` module docstring),
@@ -2609,11 +2615,12 @@ dispatch / timer-tick / SGI statistics via `per_cpu_stats::record_*`,
 then dispatches via `gic::dispatch_irq` with per-core attribution in
 the unhandled-INTID log line.
 
-**SM5 landing seam**: SM5 will swap the assembly entry vector from
-`handle_irq` to `handle_irq_per_core`.  At SM1.I the assembly entry
-still calls `handle_irq` (single-core legacy entry); both functions
-have identical `extern "C" fn(&mut TrapFrame)` signatures so SM5's
-swap is a single function-pointer change.
+**SM5 landing seam — LANDED**: the assembly entry vector was swapped
+from `handle_irq` to `handle_irq_per_core` when the SM5 per-core
+scheduler seams were completed (both IRQ vectors in `trap.S` now
+branch to the per-core handler, pinned by
+`build.rs::scan_trap_s_irq_vector_redirect`); the single-core legacy
+`handle_irq` was removed with the swap.
 
 **SGI dispatch**: at SM1.I.1 SGIs (INTID 0..15) increment the
 per-core counter but do NOT route through the SGI handler table —
@@ -3005,13 +3012,14 @@ side-branch joining at SM1.H.5).
 **Items deferred past v1.0.0 with correctness impact**: NONE.
 
 **Items deferred to SM5+ (per-core scheduler state)** with no
-correctness impact at SM1:
-- `handle_irq_per_core` is added as the SM5 landing seam but the
-  assembly entry still calls `handle_irq`.  SM5 swaps the entry
-  vector.
-- SGI dispatch through the registered SGI handler table requires a
-  `dispatch_irq_with_iar` variant that preserves the full IAR (not
-  just the INTID).  SM5 wires this.
+correctness impact at SM1 — both since landed:
+- `handle_irq_per_core` was added as the SM5 landing seam; the
+  assembly entry vector swap from `handle_irq` landed with the SM5
+  seam completion (pinned by
+  `build.rs::scan_trap_s_irq_vector_redirect`).
+- SGI dispatch through the registered SGI handler table via the
+  full-IAR-preserving `dispatch_irq_with_iar` variant landed at
+  SM7.B.3.
 - The Lean-side idle TCB consumes `ffi_idle_wait`; SM5 introduces
   the per-core idle thread.
 - The Lean-side per-core stats consumers (read paths via
