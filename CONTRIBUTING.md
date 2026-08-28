@@ -48,8 +48,9 @@ rejects any commit that introduces a `sorry`. **Do not bypass it with
 `--no-verify`** — if it blocks a commit, fix the underlying issue.
 
 `scripts/setup_lean_env.sh` runs the installer automatically; CI invokes
-`./scripts/install_git_hooks.sh --check` to enforce hook presence on the
-contributor's clone for any merged PR.
+`./scripts/install_git_hooks.sh --check` on its own checkout to assert the
+installer ran end-to-end, so a regression in the auto-install path fails
+every PR.
 
 ## Required validation before opening a PR
 
@@ -58,10 +59,13 @@ contributor's clone for any merged PR.
 ./scripts/test_full.sh      # required for theorem/invariant changes (Tier 0-3)
 ```
 
-For Rust-side changes, additionally run:
+For Rust-side changes, additionally run the full Rust gate (what CI and
+`test_smoke.sh` actually run — it adds `--features std` tests, the ABI
+conformance suite, `cargo fmt --check`, and all-targets clippy on top of
+the bare workspace test):
 
 ```bash
-cd rust && cargo test --workspace && cargo clippy --workspace -- -D warnings
+./scripts/test_rust.sh
 ```
 
 For ABI / decode-layer changes, also run:
@@ -73,8 +77,10 @@ For ABI / decode-layer changes, also run:
 
 ## File-size convention (2000-LOC ceiling)
 
-Production `.lean` modules SHOULD stay under **2000 LOC**. Files that have
-grown past this ceiling are split into a re-export hub plus child modules
+Production `.lean` modules SHOULD stay under **2000 LOC**. This is
+guidance, not a gate — a number of proof-heavy modules exceed it (the
+curated list lives in CLAUDE.md under "Known large files") — and the
+remedy when a split is warranted is a re-export hub plus child modules
 (see `SeLe4n/Kernel/IPC/Invariant/Structural.lean`,
 `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`, and
 `SeLe4n/Kernel/Lifecycle/Operations.lean` for examples). Hub files are

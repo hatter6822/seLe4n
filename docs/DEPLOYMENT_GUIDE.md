@@ -1,9 +1,9 @@
 # seLe4n Production Deployment Guide
 
-**Version**: 0.25.13
+**Version**: 0.33.101 (originally written at 0.25.13; §2.3 updated for WS-SM SM9)
 **Status**: Pre-release — requires external threat-model review before high-assurance deployment
 **Audit reference**: `docs/dev_history/audits/AUDIT_v0.25.10_PRE_RELEASE.md`
-**Phase**: WS-AD/AD3 (F-04, F-05, F-06, F-07)
+**Phase**: WS-AD/AD3 (F-04, F-05, F-06, F-07), SM8.C/SM9 amendments
 
 ---
 
@@ -24,7 +24,7 @@ The kernel enforces non-interference (NI) across the following subsystems:
 - **Lifecycle** (thread suspend/resume, object retype)
 - **Decode/dispatch** (syscall argument decode, capability-gated dispatch)
 
-The NI model uses 32 `NonInterferenceStep` constructors
+The NI model uses 35 `NonInterferenceStep` constructors
 (`SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean`) covering all
 kernel-primitive transitions with per-step and trace-level NI proofs.
 
@@ -52,13 +52,13 @@ blocked.
 
 **Formal witnesses** (`SeLe4n/Kernel/InformationFlow/Policy.lean`):
 
-| Theorem | Line | Purpose |
-|---------|------|---------|
-| `integrityFlowsTo_is_not_biba` | 115 | Proves seLe4n differs from BIBA |
-| `integrityFlowsTo_prevents_escalation` | 157 | Proves escalation is denied |
-| `securityFlowsTo_prevents_label_escalation` | 193 | Combined 2D label proof |
+| Theorem | Purpose |
+|---------|---------|
+| `integrityFlowsTo_is_not_biba` | Proves seLe4n differs from BIBA |
+| `integrityFlowsTo_prevents_escalation` | Proves escalation is denied |
+| `securityFlowsTo_prevents_label_escalation` | Combined 2D label proof |
 
-A standard BIBA reference implementation (`bibaIntegrityFlowsTo`, ) is
+A standard BIBA reference implementation (`bibaIntegrityFlowsTo`) is
 provided for comparison and could serve as a drop-in replacement if a deployment
 requires strict BIBA semantics.
 
@@ -88,8 +88,8 @@ creating a bounded covert channel.
 
 **Formal witnesses** (`SeLe4n/Kernel/InformationFlow/Projection.lean`):
 
-| Theorem | Line | Purpose |
-|---------|------|---------|
+| Theorem | Where | Purpose |
+|---------|-------|---------|
 | `acceptedCovertChannel_scheduling` | `Projection.lean` | Witnesses channel existence |
 | `schedulingCovertChannel_bounded_width` | `Projection.lean` | Confirms the channel is transparent (the projections are the raw scheduler reads) — **not** a capacity bound |
 | `schedulingChannel_not_bounded_by_scheduleLength` | `CovertChannelPerCore.lean` | Why Q is required: `domainTimeRemaining` is an unrestricted `Nat`, so schedule length alone bounds nothing |
@@ -105,7 +105,9 @@ Each domain receives guaranteed time quanta.
 **You must supply a non-empty schedule and a countdown cap Q.**  Both are
 deployment obligations; the kernel discharges the other three conditions
 (`domainScheduleIndexInBoundsOnCore`, `domainConsistentOnCore`, and an unchanged
-`domainSchedule` — there is no `setDomainSchedule` in the model).  The full list
+`domainSchedule` — the model's one schedule mutator,
+`setDomainScheduleChecked` in `Model/State.lean`, is exercised only from
+test harnesses and no syscall routes to it).  The full list
 is `schedulingCapacityPreconditions` / `schedulingCapacityComparable` in
 `CovertChannelPerCore.lean`; `docs/SECURITY_ADVISORY.md` §SA-3 tabulates who
 discharges each.  An empty schedule (single-domain mode) makes the index-bounds
@@ -149,10 +151,10 @@ information flow is restricted**.
 
 **Formal proof of insecurity** (`SeLe4n/Kernel/InformationFlow/Policy.lean`):
 
-| Theorem | Line | Proves |
-|---------|------|--------|
-| `defaultLabelingContext_insecure` | 240 | All object pairs allow flow |
-| `defaultLabelingContext_all_threads_observable` | 250 | All threads mutually observable |
+| Theorem | Proves |
+|---------|--------|
+| `defaultLabelingContext_insecure` | All object pairs allow flow |
+| `defaultLabelingContext_all_threads_observable` | All threads mutually observable |
 
 **Production deployments MUST override `defaultLabelingContext`** with a
 domain-specific labeling policy. Failure to do so negates all information-flow
@@ -179,9 +181,12 @@ def productionLabelingContext : LabelingContext :=
     serviceLabelOf := fun _ => SecurityLabel.kernelTrusted }
 ```
 
-The `LabelingContext` structure (`Policy.lean`) requires four label
+The `LabelingContext` structure (`Policy.lean`) carries four label
 assignment functions (`objectLabelOf`, `threadLabelOf`, `endpointLabelOf`,
-`serviceLabelOf`) plus an optional `memoryOwnership` for memory projection.
+`serviceLabelOf`), an optional `memoryOwnership` for memory projection,
+and three policy knobs: `endpointPolicy` and `declassificationPolicy`
+(§2.3) and `auditMonitorClearance` — the audit-trail read/drain gate a
+declassifying deployment must configure (§2.3).
 
 See also: `docs/SECURITY_ADVISORY.md` SA-2.
 
@@ -269,12 +274,40 @@ capacity, `.declassify` **refuses the downgrade** with
 `.auditLogCapacityExceeded` rather than dropping a record: an authorized
 downgrade the kernel did not record is precisely the failure the audit exists to
 prevent.  A deployment that declassifies routinely must therefore treat
-`.auditLogCapacityExceeded` as an operational alert — and note that **this
-release ships no interface for reading or draining the trail** (the trail is
-deliberately outside the information-flow projection; a privileged reader owes
-its own flow argument and is SM8.E scope).  Until that lands, a deployment
-either declassifies fewer than 256 times per boot or accepts that
-`.declassify` stops working after that.
+`.auditLogCapacityExceeded` as an operational alert.
+
+**The reader and drain exist (WS-SM SM9.A, v0.33.42+).**  Two live syscalls
+close the 256-entry cliff: `.auditRead` (SyscallId 31) and `.auditDrain`
+(SyscallId 32), implemented in `SeLe4n/Kernel/InformationFlow/AuditRead.lean`
+behind a dedicated `CapTarget.auditTrail` capability. The clearance filter
+(`auditLogVisibleTo`) is a function of the reader's clearance alone; a
+**drain** additionally demands a complete view — the transition guard
+(`auditDrainViewComplete`) refuses any drain whose clearance hides a
+recorded source domain, because a partial-visibility drain would reveal
+the positions of hidden entries. **Deployment-mandatory knob**: the live
+`.auditRead`/`.auditDrain` arms consume the configured clearance only
+through `validatedAuditMonitorClearance` (`AuditRead.lean`), which admits
+it only when it dominates **all four** legacy security labels
+(`legacySubjectLabels` — the kernel's entire subject/object label space)
+and validates to `none` otherwise. A deployment that declassifies at all
+must therefore configure `auditMonitorClearance` to dominate every legacy
+label — a clearance covering merely the domains the policy lets
+declassify is rejected whole, leaving **no monitor at all** (exactly the
+unconfigured posture) — and run a monitor that drains the trail; an
+unconfigured deployment has no audit reader and keeps the 256-per-boot
+cliff as its conservative default.
+
+**The declassification surface is wider than `.declassify` (SM9.B–SM9.D).**
+`.declassifySignal` (SyscallId 33) is the data-carrying declassification — a
+bound notification signal whose badge may cross a boundary the base lattice
+denies, gated on both hops and recorded per authorized hop. Refused
+downgrades are recorded too: the type-bounded refusal ledger
+(`SystemState.declassificationRefusals`, SM9.B) lets a monitor distinguish
+"no attempts" from "many attempts, all denied", read through `.auditRead`
+sub-operations behind the same monitor gate. Causal provenance
+(`DeclassificationTaint`, SM9.D) lets the monitor's laundering detector
+follow content through ordinary IPC between two downgrades instead of
+guessing from domains and timestamps.
 
 ---
 
@@ -284,7 +317,7 @@ The kernel's non-interference guarantees have an explicitly documented boundary.
 
 ### 3.1 What Is Covered
 
-The 32 `NonInterferenceStep` constructors in
+The 35 `NonInterferenceStep` constructors in
 `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` cover all kernel
 primitive transitions. Per-step NI proofs and trace-level composition theorems
 ensure that information flows only through policy-authorized channels.
@@ -320,8 +353,10 @@ The kernel NI guarantees do not extend to service orchestration semantics.
 - [ ] **Integrity model reviewed** (F-04) -- assess whether the non-BIBA
   authority-flow model matches your deployment's threat model; consider
   external review for high-assurance environments
-- [ ] **Covert channel bandwidth acceptable** (F-06) -- evaluate whether
-  &le;400 bps scheduling covert channel is within acceptable limits for your
+- [ ] **Covert channel bandwidth acceptable** (F-06) -- budget the
+  scheduling covert channel against the proven upper bound in §1.3 (your
+  N, Q and tick rate; &le;12,000 bits/second at the canonical bounds — no
+  smaller "practical" figure is offered) and confirm it is within your
   security policy
 - [ ] **Service-layer NI analyzed separately** (F-05) -- kernel NI does not
   cover service orchestration; conduct independent analysis if service
@@ -331,11 +366,14 @@ The kernel NI guarantees do not extend to service orchestration semantics.
 - [ ] **Endpoint overrides reviewed for availability** (SM8.C) -- a widening
   `endpointPolicy` override cannot leak (the gate conjoins), but a narrowing one
   can refuse traffic policy intended to allow; review §2.x
-- [ ] **Declassification policy decided** (SM8.C) -- the default is deny-all and
-  `.declassify` is refused outright; if a trusted downgrader is configured, size
-  the 256-entry audit trail against the expected downgrade rate and treat
-  `.auditLogCapacityExceeded` as an alert (no trail-reading interface ships in
-  this release)
+- [ ] **Declassification policy decided** (SM8.C/SM9) -- the default is deny-all
+  and `.declassify` is refused outright; if a trusted downgrader is configured,
+  treat `.auditLogCapacityExceeded` as an alert AND provision the read/drain
+  path (§2.3): grant the monitor a `CapTarget.auditTrail` capability, configure
+  `auditMonitorClearance` to dominate **all four** legacy security labels
+  (`validatedAuditMonitorClearance` rejects anything less, leaving no monitor
+  at all), and run a drain process -- an unconfigured deployment keeps the
+  256-per-boot fail-closed cliff
 - [ ] **Security advisory reviewed** -- read `docs/SECURITY_ADVISORY.md`
   (SA-1: starvation, SA-2: labeling, SA-3: covert channel)
 - [ ] **Test suite passed** -- run `./scripts/test_full.sh` with production

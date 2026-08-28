@@ -1,9 +1,11 @@
 # WS-SM — SMP / Multi-Core Completion (pre-v1.0.0) — Overview
 
-> **Status**: PLAN (overview) — unified workstream closing at
-> v1.0.0. WS-RC and WS-SM are merged.
+> **Status**: IN EXECUTION (overview) — unified workstream closing at
+> v1.0.0. WS-RC and WS-SM are merged. SM0–SM9 and WS-RA have landed
+> (§9 per-phase table); SM10 (release closure) is the remaining phase.
 >
-> **Audited cut**: `v0.31.2` (current `lakefile.toml::version`).
+> **Audited cut**: `v0.31.2` (the `lakefile.toml::version` at plan time;
+> the tree has since moved well past it — see §9 for per-phase landings).
 >
 > **Branch (this audit)**: `claude/audit-multicore-implementation-sUcIx`.
 >
@@ -374,13 +376,13 @@ Document: [`SMP_INFORMATION_FLOW_PLAN.md`](SMP_INFORMATION_FLOW_PLAN.md).
 per-core NI proofs; lock-contention covert channel
 documentation; per-core declassification audit.
 
-### SM9 — Declassification completion
+### SM9 — Declassification completion — CLOSED (v0.33.42 → v0.33.100)
 
 Document: [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md).
 
 **Was blocked on WS-RA** ([`SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md)),
-which was implemented first — **core landed at v0.33.37, so SM9 is
-unblocked**.  SM9.A's audit reader and SM9.C's data-carrying declassification
+which was implemented first — core landed at v0.33.37, unblocking SM9,
+whose phases A–E then landed through the v0.33.100 closure.  SM9.A's audit reader and SM9.C's data-carrying declassification
 are both *value-returning* syscalls, and before WS-RA the kernel had no
 syscall return path: `dispatchWithCapChecked` was `Kernel Unit` over a return
 register no transition wrote, so both would have computed the right answer
@@ -505,13 +507,14 @@ WS-RC and WS-SM are merged. Opens immediately at v0.31.2 boundary.
 | Phase | Releases | Estimated calendar |
 |-------|----------|--------------------|
 | SM0 | v0.31.3 (LANDED) | single cut (compressed from the original v0.31.9..v0.32.x ~18-PR spread per maintainer redirection) |
-| SM1 | v0.31.3 → v0.31.8 (LANDED) | 9 sub-phases (SM1.A–SM1.I), all landed in compressed cadence; SM2 still pending |
-| SM1 ‖ SM2 | v0.33.0 → v0.45.x | 16-22 weeks (parallel) |
-| SM3 | v0.46.0 → v0.52.x | 8-12 weeks |
-| SM4 | v0.53.0 → v0.70.x | 20-26 weeks (largest phase) |
-| SM5 | v0.71.0 → v0.82.x | 12-16 weeks |
-| SM6 | v0.83.0 → v0.90.x | 8-12 weeks |
-| SM7 ‖ SM8 | v0.91.0 → v0.97.x | 6-10 weeks (parallel) |
+| SM1 | v0.31.3 → v0.31.8 (LANDED) | 9 sub-phases (SM1.A–SM1.I), all landed in compressed cadence |
+| SM2 | v0.31.9 (LANDED) | memory model, TicketLock, RwLock, FFI bridge, refinement (original estimate v0.33.0 → v0.45.x, 16-22 weeks parallel with SM1) |
+| SM3 | v0.31.9 (CLOSED) | per-object locks, lock sets, 2PL, deadlock-freedom, serializability (original estimate v0.46.0 → v0.52.x) |
+| SM4 | v0.31.37 (LANDED) | per-core `Vector` state migration (original estimate v0.53.0 → v0.70.x, largest phase) |
+| SM5 | v0.31.38 → v0.31.64 (LANDED) | per-core scheduler A–K (original estimate v0.71.0 → v0.82.x) |
+| SM6 | v0.31.65 → v0.32.68 (LANDED) | cross-core IPC A–F (original estimate v0.83.0 → v0.90.x) |
+| SM7 | v0.32.72 → v0.32.151 (LANDED; SM7.D closed at model level) | TLB shootdown + cache maintenance (original estimate v0.91.0 → v0.97.x parallel with SM8) |
+| SM8 | v0.33.2 → v0.33.23 (CLOSED) | SMP information flow A–E |
 | **WS-RA** | v0.33.36 → v0.33.38 | **COMPLETE** (estimate was 5-8 weeks; the flip collapsed to one atomic cut, RA.B.5b + RA.B.8 followed at v0.33.38.  SM10.E owes delivery + cancellation error frames) |
 | SM9 | after WS-RA — **CLOSED (v0.33.100)** | closed at SM9.E: A (the audit trail's reader — the 256-entry cliff SM8.C.8 left, closed), B (refusal auditing), C (the data-carrying declassification), D (causal provenance), E (tests + closure — the acceptance scenarios pinned as golden fixtures) |
 | SM10 | v0.98.0 → **v1.0.0** | 4-6 weeks |

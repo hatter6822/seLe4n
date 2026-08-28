@@ -1,3 +1,166 @@
+## v0.34.0 — the documentation audited whole, and the audited line advances a minor
+
+One cut, three movements: the deep documentation audit (narrated in full
+below), a maintainer-directed **minor** bump on top of it — the explicit
+maintainer instruction that supersedes the default every-PR-patch-bump
+convention for this release — and the closure of the four bot review
+rounds the PR drew.  No functional change beyond shell-script fixes and
+one CI gate addition.  `./scripts/bump_version.sh 0.34.0` rewrote
+all 36 registered version sites (verified by `check_version_sync.sh`),
+including, for the first time under gate control, the Version rows of all
+eleven `docs/i18n/*/README.md` translations that this same cut's audit
+registered in `scripts/version_locations.sh` — the bump exercised those
+nine new registrations end to end.  The i18n prose is
+aligned by this cut's re-sync; `docs/i18n/LANGUAGES.md`'s sync marker
+and the WS-SM version-trail arrows (`docs/WORKSTREAM_HISTORY.md`, GitBook
+chapter 05) now include the v0.34.x series.  Historical "as of" figures
+are left as written per the record convention.
+
+**Same cut — the Codex review on PR #878 closed, all six findings real.**
+The audit's own patches drew a bot review that caught what the
+audit wrote imprecisely, and two genuine gaps it had only documented:
+`HARDWARE_TESTING`'s interim "build the raw kernel binary" fallback
+pointed at a library-only crate (no `[[bin]]`, no `main.rs` — the command
+yields an `.rlib`), so the guide now says plainly that no manual path
+exists until SM10.E ships the bootable target, and notes that
+`test_qemu.sh` SKIPs at its kernel-binary check until then; the §4.4
+sample program still looped syscall ids `0..24` (now `0..33`);
+`rustup target add` ran outside `rust/` in both the guide and
+`hardware_test_env_setup.sh`, landing the target in the default toolchain
+instead of the pinned one (both now run from `rust/`, and the script's
+`|| true` failure mask became an explicit warn); the VSpace ADR's closing
+line still called finite-map ASID indexing "future work" two paragraphs
+under the row recording its delivery; and — the two implemented
+improvements rather than reworded claims — `Rust ABI Tests` joined both
+required-check enumerations in `CI_POLICY.md` §1/§4, and
+`test_tier2_determinism.sh` now runs in the PR smoke CI job
+(`lean_action_ci.yml`, lane `smoke-determinism`) instead of being
+attributed to the schedule-only nightly.
+
+**Rounds two through five — the reviewer read the fixes, and three times
+was right about them.**  Twelve further findings across four rounds; two
+declined once each with rationale (the version-policy revert a maintainer
+instruction supersedes, and the repeat demand to build the SM10.E image
+inside a documentation cut).  The substantive closures: the FFI extern
+count re-measured on the comment-free code view (66, not the 72 raw-text
+matches); GitBook 15's argument-structure line, over-corrected in round
+three with the Lean-side count, now states both truths — 19 Rust `*Args`
+structures in `sele4n-abi`'s `args/` tree, 27 decode structures in
+`SyscallArgDecode.lean`, the notification/receive/audit shapes existing
+only on the Lean side; DEPLOYMENT_GUIDE's audit-monitor knob no longer
+understates its own gate — `validatedAuditMonitorClearance` admits a
+clearance only when it dominates **all four** legacy labels, so covering
+merely the declassifying domains buys no monitor at all; SECURITY_ADVISORY
+SA-1 now scopes the WCRT liveness theorems exactly — the band-progress
+obligation is the externalized hypothesis, only its `eventuallyExits`
+sub-piece has an RPi5 discharge, and the open FIFO composition is
+registered as standing debt in `CLAUDE.md`; and `test_qemu.sh` stopped
+soft-passing a hung kernel — empty serial output, a missing banner, or
+any absent `qemu_boot_expected.txt` fragment is now a hard failure once
+QEMU runs (the library-only SKIP stays the only soft path until SM10.E).
+The fifth round caught that hardening's own consequence: the fixture's
+TPIDR fragment predated audit-pass-4's move of the write to Phase 1 and
+could never have matched, so it now mirrors `boot.rs`'s live message —
+with all eight fragments re-checked against the emitted lines.
+
+Zero sorry/axiom untouched; trace fixture byte-identical.
+
+**The audit itself — every count re-measured, every status re-dated, the
+mirrors pulled up to the tree.**
+A deep documentation audit of the entire prose surface — README, spec,
+claim-evidence index, GitBook chapters, ADRs, deployment/security/hardware
+guides, planning headers, workstream history, Rust crate docstrings, and the
+eleven translations — every verifiable claim re-checked against the code, per
+instruction.  Verdict: the machine-synced sites (version badges, `readme_sync`
+metrics, count-pinning theorems) were uniformly correct; the drift lived in
+hand-maintained prose, concentrated where a number or status was restated
+instead of cited.  All of it is closed in this cut; nothing here changes any
+kernel semantics (one docstring and three Rust doc-comments are the only
+source-file edits, plus one shell-script ordering bug).
+
+**The front door stopped pointing backwards.**  README's "What's next" named
+**WS-V** — a workstream complete since v0.22.x, the exact stale-future-cite
+class AK9 once remediated in source comments — as the next major milestone,
+beside a completed-workstreams table frozen at WS-AE/AF/AG and a comparison
+row quoting 2,725 proved declarations against the synced table's 9,601 one
+screen up.  The section now states the true state (WS-SM SM0–SM9 landed, SM10
+→ v1.0.0 remaining, WS-RA complete); duplicated metrics now point at the one
+synced table instead of restating it; `blockingChainAcyclic` — a theorem name
+that exists nowhere — is corrected to the real `blockingAcyclic`; the
+`proofLayerInvariantBundle` claim grew from the 11 conjuncts it stopped
+counting at to the 16 the definition carries; 20 frozen operations became the
+24 the operation table lists; 7 liveness modules became 8.
+
+**Counts that a single code change moved, moved everywhere at last.**  The
+enforcement boundary is 43 entries / 13 policy-gated (`enforcementBoundary-
+Extended_count`); `NonInterferenceStep` has 35 constructors; `SyscallId` has
+34 variants; `ipcInvariantFull` has 20 conjuncts; `ObservableState` has 12
+fields; Rust `KernelError` carries 57 kernel discriminants plus the sentinel;
+`TypeTag` has 8 variants; `ArchAssumption` has 6.  Every place that still
+said 42/32/13-through-26/9-or-14/9/49/7/5 — spec §§3–11, DEVELOPMENT,
+DEPLOYMENT_GUIDE, INFORMATION_FLOW_ROADMAP, GitBook 01/03/04/05/07/11/15/28,
+the sys/types/abi/hal crate docstrings, one Lean docstring
+(`Projection.lean`'s NI-scope note) — now matches the tree, with historical
+narrative figures left as written per the record convention.
+
+**Descriptions of deleted code stopped describing it as current.**  The
+`api*` wrapper layer (removed in S5-A), the WS-G9 fast-projection cluster
+(removed in W3-D), `severDerivationEdge` (W3-C), the superseded capability
+bundles (U7-E), the `serviceStop`/`serviceRestart` lifecycle (WS-Q1-E1), and
+~25 renamed/retired theorem citations in the claim-evidence index — each now
+names its successor or records its removal, so an auditor grepping for cited
+evidence finds it.  Three claim-index evidence commands that failed outright
+(`lake build` targets for the renamed `Sm5C`/`Sm3D`/`Sm3E` inventories) now
+run; the V6 row no longer offers `defaultLabelingContext_valid` — a theorem
+whose truth value AI5-C inverted — as evidence.
+
+**Deployment guidance caught up with SM9.**  DEPLOYMENT_GUIDE §2.3 told
+deployers this release ships no way to read or drain the audit trail — the
+256-entry cliff SM9.A closed at v0.33.42 with `.auditRead`/`.auditDrain` and
+the deployment-mandatory `auditMonitorClearance` gate the guide never named.
+It now documents the reader, the drain's full-dominance rule, the SM9.B
+refusal ledger, `.declassifySignal`, and causal provenance — and its §4
+checklist no longer quotes the retracted ≤400 bps figure its own §1.3
+removed.  SECURITY_ADVISORY SA-1's "no liveness property exists" yields to
+the hypothesis-conditional `no_starvation_under_smp` (the unconditional
+headline stands); SA-3's schedule-mutator enumeration now names
+`setDomainScheduleChecked`.
+
+**Status markers stopped lying about time.**  WS-RC's history heading said
+IN FLIGHT four hundred versions after it closed; the master SMP plan's §9
+said "SM2 still pending" three rows above "SM9 CLOSED"; the RwLock
+deferred-completion plan listed as "Not built" the Tier-5 harness that runs
+nightly; seven SM phase-plan headers carried never-realized target ranges
+and no landed marker; the discharge index's summary table contradicted its
+own populated sections; the two governance sync docs named WS-R active at
+v0.18-era metrics and called the CI-enforced docs-sync gate "not part of CI".
+Each carries its real status now, and `WORKSTREAM_HISTORY`'s portfolio table
+— promised to auditors as the traceability index but frozen at WS-M —
+gained the twenty-six missing rows through WS-RA.
+
+**The documented validation paths became runnable.**  HARDWARE_TESTING
+instructed ten scripts of which eight did not exist: each section now names
+the coverage that exists today (cargo suites, `test_qemu.sh`,
+`test_qemu_tlb_cache_coherence.sh`, the SGI round-trip and SMP boot-check
+exercisers) and the missing QEMU-level scripts are registered debt with IDs
+(SM10.B.D1–D6, SM10.E.D1) in the SM10 plan rather than phantom commands;
+`test_qemu.sh` itself used `QEMU_BUILD_LOG` before assignment — fatal under
+`set -u` on the one path where cargo and the target exist — and the temp-log
+setup now precedes first use.  The nine i18n Version rows the sync gate never
+knew about (drifting at v0.25.5 beside gate-synced badges, exactly the drift
+the gate exists to prevent) are registered in `version_locations.sh`, so this
+bump rewrites them and every future bump holds them; the translations
+themselves — carrying 30-entry boundaries, 32 constructors, WS-V and
+"RPi5-binding next" roadmaps of assorted vintages, and three literal U+FFFD
+bytes in the Hindi README — are re-aligned to the corrected English across
+all eleven locales.
+
+Zero sorry/axiom (docstring-only Lean change; the SMP information-flow axiom
+sweep re-run clean: 4,777 environment constants).  Trace fixture
+byte-identical.  Tier 0–3 + Rust gate green.
+
+Refs: docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md §4
+
 ## v0.33.101 — the SM9 closure audited: the planners stop trusting a wildcard, and the record stops citing theorems that never existed
 
 A post-closure audit of the whole SM9 workstream (PRs #870–#874,

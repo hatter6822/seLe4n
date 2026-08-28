@@ -14,7 +14,7 @@ When changing documentation, ensure the paired files are updated in the same PR:
 
 | Change area | Canonical doc | GitBook chapter |
 |-------------|--------------|-----------------|
-| Planning/workstream status | `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md`, `docs/WORKSTREAM_HISTORY.md` | `05-*` |
+| Planning/workstream status | `docs/planning/SMP_*.md` (active), `docs/audits/AUDIT_v0.30.11_*` (active baseline), `docs/WORKSTREAM_HISTORY.md` | `05-*` |
 | Workflow/test policy | `TESTING_FRAMEWORK_PLAN.md`, `CI_POLICY.md` | `07-*` |
 | Spec/roadmap | `docs/spec/SELE4N_SPEC.md`, `SEL4_SPEC.md` | `05-*` |
 | Dedup ownership | `DOCS_DEDUPLICATION_MAP.md` | `27-*` |
@@ -34,7 +34,8 @@ For baseline planning changes, also run `./scripts/test_nightly.sh`.
 
 ## 4) Current-stage status summary
 
-All documentation surfaces are synchronized as of v0.25.15. See the canonical
+Documentation surfaces are re-synchronized on every PR by the docs-sync
+gate (`scripts/test_docs_sync.sh`, CI-enforced). See the canonical
 [`DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](../DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md)
 for the full status table.
 

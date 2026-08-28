@@ -21,7 +21,7 @@ developed with this target in mind.
 | **H0** | Architecture-neutral semantics and proofs | **Complete** | M1–M7, WS-B..E |
 | **H1** | Architecture-boundary interfaces and adapters | **Complete** | M6 |
 | **H2** | Audit-driven proof deepening | **Complete** (WS-F1..F8, all findings closed) | Close CRIT/HIGH findings |
-| **H3** | Platform binding — Raspberry Pi 5 hardware | **AG9 complete** (testing + validation) | ~~WS-F1..F4~~ (done) |
+| **H3** | Platform binding — Raspberry Pi 5 hardware | **Complete** (WS-AG AG1–AG10, v0.26.0–v0.27.1) | ~~WS-F1..F4~~ (done) |
 | **H3.5** | Hardware-binding closure (TLB/cache composition, SVC FFI, SMP) | **AN9 complete (v0.30.10)**; **WS-RC R2 complete (v0.30.11)** wired Lean ↔ Rust SVC dispatch | ~~AG9~~ (done), AN6/AN8 (done) |
 | **H4** | Evidence convergence — connect proofs to platform | Planned | H3.5 complete |
 
@@ -57,8 +57,10 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
 - **Bounded WFE** (AN9-G / DEF-R-HAL-L17): `wfe_bounded` with
   10 ms default at 54 MHz.
 - **SMP scaffolding** (AN9-J / DEF-R-HAL-L20): PSCI `cpu_on` +
-  `smp.rs` secondary-core bring-up; **disabled by default** at
-  v1.0.0 (`SMP_ENABLED = false`).
+  `smp.rs` secondary-core bring-up; merged default-off at AN9-J,
+  **enabled by default since v0.32.142** (SM5.I's serialised kernel
+  entry; kernel-cmdline `smp_enabled=true` — see the SM1.D bullet
+  below).
 - **PSCI completion** (WS-SM SM1.A): full DEN0022D §5 surface
   wrapped — `cpu_off`, `affinity_info` (+ `AffinityInfoState`),
   `psci_version` (+ `PsciVersion`), `migrate_info_type` (+
@@ -233,7 +235,7 @@ All audit findings (WS-F1..F8) are resolved. WS-J1 (typed register decode layer)
 and WS-K (full syscall dispatch) are also complete, providing the typed
 user-space-to-kernel boundary that H3 will bind to hardware registers.
 
-### H3 — In progress: Raspberry Pi 5 binding
+### H3 — Complete: Raspberry Pi 5 binding
 
 **WS-AJ PORTFOLIO COMPLETE (v0.28.1–v0.29.0).** Post-audit remediation
 of the v0.28.0 comprehensive audit — 6 phases (AJ1–AJ6), 30 sub-tasks.
@@ -406,7 +408,8 @@ provides the organizational infrastructure for hardware binding:
 
 ## 5. What contributors can do now
 
-- Review the `Platform/RPi5/` stubs and contribute hardware-specific knowledge.
+- Review the `Platform/RPi5/` binding modules (8 files, production-wired
+  since WS-RC R3) and contribute hardware-specific knowledge.
 - Keep kernel transitions architecture-neutral — hardware assumptions belong in
   `PlatformBinding` instances, not in `Kernel/` modules.
 - Document hardware assumptions explicitly in adapter interfaces.

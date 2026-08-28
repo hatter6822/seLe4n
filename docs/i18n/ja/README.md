@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.33.101-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.0-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -58,8 +58,8 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネルです。�
 - **合成可能なパフォーマンスオブジェクト** ―― CPU 時間はファーストクラスのカーネルオブジェクトです。`SchedContext` はバジェット、周期、優先度、デッドライン、ドメインを再利用可能なスケジューリングコンテキストにカプセル化し、スレッドはケイパビリティを通じてバインドします。CBS（Constant Bandwidth Server）スケジューリングにより、証明済みの帯域幅分離を提供します（`cbs_bandwidth_bounded` 定理）
 - **パッシブサーバー** ―― アイドル状態のサーバーは IPC 中にクライアントの `SchedContext` を借用し、サービス提供時以外は CPU を消費しません。`donationChainAcyclic` 不変条件により循環ドネーションチェーンを防止します
 - **バジェット駆動型 IPC タイムアウト** ―― ブロッキング操作は呼び出し元のバジェットによって制限されます。期限切れ時、スレッドはエンドポイントキューから取り出され再エンキューされます
-- **優先度継承プロトコル** ―― 推移的な優先度伝搬と、機械検証されたデッドロックフリー保証（`blockingChainAcyclic`）および有界チェーン深度を備え、無制限の優先度逆転を防止します
-- **有界レイテンシ定理** ―― 機械検証された WCRT 上界：`WCRT = D × L_max + N × (B + P)`。7 つの活性モジュールにわたって証明され、バジェット単調性、補充タイミング、yield セマンティクス、バンド枯渇、ドメインローテーションを網羅します
+- **優先度継承プロトコル** ―― 推移的な優先度伝搬と、機械検証されたデッドロックフリー保証（`blockingAcyclic`）および有界チェーン深度を備え、無制限の優先度逆転を防止します
+- **有界レイテンシ定理** ―― 機械検証された WCRT 上界：`WCRT = D × L_max + N × (B + P)`。8 つの活性モジュールにわたって証明され、バジェット単調性、補充タイミング、yield セマンティクス、バンド枯渇、ドメインローテーションを網羅します
 
 ### データ構造と IPC
 
@@ -69,9 +69,9 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネルです。�
 
 ### セキュリティと検証
 
-- **N ドメイン情報フロー** ―― パラメータ化されたフローポリシーにより seL4 の二値パーティションを一般化。30 エントリのエンフォースメント境界と、操作ごとの非干渉証明（32 コンストラクタの `NonInterferenceStep` 帰納型）
-- **合成証明レイヤー** ―― `proofLayerInvariantBundle` が 10 のサブシステム不変条件（スケジューラ、ケイパビリティ、IPC、ライフサイクル、サービス、VSpace、クロスサブシステム、TLB、CBS 拡張）を単一のトップレベル義務に合成し、ブートからすべての操作まで検証
-- **二段階状態アーキテクチャ** ―― 不変条件ウィットネス付きビルダーフェーズからフリーズされた不変表現へ遷移し、証明済みのルックアップ等価性を保証。20 のフリーズ操作がライブ API をミラー
+- **N ドメイン情報フロー** ―― パラメータ化されたフローポリシーにより seL4 の二値パーティションを一般化。43 エントリのエンフォースメント境界と、操作ごとの非干渉証明（35 コンストラクタの `NonInterferenceStep` 帰納型）、および有界かつフェイルクローズドな機密解除監査証跡（ケイパビリティでゲートされたリーダー付き）
+- **合成証明レイヤー** ―― `proofLayerInvariantBundle` が 16 のサブシステム不変条件バンドル（スケジューラコア + CBS 拡張、ケイパビリティ、IPC + IPC–スケジューラ結合、ライフサイクル、サービス、VSpace、クロスサブシステム、TLB 一貫性、通知ウェイター一貫性、TLB シュートダウンの pending/ack 上界、コアごとの TLB 無効化と I キャッシュコヒーレンス、および機密解除監査ログ上界）を単一のトップレベル義務に合成し、ブートからすべての操作まで検証
+- **二段階状態アーキテクチャ** ―― 不変条件ウィットネス付きビルダーフェーズからフリーズされた不変表現へ遷移し、証明済みのルックアップ等価性を保証。24 のフリーズ操作がライブ API をミラー
 - **完全な操作セット** ―― すべての seL4 操作が不変条件保存付きで実装済み。5 つの遅延操作（suspend/resume、setPriority/setMCPriority、setIPCBuffer）を含む
 - **サービスオーケストレーション** ―― カーネルレベルのコンポーネントライフサイクル管理。依存グラフと証明済み非循環性を備える（seLe4n 独自の拡張、seL4 には存在しない）
 
@@ -83,14 +83,14 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネルです。�
 
 | 属性 | 値 |
 |------|-----|
-| **バージョン** | `0.25.5` |
+| **バージョン** | `0.34.0` |
 | **Lean ツールチェーン** | `v4.28.0` |
-| **本番 Lean コード行数** | 132 ファイルにわたる 83,286 行 |
-| **テスト Lean コード行数** | 15 テストスイートにわたる 10,564 行 |
-| **証明済み宣言数** | 2,447 件の定理/補題宣言（sorry/axiom ゼロ） |
+| **本番 Lean コード行数** | 286 ファイルにわたる 286,841 行 |
+| **テスト Lean コード行数** | 69 テストスイートにわたる 64,078 行 |
+| **証明済み宣言数** | 9,601 件の定理/補題宣言（sorry/axiom ゼロ） |
 | **ターゲットハードウェア** | Raspberry Pi 5（BCM2712 / ARM Cortex-A76 / ARMv8-A） |
-| **標準監査** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) ―― 1.0 前の包括的監査（202 件の指摘事項；WS-AK AK1–AK10 で修正済み） |
-| **最新監査** | [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) ―― 1.0 前の堅牢化監査（3 CRIT、24 HIGH、71 MED、58 LOW、40 INFO ―― §0.4 の初期スコアリング） |
+| **標準監査** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) ―― 1.0 前の包括的監査（202 件の指摘事項；WS-AK AK1–AK10 で修正済み；アーカイブ済み） |
+| **最新監査** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) ―― WS-AN 完了後に実施された 1.0 前レディネス監査（WS-AN AN0–AN12 で修正され現在アーカイブ済みの [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) を引き継ぐ）。WS-RC R0..R5 は v0.31.2 で完了；WS-RC R6..R14 は SM0.Q.1 吸収マッピングに従って WS-SM に吸収（[`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) を参照）。アクティブなワークストリーム計画：[`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)。 |
 | **コードベースマップ** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) ―― 機械可読な宣言インベントリ |
 
 メトリクスは `./scripts/generate_codebase_map.py` によってコードベースから導出され、
@@ -150,7 +150,7 @@ seLe4n は階層化されたコントラクトとして構成されており、�
 ├──────────────────────────────────────────────────────────────────────┤
 │             Foundations  (Prelude, Machine, MachineConfig)           │
 ├──────────────────────────────────────────────────────────────────────┤
-│          Platform  (Contract, Sim, RPi5)  ← H3-prep bindings         │
+│        Platform  (Contract, Sim, RPi5)  ← production bindings        │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -182,7 +182,7 @@ SeLe4n/
 │   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
 ├── Testing/                     Test harness, state builder, invariant checks
 Main.lean                        Executable entry point
-tests/                           15 test suites
+tests/                           Executable test suites + fixtures
 ```
 
 各サブシステムは **Operations/Invariant 分離**パターンに従います：遷移は `Operations.lean` に、証明は `Invariant.lean` に記述されます。統合された `apiInvariantBundle` がすべてのサブシステムの不変条件を単一の証明義務に集約します。ファイルごとの完全なインベントリは [`docs/codebase_map.json`](../../../docs/codebase_map.json) を参照してください。
@@ -194,32 +194,19 @@ tests/                           15 test suites
 | **スケジューリング** | C 実装の散発サーバー（MCS） | CBS スケジューリング、機械検証済み `cbs_bandwidth_bounded` 定理付き。`SchedContext` をケイパビリティ制御のカーネルオブジェクトとして提供 |
 | **パッシブサーバー** | C による SchedContext ドネーション | `donationChainAcyclic` 不変条件付きの検証済みドネーション |
 | **IPC** | 単一リンクリストのエンドポイントキュー | 侵入型デュアルキューによる O(1) キュー途中削除、バジェット駆動型タイムアウト |
-| **情報フロー** | 二値 high/low パーティション | N ドメイン設定可能ポリシー、30 エントリのエンフォースメント境界と操作ごとの NI 証明 |
+| **情報フロー** | 二値 high/low パーティション | N ドメイン設定可能ポリシー、43 エントリのエンフォースメント境界（エントリ数は `enforcementBoundaryExtended_count` で固定）、操作ごとの NI 証明、およびすべての承認済み機密解除に対するケイパビリティゲート付き監査証跡 |
 | **優先度継承** | C 実装の PIP（MCS ブランチ） | 機械検証済みの推移的 PIP、デッドロックフリー保証とパラメトリック WCRT 上界付き |
-| **有界レイテンシ** | 形式的な WCRT 上界なし | `WCRT = D × L_max + N × (B + P)` を 7 つの活性モジュールで証明 |
+| **有界レイテンシ** | 形式的な WCRT 上界なし | `WCRT = D × L_max + N × (B + P)` を 8 つの活性モジュールで証明 |
 | **オブジェクトストア** | リンクリストと配列 | 検証済み Robin Hood ハッシュテーブル（`RHTable`/`RHSet`）による O(1) ホットパス |
 | **サービス管理** | カーネル外 | ファーストクラスのオーケストレーション、依存グラフと非循環性証明付き |
-| **証明手法** | Isabelle/HOL、事後検証 | Lean 4 型検査器、遷移と共存配置（2,447 定理、sorry/axiom ゼロ） |
+| **証明手法** | Isabelle/HOL、事後検証 | Lean 4 型検査器、遷移と共存配置――sorry/axiom ゼロ（証明済み宣言数は[現在の状態](#現在の状態)の表を参照） |
 | **プラットフォーム抽象化** | C レベル HAL | `PlatformBinding` 型クラスと型付き境界コントラクト |
 
 ## 次のステップ
 
-ソフトウェアレベルのワークストリーム（WS-B から WS-AB）はすべて完了しています。
-完全な履歴は [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) を参照してください。
+アクティブなワークストリームは **WS-SM**（SMP マルチコア完成）です。WS-RC の残りの修正フェーズを SMP 専用の SM0–SM10 フェーズ計画に統合したもので、Raspberry Pi 5 上でブート可能な検証済み SMP マイクロカーネルとして **v1.0.0** で完結します。フェーズ SM0–SM9 は完了済みです――基盤となる SMP 型とロック階層、Rust HAL の SMP ブートアップ、検証済みロックプリミティブ、オブジェクトごとのロック、コアごとのスケジューラ状態とスケジューリング、クロスコア IPC、TLB シュートダウンとキャッシュメンテナンス、SMP 情報フロー、そして機密解除の完成（SM9、v0.33.100 でクローズ）。残るフェーズは **SM10**（リリースクロージャ → v1.0.0）です。システムコール戻り値 ABI ワークストリーム（**WS-RA**）は完了しています。
 
-### 完了したワークストリーム
-
-| ワークストリーム | 範囲 | バージョン |
-|---------------|------|----------|
-| **WS-AB** | 遅延操作と活性――suspend/resume、setPriority/setMCPriority、setIPCBuffer、優先度継承プロトコル、有界レイテンシ定理（6 フェーズ、90 タスク） | v0.24.0–v0.25.5 |
-| **WS-Z** | 合成可能パフォーマンスオブジェクト――`SchedContext` を第 7 のカーネルオブジェクトとして、CBS バジェットエンジン、補充キュー、パッシブサーバードネーション、タイムアウトエンドポイント（10 フェーズ、213 タスク） | v0.23.0–v0.23.21 |
-| **WS-B – WS-Y** | コアカーネルサブシステム、Robin Hood ハッシュテーブル、基数木、フリーズ状態、情報フロー、サービスオーケストレーション、プラットフォームコントラクト | v0.9.0–v0.22.x |
-
-詳細な計画：[WS-AB](../../../docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
-
-### 次の主要マイルストーン
-
-**Raspberry Pi 5 ハードウェアバインディング** ―― ARMv8 ページテーブルウォーク、GIC-400 割り込みルーティング、ブートシーケンス。過去の監査とマイルストーンクローズアウトは [`docs/dev_history/`](../../../docs/dev_history/README.md) にアーカイブされています。
+マスタープラン：[`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)、フェーズごとの計画は `docs/planning/SMP_*.md` にあります。フェーズごとの正準記録――完了したすべてのワークストリームポートフォリオ（WS-B から WS-AB、WS-AE から WS-AN、WS-RC R0–R5、WS-RA）を含む――は [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) です。過去の監査とマイルストーンクローズアウトは [`docs/dev_history/`](../../../docs/dev_history/README.md) にアーカイブされています。
 
 ---
 

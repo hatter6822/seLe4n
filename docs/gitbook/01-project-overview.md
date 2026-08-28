@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state: 83,286 lines of production Lean across 132 files, 10,564 lines across 15 Lean test suites,
-2,447 theorem/lemma declarations, zero unsound constructs.
+Current state (as of v0.33.101): 286,841 lines of production Lean across 286 files, 64,078 lines across 69 Lean test suites,
+9,601 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -91,7 +91,14 @@ Remediation — 5 phases (AH1–AH5), 27 sub-tasks.
 Remediation — 7 phases (AI1–AI7), 37 sub-tasks. All 60 findings from the
 v0.27.6 audit addressed (5 HIGH, 27 MEDIUM, 28 LOW).
 
-**Next major milestone**: WS-SM — multi-core SMP completion through v1.0.0.
+**Active workstream**: WS-SM — multi-core SMP completion through v1.0.0.
+Phases **SM0–SM9 have all landed** (per-object locks, per-core scheduler
+state and scheduling, cross-core IPC, TLB shootdown + cache maintenance,
+SMP information flow, and the SM9 declassification completion, closed at
+v0.33.100); the syscall return ABI workstream (WS-RA) is complete, and
+**SM10** (release closure → v1.0.0) is the remaining phase — see
+CLAUDE.md's phase table and `docs/WORKSTREAM_HISTORY.md`. The narrative
+below records the SM0/SM1 foundations in detail.
 Phase SM0 (foundations & honesty patches) closed at v0.31.3 with the
 type-level scaffolding (CoreId, LockKind, LockId, SgiKind, SharingDomain,
 BklState).  Phase SM1 (Rust HAL) closes at v0.31.8 with the nine

@@ -1203,7 +1203,7 @@ restore) and the cancellation/timeout error-frame staging.  Plan:
 [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](planning/SYSCALL_RETURN_ABI_PLAN.md).
 
 **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 →
-v0.31.3 → v0.32.x → v1.0.0).** Unified workstream merging WS-RC's remaining
+v0.31.3 → v0.32.x → v0.33.x → v0.34.x → v1.0.0).** Unified workstream merging WS-RC's remaining
 R6..R14 phases with the SMP-specific SM-phases (SM0..SM10).  Closes
 at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5.
 Plan:
@@ -1211,8 +1211,9 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM8.E tests + closure LANDED (v0.33.23) — WS-SM phase
-SM8 is CLOSED.**
+**WS-SM SM8.E — tests + closure LANDED (v0.33.23) — WS-SM phase
+SM8 is CLOSED.** (Current status lives in the "What's next" section at the
+top of this file.)
 
 SM8.E adds no transition and no module; its subject is whether the phase's own
 claims are *anchored*, *recorded* and *counted* where a reader can check them —
@@ -6830,7 +6831,7 @@ WS-RC R3 (v1.0.0-blocking) respectively. Cleanups for TLB+cache
 composition, secondary-core bring-up / SMP and the explicit
 single-core kernel model were closed in WS-AN AN9.
 
-## WS-RC — Pre-1.0 Audit Remediation (v0.30.11 → v0.31.0 → v1.0.0, **IN FLIGHT**)
+## WS-RC — Pre-1.0 Audit Remediation (v0.30.11 → v0.31.2, **CLOSED** — R0–R5 landed; R6..R14 absorbed into WS-SM per SM0.Q)
 
 **Audit (comprehensive):** [`docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md`](audits/AUDIT_v0.30.11_COMPREHENSIVE.md)
 **Audit (deep verification):** [`docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md`](audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md)
@@ -7840,10 +7841,13 @@ witnessed by the three new runtime tests, and the shape-form
 substantive theorems (which compose the now-substantive Phase Q2.A
 schedule frame) provide the proof-layer infrastructure.
 
-### R6..R14 — TBD
+### R6..R14 — absorbed into WS-SM (SM0.Q)
 
-Per plan §3 phase summary; remaining rows will be appended to this
-section as each phase lands a coherent slice. R6 is the remaining
+No further rows land here: WS-RC closed at v0.31.2 with R0–R5, and
+R6..R14 were absorbed into the WS-SM phase plans per the SM0.Q.1
+absorption mapping (see the WS-SM section above and
+`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` §15). The original
+sequencing note is retained below for context. R6 was the remaining
 v1.0.0 implementation-tier work (spec completeness:
 DEEP-ARCH-03, DEEP-IF-01/02, DEEP-IPC-04), then R7..R12
 (cleanup/hygiene tier in any order, with R11 landing last among
@@ -11928,29 +11932,63 @@ for the full workstream plan (8 phases: K-A through K-H).
 |----|-------|----------|
 | **WS-K** | Extend `SyscallDecodeResult` with msgRegs, implement per-syscall argument decode, wire all 13 syscalls through dispatch, replace service policy stubs, populate IPC message bodies, prove round-trip correctness and NI, comprehensive testing and documentation | CRITICAL — **K-A COMPLETED** (v0.16.0), **K-B COMPLETED** (v0.16.1), **K-C COMPLETED** (v0.16.2), **K-D COMPLETED** (v0.16.3), **K-E COMPLETED** (v0.16.4), **K-F COMPLETED** (v0.16.5), **K-G COMPLETED** (v0.16.7), **K-H COMPLETED** (v0.16.8) — **PORTFOLIO COMPLETE** |
 
-### Raspberry Pi 5 hardware binding
+### Raspberry Pi 5 hardware binding — LANDED (WS-AG, v0.26.0–v0.27.1)
 
-After the remaining workstreams, the next major milestone is populating the RPi5
-platform stubs with hardware-validated contracts:
+This section originally listed the hardware-binding milestone as future
+work. All five items shipped with the H3/WS-AG portfolio:
 
-1. Populate RPi5 runtime contract with hardware-validated predicates.
-2. Implement ARMv8 multi-level page table walk as a `VSpaceBackend` instance.
-3. Implement GIC-400 interrupt routing with IRQ acknowledgment.
-4. Bind timer adapter to ARM Generic Timer (CNTPCT_EL0).
-5. Define boot sequence as a verified initial state construction.
+1. ~~Populate RPi5 runtime contract with hardware-validated predicates.~~ DONE (`Platform/RPi5/`).
+2. ~~Implement ARMv8 multi-level page table walk as a `VSpaceBackend` instance.~~ DONE (`Architecture/VSpaceARMv8.lean`, AG6).
+3. ~~Implement GIC-400 interrupt routing with IRQ acknowledgment.~~ DONE (`rust/sele4n-hal/src/gic.rs`).
+4. ~~Bind timer adapter to ARM Generic Timer (CNTPCT_EL0).~~ DONE (`rust/sele4n-hal/src/timer.rs`).
+5. ~~Define boot sequence as a verified initial state construction.~~ DONE (`Platform/Boot.lean`, WS-RC R3 boot VSpace wiring).
 
 ### Long-horizon items
 
-- MCS scheduling contexts (budget/period/replenishments).
-- Multi-core support (per-core kernel instances).
+- ~~MCS scheduling contexts (budget/period/replenishments).~~ LANDED (WS-Z, v0.23.x).
+- ~~Multi-core support.~~ IN FLIGHT as WS-SM (SM0–SM9 closed; SM10 → v1.0.0).
 - Device memory and IOMMU modeling.
 - Cryptographic attestation of kernel image.
-- Side-channel analysis at hardware binding layer.
+- Side-channel analysis at hardware binding layer (speculation barriers and
+  the accepted covert-channel registry CC-1..CC-8 exist; a full
+  hardware-layer analysis remains open — see
+  `docs/planning/HARDWARE_PARTITION_ISOLATION_PLAN.md`).
 
 ## Completed workstream portfolio
 
+The in-flight workstream (WS-SM) is tracked in "What's next" at the top of
+this file and joins this table at closure. Rows are newest-first; each
+portfolio also has a narrative section above with full gate results.
+
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
+| **WS-RA** | v0.33.37–v0.33.38 | Syscall return ABI — the kernel returns seL4's exact ARM64 frame (`x0` result, `x1` MessageInfo offset-error label, `x2`–`x5` message registers); `SYSCALL_ABI_VERSION = 2` pinned in Lean, `sele4n-types` and the HAL; blocked-waiter staging + per-arm return-shape family. **COMPLETE** (frame delivery at context restore owed to SM10.E) | RA.A–RA.B |
+| **WS-RC** | v0.30.11–v0.31.2 | Pre-1.0 audit remediation of the v0.30.11 baseline — R0–R5 landed (R3 boot VSpace production wiring, R4 type-level structural promotion, R5 scheduler/lifecycle symmetry); R6–R14 absorbed into WS-SM per SM0.Q. **CLOSED** | R0–R5 |
+| **WS-AN** | v0.30.6–v0.30.11 | Comprehensive audit remediation of the v0.30.6 baseline — 12 phases and the v0.30.11 re-audit cut. **PORTFOLIO COMPLETE** | AN0–AN12 |
+| **WS-AM** | v0.30.0 | AK7 cascade hygiene closure (post-delivery cascade continuation). **COMPLETE** | AM |
+| **WS-AK** | v0.29.1–v0.30.6 | Comprehensive audit remediation of the v0.29.0 baseline — 10 phases through the AK10 closure cut. **PORTFOLIO COMPLETE** | AK1–AK10 |
+| **WS-AL** | v0.29.13–v0.29.14 | AK7 cascade closure (AL1b/AL8). **COMPLETE** | AL1b, AL6, AL8 |
+| **WS-AJ** | v0.28.1–v0.29.0 | Post-audit comprehensive remediation (6 phases, 30 sub-tasks). **PORTFOLIO COMPLETE** | AJ1–AJ6 |
+| **WS-AI** | v0.27.7–v0.28.0 | Remediation of the v0.27.6 comprehensive audit (7 phases, 37 sub-tasks). **PORTFOLIO COMPLETE** | AI1–AI7 |
+| **WS-AH** | v0.27.2–v0.27.6 | Post-H3 audit remediation. **PORTFOLIO COMPLETE** | AH1–AH5 |
+| **WS-AG** | v0.26.0–v0.27.1 | H3 hardware binding audit remediation — HAL crate, GIC-400, ARM Generic Timer, ARMv8 page tables, ASID manager, FFI bridge, exception/interrupt models, cache coherency, QEMU integration, speculation barriers (10 phases, 67 sub-tasks). **PORTFOLIO COMPLETE** | AG1–AG10 |
+| **WS-AF** | v0.25.22–v0.25.27 | Pre-release comprehensive audit remediation (6 phases, 49 sub-tasks). **PORTFOLIO COMPLETE** | AF1–AF6 |
+| **WS-AE** | v0.25.15–v0.25.21 | Production audit remediation (6 phases, 53 sub-tasks). **PORTFOLIO COMPLETE** | AE1–AE6 |
+| **WS-AD** | v0.25.11–v0.25.14 | Pre-release audit remediation of the v0.25.10 baseline. **PORTFOLIO COMPLETE** | AD1–AD4 |
+| **WS-AC** | v0.25.3–v0.25.10 | Comprehensive audit remediation of the v0.25.3 baseline (6 phases, 42 sub-tasks). **PORTFOLIO COMPLETE** | AC1–AC6 |
+| **WS-AB** | v0.24.0–v0.25.5 | Deferred operations + liveness — suspend/resume, setPriority/setMCPriority, setIPCBuffer, priority inheritance protocol, bounded latency (WCRT) theorem (6 phases, 90 sub-tasks). **PORTFOLIO COMPLETE** | D1–D6 |
+| **WS-AA** | v0.23.21–v0.23.x | Comprehensive audit remediation of the v0.23.21 baseline. **COMPLETE** | AA1+ |
+| **WS-Z** | v0.23.0–v0.23.21 | Composable performance objects — `SchedContext` as a first-class kernel object, CBS budget engine, replenishment queue, passive-server donation, timeout endpoints (10 phases, 213 tasks). **PORTFOLIO COMPLETE** | Z1–Z10 |
+| **WS-Y** | v0.22.22–v0.22.x | Final audit remediation of the v0.22.22 baseline. **PORTFOLIO COMPLETE** | Y1–Y3 |
+| **WS-X** | v0.22.17–v0.22.21 | Pre-release audit remediation of the v0.22.17 baseline. **PORTFOLIO COMPLETE** | X1–X5 |
+| **WS-W** | v0.22.10–v0.22.16 | Pre-release audit remediation of the v0.22.10 baseline. **PORTFOLIO COMPLETE** | W1–W6 |
+| **WS-V** | v0.21.8–v0.22.9 | Pre-release audit remediation of the v0.21.7 baseline (95 findings across three audits). **PORTFOLIO COMPLETE** | V1–V8 |
+| **WS-U** | v0.21.0–v0.21.7 | Deep audit remediation of the v0.20.7 baseline — correctness fixes, safety-boundary hardening, Rust ABI hardening, proof-chain composition, API/dispatch integrity, platform fidelity, proof hygiene. **PORTFOLIO COMPLETE** | U1–U8 |
+| **WS-T** | v0.20.0–v0.20.7 | Deep-dive audit remediation (8 phases, 94 sub-tasks). **PORTFOLIO COMPLETE** | T1–T8 |
+| **WS-S** | v0.19.0–v0.19.6 | Pre-benchmark strengthening (7 phases). **PORTFOLIO COMPLETE** | S1–S7 |
+| **WS-R** | v0.18.0–v0.18.7 | Comprehensive audit remediation of the v0.17.14 baseline (8 phases). **PORTFOLIO COMPLETE** | R1–R8 |
+| **WS-Q** | v0.17.7–v0.17.14 | Kernel state architecture — universal RHTable migration, freeze pipeline, frozen operations, Rust syscall wrappers, registry-only service model (9 phases). **PORTFOLIO COMPLETE** | Q1–Q9 |
+| **WS-N** | v0.17.0–v0.17.5 | Verified Robin Hood hashing (`RHTable`/`RHSet`) + CNode radix tree foundations. **COMPLETE** (N2/N4 sub-workstreams within range) | N1–N4 |
 | **WS-M** | v0.16.14–v0.17.0 | Capability subsystem audit & remediation — 5 phases, 55+ subtasks, all 14 audit findings resolved. M1: proof strengthening (guard-match, mint completeness, addEdge acyclicity, error-swallowing consistency). M2: performance optimization (fused revoke, CDT parentMap, shared reply lemma). M3: IPC capability transfer (20 subtasks, resolves L-T03). M4: test coverage expansion (8 edge-case tests). M5: streaming BFS revocation + documentation sync; v0.17.0 optimization (shared `processRevokeNode` helper, 3 new edge case tests). Zero sorry/axiom. | M1–M5 |
 | **WS-M2** | v0.16.15 | Capability subsystem performance optimization. M2-A: fused `revokeAndClearRefsState` — single-pass O(m) fold replacing two O(m) passes (revoke children + clear parent references). M2-B: CDT `parentMap` index in `CSpaceState` — O(1) `parentOf` lookup; `removeNode`/`removeAsChild`/`removeAsParent` maintain the index with targeted updates. M2-C: shared reply lemma extraction — factored `endpointReply` preservation proof body consumed by both direct-reply and reply-recv paths. Field preservation lemmas for non-interference proofs added for new `parentMap` field. Runtime `parentMapConsistent` check added and verified. Zero sorry/axiom. | M2 |
 | **WS-L** | v0.16.9–v0.16.13 | IPC subsystem audit & remediation — comprehensive end-to-end audit of IPC subsystem (9,195 LoC, 12 files). L1: eliminated 4 redundant TCB lookups on IPC hot paths. L2: HashMap.fold migration (4 sites). L3: 22 new theorems + `ipcStateQueueConsistent` invariant. L4: 16 test scenario IDs, 4 coverage gaps filled. L5: IF readers' guide, version bump, full doc sync. 12/13 findings resolved, 1 deferred (L-T03). All WS-I5 deferred items closed. Zero sorry/axiom. | L1–L5 |

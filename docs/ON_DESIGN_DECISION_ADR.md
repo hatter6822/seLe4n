@@ -3,10 +3,15 @@
 ## Status
 **Superseded** (WS-G completed, v0.12.6–v0.12.15)
 
-> **This ADR is historical.** WS-G (v0.12.6–v0.12.15) completed the full
-> migration from `List`-based to `Std.HashMap`/`Std.HashSet`-based data
-> structures for all kernel hot paths. Every collection listed in the "Context"
-> table below has been migrated to O(1) hash-based structures. The "Decision"
+> **This ADR is historical.** WS-G (v0.12.6–v0.12.15) completed the
+> migration from `List`-based to hash-based data structures for the kernel
+> hot paths (WS-Q2 later replaced `Std.HashMap`/`Std.HashSet` with the
+> verified `RHTable`/`RHSet`). The hot-path collections in the "Context"
+> table were migrated to O(1) hash-based structures; deliberately-List
+> survivors remain where order is semantic or sizes are small
+> (`domainSchedule`, `ServiceGraphEntry.dependencies`), and
+> `SchedulerState.runnable` is today a compatibility view over the SM4
+> per-core structures. The "Decision"
 > and "Migration path" sections describe the rationale and strategy that were
 > followed during execution. This document is retained for architectural
 > traceability — it is not active guidance.

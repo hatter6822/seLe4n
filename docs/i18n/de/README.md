@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sicherheit" /></a>
-  <img src="https://img.shields.io/badge/version-0.33.101-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.0-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Lizenz" /></a>
 </p>
@@ -62,8 +62,8 @@ Lean-4-Beweissystem ermöglicht werden:
 - **Komponierbare Leistungsobjekte** — CPU-Zeit ist ein erstklassiges Kernel-Objekt. `SchedContext` kapselt Budget, Periode, Priorität, Deadline und Domäne in einen wiederverwendbaren Scheduling-Kontext, an den sich Threads über Capabilities binden. CBS-Scheduling (Constant Bandwidth Server) bietet bewiesene Bandbreitenisolation (Theorem `cbs_bandwidth_bounded`)
 - **Passive Server** — untätige Server leihen sich den `SchedContext` des Clients während IPC, verbrauchen null CPU-Zeit wenn sie nicht aktiv bedienen. Die Invariante `donationChainAcyclic` verhindert zirkuläre Spendenketten
 - **Budgetgesteuerte IPC-Timeouts** — blockierende Operationen sind durch das Budget des Aufrufers begrenzt. Bei Ablauf werden Threads aus der Endpoint-Queue herausgelöst und erneut eingereiht
-- **Priority-Inheritance-Protokoll** — transitive Prioritätspropagation mit maschinengeprüfter Deadlock-Freiheit (`blockingChainAcyclic`) und beschränkter Kettentiefe. Verhindert unbegrenzte Prioritätsinversion
-- **Theorem für beschränkte Latenz** — maschinengeprüfte WCRT-Schranke: `WCRT = D × L_max + N × (B + P)`, bewiesen über 7 Liveness-Module zu Budgetmonotonie, Replenishment-Timing, Yield-Semantik, Banderschöpfung und Domänenrotation
+- **Priority-Inheritance-Protokoll** — transitive Prioritätspropagation mit maschinengeprüfter Deadlock-Freiheit (`blockingAcyclic`) und beschränkter Kettentiefe. Verhindert unbegrenzte Prioritätsinversion
+- **Theorem für beschränkte Latenz** — maschinengeprüfte WCRT-Schranke: `WCRT = D × L_max + N × (B + P)`, bewiesen über 8 Liveness-Module zu Budgetmonotonie, Replenishment-Timing, Yield-Semantik, Banderschöpfung und Domänenrotation
 
 ### Datenstrukturen und IPC
 
@@ -73,9 +73,9 @@ Lean-4-Beweissystem ermöglicht werden:
 
 ### Sicherheit und Verifikation
 
-- **N-Domänen-Informationsfluss** — parametrisierte Flussrichtlinien, die seL4s binäre Partitionierung verallgemeinern. 30-Einträge-Durchsetzungsgrenze mit Nichteinmischungsbeweisen pro Operation (32-Konstruktor-Induktive `NonInterferenceStep`)
-- **Komponierte Beweisschicht** — `proofLayerInvariantBundle` komponiert 10 Subsystem-Invarianten (Scheduler, Capability, IPC, Lifecycle, Service, VSpace, Cross-Subsystem, TLB und CBS-Erweiterungen) zu einer einzigen übergeordneten Beweisverpflichtung, verifiziert vom Boot durch alle Operationen
-- **Zweiphasen-Zustandsarchitektur** — Builder-Phase mit Invariantenzeugen fließt in eine eingefrorene unveränderliche Darstellung mit bewiesener Lookup-Äquivalenz. 20 eingefrorene Operationen spiegeln die Live-API wider
+- **N-Domänen-Informationsfluss** — parametrisierte Flussrichtlinien, die seL4s binäre Partitionierung verallgemeinern. 43-Einträge-Durchsetzungsgrenze mit Nichteinmischungsbeweisen pro Operation (35-Konstruktor-Induktive `NonInterferenceStep`) sowie ein beschränkter, fail-closed Deklassifizierungs-Audit-Trail mit Capability-gesichertem Leser
+- **Komponierte Beweisschicht** — `proofLayerInvariantBundle` komponiert 16 Subsystem-Invariantenbündel (Scheduler-Kern + CBS-Erweiterungen, Capability, IPC + IPC-Scheduler-Kopplung, Lifecycle, Service, VSpace, Cross-Subsystem, TLB-Konsistenz, Notification-Waiter-Konsistenz, Pending/Ack-Schranken des TLB-Shootdowns, TLB-Invalidierung pro Kern und I-Cache-Kohärenz sowie die Schranke des Deklassifizierungs-Audit-Logs) zu einer einzigen übergeordneten Beweisverpflichtung, verifiziert vom Boot durch alle Operationen
+- **Dreiphasen-Zustandsarchitektur** — Builder-Phase mit Invariantenzeugen fließt in eine eingefrorene unveränderliche Darstellung mit bewiesener Lookup-Äquivalenz. 24 eingefrorene Operationen spiegeln die Live-API wider
 - **Vollständiger Operationssatz** — alle seL4-Operationen implementiert mit Invariantenerhaltung, einschließlich der 5 zurückgestellten Operationen (suspend/resume, setPriority/setMCPriority, setIPCBuffer)
 - **Service-Orchestrierung** — Kernel-seitige Komponentenlebenszyklusverwaltung mit Abhängigkeitsgraphen und bewiesener Azyklizität (seLe4n-Erweiterung, nicht in seL4)
 
@@ -87,14 +87,14 @@ Lean-4-Beweissystem ermöglicht werden:
 
 | Eigenschaft | Wert |
 |-------------|------|
-| **Version** | `0.33.101` |
+| **Version** | `0.34.0` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 103.179 über 142 Dateien |
-| **Test-LoC (Lean)** | 14.890 über 24 Testsuiten |
-| **Bewiesene Deklarationen** | 3.045 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
+| **Produktions-LoC (Lean)** | 286.841 über 286 Dateien |
+| **Test-LoC (Lean)** | 64.078 über 69 Testsuiten |
+| **Bewiesene Deklarationen** | 9.601 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Kanonisches Audit** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — umfassendes Pre-1.0-Audit (202 Befunde; behoben durch WS-AK AK1–AK10) |
-| **Letztes Audit** | [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) — Pre-1.0-Härtungsaudit (3 CRIT, 24 HIGH, 71 MED, 58 LOW, 40 INFO — anfängliche Bewertung gemäß §0.4) |
+| **Kanonisches Audit** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — umfassendes Pre-1.0-Audit (202 Befunde; behoben durch WS-AK AK1–AK10; archiviert) |
+| **Letztes Audit** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — Pre-1.0-Bereitschaftsaudit nach dem WS-AN-Abschluss (Nachfolger des inzwischen archivierten [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), behoben durch WS-AN AN0–AN12). WS-RC R0..R5 LANDED bei v0.31.2; WS-RC R6..R14 gemäß der SM0.Q.1-Absorptionszuordnung in WS-SM aufgegangen (siehe [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Aktiver Workstream-Plan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
 | **Codebase-Karte** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — maschinenlesbare Deklarationsinventur |
 
 Die Metriken werden durch `./scripts/generate_codebase_map.py` aus der Codebasis
@@ -159,7 +159,7 @@ seLe4n ist als geschichtete Verträge organisiert, jeweils mit ausführbaren
 ├──────────────────────────────────────────────────────────────────────┤
 │             Foundations  (Prelude, Machine, MachineConfig)           │
 ├──────────────────────────────────────────────────────────────────────┤
-│          Platform  (Contract, Sim, RPi5)  ← H3-prep bindings         │
+│        Platform  (Contract, Sim, RPi5)  ← production bindings        │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -191,7 +191,7 @@ SeLe4n/
 │   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
 ├── Testing/                     Test harness, state builder, invariant checks
 Main.lean                        Executable entry point
-tests/                           15 test suites
+tests/                           Ausführbare Testsuiten + Fixtures
 ```
 
 Jedes Subsystem folgt der **Operations/Invariant-Aufteilung**: Übergänge in
@@ -207,34 +207,35 @@ Beweisverpflichtung. Für die vollständige Dateiinventur siehe
 | **Scheduling** | In C implementierter Sporadic Server (MCS) | CBS mit maschinengeprüftem Theorem `cbs_bandwidth_bounded`; `SchedContext` als Capability-gesteuertes Kernel-Objekt |
 | **Passive Server** | SchedContext-Donation via C | Verifizierte Donation mit Invariante `donationChainAcyclic` |
 | **IPC** | Einfach verkettete Endpoint-Queue | Intrusive Dual-Queue mit O(1)-Entfernung aus der Warteschlangenmitte; budgetgesteuerte Timeouts |
-| **Informationsfluss** | Binäre High/Low-Partitionierung | N-Domänen-konfigurierbare Richtlinie mit 30-Einträge-Durchsetzungsgrenze und Nichteinmischungsbeweisen pro Operation |
+| **Informationsfluss** | Binäre High/Low-Partitionierung | N-Domänen-konfigurierbare Richtlinie mit 43-Einträge-Durchsetzungsgrenze (Anzahl fixiert durch `enforcementBoundaryExtended_count`), Nichteinmischungsbeweisen pro Operation und einem Capability-gesicherten Audit-Trail für jede autorisierte Deklassifizierung |
 | **Priority Inheritance** | In C implementiertes PIP (MCS-Branch) | Maschinengeprüftes transitives PIP mit Deadlock-Freiheit und parametrischer WCRT-Schranke |
-| **Beschränkte Latenz** | Keine formale WCRT-Schranke | `WCRT = D × L_max + N × (B + P)` bewiesen über 7 Liveness-Module |
+| **Beschränkte Latenz** | Keine formale WCRT-Schranke | `WCRT = D × L_max + N × (B + P)` bewiesen über 8 Liveness-Module |
 | **Object Stores** | Verkettete Listen und Arrays | Verifizierte Robin-Hood-Hashtabellen (`RHTable`/`RHSet`) mit O(1)-Hotpaths |
 | **Dienstverwaltung** | Nicht im Kernel | Erstklassige Orchestrierung mit Abhängigkeitsgraph und Azyklizitätsbeweisen |
-| **Beweise** | Isabelle/HOL, nachträglich | Lean-4-Typprüfer, direkt bei Übergängen platziert (2.447 Theoreme, null sorry/axiom) |
+| **Beweise** | Isabelle/HOL, nachträglich | Lean-4-Typprüfer, direkt bei Übergängen platziert — null sorry/axiom (Anzahl bewiesener Deklarationen in der Tabelle [Aktueller Stand](#aktueller-stand)) |
 | **Plattform** | HAL auf C-Ebene | `PlatformBinding`-Typklasse mit typisierten Schnittstellenverträgen |
 
 ## Nächste Schritte
 
-Alle Software-Workstreams (WS-B bis WS-AB) sind abgeschlossen. Die vollständige
-Geschichte befindet sich in [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md).
+Der aktive Workstream ist **WS-SM** (SMP-Mehrkern-Vervollständigung), der die
+verbleibenden WS-RC-Behebungsphasen in den SMP-spezifischen Phasenplan
+SM0–SM10 überführt hat und bei **v1.0.0** mit einem bootfähigen verifizierten
+SMP-Mikrokernel auf dem Raspberry Pi 5 abschließt. Die Phasen SM0–SM9 sind
+gelandet — grundlegende SMP-Typen und die Lock-Hierarchie, das SMP-Bring-up
+des Rust-HAL, verifizierte Lock-Primitive, Locks pro Objekt,
+Scheduler-Zustand und Scheduling pro Kern, kernübergreifendes IPC,
+TLB-Shootdown und Cache-Wartung, SMP-Informationsfluss sowie die
+Vervollständigung der Deklassifizierung (SM9, abgeschlossen bei v0.33.100).
+Die verbleibende Phase ist **SM10** (Release-Abschluss → v1.0.0). Der
+Workstream zum Syscall-Rückgabe-ABI (**WS-RA**) ist abgeschlossen.
 
-### Abgeschlossene Workstreams
-
-| Workstream | Umfang | Version |
-|------------|--------|---------|
-| **WS-AB** | Zurückgestellte Operationen & Liveness — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Priority-Inheritance-Protokoll, Theorem für beschränkte Latenz (6 Phasen, 90 Aufgaben) | v0.24.0–v0.25.5 |
-| **WS-Z** | Komponierbare Leistungsobjekte — `SchedContext` als 7. Kernel-Objekt, CBS-Budget-Engine, Replenishment-Queue, passive Server-Donation, Timeout-Endpoints (10 Phasen, 213 Aufgaben) | v0.23.0–v0.23.21 |
-| **WS-B – WS-Y** | Kern-Subsysteme, Robin-Hood-Hashtabellen, Radix Trees, Frozen State, Informationsfluss, Service-Orchestrierung, Plattformverträge | v0.9.0–v0.22.x |
-
-Detaillierte Pläne: [WS-AB](../../../docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
-
-### Nächster großer Meilenstein
-
-**Raspberry Pi 5 Hardware-Anbindung** — ARMv8 Page-Table-Walk, GIC-400
-Interrupt-Routing, Boot-Sequenz. Frühere Audits und Meilensteinabschlüsse
-sind in [`docs/dev_history/`](../../../docs/dev_history/README.md) archiviert.
+Masterplan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
+mit Plänen pro Phase in `docs/planning/SMP_*.md`. Die kanonische Aufzeichnung
+pro Phase — einschließlich aller abgeschlossenen Workstream-Portfolios (WS-B
+bis WS-AB, WS-AE bis WS-AN, WS-RC R0–R5, WS-RA) — ist
+[`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md); frühere
+Audits und Meilensteinabschlüsse sind in
+[`docs/dev_history/`](../../../docs/dev_history/README.md) archiviert.
 
 ---
 

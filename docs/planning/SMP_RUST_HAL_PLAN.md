@@ -1,9 +1,10 @@
 # SM1 — Rust HAL Completion (WS-SM Phase 1)
 
 > **Phase**: SM1 of WS-SM
+> **Status**: LANDED (v0.31.3 → v0.31.8) — PSCI, per-CPU, secondary init, TLBI, SGI, QEMU
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
-> **Target releases**: v0.33.0 .. v0.45.x (parallel with SM2)
+> **Target releases (original estimate)**: v0.33.0 .. v0.45.x (parallel with SM2)
 > **Calendar estimate**: 16-22 weeks (parallel with SM2 verified-lock work)
 > **Sub-task count**: 60-80 across ~22-32 PRs
 

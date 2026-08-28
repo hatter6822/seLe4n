@@ -6,6 +6,15 @@ algorithmic bottleneck identified by the
 All 14 findings (F-P01 through F-P14) across 6 subsystems are resolved.
 Every invariant proof was re-verified — zero `sorry`, zero `axiom`.
 
+> **Historical chapter — two later supersessions to know about**: (1) the
+> `Std.HashMap`/`Std.HashSet` end-states shown in the tables below were
+> themselves migrated to the *verified* Robin Hood structures
+> (`RHTable`/`RHSet`) in WS-Q2 (v0.17.8), preserving the O(1) complexity
+> this portfolio established; (2) the WS-G9 fast-projection artifacts
+> (`computeObservableSet`, `projectStateFast`, `projectStateFast_eq`,
+> §§5–6 below) were removed in W3-D — `projectState` is the single
+> projection path today.
+
 ## 1. Motivation
 
 A production microkernel targeting Raspberry Pi 5 cannot afford O(n) hot-path

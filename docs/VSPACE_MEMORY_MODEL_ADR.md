@@ -41,6 +41,8 @@ proof-friendly and explicitly extensible.
 | WS-G6 | Migrated `VSpaceRoot.mappings` from `List (VAddr × PAddr)` to `Std.HashMap VAddr PAddr` for O(1) operations. |
 | WS-G3 | Added `asidTable : Std.HashMap ASID ObjId` for O(1) ASID resolution; `asidTableConsistent` invariant; `vspaceInvariantBundle` extended to 3 conjuncts. |
 | WS-H11 | Enriched mappings to `HashMap VAddr (PAddr × PagePermissions)` with W^X enforcement; `vspaceInvariantBundle` extended to 5 conjuncts (+ `wxExclusiveInvariant` + `boundedAddressTranslation`); `VSpaceBackend` enriched with permissions; `MachineConfig.wellFormed` enforces `endAddr ≤ 2^physicalAddressWidth`; abstract TLB model (`TlbState`, `adapterFlushTlb`, `tlbConsistent`). |
+| WS-Q2 | Migrated `mappings` (and the other kernel stores) to the verified Robin Hood table: `mappings : RHTable VAddr (PAddr × PagePermissions)` (`Model/Object/Structures.lean`); the ASID table joined as `asidTable : RHTable` (`Model/State.lean`). |
+| Later (through WS-SM) | `vspaceInvariantBundle` grew to 7 conjuncts (+ `vspaceCrossAsidIsolation`, `canonicalAddressInvariant`, `VSpaceInvariant.lean`); the ARMv8 4-level walk (AG6) and the SM7 shootdown protocol sit above this model. |
 
 ## Consequences
 
@@ -52,15 +54,21 @@ proof-friendly and explicitly extensible.
 - (WS-H11) Per-page permissions with W^X enforcement at insertion time.
 - (WS-H11) Abstract TLB model enables reasoning about cache maintenance sequences.
 
-### Deferred
+### Deferred (first two since delivered)
 
-- Multi-level page-table walk semantics.
-- ~~Hardware-precise MMU/TLB invalidation behavior.~~ Partially addressed: abstract `TlbState` model added (WS-H11); hardware-specific TLB ISB/DSB barrier integration deferred to H3 platform bring-up.
+- ~~Multi-level page-table walk semantics.~~ Delivered by WS-AG AG6: the
+  ARMv8 4-level walk (`pageTableWalkPerms`, `Kernel/Architecture/VSpaceARMv8.lean`).
+- ~~Hardware-precise MMU/TLB invalidation behavior.~~ Abstract `TlbState`
+  model added (WS-H11); hardware barrier integration delivered by AN9-H/I
+  (`BarrierKind` + composite emitters, `rust/sele4n-hal/src/barriers.rs`)
+  and the SM7 TLB-shootdown protocol.
 - Tight coupling to physical memory frame allocator semantics.
 
-These remain tracked as post-WS-B1 expansions; WS-C7 has already removed the bounded
-discovery-window hack in favor of explicit object indexing, while full finite-map ASID indexing
-remains future work.
+Of these, only the frame-allocator coupling remains tracked as a post-WS-B1
+expansion. WS-C7 removed the bounded discovery-window hack in favor of
+explicit object indexing, and full finite-map ASID indexing has since been
+delivered (WS-G3's O(1) `asidTable`, `RHTable`-backed since WS-Q2 — see the
+evolution table above).
 
 ## Verification evidence
 

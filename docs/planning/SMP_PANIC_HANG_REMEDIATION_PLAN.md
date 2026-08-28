@@ -1,5 +1,12 @@
 # Plan — Eliminate every panic and hang in the WS-SM multi-core work
 
+> **Status**: LANDED — the SM2.E remediation shipped the queued MCS-RW
+> lock (`rust/sele4n-hal/src/queued_rw_lock.rs`) and closed both
+> documented failure classes (see the SM2.E entry in `CHANGELOG.md`).
+> The only remaining `panic!` sites in `queued_rw_lock.rs` are the
+> deliberate panic-injection tests (guard-Drop release coverage), and no
+> "known flakiness under load" note survives in `rust/` or the plans.
+
 ## Table of contents
 
 1. [Context](#1-context)

@@ -17,7 +17,8 @@ all are addressed in the v0.29.x → v0.30.x release line.
 ### R-ABI-L1 — `LifecycleRetypeArgs` `TypeTag` enumeration
 
 `rust/sele4n-abi/src/args/lifecycle.rs` doc comment now enumerates the
-full 7-variant `TypeTag` list. The original audit flagged that the
+full `TypeTag` list (7 variants at the time; 8 since WS-SM SM6.D added
+`Reply`, and the lifecycle.rs comment tracks the current count). The original audit flagged that the
 crate-level docstring elided the variant names; the inline doc fix is
 the canonical resolution.
 
@@ -44,7 +45,8 @@ argument-bearing syscalls. Lean mirror: `ServiceQueryArgs` in
 
 ### R-ABI-L5 — `lateout("x6") _` AAPCS64 redundancy
 
-`rust/sele4n-hal/src/trap.rs` has an inline-comment annotation
+`rust/sele4n-abi/src/trap.rs` (the `raw_syscall` inline-asm site) has an
+inline-comment annotation
 explaining the `clobber_abi("C")` redundancy. Removing the explicit
 `lateout("x6") _` is a no-op; it stays for clarity.
 

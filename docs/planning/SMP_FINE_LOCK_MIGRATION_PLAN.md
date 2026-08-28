@@ -14,10 +14,11 @@
 Three coupled closures, sequenced security-first:
 
 1. **Fix the confirmed revocation-precision defect** (§3) — IPC capability
-   transfer misattributes CDT provenance to a synthetic source slot, so
-   `cspaceRevokeCdt` misses transferred children. High severity, single-core
-   reachable, model-level today (a live CVE-class defect once the kernel boots
-   at SM10.E).
+   transfer misattributed CDT provenance to a synthetic source slot, so
+   `cspaceRevokeCdt` missed transferred children. High severity, single-core
+   reachable, model-level (would have been a live CVE-class defect once the
+   kernel boots at SM10.E). **CLOSED at v0.33.88 across five cuts — see
+   §3.1 for the closure record**; items 2 and 3 below remain open.
 2. **Close the registered footprint defect** `UncoveredLockDomain.capTransferReceiverCnode`
    — the receiver-CNode write (and the previously-undeclared CDT write on
    *every* CDT writer) rides no declared lock. Declare it, prove the coverage,

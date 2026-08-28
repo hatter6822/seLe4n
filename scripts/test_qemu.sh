@@ -81,6 +81,12 @@ if ! rustup target list --installed 2>/dev/null | grep -q "${RUST_TARGET}"; then
     }
 fi
 
+# ── Temp logs (created before first use; cleaned up on exit) ──────────────
+QEMU_LOG=$(mktemp /tmp/qemu_boot_XXXXXX.log)
+QEMU_BUILD_LOG=$(mktemp /tmp/qemu_build_XXXXXX.log)
+cleanup() { rm -f "${QEMU_LOG}" "${QEMU_BUILD_LOG}"; }
+trap cleanup EXIT
+
 # ── Build kernel binary ───────────────────────────────────────────────────
 log_section "BUILD" "Building kernel binary for ${RUST_TARGET}..."
 cd "${RUST_DIR}"
@@ -101,13 +107,7 @@ fi
 
 log_section "BUILD" "Kernel binary built: $(wc -c < "${KERNEL_BIN}") bytes"
 
-# ── QEMU boot test ────────────────────────────────────────────────────────
-QEMU_LOG=$(mktemp /tmp/qemu_boot_XXXXXX.log)
-QEMU_BUILD_LOG=$(mktemp /tmp/qemu_build_XXXXXX.log)
-
-# Ensure temp files are cleaned up on exit/signal
-cleanup() { rm -f "${QEMU_LOG}" "${QEMU_BUILD_LOG}"; }
-trap cleanup EXIT
+# ── QEMU boot test (temp logs created above, before first use) ────────────
 
 log_section "TRACE" "RUN: QEMU boot test (timeout: ${QEMU_TIMEOUT}s)"
 
@@ -126,22 +126,24 @@ timeout "${QEMU_TIMEOUT}" "${QEMU_BIN}" \
 # ── Validate boot output ──────────────────────────────────────────────────
 BOOT_PASS=true
 
-# Check 1: UART boot banner
+# Check 1: UART boot banner — mandatory: a kernel that boots without its
+# banner is a failed boot (the KERNEL_BIN SKIP above is the only soft path)
 if grep -q "seLe4n" "${QEMU_LOG}" 2>/dev/null; then
     log_section "TRACE" "PASS: Boot banner detected"
 else
-    log_section "TRACE" "INFO: Boot banner not detected (may require full kernel linkage)"
-    # Not a hard failure — boot banner requires UART init which may not
-    # complete in all QEMU configurations
+    record_failure "TRACE" "Boot banner not detected"
+    BOOT_PASS=false
 fi
 
-# Check 2: Non-empty output (UART is functional)
+# Check 2: Non-empty output — mandatory: a silent QEMU run is a hung or
+# dead kernel, not a pass
 if [[ -s "${QEMU_LOG}" ]]; then
     log_section "TRACE" "PASS: QEMU produced output (UART functional)"
     QEMU_LINES=$(wc -l < "${QEMU_LOG}")
     log_section "TRACE" "      Output: ${QEMU_LINES} lines"
 else
-    log_section "TRACE" "INFO: QEMU produced no output"
+    record_failure "TRACE" "QEMU produced no output (hung or dead kernel)"
+    BOOT_PASS=false
 fi
 
 # Check 3: No fatal exceptions in output
@@ -160,9 +162,14 @@ else
     log_section "TRACE" "PASS: QEMU completed without crash"
 fi
 
-# Check 5: Structured boot sequence validation from fixture
+# Check 5: Structured boot sequence validation from fixture — every fragment
+# is mandatory once QEMU has run; an empty log already failed Check 2, so the
+# -s guard only suppresses duplicate per-fragment reports
 FIXTURE="${REPO_ROOT}/tests/fixtures/qemu_boot_expected.txt"
-if [[ -f "${FIXTURE}" ]] && [[ -s "${QEMU_LOG}" ]]; then
+if [[ ! -f "${FIXTURE}" ]]; then
+    record_failure "TRACE" "Boot fixture missing: ${FIXTURE}"
+    BOOT_PASS=false
+elif [[ -s "${QEMU_LOG}" ]]; then
     log_section "TRACE" "Validating boot sequence against ${FIXTURE##*/}..."
     while IFS='|' read -r check_name fragment; do
         # Skip comments and blank lines
@@ -173,7 +180,8 @@ if [[ -f "${FIXTURE}" ]] && [[ -s "${QEMU_LOG}" ]]; then
         if grep -q "${fragment}" "${QEMU_LOG}" 2>/dev/null; then
             log_section "TRACE" "PASS: ${check_name} — '${fragment}' found"
         else
-            log_section "TRACE" "INFO: ${check_name} — '${fragment}' not found (pre-hardware)"
+            record_failure "TRACE" "${check_name} — '${fragment}' missing from boot log"
+            BOOT_PASS=false
         fi
     done < "${FIXTURE}"
 fi

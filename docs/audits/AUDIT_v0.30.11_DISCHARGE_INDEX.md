@@ -11,7 +11,7 @@
 **Predecessor:** [`AUDIT_v0.30.6_DISCHARGE_INDEX.md`](../dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md) (archived)
 **Author:** WS-RC Phase R0.3
 **Date:** 2026-04-29
-**Status:** SEED — empty at WS-RC R0; populated incrementally as R1..R12 phases produce closure-form theorems and structural witnesses.
+**Status:** POPULATED through R4 (sections §3.D/§3.E landed; §3.F partial — R12.* absorbed into WS-SM). Originally seeded empty at WS-RC R0.
 
 ## 1. Purpose and methodology
 
@@ -70,8 +70,8 @@ will be added in the same PR as the corresponding R-phase landing.
 | 3.A | CDT post-state witnesses | `hCdtPost` | (predecessor AN4-C) | H-04 | CARRIED — see [v0.30.6 index §3.A](../dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md#3a--cdt-post-state-discharge-h-04--an4-c) |
 | 3.B | Projection closures | `hProjEq` | (predecessor AN6-A / AK6-F) | H-07, AK6F.13–19 | CARRIED — see [v0.30.6 index §3.B](../dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md#3b--projection-closures-h-07--an6-a--ak6f1319) |
 | 3.C | Schedule / Service closures | `hSchedProj`, `hServiceProjEq` | (predecessor AN5-D / AK6-F) | SC-M02, AK6F.11/12 | CARRIED — see [v0.30.6 index §3.C](../dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md#3c--schedule--service-closures-sc-m02--ak6f1112) |
-| 3.D | NoDup / structural promotions | type-level invariant | R4.A / R4.B / R4.C | DEEP-MODEL-01, DEEP-CAP-04, DEEP-IPC-05 | **PENDING — populated at R4 landing** |
-| 3.E | Predecessor reroutings | – | R4.C subsumes DEEP-IPC-01 | DEEP-IPC-01 | **PENDING — populated at R4.C landing** |
+| 3.D | NoDup / structural promotions | type-level invariant | R4.A / R4.B / R4.C | DEEP-MODEL-01, DEEP-CAP-04, DEEP-IPC-05 | **LANDED** — see §3.D below |
+| 3.E | Predecessor reroutings | – | R4.C subsumes DEEP-IPC-01 | DEEP-IPC-01 | **LANDED** — see §3.E below |
 | 3.F | False-positive structural witnesses | runtime-guard equivalence | R4.D / R12.B / R12.C / R12.D | DEEP-CAP-02, DEEP-ARCH-01, DEEP-RUST-01/02, DEEP-ARCH-02 | **PENDING — populated as each gate / witness lands** |
 | 3.G | Predecessor closure reconfirmations | DEBT carry-over | R0.4 | DEBT-RUST-02 / H-24 | **LANDED at R0.4** (see annotation in [v0.30.6 index §5](../dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md#5-closure-summary)) |
 

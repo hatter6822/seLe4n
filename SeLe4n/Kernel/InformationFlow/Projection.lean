@@ -934,9 +934,10 @@ def serviceRegistryAffectsProjection
     formalizes the boundary: service orchestration state changes that don't
     create or remove observable services are invisible to the projection model.
 
-    **Scope of NI guarantees**: The 32 `NonInterferenceStep` constructors
+    **Scope of NI guarantees**: The 35 `NonInterferenceStep` constructors
     (in `Invariant/Composition.lean`) cover kernel primitives (IPC, scheduling,
-    capability operations, lifecycle). Service orchestration NI is deferred to
+    capability operations, lifecycle) and registry-level service registration
+    (`registerServiceChecked`). NI for orchestration *internals* is deferred to
     a future workstream requiring extension of `ObservableState` with dependency
     graph projections and NI proofs for all service operations.
 

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.33.101-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.0-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -61,8 +61,8 @@ architectural improvements enabled by the Lean 4 proof framework:
 - **Composable performance objects** — CPU time is a first-class kernel object. `SchedContext` encapsulates budget, period, priority, deadline, and domain into a reusable scheduling context that threads bind to via capabilities. CBS (Constant Bandwidth Server) scheduling provides proven bandwidth isolation (`cbs_bandwidth_bounded` theorem)
 - **Passive servers** — idle servers borrow the client's `SchedContext` during IPC, consuming zero CPU when not serving. The `donationChainAcyclic` invariant prevents circular donation chains
 - **Budget-driven IPC timeouts** — blocking operations are bounded by the caller's budget. On expiry, threads are spliced out of the endpoint queue and re-enqueued
-- **Priority Inheritance Protocol** — transitive priority propagation with machine-checked deadlock freedom (`blockingChainAcyclic`) and bounded chain depth. Prevents unbounded priority inversion
-- **Bounded latency theorem** — machine-checked WCRT bound: `WCRT = D × L_max + N × (B + P)`, proven across 7 liveness modules covering budget monotonicity, replenishment timing, yield semantics, band exhaustion, and domain rotation
+- **Priority Inheritance Protocol** — transitive priority propagation with machine-checked deadlock freedom (`blockingAcyclic`) and bounded chain depth. Prevents unbounded priority inversion
+- **Bounded latency theorem** — machine-checked WCRT bound: `WCRT = D × L_max + N × (B + P)`, proven across 8 liveness modules covering budget monotonicity, replenishment timing, yield semantics, band exhaustion, and domain rotation
 
 ### Data structures and IPC
 
@@ -73,9 +73,9 @@ architectural improvements enabled by the Lean 4 proof framework:
 ### Security and verification
 
 - **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 43-entry enforcement boundary with per-operation non-interference proofs (35-constructor `NonInterferenceStep` inductive), and a bounded, fail-closed declassification audit trail with a capability-gated reader
-- **Composed proof layer** — `proofLayerInvariantBundle` composes 11 subsystem invariants (scheduler, capability, IPC, lifecycle, service, VSpace, cross-subsystem, TLB, CBS extensions, and notification-waiter consistency) into a single top-level obligation verified from boot through all operations
-- **Three-phase state architecture** — builder phase with invariant witnesses flows to a frozen immutable representation with proven lookup equivalence. 20 frozen operations mirror the live API
-- **Complete operation set** — all seL4 operations implemented with invariant preservation, including the 5 deferred operations (suspend/resume, setPriority/setMCPriority, setIPCBuffer)
+- **Composed proof layer** — `proofLayerInvariantBundle` composes 16 subsystem invariant bundles (scheduler core + CBS extensions, capability, IPC + IPC–scheduler coupling, lifecycle, service, VSpace, cross-subsystem, TLB consistency, notification-waiter consistency, TLB-shootdown pending/ack bounds, per-core TLB invalidation and I-cache coherence, and the declassification audit-log bound) into a single top-level obligation verified from boot through all operations
+- **Three-phase state architecture** — builder phase with invariant witnesses flows to a frozen immutable representation with proven lookup equivalence. 24 frozen operations mirror the live API
+- **Complete operation set** — all seL4 operations implemented with invariant preservation, through thread suspend/resume, priority management (setPriority/setMCPriority), and IPC-buffer configuration
 - **Service orchestration** — kernel-level component lifecycle with dependency graphs and proven acyclicity (seLe4n extension, not in seL4)
 
 ## Current state
@@ -86,9 +86,9 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.33.101` |
+| **Version** | `0.34.0` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 286,841 across 286 files |
+| **Production Lean LoC** | 286,842 across 286 files |
 | **Test Lean LoC** | 64,078 across 69 test suites |
 | **Proved declarations** | 9,601 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
@@ -100,8 +100,9 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 Metrics are derived from the codebase by `./scripts/generate_codebase_map.py`
 and stored in [`docs/codebase_map.json`](docs/codebase_map.json) under the
-`readme_sync` key. Update all documentation together using
-`./scripts/report_current_state.py` as a cross-check.
+`readme_sync` key. Update all documentation together with
+`./scripts/sync_documentation_metrics.sh` (verify-only: `--check`);
+`./scripts/report_current_state.py` remains a manual cross-check.
 
 ## Quick start
 
@@ -159,7 +160,7 @@ machine-checked invariant preservation proofs:
 ├──────────────────────────────────────────────────────────────────────┤
 │             Foundations  (Prelude, Machine, MachineConfig)           │
 ├──────────────────────────────────────────────────────────────────────┤
-│          Platform  (Contract, Sim, RPi5)  ← H3-prep bindings         │
+│        Platform  (Contract, Sim, RPi5)  ← production bindings        │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -195,7 +196,7 @@ SeLe4n/
 │                                boot VSpaceRoot (production-wired since WS-RC R3).
 ├── Testing/                     Test harness, state builder, invariant checks
 Main.lean                        Executable entry point
-tests/                           38 test suites
+tests/                           Executable test suites + fixtures
 ```
 
 Each subsystem follows the **Operations/Invariant split**: transitions in
@@ -212,31 +213,32 @@ per-file inventory, see [`docs/codebase_map.json`](docs/codebase_map.json).
 | **IPC** | Single linked-list endpoint queue | Intrusive dual-queue with O(1) mid-queue removal; budget-driven timeouts |
 | **Information flow** | Binary high/low partition | N-domain configurable policy with a 43-entry enforcement boundary (count pinned by `enforcementBoundaryExtended_count`), per-operation NI proofs, and a capability-gated audit trail for every authorized declassification |
 | **Priority inheritance** | C-implemented PIP (MCS branch) | Machine-checked transitive PIP with deadlock freedom and parametric WCRT bound |
-| **Bounded latency** | No formal WCRT bound | `WCRT = D × L_max + N × (B + P)` proven across 7 liveness modules |
+| **Bounded latency** | No formal WCRT bound | `WCRT = D × L_max + N × (B + P)` proven across 8 liveness modules |
 | **Object stores** | Linked lists and arrays | Verified Robin Hood hash tables (`RHTable`/`RHSet`) with O(1) hot paths |
 | **Service management** | Not in kernel | First-class orchestration with dependency graph and acyclicity proofs |
-| **Proofs** | Isabelle/HOL, post-hoc | Lean 4 type-checker, co-located with transitions (2,725 proved declarations, zero sorry/axiom) |
+| **Proofs** | Isabelle/HOL, post-hoc | Lean 4 type-checker, co-located with transitions — zero sorry/axiom (proved-declaration count in the [Current state](#current-state) table) |
 | **Platform** | C-level HAL | `PlatformBinding` typeclass with typed boundary contracts |
 
 ## What's next
 
-All software-level workstreams (WS-B through WS-AB) and the H3 hardware binding
-workstream (WS-AG) are complete. The full history is in
-[`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
+The active workstream is **WS-SM** (SMP multi-core completion), which merged
+the remaining WS-RC remediation phases into the SMP-specific SM0–SM10 phase
+plan and closes at **v1.0.0** with a bootable verified SMP microkernel on
+Raspberry Pi 5. Phases SM0–SM9 have landed — foundational SMP types and the
+lock hierarchy, the Rust HAL SMP bring-up, verified lock primitives,
+per-object locks, per-core scheduler state and scheduling, cross-core IPC,
+TLB shootdown and cache maintenance, SMP information flow, and the
+declassification completion (SM9, closed at v0.33.100). The remaining phase
+is **SM10** (release closure → v1.0.0). The syscall return ABI workstream
+(**WS-RA**) is complete.
 
-### Completed workstreams
-
-| Workstream | Scope | Version |
-|------------|-------|---------|
-| **WS-AG** | H3 Hardware Binding Audit Remediation — 10 phases (AG1–AG10), 67 sub-tasks. HAL crate, GIC-400 driver, ARM Generic Timer, ARMv8 page tables, ASID manager, FFI bridge (17 `@[extern]` functions), exception/interrupt models, cache coherency model, QEMU integration testing, speculation barriers, hardware validation suite. **PORTFOLIO COMPLETE** | v0.26.0–v0.27.1 |
-| **WS-AF** | Pre-Release Comprehensive Audit Remediation — 6 phases (AF1–AF6), 49 sub-tasks. **PORTFOLIO COMPLETE** | v0.25.22–v0.25.27 |
-| **WS-AE** | Production Audit Remediation — 6 phases (AE1–AE6), 53 sub-tasks. **PORTFOLIO COMPLETE** | v0.25.15–v0.25.21 |
-
-### Next major milestone
-
-**WS-V**: Multi-core SMP support, FrozenOps production promotion, CDT fuel
-sufficiency proofs, and donation chain formal bridge. Prior audits and milestone
-closeouts are archived in [`docs/dev_history/`](docs/dev_history/README.md).
+Master plan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
+with per-phase plans in `docs/planning/SMP_*.md`. The canonical per-phase
+record — including every completed workstream portfolio (WS-B through WS-AB,
+WS-AE through WS-AN, WS-RC R0–R5, WS-RA) — is
+[`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md); prior audits and
+milestone closeouts are archived in
+[`docs/dev_history/`](docs/dev_history/README.md).
 
 ## License and third-party attributions
 

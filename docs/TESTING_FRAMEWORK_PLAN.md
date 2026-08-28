@@ -4,16 +4,17 @@
 
 This document defines the active testing baseline and near-term expansion path after M5 closeout.
 
-Current stage context: **All prior workstreams completed through WS-Q (v0.17.14). Active workstream: WS-R (Comprehensive Audit Remediation). Testing surface: 54,573 production LoC, 7,309 test LoC, 1,660 proved declarations (zero sorry/axiom). 4-tier CI enforces regression protection across 98 production files and 10 test suites.**
+Current stage context: **Active workstream: WS-SM (SMP multi-core completion; SM0–SM9 landed, SM10 pending → v1.0.0); WS-RA complete. Testing surface at v0.33.101: 286,841 production LoC across 286 files, 64,078 test LoC across 69 suites, 9,601 proved declarations (zero sorry/axiom) — live values in `docs/codebase_map.json` → `readme_sync`. The tier ladder now spans Tier 0–5 (§2).** (This document's baseline sections were written at the WS-R era and record that testing architecture; tier contents below are updated to the current scripts.)
 
 ## 2. Current enforced tiers
 
-- **Tier 0** hygiene (`scripts/test_tier0_hygiene.sh`: forbidden-marker scan, fixture-isolation guard, wrapper-structure regression, theorem-body spot-check, SHA-pinning regression, optional shellcheck)
-- **Tier 1** build/theorem compile (`scripts/test_tier1_build.sh`)
-- **Tier 2** executable smoke (`scripts/test_tier2_trace.sh` + `scripts/test_tier2_negative.sh`, including `negative_state_suite` + `information_flow_suite`)
+- **Tier 0** hygiene (`scripts/test_tier0_hygiene.sh`, now ~24 checks: forbidden-marker scan, fixture-isolation guard, wrapper-structure regression, theorem-body spot-check (L-08), SHA-pinning regression, shellcheck (locally optional; CI installs it — AF6-F), version sync, website-link protection, identifier-naming gate + witness suite, CodeQL workflow policy + self-test, `lean_code_view --self-test` + code-view wiring test, anchor-consistency + self-test, AK7 cascade monotonicity, production/staging partition, orphan-fields, codebase-map unit tests, scenario-registry validation, lifecycle-internal allowlist, DeviceTree legacy consumers, physical-address width, BCM2712 freshness, lock FFI symmetry)
+- **Tier 1** build/theorem compile (`scripts/test_tier1_build.sh`: `lake build`, the staged-platform build anchor, the live-arm per-core routing gate, and the content-flow classification reach gate)
+- **Tier 2** executable smoke (`scripts/test_tier2_trace.sh` + `scripts/test_tier2_determinism.sh` (mandatory two-run diff) + `scripts/test_tier2_negative.sh`, including `negative_state_suite` + `information_flow_suite`; `test_smoke.sh` additionally builds `SeLe4n.Platform.Sim.Contract` and runs the Rust gate `scripts/test_rust.sh`)
 - **Tier 3** invariant surface checks (`scripts/test_tier3_invariant_surface.sh`, via full suite),
   including code/theorem/trace anchor verification for all milestone surfaces.
-- **Tier 4** staged nightly candidates (`scripts/test_tier4_nightly_candidates.sh` via `scripts/test_nightly.sh`; explicit opt-in extension point with mode-aware status messaging for default vs enabled runs)
+- **Tier 4** staged nightly candidates (`scripts/test_tier4_nightly_candidates.sh` via `scripts/test_nightly.sh`; explicit opt-in extension point with mode-aware status messaging for default vs enabled runs) plus the SMP boot-check family (`scripts/test_tier4_smp_bootcheck.sh` orchestrating the `test_qemu_smp_*.sh` exercisers when a QEMU environment is available)
+- **Tier 5** cross-language correspondence (`scripts/test_tier5_cross_language.sh`, WS-SM SM2.C-defer D-6: Lean-oracle vs Rust lock-primitive correspondence, run from `test_nightly.sh` under `NIGHTLY_ENABLE_EXPERIMENTAL=1`)
 
 Documentation sync (`scripts/test_docs_sync.sh`) verifies GitBook navigation generation, markdown link integrity, and optional doc-gen4 probes. It is integrated into the `test_smoke.sh` entrypoint and the smoke CI job (WS-H3/M-19), catching documentation navigation/link drift on every PR.
 
@@ -51,7 +52,7 @@ Root contributor discoverability artifacts are `CONTRIBUTING.md` and `CHANGELOG.
 
 ## 5. M5 evidence/testing closure status (WS-M5-E complete)
 
-1. Service-graph restart/isolation/dependency-failure fixture fragments are present in `tests/fixtures/main_trace_smoke.expected`.
+1. Service-graph isolation/dependency-failure fixture fragments are present in `tests/fixtures/main_trace_smoke.expected` (the start/stop/restart lifecycle fragments were removed with the WS-Q1 registry-only service model).
 2. Tier 3 includes grouped M5 service/policy theorem and bundle symbol checks plus trace anchors.
 3. Tier 4 staged nightly candidates now assert determinism and M5 evidence-line presence before full-suite replay.
 4. Artifact names remain standardized under `tests/artifacts/nightly/` for CI triage.
@@ -153,7 +154,7 @@ For future milestones, expand this model by adding new proof/trace obligations a
 
 ## 12. M7 WS-A4 closure evidence (completed)
 
-1. Tier 2 fixture entries are scenario-labeled with `scenario_id | risk_class | expected_trace_fragment` so risk mapping is auditable at a glance.
+1. Tier 2 fixture entries are scenario-labeled as `[PREFIX-NNN] expected_trace_fragment` lines with the risk mapping in `scenario_registry.yaml` (the parser also accepts an optional `scenario_id | risk_class | fragment` pipe form, unused by the current fixture).
 2. Tier 2 parser emits concise scenario/risk-tagged failures and ignores comment/blank fixture lines for readability.
 3. Tier 4 nightly candidates execute seeded `trace_sequence_probe` runs to provide stochastic/property-style sequence diversity checks over IPC endpoint-state consistency.
 

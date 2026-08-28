@@ -78,9 +78,14 @@ fi
 
 # 3. Rust toolchain + aarch64-unknown-none target
 if command -v rustup &>/dev/null; then
-  info "Ensuring aarch64-unknown-none Rust target"
-  rustup target add aarch64-unknown-none 2>&1 | tail -2 || true
-  pass "Rust aarch64-unknown-none target available"
+  info "Ensuring aarch64-unknown-none Rust target (pinned toolchain)"
+  # Run from rust/ so rust-toolchain.toml's pinned toolchain applies;
+  # from the repo root the target would land in the default toolchain.
+  if (cd "${REPO_ROOT}/rust" && rustup target add aarch64-unknown-none 2>&1 | tail -2); then
+    pass "Rust aarch64-unknown-none target available on the pinned toolchain"
+  else
+    warn "Could not add aarch64-unknown-none to the pinned toolchain; cross-builds under rust/ will fail until it is installed"
+  fi
 else
   warn "rustup not installed; install via:"
   warn "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"

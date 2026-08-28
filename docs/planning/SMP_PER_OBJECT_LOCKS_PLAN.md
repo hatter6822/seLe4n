@@ -1,9 +1,10 @@
 # SM3 — Per-Object Lock Fields & Hierarchical Order (WS-SM Phase 3)
 
 > **Phase**: SM3 of WS-SM
+> **Status**: CLOSED (v0.31.9) — per-object locks, lock sets, 2PL, deadlock-freedom, serializability; SM3.C.9 @[export] wrapping deferred (see SMP_FINE_LOCK_MIGRATION_PLAN.md)
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
-> **Target releases**: v0.46.0 .. v0.52.x (after SM1+SM2 complete)
+> **Target releases (original estimate)**: v0.46.0 .. v0.52.x (after SM1+SM2 complete)
 > **Calendar estimate**: 8-12 weeks
 > **Sub-task count**: 50-65 across ~18-26 PRs
 

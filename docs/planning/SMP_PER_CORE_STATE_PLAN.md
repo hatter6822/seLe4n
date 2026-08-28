@@ -1,9 +1,10 @@
 # SM4 — Path-a Per-Core State Replacement (WS-SM Phase 4)
 
 > **Phase**: SM4 of WS-SM
+> **Status**: LANDED (v0.31.37) — per-core Vector state, SchedulerState, register banks, invariant migration, idle bootstrap (SM4.C.11 liveness-form migration is Scheduler-subsystem scope)
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
-> **Target releases**: v0.53.0 .. v0.70.x (largest phase)
+> **Target releases (original estimate)**: v0.53.0 .. v0.70.x (largest phase)
 > **Calendar estimate**: 20-26 weeks
 > **Sub-task count**: 90-115 across ~35-50 PRs
 

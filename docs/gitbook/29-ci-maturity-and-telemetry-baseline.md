@@ -60,7 +60,7 @@ Flake signals are triaged as reliability incidents. Timing regressions are revie
 - Command-level CI timing capture across all lanes
 - Repeated-lane flake probe with configurable attempt count
 - Telemetry artifact uploads to `.ci-artifacts/telemetry/`
-- Weekly Lean toolchain drift proposals via Dependabot
+- Weekly Lean toolchain drift proposals via the `lean_toolchain_update_proposal.yml` workflow (Dependabot covers GitHub Actions pins)
 - Explicit CodeQL policy rationale in `docs/CI_POLICY.md` (blocking since v0.33.6; the WS-B10 non-blocking decision and its reversal are recorded in §8.1)
 
 ### Related

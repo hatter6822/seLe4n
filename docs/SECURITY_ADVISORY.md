@@ -36,8 +36,12 @@ prevention is the responsibility of user-level scheduling policy, not the kernel
    priorities within other domains.
 5. **MCS scheduling extensions**: seL4's MCS (Mixed-Criticality Systems)
    scheduling extensions add sporadic server semantics with bandwidth
-   enforcement. These are not yet modeled in seLe4n but could be added as a
-   future extension without breaking the formal model.
+   enforcement. seLe4n has since modeled its own bandwidth-enforcement
+   layer (WS-Z): the `SchedContext` subsystem
+   (`SeLe4n/Kernel/SchedContext/`) with a CBS budget engine
+   (`consumeBudget`, `scheduleReplenishment`, `admissionCheck`,
+   `cbsUpdateDeadline`) and per-core CBS under SMP
+   (`Scheduler/Operations/PerCoreCbs.lean`, SM5).
 
 ### seL4 Precedent
 
@@ -48,13 +52,28 @@ enforcement but are a separate scheduling policy layer above the base kernel.
 ### Formal Model Status
 
 The scheduler's `schedule` function (`Core.lean`) selects the highest-priority
-runnable thread via `chooseThread`. The EDF (Earliest Deadline First) variant
-(`edfPriority`) provides deadline-aware selection but does not enforce starvation
-freedom — it only changes the priority metric, not the preemption semantics.
+runnable thread via `chooseThread`. EDF deadline tie-breaking lives inside
+the selection helpers (`betterCandidate` / `chooseBestInBucketEffective` in
+`Scheduler/Operations/Selection.lean`) and changes the priority metric, not
+the preemption semantics.
 
-No formal starvation freedom property is claimed or proven. All scheduler
-invariants (`schedulerInvariantBundleFull`) concern structural correctness
-(queue consistency, time-slice positivity, context matching), not liveness.
+Liveness properties now exist but are **hypothesis-conditional**, so the
+headline of this advisory stands: starvation freedom is not guaranteed
+unconditionally. `no_starvation_under_smp` and
+`thread_eventually_scheduled_onCore`
+(`Scheduler/Operations/PerCoreWcrt.lean`) compose the domain-rotation and
+band-exhaustion bounds of the 8-module `Scheduler/Liveness/` WCRT surface
+into a closed bound, but the substantive progress content is itself an
+externalized deployment hypothesis: `hBandProgress` *assumes* that once
+the thread's target domain is active with the thread runnable, the thread
+is selected within the band-exhaustion bound. Of that hypothesis, only
+the `eventuallyExits` sub-piece (`Liveness/BandExhaustion.lean`) has an
+RPi5 discharge (`rpi5_higherBandExhausted_from_progressesOnCore`,
+`Liveness/RPi5CanonicalConfig.lean`); the FIFO/bucket-rotation
+composition that would construct `hBandProgress` outright is an **open
+follow-up**, recorded in that module's AN5-E.4 honest-framing note. The
+structural scheduler invariants (`schedulerInvariantBundleFull`) remain
+unconditional.
 
 ---
 
@@ -154,7 +173,7 @@ three theorem signatures:
 | `domainTimeRemaining ≤ Q` | **Deployment.** No cap, no bound. |
 | `domainScheduleIndexInBoundsOnCore` | Kernel — maintained by the domain transitions. |
 | `domainConsistentOnCore` | Kernel — what makes `activeDomain` a function of the schedule and index rather than a fourth independent value. |
-| `domainSchedule` unchanged between observations | Kernel **today**: there is no `setDomainSchedule`, and the only assignments in the tree are the boot builder and the freeze copy. A Tier-3 anchor pins that absence. Adding a schedule-reconfiguration syscall would invalidate this figure — the schedule is projected unfiltered, so a mutable schedule is its own channel and fixing N bounds nothing about its contents. |
+| `domainSchedule` unchanged between observations | Kernel **today**: no syscall mutates the schedule. The assignment sites are the boot builder, the freeze copy, and the test-only mutator `setDomainScheduleChecked` (`Model/State.lean`, exercised from test harnesses; no dispatch arm routes to it). A Tier-3 anchor pins the absence of a `setDomainSchedule` syscall surface. Adding a schedule-reconfiguration syscall would invalidate this figure — the schedule is projected unfiltered, so a mutable schedule is its own channel and fixing N bounds nothing about its contents. |
 
 The corrected figure is proven rather than asserted:
 `schedulingChannel_alphabet_bounded` injects the per-core observation alphabet

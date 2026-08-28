@@ -30,7 +30,8 @@ Monolithic invariants are brittle. seLe4n decomposes invariants into named compo
 
 ```
 schedulerInvariantBundle =
-  schedulerWellFormed ∧ currentThreadInActiveDomain ∧ timeSlicePositive
+  queueCurrentConsistent ∧ runQueueUnique ∧ currentThreadValid
+-- (timeSlicePositive and the domain conjuncts live in the Full bundle)
 
 capabilityInvariantBundle =
   cspaceSlotUnique ∧ cspaceLookupSound ∧ cdtWellFormed
@@ -63,7 +64,7 @@ The syscall boundary uses a two-layer decode architecture that converts raw ARM6
 
 **Layer 1 — RegisterDecode.lean:** Converts the raw register file (x0–x7) into a flat `SyscallDecodeResult` containing `capAddr : CPtr`, `msgInfo : MessageInfo`, `syscallId : SyscallId`, and `msgRegs : Array RegValue`. This layer handles architecture-specific register layout via `SyscallRegisterLayout` and provides total decode with explicit `Except` errors. Round-trip, determinism, and error-exclusivity theorems are proved at this layer.
 
-**Layer 2 — SyscallArgDecode.lean:** Converts the `msgRegs` array within `SyscallDecodeResult` into per-syscall typed argument structures. Ten structures cover the syscall families:
+**Layer 2 — SyscallArgDecode.lean:** Converts the `msgRegs` array within `SyscallDecodeResult` into per-syscall typed argument structures. Per-syscall structures cover the syscall families (ten at WS-K; 27 `*Args` structures today, spanning SchedContext/TCB/notification/audit/receive families):
 
 | Syscall family | Structure | Min regs | Fields |
 |---|---|---|---|
@@ -80,7 +81,7 @@ The syscall boundary uses a two-layer decode architecture that converts raw ARM6
 
 A shared `requireMsgReg` helper provides safe indexing with `invalidMessageInfo` on insufficient registers. All decode functions are pure `Except KernelError T` — no state access, no side effects. Ten encode functions provide the inverse mapping for round-trip proofs (`decode_layer2_roundtrip_all`).
 
-**Dispatch integration:** `dispatchWithCap` accepts a full `SyscallDecodeResult` and routes through the appropriate layer-2 decode function before delegating to the kernel operation. All 25 syscalls are fully wired — zero `.illegalState` stubs remain.
+**Dispatch integration:** `dispatchWithCap` accepts a full `SyscallDecodeResult` and routes through the appropriate layer-2 decode function before delegating to the kernel operation. All 34 syscalls are fully wired — zero `.illegalState` stubs remain (25 at the WS-K closure; the surface has since grown through WS-SM SM9's `declassifySignal` = 33).
 
 **Service registry (WS-Q1):** The service subsystem uses a stateless registry model — services are registered entries with identity, dependencies, and isolation edges. No `ServiceStatus` lifecycle state or `ServiceConfig` policy predicates. Graph invariants (acyclicity, bounded service count) are preserved by `serviceRegisterDependency`.
 
@@ -125,11 +126,11 @@ seLe4n uses `Std.HashMap` and `Std.HashSet` for all kernel hot paths. This is a 
 
 | Data structure | seL4 | seLe4n |
 |----------------|------|--------|
-| Object store | Array indexed by ID | `HashMap ObjId KernelObject` |
-| CNode slots | Array indexed by slot | `RHTable Slot Capability` (verified Robin Hood hash table, WS-N4) |
-| VSpace mappings | Page table tree | `HashMap VAddr (PAddr × PagePermissions)` with W^X enforcement |
-| Run queue | Linked list | `HashMap Priority (List ThreadId)` + `HashSet ThreadId` with dequeue-on-dispatch (WS-H12b) |
-| CDT children | Linked list | `HashMap CdtNodeId (List CdtNodeId)` |
+| Object store | Array indexed by ID | `RHTable ObjId KernelObject` (verified Robin Hood table since WS-Q2) |
+| CNode slots | Array indexed by slot | `UniqueSlotMap Capability` (WS-RC R4.A structural promotion of the WS-N4 `RHTable Slot Capability`) |
+| VSpace mappings | Page table tree | `RHTable VAddr (PAddr × PagePermissions)` with W^X enforcement (WS-Q2) |
+| Run queue | Linked list | `RHTable`/`RHSet`-backed `RunQueue` (+ `threadPriority`/`flat`/`size` indices) with dequeue-on-dispatch (WS-H12b, WS-Q2) |
+| CDT children | Linked list | `RHTable CdtNodeId (List CdtNodeId)` (WS-Q2) |
 
 HashMap key uniqueness is structural (guaranteed by the data structure), so properties like `slotsUnique` become trivially true. This eliminated entire classes of proof obligations during the WS-G migration.
 
@@ -156,7 +157,7 @@ seL4's CDT uses mutable doubly-linked lists. seLe4n replaces this with a node-st
 - **Derivation edges** connect stable node IDs, not mutable slot pointers.
 - **Bidirectional maps** (`cdtSlotNode`, `cdtNodeSlot`) link slots to nodes.
 - **`cspaceMove`** updates slot-to-node ownership without rewriting CDT edges.
-- **`childMap : HashMap CdtNodeId (List CdtNodeId)`** gives O(1) children lookup.
+- **`childMap : RHTable CdtNodeId (List CdtNodeId)`** gives O(1) children lookup.
 - **`descendantsOf`** runs in O(n+e) via DFS with `HashSet` visited tracking.
 
 This eliminates dangling-pointer hazards and makes revocation semantics cleaner: `cspaceRevokeCdtStrict` reports the first descendant deletion failure with offending slot context.
@@ -170,7 +171,7 @@ seL4 uses a binary high/low partition. seLe4n generalizes to a parameterized N-d
 - **Legacy `SecurityLabel`** — two-dimensional product label (confidentiality × integrity) with four fixed security classes, providing backward-compatible Bell-LaPadula/Biba semantics.
 - **Generic `SecurityDomain`** — Nat-indexed domain identifier with pluggable `DomainFlowPolicy` supporting arbitrary domain counts and custom flow relations (linear order, flat lattice, or application-specific policies).
 
-The legacy 2D system embeds into the generic N-domain system via `embedLegacyLabel` with a proven flow-preservation theorem. `computeObservableSet` precomputes visible objects using `HashSet ObjId`, and `projectStateFast` uses O(1) membership checks. The `projectStateFast_eq` theorem proves equivalence with the naive projection.
+The legacy 2D system embeds into the generic N-domain system via `embedLegacyLabel` with a proven flow-preservation theorem. (The WS-G9-era fast-projection cluster — `computeObservableSet`, `projectStateFast`, `projectStateFast_eq` — was removed in W3-D; `projectState` in `Projection.lean` is the single projection path today.)
 
 ## 6. Milestone slicing strategy
 
@@ -282,10 +283,11 @@ WS-J1 addresses this modeling gap in 6 phases (J1-A through J1-F):
 
 ```
 User space → hardware trap → RegisterDecode.decodeSyscallArgs → syscallEntry
-    → SyscallGate → api* wrapper → internal kernel operation
+    → SyscallGate → syscallInvoke → dispatchWithCap → internal kernel operation
 ```
 
-The existing `api*` functions remain as the internal kernel API. `syscallEntry`
+(The `api*` wrapper layer this section originally described was removed in
+S5-A; the capability-gated dispatch pipeline above is the single surface.) `syscallEntry`
 models the user-space boundary where untrusted register values become trusted
 kernel references — exactly where real-world confusion attacks occur.
 

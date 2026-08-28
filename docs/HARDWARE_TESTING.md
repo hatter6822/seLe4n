@@ -14,7 +14,9 @@ effects** — coherent TLBs, ordered MMIO writes, atomic suspend
 windows, and SMP secondary-core wake-up.
 
 > **Audience.** Maintainers performing post-AN9 validation, or
-> contributors enabling SMP (`SMP_ENABLED=true`) for a deployment.
+> contributors validating SMP (`smp_enabled` on the kernel command
+> line, default `true` since v0.32.142; the Rust-side static is
+> `smp::SMP_ENABLED`) for a deployment.
 
 ---
 
@@ -79,9 +81,10 @@ sudo apt install gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
 # OpenOCD (for on-board JTAG debugging — optional, RPi 5 only)
 sudo apt install openocd
 
-# Rust nightly with aarch64-unknown-none target
-rustup install nightly
-rustup target add aarch64-unknown-none --toolchain nightly
+# Rust stable (the repo pins the toolchain via rust/rust-toolchain.toml).
+# Run the target-add from rust/ so the pinned toolchain override applies —
+# from the repo root it would land in your default toolchain instead.
+(cd rust && rustup target add aarch64-unknown-none)
 
 # Lean 4.28.0 (already installed via setup_lean_env.sh)
 ./scripts/setup_lean_env.sh
@@ -89,8 +92,9 @@ rustup target add aarch64-unknown-none --toolchain nightly
 
 ### 3.2 Setup script
 
-A turnkey environment setup script that installs all of the above on
-a fresh Ubuntu/Debian host:
+A turnkey environment setup script for a fresh Ubuntu/Debian host (it
+installs the apt tooling and the Rust target; OpenOCD and rustup
+themselves are detect-and-warn only):
 
 ```bash
 ./scripts/hardware_test_env_setup.sh
@@ -110,13 +114,17 @@ For maximum confidence (real silicon validation):
   USB-to-serial adapter on the host.
 - **Power**: 27 W USB-C PD (Pi 5 official supply).
 
-Build the deployable kernel image with:
-
-```bash
-./scripts/build_rpi5_image.sh    # produces kernel8.img + config.txt
-```
-
-Then flash to the SD card and boot the board.  All Section 2 tests
+Building the deployable image (`kernel8.img` + `config.txt`) is **SM10.E
+scope** — the image-packaging script (`scripts/build_rpi5_image.sh`) is
+registered debt tracked in
+[`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md)
+(SM10.E ships the bootable image). There is **no interim manual path**:
+`sele4n-hal` currently builds as a library crate (no `[[bin]]` target, no
+`main.rs`), so `cargo build -p sele4n-hal` produces an `.rlib` for the
+linker, not a flashable kernel binary — the bootable ELF target, its
+linker script, and the image packaging all arrive together with SM10.E.
+Once they land, flash the packaged image to the SD card and boot the
+board.  All Section 2 tests
 that require real silicon (TLB coherence, OSH multi-cluster,
 PMCCNTR_EL0 timing) execute on this path.
 
@@ -131,7 +139,10 @@ and emits the canonical `dsb ishst → dc cvac → dsb ish → tlbi → dsb ish
 → isb → ic iallu` sequence, subsequent instruction fetches must see
 the new mapping.
 
-**Procedure:**
+**Procedure** (the script currently **self-skips** — it needs the SM10.E
+kernel image; registered debt SM10.B.D7 in
+`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` — so the steps below describe
+the run once it is wired):
 
 ```bash
 # 1. Boot the kernel under QEMU with virt machine (8 GB RAM).
@@ -172,11 +183,19 @@ followed by `dsb ish` and `isb` (per ARM ARM D8.11).
 # Static-analysis check on the HAL source (runs at build time):
 cargo build --manifest-path rust/Cargo.toml -p sele4n-hal
 
-# Runtime check via QEMU instruction trace:
-./scripts/test_qemu_tlb_barrier_audit.sh
+# Unit-level barrier coverage that exists today:
+cargo test --manifest-path rust/Cargo.toml -p sele4n-hal barriers
 ```
 
-The runtime check captures the `-d in_asm` trace, greps for every
+> `scripts/test_qemu_tlb_cache_coherence.sh` exists but is a
+> **self-skipping stub** until the SM10.E image pipeline lands (registered
+> as SM10.B.D7 in `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`) — it
+> reports `[SKIP]` unconditionally today, so do not read its success exit
+> as coherence coverage.
+
+> **Planned** — the dedicated instruction-trace audit
+> (`scripts/test_qemu_tlb_barrier_audit.sh`) is registered SM10.B debt
+> (see `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`). The planned runtime check captures the `-d in_asm` trace, greps for every
 `tlbi` mnemonic, and asserts the immediately-following two
 instructions are `dsb ish` and `isb`.
 
@@ -196,12 +215,14 @@ dispatch.
 **Procedure:**
 
 ```bash
-# Run the suspend stress test under QEMU with a high-frequency
-# timer interrupt (1 kHz).
-./scripts/test_qemu_suspend_atomicity.sh
+# Model-level coverage that exists today:
+source ~/.elan/env && lake exe suspend_resume_suite
+cargo test --manifest-path rust/Cargo.toml -p sele4n-hal cpu
 ```
 
-The test:
+> **Planned** — the QEMU-level stress script
+> (`scripts/test_qemu_suspend_atomicity.sh`) is registered SM10.B debt
+> (see `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`). The planned test:
 1. Spawns 100 threads, each performing 1000 suspend/resume cycles.
 2. Concurrent timer ticks try to interleave.
 3. Asserts no thread is observed in a partially-cleaned state
@@ -226,9 +247,15 @@ correctly dispatches through `handle_synchronous_exception` →
 **Procedure:**
 
 ```bash
-# Userspace test program issues svc #0 with each SyscallId variant:
-./scripts/test_qemu_svc_roundtrip.sh
+# Dispatch-layer coverage that exists today (host-side):
+cargo test --manifest-path rust/Cargo.toml -p sele4n-hal svc_dispatch
+./scripts/test_rust_conformance.sh   # cross-language ABI conformance
 ```
+
+> **Planned** — the QEMU userspace round-trip script
+> (`scripts/test_qemu_svc_roundtrip.sh`) is registered SM10.B debt
+> (see `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`); it drives the
+> userspace program below through every `SyscallId` variant.
 
 The userspace test program (built with `aarch64-linux-gnu-gcc`):
 
@@ -243,8 +270,8 @@ uint64_t do_svc(uint32_t syscall_id, uint64_t arg0) {
 }
 
 int main(void) {
-    // Each SyscallId variant 0..24
-    for (uint32_t id = 0; id < 25; id++) {
+    // Each SyscallId variant 0..33 (COUNT = 34 in both Rust mirrors)
+    for (uint32_t id = 0; id < 34; id++) {
         uint64_t ret = do_svc(id, 0);
         // Expect either Ok(0) or specific kernel error.
     }
@@ -252,7 +279,7 @@ int main(void) {
 }
 ```
 
-**Expected output:** `[PASS] 25 SyscallId variants, dispatch routes
+**Expected output:** `[PASS] 34 SyscallId variants, dispatch routes
 correctly`.
 
 **Failure diagnostic:** if a syscall routes to the wrong handler,
@@ -269,11 +296,13 @@ after the timeout even if no event arrives.
 **Procedure:**
 
 ```bash
-# Boot the kernel with the timer interrupt source forcibly disabled.
-./scripts/test_qemu_wfe_bounded.sh
+# Unit-level coverage that exists today:
+cargo test --manifest-path rust/Cargo.toml -p sele4n-hal cpu
 ```
 
-The test boots the kernel, masks all event sources, and enters
+> **Planned** — the QEMU boot-level script
+> (`scripts/test_qemu_wfe_bounded.sh`) is registered SM10.B debt (see
+> `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`). The planned test boots the kernel, masks all event sources, and enters
 `wfe_bounded(540_000)` (the 10 ms RPi5 default).  If the WFE was
 unconditional, the kernel would hang forever; the bounded variant
 must fall through after ~10 ms (verified by host-side wallclock).
@@ -295,12 +324,13 @@ expected ARMv8 instruction byte sequence.
 **Procedure:**
 
 ```bash
-# Disassembly-based check.  Compile a minimal binary that emits each
-# BarrierKind variant; objdump confirms the right instruction bytes.
-./scripts/test_barrier_kind_emission.sh
+# Emission coverage that exists today (unit tests over the emitters):
+cargo test --manifest-path rust/Cargo.toml -p sele4n-hal barriers
 ```
 
-The script:
+> **Planned** — the objdump disassembly check
+> (`scripts/test_barrier_kind_emission.sh`) is registered SM10.B debt
+> (see `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`). The planned script:
 1. Generates a `barrier_emission_test.rs` that calls each
    `BarrierKind::emit()` variant.
 2. Compiles to an ARM64 object.
@@ -322,12 +352,14 @@ explicit cluster topology.
 **Procedure:**
 
 ```bash
-# Run on Raspberry Pi 5 (single cluster but exposes inner/outer
-# domain distinction via the SCU).
-./scripts/test_rpi5_osh_widening.sh
+# Emitter-level coverage that exists today:
+cargo test --manifest-path rust/Cargo.toml -p sele4n-hal barriers
 ```
 
-The test uses an MMIO write to a device register visible across
+> **Planned** — the on-board latency probe
+> (`scripts/test_rpi5_osh_widening.sh`) is registered SM10.B debt (see
+> `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`); it requires real silicon.
+> The planned test uses an MMIO write to a device register visible across
 clusters and verifies that after `dsb oshst` the write is observed
 by the cross-cluster reader.  On RPi 5 (single cluster) this collapses
 to checking `dsb osh` doesn't crash and doesn't have larger latency
@@ -337,7 +369,7 @@ than `dsb ish` (both should be ≈ 30 ns on Cortex-A76).
 
 ### 4.8 AN9-J — SMP secondary-core bring-up
 
-**What we're checking:** with `SMP_ENABLED=true`, all 4 cores reach
+**What we're checking:** with SMP enabled (the default), all 4 cores reach
 their per-core `core_ready` flag and execute concurrent kernel work.
 
 **Procedure:**
@@ -347,23 +379,21 @@ their per-core `core_ready` flag and execute concurrent kernel work.
 ./scripts/test_qemu_smp_bringup.sh
 ```
 
-The script:
-1. Boots QEMU `virt` with `-smp 4 -machine virt,secure=on`.
-2. Passes `smp_enabled=true` on the kernel command line.
-3. Captures the UART log and asserts each of cores 0..3 emits its
-   identifying `core_id = N` log line.
-4. Runs a cross-core SGI test (primary signals each secondary; each
-   secondary acknowledges).
+The script (requires `SELE4N_KERNEL_IMAGE` pointing at a built kernel
+image; it SKIPs without one):
+1. Boots QEMU `virt` with `-smp 4 -machine virt,secure=on,virtualization=on`.
+2. Passes the kernel command line (`smp_enabled` defaults to `true`).
+3. Captures the UART log and asserts `[smp] core N: ready, entering
+   kernel` for cores 1..3 plus the `[boot] Phase 5: N secondary
+   core(s) online` rollup.
 
-**Expected output:**
-```
-[BOOT] core 0: primary boot (BCM2712 simulated)
-[BOOT] core 1: secondary entry, MMU enabled, GIC initialised
-[BOOT] core 2: secondary entry, MMU enabled, GIC initialised
-[BOOT] core 3: secondary entry, MMU enabled, GIC initialised
-[BOOT] all 4 cores ready; broadcasting SEV
-[PASS] SMP bring-up complete: 4/4 cores online
-```
+The cross-core SGI round-trip is the separate
+`./scripts/test_qemu_smp_sgi_roundtrip.sh` exerciser (primary signals
+each secondary; each secondary acknowledges); the broader SMP behaviour
+suites are orchestrated by `./scripts/test_tier4_smp_bootcheck.sh`.
+
+**Expected output** ends with the script's
+`[PASS] WS-SM SM1.H.1` line once all secondaries report ready.
 
 **Failure diagnostic:** if any secondary fails to wake, examine the
 PSCI return code (`PsciResult::Denied`, `AlreadyOn`, etc.) logged
@@ -377,21 +407,32 @@ EL2 or enable PSCI in the firmware build.
 `PerCpuData` slot in the `PER_CPU_DATA` array, so a per-core
 identifier lookup is a single `mrs xN, tpidr_el1` instruction.
 
-**Boot core (always reachable, even with `SMP_ENABLED=false`):**
+**Boot core (always reachable, even with `smp_enabled=false` on the
+kernel command line):**
 
 ```bash
 # QEMU boot — primary core only.
-./scripts/test_qemu_boot.sh
+./scripts/test_qemu.sh
 ```
 
-The kernel boot log on the primary core MUST contain (in this order):
+> Note: until SM10.E lands the `sele4n-hal` bootable binary target, this
+> script SKIPs gracefully at its kernel-binary check (the crate builds as
+> a library today). Once the binary exists and QEMU runs, the assertions
+> are **hard failures**: empty serial output, a missing boot banner, or
+> any fragment of `tests/fixtures/qemu_boot_expected.txt` absent from the
+> boot log fails the script — a hung kernel cannot soft-pass.
+
+The kernel boot log on the primary core MUST contain:
 
 ```
 [boot] Timer initialized (54 MHz counter, 1ms ticks)
-[boot] TPIDR_EL1 set to PER_CPU_DATA[0] = 0x<addr>
+[boot] TPIDR_EL1 set early (Phase 1) to PER_CPU_DATA[0] = 0x<addr>
 [boot] current_core_id_from_tpidr() = 0
 [boot] IRQ delivery enabled
 ```
+
+(the TPIDR_EL1 write moved to Phase 1 in audit-pass-4; a
+`[boot] TPIDR_EL1 re-confirmed at Phase 4: …` line follows later).
 
 The `PER_CPU_DATA[0]` address must be 64-byte aligned (verified by
 the runtime `check_per_cpu_invariants()` immediately before the
@@ -399,7 +440,7 @@ TPIDR_EL1 write; a misaligned address would have aborted boot before
 this line was emitted).  The `current_core_id_from_tpidr()` value
 must equal `0` (boot core's `core_id` field).
 
-**Secondary cores (requires `SMP_ENABLED=true`):**
+**Secondary cores (require SMP enabled — the default):**
 
 ```bash
 # QEMU with -smp 4.
@@ -452,9 +493,10 @@ as a skip-with-log entry (CI runners typically lack QEMU):
 ```bash
 # Add to scripts/test_tier2_negative.sh:
 if command -v qemu-system-aarch64 &>/dev/null; then
-    run_check "HW" ./scripts/test_qemu_tlb_cache_coherence.sh
-    run_check "HW" ./scripts/test_qemu_tlb_barrier_audit.sh
-    # ... etc
+    run_check "HW" ./scripts/test_qemu.sh
+    run_check "HW" ./scripts/test_qemu_tlb_cache_coherence.sh  # self-skips until SM10.B.D7 wires it
+    run_check "HW" ./scripts/test_tier4_smp_bootcheck.sh
+    # ... plus the SM10.B scripts as they land
 else
     echo "[SKIP] QEMU not available — hardware tests SKIPPED"
 fi

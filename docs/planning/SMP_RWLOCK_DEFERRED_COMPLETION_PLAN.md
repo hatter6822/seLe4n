@@ -4,8 +4,11 @@
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Origin plan**: [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.3 (closed at audit-pass-3, HEAD `1109bda`)
 > **Audited closure cut**: PR #784 (SM2.C closure with three audit passes)
-> **Target releases**: v1.x.x post-v1.0.0 (calendar TBD; see §7 for sequencing)
-> **Calendar estimate**: 12–20 weeks across 6 items
+> **Target releases**: originally v1.x.x post-v1.0.0; substantively
+> delivered early in the pre-v0.31.10 SM2.C-defer cut (see the landing
+> annotations in the §1 table — D-4 partial and the D-1.9 full
+> transition-edge theorem are the remaining residue)
+> **Calendar estimate**: 12–20 weeks across 6 items (as planned)
 > **Sub-task count**: ~30 across 6 deferred items (D-1..D-6)
 
 ## 1. Phase goal
@@ -18,14 +21,14 @@ However, **six items** in the original plan or in standard verification
 best practice were delivered in **weakened form** or with documented
 gaps:
 
-| # | Deferred item | Plan reference | Current state | Target |
-|---|--------------|----------------|---------------|--------|
-| D-1 | Temporal FIFO admission | §3.3.7.1 (R-03) | Structural drop-prefix only | Trace-based temporal claim |
-| D-2 | Writer-specific bounded wait | §3.3.8.2 (R-05) | Alias of `_read` | Distinct structural bound |
-| D-3 | Full liveness theorem | §3.3.10.1 (R-10) | Single-step safety only | Multi-step liveness under fairness |
-| D-4 | Full bisimulation refinement | §3.4.2 (F-02) | `rwLockSim` + witnesses + no-op | Trace-based refinement theorem |
-| D-5 | Queued RwLock variant | §5.3 note | CAS-retry; no waiter queue | FIFO-preserving Rust impl |
-| D-6 | Tier 5 cross-language tests | §6.3 | Not built | Lean↔Rust correspondence harness |
+| # | Deferred item | Plan reference | State at deferral | Target | Landing |
+|---|--------------|----------------|---------------|--------|---------|
+| D-1 | Temporal FIFO admission | §3.3.7.1 (R-03) | Structural drop-prefix only | Trace-based temporal claim | **LANDED** (SM2.C-defer temporal FIFO family; the D-1.9 full transition-edge theorem remains) |
+| D-2 | Writer-specific bounded wait | §3.3.8.2 (R-05) | Alias of `_read` | Distinct structural bound | **LANDED** (`writerWaitDepth` distinct bound; refined through SM2.C-defer D-2.3) |
+| D-3 | Full liveness theorem | §3.3.10.1 (R-10) | Single-step safety only | Multi-step liveness under fairness | **LANDED** (full `d × maxDelay` bound under strict FIFO; refined through D-3.10) |
+| D-4 | Full bisimulation refinement | §3.4.2 (F-02) | `rwLockSim` + witnesses + no-op | Trace-based refinement theorem | **PARTIAL** (landed as stated in the SM2.C-defer cut; the full trace-based theorem remains open) |
+| D-5 | Queued RwLock variant | §5.3 note | CAS-retry; no waiter queue | FIFO-preserving Rust impl | **LANDED** (`rust/sele4n-hal/src/queued_rw_lock.rs`, queued MCS-RW; also the SM2.E panic-hang remediation carrier) |
+| D-6 | Tier 5 cross-language tests | §6.3 | Not built | Lean↔Rust correspondence harness | **LANDED** (`scripts/test_tier5_cross_language.sh`, wired into `test_nightly.sh`) |
 
 This plan describes the **optimal, complete implementation** of D-1 through
 D-6. Each item is broken down into sub-tasks with formal signatures, proof
@@ -83,11 +86,12 @@ impl satisfies mutex+exclusion but not FIFO. A queued variant would
 require lock-free linked-list management or a per-waiter event
 mechanism.
 
-**Category C — Test infrastructure not built** (D-6):
+**Category C — Test infrastructure not built at deferral** (D-6):
 The plan §6.3 specified a "Tier 5" cross-language correspondence test
 infrastructure. Neither SM2.A nor SM2.B built this; SM2.C inherited
-the gap. Closing it requires a lake↔cargo test harness that doesn't
-exist at v1.0.0.
+the gap. **Since closed**: `scripts/test_tier5_cross_language.sh` is the
+lake↔cargo harness (Lean-oracle vs Rust correspondence), run from
+`test_nightly.sh` under `NIGHTLY_ENABLE_EXPERIMENTAL=1`.
 
 ### 2.3 What is NOT deferred (acknowledged but accepted as-is)
 

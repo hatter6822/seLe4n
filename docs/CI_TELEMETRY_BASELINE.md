@@ -14,7 +14,7 @@ Telemetry is generated directly by repository-owned scripts:
 
 Artifacts are uploaded from CI workflows to `.ci-artifacts/telemetry/`:
 
-- Lean CI lanes (`.github/workflows/lean_action_ci.yml`): docs, fast, smoke, full,
+- Lean CI lanes (`.github/workflows/lean_action_ci.yml`): `fast`, `smoke-trace`, `smoke-determinism`, `smoke-negative`, `docs-sync`, `full`,
 - nightly lane (`.github/workflows/nightly_determinism.yml`): nightly + repeated smoke flake probe,
 - ARM64 fast lane (`.github/workflows/platform_security_baseline.yml`).
 

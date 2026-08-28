@@ -12,10 +12,10 @@ codebase.
 
 This audit succeeds `AUDIT_v0.30.6_COMPREHENSIVE.md` (now archived under
 `docs/dev_history/audits/` after WS-AN closure) and is intended to be
-the **pre-1.0 readiness checkpoint**. It does not yet have a paired
-`WORKSTREAM_PLAN`/`BASELINE` because remediation has not started; those
-artefacts will be added when (and only when) the next remediation workstream
-opens. Per the `docs/audits/` README, this leaves the v0.30.6 artefacts in
+the **pre-1.0 readiness checkpoint**. Its paired
+`WORKSTREAM_PLAN`/`BASELINE` (added when WS-RC opened) now sit beside it in
+this directory; the plan is historical since WS-RC closed at v0.31.2 with
+R6..R14 absorbed into WS-SM. Per the `docs/audits/` README, this leaves the v0.30.6 artefacts in
 place until the v0.30.11 remediation workstream closes.
 
 ## Verified codebase shape (re-counted at audit time)

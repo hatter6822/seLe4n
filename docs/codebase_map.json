@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/sm9-audit-testing-25nzle",
-      "commit_sha": "e8d43a7999f8e464d459f384992b9f32127c105b",
-      "tree_sha": "6421b0aa223e43ee4be9652280e115997aa6eaec",
-      "committed_at_utc": "2026-08-27T19:01:29-04:00"
+      "branch": "claude/docs-audit-refinement-onhs0b",
+      "commit_sha": "059bd68fdf1374c2a4ec41e09acd5ab645ee1ece",
+      "tree_sha": "0e21619016121b627f452da8724bcf77ad0ee86d",
+      "committed_at_utc": "2026-08-27T22:18:22-04:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5fe68440fe1a593e096a96c0e988a112c7a94ada9b6c4182e5c6fcf768e456fc"
+    "source_digest": "0e02f1103ec0204944fb3b52dfae6433ad23f5178b53d058e81f109af033dc9a"
   },
   "summary": {
     "module_count": 355,
     "declaration_count": 16963
   },
   "readme_sync": {
-    "version": "0.33.101",
+    "version": "0.34.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 286,
-    "production_loc": 286841,
+    "production_loc": 286842,
     "test_files": 69,
     "test_loc": 64078,
     "proved_theorem_lemma_decls": 9601,
@@ -121785,7 +121785,7 @@
         {
           "kind": "theorem",
           "name": "serviceOrchestrationOutsideNiBoundary",
-          "line": 955,
+          "line": 956,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -121814,7 +121814,7 @@
         {
           "kind": "theorem",
           "name": "serviceOrchestration_boundary_disjunction",
-          "line": 1015,
+          "line": 1016,
           "called": [
             "IfObserver",
             "Kernel",
