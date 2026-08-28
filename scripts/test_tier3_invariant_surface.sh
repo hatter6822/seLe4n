@@ -3677,6 +3677,16 @@ run_negative_check "INVARIANT" rg -Un 'def contentFlowClass : SyscallId → Cont
 # (per-arm wrong-shape fallbacks stay), so no two-discriminant wildcard may
 # return anywhere in the module.
 run_negative_check "INVARIANT" rg -n '\|\s*_\s*,\s*_\s*=>' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# NEGATIVE (PR #877 review): nor the UNARY respelling of the same hole.  The
+# restructure split the pair match into nested matches, so `| _ => []` written
+# at the *syscall* level of any planner elaborates exactly as the pair
+# wildcard did — and the pair anchor above cannot see it.  Indentation is the
+# scope: every legitimate wildcard in this module is a capability-shape or
+# argument-shape fallback nested at 8+ spaces, while def-level and
+# syscall-level arms sit at 2–6 — so a shallow unary wildcard anywhere in the
+# module is a planner (or future helper) declining its per-syscall decision,
+# and there is deliberately no allowlisted instance.
+run_negative_check "INVARIANT" rg -n '^ {0,6}\| *_' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^DECLARED_TAINT_WRITERS = ' scripts/check_content_flow_coverage.py
 run_check "INVARIANT" rg -n '^CONTENT_CHANNELS = ' scripts/check_content_flow_coverage.py
 run_check "BUILD" rg -n 'check_content_flow_coverage.py' scripts/test_tier1_build.sh
