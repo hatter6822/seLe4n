@@ -37,8 +37,8 @@ required-check enumerations in `CI_POLICY.md` §1/§4, and
 (`lean_action_ci.yml`, lane `smoke-determinism`) instead of being
 attributed to the schedule-only nightly.
 
-**Rounds two through four — the reviewer read the fixes, and twice was
-right about them.**  Eleven further findings across three rounds; two
+**Rounds two through five — the reviewer read the fixes, and three times
+was right about them.**  Twelve further findings across four rounds; two
 declined once each with rationale (the version-policy revert a maintainer
 instruction supersedes, and the repeat demand to build the SM10.E image
 inside a documentation cut).  The substantive closures: the FFI extern
@@ -58,6 +58,10 @@ registered as standing debt in `CLAUDE.md`; and `test_qemu.sh` stopped
 soft-passing a hung kernel — empty serial output, a missing banner, or
 any absent `qemu_boot_expected.txt` fragment is now a hard failure once
 QEMU runs (the library-only SKIP stays the only soft path until SM10.E).
+The fifth round caught that hardening's own consequence: the fixture's
+TPIDR fragment predated audit-pass-4's move of the write to Phase 1 and
+could never have matched, so it now mirrors `boot.rs`'s live message —
+with all eight fragments re-checked against the emitted lines.
 
 Zero sorry/axiom untouched; trace fixture byte-identical.
 
