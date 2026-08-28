@@ -57,7 +57,7 @@ suites, bumps the version, and records WS-SM closure.
 
 ## 3. Sub-tasks
 
-### SM10.A — Documentation sync (3-4 PRs, 9 sub-tasks)
+### SM10.A — Documentation sync (9 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
@@ -71,7 +71,7 @@ suites, bumps the version, and records WS-SM closure.
 | SM10.A.8 | Regenerate codebase_map.json | (1 file) | T |
 | SM10.A.9 | Update website_link_manifest.txt | (1 file) | S |
 
-### SM10.B — Test suite completion (2-4 PRs, 13 sub-tasks)
+### SM10.B — Test suite completion (13 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
@@ -106,7 +106,7 @@ scripts, SM10.E for the image build):
 | SM10.E.D1 | `scripts/build_rpi5_image.sh` (kernel8.img + config.txt packaging; also the `sele4n-hal` bootable binary target it packages) | §3.3 |
 | SM10.B.D7 | Wire `scripts/test_qemu_tlb_cache_coherence.sh` — the script exists but is a self-skipping stub until SM10.E.D1's image lands | §4.1 |
 
-### SM10.C — Version bump + closure (1-2 PRs, 5 sub-tasks)
+### SM10.C — Version bump + closure (5 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
@@ -116,7 +116,7 @@ scripts, SM10.E for the image build):
 | SM10.C.4 | Move WS-SM plan + per-phase docs to dev_history/planning/ | (11 file moves) | T |
 | SM10.C.5 | Tag v1.0.0 (maintainer-cut) | git tag | T |
 
-### SM10.D — AN12-B inventory closure (1 PR, 3 sub-tasks)
+### SM10.D — AN12-B inventory closure (3 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
@@ -124,7 +124,7 @@ scripts, SM10.E for the image build):
 | SM10.D.2 | Rename `smpLatentInventory` to `smpDischargedInventory` (or retire entirely) | (refactor) | M |
 | SM10.D.3 | 8-entry size witness retained | Theorem | T |
 
-### SM10.E — Final QEMU validation (1 PR, 3 sub-tasks)
+### SM10.E — Final QEMU validation (3 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
