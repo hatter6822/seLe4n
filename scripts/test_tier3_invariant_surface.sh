@@ -2953,6 +2953,15 @@ run_check "INVARIANT" rg -n '^def readableStructureAgrees' SeLe4n/Kernel/Informa
 run_check "INVARIANT" rg -n '^def auditObservationalEquivalence' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^theorem auditReadOp_structure_total' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem readableStructure_list_gate_insufficient' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+# NEGATIVE: the fusion's enforcement is the wildcard-free exhaustive match — the
+# `∃`-shaped totality theorems above hold of ANY total function, wildcard arms
+# included, so they cannot pin it.  These anchors are what does: a wildcard arm
+# inserted into either total function is caught here even though every named
+# theorem would stay green.  (Span-scoped: the run walks the definition's own
+# arm block — arm lines, deeper-indented clause bodies, and the blank lines the
+# code view leaves where comments were — and stops at the next declaration.)
+run_negative_check "INVARIANT" rg -Un 'def AuditReadOp\.readsStructure[^\n]*\n((  \|[^\n]*| *)\n)*  \|\s*_' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_negative_check "INVARIANT" rg -Un 'def readableStructureAgrees[^\n]*\n((    [^\n]*|  \|[^\n]*| *)\n)*  \|\s*_' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # The lemma `lowEquivalent` CANNOT supply: `ObservableState` does not contain
 # the trail, so "low-equivalent states give identical visible views" is false
 # and could not have been the flow argument.
@@ -3222,8 +3231,12 @@ run_check "INVARIANT" rg -n '^theorem refusalSeamClass_records_iff' SeLe4n/Kerne
 # is precisely the design SM9.C silently defeats.
 run_negative_check "INVARIANT" rg -n 'syscallId.*==.*SyscallId.declassify' SeLe4n/Platform/FFI.lean
 # NEGATIVE: and the classification must stay wildcard-free, or a syscall added
-# tomorrow falls through to `.exempt` with nothing failing to compile.
-run_negative_check "INVARIANT" rg -n '^  \| _ => RefusalSeamClass' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+# tomorrow falls through to `.exempt` with nothing failing to compile.  The
+# pattern covers every wildcard-arm spelling (the definition's own arms use dot
+# notation, so a maintainer would write `| _ => .exempt`, which the earlier
+# `RefusalSeamClass`-spelled anchor could never match); the module holds no
+# legitimate wildcard arm, so the whole file is in scope.
+run_negative_check "INVARIANT" rg -n '\|\s*_\s*=>' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 
 # SM9.B.9: the write itself, and the three security theorems.
 run_check "INVARIANT" rg -n '^def recordSyscallRefusal' SeLe4n/Platform/FFI.lean
@@ -3651,6 +3664,29 @@ run_check "INVARIANT" rg -n 'declassificationEventNames e₂ e₁ = true' SeLe4n
 run_check "INVARIANT" rg -n '^inductive ContentFlowClass where' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^def contentFlowClass : SyscallId → ContentFlowClass' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem contentFlowClass_total' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# NEGATIVE: the classification must stay wildcard-free (same anchor shape as
+# the seam's — `contentFlowClass_total` is ∃-shaped and holds of a wildcarded
+# function too, so only this pins the mechanism).
+run_negative_check "INVARIANT" rg -Un 'def contentFlowClass : SyscallId → ContentFlowClass[^\n]*\n((  \|[^\n]*| *)\n)*  \|\s*_' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# NEGATIVE: the PLANNERS are wildcard-free over `SyscallId` too — the
+# classification alone forces a class decision, but before this pin the edge,
+# clear and bypass planners each ended in `| _, _ => []`, so a ninth
+# `.movesContent` syscall would have elaborated and run with an empty edge
+# plan: content moving with no provenance following it, the one direction the
+# module must never err in.  The planners now match every syscall explicitly
+# (per-arm wrong-shape fallbacks stay), so no two-discriminant wildcard may
+# return anywhere in the module.
+run_negative_check "INVARIANT" rg -n '\|\s*_\s*,\s*_\s*=>' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+# NEGATIVE (PR #877 review): nor the UNARY respelling of the same hole.  The
+# restructure split the pair match into nested matches, so `| _ => []` written
+# at the *syscall* level of any planner elaborates exactly as the pair
+# wildcard did — and the pair anchor above cannot see it.  Indentation is the
+# scope: every legitimate wildcard in this module is a capability-shape or
+# argument-shape fallback nested at 8+ spaces, while def-level and
+# syscall-level arms sit at 2–6 — so a shallow unary wildcard anywhere in the
+# module is a planner (or future helper) declining its per-syscall decision,
+# and there is deliberately no allowlisted instance.
+run_negative_check "INVARIANT" rg -n '^ {0,6}\| *_' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^DECLARED_TAINT_WRITERS = ' scripts/check_content_flow_coverage.py
 run_check "INVARIANT" rg -n '^CONTENT_CHANNELS = ' scripts/check_content_flow_coverage.py
 run_check "BUILD" rg -n 'check_content_flow_coverage.py' scripts/test_tier1_build.sh

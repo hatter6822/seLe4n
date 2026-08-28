@@ -37,7 +37,7 @@ is what makes it placeable below every consumer.
 
 namespace SeLe4n.Model
 
-/-- F-04: Kernel error codes. This inductive has 49 variants.
+/-- F-04: Kernel error codes. This inductive has 57 variants.
 **Coding convention**: Prefer explicit match arms over `| _ =>` catch-all
 patterns when matching on `KernelError`. Lean's exhaustiveness checker will
 flag missing arms at compile time, but catch-all patterns silently swallow

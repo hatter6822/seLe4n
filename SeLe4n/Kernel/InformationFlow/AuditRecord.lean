@@ -338,13 +338,16 @@ structure DeclassificationEvent where
       pair of events changes with unrelated later activity is not a detector
       (`chainCausal_not_table_derived`).
 
-      **Why it is not exported to every reader.**  The tags are *global*
+      **Why it is not exported to any reader.**  The tags are *global*
       identities, including those of events a partially-cleared reader cannot
       see, so exporting them would carry a hidden event's global position
-      straight through the reader whose indices SM9.A.2 made view-local.  They
-      reach the configured audit monitor only, and every other reader gets at
-      most an opaque `Bool` verdict (`predecessorTags_dominating_only`,
-      `partialReader_gets_opaque_causality`).
+      straight through the reader whose indices SM9.A.2 made view-local.  The
+      plan drafted a dominating-reader export with an opaque verdict for
+      everyone else; what landed is strictly stronger: no `AuditReadOp`
+      returns the tags to **anyone** — the reader's only causality surface is
+      the one-bit verdicts, view-local by `chainVerdict_view_local` and
+      `chainEntryVerdict_view_local`, with the archived-predecessor form
+      monitor-gated (`chainArchivedVerdict_denied_for_non_monitor`).
 
       Deliberately **not** defaulted, for the reason `actor` and
       `originatingCore` are not — and here the silent failure is the unsafe
