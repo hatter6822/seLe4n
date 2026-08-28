@@ -139,7 +139,10 @@ and emits the canonical `dsb ishst → dc cvac → dsb ish → tlbi → dsb ish
 → isb → ic iallu` sequence, subsequent instruction fetches must see
 the new mapping.
 
-**Procedure:**
+**Procedure** (the script currently **self-skips** — it needs the SM10.E
+kernel image; registered debt SM10.B.D7 in
+`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` — so the steps below describe
+the run once it is wired):
 
 ```bash
 # 1. Boot the kernel under QEMU with virt machine (8 GB RAM).
@@ -182,8 +185,13 @@ cargo build --manifest-path rust/Cargo.toml -p sele4n-hal
 
 # Unit-level barrier coverage that exists today:
 cargo test --manifest-path rust/Cargo.toml -p sele4n-hal barriers
-./scripts/test_qemu_tlb_cache_coherence.sh   # QEMU TLB/cache coherence exerciser
 ```
+
+> `scripts/test_qemu_tlb_cache_coherence.sh` exists but is a
+> **self-skipping stub** until the SM10.E image pipeline lands (registered
+> as SM10.B.D7 in `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`) — it
+> reports `[SKIP]` unconditionally today, so do not read its success exit
+> as coherence coverage.
 
 > **Planned** — the dedicated instruction-trace audit
 > (`scripts/test_qemu_tlb_barrier_audit.sh`) is registered SM10.B debt
@@ -484,7 +492,7 @@ as a skip-with-log entry (CI runners typically lack QEMU):
 # Add to scripts/test_tier2_negative.sh:
 if command -v qemu-system-aarch64 &>/dev/null; then
     run_check "HW" ./scripts/test_qemu.sh
-    run_check "HW" ./scripts/test_qemu_tlb_cache_coherence.sh
+    run_check "HW" ./scripts/test_qemu_tlb_cache_coherence.sh  # self-skips until SM10.B.D7 wires it
     run_check "HW" ./scripts/test_tier4_smp_bootcheck.sh
     # ... plus the SM10.B scripts as they land
 else

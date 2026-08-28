@@ -1,19 +1,23 @@
-## v0.34.0 — minor version bump: the audited documentation line advances to 0.34
+## v0.34.0 — the documentation audited whole, and the audited line advances a minor
 
-A maintainer-directed minor bump on top of the v0.33.102 documentation
-audit — no functional change.  `./scripts/bump_version.sh 0.34.0` rewrote
+One cut, three movements: the deep documentation audit (narrated in full
+below), a maintainer-directed **minor** bump on top of it — the explicit
+maintainer instruction that supersedes the default every-PR-patch-bump
+convention for this release — and the closure of the two bot reviews the
+PR drew.  No functional change beyond one shell-script fix and one CI
+gate addition.  `./scripts/bump_version.sh 0.34.0` rewrote
 all 36 registered version sites (verified by `check_version_sync.sh`),
 including, for the first time under gate control, the Version rows of all
-eleven `docs/i18n/*/README.md` translations that the v0.33.102 cut
-registered in `scripts/version_locations.sh` — this bump is the first to
-exercise those nine new registrations end to end.  The i18n prose remains
-aligned from the v0.33.102 re-sync; `docs/i18n/LANGUAGES.md`'s sync marker
+eleven `docs/i18n/*/README.md` translations that this same cut's audit
+registered in `scripts/version_locations.sh` — the bump exercised those
+nine new registrations end to end.  The i18n prose is
+aligned by this cut's re-sync; `docs/i18n/LANGUAGES.md`'s sync marker
 and the WS-SM version-trail arrows (`docs/WORKSTREAM_HISTORY.md`, GitBook
 chapter 05) now include the v0.34.x series.  Historical "as of" figures
 are left as written per the record convention.
 
 **Same cut — the Codex review on PR #878 closed, all six findings real.**
-The v0.33.102 audit's own patches drew a bot review that caught what the
+The audit's own patches drew a bot review that caught what the
 audit wrote imprecisely, and two genuine gaps it had only documented:
 `HARDWARE_TESTING`'s interim "build the raw kernel binary" fallback
 pointed at a library-only crate (no `[[bin]]`, no `main.rs` — the command
@@ -35,10 +39,8 @@ attributed to the schedule-only nightly.
 
 Zero sorry/axiom untouched; trace fixture byte-identical.
 
-Refs: docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md §4
-
-## v0.33.102 — the documentation audited whole: every count re-measured, every status re-dated, and the mirrors pulled up to the tree
-
+**The audit itself — every count re-measured, every status re-dated, the
+mirrors pulled up to the tree.**
 A deep documentation audit of the entire prose surface — README, spec,
 claim-evidence index, GitBook chapters, ADRs, deployment/security/hardware
 guides, planning headers, workstream history, Rust crate docstrings, and the

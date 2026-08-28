@@ -89,7 +89,7 @@ suites, bumps the version, and records WS-SM closure.
 | SM10.B.12 | Wire all tier-4/5 into `test_nightly.sh` | (1 file) | S |
 | SM10.B.13 | Verify all 210 SM theorems land at HEAD | tier-5 manifest | M |
 
-**Registered debt — hardware-validation scripts** (from the v0.33.102
+**Registered debt — hardware-validation scripts** (from the v0.34.0
 documentation audit; each is a runnable procedure `docs/HARDWARE_TESTING.md`
 documents whose script does not exist yet, with today's partial coverage
 noted there per section). Closure target: this phase (SM10.B for the QEMU
@@ -103,7 +103,8 @@ scripts, SM10.E for the image build):
 | SM10.B.D4 | `scripts/test_qemu_wfe_bounded.sh` (bounded-WFE fall-through wallclock) | §4.5 |
 | SM10.B.D5 | `scripts/test_barrier_kind_emission.sh` (objdump emission check) | §4.6 |
 | SM10.B.D6 | `scripts/test_rpi5_osh_widening.sh` (on-board OSH latency probe) | §4.7 |
-| SM10.E.D1 | `scripts/build_rpi5_image.sh` (kernel8.img + config.txt packaging) | §3.3 |
+| SM10.E.D1 | `scripts/build_rpi5_image.sh` (kernel8.img + config.txt packaging; also the `sele4n-hal` bootable binary target it packages) | §3.3 |
+| SM10.B.D7 | Wire `scripts/test_qemu_tlb_cache_coherence.sh` — the script exists but is a self-skipping stub until SM10.E.D1's image lands | §4.1 |
 
 ### SM10.C — Version bump + closure (1-2 PRs, 5 sub-tasks)
 

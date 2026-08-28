@@ -125,7 +125,7 @@ unset _lang
 # --- i18n README Version table rows (all 11 locales carry the row; the
 # label is translated, so the pattern keys on the unique `** | `X.Y.Z``
 # row shape rather than the word "Version". Registered for all locales
-# since the v0.33.102 documentation audit found 9 unregistered rows
+# since the v0.34.0 documentation audit found 9 unregistered rows
 # drifting at v0.25.5-era values beside gate-synced badges.) -----------------
 for _lang in ar de es fr hi ja ko pt-BR ru uk zh-CN; do
   _reg "docs/i18n/${_lang}/README.md" \
