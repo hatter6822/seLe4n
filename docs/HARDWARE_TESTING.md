@@ -417,8 +417,10 @@ kernel command line):**
 
 > Note: until SM10.E lands the `sele4n-hal` bootable binary target, this
 > script SKIPs gracefully at its kernel-binary check (the crate builds as
-> a library today); the boot-log assertions below describe the run once
-> that target exists.
+> a library today). Once the binary exists and QEMU runs, the assertions
+> are **hard failures**: empty serial output, a missing boot banner, or
+> any fragment of `tests/fixtures/qemu_boot_expected.txt` absent from the
+> boot log fails the script — a hung kernel cannot soft-pass.
 
 The kernel boot log on the primary core MUST contain:
 

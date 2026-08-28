@@ -842,6 +842,15 @@ code may assume:
   must not assume a carried `TransferCap` will install.
 - **SM4.C.11**: per-core Liveness forms (`Scheduler/Liveness/*.lean`) remain
   `bootCoreId`-pinned; migration is Scheduler-subsystem scope, not SM4.D.
+- **The WCRT liveness theorems are hypothesis-conditional**: the band-progress
+  obligation `hBandProgress` consumed by `thread_eventually_scheduled_onCore` /
+  `no_starvation_under_smp` is an externalized deployment hypothesis whose
+  conclusion carries the substantive progress content; only its
+  `eventuallyExits` sub-piece has an RPi5 discharge, and the
+  FIFO/bucket-rotation composition that would construct it outright is an open
+  Scheduler-subsystem follow-up (`Liveness/Yield.lean` scope — AN5-E.4
+  honest-framing note, `Scheduler/Liveness/RPi5CanonicalConfig.lean`). Docs
+  citing these theorems must state the hypothesis.
 - **Registered uncovered lock domains** are enumerated in Lean, not in prose:
   `UncoveredLockDomain` (`InformationFlow/FineLockFlow.lean`) names each gap and
   its owner, and its completeness theorem forces a new domain to be registered.

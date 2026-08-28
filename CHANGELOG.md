@@ -3,9 +3,9 @@
 One cut, three movements: the deep documentation audit (narrated in full
 below), a maintainer-directed **minor** bump on top of it — the explicit
 maintainer instruction that supersedes the default every-PR-patch-bump
-convention for this release — and the closure of the two bot reviews the
-PR drew.  No functional change beyond one shell-script fix and one CI
-gate addition.  `./scripts/bump_version.sh 0.34.0` rewrote
+convention for this release — and the closure of the four bot review
+rounds the PR drew.  No functional change beyond shell-script fixes and
+one CI gate addition.  `./scripts/bump_version.sh 0.34.0` rewrote
 all 36 registered version sites (verified by `check_version_sync.sh`),
 including, for the first time under gate control, the Version rows of all
 eleven `docs/i18n/*/README.md` translations that this same cut's audit
@@ -36,6 +36,28 @@ required-check enumerations in `CI_POLICY.md` §1/§4, and
 `test_tier2_determinism.sh` now runs in the PR smoke CI job
 (`lean_action_ci.yml`, lane `smoke-determinism`) instead of being
 attributed to the schedule-only nightly.
+
+**Rounds two through four — the reviewer read the fixes, and twice was
+right about them.**  Eleven further findings across three rounds; two
+declined once each with rationale (the version-policy revert a maintainer
+instruction supersedes, and the repeat demand to build the SM10.E image
+inside a documentation cut).  The substantive closures: the FFI extern
+count re-measured on the comment-free code view (66, not the 72 raw-text
+matches); GitBook 15's argument-structure line, over-corrected in round
+three with the Lean-side count, now states both truths — 19 Rust `*Args`
+structures in `sele4n-abi`'s `args/` tree, 27 decode structures in
+`SyscallArgDecode.lean`, the notification/receive/audit shapes existing
+only on the Lean side; DEPLOYMENT_GUIDE's audit-monitor knob no longer
+understates its own gate — `validatedAuditMonitorClearance` admits a
+clearance only when it dominates **all four** legacy labels, so covering
+merely the declassifying domains buys no monitor at all; SECURITY_ADVISORY
+SA-1 now scopes the WCRT liveness theorems exactly — the band-progress
+obligation is the externalized hypothesis, only its `eventuallyExits`
+sub-piece has an RPi5 discharge, and the open FIFO composition is
+registered as standing debt in `CLAUDE.md`; and `test_qemu.sh` stopped
+soft-passing a hung kernel — empty serial output, a missing banner, or
+any absent `qemu_boot_expected.txt` fragment is now a hard failure once
+QEMU runs (the library-only SKIP stays the only soft path until SM10.E).
 
 Zero sorry/axiom untouched; trace fixture byte-identical.
 

@@ -281,14 +281,21 @@ close the 256-entry cliff: `.auditRead` (SyscallId 31) and `.auditDrain`
 (SyscallId 32), implemented in `SeLe4n/Kernel/InformationFlow/AuditRead.lean`
 behind a dedicated `CapTarget.auditTrail` capability. The clearance filter
 (`auditLogVisibleTo`) is a function of the reader's clearance alone; a
-**drain** is authorized only for a caller whose configured
-`auditMonitorClearance` (`LabelingContext`, `Policy.lean`) dominates every
-recorded source domain — a partial-visibility drain would reveal the
-positions of hidden entries. **Deployment-mandatory knob**: a deployment
-that declassifies at all must configure `auditMonitorClearance` to dominate
-every domain its policy lets declassify, and run a monitor that drains the
-trail; an unconfigured deployment has no audit reader and keeps the
-256-per-boot cliff as its conservative default.
+**drain** additionally demands a complete view — the transition guard
+(`auditDrainViewComplete`) refuses any drain whose clearance hides a
+recorded source domain, because a partial-visibility drain would reveal
+the positions of hidden entries. **Deployment-mandatory knob**: the live
+`.auditRead`/`.auditDrain` arms consume the configured clearance only
+through `validatedAuditMonitorClearance` (`AuditRead.lean`), which admits
+it only when it dominates **all four** legacy security labels
+(`legacySubjectLabels` — the kernel's entire subject/object label space)
+and validates to `none` otherwise. A deployment that declassifies at all
+must therefore configure `auditMonitorClearance` to dominate every legacy
+label — a clearance covering merely the domains the policy lets
+declassify is rejected whole, leaving **no monitor at all** (exactly the
+unconfigured posture) — and run a monitor that drains the trail; an
+unconfigured deployment has no audit reader and keeps the 256-per-boot
+cliff as its conservative default.
 
 **The declassification surface is wider than `.declassify` (SM9.B–SM9.D).**
 `.declassifySignal` (SyscallId 33) is the data-carrying declassification — a
@@ -363,9 +370,10 @@ The kernel NI guarantees do not extend to service orchestration semantics.
   and `.declassify` is refused outright; if a trusted downgrader is configured,
   treat `.auditLogCapacityExceeded` as an alert AND provision the read/drain
   path (§2.3): grant the monitor a `CapTarget.auditTrail` capability, configure
-  `auditMonitorClearance` to dominate every domain the policy lets declassify,
-  and run a drain process -- an unconfigured deployment keeps the 256-per-boot
-  fail-closed cliff
+  `auditMonitorClearance` to dominate **all four** legacy security labels
+  (`validatedAuditMonitorClearance` rejects anything less, leaving no monitor
+  at all), and run a drain process -- an unconfigured deployment keeps the
+  256-per-boot fail-closed cliff
 - [ ] **Security advisory reviewed** -- read `docs/SECURITY_ADVISORY.md`
   (SA-1: starvation, SA-2: labeling, SA-3: covert channel)
 - [ ] **Test suite passed** -- run `./scripts/test_full.sh` with production

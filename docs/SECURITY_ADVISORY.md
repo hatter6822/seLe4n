@@ -61,12 +61,19 @@ Liveness properties now exist but are **hypothesis-conditional**, so the
 headline of this advisory stands: starvation freedom is not guaranteed
 unconditionally. `no_starvation_under_smp` and
 `thread_eventually_scheduled_onCore`
-(`Scheduler/Operations/PerCoreWcrt.lean`) prove a runnable thread is
-eventually scheduled within a closed bound, and the 8-module
-`Scheduler/Liveness/` WCRT surface carries the bound — under externalized
-deployment hypotheses (e.g. `eventuallyExits`,
-`Liveness/BandExhaustion.lean`). The structural scheduler invariants
-(`schedulerInvariantBundleFull`) remain unconditional.
+(`Scheduler/Operations/PerCoreWcrt.lean`) compose the domain-rotation and
+band-exhaustion bounds of the 8-module `Scheduler/Liveness/` WCRT surface
+into a closed bound, but the substantive progress content is itself an
+externalized deployment hypothesis: `hBandProgress` *assumes* that once
+the thread's target domain is active with the thread runnable, the thread
+is selected within the band-exhaustion bound. Of that hypothesis, only
+the `eventuallyExits` sub-piece (`Liveness/BandExhaustion.lean`) has an
+RPi5 discharge (`rpi5_higherBandExhausted_from_progressesOnCore`,
+`Liveness/RPi5CanonicalConfig.lean`); the FIFO/bucket-rotation
+composition that would construct `hBandProgress` outright is an **open
+follow-up**, recorded in that module's AN5-E.4 honest-framing note. The
+structural scheduler invariants (`schedulerInvariantBundleFull`) remain
+unconditional.
 
 ---
 

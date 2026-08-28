@@ -6,7 +6,10 @@
 # Format: CHECK_NAME | expected_fragment
 #
 # These fragments are validated when the full kernel binary is linked and
-# runs on QEMU. During pre-hardware development, checks are informational.
+# runs on QEMU. Every fragment is mandatory: a missing fragment is a hard
+# failure. Pre-hardware, scripts/test_qemu.sh SKIPs before launching QEMU
+# at its kernel-binary check (sele4n-hal builds as a library until the
+# SM10.E binary target lands), so these rows only gate real boots.
 
 BOOT_BANNER | seLe4n
 UART_INIT   | UART

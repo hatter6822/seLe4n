@@ -47,8 +47,12 @@ ARM64 register ABI layer with exactly one `unsafe` block:
 - **`RegisterFile`**: Safe bounds-checked wrapper for the 7-element register
   array; `get()`/`set()` return `Option` (U3-G)
 - **Per-syscall argument structures**: CSpace, Lifecycle, VSpace, Service,
-  SchedContext, TCB, notification, receive/replyRecv and audit families —
-  27 `*Args` structures in the current tree (5 at the layer's introduction)
+  SchedContext and TCB families — 19 `*Args` structures in the crate's
+  `args/` tree (5 at the layer's introduction). The notification,
+  receive/replyRecv and audit argument shapes have no Rust-side `*Args`
+  mirror: their `sele4n-sys` wrappers pass typed parameters straight into
+  registers, and the corresponding structures live on the Lean decode side
+  (27 in `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`)
 - **`TypeTag`**: 8 retype variants (TCB=0, Endpoint=1, ..., Untyped=5, SchedContext=6, Reply=7)
 - **`PagePerms`**: Permission bitmask with W^X enforcement
 - **`IpcBuffer`**: Overflow message registers (4–119) for messages exceeding
