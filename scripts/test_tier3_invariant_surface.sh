@@ -5312,7 +5312,7 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.Concurrency.currentCoreId_in_range_marker
 #check @SeLe4n.Kernel.Concurrency.instInhabitedCoreId
 -- SM1.C.6 / SM5.C.5 — Secondary-core kernel entry (closes SMP-C2 Lean side;
--- bring-up is definitionally the core's first reschedule)
+-- bring-up is definitionally the first reschedule on the onlined core)
 #check @SeLe4n.Kernel.secondaryKernelMain
 #check @SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry
 #check @SeLe4n.Kernel.secondaryKernelMain_def
