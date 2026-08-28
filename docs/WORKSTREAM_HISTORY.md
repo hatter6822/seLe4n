@@ -1203,7 +1203,7 @@ restore) and the cancellation/timeout error-frame staging.  Plan:
 [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](planning/SYSCALL_RETURN_ABI_PLAN.md).
 
 **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 →
-v0.31.3 → v0.32.x → v0.33.x → v1.0.0).** Unified workstream merging WS-RC's remaining
+v0.31.3 → v0.32.x → v0.33.x → v0.34.x → v1.0.0).** Unified workstream merging WS-RC's remaining
 R6..R14 phases with the SMP-specific SM-phases (SM0..SM10).  Closes
 at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5.
 Plan:

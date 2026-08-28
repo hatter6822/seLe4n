@@ -1,3 +1,21 @@
+## v0.34.0 — minor version bump: the audited documentation line advances to 0.34
+
+A maintainer-directed minor bump on top of the v0.33.102 documentation
+audit — no functional change.  `./scripts/bump_version.sh 0.34.0` rewrote
+all 36 registered version sites (verified by `check_version_sync.sh`),
+including, for the first time under gate control, the Version rows of all
+eleven `docs/i18n/*/README.md` translations that the v0.33.102 cut
+registered in `scripts/version_locations.sh` — this bump is the first to
+exercise those nine new registrations end to end.  The i18n prose remains
+aligned from the v0.33.102 re-sync; `docs/i18n/LANGUAGES.md`'s sync marker
+and the WS-SM version-trail arrows (`docs/WORKSTREAM_HISTORY.md`, GitBook
+chapter 05) now include the v0.34.x series.  Historical "as of" figures
+are left as written per the record convention.
+
+Zero sorry/axiom untouched; trace fixture byte-identical.
+
+Refs: docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md §4
+
 ## v0.33.102 — the documentation audited whole: every count re-measured, every status re-dated, and the mirrors pulled up to the tree
 
 A deep documentation audit of the entire prose surface — README, spec,

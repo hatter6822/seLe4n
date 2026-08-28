@@ -56,4 +56,4 @@
 All translations are community-maintained. If you find errors or sections that
 need updating, please open a PR or issue.
 
-Last synchronized with English sources: v0.33.102 (figures, current-state tables, and roadmap sections re-aligned by the documentation audit; badges and Version rows are gate-synced by scripts/check_version_sync.sh)
+Last synchronized with English sources: v0.34.0 (figures, current-state tables, and roadmap sections re-aligned by the documentation audit; badges and Version rows are gate-synced by scripts/check_version_sync.sh)
