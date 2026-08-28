@@ -9,6 +9,7 @@ For pull requests into `main`, branch protection should require all of the follo
 1. `Tiered Tests / Fast (Tier 0 + Tier 1)`
 2. `Tiered Tests / Smoke (Tier 2)`
 3. `Tiered Tests / Full (Tier 3)`
+4. `Rust ABI Tests`
 
 These checks are produced by `.github/workflows/lean_action_ci.yml`. Each CI job runs only its incremental tier; earlier tiers are gated by job dependencies:
 
@@ -17,10 +18,9 @@ These checks are produced by `.github/workflows/lean_action_ci.yml`. Each CI job
 - `test-full` (after test-smoke): `./scripts/test_tier3_invariant_surface.sh`
 - `test-rust` (`Rust ABI Tests`): `./scripts/test_rust.sh` — workspace tests (incl. `--features std`), ABI conformance suite, `cargo fmt --check`, all-targets clippy. Runs on every PR/push alongside the Lean lanes.
 
-Note: `scripts/test_tier2_determinism.sh` (mandatory Tier 2 locally via
-`test_smoke.sh`) is not part of the PR-time smoke job; PR-time determinism
-coverage comes from the nightly workflow (§2). Branch-protection
-configurations that mirror this inventory should require all four jobs.
+`scripts/test_tier2_determinism.sh` (mandatory Tier 2) runs in the PR-time
+smoke job as of v0.34.0, alongside the trace and negative-state checks;
+the nightly workflow (§2) additionally runs the repeat-run replay family.
 
 Documentation sync (`./scripts/test_docs_sync.sh`) is integrated into the smoke CI job and the `test_smoke.sh` entrypoint (WS-H3/M-19). Documentation navigation/link drift is caught automatically on every PR.
 
@@ -53,6 +53,7 @@ In GitHub repository settings for `main`:
    - `Tiered Tests / Fast (Tier 0 + Tier 1)`
    - `Tiered Tests / Smoke (Tier 2)`
    - `Tiered Tests / Full (Tier 3)`
+   - `Rust ABI Tests`
 4. Enable **Require branches to be up to date before merging**.
 5. Disable direct pushes to `main` for non-admin contributors.
 

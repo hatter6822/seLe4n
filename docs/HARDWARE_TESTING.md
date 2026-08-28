@@ -81,9 +81,10 @@ sudo apt install gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
 # OpenOCD (for on-board JTAG debugging — optional, RPi 5 only)
 sudo apt install openocd
 
-# Rust stable (the repo pins 1.94.1 via rust/rust-toolchain.toml)
-# with the aarch64-unknown-none target added to the pinned toolchain
-rustup target add aarch64-unknown-none
+# Rust stable (the repo pins the toolchain via rust/rust-toolchain.toml).
+# Run the target-add from rust/ so the pinned toolchain override applies —
+# from the repo root it would land in your default toolchain instead.
+(cd rust && rustup target add aarch64-unknown-none)
 
 # Lean 4.28.0 (already installed via setup_lean_env.sh)
 ./scripts/setup_lean_env.sh
@@ -117,10 +118,13 @@ Building the deployable image (`kernel8.img` + `config.txt`) is **SM10.E
 scope** — the image-packaging script (`scripts/build_rpi5_image.sh`) is
 registered debt tracked in
 [`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md)
-(SM10.E ships the bootable image). Until it lands, build the raw kernel
-binary with `cd rust && cargo build --release --target
-aarch64-unknown-none -p sele4n-hal` and package manually. Then flash to
-the SD card and boot the board.  All Section 2 tests
+(SM10.E ships the bootable image). There is **no interim manual path**:
+`sele4n-hal` currently builds as a library crate (no `[[bin]]` target, no
+`main.rs`), so `cargo build -p sele4n-hal` produces an `.rlib` for the
+linker, not a flashable kernel binary — the bootable ELF target, its
+linker script, and the image packaging all arrive together with SM10.E.
+Once they land, flash the packaged image to the SD card and boot the
+board.  All Section 2 tests
 that require real silicon (TLB coherence, OSH multi-cluster,
 PMCCNTR_EL0 timing) execute on this path.
 
@@ -258,8 +262,8 @@ uint64_t do_svc(uint32_t syscall_id, uint64_t arg0) {
 }
 
 int main(void) {
-    // Each SyscallId variant 0..24
-    for (uint32_t id = 0; id < 25; id++) {
+    // Each SyscallId variant 0..33 (COUNT = 34 in both Rust mirrors)
+    for (uint32_t id = 0; id < 34; id++) {
         uint64_t ret = do_svc(id, 0);
         // Expect either Ok(0) or specific kernel error.
     }
@@ -402,6 +406,11 @@ kernel command line):**
 # QEMU boot — primary core only.
 ./scripts/test_qemu.sh
 ```
+
+> Note: until SM10.E lands the `sele4n-hal` bootable binary target, this
+> script SKIPs gracefully at its kernel-binary check (the crate builds as
+> a library today); the boot-log assertions below describe the run once
+> that target exists.
 
 The kernel boot log on the primary core MUST contain:
 

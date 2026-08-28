@@ -130,6 +130,9 @@ jobs:
           TRACE_ARTIFACT_DIR: .ci-artifacts/trace
         run: ./scripts/ci_capture_timing.sh smoke-trace ./scripts/test_tier2_trace.sh
 
+      - name: Run Tier 2 determinism check
+        run: ./scripts/ci_capture_timing.sh smoke-determinism ./scripts/test_tier2_determinism.sh
+
       - name: Run Tier 2 negative-state checks
         run: ./scripts/ci_capture_timing.sh smoke-negative ./scripts/test_tier2_negative.sh
 

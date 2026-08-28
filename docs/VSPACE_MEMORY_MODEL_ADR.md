@@ -64,9 +64,11 @@ proof-friendly and explicitly extensible.
   and the SM7 TLB-shootdown protocol.
 - Tight coupling to physical memory frame allocator semantics.
 
-These remain tracked as post-WS-B1 expansions; WS-C7 has already removed the bounded
-discovery-window hack in favor of explicit object indexing, while full finite-map ASID indexing
-remains future work.
+Of these, only the frame-allocator coupling remains tracked as a post-WS-B1
+expansion. WS-C7 removed the bounded discovery-window hack in favor of
+explicit object indexing, and full finite-map ASID indexing has since been
+delivered (WS-G3's O(1) `asidTable`, `RHTable`-backed since WS-Q2 — see the
+evolution table above).
 
 ## Verification evidence
 

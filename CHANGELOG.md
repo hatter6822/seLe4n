@@ -12,6 +12,27 @@ and the WS-SM version-trail arrows (`docs/WORKSTREAM_HISTORY.md`, GitBook
 chapter 05) now include the v0.34.x series.  Historical "as of" figures
 are left as written per the record convention.
 
+**Same cut — the Codex review on PR #878 closed, all six findings real.**
+The v0.33.102 audit's own patches drew a bot review that caught what the
+audit wrote imprecisely, and two genuine gaps it had only documented:
+`HARDWARE_TESTING`'s interim "build the raw kernel binary" fallback
+pointed at a library-only crate (no `[[bin]]`, no `main.rs` — the command
+yields an `.rlib`), so the guide now says plainly that no manual path
+exists until SM10.E ships the bootable target, and notes that
+`test_qemu.sh` SKIPs at its kernel-binary check until then; the §4.4
+sample program still looped syscall ids `0..24` (now `0..33`);
+`rustup target add` ran outside `rust/` in both the guide and
+`hardware_test_env_setup.sh`, landing the target in the default toolchain
+instead of the pinned one (both now run from `rust/`, and the script's
+`|| true` failure mask became an explicit warn); the VSpace ADR's closing
+line still called finite-map ASID indexing "future work" two paragraphs
+under the row recording its delivery; and — the two implemented
+improvements rather than reworded claims — `Rust ABI Tests` joined both
+required-check enumerations in `CI_POLICY.md` §1/§4, and
+`test_tier2_determinism.sh` now runs in the PR smoke CI job
+(`lean_action_ci.yml`, lane `smoke-determinism`) instead of being
+attributed to the schedule-only nightly.
+
 Zero sorry/axiom untouched; trace fixture byte-identical.
 
 Refs: docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md §4
