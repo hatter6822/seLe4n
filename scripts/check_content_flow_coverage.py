@@ -1275,7 +1275,7 @@ def main() -> int:
             failures.append(
                 f"  `.{arm}` (in `{dispatcher_of(key)}`) is classified "
                 f"`.{cls[arm]}` but reaches "
-                f"{hits[arm]} content write(s): {', '.join(detail.get(arm, [])[:4])}")
+                f"{hits[key]} content write(s): {', '.join(detail.get(key, [])[:4])}")
 
     # (C3) WS-SM SM9.D.13a: the recording classification must match the reach.
     #
@@ -1312,8 +1312,8 @@ def main() -> int:
                    and arm not in AUDIT_APPEND_EXEMPT)
         if reached and not declared:
             failures.append(
-                f"  `.{arm}` reaches {audit_hits[arm]} audit-trail write(s) "
-                f"({', '.join(audit_detail.get(arm, [])[:3])}) but "
+                f"  `.{arm}` reaches {audit_hits[key]} audit-trail write(s) "
+                f"({', '.join(audit_detail.get(key, [])[:3])}) but "
                 f"`syscallRecordsDeclassification` says it cannot record — "
                 f"`applySyscallTaint` would skip the origination diff and lose "
                 f"every causal chain through this arm")

@@ -1442,12 +1442,12 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 **M-07 — Enforcement boundary specification:**
 
 - `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`),
-- `enforcementBoundary` — exhaustive 42-entry classification table (12 policy-gated, 26 capability-only, 4 read-only; count pinned by `enforcementBoundaryExtended_count`; Z8-M added 3 SchedContext, D1 added 2 thread lifecycle, D2 added 2 priority management, D3 added 1 IPC buffer, AC4-D added 3 VSpace/service capability-only operations, WS-SM SM8.C added the live declassification entry point (policy-gated), WS-SM SM8.E.3 added the SM3 two-phase-locking bracket `withLockSet` (capability-only), WS-SM SM9.A.11 added the two audit-trail readers `auditReadFromCore` / `auditDrainVisiblePrefix` (capability-only — authority is the dedicated `CapTarget.auditTrail`, never a right)),
+- `enforcementBoundary` — exhaustive 43-entry classification table (13 policy-gated, 26 capability-only, 4 read-only; count pinned by `enforcementBoundaryExtended_count`; Z8-M added 3 SchedContext, D1 added 2 thread lifecycle, D2 added 2 priority management, D3 added 1 IPC buffer, AC4-D added 3 VSpace/service capability-only operations, WS-SM SM8.C added the live declassification entry point (policy-gated), WS-SM SM8.E.3 added the SM3 two-phase-locking bracket `withLockSet` (capability-only), WS-SM SM9.A.11 added the two audit-trail readers `auditReadFromCore` / `auditDrainVisiblePrefix` (capability-only — authority is the dedicated `CapTarget.auditTrail`, never a right), and WS-SM SM9.C.8 added the data-carrying declassification `notificationSignalDeclassifiedOnCore` (policy-gated, the thirteenth)),
 - `enforcementBoundaryExtended` — definitional alias of `enforcementBoundary` (W2-G, previously duplicate list),
 - `enforcementBoundaryExtended_eq_canonical` — element-wise equality proof (W2-G),
-- `enforcementBoundaryComplete_counts` — compile-time count witness (11+18+4=33, V6-F/Z8-M/D1/D2/D3/AC4-D),
+- `enforcementBoundaryExtended_count` — compile-time count witness (43 entries: 13 policy-gated + 26 capability-only + 4 read-only),
 - `enforcementBoundary_names_nonempty` — all boundary handler names non-empty (V6-F),
-- `SyscallId.all` — exhaustive list of all 25 SyscallId variants (AC4-D),
+- `SyscallId.all` — exhaustive list of all 34 SyscallId variants (AC4-D; grown since by the SM6-SM9 ABI additions through `.declassifySignal` = 33),
 - `SyscallId.all_length` — compile-time length check (`all.length = count`, AC4-D),
 - `SyscallId.all_complete` — membership proof for every variant (`cases s <;> decide`, AC4-D),
 - `syscallIdToEnforcementName` — SyscallId → String bridge mapping to enforcement boundary names (AC4-D),
@@ -3390,15 +3390,15 @@ so taint propagates through ordinary IPC.
   commit — the origination pass skips cleared keys (v0.33.58), so a downgrade
   delivered straight to a waiter cannot re-tag the transport it emptied.
 
-  `capTransferTaintSinks` tags the receiver's **CNode**: a CNode is shared, so a
-  second thread rooted at the same CSpace reads what `ipcUnwrapCaps` installed
-  without ever touching the receiver's TCB.  It also tags the receiving
-  **subject** from the sender's CSpace root directly (v0.33.58), because
-  `applyTaintFlow` reads every source from the pre-state and two edges of one
-  commit therefore do not compose.  All of it is gated on capabilities actually
-  crossing: once a CSpace root feeds a subject, declaring the sink for a plain
-  message would name an *unsaturated* predecessor for an unrelated later
-  downgrade, which `staleTaint_is_not_saturation` forbids.
+  A capability transfer declares **no CSpace taint edge at all** (v0.33.66,
+  which deleted the earlier `capTransferTaintSinks` design): a CNode holds no
+  *tracked content* (`contentTrackedFields` — a TCB's `pendingMessage`, a
+  notification's `pendingBadge`), so a CSpace root is not a taint carrier on
+  either ordering.  A root sink feeding the consuming subject would name an
+  *unsaturated* predecessor for an unrelated later downgrade, which
+  `staleTaint_is_not_saturation` forbids.  The shipped boundary is content-only
+  (`senderTaintEdges_content_only`), with capability badge/rights metadata an
+  accepted out-of-scope channel (`capabilityBadgeChannel_out_of_scope`).
 
 * **The retype clears** (SM9.D.12).  `lifecycleRetype` commits `storeObject` at
   the same id, so a *framed* retype leaves a destroyed object's tags on its

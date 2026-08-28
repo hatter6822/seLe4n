@@ -10502,14 +10502,15 @@ private def runTaintPropagationChecks : IO Unit := do
     (match taintedEntryOutcome with
      | .ok ((), st) => !((st.declassificationTaint lowNotification).contains 42)
      | .error _ => false)
-  -- PR #873 rounds 5-7: the live `.receive` runs NO capability unwrap
-  -- (`endpointReceiveDualOnCore` delivers the parked message wholesale and
-  -- reports an installed count of zero).  So the receive declares its content
-  -- edge and NOTHING about CSpace: a sink here would write the sender's
-  -- provenance into a CNode no capability reached, and — since a root feeds the
-  -- consuming subject — hand an unrelated later downgrade an unsaturated
-  -- predecessor.  The send ordering keeps the transfer sinks, because the live
-  -- send really does unwrap.
+  -- v0.33.66 (`senderTaintEdges_content_only`): the receive declares its
+  -- content edge and NOTHING about CSpace — not because the live `.receive`
+  -- installs no capabilities (it does, through the capability-installing
+  -- receive since v0.33.82), but because a CNode holds no *tracked content*
+  -- (`contentTrackedFields`), so a CSpace root is not a taint carrier on
+  -- either ordering.  A root sink would hand the consuming subject an
+  -- unrelated earlier transfer's provenance — an unsaturated false
+  -- predecessor, which `staleTaint_is_not_saturation` forbids.  The send
+  -- ordering declares no transfer sinks either, for the same reason.
   assertBool "the receive declares the content edge from the blocked sender"
     (decide (({ sink := highCurrent.toObjId, source := taintedSender.toObjId } : TaintFlowEdge)
        ∈ receiverTaintEdges taintedEndpointState highCurrent highEndpoint))

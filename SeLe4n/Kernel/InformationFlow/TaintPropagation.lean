@@ -699,23 +699,60 @@ Keyed on the decoded syscall and the resolved operand, so the plan names the
 object the arm acts on.  A capability that does not resolve, or resolves to the
 wrong shape, declares nothing — which is correct rather than fail-open: the arm
 itself rejects such a call with `.invalidCapability` before any content
-moves. -/
+moves.
+
+The syscall match is **total with no wildcard**, exactly as `contentFlowClass`
+is: a syscall added tomorrow fails to elaborate here too, so a ninth
+`.movesContent` arm cannot silently run with an empty edge plan — which would
+be a missed chain, the one direction this module must never err in.  Only the
+per-arm *shape* fallbacks stay wildcards, since they are the wrong-capability
+refusals described above, sound for every present and future target shape. -/
 def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) : List TaintFlowEdge :=
   match syscallOperandCap? st tid decoded.capAddr with
   | none => []
   | some cap =>
-    match decoded.syscallId, cap.target with
-    | .send, .object epId => senderTaintEdges st tid epId
-    | .call, .object epId => senderTaintEdges st tid epId
-    | .receive, .object epId => receiverTaintEdges st tid epId
-    | .replyRecv, .object epId =>
-        receiverTaintEdges st tid epId ++ replyRecvReplyLegEdges st tid decoded
-    | .reply, .replyCap rid => replyTaintEdges st tid rid
-    | .notificationSignal, .object nid => signalTaintEdges st tid nid
-    | .declassifySignal, .object nid => signalTaintEdges st tid nid
-    | .notificationWait, .object nid => waitTaintEdges tid nid
-    | _, _ => []
+    match decoded.syscallId with
+    | .send =>
+        match cap.target with
+        | .object epId => senderTaintEdges st tid epId
+        | _ => []
+    | .call =>
+        match cap.target with
+        | .object epId => senderTaintEdges st tid epId
+        | _ => []
+    | .receive =>
+        match cap.target with
+        | .object epId => receiverTaintEdges st tid epId
+        | _ => []
+    | .replyRecv =>
+        match cap.target with
+        | .object epId =>
+            receiverTaintEdges st tid epId ++ replyRecvReplyLegEdges st tid decoded
+        | _ => []
+    | .reply =>
+        match cap.target with
+        | .replyCap rid => replyTaintEdges st tid rid
+        | _ => []
+    | .notificationSignal =>
+        match cap.target with
+        | .object nid => signalTaintEdges st tid nid
+        | _ => []
+    | .declassifySignal =>
+        match cap.target with
+        | .object nid => signalTaintEdges st tid nid
+        | _ => []
+    | .notificationWait =>
+        match cap.target with
+        | .object nid => waitTaintEdges tid nid
+        | _ => []
+    | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .lifecycleRetype
+    | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
+    | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+    | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
+    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbBindNotification
+    | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
+    | .declassify | .auditRead | .auditDrain => []
 
 /-- WS-SM SM9.D.10: **the notification a signal empties**, if any.
 
@@ -872,12 +909,26 @@ moves nothing — folding them would make "inert arms bypass nothing" unprovable
 for the twenty-nine arms where it is still exactly true. -/
 def declassifyBypassedTargets (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) : List SeLe4n.ObjId :=
-  match decoded.syscallId, syscallOperandCap? st tid decoded.capAddr with
-  | .declassify, some cap =>
-      match cap.target with
-      | .object targetId => declassifyBypassedTarget st targetId
-      | _ => []
-  | _, _ => []
+  -- Total on `SyscallId` with no wildcard, like the three content-flow
+  -- planners: a second bare-downgrade syscall added tomorrow must decide its
+  -- idle-target list here or fail to elaborate.
+  match decoded.syscallId with
+  | .declassify =>
+      match syscallOperandCap? st tid decoded.capAddr with
+      | some cap =>
+          match cap.target with
+          | .object targetId => declassifyBypassedTarget st targetId
+          | _ => []
+      | none => []
+  | .send | .receive | .call | .reply | .replyRecv
+  | .notificationSignal | .notificationWait | .declassifySignal
+  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .lifecycleRetype
+  | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+  | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbBindNotification
+  | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
+  | .auditRead | .auditDrain => []
 
 /-- WS-SM SM9.D.13a (PR #873 round 7): every arm but `.declassify` bypasses
 nothing here — the fact `syscallTaintPlan_eq_inert` rests on. -/
@@ -893,10 +944,26 @@ def contentFlowBypassed (st : SystemState) (tid : SeLe4n.ThreadId)
   match syscallOperandCap? st tid decoded.capAddr with
   | none => []
   | some cap =>
-    match decoded.syscallId, cap.target with
-    | .notificationSignal, .object nid => signalBypassedNotification st nid
-    | .declassifySignal, .object nid => signalBypassedNotification st nid
-    | _, _ => []
+    -- Total on `SyscallId` with no wildcard, like its two planner siblings: a
+    -- new delivering syscall must decide what its delivery bypasses or fail to
+    -- elaborate.  Shape fallbacks stay per-arm wrong-capability refusals.
+    match decoded.syscallId with
+    | .notificationSignal =>
+        match cap.target with
+        | .object nid => signalBypassedNotification st nid
+        | _ => []
+    | .declassifySignal =>
+        match cap.target with
+        | .object nid => signalBypassedNotification st nid
+        | _ => []
+    | .send | .receive | .call | .reply | .replyRecv | .notificationWait
+    | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .lifecycleRetype
+    | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
+    | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+    | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
+    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbBindNotification
+    | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
+    | .declassify | .auditRead | .auditDrain => []
 
 /-- WS-SM SM9.D.8 (**content-derived transport**): the transport objects a
 content-moving syscall *empties*, so an object's taint reflects the content it
@@ -927,11 +994,31 @@ def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
   match syscallOperandCap? st tid decoded.capAddr with
   | none => []
   | some cap =>
-    match decoded.syscallId, cap.target with
-    | .notificationWait, .object nid => [nid]
-    | .notificationSignal, .object nid => signalClearedNotification st nid
-    | .declassifySignal, .object nid => signalClearedNotification st nid
-    | _, _ => []
+    -- Total on `SyscallId` with no wildcard, like `contentFlowEdges` above: a
+    -- new content-moving syscall must decide its cleared transports here or
+    -- fail to elaborate, so a consumed transport cannot silently keep stale
+    -- provenance.  Shape fallbacks stay per-arm wrong-capability refusals.
+    match decoded.syscallId with
+    | .notificationWait =>
+        match cap.target with
+        | .object nid => [nid]
+        | _ => []
+    | .notificationSignal =>
+        match cap.target with
+        | .object nid => signalClearedNotification st nid
+        | _ => []
+    | .declassifySignal =>
+        match cap.target with
+        | .object nid => signalClearedNotification st nid
+        | _ => []
+    | .send | .receive | .call | .reply | .replyRecv
+    | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .lifecycleRetype
+    | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
+    | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+    | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
+    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbBindNotification
+    | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
+    | .declassify | .auditRead | .auditDrain => []
 
 /-- WS-SM SM9.D.12: **what a retype destroys.**
 
@@ -1622,7 +1709,7 @@ theorem taintPropagation_send_to_receiver (st post : SystemState) (tid : SeLe4n.
     rcases hSid with h | h <;> simp only [h, hTarget] <;> simp [senderTaintEdges, hRecv]
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
   refine taintPropagation_edge _ st post _ hIn ?_ hSender
-  rw [hCleared]; rcases hSid with h | h <;> simp [contentFlowClears, hCap, h, hTarget]
+  rw [hCleared]; rcases hSid with h | h <;> simp [contentFlowClears, hCap, h]
 
 /-- WS-SM SM9.D.8 (**receive / replyRecv ← sender**): a receiver picks up the
 provenance of the blocked sender at `sendQ.head` directly — whether that sender
@@ -1649,7 +1736,7 @@ theorem taintPropagation_receive_from_sender (st post : SystemState) (tid : SeLe
       exact List.mem_append_left _ (by simp [receiverTaintEdges, hSender])
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
   refine taintPropagation_edge _ st post _ hIn ?_ hSrc
-  rw [hCleared]; rcases hSid with h | h <;> simp [contentFlowClears, hCap, h, hTarget]
+  rw [hCleared]; rcases hSid with h | h <;> simp [contentFlowClears, hCap, h]
 
 -- Three receive-side theorems are deliberately GONE, not moved — and PR #873
 -- round 8 corrected *why*.  The reason recorded here was "they assert capability
@@ -1696,7 +1783,7 @@ theorem taintPropagation_reply_to_caller (st post : SystemState) (tid : SeLe4n.T
     simp [replyTaintEdges, hCaller]
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
   refine taintPropagation_edge _ st post _ hIn ?_ hReplier
-  rw [hCleared]; simp [contentFlowClears, hCap, hSid, hTarget]
+  rw [hCleared]; simp [contentFlowClears, hCap, hSid]
 
 /-- WS-SM SM9.D.9 (**replyRecv → previous caller**): the reply half of the
 server's steady-state loop carries the server's provenance to the caller the
@@ -1725,7 +1812,7 @@ theorem taintPropagation_replyRecv_reply_to_prevCaller (st post : SystemState)
     simp [replyTaintEdges, hCaller]
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
   refine taintPropagation_edge _ st post _ hIn ?_ hServer
-  rw [hCleared]; simp [contentFlowClears, hCap, hSid, hTarget]
+  rw [hCleared]; simp [contentFlowClears, hCap, hSid]
 
 /-- WS-SM SM9.D.10 (**signal → notification, stored**): when no waiter is present
 the badge is stored on the notification, so it carries the signaller's provenance

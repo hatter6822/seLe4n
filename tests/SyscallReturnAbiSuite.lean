@@ -725,11 +725,17 @@ private def returnAbiTraceLines : List String :=
     match signalled with
     | .ok (_, st) => dispatchFromAbi SyscallId.notificationWait.toNat 0 0 st
     | e => e
+  -- 57 = the full `KernelError` enumeration (discriminants 0..56, the newest
+  -- being SM9.C's `.declassificationDeniedAtReceiver` at 56).  The boundary
+  -- conjunct pins the count from above: when a 58th variant lands,
+  -- `ofDiscriminant? 57` stops being `none`, the fixture line diverges, and
+  -- this range has to move with it rather than silently under-covering.
   let labelRoundtrips :=
-    (List.range 56).all fun d =>
+    (List.range 57).all fun d =>
       match SeLe4n.Model.KernelError.ofDiscriminant? d with
       | some e => Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabel e) == some e
       | none => false
+  let labelBoundary := (SeLe4n.Model.KernelError.ofDiscriminant? 57).isNone
   [ s!"[ret-abi] abi-version: {Kernel.Architecture.syscallAbiVersion}"
   , outcomeLine "unit signal (cap ptr 5)" signalled
   , outcomeLine "badge wait after signal 42" waitAfterSignal
@@ -740,7 +746,7 @@ private def returnAbiTraceLines : List String :=
         SeLe4n.Kernel.Concurrency.bootCoreId
         SyscallId.notificationSignal.toNat.toUInt32 0xAAAA
         capPtrValue.toUInt64 0xBBBB 0 0 0 0 0 witnessState)
-  , s!"[ret-abi] error labels: all 56 discriminants round-trip = {labelRoundtrips}"
+  , s!"[ret-abi] error labels: all 57 discriminants round-trip = {labelRoundtrips}; 57 unassigned = {labelBoundary}"
   , s!"[ret-abi] full-width badge frame: " ++
       frameCells (Kernel.Architecture.returnFrameOfBadge
         (Badge.ofNatMasked 0x8000000000000042))

@@ -1,3 +1,99 @@
+## v0.33.101 — the SM9 closure audited: the planners stop trusting a wildcard, and the record stops citing theorems that never existed
+
+A post-closure audit of the whole SM9 workstream (PRs #870–#874,
+v0.33.42 → v0.33.100) — every sub-phase re-derived against the code,
+documentation distrusted by instruction.  Verdict: **no security defect in any
+reachable state and no false theorem**; the full test surface (Tier 0–4, the
+Rust mirrors and the Tier-5 cross-language harness) is green.  What the audit
+did find, all closed in this cut:
+
+**The taint planners could silently under-plan a future syscall.**
+`contentFlowClass` is wildcard-free by design — a new `SyscallId` fails to
+elaborate without a classification — but the three planner components it
+licenses (`contentFlowEdges`, `contentFlowClears`, `contentFlowBypassed`) and
+`declassifyBypassedTargets` all ended in `| _, _ => []`, so a ninth
+`.movesContent` syscall would have compiled and run with an **empty edge
+plan**: content moving with no provenance following it, the one direction the
+module must never err in, and nothing — not the totality theorem, not the
+Tier-1 reach gate (whose check (B) verifies the classification against the
+transition's reach, never the planner's edges) — would have caught it.  All
+four now match every syscall explicitly (per-arm wrong-shape fallbacks stay,
+sound as the arms' own `.invalidCapability` refusals), so the planner joins
+the classification in failing at elaboration.
+
+**The `∃`-shaped "totality anchors" pinned nothing, and the wildcard
+tripwire could not fire.**  `auditReadOp_structure_total`,
+`auditObservationalEquivalence_clause_total`, `refusalSeamClass_total` and
+`contentFlowClass_total` are satisfied by *any* total function — a wildcarded
+one included; the real mechanism is the wildcard-free match, and the one
+Tier-3 negative meant to pin it grepped for `| _ => RefusalSeamClass` while
+the definition's own arms use dot notation, so the wildcard a maintainer
+would actually write (`| _ => .exempt`) passed CI silently.  The seam's
+negative now matches every wildcard-arm spelling, and the same anchor shape
+is added for `AuditReadOp.readsStructure`, `readableStructureAgrees`,
+`contentFlowClass` and the planners' two-discriminant form — each verified to
+fire on a planted wildcard through the code view before landing.  The
+acceptance-gate boxes that credited the `∃`-theorems as the enforcement now
+name the mechanism and keep the theorems as its named surface.
+
+**Diagnostics that crashed exactly when needed.**  The content-flow gate's
+checks (A) and (C3) guard on the dispatcher-qualified key but indexed their
+failure messages by the bare arm — a `KeyError` at precisely the moment the
+gate had something to report.  Both diagnostics now read the key they guard.
+
+**Runtime coverage catch-ups.**  The return-ABI error-label round-trip probed
+discriminants 0–55, silently omitting SM9.C's own
+`.declassificationDeniedAtReceiver` (56); it now covers all 57 with an
+upper-boundary conjunct (`ofDiscriminant? 57 = none` observed in the fixture
+line), so the next `KernelError` variant diverges the fixture instead of
+falling out of coverage — the theorem-level pin
+(`toDiscriminant_ofDiscriminant?`) always covered 57, this closes the
+runtime half.  The `syscall_return_abi` fixture moves by exactly that one
+line.  FO-026 through FO-030 gain the FO-031 success controls, so the five
+differential frozen-vs-live IPC scenarios can no longer be satisfied by a
+shared refusal.
+
+**The record stops citing theorems that never existed.**
+`predecessorTags_dominating_only` and `partialReader_gets_opaque_causality`
+were cited by a production docstring (`AuditRecord.lean`), the plan's ticked
+acceptance box and its catalogue — and exist nowhere: the property landed
+*stronger* (the tags are exported to no one; the causality surface is the
+view-local one-bit verdicts `chainVerdict_view_local` /
+`chainEntryVerdict_view_local`, the archived form monitor-gated), so every
+citation now names the witnesses that are real, and the v0.33.30 plan-review
+CHANGELOG entry citing the drafted names stands as history of what the plan
+then intended.  The same treatment for `auditReadStatus_generation_observer_scoped`
+(the observer-scoped drain generation was **resolved otherwise** — the
+per-observer token is unbuildable and the live reader monitor-only since
+PR #870 round 6; box, §3.3, risk row and catalogue now say so, citing
+`auditReadStatus_partial_hides_generation` /
+`auditReadStatus_global_generation_leaks`), for the catalogue's
+`auditDrainVisiblePrefix_preserves_*` spellings (landed as `auditDrain_*`),
+for `auditTimestampsFrom_epoch_preserved` (landed as
+`auditTimestampsFrom_drop` + `auditDrain_preserves_wellFormed_at_epoch`) and
+for `contentFlowSite_list_gate_insufficient` (the substance is the Tier-1
+reach gate).  **Four canonical docs described the deleted CSpace-root taint
+sinks as current behavior**: `CLAIM_EVIDENCE_INDEX` row SM9.D,
+`WORKSTREAM_HISTORY`, GitBook 12 and the plan's D.11 record all still
+presented `capTransferTaintSinks` and its four cspace-edge theorems as
+shipped, when v0.33.66 deleted the mechanism (a CNode holds no tracked
+content; `senderTaintEdges_content_only`,
+`capabilityBadgeChannel_out_of_scope`) — all four now record the reversal.
+Stale counts corrected against their pinned theorems: the spec's
+"machine-checked counts" block (25/18/22/10/54 → 30/22/24/14/58), README and
+GitBook's 42-entry enforcement boundary (43; 13 policy-gated), GitBook's
+25-variant `SyscallId.all` (34) and its retired `enforcementBoundaryComplete_counts`
+citation (→ `enforcementBoundaryExtended_count`), `KernelError`'s "49
+variants" docstring (57), the axiom sweep's "eight information-flow modules"
+(thirteen), a stale `0..=30` decode-range comment in the HAL, and the
+`.receive`-declares-no-CSpace-sink suite comment whose *reason* had been
+superseded twice (v0.33.82's capability-installing receive, v0.33.66's
+content-only scope).
+
+Version bumped 0.33.100 → 0.33.101.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §9
+
 ## v0.33.100 — the acceptance criteria run end to end, and one of them was not
 
 SM9.E closes WS-SM phase SM9. The phase's acceptance scenarios now run as live

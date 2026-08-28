@@ -145,7 +145,7 @@ impl SyscallId {
     pub const COUNT: u32 = 34;
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
-    /// outside the valid 0..=30 range with `None`.
+    /// outside the valid 0..=33 range with `None`.
     pub const fn from_u32(v: u32) -> Option<Self> {
         match v {
             0 => Some(Self::Send),

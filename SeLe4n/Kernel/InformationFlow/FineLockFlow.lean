@@ -3033,7 +3033,7 @@ def UncoveredLockDomain.all : List UncoveredLockDomain :=
    .capTransferReceiverCnode, .taintTablePerKeyStore, .cdtNodeAllocation]
 
 /-- SM8.D.5: every constructor is listed.  This is the clause a literal
-comparison cannot supply: adding a third domain makes `cases d` non-exhaustive
+comparison cannot supply: adding a new domain makes `cases d` non-exhaustive
 here, so the registration has to be amended in the same cut. -/
 theorem UncoveredLockDomain.mem_all (d : UncoveredLockDomain) : d ∈ UncoveredLockDomain.all := by
   cases d <;> decide

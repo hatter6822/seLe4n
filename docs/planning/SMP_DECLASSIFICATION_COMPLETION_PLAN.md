@@ -434,9 +434,14 @@ response — a one-bit signal per drain from the dominating subject to every
 subject in the system, out of the very boundary this phase polices.  The token
 must therefore change only when *this reader's own visible indexing* changes,
 which by construction is only when an entry the reader can see is removed.
-Stated as `auditReadStatus_generation_observer_scoped` (§11), with the negative
-that a global counter is refutable — otherwise the natural implementation is the
-leaky one and nothing catches it.
+(**Resolved otherwise at landing** — the per-observer token proved unbuildable,
+`observerScopedGeneration_not_mountable`, and PR #870 round 6 then made the
+live reader monitor-only because the visible *length* still moves under a
+monitor's drain, `auditDrain_moves_partial_readers_status`.  What survives of
+this section's claim is exactly the pair `auditReadStatus_partial_hides_generation`
+— a partial reader's model-level `status` carries generation `0`, never the
+epoch — and the negative `auditReadStatus_global_generation_leaks`, which keeps
+the leaky global-counter form refuted.)
 
 ### 3.4 Reader flow argument: a re-indexed, clearance-filtered view
 
@@ -782,8 +787,11 @@ table created an export surface the round-3 index fix had just closed.  So the
 tags follow the same two-class rule as identity (§3.3), keyed on the configured
 monitor clearance of §3.4: a **monitor** reads them, and every other reader gets
 at most an *opaque* causality verdict — a `Bool` computed by the kernel, carrying
-no timestamps —
-(`predecessorTags_dominating_only`, `partialReader_gets_opaque_causality`).  The
+no timestamps.  (**Landed stronger** — see the D.13a completion record: the tags
+are exported to *no one*, the opaque verdict is the view-local bit of
+`chainVerdict_view_local` / `chainEntryVerdict_view_local`, and the
+archived-predecessor form is monitor-gated,
+`chainArchivedVerdict_denied_for_non_monitor`.)  The
 general lesson is now explicit in §3.7: adding a field to a *readable* record is
 adding a read channel, and inherits both obligations.
 
@@ -1613,7 +1621,7 @@ and its consequences (D.14–D.18).
 | SM9.D.11 | Propagation at capability transfer (`ipcUnwrapCaps`) | `IPC/Operations/CapTransfer.lean` | M |
 | SM9.D.12 | Taint **frames** for every non-content transition (scheduler, VSpace, cache/TLB), so D.7's completeness is checkable rather than declared — **except retype, which clears** (§3.6): `lifecycleRetypeObject` commits `storeObject target newObj` at the same id, so a framed retype leaves a destroyed object's tags on its replacement.  `retypeClearsTaint` at the two production wrappers (the entry points SM7.D's initiator drain already enumerates) + `retypedObject_taint_empty` + `staleTaint_is_not_saturation`, which keeps D.15's residual-imprecision claim true | ~12 files | XL |
 | SM9.D.13 | Saturation: the structural bound, upward-saturating overflow, `taintSaturate_over_approximates` (the safe direction for a detector, stated as a theorem) | `InformationFlow/Taint.lean` | M |
-| SM9.D.13a | **`DeclassificationEvent.sourceSubject : ObjId` + `predecessorTags`** (§3.6) — the declassifying thread's TCB *and* a bounded snapshot of its taint at production time, the tags **dominating-reader-only** with an opaque causality verdict for partial readers (`predecessorTags_dominating_only`, `partialReader_gets_opaque_causality`), since the tags are global timestamps of events a partial reader may not see.  The subject alone is insufficient: the taint it names lives in a mutable side table, so re-evaluating a historical event against current taint invents links (tag acquired after the fact) and loses real ones (retype clears it).  `chainCausal_is_history_local` + `chainCausal_not_table_derived`.  A change to landed SM8 code, riding the §6 mount checklist (record type, producer, well-formedness, the reader's chunk protocol, the golden fixtures) | `InformationFlow/AuditRecord.lean`, `Declassification.lean`, `AuditRead.lean` | XL |
+| SM9.D.13a | **`DeclassificationEvent.sourceSubject : ObjId` + `predecessorTags`** (§3.6) — the declassifying thread's TCB *and* a bounded snapshot of its taint at production time, the tags **dominating-reader-only** with an opaque causality verdict for partial readers (landed stronger — the tags are exported to *no one*, per the completion record; the opaque verdict is `chainVerdict_view_local` / `chainEntryVerdict_view_local`), since the tags are global timestamps of events a partial reader may not see.  The subject alone is insufficient: the taint it names lives in a mutable side table, so re-evaluating a historical event against current taint invents links (tag acquired after the fact) and loses real ones (retype clears it).  `chainCausal_is_history_local` + `chainCausal_not_table_derived`.  A change to landed SM8 code, riding the §6 mount checklist (record type, producer, well-formedness, the reader's chunk protocol, the golden fixtures) | `InformationFlow/AuditRecord.lean`, `Declassification.lean`, `AuditRead.lean` | XL |
 | SM9.D.14 | `declassificationChainCausal` — hop 2's **recorded `predecessorTags`** contain hop 1's timestamp — conjoined into `declassificationChainLinked`, read from the event list rather than from the live taint table, so the verdict on a fixed pair of events cannot change with later unrelated activity | `InformationFlow/DeclassificationPerCore.lean` | L |
 | SM9.D.15 | **Retire `declassificationChainLinked_is_syntactic`** (now genuinely false) for a soundness theorem on the causal detector; a negative pinning the residual saturation-induced over-approximation, so the remaining imprecision is stated rather than implied absent | same | M |
 | SM9.D.16 | `chainLaunders` consumes it; the rule-inventory `evidenceProp` moves with the theorem; counts + Tier-3 anchors incl. the retirement negative | same | M |
@@ -1717,25 +1725,24 @@ holds; and a clear is **final within its commit** (v0.33.58,
 `applySyscallTaint_cleared_empty`), because the origination pass skips cleared
 keys rather than re-tagging a transport that stored nothing.
 
-D.11's capability transfer is `capTransferTaintSinks`: a transferred capability
-lands in the *receiver's CNode*, a different object from its TCB, and a CNode is
-shared — a second thread rooted at the same CSpace reads what the transfer
-installed without ever touching that TCB.  The helper declares three edges, each
-closing a gap found in review: the receiver's root is tagged with the sender's
-content and with the sender's *root* (so a forwarded capability carries its
-chain, v0.33.55), and the receiving **subject** is tagged from the sender's root
-directly (v0.33.58) — necessary because `applyTaintFlow` reads every source from
-the pre-state, so a root→root edge and a root→subject edge in the same commit do
-not compose.
-
-The sinks are **gated on capabilities actually crossing** (v0.33.58), by the
-signal each ordering has: a send reads its own `MessageInfo.extraCaps`, a receive
-reads the parked message's `caps` array.  The earlier unconditional declaration
-rested on "over-approximation is safe", which stopped being true once a CSpace
-root fed a subject: a plain message would then hand an unrelated later downgrade
-an *unsaturated* predecessor — exactly what `staleTaint_is_not_saturation`
-forbids.  Over-approximation remains safe for an isolated sink; it is not safe
-for one that feeds the detector's subject side.
+D.11's capability transfer, **as finally shipped (v0.33.66), declares no
+CSpace taint edge at all** — the standing scope decision, not a wiring gap.
+The landing built `capTransferTaintSinks` (root and subject edges refined
+across v0.33.55/v0.33.58, gated on capabilities actually crossing by
+`MessageInfo.extraCaps` on a send and the parked `caps` array on a receive),
+and v0.33.66 deleted the whole mechanism: a CNode holds no *tracked content*
+(`contentTrackedFields` is a TCB's `pendingMessage` and a notification's
+`pendingBadge`), so a CSpace root is not a taint carrier on **either**
+ordering.  A root sink feeding the consuming subject hands an unrelated later
+downgrade an *unsaturated* predecessor — exactly what
+`staleTaint_is_not_saturation` forbids, and why "over-approximation is safe"
+stopped justifying the sinks once a root fed a subject (over-approximation
+remains safe for an isolated sink; not for one that feeds the detector's
+subject side).  The shipped boundary is content-only
+(`senderTaintEdges_content_only`); capability badge/rights metadata is an
+accepted out-of-scope channel (`capabilityBadgeChannel_out_of_scope`), Tier-3
+negatives forbid the deleted sink names' return, and restoring slot-granular
+capability provenance is a *scope* change, not a fix.
 
 **D.12 — the retype clears.**  `lifecycleRetype` commits `storeObject` at the
 same id, so a *framed* retype leaves a destroyed object's tags on its
@@ -2095,7 +2102,7 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 | Taint outliving the object it describes | MED | MED | Retype commits `storeObject` at the same id, so a framed retype leaves a destroyed object's tags on its replacement — a false positive unrelated to saturation.  Retype clears (§3.6, SM9.D.12) |
 | SM9.D's size swamps the phase | HIGH | MED | Acknowledged in the estimate rather than absorbed: 18 sub-tasks, 6-8 PRs, and the phase moved 6-9 → 12-16 weeks.  Sequenced in four blocks so mount, propagation and detector land separately |
 | The reader leaks hidden-entry counts through index gaps | LOW | HIGH | Re-indexed filtered view, not sparse global indices; the visible view is a function of the reader's clearance alone; **drain requires full dominance** so there is no partial-visibility prefix to probe (§3.4) |
-| A global drain generation signals a dominating monitor's drains to every reader | MED | HIGH | `drainGeneration` is observer-scoped (§3.3), with the negative that a global counter is refutable |
+| A global drain generation signals a dominating monitor's drains to every reader | MED | HIGH | Resolved by exclusion (§3.3, PR #870 round 6): the live reader is monitor-only, a partial reader's status carries no generation (`auditReadStatus_partial_hides_generation`), and the global-counter form stays refuted (`auditReadStatus_global_generation_leaks`) |
 | The reader's flow argument is stated over a relation that cannot see the trail | MED | HIGH | `lowEquivalent` does not imply equal visible views once a reader exists — the naive lemma is **false** (§3.4a).  `auditObservationalEquivalence` is the relation SM9.A.4a/.4b are stated over |
 | A read word aliases the ABI error flag | — | — | Structurally impossible since WS-RA (v0.33.37): value and error travel in separate registers (`x0` vs `x1`'s `MessageInfo` label), so no returned word can alias the error channel.  Unbounded fields are still chunked (§3.3) — that constraint was never about the flag |
 | A retired rule leaves stale inventory counts | MED | MED | Both retirements (SM9.B.10, SM9.D.15) follow the SM8.E pattern: retire, move counts, add a negative anchor |
@@ -2118,7 +2125,14 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
       (DONE — `auditDrain_requires_full_dominance`; the operator consequence shipped at v0.33.100 in `SELE4N_SPEC.md`'s workstream cell and GitBook 12's SM9.A drain bullet)
 - [x] `drainGeneration` is observer-scoped; the global-counter form is refuted
       by a negative rather than merely avoided.
-      (DONE — `auditReadStatus_generation_observer_scoped` + the refuted global counter, suite §9.3/§9.9)
+      (RESOLVED OTHERWISE — the per-observer token is unbuildable
+      (`observerScopedGeneration_not_mountable`) and the live reader is
+      monitor-only since PR #870 round 6, so no partial reader receives any
+      generation at all: `auditReadStatus_partial_hides_generation` is the
+      surviving positive, `auditReadStatus_global_generation_leaks` keeps the
+      global-counter form refuted, and
+      `auditDrain_moves_partial_readers_status` exhibits the channel the
+      exclusion closes; suite §9.3/§9.9)
 - [x] Refusals are counted and attributed, and provably cannot displace an
       authorized-downgrade entry (SM9.B: `declassificationRefusals_are_counted_and_attributed`,
       `refusalWrite_declassificationAuditLog_eq`, `refusalWrite_cannot_exhaust_trail`).
@@ -2158,7 +2172,11 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 - [x] SM9.C.0 is closed: the notification wait path delivers the badge, so a
       data-carrying declassification is not built over a path that loses data in
       one of its two orderings.
-      (DONE — suite §11.3: the badge really crosses, in both orderings)
+      (DONE — suite §11.3 covers the wait-side delivery; the signal-first
+      ordering is exercised end to end by `SyscallReturnAbiSuite`'s
+      `badge wait after signal` line and the wait-first ordering by its staged
+      `wait-before-signal` frame, both pinned byte-for-byte in
+      `tests/fixtures/syscall_return_abi.expected`)
 - [x] The declassifying signal authorizes its **resolved destination**, not only
       its notification, and the audit event names that destination — the
       v0.31.73 leak is not re-opened under declassification authority.
@@ -2191,15 +2209,29 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
       (DONE — SM9.A.10 on WS-RA's return path; `SyscallReturnAbiSuite` §10a–§10e)
 - [x] No field derived from hidden state reaches a partial reader, including
       fields added to fix something else.
-      (DONE — `predecessorTags_dominating_only`, `partialReader_gets_opaque_causality`)
+      (DONE, stronger than drafted — `predecessorTags` is exported to *no one*
+      (no `AuditReadOp` returns it; the field-selector list has no tags
+      member), the causality surface is the one-bit view-local verdicts
+      (`chainVerdict_view_local`, `chainEntryVerdict_view_local`), the
+      archived form is monitor-gated
+      (`chainArchivedVerdict_denied_for_non_monitor`), and the live reader is
+      monitor-only (`auditReadFromCore_partial_reader_denied`))
 - [x] Every readable structure has an equivalence clause and a hidden-write
-      non-interference argument (§3.7), enforced by `auditReadOp_structure_total`
-      and `auditObservationalEquivalence_clause_total` — **not** by a `mem_all`
-      list, which §3.7 refutes.
-      (DONE — `auditReadOp_structure_total`, `auditObservationalEquivalence_clause_total`)
-- [x] Both declassifying syscalls reach the refusal seam, enforced by the total
-      `refusalSeamClass_total` and exercised by a denied `.declassifySignal`.
-      (DONE — `refusalSeamClass_total`; the denied `.declassifySignal` exercised through the dispatch boundary at SM9.E §13.2, v0.33.100, pinned by the reader fixture's seam line)
+      non-interference argument (§3.7), enforced by the **wildcard-free total
+      matches themselves** (`AuditReadOp.readsStructure`,
+      `readableStructureAgrees`) — **not** by a `mem_all` list, which §3.7
+      refutes.  `auditReadOp_structure_total` and
+      `auditObservationalEquivalence_clause_total` are the named surface for
+      that mechanism, not its enforcement — an `∃`-shaped statement holds of a
+      wildcarded function too — so the wildcard-freedom is pinned by Tier-3
+      negatives on both definitions (added at the v0.33.101 audit), the same
+      anchor shape the refusal seam carries.
+      (DONE — the fused definitions + the Tier-3 wildcard negatives)
+- [x] Both declassifying syscalls reach the refusal seam, enforced by the
+      wildcard-free total `refusalSeamClass` (pinned by a Tier-3 wildcard
+      negative; `refusalSeamClass_total` is its named surface) and exercised by
+      a denied `.declassifySignal`.
+      (DONE — the denied `.declassifySignal` exercised through the dispatch boundary at SM9.E §13.2, v0.33.100, pinned by the reader fixture's seam line)
 - [x] The laundering detector is **causal**: the §3.6 chain (downgrade →
       ordinary delivery → downgrade) is detected, the syntactic-scope theorem is
       retired rather than weakened, and the residual saturation-induced
@@ -2210,7 +2242,7 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
       (RESOLVED OTHERWISE — per §4 SM9.C.7: a `KernelOperation` constructor would have reported the visible flow as projection-preserving, so the inventory that grew is `CrossCoreTransition` 28→29; `kernelOperation_count` stays 35 with a Tier-3 exclusion negative)
 - [x] Zero `sorry`/`axiom`; `check_module_axioms.py --all-smp-information-flow`
       green including every new module.
-      (DONE — 4751 environment constants axiom-clean across the eight information-flow modules at v0.33.100)
+      (DONE — 4751 environment constants axiom-clean across the thirteen registered information-flow modules at v0.33.100)
 - [x] Tier 0..3 green; trace fixture diffs explained.
       (DONE at v0.33.100 — the two acceptance fixtures are new with this closure; no pre-existing fixture moved)
 
@@ -2227,9 +2259,10 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 ~82 substantive theorems.  Headline set:
 
 - `auditLogVisibleTo_sublist` + the clearance-determines-view theorem (SM9.A.1)
-- `auditTimestampsFrom_epoch_preserved` + `auditDrain_monotone_epoch` — the
-  timestamp epoch, and the negative that the pre-epoch `log.length` producer
-  **reuses** a timestamp after a drain (SM9.A.1a)
+- `auditTimestampsFrom_drop` + `auditDrain_preserves_wellFormed_at_epoch` +
+  `auditDrain_monotone_epoch` — the timestamp epoch, with
+  `preEpochTimestamp_reused_after_drain` the negative that the pre-epoch
+  `log.length` producer **reuses** a timestamp after a drain (SM9.A.1a)
 - `auditReadField_reconstructs` + `auditReadBasis_reconstructs_designation` —
   folding the chunks recovers the value, over the domain `maxAuditFieldChunks`
   admits, with `.auditFieldTooLarge` fail-closed above it (SM9.A.2)
@@ -2253,12 +2286,15 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
   and a full-width word cannot alias the error channel (§3.3).  The
   losslessness half it was explicitly *not* — `auditReadField_reconstructs` —
   is unaffected (SM9.A.2)
-- `auditReadStatus_generation_observer_scoped` + the negative that a global
-  drain counter is refutable (SM9.A.2)
+- `auditReadStatus_partial_hides_generation` +
+  `auditReadStatus_global_generation_leaks` — a partial reader's status carries
+  no generation, and the global-counter form stays refuted (SM9.A.2; the
+  drafted `auditReadStatus_generation_observer_scoped` was resolved otherwise —
+  see §3.3 and the round-6 cut)
 - `auditDrain_requires_full_dominance` (SM9.A.3)
-- `auditDrainVisiblePrefix_preserves_auditLogBounded` +
-  `_preserves_wellFormed_at_epoch` + `_fully_clears_for_dominating_reader`
-  (SM9.A.3)
+- `auditDrain_preserves_auditLogBounded` +
+  `auditDrain_preserves_wellFormed_at_epoch` +
+  `auditDrain_fully_clears_for_dominating_reader` (SM9.A.3)
 - `auditObservationalEquivalence` over a **total** clause function + its
   congruences, and the negative that plain `lowEquivalent` does **not** imply
   equal visible views (SM9.A.4a, §3.7)
@@ -2276,14 +2312,19 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
   `onCore_declassificationRefusals` (SM9.B.8)
 - `notificationSignalDeclassified_preserves_ipcInvariantFull{,_perCore}` (SM9.C.3; landed as the honest transfer forms `notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer` / `_perCore_transfer` plus the unconditional `_preserves_ipcInvariantFull_fallthrough` instance — the bound-delivery path's premise is SM6.D's registered debt, stated rather than silently inherited)
 - **`declassificationRelativeNonInterference`** (SM9.C.6) — the phase headline
-- `contentFlowClass_total` + `contentFlowSite_list_gate_insufficient` — the
+- `contentFlowClass` (wildcard-free total, `contentFlowClass_total` its named
+  surface) + the Tier-1 reach gate `check_content_flow_coverage.py` — the
   taint-propagation soundness keystone, classified from an exhaustive taxonomy
-  rather than enumerated in a fresh one (SM9.D.7)
+  rather than enumerated in a fresh one; the list-gate refutation lives at the
+  seam's `refusalSeam_list_gate_insufficient` and the reader's
+  `readableStructure_list_gate_insufficient` (SM9.D.7)
 - `chainCausal_is_history_local` + `chainCausal_not_table_derived` — the verdict
   on a fixed pair of events cannot change with later unrelated activity
   (SM9.D.13a, SM9.D.14)
-- `predecessorTags_dominating_only` + `partialReader_gets_opaque_causality` — a
-  field added to a readable record is a read channel (SM9.D.13a, §3.7)
+- `chainVerdict_view_local` + `chainEntryVerdict_view_local` +
+  `chainArchivedVerdict_denied_for_non_monitor` — a field added to a readable
+  record is a read channel, closed by exporting the tags to no one and serving
+  only view-local one-bit verdicts (SM9.D.13a, §3.7)
 - `attributionFromRunningSubject_over_actor` +
   `secondHop_actor_differs_from_flowSource` — who performed a downgrade and
   where the flow came from are two identities (§3.5)

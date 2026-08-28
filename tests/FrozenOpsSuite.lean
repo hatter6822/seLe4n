@@ -823,6 +823,12 @@ private def differentialNotificationSignalAgrees : IO Unit := do
   let boundTcb : TCB := { diffTcb 62 with ipcState := .blockedOnReceive diffEpId, queuePPrev := some .endpointHead }
   let ist := diffAddTcb (diffAddTcb (diffAddNotification
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)]) diffEpId ep) diffNotifId ntfn) boundTcb) (diffTcb 63)
+  -- Control (the FO-031 discipline): both sides really deliver, so the
+  -- agreement below is about a delivered signal rather than a shared refusal.
+  expect "FO-026 control: the live bound-aware signal succeeds (not a shared refusal)"
+    (SeLe4n.Kernel.notificationSignalBound diffNotifId badge ist.state).toOption.isSome
+  expect "FO-026 control: and so does the frozen one"
+    (frozenNotificationSignal diffNotifId diffB badge (freeze ist)).toOption.isSome
   expect "FO-026: the frozen signal agrees with the live bound-aware signal"
     (frozenRunAgrees unitResultAgrees
       (frozenNotificationSignal diffNotifId diffB badge (freeze ist))
@@ -838,6 +844,11 @@ private def differentialNotificationWaitAgrees : IO Unit := do
   let ist := diffAddTcb
     (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
       diffNotifId ntfn) (diffTcb 62)
+  -- Control: the badge really is consumed on both sides.
+  expect "FO-027 control: the live wait succeeds (not a shared refusal)"
+    (SeLe4n.Kernel.notificationWait diffNotifId diffA ist.state).toOption.isSome
+  expect "FO-027 control: and so does the frozen one"
+    (frozenNotificationWait diffNotifId diffA (freeze ist)).toOption.isSome
   expect "FO-027: the frozen wait agrees with the live wait"
     (frozenRunAgrees (fun a b => a == b)
       (frozenNotificationWait diffNotifId diffA (freeze ist))
@@ -850,6 +861,11 @@ private def differentialEndpointSendAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨5⟩], caps := #[], badge := none }
   let ist := diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId {}) (diffTcb 62)) (diffTcb 63)
+  -- Control: the send really parks on both sides.
+  expect "FO-028 control: the live send succeeds (not a shared refusal)"
+    (SeLe4n.Kernel.endpointSendDual diffEpId diffA msg ist.state).toOption.isSome
+  expect "FO-028 control: and so does the frozen one"
+    (frozenEndpointSend diffEpId diffA msg (freeze ist)).toOption.isSome
   expect "FO-028: the frozen send agrees with the live send"
     (frozenRunAgrees unitResultAgrees
       (frozenEndpointSend diffEpId diffA msg (freeze ist))
@@ -864,6 +880,11 @@ private def differentialEndpointReceiveAgrees : IO Unit := do
   let parked : TCB := { diffTcb 62 with ipcState := .blockedOnSend diffEpId, pendingMessage := some msg, queuePPrev := some .endpointHead }
   let ist := diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parked) (diffTcb 63)
+  -- Control: the rendezvous really completes on both sides.
+  expect "FO-029 control: the live receive succeeds (not a shared refusal)"
+    (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB none ist.state).toOption.isSome
+  expect "FO-029 control: and so does the frozen one"
+    (frozenEndpointReceive diffEpId diffB none (freeze ist)).toOption.isSome
   expect "FO-029: the frozen receive agrees with the live receive"
     (frozenRunAgrees (fun a b => a == b)
       (frozenEndpointReceive diffEpId diffB none (freeze ist))
@@ -876,6 +897,11 @@ private def differentialEndpointCallAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨11⟩], caps := #[], badge := none }
   let ist := diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId {}) (diffTcb 62)) (diffTcb 63)
+  -- Control: the call really parks on both sides.
+  expect "FO-030 control: the live call succeeds (not a shared refusal)"
+    (SeLe4n.Kernel.endpointCall diffEpId diffA msg ist.state).toOption.isSome
+  expect "FO-030 control: and so does the frozen one"
+    (frozenEndpointCall diffEpId diffA msg (freeze ist)).toOption.isSome
   expect "FO-030: the frozen call agrees with the live call"
     (frozenRunAgrees unitResultAgrees
       (frozenEndpointCall diffEpId diffA msg (freeze ist))

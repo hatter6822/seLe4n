@@ -79,8 +79,8 @@ outside that file's import set, and is anchored in the runtime suite — and
 `declassificationChainLinked_is_syntactic`) and the hardcoded-`.declassify`
 seam-filter negative landed with their sub-phases and stand in those Tier-3
 blocks.  `check_module_axioms.py --all-smp-information-flow` sweeps 4751
-environment constants across the eight information-flow modules, axiom-clean;
-SM9.E registers no new module because it adds none.
+environment constants across the thirteen registered information-flow
+modules, axiom-clean; SM9.E registers no new module because it adds none.
 
 **SM9.E.6 — the operator consequence, shipped.**  The plan's acceptance gate
 required the drain-dominance consequence to be stated in shipped documentation
@@ -212,24 +212,22 @@ there rather than the one it consumed.  A consumed transport is **cleared**
 instead (`contentFlowClears`), which is what makes an object's taint describe the
 content it currently holds.
 
-D.11's capability transfer is `capTransferTaintSinks`: a transferred capability
-lands in the *receiver's CNode*, a different object from its TCB, and a CNode is
-shared — a second thread rooted at the same CSpace reads what the transfer
-installed without ever touching that TCB.  The helper declares three edges, and
-each closes a distinct gap found in review: the receiver's root is tagged with
-the sender's content and with the sender's *root* (so a forwarded capability
-carries its chain, v0.33.55), and the receiving **subject** is tagged from the
-sender's root directly (v0.33.58) — necessary because `applyTaintFlow` reads
-every source from the pre-state, so a root→root edge and a root→subject edge in
-the same commit do not compose.
-
-The sinks are **gated on capabilities actually crossing** (v0.33.58), by the
-signal each ordering has: a send reads its own `MessageInfo.extraCaps`, a receive
-reads the parked message's `caps` array.  The earlier unconditional declaration
-rested on "over-approximation is safe", which stopped being true once a CSpace
-root fed a subject: a plain message would then hand an unrelated later downgrade
-an *unsaturated* predecessor — exactly what `staleTaint_is_not_saturation`
-forbids.
+D.11's capability transfer declares **no CSpace taint edge at all**, and that
+is the standing scope decision rather than a wiring gap.  The landing built
+`capTransferTaintSinks` — root and subject edges refined across the
+v0.33.55/v0.33.58 rounds, gated on capabilities actually crossing — and
+**v0.33.66 deleted the whole mechanism**: a CNode holds no *tracked content*
+(`contentTrackedFields` is a TCB's `pendingMessage` and a notification's
+`pendingBadge`), so a CSpace root is not a taint carrier on **either**
+ordering.  A root sink feeding the consuming subject would hand an unrelated
+later downgrade an *unsaturated* predecessor — exactly what
+`staleTaint_is_not_saturation` forbids — which is also why "over-approximation
+is safe" stopped justifying the sinks once a root fed a subject.  The shipped
+boundary is content-only (`senderTaintEdges_content_only`); what a
+capability's badge and rights can carry is registered as an accepted
+out-of-scope channel (`capabilityBadgeChannel_out_of_scope`) rather than
+half-tracked, Tier-3 negatives forbid the deleted sink names' return, and
+restoring slot-granular capability provenance is a *scope* change, not a fix.
 
 **D.12 — the retype clears.**  `lifecycleRetype` commits `storeObject` at the
 same id, so a *framed* retype leaves a destroyed object's tags on its
