@@ -5197,11 +5197,11 @@ EOF'
 # AN12-B inventory hardening theorems (NoDup witnesses, 6-way ArchAssumption
 # distinctness, Anchors module).  WS-SM SM1.B.5 adds the per-CPU FFI
 # wrapper surface (Concurrency.Runtime + Platform.FFI.ffiCurrentCoreId).
-# WS-SM SM1.C.6 / SM5.C.5 adds the secondary-core kernel entry
+# WS-SM SM1.C.6 adds the secondary-core kernel entry
 # (Kernel.SecondaryEntry.secondaryKernelMain — definitionally the
-# per-core reschedule entry since the SM5.C.5 seam completion — with
-# the seam-identity + body-shape marker theorems and the verified
-# perCoreRescheduleStep it commits).
+# per-core reschedule entry since the reschedule-receiver seam
+# completion — with the seam-identity + body-shape marker theorems
+# and the verified perCoreRescheduleStep it commits).
 # WS-SM SM1.E.4 adds the typed TLBI dispatcher wrapper
 # (Architecture.TlbiForSharing + tag encoding theorems).
 # WS-SM SM1.F.6 adds the SGI primitive FFI bindings
@@ -5311,7 +5311,7 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.Concurrency.currentCoreId
 #check @SeLe4n.Kernel.Concurrency.currentCoreId_in_range_marker
 #check @SeLe4n.Kernel.Concurrency.instInhabitedCoreId
--- SM1.C.6 / SM5.C.5 — Secondary-core kernel entry (closes SMP-C2 Lean side;
+-- SM1.C.6 — Secondary-core kernel entry (closes SMP-C2 Lean side;
 -- bring-up is definitionally the first reschedule on the onlined core)
 #check @SeLe4n.Kernel.secondaryKernelMain
 #check @SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry
