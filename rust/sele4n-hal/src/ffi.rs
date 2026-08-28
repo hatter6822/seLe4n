@@ -71,22 +71,25 @@ pub extern "C" fn ffi_timer_read_counter() -> u64 {
     crate::timer::read_counter()
 }
 
-/// Reprogram the timer comparator for the next tick interval.
+/// Reprogram the timer comparator for the next tick interval — re-arm only.
 ///
-/// Sets CNTP_CVAL_EL0 = current counter + stored interval, then increments
-/// the tick counter. Called from the Lean kernel's timer tick handler.
+/// Sets CNTP_CVAL_EL0 = current counter + stored interval.
 ///
-/// AI1-C/M-26: This is the **canonical** tick accounting path. The IRQ path
-/// (`trap.rs::handle_irq_per_core` → `timer::per_core_timer_tick_isr`) only
-/// re-arms the hardware timer and records the per-core diagnostic counter; it
-/// does NOT increment the global tick count. All global tick accounting flows
-/// through this FFI entry point, which the Lean kernel controls.
+/// AI1-C/M-26, owner relocated: global tick accounting is single-path, and
+/// its one site is now the **boot core's** `timer::per_core_timer_tick_isr`
+/// invocation (the live IRQ path; the Lean side mirrors it — only the boot
+/// core's committed run-loop step advances `machine.timer`, via
+/// `tickClockedState`).  This export originally carried the increment for a
+/// Lean-driven accounting flow that never gained a caller; when the per-core
+/// path became the live one the increment moved to the ISR, and this seam
+/// became re-arm-only so a second incrementer cannot reappear (the M-26
+/// double-count shape).  It remains exported for a manual re-arm from Lean
+/// should one ever be needed; calling it cannot perturb the tick count.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTimerReprogram`
 #[no_mangle]
 pub extern "C" fn ffi_timer_reprogram() {
     crate::timer::reprogram_timer();
-    crate::timer::increment_tick_count();
 }
 
 /// Get the current tick count from the timer driver.

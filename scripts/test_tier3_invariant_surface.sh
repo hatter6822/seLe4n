@@ -7433,9 +7433,16 @@ open SeLe4n.Kernel
 #check @perCoreTimerTickStep_invalid_core
 #check @perCoreTimerTickStep_ok
 #check @perCoreTimerTickStep_error
+#check @perCoreTimerTickStep_domain_error
 #check @perCoreTimerTickStep_sgis_eq_tick
 #check @perCoreTimerTickStep_preserves_objects_invExt
 #check @perCoreTimerTickStep_ok_currentThreadValidOnCore
+#check @tickClockedState
+#check @tickClockedState_objects
+#check @tickClockedState_scheduler
+#check @tickClockedState_bootCore_timer
+#check @tickClockedState_nonBoot
+#check @scheduleDomainOnCore_preserves_currentThreadValidOnCore
 #check @perCoreTimerTickEntry
 #check @perCoreTimerTickEntry_def
 -- SM5.D.6 full per-core domain re-dispatch (§4b).

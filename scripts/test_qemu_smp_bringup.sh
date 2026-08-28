@@ -169,6 +169,8 @@ esac
 #   [smp] core N: GIC-400 CPU interface initialized (...)
 #   [smp] core N: timer armed at 1000 Hz
 #   [smp] core N: kernel bring-up entry complete (first reschedule)
+#     (or "... deferred (Lean runtime not ready)" until SM10.E's image
+#      initialization marks the core ready — the lean_ready gate)
 #   [smp] core N: IRQ delivery enabled
 #   [smp] core N: IRQ-serviceable (shootdown-eligible)
 #   [smp] core N: ready, entering kernel

@@ -111,9 +111,16 @@ open SeLe4n.Testing
 #check @perCoreTimerTickStep_invalid_core
 #check @perCoreTimerTickStep_ok
 #check @perCoreTimerTickStep_error
+#check @perCoreTimerTickStep_domain_error
 #check @perCoreTimerTickStep_sgis_eq_tick
 #check @perCoreTimerTickStep_preserves_objects_invExt
 #check @perCoreTimerTickStep_ok_currentThreadValidOnCore
+#check @tickClockedState
+#check @tickClockedState_objects
+#check @tickClockedState_scheduler
+#check @tickClockedState_bootCore_timer
+#check @tickClockedState_nonBoot
+#check @scheduleDomainOnCore_preserves_currentThreadValidOnCore
 
 -- §4b SM5.D.6 full per-core domain re-dispatch (switchDomainOnCore / scheduleDomainOnCore).
 #check @switchDomainOnCore_singleDomain_noop
@@ -446,6 +453,26 @@ private def runRunLoopStepChecks : IO Unit := do
   -- (it returns the input state unchanged, never committing a partial tick).
   assertBool "step on out-of-range core 99 does NOT clear lastTimeoutErrors (true no-op)"
     (((perCoreTimerTickStep stStale 99).1.scheduler.lastTimeoutErrorsOnCore bootCoreId).length == 1)
+  -- Single-authority clock (the boot-core advance re-homed at the composition
+  -- point): a committed boot-core step advances `machine.timer` by exactly one —
+  -- the CBS/timeout clock ticks on the live path, matching the single-core
+  -- `timerTick` which advanced it on every committed path.
+  assertBool "step on boot core 0 advances machine.timer by exactly 1"
+    ((perCoreTimerTickStep st 0).1.machine.timer == st.machine.timer + 1)
+  -- ... and a non-boot core's step reads the shared clock without advancing it
+  -- (only the boot core is the clock authority; four cores ticking must not run
+  -- the clock at 4x).
+  assertBool "step on non-boot core 3 leaves machine.timer untouched"
+    ((perCoreTimerTickStep st 3).1.machine.timer == st.machine.timer)
+  -- SM5.D.6 composition (the run loop genuinely invokes the tick THEN the
+  -- domain transition): away from a boundary, a committed step decrements the
+  -- ticked core's domain time remaining — pinned on a state whose remaining
+  -- time is safely above the boundary.
+  let stMidDomain : SystemState :=
+    { st with scheduler := st.scheduler.setDomainTimeRemainingOnCore bootCoreId 10 }
+  assertBool "step runs the domain transition (in-domain decrement 10 -> 9)"
+    (((perCoreTimerTickStep stMidDomain 0).1.scheduler.domainTimeRemainingOnCore
+        bootCoreId) == 9)
 
 /-- A single-domain (empty schedule) idle state, for the SM5.D.6 no-op witness. -/
 private def stSingleDomain : SystemState :=

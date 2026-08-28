@@ -490,19 +490,29 @@ fn reschedule_sgi_handler(_intid: u8, _source_cpu: u8) {
     let core_id = crate::per_cpu::current_core_id_from_tpidr();
     #[cfg(feature = "hw_target")]
     {
-        // SAFETY: `lean_per_core_reschedule` is the C-callable wrapper the
-        // Lean compiler emits for `Kernel.perCoreRescheduleEntry`
-        // (`@[export lean_per_core_reschedule]`).  It takes a `u64` core id
-        // and returns no value; calling it is sound from EL1 IRQ context
-        // after per-core hardware init has completed (the SGI can only be
-        // taken once `enable_irq` ran on this core, which is after the
-        // bring-up entry established this core's scheduler state).
-        extern "C" {
-            fn lean_per_core_reschedule(core_id: u64);
+        // Lean-runtime readiness gate: a PE must never enter a Lean runtime
+        // it has not initialized (the constraint shootdown.rs states in
+        // prose, structural since `lean_ready`).  A not-yet-ready core
+        // drops the reschedule — the woken thread stays enqueued on this
+        // core's run queue, and the dispatch happens at this core's first
+        // ready-side scheduling point instead (its bring-up reschedule or
+        // its next tick); nothing is lost, only deferred.
+        if crate::lean_ready::lean_ready(core_id as usize) {
+            // SAFETY: `lean_per_core_reschedule` is the C-callable wrapper the
+            // Lean compiler emits for `Kernel.perCoreRescheduleEntry`
+            // (`@[export lean_per_core_reschedule]`).  It takes a `u64` core id
+            // and returns no value; calling it is sound from EL1 IRQ context
+            // after per-core hardware init has completed (the SGI can only be
+            // taken once `enable_irq` ran on this core, which is after the
+            // bring-up entry established this core's scheduler state) AND this
+            // core's Lean runtime is initialized (the gate just checked).
+            extern "C" {
+                fn lean_per_core_reschedule(core_id: u64);
+            }
+            crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
+                lean_per_core_reschedule(core_id);
+            });
         }
-        crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
-            lean_per_core_reschedule(core_id);
-        });
     }
     #[cfg(not(feature = "hw_target"))]
     let _ = core_id;

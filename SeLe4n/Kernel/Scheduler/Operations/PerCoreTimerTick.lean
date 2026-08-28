@@ -1343,11 +1343,12 @@ theorem timerTickOnCore_idle (st : SystemState) (c : CoreId)
 per-core tick **advances core `c`'s local accounting without advancing the global
 timer** — `st'.machine = st.machine`.  This is the defining SMP property: each
 core's CNTP fires and the tick processes that core's state locally, but the global
-monotonic tick counter (`machine.timer`) is owned by a single authority (the boot
-core / the FFI `ffi_timer_reprogram`), mirroring the Rust HAL's primary-owned
-`TICK_COUNT`.  Stated on the idle path (where the tick makes no register-context
-write, so the *whole* machine is preserved); the global-timer field specifically is
-preserved on every path. -/
+monotonic tick counter (`machine.timer`) is owned by a single authority — the
+boot core's committed run-loop step (`tickClockedState` in `PerCoreRunLoop.lean`),
+mirroring the Rust HAL's primary-owned `TICK_COUNT` (advanced by the boot core's
+`per_core_timer_tick_isr` invocation, one site).  Stated on the idle path (where
+the tick makes no register-context write, so the *whole* machine is preserved);
+the global-timer field specifically is preserved on every path. -/
 theorem timerTickOnCore_advances_per_core (st : SystemState) (c : CoreId)
     (st' : SystemState) (sgis : List (CoreId × SgiKind))
     (hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = none)
@@ -1714,6 +1715,30 @@ theorem scheduleEffectiveOnCore_establishes_currentThreadValidOnCore (st : Syste
           simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
           exact scheduleEffectiveOnCore_getTcb?_isSome st c _ tid hInv hCopy ⟨tcb, hTcb⟩
         · simp at hStep
+
+/-- WS-SM SM5.D.6 (preservation): `scheduleDomainOnCore` preserves per-core
+current-thread validity.  On a domain boundary the re-dispatch *establishes*
+validity outright (`scheduleEffectiveOnCore_establishes_currentThreadValidOnCore`,
+under `invExt` carried through the switch); the in-domain decrement frames the
+current slot and the store
+(`decrementDomainTimeOnCore_preserves_currentThreadValidOnCore`).  This is the
+composition lemma the live run-loop step (`perCoreTimerTickStep`) consumes now
+that the SM5.I run loop genuinely invokes `timerTickOnCore` **then**
+`scheduleDomainOnCore`, as the tick's own docstring always required. -/
+theorem scheduleDomainOnCore_preserves_currentThreadValidOnCore (st : SystemState)
+    (c : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hValid : currentThreadValidOnCore st c)
+    (hStep : scheduleDomainOnCore st c = .ok st') :
+    currentThreadValidOnCore st' c := by
+  unfold scheduleDomainOnCore at hStep
+  split at hStep
+  · split at hStep
+    · simp at hStep
+    · rename_i st'' hsw
+      exact scheduleEffectiveOnCore_establishes_currentThreadValidOnCore st'' c st'
+        (switchDomainOnCore_preserves_objects_invExt st c st'' hInv hsw) hStep
+  · simp only [Except.ok.injEq] at hStep; subst hStep
+    exact decrementDomainTimeOnCore_preserves_currentThreadValidOnCore st c c hValid
 
 /-- WS-SM SM5.D.5 (invariant established): after a successful per-core reschedule,
 core `c` satisfies `queueCurrentConsistentOnCore` — the dispatched thread is

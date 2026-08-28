@@ -342,24 +342,31 @@ pub fn get_tick_count() -> u64 {
 /// are per-core, banked at the hardware level — see [`init_timer_secondary`]).
 /// On each tick of core `core_id` this routine:
 ///
-/// 1. **Records** the per-core tick counter (an SMP-local diagnostic, separate
-///    from the primary-owned global `TICK_COUNT`).
+/// 1. **Records** the per-core tick counter (an SMP-local diagnostic), and —
+///    **boot core only** — advances the global `TICK_COUNT` (see ownership
+///    below).
 /// 2. **Re-arms** the per-core comparator for the next tick
 ///    ([`reprogram_timer`], counter-relative to avoid missed-tick accumulation).
 /// 3. **Drives** the Lean per-core scheduler tick via the C-callable export
 ///    `lean_per_core_timer_tick(core_id)` (the Lean kernel reads core `core_id`'s
-///    scheduler slots, advances its domain accounting, processes CBS, and emits
-///    any cross-core `.reschedule` SGIs the replenishment wakes produce — the
-///    pure `timerTickOnCore` transition + its `withLockSet` bracket).  Gated on
-///    `feature = "hw_target"`: on the host the call is omitted (no kernel image
-///    is linked), so the ISR is unit-testable as the record-and-rearm seam.
+///    scheduler slots, advances its budget accounting, processes CBS, runs the
+///    SM5.D.6 domain transition, and emits any cross-core `.reschedule` SGIs the
+///    replenishment wakes produce — the pure `perCoreTimerTickStep` composition).
+///    Gated on `feature = "hw_target"` AND on this core's Lean-runtime
+///    readiness ([`crate::lean_ready::lean_ready`]): on the host the call is
+///    omitted (no kernel image is linked), and on hardware a core that SM10.E's
+///    initialization has not marked ready degrades to the record-and-rearm
+///    seam — a PE must never enter a Lean runtime it has not initialized.
 ///
-/// **Global-timer ownership.** This routine does **not** touch the primary-owned
-/// global `TICK_COUNT` (that is advanced once per global tick by the boot core
-/// via `ffi_timer_reprogram`), mirroring the Lean model where `timerTickOnCore`
-/// reads but never advances `machine.timer` — each core's CNTP is local, the
-/// global monotonic count is owned by a single authority.  See the SM5.D section
-/// header of `SeLe4n/Kernel/Scheduler/Operations/Core.lean`.
+/// **Global-timer ownership (single authority, one site).**  The boot core's
+/// invocation of this ISR is the sole advancer of the global `TICK_COUNT` —
+/// relocated here from `ffi_timer_reprogram` (which had no caller on the live
+/// path and is re-arm-only now, so a second incrementer cannot reappear; the
+/// AI1-C/M-26 single-path invariant is preserved with the owner relocated).
+/// This mirrors the Lean side exactly: `timerTickOnCore` reads but never
+/// advances `machine.timer`; the boot core's committed run-loop step advances
+/// it once per global tick (`tickClockedState` in
+/// `SeLe4n/Kernel/Scheduler/Operations/PerCoreRunLoop.lean`).
 ///
 /// **Re-entrancy.** The IRQ is acknowledged + EOI'd before this runs, and the
 /// CPU-interface running-priority mask holds INTID 30 off until `PSTATE.I` clears
@@ -380,34 +387,52 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
     );
     // 1. Per-core tick accounting (SMP-localised diagnostic).
     let _ = crate::per_cpu_stats::record_timer_tick();
+    // 1b. Global tick accounting — boot core only (the single-authority
+    // rule, relocated here from the uncalled `ffi_timer_reprogram` when
+    // the per-core path became the live one).  Exactly one site advances
+    // `TICK_COUNT`, and exactly one core reaches it per global tick
+    // period, mirroring the Lean side where only the boot core's
+    // committed run-loop step advances `machine.timer`
+    // (`tickClockedState`).  The AI1-C/M-26 single-path invariant is
+    // preserved with the owner relocated; `ffi_timer_reprogram` is
+    // re-arm-only so a second incrementer cannot reappear.
+    if core_id == 0 {
+        let _ = increment_tick_count();
+    }
     // 2. Re-arm the per-core comparator for the next tick.
     reprogram_timer();
-    // 3. Drive the Lean per-core scheduler timer tick (hardware only).
+    // 3. Drive the Lean per-core scheduler timer tick (hardware only),
+    // gated on this core's Lean-runtime readiness: until SM10.E's image
+    // initialization marks the core ready (`lean_ready::mark_lean_ready`),
+    // the ISR is the record-and-rearm seam only — a PE must never enter
+    // the Lean runtime it has not initialized (the constraint
+    // shootdown.rs has always stated, now structural).
     #[cfg(feature = "hw_target")]
     {
-        // SAFETY: `lean_per_core_timer_tick` is the C-callable wrapper the Lean
-        // compiler emits for `Kernel.perCoreTimerTickEntry`
-        // (`@[export lean_per_core_timer_tick]`).  It takes a `u64` core id and
-        // returns no value; calling it is sound from EL1 kernel context after
-        // the per-core hardware init has completed.
-        extern "C" {
-            fn lean_per_core_timer_tick(core_id: u64);
+        if crate::lean_ready::lean_ready(core_id as usize) {
+            // SAFETY: `lean_per_core_timer_tick` is the C-callable wrapper the
+            // Lean compiler emits for `Kernel.perCoreTimerTickEntry`
+            // (`@[export lean_per_core_timer_tick]`).  It takes a `u64` core id
+            // and returns no value; calling it is sound from EL1 kernel context
+            // after the per-core hardware init has completed AND this core's
+            // Lean runtime is initialized (the `lean_ready` gate just checked).
+            extern "C" {
+                fn lean_per_core_timer_tick(core_id: u64);
+            }
+            // WS-SM SM5.I: the tick commits kernel state through the same
+            // `modifyGetKernelState` read-then-write the syscall path uses,
+            // so it takes the same kernel-entry lock.  Without it a tick on
+            // one core and a syscall on another can lose one commit whole.
+            //
+            // Non-reentrancy is what makes this safe on a single core: both
+            // kernel-entry paths run with IRQs masked, so a tick cannot
+            // preempt a syscall on the same core and queue behind a ticket
+            // that core already holds.
+            crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
+                lean_per_core_timer_tick(core_id);
+            });
         }
-        // WS-SM SM5.I: the tick commits kernel state through the same
-        // `modifyGetKernelState` read-then-write the syscall path uses,
-        // so it takes the same kernel-entry lock.  Without it a tick on
-        // one core and a syscall on another can lose one commit whole.
-        //
-        // Non-reentrancy is what makes this safe on a single core: both
-        // kernel-entry paths run with IRQs masked, so a tick cannot
-        // preempt a syscall on the same core and queue behind a ticket
-        // that core already holds.
-        crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
-            lean_per_core_timer_tick(core_id);
-        });
     }
-    #[cfg(not(feature = "hw_target"))]
-    let _ = core_id;
 }
 
 // ============================================================================
@@ -793,21 +818,33 @@ mod tests {
         );
     }
 
-    /// SM5.D.1: the ISR does not advance the primary-owned global `TICK_COUNT`
-    /// (that is the boot core's / FFI's responsibility — the per-core tick reads
-    /// but never advances the global monotonic counter, mirroring the Lean model
+    /// SM5.D.1 + single-authority clock: only the BOOT core's ISR invocation
+    /// advances the primary-owned global `TICK_COUNT` (one owner, one site —
+    /// relocated from the uncalled `ffi_timer_reprogram`; mirrors the Lean model
     /// where `timerTickOnCore` never advances `machine.timer`).
     #[test]
-    fn per_core_timer_tick_isr_does_not_advance_global_tick_count() {
+    fn per_core_timer_tick_isr_boot_core_owns_global_tick_count() {
+        // Single-authority clock: the BOOT core's ISR invocation is the sole
+        // advancer of the global TICK_COUNT (relocated from the uncalled
+        // `ffi_timer_reprogram`); every non-boot core's ISR leaves it
+        // untouched, so four cores ticking cannot run the count at 4x.
         let _guard = TIMER_GLOBAL_STATE_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let before = get_tick_count();
-        per_core_timer_tick_isr(0);
-        let after = get_tick_count();
+        per_core_timer_tick_isr(1);
+        per_core_timer_tick_isr(2);
+        per_core_timer_tick_isr(3);
         assert_eq!(
-            after, before,
-            "the per-core timer ISR must NOT advance the primary-owned global TICK_COUNT"
+            get_tick_count(),
+            before,
+            "a non-boot core's timer ISR must NOT advance the global TICK_COUNT"
+        );
+        per_core_timer_tick_isr(0);
+        assert_eq!(
+            get_tick_count(),
+            before + 1,
+            "the boot core's timer ISR advances the global TICK_COUNT by exactly 1"
         );
     }
 

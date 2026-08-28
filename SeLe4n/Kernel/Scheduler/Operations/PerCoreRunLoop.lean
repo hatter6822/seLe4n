@@ -80,18 +80,74 @@ are themselves staged (the `@[export]` seams).
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (numCores CoreId SgiKind)
+open SeLe4n.Kernel.Concurrency (numCores CoreId SgiKind bootCoreId)
 
-/-- **WS-SM SM5.I** (the per-core run-loop step): drive the verified per-core timer
-tick on core `coreId` against state `st`, returning the post-tick state paired with
-the cross-core SGIs to fire.  Fail-closed (see the module docstring): an
-out-of-range core id or a tick error yields `(st, [])`. -/
+/-- **WS-SM SM5.I** (single-authority clock): the boot-core-conditional machine
+clock advance the run-loop step applies before the tick transition reads
+`machine.timer`.  Exactly one core — the boot core — advances the shared clock,
+once per tick; every other core's step reads the clock the boot core last
+committed.  Factored as a named state function so the step's theorems can
+frame it (`tickClockedState_objects`) and so the SGI/commit statements name
+the state the tick actually ran against. -/
+def tickClockedState (st : SystemState) (c : CoreId) : SystemState :=
+  if c = bootCoreId then { st with machine := tick st.machine } else st
+
+/-- **WS-SM SM5.I**: the clock advance never touches the object store. -/
+@[simp] theorem tickClockedState_objects (st : SystemState) (c : CoreId) :
+    (tickClockedState st c).objects = st.objects := by
+  unfold tickClockedState; split <;> rfl
+
+/-- **WS-SM SM5.I**: the clock advance never touches the scheduler state. -/
+@[simp] theorem tickClockedState_scheduler (st : SystemState) (c : CoreId) :
+    (tickClockedState st c).scheduler = st.scheduler := by
+  unfold tickClockedState; split <;> rfl
+
+/-- **WS-SM SM5.I**: on the boot core the clock advances by exactly one. -/
+theorem tickClockedState_bootCore_timer (st : SystemState) :
+    (tickClockedState st bootCoreId).machine.timer = st.machine.timer + 1 := by
+  unfold tickClockedState; rw [if_pos rfl]; exact tick_timer_succ st.machine
+
+/-- **WS-SM SM5.I**: on a non-boot core the clock is untouched (the
+single-authority rule: only the boot core advances the shared clock). -/
+theorem tickClockedState_nonBoot (st : SystemState) (c : CoreId)
+    (hc : c ≠ bootCoreId) : tickClockedState st c = st := by
+  unfold tickClockedState; rw [if_neg hc]
+
+/-- **WS-SM SM5.I** (the per-core run-loop step): drive the verified per-core
+timer tick on core `coreId` against state `st`, returning the post-tick state
+paired with the cross-core SGIs to fire.  Three verified pieces compose, in
+order:
+
+1. **Boot-core clock advance.**  On the boot core — and only there, the
+   single-authority rule — the shared machine clock advances by one
+   (`machine := tick st.machine`) *before* the tick transition reads it, so
+   CBS replenishments and IPC timeouts that fall due this tick actually fire.
+   The single-core `timerTick` / `timerTickWithBudget` advanced the clock on
+   every committed path; the per-core `timerTickOnCore` deliberately reads
+   without advancing (each core's CNTP is local), so the advance is re-homed
+   here at the composition point, once per global tick, never per core.
+2. **`timerTickOnCore`** — SM5.D budget accounting, CBS replenishment,
+   budget-exhaustion preemption; recovers the cross-core `.reschedule` SGIs.
+3. **`scheduleDomainOnCore`** — SM5.D.6 domain accounting: the in-domain
+   decrement, or the boundary rotation + budget-aware re-dispatch.  The tick
+   does budget accounting **only** (its own docstring: rotation folded into
+   the tick breaks `currentThreadInActiveDomain`), so the run loop must
+   invoke both — exactly as the single-core run loop invokes
+   `timerTickWithBudget` then `scheduleDomain`.  The domain arm emits no
+   SGIs; the step's SGI list is the tick's.
+
+Fail-closed, all-or-nothing (see the module docstring): an out-of-range core
+id, a tick error, or a domain-transition error yields `(st, [])` — an errored
+entry commits nothing, the clock advance included. -/
 def perCoreTimerTickStep (st : SystemState) (coreId : UInt64) :
     SystemState × List (CoreId × SgiKind) :=
   if h : coreId.toNat < numCores then
-    match timerTickOnCore st ⟨coreId.toNat, h⟩ with
-    | .ok result => result
+    match timerTickOnCore (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩ with
     | .error _ => (st, [])
+    | .ok result =>
+        match scheduleDomainOnCore result.1 ⟨coreId.toNat, h⟩ with
+        | .error _ => (st, [])
+        | .ok st2 => (st2, result.2)
   else (st, [])
 
 /-- **WS-SM SM5.I**: an out-of-range core id is a no-op (state unchanged, no SGIs). -/
@@ -100,61 +156,107 @@ theorem perCoreTimerTickStep_invalid_core (st : SystemState) (coreId : UInt64)
     perCoreTimerTickStep st coreId = (st, []) := by
   unfold perCoreTimerTickStep; rw [dif_neg h]
 
-/-- **WS-SM SM5.I**: on a valid core, a successful tick is committed verbatim. -/
+/-- **WS-SM SM5.I**: on a valid core, a successful tick (against the clocked
+state) followed by a successful domain transition is committed verbatim — the
+domain arm's state paired with the tick's SGIs. -/
 theorem perCoreTimerTickStep_ok (st : SystemState) (coreId : UInt64)
     (h : coreId.toNat < numCores) (result : SystemState × List (CoreId × SgiKind))
-    (hok : timerTickOnCore st ⟨coreId.toNat, h⟩ = .ok result) :
-    perCoreTimerTickStep st coreId = result := by
-  unfold perCoreTimerTickStep; rw [dif_pos h, hok]
+    (st2 : SystemState)
+    (hok : timerTickOnCore (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩
+      = .ok result)
+    (hdom : scheduleDomainOnCore result.1 ⟨coreId.toNat, h⟩ = .ok st2) :
+    perCoreTimerTickStep st coreId = (st2, result.2) := by
+  unfold perCoreTimerTickStep; rw [dif_pos h, hok]; simp only [hdom]
 
-/-- **WS-SM SM5.I**: on a valid core, a tick error is a no-op (the Rust ISR has
+/-- **WS-SM SM5.I**: on a valid core, a tick error is a no-op — the whole step
+(the boot-core clock advance included) commits nothing (the Rust ISR has
 already serviced the tick; the error short-circuits before any state write). -/
 theorem perCoreTimerTickStep_error (st : SystemState) (coreId : UInt64)
     (h : coreId.toNat < numCores) (e : KernelError)
-    (herr : timerTickOnCore st ⟨coreId.toNat, h⟩ = .error e) :
+    (herr : timerTickOnCore (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩
+      = .error e) :
     perCoreTimerTickStep st coreId = (st, []) := by
   unfold perCoreTimerTickStep; rw [dif_pos h, herr]
 
-/-- **WS-SM SM5.I**: the step never *fabricates* SGIs — every emitted SGI comes from
-the verified `timerTickOnCore` (the failure / out-of-range paths emit none).  So a
-configuration in which `timerTickOnCore` emits no cross-core wake (every refilled
-SchedContext homed on `c`) drives no cross-core IPI. -/
+/-- **WS-SM SM5.I**: on a valid core, a domain-transition error is equally a
+no-op — all-or-nothing: the tick's commit is withheld rather than shipping a
+state whose domain accounting failed (unreachable under the maintained
+invariants; AK2-I out-of-bounds index). -/
+theorem perCoreTimerTickStep_domain_error (st : SystemState) (coreId : UInt64)
+    (h : coreId.toNat < numCores) (result : SystemState × List (CoreId × SgiKind))
+    (e : KernelError)
+    (hok : timerTickOnCore (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩
+      = .ok result)
+    (herr : scheduleDomainOnCore result.1 ⟨coreId.toNat, h⟩ = .error e) :
+    perCoreTimerTickStep st coreId = (st, []) := by
+  unfold perCoreTimerTickStep; rw [dif_pos h, hok]; simp only [herr]
+
+/-- **WS-SM SM5.I**: the step never *fabricates* SGIs — every emitted SGI comes
+from the verified `timerTickOnCore` (the domain arm emits none, and the failure /
+out-of-range paths emit none).  So a configuration in which `timerTickOnCore`
+emits no cross-core wake (every refilled SchedContext homed on `c`) drives no
+cross-core IPI. -/
 theorem perCoreTimerTickStep_sgis_eq_tick (st : SystemState) (coreId : UInt64)
     (h : coreId.toNat < numCores) (result : SystemState × List (CoreId × SgiKind))
-    (hok : timerTickOnCore st ⟨coreId.toNat, h⟩ = .ok result) :
+    (st2 : SystemState)
+    (hok : timerTickOnCore (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩
+      = .ok result)
+    (hdom : scheduleDomainOnCore result.1 ⟨coreId.toNat, h⟩ = .ok st2) :
     (perCoreTimerTickStep st coreId).2 = result.2 := by
-  rw [perCoreTimerTickStep_ok st coreId h result hok]
+  rw [perCoreTimerTickStep_ok st coreId h result st2 hok hdom]
 
 /-- **WS-SM SM5.I** (soundness): the run-loop step preserves the object-store
-invariant `invExt` — unconditionally, on every path.  The success path lifts
-`timerTickOnCore_preserves_objects_invExt`; the failure / out-of-range paths return
-`st` unchanged. -/
+invariant `invExt` — unconditionally, on every path.  The clock advance frames
+the store (`tickClockedState_objects`); the success path composes
+`timerTickOnCore_preserves_objects_invExt` with
+`scheduleDomainOnCore_preserves_objects_invExt`; the failure / out-of-range
+paths return `st` unchanged. -/
 theorem perCoreTimerTickStep_preserves_objects_invExt (st : SystemState)
     (coreId : UInt64) (hInv : st.objects.invExt) :
     (perCoreTimerTickStep st coreId).1.objects.invExt := by
   by_cases h : coreId.toNat < numCores
-  · cases hT : timerTickOnCore st ⟨coreId.toNat, h⟩ with
+  · have hInvC : (tickClockedState st ⟨coreId.toNat, h⟩).objects.invExt := by
+      rw [tickClockedState_objects]; exact hInv
+    cases hT : timerTickOnCore (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩ with
     | error e => rw [perCoreTimerTickStep_error st coreId h e hT]; exact hInv
     | ok result =>
         obtain ⟨st', sgis⟩ := result
-        rw [perCoreTimerTickStep_ok st coreId h (st', sgis) hT]
-        exact timerTickOnCore_preserves_objects_invExt st _ st' sgis hInv hT
+        have hTickInv : st'.objects.invExt :=
+          timerTickOnCore_preserves_objects_invExt _ _ st' sgis hInvC hT
+        cases hD : scheduleDomainOnCore st' ⟨coreId.toNat, h⟩ with
+        | error e =>
+            rw [perCoreTimerTickStep_domain_error st coreId h (st', sgis) e hT hD]
+            exact hInv
+        | ok st2 =>
+            rw [perCoreTimerTickStep_ok st coreId h (st', sgis) st2 hT hD]
+            exact scheduleDomainOnCore_preserves_objects_invExt st' _ st2 hTickInv hD
   · rw [perCoreTimerTickStep_invalid_core st coreId h]; exact hInv
 
-/-- **WS-SM SM5.I** (soundness): on a valid core, a successful step establishes the
-SM4.C per-core current-thread validity on the ticked core — lifting SM5.D's
-`timerTickOnCore_preserves_currentThreadValidOnCore`.  (The no-op paths are not
-covered: they leave `st` whose pre-tick validity is the caller's to assume — the
-substantive content is the success path, where the tick *re-establishes* validity
-even when it preempts.) -/
+/-- **WS-SM SM5.I** (soundness): on a valid core, a successful step establishes
+the SM4.C per-core current-thread validity on the ticked core — composing
+SM5.D's `timerTickOnCore_preserves_currentThreadValidOnCore` with SM5.D.6's
+`scheduleDomainOnCore_preserves_currentThreadValidOnCore` (whose boundary arm
+*establishes* validity outright via the re-dispatch).  (The no-op paths are not
+covered: they leave `st` whose pre-tick validity is the caller's to assume —
+the substantive content is the success path, where the tick and the domain
+transition *re-establish* validity even when they preempt or rotate.) -/
 theorem perCoreTimerTickStep_ok_currentThreadValidOnCore (st : SystemState)
     (coreId : UInt64) (h : coreId.toNat < numCores) (hInv : st.objects.invExt)
-    (result : SystemState × List (CoreId × SgiKind))
-    (hok : timerTickOnCore st ⟨coreId.toNat, h⟩ = .ok result) :
+    (result : SystemState × List (CoreId × SgiKind)) (st2 : SystemState)
+    (hok : timerTickOnCore (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩
+      = .ok result)
+    (hdom : scheduleDomainOnCore result.1 ⟨coreId.toNat, h⟩ = .ok st2) :
     currentThreadValidOnCore (perCoreTimerTickStep st coreId).1 ⟨coreId.toNat, h⟩ := by
   obtain ⟨st', sgis⟩ := result
-  rw [perCoreTimerTickStep_ok st coreId h (st', sgis) hok]
-  exact timerTickOnCore_preserves_currentThreadValidOnCore st _ st' sgis hInv hok
+  rw [perCoreTimerTickStep_ok st coreId h (st', sgis) st2 hok hdom]
+  have hInvC : (tickClockedState st ⟨coreId.toNat, h⟩).objects.invExt := by
+    rw [tickClockedState_objects]; exact hInv
+  have hTickValid : currentThreadValidOnCore st' ⟨coreId.toNat, h⟩ :=
+    timerTickOnCore_preserves_currentThreadValidOnCore _ _ st' sgis hInvC hok
+  have hTickInv : st'.objects.invExt :=
+    timerTickOnCore_preserves_objects_invExt _ _ st' sgis hInvC hok
+  exact scheduleDomainOnCore_preserves_currentThreadValidOnCore st' _ st2
+    hTickInv hTickValid hdom
 
 /-- **WS-SM SM5.C.5** (the reschedule run-loop step): drive the verified
 `.reschedule` SGI handler on core `coreId` against state `st`, returning the

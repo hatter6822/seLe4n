@@ -48,6 +48,14 @@
 //! not reentrant) — the same IRQs-masked-while-held discipline the trap
 //! handlers get from `PSTATE.I` staying set until exception return.
 //!
+//! Bracketing is necessary but not sufficient: this lock serializes
+//! access to `kernelStateRef`; it does not make the Lean runtime exist
+//! on a PE.  Every hardware seam above therefore also consults the
+//! per-core readiness gate ([`crate::lean_ready`]) before its Lean
+//! call — a core SM10.E's initialization has not marked ready degrades
+//! to its Rust-only half instead of entering a runtime it never
+//! initialized.
+//!
 //! `lean_kernel_main` (the primary's boot seam, owed by the SM10.E
 //! image target) is the one committing path outside the bracket today.
 //! Phase 6 runs it after Phase 5 has released the secondaries, so its

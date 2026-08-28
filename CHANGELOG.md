@@ -79,6 +79,34 @@ GitBook chapters brought to the landed state; the QEMU bring-up script's
 banner sequence updated (the grepped `ready, entering kernel` witness is
 unchanged).
 
+**Review round (same version) — the Codex review on PR #880: five findings,
+all verified against source, three implemented, two already registered.**
+(1) The Lean-runtime constraint `shootdown.rs` states in prose ("a reentrant
+per-core Lean runtime … does not exist") became structural: new
+`rust/sele4n-hal/src/lean_ready.rs` holds a per-core readiness mask, `false`
+for every core at boot, consulted by the timer ISR, the reschedule handler
+and the secondary bring-up entry — each degrades to its Rust-only half until
+SM10.E's image initialization marks the core ready, so no PE can enter a
+Lean runtime it never initialized.  (2) `perCoreTimerTickStep` now composes
+`scheduleDomainOnCore` after `timerTickOnCore` — the composition the tick's
+own docstring always required and the run loop never performed (a live core
+would never have decremented or rotated its domain); all-or-nothing
+fail-closed, `_domain_error` theorem added, the new
+`scheduleDomainOnCore_preserves_currentThreadValidOnCore` closing the
+validity chain.  (3) The global clock is wired: the single-core `timerTick`
+advanced `machine.timer` on every committed path, and the per-core migration
+had removed the advance without re-homing it (`ffi_timer_reprogram`, the
+claimed owner, had no caller) — freezing CBS due-times and timeouts on the
+live path.  `tickClockedState` now advances `machine.timer` on the boot
+core's committed step only, the Rust `TICK_COUNT` moves to the boot core's
+ISR invocation, and `ffi_timer_reprogram` is re-arm-only so a second
+incrementer cannot reappear (AI1-C/M-26 single-path, owner relocated).
+Suite pins on both sides (boot advances by exactly 1, non-boot doesn't, the
+in-domain decrement runs through the step).  Findings (4) context-restore
+coupling and (5) install-before-release are the SM10.E obligations this cut
+had already registered; the readiness gate makes both unreachable until that
+work lands.
+
 Gates: `./scripts/test_full.sh` green (tiers 0–3);
 `./scripts/test_rust.sh` green (1140 unit + 108 conformance tests, fmt,
 clippy `-D warnings`); staged-module partition consistent

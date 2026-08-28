@@ -89,6 +89,42 @@ out-of-range ids fail closed); tier-3 anchors extended with the reschedule
 step/entry surface.  Rust gate: 1140 unit + 108 conformance tests, fmt and
 clippy clean.
 
+**Review round (same cut) — the Codex review on PR #880, all five findings
+verified against source, three implemented.**  The bot read the redirect
+correctly: making the per-core path live exposes every piece that is not
+there yet.  (1) **The Lean-runtime constraint, made structural** —
+`shootdown.rs` has always said a reentrant per-core Lean runtime does not
+exist, while the hardware seams compiled unconditional Lean calls behind
+`hw_target`.  New `rust/sele4n-hal/src/lean_ready.rs`: a per-core readiness
+mask, `false` everywhere at boot, consulted by the timer ISR, the reschedule
+handler and the secondary bring-up entry; each degrades to its Rust-only
+half until SM10.E's image initialization marks the core ready.  The seams
+are wired, dormant, and cannot fire early.  (2) **The domain transition,
+composed** — `timerTickOnCore`'s own comment required "the SM5.I run loop
+invokes `timerTickOnCore` then `scheduleDomainOnCore`", and the run-loop
+step only invoked the tick, so a live core would never have decremented or
+rotated its domain.  `perCoreTimerTickStep` now composes both (all-or-
+nothing fail-closed; the domain arm emits no SGIs), with the new
+`scheduleDomainOnCore_preserves_currentThreadValidOnCore` composition lemma
+and re-proved step theorems (`_domain_error` added).  (3) **The clock,
+wired** — the single-core `timerTick` advanced `machine.timer` on every
+committed path; the per-core migration removed the advance and re-homed it
+nowhere (`ffi_timer_reprogram`, the claimed owner, has no caller), freezing
+CBS due-times and timeouts on the live path.  The advance is re-homed at
+the composition point: `tickClockedState` advances `machine.timer` on the
+boot core's committed step only (four cores must not run the clock at 4x),
+and the Rust `TICK_COUNT` moves to the boot core's ISR invocation, with
+`ffi_timer_reprogram` made re-arm-only so a second incrementer cannot
+reappear (the AI1-C/M-26 single-path invariant, owner relocated).  Suite
+pins: boot-core step advances by exactly 1, non-boot step doesn't, the
+in-domain decrement runs through the step; Rust tests pin the mirrored
+`TICK_COUNT` ownership.  Findings (4) context-restore coupling and (5)
+install-before-release are the registered SM10.E obligations (the restore
+seam and the boot-entry ordering already recorded in
+`SMP_RELEASE_CLOSURE_PLAN.md`); with the readiness gate, neither hazard is
+reachable before that work exists — and the gate is the structural piece
+that makes deferring them sound rather than hopeful.
+
 Plan: [`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`](planning/SMP_PER_CORE_SCHEDULER_PLAN.md)
 §SM5.C (landing note).  Next: SM10 release closure (→ v1.0.0),
 [`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md).

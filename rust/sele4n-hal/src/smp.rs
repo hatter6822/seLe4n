@@ -722,21 +722,40 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // -----------------------------------------------------------------
     #[cfg(feature = "hw_target")]
     {
-        extern "C" {
-            fn lean_secondary_kernel_main(core_id: u64);
+        // Lean-runtime readiness gate: SM10.E's image initialization runs
+        // this core's per-core Lean runtime init earlier in this function
+        // and marks the core ready; until that work exists, no core is
+        // ever ready and the bring-up entry is skipped — a PE must never
+        // enter a Lean runtime it has not initialized.  A skipped entry
+        // leaves `currentOnCore` at its boot value (`none`, the legacy
+        // idle representation); the core's first ready-side scheduling
+        // point performs the deferred first reschedule.
+        if crate::lean_ready::lean_ready(core_idx) {
+            extern "C" {
+                fn lean_secondary_kernel_main(core_id: u64);
+            }
+            // SAFETY: `lean_secondary_kernel_main` is the Lean-emitted
+            // C-callable wrapper for `SeLe4n.Kernel.secondaryKernelMain`.
+            // The function takes one u64 argument (the PSCI context_id)
+            // and returns `()` — the call is total and never unwinds
+            // across the FFI boundary (Lean's `BaseIO` never throws under
+            // `panic = "abort"`).  The verified step decodes the id
+            // fail-closed, so even an out-of-range context_id commits
+            // nothing.  This core's Lean runtime is initialized (the
+            // `lean_ready` gate just checked).
+            crate::kernel_entry::with_kernel_entry(core_idx, || unsafe {
+                lean_secondary_kernel_main(core_id);
+            });
+            crate::kprintln!(
+                "[smp] core {core_id}: kernel bring-up entry complete (first reschedule)"
+            );
+        } else {
+            crate::kprintln!(
+                "[smp] core {core_id}: kernel bring-up entry deferred (Lean runtime not ready)"
+            );
         }
-        // SAFETY: `lean_secondary_kernel_main` is the Lean-emitted
-        // C-callable wrapper for `SeLe4n.Kernel.secondaryKernelMain`.
-        // The function takes one u64 argument (the PSCI context_id)
-        // and returns `()` — the call is total and never unwinds
-        // across the FFI boundary (Lean's `BaseIO` never throws under
-        // `panic = "abort"`).  The verified step decodes the id
-        // fail-closed, so even an out-of-range context_id commits
-        // nothing.
-        crate::kernel_entry::with_kernel_entry(core_idx, || unsafe {
-            lean_secondary_kernel_main(core_id);
-        });
     }
+    #[cfg(not(feature = "hw_target"))]
     crate::kprintln!("[smp] core {core_id}: kernel bring-up entry complete (first reschedule)");
 
     // -----------------------------------------------------------------

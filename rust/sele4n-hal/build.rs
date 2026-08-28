@@ -106,6 +106,16 @@ fn main() {
     // wake-on-next-tick (the SGI would land on the no-op table arm).
     scan_reschedule_sgi_seam_intact();
 
+    // WS-SM (Lean-runtime readiness contract): verify every Rust seam
+    // that calls into Lean consults the per-core readiness gate
+    // (`lean_ready`) — the structural form of the constraint
+    // shootdown.rs states in prose ("a reentrant per-core Lean runtime
+    // … does not exist").  A regression that dropped a gate would let a
+    // hand-built image enter the Lean runtime from a PE that never
+    // initialized it — undefined behaviour at that PE's first
+    // interrupt.
+    scan_lean_ready_gates_intact();
+
     // WS-SM SM2.D.5 (verified-lock FFI bridge contract): verify the
     // SM2.D lock-bridge module is present and every required FFI
     // export in `ffi.rs` resolves to a helper in `lock_bridge.rs`.
@@ -1042,6 +1052,67 @@ fn scan_reschedule_sgi_seam_intact() {
              wake-on-next-tick.  Restore the \
              `crate::trap::register_reschedule_sgi_handler()` call."
         );
+    }
+}
+
+/// **WS-SM**: verify every Rust seam that calls into the Lean runtime
+/// consults the per-core readiness gate (`lean_ready::lean_ready`)
+/// before its Lean call.
+///
+/// The three seams and the symbols they resolve:
+///
+///   1. `timer.rs::per_core_timer_tick_isr` → `lean_per_core_timer_tick`
+///   2. `trap.rs::reschedule_sgi_handler`   → `lean_per_core_reschedule`
+///   3. `smp.rs::rust_secondary_main`       → `lean_secondary_kernel_main`
+///
+/// Each file must contain both the gate call (`lean_ready(`) and its
+/// Lean symbol; a file carrying the symbol without the gate is exactly
+/// the regression this scanner exists to catch (a PE entering a Lean
+/// runtime it never initialized — the constraint `shootdown.rs`
+/// documents and `lean_ready.rs` enforces).  Comment-stripped so prose
+/// mentions neither satisfy nor trip the checks.
+fn scan_lean_ready_gates_intact() {
+    let strip = |contents: &str| -> String {
+        contents
+            .lines()
+            .map(|line| {
+                if let Some(idx) = line.find("//") {
+                    &line[..idx]
+                } else {
+                    line
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let sites: &[(&str, &str)] = &[
+        ("src/timer.rs", "lean_per_core_timer_tick"),
+        ("src/trap.rs", "lean_per_core_reschedule"),
+        ("src/smp.rs", "lean_secondary_kernel_main"),
+    ];
+    for (path, lean_symbol) in sites {
+        println!("cargo:rerun-if-changed={path}");
+        let stripped = match std::fs::read_to_string(path) {
+            Ok(s) => strip(&s),
+            Err(e) => panic!("WS-SM lean-ready scanner: failed to read {path}: {e}"),
+        };
+        if !stripped.contains(lean_symbol) {
+            panic!(
+                "WS-SM regression: `{path}` no longer resolves `{lean_symbol}`. \
+                 The Lean seam moved or was dropped; update this scanner's site \
+                 table in the same change so the readiness-gate contract keeps \
+                 tracking the real call sites."
+            );
+        }
+        if !stripped.contains("lean_ready(") {
+            panic!(
+                "WS-SM regression: `{path}` calls into the Lean runtime \
+                 (`{lean_symbol}`) without consulting the per-core readiness \
+                 gate (`crate::lean_ready::lean_ready(core)`).  A PE must never \
+                 enter a Lean runtime it has not initialized; restore the gate \
+                 around the Lean call."
+            );
+        }
     }
 }
 

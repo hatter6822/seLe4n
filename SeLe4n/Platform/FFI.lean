@@ -135,8 +135,13 @@ instance : Nonempty LabelingContext := ⟨Kernel.testLabelingContext⟩
 @[extern "ffi_timer_read_counter"]
 opaque ffiTimerReadCounter : BaseIO UInt64
 
-/-- Reprogram the timer comparator for the next tick interval and
-    increment the tick counter.
+/-- Reprogram the timer comparator for the next tick interval — re-arm
+    only.  Global tick accounting is single-path and its one site is the
+    boot core's `timer::per_core_timer_tick_isr` invocation (the Lean
+    mirror: only the boot core's committed run-loop step advances
+    `machine.timer`, via `tickClockedState`); this seam deliberately
+    cannot increment, so a second incrementer cannot reappear (AI1-C /
+    M-26, owner relocated).
     Rust: `ffi_timer_reprogram` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_timer_reprogram"]
 opaque ffiTimerReprogram : BaseIO Unit

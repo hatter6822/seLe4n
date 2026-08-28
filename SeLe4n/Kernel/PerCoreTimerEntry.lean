@@ -26,9 +26,13 @@ driver**.  On each per-core timer interrupt the entry now:
 
 1. reads the live kernel `SystemState` and, **atomically** (one
    `modifyGetKernelState`), runs the verified `Kernel.perCoreTimerTickStep` —
-   which decodes the `coreId`, drives the verified `Kernel.timerTickOnCore`
-   transition (SM5.D.4 CBS replenishment, SM5.D.5 budget-tick preemption, SM5.D.6
-   domain re-dispatch), commits the new state, and recovers the cross-core SGIs;
+   which decodes the `coreId` fail-closed and composes three verified pieces:
+   the boot-core-only shared-clock advance (`tickClockedState` — the
+   single-authority `machine.timer` tick the CBS/timeout due-checks read), the
+   `Kernel.timerTickOnCore` transition (SM5.D.4 CBS replenishment, SM5.D.5
+   budget-tick preemption), and the SM5.D.6 `scheduleDomainOnCore` domain
+   transition (in-domain decrement or boundary rotation + budget-aware
+   re-dispatch) — commits the new state, and recovers the cross-core SGIs;
 2. **fires** the recovered cross-core `.reschedule` SGIs via
    `Concurrency.fireCrossCoreSgis` — the SM5.F dispatch that actually pokes the
    remote cores' GIC (after the state write is visible, per the SM1.F.8 ordering).

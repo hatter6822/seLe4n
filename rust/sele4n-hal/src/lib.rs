@@ -276,3 +276,12 @@ pub mod queued_rw_lock;
 // the module docstring in `lock_bridge.rs` for the handle encoding,
 // trace-counter rationale, and ARM ARM citations.
 pub mod lock_bridge;
+// WS-SM: per-core Lean-runtime readiness gate.  The structural form of
+// the constraint shootdown.rs states in prose ("a reentrant per-core
+// Lean runtime … does not exist"): every Rust seam that would call into
+// Lean (`per_core_timer_tick_isr`, `reschedule_sgi_handler`, the
+// secondary bring-up entry) consults `lean_ready(core_id)` and degrades
+// to its Rust-only half until SM10.E's image initialization marks the
+// core ready.  No core is ready at boot; nothing in the tree marks one
+// yet — the seams are wired, dormant, and cannot fire early.
+pub mod lean_ready;
