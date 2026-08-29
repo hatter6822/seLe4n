@@ -1,3 +1,59 @@
+## v0.34.3 — the unfinished-work register: what SM10 must absorb before it opens
+
+A deep completeness audit of `docs/planning/` — every plan except
+`HARDWARE_PARTITION_ISOLATION_PLAN.md`, which was out of scope — asked one
+question: is the project ready to begin SM10?  Nineteen plans and six
+cross-cutting sweeps were each audited against the tree, and every resulting
+finding was re-checked by an independent adversarial pass instructed to refute
+it: 171 findings confirmed, 53 refuted.  This cut lands the register as
+`docs/planning/UNFINISHED_SMP_WORK.md`.
+
+**The answer is not yet, and the reason is scoping rather than missing proofs.**
+The substance of SM0–SM9 is real and the tree is healthy: `lake build` 436/436,
+Tier 0–3 green, zero `sorry`/`axiom`, 36/36 version sites.  Nine of nineteen
+plans verify as complete or complete-with-registered-debt.  What blocks SM10 is
+three findings plus a phase whose own scope statement is wrong.
+
+**The three blockers.**  `IPC_INVARIANT_DETHREADING_PLAN.md` is an active
+workstream — its status table marks D1/D6/D8 in progress, two of twenty
+`ipcInvariantFull` conjuncts are still threaded as hypotheses on 31–33 of 35
+bundles, and the payoff theorems do not exist — yet it is registered in no
+durable index: zero mentions in `CLAUDE.md`, `AGENTS.md`,
+`docs/WORKSTREAM_HISTORY.md`, the WS-SM overview, the SM10 plan or
+`CLAIM_EVIDENCE_INDEX.md`.  SM10 would close WS-SM over it silently.  Cross-core
+SchedContext donation never migrates the CBS replenish queue, breaking the SM5.H
+affinity invariant on a live path.  The live `.send` arm carries no
+`ipcInvariantFull` preservation while SM6.D claims the surface closed.
+
+**SM10.E is a bare-metal Lean runtime port, not a version bump.**  Its plan
+scopes the phase as documentation sync plus a version bump at 4–6 weeks.
+Measured against the tree, the boot path does not exist in any form: `rust/` has
+no `[[bin]]` target, `lakefile.toml` declares only host artifacts with no
+cross-compilation rule, nothing produces `libsele4n.a` for aarch64, there are no
+Lean-runtime-init symbols anywhere, `@[export] lean_kernel_main` is absent (only
+the *staged* secondary entry exists), and no aarch64 target is compiled anywhere
+in tree or CI — 67 cfg-gated blocks, 59 `asm!` sites and all three `.S` files
+have zero compile coverage.  Separately, the SM10 plan predates SM9 and never
+absorbed it: its theorem tally runs SM8 to SM10 with no SM9 term and its archive
+list omits the SM9 plan, so `wsm_theorem_count` would certify a number computed
+as if a landed phase had not happened.
+
+**Fail-open latents that go live exactly when the kernel boots.**  Recorded in
+§4 with remediations, none exploitable today because nothing boots: data and
+instruction aborts set `x0` and return to the faulting instruction with `ELR_EL1`
+restored verbatim, so any user thread touching an unmapped page wedges its core
+forever; the boot wrapper's labeling context is optional and defaults to the
+all-public test context, which the insecure-default guard deliberately does not
+flag; and two of the five kernel seams call into Lean without the readiness gate
+their own module docs say every seam consults.
+
+Citations throughout name a file and a symbol rather than a line number, per the
+`check_source_line_citations.py` contract — 812 line citations were resolved to
+their enclosing declaration rather than renumbered.
+
+Refs: docs/planning/UNFINISHED_SMP_WORK.md
+Refs: docs/planning/SMP_RELEASE_CLOSURE_PLAN.md §2 (SM10 dependencies)
+
 ## v0.34.2 — the tier-4 acceptance gates stop reporting PASS for work they never did
 
 A pre-SM10 audit of `docs/planning/` found the WS-SM hardware acceptance
