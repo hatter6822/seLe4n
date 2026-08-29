@@ -59,7 +59,7 @@ if ! command -v qemu-system-aarch64 &>/dev/null; then
   echo "[SKIP] WS-SM SM1.H.1: qemu-system-aarch64 not found on PATH"
   echo "       Install with: sudo apt-get install qemu-system-arm  (Debian/Ubuntu)"
   echo "                     brew install qemu                      (macOS)"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # Kernel image must be set explicitly via $SELE4N_KERNEL_IMAGE — at
@@ -78,13 +78,13 @@ if [[ -z "${KERNEL_IMAGE}" ]]; then
   echo ""
   echo "  To test with a pre-built kernel ELF, set:"
   echo "    export SELE4N_KERNEL_IMAGE=/path/to/kernel.elf"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 if [[ ! -f "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM1.H.1: kernel image not found at ${KERNEL_IMAGE}"
   echo "       (\$SELE4N_KERNEL_IMAGE = ${SELE4N_KERNEL_IMAGE})"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # ---------------------------------------------------------------------------

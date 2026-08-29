@@ -1,3 +1,56 @@
+## v0.34.2 — the tier-4 acceptance gates stop reporting PASS for work they never did
+
+A pre-SM10 audit of `docs/planning/` found the WS-SM hardware acceptance
+gates certifying phases on machines that had never run them.  Every one of
+the fourteen QEMU sub-tests behind `test_tier4_smp_bootcheck.sh` exits when
+its prerequisites are missing; each exited `0`; `run_check` scored that as
+`PASS`; and the tier signed off with `All checks passed`.  `qemu-system-aarch64`
+was installed by neither `setup_lean_env.sh` nor any CI workflow, so on the
+nightly runner all fourteen skipped and the tier passed — meaning the SM1,
+SM3, SM5, SM6 and SM7 acceptance criteria have never executed anywhere.  A
+gate that reports success for work it did not perform is worse than no gate,
+because the phase it certifies reads as validated.
+
+**The emulator is a test dependency now, not an optional extra.**
+`setup_lean_env.sh` installs `qemu-system-arm` (which provides
+`qemu-system-aarch64`) alongside `shellcheck` and `ripgrep`, with the
+per-distro name mapping for dnf/yum/pacman.  Because test deps install in
+the background there, the `nightly-tier4` job also installs it synchronously
+before running the tier, so the gates cannot race the package manager and
+then record themselves NOT RUN.
+
+**A skip is no longer a pass.**  `test_lib.sh` gains a reserved exit code
+`SELE4N_SKIP_EXIT` (77) and `run_gate_check`, the variant to use for any
+check certifying phase acceptance criteria: a sub-test that cannot run is
+recorded NOT RUN, counted separately from failures, and named in the
+summary.  `finalize_report` no longer prints `All checks passed` while any
+gate was skipped — it reports how many did not run and that coverage is
+incomplete.  All fifteen `test_qemu_*.sh` scripts exit the skip code from
+their `[SKIP]` branches (56 call sites), and all fourteen tier-4
+invocations route through `run_gate_check`.
+
+**`SELE4N_REQUIRE_GATES=1` promotes a skipped gate to a hard failure.**
+This is the mode the v1.0.0 release validation (SM10.E) must run in: a
+release may not certify phases whose gates never ran.
+
+**The mechanism is pinned, not trusted.**  A regression here stays green by
+construction — the tier still exits 0 and still looks clean — so
+`scripts/test_gate_skip_accounting.sh` joins `test_code_view_wiring.sh` and
+`test_identifier_naming_gate.py` as a Tier 0 witness.  Nine checks drive
+`run_gate_check` over skip/pass/fail fixtures, assert the summary never
+claims a clean run over an unexecuted gate, assert strict mode fails, and
+re-assert at the source that no QEMU sub-test exits 0 from a `[SKIP]`
+branch — the last being what stops the defect returning one script at a
+time.  Verified to fail against the pre-fix tree.
+
+Installing the emulator removes one of the two skip causes outright; the
+remaining fourteen skips are all `SELE4N_KERNEL_IMAGE env var not set` and
+cannot be closed by installing anything.  They need the bootable image owed
+by SM10.E.D1 (`scripts/build_rpi5_image.sh`), which does not exist yet — the
+tier now reports that fact instead of concealing it.
+
+Refs: docs/planning/SMP_RELEASE_CLOSURE_PLAN.md §2 (SM10 dependencies), §3 (SM10.B.D1..D7)
+
 ## v0.34.1 — the SM5 runtime seams close: the verified per-core scheduler reaches the hardware IRQ path
 
 A pre-SM10 validation sweep of the WS-SM headline findings (SMP-C1..C4,

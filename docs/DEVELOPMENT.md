@@ -1078,6 +1078,22 @@ Optional nightly/staged checks:
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh
 ```
 
+Tier 4 is the QEMU SMP acceptance tier. Its sub-tests need
+`qemu-system-aarch64` (installed by `setup_lean_env.sh`) and a bootable
+kernel image in `SELE4N_KERNEL_IMAGE`. A sub-test that cannot run exits
+`SELE4N_SKIP_EXIT` (77) and is recorded **NOT RUN** — never PASS — so the
+tier reports how many acceptance gates did not execute rather than
+claiming a clean run over them. To require that every gate actually ran:
+
+```bash
+SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh
+```
+
+which turns a skipped gate into a hard failure. The v1.0.0 release
+validation (SM10.E) must run in that mode. When adding a check that
+certifies phase acceptance criteria, call `run_gate_check`, not
+`run_check`.
+
 Module-specific build targets (SchedContext):
 
 ```bash

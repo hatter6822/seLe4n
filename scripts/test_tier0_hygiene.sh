@@ -171,6 +171,17 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/lean_code_view.py" --self-test
 # symbol exists only in a comment.
 run_check "HYGIENE" "${SCRIPT_DIR}/test_code_view_wiring.sh"
 
+# ... and the acceptance-gate skip accounting, whose failure mode is the
+# same shape: a sub-test that cannot run used to `exit 0`, `run_check`
+# scored it PASS, and tier 4 printed "All checks passed" over fourteen
+# QEMU gates that had never executed — so SM1/SM3/SM5/SM6/SM7 read as
+# hardware-validated on a machine with no emulator.  A regression stays
+# green by construction, so the mechanism is pinned rather than trusted:
+# the suite drives `run_gate_check` over skip/pass/fail fixtures and
+# re-asserts at the source that no QEMU sub-test exits 0 from a [SKIP]
+# branch.
+run_check "HYGIENE" "${SCRIPT_DIR}/test_gate_skip_accounting.sh"
+
 # PR #873: the anchor set must be SATISFIABLE.  `run_check` asserts a pattern is
 # present and `run_negative_check` asserts it is absent, and nothing compared the
 # two — so a cut that deleted a theorem, added the negative pin forbidding its

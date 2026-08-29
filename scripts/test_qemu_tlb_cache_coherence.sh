@@ -18,7 +18,7 @@ cd "${REPO_ROOT}"
 if ! command -v qemu-system-aarch64 &>/dev/null; then
   echo "[SKIP] qemu-system-aarch64 not found — AN9-A hardware test SKIPPED"
   echo "       Install with: sudo apt install qemu-system-arm"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # This harness is a STUB awaiting the full RPi 5 image build pipeline
@@ -45,4 +45,4 @@ echo "    - lake build SeLe4n.Kernel.Architecture.TlbCacheComposition"
 echo "    - lake exe an9_hardware_binding_suite (15 tests)"
 echo ""
 
-exit 0
+exit "${SELE4N_SKIP_EXIT:-77}"

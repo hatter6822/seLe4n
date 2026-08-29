@@ -14,6 +14,26 @@ CONTINUE_MODE=0
 FAILURE_COUNT=0
 FAILURE_MESSAGES=()
 
+# An acceptance gate that did not run is not an acceptance gate that passed.
+#
+# Sub-tests that cannot execute (a missing emulator, a kernel image the
+# tree does not build yet) used to `exit 0`, which `run_check` scored as
+# PASS — so a tier whose every gate declined to run still printed "All
+# checks passed".  A gate reporting success for work it never did is
+# worse than no gate, because the phase it certifies reads as validated.
+#
+# The contract: such a sub-test exits `SELE4N_SKIP_EXIT` and is invoked
+# through `run_gate_check`, which records it as NOT RUN.  Skips are
+# counted and named separately from failures, and `finalize_report`
+# never claims a clean run while any gate was skipped.
+#
+# `SELE4N_REQUIRE_GATES=1` promotes a skipped gate to a hard failure —
+# the mode a release cut (SM10.E) runs in, where "the emulator was
+# absent" must stop the release rather than decorate it.
+SELE4N_SKIP_EXIT=77
+SKIP_COUNT=0
+SKIP_MESSAGES=()
+
 # AN11-B (H-21): per-suite timeout for `lake exe …` invocations. Default 30
 # minutes is generous on CI hardware (the slowest production suite —
 # `operation_chain_suite` — completes in well under 5 minutes); nightly
@@ -125,6 +145,21 @@ record_failure() {
   FAILURE_COUNT=$((FAILURE_COUNT + 1))
   FAILURE_MESSAGES+=("${category}: ${message}")
   log_section "${category}" "FAIL: ${message}"
+}
+
+# Record a gate that declined to run.  Under `SELE4N_REQUIRE_GATES=1` this
+# is a failure outright; otherwise it is tracked so `finalize_report` can
+# say what was not covered instead of silently counting it as covered.
+record_skip() {
+  local category="$1"
+  local message="$2"
+  if [[ "${SELE4N_REQUIRE_GATES:-0}" -eq 1 ]]; then
+    record_failure "${category}" "acceptance gate did not run: ${message}"
+    return 0
+  fi
+  SKIP_COUNT=$((SKIP_COUNT + 1))
+  SKIP_MESSAGES+=("${category}: ${message}")
+  log_section "${category}" "SKIP (NOT RUN): ${message}"
 }
 
 # ---------------------------------------------------------------------------
@@ -315,6 +350,48 @@ run_check() {
   if _run_with_view "$@"; then
     _note_duration "${_t0}" "$*"
     log_section "${category}" "PASS${DURATION_NOTE}"
+    return 0
+  fi
+
+  record_failure "${category}" "Command failed: $*"
+  if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+    finalize_report
+  fi
+  return 1
+}
+
+# `run_check` for an acceptance gate whose sub-test may legitimately be
+# unable to run.  Identical to `run_check` except that the reserved exit
+# code `SELE4N_SKIP_EXIT` is reported as NOT RUN rather than PASS.
+#
+# Use this — not `run_check` — for any check that certifies a phase's
+# acceptance criteria against real hardware or an emulator.
+run_gate_check() {
+  local category="$1"
+  shift
+
+  log_section "${category}" "RUN: $*"
+  local _t0 _rc
+  _t0="$(_now_ms)"
+  set +e
+  _run_with_view "$@"
+  _rc=$?
+  if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+    set -e
+  fi
+
+  if [[ "${_rc}" -eq 0 ]]; then
+    _note_duration "${_t0}" "$*"
+    log_section "${category}" "PASS${DURATION_NOTE}"
+    return 0
+  fi
+
+  if [[ "${_rc}" -eq "${SELE4N_SKIP_EXIT}" ]]; then
+    record_skip "${category}" "$*"
+    # Under SELE4N_REQUIRE_GATES a skip became a failure; honour fail-fast.
+    if [[ "${SELE4N_REQUIRE_GATES:-0}" -eq 1 && "${CONTINUE_MODE}" -eq 0 ]]; then
+      finalize_report
+    fi
     return 0
   fi
 
@@ -524,6 +601,7 @@ run_check_with_timeout() {
 
 finalize_report() {
   _report_slow_checks
+  _report_skipped_gates
   if [[ "${FAILURE_COUNT}" -gt 0 ]]; then
     log_section "META" "Completed with ${FAILURE_COUNT} failure(s)."
     local entry
@@ -533,7 +611,30 @@ finalize_report() {
     exit 1
   fi
 
+  # Never claim a clean run over gates that did not execute: the summary
+  # line is what a reader (and a release checklist) takes as the verdict.
+  if [[ "${SKIP_COUNT}" -gt 0 ]]; then
+    log_section "META" \
+      "Checks passed, but ${SKIP_COUNT} acceptance gate(s) DID NOT RUN — coverage is incomplete."
+    log_section "META" \
+      "  Re-run with SELE4N_REQUIRE_GATES=1 to treat a skipped gate as a failure."
+    return 0
+  fi
+
   log_section "META" "All checks passed."
+}
+
+# Name every gate that declined to run, so an unexecuted gate is visible
+# in the log rather than inferred from its absence.
+_report_skipped_gates() {
+  if [[ "${SKIP_COUNT}" -eq 0 ]]; then
+    return 0
+  fi
+  log_section "META" "Skipped (NOT RUN) — ${SKIP_COUNT} acceptance gate(s):"
+  local entry
+  for entry in "${SKIP_MESSAGES[@]}"; do
+    log_section "META" "  ${entry}"
+  done
 }
 
 resolve_elan_env_file() {

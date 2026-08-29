@@ -59,7 +59,7 @@ cd "${REPO_ROOT}"
 
 if ! command -v qemu-system-aarch64 &>/dev/null; then
   echo "[SKIP] WS-SM SM5.K.5: qemu-system-aarch64 not found on PATH"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-}"
@@ -67,12 +67,12 @@ KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-}"
 if [[ -z "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM5.K.5: SELE4N_KERNEL_IMAGE env var not set"
   echo "       Set SELE4N_KERNEL_IMAGE=/path/to/kernel.elf to enable."
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 if [[ ! -f "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM5.K.5: kernel image not found at ${KERNEL_IMAGE}"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # --------------------------------------------------------------------------
@@ -109,7 +109,7 @@ if ! grep -q "smp-test.*per-core-scheduler" <<<"${KERNEL_STRINGS}"; then
   echo "  Formal coverage at SM5.K (already passing):"
   echo "    lake exe smp_scheduler_suite"
   echo "    lake exe smp_wcrt_suite"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # --------------------------------------------------------------------------

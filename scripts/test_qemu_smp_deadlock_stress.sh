@@ -58,7 +58,7 @@ cd "${REPO_ROOT}"
 
 if ! command -v qemu-system-aarch64 &>/dev/null; then
   echo "[SKIP] WS-SM SM3.D.7: qemu-system-aarch64 not found on PATH"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-}"
@@ -66,12 +66,12 @@ KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-}"
 if [[ -z "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM3.D.7: SELE4N_KERNEL_IMAGE env var not set"
   echo "       Set SELE4N_KERNEL_IMAGE=/path/to/kernel.elf to enable."
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 if [[ ! -f "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM3.D.7: kernel image not found at ${KERNEL_IMAGE}"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # --------------------------------------------------------------------------
@@ -105,7 +105,7 @@ if ! strings "${KERNEL_IMAGE}" 2>/dev/null | grep -q "smp-test.*deadlock-stress"
   echo ""
   echo "  Formal coverage at SM3.D (already passing):"
   echo "    lake exe deadlock_freedom_suite"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # --------------------------------------------------------------------------

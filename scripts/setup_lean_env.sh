@@ -341,6 +341,15 @@ install_missing_packages() {
       missing_apt+=("ripgrep")
       missing_any=1
     fi
+    # qemu-system-aarch64 backs every tier-4 SMP acceptance gate.  Without
+    # it those gates cannot run, and a gate that does not run certifies
+    # nothing — so the emulator is a test dependency, not an optional
+    # extra.  (Debian/Ubuntu ship the aarch64 system emulator inside
+    # `qemu-system-arm`.)
+    if ! command -v qemu-system-aarch64 >/dev/null 2>&1; then
+      missing_apt+=("qemu-system-arm")
+      missing_any=1
+    fi
   fi
 
   # zstd: try a quick install without apt-get update first (from local cache).
@@ -375,6 +384,8 @@ install_missing_packages() {
       for pkg in "${missing_apt[@]}"; do
         case "${pkg}" in
           shellcheck) dnf_pkgs+=("ShellCheck") ;;
+          # Fedora/RHEL split the emulator per target architecture.
+          qemu-system-arm) dnf_pkgs+=("qemu-system-aarch64") ;;
           *) dnf_pkgs+=("${pkg}") ;;
         esac
       done
@@ -385,12 +396,21 @@ install_missing_packages() {
       for pkg in "${missing_apt[@]}"; do
         case "${pkg}" in
           shellcheck) yum_pkgs+=("ShellCheck") ;;
+          qemu-system-arm) yum_pkgs+=("qemu-system-aarch64") ;;
           *) yum_pkgs+=("${pkg}") ;;
         esac
       done
       run_pkg_install yum install -y "${yum_pkgs[@]}" || true
     elif command -v pacman >/dev/null 2>&1; then
-      run_pkg_install pacman -Sy --noconfirm "${missing_apt[@]}" || true
+      local pacman_pkgs=()
+      for pkg in "${missing_apt[@]}"; do
+        case "${pkg}" in
+          # Arch ships every system target in one package.
+          qemu-system-arm) pacman_pkgs+=("qemu-system-aarch64") ;;
+          *) pacman_pkgs+=("${pkg}") ;;
+        esac
+      done
+      run_pkg_install pacman -Sy --noconfirm "${pacman_pkgs[@]}" || true
     elif command -v brew >/dev/null 2>&1; then
       for pkg in "${missing_apt[@]}"; do
         brew install "${pkg}" || true

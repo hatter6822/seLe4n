@@ -72,7 +72,7 @@ TEST_BANNER="\\[smp-test\\] per-core-timer: cores 0-3 ticked locally"
 
 if ! command -v qemu-system-aarch64 &>/dev/null; then
   echo "[SKIP] WS-SM SM5.D: qemu-system-aarch64 not found on PATH"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-}"
@@ -80,12 +80,12 @@ KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-}"
 if [[ -z "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM5.D: SELE4N_KERNEL_IMAGE env var not set"
   echo "       Set SELE4N_KERNEL_IMAGE=/path/to/kernel.elf to enable."
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 if [[ ! -f "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM5.D: kernel image not found at ${KERNEL_IMAGE}"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # --------------------------------------------------------------------------
@@ -121,7 +121,7 @@ if ! strings "${KERNEL_IMAGE}" 2>/dev/null | grep -q "smp-test.*per-core-timer";
   echo ""
   echo "  Formal coverage at SM5.D (already passing):"
   echo "    lake exe smp_timer_suite"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 echo "[META] WS-SM SM5.D: booting QEMU virt -smp 4 for per-core timer tick"

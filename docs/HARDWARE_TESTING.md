@@ -190,8 +190,8 @@ cargo test --manifest-path rust/Cargo.toml -p sele4n-hal barriers
 > `scripts/test_qemu_tlb_cache_coherence.sh` exists but is a
 > **self-skipping stub** until the SM10.E image pipeline lands (registered
 > as SM10.B.D7 in `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`) — it
-> reports `[SKIP]` unconditionally today, so do not read its success exit
-> as coherence coverage.
+> reports `[SKIP]` unconditionally today and exits `SELE4N_SKIP_EXIT`
+> (77), so it can never be mistaken for coherence coverage.
 
 > **Planned** — the dedicated instruction-trace audit
 > (`scripts/test_qemu_tlb_barrier_audit.sh`) is registered SM10.B debt
@@ -487,20 +487,27 @@ the offending change and ensure each slot is populated with
 
 ## 5. Continuous validation (CI integration)
 
-After each AN9 hardware test passes once, wire it into Tier-2 CI
-as a skip-with-log entry (CI runners typically lack QEMU):
+QEMU is a test dependency, not an optional extra: `setup_lean_env.sh`
+installs `qemu-system-arm` (which provides `qemu-system-aarch64`), and
+the `nightly-tier4` job installs it synchronously before running the
+tier. A runner without the emulator is a runner that cannot validate
+anything, so wire a hardware test in directly rather than behind a
+`command -v` guard:
 
 ```bash
-# Add to scripts/test_tier2_negative.sh:
-if command -v qemu-system-aarch64 &>/dev/null; then
-    run_check "HW" ./scripts/test_qemu.sh
-    run_check "HW" ./scripts/test_qemu_tlb_cache_coherence.sh  # self-skips until SM10.B.D7 wires it
-    run_check "HW" ./scripts/test_tier4_smp_bootcheck.sh
-    # ... plus the SM10.B scripts as they land
-else
-    echo "[SKIP] QEMU not available — hardware tests SKIPPED"
-fi
+# Add to scripts/test_tier4_smp_bootcheck.sh:
+run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_bringup.sh"
+# ... plus the SM10.B scripts as they land
 ```
+
+Use **`run_gate_check`**, never `run_check`, for any check that
+certifies phase acceptance criteria. A sub-test that cannot run exits
+`SELE4N_SKIP_EXIT` (77) and `run_gate_check` records it as **NOT RUN** —
+the tier then names every unexecuted gate and reports that coverage is
+incomplete, instead of printing "All checks passed" over work nothing
+performed. Set `SELE4N_REQUIRE_GATES=1` to promote a skipped gate to a
+hard failure; the v1.0.0 release validation (SM10.E) must run in that
+mode, since a release may not certify phases whose gates never ran.
 
 This lets full-fat CI runners exercise the runtime steps while
 lightweight runners still pass.
