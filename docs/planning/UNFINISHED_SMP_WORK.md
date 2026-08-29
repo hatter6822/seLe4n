@@ -1216,7 +1216,7 @@ The sweep found the proof surface, capability gating, ABI design and Rust unsafe
 
 > **This sequence is now planned in full.** Every item below, plus the
 > security findings of §4 and the medium sweep of §6, is decomposed into
-> 143 PR-sized sub-tasks across nine phases in
+> 145 PR-sized sub-tasks across nine phases in
 > [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) (WS-RR).
 > The §7 low-severity table is deliberately *not* in that plan — it is
 > handed to SM10.A, whose assigned job is the documentation sweep.
@@ -1248,10 +1248,15 @@ boot seam flips.
  the two kernel seams that skip the `lean_ready` gate. None is
  exploitable today because nothing boots; each becomes reachable the
  moment SM10.E succeeds, which is the wrong time to discover them.
-5. **Run the acceptance gates.** Once SM10.E.D1 produces an image, run
- tier 4 under `SELE4N_REQUIRE_GATES=1` and record the results as the
- SM0–SM9 acceptance evidence `SMP_RELEASE_CLOSURE_PLAN.md` §2 requires.
- Until then that dependency is unmet, not merely unverified.
+5. **Hand the acceptance-gate execution to SM10, where the image exists.**
+ This step cannot run before SM10 opens: tier 4 under
+ `SELE4N_REQUIRE_GATES=1` needs the bootable image that SM10.E.D1 produces,
+ so scheduling it inside a sequence that completes *before* SM10 would be
+ circular. WS-RR's obligation is to leave the gate honest and the
+ dependency visible; SM10.E runs it immediately after D1 and before release
+ acceptance. Until it runs, `SMP_RELEASE_CLOSURE_PLAN.md` §2's "acceptance
+ gates for SM0..SM9 green" is unmet, not merely unverified — and that is a
+ statement SM10 must satisfy, not one WS-RR can close.
 
 The **§7** table is the natural work-list for SM10.A's documentation sweep.
 The §6 mediums are **not** SM10.A's: WS-RR phase RR7 owns them and must close

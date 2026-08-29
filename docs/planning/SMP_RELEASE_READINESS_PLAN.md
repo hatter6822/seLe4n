@@ -6,7 +6,7 @@
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 143 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 145 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -91,18 +91,24 @@ twice. The dependencies that produced this order:
   owns both halves of the SM10 estimate: RR1.10 records the measured aarch64
   surface and RR1.11 revises the estimate from it, in that order, so no phase
   has to reach back to a later one for its input.
-- **RR2 before RR3.** The de-threading payoff theorems (RR3.16, RR3.17)
+- **RR2 before RR3.** The de-threading payoff theorems (RR3.15, RR3.16)
   quantify over dispatch arms that must carry bundles first.
 - **RR4 before RR5, and never concurrent.** Both touch the trap and boot
   seams; running them in parallel means two phases editing the same files.
-- **RR6 and RR7 are independent** of everything above and of each other.
-  They sit late because nothing depends on them, not because they are
-  optional.
+- **RR6 is independent** of everything above; it sits late because nothing
+  depends on it, not because it is optional.
+- **RR7 is not independent, despite being a sweep.** Several of its rows own
+  findings whose primary owner is an earlier phase — RR7.15 the RwLock-deferred
+  mediums that RR6 implements, RR7.18 the IPC de-threading medium RR3 closes,
+  and its cross-core IPC batches touch RR2 and RR3 surfaces. It therefore runs
+  **after** those phases, and its overlapping rows are verification that the
+  owning phase actually closed the finding, not a second attempt at it.
 - **RR8 last** by construction: it verifies the other eight.
 
-A team with capacity to parallelise can overlap RR6 and RR7 with any earlier
-phase, and RR1 with RR0. Nothing else may overlap without re-reading the
-dependency list above.
+A team with capacity to parallelise can overlap RR6 with any earlier phase, and
+RR1 with RR0. **RR7 may not overlap RR2, RR3 or RR6** — it would send two
+numbered tasks into the same findings and files before their owner finished.
+Nothing else may overlap without re-reading the dependency list above.
 
 ## 3. Dependencies
 
@@ -119,13 +125,13 @@ dependency list above.
 |-------|------------------|------|-----|
 | RR0 | Registration and plan correction — nothing further is lost | 11 | S–M |
 | RR1 | aarch64 compile coverage, plus the Rust HAL gate no other phase owns | 11 | M |
-| RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live | 18 | M–L |
-| RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 18 | L–XL |
+| RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live | 19 | M–L |
+| RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 | L–XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
 | RR5 | Boot-path fail-open closure | 14 | M–L |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 | L |
-| RR7 | Medium-severity sweep | 21 | M |
-| RR8 | Phase closure and hand-off to SM10 | 4 | S |
+| RR7 | Medium-severity sweep | 22 | M |
+| RR8 | Phase closure and hand-off to SM10 | 5 | S |
 
 ## 5. Sub-tasks
 
@@ -197,20 +203,21 @@ payoff theorems.
 | RR2.2 | Call `migrateSchedContextReplenishment` from it (donor home → donee home), mirroring the cancellation path that already does this | (same) | M |
 | RR2.3 | Prove the call path preserves the SM5.H affinity invariant | `SeLe4n/Kernel/SchedContext/` | M |
 | RR2.4 | Extend `lockSet_endpointCall` with `migrateSchedContextReplenishmentLockSet` (both home cores' replenish queues) and re-prove its coverage. Without this the migration writes scheduler queues outside the declared `withLockSet` footprint, which invalidates the SM3 serializability argument | `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` | L |
-| RR2.5 | Replace the live `applyCallDonation` call in `endpointCallCrossCoreDispatch` with `applyCallDonationOnCore`, threading the resolved home cores. Adding and proving the helper leaves the reachable `.call` path still unmigrated — this is the sub-task that closes the blocker rather than modelling it | `SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean` | M |
-| RR2.6 | Add the mirror migration inside `applyReplyDonationOnCore` (replier home → original-owner home) | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | M |
-| RR2.7 | Prove the reply path preserves the affinity invariant | (same) | M |
-| RR2.8 | Extend `lockSet_endpointReply` with the same migration footprint and re-prove coverage | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` | L |
-| RR2.9 | Replace the live `applyReplyDonation` call in `endpointReplyCrossCoreDispatch` with `applyReplyDonationOnCore` | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | M |
-| RR2.10 | Bridge theorem: boot-core instantiation of both migrations reduces to the single-core forms | (2 files) | S |
-| RR2.11 | `endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull` — use the staged `endpointSendDualOnCore_bootCore_{block,rendezvous}_eq_single` rewrites | `SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean` | L |
-| RR2.12 | Per-core form `…_preserves_ipcInvariantFull_perCore` | (same) | M |
-| RR2.13 | `clearWokenReceiverStash` preservation bundle | `SeLe4n/Kernel/IPC/` | M |
-| RR2.14 | `endpointCallCrossCoreDispatch` preservation bundle | `SeLe4n/Kernel/IPC/CrossCore/` | M |
-| RR2.15 | `endpointReplyCrossCoreDispatch` preservation bundle | `SeLe4n/Kernel/IPC/CrossCore/` | M |
-| RR2.16 | Extend the cancellation `ipcInvariant` closure to the operation that actually runs on `.tcbSuspend` — today's claim excludes it | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | L |
-| RR2.17 | Discharge the `hTeardownProj` hypothesis whose closure form returns its own premise | `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` | L |
-| RR2.18 | Tests: donation-migration and dispatch-arm coverage; extend the cross-core IPC suite | `tests/SmpIpcSuite.lean` | M |
+| RR2.5 | Invariant-preservation theorems for the donation primitives themselves, which carry none today — required before either live switch below, since after them the primitives sit on a reachable path | `SeLe4n/Kernel/IPC/Operations/Donation.lean` | L |
+| RR2.6 | `endpointCallCrossCoreDispatch` preservation bundle | `SeLe4n/Kernel/IPC/CrossCore/` | M |
+| RR2.7 | Replace the live `applyCallDonation` call in `endpointCallCrossCoreDispatch` with `applyCallDonationOnCore`, threading the resolved home cores. Adding and proving the helper leaves the reachable `.call` path still unmigrated — this is the sub-task that closes the blocker rather than modelling it | `SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean` | M |
+| RR2.8 | Add the mirror migration inside `applyReplyDonationOnCore` (replier home → original-owner home) | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | M |
+| RR2.9 | Prove the reply path preserves the affinity invariant | (same) | M |
+| RR2.10 | Extend `lockSet_endpointReply` with the same migration footprint and re-prove coverage | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` | L |
+| RR2.11 | `endpointReplyCrossCoreDispatch` preservation bundle | `SeLe4n/Kernel/IPC/CrossCore/` | M |
+| RR2.12 | Replace the live `applyReplyDonation` call in `endpointReplyCrossCoreDispatch` with `applyReplyDonationOnCore` | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | M |
+| RR2.13 | Bridge theorem: boot-core instantiation of both migrations reduces to the single-core forms | (2 files) | S |
+| RR2.14 | `endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull` — use the staged `endpointSendDualOnCore_bootCore_{block,rendezvous}_eq_single` rewrites | `SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean` | L |
+| RR2.15 | Per-core form `…_preserves_ipcInvariantFull_perCore` | (same) | M |
+| RR2.16 | `clearWokenReceiverStash` preservation bundle | `SeLe4n/Kernel/IPC/` | M |
+| RR2.17 | Extend the cancellation `ipcInvariant` closure to the operation that actually runs on `.tcbSuspend` — today's claim excludes it | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | L |
+| RR2.18 | Discharge the `hTeardownProj` hypothesis whose closure form returns its own premise | `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` | L |
+| RR2.19 | Tests: donation-migration and dispatch-arm coverage; extend the cross-core IPC suite | `tests/SmpIpcSuite.lean` | M |
 
 **Acceptance**: every arm reachable from `SeLe4n/Kernel/API.lean`'s SMP
 dispatch carries a `_preserves_ipcInvariantFull` theorem; the donation paths
@@ -228,30 +235,29 @@ assumed as post-state hypotheses on nearly every bundle —
 today an end-to-end machine-checked property of the live kernel.
 
 The per-transition establishers for all seven base transitions already exist,
-so D1's residue is module ordering rather than missing mathematics. RR3.16 and
-RR3.17 depend on RR2: the payoff theorems quantify over dispatch arms that
+so D1's residue is module ordering rather than missing mathematics. RR3.15 and
+RR3.16 depend on RR2: the payoff theorems quantify over dispatch arms that
 must carry bundles first.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | RR3.1 | Build the de-threading gate: over the code view, report every `_preserves_ipcInvariantFull` statement that binds a conjunct applied to the **post** state, independent of binder name. Establishes the true baseline and becomes the phase's progress meter | `scripts/check_ipc_invariant_dethreading.py` (new) | M |
 | RR3.2 | Resolve the module-ordering obstruction blocking `blockedThreadsPendingMessageConsistent` composition | `SeLe4n/Kernel/IPC/Invariant/` | M |
-| RR3.3 | De-thread `hBTPM'` across the endpoint bundles (send / receive / call) | `SeLe4n/Kernel/IPC/Invariant/Structural/` | L |
-| RR3.4 | De-thread it across the reply and replyRecv bundles | (same) | L |
+| RR3.3 | De-thread the post-state `blockedThreadsPendingMessageConsistent` hypothesis across the endpoint bundles (send / receive / call) — measured by the RR3.1 gate, not by binder name | `SeLe4n/Kernel/IPC/Invariant/Structural/` | L |
+| RR3.4 | De-thread that same post-state hypothesis across the reply and replyRecv bundles | (same) | L |
 | RR3.5 | De-thread it across the notification bundles | (same) | M |
 | RR3.6 | De-thread it across the lifecycle and cancellation bundles | (same) | L |
 | RR3.7 | Prove the per-transition establishers for `replyCallerLinkageReciprocal`'s forward clause | `SeLe4n/Kernel/IPC/Invariant/` | L |
-| RR3.8 | De-thread `hRCL'` across the endpoint bundles | (same) | L |
+| RR3.8 | De-thread the post-state `replyCallerLinkageReciprocal` hypothesis across the endpoint bundles | (same) | L |
 | RR3.9 | De-thread it across the reply, notification and lifecycle bundles | (same) | L |
 | RR3.10 | Decide the `consumeCallerReply` documented exception — close it, or re-record it with the reason it cannot close | (same) | M |
 | RR3.11 | De-thread `dualQueueSystemInvariant` / `badgeWellFormed` at the eight remaining sites | (same) | M |
 | RR3.12 | De-thread `donationOwnerValid` at the six remaining sites | (same) | M |
 | RR3.13 | Build the reachability bundle that discharges the remaining pre-state preconditions | `SeLe4n/Kernel/IPC/Invariant/Reachability.lean` (new) | L |
 | RR3.14 | Prove the boot state satisfies it, so the bundle is inhabited rather than vacuous | (same) | M |
-| RR3.15 | Invariant-preservation theorems for the donation primitives on the live `.call` path, which carry none today | `SeLe4n/Kernel/IPC/Operations/Donation.lean` | L |
-| RR3.16 | `dispatchWithCap_preserves_ipcInvariantFull` (**depends on RR2**) | `SeLe4n/Kernel/API.lean` | L |
-| RR3.17 | `syscallDispatch_preserves_ipcInvariantFull` — the D8 payoff | (same) | L |
-| RR3.18 | Retire `IPC_INVARIANT_DETHREADING_PLAN.md`: mark closed, record the closure version, move to `docs/dev_history/planning/` | (file move) | S |
+| RR3.15 | `dispatchWithCap_preserves_ipcInvariantFull` (**depends on RR2**) | `SeLe4n/Kernel/API.lean` | L |
+| RR3.16 | `syscallDispatch_preserves_ipcInvariantFull` — the D8 payoff | (same) | L |
+| RR3.17 | Retire `IPC_INVARIANT_DETHREADING_PLAN.md`: mark closed, record the closure version, move to `docs/dev_history/planning/` | (file move) | S |
 
 **Acceptance**: the RR3.1 gate reports zero post-state bindings of
 `blockedThreadsPendingMessageConsistent` and `replyCallerLinkageReciprocal`
@@ -388,7 +394,7 @@ would have caught that drives neither.
 | RR6.1 | Add non-blocking `try_acquire_read` / `try_acquire_write` to the real `RwLock`, removing the oracle's stated reason for modelling instead of driving | `rust/sele4n-hal/src/rw_lock.rs` | M |
 | RR6.2 | Rewrite the Tier-5 oracle to drive the real lock through those entry points | `rust/sele4n-hal/src/bin/rw_lock_oracle.rs` | L |
 | RR6.3 | Extend the oracle to the queued lock, so both implementations are covered | (same) | M |
-| RR6.4 | Operational step model for `QueuedRwLock` plus its refinement to the Lean FIFO spec. `RwLockRefinement.lean` models the **CAS-retry** `rw_lock.rs`, and the `queued_*` theorems in `RwLock.lean` are about the abstract spec's waiter queue — neither is a bridge to the queued Rust algorithm RR6.4 deploys, so without this the next sub-task's corollary has nothing to compose | `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (new) | XL |
+| RR6.4 | Operational step model for `QueuedRwLock` plus its refinement to the Lean FIFO spec. `RwLockRefinement.lean` models the **CAS-retry** `rw_lock.rs`, and the `queued_*` theorems in `RwLock.lean` are about the abstract spec's waiter queue — neither is a bridge to the queued Rust algorithm this phase deploys, so without this the next sub-task's corollary has nothing to compose | `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (new) | XL |
 | RR6.5 | Corollary: `QueuedRwLock` refines the Lean FIFO spec end to end, closing the spec-to-implementation gap for the lock the next sub-task deploys — proved before the switch, so no version ships an unrefined core lock | (same) | L |
 | RR6.6 | Point `STATIC_RW_LOCK_POOL` and the `ffi_rw_lock_*` entries at `QueuedRwLock`, so the deployed lock is the FIFO one the spec describes | `rust/sele4n-hal/src/lock_bridge.rs` | M |
 | RR6.7 | Update the FFI and information-flow docs that name the CAS-retry lock as deployed | `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` | S |
@@ -451,12 +457,13 @@ acceptance gate below can actually be checked against the work list.
 | RR7.13 | Declassification mediums | 2 | S |
 | RR7.14 | Panic-hang remediation mediums | 2 | S |
 | RR7.15 | RwLock-deferred mediums | 2 | S |
-| RR7.16 | Implement-the-improvement sweep mediums | 2 | S |
-| RR7.17 | IPC de-threading medium | 1 | S |
-| RR7.18 | Reply objects medium | 1 | S |
-| RR7.19 | SMP foundations medium | 1 | S |
-| RR7.20 | Master plan medium | 1 | S |
-| RR7.21 | Doc-sync medium | 1 | S |
+| RR7.16 | Implement-the-improvement sweep: route the per-core scheduler entries through the HAL context-switch seam | 1 | S |
+| RR7.17 | Implement-the-improvement sweep: the DeviceTree-to-`PlatformConfig` boot bridge — a platform/boot surface unrelated to the row above, so its own task | 1 | S |
+| RR7.18 | IPC de-threading medium | 1 | S |
+| RR7.19 | Reply objects medium | 1 | S |
+| RR7.20 | SMP foundations medium | 1 | S |
+| RR7.21 | Master plan medium | 1 | S |
+| RR7.22 | Doc-sync medium | 1 | S |
 
 **Acceptance**: all **49** findings this phase owns — the 46 in the register's
 §6 table and the three §4 items in RR7.1–RR7.3 — are closed or carry an
@@ -471,8 +478,9 @@ the §6 table alone.
 |-----|-------------|-------|-----|
 | RR8.1 | Walk the RR0..RR7 acceptance gates and record the closing version for each | (1 file) | S |
 | RR8.2 | Update `UNFINISHED_SMP_WORK.md`: mark each closed finding with its version, leaving open items visible | `docs/planning/UNFINISHED_SMP_WORK.md` | M |
-| RR8.3 | WS-RR closure entry in `docs/WORKSTREAM_HISTORY.md`; update the CLAUDE.md phase table | (3 files) | S |
-| RR8.4 | Hand-off: confirm SM10's §2 dependencies are genuinely met, and that its §1 scope statement now matches the tree | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` | S |
+| RR8.3 | Retire the RR0.3 standing constraint from `CLAUDE.md` and `AGENTS.md` once RR3 has closed — it says two conjuncts remain threaded and `ipcInvariantFull` is not end-to-end checked, which becomes false at RR3.16 and would otherwise misdirect every later contributor | `CLAUDE.md`, `AGENTS.md` | S |
+| RR8.4 | WS-RR closure entry in `docs/WORKSTREAM_HISTORY.md`; update the CLAUDE.md phase table | (3 files) | S |
+| RR8.5 | Hand-off: confirm SM10's §2 dependencies are genuinely met, and that its §1 scope statement now matches the tree | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` | S |
 
 ## 6. Verification strategy
 
@@ -510,7 +518,7 @@ PASS — the contract landed at `v0.34.2` and pinned by
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| RR4 fault IPC is larger than XL and slips the phase | HIGH | HIGH | Split at the sub-task boundaries §RR4 names; the RR4.9 no-handler suspend alone removes the livelock, so partial delivery is still safe |
+| RR4 fault IPC is larger than XL and slips the phase | HIGH | HIGH | Split at the sub-task boundaries §RR4 names. Partial delivery is **not** safe: RR4.9's no-handler policy is unreachable until RR4.21 wires the abort arms and RR4.22 routes the Rust trap path to them, so until both land aborts still take the old `.error .vmFault` path and return to the faulting instruction. If RR4 slips, the release waits |
 | RR3 de-threading blocks on an ordering cycle between invariant modules | MED | HIGH | RR3.2 addresses ordering before any bundle edit; the per-transition establishers already exist |
 | RR6.12 bisimulation does not close | MED | MED | Land the trace-shape predicate independently so the composition has something to consume; RR6 stays open and the release waits — deferring the deployed-lock corollary past v1.0.0 would ship the exact gap this phase exists to close |
 | RR1 surfaces a large volume of aarch64 compile errors | MED | MED | Expected and desirable — it is cheaper here than at SM10.E; RR1.2 and RR1.3 are sized L for this reason |
@@ -526,7 +534,11 @@ PASS — the contract landed at `v0.34.2` and pinned by
 - [ ] Every live SMP dispatch arm carries an `ipcInvariantFull` bundle.
 - [ ] Both cross-core donation paths migrate the CBS replenish queue.
 - [ ] Fault IPC delivers, resumes and restarts; no path returns to a faulting instruction.
-- [ ] `hBTPM'` and `hRCL'` return zero occurrences repo-wide.
+- [ ] The RR3.1 gate reports zero post-state bindings of
+      `blockedThreadsPendingMessageConsistent` and `replyCallerLinkageReciprocal`
+      across the `_preserves_ipcInvariantFull` family. Not a binder-name grep:
+      those two conjuncts have no canonical primed name, so a name-based check
+      passes without measuring anything.
 - [ ] Both top-level dispatch payoff theorems exist.
 - [ ] Hardware boot without a production labeling context fails closed.
 - [ ] Idle threads are installed on the production boot path.

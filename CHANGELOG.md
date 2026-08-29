@@ -1,3 +1,52 @@
+## v0.34.10 — a plan that told you to prove a thing after making it live; Codex review round 5
+
+Documentation-only. Seven findings from the fifth review round on
+`docs/planning/SMP_RELEASE_READINESS_PLAN.md` and
+`docs/planning/UNFINISHED_SMP_WORK.md`, all verified against the tree before
+being acted on.
+
+**The ordering defect worth naming.** Round 4's fix moved the two live-dispatch
+switches earlier in RR2 so the blocker closed sooner, and in doing so put both
+of them *before* the preservation bundles for the very operations they make
+reachable. That is backwards: a live switch on an operation with no
+`_preserves_ipcInvariantFull` theorem is exactly the blocker the phase exists
+to close, reintroduced one sub-task at a time. RR2 is renumbered so each
+bundle precedes its switch — 5 donation-primitive preservation, 6 call
+dispatch bundle, 7 live call switch; 11 reply bundle, 12 live reply switch —
+and the donation-primitive proof is lifted out of RR3 (where it was RR3.15,
+after the switch that needs it) into RR2 where it binds.
+
+**Also fixed:**
+
+- **Binder names are not a measurement.** Three RR3 rows and the §8 acceptance
+  checklist asked for `hBTPM'` and `hRCL'` to reach zero occurrences. Neither
+  conjunct has a canonical primed binder name, so that check passes without
+  measuring anything. All four now name the predicate and defer to the RR3.1
+  gate, which reads statement shape over the code view.
+- **A risk mitigation that was false.** "The RR4.9 no-handler suspend alone
+  removes the livelock, so partial delivery is still safe" — RR4.9's policy is
+  unreachable until RR4.21 wires the abort arms and RR4.22 routes the Rust trap
+  path to them. Until both land, an abort still takes the old `.error .vmFault`
+  path and returns to the faulting instruction. The row now says partial
+  delivery is not safe and the release waits.
+- **RR7 is not independent.** It was described as overlappable with anything;
+  several of its rows own findings whose primary owner is RR2, RR3 or RR6.
+  §2.3 now states it runs after those phases and may not overlap them.
+- **A standing constraint with no retirement.** RR0.3 writes a CLAUDE.md
+  constraint saying `ipcInvariantFull` is not end-to-end machine-checked;
+  nothing retracted it once RR3.16 makes it false. New RR8.3 does.
+- **RR7.16 bundled two unrelated surfaces** (per-core scheduler HAL seam;
+  DeviceTree-to-`PlatformConfig` boot bridge) into one row. Split.
+- **A circular schedule in the register.** §10 step 5 told WS-RR to run the
+  Tier-4 acceptance gates before SM10 opens, using an image SM10.E.D1
+  produces. Execution is reassigned to SM10.E, immediately after D1.
+
+Counts resynced: 145 sub-tasks (RR2 19, RR3 17, RR7 22, RR8 5) in the phase
+map, plan header, register §10, `CLAUDE.md` and `AGENTS.md`. Four prose
+cross-references to renumbered RR3/RR7 rows corrected.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §2.3, §5 (RR2, RR3, RR7, RR8)
+
 ## v0.34.9 — the audit script broke under its own skip status; Codex review round 4
 
 Eight findings on `906e6f9`, all verified and all genuine.  Four are residue
