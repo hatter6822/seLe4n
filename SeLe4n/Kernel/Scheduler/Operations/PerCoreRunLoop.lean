@@ -126,17 +126,27 @@ order:
    every committed path; the per-core `timerTickOnCore` deliberately reads
    without advancing (each core's CNTP is local), so the advance is re-homed
    here at the composition point, once per global tick, never per core.
+   The advance drains only the **boot core's own** due replenishments this
+   step; a *remote* core's queue may then hold entries due at exactly the
+   new clock until that core's own next step drains them (PR #880 round 4)
+   — never strictly overdue (`tickClockedState_bootCore_replenish_ge`), and
+   re-established strict by the owner's step
+   (`perCoreTimerTickStep_ok_establishes_replenishmentPipelineOrderOnCore_self`,
+   both in `PerCoreTickCbsPreservation.lean`): the bounded release window
+   inherent to per-core release queues, one PPI period nominally.
 2. **`timerTickOnCore`** — SM5.D budget accounting, CBS replenishment,
    budget-exhaustion preemption; recovers the cross-core `.reschedule` SGIs.
-3. **`scheduleDomainOnCore`** — SM5.D.6 domain accounting: the in-domain
-   decrement, or the boundary re-dispatch — the rotating arm's
-   `switchDomainOnCore` preparation + rotation, or the empty-schedule arm's
-   `singleDomainBoundaryPrep` (the same save → re-enqueue → clear-current
-   preparation, so the outgoing current competes in the re-dispatch and is
-   never dropped) — each followed by the budget-aware
-   `scheduleEffectiveOnCore`.  The tick does budget accounting **only** (its
-   own docstring: rotation folded into the tick breaks
-   `currentThreadInActiveDomain`), so the run loop must invoke both —
+3. **`scheduleDomainOnCore`** — SM5.D.6 domain accounting, for a
+   **non-empty** domain schedule: the in-domain decrement, or the boundary
+   rotation (`switchDomainOnCore`: save the outgoing current, re-enqueue it,
+   rotate, reload the quantum) followed by the budget-aware
+   `scheduleEffectiveOnCore`.  In single-domain mode (`domainSchedule = []`,
+   the RPi5 v1.0.0 default) the domain layer is **inert**
+   (`scheduleDomainOnCore_singleDomain_inert`, PR #880 round 4): no
+   boundary exists, so nothing decrements or re-dispatches and the budget
+   tick's time-slice quantum is never disturbed.  The tick does budget
+   accounting **only** (its own docstring: rotation folded into the tick
+   breaks `currentThreadInActiveDomain`), so the run loop must invoke both —
    exactly as the single-core run loop invokes `timerTickWithBudget` then
    `scheduleDomain`.  The domain arm emits no SGIs; the step's SGI list is
    the tick's.

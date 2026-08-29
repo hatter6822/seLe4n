@@ -141,13 +141,11 @@ open SeLe4n.Testing
 #check @switchDomainOnCore_rotates
 #check @scheduleDomainOnCore_decrements
 #check @scheduleDomainOnCore_preserves_objects_invExt
--- The empty-schedule boundary re-enqueues the outgoing current before the
--- re-dispatch (PR #880 review round 2): the named preparation + its identity
--- on idle cores + its object/invariant frames.
-#check @singleDomainBoundaryPrep
-#check @singleDomainBoundaryPrep_of_current_none
-#check @singleDomainBoundaryPrep_objects
-#check @singleDomainBoundaryPrep_preserves_objects_invExt
+-- Single-domain mode is inert (PR #880 review rounds 2 + 4): with no domain
+-- schedule there is no boundary — nothing decrements, rotates or
+-- re-dispatches, so the domain layer provably cannot perturb the budget
+-- tick's time-slice scheduling on the RPi5 v1.0.0 default.
+#check @scheduleDomainOnCore_singleDomain_inert
 
 -- §7 SM5.D.5/.6 per-core invariant preservation (B1/B2/B3).
 #check @decrementDomainTimeOnCore_preserves_currentThreadValidOnCore
@@ -484,14 +482,24 @@ private def runRunLoopStepChecks : IO Unit := do
   assertBool "step on non-boot core 3 leaves machine.timer untouched"
     ((perCoreTimerTickStep st 3).1.machine.timer == st.machine.timer)
   -- SM5.D.6 composition (the run loop genuinely invokes the tick THEN the
-  -- domain transition): away from a boundary, a committed step decrements the
-  -- ticked core's domain time remaining — pinned on a state whose remaining
-  -- time is safely above the boundary.
+  -- domain transition): with a NON-EMPTY domain schedule, away from a
+  -- boundary, a committed step decrements the ticked core's domain time
+  -- remaining — pinned on a state whose remaining time is safely above the
+  -- boundary.  (Single-domain mode is inert — pinned below.)
+  let schedTwoDomains := { st.scheduler with domainSchedule := [dom0, dom1] }
   let stMidDomain : SystemState :=
-    { st with scheduler := st.scheduler.setDomainTimeRemainingOnCore bootCoreId 10 }
-  assertBool "step runs the domain transition (in-domain decrement 10 -> 9)"
+    { st with scheduler := schedTwoDomains.setDomainTimeRemainingOnCore bootCoreId 10 }
+  assertBool "step runs the domain transition (in-domain decrement 10 -> 9, non-empty schedule)"
     (((perCoreTimerTickStep stMidDomain 0).1.scheduler.domainTimeRemainingOnCore
         bootCoreId) == 9)
+  -- Single-domain mode (empty schedule — the RPi5 v1.0.0 default): the domain
+  -- layer is inert, so the committed step leaves the countdown untouched
+  -- (PR #880 round 4 — no drift toward a perpetual boundary).
+  let stIdleCountdown : SystemState :=
+    { st with scheduler := st.scheduler.setDomainTimeRemainingOnCore bootCoreId 10 }
+  assertBool "step leaves the countdown untouched in single-domain mode (inert)"
+    (((perCoreTimerTickStep stIdleCountdown 0).1.scheduler.domainTimeRemainingOnCore
+        bootCoreId) == 10)
 
 /-- A single-domain (empty schedule) idle state, for the SM5.D.6 no-op witness. -/
 private def stSingleDomain : SystemState :=
@@ -544,46 +552,55 @@ private def stBoundaryBusy : SystemState :=
       |>.withCurrent (some tidHigh)).build
   { base with scheduler := base.scheduler.setDomainTimeRemainingOnCore bootCoreId 1 }
 
-/-- §3.10 (PR #880 review round 2): the empty-schedule domain boundary
-re-enqueues the outgoing current before re-dispatching — the boundary never
-drops the running thread.  Regression pin for the drop-current hazard: with a
-high-priority thread running and only a low-priority thread queued, the
-boundary re-selects the incumbent (it outranks the queue) and the queued
-waiter survives.  Before the fix, `switchDomainOnCore`'s empty-schedule no-op
-fed the un-prepped state to the drop-current `scheduleEffectiveOnCore`, which
-replaced the running high-priority thread with the queued low-priority one and
-lost the incumbent from scheduling entirely. -/
+/-- §3.10 (PR #880 review rounds 2 + 4): single-domain mode is **inert** — with
+no domain schedule there is no boundary, so the domain tick can neither drop
+the running thread (the round-2 hazard) nor degrade the time-slice quantum to
+per-tick re-dispatch churn (the round-4 hazard: the empty-schedule arm had no
+entry to reload the countdown from, so once `domainTimeRemainingOnCore`
+reached the boundary every subsequent tick re-prepped and re-dispatched,
+capable of immediately reversing an equal-priority switch the budget tick had
+just made).  Regression pins on the busy fixture (high-priority current,
+low-priority queued, countdown at the old boundary value): the domain tick is
+the identity — incumbent untouched, waiter untouched, countdown untouched (no
+perpetual boundary) — and the composed live step preserves all three. -/
 private def runEmptyBoundaryRequeueChecks : IO Unit := do
-  IO.println "--- §3.10 empty-schedule boundary re-enqueue ---"
+  IO.println "--- §3.10 single-domain mode is inert ---"
   assertBool "fixture: single-domain mode (empty schedule)"
     (stBoundaryBusy.scheduler.domainSchedule.isEmpty)
-  assertBool "fixture: at the domain boundary (time remaining 1)"
+  assertBool "fixture: countdown at the old boundary value (1)"
     (stBoundaryBusy.scheduler.domainTimeRemainingOnCore bootCoreId == 1)
   assertBool "fixture: high-priority thread current, low-priority thread queued"
     (stBoundaryBusy.scheduler.currentOnCore bootCoreId == some tidHigh
       && decide (tidLow ∈ (stBoundaryBusy.scheduler.runQueueOnCore bootCoreId).toList))
-  assertBool "boundary keeps the higher-priority incumbent current (re-selected, not dropped)"
+  assertBool "inert domain tick keeps the incumbent current (no dispatch at all)"
     (match scheduleDomainOnCore stBoundaryBusy bootCoreId with
      | .ok st' => st'.scheduler.currentOnCore bootCoreId == some tidHigh
      | .error _ => false)
-  assertBool "boundary leaves the low-priority waiter queued (nothing lost)"
+  assertBool "inert domain tick leaves the low-priority waiter queued"
     (match scheduleDomainOnCore stBoundaryBusy bootCoreId with
      | .ok st' => decide (tidLow ∈ (st'.scheduler.runQueueOnCore bootCoreId).toList)
      | .error _ => false)
+  -- Round 4's specific hazard: the countdown must NOT stick at a perpetual
+  -- boundary — in inert mode it is simply never touched.
+  assertBool "inert domain tick leaves the countdown untouched (no perpetual boundary)"
+    (match scheduleDomainOnCore stBoundaryBusy bootCoreId with
+     | .ok st' => st'.scheduler.domainTimeRemainingOnCore bootCoreId == 1
+     | .error _ => false)
   -- The composed live step (tick THEN domain transition) preserves the
-  -- incumbent through the empty-schedule boundary as well.
-  assertBool "live run-loop step at the boundary keeps the incumbent current"
+  -- incumbent and the countdown through single-domain mode as well.
+  assertBool "live run-loop step keeps the incumbent current in single-domain mode"
     ((perCoreTimerTickStep stBoundaryBusy 0).1.scheduler.currentOnCore bootCoreId
       == some tidHigh)
-  -- With nothing running (idle core), the boundary preparation is the identity
-  -- (`singleDomainBoundaryPrep_of_current_none`) — the SM5.E idle-adoption path
-  -- is untouched by the re-enqueue fix: nothing spuriously enqueued, current
-  -- still clear.
-  assertBool "idle-core boundary preparation is the identity (no spurious enqueue)"
-    (((singleDomainBoundaryPrep stSingleDomain bootCoreId).scheduler.runQueueOnCore
-        bootCoreId).toList.isEmpty
-      && ((singleDomainBoundaryPrep stSingleDomain bootCoreId).scheduler.currentOnCore
-          bootCoreId).isNone)
+  assertBool "live run-loop step leaves the countdown untouched in single-domain mode"
+    ((perCoreTimerTickStep stBoundaryBusy 0).1.scheduler.domainTimeRemainingOnCore
+        bootCoreId == 1)
+  -- And on the idle single-domain state the whole domain tick is the identity.
+  assertBool "single-domain domain tick is the identity on the idle state"
+    (match scheduleDomainOnCore stSingleDomain bootCoreId with
+     | .ok st' => st'.scheduler.currentOnCore bootCoreId
+          == stSingleDomain.scheduler.currentOnCore bootCoreId
+        && ((st'.scheduler.runQueueOnCore bootCoreId).toList.isEmpty : Bool)
+     | .error _ => false)
 
 /-- §3.11 (PR #880 follow-up — commit-coupled shadow clock): the flagged step's
 clock-advance report is exactly the committed state's `machine.timer` delta,
@@ -622,6 +639,41 @@ private def runClockAdvanceFlagChecks : IO Unit := do
   assertBool "busy boundary fixture's boot step reports the clock advance"
     ((perCoreTimerTickStepWithClockAdvance stBoundaryBusy 0).1.2 == true)
 
+/-- §3.12 (PR #880 round 4 — clock-advance honesty): the boot core's committed
+clock advance can leave a REMOTE core's queued replenishment due at exactly
+the new clock — never strictly overdue (the weak form
+`tickClockedState_bootCore_replenish_ge` holds) — and the owning core's own
+next committed step drains it, restoring the strict pipeline-order form
+(`perCoreTimerTickStep_ok_establishes_replenishmentPipelineOrderOnCore_self`).
+The two-phase pin of the bounded release window inherent to per-core release
+queues (each core drains its own queue on its own PPI). -/
+private def runClockAdvanceReplenishChecks : IO Unit := do
+  IO.println "--- §3.12 clock-advance replenish window ---"
+  let scId : SeLe4n.SchedContextId := ⟨77⟩
+  -- Seed core 1's queue with an entry due one tick in the future: the strict
+  -- form holds at the current clock.
+  let stSeeded := replenishOnCore stIdle core1 scId (stIdle.machine.timer + 1)
+  assertBool "seeded: core 1 holds one future replenishment (strict form)"
+    (((stSeeded.scheduler.replenishQueueOnCore core1).entries.length == 1)
+      && decide (∀ p ∈ (stSeeded.scheduler.replenishQueueOnCore core1).entries,
+            p.2 > stSeeded.machine.timer))
+  -- Boot core ticks: the shared clock advances; core 1's entry is untouched
+  -- and now due at exactly the new clock — the documented window.
+  let stAfterBoot := (perCoreTimerTickStep stSeeded 0).1
+  assertBool "boot step advances the clock and leaves the remote entry queued"
+    (stAfterBoot.machine.timer == stSeeded.machine.timer + 1
+      && ((stAfterBoot.scheduler.replenishQueueOnCore core1).entries.length == 1))
+  assertBool "remote entry is due-now, never strictly overdue (weak form holds)"
+    (decide (∀ p ∈ (stAfterBoot.scheduler.replenishQueueOnCore core1).entries,
+        p.2 ≥ stAfterBoot.machine.timer))
+  -- Core 1's own committed step drains the due entry: the strict form is
+  -- restored on its queue at the current clock.
+  let stAfterOwn := (perCoreTimerTickStep stAfterBoot 1).1
+  assertBool "the owner's next step drains the due entry (strict form restored)"
+    ((stAfterOwn.scheduler.replenishQueueOnCore core1).entries.isEmpty)
+  assertBool "the owner's step reads the shared clock without advancing it"
+    (stAfterOwn.machine.timer == stAfterBoot.machine.timer)
+
 def runAll : IO Unit := do
   IO.println "=== WS-SM SM5.D — Per-core timer tick suite ==="
   runLockSetChecks
@@ -635,6 +687,7 @@ def runAll : IO Unit := do
   runDomainRedispatchChecks
   runEmptyBoundaryRequeueChecks
   runClockAdvanceFlagChecks
+  runClockAdvanceReplenishChecks
   IO.println "=== SM5.D timer suite: all checks passed ==="
 
 end SeLe4n.Testing.SmpTimer

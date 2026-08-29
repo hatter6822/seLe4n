@@ -183,6 +183,33 @@ pre-readiness, non-boot, and failed entries included.  Pinned by
 tests, and the new `build.rs` shadow-advance scanner (export present;
 ISR body must not regrow an incrementer).
 
+**Review round 4 (same cut) — single-domain mode goes inert; the
+clock-advance replenish window is made formal.**  (1) Round 2's boundary
+re-enqueue inherited a deeper artifact: the empty-schedule arm had no
+entry to reload the quantum from, so the countdown stuck at the boundary
+and every subsequent tick re-dispatched — per-tick churn that could
+immediately reverse an equal-priority switch the budget tick had just
+made.  `scheduleDomainOnCore` now matches on the schedule first: empty ⇒
+**identity** (`scheduleDomainOnCore_singleDomain_inert` — no domain
+schedule means no domain scheduling; time-slice fairness is the budget
+tick's, exactly as in seL4 whose schedule always has ≥ 1 entry);
+non-empty ⇒ decrement / rotation + re-dispatch as before.  The round-2
+`singleDomainBoundaryPrep` apparatus became dead code and is removed;
+`scheduleDomainOnCore_runs_idle` is restated on the rotating boundary,
+with single-domain idle adoption owned by the wake receiver, the
+vacate-successor seam and the budget tick's own re-dispatch fallback.
+§3.10 re-pins the busy fixture inert (incumbent/waiter/countdown all
+untouched).  (2) The boot clock advance can leave a remote core's queued
+replenishment due at exactly the new clock until that core's own next
+tick — the bounded per-core release window (seL4 MCS's shape), now
+formal in `PerCoreTickCbsPreservation.lean` §5:
+`tickClockedState_bootCore_replenish_ge` (nothing goes strictly overdue)
++ `perCoreTimerTickStep_ok_establishes_replenishmentPipelineOrderOnCore_self`
+(each core's committed step re-establishes the strict form on its own
+queue, via the new generic `popDue_remaining_gt`).  Draining all cores
+from the boot tick was rejected (hot-path cross-core queue coupling,
+against the fine-lock design).  §3.12 pins the two phases live.
+
 Plan: [`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`](planning/SMP_PER_CORE_SCHEDULER_PLAN.md)
 §SM5.C (landing note).  Next: SM10 release closure (→ v1.0.0),
 [`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md).

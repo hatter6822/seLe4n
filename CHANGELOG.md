@@ -198,6 +198,58 @@ core, before and after readiness — and
 that pins the export and fails the build if the ISR body regrows an
 `increment_tick_count` call.
 
+**Review round 4 (same version) — two findings: single-domain mode goes
+inert; the clock-advance replenish window is made formal.**
+
+(1) **Single-domain mode is inert.**  Round 2's boundary re-enqueue fixed the
+drop-current hazard but inherited a deeper artifact: with no schedule entry
+to reload the quantum from, `domainTimeRemainingOnCore` stayed at the
+boundary forever once reached, so on the RPi5 v1.0.0 default every
+subsequent tick re-prepped and re-dispatched — degrading the budget tick's
+time-slice quantum to per-tick churn (an equal-priority switch the budget
+tick had just made could be immediately reversed by the boundary
+re-dispatch).  The honest semantics for "no domain schedule" is **no domain
+scheduling**: `scheduleDomainOnCore` now matches on the schedule first —
+empty ⇒ identity (`scheduleDomainOnCore_singleDomain_inert`, the new
+headline witness that the domain layer cannot perturb scheduling on the
+default configuration); non-empty ⇒ the decrement / boundary rotation +
+budget-aware re-dispatch, exactly as in seL4, whose domain schedule always
+carries at least one entry.  The round-2 `singleDomainBoundaryPrep`
+apparatus (def, frames, §8.1b helper family, composite) is thereby dead
+code and is **removed** rather than kept unwired; the idle-adoption witness
+`scheduleDomainOnCore_runs_idle` is restated on the rotating boundary
+(post-switch selection empty ⇒ idle adopted), with single-domain idle
+adoption owned by the wake receiver, the vacate-successor seam and the
+budget tick's own re-dispatch fallback.  `smp_timer_suite` §3.10 re-pins
+the busy fixture as inert (incumbent, waiter and countdown all untouched —
+no perpetual boundary; composed step included) and §3.8 pins the in-domain
+decrement on a rotating schedule beside the inert default.  The
+single-core `scheduleDomain` keeps its registered-debt entry.
+
+(2) **Clock-advance honesty for per-core replenish queues.**  The boot
+core's committed clock advance can leave a *remote* core's queued
+replenishment due at exactly the new clock until that core's own next
+committed tick drains it — the bounded release window inherent to per-core
+release queues (seL4 MCS's shape).  `replenishmentPipelineOrderOnCore`'s
+strict form is therefore a per-core post-own-tick property, and the pair of
+theorems making that formal lands in `PerCoreTickCbsPreservation.lean` §5:
+`tickClockedState_bootCore_replenish_ge` (the advance makes nothing
+strictly overdue — the weak `≥` form holds on every core immediately
+after) and
+`perCoreTimerTickStep_ok_establishes_replenishmentPipelineOrderOnCore_self`
+(each core's committed step **re-establishes** the strict form on its own
+queue at the current clock — via the new generic `popDue_remaining_gt`
+prefix-drain lemma under sortedness, threaded through the budget and
+dispatch phases and the new
+`scheduleDomainOnCore_preserves_replenishmentPipelineOrderOnCore`).
+Draining every core's queue from the boot tick was considered and
+rejected: it would couple the hot tick path to every core's replenish
+queue and inflate the tick's lock footprint, against the fine-lock design.
+The invariant's docstring now states the SMP scoping;
+`smp_timer_suite` §3.12 pins the two phases live (seed a future entry on
+core 1 → boot step leaves it due-now, never overdue → core 1's own step
+drains it with the clock untouched).
+
 Gates: `./scripts/test_full.sh` green (tiers 0–3);
 `./scripts/test_rust.sh` green (1145 unit + 108 conformance tests, fmt,
 clippy `-D warnings`); staged-module partition consistent

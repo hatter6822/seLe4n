@@ -2120,156 +2120,6 @@ theorem switchDomainOnCore_preserves_contextMatchesCurrentOnCore_sibling
       simp only [contextMatchesCurrentOnCore, hcur0, htcb] at hCtx0
       exact RegisterFile.beq_symm hCtx0
 
--- ── §8.1b  `singleDomainBoundaryPrep` frame + characterisation helpers ──
---
--- The empty-schedule boundary arm of `scheduleDomainOnCore` (the outgoing
--- current is re-enqueued before the re-dispatch, never dropped) runs
--- `singleDomainBoundaryPrep` — the re-dispatch preparation
--- `switchDomainOnCore`'s rotate path performs, minus the domain-slot rotation.
--- Each helper below is the exact analogue of its `switchDomainOnCore_*`
--- sibling above, factored through the same `saveOutgoingContextOnCore_*`
--- characterisations.
-
-/-- The operated core has no current thread after the boundary preparation —
-either it had none (identity arm) or the preparation cleared it. -/
-theorem singleDomainBoundaryPrep_currentOnCore_self (st : SystemState) (c : CoreId) :
-    (singleDomainBoundaryPrep st c).scheduler.currentOnCore c = none := by
-  unfold singleDomainBoundaryPrep
-  split
-  next hCur => exact hCur
-  next => simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
-
-/-- The boundary preparation frames a sibling core's current thread. -/
-theorem singleDomainBoundaryPrep_currentOnCore_ne (st : SystemState) (c c' : CoreId)
-    (hc : c ≠ c') :
-    (singleDomainBoundaryPrep st c).scheduler.currentOnCore c'
-      = st.scheduler.currentOnCore c' := by
-  unfold singleDomainBoundaryPrep
-  split
-  · rfl
-  · simp only [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hc,
-      SchedulerState.setRunQueueOnCore_currentOnCore, saveOutgoingContextOnCore_scheduler]
-
-/-- The boundary preparation frames a sibling core's run queue. -/
-theorem singleDomainBoundaryPrep_runQueueOnCore_ne (st : SystemState) (c c' : CoreId)
-    (hc : c ≠ c') :
-    (singleDomainBoundaryPrep st c).scheduler.runQueueOnCore c'
-      = st.scheduler.runQueueOnCore c' := by
-  unfold singleDomainBoundaryPrep
-  split
-  · rfl
-  · simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-      SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc,
-      saveOutgoingContextOnCore_scheduler]
-
-/-- The boundary preparation leaves the machine register banks unchanged (its
-only object write is the outgoing-context save). -/
-theorem singleDomainBoundaryPrep_machine_eq (st : SystemState) (c : CoreId) :
-    (singleDomainBoundaryPrep st c).machine = st.machine := by
-  unfold singleDomainBoundaryPrep
-  split
-  · rfl
-  · exact saveOutgoingContextOnCore_machine st c
-
-/-- The boundary preparation preserves TCB-resolvability of every thread. -/
-theorem singleDomainBoundaryPrep_getTcb?_isSome (st : SystemState) (c : CoreId)
-    (hInv : st.objects.invExt) :
-    ∀ tid, (st.getTcb? tid).isSome →
-      ((singleDomainBoundaryPrep st c).getTcb? tid).isSome := by
-  intro tid hSome
-  unfold singleDomainBoundaryPrep
-  split
-  · exact hSome
-  · exact Option.isSome_iff_exists.mpr
-      (saveOutgoingContextOnCore_getTcb?_isSome st c tid hInv
-        (Option.isSome_iff_exists.mp hSome))
-
-/-- The boundary preparation's only `registerContext` write is the
-outgoing-context save (lifts `saveOutgoingContextOnCore_getTcb?_regContext`
-through the scheduler-only record update). -/
-theorem singleDomainBoundaryPrep_getTcb?_regContext (st : SystemState) (c₀ : CoreId)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
-    (htcb : st.getTcb? tid = some tcb) :
-    ∃ tcb', (singleDomainBoundaryPrep st c₀).getTcb? tid = some tcb' ∧
-      (tcb'.registerContext = tcb.registerContext ∨
-        (st.scheduler.currentOnCore c₀ = some tid ∧
-          tcb'.registerContext = st.machine.regsOnCore c₀)) := by
-  unfold singleDomainBoundaryPrep
-  split
-  · exact ⟨tcb, htcb, Or.inl rfl⟩
-  · exact saveOutgoingContextOnCore_getTcb?_regContext st c₀ tid tcb hInv htcb
-
-/-- The operated core's run queue after the boundary preparation is well-formed,
-duplicate-free, and all-TCB whenever the pre-state base safety invariant held on
-`c` — the only queue change is re-enqueuing the (TCB) current thread
-(`switchDomainOnCore_operated_runQueue_props`' argument, minus the rotation). -/
-theorem singleDomainBoundaryPrep_operated_runQueue_props (st : SystemState) (c : CoreId)
-    (hInv : st.objects.invExt)
-    (hPre : schedulerInvariantStructuralRegNodup_perCore st c) :
-    ((singleDomainBoundaryPrep st c).scheduler.runQueueOnCore c).wellFormed ∧
-      ((singleDomainBoundaryPrep st c).scheduler.runQueueOnCore c).toList.Nodup ∧
-      runnableThreadsAreTCBsOnCore (singleDomainBoundaryPrep st c) c := by
-  obtain ⟨⟨⟨_hQCC, _hCTV, hRAT, hWf⟩, _hCtx⟩, hNodup⟩ := hPre
-  unfold singleDomainBoundaryPrep
-  split
-  · -- `current = none`: the preparation is the identity.
-    exact ⟨hWf, hNodup, hRAT⟩
-  · -- `current = some tid0`: save + re-enqueue + clear-current.
-    next tid0 _hcur =>
-      refine ⟨?_, ?_, ?_⟩
-      · -- wellFormed
-        simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-          SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        split
-        · exact RunQueue.insert_preserves_wellFormed _ hWf _ _
-        · exact hWf
-      · -- Nodup
-        simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-          SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        split
-        · exact RunQueue.insert_preserves_toList_nodup _ _ _ hNodup
-        · exact hNodup
-      · -- runnableThreadsAreTCBs on the post state
-        intro tid htid
-        simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-          SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at htid
-        cases htcb0 : st.getTcb? tid0 with
-        | none =>
-            simp only [htcb0] at htid
-            obtain ⟨tcb, htcb⟩ := hRAT tid htid
-            exact saveOutgoingContextOnCore_getTcb?_isSome st c tid hInv ⟨tcb, htcb⟩
-        | some tcb0 =>
-            simp only [htcb0] at htid
-            rcases (RunQueue.mem_insert _ tid0 _ tid).mp
-                ((RunQueue.mem_toList_iff_mem _ tid).mp htid) with hold | heq
-            · obtain ⟨tcb, htcb⟩ := hRAT tid ((RunQueue.mem_toList_iff_mem _ tid).mpr hold)
-              exact saveOutgoingContextOnCore_getTcb?_isSome st c tid hInv ⟨tcb, htcb⟩
-            · subst heq
-              exact saveOutgoingContextOnCore_getTcb?_isSome st c _ hInv ⟨tcb0, htcb0⟩
-
-/-- The boundary preparation on core `c₀` preserves `contextMatchesCurrentOnCore`
-on a *sibling* core `c'` (exact analogue of
-`switchDomainOnCore_preserves_contextMatchesCurrentOnCore_sibling`). -/
-theorem singleDomainBoundaryPrep_preserves_contextMatchesCurrentOnCore_sibling
-    (st : SystemState) (c₀ c' : CoreId) (hc : c₀ ≠ c')
-    (hInv : st.objects.invExt)
-    (hValid : currentThreadValidOnCore st c')
-    (hCtx0 : contextMatchesCurrentOnCore st c₀)
-    (hCtx' : contextMatchesCurrentOnCore st c') :
-    contextMatchesCurrentOnCore (singleDomainBoundaryPrep st c₀) c' := by
-  refine contextMatchesCurrentOnCore_frame_at
-    (singleDomainBoundaryPrep_currentOnCore_ne st c₀ c' hc) ?_ ?_ hValid hCtx'
-  · rw [singleDomainBoundaryPrep_machine_eq]
-  · intro tid tcb hcur' htcb
-    obtain ⟨tcb', htcb', hrc⟩ :=
-      singleDomainBoundaryPrep_getTcb?_regContext st c₀ tid tcb hInv htcb
-    refine ⟨tcb', htcb', ?_⟩
-    rcases hrc with hEq | ⟨hcur0, hEq⟩
-    · rw [hEq]; exact RegisterFile.beq_self _
-    · rw [hEq]
-      simp only [contextMatchesCurrentOnCore, hcur0, htcb] at hCtx0
-      exact RegisterFile.beq_symm hCtx0
-
 /-- WS-SM SM5.I.8 (composite, single-core): the per-core **domain switch** — the
 boundary half of the live domain tick — preserves the base safety invariant on
 every core.  Single-domain mode (`domainSchedule = []`) is a no-op; otherwise the
@@ -2316,50 +2166,11 @@ theorem switchDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     refine runQueueUniqueOnCore_smp_of_operated_and_frame (c₀ := c₀)
       (fun c => (hPre c).2) hNodup' (fun c' hc => hFrameRQ c' hc)
 
-/-- WS-SM SM5.I.8 (composite, single-core): the single-domain **boundary
-preparation** preserves the base safety invariant on every core.  The operated
-core becomes idle (current `none`) with its current thread re-enqueued; every
-sibling is framed.  Exact analogue of
-`switchDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp`'s rotate
-path, minus the domain-slot writes. -/
-theorem singleDomainBoundaryPrep_preserves_schedulerInvariantStructuralRegNodup_smp
-    (st : SystemState) (c₀ : CoreId)
-    (hInv : st.objects.invExt)
-    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
-    schedulerInvariantStructuralRegNodup_smp (singleDomainBoundaryPrep st c₀) := by
-  have hCurNone := singleDomainBoundaryPrep_currentOnCore_self st c₀
-  obtain ⟨hWf', hNodup', hRAT'⟩ :=
-    singleDomainBoundaryPrep_operated_runQueue_props st c₀ hInv (hPre c₀)
-  have hFrameCur := fun c' (hc : c₀ ≠ c') =>
-    singleDomainBoundaryPrep_currentOnCore_ne st c₀ c' hc
-  have hFrameRQ := fun c' (hc : c₀ ≠ c') =>
-    singleDomainBoundaryPrep_runQueueOnCore_ne st c₀ c' hc
-  have hTcbSome := singleDomainBoundaryPrep_getTcb?_isSome st c₀ hInv
-  -- operated-core structural establishment (current = none).
-  have hC0Struct : schedulerInvariantStructural_perCore (singleDomainBoundaryPrep st c₀) c₀ := by
-    refine ⟨?_, ?_, hRAT', hWf'⟩
-    · simp only [queueCurrentConsistentOnCore, hCurNone]
-    · simp only [currentThreadValidOnCore, hCurNone]
-  have hBase : schedulerInvariantStructural_smp (singleDomainBoundaryPrep st c₀) :=
-    schedulerInvariantStructural_smp_of_establish_and_frame
-      (fun c => (hPre c).1.1) hC0Struct hFrameCur hFrameRQ hTcbSome
-  -- contextMatchesCurrent on every core.
-  have hCtx : ∀ c', contextMatchesCurrentOnCore (singleDomainBoundaryPrep st c₀) c' := by
-    intro c'
-    by_cases hc : c₀ = c'
-    · subst hc; simp only [contextMatchesCurrentOnCore, hCurNone]
-    · exact singleDomainBoundaryPrep_preserves_contextMatchesCurrentOnCore_sibling
-        st c₀ c' hc hInv ((hPre c').1.1.2.1) ((hPre c₀).1.2) ((hPre c').1.2)
-  refine schedulerInvariantStructuralRegNodup_smp_of_reg_and_nodup
-    (schedulerInvariantStructuralReg_smp_of_base_and_ctx hBase hCtx) ?_
-  refine runQueueUniqueOnCore_smp_of_operated_and_frame (c₀ := c₀)
-    (fun c => (hPre c).2) hNodup' (fun c' hc => hFrameRQ c' hc)
-
 /-- WS-SM SM5.I.8 (composite, single-core): the per-core **domain tick** preserves
 the base safety invariant on every core.  At a domain boundary it composes the
-boundary preparation (empty schedule) or the domain switch (rotating schedule)
-with the budget-aware re-dispatch (`scheduleEffectiveOnCore`); off a boundary it
-is the pure domain-time decrement. -/
+domain switch with the budget-aware re-dispatch (`scheduleEffectiveOnCore`);
+off a boundary it is the pure domain-time decrement; in single-domain mode
+(empty schedule) it is the identity. -/
 theorem scheduleDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (c₀ : CoreId) (st' : SystemState)
     (hInv : st.objects.invExt)
@@ -2368,14 +2179,11 @@ theorem scheduleDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     schedulerInvariantStructuralRegNodup_smp st' := by
   unfold scheduleDomainOnCore at h
   split at h
-  · -- domain boundary.
+  · -- single-domain mode: the domain tick is the identity.
+    simp only [Except.ok.injEq] at h; subst h; exact hPre
+  · -- non-empty schedule.
     split at h
-    · -- empty schedule: boundary preparation, then re-dispatch.
-      exact scheduleEffectiveOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
-        _ c₀ st' (singleDomainBoundaryPrep_preserves_objects_invExt st c₀ hInv)
-        (singleDomainBoundaryPrep_preserves_schedulerInvariantStructuralRegNodup_smp
-          st c₀ hInv hPre) h
-    · -- rotating schedule: switch then re-dispatch.
+    · -- boundary: switch then re-dispatch.
       cases hsw : switchDomainOnCore st c₀ with
       | error e => rw [hsw] at h; simp at h
       | ok stMid =>
@@ -2385,9 +2193,9 @@ theorem scheduleDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
           have hMidInv := switchDomainOnCore_preserves_objects_invExt st c₀ stMid hInv hsw
           exact scheduleEffectiveOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
             stMid c₀ st' hMidInv hMid h
-  · -- non-boundary: pure domain-time decrement.
-    simp only [Except.ok.injEq] at h; subst h
-    exact decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ hPre
+    · -- non-boundary: pure domain-time decrement.
+      simp only [Except.ok.injEq] at h; subst h
+      exact decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ hPre
 
 -- ── §8.3  `timerTickOnCore` base preservation (the genuinely multi-core tick) ──
 --
@@ -4798,22 +4606,21 @@ theorem scheduleDomainOnCore_preserves_allThreadsTimeSlicePositive (st : SystemS
     allThreadsTimeSlicePositive st' := by
   unfold scheduleDomainOnCore at hStep
   split at hStep
-  · split at hStep
-    · -- empty schedule: prep (objects = the context save), then re-dispatch.
-      have hPrepAll : allThreadsTimeSlicePositive (singleDomainBoundaryPrep st c) :=
-        allThreadsTimeSlicePositive_of_objects_eq (singleDomainBoundaryPrep_objects st c)
-          (saveOutgoingContextOnCore_preserves_allThreadsTimeSlicePositive st c hInv h)
-      exact scheduleEffectiveOnCore_preserves_allThreadsTimeSlicePositive _ c st'
-        (singleDomainBoundaryPrep_preserves_objects_invExt st c hInv) hStep hPrepAll
-    · cases hsw : switchDomainOnCore st c with
+  · -- single-domain mode: the domain tick is the identity.
+    simp only [Except.ok.injEq] at hStep; subst hStep; exact h
+  · -- non-empty schedule.
+    split at hStep
+    · -- boundary: switch then re-dispatch.
+      cases hsw : switchDomainOnCore st c with
       | error e => rw [hsw] at hStep; simp at hStep
       | ok stMid =>
           rw [hsw] at hStep
           have hMidAll := switchDomainOnCore_preserves_allThreadsTimeSlicePositive st c stMid hInv hsw h
           have hMidInv := switchDomainOnCore_preserves_objects_invExt st c stMid hInv hsw
           exact scheduleEffectiveOnCore_preserves_allThreadsTimeSlicePositive stMid c st' hMidInv hStep hMidAll
-  · simp only [Except.ok.injEq] at hStep; subst hStep
-    exact decrementDomainTimeOnCore_preserves_allThreadsTimeSlicePositive st c h
+    · -- non-boundary: pure domain-time decrement.
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      exact decrementDomainTimeOnCore_preserves_allThreadsTimeSlicePositive st c h
 
 /-- `scheduleOrIdleOnCore` preserves `allThreadsTimeSlicePositive` (definitionally
 `scheduleEffectiveOnCore`). -/

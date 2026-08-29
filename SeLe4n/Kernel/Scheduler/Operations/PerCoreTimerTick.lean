@@ -839,14 +839,6 @@ theorem saveOutgoingContextOnCore_preserves_objects_invExt (st : SystemState) (c
     · exact RHTable_insert_preserves_invExt st.objects _ _ hInv
     · exact hInv
 
-/-- WS-SM SM5.D.6 (local helper): the single-domain boundary preparation preserves
-the object store — its only object write is the context save
-(`singleDomainBoundaryPrep_objects`). -/
-theorem singleDomainBoundaryPrep_preserves_objects_invExt (st : SystemState) (c : CoreId)
-    (hInv : st.objects.invExt) : (singleDomainBoundaryPrep st c).objects.invExt := by
-  rw [singleDomainBoundaryPrep_objects]
-  exact saveOutgoingContextOnCore_preserves_objects_invExt st c hInv
-
 /-- WS-SM SM5.D.5 (local helper): `restoreIncomingContext` writes only the machine
 register file, so the object store is unchanged. -/
 theorem restoreIncomingContext_objects_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -1047,15 +1039,21 @@ theorem switchDomainOnCore_rotates (st : SystemState) (c : CoreId) (st' : System
       SchedulerState.setDomainTimeRemainingOnCore_activeDomainOnCore,
       SchedulerState.setActiveDomainOnCore_activeDomainOnCore_self]
 
-/-- WS-SM SM5.D.6: before the domain boundary expires (`domainTimeRemainingOnCore
-c > 1`), `scheduleDomainOnCore` only decrements core `c`'s domain time remaining
-(the lightweight in-domain tick); it does not rotate or re-dispatch. -/
+/-- WS-SM SM5.D.6: with a non-empty domain schedule, before the domain boundary
+expires (`domainTimeRemainingOnCore c > 1`), `scheduleDomainOnCore` only
+decrements core `c`'s domain time remaining (the lightweight in-domain tick);
+it does not rotate or re-dispatch.  (In single-domain mode there is no
+accounting at all — `scheduleDomainOnCore_singleDomain_inert`.) -/
 theorem scheduleDomainOnCore_decrements (st : SystemState) (c : CoreId)
+    (hSched : st.scheduler.domainSchedule ≠ [])
     (hle : st.scheduler.domainTimeRemainingOnCore c > 1) :
     ∃ st', scheduleDomainOnCore st c = .ok st' ∧
       st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c - 1 := by
   refine ⟨decrementDomainTimeOnCore st c, ?_, ?_⟩
-  · unfold scheduleDomainOnCore; rw [if_neg (by omega)]
+  · unfold scheduleDomainOnCore
+    cases hcase : st.scheduler.domainSchedule with
+    | nil => exact absurd hcase hSched
+    | cons hd tl => rw [if_neg (by omega)]
   · exact decrementDomainTimeOnCore_decrements st c
 
 /-- WS-SM SM5.D.6 (preservation): `scheduleDomainOnCore` preserves the RobinHood
@@ -1067,18 +1065,18 @@ theorem scheduleDomainOnCore_preserves_objects_invExt (st : SystemState) (c : Co
     (hStep : scheduleDomainOnCore st c = .ok st') : st'.objects.invExt := by
   unfold scheduleDomainOnCore at hStep
   split at hStep
-  · split at hStep
-    · -- empty-schedule boundary: save + re-enqueue + clear touch only the
-      -- scheduler slots (the prologue's object write is the context save),
-      -- then the re-dispatch preserves `invExt`.
-      exact scheduleEffectiveOnCore_preserves_objects_invExt _ c st'
-        (singleDomainBoundaryPrep_preserves_objects_invExt st c hInv) hStep
-    · split at hStep
+  · -- single-domain mode: the domain tick is the identity.
+    simp only [Except.ok.injEq] at hStep; subst hStep; exact hInv
+  · -- non-empty schedule.
+    split at hStep
+    · -- boundary: switch then re-dispatch.
+      split at hStep
       · simp at hStep
       · rename_i st'' hsw
         exact scheduleEffectiveOnCore_preserves_objects_invExt st'' c st'
           (switchDomainOnCore_preserves_objects_invExt st c st'' hInv hsw) hStep
-  · simp only [Except.ok.injEq] at hStep; subst hStep; exact hInv
+    · -- non-boundary: pure domain-time decrement.
+      simp only [Except.ok.injEq] at hStep; subst hStep; exact hInv
 
 -- ============================================================================
 -- §5  SM5.D.2 / .9 — `timerTickOnCore` semantics (idle, no-global-timer-advance,
@@ -1746,18 +1744,20 @@ theorem scheduleDomainOnCore_preserves_currentThreadValidOnCore (st : SystemStat
     currentThreadValidOnCore st' c := by
   unfold scheduleDomainOnCore at hStep
   split at hStep
-  · split at hStep
-    · -- empty-schedule boundary: the re-dispatch *establishes* validity on the
-      -- prepped state (whose store is the context-saved one, `invExt`-preserved).
-      exact scheduleEffectiveOnCore_establishes_currentThreadValidOnCore _ c st'
-        (singleDomainBoundaryPrep_preserves_objects_invExt st c hInv) hStep
-    · split at hStep
+  · -- single-domain mode: the domain tick is the identity.
+    simp only [Except.ok.injEq] at hStep; subst hStep; exact hValid
+  · -- non-empty schedule.
+    split at hStep
+    · -- boundary: the re-dispatch *establishes* validity on the switched state
+      -- (whose store is the context-saved one, `invExt`-preserved).
+      split at hStep
       · simp at hStep
       · rename_i st'' hsw
         exact scheduleEffectiveOnCore_establishes_currentThreadValidOnCore st'' c st'
           (switchDomainOnCore_preserves_objects_invExt st c st'' hInv hsw) hStep
-  · simp only [Except.ok.injEq] at hStep; subst hStep
-    exact decrementDomainTimeOnCore_preserves_currentThreadValidOnCore st c c hValid
+    · -- non-boundary: pure domain-time decrement.
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      exact decrementDomainTimeOnCore_preserves_currentThreadValidOnCore st c c hValid
 
 /-- WS-SM SM5.D.5 (invariant established): after a successful per-core reschedule,
 core `c` satisfies `queueCurrentConsistentOnCore` — the dispatched thread is

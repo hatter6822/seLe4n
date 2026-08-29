@@ -207,20 +207,30 @@ example (st : SystemState) (c : CoreId)
     ¬(tcb.domain = st.scheduler.activeDomainOnCore c ∧ hasSufficientBudget st tcb = true) :=
   scheduleOrIdleOnCore_idle_starves_no_eligible_thread st c hChoose tid htid tcb htcb
 
--- SM5.E (live-wiring witness, review #4 closure): the folded idle dispatch is
--- reachable on the live per-core domain-tick path (`scheduleDomainOnCore`).
--- The `hCur` precondition states the idle scenario honestly: nothing running,
--- nothing eligible (with a thread current, the boundary prologue re-enqueues it
--- and selection decides — PR #880 review round 2).
-example (st st'' : SystemState) (c : CoreId)
+-- SM5.E (live-wiring witness, review #4 closure; restated for inert
+-- single-domain mode at PR #880 round 4): the folded idle dispatch is
+-- reachable on the live per-core domain-tick path — a rotating domain
+-- boundary whose post-switch state has nothing budget-eligible adopts the
+-- idle thread.  (In single-domain mode the domain tick is deliberately
+-- inert — `scheduleDomainOnCore_singleDomain_inert` — and idle adoption
+-- rides the wake receiver, the vacate-successor seam and the budget tick's
+-- own re-dispatch fallback.)
+example (st stMid st'' : SystemState) (c : CoreId)
     (hBoundary : st.scheduler.domainTimeRemainingOnCore c ≤ 1)
-    (hSched : st.scheduler.domainSchedule = [])
-    (hCur : st.scheduler.currentOnCore c = none)
-    (hChoose : chooseThreadEffectiveOnCore st c = .ok none)
-    (hDisp : idleDispatchableOnCore (saveOutgoingContextOnCore st c) c = true)
+    (hSched : st.scheduler.domainSchedule ≠ [])
+    (hSwitch : switchDomainOnCore st c = .ok stMid)
+    (hChoose : chooseThreadEffectiveOnCore stMid c = .ok none)
+    (hDisp : idleDispatchableOnCore (saveOutgoingContextOnCore stMid c) c = true)
     (hStep : scheduleDomainOnCore st c = .ok st'') :
     st''.scheduler.currentOnCore c = some (idleThreadId c) :=
-  scheduleDomainOnCore_runs_idle st c st'' hBoundary hSched hCur hChoose hDisp hStep
+  scheduleDomainOnCore_runs_idle st c stMid st'' hBoundary hSched hSwitch hChoose hDisp hStep
+
+-- PR #880 round 4: single-domain mode is inert — the domain tick provably
+-- cannot perturb scheduling on the RPi5 v1.0.0 default configuration.
+example (st : SystemState) (c : CoreId)
+    (hSched : st.scheduler.domainSchedule = []) :
+    scheduleDomainOnCore st c = .ok st :=
+  scheduleDomainOnCore_singleDomain_inert st c hSched
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): concrete `enqueueIdleThreadOnCore` + selection

@@ -7358,6 +7358,7 @@ run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.P
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5d_surface.lean <<EOF
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
 import SeLe4n.Kernel.PerCoreTimerEntry
 open SeLe4n.Kernel
 -- SM5.D.2/.4/.5/.6/.9 production transitions.
@@ -7463,16 +7464,19 @@ open SeLe4n.Kernel
 #check @switchDomainOnCore_rotates
 #check @scheduleDomainOnCore_decrements
 #check @scheduleDomainOnCore_preserves_objects_invExt
--- The empty-schedule boundary re-enqueues the outgoing current before the
--- re-dispatch: the named preparation, its idle-identity, and its frames.
-#check @singleDomainBoundaryPrep
-#check @singleDomainBoundaryPrep_of_current_none
-#check @singleDomainBoundaryPrep_objects
-#check @singleDomainBoundaryPrep_domainSchedule
-#check @singleDomainBoundaryPrep_activeDomainOnCore
-#check @singleDomainBoundaryPrep_domainScheduleIndexOnCore
-#check @singleDomainBoundaryPrep_domainTimeRemainingOnCore
-#check @singleDomainBoundaryPrep_preserves_objects_invExt
+-- Single-domain mode is inert: with no domain schedule there is no boundary,
+-- so the domain layer provably cannot perturb the budget-tick time slice.
+#check @scheduleDomainOnCore_singleDomain_inert
+-- Clock-advance honesty: the boot advance makes nothing strictly overdue on
+-- any core, and each core re-establishes strict pipeline order on its own
+-- queue at its own next committed step.
+#check @popDue_remaining_gt
+#check @tickClockedState_bootCore_replenish_ge
+#check @switchDomainOnCore_replenishQueueOnCore
+#check @switchDomainOnCore_machine
+#check @scheduleDomainOnCore_preserves_replenishmentPipelineOrderOnCore
+#check @timerTickOnCore_establishes_replenishmentPipelineOrderOnCore_self
+#check @perCoreTimerTickStep_ok_establishes_replenishmentPipelineOrderOnCore_self
 -- SM5.D.5/.6 per-core invariant preservation (§7 B1/B2/B3).
 #check @decrementDomainTimeOnCore_preserves_currentThreadValidOnCore
 #check @decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore
@@ -8136,12 +8140,6 @@ open SeLe4n.Kernel
 #check @switchDomainOnCore_preserves_allThreadsTimeSlicePositive
 #check @scheduleDomainOnCore_preserves_allThreadsTimeSlicePositive
 #check @scheduleOrIdleOnCore_preserves_allThreadsTimeSlicePositive
--- the empty-schedule boundary preparation: composite preservation, with the
--- frame + characterisation helper family beside the switchDomainOnCore ones.
-#check @singleDomainBoundaryPrep_currentOnCore_self
-#check @singleDomainBoundaryPrep_operated_runQueue_props
-#check @singleDomainBoundaryPrep_preserves_contextMatchesCurrentOnCore_sibling
-#check @singleDomainBoundaryPrep_preserves_schedulerInvariantStructuralRegNodup_smp
 -- the Strong SMP invariant (RegNodup + global slice → 8 of 11 conjuncts).
 #check @schedulerInvariantStrong_smp
 #check @schedulerInvariantStrong_smp_to_regNodup_smp

@@ -241,7 +241,22 @@ def budgetPositiveOnCore (st : SystemState) (c : CoreId) : Prop :=
 
 /-- SM4.C: per-core replenishment-pipeline ordering.  Per-core form of
 `replenishmentPipelineOrder`: every entry of core `c`'s replenish queue is
-eligible strictly after the machine timer. -/
+eligible strictly after the machine timer.
+
+**SMP scoping (PR #880 round 4).**  The strict form is a *per-core,
+post-own-tick* property, not global-always: the boot core's committed step
+advances the shared clock, which can leave a **remote** core's queued entry
+due at exactly the new clock until that core's own next committed tick
+drains it.  The formal pair in `PerCoreTickCbsPreservation.lean`:
+the advance makes nothing strictly overdue
+(`tickClockedState_bootCore_replenish_ge` — the weak `≥` form holds on
+every core immediately after), and each core's own committed step
+**re-establishes** this strict form on its own queue at the current clock
+(`perCoreTimerTickStep_ok_establishes_replenishmentPipelineOrderOnCore_self`,
+via `popDue`'s prefix drain under sortedness).  The due-now window is the
+bounded release jitter inherent to per-core release queues — one PPI
+period nominally — exactly seL4 MCS's shape; `smp_timer_suite` §3.12 pins
+the two phases live. -/
 def replenishmentPipelineOrderOnCore (st : SystemState) (c : CoreId) : Prop :=
   ∀ (pair : SchedContextId × Nat),
     pair ∈ (st.scheduler.replenishQueueOnCore c).entries → pair.2 > st.machine.timer
