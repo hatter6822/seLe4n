@@ -250,6 +250,30 @@ The invariant's docstring now states the SMP scoping;
 core 1 → boot step leaves it due-now, never overdue → core 1's own step
 drains it with the clock untouched).
 
+**Review round 6 (same version) — one finding: the SGI preemption gate
+honours EDF.**  `candidateOutranksCurrentOnCore` compared effective priority
+only, so an equal-priority wake with a strictly earlier (nonzero) deadline
+sent its `.reschedule` SGI and had it dropped at the receiver — contradicting
+the per-core invariant suite's stated contract that
+`edfCurrentHasEarliestDeadlineOnCore` is transiently broken by such a wake
+"precisely *when* the wake fires a preemption SGI", i.e. re-established at
+that SGI, not at a later timer scheduling point the urgent thread could miss
+its deadline waiting for.  The gate now fires on the new
+`candidateEdfDisplacesCurrent` as well: same scheduling bucket (equal
+effective run-queue priority, equal base priority, same domain) with both
+deadlines set and the candidate's strictly earlier — exactly the negation of
+the EDF conjunct's per-member obligation (TCB-field-based like the invariant
+itself; deadline `0` = no deadline, so a deadline-less current is never
+displaced and a deadline-less candidate never displaces; equal deadlines are
+FIFO ties and do not preempt).
+`candidateOutranksCurrentOnCore_of_edf_displaces` pins that displacement
+alone opens the gate; every existing consumer proof survives unchanged (the
+none-arm and the hypothesis-style uses are untouched, and the no-gratuitous-
+preemption pins ride deadline-less fixtures).  `smp_wake_suite` §3.4 gains
+the six-way pin family — earlier-deadline preempts; later, equal and absent
+deadlines do not; idle admits — plus the end-to-end receiver switch to the
+equal-priority earlier-deadline candidate.
+
 Gates: `./scripts/test_full.sh` green (tiers 0–3);
 `./scripts/test_rust.sh` green (1145 unit + 108 conformance tests, fmt,
 clippy `-D warnings`); staged-module partition consistent

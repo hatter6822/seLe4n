@@ -110,6 +110,8 @@ open SeLe4n.Testing
 #check @handleRescheduleSgiOnCore_independent_of_other_core
 #check @handleRescheduleSgiOnCore_keeps_current_when_outranked
 #check @candidateOutranksCurrentOnCore
+#check @candidateEdfDisplacesCurrent
+#check @candidateOutranksCurrentOnCore_of_edf_displaces
 
 -- SM5.C.11 SGI delivery latency bound:
 #check @wakeSgiCount
@@ -470,6 +472,40 @@ private def runRoundTripChecks : IO Unit := do
     (let stCur := { stWake with
                       scheduler := stWake.scheduler.setCurrentOnCore core1 (some tidU) }
      !candidateOutranksCurrentOnCore stCur core1 tidW)
+  -- PR #880 round 6: the gate is EDF-aware within the scheduling bucket — an
+  -- equal-priority candidate with a strictly earlier (nonzero) deadline
+  -- preempts, so the wake's `.reschedule` SGI is the point that re-establishes
+  -- `edfCurrentHasEarliestDeadlineOnCore`; later, equal or absent deadlines
+  -- still never preempt (no gratuitous preemption, FIFO ties hold).
+  let mkDl : Nat → Nat → TCB := fun tidN dl => { mkTcb tidN 10 0 with deadline := ⟨dl⟩ }
+  let mkEdfState : TCB → TCB → SystemState := fun curT candT =>
+    (((BootstrapBuilder.empty.withObject tidU.toObjId (.tcb curT)).withObject
+        tidW.toObjId (.tcb candT)).withCurrent (some tidU)).build
+  assertBool "preempt-gate: equal-priority EARLIER-deadline candidate preempts (EDF)"
+    (candidateOutranksCurrentOnCore (mkEdfState (mkDl 200 20) (mkDl 201 10))
+      bootCoreId tidW)
+  assertBool "preempt-gate: equal-priority LATER-deadline candidate does NOT preempt"
+    (!candidateOutranksCurrentOnCore (mkEdfState (mkDl 200 10) (mkDl 201 20))
+      bootCoreId tidW)
+  assertBool "preempt-gate: equal deadlines do NOT preempt (FIFO tie)"
+    (!candidateOutranksCurrentOnCore (mkEdfState (mkDl 200 10) (mkDl 201 10))
+      bootCoreId tidW)
+  assertBool "preempt-gate: a deadline-less current is never EDF-displaced"
+    (!candidateOutranksCurrentOnCore (mkEdfState (mkTcb 200 10 0) (mkDl 201 10))
+      bootCoreId tidW)
+  assertBool "preempt-gate: a deadline-less candidate never EDF-displaces"
+    (!candidateOutranksCurrentOnCore (mkEdfState (mkDl 200 10) (mkTcb 201 10 0))
+      bootCoreId tidW)
+  -- End to end: with the earlier-deadline candidate queued, the receiver's
+  -- handler switches to it (before round 6 the SGI was dropped and the urgent
+  -- thread waited for a later timer scheduling point).
+  let stEdfQ : SystemState :=
+    ((((BootstrapBuilder.empty.withObject tidU.toObjId (.tcb (mkDl 200 20))).withObject
+        tidW.toObjId (.tcb (mkDl 201 10))).withRunnable [tidW]).withCurrent
+        (some tidU)).build
+  assertBool "reschedule handler switches to the equal-priority earlier-deadline candidate"
+    (handlerOkAnd stEdfQ bootCoreId
+      (fun st2 => st2.scheduler.currentOnCore bootCoreId == some tidW))
 
 /-- §3.5 SM5.C.8: affinity-control op. -/
 private def runAffinityOpChecks : IO Unit := do

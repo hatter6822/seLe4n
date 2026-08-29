@@ -210,6 +210,19 @@ queue, via the new generic `popDue_remaining_gt`).  Draining all cores
 from the boot tick was rejected (hot-path cross-core queue coupling,
 against the fine-lock design).  §3.12 pins the two phases live.
 
+**Review round 6 (same cut) — the SGI preemption gate honours EDF.**
+`candidateOutranksCurrentOnCore` was priority-only, so an equal-priority
+earlier-deadline wake's `.reschedule` SGI was dropped at the receiver —
+against the suite's stated contract that the wake's preemption SGI is
+where `edfCurrentHasEarliestDeadlineOnCore` is re-established.  The gate
+now also fires on the new `candidateEdfDisplacesCurrent` (same bucket:
+equal effective + base priority, same domain; both deadlines nonzero;
+candidate's strictly earlier — the exact negation of the EDF conjunct's
+per-member obligation, TCB-field-based like the invariant).
+`candidateOutranksCurrentOnCore_of_edf_displaces` pins the gate truth;
+all consumer proofs survive unchanged; `smp_wake_suite` gains the six-way
+gate pins plus the end-to-end receiver switch.
+
 Plan: [`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`](planning/SMP_PER_CORE_SCHEDULER_PLAN.md)
 §SM5.C (landing note).  Next: SM10 release closure (→ v1.0.0),
 [`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md).

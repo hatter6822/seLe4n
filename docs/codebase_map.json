@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/smp-multicore-completion-6nuj04",
-      "commit_sha": "66812ea6f35ccb9062b2624d5d58dc3d2a4e09e8",
-      "tree_sha": "0793a9446c8cbad78852c08b37de279a4a1f2197",
-      "committed_at_utc": "2026-08-29T01:01:34+00:00"
+      "commit_sha": "4e40f8090d4984723e57a78c521b26cd3a2449b2",
+      "tree_sha": "e3424ba50b9736dbf7d541334e389f0d84509a89",
+      "committed_at_utc": "2026-08-29T01:43:07+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "bf5030907ba935452d48ffe65afc4b2e039c8da114d52666acf4b093554d7373"
+    "source_digest": "c13824f9fbd068d183f1b3c3a4bd9eb126e6fb3bf19db933606f1fda48c3a1eb"
   },
   "summary": {
     "module_count": 356,
-    "declaration_count": 17009
+    "declaration_count": 17011
   },
   "readme_sync": {
     "version": "0.34.1",
     "lean_toolchain": "v4.28.0",
     "production_files": 287,
-    "production_loc": 287736,
+    "production_loc": 287792,
     "test_files": 69,
-    "test_loc": 64323,
-    "proved_theorem_lemma_decls": 9631,
+    "test_loc": 64359,
+    "proved_theorem_lemma_decls": 9632,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -131094,13 +131094,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 86,
+          "line": 88,
           "called": []
         },
         {
           "kind": "def",
           "name": "perCoreRescheduleEntry",
-          "line": 99,
+          "line": 101,
           "called": [
             "perCoreRescheduleStep",
             "st",
@@ -131110,7 +131110,7 @@
         {
           "kind": "theorem",
           "name": "perCoreRescheduleEntry_def",
-          "line": 110,
+          "line": 112,
           "called": [
             "Kernel",
             "perCoreRescheduleEntry",
@@ -156727,13 +156727,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 80,
+          "line": 81,
           "called": []
         },
         {
           "kind": "def",
           "name": "tickClockedState",
-          "line": 92,
+          "line": 93,
           "called": [
             "CoreId",
             "SystemState",
@@ -156745,7 +156745,7 @@
         {
           "kind": "theorem",
           "name": "tickClockedState_objects",
-          "line": 96,
+          "line": 97,
           "called": [
             "CoreId",
             "SystemState",
@@ -156756,7 +156756,7 @@
         {
           "kind": "theorem",
           "name": "tickClockedState_scheduler",
-          "line": 101,
+          "line": 102,
           "called": [
             "CoreId",
             "SystemState",
@@ -156767,7 +156767,7 @@
         {
           "kind": "theorem",
           "name": "tickClockedState_bootCore_timer",
-          "line": 106,
+          "line": 107,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -156779,7 +156779,7 @@
         {
           "kind": "theorem",
           "name": "tickClockedState_nonBoot",
-          "line": 112,
+          "line": 113,
           "called": [
             "CoreId",
             "SystemState",
@@ -156791,7 +156791,7 @@
         {
           "kind": "def",
           "name": "perCoreTimerTickStep",
-          "line": 157,
+          "line": 158,
           "called": [
             "CoreId",
             "SgiKind",
@@ -156807,7 +156807,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStep_invalid_core",
-          "line": 169,
+          "line": 170,
           "called": [
             "SystemState",
             "numCores",
@@ -156819,7 +156819,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStep_ok",
-          "line": 177,
+          "line": 178,
           "called": [
             "CoreId",
             "SgiKind",
@@ -156836,7 +156836,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStep_error",
-          "line": 189,
+          "line": 190,
           "called": [
             "KernelError",
             "SystemState",
@@ -156851,7 +156851,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStep_domain_error",
-          "line": 200,
+          "line": 201,
           "called": [
             "CoreId",
             "KernelError",
@@ -156869,7 +156869,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStep_sgis_eq_tick",
-          "line": 214,
+          "line": 215,
           "called": [
             "CoreId",
             "SgiKind",
@@ -156887,7 +156887,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStep_preserves_objects_invExt",
-          "line": 229,
+          "line": 230,
           "called": [
             "SystemState",
             "invExt",
@@ -156910,7 +156910,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStep_ok_currentThreadValidOnCore",
-          "line": 258,
+          "line": 259,
           "called": [
             "CoreId",
             "SgiKind",
@@ -156934,7 +156934,7 @@
         {
           "kind": "def",
           "name": "perCoreTimerTickStepWithClockAdvance",
-          "line": 294,
+          "line": 295,
           "called": [
             "CoreId",
             "SgiKind",
@@ -156946,7 +156946,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStepWithClockAdvance_state",
-          "line": 300,
+          "line": 301,
           "called": [
             "SystemState",
             "perCoreTimerTickStep",
@@ -156957,7 +156957,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStepWithClockAdvance_sgis",
-          "line": 306,
+          "line": 307,
           "called": [
             "SystemState",
             "perCoreTimerTickStep",
@@ -156968,7 +156968,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStepWithClockAdvance_flag_def",
-          "line": 315,
+          "line": 316,
           "called": [
             "SystemState",
             "perCoreTimerTickStep",
@@ -156979,7 +156979,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStepWithClockAdvance_flag_iff",
-          "line": 322,
+          "line": 323,
           "called": [
             "SystemState",
             "perCoreTimerTickStep",
@@ -156991,7 +156991,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStepWithClockAdvance_flag_invalid_core",
-          "line": 331,
+          "line": 332,
           "called": [
             "SystemState",
             "numCores",
@@ -157004,7 +157004,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStepWithClockAdvance_flag_error",
-          "line": 340,
+          "line": 341,
           "called": [
             "KernelError",
             "SystemState",
@@ -157020,7 +157020,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStepWithClockAdvance_flag_domain_error",
-          "line": 350,
+          "line": 351,
           "called": [
             "CoreId",
             "KernelError",
@@ -157039,7 +157039,7 @@
         {
           "kind": "def",
           "name": "perCoreRescheduleStep",
-          "line": 374,
+          "line": 375,
           "called": [
             "SystemState",
             "handleRescheduleSgiOnCore",
@@ -157051,7 +157051,7 @@
         {
           "kind": "theorem",
           "name": "perCoreRescheduleStep_invalid_core",
-          "line": 382,
+          "line": 383,
           "called": [
             "SystemState",
             "numCores",
@@ -157063,7 +157063,7 @@
         {
           "kind": "theorem",
           "name": "perCoreRescheduleStep_ok",
-          "line": 389,
+          "line": 390,
           "called": [
             "SystemState",
             "handleRescheduleSgiOnCore",
@@ -157076,7 +157076,7 @@
         {
           "kind": "theorem",
           "name": "perCoreRescheduleStep_error",
-          "line": 398,
+          "line": 399,
           "called": [
             "KernelError",
             "SystemState",
@@ -157090,7 +157090,7 @@
         {
           "kind": "theorem",
           "name": "perCoreRescheduleStep_preserves_objects_invExt",
-          "line": 408,
+          "line": 409,
           "called": [
             "SystemState",
             "handleRescheduleSgiOnCore",
@@ -157108,7 +157108,7 @@
         {
           "kind": "theorem",
           "name": "perCoreRescheduleStep_preserves_runQueue_wellFormed",
-          "line": 425,
+          "line": 426,
           "called": [
             "CoreId",
             "SystemState",
@@ -157129,7 +157129,7 @@
         {
           "kind": "theorem",
           "name": "perCoreRescheduleStep_switches_current",
-          "line": 451,
+          "line": 452,
           "called": [
             "Kernel",
             "SystemState",
@@ -166028,7 +166028,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.Selection",
       "path": "SeLe4n/Kernel/Scheduler/Operations/Selection.lean",
-      "declaration_count": 68,
+      "declaration_count": 70,
       "declarations": [
         {
           "kind": "namespace",
@@ -166957,12 +166957,23 @@
         },
         {
           "kind": "def",
+          "name": "candidateEdfDisplacesCurrent",
+          "line": 1292,
+          "called": [
+            "TCB",
+            "effectiveRunQueuePriority",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "candidateOutranksCurrentOnCore",
-          "line": 1304,
+          "line": 1338,
           "called": [
             "CoreId",
             "SystemState",
             "ThreadId",
+            "candidateEdfDisplacesCurrent",
             "currentOnCore",
             "effectiveRunQueuePriority",
             "getTcb",
@@ -166971,9 +166982,25 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "candidateOutranksCurrentOnCore_of_edf_displaces",
+          "line": 1354,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "candidateEdfDisplacesCurrent",
+            "candidateOutranksCurrentOnCore",
+            "currentOnCore",
+            "getTcb",
+            "st"
+          ]
+        },
+        {
           "kind": "def",
           "name": "handleRescheduleSgiOnCore",
-          "line": 1347,
+          "line": 1400,
           "called": [
             "CoreId",
             "KernelError",
@@ -166988,7 +167015,7 @@
         {
           "kind": "def",
           "name": "setThreadCpuAffinity",
-          "line": 1390,
+          "line": 1443,
           "called": [
             "CoreId",
             "KernelError",
@@ -248396,7 +248423,9 @@
             "SchedReachable.of_enqueue",
             "SchedReachable.trans",
             "SchedStep",
+            "candidateEdfDisplacesCurrent",
             "candidateOutranksCurrentOnCore",
+            "candidateOutranksCurrentOnCore_of_edf_displaces",
             "coreIdTargetMask",
             "coreIdTargetMask_bootCore",
             "crossCoreWakeTheorems",
@@ -248502,8 +248531,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:193>",
-          "line": 193,
+          "name": "<anonymous:example:195>",
+          "line": 195,
           "called": [
             "CoreId",
             "SystemState",
@@ -248518,8 +248547,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:201>",
-          "line": 201,
+          "name": "<anonymous:example:203>",
+          "line": 203,
           "called": [
             "CoreId",
             "SystemState",
@@ -248533,8 +248562,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:207>",
-          "line": 207,
+          "name": "<anonymous:example:209>",
+          "line": 209,
           "called": [
             "CoreId",
             "SystemState",
@@ -248552,8 +248581,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:214>",
-          "line": 214,
+          "name": "<anonymous:example:216>",
+          "line": 216,
           "called": [
             "CoreId",
             "SchedReachable",
@@ -248573,8 +248602,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:223>",
-          "line": 223,
+          "name": "<anonymous:example:225>",
+          "line": 225,
           "called": [
             "SystemState",
             "TCB",
@@ -248589,8 +248618,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:230>",
-          "line": 230,
+          "name": "<anonymous:example:232>",
+          "line": 232,
           "called": [
             "SystemState",
             "TCB",
@@ -248604,8 +248633,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:238>",
-          "line": 238,
+          "name": "<anonymous:example:240>",
+          "line": 240,
           "called": [
             "CoreId",
             "SystemState",
@@ -248621,8 +248650,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:247>",
-          "line": 247,
+          "name": "<anonymous:example:249>",
+          "line": 249,
           "called": [
             "CoreId",
             "SystemState",
@@ -248637,8 +248666,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:255>",
-          "line": 255,
+          "name": "<anonymous:example:257>",
+          "line": 257,
           "called": [
             "CoreId",
             "SystemState",
@@ -248654,8 +248683,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:262>",
-          "line": 262,
+          "name": "<anonymous:example:264>",
+          "line": 264,
           "called": [
             "CoreId",
             "RunQueueLockId",
@@ -248665,8 +248694,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:268>",
-          "line": 268,
+          "name": "<anonymous:example:270>",
+          "line": 270,
           "called": [
             "CoreId",
             "SystemState",
@@ -248679,8 +248708,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:276>",
-          "line": 276,
+          "name": "<anonymous:example:278>",
+          "line": 278,
           "called": [
             "CoreId",
             "SystemState",
@@ -248695,8 +248724,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:285>",
-          "line": 285,
+          "name": "<anonymous:example:287>",
+          "line": 287,
           "called": [
             "CoreId",
             "SystemState",
@@ -248711,8 +248740,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:292>",
-          "line": 292,
+          "name": "<anonymous:example:294>",
+          "line": 294,
           "called": [
             "CoreId",
             "SystemState",
@@ -248726,8 +248755,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:299>",
-          "line": 299,
+          "name": "<anonymous:example:301>",
+          "line": 301,
           "called": [
             "CoreId",
             "SchedReachable",
@@ -248745,8 +248774,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:311>",
-          "line": 311,
+          "name": "<anonymous:example:313>",
+          "line": 313,
           "called": [
             "CoreId",
             "SystemState",
@@ -248760,8 +248789,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:318>",
-          "line": 318,
+          "name": "<anonymous:example:320>",
+          "line": 320,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -248775,7 +248804,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 330,
+          "line": 332,
           "called": [
             "TCB",
             "ofNat"
@@ -248784,7 +248813,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 335,
+          "line": 337,
           "called": [
             "CoreId"
           ]
@@ -248792,24 +248821,6 @@
         {
           "kind": "def",
           "name": "tidU",
-          "line": 337,
-          "called": [
-            "ThreadId",
-            "ofNat"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "tidW",
-          "line": 338,
-          "called": [
-            "ThreadId",
-            "ofNat"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "tidGhost",
           "line": 339,
           "called": [
             "ThreadId",
@@ -248818,8 +248829,26 @@
         },
         {
           "kind": "def",
+          "name": "tidW",
+          "line": 340,
+          "called": [
+            "ThreadId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tidGhost",
+          "line": 341,
+          "called": [
+            "ThreadId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "stWake",
-          "line": 343,
+          "line": 345,
           "called": [
             "SystemState",
             "build",
@@ -248832,7 +248861,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 347,
+          "line": 349,
           "called": [
             "throw"
           ]
@@ -248840,7 +248869,7 @@
         {
           "kind": "def",
           "name": "rqHas",
-          "line": 357,
+          "line": 359,
           "called": [
             "CoreId",
             "SystemState",
@@ -248853,7 +248882,7 @@
         {
           "kind": "def",
           "name": "wakeStateAnd",
-          "line": 361,
+          "line": 363,
           "called": [
             "CoreId",
             "SystemState",
@@ -248865,7 +248894,7 @@
         {
           "kind": "def",
           "name": "handlerOkAnd",
-          "line": 366,
+          "line": 368,
           "called": [
             "CoreId",
             "SystemState",
@@ -248876,7 +248905,7 @@
         {
           "kind": "def",
           "name": "runDetermineTargetChecks",
-          "line": 372,
+          "line": 374,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -248891,7 +248920,7 @@
         {
           "kind": "def",
           "name": "runEnqueueChecks",
-          "line": 382,
+          "line": 384,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -248915,7 +248944,7 @@
         {
           "kind": "def",
           "name": "runWakeSgiChecks",
-          "line": 421,
+          "line": 423,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -248934,16 +248963,20 @@
         {
           "kind": "def",
           "name": "runRoundTripChecks",
-          "line": 443,
+          "line": 445,
           "called": [
+            "SystemState",
+            "TCB",
             "assertBool",
             "bootCoreId",
+            "build",
             "candidateOutranksCurrentOnCore",
             "core1",
             "currentOnCore",
             "handleRescheduleSgiOnCoreSucceeds",
             "handlerOkAnd",
             "isEmpty",
+            "mkTcb",
             "none",
             "rqHas",
             "runQueueOnCore",
@@ -248951,13 +248984,17 @@
             "stWake",
             "tidU",
             "tidW",
-            "wakeThread"
+            "toObjId",
+            "wakeThread",
+            "withCurrent",
+            "withObject",
+            "withRunnable"
           ]
         },
         {
           "kind": "def",
           "name": "runAffinityOpChecks",
-          "line": 475,
+          "line": 511,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -248976,7 +249013,7 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 497,
+          "line": 533,
           "called": [
             "RunQueueLockId",
             "all",
@@ -248992,7 +249029,7 @@
         {
           "kind": "def",
           "name": "runLatencyChecks",
-          "line": 517,
+          "line": 553,
           "called": [
             "all",
             "assertBool",
@@ -249011,7 +249048,7 @@
         {
           "kind": "def",
           "name": "tidB",
-          "line": 538,
+          "line": 574,
           "called": [
             "ThreadId",
             "ofNat"
@@ -249020,7 +249057,7 @@
         {
           "kind": "def",
           "name": "stBlocked",
-          "line": 540,
+          "line": 576,
           "called": [
             "SystemState",
             "build",
@@ -249033,7 +249070,7 @@
         {
           "kind": "def",
           "name": "runAuditPass1Checks",
-          "line": 545,
+          "line": 581,
           "called": [
             "affinityAdmitsCore",
             "all",
@@ -249069,7 +249106,7 @@
         {
           "kind": "def",
           "name": "runSmpWakeChecks",
-          "line": 637,
+          "line": 673,
           "called": [
             "runAffinityOpChecks",
             "runAuditPass1Checks",
@@ -249084,7 +249121,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 653,
+          "line": 689,
           "called": [
             "runSmpWakeChecks"
           ]

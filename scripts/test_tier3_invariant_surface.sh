@@ -7251,6 +7251,11 @@ open SeLe4n.Kernel.Concurrency
 #check @handleRescheduleSgiOnCore_independent_of_other_core
 #check @handleRescheduleSgiOnCore_keeps_current_when_outranked
 #check @candidateOutranksCurrentOnCore
+-- The preemption gate is EDF-aware within the bucket: an equal-priority
+-- earlier-deadline candidate opens it, so the wake SGI re-establishes the
+-- EDF conjunct at the receiver.
+#check @candidateEdfDisplacesCurrent
+#check @candidateOutranksCurrentOnCore_of_edf_displaces
 
 -- SM5.C.11 SGI delivery latency bound.
 #check @wakeSgiCount

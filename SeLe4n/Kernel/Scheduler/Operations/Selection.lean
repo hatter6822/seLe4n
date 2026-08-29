@@ -1273,17 +1273,48 @@ def wakeThread (st : SystemState) (tid : SeLe4n.ThreadId)
     | some _ => if target == executingCore then none else some (target, SgiKind.reschedule)
   (st', sgi)
 
-/-- WS-SM SM5.C.5 (audit-pass-3): does the budget-eligible candidate `tid`
-strictly outrank core `c`'s current thread by *effective* run-queue priority
-(`max(base, pipBoost)`)?
+/-- WS-SM (PR #880 round 6): does candidate `tidTcb` **EDF-displace** the
+running `curTcb` — same scheduling bucket (equal effective run-queue priority,
+equal base priority, same domain) with **both** deadlines set and the
+candidate's strictly earlier?
+
+This is exactly the negation of `edfCurrentHasEarliestDeadlineOnCore`'s
+per-member obligation (`Scheduler/Invariant/PerCore.lean`), so a `.reschedule`
+receiver preempting on it is precisely what re-establishes the EDF conjunct a
+wake transiently broke — the per-core invariant suite's stated contract: EDF
+is dispatch-established, and a wake enqueuing an earlier-deadline peer breaks
+it only "until the next dispatch re-establishes it (precisely *when* the wake
+fires a preemption SGI)".  TCB-field-based like the invariant itself
+(deadline `0` = no deadline: a deadline-less current is never EDF-displaced,
+matching the invariant's first disjunct, and a deadline-less candidate never
+displaces).  Ties (equal deadlines) do not displace — FIFO holds and no
+gratuitous preemption fires. -/
+def candidateEdfDisplacesCurrent (curTcb tidTcb : TCB) : Bool :=
+  ((effectiveRunQueuePriority curTcb).val == (effectiveRunQueuePriority tidTcb).val)
+    && tidTcb.priority == curTcb.priority
+    && tidTcb.domain == curTcb.domain
+    && curTcb.deadline.toNat != 0
+    && tidTcb.deadline.toNat != 0
+    && tidTcb.deadline.toNat < curTcb.deadline.toNat
+
+/-- WS-SM SM5.C.5 (audit-pass-3; EDF-aware since PR #880 round 6): does the
+budget-eligible candidate `tid` outrank core `c`'s current thread — by
+*effective* run-queue priority (`max(base, pipBoost)`), or by EDF within the
+same scheduling bucket?
 
 - `true` when the core is idle (`currentOnCore c = none`) — no running thread to
   protect, so the candidate dispatches.
 - `true` when the candidate's effective priority is *strictly greater* than the
   current thread's — fixed-priority preemption fires.
-- `false` when the current thread's effective priority is `≥` the candidate's —
-  no gratuitous preemption (the running thread keeps the core; the candidate
-  waits in the run queue for the next scheduling point).
+- `true` when the candidate **EDF-displaces** the current thread
+  (`candidateEdfDisplacesCurrent`: same bucket, both deadlines set, candidate's
+  strictly earlier) — the preemption SGI is the point that re-establishes the
+  `edfCurrentHasEarliestDeadlineOnCore` conjunct the wake transiently broke;
+  without this arm an equal-priority earlier-deadline wake would wait for a
+  later timer scheduling point and could miss its deadline (PR #880 round 6).
+- `false` otherwise — no gratuitous preemption (the running thread keeps the
+  core; a lower-priority, deadline-less, later-deadline or equal-deadline
+  candidate waits in the run queue for the next scheduling point).
 
 The `_, _ => true` arm (current TID does not resolve to a TCB) is unreachable
 under `currentThreadValidOnCore`; it dispatches the run-queue-validated
@@ -1299,8 +1330,11 @@ SchedContext's `priority` equals its thread's TCB `priority` —
 (above) is exactly that bridge, so a SchedContext-priced candidate selected
 by `chooseThreadEffectiveOnCore` is never wrongly rejected here.  The
 TCB-field form is kept because it needs no store lookups on the hot
-preemption gate; if the priority-agreement invariant is ever relaxed, this
-gate must switch to `resolveEffectivePrioDeadline` in the same commit. -/
+preemption gate; the EDF clause reads the TCB `deadline` field for the same
+reason — and because `edfCurrentHasEarliestDeadlineOnCore`, the conjunct this
+gate re-establishes, is itself stated over the TCB field.  If the
+priority-agreement invariant is ever relaxed, this gate must switch to
+`resolveEffectivePrioDeadline` in the same commit. -/
 def candidateOutranksCurrentOnCore (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : Bool :=
   match st.scheduler.currentOnCore c with
@@ -1308,8 +1342,25 @@ def candidateOutranksCurrentOnCore (st : SystemState) (c : CoreId)
   | some curTid =>
       match st.getTcb? curTid, st.getTcb? tid with
       | some curTcb, some tidTcb =>
-          (effectiveRunQueuePriority curTcb).val < (effectiveRunQueuePriority tidTcb).val
+          ((effectiveRunQueuePriority curTcb).val < (effectiveRunQueuePriority tidTcb).val)
+            || candidateEdfDisplacesCurrent curTcb tidTcb
       | _, _ => true
+
+/-- WS-SM (PR #880 round 6): the preemption gate fires on EDF displacement —
+with a resolving current and candidate, `candidateEdfDisplacesCurrent` alone
+opens the gate, so an equal-priority earlier-deadline wake's `.reschedule` SGI
+results in a switch at the receiver instead of being dropped until a later
+timer scheduling point. -/
+theorem candidateOutranksCurrentOnCore_of_edf_displaces (st : SystemState)
+    (c : CoreId) (tid curTid : SeLe4n.ThreadId) (curTcb tidTcb : TCB)
+    (hCur : st.scheduler.currentOnCore c = some curTid)
+    (hCurTcb : st.getTcb? curTid = some curTcb)
+    (hTidTcb : st.getTcb? tid = some tidTcb)
+    (hDisp : candidateEdfDisplacesCurrent curTcb tidTcb = true) :
+    candidateOutranksCurrentOnCore st c tid = true := by
+  unfold candidateOutranksCurrentOnCore
+  simp only [hCur, hCurTcb, hTidTcb]
+  simp [hDisp]
 
 /-- WS-SM SM5.C.5 (plan §4.4): the target core's `.reschedule` SGI handler.
 
@@ -1317,8 +1368,10 @@ When core `c` takes a `.reschedule` SGI (sent by a remote wake), it re-runs its
 own scheduler: re-choose the highest-priority *budget-eligible* runnable thread
 in its run queue (`chooseThreadEffectiveOnCore`, SM5.A §6 — the CBS/SchedContext
 selector the production timer path uses, so a reschedule cannot dispatch a
-budget-exhausted thread) and, **only if that candidate strictly outranks the
-current thread** (`candidateOutranksCurrentOnCore`), switch to it
+budget-exhausted thread) and, **only if that candidate outranks the current
+thread** (`candidateOutranksCurrentOnCore` — strictly higher effective
+priority, or an EDF displacement within the same bucket: equal priority,
+strictly earlier nonzero deadline, PR #880 round 6), switch to it
 (`switchToThreadOnCore`, SM5.B).
 
 - `chooseThreadEffectiveOnCore` errors (corrupted run queue) → propagate.

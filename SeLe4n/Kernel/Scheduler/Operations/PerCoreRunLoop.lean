@@ -27,7 +27,8 @@ kernel state.  Two steps live here:
   bring-up entry `Kernel.secondaryKernelMain` — bring-up **is** the core's first
   reschedule).  It runs the **verified** `Kernel.handleRescheduleSgiOnCore`
   transition (SM5.C.5: budget-aware re-choose, preempt only when the candidate
-  strictly outranks the current thread) and commits its result.  It emits no
+  outranks the current thread — strictly higher effective priority, or an
+  EDF displacement within the bucket, PR #880 round 6) and commits its result.  It emits no
   SGIs: a local dispatch wakes nothing remote.
 
 This module holds the pure steps + their correctness theorems so each `BaseIO`
