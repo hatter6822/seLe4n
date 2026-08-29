@@ -39,10 +39,15 @@ Tier 4 is the exception, and it is the reason this audit exists — see §2.1.
 
 Two of those ten warrant immediate qualification:
 
-- **`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` is not a v1.0.0 blocker.** Its
- title scopes it post-v1.0.0 by design, and the audit confirmed that
- reading. Its D-1..D-6 items are correctly deferred; only the D-6 Tier-5
- oracle finding (§5) affects a claim made *today*.
+- **`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` has been re-scoped pre-v1.0.0.**
+ The audit read its post-v1.0.0 framing as deliberate and therefore not a
+ blocker. That framing has since been rejected as a maintainer decision:
+ shipping a verified microkernel whose core concurrency primitive carries a
+ known-deferred completeness story understates what "verified" means on the
+ one component every other subsystem's serialisability argument rests on.
+ Its residue is now owned by WS-RR phase RR5
+ ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)), and the
+ plan's own header records the re-scoping.
 - **`SMP_RELEASE_CLOSURE_PLAN.md` is "incomplete" by construction** — SM10
  has not started. It is marked incomplete here because its *own scope
  statement* is wrong (§2.2), not because its work is undone.
@@ -1207,6 +1212,14 @@ The sweep found the proof surface, capability gating, ABI design and Rust unsafe
 - The userspace-supplied `ipcBufferAddr` is deliberately ignored (`_ipcBufferAddr`) in `syscallDispatchFromAbi`; the IPC buffer is taken from the TCB, matching seL4 and avoiding an unvalidated user pointer.
 
 ## 10. Recommended sequence before SM10 opens
+
+> **This sequence is now planned in full.** Every item below, plus the
+> security findings of §4 and the medium sweep of §6, is decomposed into
+> 126 PR-sized sub-tasks across nine phases in
+> [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) (WS-RR).
+> The §7 low-severity table is deliberately *not* in that plan — it is
+> handed to SM10.A, whose assigned job is the documentation sweep.
+
 
 Ordered so each step unblocks the next. Steps 1–3 close the blockers;
 steps 4–5 close the fail-open latents that become live exactly when the

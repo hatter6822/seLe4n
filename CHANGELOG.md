@@ -1,3 +1,70 @@
+## v0.34.4 — WS-RR: the pre-SM10 remediation phase, planned end to end
+
+The `v0.34.3` audit register said the project was not ready to begin SM10 and
+listed what stood in the way.  This cut turns that register into a workstream:
+`docs/planning/SMP_RELEASE_READINESS_PLAN.md` decomposes every open finding
+into **126 PR-sized sub-tasks across nine phases** (RR0..RR8), each with files,
+estimates, acceptance criteria and explicit ordering constraints.
+
+**Why a separate phase rather than more SM10 sub-tasks.**  SM10's acceptance
+gate is a release checklist — spec rewritten, chapters published, version
+bumped, tag cut.  Folding a fault-IPC implementation and an invariant
+de-threading closure into it would make "is the release well-formed" and "is
+the kernel finished" the same question, which is the conflation that let the
+tier-4 gates certify phases nothing had run.  WS-RR closes first; SM10 then
+does what it was scoped to do.
+
+**The phases.**  RR0 registration and plan correction (nothing further is
+lost); RR1 live-path correctness — the four live SMP dispatch arms gain
+`ipcInvariantFull` bundles and both cross-core donation paths migrate the CBS
+replenish queue; RR2 fault handling; RR3 the `ipcInvariantFull` de-threading
+closure; RR4 boot-path fail-open closure; RR5 verified lock primitives; RR6
+aarch64 compile coverage; RR7 the medium sweep; RR8 hand-off.
+
+**Fault handling is scoped to full seL4-style fault IPC with reply-based
+restart** (27 sub-tasks), not a minimal fail-safe.  The groundwork is better
+than it looked: the TCB already carries a `faultHandler` field with no
+consumer, and `ExceptionModel.lean` already classifies exceptions — its abort
+arms simply return `.error .vmFault` as a pure error, and its only callers are
+tests, because `trap.rs` runs a parallel `esr_ec` match of its own.  So the
+work is an unwired field, a missing `Fault` type and delivery transition, and
+the retirement of a duplicate classification path — with a progress theorem
+(RR2.K.1) that makes the livelock unrepresentable rather than merely absent.
+
+**The IPC de-threading workstream closes before v1.0.0**, not after.  Two of
+twenty `ipcInvariantFull` conjuncts are still assumed as post-state hypotheses
+on 31–33 of 35 bundles; RR3 de-threads both and lands the top-level dispatch
+payoff theorems, so the invariant is end-to-end machine-checked rather than
+conditionally so.
+
+**`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` is re-scoped pre-v1.0.0** and
+absorbed as RR5.  Shipping a verified microkernel whose core concurrency
+primitive carries a known-deferred completeness story understates what
+"verified" means on the one component every other subsystem's serialisability
+argument rests on.  The residue concentrates in one theme: the refinement
+bridges connect the Lean specs to transliterations and to their own
+assumptions rather than to the deployed locks.  Three facts frame it —
+`lock_bridge.rs` builds its pool from the CAS-retry `rw_lock.rs` while the Lean
+spec was tightened to strict FIFO; `QueuedRwLock`, the FIFO implementation D-5
+landed, has zero consumers outside its own module; and the Tier-5 oracle's own
+docstring states it models rather than drives the real lock.  The deployed lock
+is not the one the spec describes, and the harness that would have caught that
+drives neither.
+
+**RR6 runs early despite its position.**  No aarch64 target is compiled
+anywhere in tree or CI, so 67 cfg-gated blocks, 59 `asm!` sites and all three
+`.S` files would first be exercised by SM10.E — the same step that first links
+and boots them.  A `cargo check` against `aarch64-unknown-none` is cheap and
+de-risks every later Rust change; its result also sizes SM10.E's estimate
+(RR0.B.2), replacing a guess with a measurement.
+
+The register's 99 low-severity findings are deliberately **not** in this plan.
+Documentation sync is SM10.A's assigned job, and running the same sweep twice
+is two passes for one outcome; RR0.H.1 hands SM10.A the table as its work-list.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md
+Refs: docs/planning/UNFINISHED_SMP_WORK.md
+
 ## v0.34.3 — the unfinished-work register: what SM10 must absorb before it opens
 
 A deep completeness audit of `docs/planning/` — every plan except
