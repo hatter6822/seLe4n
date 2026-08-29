@@ -115,6 +115,14 @@ fast_path_ready() {
   [ -x "${tc_dir}/bin/lean" ] || return 1
   # Check 3: CRT startup files must be present (linker sanity).
   [ -f "${tc_dir}/lib/crti.o" ] || return 1
+  # Check 4: the tier-4 emulator, unless test deps were explicitly skipped.
+  # Without this the fast path returns before `install_missing_packages` runs,
+  # so a repeat session with Lean already configured never installs QEMU and
+  # every tier-4 gate keeps reporting NOT RUN while setup claims to have
+  # installed the test dependencies.
+  if [ "${SKIP_TEST_DEPS}" -eq 0 ]; then
+    command -v qemu-system-aarch64 >/dev/null 2>&1 || return 1
+  fi
   return 0
 }
 
@@ -412,7 +420,19 @@ install_missing_packages() {
       done
       run_pkg_install pacman -Sy --noconfirm "${pacman_pkgs[@]}" || true
     elif command -v brew >/dev/null 2>&1; then
+      local brew_pkgs=()
       for pkg in "${missing_apt[@]}"; do
+        case "${pkg}" in
+          # Homebrew ships every system emulator in one `qemu` formula; the
+          # Debian split name does not exist there, and the install failure
+          # would be swallowed by `|| true`, leaving setup "successful" with
+          # qemu-system-aarch64 still absent and every tier-4 gate skipping.
+          # The repo's own macOS instructions already say `brew install qemu`.
+          qemu-system-arm) brew_pkgs+=("qemu") ;;
+          *) brew_pkgs+=("${pkg}") ;;
+        esac
+      done
+      for pkg in "${brew_pkgs[@]}"; do
         brew install "${pkg}" || true
       done
     fi

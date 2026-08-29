@@ -88,27 +88,55 @@ witness "a passing gate still reports All checks passed" \
 rc=0; drive "${TMP}/failer.sh" 0 >/dev/null 2>&1 || rc=$?
 witness "a failing gate still exits 1" "1" "${rc}"
 
-# 5. The source-level guarantee: no QEMU sub-test may exit 0 out of a
-#    [SKIP] branch.  This is what stops the original defect returning one
-#    script at a time — the accounting above cannot help if the sub-test
-#    reports success instead of the skip code.
+# 5. The source-level guarantee: no gate script may exit 0 out of a skip
+#    branch.  This is what stops the original defect returning one script at
+#    a time — the accounting above cannot help if the sub-test reports
+#    success instead of the skip code.
+#
+#    Both skip idioms count.  Matching only the literal `[SKIP]` would miss
+#    branches written with the shared logger (`log_section "META" "SKIP: …"`),
+#    which is how the hardware gates spell it; a script converted to that
+#    style would silently restore the defect while this suite stayed green.
+#    The glob is `test_qemu*.sh` (not `test_qemu_*.sh`) plus the hardware
+#    gates, because `test_qemu.sh` has no underscore and is a live gate.
 stray=0
-for f in scripts/test_qemu_*.sh; do
-  # Walk each file; a bare `exit 0` reached from a [SKIP] echo block is
-  # the regression.  Only echo/blank/comment lines may sit in between.
+for f in scripts/test_qemu*.sh scripts/test_hw_*.sh; do
+  [[ -e "${f}" ]] || continue
   if awk '
-    /\[SKIP\]/            { armed = 1; next }
+    /\[SKIP\]/                                   { armed = 1; next }
+    /log_section[[:space:]]+"[A-Z]+"[[:space:]]+"SKIP/ { armed = 1; next }
     armed && /^[[:space:]]*exit[[:space:]]+0[[:space:]]*$/ { found = 1; exit }
-    armed && /^[[:space:]]*(echo|#)/ { next }
-    armed && /^[[:space:]]*$/        { next }
-    armed                            { armed = 0 }
+    armed && /^[[:space:]]*(echo|log_section|#|tail|fi|\})/ { next }
+    armed && /GITHUB_OUTPUT/                     { next }
+    armed && /^[[:space:]]*$/                    { next }
+    armed                                        { armed = 0 }
     END { exit (found ? 0 : 1) }
   ' "${f}"; then
-    echo "  FAIL: ${f} exits 0 from a [SKIP] branch (must exit \${SELE4N_SKIP_EXIT})"
+    echo "  FAIL: ${f} exits 0 from a skip branch (must exit \${SELE4N_SKIP_EXIT})"
     stray=$((stray + 1))
   fi
 done
-witness "no QEMU sub-test exits 0 from a [SKIP] branch" "0" "${stray}"
+witness "no gate script exits 0 from a skip branch" "0" "${stray}"
+
+# 6. The skip status must survive the process boundary.  Tier scripts nest,
+#    and a `finalize_report` that returned 0 on skips had each parent's
+#    `run_check` record PASS — so the nightly still printed "All checks
+#    passed" over fourteen gates that never ran.  Reporting NOT RUN inside
+#    one script while the enclosing verdict stays clean is the same defect
+#    one level up, which is why it gets its own witness.
+rc=0; drive "${TMP}/skipper.sh" 0 >/dev/null 2>&1 || rc=$?
+witness "a skipped gate exits the reserved skip status, not 0" "77" "${rc}"
+
+# Its own counter: sharing `stray` with the check above made a source-level
+# failure cascade into this one, reporting two defects where there is one.
+unaware=0
+for parent in scripts/test_tier4_nightly_candidates.sh scripts/test_nightly.sh; do
+  if grep -q 'run_check "META" "${SCRIPT_DIR}/test_tier4' "${parent}"; then
+    echo "  FAIL: ${parent} invokes a tier-4 runner with run_check (skip status is lost)"
+    unaware=$((unaware + 1))
+  fi
+done
+witness "nested tier runners are invoked skip-aware" "0" "${unaware}"
 
 if [[ "${WITNESS_FAILURES}" -gt 0 ]]; then
   record_failure "META" "${WITNESS_FAILURES} gate skip-accounting witness(es) failed"

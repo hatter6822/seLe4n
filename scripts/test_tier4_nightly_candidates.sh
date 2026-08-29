@@ -26,7 +26,7 @@ sm0t_sub_args=()
 if [[ "${CONTINUE_MODE:-0}" -eq 1 ]]; then
   sm0t_sub_args+=("--continue")
 fi
-run_check "META" "${SCRIPT_DIR}/test_tier4_smp_bootcheck.sh" "${sm0t_sub_args[@]}"
+run_gate_check "META" "${SCRIPT_DIR}/test_tier4_smp_bootcheck.sh" "${sm0t_sub_args[@]}"
 
 ensure_lake_available
 

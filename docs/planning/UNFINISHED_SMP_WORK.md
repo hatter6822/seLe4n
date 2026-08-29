@@ -221,7 +221,7 @@ Each blocks *starting* SM10, as distinct from work SM10 is itself supposed to do
 
 **Independent verification.** TECHNICAL SUBSTANCE: CONFIRMED. Every cited fact verified verbatim, and one independent check strengthens it. - SeLe4n/Platform/FFI.lean (ffiIcMaintenance) reads exactly "the boot tables identity-map RAM, so a RAM frame's kernel VA equals its PA and `ICacheInvalidation.toPaddr` is the correct operand"; repeats it for `.unifyPage` ("the same operand under the same identity-map argument"). No qualifier anywhere in the file (grep for Device/3 GiB/0xC000/kernel VA over FFI.lean: zero hits in that docstring's scope). - rust/sele4n-hal/src/mmu.rs (build_identity_tables) populates exactly four L1 block descriptors: entries 0..2 = `addr | BLOCK_NORMAL` (0x0–0xBFFF_FFFF), entry 3 = `(3u64 << 30) | BLOCK_DEVICE`. Nothing above 4 GiB. rust/sele4n-hal/src/mmu.rs (BLOCK_NORMAL)/54 confirm BLOCK_NORMAL carries SH_INNER + ATTR_IDX_NORMAL while BLOCK_DEVICE carries PXN|UXN|ATTR_IDX_DEVICE and no SH_INNER; rust/sele4n-hal/src/mmu.rs (block_device_has_pxn_and_uxn) asserts that (`assert_eq!(BLOCK_DEVICE & SH_INNER, 0)`). - SeLe4n/Platform/RPi5/Board.lean (rpi5MachineConfig) `physicalAddressWidth := 44`. - No PA→ker…
 
-**Remediation.** Implement the improvement the deferred item already specifies: add a PA→kernel-VA translation for the whole ICacheInvalidation operand family (iallu / ivauPage / unifyPage / cleanRangeIallu) with a fail-closed reject for frames outside the cacheable window, and pin the window against mmu.rs's L1 population so the two cannot drift. Until that lands, the FFI.lean docstring must state the bound it actually relies on (a frame below 0xC000_0000) rather than an unconditional identity map — but the docstring edit is the stopgap, not the fix, and must not be substituted for it.
+**Remediation.** Implement the improvement the deferred item already specifies: add a PA→kernel-VA translation for the whole ICacheInvalidation operand family (iallu / ivauPage / unifyPage / cleanRangeIallu) with a fail-closed reject for frames outside the cacheable window, and pin the window against mmu.rs's L1 population so the two cannot drift. If the full translation cannot land in one cut, the minimal closure is the fail-closed reject on its own: refusing operands outside the cacheable window makes the docstring's identity-map claim true within an enforced bound, which is the implement-the-improvement direction. Qualifying the docstring to describe the narrower behaviour is NOT an acceptable interim step — the project forbids rewriting a description to match inferior code, and where the implementation is genuinely out of scope the correct outcome is to defer the release as tracked debt, never to ship a documentation-only patch.
 
 #### 4. The boot MMU maps 960 MiB that link.ld declares as RAM as Device memory, and maps nothing above 4 GiB
 
@@ -1215,7 +1215,7 @@ The sweep found the proof surface, capability gating, ABI design and Rust unsafe
 
 > **This sequence is now planned in full.** Every item below, plus the
 > security findings of §4 and the medium sweep of §6, is decomposed into
-> 125 PR-sized sub-tasks across nine phases in
+> 130 PR-sized sub-tasks across nine phases in
 > [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) (WS-RR).
 > The §7 low-severity table is deliberately *not* in that plan — it is
 > handed to SM10.A, whose assigned job is the documentation sweep.

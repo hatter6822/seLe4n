@@ -55,17 +55,20 @@ run_check_with_timeout "BUILD" lake exe badge_overflow_suite
 # ── Phase 4: Hardware Cross-Check (AG9-B) ─────────────────────────────
 log_section "META" "--- Phase 4: Hardware Cross-Check (AG9-B) ---"
 if [[ "$(uname -m)" = "aarch64" ]]; then
-    run_check "META" "${SCRIPT_DIR}/test_hw_crosscheck.sh"
+    run_gate_check "META" "${SCRIPT_DIR}/test_hw_crosscheck.sh"
 else
-    log_section "META" "SKIP: Not ARM64 — hardware cross-check skipped"
+    # Recorded, not merely printed: an inline `log_section "SKIP"` left
+    # FAILURE_COUNT and SKIP_COUNT both at zero, so the suite still ended on
+    # "All checks passed" having run no hardware check at all.
+    record_skip "META" "hardware cross-check — not ARM64"
 fi
 
 # ── Phase 5: QEMU Integration (AG9-A) ─────────────────────────────────
 log_section "META" "--- Phase 5: QEMU Integration Tests (AG9-A) ---"
 if command -v qemu-system-aarch64 &>/dev/null; then
-    run_check "META" "${SCRIPT_DIR}/test_qemu.sh"
+    run_gate_check "META" "${SCRIPT_DIR}/test_qemu.sh"
 else
-    log_section "META" "SKIP: qemu-system-aarch64 not available — QEMU tests skipped"
+    record_skip "META" "QEMU integration — qemu-system-aarch64 not available"
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────

@@ -1,3 +1,100 @@
+## v0.34.6 — the skip status survives the process boundary; Codex review round 1
+
+Eight review threads from the Codex bot on PR #881.  Six were confirmed against
+the tree and fixed; one was confirmed in substance while its stated mechanism
+was wrong, and fixing the real gap uncovered three more affected scripts; one
+was already closed by `v0.34.5`.
+
+**The P1, and it was my own defect one level up.**  `finalize_report` returned
+0 when gates had been skipped, so the NOT RUN verdict died at the process
+boundary.  `test_tier4_nightly_candidates.sh` runs the tier-4 bootcheck through
+`run_check` and `test_nightly.sh` does the same to that runner, so each parent
+recorded PASS and the nightly still printed "All checks passed" over fourteen
+gates that never ran — precisely the defect `v0.34.2` set out to close, one
+layer up.  `finalize_report` now exits `SELE4N_SKIP_EXIT`, and both parents
+invoke their child runner with `run_gate_check`.  Verified end to end: the
+bootcheck exits 77, the candidates runner records it NOT RUN and itself exits
+77.
+
+**The witness only recognised one skip idiom.**  It armed on the literal
+`[SKIP]`, missing branches written with the shared logger
+(`log_section "META" "SKIP: …"`).  The bot's specific claim — that
+`scripts/test_qemu.sh` was already inside the witness's `test_qemu_*.sh` glob —
+is false; that filename has no underscore.  But the underlying concern was
+real, and checking it surfaced three gates the fix had never reached:
+`test_qemu.sh` (a live gate, run from `test_hw_full.sh`) and
+`test_hw_crosscheck.sh` skip with `exit 0`, and `test_hw_full.sh`'s own inline
+guards only *printed* SKIP, leaving both counters at zero so the suite still
+ended on "All checks passed" having run no hardware check at all.  All three
+now use the skip status and `record_skip`, and the witness matches both idioms
+over a glob that includes them.
+
+**Setup could complete without the emulator it promises.**  `fast_path_ready`
+returned before `install_missing_packages`, so a repeat session with Lean
+already configured never installed QEMU; the fast path now includes it unless
+`--skip-test-deps` was passed.  And on macOS the Debian split name reached
+`brew install qemu-system-arm`, which fails into `|| true` — Homebrew ships one
+`qemu` formula, as the repo's own instructions already said.
+
+**Three new witnesses**, each verified to fail against the pre-fix tree: the
+skip status is not 0, nested runners are invoked skip-aware, and no gate script
+exits 0 from either skip idiom.  The last two counters were initially shared,
+so one defect reported two failures; they are now separate.
+
+**Plan corrections.**  RR7's batch counts summed to 34 against 46 medium
+findings, leaving twelve with no owner and its acceptance gate uncheckable
+against the work list.  Three of its rows also drew from the register's §4
+(security) set rather than §6, and the non-IS TLBI ban gate it carried is a
+*high* that no phase owned at all.  RR7 now allocates 49 — the 46 in §6 plus
+the three §4 items that are remediation rather than security work, with the
+other two named as owned by RR2 and RR4 — and the TLBI gate moves to RR1, where
+the rest of the Rust HAL hygiene lives.  Total 125 → 130.
+
+Appendix A's cross-check ran `cargo` from the repository root with
+`--manifest-path`, which does not move rustup's directory override:
+`rust-toolchain.toml` lives under `rust/`, and the root resolves to `stable`
+rather than the pinned 1.94.1 that RR1.1 adds the cross target to.  It now runs
+from `rust/`.
+
+**One remediation violated the project's own rule.**  The register's FFI
+identity-map finding prescribed qualifying the docstring "until the fix lands".
+CLAUDE.md forbids rewriting a description to match inferior code and requires
+deferring the release instead — and there is a better answer than either: a
+fail-closed reject of operands outside the cacheable window makes the existing
+claim *true* within an enforced bound.  That is now the prescribed minimal
+closure, and the stopgap is gone.
+
+
+**Codex review round 2** (five findings on the reordered plan, all confirmed —
+and all of them execution-order defects, which is what the new rule exists to
+catch).  Three were stale references left by the renumbering: `RR3.16` still
+named RR1 as its dependency where the analysis says RR2, `RR6.18` registered
+the lock workstream against RR5 (the preceding boot-path phase, which neither
+owns those tasks nor is open when RR6 runs), and `RR4`'s negative test pointed
+at a row seven positions later.  My remap had deliberately skipped §5 to
+protect sub-task IDs, and hand-checking caught only the references outside
+table rows; a scan of references *inside* rows found exactly the set Codex
+reported.
+
+Two were real ordering violations.  `RR1.2` required the aarch64 `cargo check`
+to **succeed** before RR1.3 and RR1.4 fix the errors it surfaces — impossible
+under a one-PR-per-sub-task contract — so it is now the diagnostic pass that
+records the error inventory, with a separate success gate after the fixes.  And
+`RR4`'s no-handler fail-closed policy now precedes the negative test that
+exercises it, rather than following it by seven rows.
+
+The RR6 risk row also permitted the deployed-lock corollary to land after
+v1.0.0 if the bisimulation stalled — which would ship precisely the gap the
+phase exists to close, and contradicts its own acceptance criterion.  RR6 now
+stays open and the release waits.
+
+The plan is checked mechanically for both properties: sub-task numbering is
+sequential within every phase, and no sub-task references a higher-numbered one
+in its own phase.  Total 130.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md
+Refs: docs/planning/UNFINISHED_SMP_WORK.md
+
 ## v0.34.5 — a plan's numbering is its schedule: WS-RR reordered into execution order
 
 `v0.34.4` shipped WS-RR with phases numbered RR0..RR8 and a separate §2.3 note

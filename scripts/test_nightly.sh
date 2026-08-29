@@ -18,7 +18,7 @@ if [[ "${CONTINUE_MODE}" -eq 1 ]]; then
 fi
 
 run_check "META" "${SCRIPT_DIR}/test_full.sh" "${sub_args[@]}"
-run_check "META" "${SCRIPT_DIR}/test_tier4_nightly_candidates.sh" "${sub_args[@]}"
+run_gate_check "META" "${SCRIPT_DIR}/test_tier4_nightly_candidates.sh" "${sub_args[@]}"
 if [[ "${NIGHTLY_ENABLE_EXPERIMENTAL:-0}" == "1" ]]; then
   log_section "INVARIANT" "Tier 4 staged candidates executed (NIGHTLY_ENABLE_EXPERIMENTAL=1)."
   # WS-SM SM2.C-defer D-6: Tier 5 cross-language correspondence harness.

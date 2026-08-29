@@ -41,7 +41,7 @@ if [[ "${ARCH}" = "aarch64" ]]; then
 else
     log_section "META" "SKIP: Not running on ARM64 (${ARCH}) — hardware checks unavailable"
     log_section "META" "       This script must run on physical RPi5 or QEMU aarch64"
-    exit 0
+    exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # Check 2: Timer frequency (CNTFRQ_EL0)

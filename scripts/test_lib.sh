@@ -613,12 +613,21 @@ finalize_report() {
 
   # Never claim a clean run over gates that did not execute: the summary
   # line is what a reader (and a release checklist) takes as the verdict.
+  #
+  # Exiting SELE4N_SKIP_EXIT rather than 0 is what carries that verdict across
+  # the process boundary.  Tier scripts nest — `test_nightly.sh` runs
+  # `test_tier4_nightly_candidates.sh`, which runs `test_tier4_smp_bootcheck.sh`
+  # — and a 0 here would have each parent's `run_check` record PASS, so the
+  # nightly still printed "All checks passed" over fourteen gates that never
+  # ran.  Reporting NOT RUN inside one script while the enclosing verdict stays
+  # clean is the same defect one level up.  Parents invoke child runners with
+  # `run_gate_check`, which understands this status.
   if [[ "${SKIP_COUNT}" -gt 0 ]]; then
     log_section "META" \
       "Checks passed, but ${SKIP_COUNT} acceptance gate(s) DID NOT RUN — coverage is incomplete."
     log_section "META" \
       "  Re-run with SELE4N_REQUIRE_GATES=1 to treat a skipped gate as a failure."
-    return 0
+    exit "${SELE4N_SKIP_EXIT}"
   fi
 
   log_section "META" "All checks passed."
