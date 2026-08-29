@@ -14,7 +14,7 @@ It is aligned to the **current project state**:
   scheduler and the hardware IRQ path are closed: `trap.S`'s IRQ vectors
   branch to `handle_irq_per_core` (the legacy single-core `handle_irq`
   removed; the timer PPI drives the verified `timerTickOnCore` under the
-  kernel-entry lock), the `.reschedule` SGI receiver is live end to end
+  kernel-entry lock), the `.reschedule` SGI receiver is wired end to end
   (`perCoreRescheduleStep` over the verified `handleRescheduleSgiOnCore`,
   `@[export lean_per_core_reschedule]`, registered at boot for INTID 0), and
   the secondary bring-up entry is definitionally the core's first reschedule
@@ -22,7 +22,11 @@ It is aligned to the **current project state**:
   `kernel_entry::with_kernel_entry` and ordered before `enable_irq`; the
   bracketed committing-entry roster is now five, and the primary
   `lean_kernel_main` install-ordering obligation is registered against
-  SM10.E.  SM10 (release closure → v1.0.0) is the remaining phase.
+  SM10.E.  All three seams are **dormant on hardware behind the per-core
+  `lean_ready` gate** (`rust/sele4n-hal/src/lean_ready.rs`: no core is marked
+  ready anywhere in the tree today, so each seam degrades to its Rust-only
+  half) until SM10.E's per-core Lean runtime initialization flips them live.
+  SM10 (release closure → v1.0.0) is the remaining phase.
   Interleaved: **WS-RA (Syscall Return ABI) core LANDED
   (v0.33.37)** — the kernel returns the full seL4 ARM64 frame end to end (`x0`
   = badge/primary result at full 64-bit width; `x1` = `MessageInfo` whose

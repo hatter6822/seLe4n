@@ -839,6 +839,14 @@ theorem saveOutgoingContextOnCore_preserves_objects_invExt (st : SystemState) (c
     · exact RHTable_insert_preserves_invExt st.objects _ _ hInv
     · exact hInv
 
+/-- WS-SM SM5.D.6 (local helper): the single-domain boundary preparation preserves
+the object store — its only object write is the context save
+(`singleDomainBoundaryPrep_objects`). -/
+theorem singleDomainBoundaryPrep_preserves_objects_invExt (st : SystemState) (c : CoreId)
+    (hInv : st.objects.invExt) : (singleDomainBoundaryPrep st c).objects.invExt := by
+  rw [singleDomainBoundaryPrep_objects]
+  exact saveOutgoingContextOnCore_preserves_objects_invExt st c hInv
+
 /-- WS-SM SM5.D.5 (local helper): `restoreIncomingContext` writes only the machine
 register file, so the object store is unchanged. -/
 theorem restoreIncomingContext_objects_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -1060,10 +1068,16 @@ theorem scheduleDomainOnCore_preserves_objects_invExt (st : SystemState) (c : Co
   unfold scheduleDomainOnCore at hStep
   split at hStep
   · split at hStep
-    · simp at hStep
-    · rename_i st'' hsw
-      exact scheduleEffectiveOnCore_preserves_objects_invExt st'' c st'
-        (switchDomainOnCore_preserves_objects_invExt st c st'' hInv hsw) hStep
+    · -- empty-schedule boundary: save + re-enqueue + clear touch only the
+      -- scheduler slots (the prologue's object write is the context save),
+      -- then the re-dispatch preserves `invExt`.
+      exact scheduleEffectiveOnCore_preserves_objects_invExt _ c st'
+        (singleDomainBoundaryPrep_preserves_objects_invExt st c hInv) hStep
+    · split at hStep
+      · simp at hStep
+      · rename_i st'' hsw
+        exact scheduleEffectiveOnCore_preserves_objects_invExt st'' c st'
+          (switchDomainOnCore_preserves_objects_invExt st c st'' hInv hsw) hStep
   · simp only [Except.ok.injEq] at hStep; subst hStep; exact hInv
 
 -- ============================================================================
@@ -1733,10 +1747,15 @@ theorem scheduleDomainOnCore_preserves_currentThreadValidOnCore (st : SystemStat
   unfold scheduleDomainOnCore at hStep
   split at hStep
   · split at hStep
-    · simp at hStep
-    · rename_i st'' hsw
-      exact scheduleEffectiveOnCore_establishes_currentThreadValidOnCore st'' c st'
-        (switchDomainOnCore_preserves_objects_invExt st c st'' hInv hsw) hStep
+    · -- empty-schedule boundary: the re-dispatch *establishes* validity on the
+      -- prepped state (whose store is the context-saved one, `invExt`-preserved).
+      exact scheduleEffectiveOnCore_establishes_currentThreadValidOnCore _ c st'
+        (singleDomainBoundaryPrep_preserves_objects_invExt st c hInv) hStep
+    · split at hStep
+      · simp at hStep
+      · rename_i st'' hsw
+        exact scheduleEffectiveOnCore_establishes_currentThreadValidOnCore st'' c st'
+          (switchDomainOnCore_preserves_objects_invExt st c st'' hInv hsw) hStep
   · simp only [Except.ok.injEq] at hStep; subst hStep
     exact decrementDomainTimeOnCore_preserves_currentThreadValidOnCore st c c hValid
 

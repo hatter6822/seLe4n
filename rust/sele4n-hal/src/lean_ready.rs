@@ -63,8 +63,28 @@ pub fn lean_ready(core_id: usize) -> bool {
 /// after its per-core runtime init in `rust_secondary_main`).  Release
 /// ordering publishes the initialization writes to every core that
 /// acquires the mask.  Out-of-range ids are ignored (nothing to set).
+///
+/// # Safety
+///
+/// Setting a core's bit is a load-bearing promise, not a bookkeeping
+/// update: every gated seam (`timer::per_core_timer_tick_isr`,
+/// `trap::reschedule_sgi_handler`, `smp::rust_secondary_main`) will
+/// thereafter call Lean-emitted symbols from that PE.  The caller must
+/// guarantee, **before** calling, that on core `core_id`:
+///
+/// 1. the Lean runtime is fully initialized for that PE (module
+///    initializers run; the PE's runtime thread-state established), and
+/// 2. the kernel state the entries commit against is installed (the
+///    boot core's `lean_kernel_main` install has happened-before, per
+///    the registered SM10.E ordering obligation).
+///
+/// Marking a core whose runtime is not initialized is undefined
+/// behaviour at that core's next gated interrupt — exactly the hazard
+/// this module exists to make unreachable.  The `Release` store
+/// publishes the initialization writes only if they precede the call
+/// on the same PE (or are otherwise ordered before it).
 #[inline]
-pub fn mark_lean_ready(core_id: usize) {
+pub unsafe fn mark_lean_ready(core_id: usize) {
     if core_id >= 8 {
         return;
     }
@@ -92,13 +112,16 @@ mod tests {
     #[test]
     fn mark_then_check_roundtrip() {
         assert!(!lean_ready(6));
-        mark_lean_ready(6);
+        // SAFETY: host-side unit test — no gated seam is compiled to call
+        // Lean here (`hw_target` off), so the readiness promise is vacuous.
+        unsafe { mark_lean_ready(6) };
         assert!(lean_ready(6));
     }
 
     #[test]
     fn out_of_range_ids_fail_closed() {
-        mark_lean_ready(99); // ignored — nothing to set
+        // SAFETY: host-side unit test (see above); out-of-range is a no-op.
+        unsafe { mark_lean_ready(99) }; // ignored — nothing to set
         assert!(!lean_ready(99));
         assert!(!lean_ready(8));
         assert!(!lean_ready(usize::MAX));
@@ -106,7 +129,8 @@ mod tests {
 
     #[test]
     fn marking_one_core_leaves_others_untouched() {
-        mark_lean_ready(7);
+        // SAFETY: host-side unit test (see above).
+        unsafe { mark_lean_ready(7) };
         assert!(lean_ready(7));
         assert!(!lean_ready(5));
     }

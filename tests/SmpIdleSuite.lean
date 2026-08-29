@@ -209,14 +209,18 @@ example (st : SystemState) (c : CoreId)
 
 -- SM5.E (live-wiring witness, review #4 closure): the folded idle dispatch is
 -- reachable on the live per-core domain-tick path (`scheduleDomainOnCore`).
+-- The `hCur` precondition states the idle scenario honestly: nothing running,
+-- nothing eligible (with a thread current, the boundary prologue re-enqueues it
+-- and selection decides — PR #880 review round 2).
 example (st st'' : SystemState) (c : CoreId)
     (hBoundary : st.scheduler.domainTimeRemainingOnCore c ≤ 1)
     (hSched : st.scheduler.domainSchedule = [])
+    (hCur : st.scheduler.currentOnCore c = none)
     (hChoose : chooseThreadEffectiveOnCore st c = .ok none)
     (hDisp : idleDispatchableOnCore (saveOutgoingContextOnCore st c) c = true)
     (hStep : scheduleDomainOnCore st c = .ok st'') :
     st''.scheduler.currentOnCore c = some (idleThreadId c) :=
-  scheduleDomainOnCore_runs_idle st c st'' hBoundary hSched hChoose hDisp hStep
+  scheduleDomainOnCore_runs_idle st c st'' hBoundary hSched hCur hChoose hDisp hStep
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): concrete `enqueueIdleThreadOnCore` + selection

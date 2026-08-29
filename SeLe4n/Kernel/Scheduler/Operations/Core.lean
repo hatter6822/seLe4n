@@ -1062,6 +1062,17 @@ def saveOutgoingContextOnCore (st : SystemState) (c : CoreId) : SystemState :=
           { st with objects := st.objects.insert outTid.toObjId savedTcb }
       | none => st
 
+/-- WS-SM SM5.D (frame): the per-core context save writes only the object
+store — the scheduler state passes through untouched on every arm. -/
+@[simp] theorem saveOutgoingContextOnCore_scheduler (st : SystemState) (c : CoreId) :
+    (saveOutgoingContextOnCore st c).scheduler = st.scheduler := by
+  unfold saveOutgoingContextOnCore
+  split
+  · rfl
+  · split
+    · rfl
+    · rfl
+
 /-- WS-SM SM5.E (idle-dispatch admission): is core `c`'s idle thread a *safe*
 dispatch target — installed, in core `c`'s active domain, **and admissible on core
 `c`** (its `cpuAffinity` admits `c`)?  This gates the idle fallback in
@@ -1489,18 +1500,138 @@ def switchDomainOnCore (st : SystemState) (c : CoreId) :
               c (DomainScheduleEntry.length entry)).setDomainScheduleIndexOnCore c nextIdx
           .ok { stSaved with scheduler := sched' }
 
+/-- WS-SM SM5.D.6 (single-domain boundary re-dispatch preparation): save the
+outgoing thread's register context, re-enqueue it at
+`effectiveRunQueuePriority`, and clear `currentOnCore c` — byte-for-byte the
+re-dispatch preparation `switchDomainOnCore`'s non-empty arm performs, minus
+the domain-slot rotation (an empty schedule has nothing to rotate).  With no
+current thread the save and re-enqueue are the identity on the store and the
+queue, so the preparation only clears the (already-`none`) current slot.
+Consumed by `scheduleDomainOnCore`'s empty-schedule boundary arm; its frame
+lemmas (`singleDomainBoundaryPrep_objects` / `_domainSchedule` /
+`_activeDomainOnCore` / `_domainScheduleIndexOnCore` /
+`_domainTimeRemainingOnCore`) reduce the domain-slot invariants to the
+pre-state. -/
+def singleDomainBoundaryPrep (st : SystemState) (c : CoreId) : SystemState :=
+  match st.scheduler.currentOnCore c with
+  | none => st  -- nothing running: the state is already boundary-ready
+  | some tid =>
+      let stSaved := saveOutgoingContextOnCore st c
+      let rq' := match st.getTcb? tid with
+        | some tcb =>
+            (st.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb)
+        | none => st.scheduler.runQueueOnCore c
+      { stSaved with scheduler :=
+          (stSaved.scheduler.setRunQueueOnCore c rq').setCurrentOnCore c none }
+
+/-- WS-SM SM5.D.6: with no current thread the boundary preparation is the
+identity — definitionally, so the idle-adoption witness
+(`scheduleDomainOnCore_runs_idle`) transports its hypotheses across the
+preparation by rewriting. -/
+theorem singleDomainBoundaryPrep_of_current_none (st : SystemState) (c : CoreId)
+    (hCur : st.scheduler.currentOnCore c = none) :
+    singleDomainBoundaryPrep st c = st := by
+  unfold singleDomainBoundaryPrep
+  rw [hCur]
+
+/-- WS-SM SM5.D.6 (frame): the boundary preparation's only object-store write is
+the context save (with no current thread both sides are the identity on the
+store, since the save matches on the same `currentOnCore c` discriminant). -/
+@[simp] theorem singleDomainBoundaryPrep_objects (st : SystemState) (c : CoreId) :
+    (singleDomainBoundaryPrep st c).objects = (saveOutgoingContextOnCore st c).objects := by
+  unfold singleDomainBoundaryPrep
+  split
+  next hCur =>
+    unfold saveOutgoingContextOnCore
+    rw [hCur]
+  next => rfl
+
+/-- WS-SM SM5.D.6 (frame): the boundary preparation never touches the domain
+schedule table. -/
+@[simp] theorem singleDomainBoundaryPrep_domainSchedule (st : SystemState) (c : CoreId) :
+    (singleDomainBoundaryPrep st c).scheduler.domainSchedule
+      = st.scheduler.domainSchedule := by
+  unfold singleDomainBoundaryPrep
+  split
+  · rfl
+  · simp only [SchedulerState.setCurrentOnCore_domainSchedule,
+      SchedulerState.setRunQueueOnCore_domainSchedule, saveOutgoingContextOnCore_scheduler]
+
+/-- WS-SM SM5.D.6 (frame): the boundary preparation never touches any core's
+active-domain slot. -/
+@[simp] theorem singleDomainBoundaryPrep_activeDomainOnCore (st : SystemState)
+    (c c' : CoreId) :
+    (singleDomainBoundaryPrep st c).scheduler.activeDomainOnCore c'
+      = st.scheduler.activeDomainOnCore c' := by
+  unfold singleDomainBoundaryPrep
+  split
+  · rfl
+  · simp only [SchedulerState.setCurrentOnCore_activeDomainOnCore,
+      SchedulerState.setRunQueueOnCore_activeDomainOnCore, saveOutgoingContextOnCore_scheduler]
+
+/-- WS-SM SM5.D.6 (frame): the boundary preparation never touches any core's
+domain-schedule index. -/
+@[simp] theorem singleDomainBoundaryPrep_domainScheduleIndexOnCore (st : SystemState)
+    (c c' : CoreId) :
+    (singleDomainBoundaryPrep st c).scheduler.domainScheduleIndexOnCore c'
+      = st.scheduler.domainScheduleIndexOnCore c' := by
+  unfold singleDomainBoundaryPrep
+  split
+  · rfl
+  · simp only [SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
+      SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
+      saveOutgoingContextOnCore_scheduler]
+
+/-- WS-SM SM5.D.6 (frame): the boundary preparation never touches any core's
+domain time remaining. -/
+@[simp] theorem singleDomainBoundaryPrep_domainTimeRemainingOnCore (st : SystemState)
+    (c c' : CoreId) :
+    (singleDomainBoundaryPrep st c).scheduler.domainTimeRemainingOnCore c'
+      = st.scheduler.domainTimeRemainingOnCore c' := by
+  unfold singleDomainBoundaryPrep
+  split
+  · rfl
+  · simp only [SchedulerState.setCurrentOnCore_domainTimeRemainingOnCore,
+      SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+      saveOutgoingContextOnCore_scheduler]
+
 /-- WS-SM SM5.D.6 (per-core domain tick): the per-core analogue of
 `scheduleDomain`.  Decrements core `c`'s domain time remaining; on expiry,
 performs the per-core domain switch (`switchDomainOnCore`) and re-dispatches via
 the budget-aware `scheduleEffectiveOnCore` (so a domain boundary never dispatches
 a budget-exhausted thread — a deliberate budget-aware refinement over the
-single-core `scheduleDomain`, which uses the non-budget `schedule`). -/
+single-core `scheduleDomain`, which uses the non-budget `schedule`).
+
+**Single-domain boundary (`domainSchedule = []`, the RPi5 v1.0.0 default) — the
+re-enqueue is explicit (PR #880 review).**  `switchDomainOnCore`'s empty-schedule
+arm is a whole-state no-op (nothing to rotate), which is correct for the *switch*
+but left this composition's boundary re-dispatching with the outgoing current
+still set and absent from the run queue — `scheduleEffectiveOnCore` is a
+drop-current dispatch (re-enqueue-on-preemption is the caller's job), so the
+first empty-schedule boundary could replace a running higher-priority thread
+with a queued lower-priority one and lose the outgoing thread from scheduling
+entirely.  The empty-schedule boundary therefore performs the same
+save-outgoing → re-enqueue-at-`effectiveRunQueuePriority` → clear-current
+prologue the non-empty arm gets from `switchDomainOnCore` (rotation aside,
+byte-for-byte its re-dispatch preparation), and only then re-dispatches: the
+outgoing thread competes fairly in the selection — the highest-priority
+runnable wins (the incumbent re-selected when it still outranks the queue), and
+the SM5.E idle-adoption witness (`scheduleDomainOnCore_runs_idle` — a
+`current = none` core adopts its idle thread at the live boundary) is
+preserved, since with no current the prologue is the identity on the queue.
+
+The prologue is factored as the named [`singleDomainBoundaryPrep`] (above) so
+the preservation proofs work with one clean state function and its frame
+lemmas instead of an inlined `let`-chain. -/
 def scheduleDomainOnCore (st : SystemState) (c : CoreId) :
     Except KernelError SystemState :=
   if (st.scheduler.domainTimeRemainingOnCore c) ≤ 1 then
-    match switchDomainOnCore st c with
-    | .error e => .error e
-    | .ok st' => scheduleEffectiveOnCore st' c
+    match st.scheduler.domainSchedule with
+    | [] => scheduleEffectiveOnCore (singleDomainBoundaryPrep st c) c
+    | _ :: _ =>
+        match switchDomainOnCore st c with
+        | .error e => .error e
+        | .ok st' => scheduleEffectiveOnCore st' c
   else
     -- non-boundary: decrement core `c`'s domain time (`> 1`, so stays `≥ 1`).
     .ok (decrementDomainTimeOnCore st c)

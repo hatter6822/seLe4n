@@ -201,16 +201,27 @@ re-dispatches via `scheduleEffectiveOnCore`; when nothing is budget-eligible and
 core `c`'s idle thread is dispatchable, the live domain tick runs the idle thread
 (`current = some (idleThreadId c)`).  This makes "the idle thread runs on the
 live kernel" a theorem about a production transition the timer drives, not just
-about the standalone dispatcher. -/
+about the standalone dispatcher.
+
+The `hCur` precondition (`currentOnCore c = none`) states the scenario honestly:
+idle adoption is the *nothing-is-running-and-nothing-is-eligible* boundary.  With
+a thread current, the boundary prologue (`singleDomainBoundaryPrep`) re-enqueues
+it, and the selection outcome is `chooseThreadEffectiveOnCore`'s to decide on the
+prepped queue — that path is covered by the establishment lemmas, not this
+witness.  With `current = none` the prologue is the identity
+(`singleDomainBoundaryPrep_of_current_none`), so the selector and dispatchability
+hypotheses transport unchanged to the re-dispatch. -/
 theorem scheduleDomainOnCore_runs_idle (st : SystemState) (c : CoreId) (st'' : SystemState)
     (hBoundary : st.scheduler.domainTimeRemainingOnCore c ≤ 1)
     (hSched : st.scheduler.domainSchedule = [])
+    (hCur : st.scheduler.currentOnCore c = none)
     (hChoose : chooseThreadEffectiveOnCore st c = .ok none)
     (hDisp : idleDispatchableOnCore (saveOutgoingContextOnCore st c) c = true)
     (hStep : scheduleDomainOnCore st c = .ok st'') :
     st''.scheduler.currentOnCore c = some (idleThreadId c) := by
   unfold scheduleDomainOnCore at hStep
-  rw [if_pos hBoundary, switchDomainOnCore_singleDomain_noop st c hSched] at hStep
+  rw [if_pos hBoundary, hSched] at hStep
+  rw [singleDomainBoundaryPrep_of_current_none st c hCur] at hStep
   exact scheduleOrIdleOnCore_runs_idle st c st'' hChoose hDisp hStep
 
 end SeLe4n.Kernel

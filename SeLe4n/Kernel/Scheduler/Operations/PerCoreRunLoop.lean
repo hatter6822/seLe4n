@@ -129,12 +129,17 @@ order:
 2. **`timerTickOnCore`** — SM5.D budget accounting, CBS replenishment,
    budget-exhaustion preemption; recovers the cross-core `.reschedule` SGIs.
 3. **`scheduleDomainOnCore`** — SM5.D.6 domain accounting: the in-domain
-   decrement, or the boundary rotation + budget-aware re-dispatch.  The tick
-   does budget accounting **only** (its own docstring: rotation folded into
-   the tick breaks `currentThreadInActiveDomain`), so the run loop must
-   invoke both — exactly as the single-core run loop invokes
-   `timerTickWithBudget` then `scheduleDomain`.  The domain arm emits no
-   SGIs; the step's SGI list is the tick's.
+   decrement, or the boundary re-dispatch — the rotating arm's
+   `switchDomainOnCore` preparation + rotation, or the empty-schedule arm's
+   `singleDomainBoundaryPrep` (the same save → re-enqueue → clear-current
+   preparation, so the outgoing current competes in the re-dispatch and is
+   never dropped) — each followed by the budget-aware
+   `scheduleEffectiveOnCore`.  The tick does budget accounting **only** (its
+   own docstring: rotation folded into the tick breaks
+   `currentThreadInActiveDomain`), so the run loop must invoke both —
+   exactly as the single-core run loop invokes `timerTickWithBudget` then
+   `scheduleDomain`.  The domain arm emits no SGIs; the step's SGI list is
+   the tick's.
 
 Fail-closed, all-or-nothing (see the module docstring): an out-of-range core
 id, a tick error, or a domain-transition error yields `(st, [])` — an errored

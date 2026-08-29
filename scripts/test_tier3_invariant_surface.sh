@@ -7452,6 +7452,16 @@ open SeLe4n.Kernel
 #check @switchDomainOnCore_rotates
 #check @scheduleDomainOnCore_decrements
 #check @scheduleDomainOnCore_preserves_objects_invExt
+-- The empty-schedule boundary re-enqueues the outgoing current before the
+-- re-dispatch: the named preparation, its idle-identity, and its frames.
+#check @singleDomainBoundaryPrep
+#check @singleDomainBoundaryPrep_of_current_none
+#check @singleDomainBoundaryPrep_objects
+#check @singleDomainBoundaryPrep_domainSchedule
+#check @singleDomainBoundaryPrep_activeDomainOnCore
+#check @singleDomainBoundaryPrep_domainScheduleIndexOnCore
+#check @singleDomainBoundaryPrep_domainTimeRemainingOnCore
+#check @singleDomainBoundaryPrep_preserves_objects_invExt
 -- SM5.D.5/.6 per-core invariant preservation (§7 B1/B2/B3).
 #check @decrementDomainTimeOnCore_preserves_currentThreadValidOnCore
 #check @decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore
@@ -8115,6 +8125,12 @@ open SeLe4n.Kernel
 #check @switchDomainOnCore_preserves_allThreadsTimeSlicePositive
 #check @scheduleDomainOnCore_preserves_allThreadsTimeSlicePositive
 #check @scheduleOrIdleOnCore_preserves_allThreadsTimeSlicePositive
+-- the empty-schedule boundary preparation: composite preservation, with the
+-- frame + characterisation helper family beside the switchDomainOnCore ones.
+#check @singleDomainBoundaryPrep_currentOnCore_self
+#check @singleDomainBoundaryPrep_operated_runQueue_props
+#check @singleDomainBoundaryPrep_preserves_contextMatchesCurrentOnCore_sibling
+#check @singleDomainBoundaryPrep_preserves_schedulerInvariantStructuralRegNodup_smp
 -- the Strong SMP invariant (RegNodup + global slice → 8 of 11 conjuncts).
 #check @schedulerInvariantStrong_smp
 #check @schedulerInvariantStrong_smp_to_regNodup_smp

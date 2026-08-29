@@ -1057,7 +1057,10 @@ fn scan_reschedule_sgi_seam_intact() {
 
 /// **WS-SM**: verify every Rust seam that calls into the Lean runtime
 /// consults the per-core readiness gate (`lean_ready::lean_ready`)
-/// before its Lean call.
+/// before its Lean call — **inside the seam function's own body, gate
+/// before symbol** (PR #880 review round 2: a file-level containment
+/// check would accept a gate parked in one function while another
+/// function's Lean call runs ungated).
 ///
 /// The three seams and the symbols they resolve:
 ///
@@ -1065,12 +1068,15 @@ fn scan_reschedule_sgi_seam_intact() {
 ///   2. `trap.rs::reschedule_sgi_handler`   → `lean_per_core_reschedule`
 ///   3. `smp.rs::rust_secondary_main`       → `lean_secondary_kernel_main`
 ///
-/// Each file must contain both the gate call (`lean_ready(`) and its
-/// Lean symbol; a file carrying the symbol without the gate is exactly
-/// the regression this scanner exists to catch (a PE entering a Lean
+/// For each seam the scanner extracts the named function's body (first
+/// `fn <name>(` declaration through its brace-matched close, on the
+/// comment-stripped text so prose mentions neither satisfy nor trip the
+/// checks) and requires the first `lean_ready(` call to appear
+/// **before** the first occurrence of the Lean symbol within that body.
+/// A body carrying the symbol without a preceding gate is exactly the
+/// regression this scanner exists to catch (a PE entering a Lean
 /// runtime it never initialized — the constraint `shootdown.rs`
-/// documents and `lean_ready.rs` enforces).  Comment-stripped so prose
-/// mentions neither satisfy nor trip the checks.
+/// documents and `lean_ready.rs` enforces).
 fn scan_lean_ready_gates_intact() {
     let strip = |contents: &str| -> String {
         contents
@@ -1085,32 +1091,92 @@ fn scan_lean_ready_gates_intact() {
             .collect::<Vec<_>>()
             .join("\n")
     };
-    let sites: &[(&str, &str)] = &[
-        ("src/timer.rs", "lean_per_core_timer_tick"),
-        ("src/trap.rs", "lean_per_core_reschedule"),
-        ("src/smp.rs", "lean_secondary_kernel_main"),
+    // The named function's body: from its `fn <name>(` declaration through
+    // the brace-matched close of its outermost block.
+    fn function_body<'a>(stripped: &'a str, path: &str, fn_name: &str) -> &'a str {
+        let decl = format!("fn {fn_name}(");
+        let decl_idx = stripped.find(&decl).unwrap_or_else(|| {
+            panic!(
+                "WS-SM regression: `{path}` no longer declares `fn {fn_name}`. \
+                 The Lean seam moved or was renamed; update the lean-ready \
+                 scanner's site table in the same change so the readiness-gate \
+                 contract keeps tracking the real call sites."
+            )
+        });
+        let open_rel = stripped[decl_idx..].find('{').unwrap_or_else(|| {
+            panic!(
+                "WS-SM lean-ready scanner: `{path}`'s `fn {fn_name}` has no \
+                 body block after its declaration."
+            )
+        });
+        let body_start = decl_idx + open_rel;
+        let mut depth = 0usize;
+        for (i, ch) in stripped[body_start..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &stripped[body_start..body_start + i + 1];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!(
+            "WS-SM lean-ready scanner: unbalanced braces while extracting \
+             `{path}`'s `fn {fn_name}` body."
+        );
+    }
+    let sites: &[(&str, &str, &str)] = &[
+        (
+            "src/timer.rs",
+            "per_core_timer_tick_isr",
+            "lean_per_core_timer_tick",
+        ),
+        (
+            "src/trap.rs",
+            "reschedule_sgi_handler",
+            "lean_per_core_reschedule",
+        ),
+        (
+            "src/smp.rs",
+            "rust_secondary_main",
+            "lean_secondary_kernel_main",
+        ),
     ];
-    for (path, lean_symbol) in sites {
+    for (path, fn_name, lean_symbol) in sites {
         println!("cargo:rerun-if-changed={path}");
         let stripped = match std::fs::read_to_string(path) {
             Ok(s) => strip(&s),
             Err(e) => panic!("WS-SM lean-ready scanner: failed to read {path}: {e}"),
         };
-        if !stripped.contains(lean_symbol) {
+        let body = function_body(&stripped, path, fn_name);
+        let sym_idx = body.find(lean_symbol).unwrap_or_else(|| {
             panic!(
-                "WS-SM regression: `{path}` no longer resolves `{lean_symbol}`. \
-                 The Lean seam moved or was dropped; update this scanner's site \
-                 table in the same change so the readiness-gate contract keeps \
-                 tracking the real call sites."
-            );
-        }
-        if !stripped.contains("lean_ready(") {
+                "WS-SM regression: `{path}`'s `fn {fn_name}` no longer resolves \
+                 `{lean_symbol}` in its body.  The Lean seam moved or was \
+                 dropped; update this scanner's site table in the same change \
+                 so the readiness-gate contract keeps tracking the real call \
+                 sites."
+            )
+        });
+        let gate_idx = body.find("lean_ready(").unwrap_or_else(|| {
             panic!(
-                "WS-SM regression: `{path}` calls into the Lean runtime \
-                 (`{lean_symbol}`) without consulting the per-core readiness \
-                 gate (`crate::lean_ready::lean_ready(core)`).  A PE must never \
-                 enter a Lean runtime it has not initialized; restore the gate \
-                 around the Lean call."
+                "WS-SM regression: `{path}`'s `fn {fn_name}` calls into the \
+                 Lean runtime (`{lean_symbol}`) without consulting the per-core \
+                 readiness gate (`crate::lean_ready::lean_ready(core)`) in its \
+                 body.  A PE must never enter a Lean runtime it has not \
+                 initialized; restore the gate around the Lean call."
+            )
+        });
+        if gate_idx >= sym_idx {
+            panic!(
+                "WS-SM regression: in `{path}`'s `fn {fn_name}`, the readiness \
+                 gate (`lean_ready(`) appears only after `{lean_symbol}` — the \
+                 Lean call is reachable before the gate is consulted.  Move the \
+                 `crate::lean_ready::lean_ready(core)` check so it guards the \
+                 Lean call."
             );
         }
     }

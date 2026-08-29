@@ -1104,16 +1104,24 @@ theorem scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule
     activeDomainOnCore_isInDomainSchedule st' c := by
   unfold scheduleDomainOnCore at hStep
   split at hStep
-  · cases hsw : switchDomainOnCore st c with
-    | error e => rw [hsw] at hStep; simp at hStep
-    | ok stMid =>
-      rw [hsw] at hStep
-      have hMid : activeDomainOnCore_isInDomainSchedule stMid c :=
-        switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule st c stMid hPred hsw
-      unfold activeDomainOnCore_isInDomainSchedule at hMid ⊢
-      rw [scheduleEffectiveOnCore_domainSchedule stMid c st' hStep,
-        scheduleEffectiveOnCore_activeDomainOnCore stMid c st' hStep]
-      exact hMid
+  · split at hStep
+    · -- empty-schedule boundary: the preparation frames the domain slots
+      -- (`singleDomainBoundaryPrep_*`), and the re-dispatch frames them too.
+      unfold activeDomainOnCore_isInDomainSchedule at hPred ⊢
+      rw [scheduleEffectiveOnCore_domainSchedule _ c st' hStep,
+        scheduleEffectiveOnCore_activeDomainOnCore _ c st' hStep,
+        singleDomainBoundaryPrep_domainSchedule, singleDomainBoundaryPrep_activeDomainOnCore]
+      exact hPred
+    · cases hsw : switchDomainOnCore st c with
+      | error e => rw [hsw] at hStep; simp at hStep
+      | ok stMid =>
+        rw [hsw] at hStep
+        have hMid : activeDomainOnCore_isInDomainSchedule stMid c :=
+          switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule st c stMid hPred hsw
+        unfold activeDomainOnCore_isInDomainSchedule at hMid ⊢
+        rw [scheduleEffectiveOnCore_domainSchedule stMid c st' hStep,
+          scheduleEffectiveOnCore_activeDomainOnCore stMid c st' hStep]
+        exact hMid
   · simp only [Except.ok.injEq] at hStep
     subst hStep
     unfold activeDomainOnCore_isInDomainSchedule at hPred ⊢
@@ -1213,14 +1221,24 @@ theorem scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore
     domainScheduleIndexInBoundsOnCore st' c := by
   unfold scheduleDomainOnCore at hStep
   split at hStep
-  · cases hsw : switchDomainOnCore st c with
-    | error e => rw [hsw] at hStep; simp at hStep
-    | ok stMid =>
-      rw [hsw] at hStep
+  · split at hStep
+    · -- empty-schedule boundary: compose the re-dispatch frames with the
+      -- preparation frames (`singleDomainBoundaryPrep_*`) — both leave the
+      -- schedule table and the index untouched.
       exact domainScheduleIndexInBoundsOnCore_frame
-        (scheduleEffectiveOnCore_domainSchedule stMid c st' hStep)
-        (scheduleEffectiveOnCore_domainScheduleIndexOnCore stMid c st' hStep)
-        (switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore st c stMid hsw)
+        ((scheduleEffectiveOnCore_domainSchedule _ c st' hStep).trans
+          (singleDomainBoundaryPrep_domainSchedule st c))
+        ((scheduleEffectiveOnCore_domainScheduleIndexOnCore _ c st' hStep).trans
+          (singleDomainBoundaryPrep_domainScheduleIndexOnCore st c c))
+        hInv
+    · cases hsw : switchDomainOnCore st c with
+      | error e => rw [hsw] at hStep; simp at hStep
+      | ok stMid =>
+        rw [hsw] at hStep
+        exact domainScheduleIndexInBoundsOnCore_frame
+          (scheduleEffectiveOnCore_domainSchedule stMid c st' hStep)
+          (scheduleEffectiveOnCore_domainScheduleIndexOnCore stMid c st' hStep)
+          (switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore st c stMid hsw)
   · simp only [Except.ok.injEq] at hStep; subst hStep
     exact domainScheduleIndexInBoundsOnCore_frame
       (decrementDomainTimeOnCore_domainSchedule st c)
@@ -1259,15 +1277,26 @@ theorem scheduleDomainOnCore_preserves_domainConsistentOnCore
     domainConsistentOnCore st' c := by
   unfold scheduleDomainOnCore at hStep
   split at hStep
-  · cases hsw : switchDomainOnCore st c with
-    | error e => rw [hsw] at hStep; simp at hStep
-    | ok stMid =>
-      rw [hsw] at hStep
+  · split at hStep
+    · -- empty-schedule boundary: the preparation and the re-dispatch both
+      -- frame the schedule table, the index and the active domain.
       exact domainConsistentOnCore_frame
-        (scheduleEffectiveOnCore_domainSchedule stMid c st' hStep)
-        (scheduleEffectiveOnCore_domainScheduleIndexOnCore stMid c st' hStep)
-        (scheduleEffectiveOnCore_activeDomainOnCore stMid c st' hStep)
-        (switchDomainOnCore_preserves_domainConsistentOnCore st c stMid hCons hsw)
+        ((scheduleEffectiveOnCore_domainSchedule _ c st' hStep).trans
+          (singleDomainBoundaryPrep_domainSchedule st c))
+        ((scheduleEffectiveOnCore_domainScheduleIndexOnCore _ c st' hStep).trans
+          (singleDomainBoundaryPrep_domainScheduleIndexOnCore st c c))
+        ((scheduleEffectiveOnCore_activeDomainOnCore _ c st' hStep).trans
+          (singleDomainBoundaryPrep_activeDomainOnCore st c c))
+        hCons
+    · cases hsw : switchDomainOnCore st c with
+      | error e => rw [hsw] at hStep; simp at hStep
+      | ok stMid =>
+        rw [hsw] at hStep
+        exact domainConsistentOnCore_frame
+          (scheduleEffectiveOnCore_domainSchedule stMid c st' hStep)
+          (scheduleEffectiveOnCore_domainScheduleIndexOnCore stMid c st' hStep)
+          (scheduleEffectiveOnCore_activeDomainOnCore stMid c st' hStep)
+          (switchDomainOnCore_preserves_domainConsistentOnCore st c stMid hCons hsw)
   · simp only [Except.ok.injEq] at hStep; subst hStep
     exact domainConsistentOnCore_frame
       (decrementDomainTimeOnCore_domainSchedule st c)

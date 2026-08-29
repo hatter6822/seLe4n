@@ -129,6 +129,13 @@ open SeLe4n.Testing
 #check @switchDomainOnCore_rotates
 #check @scheduleDomainOnCore_decrements
 #check @scheduleDomainOnCore_preserves_objects_invExt
+-- The empty-schedule boundary re-enqueues the outgoing current before the
+-- re-dispatch (PR #880 review round 2): the named preparation + its identity
+-- on idle cores + its object/invariant frames.
+#check @singleDomainBoundaryPrep
+#check @singleDomainBoundaryPrep_of_current_none
+#check @singleDomainBoundaryPrep_objects
+#check @singleDomainBoundaryPrep_preserves_objects_invExt
 
 -- §7 SM5.D.5/.6 per-core invariant preservation (B1/B2/B3).
 #check @decrementDomainTimeOnCore_preserves_currentThreadValidOnCore
@@ -510,6 +517,62 @@ private def runDomainRedispatchChecks : IO Unit := do
      | .ok st' => st'.scheduler.domainTimeRemainingOnCore bootCoreId == 4
      | .error _ => false)
 
+private def tidHigh : SeLe4n.ThreadId := ThreadId.ofNat 400
+private def tidLow : SeLe4n.ThreadId := ThreadId.ofNat 401
+
+/-- Empty-schedule domain boundary with a high-priority (200) thread RUNNING and
+a low-priority (10) thread queued: `domainSchedule = []` (the RPi5 v1.0.0
+default) and `domainTimeRemaining = 1`, so the next `scheduleDomainOnCore` takes
+the single-domain boundary arm. -/
+private def stBoundaryBusy : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty.withObject tidHigh.toObjId (.tcb (mkTcb 400 200 0))
+      |>.withObject tidLow.toObjId (.tcb (mkTcb 401 10 0))
+      |>.withRunnable [tidLow]
+      |>.withCurrent (some tidHigh)).build
+  { base with scheduler := base.scheduler.setDomainTimeRemainingOnCore bootCoreId 1 }
+
+/-- §3.10 (PR #880 review round 2): the empty-schedule domain boundary
+re-enqueues the outgoing current before re-dispatching — the boundary never
+drops the running thread.  Regression pin for the drop-current hazard: with a
+high-priority thread running and only a low-priority thread queued, the
+boundary re-selects the incumbent (it outranks the queue) and the queued
+waiter survives.  Before the fix, `switchDomainOnCore`'s empty-schedule no-op
+fed the un-prepped state to the drop-current `scheduleEffectiveOnCore`, which
+replaced the running high-priority thread with the queued low-priority one and
+lost the incumbent from scheduling entirely. -/
+private def runEmptyBoundaryRequeueChecks : IO Unit := do
+  IO.println "--- §3.10 empty-schedule boundary re-enqueue ---"
+  assertBool "fixture: single-domain mode (empty schedule)"
+    (stBoundaryBusy.scheduler.domainSchedule.isEmpty)
+  assertBool "fixture: at the domain boundary (time remaining 1)"
+    (stBoundaryBusy.scheduler.domainTimeRemainingOnCore bootCoreId == 1)
+  assertBool "fixture: high-priority thread current, low-priority thread queued"
+    (stBoundaryBusy.scheduler.currentOnCore bootCoreId == some tidHigh
+      && decide (tidLow ∈ (stBoundaryBusy.scheduler.runQueueOnCore bootCoreId).toList))
+  assertBool "boundary keeps the higher-priority incumbent current (re-selected, not dropped)"
+    (match scheduleDomainOnCore stBoundaryBusy bootCoreId with
+     | .ok st' => st'.scheduler.currentOnCore bootCoreId == some tidHigh
+     | .error _ => false)
+  assertBool "boundary leaves the low-priority waiter queued (nothing lost)"
+    (match scheduleDomainOnCore stBoundaryBusy bootCoreId with
+     | .ok st' => decide (tidLow ∈ (st'.scheduler.runQueueOnCore bootCoreId).toList)
+     | .error _ => false)
+  -- The composed live step (tick THEN domain transition) preserves the
+  -- incumbent through the empty-schedule boundary as well.
+  assertBool "live run-loop step at the boundary keeps the incumbent current"
+    ((perCoreTimerTickStep stBoundaryBusy 0).1.scheduler.currentOnCore bootCoreId
+      == some tidHigh)
+  -- With nothing running (idle core), the boundary preparation is the identity
+  -- (`singleDomainBoundaryPrep_of_current_none`) — the SM5.E idle-adoption path
+  -- is untouched by the re-enqueue fix: nothing spuriously enqueued, current
+  -- still clear.
+  assertBool "idle-core boundary preparation is the identity (no spurious enqueue)"
+    (((singleDomainBoundaryPrep stSingleDomain bootCoreId).scheduler.runQueueOnCore
+        bootCoreId).toList.isEmpty
+      && ((singleDomainBoundaryPrep stSingleDomain bootCoreId).scheduler.currentOnCore
+          bootCoreId).isNone)
+
 def runAll : IO Unit := do
   IO.println "=== WS-SM SM5.D — Per-core timer tick suite ==="
   runLockSetChecks
@@ -521,6 +584,7 @@ def runAll : IO Unit := do
   runReplenishChecks
   runRunLoopStepChecks
   runDomainRedispatchChecks
+  runEmptyBoundaryRequeueChecks
   IO.println "=== SM5.D timer suite: all checks passed ==="
 
 end SeLe4n.Testing.SmpTimer

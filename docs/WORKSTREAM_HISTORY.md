@@ -23,8 +23,10 @@ next.**
 A pre-SM10 sweep of the WS-SM headline findings (SMP-C1..C4, SMP-H1..H4,
 the MED/LOW set) confirmed every closure in place — and surfaced three
 runtime seams that SM5 had promised in prose but never landed, each one a
-proven transition with no consumer.  All three are now live, plus the
-serialisation gap the third one exposed:
+proven transition with no consumer.  All three are now wired (dormant on
+hardware behind the per-core `lean_ready` gate until SM10.E's runtime
+initialization marks cores ready — see the review-round paragraph below),
+plus the serialisation gap the third one exposed:
 
 **The IRQ vector redirect.**  `trap.S`'s two IRQ vectors still branched to
 the single-core legacy `handle_irq`, whose timer branch only re-armed the
@@ -124,6 +126,34 @@ seam and the boot-entry ordering already recorded in
 `SMP_RELEASE_CLOSURE_PLAN.md`); with the readiness gate, neither hazard is
 reachable before that work exists — and the gate is the structural piece
 that makes deferring them sound rather than hopeful.
+
+**Review round 2 (same cut) — four findings; one real scheduler bug.**
+(1) **The empty-schedule domain boundary dropped the running thread** —
+`switchDomainOnCore`'s `[]` arm is a whole-state no-op (correct for the
+*switch*: nothing to rotate), but the boundary composition then handed the
+un-prepped state to the drop-current `scheduleEffectiveOnCore`, so on the
+RPi5 v1.0.0 default (`domainSchedule = []`) every boundary could swap a
+running higher-priority thread for a queued lower-priority one and lose the
+incumbent from scheduling.  The boundary now runs the named
+`singleDomainBoundaryPrep` (save-outgoing → re-enqueue at
+`effectiveRunQueuePriority` → clear current — byte-for-byte the rotating
+arm's preparation, minus the rotation), definitionally the identity on an
+idle core so the SM5.E idle-adoption witness keeps holding with an honest
+`current = none` precondition; the prep's frame/characterisation family
+(§8.1b of the invariant suite, mirroring the `switchDomainOnCore_*`
+helpers) closes the composite preservation for `invExt`, current-validity,
+`RegNodup_smp` and the global slice invariant, and `smp_timer_suite` §3.10
+pins the regression live (incumbent re-selected, waiter intact, composed
+step included).  **Registered debt**: the *single-core*
+`scheduleDomain`/`switchDomain` pair shares the same `[]`-boundary shape;
+it is off the live path (the run loop drives the per-core composition) and
+its alignment is Scheduler-subsystem follow-up scope, deliberately not
+widened into this cut (19 proof-file consumers ride the single-core
+definition).  (2) Honesty: "live end to end" → wired, dormant behind
+`lean_ready` until SM10.E (DEVELOPMENT.md, this file, CHANGELOG).
+(3) `mark_lean_ready` is `unsafe fn` with the Safety contract the flip
+actually carries.  (4) The lean-ready scanner is body-scoped: gate before
+Lean symbol within each seam function, not file-level containment.
 
 Plan: [`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`](planning/SMP_PER_CORE_SCHEDULER_PLAN.md)
 §SM5.C (landing note).  Next: SM10 release closure (→ v1.0.0),

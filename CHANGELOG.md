@@ -20,7 +20,7 @@ legacy handler), `handle_irq` is removed, and
 `build.rs::scan_trap_s_irq_vector_redirect` pins the redirect so it cannot
 silently regress.
 
-**The `.reschedule` receiver (SGI INTID 0, live end to end).**  A remote
+**The `.reschedule` receiver (SGI INTID 0, wired end to end).**  A remote
 wake's poke used to land on the no-handler log arm — every cross-core wake
 silently demoted to wake-on-next-tick.  The verified receiver
 (`handleRescheduleSgiOnCore`: budget-aware re-choose, preempt only when
@@ -107,8 +107,48 @@ coupling and (5) install-before-release are the SM10.E obligations this cut
 had already registered; the readiness gate makes both unreachable until that
 work lands.
 
+**Review round 2 (same version) — four findings: one substantive scheduler
+bug, three hardening/honesty items.**  (1) **The empty-schedule domain
+boundary dropped the running thread.**  `switchDomainOnCore`'s `[]` arm is a
+whole-state no-op — correct for the *switch* (nothing to rotate), but
+`scheduleDomainOnCore`'s boundary then fed the un-prepped state to
+`scheduleEffectiveOnCore`, a drop-current dispatch (re-enqueue-on-preemption
+is the caller's job).  On the RPi5 v1.0.0 default (`domainSchedule = []`)
+every domain boundary could therefore replace a running higher-priority
+thread with a queued lower-priority one and lose the incumbent from
+scheduling entirely.  The boundary now performs the same
+save-outgoing → re-enqueue-at-`effectiveRunQueuePriority` → clear-current
+prologue the rotating arm gets from `switchDomainOnCore`, factored as the
+named `singleDomainBoundaryPrep` — definitionally the identity on an idle
+core (`singleDomainBoundaryPrep_of_current_none`), so the idle-adoption
+witness `scheduleDomainOnCore_runs_idle` survives with an honest
+`current = none` precondition.  The prep's frame/characterisation family
+mirrors the `switchDomainOnCore_*` helpers (§8.1b of the invariant suite),
+its composite preservation covers the new arm for `invExt`,
+`currentThreadValidOnCore`, `schedulerInvariantStructuralRegNodup_smp` and
+`allThreadsTimeSlicePositive`, and `smp_timer_suite` §3.10 pins the
+regression live (incumbent re-selected over the low-priority waiter, waiter
+still queued, the composed run-loop step included; idle identity pinned).
+The single-core `scheduleDomain`/`switchDomain` pair shares the same
+`[]`-boundary shape; it is no longer on the live path (the run loop drives
+the per-core composition) and its alignment is registered Scheduler-subsystem
+debt in `docs/WORKSTREAM_HISTORY.md` rather than widened into this cut.
+(2) **Honesty**: the runtime-status prose said the seams were "live end to
+end" while the readiness gate deliberately keeps them dormant —
+`DEVELOPMENT.md`, `WORKSTREAM_HISTORY.md` and this entry now say wired,
+dormant behind `lean_ready` until SM10.E flips cores ready.  (3)
+`mark_lean_ready` is now an `unsafe fn` with an explicit `# Safety`
+contract — setting a core's bit is the load-bearing promise that the PE's
+Lean runtime is initialized and the kernel state installed, so the type
+system now demands the caller acknowledge it.  (4)
+`scan_lean_ready_gates_intact` no longer accepts file-level containment (a
+gate parked in one function while another function's Lean call runs
+ungated): it extracts each seam function's body (brace-matched, on
+comment-stripped text) and requires the `lean_ready(` call to precede the
+Lean symbol within that body.
+
 Gates: `./scripts/test_full.sh` green (tiers 0–3);
-`./scripts/test_rust.sh` green (1140 unit + 108 conformance tests, fmt,
+`./scripts/test_rust.sh` green (1144 unit + 108 conformance tests, fmt,
 clippy `-D warnings`); staged-module partition consistent
 (`PerCoreRescheduleEntry` allowlisted; `SecondaryEntry` / `PerCoreRunLoop`
 annotations updated); docs metrics re-synced (287 production files, 9,608
