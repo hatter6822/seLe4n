@@ -2568,10 +2568,10 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
 
   -- SCO-023: timeoutThread — successful timeout of a blocked thread
   -- Thread tid1 is blockedOnSend, in the send queue — should be unblocked
-  match SeLe4n.Kernel.timeoutThread epId false tid1 stQ with
+  match SeLe4n.Kernel.timeoutThread epId false tid1 bootCoreId stQ with
   | .error err =>
     IO.println s!"[SCO-023] timeoutThread blocked: error {reprStr err}"
-  | .ok stTimeout =>
+  | .ok (stTimeout, _sgi) =>
     match stTimeout.objects[tid1.toObjId]? with
     | some (.tcb tcbAfter) =>
       let stateReady := tcbAfter.ipcState == .ready
@@ -2583,15 +2583,15 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     | _ => IO.println s!"[SCO-023] timeoutThread blocked: tcb not found after timeout"
 
   -- SCO-024: timeoutThread — thread not found returns error
-  match SeLe4n.Kernel.timeoutThread epId false ⟨9999⟩ stQ with
+  match SeLe4n.Kernel.timeoutThread epId false ⟨9999⟩ bootCoreId stQ with
   | .error err => IO.println s!"[SCO-024] timeoutThread not-found: {reprStr err}"
   | .ok _ => IO.println s!"[SCO-024] timeoutThread not-found: unexpected success"
 
   -- SCO-025: timeoutThread — after timeout, thread is in RunQueue
-  match SeLe4n.Kernel.timeoutThread epId false tid1 stQ with
+  match SeLe4n.Kernel.timeoutThread epId false tid1 bootCoreId stQ with
   | .error err =>
     IO.println s!"[SCO-025] timeoutThread re-enqueue: error {reprStr err}"
-  | .ok stTimeout =>
+  | .ok (stTimeout, _sgi) =>
     let inRq := (stTimeout.scheduler.runQueueOnCore bootCoreId).contains tid1
     IO.println s!"[SCO-025] timeoutThread re-enqueue: in_runQueue={inRq}"
 
@@ -2612,7 +2612,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       |>.insert tid1.toObjId (.tcb tcb1Bound)
     -- S-05/PERF-O1: Populate scThreadIndex so timeoutBlockedThreads can find tid1
     scThreadIndex := scThreadIndexAdd stQ.scThreadIndex scId tid1 }
-  let (stAfterTimeout, timeoutErrs) := SeLe4n.Kernel.timeoutBlockedThreads stBound scId
+  let (stAfterTimeout, timeoutErrs, _timeoutSgis) := SeLe4n.Kernel.timeoutBlockedThreads stBound scId bootCoreId
   -- AG1-B audit: surface diagnostic errors if any
   if !timeoutErrs.isEmpty then
     IO.println s!"[SCO-027] DIAGNOSTIC: timeoutBlockedThreads returned {timeoutErrs.length} error(s)"
@@ -2624,7 +2624,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
 
   -- SCO-028: timeoutBlockedThreads — skips threads with non-matching SchedContext
   let otherScId : SeLe4n.SchedContextId := ⟨6011⟩
-  let (stAfterOther, otherErrs) := SeLe4n.Kernel.timeoutBlockedThreads stBound otherScId
+  let (stAfterOther, otherErrs, _otherSgis) := SeLe4n.Kernel.timeoutBlockedThreads stBound otherScId bootCoreId
   if !otherErrs.isEmpty then
     IO.println s!"[SCO-028] DIAGNOSTIC: timeoutBlockedThreads returned {otherErrs.length} error(s)"
   match stAfterOther.objects[tid1.toObjId]? with
@@ -2758,10 +2758,10 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let stCall := { st1 with
     objects := (st1.objects.insert epId (.endpoint epCall))
       |>.insert tid1.toObjId (.tcb tcb1Call) }
-  match SeLe4n.Kernel.timeoutThread epId false tid1 stCall with
+  match SeLe4n.Kernel.timeoutThread epId false tid1 bootCoreId stCall with
   | .error err =>
     IO.println s!"[SCO-034] timeoutThread blockedOnCall: error {reprStr err}"
-  | .ok stTimeout =>
+  | .ok (stTimeout, _sgi) =>
     match stTimeout.objects[tid1.toObjId]? with
     | some (.tcb tcbAfter) =>
       let stateReady := tcbAfter.ipcState == .ready
@@ -2793,7 +2793,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       |>.insert tid2.toObjId (.tcb tcbM2)
     -- S-05/PERF-O1: Populate scThreadIndex so timeoutBlockedThreads can find both threads
     scThreadIndex := scThreadIndexAdd (scThreadIndexAdd st1.scThreadIndex scIdMulti tid1) scIdMulti tid2 }
-  let (stAfterMulti, multiErrs) := SeLe4n.Kernel.timeoutBlockedThreads stMulti scIdMulti
+  let (stAfterMulti, multiErrs, _multiSgis) := SeLe4n.Kernel.timeoutBlockedThreads stMulti scIdMulti bootCoreId
   if !multiErrs.isEmpty then
     IO.println s!"[SCO-035] DIAGNOSTIC: timeoutBlockedThreads returned {multiErrs.length} error(s)"
   let t1Ready := match stAfterMulti.objects[tid1.toObjId]? with

@@ -280,9 +280,10 @@ example (st st' : SystemState) (c : CoreId) (sgis : List (CoreId × Concurrency.
 `timerTickBudgetOnCore` — including the bound-budget-exhausted timeoutBlockedThreads
 path — preserves rat / rqWf / Nodup on core `c`. -/
 example (st st3 : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (b : Bool)
+    {sgis3 : List (CoreId × SgiKind)}
     (hInv : st.objects.invExt) (hTid : st.getTcb? tid = some tcb)
     (h : runQueueSafetyOnCore st c)
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st3, b)) :
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st3, b, sgis3)) :
     runQueueSafetyOnCore st3 c :=
   timerTickBudgetOnCore_preserves_runQueueSafetyOnCore st c tid tcb st3 b hInv hTid h hStep
 

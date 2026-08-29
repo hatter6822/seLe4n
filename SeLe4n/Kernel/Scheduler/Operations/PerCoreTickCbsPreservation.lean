@@ -213,7 +213,7 @@ theorem timerTickOnCore_preserves_replenishQueueValidOnCore (st : SystemState) (
     · split at hStep
       · simp at hStep
       · -- budget tick `.ok (st3, b)`
-        rename_i st3 b hbud
+        rename_i st3 b tsgis hbud
         have h3 : replenishQueueValidOnCore st3 c' :=
           timerTickBudgetOnCore_preserves_replenishQueueValidOnCore _ c _ _ _ _ c' hPrep hbud
         split at hStep
@@ -296,9 +296,10 @@ theorem endpointQueueRemove_machine
 `revertPriorityInheritance`) writes only the object store / run queues.  Mirrors
 `timeoutThread_replenishQueueOnCore`. -/
 theorem timeoutThread_machine (epId : SeLe4n.ObjId) (isReceiveQ : Bool)
-    (tid : SeLe4n.ThreadId) (st st' : SystemState)
-    (h : timeoutThread epId isReceiveQ tid st = .ok st') :
-    st'.machine = st.machine := by
+    (tid : SeLe4n.ThreadId) (execCore : CoreId) (st : SystemState)
+    (r : SystemState × Option (CoreId × SgiKind))
+    (h : timeoutThread epId isReceiveQ tid execCore st = .ok r) :
+    r.1.machine = st.machine := by
   unfold timeoutThread at h
   split at h
   · simp at h
@@ -315,29 +316,30 @@ theorem timeoutThread_machine (epId : SeLe4n.ObjId) (isReceiveQ : Bool)
           first
             | rw [PriorityInheritance.revert_preserves_machine]
             | skip
-          rw [ensureRunnable_machine]
+          rw [wakeThread_state_eq_enqueue, enqueueRunnableOnCore_machine_eq]
           show st1.machine = st.machine
           rw [hMach1]
 
 /-- WS-SM SM5.I: timing out **all** of a SchedContext's IPC-blocked threads leaves the
 machine unchanged (each step is a `timeoutThread`).  Mirrors
 `timeoutBlockedThreads_replenishQueueOnCore`. -/
-theorem timeoutBlockedThreads_machine (st : SystemState) (scId : SeLe4n.SchedContextId) :
-    (timeoutBlockedThreads st scId).1.machine = st.machine := by
+theorem timeoutBlockedThreads_machine (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (execCore : CoreId) :
+    (timeoutBlockedThreads st scId execCore).1.machine = st.machine := by
   unfold timeoutBlockedThreads
   suffices hFold : ∀ (tids : List SeLe4n.ThreadId)
-      (acc : SystemState × List (SeLe4n.ThreadId × KernelError)),
-      (tids.foldl (fun (acc : SystemState × List (SeLe4n.ThreadId × KernelError)) tid =>
+      (acc : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind)),
+      (tids.foldl (fun (acc : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind)) tid =>
         match acc.1.getTcb? tid with
         | some tcb =>
           match tcbBlockingInfo tcb with
           | some (epId, isReceiveQ) =>
-            match timeoutThread epId isReceiveQ tid acc.1 with
-            | .ok st'' => (st'', acc.2)
-            | .error e => (acc.1, acc.2 ++ [(tid, e)])
-          | none => (acc.1, acc.2)
-        | none => (acc.1, acc.2)) acc).1.machine = acc.1.machine by
-    exact hFold _ (st, [])
+            match timeoutThread epId isReceiveQ tid execCore acc.1 with
+            | .ok r => (r.1, acc.2.1, acc.2.2 ++ r.2.toList)
+            | .error e => (acc.1, acc.2.1 ++ [(tid, e)], acc.2.2)
+          | none => (acc.1, acc.2.1, acc.2.2)
+        | none => (acc.1, acc.2.1, acc.2.2)) acc).1.machine = acc.1.machine by
+    exact hFold _ (st, [], [])
   intro tids
   induction tids with
   | nil => intro acc; rfl
@@ -347,7 +349,7 @@ theorem timeoutBlockedThreads_machine (st : SystemState) (scId : SeLe4n.SchedCon
     split
     · split
       · split
-        · next st'' heqTo => exact timeoutThread_machine _ _ hd acc.1 st'' heqTo
+        · next r heqTo => exact timeoutThread_machine _ _ hd execCore acc.1 r heqTo
         · rfl
       · rfl
     · rfl
@@ -357,7 +359,8 @@ branch writes only the object store / scheduler slots (the bound-exhausted branc
 `timeoutBlockedThreads` is machine-framed). -/
 theorem timerTickBudgetOnCore_machine (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (st' : SystemState) (b : Bool)
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b)) :
+    {sgis : List (CoreId × SgiKind)}
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis)) :
     st'.machine = st.machine := by
   unfold timerTickBudgetOnCore at hStep
   split at hStep
@@ -443,7 +446,7 @@ theorem timerTickOnCore_machine_timer_eq (st : SystemState) (c : CoreId)
   · split at hStep
     · split at hStep
       · simp at hStep
-      · rename_i st3 b hbud
+      · rename_i st3 b tsgis hbud
         have h3 : st3.machine = (timerTickOnCorePrepared st c).1.machine :=
           timerTickBudgetOnCore_machine _ c _ _ _ _ hbud
         split at hStep
@@ -547,9 +550,10 @@ is future because the SchedContext's `period` is positive. -/
 theorem timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (st' : SystemState) (b : Bool) (c' : CoreId)
+    {sgis : List (CoreId × SgiKind)}
     (hPipe : replenishmentPipelineOrderOnCore st c')
     (hPeriod : ∀ scId sc, st.getSchedContext? scId = some sc → 0 < sc.period.val)
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b)) :
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis)) :
     replenishmentPipelineOrderOnCore st' c' := by
   have hM : st'.machine.timer = st.machine.timer := by
     rw [timerTickBudgetOnCore_machine st c tid tcb st' b hStep]
@@ -634,7 +638,7 @@ theorem timerTickOnCore_preserves_replenishmentPipelineOrderOnCore (st : SystemS
   · split at hStep
     · split at hStep
       · simp at hStep
-      · rename_i st3 b hbud
+      · rename_i st3 b tsgis hbud
         have h3 : replenishmentPipelineOrderOnCore st3 c' :=
           timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore _ c _ _ _ _ c'
             (hPrep c') hPeriod hbud
@@ -881,7 +885,7 @@ theorem timerTickOnCore_establishes_replenishmentPipelineOrderOnCore_self
   · split at hStep
     · split at hStep
       · simp at hStep
-      · rename_i st3 b hbud
+      · rename_i st3 b tsgis hbud
         have h3 : replenishmentPipelineOrderOnCore st3 c :=
           timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore _ c _ _ _ _ c
             hPrepSelf hPeriod hbud

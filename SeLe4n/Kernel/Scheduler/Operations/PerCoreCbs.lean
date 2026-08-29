@@ -1700,14 +1700,32 @@ theorem ensureRunnable_replenishQueueOnCore (st : SystemState) (tid : SeLe4n.Thr
     · simp
     · rfl
 
+/-- WS-SM (PR #880 round 8, frame): the target-aware wake never touches any
+replenish queue — its state effect is `enqueueRunnableOnCore` (a run-queue
+insert plus a TCB write). -/
+theorem wakeThread_replenishQueueOnCore_local (st : SystemState)
+    (tid : SeLe4n.ThreadId) (ec : CoreId) (c : CoreId) :
+    (wakeThread st tid ec).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  show (enqueueRunnableOnCore st (determineTargetCore st tid) tid).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c
+  unfold enqueueRunnableOnCore
+  split
+  · split
+    · rfl
+    · simp [SeLe4n.Model.SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+  · rfl
+
 /-- WS-SM SM5.H (frame): timing out one IPC-blocked thread never touches any
 replenish queue.  Its steps are an endpoint-queue removal (scheduler-invariant),
-a TCB store (scheduler-invariant), a run-queue re-enqueue, and a PIP reversion —
-all replenish-queue-preserving. -/
+a TCB store (scheduler-invariant), a target-aware wake (run-queue insert — the
+round-8 home-core re-enqueue), and a PIP reversion — all
+replenish-queue-preserving. -/
 theorem timeoutThread_replenishQueueOnCore (epId : SeLe4n.ObjId) (isReceiveQ : Bool)
-    (tid : SeLe4n.ThreadId) (st st' : SystemState) (c : CoreId)
-    (h : timeoutThread epId isReceiveQ tid st = .ok st') :
-    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+    (tid : SeLe4n.ThreadId) (execCore : CoreId)
+    (st : SystemState) (r : SystemState × Option (CoreId × SgiKind)) (c : CoreId)
+    (h : timeoutThread epId isReceiveQ tid execCore st = .ok r) :
+    r.1.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold timeoutThread at h
   split at h
   · simp at h
@@ -1723,32 +1741,32 @@ theorem timeoutThread_replenishQueueOnCore (epId : SeLe4n.ObjId) (isReceiveQ : B
           first
             | rw [revertPriorityInheritance_replenishQueueOnCore]
             | skip
-          rw [ensureRunnable_replenishQueueOnCore]
+          rw [wakeThread_replenishQueueOnCore_local]
           show st1.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c
           rw [hSched1]
 
 /-- WS-SM SM5.H (frame): timing out **all** of a SchedContext's IPC-blocked threads
 never touches any replenish queue (each step is a `timeoutThread`). -/
 theorem timeoutBlockedThreads_replenishQueueOnCore (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (c : CoreId) :
-    (timeoutBlockedThreads st scId).1.scheduler.replenishQueueOnCore c
+    (scId : SeLe4n.SchedContextId) (execCore : CoreId) (c : CoreId) :
+    (timeoutBlockedThreads st scId execCore).1.scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
   unfold timeoutBlockedThreads
   -- prove the fold preserves the queue from any accumulator
   suffices hFold : ∀ (tids : List SeLe4n.ThreadId)
-      (acc : SystemState × List (SeLe4n.ThreadId × KernelError)),
-      (tids.foldl (fun (acc : SystemState × List (SeLe4n.ThreadId × KernelError)) tid =>
+      (acc : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind)),
+      (tids.foldl (fun (acc : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind)) tid =>
         match acc.1.getTcb? tid with
         | some tcb =>
           match tcbBlockingInfo tcb with
           | some (epId, isReceiveQ) =>
-            match timeoutThread epId isReceiveQ tid acc.1 with
-            | .ok st'' => (st'', acc.2)
-            | .error e => (acc.1, acc.2 ++ [(tid, e)])
-          | none => (acc.1, acc.2)
-        | none => (acc.1, acc.2)) acc).1.scheduler.replenishQueueOnCore c
+            match timeoutThread epId isReceiveQ tid execCore acc.1 with
+            | .ok r => (r.1, acc.2.1, acc.2.2 ++ r.2.toList)
+            | .error e => (acc.1, acc.2.1 ++ [(tid, e)], acc.2.2)
+          | none => (acc.1, acc.2.1, acc.2.2)
+        | none => (acc.1, acc.2.1, acc.2.2)) acc).1.scheduler.replenishQueueOnCore c
         = acc.1.scheduler.replenishQueueOnCore c by
-    exact hFold _ (st, [])
+    exact hFold _ (st, [], [])
   intro tids
   induction tids with
   | nil => intro acc; rfl
@@ -1759,8 +1777,8 @@ theorem timeoutBlockedThreads_replenishQueueOnCore (st : SystemState)
     split
     · split
       · split
-        · next st'' heqTo =>
-            exact timeoutThread_replenishQueueOnCore _ _ hd acc.1 st'' c heqTo
+        · next r heqTo =>
+            exact timeoutThread_replenishQueueOnCore _ _ hd execCore acc.1 r c heqTo
         · rfl
       · rfl
     · rfl
@@ -1777,7 +1795,8 @@ theorem timerTickBudgetOnCore_bound_exhausted_replenish_eq
     (hBound : tcb.schedContextBinding = .bound scId)
     (hSc : st.getSchedContext? scId = some sc)
     (hBudget : sc.budgetRemaining.val ≤ 1)
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b)) (c' : CoreId) :
+    {sgis : List (CoreId × SgiKind)}
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis)) (c' : CoreId) :
     st'.scheduler.replenishQueueOnCore c'
       = (replenishOnCore st c scId (st.machine.timer + sc.period.val)).scheduler.replenishQueueOnCore c' := by
   simp only [timerTickBudgetOnCore, hBound, hSc, if_pos hBudget, Except.ok.injEq,
@@ -1801,7 +1820,8 @@ theorem timerTickBudgetOnCore_donated_exhausted_replenish_eq
     (hDonated : tcb.schedContextBinding = .donated scId owner)
     (hSc : st.getSchedContext? scId = some sc)
     (hBudget : sc.budgetRemaining.val ≤ 1)
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b)) (c' : CoreId) :
+    {sgis : List (CoreId × SgiKind)}
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis)) (c' : CoreId) :
     st'.scheduler.replenishQueueOnCore c'
       = (replenishOnCore st c scId (st.machine.timer + sc.period.val)).scheduler.replenishQueueOnCore c' := by
   simp only [timerTickBudgetOnCore, hDonated, hSc, if_pos hBudget, Except.ok.injEq,
@@ -1817,7 +1837,8 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (st' : SystemState) (b : Bool) (c' : CoreId)
     (hValid : ∀ c'', replenishQueueValidOnCore st c'')
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b)) :
+    {sgis : List (CoreId × SgiKind)}
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis)) :
     replenishQueueValidOnCore st' c' := by
   match hB : tcb.schedContextBinding with
   | .unbound =>

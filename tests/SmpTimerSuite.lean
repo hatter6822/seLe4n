@@ -196,11 +196,12 @@ example (st : SystemState) (execCore : CoreId) (scId : SeLe4n.SchedContextId) (n
 /-- SM5.D.5 / plan §6.1: budget-tick preemption re-dispatches via the budget-aware
 reschedule. -/
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (st3 st' : SystemState)
+    (tsgis : List (CoreId × SgiKind))
     (hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid)
     (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb)
-    (hBud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, true))
+    (hBud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, true, tsgis))
     (hSched : scheduleEffectiveOnCore st3 c = .ok st') :
-    timerTickOnCore st c = .ok (st', (timerTickOnCorePrepared st c).2.1) :=
+    timerTickOnCore st c = .ok (st', (timerTickOnCorePrepared st c).2.1 ++ tsgis) :=
   timerTickOnCore_preempts_local st c tid tcb st3 st' hCur hTcb hBud hSched
 
 /-- SM5.D.6 (audit-pass-2): domain rotation is the separate atomic `scheduleDomainOnCore`
@@ -249,10 +250,10 @@ given the budget-tick discharge `hBudgetRqWf` (unconditional on clean paths via
 bound-budget-exhausted re-enqueue is the SM5.F tracked gap). -/
 example (st : SystemState) (c : CoreId) (st' : SystemState) (sgis : List (CoreId × SgiKind))
     (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
-    (hBudgetRqWf : ∀ tid tcb st3 b,
+    (hBudgetRqWf : ∀ tid tcb st3 b sgis3,
        (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
        (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b) →
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b, sgis3) →
        (st3.scheduler.runQueueOnCore c).wellFormed)
     (hStep : timerTickOnCore st c = .ok (st', sgis)) :
     (st'.scheduler.runQueueOnCore c).wellFormed :=
@@ -299,7 +300,7 @@ private def stDomain : SystemState :=
 
 private def budgetPreempts (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) : Bool :=
   match timerTickBudgetOnCore st c tid tcb with
-  | .ok (_, b) => b
+  | .ok (_, b, _) => b
   | .error _ => false
 
 private def tickOk (st : SystemState) (c : CoreId) : Bool :=
@@ -740,6 +741,82 @@ private def runLocalReplenishRescheduleChecks : IO Unit := do
      | .ok r => r.1.scheduler.currentOnCore bootCoreId == some tidLo
      | .error _ => false)
 
+/-- §3.14 fixture: core 1 runs `tidCur` (bound to an SC one charge from
+exhaustion); `tidW` — blocked on the endpoint's send queue, budget-bounded by
+the same SC (`scThreadIndex`), with the given `cpuAffinity` — is the thread the
+exhaustion timeout will wake. -/
+private def mkTimeoutWakeState (aff : Option CoreId) : SystemState :=
+  let tidCur := ThreadId.ofNat 320
+  let tidW := ThreadId.ofNat 321
+  let scW : SeLe4n.SchedContextId := ⟨90⟩
+  let epW : SeLe4n.ObjId := ⟨91⟩
+  let tcbCur : TCB := { mkTcb 320 15 0 with schedContextBinding := .bound scW }
+  let tcbW : TCB := { mkTcb 321 12 0 with
+    schedContextBinding := .bound scW, cpuAffinity := aff,
+    ipcState := .blockedOnSend epW,
+    queuePrev := none, queueNext := none, queuePPrev := some .endpointHead }
+  let scObj : SchedContext :=
+    { (default : SchedContext) with
+        priority := ⟨15⟩, boundThread := some tidCur,
+        budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨1⟩ }
+  let epObj : Endpoint := { sendQ := { head := some tidW, tail := some tidW } }
+  let stBase : SystemState :=
+    ((((BootstrapBuilder.empty.withObject tidCur.toObjId (.tcb tcbCur)).withObject
+        tidW.toObjId (.tcb tcbW)).withObject
+        scW.toObjId (.schedContext scObj)).withObject
+        epW (.endpoint epObj)).build
+  { stBase with
+    scheduler := stBase.scheduler.setCurrentOnCore core1 (some tidCur),
+    scThreadIndex := scThreadIndexAdd stBase.scThreadIndex scW tidW }
+
+/-- §3.14 (PR #880 round 8 — affinity-aware budget-timeout wakes): a thread
+whose budget-bounded IPC times out on a secondary core's tick wakes onto its
+HOME core (its `cpuAffinity`; the boot core when unbound) — never hard-pinned
+to the boot queue — and a remote home core is poked with a `.reschedule` SGI
+carried in the tick's result.  Before round 8 the timeout wake was
+`ensureRunnable` (bootCoreId-pinned, no SGI): an affinity-bound waiter landed
+on a queue whose dispatch gate refuses it (`affinityAdmitsCore` fail-closed)
+or ran off its affinity core, and no poke ever reached its home core. -/
+private def runAffinityTimeoutWakeChecks : IO Unit := do
+  IO.println "--- §3.14 affinity-aware budget-timeout wake ---"
+  let core2 : CoreId := ⟨2, by decide⟩
+  let tidW := ThreadId.ofNat 321
+  -- Remote-affinity waiter: the exhaustion tick on core 1 wakes it onto core 2.
+  let stRemote := mkTimeoutWakeState (some core2)
+  assertBool "remote-affinity waiter wakes onto its HOME core's queue (core 2)"
+    (match timerTickOnCore stRemote core1 with
+     | .ok r => (r.1.scheduler.runQueueOnCore core2).contains tidW
+     | .error _ => false)
+  assertBool "remote-affinity waiter is NOT parked on the boot queue (the round-8 bug)"
+    (match timerTickOnCore stRemote core1 with
+     | .ok r => ! (r.1.scheduler.runQueueOnCore bootCoreId).contains tidW
+     | .error _ => false)
+  assertBool "the remote home core is poked: (core 2, .reschedule) rides the tick result"
+    (match timerTickOnCore stRemote core1 with
+     | .ok r => r.2.contains (core2, SgiKind.reschedule)
+     | .error _ => false)
+  -- Local-affinity waiter: the wake stays on the ticking core — no SGI at all.
+  let stLocal := mkTimeoutWakeState (some core1)
+  assertBool "local-affinity waiter wakes onto the ticking core's own queue"
+    (match timerTickOnCore stLocal core1 with
+     | .ok r => (r.1.scheduler.runQueueOnCore core1).contains tidW
+     | .error _ => false)
+  assertBool "a local timeout wake fires no SGI"
+    (match timerTickOnCore stLocal core1 with
+     | .ok r => r.2.isEmpty
+     | .error _ => false)
+  -- Unbound waiter: boot-core placement (as before round 8) — but the boot
+  -- core now gets its `.reschedule` poke, since the wake is remote to core 1.
+  let stUnbound := mkTimeoutWakeState none
+  assertBool "unbound waiter wakes onto the boot queue"
+    (match timerTickOnCore stUnbound core1 with
+     | .ok r => (r.1.scheduler.runQueueOnCore bootCoreId).contains tidW
+     | .error _ => false)
+  assertBool "the boot core is poked for the unbound waiter woken from core 1"
+    (match timerTickOnCore stUnbound core1 with
+     | .ok r => r.2.contains (bootCoreId, SgiKind.reschedule)
+     | .error _ => false)
+
 def runAll : IO Unit := do
   IO.println "=== WS-SM SM5.D — Per-core timer tick suite ==="
   runLockSetChecks
@@ -755,6 +832,7 @@ def runAll : IO Unit := do
   runClockAdvanceFlagChecks
   runClockAdvanceReplenishChecks
   runLocalReplenishRescheduleChecks
+  runAffinityTimeoutWakeChecks
   IO.println "=== SM5.D timer suite: all checks passed ==="
 
 end SeLe4n.Testing.SmpTimer

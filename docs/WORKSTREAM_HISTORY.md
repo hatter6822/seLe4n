@@ -257,6 +257,27 @@ domain-respect trio moved up-graph to their operations homes.
 quiet-tick triple; `smp_wake_suite` restates the gate family on the
 selector order and adds the bound-thread SC-deadline pins.
 
+**Review round 8 (same cut) — the budget-exhaustion timeout wake goes
+through the cross-core wake.**  One finding: `timeoutThread`'s re-enqueue
+was still `ensureRunnable` — `bootCoreId`-pinned, no SGI — so a waiter
+whose budget-bounded IPC timed out on a secondary core's tick was parked on
+the boot queue whatever its `cpuAffinity` (run off its affinity core, or
+refused fail-closed by `switchToThreadOnCore`'s `affinityAdmitsCore` gate),
+and no poke reached the core that should re-schedule.  `timeoutThread` now
+takes the executing core and wakes through `wakeThread` — the same SM5.C
+primitive as replenishment and resume wakes (home-core placement via
+`determineTargetCore`, single-placement guard, remote-target SGI) — and the
+SGIs thread out through `timeoutBlockedThreads` (state × errors × sgis),
+`timerTickBudgetOnCore` (third result component) and `timerTickOnCore`
+(`replenishSgis ++ timeoutSgis`), reaching the hardware through the seam
+the replenish pokes already use.  The single-core `timerTickBudget` and the
+trace model stay boot-pinned with their scope noted inline.  The timeout
+atoms recompose onto the wake (`wakeThread_preserves_runQueueSafetyOnCore`
+unconditional on every core; `timeoutThread_currentOnCore_eq` every-core,
+on new every-core PIP current frames in `PriorityInheritance/Preservation`);
+`smp_timer_suite` §3.14 pins remote-affinity home placement + SGI,
+local-affinity no-SGI, and unbound boot placement now with its poke.
+
 Plan: [`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`](planning/SMP_PER_CORE_SCHEDULER_PLAN.md)
 §SM5.C (landing note).  Next: SM10 release closure (→ v1.0.0),
 [`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md).

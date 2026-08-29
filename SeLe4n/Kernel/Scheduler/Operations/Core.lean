@@ -618,11 +618,12 @@ handles the case where a client's donated budget expires while the server
 is running — the client is unblocked with a timeout error (Z6-E integration
 with Z7 donation). -/
 def timeoutBlockedThreads (st : SystemState) (scId : SeLe4n.SchedContextId)
-    : SystemState × List (SeLe4n.ThreadId × KernelError) :=
+    (execCore : CoreId)
+    : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind) :=
   -- S-05/PERF-O1: O(1) RHTable lookup replaces O(n) object store scan
   let tids := st.scThreadIndex[scId]?.getD []
-  tids.foldl (fun (acc : SystemState × List (SeLe4n.ThreadId × KernelError)) tid =>
-    let (st', errs) := acc
+  tids.foldl (fun (acc : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind)) tid =>
+    let (st', errs, sgis) := acc
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. The
     -- original `_` arm collapsed wrong-variant and absent into the same
     -- identity fall-through, so migration is semantics-preserving.
@@ -630,15 +631,18 @@ def timeoutBlockedThreads (st : SystemState) (scId : SeLe4n.SchedContextId)
     | some tcb =>
       match tcbBlockingInfo tcb with
       | some (epId, isReceiveQ) =>
-        match timeoutThread epId isReceiveQ tid st' with
-        | .ok st'' => (st'', errs)
+        -- PR #880 round 8: the timeout wake is target-aware (the thread's home
+        -- core, not the boot queue); a remote home core's `.reschedule` SGI is
+        -- accumulated for the caller to emit after its state commit.
+        match timeoutThread epId isReceiveQ tid execCore st' with
+        | .ok r => (r.1, errs, sgis ++ r.2.toList)
         -- AG1-B: Collect errors instead of silently swallowing.
         -- Under crossSubsystemInvariant, timeoutThread failures are unreachable.
         -- A non-empty error list indicates an invariant violation.
-        | .error e => (st', errs ++ [(tid, e)])
-      | none => (st', errs)  -- not blocked on IPC
-    | none => (st', errs)  -- index entry for non-TCB (invariant violation)
-  ) (st, [])
+        | .error e => (st', errs ++ [(tid, e)], sgis)
+      | none => (st', errs, sgis)  -- not blocked on IPC
+    | none => (st', errs, sgis)  -- index entry for non-TCB (invariant violation)
+  ) (st, [], [])
 
 -- ============================================================================
 -- Z4-F: SchedContext-aware budget decrement (timerTickBudget)
@@ -705,7 +709,13 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
         -- `SchedulerState.lastTimeoutErrors` field instead of being silently
         -- discarded. A non-empty list indicates an invariant violation. Under
         -- `crossSubsystemInvariant`, the list is always empty.
-        let (st''', timeoutErrors) := timeoutBlockedThreads st'' scId
+        -- PR #880 round 8: the timeout wake is target-aware, so on this
+        -- boot-core (single-core model) path a woken thread lands on its home
+        -- queue.  The SGI component is dropped here: the single-core surface
+        -- has no SGI seam (the live kernel runs the per-core
+        -- `timerTickBudgetOnCore`, which propagates it), and an SGI can only
+        -- arise for an affinity-bound thread the single-core model never runs.
+        let (st''', timeoutErrors, _timeoutSgis) := timeoutBlockedThreads st'' scId bootCoreId
         let st'''' := { st''' with scheduler :=
           st'''.scheduler.setLastTimeoutErrorsOnCore bootCoreId timeoutErrors }
         .ok (st'''', true)
@@ -1366,14 +1376,22 @@ Dispatches on `tcb.schedContextBinding` exactly as `timerTickBudget`:
 - **Bound, SC missing**: `.error .missingSchedContext` (R5.E fail-closed; the
   branch is unreachable under `schedContextStoreConsistent`).
 
-Reads / writes **only** core `c`'s scheduler slots (`runQueueOnCore c`,
-`replenishQueueOnCore c`, `lastTimeoutErrorsOnCore c`) and the object store.
+Returns `(updatedState, wasPreempted, timeoutSgis)` (PR #880 round 8): the
+third component is the cross-core `.reschedule` SGIs the bound-exhausted arm's
+timeout wakes produced — `timeoutThread` wakes each timed-out thread on its
+**home** core, and a remote home must be poked after the caller's state commit
+exactly like the replenish-drain wakes.  Every non-exhausted arm returns `[]`.
+
+Reads / writes core `c`'s scheduler slots (`runQueueOnCore c`,
+`replenishQueueOnCore c`, `lastTimeoutErrorsOnCore c`), the object store, and —
+via the round-8 target-aware timeout wakes — the woken threads' home-core run
+queues.
 
 **No `machine.timer` advance** (unlike `timerTickBudget`): the per-core tick is
 read-only w.r.t. the shared global tick counter (see the SM5.D section header —
 global-timer ownership). -/
 def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) : Except KernelError (SystemState × Bool) :=
+    (tcb : TCB) : Except KernelError (SystemState × Bool × List (CoreId × SgiKind)) :=
   match tcb.schedContextBinding with
   | .unbound =>
     if tcb.timeSlice ≤ 1 then
@@ -1381,10 +1399,10 @@ def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId
       let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
       let rq := (st'.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb)
       let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore c rq }
-      .ok (st'', true)
+      .ok (st'', true, [])
     else
       let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
-      .ok ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') }, false)
+      .ok ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') }, false, [])
   | .bound scId | .donated scId _ =>
     match st.getSchedContext? scId with
     | some sc =>
@@ -1402,14 +1420,16 @@ def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId
         let stReplenished := replenishOnCore st' c scId (now + sc.period.val)
         let rqPreempt := (st'.scheduler.runQueueOnCore c).insert tid (resolveInsertPriority st' tid sc)
         let st'' := { stReplenished with scheduler := stReplenished.scheduler.setRunQueueOnCore c rqPreempt }
-        let (st''', timeoutErrors) := timeoutBlockedThreads st'' scId
+        -- PR #880 round 8: timeout wakes land on each thread's HOME core and
+        -- their remote-poke SGIs ride the result's third component.
+        let (st''', timeoutErrors, timeoutSgis) := timeoutBlockedThreads st'' scId c
         let st'''' := { st''' with scheduler :=
           st'''.scheduler.setLastTimeoutErrorsOnCore c timeoutErrors }
-        .ok (st'''', true)
+        .ok (st'''', true, timeoutSgis)
       else
         let sc' := consumeBudget sc 1
         let st' := { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
-        .ok (st', false)
+        .ok (st', false, [])
     | _ =>
       -- R5.E fail-closed: SchedContext lookup failed for a bound-budget thread.
       -- Unreachable under `schedContextStoreConsistent`; surfaced explicitly
@@ -1509,11 +1529,14 @@ def timerTickOnCore (st : SystemState) (c : CoreId) :
       | some tcb =>
           match timerTickBudgetOnCore st1 c tid tcb with
           | .error e => .error e
-          | .ok (st2, preempted) =>
+          | .ok (st2, preempted, timeoutSgis) =>
+              -- PR #880 round 8: the bound-exhausted arm's timeout wakes are
+              -- target-aware; their remote-poke SGIs join the replenish
+              -- drain's in the tick's emission list.
               if preempted then
                 match scheduleEffectiveOnCore st2 c with
                 | .error e => .error e
-                | .ok st3 => .ok (st3, replenishSgis)
+                | .ok st3 => .ok (st3, replenishSgis ++ timeoutSgis)
               else if localReplenishWake then
                 -- PR #880 round 7: the drain woke a thread on this very core and
                 -- the charge did not preempt — run the receiver-side reschedule
@@ -1523,9 +1546,9 @@ def timerTickOnCore (st : SystemState) (c : CoreId) :
                 -- already re-selects over the refilled queue.
                 match handleRescheduleSgiOnCore st2 c with
                 | .error e => .error e
-                | .ok st3 => .ok (st3, replenishSgis)
+                | .ok st3 => .ok (st3, replenishSgis ++ timeoutSgis)
               else
-                .ok (st2, replenishSgis)
+                .ok (st2, replenishSgis ++ timeoutSgis)
       | none => .error .schedulerInvariantViolation
 
 -- ─ SM5.D.6 (separate per-core domain-boundary re-dispatch, faithful to the

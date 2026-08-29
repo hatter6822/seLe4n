@@ -583,9 +583,10 @@ theorem timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore (st : S
     (c : CoreId) (st' : SystemState) (sgis : List (CoreId × SgiKind)) (c' : CoreId)
     (hInv : st.objects.invExt)
     (hCons : ∀ c'', replenishQueueAffinityConsistentOnCore st c'')
-    (hBudgetAffinity : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (st3 : SystemState) (b : Bool),
+    (hBudgetAffinity : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (st3 : SystemState) (b : Bool)
+      (sgis3 : List (CoreId × SgiKind)),
       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-      timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b) →
+      timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b, sgis3) →
       replenishQueueAffinityConsistentOnCore (timerTickOnCorePrepared st c).1 c' →
       replenishQueueAffinityConsistentOnCore st3 c')
     (hStep : timerTickOnCore st c = .ok (st', sgis)) :
@@ -611,9 +612,9 @@ theorem timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore (st : S
     split at hStep
     · split at hStep
       · simp at hStep
-      · rename_i st3 b hbud
+      · rename_i st3 b tsgis hbud
         have h3 : replenishQueueAffinityConsistentOnCore st3 c' :=
-          hBudgetAffinity _ _ _ _ hCur hbud (hPrep c')
+          hBudgetAffinity _ _ _ _ _ hCur hbud (hPrep c')
         have h3Inv : st3.objects.invExt :=
           timerTickBudgetOnCore_preserves_objects_invExt _ c _ _ _ _ hPrepInv hbud
         split at hStep
@@ -652,9 +653,10 @@ theorem timerTickOnCore_preserves_perCoreCbsInvariant_discharged (st : SystemSta
     (hInvObj : st.objects.invExt)
     (hPeriod : ∀ scId sc, (timerTickOnCorePrepared st c).1.getSchedContext? scId = some sc →
       0 < sc.period.val)
-    (hBudgetAffinity : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (st3 : SystemState) (b : Bool),
+    (hBudgetAffinity : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (st3 : SystemState) (b : Bool)
+      (sgis3 : List (CoreId × SgiKind)),
       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-      timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b) →
+      timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b, sgis3) →
       replenishQueueAffinityConsistentOnCore (timerTickOnCorePrepared st c).1 c' →
       replenishQueueAffinityConsistentOnCore st3 c')
     (hStep : timerTickOnCore st c = .ok (st', sgis)) :

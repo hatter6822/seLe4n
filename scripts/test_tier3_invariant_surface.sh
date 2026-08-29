@@ -8124,6 +8124,15 @@ open SeLe4n.Kernel
 #check @ensureRunnable_preserves_runQueueSafetyOnCore
 #check @updatePipBoost_preserves_runQueueSafetyOnCore
 #check @revertPriorityInheritance_preserves_runQueueSafetyOnCore
+-- PR #880 round 8: the timeout wake is the cross-core wake — run-queue
+-- safety through the target-core enqueue (every core, unconditional), and the
+-- every-core current frames (timeout atom + the PIP walk it composes).
+#check @enqueueRunnableOnCore_preserves_runQueueSafetyOnCore
+#check @wakeThread_preserves_runQueueSafetyOnCore
+#check @timeoutThread_currentOnCore_eq
+#check @SeLe4n.Kernel.PriorityInheritance.updatePipBoost_currentOnCore_eq
+#check @SeLe4n.Kernel.PriorityInheritance.propagate_currentOnCore_eq
+#check @SeLe4n.Kernel.PriorityInheritance.revert_currentOnCore_eq
 #check @timeoutThread_preserves_runQueueSafetyOnCore
 #check @timeoutBlockedThreads_preserves_runQueueSafetyOnCore
 #check @replenishOnCore_preserves_runQueueSafetyOnCore

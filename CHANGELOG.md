@@ -348,6 +348,46 @@ as selection orders it) and gains the bound-thread pins: SC deadline 10
 displaces SC deadline 20 while both TCB fields sit at `0`, and the reversed
 deadlines do not.
 
+**Review round 8 (same version) — one finding: the budget-exhaustion timeout
+wake was still the single-core wake.**  `timerTickBudgetOnCore`'s
+bound-budget-exhausted arm ends in `timeoutBlockedThreads` → `timeoutThread`,
+whose re-enqueue was `ensureRunnable` — hard-coded onto `bootCoreId`, no SGI.
+A waiter whose budget-bounded IPC timed out on a secondary core's tick was
+parked on the boot queue whatever its `cpuAffinity`: an affinity-bound waiter
+either ran off its affinity core (`scheduleEffectiveOnCore` gates domain and
+budget but not affinity) or was refused fail-closed at dispatch
+(`switchToThreadOnCore`'s `affinityAdmitsCore` gate), and no poke ever reached
+the core that should re-schedule — the exact placement-plus-notification pair
+the tree already fixed for replenishment wakes (SM5.D.4) and resume wakes
+(PR #811 P2-5).  The timeout path now wakes through the same SM5.C primitive
+as both: `timeoutThread` takes the executing core and calls `wakeThread`
+(placement = `determineTargetCore` — the affinity core, boot when unbound;
+single-placement guard; ready-save), returning the wake's optional
+`.reschedule` SGI; `timeoutBlockedThreads` accumulates `(state, errors, sgis)`;
+`timerTickBudgetOnCore` carries the SGIs in a third result component; and
+`timerTickOnCore` emits `replenishSgis ++ timeoutSgis` after its state commit —
+so the live tick entry fires the timeout pokes through the seam that already
+fires the replenish pokes.  The single-core `timerTickBudget` passes
+`bootCoreId` and drops the SGI list with its rationale in place (that model has
+no SGI seam), and the trace model's `.ipcTimeoutTick` stays boot-pinned
+(single-core liveness scope, noted inline).  On the proof surface the timeout
+atoms recompose from `ensureRunnable` to the wake: run-queue safety through the
+target-core enqueue (`enqueueRunnableOnCore_preserves_runQueueSafetyOnCore` /
+`wakeThread_preserves_runQueueSafetyOnCore`, every core, unconditional), the
+current-thread frame generalises boot → every core
+(`timeoutThread_currentOnCore_eq`) standing on new every-core PIP frames in
+`PriorityInheritance/Preservation` (`updatePipBoost_currentOnCore_eq`,
+`propagate_currentOnCore_eq`, `revert_currentOnCore_eq` — the D4-O/P
+boot-pinned forms now re-derive from them), and the base-invariant atom's
+don't-wake-current hypothesis generalises to every core, instantiated at the
+wake's target; the tick capstones and their budget-hypothesis bundles ride the
+widened triple unchanged in content.  `smp_timer_suite` §3.14 pins the
+scenario: a remote-affinity waiter timed out from core 1's tick lands on its
+home core's queue — not boot's — with `(home, .reschedule)` riding the tick
+result; a local-affinity waiter lands on the ticking core with no SGI; an
+unbound waiter keeps boot placement and boot now gets its poke.  The golden
+trace is byte-identical (an unbound waiter's placement is unchanged).
+
 Gates: `./scripts/test_full.sh` green (tiers 0–3);
 `./scripts/test_rust.sh` green (1145 unit + 108 conformance tests, fmt,
 clippy `-D warnings`); staged-module partition consistent
