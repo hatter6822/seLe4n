@@ -292,9 +292,9 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
 
 -- SM5.H.2 (A4): the live per-core budget tick preserves replenish-queue validity.
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (st' : SystemState) (b : Bool) (c' : CoreId)
+    (st' : SystemState) (b : Bool) {sgis3 : List (CoreId × SgiKind)} (c' : CoreId)
     (hValid : ∀ c'', replenishQueueValidOnCore st c'')
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b)) :
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis3)) :
     replenishQueueValidOnCore st' c' :=
   timerTickBudgetOnCore_preserves_replenishQueueValidOnCore st c tid tcb st' b c' hValid hStep
 
@@ -543,7 +543,7 @@ private def runLiveTickScenarios : IO Unit := do
   let stExhausted : SystemState :=
     { stCbs with objects := stCbs.objects.insert scId0.toObjId (.schedContext scExhausted) }
   match timerTickBudgetOnCore stExhausted core1 tid0 tcb0 with
-  | .ok (st', preempted) =>
+  | .ok (st', preempted, _tsgis) =>
       assertBool "bound-exhausted budget tick preempts (returns true)"
         (preempted == true)
       -- A2: the LIVE tick's replenish-queue write on core 1 is exactly the

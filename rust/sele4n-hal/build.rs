@@ -80,14 +80,41 @@ fn main() {
     // DSB; this scanner ensures the source still honours it.
     scan_gic_rs_send_sgi_emits_dsb_ish();
 
-    // WS-SM SM1.I.1 (per-core IRQ handler contract): verify
+    // WS-SM SM1.I.1 / SM5 (per-core IRQ handler contract): verify
     // `trap.rs::handle_irq_per_core` exists and routes through the
-    // per-core stats record path.  SM5 will swap the assembly entry
-    // vector from `handle_irq` to `handle_irq_per_core`; if a future
-    // refactor removed or renamed the function, the SM5 swap would
-    // fail at link time.  This scanner forces the contract earlier
-    // (at elaboration) with an actionable diagnostic.
+    // per-core stats record path and the per-core CNTP ISR seam.  It is
+    // the live IRQ path (`trap.S`'s IRQ vectors branch to it); if a
+    // future refactor removed or renamed the function, the assembly
+    // branch would fail at link time.  This scanner forces the contract
+    // earlier (at elaboration) with an actionable diagnostic.
     scan_trap_rs_handle_irq_per_core_intact();
+
+    // WS-SM SM5 (IRQ vector redirect contract): verify `trap.S`'s IRQ
+    // vectors branch to `handle_irq_per_core` and that no vector still
+    // branches to a bare `handle_irq` (the removed single-core legacy
+    // entry).  A regression that re-pointed a vector at a handler
+    // without the per-core scheduler seam would silently disconnect
+    // the verified per-core timer tick and the `.reschedule` receiver
+    // from the hardware IRQ path.
+    scan_trap_s_irq_vector_redirect();
+
+    // WS-SM SM5.C.5 (reschedule receiver contract): verify the
+    // `.reschedule` SGI seam is intact end to end on the Rust side —
+    // `trap.rs` defines the handler + its kernel-entry bracket, and
+    // `boot.rs` registers it at boot.  A regression that dropped the
+    // registration would silently demote every cross-core wake to
+    // wake-on-next-tick (the SGI would land on the no-op table arm).
+    scan_reschedule_sgi_seam_intact();
+
+    // WS-SM (Lean-runtime readiness contract): verify every Rust seam
+    // that calls into Lean consults the per-core readiness gate
+    // (`lean_ready`) — the structural form of the constraint
+    // shootdown.rs states in prose ("a reentrant per-core Lean runtime
+    // … does not exist").  A regression that dropped a gate would let a
+    // hand-built image enter the Lean runtime from a PE that never
+    // initialized it — undefined behaviour at that PE's first
+    // interrupt.
+    scan_lean_ready_gates_intact();
 
     // WS-SM SM2.D.5 (verified-lock FFI bridge contract): verify the
     // SM2.D lock-bridge module is present and every required FFI
@@ -102,6 +129,13 @@ fn main() {
     scan_lock_bridge_rs_intact();
     scan_ffi_rs_exposes_lock_ffi_exports();
     scan_ffi_rs_exposes_switch_to_thread_exports();
+
+    // WS-SM SM5.I (commit-coupled shadow-clock contract): verify `ffi.rs`
+    // still exposes the shadow-advance export the Lean tick entry's
+    // committed clock advance resolves against, and that the timer ISR
+    // has not regrown an invocation-time incrementer beside it (the
+    // drift the commit-coupling exists to make impossible).
+    scan_ffi_rs_exposes_timer_shadow_advance_export();
 
     // WS-SM SM2.E (closes the queued_rw_lock protocol contract):
     // verify that the mode-encoded four-state parked machine and the
@@ -467,8 +501,15 @@ fn scan_smp_rs_invokes_secondary_init_helpers() {
         ("init_mmu_secondary(", "Step 1: MMU enable"),
         ("init_cpu_interface_secondary(", "Step 3: GIC CPU interface"),
         ("init_timer_secondary(", "Step 4: Timer arm"),
-        ("enable_irq(", "Step 5: IRQ unmask"),
-        ("lean_secondary_kernel_main", "Step 6: Lean kernel entry"),
+        (
+            "lean_secondary_kernel_main",
+            "Step 5: Lean kernel bring-up entry",
+        ),
+        (
+            "with_kernel_entry(",
+            "Step 5: kernel-entry bracket around the bring-up entry",
+        ),
+        ("enable_irq(", "Step 6: IRQ unmask"),
     ];
 
     let mut missing: Vec<&str> = Vec::new();
@@ -755,22 +796,23 @@ fn scan_gic_rs_send_sgi_emits_dsb_ish() {
     }
 }
 
-/// **WS-SM SM1.I.1**: verify `trap.rs::handle_irq_per_core` is intact.
+/// **WS-SM SM1.I.1 / SM5**: verify `trap.rs::handle_irq_per_core` is
+/// intact.
 ///
-/// SM1.I.1 adds the per-core IRQ handler entry as the SM5 landing seam
-/// — SM5 will redirect `trap.S`'s IRQ assembly entry from `handle_irq`
-/// to `handle_irq_per_core`.  This scanner forces the contract at
-/// elaboration time:
+/// `handle_irq_per_core` is the live IRQ path — `trap.S`'s IRQ vectors
+/// branch to it (the redirect the SM1.I.1 seam was staged for; pinned
+/// by `scan_trap_s_irq_vector_redirect`).  This scanner forces the
+/// contract at elaboration time:
 ///
 ///   1. The function `pub extern "C" fn handle_irq_per_core` exists
-///      (a regression that removed or renamed it would fail SM5's
-///      assembly swap at link time; we catch it earlier).
+///      (a regression that removed or renamed it would fail the
+///      assembly branch at link time; we catch it earlier).
 ///   2. The `#[no_mangle]` attribute is preserved (otherwise the
 ///      assembly entry cannot resolve the symbol at link time).
 ///   3. The body invokes `crate::per_cpu_stats::record_irq_dispatch`
 ///      so per-core IRQ attribution is wired (this is the
 ///      substantive SM1.I.1 contract; a refactor that dropped the
-///      counter increment would silently break SM5+ per-core
+///      counter increment would silently break per-core
 ///      diagnostics).
 ///   4. The body invokes
 ///      `crate::per_cpu::current_core_id_from_tpidr` so the
@@ -803,9 +845,8 @@ fn scan_trap_rs_handle_irq_per_core_intact() {
         panic!(
             "WS-SM SM1.I.1 regression: `{path}` no longer defines \
              `pub extern \"C\" fn handle_irq_per_core(...)`.  This is the \
-             SM5 landing seam — SM5 will redirect `trap.S`'s IRQ entry to \
-             this function.  Restore the function or update the scanner if \
-             SM5 has landed and the contract changed."
+             live IRQ path — `trap.S`'s IRQ vectors branch to it.  \
+             Restore the function."
         );
     };
 
@@ -826,9 +867,9 @@ fn scan_trap_rs_handle_irq_per_core_intact() {
         panic!(
             "WS-SM SM1.I.1 regression: `{path}::handle_irq_per_core` no longer \
              has the `#[no_mangle]` attribute.  Without it, the assembly entry \
-             vector (SM5 will redirect to this function) cannot resolve the \
-             symbol at link time.  Restore `#[no_mangle]` immediately above the \
-             function declaration."
+             vector (`trap.S`'s IRQ entries branch to this function) cannot \
+             resolve the symbol at link time.  Restore `#[no_mangle]` \
+             immediately above the function declaration."
         );
     }
 
@@ -867,6 +908,284 @@ fn scan_trap_rs_handle_irq_per_core_intact() {
              timer tick (`Kernel.timerTickOnCore`).  Restore the call in the \
              `intid == TIMER_PPI_ID` branch."
         );
+    }
+}
+
+/// **WS-SM SM5**: verify `trap.S`'s IRQ vectors branch to the per-core
+/// IRQ handler.
+///
+/// The redirect from the single-core legacy entry to
+/// `handle_irq_per_core` is what connects the hardware IRQ path to the
+/// verified per-core scheduler (the SM5.D.1 timer-tick seam and the
+/// SM5.C.5 `.reschedule` receiver both hang off the per-core handler's
+/// dispatch closure).  Two textual checks codify the contract:
+///
+///   1. `bl handle_irq_per_core` appears at least twice (the EL0 and
+///      EL1 IRQ vectors).
+///   2. No `bl handle_irq` line targets anything other than
+///      `handle_irq_per_core` — the single-core legacy entry was
+///      removed with the redirect, so a bare `bl handle_irq` would be
+///      an unresolved symbol reintroducing the pre-SM5 split brain.
+fn scan_trap_s_irq_vector_redirect() {
+    let path = "src/trap.S";
+    println!("cargo:rerun-if-changed={path}");
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => panic!("WS-SM SM5 scanner: failed to read {path}: {e}"),
+    };
+
+    // Strip `//` line comments so prose mentions don't satisfy (or
+    // trip) the checks.
+    let stripped: String = contents
+        .lines()
+        .map(|line| {
+            if let Some(idx) = line.find("//") {
+                &line[..idx]
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let per_core_branches = stripped.matches("bl      handle_irq_per_core").count()
+        + stripped.matches("bl handle_irq_per_core").count();
+    if per_core_branches < 2 {
+        panic!(
+            "WS-SM SM5 regression: `{path}` must branch to \
+             `handle_irq_per_core` from both IRQ vectors \
+             (`__el0_irq_entry` and `__el1_irq_entry`); found \
+             {per_core_branches} branch(es).  The per-core handler is \
+             the seam that drives the verified per-core scheduler from \
+             hardware IRQs."
+        );
+    }
+
+    // A `bl handle_irq` token NOT followed by `_per_core` is the
+    // removed legacy entry.
+    for line in stripped.lines() {
+        let Some(idx) = line.find("bl") else { continue };
+        let target = line[idx + 2..].trim();
+        if target == "handle_irq" {
+            panic!(
+                "WS-SM SM5 regression: `{path}` branches to the removed \
+                 single-core `handle_irq`.  Both IRQ vectors must branch \
+                 to `handle_irq_per_core`."
+            );
+        }
+    }
+}
+
+/// **WS-SM SM5.C.5**: verify the `.reschedule` SGI receiver seam is
+/// intact end to end on the Rust side.
+///
+///   1. `trap.rs` defines `reschedule_sgi_handler` and brackets its
+///      Lean call (`lean_per_core_reschedule`) in
+///      `kernel_entry::with_kernel_entry` — an unbracketed commit
+///      racing another core's entry loses one transition whole.
+///   2. `trap.rs` defines `register_reschedule_sgi_handler` (the
+///      write-once boot registration wrapper).
+///   3. `boot.rs` calls `register_reschedule_sgi_handler` — without
+///      the registration, every cross-core wake silently demotes to
+///      wake-on-next-tick (the SGI lands on the no-op table arm).
+fn scan_reschedule_sgi_seam_intact() {
+    let trap_path = "src/trap.rs";
+    let boot_path = "src/boot.rs";
+    let strip = |contents: &str| -> String {
+        contents
+            .lines()
+            .map(|line| {
+                if let Some(idx) = line.find("//") {
+                    &line[..idx]
+                } else {
+                    line
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let trap = match std::fs::read_to_string(trap_path) {
+        Ok(s) => strip(&s),
+        Err(e) => panic!("WS-SM SM5.C.5 scanner: failed to read {trap_path}: {e}"),
+    };
+    let boot = match std::fs::read_to_string(boot_path) {
+        Ok(s) => strip(&s),
+        Err(e) => panic!("WS-SM SM5.C.5 scanner: failed to read {boot_path}: {e}"),
+    };
+
+    let Some(handler_start) = trap.find("fn reschedule_sgi_handler(") else {
+        panic!(
+            "WS-SM SM5.C.5 regression: `{trap_path}` no longer defines \
+             `reschedule_sgi_handler`.  This is the receiver seam of the \
+             cross-core wake protocol; restore the handler."
+        );
+    };
+    let handler_end = trap[handler_start..]
+        .find("\npub unsafe fn register_reschedule_sgi_handler")
+        .map(|off| handler_start + off)
+        .unwrap_or(trap.len());
+    let handler_body = &trap[handler_start..handler_end];
+    if !handler_body.contains("with_kernel_entry") {
+        panic!(
+            "WS-SM SM5.C.5 regression: `{trap_path}::reschedule_sgi_handler` \
+             no longer brackets its Lean call in \
+             `kernel_entry::with_kernel_entry`.  The reschedule commits \
+             kernel state; an unbracketed commit racing another core's \
+             entry loses one transition whole.  Restore the bracket."
+        );
+    }
+    if !handler_body.contains("lean_per_core_reschedule") {
+        panic!(
+            "WS-SM SM5.C.5 regression: `{trap_path}::reschedule_sgi_handler` \
+             no longer drives the Lean reschedule entry \
+             (`lean_per_core_reschedule`).  Restore the hw_target-gated \
+             call so the verified `handleRescheduleSgiOnCore` transition \
+             runs on SGI receipt."
+        );
+    }
+    if !trap.contains("pub unsafe fn register_reschedule_sgi_handler") {
+        panic!(
+            "WS-SM SM5.C.5 regression: `{trap_path}` no longer defines \
+             `register_reschedule_sgi_handler`.  Restore the write-once \
+             boot registration wrapper."
+        );
+    }
+    if !boot.contains("register_reschedule_sgi_handler") {
+        panic!(
+            "WS-SM SM5.C.5 regression: `{boot_path}` no longer registers \
+             the `.reschedule` SGI handler at boot (phase 3).  Without \
+             the registration every cross-core wake silently demotes to \
+             wake-on-next-tick.  Restore the \
+             `crate::trap::register_reschedule_sgi_handler()` call."
+        );
+    }
+}
+
+/// **WS-SM**: verify every Rust seam that calls into the Lean runtime
+/// consults the per-core readiness gate (`lean_ready::lean_ready`)
+/// before its Lean call — **inside the seam function's own body, gate
+/// before symbol** (PR #880 review round 2: a file-level containment
+/// check would accept a gate parked in one function while another
+/// function's Lean call runs ungated).
+///
+/// The three seams and the symbols they resolve:
+///
+///   1. `timer.rs::per_core_timer_tick_isr` → `lean_per_core_timer_tick`
+///   2. `trap.rs::reschedule_sgi_handler`   → `lean_per_core_reschedule`
+///   3. `smp.rs::rust_secondary_main`       → `lean_secondary_kernel_main`
+///
+/// For each seam the scanner extracts the named function's body (first
+/// `fn <name>(` declaration through its brace-matched close, on the
+/// comment-stripped text so prose mentions neither satisfy nor trip the
+/// checks) and requires the first `lean_ready(` call to appear
+/// **before** the first occurrence of the Lean symbol within that body.
+/// A body carrying the symbol without a preceding gate is exactly the
+/// regression this scanner exists to catch (a PE entering a Lean
+/// runtime it never initialized — the constraint `shootdown.rs`
+/// documents and `lean_ready.rs` enforces).
+fn scan_lean_ready_gates_intact() {
+    let strip = |contents: &str| -> String {
+        contents
+            .lines()
+            .map(|line| {
+                if let Some(idx) = line.find("//") {
+                    &line[..idx]
+                } else {
+                    line
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    // The named function's body: from its `fn <name>(` declaration through
+    // the brace-matched close of its outermost block.
+    fn function_body<'a>(stripped: &'a str, path: &str, fn_name: &str) -> &'a str {
+        let decl = format!("fn {fn_name}(");
+        let decl_idx = stripped.find(&decl).unwrap_or_else(|| {
+            panic!(
+                "WS-SM regression: `{path}` no longer declares `fn {fn_name}`. \
+                 The Lean seam moved or was renamed; update the lean-ready \
+                 scanner's site table in the same change so the readiness-gate \
+                 contract keeps tracking the real call sites."
+            )
+        });
+        let open_rel = stripped[decl_idx..].find('{').unwrap_or_else(|| {
+            panic!(
+                "WS-SM lean-ready scanner: `{path}`'s `fn {fn_name}` has no \
+                 body block after its declaration."
+            )
+        });
+        let body_start = decl_idx + open_rel;
+        let mut depth = 0usize;
+        for (i, ch) in stripped[body_start..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &stripped[body_start..body_start + i + 1];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!(
+            "WS-SM lean-ready scanner: unbalanced braces while extracting \
+             `{path}`'s `fn {fn_name}` body."
+        );
+    }
+    let sites: &[(&str, &str, &str)] = &[
+        (
+            "src/timer.rs",
+            "per_core_timer_tick_isr",
+            "lean_per_core_timer_tick",
+        ),
+        (
+            "src/trap.rs",
+            "reschedule_sgi_handler",
+            "lean_per_core_reschedule",
+        ),
+        (
+            "src/smp.rs",
+            "rust_secondary_main",
+            "lean_secondary_kernel_main",
+        ),
+    ];
+    for (path, fn_name, lean_symbol) in sites {
+        println!("cargo:rerun-if-changed={path}");
+        let stripped = match std::fs::read_to_string(path) {
+            Ok(s) => strip(&s),
+            Err(e) => panic!("WS-SM lean-ready scanner: failed to read {path}: {e}"),
+        };
+        let body = function_body(&stripped, path, fn_name);
+        let sym_idx = body.find(lean_symbol).unwrap_or_else(|| {
+            panic!(
+                "WS-SM regression: `{path}`'s `fn {fn_name}` no longer resolves \
+                 `{lean_symbol}` in its body.  The Lean seam moved or was \
+                 dropped; update this scanner's site table in the same change \
+                 so the readiness-gate contract keeps tracking the real call \
+                 sites."
+            )
+        });
+        let gate_idx = body.find("lean_ready(").unwrap_or_else(|| {
+            panic!(
+                "WS-SM regression: `{path}`'s `fn {fn_name}` calls into the \
+                 Lean runtime (`{lean_symbol}`) without consulting the per-core \
+                 readiness gate (`crate::lean_ready::lean_ready(core)`) in its \
+                 body.  A PE must never enter a Lean runtime it has not \
+                 initialized; restore the gate around the Lean call."
+            )
+        });
+        if gate_idx >= sym_idx {
+            panic!(
+                "WS-SM regression: in `{path}`'s `fn {fn_name}`, the readiness \
+                 gate (`lean_ready(`) appears only after `{lean_symbol}` — the \
+                 Lean call is reachable before the gate is consulted.  Move the \
+                 `crate::lean_ready::lean_ready(core)` check so it guards the \
+                 Lean call."
+            );
+        }
     }
 }
 
@@ -1063,6 +1382,110 @@ fn scan_ffi_rs_exposes_switch_to_thread_exports() {
                  wrapper in `SeLe4n/Kernel/Concurrency/Runtime.lean` (in lockstep)."
             );
         }
+    }
+}
+
+/// **WS-SM SM5.I** (commit-coupled shadow clock — PR #880 follow-up): verify
+/// the shadow-advance seam holds on both sides of the crate.
+///
+/// 1. `ffi.rs` must declare `ffi_timer_advance_tick_count` — the export the
+///    Lean tick entry (`perCoreTimerTickEntry`, whose `@[extern]` declaration
+///    resolves against it at the verified-kernel hardware build's link step)
+///    calls iff the committed step advanced the model clock.  Dropping it
+///    would only surface at that future link step; pin it at elaboration.
+/// 2. `timer.rs::per_core_timer_tick_isr` must NOT have regrown an
+///    invocation-time `increment_tick_count` call — an ISR-side increment
+///    counts invocations rather than commits, which is exactly the drift
+///    (pre-readiness offsets, failed entries counted) the commit-coupled
+///    design exists to make impossible.  Checked on the ISR's brace-matched
+///    body over comment-stripped text, like the lean-ready gate scanner.
+fn scan_ffi_rs_exposes_timer_shadow_advance_export() {
+    let strip = |contents: &str| -> String {
+        contents
+            .lines()
+            .map(|line| {
+                if let Some(idx) = line.find("//") {
+                    &line[..idx]
+                } else {
+                    line
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let ffi_path = "src/ffi.rs";
+    println!("cargo:rerun-if-changed={ffi_path}");
+    let ffi_stripped = match std::fs::read_to_string(ffi_path) {
+        Ok(s) => strip(&s),
+        Err(e) => panic!("WS-SM SM5.I shadow-clock scanner: failed to read {ffi_path}: {e}"),
+    };
+    let needle = "pub extern \"C\" fn ffi_timer_advance_tick_count(";
+    if !ffi_stripped.contains(needle) {
+        panic!(
+            "WS-SM SM5.I regression: `{ffi_path}` no longer declares `{needle}`.  \
+             The Lean tick entry's commit-coupled shadow advance \
+             (`ffiTimerAdvanceTickCount`) resolves against this export at the \
+             verified-kernel hardware build's link step; without it the \
+             `TICK_COUNT` shadow can never advance.  If you removed the export \
+             deliberately, also remove the `@[extern]` declaration in \
+             `SeLe4n/Platform/FFI.lean` and rework `perCoreTimerTickEntry` \
+             (in lockstep)."
+        );
+    }
+
+    let timer_path = "src/timer.rs";
+    println!("cargo:rerun-if-changed={timer_path}");
+    let timer_stripped = match std::fs::read_to_string(timer_path) {
+        Ok(s) => strip(&s),
+        Err(e) => panic!("WS-SM SM5.I shadow-clock scanner: failed to read {timer_path}: {e}"),
+    };
+    let decl = "fn per_core_timer_tick_isr(";
+    let decl_idx = timer_stripped.find(decl).unwrap_or_else(|| {
+        panic!(
+            "WS-SM SM5.I shadow-clock scanner: `{timer_path}` no longer declares \
+             `fn per_core_timer_tick_isr` — update this scanner in lockstep with \
+             the seam move."
+        )
+    });
+    let open_rel = timer_stripped[decl_idx..].find('{').unwrap_or_else(|| {
+        panic!(
+            "WS-SM SM5.I shadow-clock scanner: `{timer_path}`'s \
+             `fn per_core_timer_tick_isr` has no body block after its declaration."
+        )
+    });
+    let body_start = decl_idx + open_rel;
+    let mut depth = 0usize;
+    let mut body_end = None;
+    for (i, ch) in timer_stripped[body_start..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    body_end = Some(body_start + i + 1);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let body = &timer_stripped[body_start..body_end.unwrap_or_else(|| {
+        panic!(
+            "WS-SM SM5.I shadow-clock scanner: unbalanced braces while extracting \
+             `{timer_path}`'s `fn per_core_timer_tick_isr` body."
+        )
+    })];
+    if body.contains("increment_tick_count") {
+        panic!(
+            "WS-SM SM5.I regression: `{timer_path}`'s `per_core_timer_tick_isr` \
+             calls `increment_tick_count` again.  The `TICK_COUNT` shadow is \
+             commit-coupled: its sole incrementer is \
+             `ffi::ffi_timer_advance_tick_count`, driven by the Lean entry iff \
+             the committed step advanced the model clock.  An ISR-side \
+             increment counts invocations rather than commits and reintroduces \
+             the pre-readiness / failed-entry drift; remove it."
+        );
     }
 }
 

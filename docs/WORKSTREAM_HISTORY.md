@@ -15,8 +15,277 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
-**Current sub-phase: SM9.E tests + closure LANDED (v0.33.100) — WS-SM phase
-SM9 is CLOSED.**
+**Current cut: the SM5 runtime-seam completion LANDED (v0.34.1) — every
+seam the SM5 docstrings promised between the verified per-core scheduler
+and the hardware IRQ path is closed.  SM10 (release closure → v1.0.0) is
+next.**
+
+A pre-SM10 sweep of the WS-SM headline findings (SMP-C1..C4, SMP-H1..H4,
+the MED/LOW set) confirmed every closure in place — and surfaced three
+runtime seams that SM5 had promised in prose but never landed, each one a
+proven transition with no consumer.  All three are now wired (dormant on
+hardware behind the per-core `lean_ready` gate until SM10.E's runtime
+initialization marks cores ready — see the review-round paragraph below),
+plus the serialisation gap the third one exposed:
+
+**The IRQ vector redirect.**  `trap.S`'s two IRQ vectors still branched to
+the single-core legacy `handle_irq`, whose timer branch only re-armed the
+comparator — `timer::per_core_timer_tick_isr`, the SM5.I ISR that drives
+the verified `timerTickOnCore` under the kernel-entry lock, had no caller
+from the vector, so the verified per-core scheduler was disconnected from
+hardware timer interrupts.  Both vectors now branch to
+`handle_irq_per_core` (which subsumes the legacy handler: per-core tick
+recording + re-arm + the Lean tick, full-IAR SGI dispatch, per-core
+attribution), the legacy `handle_irq` is removed, and
+`build.rs::scan_trap_s_irq_vector_redirect` pins the redirect.
+
+**The `.reschedule` receiver.**  SGI INTID 0 had no registered handler: a
+cross-core wake's poke woke the target from `wfe` and landed on the
+no-handler log arm, demoting every wake to wake-on-next-tick.  The
+verified receiver (`handleRescheduleSgiOnCore` — budget-aware re-choose,
+preempt only when the candidate strictly outranks current, SM5.C.5 with
+full preservation) existed with no runtime consumer.  It now drives a new
+fail-closed pure step `perCoreRescheduleStep`
+(`Scheduler/Operations/PerCoreRunLoop.lean`, beside the tick step, with
+`_invalid_core`/`_ok`/`_error`/`_preserves_objects_invExt`/
+`_preserves_runQueue_wellFormed`/`_switches_current`) behind a thin atomic
+entry `perCoreRescheduleEntry` (`@[export lean_per_core_reschedule]`,
+`Kernel/PerCoreRescheduleEntry.lean`), invoked by
+`trap.rs::reschedule_sgi_handler` under `with_kernel_entry` and registered
+at boot phase 3 beside the shootdown and haltAll handlers
+(`scan_reschedule_sgi_seam_intact` pins the seam end to end).
+
+**The secondary bring-up body.**  `secondaryKernelMain` was still the
+SM1.C `pure ()` placeholder its own docstring said SM5 would replace.  The
+replacement is definitional reuse, not a bespoke transition: **bring-up is
+the core's first reschedule** — `secondaryKernelMain :=
+perCoreRescheduleEntry`, pinned by the `rfl` marker
+`secondaryKernelMain_eq_perCoreRescheduleEntry` (+ `secondaryKernelMain_def`
+for the full body shape), so a freshly-onlined core (whose
+`currentOnCore = none` admits any budget-eligible candidate through the
+outranks gate) dispatches its highest-priority runnable — its idle thread
+when nothing else is assigned — through the same verified step the SGI
+receiver runs, and the two seams cannot drift apart.
+
+**The serialisation the new body demanded.**  A committing bring-up entry
+must hold the kernel-entry lock (sibling cores are already ticking), and a
+bracketed entry must not be interruptible by a tick that queues behind its
+own core's ticket (the lock is not reentrant).  `rust_secondary_main`
+therefore runs the entry inside `kernel_entry::with_kernel_entry` and
+**before** `enable_irq` — the same IRQs-masked-while-held discipline every
+other entry observes; the bracket's shootdown self-service has nothing to
+discharge because a not-yet-IRQ-ready core is excluded from every round.
+The bracketed-entry roster is now five (syscall dispatch, per-core tick,
+`.reschedule` receiver, secondary bring-up, cross-core suspend); the
+primary's `lean_kernel_main` install-ordering obligation is recorded
+against SM10.E in the release-closure plan, `Platform/FFI.lean` and
+`kernel_entry.rs`.
+
+Alongside: the `timer::handle_timer_interrupt` misnomer (a function that
+never existed) corrected to the real chain at all four sites;
+`Concurrency/Assumptions.lean`'s stale audit-by-source-read paragraph
+updated to the SM0.C Anchors build-enforcement it was superseded by;
+`SmpFoundationsSuite` §2.17 re-pinned from placeholder semantics to the
+seam identity (run live: the empty-queue bring-up commit is the identity,
+out-of-range ids fail closed); tier-3 anchors extended with the reschedule
+step/entry surface.  Rust gate: 1140 unit + 108 conformance tests, fmt and
+clippy clean.
+
+**Review round (same cut) — the Codex review on PR #880, all five findings
+verified against source, three implemented.**  The bot read the redirect
+correctly: making the per-core path live exposes every piece that is not
+there yet.  (1) **The Lean-runtime constraint, made structural** —
+`shootdown.rs` has always said a reentrant per-core Lean runtime does not
+exist, while the hardware seams compiled unconditional Lean calls behind
+`hw_target`.  New `rust/sele4n-hal/src/lean_ready.rs`: a per-core readiness
+mask, `false` everywhere at boot, consulted by the timer ISR, the reschedule
+handler and the secondary bring-up entry; each degrades to its Rust-only
+half until SM10.E's image initialization marks the core ready.  The seams
+are wired, dormant, and cannot fire early.  (2) **The domain transition,
+composed** — `timerTickOnCore`'s own comment required "the SM5.I run loop
+invokes `timerTickOnCore` then `scheduleDomainOnCore`", and the run-loop
+step only invoked the tick, so a live core would never have decremented or
+rotated its domain.  `perCoreTimerTickStep` now composes both (all-or-
+nothing fail-closed; the domain arm emits no SGIs), with the new
+`scheduleDomainOnCore_preserves_currentThreadValidOnCore` composition lemma
+and re-proved step theorems (`_domain_error` added).  (3) **The clock,
+wired** — the single-core `timerTick` advanced `machine.timer` on every
+committed path; the per-core migration removed the advance and re-homed it
+nowhere (`ffi_timer_reprogram`, the claimed owner, has no caller), freezing
+CBS due-times and timeouts on the live path.  The advance is re-homed at
+the composition point: `tickClockedState` advances `machine.timer` on the
+boot core's committed step only (four cores must not run the clock at 4x),
+and the Rust `TICK_COUNT` moves to the boot core's ISR invocation, with
+`ffi_timer_reprogram` made re-arm-only so a second incrementer cannot
+reappear (the AI1-C/M-26 single-path invariant, owner relocated).  Suite
+pins: boot-core step advances by exactly 1, non-boot step doesn't, the
+in-domain decrement runs through the step; Rust tests pin the mirrored
+`TICK_COUNT` ownership.  Findings (4) context-restore coupling and (5)
+install-before-release are the registered SM10.E obligations (the restore
+seam and the boot-entry ordering already recorded in
+`SMP_RELEASE_CLOSURE_PLAN.md`); with the readiness gate, neither hazard is
+reachable before that work exists — and the gate is the structural piece
+that makes deferring them sound rather than hopeful.
+
+**Review round 2 (same cut) — four findings; one real scheduler bug.**
+(1) **The empty-schedule domain boundary dropped the running thread** —
+`switchDomainOnCore`'s `[]` arm is a whole-state no-op (correct for the
+*switch*: nothing to rotate), but the boundary composition then handed the
+un-prepped state to the drop-current `scheduleEffectiveOnCore`, so on the
+RPi5 v1.0.0 default (`domainSchedule = []`) every boundary could swap a
+running higher-priority thread for a queued lower-priority one and lose the
+incumbent from scheduling.  The boundary now runs the named
+`singleDomainBoundaryPrep` (save-outgoing → re-enqueue at
+`effectiveRunQueuePriority` → clear current — byte-for-byte the rotating
+arm's preparation, minus the rotation), definitionally the identity on an
+idle core so the SM5.E idle-adoption witness keeps holding with an honest
+`current = none` precondition; the prep's frame/characterisation family
+(§8.1b of the invariant suite, mirroring the `switchDomainOnCore_*`
+helpers) closes the composite preservation for `invExt`, current-validity,
+`RegNodup_smp` and the global slice invariant, and `smp_timer_suite` §3.10
+pins the regression live (incumbent re-selected, waiter intact, composed
+step included).  **Registered debt**: the *single-core*
+`scheduleDomain`/`switchDomain` pair shares the same `[]`-boundary shape;
+it is off the live path (the run loop drives the per-core composition) and
+its alignment is Scheduler-subsystem follow-up scope, deliberately not
+widened into this cut (19 proof-file consumers ride the single-core
+definition).  (2) Honesty: "live end to end" → wired, dormant behind
+`lean_ready` until SM10.E (DEVELOPMENT.md, this file, CHANGELOG).
+(3) `mark_lean_ready` is `unsafe fn` with the Safety contract the flip
+actually carries.  (4) The lean-ready scanner is body-scoped: gate before
+Lean symbol within each seam function, not file-level containment.
+
+**Review round 3 (same cut) — the `TICK_COUNT` shadow shares the
+readiness gate.**  Round 2's relocation left the boot core's shadow
+increment at ISR-invocation time while the model advance sits behind
+`lean_ready` — pre-readiness hardware ticks would skew the shadow from
+`machine.timer` permanently.  Now one readiness read per invocation
+gates both; a pre-readiness tick advances neither clock; the
+failed-tick-entry residual (shadow one ahead on the fail-closed
+no-commit arm) is documented in the ownership paragraph rather than
+claimed away; the single-authority test is the full lifecycle pin
+(pre-readiness no-advance → mark → exactly-one advance, core 0's bit
+test-owned).
+
+**Maintainer follow-up (same cut) — the residual, closed: the shadow
+clock is commit-coupled.**  Gate-scoping still counted invocations where
+the model counts commits, and only Lean knows which arm a step took — so
+the advance crossed the seam.  New pure
+`perCoreTimerTickStepWithClockAdvance` pairs the run-loop step with a
+flag that is definitionally the committed state's `machine.timer` delta
+(`_flag_def` = `rfl`; the three fail-closed reductions pin `false`);
+`perCoreTimerTickEntry` runs it in the same atomic commit and calls the
+new `ffiTimerAdvanceTickCount` → `ffi_timer_advance_tick_count` iff the
+flag is set (body-shape marker updated); the ISR no longer touches
+`TICK_COUNT`.  The shadow now equals the model clock on every arm —
+pre-readiness, non-boot, and failed entries included.  Pinned by
+`smp_timer_suite` §3.11, the reworked Rust never-advances/exactly-one
+tests, and the new `build.rs` shadow-advance scanner (export present;
+ISR body must not regrow an incrementer).
+
+**Review round 4 (same cut) — single-domain mode goes inert; the
+clock-advance replenish window is made formal.**  (1) Round 2's boundary
+re-enqueue inherited a deeper artifact: the empty-schedule arm had no
+entry to reload the quantum from, so the countdown stuck at the boundary
+and every subsequent tick re-dispatched — per-tick churn that could
+immediately reverse an equal-priority switch the budget tick had just
+made.  `scheduleDomainOnCore` now matches on the schedule first: empty ⇒
+**identity** (`scheduleDomainOnCore_singleDomain_inert` — no domain
+schedule means no domain scheduling; time-slice fairness is the budget
+tick's, exactly as in seL4 whose schedule always has ≥ 1 entry);
+non-empty ⇒ decrement / rotation + re-dispatch as before.  The round-2
+`singleDomainBoundaryPrep` apparatus became dead code and is removed;
+`scheduleDomainOnCore_runs_idle` is restated on the rotating boundary,
+with single-domain idle adoption owned by the wake receiver, the
+vacate-successor seam and the budget tick's own re-dispatch fallback.
+§3.10 re-pins the busy fixture inert (incumbent/waiter/countdown all
+untouched).  (2) The boot clock advance can leave a remote core's queued
+replenishment due at exactly the new clock until that core's own next
+tick — the bounded per-core release window (seL4 MCS's shape), now
+formal in `PerCoreTickCbsPreservation.lean` §5:
+`tickClockedState_bootCore_replenish_ge` (nothing goes strictly overdue)
++ `perCoreTimerTickStep_ok_establishes_replenishmentPipelineOrderOnCore_self`
+(each core's committed step re-establishes the strict form on its own
+queue, via the new generic `popDue_remaining_gt`).  Draining all cores
+from the boot tick was rejected (hot-path cross-core queue coupling,
+against the fine-lock design).  §3.12 pins the two phases live.
+
+**Review round 6 (same cut) — the SGI preemption gate honours EDF.**
+`candidateOutranksCurrentOnCore` was priority-only, so an equal-priority
+earlier-deadline wake's `.reschedule` SGI was dropped at the receiver —
+against the suite's stated contract that the wake's preemption SGI is
+where `edfCurrentHasEarliestDeadlineOnCore` is re-established.  The gate
+now also fires on the new `candidateEdfDisplacesCurrent` (same bucket:
+equal effective + base priority, same domain; both deadlines nonzero;
+candidate's strictly earlier — the exact negation of the EDF conjunct's
+per-member obligation, TCB-field-based like the invariant).
+`candidateOutranksCurrentOnCore_of_edf_displaces` pins the gate truth;
+all consumer proofs survive unchanged; `smp_wake_suite` gains the six-way
+gate pins plus the end-to-end receiver switch.
+
+**Review round 7 (same cut) — the gate resolves what selection resolves,
+and a local CBS replenishment reschedules its own core.**  Two findings on
+what round 6 still could not see.  (1) The round-6 EDF clause read TCB
+`deadline` fields, but the selector orders bound/donated threads by the
+**SchedContext** deadline (`resolveEffectivePrioDeadline`), and no
+propagation or consistency invariant relates the two (`schedContextBind`
+copies only the priority; `schedContextConfigure` / `cbsUpdateDeadline`
+move the SC deadline alone) — so two equal-priority bound threads with TCB
+deadlines `0` and SC deadlines 20/10 were ordered by selection and refused
+by the gate.  `candidateOutranksCurrentOnCore` is now literally
+`isBetterCandidate` over `resolveEffectivePrioDeadline` of current and
+candidate (`_eq_isBetterCandidate` the alignment contract,
+`_of_edf_earlier` the resolved-deadline corollary; the round-6
+`candidateEdfDisplacesCurrent` apparatus deleted as superseded, with the
+deliberate consequences that a deadline-bearing candidate displaces a
+deadline-less current and the same-domain/base-priority conjuncts drop —
+both exactly selection's behaviour).  (2) A due replenishment refilling a
+higher-priority thread queued on the executing core was triply invisible
+(placement suppressed, no SGI — local target — and no preempt flag), so it
+waited out the current thread's whole remaining budget.  The drain now
+returns a **local-wake bit** (the exact complement of its SGI decision)
+and `timerTickOnCore` resolves it after the budget charge with the
+receiver-side decision (`handleRescheduleSgiOnCore`) on both the busy and
+idle arms — the idle arm closing the round-17 vacated-core window a refill
+re-opened (`timerTickOnCore_cannot_dispatch_vacated_core` re-scoped,
+`timerTickOnCore_idle_local_wake_reschedules` the new pin).  A
+per-conjunct `handleRescheduleSgiOnCore_preserves_*` ladder plus new
+switch-level nodup/domain/CBS frames feed the seven composed tick
+preservation proofs; the SM5.I resolvability cluster and the
+domain-respect trio moved up-graph to their operations homes.
+`smp_timer_suite` §3.13 pins the refill-preempts / vacated-dispatch /
+quiet-tick triple; `smp_wake_suite` restates the gate family on the
+selector order and adds the bound-thread SC-deadline pins.
+
+**Review round 8 (same cut) — the budget-exhaustion timeout wake goes
+through the cross-core wake.**  One finding: `timeoutThread`'s re-enqueue
+was still `ensureRunnable` — `bootCoreId`-pinned, no SGI — so a waiter
+whose budget-bounded IPC timed out on a secondary core's tick was parked on
+the boot queue whatever its `cpuAffinity` (run off its affinity core, or
+refused fail-closed by `switchToThreadOnCore`'s `affinityAdmitsCore` gate),
+and no poke reached the core that should re-schedule.  `timeoutThread` now
+takes the executing core and wakes through `wakeThread` — the same SM5.C
+primitive as replenishment and resume wakes (home-core placement via
+`determineTargetCore`, single-placement guard, remote-target SGI) — and the
+SGIs thread out through `timeoutBlockedThreads` (state × errors × sgis),
+`timerTickBudgetOnCore` (third result component) and `timerTickOnCore`
+(`replenishSgis ++ timeoutSgis`), reaching the hardware through the seam
+the replenish pokes already use.  The single-core `timerTickBudget` and the
+trace model stay boot-pinned with their scope noted inline.  The timeout
+atoms recompose onto the wake (`wakeThread_preserves_runQueueSafetyOnCore`
+unconditional on every core; `timeoutThread_currentOnCore_eq` every-core,
+on new every-core PIP current frames in `PriorityInheritance/Preservation`);
+`smp_timer_suite` §3.14 pins remote-affinity home placement + SGI,
+local-affinity no-SGI, and unbound boot placement now with its poke.
+
+Plan: [`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`](planning/SMP_PER_CORE_SCHEDULER_PLAN.md)
+§SM5.C (landing note).  Next: SM10 release closure (→ v1.0.0),
+[`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md).
+
+---
+
+**WS-SM SM9.E — tests + closure: LANDED (v0.33.100) — WS-SM phase SM9 is
+CLOSED.**
 
 SM9.E adds no transition and no module; its subject is whether the phase's own
 acceptance criteria run end to end and stay pinned — and building it found one

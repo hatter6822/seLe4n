@@ -2167,14 +2167,12 @@ theorem replyRecvBody_crossCoreNonInterference (ctx : LabelingContext)
 -- The leaf frames below are new: per-core confinement reads the domain slots and
 -- the register banks, and the context switch had frames for neither.
 
-/-- SM8.B.2: a preemption leaves every core's domain slots alone. -/
-theorem preemptCurrentOnCore_activeDomainOnCore (st : SystemState) (c c' : CoreId)
-    (tid : SeLe4n.ThreadId) :
-    (preemptCurrentOnCore st c tid).scheduler.activeDomainOnCore c'
-      = st.scheduler.activeDomainOnCore c' := by
-  simp only [preemptCurrentOnCore]; repeat' split
-  all_goals first | rfl | simp only [SchedulerState.setCurrentOnCore_activeDomainOnCore,
-      SchedulerState.setRunQueueOnCore_activeDomainOnCore]
+-- SM8.B.2 note (PR #880 round 7): the preempt / switch **active-domain** frames
+-- (`preemptCurrentOnCore_activeDomainOnCore`,
+-- `switchToThreadOnCore_activeDomainOnCore_eq`) now live upstream in
+-- `Scheduler/Operations/PerCoreSwitchToThread.lean` (the timer tick's local
+-- replenish-wake reschedule arm needs them there); this module keeps only the
+-- two domain-slot frames with no upstream counterpart.
 
 theorem preemptCurrentOnCore_domainTimeRemainingOnCore (st : SystemState) (c c' : CoreId)
     (tid : SeLe4n.ThreadId) :
@@ -2191,23 +2189,6 @@ theorem preemptCurrentOnCore_domainScheduleIndexOnCore (st : SystemState) (c c' 
   simp only [preemptCurrentOnCore]; repeat' split
   all_goals first | rfl | simp only [SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
       SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
-
-/-- SM8.B.2: a context switch leaves every core's domain slots alone — it moves
-the current thread and the run queue, never the domain schedule. -/
-theorem switchToThreadOnCore_activeDomainOnCore (st st' : SystemState) (c c' : CoreId)
-    (tid : SeLe4n.ThreadId) (h : switchToThreadOnCore st c tid = .ok st') :
-    st'.scheduler.activeDomainOnCore c' = st.scheduler.activeDomainOnCore c' := by
-  unfold switchToThreadOnCore at h
-  repeat' split at h
-  all_goals try simp only [] at h
-  all_goals first
-    | (rw [Except.ok.injEq] at h
-       subst h
-       simp only [restoreIncomingContextOnCoreUnlessCurrent_scheduler,
-         SchedulerState.setCurrentOnCore_activeDomainOnCore,
-         SchedulerState.setRunQueueOnCore_activeDomainOnCore,
-         preemptCurrentOnCore_activeDomainOnCore])
-    | exact absurd h (by simp)
 
 theorem switchToThreadOnCore_domainTimeRemainingOnCore (st st' : SystemState) (c c' : CoreId)
     (tid : SeLe4n.ThreadId) (h : switchToThreadOnCore st c tid = .ok st') :
@@ -2251,7 +2232,7 @@ theorem switchToThreadOnCore_confinedToCores (st st' : SystemState) (c : CoreId)
       (fun he => hc (by simp [he])) h).2,
    fun c' hc => (switchToThreadOnCore_independent_of_other_core st c c' tid st'
       (fun he => hc (by simp [he])) h).1,
-   fun c' _ => switchToThreadOnCore_activeDomainOnCore st st' c c' tid h,
+   fun c' _ => switchToThreadOnCore_activeDomainOnCore_eq st c tid st' c' h,
    fun c' _ => switchToThreadOnCore_domainTimeRemainingOnCore st st' c c' tid h,
    fun c' _ => switchToThreadOnCore_domainScheduleIndexOnCore st st' c c' tid h,
    fun c' hc => switchToThreadOnCore_machine_regsOnCore_ne st c c' tid st'

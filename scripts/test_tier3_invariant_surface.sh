@@ -5197,8 +5197,11 @@ EOF'
 # AN12-B inventory hardening theorems (NoDup witnesses, 6-way ArchAssumption
 # distinctness, Anchors module).  WS-SM SM1.B.5 adds the per-CPU FFI
 # wrapper surface (Concurrency.Runtime + Platform.FFI.ffiCurrentCoreId).
-# WS-SM SM1.C.6 adds the secondary-core kernel-entry placeholder
-# (Kernel.SecondaryEntry.secondaryKernelMain + marker theorem).
+# WS-SM SM1.C.6 adds the secondary-core kernel entry
+# (Kernel.SecondaryEntry.secondaryKernelMain — definitionally the
+# per-core reschedule entry since the reschedule-receiver seam
+# completion — with the seam-identity + body-shape marker theorems
+# and the verified perCoreRescheduleStep it commits).
 # WS-SM SM1.E.4 adds the typed TLBI dispatcher wrapper
 # (Architecture.TlbiForSharing + tag encoding theorems).
 # WS-SM SM1.F.6 adds the SGI primitive FFI bindings
@@ -5308,9 +5311,20 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.Concurrency.currentCoreId
 #check @SeLe4n.Kernel.Concurrency.currentCoreId_in_range_marker
 #check @SeLe4n.Kernel.Concurrency.instInhabitedCoreId
--- SM1.C.6 — Secondary-core kernel-entry placeholder (closes SMP-C2 Lean side)
+-- SM1.C.6 — Secondary-core kernel entry (closes SMP-C2 Lean side;
+-- bring-up is definitionally the first reschedule on the onlined core)
 #check @SeLe4n.Kernel.secondaryKernelMain
-#check @SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker
+#check @SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry
+#check @SeLe4n.Kernel.secondaryKernelMain_def
+#check @SeLe4n.Kernel.perCoreRescheduleEntry
+#check @SeLe4n.Kernel.perCoreRescheduleEntry_def
+#check @SeLe4n.Kernel.perCoreRescheduleStep
+#check @SeLe4n.Kernel.perCoreRescheduleStep_invalid_core
+#check @SeLe4n.Kernel.perCoreRescheduleStep_ok
+#check @SeLe4n.Kernel.perCoreRescheduleStep_error
+#check @SeLe4n.Kernel.perCoreRescheduleStep_preserves_objects_invExt
+#check @SeLe4n.Kernel.perCoreRescheduleStep_preserves_runQueue_wellFormed
+#check @SeLe4n.Kernel.perCoreRescheduleStep_switches_current
 -- SM1.E.4 — Typed TLBI dispatcher wrapper (post-SM7 cross-core call sites)
 #check @SeLe4n.Kernel.Architecture.TlbInvalidation
 #check @SeLe4n.Kernel.Architecture.TlbInvalidation.toOpTag
@@ -7237,6 +7251,23 @@ open SeLe4n.Kernel.Concurrency
 #check @handleRescheduleSgiOnCore_independent_of_other_core
 #check @handleRescheduleSgiOnCore_keeps_current_when_outranked
 #check @candidateOutranksCurrentOnCore
+-- The preemption gate is the selector own strict-preference order over the
+-- resolved effective parameters: higher resolved effective priority, or an
+-- earlier resolved deadline at equal effective priority -- so a bound
+-- thread SchedContext deadline orders the gate exactly as it orders
+-- selection.
+#check @candidateOutranksCurrentOnCore_eq_isBetterCandidate
+#check @candidateOutranksCurrentOnCore_of_edf_earlier
+-- The per-conjunct receiver-decision preservation ladder the round-7 tick
+-- arms compose.
+#check @handleRescheduleSgiOnCore_preserves_currentThreadValidOnCore
+#check @handleRescheduleSgiOnCore_preserves_queueCurrentConsistentOnCore
+#check @handleRescheduleSgiOnCore_preserves_contextMatchesCurrentOnCore
+#check @handleRescheduleSgiOnCore_preserves_runnableThreadsAreTCBsOnCore
+#check @handleRescheduleSgiOnCore_preserves_runQueueOnCore_nodup
+#check @handleRescheduleSgiOnCore_preserves_currentThreadInActiveDomainOnCore
+#check @handleRescheduleSgiOnCore_replenishQueueOnCore
+#check @handleRescheduleSgiOnCore_machine_timer
 
 -- SM5.C.11 SGI delivery latency bound.
 #check @wakeSgiCount
@@ -7344,6 +7375,7 @@ run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.P
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5d_surface.lean <<EOF
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
 import SeLe4n.Kernel.PerCoreTimerEntry
 open SeLe4n.Kernel
 -- SM5.D.2/.4/.5/.6/.9 production transitions.
@@ -7384,6 +7416,10 @@ open SeLe4n.Kernel
 #check @runningOnSomeCore
 #check @processOneReplenishmentOnCore_local_no_sgi
 #check @processOneReplenishmentOnCore_no_sgi_if_no_target
+-- The round-7 local-wake bit: raised exactly where the SGI is not, so the
+-- tick can run the receiver-side reschedule decision for its own core.
+#check @processOneReplenishmentOnCore_local_wake_bit
+#check @processOneReplenishmentOnCore_no_target_no_bit
 #check @processOneReplenishmentOnCore_preserves_objects_invExt
 #check @processReplenishmentsDueOnCore_preserves_objects_invExt
 #check @processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed
@@ -7401,6 +7437,8 @@ open SeLe4n.Kernel
 #check @timerTickOnCorePrepared
 #check @timerTickOnCorePreDomain
 #check @timerTickOnCore_idle
+#check @timerTickOnCore_idle_local_wake_reschedules
+#check @timerTickOnCore_cannot_dispatch_vacated_core
 #check @timerTickOnCore_advances_per_core
 #check @timerTickOnCore_clears_lastTimeoutErrors
 #check @timerTickOnCore_preempts_local
@@ -7419,9 +7457,27 @@ open SeLe4n.Kernel
 #check @perCoreTimerTickStep_invalid_core
 #check @perCoreTimerTickStep_ok
 #check @perCoreTimerTickStep_error
+#check @perCoreTimerTickStep_domain_error
 #check @perCoreTimerTickStep_sgis_eq_tick
 #check @perCoreTimerTickStep_preserves_objects_invExt
 #check @perCoreTimerTickStep_ok_currentThreadValidOnCore
+#check @tickClockedState
+#check @tickClockedState_objects
+#check @tickClockedState_scheduler
+#check @tickClockedState_bootCore_timer
+#check @tickClockedState_nonBoot
+-- Commit-coupled shadow clock: the flagged step + its definitional delta pin
+-- and fail-closed falsity reductions (the entry advances the HAL shadow iff
+-- the committed step advanced the model clock).
+#check @perCoreTimerTickStepWithClockAdvance
+#check @perCoreTimerTickStepWithClockAdvance_state
+#check @perCoreTimerTickStepWithClockAdvance_sgis
+#check @perCoreTimerTickStepWithClockAdvance_flag_def
+#check @perCoreTimerTickStepWithClockAdvance_flag_iff
+#check @perCoreTimerTickStepWithClockAdvance_flag_invalid_core
+#check @perCoreTimerTickStepWithClockAdvance_flag_error
+#check @perCoreTimerTickStepWithClockAdvance_flag_domain_error
+#check @scheduleDomainOnCore_preserves_currentThreadValidOnCore
 #check @perCoreTimerTickEntry
 #check @perCoreTimerTickEntry_def
 -- SM5.D.6 full per-core domain re-dispatch (§4b).
@@ -7431,6 +7487,19 @@ open SeLe4n.Kernel
 #check @switchDomainOnCore_rotates
 #check @scheduleDomainOnCore_decrements
 #check @scheduleDomainOnCore_preserves_objects_invExt
+-- Single-domain mode is inert: with no domain schedule there is no boundary,
+-- so the domain layer provably cannot perturb the budget-tick time slice.
+#check @scheduleDomainOnCore_singleDomain_inert
+-- Clock-advance honesty: the boot advance makes nothing strictly overdue on
+-- any core, and each core re-establishes strict pipeline order on its own
+-- queue at its own next committed step.
+#check @popDue_remaining_gt
+#check @tickClockedState_bootCore_replenish_ge
+#check @switchDomainOnCore_replenishQueueOnCore
+#check @switchDomainOnCore_machine
+#check @scheduleDomainOnCore_preserves_replenishmentPipelineOrderOnCore
+#check @timerTickOnCore_establishes_replenishmentPipelineOrderOnCore_self
+#check @perCoreTimerTickStep_ok_establishes_replenishmentPipelineOrderOnCore_self
 -- SM5.D.5/.6 per-core invariant preservation (§7 B1/B2/B3).
 #check @decrementDomainTimeOnCore_preserves_currentThreadValidOnCore
 #check @decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore
@@ -8055,6 +8124,15 @@ open SeLe4n.Kernel
 #check @ensureRunnable_preserves_runQueueSafetyOnCore
 #check @updatePipBoost_preserves_runQueueSafetyOnCore
 #check @revertPriorityInheritance_preserves_runQueueSafetyOnCore
+-- PR #880 round 8: the timeout wake is the cross-core wake — run-queue
+-- safety through the target-core enqueue (every core, unconditional), and the
+-- every-core current frames (timeout atom + the PIP walk it composes).
+#check @enqueueRunnableOnCore_preserves_runQueueSafetyOnCore
+#check @wakeThread_preserves_runQueueSafetyOnCore
+#check @timeoutThread_currentOnCore_eq
+#check @SeLe4n.Kernel.PriorityInheritance.updatePipBoost_currentOnCore_eq
+#check @SeLe4n.Kernel.PriorityInheritance.propagate_currentOnCore_eq
+#check @SeLe4n.Kernel.PriorityInheritance.revert_currentOnCore_eq
 #check @timeoutThread_preserves_runQueueSafetyOnCore
 #check @timeoutBlockedThreads_preserves_runQueueSafetyOnCore
 #check @replenishOnCore_preserves_runQueueSafetyOnCore

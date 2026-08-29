@@ -71,30 +71,64 @@ pub extern "C" fn ffi_timer_read_counter() -> u64 {
     crate::timer::read_counter()
 }
 
-/// Reprogram the timer comparator for the next tick interval.
+/// Reprogram the timer comparator for the next tick interval — re-arm only.
 ///
-/// Sets CNTP_CVAL_EL0 = current counter + stored interval, then increments
-/// the tick counter. Called from the Lean kernel's timer tick handler.
+/// Sets CNTP_CVAL_EL0 = current counter + stored interval.
 ///
-/// AI1-C/M-26: This is the **canonical** tick accounting path. The IRQ handler
-/// (`trap.rs::handle_irq`) only re-arms the hardware timer; it does NOT
-/// increment the tick count. All tick accounting flows through this FFI
-/// entry point, which the Lean kernel controls.
+/// AI1-C/M-26: global tick accounting is single-path, and its one site is
+/// [`ffi_timer_advance_tick_count`] (below), driven by the Lean entry's
+/// committed clock advance.  This export originally carried the increment
+/// for a Lean-driven accounting flow that never gained a caller; it is
+/// re-arm-only so a second incrementer cannot reappear (the M-26
+/// double-count shape).  It remains exported for a manual re-arm from Lean
+/// should one ever be needed; calling it cannot perturb the tick count.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTimerReprogram`
 #[no_mangle]
 pub extern "C" fn ffi_timer_reprogram() {
     crate::timer::reprogram_timer();
-    crate::timer::increment_tick_count();
 }
 
 /// Get the current tick count from the timer driver.
 ///
-/// Returns the number of timer interrupts processed since boot.
+/// Returns the number of committed model-clock advances since boot (see
+/// [`ffi_timer_advance_tick_count`] — the counter shadows the Lean model's
+/// `machine.timer` exactly).
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTimerGetTickCount`
 #[no_mangle]
 pub extern "C" fn ffi_timer_get_tick_count() -> u64 {
     crate::timer::get_tick_count()
+}
+
+/// Advance the global tick counter by one — the commit-coupled shadow
+/// advance (PR #880 follow-up).
+///
+/// Called by the Lean per-core run-loop entry (`perCoreTimerTickEntry`)
+/// **iff** the just-committed step advanced the model clock
+/// (`machine.timer`) — the boot core's committed success arm and nothing
+/// else; the flag the entry branches on is definitionally the committed
+/// state's clock delta (`perCoreTimerTickStepWithClockAdvance_flag_def`),
+/// computed inside the same atomic state commit (`modifyGetKernelState`),
+/// under the kernel-entry lock the ISR already holds around the Lean call.
+/// The shadow therefore tracks the model clock exactly on every arm:
+/// pre-readiness ticks run no entry, non-boot cores and fail-closed
+/// entries report no advance, and a failed entry can no longer leave the
+/// shadow one ahead (the residual the invocation-coupled design carried).
+///
+/// This is the sole live-path incrementer of `TICK_COUNT` (AI1-C/M-26
+/// single path, owner relocated from the boot-core ISR invocation);
+/// [`ffi_timer_reprogram`] stays re-arm-only, and
+/// `timer::per_core_timer_tick_isr` no longer touches the counter.
+/// Lock-free (one atomic fetch-add), so calling it from Lean while the
+/// kernel-entry lock is held violates no lock-ordering rule.
+///
+/// Semantics + single-authority are pinned in `timer.rs`'s test module
+/// (the shared timer-state mutex lives there, so the assertions cannot
+/// race the other timer-state tests).
+/// Lean binding: `SeLe4n.Platform.FFI.ffiTimerAdvanceTickCount`
+#[no_mangle]
+pub extern "C" fn ffi_timer_advance_tick_count() {
+    let _ = crate::timer::increment_tick_count();
 }
 
 /// Acknowledge a pending GIC interrupt (read GICC_IAR).

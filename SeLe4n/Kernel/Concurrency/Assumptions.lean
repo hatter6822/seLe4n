@@ -50,15 +50,17 @@ Each entry carries:
 
 The `identifier` and `sourceTheorem` fields hold `Lean.Name` literals.
 Lean does not enforce that a `Lean.Name` literal resolves to a defined
-symbol — the name is just a structural reference. The inventory's
-canonical names are **audited by source-read at every WS-AN closure**;
-each name in the 8 entries below was verified to resolve to a real
-kernel symbol at v0.30.11 (AN12-B audit pass). Importing every named
-symbol's owning module here would balloon the dependency graph; the
-audit-by-source-read pattern keeps the inventory lightweight while
-maintaining accuracy. Future maintainers who add or rename an entry
-must re-run the source-read audit and update names accordingly — the
-non-resolution case is a documentation regression, not a proof failure.
+symbol — the name is just a structural reference. That gap is closed at
+build time by `SeLe4n.Kernel.Concurrency.Anchors` (WS-SM SM0.C, closing
+audit finding SMP-H3): the anchor module imports every named symbol's
+owning module and `@`-references each entry's `identifier` and
+`sourceTheorem` in a build-anchor `example`, so a renamed or deleted
+symbol fails elaboration on every CI run rather than leaving a dangling
+inventory entry. The imports live in the anchor module, not here, so
+this inventory stays lightweight (importing every owning module here
+would balloon the dependency graph). Maintainers who add or rename an
+entry must extend `Anchors.lean` in the same commit — the build breaks
+until they do.
 
 The structure is a plain Lean record so the per-entry record-builder
 syntax collapses to literal data at elaboration; the inventory list below

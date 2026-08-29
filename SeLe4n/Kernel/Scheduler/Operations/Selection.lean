@@ -1273,34 +1273,53 @@ def wakeThread (st : SystemState) (tid : SeLe4n.ThreadId)
     | some _ => if target == executingCore then none else some (target, SgiKind.reschedule)
   (st', sgi)
 
-/-- WS-SM SM5.C.5 (audit-pass-3): does the budget-eligible candidate `tid`
-strictly outrank core `c`'s current thread by *effective* run-queue priority
-(`max(base, pipBoost)`)?
+/-- WS-SM SM5.C.5 (audit-pass-3; selection-aligned since PR #880 round 7): does
+the budget-eligible candidate `tid` outrank core `c`'s current thread — in the
+**selector's own strict-preference order**?
 
 - `true` when the core is idle (`currentOnCore c = none`) — no running thread to
   protect, so the candidate dispatches.
-- `true` when the candidate's effective priority is *strictly greater* than the
-  current thread's — fixed-priority preemption fires.
-- `false` when the current thread's effective priority is `≥` the candidate's —
-  no gratuitous preemption (the running thread keeps the core; the candidate
-  waits in the run queue for the next scheduling point).
+- otherwise, `true` exactly when `isBetterCandidate` prefers the candidate over
+  the current thread on their **resolved** effective scheduling parameters
+  (`resolveEffectivePrioDeadline`): strictly higher effective priority, or — at
+  equal effective priority — an earlier resolved deadline, where "no deadline"
+  (`0`) loses to any deadline and equal deadlines keep FIFO, so no gratuitous
+  preemption fires and a lower-priority or later-deadline candidate waits in
+  the run queue for the next scheduling point.
 
-The `_, _ => true` arm (current TID does not resolve to a TCB) is unreachable
-under `currentThreadValidOnCore`; it dispatches the run-queue-validated
-candidate as a making-progress recovery rather than keeping a corrupt current.
-
-**SchedContext-priority soundness (PR #831 review 3).**  The gate compares
-the TCB-field `effectiveRunQueuePriority` (base vs `pipBoost`), not the
-SchedContext-aware `resolveEffectivePrioDeadline` the selector uses.  Under
-the maintained `boundThreadPriorityConsistent` invariant (a bound/donated
-SchedContext's `priority` equals its thread's TCB `priority` —
-`Scheduler/Invariant/PerCore.lean`), the two agree for every thread:
+**Why resolved parameters (PR #880 round 7).**  The selector this gate
+predicts (`chooseThreadEffectiveOnCore` → `chooseBestRunnableEffective`)
+orders candidates by `resolveEffectivePrioDeadline` — for a bound or donated
+thread the SchedContext's `priority` / `deadline`, with the PIP boost composed
+on top.  For *priorities* a TCB-field comparison was sound: `schedContextBind`
+and `schedContextConfigure` propagate `sc.priority` into the bound TCB
+(`boundThreadPriorityConsistent`), and
 `resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree`
-(above) is exactly that bridge, so a SchedContext-priced candidate selected
-by `chooseThreadEffectiveOnCore` is never wrongly rejected here.  The
-TCB-field form is kept because it needs no store lookups on the hot
-preemption gate; if the priority-agreement invariant is ever relaxed, this
-gate must switch to `resolveEffectivePrioDeadline` in the same commit. -/
+(above) is exactly that bridge.  **Deadlines have no such propagation or
+consistency invariant**: bind copies only the priority, and
+`schedContextConfigure` / `cbsUpdateDeadline` move the SC deadline with the
+TCB field untouched.  A TCB-deadline comparison (the round-6 form) therefore
+diverged from the selector exactly for the bound threads CBS scheduling
+exists for: two equal-priority bound threads with TCB deadlines `0` and SC
+deadlines 20 / 10 select the earlier-deadline candidate at any scheduling
+point, while the TCB-based gate refused the very poke that creates that
+scheduling point.  Comparing what selection compares closes the gap by
+construction — `candidateOutranksCurrentOnCore_eq_isBetterCandidate` pins the
+gate to the selector's ordering, so `handleRescheduleSgiOnCore` (which applies
+this gate to the selector's own choice) is exactly "switch iff the selector's
+best strictly beats the incumbent".
+
+Two deliberate consequences of the alignment, both matching what selection
+would do at the next scheduling point: an equal-effective-priority
+**deadline-bearing candidate now displaces a deadline-less current** (the
+selector's challenger-has-deadline arm — EDF treats "no deadline" as latest),
+and the round-6 same-domain / equal-base-priority conjuncts are gone — the
+live consumer's candidate is already domain-filtered by
+`chooseThreadEffectiveOnCore`, and selection orders by effective (not base)
+priority.  The `_, _ => true` arm (current TID does not resolve to a TCB) is
+unreachable under `currentThreadValidOnCore`; it dispatches the
+run-queue-validated candidate as a making-progress recovery rather than
+keeping a corrupt current. -/
 def candidateOutranksCurrentOnCore (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : Bool :=
   match st.scheduler.currentOnCore c with
@@ -1308,8 +1327,64 @@ def candidateOutranksCurrentOnCore (st : SystemState) (c : CoreId)
   | some curTid =>
       match st.getTcb? curTid, st.getTcb? tid with
       | some curTcb, some tidTcb =>
-          (effectiveRunQueuePriority curTcb).val < (effectiveRunQueuePriority tidTcb).val
+          isBetterCandidate (resolveEffectivePrioDeadline st curTcb).1
+            (resolveEffectivePrioDeadline st curTcb).2
+            (resolveEffectivePrioDeadline st tidTcb).1
+            (resolveEffectivePrioDeadline st tidTcb).2
       | _, _ => true
+
+/-- WS-SM (PR #880 round 7, the alignment contract): with a resolving current
+and candidate, the preemption gate **is** the selector's strict-preference
+relation `isBetterCandidate`, applied to the same
+`resolveEffectivePrioDeadline` parameters `chooseBestRunnableEffective` orders
+by.  The gate and the selection it predicts cannot diverge — on any pair of
+scheduling parameters, bound, donated or unbound. -/
+theorem candidateOutranksCurrentOnCore_eq_isBetterCandidate (st : SystemState)
+    (c : CoreId) (tid curTid : SeLe4n.ThreadId) (curTcb tidTcb : TCB)
+    (hCur : st.scheduler.currentOnCore c = some curTid)
+    (hCurTcb : st.getTcb? curTid = some curTcb)
+    (hTidTcb : st.getTcb? tid = some tidTcb) :
+    candidateOutranksCurrentOnCore st c tid =
+      isBetterCandidate (resolveEffectivePrioDeadline st curTcb).1
+        (resolveEffectivePrioDeadline st curTcb).2
+        (resolveEffectivePrioDeadline st tidTcb).1
+        (resolveEffectivePrioDeadline st tidTcb).2 := by
+  unfold candidateOutranksCurrentOnCore
+  simp only [hCur, hCurTcb, hTidTcb]
+
+/-- WS-SM (PR #880 round 7): the preemption gate fires on EDF displacement over
+the **resolved** deadlines — at equal resolved effective priority, a candidate
+whose resolved deadline is set and earlier than the current thread's (where a
+deadline-less current counts as latest) opens the gate, so the wake's
+`.reschedule` results in a switch at the receiver instead of being dropped
+until a later timer scheduling point.  This is the round-6 EDF-displacement
+property restated on the parameters selection actually compares — a bound
+thread's SchedContext deadline now displaces, even while both TCB deadline
+fields sit at `0`. -/
+theorem candidateOutranksCurrentOnCore_of_edf_earlier (st : SystemState)
+    (c : CoreId) (tid curTid : SeLe4n.ThreadId) (curTcb tidTcb : TCB)
+    (hCur : st.scheduler.currentOnCore c = some curTid)
+    (hCurTcb : st.getTcb? curTid = some curTcb)
+    (hTidTcb : st.getTcb? tid = some tidTcb)
+    (hPrio : (resolveEffectivePrioDeadline st curTcb).1.toNat
+        = (resolveEffectivePrioDeadline st tidTcb).1.toNat)
+    (hTidDl : (resolveEffectivePrioDeadline st tidTcb).2.toNat ≠ 0)
+    (hEarlier : (resolveEffectivePrioDeadline st curTcb).2.toNat = 0 ∨
+        (resolveEffectivePrioDeadline st tidTcb).2.toNat
+          < (resolveEffectivePrioDeadline st curTcb).2.toNat) :
+    candidateOutranksCurrentOnCore st c tid = true := by
+  rw [candidateOutranksCurrentOnCore_eq_isBetterCandidate st c tid curTid
+    curTcb tidTcb hCur hCurTcb hTidTcb]
+  unfold isBetterCandidate
+  rw [if_neg (by omega), if_neg (by omega)]
+  cases hTid : (resolveEffectivePrioDeadline st tidTcb).2.toNat with
+  | zero => exact absurd hTid hTidDl
+  | succ n =>
+      cases hCurD : (resolveEffectivePrioDeadline st curTcb).2.toNat with
+      | zero => rfl
+      | succ m =>
+          simp only [decide_eq_true_eq]
+          omega
 
 /-- WS-SM SM5.C.5 (plan §4.4): the target core's `.reschedule` SGI handler.
 
@@ -1317,9 +1392,19 @@ When core `c` takes a `.reschedule` SGI (sent by a remote wake), it re-runs its
 own scheduler: re-choose the highest-priority *budget-eligible* runnable thread
 in its run queue (`chooseThreadEffectiveOnCore`, SM5.A §6 — the CBS/SchedContext
 selector the production timer path uses, so a reschedule cannot dispatch a
-budget-exhausted thread) and, **only if that candidate strictly outranks the
-current thread** (`candidateOutranksCurrentOnCore`), switch to it
-(`switchToThreadOnCore`, SM5.B).
+budget-exhausted thread) and, **only if that candidate outranks the current
+thread** (`candidateOutranksCurrentOnCore` — the selector's own
+strict-preference order over the resolved effective parameters: strictly
+higher effective priority, or an earlier resolved deadline at equal effective
+priority, PR #880 round 7), switch to it (`switchToThreadOnCore`, SM5.B).
+Since the gate *is* `isBetterCandidate` on `resolveEffectivePrioDeadline`
+(`candidateOutranksCurrentOnCore_eq_isBetterCandidate`), this handler is
+exactly "switch iff the selector's best strictly beats the incumbent".
+Consumed by the `.reschedule` SGI receiver (`PerCoreRescheduleEntry`), by
+`resumeThread` / the PIP deboost path for their **local** wake arms (PR #811
+P2-5 — no SGI can poke the core that is already executing), and — PR #880
+round 7 — by `timerTickOnCore` after a local CBS-replenishment wake, the
+tick's own local counterpart of the same receiver decision.
 
 - `chooseThreadEffectiveOnCore` errors (corrupted run queue) → propagate.
 - returns `none` (no budget-eligible thread) → no switch; core `c` keeps running

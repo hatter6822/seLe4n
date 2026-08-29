@@ -312,123 +312,62 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
     }
 }
 
-/// IRQ handler — called from assembly after context save.
-///
-/// AG5-C: Wired to GIC-400 acknowledge → EOI → dispatch sequence.
-/// The dispatch routes timer interrupts (INTID 30) to the timer handler,
-/// which re-arms the hardware comparator for the next interval.
-///
-/// AI1-C/M-26: Tick accounting (incrementing the tick counter) is performed
-/// exclusively by the Lean kernel via `ffi_timer_reprogram` (ffi.rs). The
-/// IRQ handler only re-arms the hardware timer to prevent missed interrupts.
-/// This eliminates the dual-path bug where both the IRQ handler and the FFI
-/// bridge incremented the tick count, causing double-counting.
-///
-/// AN8-C.3 (H-19): `#[deny(clippy::panic)]` is applied at the function
-/// level (together with the related `clippy::unreachable` and
-/// `clippy::todo` lints, which are panic-equivalents at runtime) so a
-/// future edit that inserts `panic!()`, `unreachable!()`, or `todo!()`
-/// directly inside the handler body fails `cargo clippy`. Even though
-/// AN8-C.1's EOI-before-handler reorder removed the panic-loses-EOI
-/// class structurally, a panicking handler still halts the kernel
-/// under `panic = "abort"`, so direct panics are a latent correctness
-/// hazard: the handler should signal recoverable conditions through
-/// return values, not unwinding.
-#[no_mangle]
-#[deny(clippy::panic, clippy::unreachable, clippy::todo)]
-pub extern "C" fn handle_irq(_frame: &mut TrapFrame) {
-    crate::gic::dispatch_irq_with_iar(|intid, source_cpu| {
-        if intid == crate::gic::TIMER_PPI_ID {
-            // Timer interrupt: re-arm the hardware comparator only.
-            // Tick accounting is performed by the Lean kernel via
-            // ffi_timer_reprogram — see ffi.rs:40-43.
-            //
-            // AN8-C.4 re-entrancy note: `reprogram_timer()` computes
-            // `CNTP_CVAL_EL0 = CNTPCT_EL0 + interval`. On RPi5 the
-            // interval is 54 000 counter ticks (~1 ms at 54 MHz);
-            // handler latency is ≪ 1 ms, so the timer IRQ cannot
-            // re-trigger inside this handler body. The GIC's CPU-
-            // interface running-priority mask also holds the INTID off
-            // until PSTATE.I clears on exception return.
-            crate::timer::reprogram_timer();
-        } else if intid < u32::from(crate::gic::MAX_SGI_INTID) {
-            // WS-SM SM7.B.3: SGIs (INTIDs 0..15) route through the
-            // SM1.F.5 handler table with genuine source-CPU
-            // attribution — `dispatch_irq_with_iar` preserved the full
-            // IAR (and EOI'd with it, per the GIC-400 §4.4.5 SGI CPUID
-            // rule).  Unregistered INTIDs dispatch to the table's
-            // no-op log arm, preserving the pre-SM7.B observable
-            // behaviour for every SGI kind without a handler (e.g.
-            // `.reschedule` until its Lean-side per-core entry wires
-            // up).
-            #[allow(clippy::cast_possible_truncation)]
-            crate::gic::dispatch_sgi(intid as u8, source_cpu);
-        } else {
-            // Non-timer, non-SGI interrupt: log for debugging.
-            //
-            // AG7 will additionally wire device interrupts (SPIs)
-            // to notification signals via FFI.
-            crate::kprintln!("IRQ: unhandled INTID {}", intid);
-        }
-    });
-}
+// The single-core `handle_irq` that predated the per-core IRQ path was
+// removed when `trap.S`'s IRQ vectors were redirected to
+// [`handle_irq_per_core`] (the redirect the SM1.I.1 seam was staged
+// for).  Its contracts survive in the per-core handler: the AG5-C
+// acknowledge → EOI → dispatch sequence (via `dispatch_irq_with_iar`),
+// the AI1-C/M-26 tick-count ownership rule (the global `TICK_COUNT` is
+// advanced exclusively by the Lean kernel via `ffi_timer_reprogram`;
+// the ISR only re-arms the comparator and records the per-core
+// diagnostic counter), and the AN8-C.3 panic-lint discipline.
 
-/// **WS-SM SM1.I.1**: Per-core IRQ handler entry.
+/// **WS-SM SM1.I.1 / SM5**: Per-core IRQ handler entry — the IRQ path
+/// `trap.S`'s `__el0_irq_entry` / `__el1_irq_entry` vectors branch to.
 ///
 /// Reads the calling core's id from `TPIDR_EL1` via
 /// [`crate::per_cpu::current_core_id_from_tpidr`], records per-core IRQ
 /// dispatch / timer-tick / SGI statistics ([`crate::per_cpu_stats`]),
-/// then dispatches the IRQ through [`crate::gic::dispatch_irq`].  The
-/// dispatch closure routes by INTID:
+/// then dispatches the IRQ through
+/// [`crate::gic::dispatch_irq_with_iar`] (which acknowledges, EOIs with
+/// the full IAR, and preserves the source-CPU bits — the AG5-C sequence).
+/// The dispatch closure routes by INTID:
 ///
-///   * `INTID == TIMER_PPI_ID (30)` → re-arm timer (legacy
-///     [`crate::timer::reprogram_timer`]) AND record the per-core
-///     timer-tick counter.
-///   * `INTID < MAX_SGI_INTID (16)` → record the per-core SGI counter.
-///     At SM1.I we cannot route through the SGI handler table because
-///     [`crate::gic::dispatch_irq`] discards the source-CPU bits of
-///     `GICC_IAR`; SM5 will add a `dispatch_irq` variant that preserves
-///     the full IAR and routes through [`crate::gic::dispatch_sgi`].
-///     The per-core counter still advances so test infrastructure
-///     measuring SGI volume (SM1.H.5 round-trip) can observe per-core
-///     activity.
+///   * `INTID == TIMER_PPI_ID (30)` →
+///     [`crate::timer::per_core_timer_tick_isr`]: records the per-core
+///     tick, re-arms the per-core comparator, and drives the verified
+///     Lean per-core scheduler timer tick (`lean_per_core_timer_tick`)
+///     inside `kernel_entry::with_kernel_entry`.  The global
+///     `TICK_COUNT` is untouched — it is advanced exclusively by the
+///     Lean kernel via `ffi_timer_reprogram` (the AI1-C/M-26
+///     single-owner rule).
+///   * `INTID < MAX_SGI_INTID (16)` → record the per-core SGI counter,
+///     then route through [`crate::gic::dispatch_sgi`] with genuine
+///     source-CPU attribution.  Registered kernel-coordination SGIs
+///     (SM0.H INTIDs: `.reschedule` 0 via
+///     [`reschedule_sgi_handler`], `.tlbShootdownReq` 1, `.haltAll` 4)
+///     run their handlers; unregistered INTIDs dispatch to the table's
+///     no-op log arm.
 ///   * Other INTIDs → log a diagnostic with the per-core `[core N]`
 ///     prefix so the boot trace is unambiguously per-core attributable.
 ///
-/// # Relationship to [`handle_irq`]
-///
-/// At SM1.I the assembly entry vector still calls [`handle_irq`]
-/// (single-core legacy entry).  This function is added as the **SM5
-/// landing seam**: once SM5+ per-core scheduler state is wired,
-/// `trap.S`'s IRQ entry will be redirected here so every IRQ pays one
-/// extra `mrs tpidr_el1` and one atomic counter increment in exchange
-/// for full per-core attribution.
-///
 /// # Cost
 ///
-/// Net addition over [`handle_irq`]: 1 × `mrs tpidr_el1` (~3 cycles) +
-/// 1 × cache-hot load of `PerCpuData.core_id` (~3 cycles) + 1 × atomic
-/// counter increment (~5 cycles uncontended on Cortex-A76).
-/// Subset counters (timer / SGI) add another atomic per matched
-/// branch.  Total overhead < 20 cycles per IRQ.
-///
-/// # SM5+ extensions
-///
-/// SM5 will:
-/// - Wire this function as the assembly entry point (replacing
-///   [`handle_irq`]).
-/// - Surface the per-core IRQ counters through a verified read API.
-/// - Route SGI dispatches through [`crate::gic::dispatch_sgi`] with
-///   the full IAR (requires a `dispatch_irq_with_iar` variant).
-/// - Push timer-tick accounting into per-core scheduler state, removing
-///   the global tick counter's role as the canonical timekeeper.
+/// Relative to a handler without per-core attribution: 1 × `mrs
+/// tpidr_el1` (~3 cycles) + 1 × cache-hot load of `PerCpuData.core_id`
+/// (~3 cycles) + 1 × atomic counter increment (~5 cycles uncontended on
+/// Cortex-A76).  Subset counters (timer / SGI) add another atomic per
+/// matched branch.  Total overhead < 20 cycles per IRQ.
 ///
 /// # Panic discipline
 ///
-/// `#[deny(clippy::panic)]` matches [`handle_irq`]'s contract.  A
-/// panicking IRQ handler halts the kernel under `panic = "abort"`,
-/// which is a structural-correctness hazard; the lint catches direct
-/// `panic!()` calls at compile time.
+/// AN8-C.3 (H-19): `#[deny(clippy::panic)]` (with the related
+/// `clippy::unreachable` and `clippy::todo` panic-equivalents) so a
+/// future edit that inserts a direct panic in the handler body fails
+/// `cargo clippy`.  A panicking IRQ handler halts the kernel under
+/// `panic = "abort"`, which is a structural-correctness hazard; the
+/// handler signals recoverable conditions through return values, not
+/// unwinding.
 #[no_mangle]
 #[deny(clippy::panic, clippy::unreachable, clippy::todo)]
 pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
@@ -500,6 +439,96 @@ pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
             crate::kprintln_core!("IRQ: unhandled INTID {}", intid);
         }
     });
+}
+
+/// **WS-SM SM0.H / SM5.C.5**: the `.reschedule` SGI INTID, matching
+/// `SeLe4n.Kernel.Concurrency.SgiKind.reschedule.toIntid` (pinned by
+/// `SgiKind.reschedule_intid` on the Lean side).  Owned here next to
+/// its handler, mirroring `gic::HALT_ALL_INTID` and
+/// `shootdown::TLB_SHOOTDOWN_REQ_INTID`.
+pub const RESCHEDULE_INTID: u8 = 0;
+
+// Compile-time pins (WS-SM SM0.H): the INTID matches the SM0.H
+// reservation (0 = `.reschedule`, mirrored by the Lean-side
+// `SgiKind.reschedule_intid`) and sits inside the SGI range the
+// SM1.F.5 handler table covers.  Const asserts, not tests, so drift
+// fails the build before any test runs — the same discipline as the
+// `TrapFrame` layout pins above.
+const _: () = assert!(RESCHEDULE_INTID == 0);
+const _: () = assert!(RESCHEDULE_INTID < crate::gic::MAX_SGI_INTID);
+
+/// **WS-SM SM5.C.5**: the `.reschedule` SGI handler — the receiver seam
+/// of the cross-core wake protocol.
+///
+/// When a remote wake enqueues a thread on this core's run queue, the
+/// waker fires SGI INTID 0 (`SgiKind::reschedule`, SM0.H) at this core.
+/// [`handle_irq_per_core`] routes the SGI here via the SM1.F.5 handler
+/// table, and this handler drives the verified Lean reschedule
+/// transition (`Kernel.handleRescheduleSgiOnCore` via the
+/// `lean_per_core_reschedule` export): re-choose the highest-priority
+/// budget-eligible runnable thread and switch to it only if it strictly
+/// outranks the current thread.
+///
+/// The Lean call commits kernel state, so it takes the kernel-entry
+/// lock ([`crate::kernel_entry::with_kernel_entry`]) exactly like the
+/// timer-tick and syscall entries.  Non-reentrancy is safe for the same
+/// reason as the tick: the SGI is acknowledged + EOI'd before the
+/// handler runs, and `PSTATE.I` stays masked until exception return, so
+/// this handler can never interrupt another kernel entry on its own
+/// core.
+///
+/// Gated on `feature = "hw_target"`: on the host no kernel image is
+/// linked, so the handler records the wake statistic only (the SGI
+/// counter advanced in [`handle_irq_per_core`]'s dispatch branch) and
+/// the reschedule itself is exercised by the Lean test suites against
+/// the pure `perCoreRescheduleStep`.
+///
+/// The `_source_cpu` attribution is diagnostic only: the reschedule
+/// decision depends on the receiving core's run queue, not on who
+/// poked it.
+fn reschedule_sgi_handler(_intid: u8, _source_cpu: u8) {
+    let core_id = crate::per_cpu::current_core_id_from_tpidr();
+    #[cfg(feature = "hw_target")]
+    {
+        // Lean-runtime readiness gate: a PE must never enter a Lean runtime
+        // it has not initialized (the constraint shootdown.rs states in
+        // prose, structural since `lean_ready`).  A not-yet-ready core
+        // drops the reschedule — the woken thread stays enqueued on this
+        // core's run queue, and the dispatch happens at this core's first
+        // ready-side scheduling point instead (its bring-up reschedule or
+        // its next tick); nothing is lost, only deferred.
+        if crate::lean_ready::lean_ready(core_id as usize) {
+            // SAFETY: `lean_per_core_reschedule` is the C-callable wrapper the
+            // Lean compiler emits for `Kernel.perCoreRescheduleEntry`
+            // (`@[export lean_per_core_reschedule]`).  It takes a `u64` core id
+            // and returns no value; calling it is sound from EL1 IRQ context
+            // after per-core hardware init has completed (the SGI can only be
+            // taken once `enable_irq` ran on this core, which is after the
+            // bring-up entry established this core's scheduler state) AND this
+            // core's Lean runtime is initialized (the gate just checked).
+            extern "C" {
+                fn lean_per_core_reschedule(core_id: u64);
+            }
+            crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
+                lean_per_core_reschedule(core_id);
+            });
+        }
+    }
+    #[cfg(not(feature = "hw_target"))]
+    let _ = core_id;
+}
+
+/// **WS-SM SM5.C.5**: register the `.reschedule` handler.
+///
+/// # Safety
+///
+/// Must be called during single-core boot with IRQs disabled, before
+/// `bring_up_secondaries` — the [`crate::gic::register_sgi_handler`]
+/// write-once contract, same as the shootdown and haltAll handlers.
+pub unsafe fn register_reschedule_sgi_handler() {
+    unsafe {
+        crate::gic::register_sgi_handler(RESCHEDULE_INTID, reschedule_sgi_handler);
+    }
 }
 
 /// SError handler — called from assembly on system error exceptions.
@@ -763,14 +792,14 @@ mod tests {
     }
 
     // ========================================================================
-    // WS-SM SM1.I.1 — Per-core IRQ handler entry tests
+    // WS-SM SM1.I.1 / SM5 — Per-core IRQ handler entry tests
     //
-    // `handle_irq_per_core` is the SM5 landing seam for per-core IRQ
-    // dispatch.  At SM1.I.1 we verify:
+    // `handle_irq_per_core` is the live IRQ path (`trap.S`'s
+    // `__el0_irq_entry` / `__el1_irq_entry` branch to it; pinned by
+    // `build.rs::scan_trap_s_irq_vector_redirect`).  We verify:
     //
     //   1. The function exists with the expected `extern "C" fn(&mut TrapFrame)`
-    //      ABI signature — assembly entry can resolve it once SM5 swaps
-    //      the vector.
+    //      ABI signature — the assembly entry resolves it.
     //   2. Calling it on host increments the per-core IRQ counter.
     //      (The dispatcher on host reads `acknowledge_irq_classified`,
     //      which on host MMIO returns Spurious/OutOfRange — the
@@ -807,12 +836,22 @@ mod tests {
     }
 
     #[test]
-    fn handle_irq_per_core_legacy_handle_irq_signature_unchanged() {
-        // The original `handle_irq` is retained at SM1.I.1 (SM5
-        // swaps the assembly entry).  Verify its signature matches
-        // the per-core variant so SM5 only swaps a function pointer.
-        let _: extern "C" fn(&mut TrapFrame) = handle_irq;
-        let _: extern "C" fn(&mut TrapFrame) = handle_irq_per_core;
+    fn reschedule_sgi_handler_matches_sgi_handler_signature() {
+        // WS-SM SM5.C.5: the `.reschedule` handler must coerce to the
+        // SM1.F.5 `SgiHandler` table signature `fn(u8, u8)` so
+        // `register_reschedule_sgi_handler` can install it.  (The
+        // INTID value itself is pinned at compile time by the
+        // `const _: () = assert!(...)` pins beside `RESCHEDULE_INTID`.)
+        let _: crate::gic::SgiHandler = reschedule_sgi_handler;
+    }
+
+    #[test]
+    fn reschedule_sgi_handler_host_call_does_not_panic() {
+        // WS-SM SM5.C.5: on host no kernel image is linked
+        // (`hw_target` off), so the handler is the record-only arm.
+        // Verify it returns without panicking for any source CPU.
+        reschedule_sgi_handler(RESCHEDULE_INTID, 0);
+        reschedule_sgi_handler(RESCHEDULE_INTID, 3);
     }
 
     #[test]

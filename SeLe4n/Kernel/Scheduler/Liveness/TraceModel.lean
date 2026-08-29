@@ -113,7 +113,9 @@ def stepPost (step : SchedulerStep) (st : SystemState) : Except KernelError Syst
     ) { st with scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId rq' }
     .ok st'
   | .ipcTimeoutTick scId =>
-    .ok (timeoutBlockedThreads st scId).1
+    -- The trace model is `bootCoreId`-pinned (SM4.C.11); the round-8
+    -- target-aware timeout wake takes the executing core explicitly.
+    .ok (timeoutBlockedThreads st scId bootCoreId).1
 
 -- ============================================================================
 -- D5-A4: Valid trace predicate

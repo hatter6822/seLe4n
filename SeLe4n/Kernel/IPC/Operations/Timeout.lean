@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.IPC.DualQueue.Core
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
+import SeLe4n.Kernel.Scheduler.Operations.Selection
 
 namespace SeLe4n.Kernel
 
@@ -42,9 +43,15 @@ This operation:
    or receive queue using `endpointQueueRemove`.
 2. **IPC state reset** (Z6-C1): Sets `tcb.ipcState := .ready` and clears
    `tcb.pendingMessage := none` and `tcb.timeoutBudget := none`.
-3. **Scheduler re-enqueue** (Z6-C3): Sets the explicit `timedOut := true` flag
-   on the TCB (AG8-A) and re-enqueues the thread in the RunQueue at its
-   current priority.
+3. **Scheduler re-enqueue** (Z6-C3; target-aware since PR #880 round 8): Sets
+   the explicit `timedOut := true` flag on the TCB (AG8-A) and wakes the
+   thread on its **home core** via the target-aware `wakeThread`
+   (`determineTargetCore` — the affinity core, or the boot core when unbound),
+   returning the cross-core `.reschedule` SGI when the home core is remote.
+   The pre-round-8 `ensureRunnable` hard-coded the boot queue, so a timeout
+   fired by a secondary core's budget tick placed an affinity-bound thread on
+   a queue whose dispatcher rejects it (`switchToThreadOnCore`'s
+   `affinityAdmitsCore` gate) — stranding the timed-out thread.
 
 The `isReceiveQ` parameter indicates which queue the thread is blocked on:
 - `true`: thread was in `blockedOnReceive` on the endpoint's receiveQ
@@ -84,12 +91,17 @@ here. The invariant is pin-pointed by
 `blockingGraph_pipBoost_implies_blockedOnReply` (D4; see
 `Scheduler/PriorityInheritance/BlockingGraph.lean`).
 
-Returns updated state or error if endpoint/thread lookup fails. -/
+Returns the updated state paired with the optional cross-core `.reschedule`
+SGI the caller must emit after its state commit (`none` for a local or
+unbound wake), or an error if endpoint/thread lookup fails.  The
+`executingCore` parameter is the core running the timeout (the budget
+tick's core) — the SGI decision compares the wake target against it. -/
 def timeoutThread
     (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId)
-    (st : SystemState) : Except KernelError SystemState :=
+    (executingCore : Concurrency.CoreId)
+    (st : SystemState) : Except KernelError (SystemState × Option (Concurrency.CoreId × Concurrency.SgiKind)) :=
   -- Step 1: Remove thread from endpoint queue
   match endpointQueueRemove endpointId isReceiveQ tid st with
   | .error e => .error e
@@ -123,15 +135,18 @@ def timeoutThread
       | .error e => .error e
       | .ok ((), st2) =>
         -- Step 4: Re-enqueue in RunQueue at current priority
-        let st3 := ensureRunnable st2 tid
+        -- PR #880 round 8: wake on the thread's HOME core (affinity target),
+        -- not the boot queue — `wakeThread` places via `determineTargetCore`
+        -- and returns the `.reschedule` SGI when the home core is remote.
+        let woken := wakeThread st2 tid executingCore
         -- D4-N: Revert PIP for the server if the timed-out thread was a waiter.
         -- Now that the client's ipcState is cleared, waitersOf won't include it,
         -- so revertPriorityInheritance correctly recomputes the server's pipBoost
         -- from remaining waiters only.
         match maybeBlockingServer with
         | some serverId =>
-          .ok (PriorityInheritance.revertPriorityInheritance st3 serverId)
-        | none => .ok st3
+          .ok (PriorityInheritance.revertPriorityInheritance woken.1 serverId, woken.2)
+        | none => .ok woken
 
 /-- AK1-H (I-M06): Composition — `timeoutThread` succeeds whenever the
     caller has witnessed that (i) an endpoint exists at `endpointId`, and
@@ -156,12 +171,12 @@ def timeoutThread
     under the preconditions. -/
 theorem timeoutThread_succeeds_under_preconditions
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
-    (st : SystemState) (ep : Endpoint) (tcb : TCB)
+    (executingCore : Concurrency.CoreId) (st : SystemState) (ep : Endpoint) (tcb : TCB)
     (hEp : st.objects[endpointId]? = some (.endpoint ep))
     (hLk : lookupTcb st tid = some tcb)
     (hLk1 : ∀ st1, endpointQueueRemove endpointId isReceiveQ tid st = .ok st1 →
       ∃ tcb1, lookupTcb st1 tid = some tcb1) :
-    ∃ st', timeoutThread endpointId isReceiveQ tid st = .ok st' := by
+    ∃ r, timeoutThread endpointId isReceiveQ tid executingCore st = .ok r := by
   -- Destructure the first step via the AK1-H endpointQueueRemove composition.
   obtain ⟨st1, hRemove⟩ :=
     endpointQueueRemove_succeeds_under_forwardBackward endpointId isReceiveQ tid st ep tcb hEp hLk

@@ -41,11 +41,19 @@ private theorem updatePipBoost_frame {F : Type}
       · exact h_insert _
   · rfl
 
+/-- D4-O (every-core form, PR #880 round 8): `updatePipBoost` preserves every
+core's `current` slot — it writes only `objects` and (at most) the boot run
+queue, and `currentOnCore` reads neither. -/
+theorem updatePipBoost_currentOnCore_eq (st : SystemState) (tid : ThreadId)
+    (c' : Concurrency.CoreId) :
+    ((updatePipBoost st tid).scheduler.currentOnCore c') = (st.scheduler.currentOnCore c') :=
+  updatePipBoost_frame (fun s => (s.scheduler.currentOnCore c')) st tid
+    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
+
 /-- D4-O: `updatePipBoost` preserves the scheduler's `current` field. -/
 theorem updatePipBoost_preserves_current (st : SystemState) (tid : ThreadId) :
     ((updatePipBoost st tid).scheduler.currentOnCore bootCoreId) = (st.scheduler.currentOnCore bootCoreId) :=
-  updatePipBoost_frame (fun s => (s.scheduler.currentOnCore bootCoreId)) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
+  updatePipBoost_currentOnCore_eq st tid bootCoreId
 
 /-- D4-O: `updatePipBoost` preserves the scheduler's `activeDomain`. -/
 theorem updatePipBoost_preserves_activeDomain (st : SystemState) (tid : ThreadId) :
@@ -215,18 +223,26 @@ theorem updatePipBoost_toList_filter_neg (st : SystemState) (tid : ThreadId)
 -- D4-O/P: Chain propagation frame lemmas
 -- ============================================================================
 
-/-- D4-P: `propagatePriorityInheritance` preserves the scheduler's `current`. -/
-theorem propagate_preserves_current (st : SystemState) (tid : ThreadId)
-    (fuel : Nat) :
-    ((propagatePriorityInheritance st tid fuel).scheduler.currentOnCore bootCoreId) =
-    (st.scheduler.currentOnCore bootCoreId) := by
+/-- D4-P (every-core form, PR #880 round 8): the chain walk is `updatePipBoost`
+at each step, so it too preserves every core's `current` slot. -/
+theorem propagate_currentOnCore_eq (st : SystemState) (tid : ThreadId)
+    (fuel : Nat) (c' : Concurrency.CoreId) :
+    ((propagatePriorityInheritance st tid fuel).scheduler.currentOnCore c') =
+    (st.scheduler.currentOnCore c') := by
   induction fuel generalizing st tid with
   | zero => simp [propagatePriorityInheritance]
   | succ n ih =>
     simp only [propagatePriorityInheritance]
     split
-    · rw [ih]; exact updatePipBoost_preserves_current st tid
-    · exact updatePipBoost_preserves_current st tid
+    · rw [ih]; exact updatePipBoost_currentOnCore_eq st tid c'
+    · exact updatePipBoost_currentOnCore_eq st tid c'
+
+/-- D4-P: `propagatePriorityInheritance` preserves the scheduler's `current`. -/
+theorem propagate_preserves_current (st : SystemState) (tid : ThreadId)
+    (fuel : Nat) :
+    ((propagatePriorityInheritance st tid fuel).scheduler.currentOnCore bootCoreId) =
+    (st.scheduler.currentOnCore bootCoreId) :=
+  propagate_currentOnCore_eq st tid fuel bootCoreId
 
 /-- D4-P: `propagatePriorityInheritance` preserves `activeDomain`. -/
 theorem propagate_preserves_activeDomain (st : SystemState) (tid : ThreadId)
@@ -455,11 +471,19 @@ theorem propagate_preserves_domainScheduleIndex (st : SystemState) (tid : Thread
 -- D4-P: Revert frame lemmas (derived from revert_eq_propagate)
 -- ============================================================================
 
+/-- D4-P (every-core form, PR #880 round 8): the reversion walk preserves every
+core's `current` slot. -/
+theorem revert_currentOnCore_eq (st : SystemState) (tid : ThreadId) (fuel : Nat)
+    (c' : Concurrency.CoreId) :
+    ((revertPriorityInheritance st tid fuel).scheduler.currentOnCore c') =
+    (st.scheduler.currentOnCore c') := by
+  rw [revert_eq_propagate]; exact propagate_currentOnCore_eq st tid fuel c'
+
 /-- D4-P: `revertPriorityInheritance` preserves `scheduler.current`. -/
 theorem revert_preserves_current (st : SystemState) (tid : ThreadId) (fuel : Nat) :
     ((revertPriorityInheritance st tid fuel).scheduler.currentOnCore bootCoreId) =
-    (st.scheduler.currentOnCore bootCoreId) := by
-  rw [revert_eq_propagate]; exact propagate_preserves_current st tid fuel
+    (st.scheduler.currentOnCore bootCoreId) :=
+  revert_currentOnCore_eq st tid fuel bootCoreId
 
 /-- D4-P: `revertPriorityInheritance` preserves `scheduler.activeDomain`. -/
 theorem revert_preserves_activeDomain (st : SystemState) (tid : ThreadId) (fuel : Nat) :

@@ -29,14 +29,18 @@
 //!      [`crate::gic::init_cpu_interface_secondary`];
 //!    * arms the per-core timer via
 //!      [`crate::timer::init_timer_secondary`];
-//!    * unmasks IRQ delivery; and
-//!    * jumps into the Lean kernel via
+//!    * enters the Lean kernel bring-up reschedule via
 //!      `lean_secondary_kernel_main(context_id)` (defined in
 //!      `SeLe4n/Kernel/SecondaryEntry.lean` with the matching
-//!      `@[export]` attribute).
-//! 4. The Lean kernel currently parks the secondary at SM1.C; SM5+
-//!    will replace the placeholder with the per-core scheduler
-//!    entry.
+//!      `@[export]` attribute), inside
+//!      `kernel_entry::with_kernel_entry` and with IRQs still
+//!      masked — the verified `handleRescheduleSgiOnCore` transition
+//!      establishes this core's `currentOnCore`; and
+//!    * unmasks IRQ delivery and publishes `CORE_IRQ_READY`.
+//! 4. The core then parks in an interrupt-driven WFE idle: per-core
+//!    timer ticks and `.reschedule` SGIs drive the verified per-core
+//!    scheduler through `trap.rs::handle_irq_per_core` under the
+//!    kernel-entry lock.
 //!
 //! ## What this module owns
 //!
@@ -50,8 +54,9 @@
 //! - `rust_secondary_main` — secondary-core Rust entry called from
 //!   `boot.S::secondary_entry`.  Performs the WS-SM SM1.C full
 //!   per-core init pipeline (validate context_id → wait on
-//!   `CORE_READY[i]` → MMU → VBAR → GIC → timer → IRQ unmask → Lean
-//!   kernel entry via `lean_secondary_kernel_main` → idle fallback)
+//!   `CORE_READY[i]` → MMU → VBAR → GIC → timer → bracketed Lean
+//!   bring-up entry via `lean_secondary_kernel_main` → IRQ unmask →
+//!   interrupt-driven idle)
 //! - `validate_secondary_context_id` — defense-in-depth validator
 //!   that refuses an out-of-range PSCI context_id before any
 //!   hardware init runs
@@ -546,17 +551,20 @@ pub(crate) const fn validate_secondary_context_id(context_id: u64) -> Option<usi
 ///      Failure (CntfrqNotProgrammed) is fatal for this core — we
 ///      log and halt the secondary while leaving primary +
 ///      already-initialised secondaries running.
-///   6. **IRQ unmask** ([`crate::interrupts::enable_irq`]): clear
-///      PSTATE.I so the GIC may deliver interrupts to this PE.
-///   7. **Lean kernel entry**: `lean_secondary_kernel_main(core_id)`
-///      (emitted by Lean from `SeLe4n.Kernel.SecondaryEntry`).  At
-///      SM1.C the Lean side is a placeholder (returns to caller);
-///      SM5+ will replace it with the per-core scheduler entry.
-///   8. **Idle fallback**: should the Lean kernel ever return, the
-///      core enters an infinite WFE loop.  Returning is unexpected
-///      and indicates either (a) early SM1.C placeholder behaviour
-///      (Lean returns immediately) or (b) a verified kernel
-///      regression that broke the per-core scheduler.
+///   6. **Lean kernel bring-up entry**:
+///      `lean_secondary_kernel_main(core_id)` (emitted by Lean from
+///      `SeLe4n.Kernel.SecondaryEntry`) — the core's first reschedule.
+///      Runs inside `kernel_entry::with_kernel_entry` and with IRQs
+///      still masked (the non-reentrant-lock discipline), committing
+///      the verified `handleRescheduleSgiOnCore` transition that
+///      establishes this core's `currentOnCore`.
+///   7. **IRQ unmask** ([`crate::interrupts::enable_irq`]): clear
+///      PSTATE.I so the GIC may deliver interrupts to this PE; then
+///      publish `CORE_IRQ_READY` (shootdown-target eligibility).
+///   8. **Interrupt-driven idle**: the core parks in a WFE loop; every
+///      subsequent kernel entry on this core is an interrupt — per-core
+///      timer ticks and `.reschedule` SGIs through
+///      `trap.rs::handle_irq_per_core` under the kernel-entry lock.
 ///
 /// **Pre-conditions on entry (established by `boot.S::secondary_entry`)**:
 /// - DAIF mask = 0xF (interrupts masked).
@@ -678,12 +686,85 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     );
 
     // -----------------------------------------------------------------
-    // Step 5 — IRQ unmask.
+    // Step 5 — Lean kernel bring-up entry (the core's first reschedule).
     //
-    // Enable IRQ delivery (clear PSTATE.I) now that GIC, timer, and
-    // VBAR are configured.  After this point the GIC may deliver
-    // timer ticks (PPI 30), inter-core SGIs (INTID 0..4 per SM0.H),
-    // and SPIs to this PE.
+    // Calls into `SeLe4n.Kernel.secondaryKernelMain` (defined in
+    // `SeLe4n/Kernel/SecondaryEntry.lean` with
+    // `@[export lean_secondary_kernel_main]`), which is definitionally
+    // the per-core reschedule entry: the verified
+    // `handleRescheduleSgiOnCore` transition dispatches the
+    // highest-priority runnable thread assigned to this core (the
+    // core's idle thread when nothing else is enqueued), establishing
+    // `currentOnCore` before this core takes its first interrupt.
+    //
+    // Ordering and locking are load-bearing here:
+    //
+    //   * The entry commits kernel state (an `IO.Ref` read-then-write),
+    //     while sibling cores may already be executing bracketed kernel
+    //     entries — so the call MUST hold the kernel-entry lock
+    //     (`kernel_entry::with_kernel_entry`), like every committing
+    //     entry.
+    //   * It runs BEFORE `enable_irq` (Step 6): the kernel-entry lock
+    //     is not reentrant, and a per-core timer tick taken mid-bracket
+    //     would queue behind a ticket this core already holds — the
+    //     IRQs-masked-while-held discipline every other kernel entry
+    //     observes.  DAIF has been masked since `secondary_entry`
+    //     (boot.S), so no extra masking is needed.
+    //   * The bracket's spin self-services shootdown obligations, but a
+    //     core that has not yet published `CORE_IRQ_READY` is excluded
+    //     from every shootdown round, so acquisition terminates without
+    //     external help.
+    //
+    // The `hw_target` feature gates the extern declaration: under host
+    // `cargo test` builds the symbol is not linked, so the declaration
+    // would be unresolved.  Under a hardware build the Lean compiler
+    // emits a C-callable wrapper that resolves here.
+    // -----------------------------------------------------------------
+    #[cfg(feature = "hw_target")]
+    {
+        // Lean-runtime readiness gate: SM10.E's image initialization runs
+        // this core's per-core Lean runtime init earlier in this function
+        // and marks the core ready; until that work exists, no core is
+        // ever ready and the bring-up entry is skipped — a PE must never
+        // enter a Lean runtime it has not initialized.  A skipped entry
+        // leaves `currentOnCore` at its boot value (`none`, the legacy
+        // idle representation); the core's first ready-side scheduling
+        // point performs the deferred first reschedule.
+        if crate::lean_ready::lean_ready(core_idx) {
+            extern "C" {
+                fn lean_secondary_kernel_main(core_id: u64);
+            }
+            // SAFETY: `lean_secondary_kernel_main` is the Lean-emitted
+            // C-callable wrapper for `SeLe4n.Kernel.secondaryKernelMain`.
+            // The function takes one u64 argument (the PSCI context_id)
+            // and returns `()` — the call is total and never unwinds
+            // across the FFI boundary (Lean's `BaseIO` never throws under
+            // `panic = "abort"`).  The verified step decodes the id
+            // fail-closed, so even an out-of-range context_id commits
+            // nothing.  This core's Lean runtime is initialized (the
+            // `lean_ready` gate just checked).
+            crate::kernel_entry::with_kernel_entry(core_idx, || unsafe {
+                lean_secondary_kernel_main(core_id);
+            });
+            crate::kprintln!(
+                "[smp] core {core_id}: kernel bring-up entry complete (first reschedule)"
+            );
+        } else {
+            crate::kprintln!(
+                "[smp] core {core_id}: kernel bring-up entry deferred (Lean runtime not ready)"
+            );
+        }
+    }
+    #[cfg(not(feature = "hw_target"))]
+    crate::kprintln!("[smp] core {core_id}: kernel bring-up entry complete (first reschedule)");
+
+    // -----------------------------------------------------------------
+    // Step 6 — IRQ unmask.
+    //
+    // Enable IRQ delivery (clear PSTATE.I) now that GIC, timer, VBAR,
+    // and this core's scheduler state are configured.  After this point
+    // the GIC may deliver timer ticks (PPI 30), inter-core SGIs
+    // (INTID 0..4 per SM0.H), and SPIs to this PE.
     // -----------------------------------------------------------------
     crate::interrupts::enable_irq();
     crate::kprintln!("[smp] core {core_id}: IRQ delivery enabled");
@@ -703,39 +784,18 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     crate::kprintln!("[smp] core {core_id}: ready, entering kernel");
 
     // -----------------------------------------------------------------
-    // Step 6 — Lean kernel entry.
+    // Step 7 — Interrupt-driven idle.
     //
-    // Calls into `SeLe4n.Kernel.secondaryKernelMain` (defined in
-    // `SeLe4n/Kernel/SecondaryEntry.lean` with
-    // `@[export lean_secondary_kernel_main]`).  At SM1.C the Lean
-    // side is a pass-through placeholder; SM5 will replace it with
-    // the per-core scheduler entry.
-    //
-    // The `hw_target` feature gates the extern declaration: under
-    // host `cargo test` builds the symbol is not linked, so the
-    // declaration would be unresolved.  Under a hardware build the
-    // Lean compiler emits a C-callable wrapper that resolves here.
-    // -----------------------------------------------------------------
-    #[cfg(feature = "hw_target")]
-    {
-        extern "C" {
-            fn lean_secondary_kernel_main(core_id: u64);
-        }
-        // SAFETY: `lean_secondary_kernel_main` is the Lean-emitted
-        // C-callable wrapper for `SeLe4n.Kernel.secondaryKernelMain`.
-        // The function takes one u64 argument (the PSCI context_id)
-        // and returns `()` — the call is total and never unwinds
-        // across the FFI boundary (Lean's `BaseIO` never throws under
-        // `panic = "abort"`).
-        unsafe { lean_secondary_kernel_main(core_id) };
-    }
-
-    // -----------------------------------------------------------------
-    // Step 7 — Idle fallback.
-    //
-    // The Lean kernel entry is not expected to return; if it does (or
-    // if we are running without `hw_target` and never enter it), park
-    // the core in a low-power WFE loop forever.
+    // The bring-up entry (Step 5) returned after committing this
+    // core's scheduler state; from here the core is entirely
+    // interrupt-driven.  Park in a low-power WFE loop: each per-core
+    // timer tick (PPI 30) drives the verified scheduler tick and each
+    // `.reschedule` SGI drives the verified reschedule, both via
+    // `trap.rs::handle_irq_per_core` under the kernel-entry lock, and
+    // each returns here.  Actually *running* a dispatched thread's
+    // context on this core is the SM10.E context-restore seam
+    // (`contextRestoreSeamLive`); until it flips, kernel state tracks
+    // the dispatch decisions while the core idles between interrupts.
     // -----------------------------------------------------------------
     loop {
         crate::cpu::wfe();

@@ -541,66 +541,12 @@ theorem chooseThreadOnCore_respects_activeDomain
   subst hObjTcb
   exact hDom
 
-/-- SM5.G.4 helper (budget variant): a `none`-seeded budget-aware fold that selects
-`rt` records a thread whose TCB is in domain `ad`.  Like
-`chooseBestRunnableEffective_result_props` but extracts **only** the domain
-eligibility (the first conjunct of the `eligible && hasSufficientBudget` filter), so
-it needs no well-formedness hypothesis (the budget / membership facts are dropped). -/
-theorem chooseBestRunnableEffective_result_eligible
-    (st : SystemState) (eligible : TCB → Bool) (list : List SeLe4n.ThreadId)
-    (rt : SeLe4n.ThreadId) (rp : SeLe4n.Priority) (rd : SeLe4n.Deadline)
-    (h : chooseBestRunnableEffective st eligible list none = .ok (some (rt, rp, rd))) :
-    ∃ rtcb : TCB, st.objects.get? rt.toObjId = some (.tcb rtcb) ∧ eligible rtcb = true := by
-  obtain ⟨_, rtcb, hObj, hElig, _⟩ := chooseBestRunnableEffective_result_props st eligible list rt rp rd h
-  exact ⟨rtcb, hObj, hElig⟩
-
-/-- SM5.G.4 helper (budget variant): a bucket-first budget-aware selection over the
-active domain `ad` records a thread whose TCB is in domain `ad`.  Needs **no**
-well-formedness hypothesis — the domain eligibility holds regardless of bucket
-structure (only the membership lift needs `wellFormed`). -/
-theorem chooseBestInBucketEffective_result_eligible
-    (st : SystemState) (rq : RunQueue) (ad : SeLe4n.DomainId)
-    (rt : SeLe4n.ThreadId) (rp : SeLe4n.Priority) (rd : SeLe4n.Deadline)
-    (h : chooseBestInBucketEffective st rq ad = .ok (some (rt, rp, rd))) :
-    ∃ rtcb : TCB, st.objects.get? rt.toObjId = some (.tcb rtcb) ∧ rtcb.domain = ad := by
-  rw [bucketFirstEffective_fullScan_equivalence] at h
-  cases hMax : chooseBestRunnableInDomainEffective st rq.maxPriorityBucket ad none with
-  | error e => rw [hMax] at h; simp at h
-  | ok val =>
-    cases val with
-    | some r =>
-      rw [hMax] at h
-      simp only [Except.ok.injEq, Option.some.injEq] at h
-      subst h
-      obtain ⟨rtcb, hObj, hElig⟩ := chooseBestRunnableEffective_result_eligible st
-        (fun tc => tc.domain == ad) rq.maxPriorityBucket rt rp rd hMax
-      exact ⟨rtcb, hObj, eq_of_beq hElig⟩
-    | none =>
-      rw [hMax] at h
-      obtain ⟨rtcb, hObj, hElig⟩ := chooseBestRunnableEffective_result_eligible st
-        (fun tc => tc.domain == ad) rq.toList rt rp rd h
-      exact ⟨rtcb, hObj, eq_of_beq hElig⟩
-
-/-- WS-SM SM5.G.4 (budget-aware companion): a thread the budget-aware
-`chooseThreadEffectiveOnCore` selects is in core `c`'s active domain.  Mirrors the
-non-budget `chooseThreadOnCore_respects_activeDomain` with **no well-formedness
-hypothesis** — domain-respect is a property of the selection filter, independent of
-run-queue well-formedness (the audit-pass closes the prior `hwf` asymmetry). -/
-theorem chooseThreadEffectiveOnCore_respects_activeDomain
-    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hSel : chooseThreadEffectiveOnCore st c = .ok (some tid))
-    (hTcb : st.getTcb? tid = some tcb) :
-    tcb.domain = st.scheduler.activeDomainOnCore c := by
-  obtain ⟨p, d, hbucket⟩ := chooseThreadEffectiveOnCore_eq_some_imp_bucket_some st c tid hSel
-  obtain ⟨rtcb, hObj, hDom⟩ := chooseBestInBucketEffective_result_eligible st
-    (st.scheduler.runQueueOnCore c) (st.scheduler.activeDomainOnCore c) tid p d hbucket
-  have hObjTcb : st.objects.get? tid.toObjId = some (.tcb tcb) :=
-    (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
-  rw [hObj] at hObjTcb
-  simp only [Option.some.injEq, KernelObject.tcb.injEq] at hObjTcb
-  subst hObjTcb
-  exact hDom
-
+-- The budget-aware domain-respect trio (`chooseBestRunnableEffective_result_eligible`,
+-- `chooseBestInBucketEffective_result_eligible`,
+-- `chooseThreadEffectiveOnCore_respects_activeDomain`) moved to
+-- `Operations/PerCoreChooseThread.lean` (PR #880 round 7) so the
+-- `handleRescheduleSgiOnCore` domain wrapper upstream of this module can cite it;
+-- this module keeps consuming it via that import.
 
 -- ============================================================================
 -- §6  SM5.G.5 — cross-core domain independence + footprint
@@ -1104,21 +1050,27 @@ theorem scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule
     activeDomainOnCore_isInDomainSchedule st' c := by
   unfold scheduleDomainOnCore at hStep
   split at hStep
-  · cases hsw : switchDomainOnCore st c with
-    | error e => rw [hsw] at hStep; simp at hStep
-    | ok stMid =>
-      rw [hsw] at hStep
-      have hMid : activeDomainOnCore_isInDomainSchedule stMid c :=
-        switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule st c stMid hPred hsw
-      unfold activeDomainOnCore_isInDomainSchedule at hMid ⊢
-      rw [scheduleEffectiveOnCore_domainSchedule stMid c st' hStep,
-        scheduleEffectiveOnCore_activeDomainOnCore stMid c st' hStep]
-      exact hMid
-  · simp only [Except.ok.injEq] at hStep
-    subst hStep
-    unfold activeDomainOnCore_isInDomainSchedule at hPred ⊢
-    rw [decrementDomainTimeOnCore_domainSchedule, decrementDomainTimeOnCore_activeDomainOnCore]
-    exact hPred
+  · -- single-domain mode: the domain tick is the identity.
+    simp only [Except.ok.injEq] at hStep; subst hStep; exact hPred
+  · -- non-empty schedule.
+    split at hStep
+    · -- boundary: switch (preserves) then re-dispatch (frames).
+      cases hsw : switchDomainOnCore st c with
+      | error e => rw [hsw] at hStep; simp at hStep
+      | ok stMid =>
+        rw [hsw] at hStep
+        have hMid : activeDomainOnCore_isInDomainSchedule stMid c :=
+          switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule st c stMid hPred hsw
+        unfold activeDomainOnCore_isInDomainSchedule at hMid ⊢
+        rw [scheduleEffectiveOnCore_domainSchedule stMid c st' hStep,
+          scheduleEffectiveOnCore_activeDomainOnCore stMid c st' hStep]
+        exact hMid
+    · -- non-boundary: pure domain-time decrement.
+      simp only [Except.ok.injEq] at hStep
+      subst hStep
+      unfold activeDomainOnCore_isInDomainSchedule at hPred ⊢
+      rw [decrementDomainTimeOnCore_domainSchedule, decrementDomainTimeOnCore_activeDomainOnCore]
+      exact hPred
 
 -- ============================================================================
 -- §11  SM5.G.2/.3 — the SM5.G invariants maintained by the LIVE domain tick
@@ -1213,18 +1165,24 @@ theorem scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore
     domainScheduleIndexInBoundsOnCore st' c := by
   unfold scheduleDomainOnCore at hStep
   split at hStep
-  · cases hsw : switchDomainOnCore st c with
-    | error e => rw [hsw] at hStep; simp at hStep
-    | ok stMid =>
-      rw [hsw] at hStep
+  · -- single-domain mode: the domain tick is the identity.
+    simp only [Except.ok.injEq] at hStep; subst hStep; exact hInv
+  · -- non-empty schedule.
+    split at hStep
+    · -- boundary: switch lands the index in bounds; the re-dispatch frames it.
+      cases hsw : switchDomainOnCore st c with
+      | error e => rw [hsw] at hStep; simp at hStep
+      | ok stMid =>
+        rw [hsw] at hStep
+        exact domainScheduleIndexInBoundsOnCore_frame
+          (scheduleEffectiveOnCore_domainSchedule stMid c st' hStep)
+          (scheduleEffectiveOnCore_domainScheduleIndexOnCore stMid c st' hStep)
+          (switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore st c stMid hsw)
+    · -- non-boundary: pure domain-time decrement.
+      simp only [Except.ok.injEq] at hStep; subst hStep
       exact domainScheduleIndexInBoundsOnCore_frame
-        (scheduleEffectiveOnCore_domainSchedule stMid c st' hStep)
-        (scheduleEffectiveOnCore_domainScheduleIndexOnCore stMid c st' hStep)
-        (switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore st c stMid hsw)
-  · simp only [Except.ok.injEq] at hStep; subst hStep
-    exact domainScheduleIndexInBoundsOnCore_frame
-      (decrementDomainTimeOnCore_domainSchedule st c)
-      (decrementDomainTimeOnCore_domainScheduleIndexOnCore st c) hInv
+        (decrementDomainTimeOnCore_domainSchedule st c)
+        (decrementDomainTimeOnCore_domainScheduleIndexOnCore st c) hInv
 
 /-- WS-SM SM5.G.2 (live rotation preserves domain consistency): `switchDomainOnCore`
 maintains `domainConsistentOnCore` — on a non-empty schedule it *establishes* it (the
@@ -1259,19 +1217,25 @@ theorem scheduleDomainOnCore_preserves_domainConsistentOnCore
     domainConsistentOnCore st' c := by
   unfold scheduleDomainOnCore at hStep
   split at hStep
-  · cases hsw : switchDomainOnCore st c with
-    | error e => rw [hsw] at hStep; simp at hStep
-    | ok stMid =>
-      rw [hsw] at hStep
+  · -- single-domain mode: the domain tick is the identity.
+    simp only [Except.ok.injEq] at hStep; subst hStep; exact hCons
+  · -- non-empty schedule.
+    split at hStep
+    · -- boundary: switch establishes consistency; the re-dispatch frames it.
+      cases hsw : switchDomainOnCore st c with
+      | error e => rw [hsw] at hStep; simp at hStep
+      | ok stMid =>
+        rw [hsw] at hStep
+        exact domainConsistentOnCore_frame
+          (scheduleEffectiveOnCore_domainSchedule stMid c st' hStep)
+          (scheduleEffectiveOnCore_domainScheduleIndexOnCore stMid c st' hStep)
+          (scheduleEffectiveOnCore_activeDomainOnCore stMid c st' hStep)
+          (switchDomainOnCore_preserves_domainConsistentOnCore st c stMid hCons hsw)
+    · -- non-boundary: pure domain-time decrement.
+      simp only [Except.ok.injEq] at hStep; subst hStep
       exact domainConsistentOnCore_frame
-        (scheduleEffectiveOnCore_domainSchedule stMid c st' hStep)
-        (scheduleEffectiveOnCore_domainScheduleIndexOnCore stMid c st' hStep)
-        (scheduleEffectiveOnCore_activeDomainOnCore stMid c st' hStep)
-        (switchDomainOnCore_preserves_domainConsistentOnCore st c stMid hCons hsw)
-  · simp only [Except.ok.injEq] at hStep; subst hStep
-    exact domainConsistentOnCore_frame
-      (decrementDomainTimeOnCore_domainSchedule st c)
-      (decrementDomainTimeOnCore_domainScheduleIndexOnCore st c)
-      (decrementDomainTimeOnCore_activeDomainOnCore st c c) hCons
+        (decrementDomainTimeOnCore_domainSchedule st c)
+        (decrementDomainTimeOnCore_domainScheduleIndexOnCore st c)
+        (decrementDomainTimeOnCore_activeDomainOnCore st c c) hCons
 
 end SeLe4n.Kernel

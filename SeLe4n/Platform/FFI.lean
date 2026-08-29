@@ -135,16 +135,37 @@ instance : Nonempty LabelingContext := ⟨Kernel.testLabelingContext⟩
 @[extern "ffi_timer_read_counter"]
 opaque ffiTimerReadCounter : BaseIO UInt64
 
-/-- Reprogram the timer comparator for the next tick interval and
-    increment the tick counter.
+/-- Reprogram the timer comparator for the next tick interval — re-arm
+    only.  Global tick accounting is single-path and its one site is
+    `ffiTimerAdvanceTickCount` (below), driven by the committed run-loop
+    step; this seam deliberately cannot increment, so a second
+    incrementer cannot reappear (AI1-C / M-26).
     Rust: `ffi_timer_reprogram` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_timer_reprogram"]
 opaque ffiTimerReprogram : BaseIO Unit
 
-/-- Get the current tick count (timer interrupts since boot).
+/-- Get the current tick count (committed model-clock advances since
+    boot — see `ffiTimerAdvanceTickCount`).
     Rust: `ffi_timer_get_tick_count` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_timer_get_tick_count"]
 opaque ffiTimerGetTickCount : BaseIO UInt64
+
+/-- WS-SM SM5.I (commit-coupled shadow clock — PR #880 follow-up): advance
+    the HAL's global tick counter (`TICK_COUNT`) by one.  Called by
+    `perCoreTimerTickEntry` **iff** the just-committed run-loop step
+    advanced the model clock (`machine.timer` — the boot core's committed
+    success arm, `tickClockedState`; the flag is definitionally the clock
+    delta, `perCoreTimerTickStepWithClockAdvance_flag_def`), so the HAL
+    shadow tracks the model clock exactly on every arm: pre-readiness
+    ticks, non-boot cores and fail-closed entries advance neither clock.
+    The sole live-path incrementer of `TICK_COUNT` (AI1-C / M-26 single
+    path, owner relocated from the boot-core ISR invocation, which counted
+    invocations rather than commits); `ffiTimerReprogram` stays
+    re-arm-only.  Lock-free on the Rust side (one atomic fetch-add), so
+    calling it under the kernel-entry lock violates no ordering rule.
+    Rust: `ffi_timer_advance_tick_count` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_timer_advance_tick_count"]
+opaque ffiTimerAdvanceTickCount : BaseIO Unit
 
 -- ============================================================================
 -- AG7-A-iii: GIC FFI declarations
@@ -945,15 +966,27 @@ def updateKernelState (f : SystemState → SystemState) : BaseIO Unit :=
     closed by serialising kernel entry, not by this combinator.
 
     **Serialisation is present (SM5.I, v0.32.142).**  Every kernel entry that
-    reaches this combinator runs inside
+    commits state runs inside
     `rust/sele4n-hal/src/kernel_entry.rs`'s `with_kernel_entry` bracket, so the
     read and the write are one critical section against every other kernel
-    entry.  All three entries are bracketed —
+    entry.  All five committing entries are bracketed —
     `lean_syscall_dispatch_cross_core` (`svc_dispatch::dispatch_svc`),
-    `lean_per_core_timer_tick` (`timer::handle_timer_interrupt`) and
-    `suspend_thread_cross_core` (`ffi::sele4n_suspend_thread`).  The bring-up
-    entries (`lean_kernel_main`, `lean_secondary_kernel_main`) are deliberately
-    outside it: they run before their core takes part in concurrent entry.
+    `lean_per_core_timer_tick` (`timer::per_core_timer_tick_isr`, from
+    `trap.rs::handle_irq_per_core`'s timer branch),
+    `lean_per_core_reschedule` (`trap.rs::reschedule_sgi_handler`, the
+    `.reschedule` SGI receiver),
+    `lean_secondary_kernel_main` (`smp.rs::rust_secondary_main`, the bring-up
+    reschedule — bracketed *and* invoked before `enable_irq` on its core, so a
+    tick cannot re-enter the non-reentrant lock on the same core) and
+    `suspend_thread_cross_core` (`ffi::sele4n_suspend_thread`).  The primary
+    bring-up entry (`lean_kernel_main`, the SM10.E image target's boot seam) is
+    the one committing path outside the bracket: its `initialiseKernelState`
+    install runs while secondaries may already be executing bracketed entries,
+    so SM10.E MUST either order the install before Phase 5 releases the
+    secondaries or take this same bracket — an unbracketed install racing a
+    bracketed tick can be overwritten by a commit derived from the
+    pre-install state (the lost-commit shape above).  Recorded as an SM10.E
+    obligation in `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`.
 
     The lock is the SM2 verified `TicketLock`, so entry is FIFO and no core
     starves; it is acquired strictly **outside** `SHOOTDOWN_ROUND_LOCK`; and its

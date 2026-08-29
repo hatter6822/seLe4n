@@ -1986,4 +1986,69 @@ theorem chooseThreadEffectiveOnCore_none_no_eligible
     (st.scheduler.runQueueOnCore c).toList htoList tid hmem tcb hObjGet
   simp [hDom, hBudget] at hElig
 
+-- ── PR #880 round 7: the budget-aware domain-respect trio (moved from
+-- `Operations/PerCoreDomain.lean`, its original SM5.G.4 home, so consumers
+-- upstream of the domain module — the `handleRescheduleSgiOnCore` domain
+-- wrapper in the timer-tick module — can cite the selection-filter fact) ──
+
+/-- SM5.G.4 helper (budget variant): a `none`-seeded budget-aware fold that selects
+`rt` records a thread whose TCB is in domain `ad`.  Like
+`chooseBestRunnableEffective_result_props` but extracts **only** the domain
+eligibility (the first conjunct of the `eligible && hasSufficientBudget` filter), so
+it needs no well-formedness hypothesis (the budget / membership facts are dropped). -/
+theorem chooseBestRunnableEffective_result_eligible
+    (st : SystemState) (eligible : TCB → Bool) (list : List SeLe4n.ThreadId)
+    (rt : SeLe4n.ThreadId) (rp : SeLe4n.Priority) (rd : SeLe4n.Deadline)
+    (h : chooseBestRunnableEffective st eligible list none = .ok (some (rt, rp, rd))) :
+    ∃ rtcb : TCB, st.objects.get? rt.toObjId = some (.tcb rtcb) ∧ eligible rtcb = true := by
+  obtain ⟨_, rtcb, hObj, hElig, _⟩ := chooseBestRunnableEffective_result_props st eligible list rt rp rd h
+  exact ⟨rtcb, hObj, hElig⟩
+
+/-- SM5.G.4 helper (budget variant): a bucket-first budget-aware selection over the
+active domain `ad` records a thread whose TCB is in domain `ad`.  Needs **no**
+well-formedness hypothesis — the domain eligibility holds regardless of bucket
+structure (only the membership lift needs `wellFormed`). -/
+theorem chooseBestInBucketEffective_result_eligible
+    (st : SystemState) (rq : RunQueue) (ad : SeLe4n.DomainId)
+    (rt : SeLe4n.ThreadId) (rp : SeLe4n.Priority) (rd : SeLe4n.Deadline)
+    (h : chooseBestInBucketEffective st rq ad = .ok (some (rt, rp, rd))) :
+    ∃ rtcb : TCB, st.objects.get? rt.toObjId = some (.tcb rtcb) ∧ rtcb.domain = ad := by
+  rw [bucketFirstEffective_fullScan_equivalence] at h
+  cases hMax : chooseBestRunnableInDomainEffective st rq.maxPriorityBucket ad none with
+  | error e => rw [hMax] at h; simp at h
+  | ok val =>
+    cases val with
+    | some r =>
+      rw [hMax] at h
+      simp only [Except.ok.injEq, Option.some.injEq] at h
+      subst h
+      obtain ⟨rtcb, hObj, hElig⟩ := chooseBestRunnableEffective_result_eligible st
+        (fun tc => tc.domain == ad) rq.maxPriorityBucket rt rp rd hMax
+      exact ⟨rtcb, hObj, eq_of_beq hElig⟩
+    | none =>
+      rw [hMax] at h
+      obtain ⟨rtcb, hObj, hElig⟩ := chooseBestRunnableEffective_result_eligible st
+        (fun tc => tc.domain == ad) rq.toList rt rp rd h
+      exact ⟨rtcb, hObj, eq_of_beq hElig⟩
+
+/-- WS-SM SM5.G.4 (budget-aware companion): a thread the budget-aware
+`chooseThreadEffectiveOnCore` selects is in core `c`'s active domain.  Mirrors the
+non-budget `chooseThreadOnCore_respects_activeDomain` with **no well-formedness
+hypothesis** — domain-respect is a property of the selection filter, independent of
+run-queue well-formedness (the audit-pass closes the prior `hwf` asymmetry). -/
+theorem chooseThreadEffectiveOnCore_respects_activeDomain
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hSel : chooseThreadEffectiveOnCore st c = .ok (some tid))
+    (hTcb : st.getTcb? tid = some tcb) :
+    tcb.domain = st.scheduler.activeDomainOnCore c := by
+  obtain ⟨p, d, hbucket⟩ := chooseThreadEffectiveOnCore_eq_some_imp_bucket_some st c tid hSel
+  obtain ⟨rtcb, hObj, hDom⟩ := chooseBestInBucketEffective_result_eligible st
+    (st.scheduler.runQueueOnCore c) (st.scheduler.activeDomainOnCore c) tid p d hbucket
+  have hObjTcb : st.objects.get? tid.toObjId = some (.tcb tcb) :=
+    (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
+  rw [hObj] at hObjTcb
+  simp only [Option.some.injEq, KernelObject.tcb.injEq] at hObjTcb
+  subst hObjTcb
+  exact hDom
+
 end SeLe4n.Kernel

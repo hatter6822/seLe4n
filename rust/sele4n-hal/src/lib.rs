@@ -57,10 +57,11 @@
 // can trace the observation → resolution without re-reading the plan.
 //
 // - R-HAL-L1  Signature fixes in `trap.rs`:
-//             `handle_serror` now declares `-> !` (AK5-K/M12). `handle_irq`
-//             and `handle_synchronous_exception` intentionally take
-//             `&mut TrapFrame` so userspace registers can be modified on
-//             return (e.g., to surface the syscall result via `set_x0`).
+//             `handle_serror` now declares `-> !` (AK5-K/M12).
+//             `handle_irq_per_core` and `handle_synchronous_exception`
+//             intentionally take `&mut TrapFrame` so userspace registers
+//             can be modified on return (e.g., to surface the syscall
+//             result via `set_x0`).
 // - R-HAL-L2  Comment accuracy: TrapFrame-layout docstrings (`trap.rs`,
 //             `trap.S`) now read 288 bytes across all sites (AK5-F).
 // - R-HAL-L3  `const fn` promotion: `is_spurious` in `gic.rs` and
@@ -275,3 +276,12 @@ pub mod queued_rw_lock;
 // the module docstring in `lock_bridge.rs` for the handle encoding,
 // trace-counter rationale, and ARM ARM citations.
 pub mod lock_bridge;
+// WS-SM: per-core Lean-runtime readiness gate.  The structural form of
+// the constraint shootdown.rs states in prose ("a reentrant per-core
+// Lean runtime … does not exist"): every Rust seam that would call into
+// Lean (`per_core_timer_tick_isr`, `reschedule_sgi_handler`, the
+// secondary bring-up entry) consults `lean_ready(core_id)` and degrades
+// to its Rust-only half until SM10.E's image initialization marks the
+// core ready.  No core is ready at boot; nothing in the tree marks one
+// yet — the seams are wired, dormant, and cannot fire early.
+pub mod lean_ready;

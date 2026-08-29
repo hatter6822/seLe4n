@@ -132,6 +132,33 @@ scripts, SM10.E for the image build):
 | SM10.E.2 | All 5 tiers green on the release candidate | (verification) | M |
 | SM10.E.3 | Release-candidate trace fixture commit | (1 file) | S |
 
+**Registered obligation — `lean_kernel_main` install ordering.**  When
+SM10.E.D1 defines the primary's boot seam (`lean_kernel_main`, the
+symbol the image target resolves), its `initialiseKernelState` install
+is a kernel-state **write** that today would run *outside* the
+kernel-entry lock and *after* Phase 5 has released the secondaries —
+whose bracketed timer ticks and `.reschedule` receivers are already
+committing against the same `IO.Ref`.  An unbracketed install racing a
+bracketed commit can be overwritten by a post-state derived from the
+pre-install default state (the lost-commit shape
+`kernel_entry.rs`'s module docs describe).  SM10.E MUST close this by
+one of:
+
+1. **Order** — perform the Lean kernel-state install *before*
+   `apply_cmdline_and_start_smp` releases any secondary (splitting the
+   install from the primary's run loop if `lean_kernel_main` combines
+   them), so no concurrent committer exists during the install; or
+2. **Bracket** — run the install inside
+   `kernel_entry::with_kernel_entry`, joining the five already-bracketed
+   committing entries.
+
+Option 1 is preferred (it also lets the secondaries' bring-up
+reschedule observe the real boot state — with per-core idle threads
+installed — instead of the empty default).  Cross-references:
+`SeLe4n/Platform/FFI.lean` (`modifyGetKernelState` docstring) and
+`rust/sele4n-hal/src/kernel_entry.rs` (module docs) both name this
+obligation.
+
 ## 4. Version-bump file list
 
 The 25 files synchronized in SM10.C.1:

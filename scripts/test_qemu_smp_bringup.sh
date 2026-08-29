@@ -159,14 +159,20 @@ esac
 # Banner verification (SM1.H.4)
 # ---------------------------------------------------------------------------
 #
-# Per the SM1.C.5 boot trace, each secondary core emits banners of the form:
+# Per the SM1.C.5 boot trace (bring-up entry ordered before IRQ unmask
+# since the SM5.C.5 seam completion), each secondary core emits banners
+# of the form:
 #
 #   [smp] core N: entering per-core init
 #   [smp] core N: MMU enabled (...)
 #   [smp] core N: VBAR_EL1 installed
 #   [smp] core N: GIC-400 CPU interface initialized (...)
 #   [smp] core N: timer armed at 1000 Hz
+#   [smp] core N: kernel bring-up entry complete (first reschedule)
+#     (or "... deferred (Lean runtime not ready)" until SM10.E's image
+#      initialization marks the core ready — the lean_ready gate)
 #   [smp] core N: IRQ delivery enabled
+#   [smp] core N: IRQ-serviceable (shootdown-eligible)
 #   [smp] core N: ready, entering kernel
 #
 # We grep for the final "ready, entering kernel" banner per core because

@@ -29,7 +29,9 @@ case-analysis lemmas) so the mature SM5.D / `timerTickOnCore` proof base is unto
   the result has `current = some (idleThreadId c)`: idle is genuinely dispatched in a
   production transition.
 * **Live-tick witness (`scheduleDomainOnCore_runs_idle`)** — the same idle dispatch
-  on the live per-core domain-tick path (a domain boundary in single-domain mode).
+  on the live per-core domain-tick path (a rotating domain boundary; in inert
+  single-domain mode idle adoption rides the wake receiver, the vacate-successor
+  seam and the budget tick's own re-dispatch instead — see the witness docstring).
 * **Soundness (thin aliases to the `scheduleEffectiveOnCore_*` establishment
   theorems)** — the result satisfies `currentThreadValidOnCore`,
   `queueCurrentConsistentOnCore`, `currentThreadInActiveDomainOnCore`,
@@ -193,24 +195,39 @@ theorem scheduleOrIdleOnCore_idle_starves_no_eligible_thread (st : SystemState) 
 -- §4  The folded idle dispatch is reachable on the live per-core tick path
 -- ============================================================================
 
-/-- WS-SM SM5.E (the live-wiring witness — review #4 closure): the folded idle
-dispatch is reachable on the **live per-core domain-tick path**.  At a domain
-boundary (`domainTimeRemainingOnCore c ≤ 1`) in single-domain mode
-(`domainSchedule = []`, the RPi5 v1.0.0 configuration), `scheduleDomainOnCore`
-re-dispatches via `scheduleEffectiveOnCore`; when nothing is budget-eligible and
-core `c`'s idle thread is dispatchable, the live domain tick runs the idle thread
-(`current = some (idleThreadId c)`).  This makes "the idle thread runs on the
-live kernel" a theorem about a production transition the timer drives, not just
-about the standalone dispatcher. -/
-theorem scheduleDomainOnCore_runs_idle (st : SystemState) (c : CoreId) (st'' : SystemState)
+/-- WS-SM SM5.E (the live-wiring witness — review #4 closure, restated for the
+inert single-domain mode at PR #880 round 4): the folded idle dispatch is
+reachable on the **live per-core domain-tick path**.  At a domain boundary
+(`domainTimeRemainingOnCore c ≤ 1`) on a **non-empty** domain schedule,
+`scheduleDomainOnCore` rotates (`switchDomainOnCore`, producing `stMid`) and
+re-dispatches via `scheduleEffectiveOnCore`; when nothing on the rotated state
+is budget-eligible and core `c`'s idle thread is dispatchable, the live domain
+tick runs the idle thread (`current = some (idleThreadId c)`).  This keeps
+"the idle thread runs on the live kernel" a theorem about a production
+transition the timer drives, not just about the standalone dispatcher.
+
+In single-domain mode (`domainSchedule = []`, the RPi5 v1.0.0 default) the
+domain tick is deliberately inert (`scheduleDomainOnCore_singleDomain_inert`)
+— there is no boundary, so idle adoption on the live paths is owned by the
+wake receiver (`handleRescheduleSgiOnCore`), the vacate-successor seam, and
+the budget tick's own re-dispatch (`timerTickOnCore`'s preemption arm runs
+`scheduleEffectiveOnCore`, whose `none` selection takes the same
+`idleFallbackOnCore` this witness exercises). -/
+theorem scheduleDomainOnCore_runs_idle (st : SystemState) (c : CoreId)
+    (stMid st'' : SystemState)
     (hBoundary : st.scheduler.domainTimeRemainingOnCore c ≤ 1)
-    (hSched : st.scheduler.domainSchedule = [])
-    (hChoose : chooseThreadEffectiveOnCore st c = .ok none)
-    (hDisp : idleDispatchableOnCore (saveOutgoingContextOnCore st c) c = true)
+    (hSched : st.scheduler.domainSchedule ≠ [])
+    (hSwitch : switchDomainOnCore st c = .ok stMid)
+    (hChoose : chooseThreadEffectiveOnCore stMid c = .ok none)
+    (hDisp : idleDispatchableOnCore (saveOutgoingContextOnCore stMid c) c = true)
     (hStep : scheduleDomainOnCore st c = .ok st'') :
     st''.scheduler.currentOnCore c = some (idleThreadId c) := by
   unfold scheduleDomainOnCore at hStep
-  rw [if_pos hBoundary, switchDomainOnCore_singleDomain_noop st c hSched] at hStep
-  exact scheduleOrIdleOnCore_runs_idle st c st'' hChoose hDisp hStep
+  cases hcase : st.scheduler.domainSchedule with
+  | nil => exact absurd hcase hSched
+  | cons hd tl =>
+      rw [hcase] at hStep
+      rw [if_pos hBoundary, hSwitch] at hStep
+      exact scheduleOrIdleOnCore_runs_idle stMid c st'' hChoose hDisp hStep
 
 end SeLe4n.Kernel

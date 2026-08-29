@@ -508,7 +508,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @preemptCurrentOnCore_activeDomainOnCore
 #check @preemptCurrentOnCore_domainTimeRemainingOnCore
 #check @preemptCurrentOnCore_domainScheduleIndexOnCore
-#check @switchToThreadOnCore_activeDomainOnCore
+#check @switchToThreadOnCore_activeDomainOnCore_eq
 #check @switchToThreadOnCore_domainTimeRemainingOnCore
 #check @switchToThreadOnCore_domainScheduleIndexOnCore
 #check @switchToThreadOnCore_confinedToCores

@@ -296,7 +296,7 @@ def perCoreTimerTheorems : List PerCoreTimerTheorem :=
       timerTickBudgetOnCorePreempts .decidability,
     pctt! "perCoreTimerTickEntry: SM5.I live per-core timer-entry driver (C-callable seam)"
       perCoreTimerTickEntry .decidability,
-    pctt! "perCoreTimerTickEntry_def: SM5.I entry-driver body-shape marker (step + fire-SGIs)"
+    pctt! "perCoreTimerTickEntry_def: SM5.I entry-driver body-shape marker (flagged step + commit-coupled shadow advance + fire-SGIs)"
       perCoreTimerTickEntry_def .decidability  ]
 
 /-- WS-SM SM5.D: the inventory has 100 substantive entries (audit-pass-2: removed

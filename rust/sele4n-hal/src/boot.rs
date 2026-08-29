@@ -16,7 +16,7 @@
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.34.0";
+const KERNEL_VERSION: &str = "0.34.1";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -152,6 +152,19 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     }
     crate::kprintln!("[boot] halt-all SGI handler registered (INTID 4)");
 
+    // WS-SM SM5.C.5: register the `.reschedule` (INTID 0) handler — the
+    // receiver seam of the cross-core wake protocol.  A remote wake
+    // enqueues the woken thread on this core's run queue and fires this
+    // SGI; the handler drives the verified reschedule transition
+    // (`lean_per_core_reschedule`) under the kernel-entry lock.
+    //
+    // SAFETY: same boot-phase-3 conditions as the registrations above --
+    // primary core alone, PSTATE.I set, no secondary online yet.
+    unsafe {
+        crate::trap::register_reschedule_sgi_handler();
+    }
+    crate::kprintln!("[boot] reschedule SGI handler registered (INTID 0)");
+
     crate::kprintln!("[boot] Initializing timer (1000 Hz)...");
     // AJ5-C/L-14 + AK5-J/AK5-L: init_timer returns Result — on failure,
     // log the error and halt via idle_loop since the kernel cannot function
@@ -189,11 +202,11 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // already been validated by the time we reach this write.
     //
     // Audit note: an earlier draft of this hook ran *after*
-    // `enable_irq()`.  Pre-SM1.I the IRQ handler (`handle_irq`)
-    // never read TPIDR_EL1, so that ordering was functionally safe;
-    // moving the write here made the discipline robust against
-    // future per-core handler additions (e.g., SM5's per-core
-    // scheduler tick).
+    // `enable_irq()`.  Pre-SM1.I the then-current single-core IRQ
+    // handler never read TPIDR_EL1, so that ordering was functionally
+    // safe; moving the write here made the discipline robust against
+    // the per-core handler that later became the live IRQ path
+    // (SM5's `handle_irq_per_core`).
     //
     // WS-SM SM1.I.4 update: `handle_synchronous_exception` now reads
     // TPIDR_EL1 via `crate::per_cpu_stats::record_*` (each branch
@@ -222,12 +235,10 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // the per-core handler swap) remains structurally visible at
     // the Phase-4 site.
     //
-    // WS-SM SM1.I.1 also adds `handle_irq_per_core` which reads
-    // TPIDR_EL1.  At SM1.I that function is NOT wired into the
-    // assembly entry vector (legacy `handle_irq` still is); SM5
-    // swaps the vector.  When SM5 lands, the IRQ path joins the
-    // synchronous-exception path in depending on TPIDR_EL1 — both
-    // are safe after the audit-pass-4 Phase 1 write.
+    // WS-SM SM1.I.1 / SM5: `handle_irq_per_core` (the live IRQ path —
+    // `trap.S`'s IRQ vectors branch to it) reads TPIDR_EL1, so the IRQ
+    // path joins the synchronous-exception path in depending on it —
+    // both are safe after the audit-pass-4 Phase 1 write.
     // -----------------------------------------------------------------------
     #[cfg(target_arch = "aarch64")]
     {
@@ -512,7 +523,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.34.0");
+        assert_eq!(KERNEL_VERSION, "0.34.1");
     }
 
     #[test]
