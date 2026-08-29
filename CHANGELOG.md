@@ -1,9 +1,53 @@
+## v0.34.5 — a plan's numbering is its schedule: WS-RR reordered into execution order
+
+`v0.34.4` shipped WS-RR with phases numbered RR0..RR8 and a separate §2.3 note
+saying to run RR6 early and RR1 before RR3.  That is a plan that has to be read
+twice and will be misread once: if the numbering does not carry the order,
+the numbering is decoration.  It also concealed a real defect — RR0.B.2 revised
+SM10's estimate "derived from the RR6 compile-coverage result", a backward
+dependency from the first phase to the seventh.
+
+**Phases renumbered so phase number is execution order.**  RR0 registration;
+RR1 aarch64 compile coverage (was RR6 — cheap, de-risks every later Rust
+change, and it produces the measurement the estimate consumes); RR2 live-path
+correctness (was RR1); RR3 de-threading closure (unchanged); RR4 fault handling
+(was RR2); RR5 boot-path fail-open (was RR4); RR6 verified lock primitives (was
+RR5); RR7 medium sweep; RR8 closure.  The backward dependency is gone: the
+measurement is recorded at RR1.8 and consumed at RR1.9, in that order, inside
+one phase.
+
+**Sub-tasks renumbered sequentially within each phase** — `RR4.1`..`RR4.27`
+rather than `RR2.A.1`..`RR2.Q.2`.  Letter groups encoded theme, not order, so a
+reader could not tell whether `RR2.C.3` preceded `RR2.B.1`; thematic grouping
+now lives in prose where it belongs.  This also retires the `RR3.A.0` that the
+previous cut had to invent to insert a step before `RR3.A.1` — a numbering
+scheme that cannot express "before the first item" is telling you something.
+
+The §2.3 sequencing note is replaced by the dependency list that produced the
+order, plus an explicit statement of which phases may overlap.  Absent that
+statement, sequential execution is the contract.
+
+**The rule is codified, not just applied.**  `CLAUDE.md` and `AGENTS.md` gain a
+"Workstream planning documents" section: phase number is execution order,
+sub-tasks run sequentially within a phase with no letter groups and no `.0`, no
+sub-task may consume the output of a higher-numbered one, and genuine
+parallelism is stated rather than implied.  It applies to every plan under
+`docs/planning/` and to the status index's own phase tables.
+
+Also corrected: the sub-task total is **125**, not the 126 `v0.34.4` claimed —
+an off-by-one introduced when that cut resynced its own counts.  Every phase
+table, cross-reference and CHANGELOG mention now agrees, and the count is
+verified against the tables rather than asserted.  The `asm!`-site figure is
+60, measured, where the plan said 59.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md
+
 ## v0.34.4 — WS-RR: the pre-SM10 remediation phase, planned end to end
 
 The `v0.34.3` audit register said the project was not ready to begin SM10 and
 listed what stood in the way.  This cut turns that register into a workstream:
 `docs/planning/SMP_RELEASE_READINESS_PLAN.md` decomposes every open finding
-into **126 PR-sized sub-tasks across nine phases** (RR0..RR8), each with files,
+into **125 PR-sized sub-tasks across nine phases** (RR0..RR8), each with files,
 estimates, acceptance criteria and explicit ordering constraints.
 
 **Why a separate phase rather than more SM10 sub-tasks.**  SM10's acceptance
@@ -14,12 +58,13 @@ the kernel finished" the same question, which is the conflation that let the
 tier-4 gates certify phases nothing had run.  WS-RR closes first; SM10 then
 does what it was scoped to do.
 
-**The phases.**  RR0 registration and plan correction (nothing further is
-lost); RR1 live-path correctness — the four live SMP dispatch arms gain
-`ipcInvariantFull` bundles and both cross-core donation paths migrate the CBS
-replenish queue; RR2 fault handling; RR3 the `ipcInvariantFull` de-threading
-closure; RR4 boot-path fail-open closure; RR5 verified lock primitives; RR6
-aarch64 compile coverage; RR7 the medium sweep; RR8 hand-off.
+**The phases**, numbered in the order they are to be implemented: RR0
+registration and plan correction (nothing further is lost); RR1 aarch64
+compile coverage; RR2 live-path correctness — the four live SMP dispatch arms
+gain `ipcInvariantFull` bundles and both cross-core donation paths migrate the
+CBS replenish queue; RR3 the `ipcInvariantFull` de-threading closure; RR4 fault
+handling; RR5 boot-path fail-open closure; RR6 verified lock primitives; RR7
+the medium sweep; RR8 hand-off.
 
 **Fault handling is scoped to full seL4-style fault IPC with reply-based
 restart** (27 sub-tasks), not a minimal fail-safe.  The groundwork is better
@@ -29,7 +74,7 @@ arms simply return `.error .vmFault` as a pure error, and its only callers are
 tests, because `trap.rs` runs a parallel `esr_ec` match of its own.  So the
 work is an unwired field, a missing `Fault` type and delivery transition, and
 the retirement of a duplicate classification path — with a progress theorem
-(RR2.K.1) that makes the livelock unrepresentable rather than merely absent.
+(RR4.20) that makes the livelock unrepresentable rather than merely absent.
 
 **The IPC de-threading workstream closes before v1.0.0**, not after.  Two of
 twenty `ipcInvariantFull` conjuncts are still assumed as post-state hypotheses
@@ -38,7 +83,7 @@ payoff theorems, so the invariant is end-to-end machine-checked rather than
 conditionally so.
 
 **`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` is re-scoped pre-v1.0.0** and
-absorbed as RR5.  Shipping a verified microkernel whose core concurrency
+absorbed as RR6.  Shipping a verified microkernel whose core concurrency
 primitive carries a known-deferred completeness story understates what
 "verified" means on the one component every other subsystem's serialisability
 argument rests on.  The residue concentrates in one theme: the refinement
@@ -51,12 +96,12 @@ docstring states it models rather than drives the real lock.  The deployed lock
 is not the one the spec describes, and the harness that would have caught that
 drives neither.
 
-**RR6 runs early despite its position.**  No aarch64 target is compiled
+**RR1 runs early by design.**  No aarch64 target is compiled
 anywhere in tree or CI, so 67 cfg-gated blocks, 59 `asm!` sites and all three
 `.S` files would first be exercised by SM10.E — the same step that first links
 and boots them.  A `cargo check` against `aarch64-unknown-none` is cheap and
 de-risks every later Rust change; its result also sizes SM10.E's estimate
-(RR0.B.2), replacing a guess with a measurement.
+(RR1.9), replacing a guess with a measurement.
 
 The register's 99 low-severity findings are deliberately **not** in this plan.
 Documentation sync is SM10.A's assigned job, and running the same sweep twice

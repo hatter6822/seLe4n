@@ -1215,7 +1215,7 @@ The sweep found the proof surface, capability gating, ABI design and Rust unsafe
 
 > **This sequence is now planned in full.** Every item below, plus the
 > security findings of §4 and the medium sweep of §6, is decomposed into
-> 126 PR-sized sub-tasks across nine phases in
+> 125 PR-sized sub-tasks across nine phases in
 > [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) (WS-RR).
 > The §7 low-severity table is deliberately *not* in that plan — it is
 > handed to SM10.A, whose assigned job is the documentation sweep.

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.4.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.5.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -810,7 +810,7 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 | SM9.D | LANDED | v0.33.53→56 | Causal declassification provenance — the laundering detector stops guessing |
 | SM9.E | LANDED | v0.33.100 | Tests + closure: acceptance scenarios run live and pinned as golden fixtures; seam boundary coverage of both declassifying syscalls; the epoch exercised with survivors |
 | SM9 | CLOSED | v0.33.100 | Declassification completion — reader, refusal auditing, data-carrying signal, causal provenance, acceptance fixtures |
-| WS-RR | PLANNED | — | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (126 subs across RR0..RR8) |
+| WS-RR | PLANNED | — | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (125 subs across RR0..RR8) |
 | SM10 | BLOCKED on WS-RR | — | Release closure (→ v1.0.0) |
 
 **Plans**: master overview at
@@ -874,6 +874,38 @@ code may assume:
 - **WS-AN** portfolio COMPLETE (v0.30.11): 12 phases (AN0–AN12).
 - **WS-AK through WS-AA**: archived to
   [`docs/CLAUDE_HISTORY.md`](docs/CLAUDE_HISTORY.md).
+
+## Workstream planning documents
+
+**Phases and sub-tasks are numbered in the order they are to be
+implemented.**  A plan's numbering is its schedule: a reader who works
+`RR0, RR1, RR2, …` in order must never violate a dependency, and must never
+need a separate note telling them to take a later-numbered phase early.
+
+Concretely:
+
+- **Phase number is execution order.**  If phase 6 has to run second, it is
+  phase 1 — renumber it.  A "sequencing note" that contradicts the numbering
+  means the numbering is wrong, not that the note is helpful; the plan then
+  has to be read twice and will be misread once.
+- **Sub-task numbers run sequentially within a phase** (`RR2.1`, `RR2.2`,
+  …), in execution order, with no letter groups and no `.0`.  Thematic
+  grouping belongs in prose or a column, not in the identifier — a reader
+  cannot tell from `RR2.C.3` whether it precedes `RR2.B.1`.
+- **No backward dependencies.**  A sub-task may only consume the output of a
+  lower-numbered sub-task.  If step 3 needs what step 9 measures, either the
+  order is wrong or the two steps belong in the same phase.  State the
+  dependency in the row that consumes it, so the constraint is visible where
+  it binds.
+- **Genuine parallelism is stated, not implied.**  Say which phases may
+  overlap and which may never (typically because they edit the same files).
+  Absent that statement, sequential execution is the contract.
+- **Renumbering is cheap before work starts and expensive after.**  Get the
+  order right at authoring time; once sub-task IDs appear in commit messages
+  and CHANGELOG entries they are effectively frozen.
+
+This applies to every plan under `docs/planning/`, and to the per-phase
+tables in `CLAUDE.md`'s status index.
 
 ## PR checklist
 
