@@ -27,8 +27,9 @@ kernel state.  Two steps live here:
   bring-up entry `Kernel.secondaryKernelMain` — bring-up **is** the core's first
   reschedule).  It runs the **verified** `Kernel.handleRescheduleSgiOnCore`
   transition (SM5.C.5: budget-aware re-choose, preempt only when the candidate
-  outranks the current thread — strictly higher effective priority, or an
-  EDF displacement within the bucket, PR #880 round 6) and commits its result.  It emits no
+  outranks the current thread in the selector's own strict-preference order —
+  higher resolved effective priority, or an earlier resolved deadline at equal
+  effective priority; PR #880 round 7) and commits its result.  It emits no
   SGIs: a local dispatch wakes nothing remote.
 
 This module holds the pure steps + their correctness theorems so each `BaseIO`
@@ -137,6 +138,12 @@ order:
    inherent to per-core release queues, one PPI period nominally.
 2. **`timerTickOnCore`** — SM5.D budget accounting, CBS replenishment,
    budget-exhaustion preemption; recovers the cross-core `.reschedule` SGIs.
+   Since PR #880 round 7 the tick also resolves its own **local**
+   replenish wakes: a due refill that woke a thread targeting the ticking
+   core itself fires no SGI, so the tick runs the receiver-side reschedule
+   decision (`handleRescheduleSgiOnCore`) after the budget charge — the
+   refilled thread preempts at its release point instead of waiting out the
+   current thread's remaining budget.
 3. **`scheduleDomainOnCore`** — SM5.D.6 domain accounting, for a
    **non-empty** domain schedule: the in-domain decrement, or the boundary
    rotation (`switchDomainOnCore`: save the outgoing current, re-enqueue it,

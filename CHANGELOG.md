@@ -274,6 +274,80 @@ the six-way pin family — earlier-deadline preempts; later, equal and absent
 deadlines do not; idle admits — plus the end-to-end receiver switch to the
 equal-priority earlier-deadline candidate.
 
+**Review round 7 (same version) — two findings, both on what the round-6 cut
+still could not see.**
+
+*The gate compares what selection compares.*  Round 6's EDF clause read the
+TCB `deadline` fields — sound for unbound threads, but the selector
+(`chooseBestRunnableEffective`) orders candidates by
+`resolveEffectivePrioDeadline`, which for a bound or donated thread is the
+**SchedContext's** priority and deadline.  Priorities agree across the two
+readings (`schedContextBind` / `schedContextConfigure` propagate
+`sc.priority` into the bound TCB — `boundThreadPriorityConsistent`), but
+**deadlines have no propagation and no consistency invariant**: bind copies
+only the priority, and `schedContextConfigure` / `cbsUpdateDeadline` move
+the SC deadline with the TCB field untouched.  Two equal-priority bound
+threads with TCB deadlines `0` and SC deadlines 20 / 10 would be ordered by
+the selector and refused by the gate — the wake's poke dropped, the urgent
+bound candidate waiting past its deadline.  The gate is now literally the
+selector's strict-preference relation: `isBetterCandidate` over
+`resolveEffectivePrioDeadline` of current and candidate
+(`candidateOutranksCurrentOnCore_eq_isBetterCandidate` is the alignment
+contract, `candidateOutranksCurrentOnCore_of_edf_earlier` the EDF corollary
+on resolved deadlines).  The round-6 `candidateEdfDisplacesCurrent` clause
+and its truth lemma are superseded and deleted; two deliberate semantic
+refinements ride the alignment, both matching what selection would do at
+the next scheduling point — a deadline-bearing candidate now displaces a
+deadline-less equal-priority current ("no deadline" is latest), and the
+same-domain / equal-base-priority conjuncts are gone (the live consumer's
+candidate is already domain-filtered by `chooseThreadEffectiveOnCore`, and
+selection orders by effective priority).
+
+*A local CBS replenishment reschedules the core that processed it.*  On the
+default empty domain schedule, a due replenishment that refilled a
+higher-priority thread queued on the executing core itself was **triply
+invisible**: its placement was suppressed (the thread had sat queued since
+its exhaustion re-enqueue), it fired no SGI (`wakeThread` pokes only remote
+targets — nothing can interrupt the core already executing the tick), and it
+raised no preemption flag (the lower-priority current's budget survived the
+charge).  Nothing re-dispatched until an unrelated scheduling point — up to
+the current thread's entire remaining budget, a priority inversion at
+exactly the release instant CBS exists to honour, and the same shape the
+tree already fixes for remote wakes (the `.reschedule` SGI) and for local
+resume wakes (`resumeThread`'s PR #811 P2-5 arm).
+`processOneReplenishmentOnCore` now returns a third component — the
+**local-wake bit**, the exact complement of its SGI decision (raised iff
+the wake resolved to a TCB and targeted the executing core;
+`processOneReplenishmentOnCore_local_wake_bit` / `_no_target_no_bit`) — and
+`timerTickOnCore` resolves the accumulated bit after the budget charge by
+running the receiver-side decision (`handleRescheduleSgiOnCore`) locally,
+on both the busy arm (charge did not preempt) and the idle arm.  The idle
+arm closes a re-opened round-17 window: a thread queued-but-exhausted on a
+vacated core was ineligible when `scheduleLocalSuccessor` ran at the vacate
+seam, and its refill was the one eligibility flip no trigger could see —
+`timerTickOnCore_cannot_dispatch_vacated_core` now carries the no-local-wake
+hypothesis that scopes it, and `timerTickOnCore_idle_local_wake_reschedules`
+pins the dispatch.  The seven composed tick preservation proofs gain the
+two handler arms, fed by a new per-conjunct receiver-decision ladder
+(`handleRescheduleSgiOnCore_preserves_*` for current-thread validity,
+queue/current consistency, register-bank match, runnable-are-TCBs,
+run-queue `Nodup`, current-in-active-domain, plus the replenish-queue and
+global-timer frames), itself standing on new switch-level facts in
+`PerCoreSwitchToThread` (nodup, active-domain and domain-field frames); the
+SM5.I resolvability cluster moved up from the invariant suite to the switch
+module and the budget-aware domain-respect trio up from `PerCoreDomain` to
+`PerCoreChooseThread` so those files can cite them (the suite and domain
+module keep consuming them via their imports), and
+`NonInterferenceCrossCore` sheds its two now-duplicate active-domain
+frames.  `smp_timer_suite` §3.13 pins the scenario end to end — the
+refilling tick preempts the lower-priority current and re-enqueues it, the
+vacated core dispatches in the same tick, and a quiet tick raises no bit
+and keeps its cost profile; `smp_wake_suite` §3.4's gate family is restated
+on the selector order (the deadline-less-current pin flips to displacement,
+as selection orders it) and gains the bound-thread pins: SC deadline 10
+displaces SC deadline 20 while both TCB fields sit at `0`, and the reversed
+deadlines do not.
+
 Gates: `./scripts/test_full.sh` green (tiers 0–3);
 `./scripts/test_rust.sh` green (1145 unit + 108 conformance tests, fmt,
 clippy `-D warnings`); staged-module partition consistent

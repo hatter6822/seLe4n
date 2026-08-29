@@ -823,6 +823,158 @@ theorem handleRescheduleSgiOnCore_independent_of_other_core (st : SystemState)
     · exact switchToThreadOnCore_independent_of_other_core st c c' _ st' hcc h
     · rw [Except.ok.injEq] at h; subst h; exact ⟨rfl, rfl⟩
 
+-- ── PR #880 round 7: per-conjunct SGI-handler preservation ──
+--
+--   The round-7 local replenish-wake reschedule routes `timerTickOnCore`'s
+--   idle and non-preempted arms through this handler (the local counterpart of
+--   the `.reschedule` receiver, mirroring `resumeThread`'s PR #811 P2-5 local
+--   arm), so the composed per-core tick preservation proofs need the same
+--   per-conjunct facts here that the `scheduleEffectiveOnCore` providers
+--   supply for the preempted arm.  Each wrapper: the choose-error arm is
+--   unreachable under `.ok`, the two identity arms inherit the pre-state fact,
+--   and the dispatch arm cites the SM5.B switch lemma.
+
+/-- WS-SM (PR #880 round 7): the SGI handler never touches any core's replenish
+queue — the CBS frame that lets `timerTickOnCore`'s local replenish-wake
+reschedule arm preserve every replenish-queue invariant verbatim. -/
+theorem handleRescheduleSgiOnCore_replenishQueueOnCore (st : SystemState) (c : CoreId)
+    (st' : SystemState) (c' : CoreId)
+    (h : handleRescheduleSgiOnCore st c = .ok st') :
+    st'.scheduler.replenishQueueOnCore c' = st.scheduler.replenishQueueOnCore c' := by
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; rfl
+  · split at h
+    · exact switchToThreadOnCore_replenishQueueOnCore st c _ st' c' h
+    · rw [Except.ok.injEq] at h; subst h; rfl
+
+/-- WS-SM (PR #880 round 7): the SGI handler never advances the global timer. -/
+theorem handleRescheduleSgiOnCore_machine_timer (st : SystemState) (c : CoreId)
+    (st' : SystemState)
+    (h : handleRescheduleSgiOnCore st c = .ok st') :
+    st'.machine.timer = st.machine.timer := by
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; rfl
+  · split at h
+    · exact switchToThreadOnCore_machine_timer st c _ st' h
+    · rw [Except.ok.injEq] at h; subst h; rfl
+
+
+/-- WS-SM (PR #880 round 7): the SGI handler preserves per-core current-thread
+validity — the dispatch arm *establishes* it (the switch requires its target to
+resolve). -/
+theorem handleRescheduleSgiOnCore_preserves_currentThreadValidOnCore (st : SystemState)
+    (c : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hValid : currentThreadValidOnCore st c)
+    (h : handleRescheduleSgiOnCore st c = .ok st') :
+    currentThreadValidOnCore st' c := by
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; exact hValid
+  · split at h
+    · exact switchToThreadOnCore_establishes_currentThreadValidOnCore st c _ st' hInv h
+    · rw [Except.ok.injEq] at h; subst h; exact hValid
+
+/-- WS-SM (PR #880 round 7): the SGI handler preserves per-core
+dequeue-on-dispatch consistency — the dispatch arm *establishes* it. -/
+theorem handleRescheduleSgiOnCore_preserves_queueCurrentConsistentOnCore (st : SystemState)
+    (c : CoreId) (st' : SystemState)
+    (hQcc : queueCurrentConsistentOnCore st.scheduler c)
+    (h : handleRescheduleSgiOnCore st c = .ok st') :
+    queueCurrentConsistentOnCore st'.scheduler c := by
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; exact hQcc
+  · split at h
+    · exact switchToThreadOnCore_establishes_queueCurrentConsistentOnCore st c _ st' h
+    · rw [Except.ok.injEq] at h; subst h; exact hQcc
+
+/-- WS-SM (PR #880 round 7): the SGI handler preserves the per-core
+register-bank match — the dispatch arm restores the incoming context into core
+`c`'s bank (the switch establishment, which consumes the pre-state match for
+its self-switch case). -/
+theorem handleRescheduleSgiOnCore_preserves_contextMatchesCurrentOnCore (st : SystemState)
+    (c : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hCtx : contextMatchesCurrentOnCore st c)
+    (h : handleRescheduleSgiOnCore st c = .ok st') :
+    contextMatchesCurrentOnCore st' c := by
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; exact hCtx
+  · split at h
+    · exact switchToThreadOnCore_establishes_contextMatchesCurrentOnCore st c _ st' hInv hCtx h
+    · rw [Except.ok.injEq] at h; subst h; exact hCtx
+
+/-- WS-SM (PR #880 round 7): the SGI handler preserves per-core
+runnable-threads-are-TCBs — the dispatch arm dequeues the chosen thread and
+re-enqueues the (resolvable) preempted current. -/
+theorem handleRescheduleSgiOnCore_preserves_runnableThreadsAreTCBsOnCore (st : SystemState)
+    (c : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hRat : runnableThreadsAreTCBsOnCore st c)
+    (hValid : currentThreadValidOnCore st c)
+    (h : handleRescheduleSgiOnCore st c = .ok st') :
+    runnableThreadsAreTCBsOnCore st' c := by
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; exact hRat
+  · split at h
+    · exact switchToThreadOnCore_preserves_runnableThreadsAreTCBsOnCore st c _ st' hInv hRat hValid h
+    · rw [Except.ok.injEq] at h; subst h; exact hRat
+
+/-- WS-SM (PR #880 round 7): the SGI handler preserves per-core run-queue
+`toList.Nodup`. -/
+theorem handleRescheduleSgiOnCore_preserves_runQueueOnCore_nodup (st : SystemState)
+    (c : CoreId) (st' : SystemState)
+    (hnd : (st.scheduler.runQueueOnCore c).toList.Nodup)
+    (h : handleRescheduleSgiOnCore st c = .ok st') :
+    (st'.scheduler.runQueueOnCore c).toList.Nodup := by
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; exact hnd
+  · split at h
+    · exact switchToThreadOnCore_preserves_runQueueOnCore_nodup st c _ st' hnd h
+    · rw [Except.ok.injEq] at h; subst h; exact hnd
+
+/-- WS-SM (PR #880 round 7): the SGI handler preserves per-core
+current-in-active-domain — its dispatch target comes from the budget-aware
+selector, whose domain filter admits only active-domain candidates
+(`chooseThreadEffectiveOnCore_respects_activeDomain`), and the switch touches
+neither the domain slots nor any thread's `domain` field. -/
+theorem handleRescheduleSgiOnCore_preserves_currentThreadInActiveDomainOnCore
+    (st : SystemState) (c : CoreId) (st' : SystemState)
+    (hInv : st.objects.invExt)
+    (hDom : currentThreadInActiveDomainOnCore st c)
+    (h : handleRescheduleSgiOnCore st c = .ok st') :
+    currentThreadInActiveDomainOnCore st' c := by
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; exact hDom
+  · rename_i tid hChoose
+    split at h
+    · have hSwitch := h
+      have hPre : ∃ tidTcb, st.getTcb? tid = some tidTcb := by
+        cases hTcb : st.getTcb? tid with
+        | none => simp [switchToThreadOnCore, hTcb] at hSwitch
+        | some t => exact ⟨t, rfl⟩
+      obtain ⟨tidTcb, hTcb⟩ := hPre
+      have hDomEq : tidTcb.domain = st.scheduler.activeDomainOnCore c :=
+        chooseThreadEffectiveOnCore_respects_activeDomain st c tid tidTcb hChoose hTcb
+      have hCur := switchToThreadOnCore_sets_current st c tid st' hSwitch
+      have hAct := switchToThreadOnCore_activeDomainOnCore_eq st c tid st' c hSwitch
+      obtain ⟨tcb', hg, hdom⟩ :=
+        switchToThreadOnCore_getTcb?_domain st c tid tid tidTcb st' hInv hTcb hSwitch
+      simp only [currentThreadInActiveDomainOnCore, hCur, hg, hAct, hdom, hDomEq]
+    · rw [Except.ok.injEq] at h; subst h; exact hDom
+
 -- ============================================================================
 -- §6b  SM5.C.6 — Multi-step wake→dispatch liveness (audit-pass-1)
 -- ============================================================================

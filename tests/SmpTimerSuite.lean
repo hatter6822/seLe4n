@@ -177,8 +177,9 @@ open SeLe4n.Testing
 advancing the global timer (idle path). -/
 example (st : SystemState) (c : CoreId) (st' : SystemState) (sgis : List (CoreId × SgiKind))
     (hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = none)
+    (hNoWake : (timerTickOnCorePrepared st c).2.2 = false)
     (hStep : timerTickOnCore st c = .ok (st', sgis)) : st'.machine = st.machine :=
-  timerTickOnCore_advances_per_core st c st' sgis hCur hStep
+  timerTickOnCore_advances_per_core st c st' sgis hCur hNoWake hStep
 
 /-- SM5.D.4 / plan §6.1: a remote-targeted CBS replenish (of a thread not running
 on any core — audit-pass-2 / Codex-P2 guard) emits a cross-core SGI. -/
@@ -188,7 +189,7 @@ example (st : SystemState) (execCore : CoreId) (scId : SeLe4n.SchedContextId) (n
     (hTcb : (refillSchedContext st scId now).getTcb? tid = some tcb)
     (hNotRunning : runningOnSomeCore (refillSchedContext st scId now) tid = false)
     (hRemote : determineTargetCore (refillSchedContext st scId now) tid ≠ execCore) :
-    (processOneReplenishmentOnCore st execCore scId now).2
+    (processOneReplenishmentOnCore st execCore scId now).2.1
       = some (determineTargetCore (refillSchedContext st scId now) tid, SgiKind.reschedule) :=
   cbsReplenish_can_wake_remote_core st execCore scId now tid tcb hTarget hTcb hNotRunning hRemote
 
@@ -199,7 +200,7 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (st3
     (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb)
     (hBud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, true))
     (hSched : scheduleEffectiveOnCore st3 c = .ok st') :
-    timerTickOnCore st c = .ok (st', (timerTickOnCorePrepared st c).2) :=
+    timerTickOnCore st c = .ok (st', (timerTickOnCorePrepared st c).2.1) :=
   timerTickOnCore_preempts_local st c tid tcb st3 st' hCur hTcb hBud hSched
 
 /-- SM5.D.6 (audit-pass-2): domain rotation is the separate atomic `scheduleDomainOnCore`
@@ -431,7 +432,9 @@ private def runReplenishChecks : IO Unit := do
   assertBool "no SchedContext ⇒ no wake target"
     (replenishWakeTarget stIdle (refillSchedContext stIdle scId 0) scId == none)
   assertBool "no wake target ⇒ no cross-core SGI"
-    ((processOneReplenishmentOnCore stIdle bootCoreId scId 0).2 == none)
+    ((processOneReplenishmentOnCore stIdle bootCoreId scId 0).2.1 == none)
+  assertBool "no wake target ⇒ no local-wake bit either"
+    ((processOneReplenishmentOnCore stIdle bootCoreId scId 0).2.2 == false)
   -- the replenishment leaves the boot run queue empty (no thread became runnable).
   assertBool "no-op replenishment leaves the run queue empty"
     ((processReplenishmentsDueOnCore stIdle bootCoreId 0).1.scheduler.runQueueOnCore bootCoreId).toList.isEmpty
@@ -674,6 +677,69 @@ private def runClockAdvanceReplenishChecks : IO Unit := do
   assertBool "the owner's step reads the shared clock without advancing it"
     (stAfterOwn.machine.timer == stAfterBoot.machine.timer)
 
+/-- §3.13 (PR #880 round 7 — local replenish-wake reschedule): a due CBS
+replenishment that refills a HIGHER-priority thread queued on the executing
+core itself preempts the lower-priority current thread in the very tick that
+made it eligible.  The wake is otherwise invisible — placement suppressed (the
+thread sat queued since its exhaustion re-enqueue), no SGI (local target), no
+preemption flag (the current thread's budget survives the charge) — so before
+round 7 the refilled thread waited out the current thread's entire remaining
+budget on the default empty domain schedule.  Also pins the idle-slot arm (a
+vacated core dispatches its refilled thread — the round-17 carve-out) and the
+quiet-tick identity (no local wake, no re-dispatch). -/
+private def runLocalReplenishRescheduleChecks : IO Unit := do
+  IO.println "--- §3.13 local replenish-wake reschedule ---"
+  let tidLo := ThreadId.ofNat 310   -- low-priority current, unbound, slice not expiring
+  let tidHi := ThreadId.ofNat 311   -- high-priority, bound to an exhausted SC
+  let scHi : SeLe4n.SchedContextId := ⟨88⟩
+  let tcbLo : TCB := { mkTcb 310 5 0 with schedContextBinding := .unbound, timeSlice := 10 }
+  let tcbHi : TCB := { mkTcb 311 20 0 with schedContextBinding := .bound scHi }
+  let scObj : SchedContext :=
+    { (default : SchedContext) with
+        priority := ⟨20⟩, boundThread := some tidHi,
+        budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨0⟩,
+        replenishments := [{ amount := ⟨5⟩, eligibleAt := 0 }] }
+  -- exhausted tidHi queued on the boot core (its exhaustion re-enqueue), tidLo
+  -- current with plenty of slice, single-domain mode (the RPi5 default).
+  let stBase : SystemState :=
+    ((((BootstrapBuilder.empty.withObject tidLo.toObjId (.tcb tcbLo)).withObject
+        tidHi.toObjId (.tcb tcbHi)).withObject
+        scHi.toObjId (.schedContext scObj)).withRunnable [tidHi]).build
+  let stBusy := { stBase with scheduler := stBase.scheduler.setCurrentOnCore bootCoreId (some tidLo) }
+  let stDue := replenishOnCore stBusy bootCoreId scHi stBusy.machine.timer
+  -- The drain raises the local-wake bit: the wake resolved and targeted the
+  -- executing core, where no SGI can poke.
+  assertBool "the prepared phase raises the local-wake bit"
+    ((timerTickOnCorePrepared stDue bootCoreId).2.2 == true)
+  assertBool "the local wake fires no SGI (local target)"
+    ((timerTickOnCorePrepared stDue bootCoreId).2.1.isEmpty)
+  -- THE round-7 pin: the tick that refills tidHi dispatches it — the
+  -- lower-priority current is preempted at the release point, not after its
+  -- remaining budget.
+  assertBool "the refilling tick preempts the lower-priority current (tidHi runs)"
+    (match timerTickOnCore stDue bootCoreId with
+     | .ok r => r.1.scheduler.currentOnCore bootCoreId == some tidHi
+     | .error _ => false)
+  assertBool "the preempted current is re-enqueued, not dropped"
+    (match timerTickOnCore stDue bootCoreId with
+     | .ok r => (r.1.scheduler.runQueueOnCore bootCoreId).contains tidLo
+     | .error _ => false)
+  -- Idle-slot arm (the round-17 carve-out): a vacated core whose queued thread
+  -- was ineligible at vacate time is dispatched the moment its refill lands.
+  let stVacantDue := replenishOnCore stBase bootCoreId scHi stBase.machine.timer
+  assertBool "a vacated core dispatches its refilled thread in the same tick"
+    (match timerTickOnCore stVacantDue bootCoreId with
+     | .ok r => r.1.scheduler.currentOnCore bootCoreId == some tidHi
+     | .error _ => false)
+  -- Quiet tick: with no due replenishment the bit stays down and the tick is
+  -- the plain budget charge — no re-dispatch, tidLo keeps the core.
+  assertBool "a quiet tick raises no local-wake bit"
+    ((timerTickOnCorePrepared stBusy bootCoreId).2.2 == false)
+  assertBool "a quiet non-preempting tick keeps the current thread"
+    (match timerTickOnCore stBusy bootCoreId with
+     | .ok r => r.1.scheduler.currentOnCore bootCoreId == some tidLo
+     | .error _ => false)
+
 def runAll : IO Unit := do
   IO.println "=== WS-SM SM5.D — Per-core timer tick suite ==="
   runLockSetChecks
@@ -688,6 +754,7 @@ def runAll : IO Unit := do
   runEmptyBoundaryRequeueChecks
   runClockAdvanceFlagChecks
   runClockAdvanceReplenishChecks
+  runLocalReplenishRescheduleChecks
   IO.println "=== SM5.D timer suite: all checks passed ==="
 
 end SeLe4n.Testing.SmpTimer

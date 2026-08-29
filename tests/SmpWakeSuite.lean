@@ -110,8 +110,8 @@ open SeLe4n.Testing
 #check @handleRescheduleSgiOnCore_independent_of_other_core
 #check @handleRescheduleSgiOnCore_keeps_current_when_outranked
 #check @candidateOutranksCurrentOnCore
-#check @candidateEdfDisplacesCurrent
-#check @candidateOutranksCurrentOnCore_of_edf_displaces
+#check @candidateOutranksCurrentOnCore_eq_isBetterCandidate
+#check @candidateOutranksCurrentOnCore_of_edf_earlier
 
 -- SM5.C.11 SGI delivery latency bound:
 #check @wakeSgiCount
@@ -472,11 +472,14 @@ private def runRoundTripChecks : IO Unit := do
     (let stCur := { stWake with
                       scheduler := stWake.scheduler.setCurrentOnCore core1 (some tidU) }
      !candidateOutranksCurrentOnCore stCur core1 tidW)
-  -- PR #880 round 6: the gate is EDF-aware within the scheduling bucket — an
-  -- equal-priority candidate with a strictly earlier (nonzero) deadline
-  -- preempts, so the wake's `.reschedule` SGI is the point that re-establishes
-  -- `edfCurrentHasEarliestDeadlineOnCore`; later, equal or absent deadlines
-  -- still never preempt (no gratuitous preemption, FIFO ties hold).
+  -- PR #880 rounds 6+7: the gate is the SELECTOR's strict-preference order over
+  -- the RESOLVED effective parameters (`isBetterCandidate` on
+  -- `resolveEffectivePrioDeadline`).  An equal-effective-priority candidate
+  -- with an earlier resolved deadline preempts (round 6); "no deadline" counts
+  -- as latest, so a deadline-bearing candidate displaces a deadline-less
+  -- current — exactly what selection would do at the next scheduling point
+  -- (round 7); later or equal deadlines still never preempt (no gratuitous
+  -- preemption, FIFO ties hold).
   let mkDl : Nat → Nat → TCB := fun tidN dl => { mkTcb tidN 10 0 with deadline := ⟨dl⟩ }
   let mkEdfState : TCB → TCB → SystemState := fun curT candT =>
     (((BootstrapBuilder.empty.withObject tidU.toObjId (.tcb curT)).withObject
@@ -490,12 +493,39 @@ private def runRoundTripChecks : IO Unit := do
   assertBool "preempt-gate: equal deadlines do NOT preempt (FIFO tie)"
     (!candidateOutranksCurrentOnCore (mkEdfState (mkDl 200 10) (mkDl 201 10))
       bootCoreId tidW)
-  assertBool "preempt-gate: a deadline-less current is never EDF-displaced"
-    (!candidateOutranksCurrentOnCore (mkEdfState (mkTcb 200 10 0) (mkDl 201 10))
+  assertBool "preempt-gate: a deadline-bearing candidate displaces a deadline-less current"
+    (candidateOutranksCurrentOnCore (mkEdfState (mkTcb 200 10 0) (mkDl 201 10))
       bootCoreId tidW)
-  assertBool "preempt-gate: a deadline-less candidate never EDF-displaces"
+  assertBool "preempt-gate: a deadline-less candidate never displaces"
     (!candidateOutranksCurrentOnCore (mkEdfState (mkDl 200 10) (mkTcb 201 10 0))
       bootCoreId tidW)
+  -- PR #880 round 7 (the SchedContext-deadline divergence): two equal-priority
+  -- BOUND threads whose TCB deadline fields both sit at 0 while their
+  -- SchedContext deadlines are 20 (current) and 10 (candidate).  The selector
+  -- orders bound threads by the SC deadlines (`resolveEffectivePrioDeadline`),
+  -- and `schedContextBind` copies only the priority into the TCB — so a
+  -- TCB-field gate rejects exactly the preemption the selector would perform,
+  -- and the urgent bound candidate misses its deadline.  The gate now resolves
+  -- what selection resolves.
+  let scIdCur : SeLe4n.SchedContextId := ⟨150⟩
+  let scIdCand : SeLe4n.SchedContextId := ⟨151⟩
+  let mkBoundSc : SeLe4n.ThreadId → Nat → SchedContext := fun t dl =>
+    { (default : SchedContext) with
+        priority := ⟨10⟩, deadline := ⟨dl⟩, boundThread := some t,
+        budgetRemaining := ⟨5⟩ }
+  let mkBound : Nat → SeLe4n.SchedContextId → TCB := fun tidN scId =>
+    { mkTcb tidN 10 0 with schedContextBinding := .bound scId }
+  let mkScEdfState : Nat → Nat → SystemState := fun curDl candDl =>
+    (((((BootstrapBuilder.empty.withObject tidU.toObjId
+          (.tcb (mkBound 200 scIdCur))).withObject
+          tidW.toObjId (.tcb (mkBound 201 scIdCand))).withObject
+          scIdCur.toObjId (.schedContext (mkBoundSc tidU curDl))).withObject
+          scIdCand.toObjId (.schedContext (mkBoundSc tidW candDl))).withCurrent
+          (some tidU)).build
+  assertBool "preempt-gate: SC deadline 10 candidate displaces SC deadline 20 current — TCB deadlines both 0"
+    (candidateOutranksCurrentOnCore (mkScEdfState 20 10) bootCoreId tidW)
+  assertBool "preempt-gate: reversed SC deadlines (current 10, candidate 20) do NOT preempt"
+    (!candidateOutranksCurrentOnCore (mkScEdfState 10 20) bootCoreId tidW)
   -- End to end: with the earlier-deadline candidate queued, the receiver's
   -- handler switches to it (before round 6 the SGI was dropped and the urgent
   -- thread waited for a later timer scheduling point).

@@ -31,9 +31,10 @@ timer-tick / syscall entries fire via `Concurrency.fireCrossCoreSgis` after
 their state commit.  The **receiver** side is this entry: the target core
 takes the SGI, and the verified `handleRescheduleSgiOnCore` transition
 re-chooses the highest-priority budget-eligible runnable thread and switches
-to it only when it outranks the current thread — strictly higher effective
-priority, or an EDF displacement within the same bucket (equal priority,
-strictly earlier nonzero deadline; PR #880 round 6)
+to it only when it outranks the current thread in the selector's own
+strict-preference order — higher resolved effective priority, or an earlier
+resolved deadline at equal effective priority (`isBetterCandidate` over
+`resolveEffectivePrioDeadline`; PR #880 round 7)
 (`candidateOutranksCurrentOnCore` — a lower-priority wake never preempts).
 
 Until this entry landed, the SGI's arrival merely woke the target core from

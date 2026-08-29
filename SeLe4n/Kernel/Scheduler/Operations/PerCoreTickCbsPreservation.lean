@@ -81,10 +81,10 @@ theorem processOneReplenishmentOnCore_replenishQueueOnCore_eq (st : SystemState)
 core's replenish-queue slot (each step is a `processOneReplenishmentOnCore`). -/
 theorem foldl_processOneReplenishment_replenishQueueOnCore (c : CoreId) (now : Nat) (c' : CoreId)
     (dueIds : List SeLe4n.SchedContextId)
-    (acc : SystemState × List (CoreId × SgiKind)) :
+    (acc : SystemState × List (CoreId × SgiKind) × Bool) :
     (dueIds.foldl (fun acc scId =>
-        let (s, sgi?) := processOneReplenishmentOnCore acc.1 c scId now
-        (s, acc.2 ++ sgi?.toList)) acc).1.scheduler.replenishQueueOnCore c'
+        let r := processOneReplenishmentOnCore acc.1 c scId now
+        (r.1, acc.2.1 ++ r.2.1.toList, acc.2.2 || r.2.2)) acc).1.scheduler.replenishQueueOnCore c'
       = acc.1.scheduler.replenishQueueOnCore c' := by
   induction dueIds generalizing acc with
   | nil => rfl
@@ -195,10 +195,20 @@ theorem timerTickOnCore_preserves_replenishQueueValidOnCore (st : SystemState) (
     fun c'' => timerTickOnCorePrepared_preserves_replenishQueueValidOnCore st c c'' (hValid c'')
   rw [timerTickOnCore_eq_prepared] at hStep
   split at hStep
-  · -- idle: result is the prepared state
-    rw [Except.ok.injEq] at hStep
-    have hst : (timerTickOnCorePrepared st c).1 = st' := by rw [hStep]
-    rw [← hst]; exact hPrep c'
+  · -- idle arm: the prepared state, or the round-7 local-wake reschedule
+    -- (whose handler never touches a replenish queue)
+    split at hStep
+    · split at hStep
+      · simp at hStep
+      · rename_i st2 hH
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨hst, _⟩ := hStep; subst hst
+        have h2 := hPrep c'
+        unfold replenishQueueValidOnCore at h2 ⊢
+        rw [handleRescheduleSgiOnCore_replenishQueueOnCore _ c _ c' hH]
+        exact h2
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨hst, _⟩ := hStep; subst hst; exact hPrep c'
   · split at hStep
     · split at hStep
       · simp at hStep
@@ -216,8 +226,18 @@ theorem timerTickOnCore_preserves_replenishQueueValidOnCore (st : SystemState) (
             unfold replenishQueueValidOnCore at h3 ⊢
             rw [scheduleEffectiveOnCore_replenishQueueOnCore _ c _ c' hsched]
             exact h3
-        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hst, _⟩ := hStep; subst hst; exact h3
+        · -- not preempted: the round-7 local-wake reschedule, or identity
+          split at hStep
+          · split at hStep
+            · simp at hStep
+            · rename_i st4 hH
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨hst, _⟩ := hStep; subst hst
+              unfold replenishQueueValidOnCore at h3 ⊢
+              rw [handleRescheduleSgiOnCore_replenishQueueOnCore _ c _ c' hH]
+              exact h3
+          · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨hst, _⟩ := hStep; subst hst; exact h3
     · simp at hStep
 
 -- ============================================================================
@@ -410,9 +430,16 @@ theorem timerTickOnCore_machine_timer_eq (st : SystemState) (c : CoreId)
     timerTickOnCorePrepared_machine_eq st c
   rw [timerTickOnCore_eq_prepared] at hStep
   split at hStep
-  · rw [Except.ok.injEq] at hStep
-    have hst : (timerTickOnCorePrepared st c).1 = st' := by rw [hStep]
-    rw [← hst, hPrepM]
+  · -- idle arm: prepared, or the round-7 local-wake reschedule (timer-framed)
+    split at hStep
+    · split at hStep
+      · simp at hStep
+      · rename_i st2 hH
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨hst, _⟩ := hStep; subst hst
+        rw [handleRescheduleSgiOnCore_machine_timer _ c _ hH, hPrepM]
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨hst, _⟩ := hStep; subst hst; rw [hPrepM]
   · split at hStep
     · split at hStep
       · simp at hStep
@@ -426,9 +453,16 @@ theorem timerTickOnCore_machine_timer_eq (st : SystemState) (c : CoreId)
             simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
             rw [scheduleEffectiveOnCore_machine_timer _ c _ hsched, h3, hPrepM]
-        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hst, _⟩ := hStep; subst hst
-          rw [h3, hPrepM]
+        · split at hStep
+          · split at hStep
+            · simp at hStep
+            · rename_i st4 hH
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨hst, _⟩ := hStep; subst hst
+              rw [handleRescheduleSgiOnCore_machine_timer _ c _ hH, h3, hPrepM]
+          · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨hst, _⟩ := hStep; subst hst
+            rw [h3, hPrepM]
     · simp at hStep
 
 -- ============================================================================
@@ -585,9 +619,18 @@ theorem timerTickOnCore_preserves_replenishmentPipelineOrderOnCore (st : SystemS
     fun c'' => timerTickOnCorePrepared_preserves_replenishmentPipelineOrderOnCore st c c'' (hPipe c'')
   rw [timerTickOnCore_eq_prepared] at hStep
   split at hStep
-  · rw [Except.ok.injEq] at hStep
-    have hst : (timerTickOnCorePrepared st c).1 = st' := by rw [hStep]
-    rw [← hst]; exact hPrep c'
+  · -- idle arm: prepared, or the round-7 local-wake reschedule (queue+timer framed)
+    split at hStep
+    · split at hStep
+      · simp at hStep
+      · rename_i st2 hH
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨hst, _⟩ := hStep; subst hst
+        exact pipeline_frame_of_queue_timer_eq _ _ c'
+          (handleRescheduleSgiOnCore_replenishQueueOnCore _ c _ c' hH)
+          (handleRescheduleSgiOnCore_machine_timer _ c _ hH) (hPrep c')
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨hst, _⟩ := hStep; subst hst; exact hPrep c'
   · split at hStep
     · split at hStep
       · simp at hStep
@@ -602,8 +645,17 @@ theorem timerTickOnCore_preserves_replenishmentPipelineOrderOnCore (st : SystemS
             simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
             exact scheduleEffectiveOnCore_preserves_replenishmentPipelineOrderOnCore _ c _ c' h3 hsched
-        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hst, _⟩ := hStep; subst hst; exact h3
+        · split at hStep
+          · split at hStep
+            · simp at hStep
+            · rename_i st4 hH
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨hst, _⟩ := hStep; subst hst
+              exact pipeline_frame_of_queue_timer_eq _ _ c'
+                (handleRescheduleSgiOnCore_replenishQueueOnCore _ c _ c' hH)
+                (handleRescheduleSgiOnCore_machine_timer _ c _ hH) h3
+          · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨hst, _⟩ := hStep; subst hst; exact h3
     · simp at hStep
 
 -- ============================================================================
@@ -814,9 +866,18 @@ theorem timerTickOnCore_establishes_replenishmentPipelineOrderOnCore_self
     exact popDue_remaining_gt _ _ hSorted pair hMem
   rw [timerTickOnCore_eq_prepared] at hStep
   split at hStep
-  · rw [Except.ok.injEq] at hStep
-    have hst : (timerTickOnCorePrepared st c).1 = st' := by rw [hStep]
-    rw [← hst]; exact hPrepSelf
+  · -- idle arm: prepared, or the round-7 local-wake reschedule (queue+timer framed)
+    split at hStep
+    · split at hStep
+      · simp at hStep
+      · rename_i st2 hH
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨hst, _⟩ := hStep; subst hst
+        exact pipeline_frame_of_queue_timer_eq _ _ c
+          (handleRescheduleSgiOnCore_replenishQueueOnCore _ c _ c hH)
+          (handleRescheduleSgiOnCore_machine_timer _ c _ hH) hPrepSelf
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨hst, _⟩ := hStep; subst hst; exact hPrepSelf
   · split at hStep
     · split at hStep
       · simp at hStep
@@ -832,8 +893,17 @@ theorem timerTickOnCore_establishes_replenishmentPipelineOrderOnCore_self
             obtain ⟨hst, _⟩ := hStep; subst hst
             exact scheduleEffectiveOnCore_preserves_replenishmentPipelineOrderOnCore
               _ c _ c h3 hsched
-        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hst, _⟩ := hStep; subst hst; exact h3
+        · split at hStep
+          · split at hStep
+            · simp at hStep
+            · rename_i st4 hH
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨hst, _⟩ := hStep; subst hst
+              exact pipeline_frame_of_queue_timer_eq _ _ c
+                (handleRescheduleSgiOnCore_replenishQueueOnCore _ c _ c hH)
+                (handleRescheduleSgiOnCore_machine_timer _ c _ hH) h3
+          · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨hst, _⟩ := hStep; subst hst; exact h3
     · simp at hStep
 
 /-- WS-SM (PR #880 round 4, the drain guarantee): a core's **committed run-loop

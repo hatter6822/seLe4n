@@ -223,6 +223,40 @@ per-member obligation, TCB-field-based like the invariant).
 all consumer proofs survive unchanged; `smp_wake_suite` gains the six-way
 gate pins plus the end-to-end receiver switch.
 
+**Review round 7 (same cut) — the gate resolves what selection resolves,
+and a local CBS replenishment reschedules its own core.**  Two findings on
+what round 6 still could not see.  (1) The round-6 EDF clause read TCB
+`deadline` fields, but the selector orders bound/donated threads by the
+**SchedContext** deadline (`resolveEffectivePrioDeadline`), and no
+propagation or consistency invariant relates the two (`schedContextBind`
+copies only the priority; `schedContextConfigure` / `cbsUpdateDeadline`
+move the SC deadline alone) — so two equal-priority bound threads with TCB
+deadlines `0` and SC deadlines 20/10 were ordered by selection and refused
+by the gate.  `candidateOutranksCurrentOnCore` is now literally
+`isBetterCandidate` over `resolveEffectivePrioDeadline` of current and
+candidate (`_eq_isBetterCandidate` the alignment contract,
+`_of_edf_earlier` the resolved-deadline corollary; the round-6
+`candidateEdfDisplacesCurrent` apparatus deleted as superseded, with the
+deliberate consequences that a deadline-bearing candidate displaces a
+deadline-less current and the same-domain/base-priority conjuncts drop —
+both exactly selection's behaviour).  (2) A due replenishment refilling a
+higher-priority thread queued on the executing core was triply invisible
+(placement suppressed, no SGI — local target — and no preempt flag), so it
+waited out the current thread's whole remaining budget.  The drain now
+returns a **local-wake bit** (the exact complement of its SGI decision)
+and `timerTickOnCore` resolves it after the budget charge with the
+receiver-side decision (`handleRescheduleSgiOnCore`) on both the busy and
+idle arms — the idle arm closing the round-17 vacated-core window a refill
+re-opened (`timerTickOnCore_cannot_dispatch_vacated_core` re-scoped,
+`timerTickOnCore_idle_local_wake_reschedules` the new pin).  A
+per-conjunct `handleRescheduleSgiOnCore_preserves_*` ladder plus new
+switch-level nodup/domain/CBS frames feed the seven composed tick
+preservation proofs; the SM5.I resolvability cluster and the
+domain-respect trio moved up-graph to their operations homes.
+`smp_timer_suite` §3.13 pins the refill-preempts / vacated-dispatch /
+quiet-tick triple; `smp_wake_suite` restates the gate family on the
+selector order and adds the bound-thread SC-deadline pins.
+
 Plan: [`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`](planning/SMP_PER_CORE_SCHEDULER_PLAN.md)
 §SM5.C (landing note).  Next: SM10 release closure (→ v1.0.0),
 [`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md).

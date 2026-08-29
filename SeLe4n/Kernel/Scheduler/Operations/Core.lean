@@ -1277,10 +1277,23 @@ target core (`currentOnCore target == some tid` ⇒ skip — re-enqueuing the ru
 thread would violate dequeue-on-dispatch).  `wakeThread`'s own single-placement
 guard (`runnableOnSomeCore`) additionally suppresses a second placement of an
 already-runnable thread.  Routes every object lookup through the typed
-`getSchedContext?` accessor (AK7-clean). -/
+`getSchedContext?` accessor (AK7-clean).
+
+**Local-wake visibility (PR #880 round 7).**  The third result component is the
+local-target counterpart of the SGI decision: `true` iff the wake resolved to a
+TCB and targeted the executing core itself (the exact complement of the SGI
+guard, which fires iff the wake resolved and targeted a *remote* core).  No SGI
+can poke the core that is already executing this drain, so the caller
+(`timerTickOnCore`) must run the receiver-side reschedule decision
+(`handleRescheduleSgiOnCore`) locally once the budget charge is done.  Without
+this bit a due replenishment that makes an already-queued higher-priority
+thread eligible again was triply invisible — placement suppressed (the thread
+sat in the queue since its exhaustion re-enqueue), no SGI (local target), no
+preemption flag (the *current* thread's budget survived the charge) — and the
+refilled thread waited out the current thread's entire remaining budget. -/
 def processOneReplenishmentOnCore (st : SystemState) (execCore : CoreId)
     (scId : SeLe4n.SchedContextId) (now : Nat) :
-    SystemState × Option (CoreId × SgiKind) :=
+    SystemState × Option (CoreId × SgiKind) × Bool :=
   let refilled := refillSchedContext st scId now
   match replenishWakeTarget st refilled scId with
   | some tid =>
@@ -1291,11 +1304,14 @@ def processOneReplenishmentOnCore (st : SystemState) (execCore : CoreId)
         -- missed a thread current on a *different* core than its
         -- `determineTargetCore` (deferred-affinity-migration case), which would
         -- leave the same TCB current on one core and runnable on another.
-        (refilled, none)
+        (refilled, none, false)
       else
-        -- wake it on its target core (local enqueue, or remote + SGI).
-        wakeThread refilled tid execCore
-  | none => (refilled, none)
+        -- wake it on its target core (local enqueue, or remote + SGI), flagging
+        -- a resolved local-target wake for the caller's reschedule decision.
+        let woken := wakeThread refilled tid execCore
+        (woken.1, woken.2,
+          (refilled.getTcb? tid).isSome && determineTargetCore refilled tid == execCore)
+  | none => (refilled, none, false)
 
 /-- WS-SM SM5.D.4: process **all** of core `c`'s due CBS replenishments at time
 `now`, accumulating the cross-core `.reschedule` SGIs the remote-targeted wakes
@@ -1308,14 +1324,19 @@ collecting each step's optional SGI.  The per-core analogue of
 `processReplenishmentsDue`, reading / writing core `c`'s replenish-queue slot
 (plus, via the wakes, the target cores' run queues and the object store).  Pure;
 deterministic; the returned SGI list is the set of cross-core pokes
-`timerTickOnCore` must emit after the state write is visible. -/
+`timerTickOnCore` must emit after the state write is visible, and the returned
+Bool (PR #880 round 7) is `true` iff **some** step's wake resolved and targeted
+the executing core itself — the accumulated local-wake bit `timerTickOnCore`
+resolves with one `handleRescheduleSgiOnCore` decision after the budget charge
+(the local counterpart of the SGIs, which remote receivers resolve the same
+way). -/
 def processReplenishmentsDueOnCore (st : SystemState) (c : CoreId) (now : Nat) :
-    SystemState × List (CoreId × SgiKind) :=
+    SystemState × List (CoreId × SgiKind) × Bool :=
   let (remainingQueue, dueIds) := (st.scheduler.replenishQueueOnCore c).popDue now
   let st' := { st with scheduler := st.scheduler.setReplenishQueueOnCore c remainingQueue }
-  dueIds.foldl (fun (acc : SystemState × List (CoreId × SgiKind)) scId =>
-    let (s, sgi?) := processOneReplenishmentOnCore acc.1 c scId now
-    (s, acc.2 ++ sgi?.toList)) (st', [])
+  dueIds.foldl (fun (acc : SystemState × List (CoreId × SgiKind) × Bool) scId =>
+    let r := processOneReplenishmentOnCore acc.1 c scId now
+    (r.1, acc.2.1 ++ r.2.1.toList, acc.2.2 || r.2.2)) (st', [], false)
 
 /-- WS-SM SM5.H.2 (plan §3.8): schedule a CBS replenishment for SchedContext
 `scId` on core `c`, eligible at absolute tick `eligibleAt` — insert into core
@@ -1410,6 +1431,22 @@ which the tick reads but does not advance — see the SM5.D section header):
    highest-priority budget-eligible runnable thread on core `c`
    (`scheduleEffectiveOnCore`).  An idle core (`currentOnCore c = none`) skips the
    budget charge.
+4. **PR #880 round 7 — local replenish-wake reschedule**: when step 2's drain
+   woke a thread **on core `c` itself** (the accumulated local-wake bit) and
+   step 3 did not already re-dispatch, run the receiver-side reschedule decision
+   locally (`handleRescheduleSgiOnCore` — choose the best budget-eligible
+   candidate, switch only if it outranks the current thread in the selector's
+   own order, re-enqueueing the preempted thread).  A local wake fires no SGI
+   (nothing can poke the core that is executing the tick), and its placement is
+   suppressed when the thread already sat in the queue from its exhaustion
+   re-enqueue, so without this decision a refilled higher-priority thread was
+   invisible to every scheduling trigger and waited out the current thread's
+   entire remaining budget — the exact latency the `.reschedule` SGI closes for
+   remote wakes, `resumeThread` closes for local resume wakes (PR #811 P2-5),
+   and this step closes for local replenish wakes.  The same decision applies
+   on the idle arm (`currentOnCore c = none`): a vacated core whose queued
+   thread was ineligible at vacate time (so `scheduleLocalSuccessor` kept the
+   vacancy) is dispatched here the moment its refill lands.
 
 The tick does **budget accounting only** and never writes
 `domainTimeRemainingOnCore` (audit-pass-2 domain-rotation faithfulness, mirroring
@@ -1431,8 +1468,13 @@ def timerTickOnCore (st : SystemState) (c : CoreId) :
   -- SM5.D.9: clear core c's timeout-error diagnostic at tick entry.
   let st0 := { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore c [] }
   let now := st0.machine.timer
-  -- SM5.D.4: process core c's due CBS replenishments (+ cross-core wakes).
-  let (st1, replenishSgis) := processReplenishmentsDueOnCore st0 c now
+  -- SM5.D.4: process core c's due CBS replenishments (+ cross-core wakes);
+  -- PR #880 round 7: the drain also reports whether a wake landed on core c
+  -- itself, resolved by the local reschedule decision after the budget charge.
+  let prepared := processReplenishmentsDueOnCore st0 c now
+  let st1 := prepared.1
+  let replenishSgis := prepared.2.1
+  let localReplenishWake := prepared.2.2
   -- SM5.D.5: per-core budget/time-slice tick + local preemption.
   --
   -- Audit-pass-2 (domain-rotation faithfulness): the tick does **budget
@@ -1450,7 +1492,18 @@ def timerTickOnCore (st : SystemState) (c : CoreId) :
   -- invokes `timerTickOnCore` then `scheduleDomainOnCore`, exactly as the
   -- single-core run loop invokes `timerTickWithBudget` then `scheduleDomain`.
   match st1.scheduler.currentOnCore c with
-  | none => .ok (st1, replenishSgis)   -- idle core: nothing to charge
+  | none =>
+      -- idle-slot core: nothing to charge — but a local replenish wake must
+      -- still dispatch (PR #880 round 7).  A thread queued-but-exhausted on a
+      -- vacated core was ineligible when `scheduleLocalSuccessor` ran at the
+      -- vacate seam, and its refill fires no SGI (local target); this decision
+      -- is the only trigger that sees it.
+      if localReplenishWake then
+        match handleRescheduleSgiOnCore st1 c with
+        | .error e => .error e
+        | .ok st2 => .ok (st2, replenishSgis)
+      else
+        .ok (st1, replenishSgis)
   | some tid =>
       match st1.getTcb? tid with
       | some tcb =>
@@ -1459,6 +1512,16 @@ def timerTickOnCore (st : SystemState) (c : CoreId) :
           | .ok (st2, preempted) =>
               if preempted then
                 match scheduleEffectiveOnCore st2 c with
+                | .error e => .error e
+                | .ok st3 => .ok (st3, replenishSgis)
+              else if localReplenishWake then
+                -- PR #880 round 7: the drain woke a thread on this very core and
+                -- the charge did not preempt — run the receiver-side reschedule
+                -- decision locally (switch only if the refilled candidate
+                -- outranks the running thread; identity otherwise).  The
+                -- preempted arm needs no such step: `scheduleEffectiveOnCore`
+                -- already re-selects over the refilled queue.
+                match handleRescheduleSgiOnCore st2 c with
                 | .error e => .error e
                 | .ok st3 => .ok (st3, replenishSgis)
               else

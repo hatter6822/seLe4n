@@ -7251,11 +7251,23 @@ open SeLe4n.Kernel.Concurrency
 #check @handleRescheduleSgiOnCore_independent_of_other_core
 #check @handleRescheduleSgiOnCore_keeps_current_when_outranked
 #check @candidateOutranksCurrentOnCore
--- The preemption gate is EDF-aware within the bucket: an equal-priority
--- earlier-deadline candidate opens it, so the wake SGI re-establishes the
--- EDF conjunct at the receiver.
-#check @candidateEdfDisplacesCurrent
-#check @candidateOutranksCurrentOnCore_of_edf_displaces
+-- The preemption gate is the selector own strict-preference order over the
+-- resolved effective parameters: higher resolved effective priority, or an
+-- earlier resolved deadline at equal effective priority -- so a bound
+-- thread SchedContext deadline orders the gate exactly as it orders
+-- selection.
+#check @candidateOutranksCurrentOnCore_eq_isBetterCandidate
+#check @candidateOutranksCurrentOnCore_of_edf_earlier
+-- The per-conjunct receiver-decision preservation ladder the round-7 tick
+-- arms compose.
+#check @handleRescheduleSgiOnCore_preserves_currentThreadValidOnCore
+#check @handleRescheduleSgiOnCore_preserves_queueCurrentConsistentOnCore
+#check @handleRescheduleSgiOnCore_preserves_contextMatchesCurrentOnCore
+#check @handleRescheduleSgiOnCore_preserves_runnableThreadsAreTCBsOnCore
+#check @handleRescheduleSgiOnCore_preserves_runQueueOnCore_nodup
+#check @handleRescheduleSgiOnCore_preserves_currentThreadInActiveDomainOnCore
+#check @handleRescheduleSgiOnCore_replenishQueueOnCore
+#check @handleRescheduleSgiOnCore_machine_timer
 
 -- SM5.C.11 SGI delivery latency bound.
 #check @wakeSgiCount
@@ -7404,6 +7416,10 @@ open SeLe4n.Kernel
 #check @runningOnSomeCore
 #check @processOneReplenishmentOnCore_local_no_sgi
 #check @processOneReplenishmentOnCore_no_sgi_if_no_target
+-- The round-7 local-wake bit: raised exactly where the SGI is not, so the
+-- tick can run the receiver-side reschedule decision for its own core.
+#check @processOneReplenishmentOnCore_local_wake_bit
+#check @processOneReplenishmentOnCore_no_target_no_bit
 #check @processOneReplenishmentOnCore_preserves_objects_invExt
 #check @processReplenishmentsDueOnCore_preserves_objects_invExt
 #check @processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed
@@ -7421,6 +7437,8 @@ open SeLe4n.Kernel
 #check @timerTickOnCorePrepared
 #check @timerTickOnCorePreDomain
 #check @timerTickOnCore_idle
+#check @timerTickOnCore_idle_local_wake_reschedules
+#check @timerTickOnCore_cannot_dispatch_vacated_core
 #check @timerTickOnCore_advances_per_core
 #check @timerTickOnCore_clears_lastTimeoutErrors
 #check @timerTickOnCore_preempts_local
