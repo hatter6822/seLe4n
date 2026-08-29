@@ -131,6 +131,11 @@ witness "a skipped gate exits the reserved skip status, not 0" "77" "${rc}"
 # failure cascade into this one, reporting two defects where there is one.
 unaware=0
 for parent in scripts/test_tier4_nightly_candidates.sh scripts/test_nightly.sh; do
+  # SC2016 is exactly the property under test: the pattern must match the
+  # LITERAL text `${SCRIPT_DIR}` as it appears in the parent script's source.
+  # Expanding it here would search for this process's own value and match
+  # nothing, silently passing the witness.
+  # shellcheck disable=SC2016
   if grep -q 'run_check "META" "${SCRIPT_DIR}/test_tier4' "${parent}"; then
     echo "  FAIL: ${parent} invokes a tier-4 runner with run_check (skip status is lost)"
     unaware=$((unaware + 1))

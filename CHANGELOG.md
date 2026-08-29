@@ -1,3 +1,27 @@
+## v0.34.7 — CI fix: the witness's literal-match grep tripped shellcheck SC2016
+
+`v0.34.6` turned CI red on two checks, both from one line I added.
+`scripts/test_gate_skip_accounting.sh`'s propagation witness greps the parent
+tier scripts for `run_check "META" "${SCRIPT_DIR}/test_tier4`, in single quotes
+so the pattern matches that text **literally** — expanding it would search for
+the running process's own `SCRIPT_DIR` and match nothing, silently passing the
+witness.  Tier 0 runs `shellcheck` with only SC1090 and SC1091 excluded, so the
+info-level SC2016 ("expressions don't expand in single quotes") failed the gate.
+
+Fixed with a scoped `# shellcheck disable=SC2016` and the rationale, since
+non-expansion is precisely the property under test.  Both red checks trace to
+this one line: *Tiered Tests / Fast* runs Tier 0 directly and *Platform Signal /
+ARM64 Fast Gate* runs `test_fast.sh`, which runs Tier 0.
+
+The miss was a process gap, not a judgement call: `shellcheck` was not
+installed in the authoring environment, so the pre-push validation fell back to
+`bash -n`, which checks syntax and not lint.  Adding a new script to a
+repository whose Tier 0 lints every script, without the linter available, is
+how a one-character-class defect reaches CI.  `shellcheck` is installed now and
+every touched script verifies clean against the exact Tier 0 invocation.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md
+
 ## v0.34.6 — the skip status survives the process boundary; Codex review round 1
 
 Eight review threads from the Codex bot on PR #881.  Six were confirmed against
