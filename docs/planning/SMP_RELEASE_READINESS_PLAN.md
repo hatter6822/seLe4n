@@ -6,7 +6,7 @@
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 130 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 139 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -89,7 +89,7 @@ twice. The dependencies that produced this order:
   cheap, and every later Rust change then lands on paths already proven to
   compile — the value is in going early, not in being a prerequisite. It also
   owns both halves of the SM10 estimate: RR1.10 records the measured aarch64
-  surface and RR1.9 revises the estimate from it, in that order, so no phase
+  surface and RR1.11 revises the estimate from it, in that order, so no phase
   has to reach back to a later one for its input.
 - **RR2 before RR3.** The de-threading payoff theorems (RR3.16, RR3.17)
   quantify over dispatch arms that must carry bundles first.
@@ -123,8 +123,8 @@ dependency list above.
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 18 | L–XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
 | RR5 | Boot-path fail-open closure | 14 | M–L |
-| RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 18 | L |
-| RR7 | Medium-severity sweep | 13 | M |
+| RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 | L |
+| RR7 | Medium-severity sweep | 21 | M |
 | RR8 | Phase closure and hand-off to SM10 | 4 | S |
 
 ## 5. Sub-tasks
@@ -171,17 +171,18 @@ first thing that links and boots them.
 | RR1.2 | Run `cargo check --target aarch64-unknown-none -p sele4n-hal --features hw_target` **from `rust/`** and record the complete error inventory — this is the diagnostic pass, not a green gate; `rust-toolchain.toml` lives under `rust/`, so rustup's directory override selects the pinned toolchain only inside it, and `--manifest-path` from the repo root silently uses the default toolchain that RR1.1 never added the target to | `rust/sele4n-hal/` | M |
 | RR1.3 | Fix what it surfaces in the cfg-gated blocks | (same) | L |
 | RR1.4 | Fix what it surfaces in the `asm!` sites | (same) | L |
-| RR1.5 | The cross check now passes: `cargo check` for aarch64 is clean from `rust/`, with the RR1.2 inventory fully discharged | `rust/sele4n-hal/` | S |
+| RR1.5 | The cross target now **builds**: `cargo build --target aarch64-unknown-none` is clean from `rust/`, with the RR1.2 inventory discharged. `cargo check` stops before code generation, so it never reaches the backend and cannot surface an `asm!` or codegen error — the diagnostic pass uses `check` for speed, but the gate must be a real build | `rust/sele4n-hal/` | M |
 | RR1.6 | Assemble the three `.S` files under the cross target | `rust/sele4n-hal/build.rs` | M |
-| RR1.7 | CI job running the cross check on every PR | `.github/workflows/` | M |
+| RR1.7 | CI job running the aarch64 **build** on every PR (not `check`, for the codegen-coverage reason in RR1.5) | `.github/workflows/` | M |
 | RR1.8 | Tier 0 check that the cross target stays configured, so it cannot be silently dropped | `scripts/test_tier0_hygiene.sh` | S |
 | RR1.9 | Implement the Tier-0 grep gate banning non-IS TLBI that `SMP_RUST_HAL_PLAN.md` §4.4 claims exists — a high finding that no other phase owns, and Rust HAL hygiene like the rest of this phase | `scripts/test_tier0_hygiene.sh` | M |
 | RR1.10 | Record the measured aarch64 surface in the register — the input the next sub-task consumes | `docs/planning/UNFINISHED_SMP_WORK.md` | S |
 | RR1.11 | Revise SM10's calendar estimate from that measurement, replacing the plan's 4–6 week guess with a figure derived from the real aarch64 surface | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` | S |
 
-**Acceptance**: `cargo check` for aarch64 passes in CI; the `.S` files
-assemble; SM10.E's estimate is derived from a real compile rather than a
-guess.
+**Acceptance**: `cargo build` for aarch64 passes in CI — a real code
+generation over all 60 `asm!` sites, not a type-check that stops before the
+backend; the `.S` files assemble; SM10.E's estimate is derived from a real
+compile rather than a guess.
 
 
 ### RR2 — Live-path correctness
@@ -304,11 +305,11 @@ Rust wiring that makes the Lean path the live one.
 | RR4.14 | Reply-based **resume**: handler replies, faulted thread resumes at its saved `ELR` | (same) | M |
 | RR4.15 | Reply-based **restart**: the reply carries a new PC and register values; the thread restarts there | (same) | L |
 | RR4.16 | Restart register writeback into the TCB register file, reusing the syscall-return writeback rather than a second mechanism | `SeLe4n/Kernel/Architecture/SyscallReturn.lean` | M |
-| RR4.17 | Wire `dispatchSynchronousException`'s `.dataAbort` / `.instrAbort` arms to the delivery transition, retiring the bare `.error .vmFault` | `SeLe4n/Kernel/Architecture/ExceptionModel.lean` | M |
-| RR4.18 | `faultDeliver_preserves_ipcInvariantFull` (+ per-core form) | `SeLe4n/Kernel/IPC/Invariant/` | L |
-| RR4.19 | Fault reply preserves `ipcInvariantFull`; scheduler and capability invariants preserved on both paths | (same) | L |
-| RR4.20 | **Progress theorem**: a faulted thread cannot re-execute the faulting instruction without an intervening handler action — the theorem that makes the livelock unrepresentable | `SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean` (new) | L |
-| RR4.21 | Non-interference: fault delivery respects the information-flow policy, and a fault message carries no data across a label boundary | `SeLe4n/Kernel/InformationFlow/` | L |
+| RR4.17 | `faultDeliver_preserves_ipcInvariantFull` (+ per-core form) | `SeLe4n/Kernel/IPC/Invariant/` | L |
+| RR4.18 | Fault reply preserves `ipcInvariantFull`; scheduler and capability invariants preserved on both paths | (same) | L |
+| RR4.19 | **Progress theorem**: a faulted thread cannot re-execute the faulting instruction without an intervening handler action — the theorem that makes the livelock unrepresentable | `SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean` (new) | L |
+| RR4.20 | Non-interference: fault delivery respects the information-flow policy, and a fault message carries no data across a label boundary | `SeLe4n/Kernel/InformationFlow/` | L |
+| RR4.21 | Wire `dispatchSynchronousException`'s `.dataAbort` / `.instrAbort` arms to the delivery transition, retiring the bare `.error .vmFault`. Deliberately **after** the preservation, progress and non-interference proofs above: this is the sub-task that makes the transition reachable, and a live kernel transition must not land ahead of its own invariant surface | `SeLe4n/Kernel/Architecture/ExceptionModel.lean` | M |
 | RR4.22 | Rust: `trap.rs` abort arms call the Lean fault entry through a new `@[export]`, inside `with_kernel_entry` | `rust/sele4n-hal/src/trap.rs`, `SeLe4n/Platform/FFI.lean` | M |
 | RR4.23 | Rust: `ELR_EL1` writeback on resume vs restart — the trap frame gains the mutator it currently lacks | `rust/sele4n-hal/src/trap.rs` | M |
 | RR4.24 | Retire the duplicate classification path: `trap.rs` classifies via the Lean model rather than its own `esr_ec` match, so the two cannot diverge | `rust/sele4n-hal/src/trap.rs` | M |
@@ -317,10 +318,10 @@ Rust wiring that makes the Lean path the live one.
 | RR4.27 | Golden fixture: a 4-core trace with a faulting thread and a handler | `tests/fixtures/` | M |
 
 **Acceptance**: no execution path returns to a faulting instruction without
-handler action (RR4.20); `faultHandler` has consumers; `trap.rs` has one
+handler action (RR4.19); `faultHandler` has consumers; `trap.rs` has one
 classification path, not two; Tier 0..3 green.
 
-**Split guidance**: RR4.11, RR4.12, RR4.15, RR4.18, RR4.19, RR4.20, RR4.21 and
+**Split guidance**: RR4.11, RR4.12, RR4.15, RR4.17, RR4.18, RR4.19, RR4.20 and
 RR4.26 are each an L and should land as their own PR. If RR4.11 exceeds a week,
 split it into the block-the-sender half and the enqueue-on-handler half.
 
@@ -390,24 +391,29 @@ would have caught that drives neither.
 | RR6.8 | Trace correspondence (`blockBisim` / `ListBlockBisim` analogue) replacing the counter arithmetic in `rust_ticketLock_refines_lean` | (same) | L |
 | RR6.9 | Replace the tautological conjunct with a statement that can fail | (same) | M |
 | RR6.10 | D-4: prove `opCorresponds`-chain plus an explicit load-then-CAS trace-shape predicate implies `ListBlockBisim`, so the twelve discharge lemmas compose into the main theorem instead of it assuming its own conclusion | `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` | XL |
-| RR6.11 | Corollary against the deployed lock, closing the spec-to-implementation gap end to end | (same) | L |
-| RR6.12 | Add `loom` as a `cfg(loom)` dev-dependency with bounded exhaustive interleavings | `rust/sele4n-hal/Cargo.toml` | M |
-| RR6.13 | Add a nightly `miri` job for the queued lock | `.github/workflows/` | M |
-| RR6.14 | Raise the FIFO and stress iteration counts to the plan's stated thresholds | `rust/sele4n-hal/src/queued_rw_lock.rs` | S |
-| RR6.15 | Prove the D-2.5 writer-bounded-wait statement as specified — the ingredients exist; only a single-state `_weak` corollary landed | `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` | M |
-| RR6.16 | Repoint the R-10 aggregator entry at the theorem that proves writer liveness; keep the safety theorem registered under its accurate name | `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` | S |
-| RR6.17 | Plan corrections: the retired-MCS design section, the D-1.9 landed row, the false §3.2.6.1 theorem statement, and the Appendix A commands that name a nonexistent script | `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | M |
-| RR6.18 | Retitle the plan: it is no longer post-v1.0.0; add an SM2.C-defer row to `docs/WORKSTREAM_HISTORY.md` with closure target RR6 — this phase, not the boot-path phase that precedes it | (2 files) | S |
+| RR6.11 | Operational step model for `QueuedRwLock` plus its refinement to the Lean FIFO spec. `RwLockRefinement.lean` models the **CAS-retry** `rw_lock.rs`, and the `queued_*` theorems in `RwLock.lean` are about the abstract spec's waiter queue — neither is a bridge to the queued Rust algorithm RR6.4 deploys, so without this the next sub-task's corollary has nothing to compose | `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (new) | XL |
+| RR6.12 | Corollary against the deployed lock, closing the spec-to-implementation gap end to end | (same) | L |
+| RR6.13 | Add `loom` as a `cfg(loom)` dev-dependency with bounded exhaustive interleavings | `rust/sele4n-hal/Cargo.toml` | M |
+| RR6.14 | Add a nightly `miri` job for the queued lock | `.github/workflows/` | M |
+| RR6.15 | Raise the FIFO and stress iteration counts to the plan's stated thresholds | `rust/sele4n-hal/src/queued_rw_lock.rs` | S |
+| RR6.16 | Prove the D-2.5 writer-bounded-wait statement as specified — the ingredients exist; only a single-state `_weak` corollary landed | `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` | M |
+| RR6.17 | Repoint the R-10 aggregator entry at the theorem that proves writer liveness; keep the safety theorem registered under its accurate name | `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` | S |
+| RR6.18 | Plan corrections: the retired-MCS design section, the D-1.9 landed row, the false §3.2.6.1 theorem statement, and the Appendix A commands that name a nonexistent script | `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | M |
+| RR6.19 | Retitle the plan: it is no longer post-v1.0.0; add an SM2.C-defer row to `docs/WORKSTREAM_HISTORY.md` with closure target RR6 — this phase, not the boot-path phase that precedes it | (2 files) | S |
 
 **Acceptance**: the deployed RwLock is the one the Lean spec describes; the
 Tier-5 oracle drives real locks; neither refinement theorem assumes its own
 conclusion or contains a tautological conjunct; `loom` and `miri` gates run.
 
-**Note on RR6.10**: this is the phase's only XL and the likeliest to need
-splitting — take the trace-shape predicate and the composition proof as
-separate PRs, and land the predicate first so the composition has something
-to consume.
-
+**Note on the two XLs**: RR6.10 (the D-4 bisimulation) and RR6.11 (the queued
+lock's own operational model and refinement) are the phase's largest items and
+the likeliest to need splitting. Take the trace-shape predicate and the
+composition proof as separate PRs, landing the predicate first so the
+composition has something to consume. RR6.11 exists because RR6.4 changes which
+lock is deployed: `RwLockRefinement.lean` models the CAS-retry implementation,
+so once the pool points at `QueuedRwLock` the existing refinement no longer
+describes the deployed lock, and RR6.12's corollary would have no bridge to
+compose from.
 
 ### RR7 — Medium-severity sweep
 
@@ -435,12 +441,22 @@ acceptance gate below can actually be checked against the work list.
 | RR7.9 | Fine-lock migration mediums | 3 | M |
 | RR7.10 | TLB shootdown mediums | 3 | M |
 | RR7.11 | Debt-register mediums | 3 | M |
-| RR7.12 | Cross-core IPC, declassification, panic-hang, RwLock-deferred and implement-the-improvement mediums (two each) | 10 | L |
-| RR7.13 | Single-finding plans: IPC de-threading, reply objects, SMP foundations, the master plan, and doc-sync | 5 | M |
+| RR7.12 | Cross-core IPC mediums | 2 | S |
+| RR7.13 | Declassification mediums | 2 | S |
+| RR7.14 | Panic-hang remediation mediums | 2 | S |
+| RR7.15 | RwLock-deferred mediums | 2 | S |
+| RR7.16 | Implement-the-improvement sweep mediums | 2 | S |
+| RR7.17 | IPC de-threading medium | 1 | S |
+| RR7.18 | Reply objects medium | 1 | S |
+| RR7.19 | SMP foundations medium | 1 | S |
+| RR7.20 | Master plan medium | 1 | S |
+| RR7.21 | Doc-sync medium | 1 | S |
 
-**Acceptance**: every medium finding in the register's §6 table is closed or
-has an explicit, registered deferral with a closure target. A medium may be
-deferred; it may not be dropped.
+**Acceptance**: all **49** findings this phase owns — the 46 in the register's
+§6 table and the three §4 items in RR7.1–RR7.3 — are closed or carry an
+explicit, registered deferral with a closure target. A medium may be deferred;
+it may not be dropped, and the §4 three may not be left open on the strength of
+the §6 table alone.
 
 
 ### RR8 — Phase closure and hand-off to SM10
@@ -543,7 +559,9 @@ lake exe fault_handling_suite                            # RR4
 ./scripts/test_tier5_cross_language.sh                   # RR6
 # RR1 — run from rust/: rustup's directory override selects the pinned
 # toolchain there, and --manifest-path does not change that selection.
-(cd rust && cargo check --target aarch64-unknown-none -p sele4n-hal --features hw_target)
+# `build`, not `check`: check stops before code generation, so it never
+# reaches the backend where an inline-asm error surfaces.
+(cd rust && cargo build --target aarch64-unknown-none -p sele4n-hal --features hw_target)
 
 # Gate honesty — a skipped acceptance gate must fail here
 SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh

@@ -1,3 +1,63 @@
+## v0.34.8 — the nightly would have gone red forever; Codex review round 3
+
+Nine findings on `dc5dc55`, all verified against the tree and all genuine.  One
+is a CI-breaking regression the previous cut introduced.
+
+**The skip propagation would have failed every scheduled nightly, permanently.**
+`ci_capture_timing.sh` propagates any nonzero status, `test_nightly.sh` now
+exits `SELE4N_SKIP_EXIT` when a gate did not run, and the nightly workflow
+neither builds nor sets `SELE4N_KERNEL_IMAGE` — so every QEMU gate skips, the
+tier returns 77, and the job fails.  Not once: on every run, until SM10.E.D1
+produces an image.  A signal that is always red is one nobody reads, which is
+the same end state as the "All checks passed" this whole line of work set out
+to remove, reached from the other direction.  The nightly now handles the
+incomplete-coverage status explicitly: a warning annotation plus a run-summary
+block naming the cause, the job completing rather than failing, and
+`SELE4N_REQUIRE_GATES=1` still the mode that fails outright — the mode SM10.E's
+release validation must use.
+
+**`cargo check` cannot provide the compile coverage RR1 promises.**  It stops
+before code generation, so it never reaches the backend where an inline-`asm!`
+error surfaces — and covering the 60 `asm!` sites is most of why the phase
+exists.  The post-fix and CI gates are now an aarch64 `cargo build`; `check`
+survives only as the earlier diagnostic pass, where its speed is the point.
+
+**A live kernel transition was scheduled ahead of its own invariant surface.**
+RR4 wired the fault-delivery transition into `dispatchSynchronousException`
+before the `ipcInvariantFull`, scheduler, capability, progress and
+non-interference proofs.  Since each sub-task lands as its own PR, that would
+ship a reachable transition with none of its proofs.  The wiring now sits after
+them, as RR4.21.
+
+**Switching the deployed lock left the refinement behind.**  RR6.4 points the
+FFI pool at `QueuedRwLock`, but `RwLockRefinement.lean` models the CAS-retry
+`rw_lock.rs`, and `RwLock.lean`'s `queued_*` theorems are about the abstract
+spec's waiter queue — neither bridges the queued Rust algorithm.  The
+deployed-lock corollary would have had nothing to compose from.  RR6.11 now
+adds the queued lock's own operational model and refinement, ahead of the
+corollary.
+
+Also: RR7.12–RR7.13 batched ten and five findings across unrelated subsystems
+while the section promised one subsystem per PR — split into RR7.12–RR7.21, one
+per subsystem; RR7's acceptance gate required closure only of the §6 table
+though the phase owns 49 findings including three from §4, so a phase could
+close with the boot-MMU correction and the live-dispatch capability theorem
+still open; and the RR1 ordering note still named the pre-renumber sub-tasks.
+
+Two register corrections.  The staged-`@[export]` finding claimed four modules;
+only three exist — `EndpointCallEntry` had its C export removed and is retained
+as a reference driver, so promoting it would add a staged dependency resolving
+no Rust symbol.  And the SM1.H remediation proposed restating a checked
+four-core boot gate as "script authored; execution blocked", which converts a
+hardware-behaviour criterion into an artifact-existence one: the documentation
+is stronger than the code there, which is the forbidden direction rather than
+the exception.  Both boxes are now simply unchecked until the gate runs.
+
+Total 130 → 139, verified sequential per phase with no forward dependencies.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md
+Refs: docs/planning/UNFINISHED_SMP_WORK.md
+
 ## v0.34.7 — CI fix: the witness's literal-match grep tripped shellcheck SC2016
 
 `v0.34.6` turned CI red on two checks, both from one line I added.
