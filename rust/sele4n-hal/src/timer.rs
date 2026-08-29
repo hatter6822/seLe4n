@@ -343,8 +343,8 @@ pub fn get_tick_count() -> u64 {
 /// On each tick of core `core_id` this routine:
 ///
 /// 1. **Records** the per-core tick counter (an SMP-local diagnostic), and —
-///    **boot core only** — advances the global `TICK_COUNT` (see ownership
-///    below).
+///    **boot core only, once its Lean runtime is ready** — advances the global
+///    `TICK_COUNT` (see ownership below).
 /// 2. **Re-arms** the per-core comparator for the next tick
 ///    ([`reprogram_timer`], counter-relative to avoid missed-tick accumulation).
 /// 3. **Drives** the Lean per-core scheduler tick via the C-callable export
@@ -359,14 +359,22 @@ pub fn get_tick_count() -> u64 {
 ///    seam — a PE must never enter a Lean runtime it has not initialized.
 ///
 /// **Global-timer ownership (single authority, one site).**  The boot core's
-/// invocation of this ISR is the sole advancer of the global `TICK_COUNT` —
-/// relocated here from `ffi_timer_reprogram` (which had no caller on the live
-/// path and is re-arm-only now, so a second incrementer cannot reappear; the
-/// AI1-C/M-26 single-path invariant is preserved with the owner relocated).
-/// This mirrors the Lean side exactly: `timerTickOnCore` reads but never
-/// advances `machine.timer`; the boot core's committed run-loop step advances
-/// it once per global tick (`tickClockedState` in
-/// `SeLe4n/Kernel/Scheduler/Operations/PerCoreRunLoop.lean`).
+/// **Lean-ready** invocation of this ISR is the sole advancer of the global
+/// `TICK_COUNT` — relocated here from `ffi_timer_reprogram` (which had no
+/// caller on the live path and is re-arm-only now, so a second incrementer
+/// cannot reappear; the AI1-C/M-26 single-path invariant is preserved with
+/// the owner relocated).  `TICK_COUNT` shadows the Lean model clock:
+/// `timerTickOnCore` reads but never advances `machine.timer`; the boot
+/// core's committed run-loop step advances it once per global tick
+/// (`tickClockedState` in
+/// `SeLe4n/Kernel/Scheduler/Operations/PerCoreRunLoop.lean`), which runs only
+/// behind the same readiness gate — so the shadow increment shares the gate
+/// (PR #880 review round 3): a pre-readiness tick advances neither clock, and
+/// the shadow cannot accumulate a permanent offset before the SM10.E handoff.
+/// Post-readiness the shadow counts the boot core's gated tick entries, which
+/// equals the model's committed advances except when a tick entry *fails*
+/// inside Lean (the fail-closed no-commit arm) — that one-behind divergence is
+/// a diagnosable anomaly of an already fail-closed kernel, not a silent drift.
 ///
 /// **Re-entrancy.** The IRQ is acknowledged + EOI'd before this runs, and the
 /// CPU-interface running-priority mask holds INTID 30 off until `PSTATE.I` clears
@@ -387,16 +395,26 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
     );
     // 1. Per-core tick accounting (SMP-localised diagnostic).
     let _ = crate::per_cpu_stats::record_timer_tick();
+    // Readiness is evaluated ONCE per invocation and shared by steps 1b and
+    // 3, so the shadow increment and the model advance see the same answer
+    // even if `mark_lean_ready` lands between them on another core (the
+    // mask is monotonic; two reads could otherwise split at the flip and
+    // put the model one ahead of the shadow, once, permanently).
+    let lean_ready_now = crate::lean_ready::lean_ready(core_id as usize);
     // 1b. Global tick accounting — boot core only (the single-authority
     // rule, relocated here from the uncalled `ffi_timer_reprogram` when
-    // the per-core path became the live one).  Exactly one site advances
-    // `TICK_COUNT`, and exactly one core reaches it per global tick
-    // period, mirroring the Lean side where only the boot core's
-    // committed run-loop step advances `machine.timer`
-    // (`tickClockedState`).  The AI1-C/M-26 single-path invariant is
-    // preserved with the owner relocated; `ffi_timer_reprogram` is
-    // re-arm-only so a second incrementer cannot reappear.
-    if core_id == 0 {
+    // the per-core path became the live one), and only once the boot
+    // core's Lean runtime is ready (PR #880 review round 3): `TICK_COUNT`
+    // shadows the model clock (`machine.timer`), and the model advances
+    // only inside the readiness-gated committed step (step 3) — so a
+    // pre-readiness tick must advance neither clock, or the shadow
+    // accumulates a permanent offset during the dormant era (IRQs are
+    // enabled long before the SM10.E Lean handoff).  Exactly one site
+    // advances `TICK_COUNT`, and exactly one core reaches it per global
+    // tick period; the AI1-C/M-26 single-path invariant is preserved with
+    // the owner relocated, and `ffi_timer_reprogram` is re-arm-only so a
+    // second incrementer cannot reappear.
+    if core_id == 0 && lean_ready_now {
         let _ = increment_tick_count();
     }
     // 2. Re-arm the per-core comparator for the next tick.
@@ -409,7 +427,7 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
     // shootdown.rs has always stated, now structural).
     #[cfg(feature = "hw_target")]
     {
-        if crate::lean_ready::lean_ready(core_id as usize) {
+        if lean_ready_now {
             // SAFETY: `lean_per_core_timer_tick` is the C-callable wrapper the
             // Lean compiler emits for `Kernel.perCoreTimerTickEntry`
             // (`@[export lean_per_core_timer_tick]`).  It takes a `u64` core id
@@ -818,20 +836,40 @@ mod tests {
         );
     }
 
-    /// SM5.D.1 + single-authority clock: only the BOOT core's ISR invocation
-    /// advances the primary-owned global `TICK_COUNT` (one owner, one site —
-    /// relocated from the uncalled `ffi_timer_reprogram`; mirrors the Lean model
-    /// where `timerTickOnCore` never advances `machine.timer`).
+    /// SM5.D.1 + single-authority clock (+ PR #880 review round 3): the global
+    /// `TICK_COUNT` shadow advances only for the BOOT core's ISR invocation,
+    /// and only once the boot core's Lean runtime is ready — a pre-readiness
+    /// tick advances neither the shadow nor the model clock (whose advance
+    /// sits behind the same gate), so the shadow cannot accumulate a
+    /// permanent offset during the dormant era.
+    ///
+    /// Core 0's readiness bit is owned by THIS test (the `lean_ready` module's
+    /// own tests deliberately use bits 4..7); the mask is process-global and
+    /// one-way, so the pre-readiness half runs before the mark within this
+    /// test, and the leading assert fails loudly if a future test claims the
+    /// bit.
     #[test]
     fn per_core_timer_tick_isr_boot_core_owns_global_tick_count() {
-        // Single-authority clock: the BOOT core's ISR invocation is the sole
-        // advancer of the global TICK_COUNT (relocated from the uncalled
-        // `ffi_timer_reprogram`); every non-boot core's ISR leaves it
-        // untouched, so four cores ticking cannot run the count at 4x.
         let _guard = TIMER_GLOBAL_STATE_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        assert!(
+            !crate::lean_ready::lean_ready(0),
+            "core 0's readiness bit must be owned by this test alone \
+             (see the lean_ready.rs test conventions)"
+        );
+        // Pre-readiness: the boot core's ISR must NOT advance the shadow —
+        // the model clock cannot advance either (the Lean call is behind the
+        // same gate), and an increment here would be the permanent-offset
+        // regression PR #880 round 3 flagged.
         let before = get_tick_count();
+        per_core_timer_tick_isr(0);
+        assert_eq!(
+            get_tick_count(),
+            before,
+            "a pre-readiness boot-core tick must NOT advance the TICK_COUNT shadow"
+        );
+        // Non-boot cores never advance it, ready or not.
         per_core_timer_tick_isr(1);
         per_core_timer_tick_isr(2);
         per_core_timer_tick_isr(3);
@@ -840,11 +878,23 @@ mod tests {
             before,
             "a non-boot core's timer ISR must NOT advance the global TICK_COUNT"
         );
+        // SAFETY: host-side unit test — no gated seam is compiled to call
+        // Lean here (`hw_target` off), so the readiness promise is vacuous.
+        unsafe { crate::lean_ready::mark_lean_ready(0) };
+        // Post-readiness: exactly one advance per boot-core invocation.
         per_core_timer_tick_isr(0);
         assert_eq!(
             get_tick_count(),
             before + 1,
-            "the boot core's timer ISR advances the global TICK_COUNT by exactly 1"
+            "the ready boot core's timer ISR advances the global TICK_COUNT by exactly 1"
+        );
+        // Still boot-core-only after the flip (core 3's bit is unset, and the
+        // owner check is boot-core-only regardless).
+        per_core_timer_tick_isr(3);
+        assert_eq!(
+            get_tick_count(),
+            before + 1,
+            "a non-boot core's timer ISR must NOT advance the shadow after the boot core is ready"
         );
     }
 

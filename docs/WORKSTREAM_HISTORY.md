@@ -155,6 +155,18 @@ definition).  (2) Honesty: "live end to end" → wired, dormant behind
 actually carries.  (4) The lean-ready scanner is body-scoped: gate before
 Lean symbol within each seam function, not file-level containment.
 
+**Review round 3 (same cut) — the `TICK_COUNT` shadow shares the
+readiness gate.**  Round 2's relocation left the boot core's shadow
+increment at ISR-invocation time while the model advance sits behind
+`lean_ready` — pre-readiness hardware ticks would skew the shadow from
+`machine.timer` permanently.  Now one readiness read per invocation
+gates both; a pre-readiness tick advances neither clock; the
+failed-tick-entry residual (shadow one ahead on the fail-closed
+no-commit arm) is documented in the ownership paragraph rather than
+claimed away; the single-authority test is the full lifecycle pin
+(pre-readiness no-advance → mark → exactly-one advance, core 0's bit
+test-owned).
+
 Plan: [`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`](planning/SMP_PER_CORE_SCHEDULER_PLAN.md)
 §SM5.C (landing note).  Next: SM10 release closure (→ v1.0.0),
 [`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md).

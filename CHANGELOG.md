@@ -147,6 +147,28 @@ ungated): it extracts each seam function's body (brace-matched, on
 comment-stripped text) and requires the `lean_ready(` call to precede the
 Lean symbol within that body.
 
+**Review round 3 (same version) — one finding: the `TICK_COUNT` shadow
+shares the readiness gate.**  The round-2 relocation put the boot core's
+`TICK_COUNT` increment at ISR-invocation time, *outside* the `lean_ready`
+gate the model advance sits behind — so on hardware, every timer interrupt
+delivered before the boot core is marked ready (IRQs are enabled long
+before the SM10.E Lean handoff) would advance the shadow while
+`machine.timer` stayed put, a permanent offset surviving the readiness
+flip.  The increment now shares the gate, with readiness evaluated **once**
+per invocation for both the shadow and the Lean call (two reads could
+split at the monotonic mask's flip and put the model one ahead of the
+shadow, once, permanently): a pre-readiness tick advances neither clock,
+so the shadow holds exactly through the entire dormant era and the
+handoff.  The residual is stated honestly in the ownership paragraph
+rather than papered over: post-readiness the shadow counts gated
+boot-core tick entries, which equals the model's committed advances
+except when a tick entry fails inside Lean (the fail-closed no-commit
+arm) — a diagnosable anomaly of an already fail-closed kernel, not a
+silent drift.  The single-authority test became the full lifecycle pin:
+pre-readiness boot tick advances nothing, non-boot cores never advance,
+the marked boot core advances by exactly one (core 0's readiness bit is
+owned by that test, asserted loudly).
+
 Gates: `./scripts/test_full.sh` green (tiers 0–3);
 `./scripts/test_rust.sh` green (1144 unit + 108 conformance tests, fmt,
 clippy `-D warnings`); staged-module partition consistent
