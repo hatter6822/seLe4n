@@ -120,6 +120,18 @@ open SeLe4n.Testing
 #check @tickClockedState_scheduler
 #check @tickClockedState_bootCore_timer
 #check @tickClockedState_nonBoot
+-- Commit-coupled shadow clock (PR #880 follow-up): the flagged step the live
+-- entry drives — the clock-advance report is definitionally the committed
+-- state's machine.timer delta, so the HAL TICK_COUNT shadow moves iff the
+-- model clock moved (fail-closed arms report false).
+#check @perCoreTimerTickStepWithClockAdvance
+#check @perCoreTimerTickStepWithClockAdvance_state
+#check @perCoreTimerTickStepWithClockAdvance_sgis
+#check @perCoreTimerTickStepWithClockAdvance_flag_def
+#check @perCoreTimerTickStepWithClockAdvance_flag_iff
+#check @perCoreTimerTickStepWithClockAdvance_flag_invalid_core
+#check @perCoreTimerTickStepWithClockAdvance_flag_error
+#check @perCoreTimerTickStepWithClockAdvance_flag_domain_error
 #check @scheduleDomainOnCore_preserves_currentThreadValidOnCore
 
 -- §4b SM5.D.6 full per-core domain re-dispatch (switchDomainOnCore / scheduleDomainOnCore).
@@ -573,6 +585,43 @@ private def runEmptyBoundaryRequeueChecks : IO Unit := do
       && ((singleDomainBoundaryPrep stSingleDomain bootCoreId).scheduler.currentOnCore
           bootCoreId).isNone)
 
+/-- §3.11 (PR #880 follow-up — commit-coupled shadow clock): the flagged step's
+clock-advance report is exactly the committed state's `machine.timer` delta,
+so the HAL `TICK_COUNT` shadow (advanced by the live entry iff this flag is
+set) moves iff the model clock moved — no arm, fail-closed ones included, can
+put the two out of step. -/
+private def runClockAdvanceFlagChecks : IO Unit := do
+  IO.println "--- §3.11 commit-coupled shadow-clock flag ---"
+  -- A committed boot-core step advances the model clock and reports it.
+  assertBool "boot-core committed step reports the clock advance (flag true)"
+    ((perCoreTimerTickStepWithClockAdvance stIdle 0).1.2 == true)
+  -- ... and the flag agrees with the committed state it was computed against.
+  assertBool "flag-true step committed machine.timer + 1 (report matches commit)"
+    ((perCoreTimerTickStepWithClockAdvance stIdle 0).2.machine.timer
+      == stIdle.machine.timer + 1)
+  -- A non-boot core's committed step reads the shared clock without advancing
+  -- it, and reports exactly that.
+  assertBool "non-boot committed step reports no clock advance (flag false)"
+    ((perCoreTimerTickStepWithClockAdvance stIdle 3).1.2 == false)
+  assertBool "flag-false step committed machine.timer unchanged"
+    ((perCoreTimerTickStepWithClockAdvance stIdle 3).2.machine.timer
+      == stIdle.machine.timer)
+  -- Fail-closed: an out-of-range core id commits nothing and reports nothing.
+  assertBool "out-of-range core id reports no clock advance (fail-closed)"
+    ((perCoreTimerTickStepWithClockAdvance stIdle 99).1.2 == false)
+  -- The flagged step commits the plain step's state and SGIs verbatim (the
+  -- flag is a report beside the commit, never a change to it).
+  assertBool "flagged step commits the plain step's state (timer agrees)"
+    ((perCoreTimerTickStepWithClockAdvance stIdle 0).2.machine.timer
+      == (perCoreTimerTickStep stIdle 0).1.machine.timer)
+  assertBool "flagged step emits the plain step's SGIs"
+    ((perCoreTimerTickStepWithClockAdvance stIdle 0).1.1.length
+      == (perCoreTimerTickStep stIdle 0).2.length)
+  -- The busy boundary fixture (§3.10) also commits a boot-core advance: the
+  -- flag rides every committed boot step, whatever the scheduling outcome.
+  assertBool "busy boundary fixture's boot step reports the clock advance"
+    ((perCoreTimerTickStepWithClockAdvance stBoundaryBusy 0).1.2 == true)
+
 def runAll : IO Unit := do
   IO.println "=== WS-SM SM5.D — Per-core timer tick suite ==="
   runLockSetChecks
@@ -585,6 +634,7 @@ def runAll : IO Unit := do
   runRunLoopStepChecks
   runDomainRedispatchChecks
   runEmptyBoundaryRequeueChecks
+  runClockAdvanceFlagChecks
   IO.println "=== SM5.D timer suite: all checks passed ==="
 
 end SeLe4n.Testing.SmpTimer

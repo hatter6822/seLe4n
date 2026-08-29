@@ -167,6 +167,22 @@ claimed away; the single-authority test is the full lifecycle pin
 (pre-readiness no-advance → mark → exactly-one advance, core 0's bit
 test-owned).
 
+**Maintainer follow-up (same cut) — the residual, closed: the shadow
+clock is commit-coupled.**  Gate-scoping still counted invocations where
+the model counts commits, and only Lean knows which arm a step took — so
+the advance crossed the seam.  New pure
+`perCoreTimerTickStepWithClockAdvance` pairs the run-loop step with a
+flag that is definitionally the committed state's `machine.timer` delta
+(`_flag_def` = `rfl`; the three fail-closed reductions pin `false`);
+`perCoreTimerTickEntry` runs it in the same atomic commit and calls the
+new `ffiTimerAdvanceTickCount` → `ffi_timer_advance_tick_count` iff the
+flag is set (body-shape marker updated); the ISR no longer touches
+`TICK_COUNT`.  The shadow now equals the model clock on every arm —
+pre-readiness, non-boot, and failed entries included.  Pinned by
+`smp_timer_suite` §3.11, the reworked Rust never-advances/exactly-one
+tests, and the new `build.rs` shadow-advance scanner (export present;
+ISR body must not regrow an incrementer).
+
 Plan: [`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`](planning/SMP_PER_CORE_SCHEDULER_PLAN.md)
 §SM5.C (landing note).  Next: SM10 release closure (→ v1.0.0),
 [`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md).

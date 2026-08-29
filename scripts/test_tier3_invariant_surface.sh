@@ -7442,6 +7442,17 @@ open SeLe4n.Kernel
 #check @tickClockedState_scheduler
 #check @tickClockedState_bootCore_timer
 #check @tickClockedState_nonBoot
+-- Commit-coupled shadow clock: the flagged step + its definitional delta pin
+-- and fail-closed falsity reductions (the entry advances the HAL shadow iff
+-- the committed step advanced the model clock).
+#check @perCoreTimerTickStepWithClockAdvance
+#check @perCoreTimerTickStepWithClockAdvance_state
+#check @perCoreTimerTickStepWithClockAdvance_sgis
+#check @perCoreTimerTickStepWithClockAdvance_flag_def
+#check @perCoreTimerTickStepWithClockAdvance_flag_iff
+#check @perCoreTimerTickStepWithClockAdvance_flag_invalid_core
+#check @perCoreTimerTickStepWithClockAdvance_flag_error
+#check @perCoreTimerTickStepWithClockAdvance_flag_domain_error
 #check @scheduleDomainOnCore_preserves_currentThreadValidOnCore
 #check @perCoreTimerTickEntry
 #check @perCoreTimerTickEntry_def

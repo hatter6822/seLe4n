@@ -136,20 +136,36 @@ instance : Nonempty LabelingContext := ⟨Kernel.testLabelingContext⟩
 opaque ffiTimerReadCounter : BaseIO UInt64
 
 /-- Reprogram the timer comparator for the next tick interval — re-arm
-    only.  Global tick accounting is single-path and its one site is the
-    boot core's `timer::per_core_timer_tick_isr` invocation (the Lean
-    mirror: only the boot core's committed run-loop step advances
-    `machine.timer`, via `tickClockedState`); this seam deliberately
-    cannot increment, so a second incrementer cannot reappear (AI1-C /
-    M-26, owner relocated).
+    only.  Global tick accounting is single-path and its one site is
+    `ffiTimerAdvanceTickCount` (below), driven by the committed run-loop
+    step; this seam deliberately cannot increment, so a second
+    incrementer cannot reappear (AI1-C / M-26).
     Rust: `ffi_timer_reprogram` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_timer_reprogram"]
 opaque ffiTimerReprogram : BaseIO Unit
 
-/-- Get the current tick count (timer interrupts since boot).
+/-- Get the current tick count (committed model-clock advances since
+    boot — see `ffiTimerAdvanceTickCount`).
     Rust: `ffi_timer_get_tick_count` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_timer_get_tick_count"]
 opaque ffiTimerGetTickCount : BaseIO UInt64
+
+/-- WS-SM SM5.I (commit-coupled shadow clock — PR #880 follow-up): advance
+    the HAL's global tick counter (`TICK_COUNT`) by one.  Called by
+    `perCoreTimerTickEntry` **iff** the just-committed run-loop step
+    advanced the model clock (`machine.timer` — the boot core's committed
+    success arm, `tickClockedState`; the flag is definitionally the clock
+    delta, `perCoreTimerTickStepWithClockAdvance_flag_def`), so the HAL
+    shadow tracks the model clock exactly on every arm: pre-readiness
+    ticks, non-boot cores and fail-closed entries advance neither clock.
+    The sole live-path incrementer of `TICK_COUNT` (AI1-C / M-26 single
+    path, owner relocated from the boot-core ISR invocation, which counted
+    invocations rather than commits); `ffiTimerReprogram` stays
+    re-arm-only.  Lock-free on the Rust side (one atomic fetch-add), so
+    calling it under the kernel-entry lock violates no ordering rule.
+    Rust: `ffi_timer_advance_tick_count` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_timer_advance_tick_count"]
+opaque ffiTimerAdvanceTickCount : BaseIO Unit
 
 -- ============================================================================
 -- AG7-A-iii: GIC FFI declarations

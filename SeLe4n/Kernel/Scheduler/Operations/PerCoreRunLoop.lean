@@ -263,6 +263,90 @@ theorem perCoreTimerTickStep_ok_currentThreadValidOnCore (st : SystemState)
   exact scheduleDomainOnCore_preserves_currentThreadValidOnCore st' _ st2
     hTickInv hTickValid hdom
 
+/-- **WS-SM SM5.I** (commit-coupled shadow clock — PR #880 follow-up): the
+run-loop step, additionally reporting whether the committed state advanced the
+shared machine clock, shaped for the entry's atomic
+`modifyGetKernelState` (get-value `(sgis, clockAdvanced)`, new state second).
+
+The report is **definitionally the clock delta**
+(`perCoreTimerTickStepWithClockAdvance_flag_def`): `tickClockedState` is the
+only writer of `machine.timer` in the composition and every fail-closed arm
+returns the pre-state, so the flag is `true` exactly when this step committed
+the boot core's clock advance.  The entry
+(`perCoreTimerTickEntry`) fires the HAL shadow advance
+(`ffiTimerAdvanceTickCount` → Rust `TICK_COUNT`) on this flag — so the shadow
+tracks the model clock exactly on *every* arm: pre-readiness ticks run no
+entry, non-boot cores and fail-closed entries report `false`, and a committed
+boot-core step reports `true`.  The previous invocation-coupled design
+(the ISR incremented per gated invocation) over-counted failed entries by one
+each; that residual is what this closes.  Concrete scenarios are pinned live
+in `smp_timer_suite` (§3.11). -/
+def perCoreTimerTickStepWithClockAdvance (st : SystemState) (coreId : UInt64) :
+    (List (CoreId × SgiKind) × Bool) × SystemState :=
+  let result := perCoreTimerTickStep st coreId
+  ((result.2, result.1.machine.timer != st.machine.timer), result.1)
+
+/-- **WS-SM SM5.I**: the flagged step commits exactly the plain step's state. -/
+@[simp] theorem perCoreTimerTickStepWithClockAdvance_state (st : SystemState)
+    (coreId : UInt64) :
+    (perCoreTimerTickStepWithClockAdvance st coreId).2
+      = (perCoreTimerTickStep st coreId).1 := rfl
+
+/-- **WS-SM SM5.I**: the flagged step emits exactly the plain step's SGIs. -/
+@[simp] theorem perCoreTimerTickStepWithClockAdvance_sgis (st : SystemState)
+    (coreId : UInt64) :
+    (perCoreTimerTickStepWithClockAdvance st coreId).1.1
+      = (perCoreTimerTickStep st coreId).2 := rfl
+
+/-- **WS-SM SM5.I** (the load-bearing pin): the clock-advance flag **is** the
+committed step's `machine.timer` delta — by definition, not by proof
+obligation.  Everything the commit-coupled shadow claims reduces to this
+equation plus the entry's body shape (`perCoreTimerTickEntry_def`). -/
+theorem perCoreTimerTickStepWithClockAdvance_flag_def (st : SystemState)
+    (coreId : UInt64) :
+    (perCoreTimerTickStepWithClockAdvance st coreId).1.2
+      = ((perCoreTimerTickStep st coreId).1.machine.timer != st.machine.timer) := rfl
+
+/-- **WS-SM SM5.I**: the flag as a proposition — `true` iff the committed
+state's clock differs from the pre-state's. -/
+theorem perCoreTimerTickStepWithClockAdvance_flag_iff (st : SystemState)
+    (coreId : UInt64) :
+    (perCoreTimerTickStepWithClockAdvance st coreId).1.2 = true ↔
+      (perCoreTimerTickStep st coreId).1.machine.timer ≠ st.machine.timer := by
+  rw [perCoreTimerTickStepWithClockAdvance_flag_def]
+  exact bne_iff_ne
+
+/-- **WS-SM SM5.I** (fail-closed): an out-of-range core id reports no clock
+advance — the step is the identity, so the delta is zero. -/
+theorem perCoreTimerTickStepWithClockAdvance_flag_invalid_core (st : SystemState)
+    (coreId : UInt64) (h : ¬ coreId.toNat < numCores) :
+    (perCoreTimerTickStepWithClockAdvance st coreId).1.2 = false := by
+  simp [perCoreTimerTickStepWithClockAdvance,
+    perCoreTimerTickStep_invalid_core st coreId h]
+
+/-- **WS-SM SM5.I** (fail-closed): a tick error reports no clock advance — the
+whole step commits nothing, the clock advance included, so the shadow must not
+move either (the exact divergence the invocation-coupled design suffered). -/
+theorem perCoreTimerTickStepWithClockAdvance_flag_error (st : SystemState)
+    (coreId : UInt64) (h : coreId.toNat < numCores) (e : KernelError)
+    (herr : timerTickOnCore (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩
+      = .error e) :
+    (perCoreTimerTickStepWithClockAdvance st coreId).1.2 = false := by
+  simp [perCoreTimerTickStepWithClockAdvance,
+    perCoreTimerTickStep_error st coreId h e herr]
+
+/-- **WS-SM SM5.I** (fail-closed): a domain-transition error reports no clock
+advance — all-or-nothing, mirroring `perCoreTimerTickStep_domain_error`. -/
+theorem perCoreTimerTickStepWithClockAdvance_flag_domain_error (st : SystemState)
+    (coreId : UInt64) (h : coreId.toNat < numCores)
+    (result : SystemState × List (CoreId × SgiKind)) (e : KernelError)
+    (hok : timerTickOnCore (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩
+      = .ok result)
+    (herr : scheduleDomainOnCore result.1 ⟨coreId.toNat, h⟩ = .error e) :
+    (perCoreTimerTickStepWithClockAdvance st coreId).1.2 = false := by
+  simp [perCoreTimerTickStepWithClockAdvance,
+    perCoreTimerTickStep_domain_error st coreId h result e hok herr]
+
 /-- **WS-SM SM5.C.5** (the reschedule run-loop step): drive the verified
 `.reschedule` SGI handler on core `coreId` against state `st`, returning the
 post-handler state.  Fail-closed (see the module docstring): an out-of-range core

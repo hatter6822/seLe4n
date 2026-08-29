@@ -130,6 +130,13 @@ fn main() {
     scan_ffi_rs_exposes_lock_ffi_exports();
     scan_ffi_rs_exposes_switch_to_thread_exports();
 
+    // WS-SM SM5.I (commit-coupled shadow-clock contract): verify `ffi.rs`
+    // still exposes the shadow-advance export the Lean tick entry's
+    // committed clock advance resolves against, and that the timer ISR
+    // has not regrown an invocation-time incrementer beside it (the
+    // drift the commit-coupling exists to make impossible).
+    scan_ffi_rs_exposes_timer_shadow_advance_export();
+
     // WS-SM SM2.E (closes the queued_rw_lock protocol contract):
     // verify that the mode-encoded four-state parked machine and the
     // stale-self tail detection are intact in `queued_rw_lock.rs`.
@@ -1375,6 +1382,110 @@ fn scan_ffi_rs_exposes_switch_to_thread_exports() {
                  wrapper in `SeLe4n/Kernel/Concurrency/Runtime.lean` (in lockstep)."
             );
         }
+    }
+}
+
+/// **WS-SM SM5.I** (commit-coupled shadow clock — PR #880 follow-up): verify
+/// the shadow-advance seam holds on both sides of the crate.
+///
+/// 1. `ffi.rs` must declare `ffi_timer_advance_tick_count` — the export the
+///    Lean tick entry (`perCoreTimerTickEntry`, whose `@[extern]` declaration
+///    resolves against it at the verified-kernel hardware build's link step)
+///    calls iff the committed step advanced the model clock.  Dropping it
+///    would only surface at that future link step; pin it at elaboration.
+/// 2. `timer.rs::per_core_timer_tick_isr` must NOT have regrown an
+///    invocation-time `increment_tick_count` call — an ISR-side increment
+///    counts invocations rather than commits, which is exactly the drift
+///    (pre-readiness offsets, failed entries counted) the commit-coupled
+///    design exists to make impossible.  Checked on the ISR's brace-matched
+///    body over comment-stripped text, like the lean-ready gate scanner.
+fn scan_ffi_rs_exposes_timer_shadow_advance_export() {
+    let strip = |contents: &str| -> String {
+        contents
+            .lines()
+            .map(|line| {
+                if let Some(idx) = line.find("//") {
+                    &line[..idx]
+                } else {
+                    line
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let ffi_path = "src/ffi.rs";
+    println!("cargo:rerun-if-changed={ffi_path}");
+    let ffi_stripped = match std::fs::read_to_string(ffi_path) {
+        Ok(s) => strip(&s),
+        Err(e) => panic!("WS-SM SM5.I shadow-clock scanner: failed to read {ffi_path}: {e}"),
+    };
+    let needle = "pub extern \"C\" fn ffi_timer_advance_tick_count(";
+    if !ffi_stripped.contains(needle) {
+        panic!(
+            "WS-SM SM5.I regression: `{ffi_path}` no longer declares `{needle}`.  \
+             The Lean tick entry's commit-coupled shadow advance \
+             (`ffiTimerAdvanceTickCount`) resolves against this export at the \
+             verified-kernel hardware build's link step; without it the \
+             `TICK_COUNT` shadow can never advance.  If you removed the export \
+             deliberately, also remove the `@[extern]` declaration in \
+             `SeLe4n/Platform/FFI.lean` and rework `perCoreTimerTickEntry` \
+             (in lockstep)."
+        );
+    }
+
+    let timer_path = "src/timer.rs";
+    println!("cargo:rerun-if-changed={timer_path}");
+    let timer_stripped = match std::fs::read_to_string(timer_path) {
+        Ok(s) => strip(&s),
+        Err(e) => panic!("WS-SM SM5.I shadow-clock scanner: failed to read {timer_path}: {e}"),
+    };
+    let decl = "fn per_core_timer_tick_isr(";
+    let decl_idx = timer_stripped.find(decl).unwrap_or_else(|| {
+        panic!(
+            "WS-SM SM5.I shadow-clock scanner: `{timer_path}` no longer declares \
+             `fn per_core_timer_tick_isr` — update this scanner in lockstep with \
+             the seam move."
+        )
+    });
+    let open_rel = timer_stripped[decl_idx..].find('{').unwrap_or_else(|| {
+        panic!(
+            "WS-SM SM5.I shadow-clock scanner: `{timer_path}`'s \
+             `fn per_core_timer_tick_isr` has no body block after its declaration."
+        )
+    });
+    let body_start = decl_idx + open_rel;
+    let mut depth = 0usize;
+    let mut body_end = None;
+    for (i, ch) in timer_stripped[body_start..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    body_end = Some(body_start + i + 1);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let body = &timer_stripped[body_start..body_end.unwrap_or_else(|| {
+        panic!(
+            "WS-SM SM5.I shadow-clock scanner: unbalanced braces while extracting \
+             `{timer_path}`'s `fn per_core_timer_tick_isr` body."
+        )
+    })];
+    if body.contains("increment_tick_count") {
+        panic!(
+            "WS-SM SM5.I regression: `{timer_path}`'s `per_core_timer_tick_isr` \
+             calls `increment_tick_count` again.  The `TICK_COUNT` shadow is \
+             commit-coupled: its sole incrementer is \
+             `ffi::ffi_timer_advance_tick_count`, driven by the Lean entry iff \
+             the committed step advanced the model clock.  An ISR-side \
+             increment counts invocations rather than commits and reintroduces \
+             the pre-readiness / failed-entry drift; remove it."
+        );
     }
 }
 

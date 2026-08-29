@@ -169,8 +169,37 @@ pre-readiness boot tick advances nothing, non-boot cores never advance,
 the marked boot core advances by exactly one (core 0's readiness bit is
 owned by that test, asserted loudly).
 
+**Maintainer follow-up (same version) — the round-3 residual, closed: the
+shadow clock is commit-coupled.**  The gate-scoped increment still counted
+*invocations* while the model counts *commits*, because only the Lean side
+knows whether the step took its success arm — so the fix moves the advance
+across the seam.  The new pure
+`perCoreTimerTickStepWithClockAdvance` (`PerCoreRunLoop.lean`) returns the
+run-loop step's result paired with a clock-advance flag that is
+**definitionally the committed state's `machine.timer` delta**
+(`_flag_def` is `rfl`; `_flag_iff` restates it as a proposition; the
+`_flag_invalid_core` / `_flag_error` / `_flag_domain_error` reductions pin
+every fail-closed arm to `false`).  `perCoreTimerTickEntry` runs it in the
+same atomic `modifyGetKernelState` and calls the new
+`ffiTimerAdvanceTickCount` (Rust `ffi_timer_advance_tick_count`, one atomic
+fetch-add — lock-safe under the kernel-entry lock) exactly when the flag is
+set; the body-shape marker pins the branch.  The ISR no longer touches
+`TICK_COUNT` at all — its sole incrementer is the committed entry, so the
+shadow equals the model clock on *every* arm: pre-readiness ticks run no
+entry, non-boot cores and fail-closed entries report `false`, and a failed
+entry can no longer leave the shadow one ahead.  Pins on all three sides:
+`smp_timer_suite` §3.11 (flag true on a committed boot step with the
+committed `timer + 1`, false on non-boot / out-of-range, state and SGIs
+verbatim the plain step's, the busy §3.10 boundary included); the Rust
+tests (`per_core_timer_tick_isr_never_advances_global_tick_count` — any
+core, before and after readiness — and
+`ffi_timer_advance_tick_count_advances_by_exactly_one`); and a new
+`build.rs` scanner (`scan_ffi_rs_exposes_timer_shadow_advance_export`)
+that pins the export and fails the build if the ISR body regrows an
+`increment_tick_count` call.
+
 Gates: `./scripts/test_full.sh` green (tiers 0–3);
-`./scripts/test_rust.sh` green (1144 unit + 108 conformance tests, fmt,
+`./scripts/test_rust.sh` green (1145 unit + 108 conformance tests, fmt,
 clippy `-D warnings`); staged-module partition consistent
 (`PerCoreRescheduleEntry` allowlisted; `SecondaryEntry` / `PerCoreRunLoop`
 annotations updated); docs metrics re-synced (287 production files, 9,608

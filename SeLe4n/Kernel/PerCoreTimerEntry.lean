@@ -25,15 +25,22 @@ At SM5.D this entry was a `pure ()` placeholder; **SM5.I replaces it with the re
 driver**.  On each per-core timer interrupt the entry now:
 
 1. reads the live kernel `SystemState` and, **atomically** (one
-   `modifyGetKernelState`), runs the verified `Kernel.perCoreTimerTickStep` —
-   which decodes the `coreId` fail-closed and composes three verified pieces:
-   the boot-core-only shared-clock advance (`tickClockedState` — the
-   single-authority `machine.timer` tick the CBS/timeout due-checks read), the
-   `Kernel.timerTickOnCore` transition (SM5.D.4 CBS replenishment, SM5.D.5
-   budget-tick preemption), and the SM5.D.6 `scheduleDomainOnCore` domain
-   transition (in-domain decrement or boundary rotation + budget-aware
-   re-dispatch) — commits the new state, and recovers the cross-core SGIs;
-2. **fires** the recovered cross-core `.reschedule` SGIs via
+   `modifyGetKernelState`), runs the verified
+   `Kernel.perCoreTimerTickStepWithClockAdvance` — the run-loop step
+   (`perCoreTimerTickStep`: fail-closed `coreId` decode composing the
+   boot-core-only shared-clock advance `tickClockedState` — the
+   single-authority `machine.timer` tick the CBS/timeout due-checks read —
+   the `Kernel.timerTickOnCore` transition (SM5.D.4 CBS replenishment,
+   SM5.D.5 budget-tick preemption), and the SM5.D.6 `scheduleDomainOnCore`
+   domain transition) plus the clock-advance flag, definitionally the
+   committed state's `machine.timer` delta — commits the new state, and
+   recovers the cross-core SGIs paired with the flag;
+2. **advances the HAL's `TICK_COUNT` shadow** (`ffiTimerAdvanceTickCount`)
+   iff the flag is set — the commit-coupled shadow clock (PR #880
+   follow-up): the shadow moves exactly when the model clock moved, so
+   pre-readiness ticks, non-boot cores and fail-closed entries advance
+   neither, and a failed entry can no longer leave the shadow one ahead;
+3. **fires** the recovered cross-core `.reschedule` SGIs via
    `Concurrency.fireCrossCoreSgis` — the SM5.F dispatch that actually pokes the
    remote cores' GIC (after the state write is visible, per the SM1.F.8 ordering).
 
@@ -80,8 +87,10 @@ Staged via `SeLe4n/Platform/Staged.lean` (added to the staged-module allowlist p
 the WS-RC R12.B partition gate).
 
 This driver references the `ffiSendSgi` extern transitively (via
-`Concurrency.fireCrossCoreSgis`), and `@[export]` keeps the symbol live — so an
-executable that *linked* this module would demand `ffi_send_sgi` at link time.
+`Concurrency.fireCrossCoreSgis`) and the `ffiTimerAdvanceTickCount` extern
+directly (the commit-coupled shadow advance), and `@[export]` keeps the symbol
+live — so an executable that *linked* this module would demand `ffi_send_sgi`
+and `ffi_timer_advance_tick_count` at link time.
 The guarantee that no test executable hits that is **link-isolation by
 non-import**: no `lake exe` root imports this module.  `Main.lean` reaches only
 `SeLe4n` + `MainTraceHarness`; the test suites that exercise the per-core tick
@@ -100,27 +109,35 @@ namespace SeLe4n.Kernel
 C-callable seam (`@[export lean_per_core_timer_tick]`) the Rust per-core CNTP ISR
 (`timer::per_core_timer_tick_isr`) invokes on each per-core timer interrupt.
 
-Atomically runs the verified `perCoreTimerTickStep` against the live kernel state
-(committing `timerTickOnCore`'s result), then fires the recovered cross-core
+Atomically runs the verified `perCoreTimerTickStepWithClockAdvance` against the
+live kernel state (committing `timerTickOnCore`'s result), advances the HAL's
+`TICK_COUNT` shadow **iff the committed step advanced the model clock** (the
+flag is definitionally the `machine.timer` delta —
+`perCoreTimerTickStepWithClockAdvance_flag_def` — so the shadow cannot drift
+from the model on any arm, failed entries included; PR #880 follow-up closing
+the invocation-coupled residual), then fires the recovered cross-core
 `.reschedule` SGIs.  See the module docstring. -/
 @[export lean_per_core_timer_tick]
 def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit := do
-  let sgis ← Platform.FFI.modifyGetKernelState (fun st =>
-    let result := perCoreTimerTickStep st coreId
-    (result.2, result.1))
-  Concurrency.fireCrossCoreSgis sgis
+  let r ← Platform.FFI.modifyGetKernelState (fun st =>
+    perCoreTimerTickStepWithClockAdvance st coreId)
+  if r.2 then Platform.FFI.ffiTimerAdvanceTickCount
+  Concurrency.fireCrossCoreSgis r.1
 
 /-- **WS-SM SM5.I** structural marker: `perCoreTimerTickEntry` unfolds to the
-verified-step-then-fire-SGIs driver.  Pins the entry's body shape (atomic
-`modifyGetKernelState` over `perCoreTimerTickStep`, then `fireCrossCoreSgis`) so a
-refactor that drops the SGI firing or the state commit breaks this marker at
-elaboration; combined with the `@[export]` attribute (which the Rust
-`lean_per_core_timer_tick` extern resolves against) and the `build.rs` Check-5
-scanner, the seam cannot regress silently. -/
+verified-step-then-shadow-advance-then-fire-SGIs driver.  Pins the entry's body
+shape (atomic `modifyGetKernelState` over `perCoreTimerTickStepWithClockAdvance`,
+the commit-coupled `ffiTimerAdvanceTickCount` on the clock-advance flag, then
+`fireCrossCoreSgis`) so a refactor that drops the SGI firing, the state commit,
+or the shadow advance breaks this marker at elaboration; combined with the
+`@[export]` attribute (which the Rust `lean_per_core_timer_tick` extern resolves
+against) and the `build.rs` Check-5 scanner, the seam cannot regress silently. -/
 theorem perCoreTimerTickEntry_def (coreId : UInt64) :
     perCoreTimerTickEntry coreId =
-      (Platform.FFI.modifyGetKernelState (fun st =>
-        let result := perCoreTimerTickStep st coreId
-        (result.2, result.1)) >>= Concurrency.fireCrossCoreSgis) := rfl
+      (do
+        let r ← Platform.FFI.modifyGetKernelState (fun st =>
+          perCoreTimerTickStepWithClockAdvance st coreId)
+        if r.2 then Platform.FFI.ffiTimerAdvanceTickCount
+        Concurrency.fireCrossCoreSgis r.1) := rfl
 
 end SeLe4n.Kernel
