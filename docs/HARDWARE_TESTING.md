@@ -526,7 +526,12 @@ checklist before tagging:
   - [ ] `cargo clippy --workspace -- -D warnings` (0 warnings)
   - [ ] `scripts/check_version_sync.sh` PASS
 
-- [ ] **Hardware (recommended, RPi 5 board or QEMU virt):**
+- [ ] **Hardware (RPi 5 board or QEMU virt) — required to tag v1.0.0,
+      recommended for any other release:**
+  - [ ] `SELE4N_REQUIRE_GATES=1 ./scripts/test_nightly.sh` completes with
+        every Tier-4 acceptance gate **executed**, not skipped. Run it after
+        SM10.E.D1 produces the bootable image; before that image exists the
+        gates report NOT RUN and this box cannot be ticked.
   - [ ] §4.1 — TLB+Cache coherency (AN9-A)
   - [ ] §4.2 — TLBI bracket audit (AN9-B)
   - [ ] §4.3 — `suspendThread` atomicity (AN9-D)
@@ -541,9 +546,16 @@ checklist before tagging:
   - [ ] `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md` rows marked RESOLVED
   - [ ] `CLAUDE.md` Active workstream context refreshed
 
-After the static gate passes for the v1.0.0 commit, the project is
-green to ship.  The hardware steps in §4 are the high-confidence
-post-release validation that completes the AN9 portfolio.
+The static gate is necessary and not sufficient. It compiles the kernel
+and checks the proofs; it executes nothing on a core. A v1.0.0 that
+claims verified SMP behaviour may not be tagged on static evidence
+alone, so the strict Tier-4 run above is a release blocker rather than
+post-release validation — a gate that never ran certifies nothing, and
+§5 gives it the exit status that says so.
+
+For releases that do not carry the v1.0.0 capability claims, the static
+gate is the tagging gate and the §4 steps remain the high-confidence
+follow-up that completes the AN9 portfolio.
 
 ---
 

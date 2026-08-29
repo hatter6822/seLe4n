@@ -1,3 +1,44 @@
+## v0.34.11 — the cross-check reported PASS having verified the page size; Codex review round 6
+
+Two findings, both genuine, both swept as a class rather than at the cited line.
+
+**A gate that announced a skip and then passed.** `test_hw_crosscheck.sh`
+logged `SKIP: devmem2/devmem not available` and fell through to
+`finalize_report` with `SKIP_COUNT` still at zero — so it exited 0, and
+`test_hw_full.sh` scored it PASS with its MMIO checks never run. The cited
+line was one of seven: checks 2, 6 and 7 printed `PENDING` and fell through
+the same way, and checks 3 and 8 emitted *nothing at all* when their evidence
+source was missing. On an ARM64 host with no device tree and no devmem, the
+constant cross-check verified the page size — a `getconf` with no bearing on
+BCM2712 — and reported success. Every such path now calls `record_skip`, so
+the script exits `SELE4N_SKIP_EXIT` and names what did not run. Verified under
+a faked `uname -m`: exit 77, five gates named, no "All checks passed".
+
+The seven constants that need a bare-metal boot are recorded as one skip
+rather than seven log lines, keeping the count a signal.
+
+**The witness could not have caught it.** `test_gate_skip_accounting.sh`
+detected only an explicit `exit 0` after a skip message, which a fall-through
+does not have. It now also requires the converse — every skip announcement is
+either emitted through `record_skip` or followed by an exit carrying the skip
+status — scoped by indentation so a skip branch containing an `if` block is
+not a false positive. Confirmed by planting the original defect: the witness
+fails on it and passes once fixed.
+
+**A release checklist that contradicted itself.** §5 of
+`docs/HARDWARE_TESTING.md` says the v1.0.0 validation must run under
+`SELE4N_REQUIRE_GATES=1` because a release may not certify phases whose gates
+never ran; §6 immediately below labelled the hardware steps "recommended" and
+declared the project "green to ship" once the static gate passed. A maintainer
+following the checklist could tag v1.0.0 having executed no SMP acceptance
+gate. §6 now requires the strict Tier-4 run to tag v1.0.0 and states plainly
+that the static gate is necessary and not sufficient — it compiles the kernel
+and checks the proofs, and executes nothing on a core. Per the
+implement-the-improvement rule the weaker half was raised to the stronger, not
+the reverse.
+
+Refs: docs/HARDWARE_TESTING.md §5, §6
+
 ## v0.34.10 — a plan that told you to prove a thing after making it live; Codex review round 5
 
 Documentation-only. Seven findings from the fifth review round on

@@ -118,6 +118,43 @@ for f in scripts/test_qemu*.sh scripts/test_hw_*.sh; do
 done
 witness "no gate script exits 0 from a skip branch" "0" "${stray}"
 
+#    The complement, and the gap that hid a live defect: a skip that neither
+#    exits nor records.  `test_hw_crosscheck.sh` announced "SKIP: devmem2 not
+#    available", fell through to `finalize_report` with SKIP_COUNT at zero, and
+#    was reported PASS by `test_hw_full.sh` — coverage the check above cannot
+#    see, because there is no `exit 0` to find.  So require the converse:
+#    every skip announcement is either emitted through `record_skip` (which
+#    increments the counter) or followed by an exit carrying the skip status.
+#    A bare `log_section`/`echo` skip that reaches the end of its branch is
+#    the defect, whatever it prints.
+fallthrough=0
+for f in scripts/test_qemu*.sh scripts/test_hw_*.sh; do
+  [[ -e "${f}" ]] || continue
+  if awk '
+    function indent(s,   n) { n = match(s, /[^ \t]/); return (n ? n - 1 : -1) }
+    /record_skip/       { armed = 0; next }   # the accounted form needs no exit
+    /^[[:space:]]*#/    { next }              # a comment about the idiom is not the idiom
+    # An announcement arms the scan and remembers its own nesting level.
+    !armed && (/\[SKIP\]/ || /log_section[[:space:]]+"[A-Z]+"[[:space:]]+"SKIP/) {
+      armed = 1; at = NR; lvl = indent($0); next
+    }
+    armed && /exit[[:space:]]/ { armed = 0; next }   # left via exit: accounted
+    armed && /^[[:space:]]*$/  { next }
+    # Dedenting past the announcement means its branch closed with neither a
+    # record_skip nor an exit — the announcement was cosmetic and the script
+    # falls through to finalize_report with SKIP_COUNT still at zero.
+    armed && indent($0) < lvl {
+      print "    line " at ": skip announced but neither recorded nor exited"
+      bad = 1; armed = 0
+    }
+    END { exit (bad ? 0 : 1) }
+  ' "${f}"; then
+    echo "  FAIL: ${f} announces a skip it does not record (use record_skip)"
+    fallthrough=$((fallthrough + 1))
+  fi
+done
+witness "no gate script announces a skip without recording it" "0" "${fallthrough}"
+
 # 6. The skip status must survive the process boundary.  Tier scripts nest,
 #    and a `finalize_report` that returned 0 on skips had each parent's
 #    `run_check` record PASS — so the nightly still printed "All checks

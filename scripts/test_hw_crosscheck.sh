@@ -19,7 +19,12 @@
 # Usage:
 #   sudo ./scripts/test_hw_crosscheck.sh
 #
-# The script will gracefully skip checks that require unavailable tools.
+# A check whose evidence source is unavailable is *recorded* as NOT RUN via
+# `record_skip`, never merely printed: the script then exits SELE4N_SKIP_EXIT
+# (77) rather than 0, so a caller cannot read "no failures" as "the BCM2712
+# constants were cross-checked".  Printing PENDING and falling through to
+# `finalize_report` was how this gate reported PASS on a host with no devmem
+# and no device tree, having verified only the page size.
 
 set -euo pipefail
 
@@ -61,7 +66,7 @@ if [[ -n "${CNTFRQ}" ]]; then
         record_failure "TRACE" "Timer frequency = ${CNTFRQ} Hz, expected 54000000"
     fi
 else
-    log_section "TRACE" "PENDING: Timer frequency (CNTFRQ_EL0) — requires kernel driver or bare-metal read"
+    record_skip "TRACE" "timer frequency (CNTFRQ_EL0, Board.lean 54000000) — no device-tree clock-frequency node to read"
 fi
 
 # CPU identification
@@ -70,15 +75,18 @@ if [[ -r /proc/cpuinfo ]]; then
 fi
 
 # Check 3: Physical address width
+PA_BITS=""
 if [[ -r /proc/cpuinfo ]]; then
     PA_BITS=$(grep -o 'address sizes.*physical' /proc/cpuinfo | head -1 | grep -o '[0-9]*' | head -1 || true)
-    if [[ -n "${PA_BITS}" ]]; then
-        if [[ "${PA_BITS}" -ge 44 ]]; then
-            log_section "TRACE" "PASS: Physical address width = ${PA_BITS} bits (Board.lean: 44)"
-        else
-            record_failure "TRACE" "Physical address width = ${PA_BITS} bits, expected >= 44"
-        fi
+fi
+if [[ -n "${PA_BITS}" ]]; then
+    if [[ "${PA_BITS}" -ge 44 ]]; then
+        log_section "TRACE" "PASS: Physical address width = ${PA_BITS} bits (Board.lean: 44)"
+    else
+        record_failure "TRACE" "Physical address width = ${PA_BITS} bits, expected >= 44"
     fi
+else
+    record_skip "TRACE" "physical address width (Board.lean 44) — /proc/cpuinfo unreadable or carries no address-sizes line"
 fi
 
 # Check 4: Page size
@@ -104,7 +112,7 @@ log_section "HYGIENE" "Checking device tree constants..."
 if [[ -d /proc/device-tree/interrupt-controller@ff841000 ]]; then
     log_section "TRACE" "PASS: GIC distributor node found at ff841000 (Board.lean: 0xFF841000)"
 else
-    log_section "TRACE" "PENDING: GIC distributor base — device tree node not found"
+    record_skip "TRACE" "GIC distributor base (Board.lean 0xFF841000) — device-tree node absent"
 fi
 
 # Check 7: UART0 base from device tree
@@ -112,7 +120,7 @@ if [[ -d /proc/device-tree/soc/serial@fe201000 ]] || \
    [[ -d /proc/device-tree/axi/serial@fe201000 ]]; then
     log_section "TRACE" "PASS: UART0 node found at fe201000 (Board.lean: 0xFE201000)"
 else
-    log_section "TRACE" "PENDING: UART0 base — device tree node not found"
+    record_skip "TRACE" "UART0 base (Board.lean 0xFE201000) — device-tree node absent"
 fi
 
 # Check 8: Virtual address width (48-bit, from kernel config)
@@ -124,7 +132,9 @@ fi
 if [[ -n "${VA_BITS}" ]] && [[ "${VA_BITS}" -ge 48 ]]; then
     log_section "TRACE" "PASS: Virtual address width >= 48 bits (Board.lean: 48)"
 elif [[ -n "${VA_BITS}" ]]; then
-    log_section "TRACE" "PENDING: Virtual address width = ${VA_BITS} bits (Board.lean: 48)"
+    record_failure "TRACE" "Virtual address width = ${VA_BITS} bits, expected >= 48"
+else
+    record_skip "TRACE" "virtual address width (Board.lean 48) — /proc/kallsyms unreadable, so no kernel address to measure"
 fi
 
 # ── MMIO register checks (require devmem2 or busybox devmem) ────────────
@@ -139,18 +149,18 @@ if command -v devmem2 &>/dev/null || command -v devmem &>/dev/null; then
     log_section "TRACE" "INFO: MMIO register validation available with ${DEVMEM_CMD}"
     log_section "TRACE" "INFO: Run with root for GICD_IIDR read at 0xFF841008"
 else
-    log_section "META" "SKIP: devmem2/devmem not available — MMIO register checks skipped"
-    log_section "META" "       Install: apt install devmem2  (Debian/Ubuntu)"
+    record_skip "META" "MMIO register checks (GICD_IIDR at 0xFF841008) — neither devmem2 nor devmem on PATH; install devmem2"
 fi
 
 # ── Pending constants (require bare-metal or kernel module) ──────────────
-log_section "META" "PENDING constants (require bare-metal seLe4n kernel boot):"
+log_section "META" "Constants requiring a bare-metal seLe4n boot (SM10.E.D1 supplies the image):"
 log_section "META" "  - peripheralBaseLow (0xFE000000) — verifiable via /proc/iomem"
 log_section "META" "  - peripheralBaseHigh (0x1000000000) — requires 64-bit MMIO probe"
 log_section "META" "  - gicCpuInterfaceBase (0xFF842000) — requires devmem read"
 log_section "META" "  - gicSpiCount (192) — requires GIC GICD_TYPER read"
 log_section "META" "  - timerPpiId (30) / virtualTimerPpiId (27) — requires IRQ test"
 log_section "META" "  - maxASID (65536) — requires ID_AA64MMFR0_EL1 read"
+record_skip "META" "7 Board.lean constants listed above — no bare-metal kernel boot available (SM10.E.D1)"
 
 # ── Summary ──────────────────────────────────────────────────────────────
 log_section "META" "Reference: docs/hardware_validation/rpi5_cross_check.md"
