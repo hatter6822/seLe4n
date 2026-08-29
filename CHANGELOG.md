@@ -1,3 +1,21 @@
+## v0.34.12 — CI fix: the skip messages carried a workstream ID into a code file
+
+`v0.34.11` put `SM10.E.D1` in two strings in `scripts/test_hw_crosscheck.sh` —
+one log line and one `record_skip` message. A shell script is code, so the
+internal-first naming rule applies and `check_identifier_naming.py` (Tier 0)
+counted the occurrences 0 → 2 and failed the gate.
+
+Both now say what is actually missing — "no kernel image is built yet", "no
+bootable kernel image exists to read them from" — which is the better text
+regardless of the gate: a reader learns what blocks the check rather than a
+phase code that ages out when the phase closes.
+
+The gate reads the **git index**, not the working tree. `test_fast.sh` had been
+run before `git add`, so it scanned the pre-change index and passed on content
+that no longer existed. Staging first is what makes the local run predictive.
+
+Refs: CLAUDE.md "Internal-first naming"
+
 ## v0.34.11 — the cross-check reported PASS having verified the page size; Codex review round 6
 
 Two findings, both genuine, both swept as a class rather than at the cited line.

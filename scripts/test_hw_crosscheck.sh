@@ -153,14 +153,14 @@ else
 fi
 
 # ── Pending constants (require bare-metal or kernel module) ──────────────
-log_section "META" "Constants requiring a bare-metal seLe4n boot (SM10.E.D1 supplies the image):"
+log_section "META" "Constants requiring a bare-metal seLe4n boot (no kernel image is built yet):"
 log_section "META" "  - peripheralBaseLow (0xFE000000) — verifiable via /proc/iomem"
 log_section "META" "  - peripheralBaseHigh (0x1000000000) — requires 64-bit MMIO probe"
 log_section "META" "  - gicCpuInterfaceBase (0xFF842000) — requires devmem read"
 log_section "META" "  - gicSpiCount (192) — requires GIC GICD_TYPER read"
 log_section "META" "  - timerPpiId (30) / virtualTimerPpiId (27) — requires IRQ test"
 log_section "META" "  - maxASID (65536) — requires ID_AA64MMFR0_EL1 read"
-record_skip "META" "7 Board.lean constants listed above — no bare-metal kernel boot available (SM10.E.D1)"
+record_skip "META" "7 Board.lean constants listed above — no bootable kernel image exists to read them from"
 
 # ── Summary ──────────────────────────────────────────────────────────────
 log_section "META" "Reference: docs/hardware_validation/rpi5_cross_check.md"
