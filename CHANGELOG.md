@@ -1,3 +1,63 @@
+## v0.34.9 — the audit script broke under its own skip status; Codex review round 4
+
+Eight findings on `906e6f9`, all verified and all genuine.  Four are residue
+from the previous cut's own fixes: I corrected the line the reviewer cited and
+did not sweep for the same defect elsewhere.  This cut sweeps each class.
+
+**A second caller of the propagating skip status, and it breaks today.**
+`scripts/audit_testing_framework.sh` runs under `set -euo pipefail` and invokes
+`test_nightly.sh` and `test_tier4_nightly_candidates.sh` bare.  Both now exit
+`SELE4N_SKIP_EXIT`, so on any checkout without a kernel image the script aborts
+four lines before the deliberately-broken-fixture check it exists to perform —
+the canonical self-test of the testing framework, silently not running.  It
+gains a `run_tier` helper that reports NOT RUN and continues while any other
+non-zero status still aborts.  A repo-wide sweep confirms it was the last
+unhandled caller: the other matches are `rg` greps of script text and a
+checklist string in a PR-body template.
+
+**`cargo check` survived in two more gates.**  Last cut moved RR1.5, RR1.7 and
+Appendix A to `cargo build`; §6.2's verification statement and the §8
+acceptance checkbox still said `check`, which can close RR1 without ever code-
+generating the 60 inline-assembly sites the phase exists to cover.  Both now
+say `build`.
+
+**The queued lock was still deployed before it was refined.**  RR6.11 supplied
+the missing model last cut but sat seven steps after RR6.4's deployment, so
+several versions would ship a core concurrency primitive with no refinement to
+the spec it is claimed to satisfy.  The model and its corollary now precede the
+switch: RR6.4, RR6.5, then RR6.6.
+
+**The donation blocker was modelled but never wired.**  RR2 added
+`applyCallDonationOnCore` and proved it while the live
+`endpointCallCrossCoreDispatch` kept calling `applyCallDonation`, so the phase
+could satisfy every proof task with the reachable `.call` path still leaving the
+replenish queue unmigrated.  Two sub-tasks now replace the live calls on both
+paths.  Two more extend `lockSet_endpointCall` / `lockSet_endpointReply` with
+`migrateSchedContextReplenishmentLockSet`: the migration writes both cores'
+replenish queues, and doing that inside the existing `withLockSet` bracket
+without widening the declared footprint would invalidate the SM3
+serializability argument — which the source register's own remediation already
+required.
+
+**Fault constructors carried no payload.**  RR4.1 gave only `vmFault` an
+address and status; `capFault`, `unknownSyscall` and `userException` were
+nullary, so the wire layout could not carry the faulting capability address and
+receive phase, the syscall number, or the exception number and code, and a
+handler could not diagnose or safely restart those cases.  Every constructor now
+carries its seL4-parity payload.
+
+Two register corrections, both mine from the renumbering: the deferred RwLock
+residue was routed to RR5, the boot-path phase that owns none of that work and
+is closed before RR6 runs; and the concluding ownership sentence handed both the
+§6 mediums and the §7 lows to SM10.A, contradicting the §2.1 table two
+paragraphs above — RR7 owns the mediums and must close or explicitly defer each,
+so a documentation sweep must not absorb them.
+
+Total 139 → 143, verified sequential per phase with no forward dependencies.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md
+Refs: docs/planning/UNFINISHED_SMP_WORK.md
+
 ## v0.34.8 — the nightly would have gone red forever; Codex review round 3
 
 Nine findings on `dc5dc55`, all verified against the tree and all genuine.  One

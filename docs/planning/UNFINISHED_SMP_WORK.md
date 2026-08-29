@@ -45,9 +45,10 @@ Two of those ten warrant immediate qualification:
  shipping a verified microkernel whose core concurrency primitive carries a
  known-deferred completeness story understates what "verified" means on the
  one component every other subsystem's serialisability argument rests on.
- Its residue is now owned by WS-RR phase RR5
- ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)), and the
- plan's own header records the re-scoping.
+ Its residue is now owned by WS-RR phase RR6
+ ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)) — the lock
+ phase, not the boot-path phase that precedes it — and the plan's own header
+ records the re-scoping.
 - **`SMP_RELEASE_CLOSURE_PLAN.md` is "incomplete" by construction** — SM10
  has not started. It is marked incomplete here because its *own scope
  statement* is wrong (§2.2), not because its work is undone.
@@ -1215,7 +1216,7 @@ The sweep found the proof surface, capability gating, ABI design and Rust unsafe
 
 > **This sequence is now planned in full.** Every item below, plus the
 > security findings of §4 and the medium sweep of §6, is decomposed into
-> 139 PR-sized sub-tasks across nine phases in
+> 143 PR-sized sub-tasks across nine phases in
 > [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) (WS-RR).
 > The §7 low-severity table is deliberately *not* in that plan — it is
 > handed to SM10.A, whose assigned job is the documentation sweep.
@@ -1252,9 +1253,12 @@ boot seam flips.
  SM0–SM9 acceptance evidence `SMP_RELEASE_CLOSURE_PLAN.md` §2 requires.
  Until then that dependency is unmet, not merely unverified.
 
-The §6 and §7 tables are the natural work-list for SM10.A's documentation
-sweep; the §8 table records what was checked and cleared, so a later
-reader does not re-open settled ground without new evidence.
+The **§7** table is the natural work-list for SM10.A's documentation sweep.
+The §6 mediums are **not** SM10.A's: WS-RR phase RR7 owns them and must close
+or explicitly defer each one, so routing them into a documentation sweep would
+let substantive remediations lapse while RR7 still read as complete. The §8
+table records what was checked and cleared, so a later reader does not re-open
+settled ground without new evidence.
 
 ## 11. Cross-references
 

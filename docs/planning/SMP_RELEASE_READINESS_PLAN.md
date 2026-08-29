@@ -6,7 +6,7 @@
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 139 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 143 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -119,7 +119,7 @@ dependency list above.
 |-------|------------------|------|-----|
 | RR0 | Registration and plan correction — nothing further is lost | 11 | S–M |
 | RR1 | aarch64 compile coverage, plus the Rust HAL gate no other phase owns | 11 | M |
-| RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration | 14 | M–L |
+| RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live | 18 | M–L |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 18 | L–XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
 | RR5 | Boot-path fail-open closure | 14 | M–L |
@@ -196,17 +196,21 @@ payoff theorems.
 | RR2.1 | Add `applyCallDonationOnCore` threading donor and donee home cores | `SeLe4n/Kernel/IPC/Operations/Donation.lean` | M |
 | RR2.2 | Call `migrateSchedContextReplenishment` from it (donor home → donee home), mirroring the cancellation path that already does this | (same) | M |
 | RR2.3 | Prove the call path preserves the SM5.H affinity invariant | `SeLe4n/Kernel/SchedContext/` | M |
-| RR2.4 | Add the mirror migration inside `applyReplyDonationOnCore` (replier home → original-owner home) | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | M |
-| RR2.5 | Prove the reply path preserves the affinity invariant | (same) | M |
-| RR2.6 | Bridge theorem: boot-core instantiation of both migrations reduces to the single-core forms | (2 files) | S |
-| RR2.7 | `endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull` — use the staged `endpointSendDualOnCore_bootCore_{block,rendezvous}_eq_single` rewrites | `SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean` | L |
-| RR2.8 | Per-core form `…_preserves_ipcInvariantFull_perCore` | (same) | M |
-| RR2.9 | `clearWokenReceiverStash` preservation bundle | `SeLe4n/Kernel/IPC/` | M |
-| RR2.10 | `endpointCallCrossCoreDispatch` preservation bundle | `SeLe4n/Kernel/IPC/CrossCore/` | M |
-| RR2.11 | `endpointReplyCrossCoreDispatch` preservation bundle | `SeLe4n/Kernel/IPC/CrossCore/` | M |
-| RR2.12 | Extend the cancellation `ipcInvariant` closure to the operation that actually runs on `.tcbSuspend` — today's claim excludes it | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | L |
-| RR2.13 | Discharge the `hTeardownProj` hypothesis whose closure form returns its own premise | `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` | L |
-| RR2.14 | Tests: donation-migration and dispatch-arm coverage; extend the cross-core IPC suite | `tests/SmpIpcSuite.lean` | M |
+| RR2.4 | Extend `lockSet_endpointCall` with `migrateSchedContextReplenishmentLockSet` (both home cores' replenish queues) and re-prove its coverage. Without this the migration writes scheduler queues outside the declared `withLockSet` footprint, which invalidates the SM3 serializability argument | `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` | L |
+| RR2.5 | Replace the live `applyCallDonation` call in `endpointCallCrossCoreDispatch` with `applyCallDonationOnCore`, threading the resolved home cores. Adding and proving the helper leaves the reachable `.call` path still unmigrated — this is the sub-task that closes the blocker rather than modelling it | `SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean` | M |
+| RR2.6 | Add the mirror migration inside `applyReplyDonationOnCore` (replier home → original-owner home) | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | M |
+| RR2.7 | Prove the reply path preserves the affinity invariant | (same) | M |
+| RR2.8 | Extend `lockSet_endpointReply` with the same migration footprint and re-prove coverage | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` | L |
+| RR2.9 | Replace the live `applyReplyDonation` call in `endpointReplyCrossCoreDispatch` with `applyReplyDonationOnCore` | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | M |
+| RR2.10 | Bridge theorem: boot-core instantiation of both migrations reduces to the single-core forms | (2 files) | S |
+| RR2.11 | `endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull` — use the staged `endpointSendDualOnCore_bootCore_{block,rendezvous}_eq_single` rewrites | `SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean` | L |
+| RR2.12 | Per-core form `…_preserves_ipcInvariantFull_perCore` | (same) | M |
+| RR2.13 | `clearWokenReceiverStash` preservation bundle | `SeLe4n/Kernel/IPC/` | M |
+| RR2.14 | `endpointCallCrossCoreDispatch` preservation bundle | `SeLe4n/Kernel/IPC/CrossCore/` | M |
+| RR2.15 | `endpointReplyCrossCoreDispatch` preservation bundle | `SeLe4n/Kernel/IPC/CrossCore/` | M |
+| RR2.16 | Extend the cancellation `ipcInvariant` closure to the operation that actually runs on `.tcbSuspend` — today's claim excludes it | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | L |
+| RR2.17 | Discharge the `hTeardownProj` hypothesis whose closure form returns its own premise | `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` | L |
+| RR2.18 | Tests: donation-migration and dispatch-arm coverage; extend the cross-core IPC suite | `tests/SmpIpcSuite.lean` | M |
 
 **Acceptance**: every arm reachable from `SeLe4n/Kernel/API.lean`'s SMP
 dispatch carries a `_preserves_ipcInvariantFull` theorem; the donation paths
@@ -289,7 +293,7 @@ Rust wiring that makes the Lean path the live one.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| RR4.1 | `Fault` inductive: `vmFault` (address, FSR, prefetch flag), `capFault`, `unknownSyscall`, `userException` | `SeLe4n/Kernel/Architecture/Fault.lean` (new) | M |
+| RR4.1 | `Fault` inductive, every constructor carrying the payload its message needs at seL4 parity: `vmFault` (address, FSR/status, prefetch flag), `capFault` (the faulting capability address and the receive-phase flag), `unknownSyscall` (the syscall number), `userException` (exception number and code). Nullary constructors would make the wire layout unable to carry what a handler needs to diagnose or restart the fault, and the round-trip theorem would then only preserve an already-impoverished value | `SeLe4n/Kernel/Architecture/Fault.lean` (new) | M |
 | RR4.2 | `DecidableEq` + `BEq` + congruence lemmas for `Fault` | (same) | S |
 | RR4.3 | Map `SynchronousExceptionClass` → `Fault`, replacing the `.error .vmFault` arms' classification role | (same) | S |
 | RR4.4 | Fault message layout: `Fault` → `MessageInfo` label + message registers, at seL4 parity | `SeLe4n/Kernel/Architecture/Fault.lean` | M |
@@ -384,15 +388,15 @@ would have caught that drives neither.
 | RR6.1 | Add non-blocking `try_acquire_read` / `try_acquire_write` to the real `RwLock`, removing the oracle's stated reason for modelling instead of driving | `rust/sele4n-hal/src/rw_lock.rs` | M |
 | RR6.2 | Rewrite the Tier-5 oracle to drive the real lock through those entry points | `rust/sele4n-hal/src/bin/rw_lock_oracle.rs` | L |
 | RR6.3 | Extend the oracle to the queued lock, so both implementations are covered | (same) | M |
-| RR6.4 | Point `STATIC_RW_LOCK_POOL` and the `ffi_rw_lock_*` entries at `QueuedRwLock`, so the deployed lock is the FIFO one the spec describes | `rust/sele4n-hal/src/lock_bridge.rs` | M |
-| RR6.5 | Update the FFI and information-flow docs that name the CAS-retry lock as deployed | `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` | S |
-| RR6.6 | Decide and record the fate of `rw_lock.rs`: retained for compatibility, or retired | (2 files) | S |
-| RR6.7 | `TicketLockConcrete` operational step function, mirroring the RwLock refinement's shape | `SeLe4n/Kernel/Concurrency/Locks/TicketLockRefinement.lean` | L |
-| RR6.8 | Trace correspondence (`blockBisim` / `ListBlockBisim` analogue) replacing the counter arithmetic in `rust_ticketLock_refines_lean` | (same) | L |
-| RR6.9 | Replace the tautological conjunct with a statement that can fail | (same) | M |
-| RR6.10 | D-4: prove `opCorresponds`-chain plus an explicit load-then-CAS trace-shape predicate implies `ListBlockBisim`, so the twelve discharge lemmas compose into the main theorem instead of it assuming its own conclusion | `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` | XL |
-| RR6.11 | Operational step model for `QueuedRwLock` plus its refinement to the Lean FIFO spec. `RwLockRefinement.lean` models the **CAS-retry** `rw_lock.rs`, and the `queued_*` theorems in `RwLock.lean` are about the abstract spec's waiter queue — neither is a bridge to the queued Rust algorithm RR6.4 deploys, so without this the next sub-task's corollary has nothing to compose | `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (new) | XL |
-| RR6.12 | Corollary against the deployed lock, closing the spec-to-implementation gap end to end | (same) | L |
+| RR6.4 | Operational step model for `QueuedRwLock` plus its refinement to the Lean FIFO spec. `RwLockRefinement.lean` models the **CAS-retry** `rw_lock.rs`, and the `queued_*` theorems in `RwLock.lean` are about the abstract spec's waiter queue — neither is a bridge to the queued Rust algorithm RR6.4 deploys, so without this the next sub-task's corollary has nothing to compose | `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (new) | XL |
+| RR6.5 | Corollary: `QueuedRwLock` refines the Lean FIFO spec end to end, closing the spec-to-implementation gap for the lock the next sub-task deploys — proved before the switch, so no version ships an unrefined core lock | (same) | L |
+| RR6.6 | Point `STATIC_RW_LOCK_POOL` and the `ffi_rw_lock_*` entries at `QueuedRwLock`, so the deployed lock is the FIFO one the spec describes | `rust/sele4n-hal/src/lock_bridge.rs` | M |
+| RR6.7 | Update the FFI and information-flow docs that name the CAS-retry lock as deployed | `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` | S |
+| RR6.8 | Decide and record the fate of `rw_lock.rs`: retained for compatibility, or retired | (2 files) | S |
+| RR6.9 | `TicketLockConcrete` operational step function, mirroring the RwLock refinement's shape | `SeLe4n/Kernel/Concurrency/Locks/TicketLockRefinement.lean` | L |
+| RR6.10 | Trace correspondence (`blockBisim` / `ListBlockBisim` analogue) replacing the counter arithmetic in `rust_ticketLock_refines_lean` | (same) | L |
+| RR6.11 | Replace the tautological conjunct with a statement that can fail | (same) | M |
+| RR6.12 | D-4: prove `opCorresponds`-chain plus an explicit load-then-CAS trace-shape predicate implies `ListBlockBisim`, so the twelve discharge lemmas compose into the main theorem instead of it assuming its own conclusion | `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` | XL |
 | RR6.13 | Add `loom` as a `cfg(loom)` dev-dependency with bounded exhaustive interleavings | `rust/sele4n-hal/Cargo.toml` | M |
 | RR6.14 | Add a nightly `miri` job for the queued lock | `.github/workflows/` | M |
 | RR6.15 | Raise the FIFO and stress iteration counts to the plan's stated thresholds | `rust/sele4n-hal/src/queued_rw_lock.rs` | S |
@@ -405,15 +409,17 @@ would have caught that drives neither.
 Tier-5 oracle drives real locks; neither refinement theorem assumes its own
 conclusion or contains a tautological conjunct; `loom` and `miri` gates run.
 
-**Note on the two XLs**: RR6.10 (the D-4 bisimulation) and RR6.11 (the queued
-lock's own operational model and refinement) are the phase's largest items and
-the likeliest to need splitting. Take the trace-shape predicate and the
-composition proof as separate PRs, landing the predicate first so the
-composition has something to consume. RR6.11 exists because RR6.4 changes which
-lock is deployed: `RwLockRefinement.lean` models the CAS-retry implementation,
-so once the pool points at `QueuedRwLock` the existing refinement no longer
-describes the deployed lock, and RR6.12's corollary would have no bridge to
-compose from.
+**Note on the two XLs**: RR6.4 (the queued lock's own operational model and
+refinement) and RR6.12 (the D-4 bisimulation for the CAS-retry lock) are the
+phase's largest items and the likeliest to need splitting. Take the trace-shape
+predicate and the composition proof as separate PRs, landing the predicate
+first so the composition has something to consume.
+
+RR6.4 and RR6.5 sit **before** RR6.6 deliberately. RR6.6 changes which lock the
+kernel deploys, and `RwLockRefinement.lean` models the CAS-retry implementation
+— so deploying first would leave several versions shipping a core concurrency
+primitive with no refinement to the spec it is claimed to satisfy. The model,
+then the corollary, then the switch.
 
 ### RR7 — Medium-severity sweep
 
@@ -489,7 +495,8 @@ the §6 table alone.
 ### 6.2 What each phase validates
 
 Tier 0..3 green after every sub-task, per the PR checklist. RR1 adds an
-aarch64 `cargo check` to CI. RR4 and RR6 add executable suites
+aarch64 `cargo build` to CI — a real code generation, not a type-check that
+stops before the backend. RR4 and RR6 add executable suites
 (`tests/FaultHandlingSuite.lean`, the Tier-5 oracle) with golden fixtures.
 
 ### 6.3 Gate discipline
@@ -505,9 +512,9 @@ PASS — the contract landed at `v0.34.2` and pinned by
 |------|------------|--------|------------|
 | RR4 fault IPC is larger than XL and slips the phase | HIGH | HIGH | Split at the sub-task boundaries §RR4 names; the RR4.9 no-handler suspend alone removes the livelock, so partial delivery is still safe |
 | RR3 de-threading blocks on an ordering cycle between invariant modules | MED | HIGH | RR3.2 addresses ordering before any bundle edit; the per-transition establishers already exist |
-| RR6.10 bisimulation does not close | MED | MED | Land the trace-shape predicate independently so the composition has something to consume; RR6 stays open and the release waits — deferring the deployed-lock corollary past v1.0.0 would ship the exact gap this phase exists to close |
+| RR6.12 bisimulation does not close | MED | MED | Land the trace-shape predicate independently so the composition has something to consume; RR6 stays open and the release waits — deferring the deployed-lock corollary past v1.0.0 would ship the exact gap this phase exists to close |
 | RR1 surfaces a large volume of aarch64 compile errors | MED | MED | Expected and desirable — it is cheaper here than at SM10.E; RR1.2 and RR1.3 are sized L for this reason |
-| Repointing the FFI pool at `QueuedRwLock` (RR6.4) regresses performance | LOW | MED | The Tier-5 oracle covers both implementations after RR6.3; keep `rw_lock.rs` until measurements land |
+| Repointing the FFI pool at `QueuedRwLock` (RR6.6) regresses performance | LOW | MED | The Tier-5 oracle covers both implementations after RR6.3; keep `rw_lock.rs` until measurements land |
 | Two phases edit the trap seam concurrently | MED | MED | §2.3 sequences RR4 and RR5 apart in the same files |
 | Medium findings are quietly dropped rather than deferred | MED | LOW | RR7's acceptance gate requires a registered deferral, not silence |
 
@@ -526,7 +533,8 @@ PASS — the contract landed at `v0.34.2` and pinned by
 - [ ] Every kernel seam consults the readiness gate.
 - [ ] The deployed RwLock is the one the Lean spec describes.
 - [ ] Neither lock refinement theorem assumes its own conclusion.
-- [ ] aarch64 `cargo check` runs in CI and passes.
+- [ ] aarch64 `cargo build` runs in CI and passes (a build, not a `check`:
+      `check` never reaches code generation, so it cannot cover the `asm!` sites).
 - [ ] Every medium finding is closed or has a registered deferral.
 - [ ] Tier 0..3 green at HEAD; Tier 4 honest about what did not run.
 - [ ] `UNFINISHED_SMP_WORK.md` updated with closing versions.
