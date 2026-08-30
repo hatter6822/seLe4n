@@ -52,12 +52,31 @@ EXEMPT_PREFIXES = ("docs/dev_history/",)
 # on the *claim* — a plan/workstream not tracking something — rather than on
 # any one sentence, since matching one sentence is what kept failing.
 UNTRACKED_RE = re.compile(
-    r"(?:no|not)\b[^.]{0,80}?"
-    r"(?:currently[- ]active|active)\b[^.]{0,80}?"
-    r"(?:plan|workstream)"
-    r"|(?:plan|workstream)[^.\n]{0,80}?(?:does not|doesn't|do not|don't)\s+track"
-    r"|(?:not|never)\s+tracked\s+(?:by|in)\s+(?:any|an?)\b[^.]{0,60}"
-    r"(?:plan|workstream|register)",
+    # The claim, in both orders it is written:
+    #
+    #   A. "no <modifiers> plan|workstream <noun> tracks it"
+    #        no currently-active plan file tracks it
+    #        no concrete plan file tracks it yet
+    #        No currently-active workstream plan tracks it
+    #   B. "not|never tracked in any <modifiers> plan|workstream"
+    #        not tracked in any currently-active workstream plan
+    #        is NOT tracked in any currently-active WS-AK plan file
+    #
+    # The modifier is free text and NOT part of the pattern: keying on
+    # `currently-active` made the gate miss `no concrete plan file tracks it`,
+    # the sixth phrasing this tree turned out to use.  What makes a deferral
+    # untracked is the *relationship* — a negation, a plan or workstream, and
+    # a tracking verb — so that is what is matched.
+    #
+    # The spans are short on purpose.  Text is flattened before matching, and
+    # code contains few periods, so a wide `[^.]` bound wanders across
+    # unrelated statements: a first attempt at this generalisation matched
+    # "runs no unwrap at all (… tracked debt, see the plan …)" in a docstring
+    # and "does not declare it tracked" in a Python f-string.  Binding the
+    # negation tightly to the noun it negates is what separates the claim from
+    # prose that merely contains the same words.
+    r"\bno\b\s+(?:[\w'-]+\s+){0,3}(?:plan|workstream)[^.]{0,40}?track"
+    r"|\b(?:not|never)\s+tracked\b[^.]{0,60}?(?:plan|workstream)",
     re.I,
 )
 

@@ -28,8 +28,8 @@ findings for the capability subsystem that were addressed in Phase AK8-K.
   extending `CdtEdgeKind` with a sender-rights field and updating the
   14 CDT-edge composition proofs. That refactor is larger than the
   Phase AK8 LOW-tier batch budgets for any single item and is recorded
-  here as a post-1.0 hardening candidate; no concrete plan file tracks
-  it yet.
+  here as a post-1.0 hardening candidate, registered in the *Registered
+  debt index* (table C.1) in `docs/WORKSTREAM_HISTORY.md`, row 32.
 - **C-L4 (`cleanupDonatedSchedContext` asymmetry):** handled inline by
   the AJ1-A + AH2-A/B cascade which aligned bound/donated cleanup
   error-propagation through `cleanupPreReceiveDonationChecked`.

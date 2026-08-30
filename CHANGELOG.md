@@ -1,3 +1,52 @@
+## v0.34.35 — match the claim, not the adjective; and one figure that did not add up
+
+Three findings on PR #882.  Two are fixed here; the third is real, conceded,
+and deliberately not chased — see the closing note.
+
+**A sixth phrasing, and the last one this pattern will need.**  C-L3 in
+`Capability/Operations.lean` says "no **concrete** plan file tracks it yet",
+and the detector required `currently-active|active`, so a known deferral sat
+outside the register while Tier 0 reported PASS — which also made the
+register's published count wrong.
+
+The pattern had been enumerating the *words* it expected rather than the
+*claim* being made.  It now matches the relationship — a negation, a plan or
+workstream, and a tracking verb — with the modifier between them free text.
+Both orders are covered: "no ⟨anything⟩ plan file tracks it" and "not tracked
+in any ⟨anything⟩ workstream plan".
+
+Generalising it wrongly first is what showed where the bound belongs.  A wide
+`[^.]{0,100}` span between negation and noun over-matched immediately, because
+text is flattened before matching and *code contains few periods*: it flagged
+"runs no unwrap at all (… tracked debt, see the plan …)" in a docstring and
+"does not declare it tracked" in a Python f-string.  Binding the negation
+tightly to the noun it negates — at most three words — separates the claim
+from prose that merely contains the same vocabulary.  Both false positives
+are gone and all sixteen witnesses still hold.
+
+C-L3 is now **row 32**: a sender-rights field on `CdtEdgeKind`, so a
+transferred capability's CDT edge records the rights the sender held.  Its
+comment cites the register.
+
+**The canonical phase table did not sum to its own total.**  `WORKSTREAM_HISTORY.md`
+still carried RR7 at **31** after RR7.32 was added, so the table's rows summed
+to 154 against the 155 published two lines above it — and the summary omitted
+the queue-ownership task entirely.  Now 32, and the column sums to 155:
+`11+11+19+17+27+14+19+32+5`.
+
+**Not fixed: Lean's escaped-identifier syntax** (`«odd Theorems»`).  The
+finding is correct — such an inventory would be invisible to discovery.  No
+inventory in this tree uses the syntax, no published figure is wrong because
+of it, and this is the sixth consecutive round in which the only remaining
+findings are robustness gaps in the two gate scripts this workstream added.
+Nine rounds and twelve commits on a registration cut is past the point where
+further hardening of the scanners serves the change; the item is recorded here
+as follow-up rather than chased, and the decision to take it now or later
+belongs to the reviewer.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
 ## v0.34.34 — a gate that claimed more than it checked
 
 Five findings on PR #882, all verified, all real: two stale figures this

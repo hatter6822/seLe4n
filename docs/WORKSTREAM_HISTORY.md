@@ -7129,7 +7129,7 @@ code view — while the register itself did not hold together:
 - the file four separate authorities named as the register,
   `docs/audits/AUDIT_v0.30.11_DEFERRED.md`, **was never created**, so an entire
   class of deferrals was registered nowhere;
-- 31 in-source deferrals across **19** production files stated **in their own
+- 32 in-source deferrals across **19** production files stated **in their own
   words** that "no currently-active plan file tracks it" (the pre-SM10 audit
   reported 23 deferrals across 17 files by matching one phrasing; §C.1 below is
   the enumerated set, measured over every phrasing the tree uses, and
@@ -7231,10 +7231,10 @@ constrains what v1.0.0 may claim, and RR8.4's hand-off check reads this table.
 | The SM8 class-C follow-on: the CC-1 capacity figure is stated in two places rather than single-sourced | Cosmetic duplication of a bound both sites agree on | post-v1.0.0 |
 | ARM CCA + MPAM hardware partition isolation | Targets a successor SoC; not RPi5 | [`docs/planning/HARDWARE_PARTITION_ISOLATION_PLAN.md`](planning/HARDWARE_PARTITION_ISOLATION_PLAN.md), unscheduled |
 | **R-ABI-L6** — cross-crate duplication of `MAX_METHOD_COUNT`, `MAX_PRIORITY`, `MAX_DOMAIN` and `MAX_SERVICE_MESSAGE_SIZE` between `sele4n-abi` (limits) and `sele4n-types` (identifiers + error enums) | Duplication, not divergence — the values agree and the ABI conformance tests compare them; the risk is that a future edit changes one copy | post-v1.0.0 hardening.  Recorded in [`docs/AUDIT_NOTES.md`](AUDIT_NOTES.md) §R-ABI-L6, which declared itself untracked and is the one v0.29.0 R-ABI item still open — L3, L4, L5, L7 and L8 record settled decisions, not deferrals.  Found during the RR0 review round (v0.34.31), not by the pre-SM10 audit |
-| The 31 in-source post-1.0 hardening candidates enumerated below | Each is a strengthening of a surface that is already correct; none is a soundness gap | post-v1.0.0 hardening, listed individually so none ages out with its comment |
+| The 32 in-source post-1.0 hardening candidates enumerated below | Each is a strengthening of a surface that is already correct; none is a soundness gap | post-v1.0.0 hardening, listed individually so none ages out with its comment |
 | `crossSubsystemFieldSets` lists 11 field-sets while `crossSubsystemInvariant` has **12** conjuncts: `untypedRegionsDisjoint` was appended without a matching `_fields` entry, so the pairwise disjointness analysis and every frame lemma derived from it cover 11 of the 12 | Incompleteness, not unsoundness — the uncovered predicate simply gets no frame lemma, so proofs needing it establish it directly; nothing false is proved | post-v1.0.0; closing it means adding `untypedRegionsDisjoint_fields` and redoing the analysis over C(12,2) = 66 pairs.  Found during the RR0 review round (v0.34.27), not by the pre-SM10 audit |
 
-#### C.1 — The 31 in-source post-1.0 hardening candidates
+#### C.1 — The 32 in-source post-1.0 hardening candidates
 
 Each of these stated in its own docstring that "no currently-active plan file
 tracks it".  That sentence made the deferral self-describing and unfindable at
@@ -7276,6 +7276,7 @@ will drift; the identifier beside each is stable.
 | 29 | `SeLe4n/Kernel/RobinHood/Bridge.lean` (DS-L5) | Restructuring the 400K–800K-heartbeat `Lookup.lean` / `Preservation.lean` proofs into smaller lemma units |
 | 30 | `SeLe4n/Kernel/RobinHood/Bridge.lean` (DS-M04) | Entry-wise correctness proof yielding `LawfulBEq (RHTable α β)`; consumers must supply `[LawfulBEq β]` at the call site until it exists |
 | 31 | `SeLe4n/Kernel/Capability/Operations.lean` (`revokeCdtTransactionalTraversal`) | The monotonicity lemma witnessing that the fold never sets `firstFailure` to `some`; the completion test is what keeps the defensive branch honest meanwhile |
+| 32 | `SeLe4n/Kernel/Capability/Operations.lean` (C-L3, `ipcTransferSingleCap`) | A sender-rights field on `CdtEdgeKind`, so a transferred capability's CDT edge records the rights the sender held; closing it moves the 14 CDT-edge composition proofs |
 
 **None is a soundness gap.**  Every one strengthens a surface that is already
 correct — a tautological witness replaced by a substantive proof, a fuel bound
@@ -7309,7 +7310,7 @@ RR8 closes.
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 |
 | RR5 | Boot-path fail-open closure | 14 |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 |
-| RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 31 |
+| RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 32 |
 | RR8 | Phase closure and hand-off to SM10 | 5 |
 
 **The three blockers**: the IPC de-threading workstream is registered in no
