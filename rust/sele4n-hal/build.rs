@@ -1666,14 +1666,44 @@ fn scan_tlb_rs_outer_shareable_guards_intact() {
              section \"FEAT_TLBIOS is not baseline\"."
         );
     }
-    if !stripped.contains("fatal_halt()") {
+    // The guard must DIVERGE on the negative branch, and that is checked
+    // inside the helper's own body rather than as a file-wide token.
+    // `stripped.contains("fatal_halt()")` was satisfied by any occurrence
+    // anywhere in `tlb.rs`, so neutering the helper to `return;` while a
+    // `fatal_halt()` remained elsewhere in the file passed cleanly -- the
+    // per-wrapper ordering checks then proved only that an ineffective
+    // helper was called before the `asm!` (PR #883 review, round 2).
+    let guard_body =
+        enclosing_fn_body(&stripped, "fn require_feat_tlbios()").unwrap_or_else(|| {
+            panic!(
+                "WS-RR RR1.4 scanner: could not delimit the body of \
+                 `{path}::require_feat_tlbios`.  If the helper was \
+                 restructured, update this scanner so the fail-closed \
+                 contract stays pinned."
+            )
+        });
+    let negative_branch =
+        braced_block_after(guard_body, "if !has_feat_tlbios()").unwrap_or_else(|| {
+            panic!(
+                "WS-RR RR1.4 regression: `{path}::require_feat_tlbios` no \
+                 longer branches on `if !has_feat_tlbios()`.  The guard's \
+                 whole purpose is to act when the probe says the feature \
+                 is ABSENT; a differently-shaped condition is not \
+                 something this scanner can verify, so it must be \
+                 re-pinned deliberately."
+            )
+        });
+    if !negative_branch.contains("fatal_halt()") || negative_branch.contains("return") {
         panic!(
-            "WS-RR RR1.4 regression: `{path}` no longer reaches \
-             `cpu::fatal_halt()`.  `require_feat_tlbios` must DIVERGE \
-             when FEAT_TLBIOS is absent — falling back to the \
-             inner-shareable variant would service only the inner \
-             domain while the caller asked for the outer one, leaving \
-             live stale translations on the PEs outside it."
+            "WS-RR RR1.4 regression: the `if !has_feat_tlbios()` branch of \
+             `{path}::require_feat_tlbios` does not diverge into \
+             `cpu::fatal_halt()` (branch body: {negative_branch:?}).\n\
+             The guard must DIVERGE when FEAT_TLBIOS is absent.  Returning \
+             normally leaves the caller to execute the UNDEFINED `TLBI \
+             *OS` encoding, and falling back to the inner-shareable \
+             variant would service only the inner domain while the caller \
+             asked for the outer one -- leaving live stale translations on \
+             the PEs outside it."
         );
     }
 
@@ -1949,4 +1979,45 @@ fn probe_assembles_aarch64(candidate: &str, target: &str) -> bool {
     let ok = matches!(cmd.status(), Ok(status) if status.success());
     let _ = std::fs::remove_file(&obj);
     ok
+}
+
+/// **WS-RR RR1.4**: the body of a top-level `fn` in a scanned source.
+///
+/// Returns the text between the signature and the closing `}` that sits in
+/// column zero.  Scanners in this file need to ask questions *about a
+/// function* -- "does this branch diverge", "does the guard precede the
+/// `asm!`" -- and a file-wide `contains` cannot answer either: it is
+/// satisfied by any occurrence anywhere, including one in a different
+/// function entirely.  See CLAUDE.md's "A presence check is not a relation
+/// check".
+fn enclosing_fn_body<'a>(source: &'a str, signature: &str) -> Option<&'a str> {
+    let start = source.find(signature)? + signature.len();
+    let end = source[start..].find("\n}\n").map(|i| start + i)?;
+    Some(&source[start..end])
+}
+
+/// **WS-RR RR1.4**: the brace-delimited block introduced by `header`.
+///
+/// Brace-matched rather than delimited by the next `}`, so a nested block
+/// inside the branch does not truncate it.  String and char literals are
+/// not tracked: the scanned bodies are guard clauses, not parsers, and a
+/// stray brace in a literal would make the block *shorter*, which fails
+/// the caller's check rather than passing it -- the safe direction.
+fn braced_block_after<'a>(source: &'a str, header: &str) -> Option<&'a str> {
+    let header_at = source.find(header)?;
+    let open = header_at + source[header_at..].find('{')?;
+    let mut depth = 0usize;
+    for (offset, ch) in source[open..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&source[open + 1..open + offset]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }

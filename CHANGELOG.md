@@ -1,8 +1,9 @@
 ## v0.34.42 — A presence check is not a relation check
 
-Eight holes in the two gates `v0.34.41` added, all one defect. Four came
+Nine holes in the two gates `v0.34.41` added, all one defect. Four came
 from the PR #883 review; applying the lens to the checks it did not name
-found three more; and the eighth was in the fix for the first.
+found three more; the eighth was in the fix for the first; and the ninth
+came from the review's second round, in the fix for the second.
 
 **The class.** Each check asserted that a *token was present* where the
 property it meant was a *relation*: that the flag reaches **this command**,
@@ -36,6 +37,16 @@ token really is there.
   anywhere in `build.rs`, including a dead helper. All three now check the
   relation — array element, `run:` value, and position inside the live
   assembly chain between the arch gate and `.compile`.
+
+**The ninth was also in a fix.** The `build.rs` scanner asserted the
+guard diverges by testing `stripped.contains("fatal_halt()")` — file-wide.
+Neutering `require_feat_tlbios` to `return;` while any `fatal_halt()`
+remained elsewhere in `tlb.rs` passed cleanly, and the new per-wrapper
+ordering checks then proved only that an *ineffective* helper was called
+before the `asm!`. The check is now scoped to the helper's own body and
+brace-matched to the `if !has_feat_tlbios()` branch, which must contain
+`fatal_halt()` and no `return`. A reshaped condition the scanner cannot
+delimit fails loudly rather than silently passing.
 
 **The eighth was in the fix.** Expanding the gate script's shell variables
 took the *first* assignment of each name, so a script assigning

@@ -563,7 +563,8 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   instruction**, that the artefact came from **this run**, that the
   reference is **this occurrence**.  Presence is necessary and almost
   never sufficient, and the gap is invisible because the token really is
-  there.  Seven instances shipped in one cut (WS-RR RR1, `v0.34.41`):
+  there.  Nine instances shipped in one cut (WS-RR RR1, `v0.34.41`), two of them
+  inside the fixes for the others:
   a workflow step *name* satisfying a check for an installed target; a
   two-profile script satisfying a `cargo build` check after one profile
   became a `check`; `CROSS_TARGET=`/`CROSS_FEATURES=` assignments
@@ -572,7 +573,13 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   passing with the guard moved *below* the instruction it protects; a
   call-syntax regex missing `use … as alias`; and a whole-file exemption
   set from a docstring — that last one in the gate written to enforce
-  *gates read code, prose reads prose*.  So: **resolve the text into the
+  *gates read code, prose reads prose*.  The two self-inflicted ones are
+  the most instructive: expanding a script's shell variables took the
+  *first* assignment, so a re-assigned setting read at a value the command
+  never receives; and a scanner asserting that a guard diverges tested for
+  `fatal_halt()` **file-wide**, so neutering the guard while any other
+  occurrence remained in the file passed.  Writing the rule down is not the
+  same as applying it.  So: **resolve the text into the
   structure it stands for before asserting** — expand the script's
   variables and check the command, take byte offsets and check the order,
   parse the array and check the element.  Where a scanner genuinely
