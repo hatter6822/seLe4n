@@ -26,6 +26,14 @@
 //! // `LatencyStats` records a single-pass summary, not the full sample).
 //! ```
 
+// WS-RR RR1.3: gated to match its only consumers.  `STUB_COUNTER` and the
+// `fetch_add` in `read_cycle_counter` are both
+// `#[cfg(not(target_arch = "aarch64"))]`, so on the real kernel target
+// this import binds nothing and rustc reports `unused_imports`.  The
+// warning was invisible until the aarch64 target was compiled for the
+// first time, because the host build is exactly the configuration that
+// uses it.
+#[cfg(not(target_arch = "aarch64"))]
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// Global monotonic counter for non-AArch64 hosts (test stub).

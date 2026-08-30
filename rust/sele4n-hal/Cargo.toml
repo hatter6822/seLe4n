@@ -29,6 +29,40 @@ sele4n-abi = { path = "../sele4n-abi" }
 [features]
 default = []
 hw_target = []
+# WS-RR RR1.3: gate for the host-side developer tools that live in this
+# crate but are not kernel code.  `src/bin/rw_lock_oracle.rs` is the
+# Tier-5 cross-language correspondence oracle: it reads an op sequence
+# on stdin and prints the post-state on stdout, so it needs `std` by
+# construction and can never build for `aarch64-unknown-none`.
+#
+# Without this gate, `cargo build --target aarch64-unknown-none -p
+# sele4n-hal` tries to compile the oracle for the bare-metal target and
+# fails with 35 errors that have nothing to do with the HAL — which is
+# what made the whole crate look uncross-compilable.  See the `[[bin]]`
+# section below.
+host_tools = []
+
+# Explicit target declaration so `required-features` can be attached.
+# Declaring one `[[bin]]` disables Cargo's auto-discovery of `src/bin/`
+# for *binaries only*; `src/lib.rs` is still auto-discovered, and any
+# future host tool added under `src/bin/` must get its own `[[bin]]`
+# entry here (auto-discovery would otherwise silently skip it).
+#
+# `required-features` is the reason this section exists: the bare-metal
+# gate (`--features hw_target`) does not enable `host_tools`, so the
+# oracle is simply not a target of that build.  The host lanes that do
+# need it name it: `scripts/test_tier5_cross_language.sh` passes
+# `--features host_tools`, and `cargo clippy --all-targets
+# --all-features` in `scripts/test_rust.sh` enables every feature, so
+# the oracle stays linted and cannot rot behind the gate.
+#
+# Corollary for anyone extending the cross build: do **not** run the
+# aarch64 build with `--all-features`.  That would enable `host_tools`
+# and pull a `std` binary into a `no_std` target.
+[[bin]]
+name = "rw_lock_oracle"
+path = "src/bin/rw_lock_oracle.rs"
+required-features = ["host_tools"]
 
 [build-dependencies]
 # AN8-E (R-HAL-L3): pinned with explicit minimum versions matching the

@@ -302,4 +302,28 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_bcm2712_freshness.sh"
 # on either side without updating the other fails the gate.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_lock_ffi_symmetry.sh"
 
+# WS-RR RR1.8: the aarch64 cross-compile coverage must stay configured.
+# Until RR1 no aarch64 target was compiled anywhere in the tree or in CI, so
+# 67 cfg-gated blocks, 57 `asm!` sites and all three `.S` files had zero
+# compile coverage -- and every way of losing that coverage again is silent:
+# dropping the `targets` key still builds on a machine that already has the
+# target, dropping `--features hw_target` still passes while compiling none
+# of the hardware paths, and downgrading `build` to `check` still passes
+# while never reaching the assembler.  The gate reads config, not Lean, so
+# it carries its own comment stripping; self-test first, because a scanner
+# that under-reaches reports PASS.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_aarch64_cross_target.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_aarch64_cross_target.py"
+
+# WS-RR RR1.9: the TLBI broadcast discipline `SMP_RUST_HAL_PLAN.md` §4.4
+# said tier 0 enforced.  It did not, and the sketch in §5.6 would not have
+# been it: one variant of four, the Lean tree only, and a raw-text grep that
+# its own explanatory sentence trips.  A non-broadcast `tlbi vae1` leaves a
+# secondary walking a translation the primary believes it removed -- the
+# stale-mapping hazard SM7 exists to close -- so the instruction is confined
+# to `tlb.rs` and every local call site is registered with the reason the
+# calling PE is the only one that needs the entry gone.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_tlbi_broadcast_discipline.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_tlbi_broadcast_discipline.py"
+
 finalize_report

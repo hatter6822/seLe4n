@@ -1,3 +1,99 @@
+## v0.34.41 — The first aarch64 compile, and the six defects nothing could see
+
+**WS-RR RR1 lands (all eleven sub-tasks).** No aarch64 target had ever been
+compiled in this tree or in CI, so 67 `#[cfg(target_arch = "aarch64")]`
+blocks, 57 `asm!` invocations and all three `.S` sources had zero compile
+coverage. SM10.1 would have been the first thing to compile them, while also
+being the first thing to link and boot them. The first compile found six
+defects and three lints.
+
+**Two `boot.S` stack-alignment steps did not assemble.** Both `_start` and
+`secondary_entry` ended their SP setup with `and sp, sp, #~0xF`. `AND
+(immediate)` accepts SP as its destination but not as its source (ARM ARM
+C6.2.13), so neither instruction encodes. Both now mask in the general
+register *before* the value reaches SP, which is also the safer order: with
+`SCTLR_EL1.SA` set, the first SP-relative access after a misaligned `mov sp,
+xN` faults before any later mask could run.
+
+**Four `TLBI *OS` sites cannot execute on the project's own hardware
+target.** `VMALLE1OS`, `VAE1OS`, `ASIDE1OS` and `VALE1OS` are FEAT_TLBIOS
+(ARMv8.4-A). They do not encode for the ARMv8.0-A baseline, and — the part
+that matters — Cortex-A76, the core in the RPi5's BCM2712, is ARMv8.2-A and
+does not implement them, so the encodings are UNDEFINED there. A platform
+binding whose `sharingDomain` is `.outer` would have trapped rather than
+invalidated. Each wrapper now probes `ID_AA64ISAR0_EL1.TLB` and takes
+`cpu::fatal_halt()` when the feature is absent. It deliberately does **not**
+fall back to the IS variant: a caller that asked for an outer-shareable
+broadcast has PEs outside the inner domain, and servicing only the inner one
+would leave live stale translations on the rest. The mnemonics assemble under
+a scoped `.arch_extension tlb-rmi` / `notlb-rmi` bracket rather than by
+raising the crate's target features to v8.4, which would let the compiler emit
+v8.4 instructions anywhere on a target that cannot run them. A `build.rs`
+scanner pins the guards and the bracket's balance, since a dropped restore
+fails *open*.
+
+**`cargo check` called all four of those clean.** It stops before code
+generation, so it never hands an `asm!` template to an assembler. That is why
+the gate is a build, in both profiles, and why RR1.5 said so before the
+evidence existed.
+
+**Three lints lived where the host lane cannot look.** `scripts/test_rust.sh`
+lints the host target, where every `#[cfg(target_arch = "aarch64")]` block is
+removed before clippy sees it — so the project's zero-warning claim excluded
+the entire hardware surface. An unused import, an unnecessary `unsafe` and a
+`needless_return` were sitting in it.
+
+**The crate was not cross-compilable for a reason unrelated to the kernel.**
+`src/bin/rw_lock_oracle.rs`, the Tier-5 correspondence oracle, is a `std` host
+tool; it was being compiled for the bare-metal target and failed with 35
+errors, which is what made the whole crate look broken. It now carries
+`required-features = ["host_tools"]`, and the Tier-5 harness names the
+feature — as does `test_rust.sh`, which is the half that is easy to miss: a
+`required-features` target that is not selected is not merely skipped from
+the build, `cargo test` does not run its `#[cfg(test)]` module either. The
+first version of the gate dropped the oracle's 14 tests from the host lane
+and the step still reported a clean pass over one fewer binary, which is the
+same shape as a skipped test. `check_aarch64_cross_target.py` now pins the
+flag. Separately, `build.rs` was handing the three `.S` files to the host
+`cc` — an x86 assembler — because `cc`'s default search finds no cross
+compiler for `aarch64-unknown-none`. It now probes candidates by compiling a
+one-instruction AArch64 translation unit, honours any explicit `CC_*`
+override first, and fails with a message naming what to install.
+
+**Two Tier 0 gates, each with a self-test.**
+`check_aarch64_cross_target.py` (14 cases) holds the configuration: the
+`targets` key, `--features hw_target`, and `cargo build` rather than `check`
+— each load-bearing in a way that is silent if lost, since a gate weakened in
+any of those directions stays green over nothing.
+`check_tlbi_broadcast_discipline.py` (12 cases) is the non-IS TLBI ban
+`SMP_RUST_HAL_PLAN.md` §4.4 has claimed since SM1 and never had. It is not
+the sketched grep: that scanned only the Lean tree, matched one of four local
+wrappers, read raw text so its own explanatory sentence was a hit, and would
+have flagged the shootdown protocol's receive side, where a local TLBI is the
+correct instruction. The gate confines the `tlbi` mnemonic to `tlb.rs`, holds
+every local call site to `scripts/tlbi_local_allowlist.txt`, and checks the
+allowlist in both directions. §4.4's "private helpers" is now true
+structurally too: the four local wrappers are `pub(crate)`.
+
+**The `asm!` figure was prose.** The register counted 59 and this plan
+carried 60; the measured figure over the comment-free code view is 57, and
+the other two are docstring mentions of the token in `cpu.rs` and `psci.rs`.
+That is the project's own "gates read code, prose reads prose" rule surfacing
+inside the audit written to enforce it. The measured surface is recorded in
+the register §5.1, with the command that reproduces it.
+
+**SM10's estimate is derived rather than guessed.** The 4–6 weeks priced
+documentation only. The replacement — 14–24 weeks — comes from a thirteen-row
+sized breakdown of the SM10.1 runtime port in the closure plan's new §1.1,
+with one row now measured: the HAL's aarch64 half needed six fixes, not a
+rewrite. §1.1 also states what that measurement does *not* license, since
+Lean cross-compilation and bare-metal runtime hosting are new capability
+rather than code waiting for a compiler. Numbering those rows into `SM10.1.x`
+is left to SM10's opening cut, because it would move the image build off
+`SM10.1.1`, which three CHANGELOG entries bind to it.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR1
+
 ## v0.34.40 — A third index/worktree split, and three plan defects the numbering gate could finally see
 
 Five findings from the fourteenth review round. Two are the same class of

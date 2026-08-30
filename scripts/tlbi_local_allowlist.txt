@@ -1,0 +1,54 @@
+# scripts/tlbi_local_allowlist.txt
+#
+# WS-RR RR1.9 — permitted emitters of local (non-broadcast) TLB
+# maintenance.
+#
+# `SMP_RUST_HAL_PLAN.md` §4.4: under SMP, kernel-side TLB invalidation
+# routes through `tlbi_for_sharing(domain, op)`, which selects the IS or
+# OS broadcast per `PlatformBinding.sharingDomain`.  A non-broadcast
+# `tlbi vae1` invalidates only the calling PE's TLB, so a secondary can
+# keep walking a translation the primary believes it removed — the
+# stale-mapping hazard the whole SM7 shootdown protocol exists to close.
+#
+# Three call shapes are nonetheless correct, and each is listed below
+# with the reason it is not a broadcast:
+#
+#   * boot-time MMU init, which runs before any secondary is released;
+#   * the shootdown protocol's receive side, where each PE retires its
+#     OWN entries — the "broadcast" is the SGI, and a hardware broadcast
+#     from the receiver would be redundant, not safer;
+#   * the FFI exports that expose exactly those two uses to Lean.
+#
+# Format: `<repo-relative path>::<enclosing symbol>` followed by an
+# optional `#` comment.  Enforced by
+# `scripts/check_tlbi_broadcast_discipline.py` (Tier 0).  Adding a line
+# here is a deliberate act: state in the comment why the calling PE is
+# the only one whose TLB needs the entry gone.
+
+# --- Boot-time MMU initialisation (pre-SMP) -------------------------------
+rust/sele4n-hal/src/mmu.rs::enable_mmu
+# Cold/warm-reset safety flush issued while the boot core is the only PE
+# out of reset; the secondaries are still parked in
+# `boot.S::.L_secondary_spin` with empty TLBs.
+
+# --- Shootdown protocol: the receive side --------------------------------
+rust/sele4n-hal/src/shootdown.rs::retire_round_ops_in
+# The `.tlbShootdownReq` handler retiring the round's operands on the
+# interrupted core.  Broadcasting here would re-invalidate every other
+# PE once per receiver, turning one round into N.
+rust/sele4n-hal/src/shootdown.rs::self_service_round_in
+# SM7.B.7's cooperative self-service: a lock-waiter discharges its own
+# outstanding shootdown obligation before release-acknowledging.
+
+# --- FFI exports of the two uses above ------------------------------------
+rust/sele4n-hal/src/ffi.rs::ffi_tlbi_all
+rust/sele4n-hal/src/ffi.rs::ffi_tlbi_by_asid
+rust/sele4n-hal/src/ffi.rs::ffi_tlbi_by_vaddr
+# The Lean bindings `ffiTlbiAll` / `ffiTlbiByAsid` / `ffiTlbiByVaddr`.
+# Reserved for boot-time init and `Concurrency.tlbiLocalFullFlush`; all
+# other Lean kernel code routes through `ffiTlbiForSharing`.
+
+# --- Lean production callers of the local FFI bindings --------------------
+SeLe4n/Kernel/Concurrency/Runtime.lean::tlbiLocalFullFlush
+# SM7.B.7's self-service arm, the Lean half of
+# `shootdown.rs::self_service_round_in`.

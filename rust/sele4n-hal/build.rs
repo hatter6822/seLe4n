@@ -148,14 +148,33 @@ fn main() {
     // closed.
     scan_queued_rw_lock_protocol_intact();
 
+    // WS-RR RR1.4 (closes the FEAT_TLBIOS contract): verify every
+    // outer-shareable TLBI wrapper in `tlb.rs` still fails closed on a
+    // PE that does not implement FEAT_TLBIOS, and that each `*OS`
+    // mnemonic is still bracketed by a balanced `.arch_extension`
+    // pair.  Both properties are invisible to the host build — the
+    // `asm!` blocks are `#[cfg(target_arch = "aarch64")]` — and a
+    // dropped guard would turn a mis-declared `SharingDomain::Outer`
+    // into an undefined-instruction trap on Cortex-A76 instead of a
+    // diagnosed halt.  Runs on every target so the check fires in host
+    // builds too.
+    scan_tlb_rs_outer_shareable_guards_intact();
+
     // Only build assembly for aarch64 targets
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     if target_arch != "aarch64" {
         return;
     }
 
-    cc::Build::new()
-        .file("src/boot.S")
+    let mut asm = cc::Build::new();
+    // WS-RR RR1.6: pick an assembler that can actually target aarch64.
+    // Left to its defaults, `cc` falls back to the host `cc` for
+    // `aarch64-unknown-none` and hands three ARM64 sources to an x86
+    // assembler — 54 "no such instruction" errors from `boot.S` alone,
+    // before the build even reaches `vectors.S`, all of them describing
+    // the toolchain rather than the code.
+    select_cross_assembler(&mut asm);
+    asm.file("src/boot.S")
         .file("src/vectors.S")
         .file("src/trap.S")
         .compile("sele4n_hal_asm");
@@ -1582,4 +1601,305 @@ fn scan_queued_rw_lock_protocol_intact() {
              `WRITER_BIT | non-zero-reader-bits`."
         );
     }
+}
+
+/// **WS-RR RR1.4** regression guard: verify the outer-shareable TLBI
+/// wrappers in `tlb.rs` keep their fail-closed FEAT_TLBIOS guard and
+/// their balanced `.arch_extension` bracket.
+///
+/// `TLBI VMALLE1OS / VAE1OS / ASIDE1OS / VALE1OS` are FEAT_TLBIOS
+/// (ARMv8.4-A).  Cortex-A76 — the core in the RPi5's BCM2712 — is
+/// ARMv8.2-A and does not implement them, so on the project's first
+/// hardware target the encodings are UNDEFINED.  Two properties keep
+/// that from becoming a runtime trap, and neither is visible to any
+/// compiler on the host:
+///
+///  1. Each wrapper calls `require_feat_tlbios()` before its `asm!`,
+///     diverging into `cpu::fatal_halt()` when the PE cannot execute
+///     the instruction.  Dropping the call would substitute an
+///     undefined-instruction exception for a diagnosed halt.
+///  2. Each `*OS` mnemonic sits inside a `.arch_extension tlb-rmi` …
+///     `.arch_extension notlb-rmi` pair.  Dropping the *enable* breaks
+///     the aarch64 build (loudly); dropping the *restore* leaves the
+///     extension enabled for every later inline-asm block in the same
+///     object, so a v8.4-only instruction elsewhere would silently
+///     assemble.  That one fails open, which is why the balance is
+///     pinned here rather than left to the aarch64 build to notice.
+///
+/// The scan runs over the comment-stripped source, so a docstring
+/// mentioning `require_feat_tlbios` cannot satisfy it.
+fn scan_tlb_rs_outer_shareable_guards_intact() {
+    let path = "src/tlb.rs";
+    println!("cargo:rerun-if-changed={path}");
+
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            panic!("WS-RR RR1.4 scanner: failed to read {path}: {e}");
+        }
+    };
+
+    // Strip `//` line comments (which subsumes `///` docstrings) so the
+    // prose that explains the contract cannot be mistaken for the code
+    // that implements it.
+    let stripped: String = contents
+        .lines()
+        .map(|line| match line.find("//") {
+            Some(idx) => &line[..idx],
+            None => line,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // The fail-closed helper itself must exist and must diverge.
+    if !stripped.contains("fn require_feat_tlbios()") {
+        panic!(
+            "WS-RR RR1.4 regression: `{path}` no longer defines \
+             `require_feat_tlbios()`.  It is the fail-closed guard that \
+             keeps a `SharingDomain::Outer` binding from executing an \
+             UNDEFINED instruction on a PE without FEAT_TLBIOS \
+             (Cortex-A76 / RPi5).  See the `tlb.rs` module docstring, \
+             section \"FEAT_TLBIOS is not baseline\"."
+        );
+    }
+    if !stripped.contains("fatal_halt()") {
+        panic!(
+            "WS-RR RR1.4 regression: `{path}` no longer reaches \
+             `cpu::fatal_halt()`.  `require_feat_tlbios` must DIVERGE \
+             when FEAT_TLBIOS is absent — falling back to the \
+             inner-shareable variant would service only the inner \
+             domain while the caller asked for the outer one, leaving \
+             live stale translations on the PEs outside it."
+        );
+    }
+
+    // Every `*OS` wrapper must call the guard before its `asm!`.
+    const OS_WRAPPERS: [&str; 4] = [
+        "tlbi_vmalle1os",
+        "tlbi_vae1os",
+        "tlbi_aside1os",
+        "tlbi_vale1os",
+    ];
+    for name in OS_WRAPPERS {
+        let signature = format!("pub fn {name}(");
+        let Some(start) = stripped.find(&signature) else {
+            panic!(
+                "WS-RR RR1.4 regression: `{path}` no longer defines \
+                 `pub fn {name}`.  The four outer-shareable wrappers are \
+                 the only production route to the FEAT_TLBIOS \
+                 instructions; if one was renamed, rename it in this \
+                 scanner too so the guard stays pinned."
+            );
+        };
+        // Top-level function bodies in this file end at a `}` in column
+        // zero, so the next such line bounds the body.
+        let body_start = start + signature.len();
+        let body_end = stripped[body_start..]
+            .find("\n}\n")
+            .map(|i| body_start + i)
+            .unwrap_or(stripped.len());
+        let body = &stripped[body_start..body_end];
+
+        if !body.contains("require_feat_tlbios()") {
+            panic!(
+                "WS-RR RR1.4 regression: `{path}::{name}` no longer calls \
+                 `require_feat_tlbios()` before its `asm!`.\n\
+                 `TLBI {upper}` is FEAT_TLBIOS (ARMv8.4-A) and is NOT \
+                 implemented by Cortex-A76, the core in the RPi5's \
+                 BCM2712.  Without the guard, a platform binding whose \
+                 `sharingDomain` is `.outer` executes an UNDEFINED \
+                 encoding instead of halting with a diagnosis.",
+                upper = name.trim_start_matches("tlbi_").to_ascii_uppercase(),
+            );
+        }
+    }
+
+    // The `.arch_extension` bracket must balance: one restore per enable,
+    // and exactly one pair per wrapper.
+    let enables = stripped.matches(".arch_extension tlb-rmi").count();
+    let restores = stripped.matches(".arch_extension notlb-rmi").count();
+    if enables != OS_WRAPPERS.len() || restores != OS_WRAPPERS.len() {
+        panic!(
+            "WS-RR RR1.4 regression: `{path}` has {enables} \
+             `.arch_extension tlb-rmi` enable(s) and {restores} \
+             `notlb-rmi` restore(s); expected {expected} of each — one \
+             pair per outer-shareable wrapper.\n\
+             An unmatched enable leaves FEAT_TLBIOS mnemonics \
+             assemblable for every later inline-asm block in the same \
+             object, so a v8.4-only instruction added elsewhere would \
+             compile silently and trap on the ARMv8.2-A target.",
+            expected = OS_WRAPPERS.len(),
+        );
+    }
+}
+
+/// **WS-RR RR1.6**: choose an assembler that can build the three `.S`
+/// sources for the *target* architecture, not the host's.
+///
+/// `cc`'s default search finds no cross compiler for
+/// `aarch64-unknown-none` on a typical x86 host and falls back to the
+/// bare `cc` on `PATH`.  That silently hands `boot.S`, `vectors.S` and
+/// `trap.S` to an x86 assembler, which reports every ARM64 mnemonic as
+/// "no such instruction" — 54 errors from `boot.S` alone, all of which
+/// look like broken assembly and are entirely an artefact of the
+/// toolchain choice.  Diagnosing that once is cheap; diagnosing it on
+/// every fresh clone is not, so the choice is made here.
+///
+/// ## Order of precedence
+///
+/// 1. **Any explicit override wins.**  If the environment already names
+///    a compiler for this target (`CC_<target>`, `TARGET_CC`, `CC`, or a
+///    `CROSS_COMPILE` prefix), this function does nothing and leaves
+///    `cc` to honour it.  A developer who has pointed the build at a
+///    specific toolchain must not have it silently replaced.
+/// 2. **Otherwise, probe candidates in order** and take the first that
+///    actually assembles a trivial aarch64 translation unit:
+///    the bare `cc` (only when the host is already aarch64, where it is
+///    the native compiler), then the conventional bare-metal and
+///    Linux cross prefixes, then `clang`, which is multi-target by
+///    construction and needs only the `--target` flag `cc` already
+///    passes it.
+///
+/// The probe compiles rather than merely checking for the binary on
+/// `PATH`: a name being present says nothing about whether that build
+/// of it has an AArch64 backend, and an assembler chosen on presence
+/// alone reproduces exactly the failure this function exists to avoid.
+///
+/// If no candidate works, the panic names the target and lists what to
+/// install, because "error occurred in cc-rs" with a wall of x86
+/// assembler diagnostics is not an actionable message.
+fn select_cross_assembler(build: &mut cc::Build) {
+    let target = std::env::var("TARGET").unwrap_or_default();
+    let host = std::env::var("HOST").unwrap_or_default();
+
+    // 1. Respect an explicit override.  These are the variables `cc`
+    // itself consults; if any is set, it has already decided.
+    let target_underscores = target.replace('-', "_");
+    let overrides = [
+        format!("CC_{target}"),
+        format!("CC_{target_underscores}"),
+        "TARGET_CC".to_string(),
+        "CC".to_string(),
+        "CROSS_COMPILE".to_string(),
+    ];
+    let mut overridden = false;
+    for var in &overrides {
+        println!("cargo:rerun-if-env-changed={var}");
+        if std::env::var_os(var).is_some() {
+            overridden = true;
+        }
+    }
+    if overridden {
+        println!(
+            "sele4n-hal: assembler selection deferred to the environment \
+             (one of {overrides:?} is set)"
+        );
+        return;
+    }
+
+    // 2. Probe candidates.  `cc` is only a candidate when the host is
+    // itself aarch64 — there it is the native compiler and the right
+    // first choice; on an x86 host it is precisely the wrong answer.
+    let host_is_aarch64 = host.starts_with("aarch64");
+    let mut candidates: Vec<&str> = Vec::new();
+    if host_is_aarch64 {
+        candidates.push("cc");
+    }
+    candidates.extend([
+        // Bare-metal (newlib / no-OS) cross toolchains.
+        "aarch64-none-elf-gcc",
+        "aarch64-elf-gcc",
+        // Linux cross toolchains: their assembler is the same GNU as,
+        // and these sources never link against a libc.
+        "aarch64-linux-gnu-gcc",
+        "aarch64-none-linux-gnu-gcc",
+        // Multi-target by construction; `cc` passes it `--target`.
+        "clang",
+    ]);
+
+    for candidate in &candidates {
+        if probe_assembles_aarch64(candidate, &target) {
+            println!("sele4n-hal: assembling .S sources for {target} with `{candidate}`");
+            build.compiler(candidate);
+            return;
+        }
+    }
+
+    panic!(
+        "WS-RR RR1.6: no assembler on PATH can build the AArch64 sources \
+         for target `{target}`.\n\
+         Tried, in order: {candidates:?}.\n\
+         \n\
+         Install one of:\n\
+         - `clang` (any recent build; it is multi-target and needs no \
+         extra packages)\n\
+         - the `gcc-aarch64-linux-gnu` package (Debian/Ubuntu)\n\
+         - a bare-metal `aarch64-none-elf` toolchain\n\
+         \n\
+         Or point the build at a specific one by exporting \
+         `CC_{target_underscores}=<compiler>`.\n\
+         \n\
+         Without this, `cc` would fall back to the host `cc` and hand \
+         ARM64 assembly to an x86 assembler."
+    );
+}
+
+/// **WS-RR RR1.6**: can `candidate` assemble an AArch64 translation unit
+/// for `target`?
+///
+/// Compiles a one-instruction `.S` file rather than checking `PATH` or
+/// parsing `--version`: the question is whether this build of the tool
+/// has an AArch64 backend, and only asking it to produce an object file
+/// answers that.  A missing binary surfaces as a spawn error and is
+/// reported as "cannot assemble", which is the correct answer for the
+/// caller.
+///
+/// The probe writes into `OUT_DIR`, so it leaves nothing behind in the
+/// source tree and is discarded with the rest of the build directory.
+fn probe_assembles_aarch64(candidate: &str, target: &str) -> bool {
+    use std::path::PathBuf;
+
+    let Ok(out_dir) = std::env::var("OUT_DIR") else {
+        // No OUT_DIR means we are not running under cargo; refuse to
+        // guess rather than probing into the source tree.
+        return false;
+    };
+    let out_dir = PathBuf::from(out_dir);
+
+    let src = out_dir.join("rr1_assembler_probe.S");
+    // `nop` is valid AArch64 and invalid on x86-family assemblers only
+    // in combination with the `.arch` directive, so pin the ISA
+    // explicitly: `.arch armv8-a` is rejected outright by an assembler
+    // without an AArch64 backend, which is exactly the discrimination
+    // this probe needs.  `msr daifset` additionally requires the A64
+    // system-register parser, so a probe that passes really can handle
+    // the sources.
+    let probe_source = ".arch armv8-a\n.text\n.globl rr1_assembler_probe\nrr1_assembler_probe:\n    msr daifset, #0xf\n    nop\n    ret\n";
+    if std::fs::write(&src, probe_source).is_err() {
+        return false;
+    }
+
+    let obj = out_dir.join(format!(
+        "rr1_assembler_probe_{}.o",
+        candidate.replace(['/', '\\', '.'], "_")
+    ));
+
+    let mut cmd = std::process::Command::new(candidate);
+    // `cc` passes clang an explicit `--target`; mirror that here so the
+    // probe exercises the same configuration the real build will use.
+    // GCC cross compilers encode their target in the binary name and
+    // reject the flag, so it is added only for clang-like names.
+    if candidate.contains("clang") && !target.is_empty() {
+        cmd.arg(format!("--target={target}"));
+    }
+    cmd.arg("-c")
+        .arg(&src)
+        .arg("-o")
+        .arg(&obj)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    let ok = matches!(cmd.status(), Ok(status) if status.success());
+    let _ = std::fs::remove_file(&obj);
+    ok
 }

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.40-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.41-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -86,7 +86,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.34.40` |
+| **Version** | `0.34.41` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 289,683 across 288 files |
 | **Test Lean LoC** | 64,535 across 69 test suites |
@@ -134,10 +134,23 @@ and is auto-refreshed on merge via CI. Regenerate with
 ./scripts/test_smoke.sh     # + Tier 2: trace + negative-state + docs sync
 ./scripts/test_full.sh      # + Tier 3: invariant surface anchors + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4: nightly determinism
+
+./scripts/test_rust.sh                 # host Rust: build, tests, fmt, clippy
+./scripts/test_aarch64_cross_build.sh  # the kernel HAL's real target
 ```
 
 Run at least `test_smoke.sh` before any PR. Run `test_full.sh` when changing
 theorems, invariants, or documentation anchors.
+
+After any change under `rust/`, run **both** Rust lanes. They cover disjoint
+halves of the same crate: on the host every `#[cfg(target_arch = "aarch64")]`
+block is removed before rustc or clippy sees it, so the host lane cannot see
+the 67 cfg-gated blocks, 57 `asm!` sites or three `.S` sources that make up
+most of the HAL. The cross lane builds `sele4n-hal` for
+`aarch64-unknown-none` in both profiles, verifies the assembly sources really
+assembled, and lints the cross target — and it is a build rather than a
+`cargo check`, because `check` stops before code generation and never reaches
+an assembler.
 
 ## Architecture
 

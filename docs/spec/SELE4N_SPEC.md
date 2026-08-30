@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.40` (`lakefile.toml`) |
+| **Package version** | `0.34.41` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 289,683 across 288 Lean files |
 | **Test LoC** | 64,535 across 69 Lean test suites |
@@ -617,6 +617,30 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    surfaced to Lean via the typed wrapper
    `SeLe4n.Kernel.Architecture.tlbiForSharing` (in
    `TlbiForSharing.lean`) backed by `ffiTlbiForSharing` FFI export.
+
+   **The four OS-variants are FEAT_TLBIOS and Cortex-A76 is not**
+   (WS-RR RR1.4, `v0.34.41`).  `TLBI VMALLE1OS / VAE1OS / ASIDE1OS /
+   VALE1OS` are introduced by FEAT_TLBIOS, mandatory from ARMv8.4-A
+   (ARM ARM D8.13.2).  The RPi5's BCM2712 is a Cortex-A76, which is
+   ARMv8.2-A, so on the project's first hardware target those four
+   encodings are UNDEFINED.  Each wrapper therefore probes
+   `ID_AA64ISAR0_EL1.TLB` (bits [59:56]) and takes
+   `cpu::fatal_halt()` when the field reads zero.  It does **not**
+   fall back to the inner-shareable variant: a platform binding that
+   selected `SharingDomain.Outer` did so because it has PEs outside
+   the inner-shareable domain, and servicing only the inner one would
+   leave live stale translations on the rest — the stale-mapping
+   hazard the SM7 shootdown protocol exists to close.  All platform
+   bindings are `.inner` today (`RPi5Platform` and the three Sim
+   contracts), so the halt is unreachable; the constraint binds any
+   future multi-cluster port.  The instructions assemble under a
+   scoped `.arch_extension tlb-rmi` / `notlb-rmi` bracket rather than
+   by raising the crate's target features to ARMv8.4-A, which would
+   let the compiler emit v8.4 instructions anywhere on a target that
+   cannot execute them.  Neither property was observable until RR1
+   compiled the HAL for `aarch64-unknown-none` for the first time:
+   `cargo check` stops before code generation and reported all four
+   sites clean.
    SM1.F adds the GICD_SGIR-based SGI primitive surface
    (`gic::send_sgi`, `send_sgi_to_self`, `send_sgi_to_all_but_self`)
    plus the `register_sgi_handler` / `dispatch_sgi` handler-table

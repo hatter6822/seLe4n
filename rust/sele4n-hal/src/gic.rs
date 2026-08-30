@@ -533,7 +533,14 @@ fn read_self_check_target(base: usize) -> u32 {
     {
         // SAFETY: production boot path; address is inside the GICD MMIO
         // window mapped by AK5-D's identity-map. (ARM ARM B2.1)
-        return unsafe { core::ptr::read_volatile(addr as *const u32) };
+        //
+        // Written as a tail expression, not `return`: the two `cfg`
+        // blocks are exactly complementary, so whichever one survives
+        // configuration is the function's last expression and yields the
+        // `u32` directly.  The `return` this replaced was `clippy::
+        // needless_return` — a lint only the aarch64 lane can see, since
+        // the host build removes this block entirely (WS-RR RR1.3).
+        unsafe { core::ptr::read_volatile(addr as *const u32) }
     }
     #[cfg(any(not(target_arch = "aarch64"), test))]
     {
