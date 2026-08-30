@@ -1,3 +1,53 @@
+## v0.34.45 — Sweep the concept, not the reported call site
+
+**WS-RR RR1.12**, round 4.  A different failure mode from the first three:
+`v0.34.43` built the right resolvers and applied each to exactly the call
+site the review named, leaving every sibling site that asks the same question
+on the old proxy.
+
+| Concept, resolved in v0.34.43 | Sibling site left behind |
+|---|---|
+| command position (`job_runs_gate`) | `cargo_invocations` scanned tokens anywhere, so `echo cargo build --target aarch64-unknown-none --features hw_target` satisfied "the cross build runs in both profiles" |
+| scope with real boundaries (`rust_code_view.enclosing_fn`) | `enclosing_lean_decl` was still last-declaration-wins, so `initialize bad : Unit ← ffiTlbiAll` after an allowlisted `def` inherited its entry |
+| comment grammar (quote-aware Rust view) | `strip_asm` handled only `//`, on the asserted *content* claim that "the `.S` sources use `//` exclusively" — `tlbi/* maintenance */ vmalle1` preprocesses to a real instruction and was invisible |
+| — | `LOCAL_WRAPPERS` was a hand-written enumeration: a new `flush_entry` emitting `tlbi vae1` inside `tlb.rs` was invisible twice over, since the emission is inside the trusted module and the call matched no known name |
+
+All four reproduced against the real tree first.
+
+### Fixes, and the sweep
+
+* **`executed_argv`** is now shared by `job_runs_gate` and
+  `cargo_invocations`. Executing wrappers are *derived* from the script — a
+  shell function whose body execs `"$@"`, with its `shift` count read from
+  the body — so the host lane's `run_cargo_step "label" cargo test …` still
+  resolves and a renamed wrapper cannot blind the gate.
+* **`lean_declaration_boundaries`** gives Lean real declaration spans, and
+  **fails closed on forms it does not know**: an unrecognised column-0 word
+  still ends the previous declaration and reports `<file scope>`, which no
+  allowlist entry can match. Enumerating keywords can never be complete;
+  ending the span on anything unrecognised can.
+* **`strip_asm`** implements the C preprocessor's grammar (`//` and
+  `/* */`, non-nesting), blanking to spaces so a comment splitting a
+  mnemonic splices back together exactly as `cpp` does for the assembler.
+* **Four enumerations became derivations with pins**, three of them found by
+  sweeping rather than reported: `LOCAL_WRAPPERS` against the non-broadcast
+  mnemonics `tlb.rs` emits; `LEAN_LOCAL_BINDINGS` against the `ffi_tlbi_*`
+  exports whose bodies reach a local wrapper; `ASM_SOURCES` against the `.S`
+  files on disk; and `OS_WRAPPERS` in `build.rs` against the `*OS` mnemonics
+  emitted, so a fifth outer-shareable wrapper is guarded from the day it is
+  written.
+
+### Coverage
+
+TLBI gate 25 cases, 6/6 checks token-preserving (two new check ids:
+`local_wrapper_inventory`, `lean_binding_inventory`). Cross-target gate 34
+cases, 5/5. Five of the new cases assert the **accepting** direction — a
+broadcast emitter, a broadcast FFI export, `cargo` behind a `"$@"` wrapper —
+because a check that only ever tightens starts rejecting correct code.
+
+`test_rust.sh` 1149 + 108, `test_aarch64_cross_build.sh` and `test_full.sh`
+green.
+
 ## v0.34.44 — Two more of the same, found by self-audit rather than review
 
 **WS-RR RR1.12**, continued.  `v0.34.43` replaced the ad-hoc text slices with

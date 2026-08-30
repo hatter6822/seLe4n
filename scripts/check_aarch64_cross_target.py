@@ -84,7 +84,13 @@ TOOLCHAIN_FILE = "rust/rust-toolchain.toml"
 WORKFLOW_FILE = ".github/workflows/lean_action_ci.yml"
 BUILD_SCRIPT = "rust/sele4n-hal/build.rs"
 HOST_LANE = "scripts/test_rust.sh"
+# The three `.S` sources as of this cut.  Kept as a floor, NOT as the source
+# of truth: `assembly_sources` enumerates what is actually on disk, so a
+# fourth `.S` added later and never handed to the assembler is reported
+# rather than silently uncovered -- the same hole a hand-written wrapper
+# list had in the TLBI gate (PR #883 review round 4).
 ASM_SOURCES = ("src/boot.S", "src/vectors.S", "src/trap.S")
+HAL_CRATE = "rust/sele4n-hal"
 ORACLE_PKG = "sele4n-hal"
 ORACLE_BIN = "rw_lock_oracle"
 # Cargo flags that RESTRICT which target kinds a `cargo test` runs. Any
@@ -301,26 +307,108 @@ def option_values(argv: list[str], *names: str) -> list[str]:
     return [piece for value in values for piece in value.split(",") if piece]
 
 
-def cargo_invocations(script: str, subcommand: str) -> list[list[str]]:
-    """Every `cargo <subcommand>` in `script`, as argv from `cargo` onwards.
+# A shell function whose body execs its own arguments -- `"$@"` -- passes
+# execution through to whatever it is called with, so `cargo` behind one is
+# genuinely run.  Derived from the script rather than named, so renaming the
+# wrapper cannot silently blind the gate.
+_SHELL_FUNCTION_RE = re.compile(
+    r"^\s*(?:function\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\(\)\s*\{", re.MULTILINE
+)
 
-    Found by token rather than by substring, so a `cargo test` named in a
-    log message or passed to `echo` is not mistaken for one that runs, and
-    a wrapper in command position (`run_cargo_step "..." cargo test --all`,
-    which is how the host lane invokes every step) still resolves to the
-    cargo argv it will exec.
+
+def executing_wrappers(script: str) -> dict[str, int]:
+    """Shell functions in `script` that exec `"$@"`, and how much they shift.
+
+    Maps the wrapper's name to the number of leading arguments it consumes
+    before exec'ing the rest, counted from the `shift` statements in its
+    body.  The host lane's `run_cargo_step "label" cargo test ...` takes one
+    label and shifts once, so the argv it execs starts at `cargo`.
+
+    Both error directions are safe: consume too few and the command word is
+    the label, consume too many and it is a flag; either way no `cargo`
+    invocation is recognised and the check reports a problem rather than
+    passing over one it could not resolve.
     """
+    wrappers: dict[str, int] = {}
+    for match in _SHELL_FUNCTION_RE.finditer(script):
+        body_start = script.index("{", match.start())
+        depth, index = 0, body_start
+        while index < len(script):
+            if script[index] == "{":
+                depth += 1
+            elif script[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            index += 1
+        body = script[body_start:index]
+        if '"$@"' not in body:
+            continue
+        shifted = 0
+        for shift in re.finditer(r"^\s*shift(?:\s+(\d+))?\s*$", body, re.MULTILINE):
+            shifted += int(shift.group(1) or 1)
+        wrappers[match.group(1)] = shifted
+    return wrappers
+
+
+def executed_argv(command: str, wrappers: dict[str, int]) -> list[str]:
+    """The argv a command actually execs, with prefixes and wrappers peeled.
+
+    Peels `VAR=value` prefixes and pass-through wrappers (`sudo`, `env`,
+    `time`, `exec`, plus the script's own `"$@"` functions) until the
+    command word is the thing that runs.  Shared by every check that asks
+    "is X the thing being executed" -- `job_runs_gate` and
+    `cargo_invocations` both, because they ask the same question and the
+    first version answered it in only one of them.
+    """
+    argv = argv_of(command)
+    while argv:
+        head = argv[0]
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", head, re.DOTALL):
+            argv = argv[1:]
+            continue
+        if head in ("sudo", "env", "time", "exec"):
+            argv = argv[1:]
+            continue
+        if head in wrappers:
+            # A `"$@"` wrapper execs whatever remains after its own
+            # `shift`s. Drop the wrapper and exactly the arguments it
+            # consumes; everything else, options included, is passed
+            # through untouched.
+            argv = argv[1 + wrappers[head] :]
+            continue
+        break
+    return argv
+
+
+def cargo_invocations(script: str, subcommand: str) -> list[list[str]]:
+    """Every EXECUTED `cargo <subcommand>` in `script`, as argv from `cargo`.
+
+    Command position, not "a `cargo` token somewhere in the command".  The
+    first version scanned every token, so `echo cargo build --target
+    aarch64-unknown-none --features hw_target` satisfied the check that the
+    gate script builds the cross target in both profiles -- CI would have
+    run `echo` while Tier 0 reported the AArch64 surface compiled (PR #883
+    review round 4).  That is the same defect as the `run: echo ./gate.sh`
+    one fixed the round before, in the neighbouring function: the resolver
+    was written and then applied at only one of the two sites that ask the
+    question.  `executed_argv` is now shared by both.
+
+    The host lane invokes every step through `run_cargo_step "label" cargo
+    test ...`, a shell function that execs `"$@"`; such wrappers are
+    derived from the script, so `cargo` behind one still counts.
+    """
+    wrappers = executing_wrappers(script)
     found: list[list[str]] = []
     for command in shell_commands(script):
-        argv = argv_of(command)
-        for index, token in enumerate(argv):
-            if (
-                (token == "cargo" or token.endswith("/cargo"))
-                and index + 1 < len(argv)
-                and argv[index + 1] == subcommand
-            ):
-                found.append(argv[index:])
-                break
+        argv = executed_argv(command, wrappers)
+        if (
+            argv
+            and (argv[0] == "cargo" or argv[0].endswith("/cargo"))
+            and len(argv) > 1
+            and argv[1] == subcommand
+        ):
+            found.append(argv)
     return found
 
 
@@ -569,15 +657,9 @@ def _names_gate(token: str) -> bool:
 def job_runs_gate(body: str) -> bool:
     """Does some `run:` step of this job actually execute the gate script?"""
     for script in run_scripts(body):
+        wrappers = executing_wrappers(script)
         for command in shell_commands(script):
-            argv = argv_of(command)
-            # Skip leading `VAR=value` prefixes and wrappers that do not
-            # change what is ultimately executed.
-            while argv and (
-                re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", argv[0])
-                or argv[0] in ("sudo", "env", "time", "exec")
-            ):
-                argv = argv[1:]
+            argv = executed_argv(command, wrappers)
             if not argv:
                 continue
             if _names_gate(argv[0]):
@@ -663,9 +745,14 @@ def check_build_script(root: str) -> list[str]:
             f"sources stay pinned to the live chain."
         ]
 
+    # Derived from the filesystem, with the known three as a floor: an
+    # enumeration cannot see a source that does not exist yet, and a new
+    # `.S` that no `.file()` mentions assembles nowhere while every check
+    # here stays green.
+    sources = sorted(set(ASM_SOURCES) | assembly_sources(root))
     missing = [
         src
-        for src in ASM_SOURCES
+        for src in sources
         if not any(
             gate_at < pos < compile_at
             for pos in _occurrences(code, f'.file("{src}")')
@@ -681,6 +768,18 @@ def check_build_script(root: str) -> list[str]:
             f"compile coverage without failing any build."
         ]
     return []
+
+
+def assembly_sources(root: str) -> set[str]:
+    """Every `.S` source in the HAL crate, as a `src/`-relative path."""
+    base = os.path.join(root, HAL_CRATE)
+    found: set[str] = set()
+    for dirpath, _dirnames, filenames in os.walk(os.path.join(base, "src")):
+        for name in filenames:
+            if name.endswith(".S"):
+                rel = os.path.relpath(os.path.join(dirpath, name), base)
+                found.add(rel.replace(os.sep, "/"))
+    return found
 
 
 def _occurrences(haystack: str, needle: str) -> list[int]:
@@ -1171,6 +1270,68 @@ def self_test() -> int:
             False,
             check="workflow",
             mutation="none",
+        )
+    )
+
+    # `echo cargo build ...` -- the token `cargo`, the subcommand, the
+    # triple, the feature and both profiles are all present; only the
+    # command word changed, so CI would run `echo` while Tier 0 reports the
+    # AArch64 profiles built.  The same defect as the `run: echo` case
+    # above, in the neighbouring function that was not swept when that one
+    # was fixed.
+    echoed_builds = baseline()
+    echoed_builds[GATE_SCRIPT] = GOOD_GATE.replace(
+        "cargo build", "echo cargo build"
+    )
+    cases.append(
+        Case(
+            "gate echoes its cargo builds instead of running them",
+            echoed_builds,
+            True,
+            check="gate_script",
+            mutation="preserving",
+        )
+    )
+
+    # ... and the accepting direction: `cargo` behind a shell function that
+    # execs `"$@"` after one `shift` is genuinely run, which is how the
+    # host lane invokes every step.  A resolver that only accepted a bare
+    # command word would reject the real configuration.
+    wrapped_host_lane = baseline()
+    wrapped_host_lane[HOST_LANE] = (
+        "#!/usr/bin/env bash\n"
+        "run_cargo_step() {\n"
+        '    local step_label="$1"\n'
+        "    shift\n"
+        '    "$@"\n'
+        "}\n"
+        'run_cargo_step "Build succeeded" cargo build --all --features host_tools\n'
+        'run_cargo_step "Unit tests passed" cargo test --all --features std,host_tools\n'
+    )
+    cases.append(
+        Case(
+            "cargo behind a `\"$@\"` wrapper still counts as executed",
+            wrapped_host_lane,
+            False,
+            check="host_lane",
+            mutation="none",
+        )
+    )
+
+    # A FOURTH `.S` source that no `.file()` mentions.  Every token the
+    # check searches for is present -- all three known sources are still
+    # handed to the assembler -- and the new one assembles nowhere.
+    unlisted_source = baseline()
+    unlisted_source[f"{HAL_CRATE}/src/psci.S"] = (
+        ".global psci_call\npsci_call:\n    ret\n"
+    )
+    cases.append(
+        Case(
+            "a new .S source no `.file()` mentions is uncovered",
+            unlisted_source,
+            True,
+            check="build_script",
+            mutation="preserving",
         )
     )
 

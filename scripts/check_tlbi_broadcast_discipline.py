@@ -96,8 +96,18 @@ LOCAL_WRAPPERS = (
     "tlbi_local",
 )
 
-# The Lean bindings of the local FFI exports.
+# The Lean bindings of the local FFI exports.  Kept as a pin, NOT as the
+# source of truth: `local_ffi_exports` derives which `ffi_tlbi_*` exports
+# are local from what their Rust bodies actually reach, and
+# `check_lean_binding_inventory` fails when a binding of a local export is
+# missing here.  An enumeration cannot see an export that does not exist
+# yet -- the same hole a hand-written `LOCAL_WRAPPERS` had (PR #883 review
+# round 4), one layer up.
 LEAN_LOCAL_BINDINGS = ("ffiTlbiAll", "ffiTlbiByAsid", "ffiTlbiByVaddr")
+FFI_MODULE = "rust/sele4n-hal/src/ffi.rs"
+_FFI_TLBI_EXPORT_RE = re.compile(
+    r'\bpub\s+extern\s+"C"\s+fn\s+(ffi_tlbi_[a-z0-9_]+)\s*\('
+)
 
 # Any REFERENCE to a local wrapper, not only a call.  Requiring `name(`
 # missed every way of reaching the function without naming it at the call
@@ -180,12 +190,91 @@ def enclosing_rust_fn(code: str, offset: int) -> str:
     return rust_code_view.enclosing_fn(code, offset)
 
 
+# Lean has no braces, so a declaration runs to the next top-level opener.
+# These are the forms that OPEN one and carry a name this gate can attribute
+# a reference to.
+LEAN_NAMED_DECL_KEYWORDS = (
+    "def", "abbrev", "theorem", "lemma", "instance", "opaque", "axiom",
+    "structure", "inductive", "class", "initialize", "builtin_initialize",
+    "macro", "elab", "syntax", "notation", "alias",
+)
+# Column-0 forms that are NOT declarations: they neither open a body nor end
+# the previous one for attribution purposes.
+LEAN_NON_DECL_KEYWORDS = (
+    "import", "open", "namespace", "end", "section", "variable", "variables",
+    "set_option", "attribute", "export", "universe", "local", "scoped",
+    "deriving", "mutual", "where", "in", "run_cmd", "example",
+    "macro_rules", "elab_rules", "declare_syntax_cat", "binder_predicate",
+)
+LEAN_MODIFIERS = (
+    "private", "protected", "partial", "noncomputable", "unsafe", "nonrec",
+    "@",
+)
+_LEAN_TOP_LEVEL_RE = re.compile(r"^(\S.*)$", re.MULTILINE)
+_LEAN_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_'.!?]*")
+
+
+def lean_declaration_boundaries(code: str) -> list[tuple[str | None, int]]:
+    """Every top-level declaration opener as ``(name or None, offset)``.
+
+    Lean bodies are delimited by indentation, so a declaration owns every
+    offset from its opener until the next one.  `None` marks a boundary
+    this scanner cannot name -- and that is the point of returning it: the
+    first version enumerated a fixed keyword set and took "the last
+    declaration at or before the offset", so a form it did not know simply
+    was not a boundary and everything inside it inherited the PRECEDING
+    declaration's allowlist entry.  `initialize bad : Unit <- ffiTlbiAll`
+    placed after an allowlisted `def` did exactly that (PR #883 review
+    round 4) -- the same defect fixed on the Rust side one round earlier
+    and left standing here.
+
+    So an unrecognised column-0 word still ENDS the previous declaration,
+    and `enclosing_lean_decl` reports `<file scope>` inside it: no
+    allowlist entry can match, which is the fail-closed answer and the
+    honest one, since the scanner genuinely does not know whose body it is.
+    """
+    boundaries: list[tuple[str | None, int]] = []
+    for line_match in _LEAN_TOP_LEVEL_RE.finditer(code):
+        line, start = line_match.group(1), line_match.start()
+        words = _LEAN_WORD_RE.findall(line)
+        stripped = line.lstrip()
+        # Attribute lines (`@[extern "..."]`) and modifiers precede the
+        # keyword; skip over them to find it.
+        index = 0
+        if stripped.startswith("@"):
+            close = line.find("]")
+            if close < 0:
+                continue  # attribute continues on the next line
+            remainder = line[close + 1 :].strip()
+            if not remainder:
+                continue  # keyword is on a following line
+            words = _LEAN_WORD_RE.findall(remainder)
+        while index < len(words) and words[index] in LEAN_MODIFIERS:
+            index += 1
+        if index >= len(words):
+            continue
+        keyword = words[index]
+        if keyword in LEAN_NON_DECL_KEYWORDS:
+            continue
+        if keyword in LEAN_NAMED_DECL_KEYWORDS:
+            name = words[index + 1] if index + 1 < len(words) else None
+            boundaries.append((name, start))
+        else:
+            # An unknown column-0 form. It may be a declaration this
+            # scanner does not know, so it ends the previous one and is
+            # reported unnamed rather than silently extending it.
+            boundaries.append((None, start))
+    return boundaries
+
+
 def enclosing_lean_decl(code: str, offset: int) -> str:
-    """Name of the last Lean declaration at or before `offset`."""
-    last = "<file scope>"
-    for match in LEAN_DECL_RE.finditer(code[:offset]):
-        last = match.group(1)
-    return last
+    """Name of the Lean declaration whose span contains `offset`."""
+    name = None
+    for candidate, start in lean_declaration_boundaries(code):
+        if start > offset:
+            break
+        name = candidate
+    return name if name else "<file scope>"
 
 
 def load_allowlist(root: str) -> tuple[set[str], list[str]]:
@@ -252,19 +341,170 @@ def check_containment(root: str) -> list[str]:
 
 
 def strip_asm(text: str) -> str:
-    """Blank `//` comments in a `.S` source, preserving line structure.
+    """Blank `//` AND `/* */` comments in a `.S` source, byte-aligned.
 
-    Deliberately NOT `strip_rust`.  In assembly a `//` opens a comment
-    wherever it appears; there are no Rust string literals to protect, and
+    Deliberately NOT `strip_rust`: in assembly a `//` opens a comment
+    wherever it appears, with no Rust string literals to protect, and
     routing `.S` through the quote-aware Rust view would let a stray `"`
-    earlier in the file swallow a later real comment -- or, worse, make a
-    commented-out `tlbi` read as live code.  Line-based is the correct
-    grammar here, which is why the two strippers stay distinct.
+    swallow a later real comment -- or make a commented-out `tlbi` read as
+    live code.
+
+    But the grammar is the C preprocessor's, not just `//`.  The first
+    version of this function asserted that "the `.S` sources use `//`
+    exclusively", which is a claim about the tree's current CONTENT, not a
+    property of the language -- and the assembler does not share it.
+    `tlbi/* maintenance */ vmalle1` preprocesses to `tlbi vmalle1` and is
+    emitted, while a `//`-only view keeps the comment and the mnemonic
+    regex no longer matches across it (PR #883 review round 4).  Comments
+    are blanked to spaces rather than removed, which also splices the
+    mnemonic back together for the scanner exactly as `cpp` does for the
+    assembler.
+
+    C block comments do not nest, unlike Rust's; an unterminated one runs
+    to end of file, which is what the preprocessor does with it too.
     """
-    return "\n".join(
-        (line if (idx := line.find("//")) < 0 else line[:idx])
-        for line in text.splitlines()
-    )
+    out = list(text)
+    index, length = 0, len(text)
+    while index < length:
+        if text.startswith("//", index):
+            end = text.find("\n", index)
+            end = length if end < 0 else end
+        elif text.startswith("/*", index):
+            close = text.find("*/", index + 2)
+            end = length if close < 0 else close + 2
+        else:
+            index += 1
+            continue
+        for position in range(index, end):
+            if out[position] != "\n":
+                out[position] = " "
+        index = end
+    return "".join(out)
+
+
+# A `tlbi` mnemonic's operation, e.g. `vae1is` in `tlbi vae1is, {0}`.
+# The broadcast variants are exactly those whose operation ends in `is`
+# (inner shareable) or `os` (outer shareable); everything else invalidates
+# only the calling PE.
+TLBI_OPERATION_RE = re.compile(
+    r'(?:^|[\s;"])tlbi\s+([a-z0-9]+)', re.IGNORECASE
+)
+
+
+def local_emitters_in_tlb_module(root: str) -> tuple[set[str], list[str]]:
+    """Functions in `tlb.rs` that emit a NON-broadcast `tlbi`, derived.
+
+    `LOCAL_WRAPPERS` is an enumeration, and an enumeration cannot see a
+    wrapper that does not exist yet.  Adding
+
+        pub fn flush_entry(v: u64) {
+            unsafe { asm!("tlbi vae1, {0}", in(reg) v); }
+        }
+
+    to `tlb.rs` and calling it from `vspace.rs` bypassed the gate entirely:
+    the emission was skipped because it is inside the trusted module, and
+    the call matched nothing because `flush_entry` is not a name the list
+    knows (PR #883 review round 4).  The containment rule and the allowlist
+    rule between them assumed the module's local surface was closed, and
+    nothing checked that.
+
+    So the set is derived from what the module actually emits, and the
+    caller pins it against `LOCAL_WRAPPERS`.  Read from the STRING-KEEPING
+    view, since the mnemonic is `asm!` template content.
+    """
+    text = read(root, TLB_MODULE)
+    code = rust_code_view.code(text)
+    bodies = rust_code_view.fn_bodies(text)
+    emitters: set[str] = set()
+    problems: list[str] = []
+    for match in TLBI_OPERATION_RE.finditer(code):
+        operation = match.group(1).lower()
+        if operation.endswith(("is", "os")):
+            continue
+        owner = rust_code_view.enclosing_fn(text, match.start(), bodies=bodies)
+        if owner == rust_code_view.FILE_SCOPE:
+            lineno = code.count("\n", 0, match.start()) + 1
+            problems.append(
+                f"{TLB_MODULE}:{lineno}: emits a non-broadcast `tlbi "
+                f"{operation}` outside any function, so this gate cannot "
+                f"attribute it to a wrapper. Move the emission into a "
+                f"named wrapper."
+            )
+            continue
+        emitters.add(owner)
+    return emitters, problems
+
+
+def check_local_wrapper_inventory(root: str) -> list[str]:
+    """Every local emitter in `tlb.rs` must be a registered local wrapper."""
+    emitters, problems = local_emitters_in_tlb_module(root)
+    unknown = sorted(emitters - set(LOCAL_WRAPPERS))
+    if unknown:
+        problems.append(
+            f"{TLB_MODULE}: {', '.join(unknown)} emit(s) a non-broadcast "
+            f"`tlbi` but is not in this gate's LOCAL_WRAPPERS list, so "
+            f"callers of it are not checked against {ALLOWLIST}.\n"
+            f"      A new local emitter is invisible twice over: the "
+            f"emission is skipped because it is inside `{TLB_MODULE}`, and "
+            f"the call site matches no known wrapper name. Add it to "
+            f"LOCAL_WRAPPERS (and register any legitimate caller), or make "
+            f"it broadcast."
+        )
+    return problems
+
+
+def local_ffi_exports(root: str) -> set[str]:
+    """`ffi_tlbi_*` exports whose bodies reach a LOCAL wrapper.
+
+    Derived from `ffi.rs` rather than listed, so a new local export cannot
+    be added without its Lean binding being checked.  `ffi_tlbi_for_sharing`
+    routes through the broadcast wrappers and is excluded by construction.
+    """
+    text = read(root, FFI_MODULE)
+    # TWO views, byte-aligned so the offsets are interchangeable. The
+    # signature is matched in the string-KEEPING view because `extern "C"`
+    # carries a string literal that is part of the language construct --
+    # blanking it makes the signature unmatchable, which is fail-open here
+    # since an unfound export is an unchecked one. The body is read in the
+    # string-blanked view, because a wrapper name inside a literal is a
+    # mention rather than a call.
+    signatures = rust_code_view.code(text)
+    code = rust_code_view.code_no_strings(text)
+    bodies = rust_code_view.fn_bodies(text)
+    spans = {name: (start, end) for name, start, end in bodies}
+    local: set[str] = set()
+    for match in _FFI_TLBI_EXPORT_RE.finditer(signatures):
+        name = match.group(1)
+        if name not in spans:
+            continue
+        start, end = spans[name]
+        if LOCAL_WRAPPER_RE.search(code[start:end]):
+            local.add(name)
+    return local
+
+
+def _lean_binding_name(export: str) -> str:
+    """`ffi_tlbi_by_asid` -> `ffiTlbiByAsid`, the Lean binder convention."""
+    head, *rest = export.split("_")
+    return head + "".join(part.capitalize() for part in rest)
+
+
+def check_lean_binding_inventory(root: str) -> list[str]:
+    """Every local `ffi_tlbi_*` export has its Lean binding registered."""
+    expected = {_lean_binding_name(e) for e in local_ffi_exports(root)}
+    missing = sorted(expected - set(LEAN_LOCAL_BINDINGS))
+    if not missing:
+        return []
+    return [
+        f"{FFI_MODULE}: the local FFI export(s) bound as "
+        f"{', '.join(missing)} are not in this gate's LEAN_LOCAL_BINDINGS "
+        f"list, so Lean callers of them are not checked against "
+        f"{ALLOWLIST}.\n"
+        f"      A local export reaches a non-broadcast TLBI; its Lean "
+        f"binding must be registered here (and any legitimate caller in "
+        f"{ALLOWLIST}), or the export must route through "
+        f"`tlbi_for_sharing`."
+    ]
 
 
 def check_rust_allowlist(root: str, allowed: set[str]) -> tuple[list[str], set[str]]:
@@ -383,6 +623,8 @@ def check_stale_entries(allowed: set[str], used: set[str]) -> list[str]:
 def run_checks(root: str) -> list[str]:
     allowed, problems = load_allowlist(root)
     problems += check_containment(root)
+    problems += check_local_wrapper_inventory(root)
+    problems += check_lean_binding_inventory(root)
     rust_problems, rust_used = check_rust_allowlist(root, allowed)
     problems += rust_problems
     lean_problems, lean_used = check_lean_allowlist(root, allowed)
@@ -454,13 +696,28 @@ opaque ffiTlbiForSharing : UInt32 → UInt32 → BaseIO Unit
 
 BASE_ALLOWLIST = """# fixture allowlist
 rust/sele4n-hal/src/mmu.rs::enable_mmu
+rust/sele4n-hal/src/ffi.rs::ffi_tlbi_all
 SeLe4n/Kernel/Concurrency/Runtime.lean::tlbiLocalFullFlush
+"""
+
+
+BASE_FFI_RS = """
+#[no_mangle]
+pub extern "C" fn ffi_tlbi_all() {
+    crate::tlb::tlbi_vmalle1();
+}
+
+#[no_mangle]
+pub extern "C" fn ffi_tlbi_for_sharing(domain: u32, op: u32) {
+    crate::tlb::tlbi_for_sharing(domain, op);
+}
 """
 
 
 def fixture() -> dict[str, str]:
     return {
         TLB_MODULE: BASE_TLB_RS,
+        FFI_MODULE: BASE_FFI_RS,
         f"{RUST_SRC}/mmu.rs": BASE_MMU_RS,
         f"{RUST_SRC}/vspace.rs": BASE_OTHER_RS,
         f"{RUST_SRC}/boot.S": "// no tlbi here\n_start:\n    nop\n",
@@ -480,7 +737,14 @@ def write_tree(root: str, files: dict[str, str]) -> None:
 
 # The checks `run_checks` performs, by id.  Each must be exercised by at
 # least one PRESERVING negative case below; the harness enforces it.
-CHECKS = ("containment", "rust_allowlist", "lean_allowlist", "stale_entries")
+CHECKS = (
+    "containment",
+    "local_wrapper_inventory",
+    "lean_binding_inventory",
+    "rust_allowlist",
+    "lean_allowlist",
+    "stale_entries",
+)
 
 
 class Case:
@@ -709,6 +973,121 @@ def self_test() -> int:
             True,
             check="stale_entries",
             mutation="preserving",
+        )
+    )
+
+    # A NEW local emitter inside the trusted module, called under a name
+    # the wrapper list does not know.  Both tokens a presence check looks
+    # for are intact -- the module is still exempt from containment, and no
+    # known wrapper name appears at the call site -- and the emitter is
+    # invisible twice over.
+    new_emitter = fixture()
+    new_emitter[TLB_MODULE] = BASE_TLB_RS + (
+        "\npub fn flush_entry(vaddr: u64) {\n"
+        '    unsafe { core::arch::asm!("tlbi vae1, {0}", in(reg) vaddr); }\n}\n'
+    )
+    new_emitter[f"{RUST_SRC}/vspace.rs"] = (
+        "\nfn unmap_page(vaddr: u64) {\n"
+        "    crate::tlb::flush_entry(vaddr);\n}\n"
+    )
+    cases.append(
+        Case(
+            "a new local emitter in tlb.rs is not silently trusted",
+            new_emitter,
+            True,
+            check="local_wrapper_inventory",
+            mutation="preserving",
+        )
+    )
+
+    # A broadcast emitter added the same way must NOT be reported: the
+    # inventory check exists to find LOCAL emitters, and a check that only
+    # ever tightens ends up rejecting correct code.
+    new_broadcast = fixture()
+    new_broadcast[TLB_MODULE] = BASE_TLB_RS + (
+        "\npub fn flush_entry_broadcast(vaddr: u64) {\n"
+        '    unsafe { core::arch::asm!("tlbi vae1is, {0}", in(reg) vaddr); }\n}\n'
+    )
+    cases.append(
+        Case(
+            "a new BROADCAST emitter in tlb.rs is accepted",
+            new_broadcast,
+            False,
+            check="local_wrapper_inventory",
+            mutation="none",
+        )
+    )
+
+    # An `initialize` block after the allowlisted definition.  The
+    # allowlisted name, its registration and the binding are all present;
+    # only the reference's owner changed, and a keyword the scanner does
+    # not know must not silently extend the previous declaration.
+    lean_unknown_form = fixture()
+    lean_unknown_form["SeLe4n/Kernel/Concurrency/Runtime.lean"] = (
+        BASE_LEAN
+        + "\ninitialize badLocalFlush : Unit \u2190 SeLe4n.Platform.FFI.ffiTlbiAll\n"
+    )
+    cases.append(
+        Case(
+            "an `initialize` after an allowlisted def does not inherit its entry",
+            lean_unknown_form,
+            True,
+            check="lean_allowlist",
+            mutation="preserving",
+        )
+    )
+
+    # A `/* */` splitting the mnemonic in a `.S` source.  The mnemonic is
+    # present and so is the comment; preprocessing splices them and the
+    # assembler emits the instruction.
+    asm_block_comment = fixture()
+    asm_block_comment[f"{RUST_SRC}/boot.S"] = (
+        "_start:\n    tlbi/* maintenance */ vmalle1\n    ret\n"
+    )
+    cases.append(
+        Case(
+            "a `/* */` inside a .S mnemonic does not hide the instruction",
+            asm_block_comment,
+            True,
+            check="containment",
+            mutation="preserving",
+        )
+    )
+
+    # A new LOCAL ffi export whose Lean binding is not registered: the
+    # export exists, the binding exists, callers exist -- only the gate's
+    # knowledge of which bindings are local is stale.
+    new_ffi_export = fixture()
+    new_ffi_export[FFI_MODULE] = BASE_FFI_RS + (
+        '\n#[no_mangle]\npub extern "C" fn ffi_tlbi_by_page(asid: u16, vaddr: u64) {\n'
+        "    crate::tlb::tlbi_vale1(asid, vaddr);\n}\n"
+    )
+    new_ffi_export[ALLOWLIST] = (
+        BASE_ALLOWLIST + "rust/sele4n-hal/src/ffi.rs::ffi_tlbi_by_page\n"
+    )
+    cases.append(
+        Case(
+            "a new local FFI export must have its Lean binding registered",
+            new_ffi_export,
+            True,
+            check="lean_binding_inventory",
+            mutation="preserving",
+        )
+    )
+
+    # ... and a new BROADCAST export must not be reported.
+    new_broadcast_export = fixture()
+    new_broadcast_export[FFI_MODULE] = BASE_FFI_RS + (
+        '\n#[no_mangle]\npub extern "C" fn ffi_tlbi_by_page(asid: u16, vaddr: u64) {\n'
+        "    crate::tlb::tlbi_vale1is(asid, vaddr);\n}\n"
+    )
+    cases.append(
+        Case(
+            "a new broadcast FFI export needs no Lean binding entry",
+            new_broadcast_export,
+            False,
+            check="lean_binding_inventory",
+            mutation="none",
         )
     )
 

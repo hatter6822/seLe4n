@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.44.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.45.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -618,6 +618,29 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   move it after the `asm!`; keep `fatal_halt()` but nest it under the
   negation of its own branch condition; keep the reference but move it out
   of the function whose allowlist entry covers it.
+
+  **And having built the resolver, sweep every site that asks the same
+  question.**  Round 4 of the same review failed differently from the first
+  three: the resolvers were right, and each was wired into exactly the call
+  site the review had named.  `job_runs_gate` required a command position
+  while its neighbour `cargo_invocations` still scanned tokens anywhere, so
+  `echo cargo build --target …` passed; `rust_code_view.enclosing_fn` got
+  real brace-matched bodies while `enclosing_lean_decl`, four lines below,
+  stayed last-declaration-wins, so an `initialize` block inherited the
+  preceding `def`'s allowlist entry; the Rust view became quote-aware while
+  the `.S` view kept a `//`-only stripper resting on an asserted claim about
+  the tree's *content* ("the `.S` sources use `//` exclusively") rather than
+  the preprocessor's grammar.  A fix applied at one site and not its
+  siblings leaves the class open and reads as closed.
+
+  A related shape, and the one worth looking for unprompted: **an
+  enumeration standing in for a derivation**.  A hand-written list of the
+  things a gate protects — local TLBI wrappers, `*OS` wrappers, `.S`
+  sources, FFI bindings — cannot see the one that does not exist yet, so the
+  gate is silent exactly when something new is added.  Derive the set from
+  what the code actually does and keep the list as a pin that fails when the
+  two diverge.  Three of the four such lists in these gates were found by
+  sweeping for the shape after the fourth was reported.
 
   Every check in a self-tested gate needs at least one such case, and
   **that requirement is now enforced rather than asserted**: each case in

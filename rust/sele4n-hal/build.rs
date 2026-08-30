@@ -1730,6 +1730,28 @@ fn scan_tlb_rs_outer_shareable_guards_intact() {
     }
 
     // Every `*OS` wrapper must call the guard before its `asm!`.
+    //
+    // The list below is a FLOOR, not the source of truth: the wrappers that
+    // actually need the guard are derived from the mnemonics `tlb.rs`
+    // emits, so a fifth `*OS` wrapper added later is guarded from the day
+    // it is written.  A hand-written list cannot see a wrapper that does
+    // not exist yet -- the hole the TLBI gate had for its own local-wrapper
+    // enumeration (PR #883 review round 4).
+    let derived_os_wrappers = outer_shareable_emitters(&templates, &code);
+    for name in &derived_os_wrappers {
+        if !OS_WRAPPERS.contains(&name.as_str()) {
+            panic!(
+                "WS-RR RR1.4 regression: `{path}::{name}` emits a `TLBI \
+                 *OS` mnemonic but is not in this scanner's OS_WRAPPERS \
+                 list, so its FEAT_TLBIOS guard is never checked.\n\
+                 Every outer-shareable wrapper must call \
+                 `require_feat_tlbios()` before its `asm!`; add the name \
+                 here so the ordering and `.arch_extension` bracket are \
+                 pinned for it too."
+            );
+        }
+    }
+
     const OS_WRAPPERS: [&str; 4] = [
         "tlbi_vmalle1os",
         "tlbi_vae1os",
@@ -2021,6 +2043,99 @@ fn enclosing_fn_body<'a>(source: &'a str, signature: &str) -> Option<&'a str> {
     let start = source.find(signature)? + signature.len();
     let end = source[start..].find("\n}\n").map(|i| start + i)?;
     Some(&source[start..end])
+}
+
+/// **WS-RR RR1.12**: functions in `tlb.rs` that emit a `TLBI *OS` mnemonic.
+///
+/// Derived from the template view (the mnemonic is `asm!` template
+/// content) and attributed through the identifier view's brace-matched
+/// function bodies, which are byte-aligned with it.  A wrapper emitting an
+/// outer-shareable invalidation from outside any function cannot be
+/// attributed, so it panics rather than passing unchecked.
+fn outer_shareable_emitters(templates: &str, code: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    let bytes = templates.as_bytes();
+    let mut at = 0usize;
+    while let Some(hit) = templates[at..].find("tlbi ") {
+        let start = at + hit;
+        // Must begin an assembly statement, not sit inside an identifier.
+        let preceded_ok =
+            start == 0 || matches!(bytes[start - 1], b' ' | b'\t' | b'\n' | b';' | b'"');
+        at = start + 5;
+        if !preceded_ok {
+            continue;
+        }
+        let operation: String = templates[at..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect();
+        if !operation.to_ascii_lowercase().ends_with("os") {
+            continue;
+        }
+        let name = enclosing_fn_name(code, start);
+        match name {
+            Some(owner) => {
+                if !found.contains(&owner) {
+                    found.push(owner);
+                }
+            }
+            None => panic!(
+                "WS-RR RR1.4 scanner: `src/tlb.rs` emits `tlbi {operation}` \
+                 outside any function, so the FEAT_TLBIOS guard cannot be \
+                 attributed to a wrapper. Move the emission into a named \
+                 wrapper."
+            ),
+        }
+    }
+    found
+}
+
+/// **WS-RR RR1.12**: the innermost `fn` whose brace-matched body contains
+/// `offset`, or `None` at module scope.
+fn enclosing_fn_name(code: &str, offset: usize) -> Option<String> {
+    let bytes = code.as_bytes();
+    let mut best: Option<(String, usize)> = None;
+    let mut search = 0usize;
+    while let Some(hit) = code[search..].find("fn ") {
+        let at = search + hit;
+        search = at + 3;
+        if at > 0 && (bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_') {
+            continue;
+        }
+        let name: String = code[at + 3..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if name.is_empty() {
+            continue;
+        }
+        let Some(open) = code[at..].find('{').map(|i| at + i) else {
+            continue;
+        };
+        // A `;` before the brace means a bodyless declaration.
+        if code[at..open].contains(';') {
+            continue;
+        }
+        let mut depth = 0usize;
+        let mut end = open;
+        for (index, ch) in code[open..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = open + index;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if open < offset && offset < end && best.as_ref().is_none_or(|(_, s)| open > *s) {
+            best = Some((name, open));
+        }
+    }
+    best.map(|(name, _)| name)
 }
 
 /// **WS-RR RR1.12**: pin `rust_code_views`, because a stripper that stops
