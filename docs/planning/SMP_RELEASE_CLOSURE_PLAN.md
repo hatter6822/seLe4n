@@ -16,7 +16,7 @@
 > **Calendar estimate**: the original 4–6 weeks covered documentation only and
 > is superseded; the replacement is derived from the measured aarch64 surface
 > by **RR1.11** and lands here in the same cut
-> **Sub-task count**: 41 enumerated rows across ~10-15 PRs (phase map in §3),
+> **Sub-task count**: 44 enumerated rows across ~10-15 PRs (phase map in §3),
 > **plus the SM10.1 runtime port**, which RR1.11 decomposes into rows this
 > line cannot pre-count.  41 is therefore a floor on the work and an exact
 > count of the schedule as written — which is the thing a gate can hold, and
@@ -78,7 +78,8 @@ between that surface and a running image, plus the remediation WS-RR owns.
    i18n locales.
 5. **DEVELOPMENT.md + CLAIM_EVIDENCE_INDEX.md** (SM10.2.5, SM10.2.6).
 6. **WORKSTREAM_HISTORY.md** WS-SM closure (SM10.2.7).
-7. **codebase_map.json regeneration** (SM10.2.8).
+7. **codebase_map.json regeneration** (SM10.2.8 as an interim sync; the
+   validation phase re-runs it once the Lean-producing phases are done).
 8. **website manifest** (SM10.2.9).
 9. **SMP test-suite completion** (SM10.3) over the suites and fixtures that
    already exist — see §3 SM10.3 for what is new and what is extension.
@@ -181,8 +182,8 @@ sat inside it unseen.
 | SM10.1 | Bootable image and boot path | 1 | XL |
 | SM10.2 | Documentation sync | 9 | L |
 | SM10.3 | Test suite completion | 20 | L |
-| SM10.4 | AN12-B inventory closure | 3 | M |
-| SM10.5 | Version bump and final release validation | 4 | L |
+| SM10.4 | Inventory closure and marker theorems | 5 | M |
+| SM10.5 | Version bump, metrics resync and final release validation | 5 | L |
 | SM10.6 | Closure and tag | 4 | M |
 
 ### SM10.1 — Bootable image and boot path (1 sub-task + the runtime port)
@@ -237,7 +238,7 @@ obligation.
 | SM10.2.5 | DEVELOPMENT.md updates | (1 file) | S |
 | SM10.2.6 | CLAIM_EVIDENCE_INDEX.md entries | (1 file) | M |
 | SM10.2.7 | WORKSTREAM_HISTORY.md WS-SM closure summary | (1 file) | L |
-| SM10.2.8 | Regenerate codebase_map.json | (1 file) | T |
+| SM10.2.8 | Regenerate codebase_map.json — an **interim** sync, so the docs written in this phase quote live figures.  It is re-run once the Lean-producing phases are done; the consuming row in the validation phase states that dependency | (1 file) | T |
 | SM10.2.9 | Update website_link_manifest.txt | (1 file) | S |
 
 **SM10.2's documentation work-list** is not "re-audit the docs".  WS-RR
@@ -309,15 +310,24 @@ restated here.
 | SM10.3.19 | `scripts/test_barrier_kind_emission.sh` (objdump emission check) | §4.6 | S |
 | SM10.3.20 | `scripts/test_rpi5_osh_widening.sh` (on-board OSH latency probe) | §4.7 | M |
 
-### SM10.4 — AN12-B inventory closure (3 sub-tasks)
+### SM10.4 — Inventory closure and marker theorems (5 sub-tasks)
+
+The phase that finishes SM10's **Lean** surface, which is why it precedes the
+version bump and the metrics regeneration in `SM10.5`: both measure the tree,
+and a theorem authored after them leaves `docs/codebase_map.json` and the
+README stale at the tag.  §6.1's marker table lists five markers; two landed
+at RR0.6 and the other three are rows here, because "assigned to SM10" is not
+a task anyone executes.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM10.4.1 | Each `smpLatentInventory` entry's `smpDischarge` updated to "SMP-implemented in WS-SM" | `Concurrency/Assumptions.lean` | M |
 | SM10.4.2 | Rename `smpLatentInventory` to `smpDischargedInventory` (or retire entirely) | (refactor) | M |
-| SM10.4.3 | 8-entry size witness retained | Theorem | T |
+| SM10.4.3 | **Author `smpRetiredInventory_complete`** — the 8-entry size witness, proving every retired entry is discharged (§6.1) | Theorem | S |
+| SM10.4.4 | **Author the acceptance-gate count marker** (e.g. `smpAcceptanceGate_count`), replacing `wsm_acceptance_gate_count` (§6.1) | Theorem | S |
+| SM10.4.5 | **Author the release witness** (e.g. `release_witness_1_0_0`), replacing `v1_0_0_release_witness` whose `v1_0_0` component the naming gate reads as a version stamped into an identifier (§6.1) | Theorem | S |
 
-### SM10.5 — Version bump and final release validation (4 sub-tasks)
+### SM10.5 — Version bump, metrics resync and final release validation (5 sub-tasks)
 
 Runs on the image `SM10.1` produced, against the suites `SM10.3` completed —
 which is why it sits here and not beside the image build.
@@ -334,9 +344,10 @@ the tag only.
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM10.5.1 | Version bump to v1.0.0 via `./scripts/bump_version.sh` (every site in `scripts/version_locations.sh`; §4), **then rebuild the image**, so `KERNEL_VERSION` in the validated artefact reads `1.0.0` | M |
-| SM10.5.2 | Full QEMU `-smp 4` boot + workload run, on the rebuilt v1.0.0 image | `scripts/test_v1_0_0_release_validation.sh` | L |
-| SM10.5.3 | All 5 tiers green on the release candidate | (verification) | M |
-| SM10.5.4 | Release-candidate trace fixture commit | (1 file) | S |
+| SM10.5.2 | **Regenerate `docs/codebase_map.json` and re-sync the README/spec metrics** — `SM10.2.8` ran before `SM10.3` added a suite and `SM10.4` added theorems, so the figures it synchronized are stale by now; this is the regeneration that survives to the tag | `./scripts/sync_documentation_metrics.sh` | S |
+| SM10.5.3 | Full QEMU `-smp 4` boot + workload run, on the rebuilt v1.0.0 image | `scripts/test_v1_0_0_release_validation.sh` | L |
+| SM10.5.4 | All 5 tiers green on the release candidate | (verification) | M |
+| SM10.5.5 | Release-candidate trace fixture commit | (1 file) | S |
 
 ### SM10.6 — Closure and tag (4 sub-tasks)
 
@@ -464,14 +475,24 @@ Closures (from the WS-SM audit):
 - SMP-H4: verified TicketLock + RwLock primitives.
 - 7 MEDIUM + 5 LOW findings closed.
 
-Theorem count: take it from docs/smp_theorem_manifest.json,
-regenerated in this cut — 902 theorems registered in a
-machine-checked inventory across SM0..SM10, of which SM2
-contributes 22, SM3 276 and SM5 604.  The same inventories hold
-1111 entries; the other 209 are defs, not proofs.  Quote the
-902.  Do NOT restate a per-phase sum here; see the note below.
-Zero Lean axioms.  Zero sorry/native_decide.  Tier 0..5 all
-green.
+Theorem count: read theoremTotal, entryTotal and the per-phase
+contributions out of docs/smp_theorem_manifest.json as
+regenerated in this cut.  Do NOT copy the figures from this
+skeleton or from an earlier release note: SM10.3.13 builds the
+eight missing phase inventories, so the total and the set of
+contributing phases both change, and any literal written here
+in advance is stale by the time it is published.  The command
+that prints them:
+
+  python3 - <<'EOF'
+  import json, pathlib
+  m = json.loads(pathlib.Path("docs/smp_theorem_manifest.json").read_text())
+  print(m["theoremTotal"], "theorems;", m["entryTotal"], "entries")
+  EOF
+
+Quote theoremTotal as theorems and entryTotal as entries; the
+difference is defs, not proofs.  Zero Lean axioms.  Zero
+sorry/native_decide.  Tier 0..5 all green.
 
 WS-RC R0..R5 LANDED at v0.31.2 (preserved); R6..R14 absorbed
 into SM-phases per SM0.Q.  Single unified workstream.
@@ -560,15 +581,21 @@ authors the remaining three under names that describe what they assert.
 
 | Marker | State | Note |
 |--------|-------|------|
-| `smpRetiredInventory_complete` | SM10.4.3 | all 8 entries discharged |
+| `smpRetiredInventory_complete` | **SM10.4.3** authors it | all 8 entries discharged |
 | `SmpCompletionPhase.all_length = 11` | **landed** (RR0.6) | replaces `wsm_phase_count = 10`, which was both workstream-coded and wrong: SM0..SM10 is **eleven** phases, and SM0 is a phase whose theorems the manifest counts |
-| acceptance-gate count | SM10 | replaces `wsm_acceptance_gate_count`; name it for what it counts (e.g. `smpAcceptanceGate_count`) |
+| acceptance-gate count | **SM10.4.4** authors it | replaces `wsm_acceptance_gate_count`; name it for what it counts (e.g. `smpAcceptanceGate_count`) |
 | `smp_inventoried_theorem_count` | **landed** (RR0.6) | replaces `wsm_theorem_count`; a sum over `smpPhaseTheoremManifest`, not a literal — see §5 |
-| release witness | SM10.6.4 | replaces `v1_0_0_release_witness`, whose `v1_0_0` component the naming gate reads as a version stamped into an identifier; spell the version without the `v` prefix (e.g. `release_witness_1_0_0`) |
+| release witness | **SM10.4.5** authors it | replaces `v1_0_0_release_witness`, whose `v1_0_0` component the naming gate reads as a version stamped into an identifier; spell the version without the `v` prefix (e.g. `release_witness_1_0_0`) |
 
 The two landed markers live in
 `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` and are exercised by the
 Tier-0 gate `scripts/generate_smp_theorem_manifest.py --check`.
+
+**Every remaining marker has a numbered row.**  Until `v0.34.40` two of the
+three were assigned to a bare phase (`SM10`) or to the row that cuts the tag,
+neither of which authors a theorem — so a maintainer could tick every
+sub-task with three of the five markers still absent.  All three now sit in
+`SM10.4`, ahead of the metrics regeneration that measures them.
 
 ### 6.2 What SM10 validates
 

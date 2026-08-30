@@ -177,7 +177,9 @@ def scan_text(rel: str, text: str, register: RegisterIndex | None = None) -> lis
 
     A claim is compliant when it cites the register **and**, if it names any
     `row N` — including every member of a range like `rows 24-26` — that row
-    exists in the register's enumerated table.  Citing the
+    exists in the register's enumerated table **and** at least one cited row
+    records this very file.  Row existence alone is satisfied by any real row,
+    which is no registration of the deferral in front of you.  Citing the
     register while naming a row that does not exist is the failure this
     correlation closes: the diagnostic always said a deferral must be both
     cited and listed, and only the citation was ever checked.
@@ -195,13 +197,26 @@ def scan_text(rel: str, text: str, register: RegisterIndex | None = None) -> lis
             out.append(f"{rel}:{i + 1}: cites no register -- {lines[i].strip()}")
             continue
         if register is not None:
-            for row in cited_rows(context):
-                if row not in register.rows:
-                    out.append(
-                        f"{rel}:{i + 1}: cites row {row}, which the register's "
-                        f"enumerated table does not contain -- {lines[i].strip()}"
-                    )
-                    break
+            rows = cited_rows(context)
+            missing = [r for r in rows if r not in register.rows]
+            if missing:
+                out.append(
+                    f"{rel}:{i + 1}: cites row {missing[0]}, which the register's "
+                    f"enumerated table does not contain -- {lines[i].strip()}"
+                )
+            elif rows and not any(register.rows[r] == rel for r in rows):
+                # A row number that merely *exists* is not a registration of
+                # this deferral: any real row would satisfy that, so a new
+                # deferral could cite an arbitrary one and pass.  At least one
+                # cited row has to name the file the claim is written in.  Not
+                # every row -- a range may legitimately span a group of related
+                # sites -- but at least the one that makes this file listed.
+                named = ", ".join(f"row {r} -> `{register.rows[r]}`" for r in rows)
+                out.append(
+                    f"{rel}:{i + 1}: cites {named}, but no cited row names this "
+                    f"file, so this deferral is not the one the register lists "
+                    f"-- {lines[i].strip()}"
+                )
     return out
 
 
@@ -373,18 +388,34 @@ def _self_test() -> int:
     # name a row that does not exist and the gate passed, while its own
     # diagnostic claimed the deferral must be listed there.
     reg = RegisterIndex("| 29 | `scripts/check_deferral_registration.py` | thing |\n")
+    HERE = "scripts/check_deferral_registration.py"
     check("a citation naming a nonexistent row is caught",
           any("does not contain" in f for f in scan_text(
-              "X.lean",
+              HERE,
               "-- no currently-active plan tracks it; see WORKSTREAM_HISTORY.md row 99.\n",
               reg)),
           "should fire")
-    check("a citation naming a real row passes",
+    check("a citation naming a real row for this file passes",
           not scan_text(
-              "X.lean",
+              HERE,
               "-- no currently-active plan tracks it; see WORKSTREAM_HISTORY.md row 29.\n",
               reg),
           "should not fire")
+    # Row existence alone is satisfied by any real row, so a deferral in a
+    # different file could cite an arbitrary one and never be listed.
+    check("a citation of a real row that names another file is caught",
+          any("no cited row names this file" in f for f in scan_text(
+              "X.lean",
+              "-- no currently-active plan tracks it; see WORKSTREAM_HISTORY.md row 29.\n",
+              reg)),
+          "should fire")
+    check("a range naming this file among others passes",
+          not scan_text(
+              HERE,
+              "-- no currently-active plan tracks it; WORKSTREAM_HISTORY.md rows 29-30.\n",
+              RegisterIndex("| 29 | `other/file.lean` | x |\n"
+                            "| 30 | `scripts/check_deferral_registration.py` | y |\n")),
+          "should not fire: row 30 names this file")
     check("the register table is parsed into rows",
           reg.rows == {29: "scripts/check_deferral_registration.py"}, repr(reg.rows))
 
@@ -398,13 +429,13 @@ def _self_test() -> int:
           repr(cited_rows("see rows 24-26")))
     check("a range whose later members are absent is caught",
           any("does not contain" in f for f in scan_text(
-              "X.lean",
+              "scripts/check_deferral_registration.py",
               "-- no currently-active plan tracks it; WORKSTREAM_HISTORY.md rows 29-31.\n",
               reg)),
           "should fire: 30 and 31 are not in the register")
     check("a range whose members all exist passes",
           not scan_text(
-              "X.lean",
+              "scripts/check_deferral_registration.py",
               "-- no currently-active plan tracks it; WORKSTREAM_HISTORY.md rows 29-29.\n",
               reg),
           "should not fire")

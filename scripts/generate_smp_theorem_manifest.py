@@ -313,9 +313,57 @@ def _count_re(inv: str) -> re.Pattern[str]:
     )
 
 
+def indexed_text(rels: list[str]) -> dict[str, str]:
+    """Each path's **staged** content, in one `git cat-file --batch`.
+
+    Enumerating from the index and then reading the working tree is a hole, not
+    an inconsistency: stage an inventory's witnesses, revert the module on
+    disk, and `--check` evaluates code the pending commit does not contain --
+    so the new inventory can be committed with no phase claiming it, which is
+    the one failure this gate exists to prevent.  The paths and the bytes come
+    from the same place, and for a gate that place is the index.
+    """
+    if not rels:
+        return {}
+    try:
+        out = subprocess.run(
+            ["git", "cat-file", "--batch"], cwd=REPO_ROOT,
+            input="".join(f":{r}\n" for r in rels).encode(),
+            capture_output=True, check=True).stdout
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return {}
+    res: dict[str, str] = {}
+    i = 0
+    for rel in rels:
+        nl = out.find(b"\n", i)
+        if nl < 0:
+            break
+        header = out[i:nl].decode("utf-8", "replace")
+        i = nl + 1
+        if header.endswith(("missing", "ambiguous")):
+            continue
+        try:
+            size = int(header.rsplit(" ", 1)[1])
+        except (IndexError, ValueError):
+            break
+        try:
+            res[rel] = out[i:i + size].decode("utf-8")
+        except UnicodeDecodeError:
+            pass
+        i += size + 1                       # blob, then its trailing newline
+    return res
+
+
 def read_code(path: pathlib.Path) -> str:
-    """Read a Lean source through the comment-free code view."""
-    return lean_code_view.strip(path.read_text(encoding="utf-8"))
+    """One Lean source through the comment-free code view, read from the index.
+
+    Falls back to the working tree only when the path is not in the index (a
+    tarball checkout, or the self-test's fixtures)."""
+    rel = str(path.relative_to(REPO_ROOT)) if path.is_absolute() else str(path)
+    staged = indexed_text([rel]).get(rel)
+    if staged is None:
+        staged = path.read_text(encoding="utf-8")
+    return lean_code_view.strip(staged)
 
 
 def lean_files() -> list[pathlib.Path]:
@@ -329,6 +377,23 @@ def lean_files() -> list[pathlib.Path]:
         return sorted(REPO_ROOT.rglob("*.lean"))
     return [REPO_ROOT / rel for rel in sorted(x for x in tracked if x)
             if not rel.startswith(LEAN_SKIP_PREFIXES)]
+
+
+def _staged_lean_sources() -> dict[str, str]:
+    """Every tracked Lean module's staged text, comment-stripped.  One batch
+    read rather than one subprocess per file."""
+    rels = [str(p.relative_to(REPO_ROOT)) for p in lean_files()]
+    staged = indexed_text(rels)
+    out: dict[str, str] = {}
+    for rel in rels:
+        text = staged.get(rel)
+        if text is None:                    # not in the index: read from disk
+            fs = REPO_ROOT / rel
+            if not fs.is_file():
+                continue
+            text = fs.read_text(encoding="utf-8")
+        out[rel] = lean_code_view.strip(text)
+    return out
 
 
 def discover_in(sources: dict[str, str]) -> tuple[dict[str, dict[str, object]], list[str]]:
@@ -401,7 +466,7 @@ def discover_in(sources: dict[str, str]) -> tuple[dict[str, dict[str, object]], 
 def discover() -> tuple[dict[str, dict[str, object]], list[str]]:
     """`discover_in` over the tree, read through the comment-free code view."""
     return discover_in(
-        {str(p.relative_to(REPO_ROOT)): read_code(p) for p in lean_files()}
+        _staged_lean_sources()
     )
 
 
@@ -1189,6 +1254,38 @@ def _self_test() -> int:
     check("build output is not scanned",
           not any(r.startswith(".lake/") for r in scanned),
           "a .lake path is being scanned")
+
+    # The *source* of the bytes, not the enumeration.  Reading the working tree
+    # after enumerating the index let a staged inventory be committed with no
+    # phase claiming it: `--check` evaluated code the commit did not contain.
+    # Driven in a throwaway repository, since the mechanism is `git cat-file`.
+    import shutil
+    import tempfile
+    global REPO_ROOT
+    saved_root = REPO_ROOT
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            (root / "SeLe4n").mkdir()
+            probe = root / "SeLe4n" / "Probe.lean"
+            probe.write_text("theorem staged : True := trivial\n", encoding="utf-8")
+            git = lambda *a: subprocess.run(["git", *a], cwd=root,
+                                            capture_output=True, check=True)
+            git("init", "-q", "-b", "main")
+            git("config", "user.email", "gate@example.invalid")
+            git("config", "user.name", "gate")
+            git("add", "-A")
+            probe.write_text("theorem on_disk_only : True := trivial\n",
+                             encoding="utf-8")
+            REPO_ROOT = root
+            staged = indexed_text(["SeLe4n/Probe.lean"]).get("SeLe4n/Probe.lean", "")
+            code = read_code(root / "SeLe4n" / "Probe.lean")
+        check("Lean sources are read from the index, not the working tree",
+              "staged" in staged and "on_disk_only" not in staged
+              and "staged" in code and "on_disk_only" not in code,
+              f"staged={staged!r} code={code!r}")
+    finally:
+        REPO_ROOT = saved_root
 
     failed = [c for c in cases if not c[1]]
     for name, ok, detail in cases:

@@ -1,3 +1,60 @@
+## v0.34.40 — A third index/worktree split, and three plan defects the numbering gate could finally see
+
+Five findings from the fourteenth review round. Two are the same class of
+defect one file further on; three are ordering and ownership faults in the
+SM10 schedule — found, this time, in a plan the gate had started parsing the
+round before.
+
+**`generate_smp_theorem_manifest.py` read the working tree.** `lean_files()`
+enumerated the index (v0.34.39) but `read_code()` read the bytes off disk, so
+staging an inventory's `_identifiers_nodup`/`_count` witnesses and reverting
+the module in the working copy let it be committed with no phase claiming it —
+the one failure this gate exists to prevent. Both halves now come from the
+index, via one `git cat-file --batch` for all 358 tracked Lean modules; the
+working tree is read only for paths the index does not carry. A witness drives
+the mechanism in a throwaway repository and fails when the fallback is
+restored. This is the third instance of the split (sources, then register
+paths, now Lean text), so the check now is: does *every* read in a gate come
+from where its enumeration does.
+
+**A cited debt row had to exist, but not to be about anything.** The register
+check validated `row N`'s number and stopped, so a new deferral in any file
+could cite an arbitrary real row and pass without ever being listed. At least
+one cited row must now name the citing file — not every row, since a range may
+legitimately span a group of related sites, but the one that makes this file
+registered. The bundled fixtures were themselves citing a row recorded against
+a different path, which is how the hole stayed invisible.
+
+**The metrics regeneration ran before the work it measures.** `SM10.2.8`
+regenerates `docs/codebase_map.json`, but `SM10.3.3` adds a Lean suite and
+`SM10.3.13` adds eight phase inventories afterwards, so the map and README
+synchronized in SM10.2 are stale at the tag. SM10.2.8 is now marked interim
+and `SM10.5.2` re-runs it after the Lean-producing phases — placed before the
+validation, so the validated tree is the documented tree.
+
+**Three marker theorems had no task that authors them.** §6.1 advertises five;
+two landed at RR0.6, and the other three were assigned to a bare phase
+(`SM10`), to a row that only retains a witness, and to the row that cuts the
+tag. Every sub-task could be ticked with three markers still absent. All three
+are now rows in `SM10.4` — renamed *Inventory closure and marker theorems* —
+which sits ahead of the metrics regeneration precisely because a theorem
+authored after it would leave the map stale.
+
+**The v1.0.0 release-note skeleton embedded today's theorem figures.** It said
+to take the count from the manifest and then wrote `902`, `SM2 22`, `SM3 276`,
+`SM5 604` — which `SM10.3.13` necessarily changes, reintroducing the
+hand-written total the manifest was built to eliminate. The skeleton now
+carries the command that reads `theoremTotal` and `entryTotal` out of the
+regenerated JSON and forbids copying a figure forward.
+
+Version bump to v1.0.0 and the closure phase renumber accordingly: SM10.4 is 5
+sub-tasks, SM10.5 is 5, and the declared total is 44. The extended plan gate
+earned its keep immediately — it rejected a forward reference this very cut
+introduced, in the SM10.2.8 row, which the two-level parser could not have
+seen.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+
 ## v0.34.39 — The bump that would have invalidated its own validation, and three gates that under-reached
 
 Six findings from the thirteenth review round, one of them a P1 ordering
