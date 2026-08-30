@@ -591,37 +591,42 @@ def local_ffi_exports(root: str) -> set[str]:
     through with its Lean binding unregistered (PR #883 review round 8).
 
     The call graph now spans every `.rs` file under the HAL's `src/`.
-    Edges are resolved by bare callee name, which OVER-approximates when
-    two modules define the same function name: an over-approximation marks
-    an export local that might not be, which fails closed -- the safe
-    direction, and the one this gate should err in.
+    Edges are resolved by bare callee name, and same-named functions in
+    different modules have their bodies UNIONED, so any definition's
+    wrapper reference counts for the name.  That over-approximates -- it
+    can mark an export local that is not -- which fails closed, the safe
+    direction and the one this gate should err in.  Keeping only one of the
+    duplicates instead would be an arbitrary choice, not an approximation,
+    and a decoy definition displaced the real one when this code tried it.
     """
-    bodies: dict[str, tuple[str, str]] = {}
+    # Same-named functions in different modules are UNIONED, not resolved.
+    # A previous cut kept "the longer body" and called that an
+    # over-approximation; it is not -- it is an arbitrary choice, and a
+    # longer unrelated `decoy::local_flush` displaced the short
+    # `helpers::local_flush` that actually reached a wrapper (PR #883
+    # review round 9).  Concatenating every definition of a name is the
+    # over-approximation the docstring claimed: any definition's wrapper
+    # reference, and any definition's call edge, counts for the name.
+    bodies: dict[str, list[str]] = {}
     signatures_by_file: dict[str, str] = {}
     for rel in walk(root, RUST_SRC, (".rs",)):
         text = read(root, rel)
         code = rust_code_view.code_no_strings(text)
         signatures_by_file[rel] = rust_code_view.code(text)
         for name, start, end in rust_code_view.fn_bodies(text):
-            # A duplicate name across modules keeps the longer body; the
-            # over-approximation is deliberate (see the docstring).
-            existing = bodies.get(name)
-            candidate = code[start:end]
-            if existing is None or len(candidate) > len(existing[1]):
-                bodies[name] = (rel, candidate)
+            bodies.setdefault(name, []).append(code[start:end])
 
+    merged = {name: "\n".join(parts) for name, parts in bodies.items()}
     direct = {
-        name
-        for name, (_rel, body) in bodies.items()
-        if LOCAL_WRAPPER_RE.search(body)
+        name for name, body in merged.items() if LOCAL_WRAPPER_RE.search(body)
     }
     calls = {
         name: {
             callee
-            for callee in bodies
+            for callee in merged
             if callee != name and re.search(rf"\b{re.escape(callee)}\s*\(", body)
         }
-        for name, (_rel, body) in bodies.items()
+        for name, body in merged.items()
     }
 
     reaching = set(direct)
@@ -1360,6 +1365,36 @@ def self_test() -> int:
             stringify_operand,
             True,
             check="containment",
+            mutation="preserving",
+        )
+    )
+
+    # A DECOY definition of the same name, longer than the real one: with
+    # duplicates resolved by picking a single body, the decoy displaces the
+    # helper that actually reaches a wrapper.  Both definitions, the
+    # export, the call and the registration are all present.
+    decoy_duplicate = fixture()
+    decoy_duplicate[f"{RUST_SRC}/helpers.rs"] = (
+        "pub fn local_flush() {\n    crate::tlb::tlbi_vmalle1();\n}\n"
+    )
+    decoy_duplicate[f"{RUST_SRC}/decoy.rs"] = (
+        "pub fn local_flush() {\n"
+        + "    let _padding = 0;\n" * 20
+        + "    crate::tlb::tlbi_vmalle1is();\n}\n"
+    )
+    decoy_duplicate[FFI_MODULE] = BASE_FFI_RS + (
+        '\n#[no_mangle]\npub extern "C" fn ffi_tlbi_sneaky() {\n'
+        "    crate::helpers::local_flush();\n}\n"
+    )
+    decoy_duplicate[ALLOWLIST] = (
+        BASE_ALLOWLIST + "rust/sele4n-hal/src/helpers.rs::local_flush\n"
+    )
+    cases.append(
+        Case(
+            "a decoy definition of the same name does not displace the real one",
+            decoy_duplicate,
+            True,
+            check="lean_binding_inventory",
             mutation="preserving",
         )
     )

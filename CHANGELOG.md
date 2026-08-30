@@ -115,7 +115,12 @@ derived in command order — `-` enables and `+` disables, which is inverted
 from the usual convention, so reading names alone was backwards rather than
 merely imprecise); and the whole `.compile` chain moved into an uncalled
 helper, which proved only that a builder *would* assemble the sources if
-anything invoked it.
+anything invoked it.  Plus one in the reachability code itself: same-named
+functions in different modules were resolved by keeping "the longer body",
+which the comment called an over-approximation and which is in fact an
+arbitrary choice — a longer unrelated `decoy::local_flush` displaced the
+short `helpers::local_flush` that actually reached a wrapper.  Duplicate
+bodies are now unioned, which is the over-approximation that was claimed.
 
 And **one functional defect**: `select_cross_assembler` counted
 `CROSS_COMPILE` among "the variables `cc` itself consults" and returned early
