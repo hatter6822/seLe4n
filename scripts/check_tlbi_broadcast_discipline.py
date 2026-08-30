@@ -167,6 +167,115 @@ def strip_rust(text: str) -> str:
     return rust_code_view.code(text)
 
 
+def split_top_level(arguments: str) -> list[str]:
+    """Split a macro argument list on commas outside brackets and strings."""
+    parts, current, depth, quote = [], [], 0, None
+    index = 0
+    while index < len(arguments):
+        char = arguments[index]
+        if quote is not None:
+            current.append(char)
+            if char == "\\":
+                if index + 1 < len(arguments):
+                    current.append(arguments[index + 1])
+                    index += 2
+                    continue
+            elif char == quote:
+                quote = None
+        elif char == '"':
+            quote = char
+            current.append(char)
+        elif char in "([{":
+            depth += 1
+            current.append(char)
+        elif char in ")]}":
+            depth -= 1
+            current.append(char)
+        elif char == "," and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+        index += 1
+    if current:
+        parts.append("".join(current))
+    return [part for part in parts if part.strip()]
+
+
+_CONCAT_RE = re.compile(r"\bconcat!\s*\(")
+
+
+def resolve_concat(code: str) -> tuple[str, list[str]]:
+    """Fold `concat!("a", "b")` into `"ab"`, byte-aligned by padding.
+
+    `asm!(concat!("tlbi ", "vmalle1"))` emits the instruction: `concat!`
+    produces ONE template line, so the mnemonic and its operand are on the
+    same line even though the source shows two literals.  The mnemonic
+    regex, reading the literals separately, matched neither (PR #883 review
+    round 6).
+
+    Note the asymmetry that makes this specific rather than general: the
+    sibling form `asm!("tlbi ", "vmalle1")` is two template LINES, joined
+    by `asm!` with a newline, and does NOT emit `tlbi vmalle1`.  So
+    adjacent template strings must stay separate and only `concat!` folds.
+
+    The replacement is padded to the original span's length so every
+    offset -- and therefore every reported line number -- still points at
+    the real file.  A `concat!` whose arguments are not all string
+    literals cannot be folded; those are returned as problems rather than
+    ignored, since an unresolvable template is exactly where a mnemonic
+    could hide.
+    """
+    problems: list[str] = []
+    out = code
+    while True:
+        match = _CONCAT_RE.search(out)
+        if match is None:
+            return out, problems
+        open_paren = match.end() - 1
+        depth, index = 0, open_paren
+        while index < len(out):
+            if out[index] == "(":
+                depth += 1
+            elif out[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            index += 1
+        if index >= len(out):
+            return out, problems
+        span = out[match.start() : index + 1]
+        arguments = split_top_level(out[open_paren + 1 : index])
+
+        # A non-literal argument matters only where it could start a NEW
+        # assembly statement.  `concat!("mrs {}, ", $reg)` -- the register
+        # macros in `registers.rs` -- puts the MNEMONIC in the literal
+        # prefix and the operand in the parameter, so the instruction is
+        # fully visible and folding the literals is enough.  A non-literal
+        # is unresolvable only when the literal text before it is empty or
+        # ends at a statement boundary, because only there can it supply a
+        # mnemonic this gate would never see.
+        text, unresolvable = "", False
+        for argument in arguments:
+            literal = re.fullmatch(r'\s*"((?:[^"\\]|\\.)*)"\s*', argument)
+            if literal:
+                text += literal.group(1)
+                continue
+            if not text.rstrip() or text.rstrip().endswith((";", "\\n", "\n")):
+                unresolvable = True
+        if unresolvable:
+            lineno = out.count("\n", 0, match.start()) + 1
+            problems.append(
+                f"line {lineno}: `concat!` whose non-literal argument could "
+                f"begin an assembly statement, so this gate cannot see what "
+                f"instruction is emitted. Put the mnemonic in a string "
+                f"literal, so the containment check reads it."
+            )
+        folded = '"' + text + '"'
+        # Pad so the view stays byte-aligned with the original file.
+        out = out[: match.start()] + folded.ljust(len(span)) + out[index + 1 :]
+
+
 def strip_hash(text: str) -> str:
     """Blank `#` line comments (allowlist file)."""
     return "\n".join(line.split("#", 1)[0] for line in text.splitlines())
@@ -328,6 +437,9 @@ def check_containment(root: str) -> list[str]:
             continue
         text = read(root, rel)
         code = strip_rust(text) if rel.endswith(".rs") else strip_asm(text)
+        if rel.endswith(".rs"):
+            code, concat_problems = resolve_concat(code)
+            problems += [f"{rel}:{note}" for note in concat_problems]
         for match in TLBI_MNEMONIC_RE.finditer(code):
             lineno = code.count("\n", 0, match.start()) + 1
             problems.append(
@@ -472,13 +584,39 @@ def local_ffi_exports(root: str) -> set[str]:
     code = rust_code_view.code_no_strings(text)
     bodies = rust_code_view.fn_bodies(text)
     spans = {name: (start, end) for name, start, end in bodies}
+    # TRANSITIVE, not just the export's own body.  An export that reaches a
+    # local wrapper through a helper -- `ffi_tlbi_by_page` -> `helper` ->
+    # `tlbi_vale1` -- has no wrapper name in its own body, so a one-level
+    # scan omitted it and its Lean binding went unregistered and unchecked
+    # (PR #883 review round 6).  Reachability is computed over the call
+    # graph of functions defined in this module; a call OUT of the module
+    # that itself reaches a wrapper is covered by the Rust allowlist check
+    # on that module, which is why the closure can stop at the boundary.
+    reaches: dict[str, set[str]] = {}
+    direct: set[str] = set()
+    for name, (start, end) in spans.items():
+        body = code[start:end]
+        if LOCAL_WRAPPER_RE.search(body):
+            direct.add(name)
+        reaches[name] = {
+            callee
+            for callee in spans
+            if callee != name and re.search(rf"\b{re.escape(callee)}\s*\(", body)
+        }
+
+    reaching = set(direct)
+    changed = True
+    while changed:
+        changed = False
+        for name, callees in reaches.items():
+            if name not in reaching and callees & reaching:
+                reaching.add(name)
+                changed = True
+
     local: set[str] = set()
     for match in _FFI_TLBI_EXPORT_RE.finditer(signatures):
         name = match.group(1)
-        if name not in spans:
-            continue
-        start, end = spans[name]
-        if LOCAL_WRAPPER_RE.search(code[start:end]):
+        if name in reaching:
             local.add(name)
     return local
 
@@ -1087,6 +1225,80 @@ def self_test() -> int:
             new_broadcast_export,
             False,
             check="lean_binding_inventory",
+            mutation="none",
+        )
+    )
+
+    # A local FFI export that reaches the wrapper THROUGH a helper: its own
+    # body holds no wrapper name, so a one-level scan omits it.
+    transitive_ffi = fixture()
+    transitive_ffi[FFI_MODULE] = BASE_FFI_RS + (
+        "\nfn invalidate_helper(asid: u16, vaddr: u64) {\n"
+        "    crate::tlb::tlbi_vale1(asid, vaddr);\n}\n"
+        '\n#[no_mangle]\npub extern "C" fn ffi_tlbi_by_page(asid: u16, vaddr: u64) {\n'
+        "    invalidate_helper(asid, vaddr);\n}\n"
+    )
+    transitive_ffi[ALLOWLIST] = (
+        BASE_ALLOWLIST + "rust/sele4n-hal/src/ffi.rs::invalidate_helper\n"
+    )
+    cases.append(
+        Case(
+            "an FFI export reaching a wrapper through a helper is still local",
+            transitive_ffi,
+            True,
+            check="lean_binding_inventory",
+            mutation="preserving",
+        )
+    )
+
+    # `concat!` composes ONE template line, so the instruction is emitted.
+    concat_template = fixture()
+    concat_template[f"{RUST_SRC}/vspace.rs"] = (
+        "\nfn unmap_page() {\n"
+        '    unsafe { core::arch::asm!(concat!("tlbi ", "vmalle1")); }\n}\n'
+    )
+    cases.append(
+        Case(
+            "a concat!-composed asm template is still an emission",
+            concat_template,
+            True,
+            check="containment",
+            mutation="preserving",
+        )
+    )
+
+    # ... and the sibling form must NOT be reported: separate template
+    # arguments are separate LINES, joined with a newline by `asm!`, so
+    # they do not compose one instruction.
+    separate_lines = fixture()
+    separate_lines[f"{RUST_SRC}/vspace.rs"] = (
+        "\nfn unmap_page() {\n"
+        '    unsafe { core::arch::asm!("dsb ish", "isb"); }\n}\n'
+    )
+    cases.append(
+        Case(
+            "separate asm template lines are not concatenated",
+            separate_lines,
+            False,
+            check="containment",
+            mutation="none",
+        )
+    )
+
+    # A register-macro `concat!` whose non-literal supplies an OPERAND, not
+    # a mnemonic, must be accepted -- the instruction is fully visible.
+    operand_concat = fixture()
+    operand_concat[f"{RUST_SRC}/vspace.rs"] = (
+        "\nmacro_rules! read_reg {\n    ($reg:literal) => {\n"
+        '        unsafe { core::arch::asm!(concat!("mrs {}, ", $reg), out(reg) v) }\n'
+        "    };\n}\n"
+    )
+    cases.append(
+        Case(
+            "a concat! supplying only an operand is not unresolvable",
+            operand_concat,
+            False,
+            check="containment",
             mutation="none",
         )
     )

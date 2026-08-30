@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.46.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.41.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -564,7 +564,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   reference is **this occurrence**.  Presence is necessary and almost
   never sufficient, and the gap is invisible because the token really is
   there.  **Seventeen instances** shipped across three review rounds of one
-  cut (WS-RR RR1, `v0.34.41`–`v0.34.43`), and the count is the point: each
+  cut (WS-RR RR1, `v0.34.41`), and the count is the point: each
   round fixed the instances it was shown and the next round found more, in
   the code written to fix the last.  Round 1 (`v0.34.41`): a workflow step
   *name* satisfying a check for an installed target; a two-profile script
@@ -578,7 +578,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   two self-inflicted, inside the fixes for the others (a shell expander
   taking the *first* assignment, so a re-assigned setting read at a value
   the command never receives; a divergence check testing for `fatal_halt()`
-  **file-wide**).  Round 3 (`v0.34.43`) found eight more, six of them
+  **file-wide**).  Round 3 found eight more, six of them
   reported and two found while fixing those: a host `--release` build
   satisfying "the *cross* build is done in both profiles"; `cargo test
   --doc … --features host_tools` satisfying "the host lane tests with

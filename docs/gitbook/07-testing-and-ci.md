@@ -64,7 +64,7 @@ The tier model above compiles Lean.  Rust has two lanes of its own, and they
 cover disjoint halves of the same crate:
 
 - `scripts/test_rust.sh` — the **host** lane: build, 1 149 unit tests across
-  10 binaries (at `v0.34.42`), the conformance suite, `cargo fmt --check`,
+  10 binaries (at `v0.34.41`), the conformance suite, `cargo fmt --check`,
   and `cargo clippy --all-targets --all-features -D warnings`.  CI job
   *Rust ABI Tests*.
 - `scripts/test_aarch64_cross_build.sh` — the **cross** lane (WS-RR RR1,

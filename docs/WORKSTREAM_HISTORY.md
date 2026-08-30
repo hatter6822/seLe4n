@@ -7283,14 +7283,14 @@ correct — a tautological witness replaced by a substantive proof, a fuel bound
 made structural, a tuple given a name, a validated-elsewhere precondition
 internalised.  That is why they may wait; it is not why they may be forgotten.
 
-## WS-RR — SMP Release Readiness (pre-SM10 remediation, **IN FLIGHT — OPEN**, opened v0.34.13; RR0 landed v0.34.26, RR1 v0.34.41, hardened through v0.34.43)
+## WS-RR — SMP Release Readiness (pre-SM10 remediation, **IN FLIGHT — OPEN**, opened v0.34.13; RR0 landed v0.34.26, RR1 v0.34.41)
 
 **Status**: IN FLIGHT — **RR0 LANDED at v0.34.26** (all eleven sub-tasks:
 registration, the debt register, the generated theorem manifest, and the SM10
 plan corrections); **RR1 LANDED at v0.34.41** (all eleven sub-tasks: the
 aarch64 cross build in CI, the six defects and three lints its first compile
 found, two Tier 0 gates, and SM10's evidence-derived estimate), with **RR1.12
-added at v0.34.43** to harden those gates after review; RR2..RR8 not
+added in the same cut** to harden those gates after review; RR2..RR8 not
 started. **Closes**: before SM10 opens.
 **Plan**: [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
 **Source register**: [`docs/planning/UNFINISHED_SMP_WORK.md`](planning/UNFINISHED_SMP_WORK.md)
@@ -7308,7 +7308,7 @@ RR8 closes.
 | Phase | Scope | Subs |
 |-------|-------|------|
 | RR0 | Registration and plan correction — **LANDED v0.34.26** | 11 |
-| RR1 | aarch64 compile coverage — **LANDED v0.34.41**; gates hardened at v0.34.43 (RR1.12) | 12 |
+| RR1 | aarch64 compile coverage — **LANDED v0.34.41** (incl. RR1.12 gate hardening) | 12 |
 | RR2 | Live-path correctness: dispatch-arm bundles, donation queue migration | 19 |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 |
@@ -7340,7 +7340,7 @@ measured surface and the full inventory are in the register's §5.1; SM10's
 calendar estimate is derived from it in
 [`SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md) §1.1.
 
-**What RR1.12 added** (v0.34.43, from three rounds of review on the RR1 cut).
+**What RR1.12 added** (v0.34.41, from six rounds of review on the RR1 cut).
 The two Tier-0 gates RR1.8 and RR1.9 built, and `build.rs`'s own scanners,
 each answered a question about a *program* — does this command carry that
 flag, does this branch diverge, is this reference inside that function, does

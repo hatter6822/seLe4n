@@ -316,6 +316,40 @@ _SHELL_FUNCTION_RE = re.compile(
 )
 
 
+def body_execs_arguments(body: str) -> bool:
+    """Does this shell-function body EXECUTE `"$@"`, rather than mention it?
+
+    Command position, one level down.  Accepting any body that contains
+    `"$@"` classified `log_step() { shift; echo "$@"; }` as a pass-through
+    wrapper, so a host lane refactored to merely log its steps unwrapped as
+    an executed cargo command and the oracle-coverage gate stayed green
+    while nothing ran (PR #883 review round 6).  That is the third time the
+    same substitution has appeared in this file, each time in the code
+    written to fix the previous one -- so it is answered with the same
+    resolver the callers use, applied to the body.
+    """
+    for command in shell_commands(body):
+        argv = argv_of(command)
+        # Peel `VAR=value` prefixes and the shell keywords that introduce a
+        # command without being one.  The real wrapper writes
+        # `if "$@" > "$log" 2>&1; then`, so requiring `"$@"` to be argv[0]
+        # outright would reject the configuration this gate must accept.
+        while argv and (
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", argv[0], re.DOTALL)
+            or argv[0] in ("if", "elif", "while", "until", "then", "do", "else", "!", "{")
+        ):
+            argv = argv[1:]
+        if argv and argv[0] in ('"$@"', "$@", "$*"):
+            return True
+        # `exec "$@"` and `eval "$@"` execute it too.
+        if len(argv) > 1 and argv[0] in ("exec", "eval", "command") and argv[1] in (
+            '"$@"',
+            "$@",
+        ):
+            return True
+    return False
+
+
 def executing_wrappers(script: str) -> dict[str, int]:
     """Shell functions in `script` that exec `"$@"`, and how much they shift.
 
@@ -342,7 +376,7 @@ def executing_wrappers(script: str) -> dict[str, int]:
                     break
             index += 1
         body = script[body_start:index]
-        if '"$@"' not in body:
+        if not body_execs_arguments(body):
             continue
         shifted = 0
         for shift in re.finditer(r"^\s*shift(?:\s+(\d+))?\s*$", body, re.MULTILINE):
@@ -554,16 +588,23 @@ def check_gate_script(root: str) -> list[str]:
         # the aarch64 surface was compiled at `-O0` only, which is exactly
         # half the coverage this pair exists to give (PR #883 review
         # round 3).
-        def is_release(argv: list[str]) -> bool:
-            return "--release" in argv or "release" in option_values(argv, "profile")
+        # THREE-way, not two.  `not release` is not `debug`: cargo takes an
+        # arbitrary `--profile <name>`, and an optimised custom profile
+        # answered "no" to `is_release` and was counted as the `-O0` build
+        # the pair exists to guarantee (PR #883 review round 6).  An
+        # unrecognised profile is classified `unknown` and satisfies
+        # neither requirement, so it fails closed and asks to be re-pinned.
+        def profile_of(argv: list[str]) -> str:
+            named = option_values(argv, "profile")
+            if "--release" in argv or "release" in named:
+                return "release"
+            if not named or named == ["dev"]:
+                return "debug"
+            return "unknown"
 
+        seen = {profile_of(argv) for argv in targeted}
         missing = [
-            profile
-            for profile, present in (
-                ("debug", any(not is_release(argv) for argv in targeted)),
-                ("release", any(is_release(argv) for argv in targeted)),
-            )
-            if not present
+            profile for profile in ("debug", "release") if profile not in seen
         ]
         if missing:
             problems.append(
@@ -574,7 +615,95 @@ def check_gate_script(root: str) -> list[str]:
                 f"optimisation level -- an `asm!` block that satisfies the "
                 f"allocator at `-O0` can fail to at `-O2`, and the deployed "
                 f"kernel is a release build."
+                + (
+                    "\n      A cross build names a profile this gate does "
+                    "not recognise as either; `--profile <name>` with an "
+                    "arbitrary name is classified `unknown` and counts as "
+                    "neither, since an optimised custom profile is not the "
+                    "`-O0` half of the pair."
+                    if any(profile_of(a) == "unknown" for a in targeted)
+                    else ""
+                )
             )
+    # The cross CLIPPY lane. `cargo build` proves the target compiles;
+    # only clippy with `-D warnings` proves it is clean, and this is the
+    # ONLY lint lane that sees `#[cfg(target_arch = "aarch64")]` code --
+    # the host lane has every such block removed before rustc or clippy
+    # sees it, which is how three lints reached review invisible to it.
+    # Deleting the command left this gate clean, because it checked builds
+    # only and the fixture had no clippy command to notice was missing (PR
+    # #883 review round 6).
+    lints = [
+        argv
+        for argv in cargo_invocations(code, "clippy")
+        if CROSS_TARGET in option_values(argv, "target")
+    ]
+    if not lints:
+        problems.append(
+            f"{GATE_SCRIPT}: no executed `cargo clippy --target "
+            f"{CROSS_TARGET}`. It is the only lint lane that sees the "
+            f'`#[cfg(target_arch = "aarch64")]` blocks at all -- the host '
+            f"lane has them removed before rustc or clippy runs -- so "
+            f"without it the cross surface is compiled but never linted."
+        )
+    for argv in lints:
+        if (
+            "hw_target" not in option_values(argv, "features")
+            and "--all-features" not in argv
+        ):
+            problems.append(
+                f"{GATE_SCRIPT}: the cross `cargo clippy` does not pass "
+                f"`--features hw_target`, so it lints none of the "
+                f"hardware-only paths: {' '.join(argv)!r}"
+            )
+        # `-D warnings` must reach CLIPPY, i.e. sit after the `--`
+        # separator; before it, cargo takes it as its own flag.
+        after = argv[argv.index("--") + 1 :] if "--" in argv else []
+        denies = [
+            after[i + 1]
+            for i, token in enumerate(after)
+            if token in ("-D", "--deny") and i + 1 < len(after)
+        ] + [
+            token.split("=", 1)[1] for token in after if token.startswith("--deny=")
+        ]
+        if "warnings" not in denies:
+            problems.append(
+                f"{GATE_SCRIPT}: the cross `cargo clippy` does not pass "
+                f"`-- -D warnings`, so a lint on the aarch64 surface is "
+                f"merely reported and the step still exits 0: "
+                f"{' '.join(argv)!r}"
+            )
+
+    # Failure propagation. Every command above is load-bearing, and bash
+    # continues past a failure by default: with `set -e` removed, a debug
+    # build that hits a profile-specific `asm!` error is followed by a
+    # successful release build, archive check and clippy, and the script
+    # exits 0 on its final `echo` (PR #883 review round 6). The commands
+    # being present says nothing about whether their failure is observed.
+    directives: set[str] = set()
+    for command in shell_commands(code):
+        argv = argv_of(command)
+        if argv and argv[0] == "set":
+            directives.update(argv[1:])
+    short_flags = "".join(
+        d.lstrip("-") for d in directives if d.startswith("-") and not d.startswith("--")
+    )
+    if "e" not in short_flags and "errexit" not in directives:
+        problems.append(
+            f"{GATE_SCRIPT}: no `set -e` (or `set -o errexit`). Without it "
+            f"bash runs past a failed command, so a broken cross build is "
+            f"followed by the remaining steps and the script exits on its "
+            f"final `echo` with status 0 -- CI green over a build that "
+            f"failed."
+        )
+    if "pipefail" not in directives:
+        problems.append(
+            f"{GATE_SCRIPT}: no `set -o pipefail`. A build step piped into "
+            f"a filter takes the pipeline's status from the last command, "
+            f"so a failed `cargo build` piped into a successful `tee` or "
+            f"`grep` reports success."
+        )
+
     return problems
 
 
@@ -989,11 +1118,20 @@ profile = "minimal"
 # BOTH profiles (so mutating only the first line leaves a `cargo build`
 # behind), and the workflow's step NAME carries the triple (so a substring
 # search over the job body stays satisfied after `targets:` is deleted).
+# The fixture must be NO THINNER than the file it stands for.  This one
+# had no `cargo clippy` command, so the check that the cross lint lane
+# still exists could not have been self-tested even once it was written --
+# the clean baseline would have failed instead of the mutation (PR #883
+# review round 6, and the third time a too-thin fixture has hidden a
+# defect here).  It now mirrors every load-bearing element of the real
+# `test_aarch64_cross_build.sh`: failure propagation, both build profiles,
+# and the lint lane with its `-D warnings` past the `--` separator.
 GOOD_GATE = f"""#!/usr/bin/env bash
 set -euo pipefail
 CROSS_TARGET="{CROSS_TARGET}"
 cargo build --target "$CROSS_TARGET" -p sele4n-hal --features hw_target
 cargo build --release --target "$CROSS_TARGET" -p sele4n-hal --features hw_target
+cargo clippy --target "$CROSS_TARGET" -p sele4n-hal --features hw_target -- -D warnings
 """
 
 GOOD_WORKFLOW = f"""name: CI
@@ -1530,6 +1668,108 @@ def self_test() -> int:
             False,
             check="host_lane",
             mutation="none",
+        )
+    )
+
+    # The cross lint lane deleted.  Both builds, the target, the feature
+    # and every other token remain.
+    no_clippy = baseline()
+    no_clippy[GATE_SCRIPT] = "\n".join(
+        line for line in GOOD_GATE.splitlines() if "cargo clippy" not in line
+    ) + "\n"
+    cases.append(
+        Case(
+            "gate drops the cross clippy lane",
+            no_clippy,
+            True,
+            check="gate_script",
+            mutation="preserving",
+        )
+    )
+
+    # `-D warnings` moved BEFORE the `--`, where cargo takes it rather than
+    # clippy, so a lint on the aarch64 surface no longer fails the step.
+    deny_before_separator = baseline()
+    deny_before_separator[GATE_SCRIPT] = GOOD_GATE.replace(
+        "--features hw_target -- -D warnings", "-D warnings --features hw_target"
+    )
+    cases.append(
+        Case(
+            "gate passes -D warnings to cargo instead of clippy",
+            deny_before_separator,
+            True,
+            check="gate_script",
+            mutation="preserving",
+        )
+    )
+
+    # An optimised CUSTOM profile standing in for the debug build: not
+    # `release`, so a two-way classification counted it as `-O0`.
+    custom_profile = baseline()
+    custom_profile[GATE_SCRIPT] = GOOD_GATE.replace(
+        'cargo build --target "$CROSS_TARGET"',
+        'cargo build --profile production --target "$CROSS_TARGET"',
+        1,
+    )
+    cases.append(
+        Case(
+            "an optimised custom profile does not count as the debug build",
+            custom_profile,
+            True,
+            check="gate_script",
+            mutation="preserving",
+        )
+    )
+
+    # ... and `--profile dev` IS the debug build, so it must be accepted.
+    explicit_dev = baseline()
+    explicit_dev[GATE_SCRIPT] = GOOD_GATE.replace(
+        'cargo build --target "$CROSS_TARGET"',
+        'cargo build --profile dev --target "$CROSS_TARGET"',
+        1,
+    )
+    cases.append(
+        Case(
+            "`--profile dev` is accepted as the debug build",
+            explicit_dev,
+            False,
+            check="gate_script",
+            mutation="none",
+        )
+    )
+
+    # Failure propagation removed: every command remains, and none of their
+    # failures is observed.
+    no_errexit = baseline()
+    no_errexit[GATE_SCRIPT] = GOOD_GATE.replace("set -euo pipefail", "set -u")
+    cases.append(
+        Case(
+            "gate stops propagating failures",
+            no_errexit,
+            True,
+            check="gate_script",
+            mutation="preserving",
+        )
+    )
+
+    # A wrapper that keeps `shift` and `"$@"` but only LOGS them.
+    logging_wrapper = baseline()
+    logging_wrapper[HOST_LANE] = (
+        "#!/usr/bin/env bash\n"
+        "run_cargo_step() {\n"
+        '    local step_label="$1"\n'
+        "    shift\n"
+        '    echo "$@"\n'
+        "}\n"
+        'run_cargo_step "Unit tests passed" cargo test --all --features std,host_tools\n'
+    )
+    cases.append(
+        Case(
+            "a wrapper that only echoes its arguments is not a runner",
+            logging_wrapper,
+            True,
+            check="host_lane",
+            mutation="preserving",
         )
     )
 

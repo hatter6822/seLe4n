@@ -144,7 +144,7 @@ Nothing else may overlap without re-reading the dependency list above.
 | Phase | Scope (one line) | Subs | Est |
 |-------|------------------|------|-----|
 | RR0 | Registration and plan correction — nothing further is lost.  **LANDED v0.34.26** | 11 | S–M |
-| RR1 | aarch64 compile coverage, plus the Rust HAL gate no other phase owns.  **LANDED v0.34.41**; gate hardening through review at v0.34.43 | 12 | M |
+| RR1 | aarch64 compile coverage, plus the Rust HAL gate no other phase owns.  **LANDED v0.34.41** (RR1.12 hardened the gates through six review rounds in the same cut) | 12 | M |
 | RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live | 19 | M–L |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 | L–XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
