@@ -1818,8 +1818,8 @@ descendant's CNode present, the shared step's failure branch is dead here, so
 list.
 
 The formal "the fold never sets `firstFailure` to `some`" witness is tracked as
-an AN12-B monotonicity lemma (a post-1.0 hardening candidate; no currently-active
-plan file tracks it). Until it exists the completion test is what keeps the
+an AN12-B monotonicity lemma (a post-1.0 hardening candidate, registered in the *Registered debt index* (table C.1) in `docs/WORKSTREAM_HISTORY.md`,
+row 31). Until it exists the completion test is what keeps the
 defensive branch honest: were validation ever weakened, a halted fold would
 report `[]` rather than claim a revocation it did not perform. -/
 def revokeCdtTransactionalTraversal (stLocal : SystemState) (_rootNode : CdtNodeId)

@@ -1,3 +1,50 @@
+## v0.34.33 — the sweep was the wrong mechanism; gate it
+
+One finding on PR #882, and it is the third time a review round has found the
+register's in-source sweep incomplete.  So this cut closes the eight items and
+then replaces the sweep with a gate.
+
+**Eight deferrals were declaring themselves untracked outside the register.**
+RR0.9 enumerated 23 in-source deferrals by grepping one sentence — "no
+currently-active plan file tracks it" — and the tree uses at least four
+phrasings.  The review named two (`Bridge.lean`'s DS-L5 and DS-M04);
+sweeping every variant found six more: three `retypeFromUntyped`
+untyped-region obligations in `Architecture/Invariant.lean`, the transitive
+CDT-closure invariant in `CrossSubsystem.lean` that the other three reduce to,
+`BlockingGraph.lean`'s formal blocking-cycle detection, and
+`Capability/Operations.lean`'s AN12-B fold-monotonicity lemma.  C.1 goes
+**23 → 31 rows across 19 files**, every one of the nine source comments now
+points at the register, and no Lean source outside one honest false positive
+(`AsidManager.lean`'s "currently-active ASID") still says it is untracked.
+
+**The mechanism, not the miss, is the defect.**  A person grepping one string
+has now been wrong three times: the first miss was in a documentation file
+rather than in Lean, the second and third in phrasings the string did not
+cover.  `scripts/check_deferral_registration.py` is a Tier 0 prose gate that
+fails when any source declares a deferral untracked without citing the
+register.  Compliance is **citing the register, not avoiding the words**, so
+the files whose subject *is* the register keep working and a new comment that
+quietly opts out does not.
+
+Three details the gate needed to be right.  It matches over a **two-line
+window**, because prose wraps and one of the real sites is split across a
+newline — a line-based scan missed it, and the self-test now pins that.  It is
+a `run_prose_check`, not a `run_check`: the subject genuinely is the comment
+text, and the comment-free code view would strip the very sentences it looks
+for.  And its own wiring comment in `test_tier0_hygiene.sh` tripped it on
+first run — the classic negative anchor firing on the sentence that explains
+what it forbids — which was fixed by making that comment cite the register
+like every other site, rather than by carving out an exemption for the
+explanation.
+
+Ten self-test witnesses, both directions: every phrasing the hand sweep missed
+is caught, a citation inside the context window passes and one beyond it does
+not, and `currently-active ASID` stays quiet.  Verified against the finding
+itself — reverting the DS-M04 re-point makes the gate fail, naming the line.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
 ## v0.34.32 — the wrong number was in the spelling every inventory uses
 
 Three findings on PR #882, all verified, all real.  One is a silent wrong

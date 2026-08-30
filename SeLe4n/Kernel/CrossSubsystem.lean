@@ -463,7 +463,8 @@ is not exercised by any test and the API dispatch never produces a
 well-formed child untyped anyway. A richer invariant (transitive
 ancestor/descendant tracking via a CDT-style closure) would be a
 standalone model-refinement effort; it is NOT part of the Phase AK8
-scope and is NOT tracked in any currently-active WS-AK plan file.
+scope; it is registered in the *Registered debt index* (table C.1) in
+`docs/WORKSTREAM_HISTORY.md`, row 27.
 See `retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild`
 for the machine-checked non-`.untyped` retype preservation proof that
 covers every retype path currently exercised by the API.

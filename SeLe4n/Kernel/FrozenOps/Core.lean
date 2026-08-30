@@ -13,8 +13,8 @@ import SeLe4n.Model.FreezeProofs
 /-!
 # Q7-A: Frozen Kernel Monad and Core Primitives
 
-**STATUS: Experimental — post-1.0 hardening candidate; no currently-active
-plan file tracks integration. Not in production import chain.**
+**STATUS: Experimental — post-1.0 hardening candidate, registered in the *Registered debt index* (table C.1) in `docs/WORKSTREAM_HISTORY.md`,
+row 14. Not in production import chain.**
 
 AG8-D production decision (H3-PROOF-05): FrozenOps evaluated for H3 promotion.
 Decision: **defer as post-1.0 hardening candidate**. Rationale:

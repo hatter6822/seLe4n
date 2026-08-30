@@ -157,6 +157,26 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/generate_smp_theorem_manifest.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/generate_smp_theorem_manifest.py" --check
 
+# Every deferral cites the one register — the *Registered debt index* in
+# docs/WORKSTREAM_HISTORY.md.  A comment saying "no currently-active plan file
+# tracks it" is a deferral that opted out of it: self-describing and
+# unfindable at once.  Keeping that true by hand did not work —
+#
+# (These lines name the register, which is what the gate below requires; a
+# comment explaining what a check forbids must not trip the check, and citing
+# the register is the same remedy every real site takes rather than an
+# exemption carved out for the explanation.)
+# three review rounds on the cut that built the register each found the sweep
+# incomplete, every time because it matched one phrasing and the tree used
+# another.  `run_prose_check`, not `run_check`: the subject genuinely IS the
+# comment text, so this one must read the real tree rather than the
+# comment-free code view, which would strip the very sentences it looks for.
+# Self-test first, and it witnesses both directions: every phrasing the hand
+# sweep missed is caught, and `currently-active ASID` — the tree's one honest
+# false positive — is not.
+run_prose_check "HYGIENE" python3 "${SCRIPT_DIR}/check_deferral_registration.py" --self-test
+run_prose_check "HYGIENE" python3 "${SCRIPT_DIR}/check_deferral_registration.py"
+
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per
 # round — `.tcbResume`, `.send`, `.tcbSetPriority`/`.tcbSetMCPriority` — each
