@@ -177,7 +177,13 @@ def _scan(src: str) -> list[tuple[str, int, int]]:
                     f"string opened at offset {i} is unterminated"
                 )
             spans.append(("string", i, j + 1))
-            spans.append(("string_body", body_start, j))
+            # An `extern "C"` ABI string is SYNTAX, not data: blanking it
+            # turns `pub extern "C" fn f` into `pub extern " " fn f` and a
+            # scanner looking for the signature stops finding it -- which
+            # is fail-open for any check that a required export still
+            # exists.  So ABI strings stay in both views.
+            if not _preceded_by_keyword(src, i, "extern"):
+                spans.append(("string_body", body_start, j))
             i = code_start = j + 1
             continue
         # --- char literal vs lifetime -------------------------------------
@@ -193,6 +199,14 @@ def _scan(src: str) -> list[tuple[str, int, int]]:
         i += 1
     close_code(n)
     return spans
+
+
+def _preceded_by_keyword(src: str, at: int, keyword: str) -> bool:
+    """Is the token immediately before `at` exactly `keyword`?"""
+    head = src[:at].rstrip()
+    return head.endswith(keyword) and (
+        len(head) == len(keyword) or not _is_ident_char(head[-len(keyword) - 1])
+    )
 
 
 def _is_ident_char(ch: str) -> bool:
@@ -456,6 +470,17 @@ def _self_test() -> int:
     check(
         "and the item after the body is still file scope",
         enclosing_fn(brace_in_string, after) == FILE_SCOPE,
+    )
+
+    abi = 'pub extern "C" fn handle_irq() { let s = "data"; }\n'
+    check(
+        "an `extern` ABI string is syntax and survives both views",
+        'extern "C" fn handle_irq' in code_no_strings(abi),
+        code_no_strings(abi),
+    )
+    check(
+        "... while an ordinary string in the same fn is still blanked",
+        "data" not in code_no_strings(abi),
     )
 
     decl_only = "trait T {\n    fn declared(&self);\n}\nfn real() {\n    TOKEN;\n}\n"

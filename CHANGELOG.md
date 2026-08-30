@@ -76,6 +76,20 @@ derivations** — `LOCAL_WRAPPERS`, `LEAN_LOCAL_BINDINGS`, `ASM_SOURCES`,
 All four are now derived from what the code does, with the list kept as a pin
 that fails on divergence.
 
+**Round 7, and the sweep it prompted.**  `check_aarch64_cross_target.py`
+kept its own line-based `//` slicer after the shared view was built and the
+TLBI gate moved onto it, so `/* asm.file("src/trap.S"); */` still counted as
+handed to the assembler.  Sweeping for that shape found **thirteen more** in
+`build.rs` — every other scanner there was still line-based.  All are now on
+structural views: the four `.S` scanners on an `asm_code_view` implementing
+the C preprocessor's grammar, the nine Rust ones on the string-blanked view,
+since each asks an identifier question and a name inside a literal is a
+mention.  That conversion exposed one more: `extern "C"` is an ABI string
+that is **syntax, not data**, so blanking it made `pub extern "C" fn
+handle_irq_per_core` unfindable and a required-export check report a live
+function missing.  Both views now keep ABI strings, pinned by a witness in
+each.
+
 **Rounds 5–6 — no-op forms, and one real build defect.**  `bash -n` ("read
 commands but do not execute them"), `cargo test --no-run` ("compile, but
 don't run tests"), a `.file()` on a `cc::Build` that is never compiled, a

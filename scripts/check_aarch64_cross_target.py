@@ -78,6 +78,9 @@ import shlex
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import rust_code_view as _shared_rust_view  # noqa: E402
+
 CROSS_TARGET = "aarch64-unknown-none"
 GATE_SCRIPT = "scripts/test_aarch64_cross_build.sh"
 TOOLCHAIN_FILE = "rust/rust-toolchain.toml"
@@ -133,17 +136,22 @@ def code_view(text: str) -> str:
 
 
 def rust_code_view(text: str) -> str:
-    """Strip ``//`` line comments from Rust source, keeping line structure.
+    """The shared Rust code view: comments blanked, byte-aligned.
 
     ``build.rs`` documents each scanner it runs in a ``///`` docstring that
     names the very ``.S`` files this gate looks for, so reading the raw text
     would let the prose satisfy the check.
+
+    Delegated to `rust_code_view.code`, the repository's one Rust stripper.
+    This function used to carry its own line-based `//` slicer, and kept it
+    after the shared module was introduced and the TLBI gate was moved onto
+    it -- so `/* asm.file("src/trap.S"); */` stayed visible here and a
+    commented-out source still counted as handed to the assembler (PR #883
+    review round 7).  That is the round-4 pattern once more: the resolver
+    was built, and one of the two files asking the question was left
+    behind.  A private stripper in a gate is now the smell, not the norm.
     """
-    out = []
-    for line in text.splitlines():
-        idx = line.find("//")
-        out.append(line if idx < 0 else line[:idx])
-    return "\n".join(out)
+    return _shared_rust_view.code(text)
 
 
 SHELL_ASSIGN = re.compile(
@@ -1769,6 +1777,24 @@ def self_test() -> int:
             logging_wrapper,
             True,
             check="host_lane",
+            mutation="preserving",
+        )
+    )
+
+    # A live `.file()` commented out with a Rust BLOCK comment.  The call
+    # is still there, on the right receiver, in the right interval -- it is
+    # simply not code any more, and a `//`-only view cannot tell.
+    block_commented_source = baseline()
+    block_commented_source[BUILD_SCRIPT] = GOOD_BUILD_RS.replace(
+        '        .file("src/trap.S")\n',
+        '    /* asm.file("src/trap.S"); */\n',
+    )
+    cases.append(
+        Case(
+            "a `.file()` inside a Rust block comment is not coverage",
+            block_commented_source,
+            True,
+            check="build_script",
             mutation="preserving",
         )
     )

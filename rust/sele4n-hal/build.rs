@@ -213,17 +213,9 @@ fn scan_boot_s_for_legacy_mpidr_literal() {
     // instructions. Block comments `/* ... */` are not used in `boot.S`
     // and are therefore not stripped here; if the codebase ever adopts
     // them for assembly, extend this stripper.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Assembly grammar: `//` AND `/* */`, since the `.S` sources go
+    // through the C preprocessor. See `asm_code_view`.
+    let stripped = asm_code_view(&contents);
 
     // Normalise whitespace: collapse ASCII whitespace to single spaces and
     // lowercase. This makes the match resilient to formatting changes.
@@ -311,17 +303,9 @@ fn scan_boot_s_for_per_cpu_data_setup() {
 
     // Strip `//` line comments before scanning so docstring mentions of
     // the symbol names do not satisfy the check spuriously.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Assembly grammar: `//` AND `/* */`, since the `.S` sources go
+    // through the C preprocessor. See `asm_code_view`.
+    let stripped = asm_code_view(&contents);
 
     // Whitespace-tolerant lowercase substring match.  We do NOT collapse
     // adjacent spaces here (unlike the MPIDR scanner) because the
@@ -386,17 +370,9 @@ fn scan_boot_rs_uses_install_exception_vectors() {
 
     // Strip `//` line comments before scanning so docstring mentions of
     // the helper / register don't satisfy the check spuriously.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
     let normalised = stripped.to_ascii_lowercase();
 
     // We require the helper call to exist in boot.rs (in non-comment
@@ -443,17 +419,9 @@ fn scan_smp_rs_uses_install_exception_vectors() {
         Err(e) => panic!("WS-SM SM1.C.2 scanner: failed to read {path}: {e}"),
     };
 
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
     let normalised = stripped.to_ascii_lowercase();
 
     let has_helper_call = normalised.contains("install_exception_vectors(");
@@ -492,17 +460,9 @@ fn scan_smp_rs_invokes_secondary_init_helpers() {
         Err(e) => panic!("WS-SM SM1.C.5 scanner: failed to read {path}: {e}"),
     };
 
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
     let normalised = stripped.to_ascii_lowercase();
 
     // Required per-core init helpers.  Each entry is a (call site,
@@ -587,17 +547,9 @@ fn scan_boot_s_for_secondary_entry_context_id_validation() {
         }
     };
 
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Assembly grammar: `//` AND `/* */`, since the `.S` sources go
+    // through the C preprocessor. See `asm_code_view`.
+    let stripped = asm_code_view(&contents);
 
     let normalised = stripped.to_ascii_lowercase();
 
@@ -657,17 +609,9 @@ fn scan_boot_rs_calls_cmdline_smp_startup() {
         Err(e) => panic!("WS-SM SM1.D scanner: failed to read {path}: {e}"),
     };
 
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
     let normalised = stripped.to_ascii_lowercase();
 
     // Required Phase-5 call sites.  Each entry is (call site, step name).
@@ -736,17 +680,9 @@ fn scan_gic_rs_send_sgi_emits_dsb_ish() {
 
     // Strip `//` line comments so docstring mentions of "dsb_ish"
     // don't satisfy the check spuriously.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
 
     // Locate each public function body and verify the ordering
     // contract.  We require:
@@ -849,17 +785,9 @@ fn scan_trap_rs_handle_irq_per_core_intact() {
 
     // Strip `//` line comments so docstring mentions of these symbols
     // don't satisfy the check spuriously.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
 
     // Check 1: the function signature is present.
     let fn_sig = "pub extern \"C\" fn handle_irq_per_core(";
@@ -958,17 +886,9 @@ fn scan_trap_s_irq_vector_redirect() {
 
     // Strip `//` line comments so prose mentions don't satisfy (or
     // trip) the checks.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Assembly grammar: `//` AND `/* */`, since the `.S` sources go
+    // through the C preprocessor. See `asm_code_view`.
+    let stripped = asm_code_view(&contents);
 
     let per_core_branches = stripped.matches("bl      handle_irq_per_core").count()
         + stripped.matches("bl handle_irq_per_core").count();
@@ -1230,17 +1150,9 @@ fn scan_lock_bridge_rs_intact() {
     };
 
     // Strip line comments so docstring mentions don't satisfy checks.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
 
     // The 16 required public helpers in `lock_bridge.rs` that the
     // SM2.D FFI exports forward to.  Plus the build anchor constant.
@@ -1313,17 +1225,9 @@ fn scan_ffi_rs_exposes_lock_ffi_exports() {
     };
 
     // Strip line comments.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
 
     // Every SM2.D FFI export.  Lean's `@[extern "<symbol>"]` declarations
     // in `SeLe4n/Platform/FFI.lean` resolve against these exports at the
@@ -1376,17 +1280,9 @@ fn scan_ffi_rs_exposes_switch_to_thread_exports() {
     };
 
     // Strip line comments so the needles match only real declarations.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
 
     let required_ffi_symbols = [
         "pub extern \"C\" fn ffi_switch_to_thread(",
@@ -2183,6 +2079,45 @@ fn enclosing_fn_name(code: &str, offset: usize) -> Option<String> {
     best.map(|(name, _)| name)
 }
 
+/// **WS-RR RR1.12**: the assembly code view for the `.S` sources.
+///
+/// The `.S` files are preprocessed by a C compiler, so BOTH `//` and
+/// `/* */` open comments there.  Thirteen scanners in this file carried a
+/// line-based `//`-only stripper; a `/* */` splitting a token left it
+/// invisible to them, exactly as it did to the TLBI containment gate.
+/// Byte-aligned by blanking to spaces, which also splices a token that a
+/// comment interrupts back together, as `cpp` does for the assembler.
+///
+/// C block comments do not nest, unlike Rust's.
+fn asm_code_view(contents: &str) -> String {
+    let bytes = contents.as_bytes();
+    let mut out = bytes.to_vec();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        let end = if bytes[index..].starts_with(b"//") {
+            bytes[index..]
+                .iter()
+                .position(|&b| b == b'\n')
+                .map_or(bytes.len(), |p| index + p)
+        } else if bytes[index..].starts_with(b"/*") {
+            match contents[index + 2..].find("*/") {
+                Some(offset) => index + 2 + offset + 2,
+                None => bytes.len(),
+            }
+        } else {
+            index += 1;
+            continue;
+        };
+        for byte in out.iter_mut().take(end).skip(index) {
+            if *byte != b'\n' {
+                *byte = b' ';
+            }
+        }
+        index = end;
+    }
+    String::from_utf8(out).expect("blanking preserves UTF-8")
+}
+
 /// **WS-RR RR1.12**: pin `rust_code_views`, because a stripper that stops
 /// stripping fails SILENTLY -- every scanner reading it keeps reporting a
 /// clean tree.
@@ -2239,6 +2174,18 @@ fn verify_rust_code_views() {
         &["require_feat_tlbios()"],
         &["require_feat_tlbios()"],
     );
+    // An `extern "C"` ABI string is syntax and must survive the blanked
+    // view, or every scanner asserting that an export still exists breaks.
+    let (_, code) = rust_code_views("pub extern \"C\" fn handle_irq() { let s = \"data\"; }\n");
+    assert!(
+        code.contains("extern \"C\" fn handle_irq"),
+        "WS-RR RR1.12: an `extern` ABI string was blanked: {code:?}"
+    );
+    assert!(
+        !code.contains("data"),
+        "WS-RR RR1.12: an ordinary string survived the blanked view: {code:?}"
+    );
+
     // A real comment is blanked in BOTH views.
     let (templates, code) = rust_code_views("let a = 1; // secret\n");
     assert!(
@@ -2358,7 +2305,15 @@ fn rust_code_views(contents: &str) -> (String, String) {
         }
         // Ordinary, byte and C strings.
         if let Some((body_start, body_end, end)) = quoted_string_at(src, i) {
-            blank(&mut blanked, body_start, body_end);
+            // An `extern "C"` ABI string is SYNTAX, not data. Blanking it
+            // turns `pub extern "C" fn f` into `pub extern " " fn f`, and
+            // a scanner asserting that a required export still exists then
+            // reports it missing -- or, worse, a differently-shaped check
+            // reports it present when it is gone. ABI strings stay in both
+            // views.
+            if !preceded_by_keyword(src, i, b"extern") {
+                blank(&mut blanked, body_start, body_end);
+            }
             i = end;
             continue;
         }
@@ -2376,6 +2331,19 @@ fn rust_code_views(contents: &str) -> (String, String) {
         String::from_utf8(kept).expect("blanking preserves UTF-8"),
         String::from_utf8(blanked).expect("blanking preserves UTF-8"),
     )
+}
+
+/// Is the token immediately before `at` exactly `keyword`?
+fn preceded_by_keyword(src: &[u8], at: usize, keyword: &[u8]) -> bool {
+    let mut end = at;
+    while end > 0 && src[end - 1].is_ascii_whitespace() {
+        end -= 1;
+    }
+    if end < keyword.len() || &src[end - keyword.len()..end] != keyword {
+        return false;
+    }
+    let before = end - keyword.len();
+    before == 0 || !(src[before - 1].is_ascii_alphanumeric() || src[before - 1] == b'_')
 }
 
 /// Start of body, end of body, and end of literal for a raw string at `at`.
