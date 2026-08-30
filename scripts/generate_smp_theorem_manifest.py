@@ -71,18 +71,44 @@ LEAN_ROOTS = ("SeLe4n",)
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import lean_code_view  # noqa: E402  (needs the path insert above)
 
-# The eleven WS-SM phase codes.  Stated here rather than derived from the
-# manifest: a phase absent from the manifest is the defect this whole
-# mechanism exists to catch, so deriving the expected set from the thing under
-# test would make the check vacuous.  Each manifest entry's `label` carries its
-# code, and the gate holds the two sets equal.
-PHASE_CODES = [f"SM{i}" for i in range(11)]
+# The eleven WS-SM phases, each constructor bound to the code its label must
+# carry.  Stated here rather than derived from the manifest: a phase absent
+# from the manifest is the defect this whole mechanism exists to catch, so
+# deriving the expected set from the thing under test would make the check
+# vacuous.
+#
+# The BINDING is the point, not the two sets.  Checking "every constructor
+# appears" and "every code appears" independently leaves both satisfied when
+# two entries swap labels — the sets are still complete while every inventory
+# is attributed to the wrong phase, and the generated JSON says so.  A renamed
+# constructor fails here as an unknown key rather than passing quietly.
+EXPECTED_PHASE_CODES = {
+    "foundations": "SM0",
+    "rustHal": "SM1",
+    "verifiedLockPrimitives": "SM2",
+    "perObjectLocks": "SM3",
+    "perCoreState": "SM4",
+    "perCoreScheduler": "SM5",
+    "crossCoreIpc": "SM6",
+    "tlbShootdown": "SM7",
+    "informationFlow": "SM8",
+    "declassification": "SM9",
+    "releaseClosure": "SM10",
+}
+PHASE_CODES = list(EXPECTED_PHASE_CODES.values())
 
 # A declaration's leading modifiers.  Matching them is not cosmetic: keying
 # discovery on a bare `^theorem` would let `private theorem
 # fooTheorems_identifiers_nodup` hide a whole inventory from this gate while
 # Lean elaborated it happily — a fail-open in the one direction that matters,
 # since an inventory the gate cannot see is an inventory no phase has to claim.
+# Lean accepts a top-level declaration at any indentation — `theorem foo …`
+# nested two spaces inside a `namespace` block elaborates exactly like an
+# unindented one.  Anchoring discovery at a bare `^` therefore made the
+# completeness guarantee depend on FORMATTING: indent an inventory's witnesses
+# and it vanishes from the gate while Tier 0 still reports PASS.  Verified
+# against the elaborator, not assumed.
+_LEAD = r"[ \t]*"
 _MODIFIERS = r"(?:@\[[^\]]*\]\s*|private\s+|protected\s+|nonrec\s+)*"
 
 # Lean accepts `lemma` wherever it accepts `theorem`, and this repository uses
@@ -95,7 +121,7 @@ _THEOREM = r"(?:theorem|lemma)"
 # `<inventory>_identifiers_nodup` — the discovery key.  Anchored at column 0
 # because every inventory witness is a top-level declaration.
 NODUP_RE = re.compile(
-    r"^" + _MODIFIERS + _THEOREM + r"\s+([A-Za-z_][A-Za-z0-9_'!?]*)_identifiers_nodup\b",
+    r"^" + _LEAD + _MODIFIERS + _THEOREM + r"\s+([A-Za-z_][A-Za-z0-9_'!?]*)_identifiers_nodup\b",
     re.M,
 )
 
@@ -103,7 +129,7 @@ NODUP_RE = re.compile(
 def _count_re(inv: str) -> re.Pattern[str]:
     """`theorem <inv>_count : <inv>.length = N` — statement may wrap a line."""
     return re.compile(
-        r"^" + _MODIFIERS + _THEOREM + r"\s+" + re.escape(inv) + r"_count\b\s*:\s*"
+        r"^" + _LEAD + _MODIFIERS + _THEOREM + r"\s+" + re.escape(inv) + r"_count\b\s*:\s*"
         r"(?:\r?\n\s*)?" + re.escape(inv) + r"\.length\s*=\s*(\d+)",
         re.M,
     )
@@ -191,12 +217,12 @@ PHASE_CTOR_RE = re.compile(r"\.([A-Za-z][A-Za-z0-9]*)")
 # `PhaseTheoremManifest.lean`, not here — this gate reads it only to confirm it
 # is not larger than the entry total, which would be incoherent on its face.
 TOTAL_RE = re.compile(
-    r"^" + _MODIFIERS + _THEOREM + r"\s+smp_inventoried_entry_count\s*:\s*"
+    r"^" + _LEAD + _MODIFIERS + _THEOREM + r"\s+smp_inventoried_entry_count\s*:\s*"
     r"smpInventoriedEntryCount\s*=\s*(\d+)",
     re.M,
 )
 THEOREM_TOTAL_RE = re.compile(
-    r"^" + _MODIFIERS + _THEOREM + r"\s+smp_inventoried_theorem_count\s*:\s*"
+    r"^" + _LEAD + _MODIFIERS + _THEOREM + r"\s+smp_inventoried_theorem_count\s*:\s*"
     r"smpInventoriedTheoremCount\s*=\s*(\d+)",
     re.M,
 )
@@ -366,6 +392,25 @@ def build_manifest(
                 f"(labels must begin with the phase code, e.g. \"SM3 — …\")"
             )
 
+    # The binding itself: this constructor must carry this code.  Without it,
+    # swapping two entries' labels leaves both completeness checks satisfied.
+    for e in entries:
+        ctor = str(e["phase"])
+        code = phase_code(str(e["label"]))
+        expected = EXPECTED_PHASE_CODES.get(ctor)
+        if expected is None:
+            errors.append(
+                f"phase constructor .{ctor} is not a known WS-SM phase — if it "
+                f"was renamed, update EXPECTED_PHASE_CODES so the binding stays "
+                f"checked"
+            )
+        elif code != expected:
+            errors.append(
+                f"phase constructor .{ctor} is labelled {code!r} but belongs to "
+                f"{expected!r} — the manifest attributes its inventories to the "
+                f"wrong phase"
+            )
+
     phases: list[dict[str, object]] = []
     total = 0
     for e in entries:
@@ -487,9 +532,11 @@ _CLEAN_SOURCES = {
 
 def _run(sources: dict[str, str], manifest: str, codes: list[str] | None = None):
     """Run the whole pipeline over fixtures; return (manifest, errors)."""
-    global PHASE_CODES
+    global PHASE_CODES, EXPECTED_PHASE_CODES
     saved = PHASE_CODES
+    saved_binding = EXPECTED_PHASE_CODES
     PHASE_CODES = codes if codes is not None else ["SM0", "SM1"]
+    EXPECTED_PHASE_CODES = {"alpha": "SM0", "beta": "SM1"}
     try:
         inv, errs = discover_in(sources)
         entries, ctors, total, perrs = parse_manifest_text(manifest)
@@ -500,6 +547,7 @@ def _run(sources: dict[str, str], manifest: str, codes: list[str] | None = None)
         return built, errs
     finally:
         PHASE_CODES = saved
+        EXPECTED_PHASE_CODES = saved_binding
 
 
 def _self_test() -> int:
@@ -663,6 +711,33 @@ def _self_test() -> int:
     _, errs = _run(dict(_CLEAN_SOURCES), impossible)
     check("a theorem count exceeding its entry count is caught",
           any("theoremCount = 5 > entryCount" in e for e in errs), "; ".join(errs))
+
+    # 18. Lean accepts an indented top-level declaration, so an inventory whose
+    #     witnesses happen to be indented is a real inventory.  Anchoring
+    #     discovery at column zero made the completeness guarantee depend on
+    #     formatting: the inventory went undiscovered and the gate reported
+    #     PASS.  (Codex review round 2, PR #882.)
+    src = dict(_CLEAN_SOURCES)
+    src["G.lean"] = ("  theorem gTheorems_identifiers_nodup : True := trivial\n"
+                     "\ttheorem gTheorems_count : gTheorems.length = 7 := by decide\n")
+    _, errs = _run(src, _CLEAN_MANIFEST)
+    check("an indented witness is discovered",
+          any("'gTheorems'" in e and "claimed by no" in e for e in errs),
+          "; ".join(errs))
+
+    # 19. Swapping two phases' labels leaves every count and every completeness
+    #     check satisfied — each phase still exists, each inventory is still
+    #     claimed exactly once, the totals still add up — while attributing one
+    #     phase's theorems to another.  Only the constructor-to-code binding
+    #     sees it.  (Codex review round 2, PR #882.)
+    swapped = (_CLEAN_MANIFEST
+               .replace('label := "SM0 - alpha"', 'label := "SM1 - alpha"')
+               .replace('label := "SM1 - beta"', 'label := "SM0 - beta"'))
+    _, errs = _run(dict(_CLEAN_SOURCES), swapped)
+    check("swapped phase labels are caught",
+          any("labelled 'SM1' but belongs to 'SM0'" in e for e in errs)
+          and any("labelled 'SM0' but belongs to 'SM1'" in e for e in errs),
+          "; ".join(errs))
 
     failed = [c for c in cases if not c[1]]
     for name, ok, detail in cases:

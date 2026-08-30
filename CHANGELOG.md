@@ -1,3 +1,50 @@
+## v0.34.28 — one declaration, two registrations; Codex review round 2
+
+Three findings on PR #882, all verified against the tree, all real, all in the
+same gate.  Round 1 found the count was measuring the wrong property; round 2
+found three ways the measurement could stop being a measurement without
+anything failing.
+
+**A duplicate registration would have counted twice.**  Each inventory carries
+an `_identifiers_nodup` witness, and that witness compares the identifier
+*strings* it stores, within its own list.  It therefore cannot see the same
+declaration registered under two spellings (`wakeThreadLockSet` and
+`SeLe4n.Kernel.wakeThreadLockSet` are distinct strings naming one theorem), nor
+the same declaration claimed by two phases — and `smpInventoriedTheoremCount`
+would have counted it once per registration.  That is precisely the failure
+this module exists to prevent, one level below where the previous cut fixed it.
+The propositionality census now de-duplicates on the **resolved `Name`** and
+throws on a repeat, naming both registrations.
+
+Measured today: 902 identifiers resolve to 902 distinct declarations, **zero
+duplicates**.  The published figure was already right; what it lacked was a
+reason to stay right.  Verified adversarially by registering one theorem twice
+under two spellings — `_identifiers_nodup` accepted it, the census did not.
+
+**Discovery depended on formatting.**  `NODUP_RE` and the size-witness regex
+were anchored at column zero, but Lean accepts an indented top-level
+declaration and elaborates it identically.  An inventory whose witnesses
+happened to be indented was invisible to the gate — and an inventory the gate
+cannot see is one no phase has to claim, which is the fail-open the gate was
+built to close.  Both patterns now admit leading whitespace.
+
+**Swapped labels passed every check.**  The gate verified that the set of
+constructors was complete and that the set of phase codes was complete, but
+never that a given constructor carried *its own* code.  Exchanging two entries'
+labels left both completeness checks satisfied, every count correct and every
+total right, while attributing one phase's theorems to another.
+`EXPECTED_PHASE_CODES` now binds each constructor to its code and the parser
+enforces the binding; an unknown constructor fails as an unknown key rather
+than passing quietly.
+
+Three new self-test witnesses (21 total, all mutation-tested: each fails when
+its mechanism is weakened and passes when it is restored).  No Lean statement
+changed; the theorem total remains 902 propositions across 1111 registered
+entries.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
 ## v0.34.27 — the theorem count was counting definitions; Codex review round 1
 
 Six findings on PR #882, all verified against the tree, all real.  The one that

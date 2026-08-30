@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr0-registration-plan-correction-cr1z0k",
-      "commit_sha": "fd74efcf4626411baf3dafd3585bc676d450c8dd",
-      "tree_sha": "1796e7aad3fc71d80815a222f773f489862cab66",
-      "committed_at_utc": "2026-08-30T04:31:05+00:00"
+      "commit_sha": "c0aab42d0c93151fe2b43d53c75d0decddbd651f",
+      "tree_sha": "25be307c888456a1cab1d765d6611329ab31fa73",
+      "committed_at_utc": "2026-08-30T05:31:20+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "beb50c47963b469bce14b052d07435ae95164eccf746bbc3fdbef280d1e41fd3"
+    "source_digest": "3a0a6e313edb117e11934290e3bcbbaa647bc45318516409cf0e4499aa1ad5ec"
   },
   "summary": {
     "module_count": 357,
     "declaration_count": 17080
   },
   "readme_sync": {
-    "version": "0.34.27",
+    "version": "0.34.28",
     "lean_toolchain": "v4.28.0",
     "production_files": 288,
-    "production_loc": 289585,
+    "production_loc": 289615,
     "test_files": 69,
     "test_loc": 64535,
     "proved_theorem_lemma_decls": 9685,
@@ -46658,19 +46658,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Concurrency",
-          "line": 93,
+          "line": 101,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "SmpCompletionPhase",
-          "line": 100,
+          "line": 108,
           "called": []
         },
         {
           "kind": "def",
           "name": "SmpCompletionPhase.all",
-          "line": 126,
+          "line": 134,
           "called": [
             "SmpCompletionPhase"
           ]
@@ -46678,7 +46678,7 @@
         {
           "kind": "theorem",
           "name": "SmpCompletionPhase.mem_all",
-          "line": 133,
+          "line": 141,
           "called": [
             "SmpCompletionPhase",
             "SmpCompletionPhase.all"
@@ -46687,13 +46687,13 @@
         {
           "kind": "theorem",
           "name": "SmpCompletionPhase.all_nodup",
-          "line": 138,
+          "line": 146,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "SmpCompletionPhase.all_length",
-          "line": 142,
+          "line": 150,
           "called": [
             "length"
           ]
@@ -46701,13 +46701,13 @@
         {
           "kind": "inductive",
           "name": "PhaseInventoryKind",
-          "line": 145,
+          "line": 153,
           "called": []
         },
         {
           "kind": "structure",
           "name": "PhaseTheoremEntry",
-          "line": 164,
+          "line": 172,
           "called": [
             "PhaseInventoryKind",
             "SmpCompletionPhase"
@@ -46716,7 +46716,7 @@
         {
           "kind": "def",
           "name": "smpPhaseTheoremManifest",
-          "line": 191,
+          "line": 199,
           "called": [
             "PhaseTheoremEntry"
           ]
@@ -46724,7 +46724,7 @@
         {
           "kind": "def",
           "name": "smpPhaseEntry",
-          "line": 265,
+          "line": 273,
           "called": [
             "PhaseTheoremEntry",
             "SmpCompletionPhase"
@@ -46733,7 +46733,7 @@
         {
           "kind": "def",
           "name": "smpPhaseEntryCount",
-          "line": 271,
+          "line": 279,
           "called": [
             "SmpCompletionPhase",
             "none",
@@ -46743,7 +46743,7 @@
         {
           "kind": "def",
           "name": "smpPhaseTheoremCount",
-          "line": 278,
+          "line": 286,
           "called": [
             "SmpCompletionPhase",
             "none",
@@ -46753,7 +46753,7 @@
         {
           "kind": "def",
           "name": "smpInventoriedEntryCount",
-          "line": 286,
+          "line": 294,
           "called": [
             "smpPhaseEntryCount"
           ]
@@ -46761,7 +46761,7 @@
         {
           "kind": "def",
           "name": "smpInventoriedTheoremCount",
-          "line": 295,
+          "line": 303,
           "called": [
             "smpPhaseTheoremCount"
           ]
@@ -46769,7 +46769,7 @@
         {
           "kind": "theorem",
           "name": "smpPhaseTheoremManifest_covers_all",
-          "line": 306,
+          "line": 314,
           "called": [
             "all",
             "smpPhaseEntry"
@@ -46778,7 +46778,7 @@
         {
           "kind": "theorem",
           "name": "smpPhaseTheoremManifest_covers",
-          "line": 310,
+          "line": 318,
           "called": [
             "SmpCompletionPhase",
             "smpPhaseEntry"
@@ -46787,13 +46787,13 @@
         {
           "kind": "theorem",
           "name": "smpPhaseTheoremManifest_phases_nodup",
-          "line": 315,
+          "line": 323,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "smpPhaseTheoremManifest_length",
-          "line": 319,
+          "line": 327,
           "called": [
             "length"
           ]
@@ -46801,7 +46801,7 @@
         {
           "kind": "theorem",
           "name": "smpPhase_verifiedLockPrimitives_entryCount_eq_inventories",
-          "line": 334,
+          "line": 342,
           "called": [
             "length",
             "lockPrimitives_count",
@@ -46811,7 +46811,7 @@
         {
           "kind": "theorem",
           "name": "smpPhase_perObjectLocks_entryCount_eq_inventories",
-          "line": 341,
+          "line": 349,
           "called": [
             "deadlockTheorems_count",
             "length",
@@ -46825,7 +46825,7 @@
         {
           "kind": "theorem",
           "name": "smpPhase_perCoreScheduler_entryCount_eq_inventories",
-          "line": 353,
+          "line": 361,
           "called": [
             "crossCoreWakeTheorems_count",
             "length",
@@ -46842,7 +46842,7 @@
         {
           "kind": "theorem",
           "name": "smpPhase_foundations_theoremCount_zero",
-          "line": 367,
+          "line": 375,
           "called": [
             "smpPhaseTheoremCount"
           ]
@@ -46850,7 +46850,7 @@
         {
           "kind": "theorem",
           "name": "smpPhase_perCoreState_theoremCount_zero",
-          "line": 371,
+          "line": 379,
           "called": [
             "smpPhaseTheoremCount"
           ]
@@ -46858,7 +46858,7 @@
         {
           "kind": "theorem",
           "name": "smpPhase_unregistered_theoremCount_zero",
-          "line": 377,
+          "line": 385,
           "called": [
             "smpPhaseTheoremCount"
           ]
@@ -46866,7 +46866,7 @@
         {
           "kind": "theorem",
           "name": "smp_inventoried_theorem_count",
-          "line": 400,
+          "line": 408,
           "called": [
             "smpInventoriedTheoremCount"
           ]
@@ -46874,7 +46874,7 @@
         {
           "kind": "theorem",
           "name": "smp_inventoried_entry_count",
-          "line": 406,
+          "line": 414,
           "called": [
             "smpInventoriedEntryCount"
           ]
@@ -46882,7 +46882,7 @@
         {
           "kind": "theorem",
           "name": "smp_inventoried_theorem_count_lt_entry_count",
-          "line": 412,
+          "line": 420,
           "called": [
             "smpInventoriedEntryCount",
             "smpInventoriedTheoremCount"
@@ -46891,7 +46891,7 @@
         {
           "kind": "theorem",
           "name": "smp_inventoried_theorem_count_decomposition",
-          "line": 419,
+          "line": 427,
           "called": [
             "smpInventoriedTheoremCount",
             "smpPhaseTheoremCount"
@@ -46900,7 +46900,7 @@
         {
           "kind": "theorem",
           "name": "smp_inventoried_entry_count_decomposition",
-          "line": 427,
+          "line": 435,
           "called": [
             "smpInventoriedEntryCount",
             "smpPhaseEntryCount"
@@ -46908,8 +46908,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:444>",
-          "line": 444,
+          "name": "<anonymous:example:452>",
+          "line": 452,
           "called": [
             "crossCoreWakeTheorems",
             "crossCoreWakeTheorems_count",
@@ -46948,13 +46948,13 @@
         {
           "kind": "section",
           "name": "Census",
-          "line": 506,
+          "line": 514,
           "called": []
         },
         {
           "kind": "def",
           "name": "censusInventories",
-          "line": 516,
+          "line": 524,
           "called": [
             "Kernel"
           ]
@@ -46962,7 +46962,7 @@
         {
           "kind": "theorem",
           "name": "censusCoversManifest",
-          "line": 550,
+          "line": 558,
           "called": [
             "all",
             "contains",
@@ -46973,15 +46973,15 @@
         {
           "kind": "def",
           "name": "censusNameMatches",
-          "line": 568,
+          "line": 576,
           "called": [
             "length"
           ]
         },
         {
           "kind": "def",
-          "name": "censusIsProp",
-          "line": 579,
+          "name": "censusResolve",
+          "line": 595,
           "called": [
             "censusNameMatches",
             "filter",
@@ -46991,18 +46991,21 @@
         },
         {
           "kind": "constant",
-          "name": "<anonymous:constant:607>",
-          "line": 607,
+          "name": "<anonymous:constant:623>",
+          "line": 623,
           "called": []
         },
         {
           "kind": "def",
           "name": "censusIndex",
-          "line": 611,
+          "line": 627,
           "called": [
             "censusInventories",
-            "censusIsProp",
+            "censusResolve",
+            "count",
+            "get",
             "insert",
+            "none",
             "smpInventoriedTheoremCount",
             "smpPhaseTheoremManifest",
             "toList"

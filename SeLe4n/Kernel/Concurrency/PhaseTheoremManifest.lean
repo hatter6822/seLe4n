@@ -73,6 +73,14 @@ duplicate-free witness and a size witness.  It is a *measurement of the tree*,
 not an estimate of what a phase "substantively" proved, and it is deliberately
 the narrower claim: every theorem it counts is named, resolves, and is unique.
 
+Unique *across the whole census*, not merely within its own inventory.  Each
+inventory's `_identifiers_nodup` witness compares the identifier strings it
+stores, in its own list, so it can see neither the same declaration registered
+under two spellings nor the same declaration claimed by two phases.  The
+census below de-duplicates on the *resolved* `Name` and errors on a repeat, so
+the total cannot drift from a count of theorems into a count of
+registrations.
+
 Phases with no inventory contribute **zero** and are registered as
 `unregistered` rather than given a plausible-looking figure.  That gap is real
 and is registered as such in `docs/WORKSTREAM_HISTORY.md`; the honest zero is
@@ -571,13 +579,21 @@ private def censusNameMatches (want n : Name) : Bool :=
   wc.length ≤ nc.length && (nc.drop (nc.length - wc.length)) == wc
 
 /-- Resolve an inventory identifier to the unique `SeLe4n.*` constant it names,
-    and say whether its type is a proposition.
+    returning that constant's full name alongside whether its type is a
+    proposition.
+
+    The resolved name, not the stored string, is what the census de-duplicates
+    on.  One declaration can be registered under two spellings
+    (`wakeThreadLockSet` and `SeLe4n.Kernel.wakeThreadLockSet`) or in two
+    inventories, and each inventory's `_identifiers_nodup` witness compares
+    only its own strings, within its own list -- so neither spelling nor scope
+    is enough to see a repeat.
 
     Ambiguity and absence are both hard errors: the census exists to make a
     number trustworthy, and a resolver that picked a winner among candidates
     would defeat that. -/
-private def censusIsProp (idx : Std.HashMap String (List Name)) (ns : Name)
-    (ident : String) : MetaM Bool := do
+private def censusResolve (idx : Std.HashMap String (List Name)) (ns : Name)
+    (ident : String) : MetaM (Name × Bool) := do
   let env ← getEnv
   let want := ident.toName
   -- Lean's own resolution order: the enclosing namespace first, then each
@@ -593,7 +609,7 @@ private def censusIsProp (idx : Std.HashMap String (List Name)) (ns : Name)
     ((List.range (cs.length + 1)).map
       (fun k => (cs.take k).foldl (· ++ ·) Name.anonymous)).reverse
   match prefixes.findSome? (fun p => env.find? (p ++ want)) with
-  | some c => isProp c.type
+  | some c => return (c.name, ← isProp c.type)
   | none =>
     -- Fallback for an identifier stored at a qualification the walk cannot
     -- reach.  Ambiguity here is a hard error: a resolver that picked a winner
@@ -602,7 +618,7 @@ private def censusIsProp (idx : Std.HashMap String (List Name)) (ns : Name)
     | [n] =>
       match env.find? n with
       | none   => throwError "propositionality census: '{ident}' has no declaration"
-      | some c => isProp c.type
+      | some c => return (c.name, ← isProp c.type)
     | []  => throwError "propositionality census: '{ident}' resolves to no SeLe4n \
                constant (searched from namespace {ns})"
     | cs  => throwError "propositionality census: '{ident}' is ambiguous ({cs})"
@@ -624,10 +640,24 @@ private def censusIndex : MetaM (Std.HashMap String (List Name)) := do
 run_cmd liftTermElabM do
   let idx ← censusIndex
   let mut perInventory : List (String × Nat) := []
+  -- Every registration across the whole census must name a *distinct*
+  -- declaration.  One theorem registered twice -- in two inventories, or under
+  -- two spellings in one -- would be counted twice, and the published total
+  -- would quietly become a count of registrations rather than of theorems.
+  -- That is exactly the failure this module was built to make impossible, so
+  -- it is a hard error rather than a deduplication.
+  let mut seen : Std.HashMap Name String := {}
   for (nm, ns, ids) in censusInventories do
     let mut props := 0
     for i in ids do
-      if (← censusIsProp idx ns i) then props := props + 1
+      let (resolved, isProposition) ← censusResolve idx ns i
+      match seen.get? resolved with
+      | some origin =>
+        throwError "propositionality census: '{i}' in {nm} resolves to \
+          {resolved}, already registered as {origin} -- one declaration, two \
+          registrations, so the total would count it twice"
+      | none => seen := seen.insert resolved s!"'{i}' in {nm}"
+      if isProposition then props := props + 1
     perInventory := perInventory ++ [(nm, props)]
   let propsOf (names : List String) : Nat :=
     names.foldl (fun acc n => acc + ((perInventory.find? (·.1 == n)).map (·.2)).getD 0) 0
