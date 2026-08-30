@@ -1873,12 +1873,20 @@ fn scan_tlb_rs_outer_shareable_guards_intact() {
 ///
 /// ## Order of precedence
 ///
-/// 1. **Any explicit override wins.**  If the environment already names
-///    a compiler for this target (`CC_<target>`, `TARGET_CC`, `CC`, or a
-///    `CROSS_COMPILE` prefix), this function does nothing and leaves
-///    `cc` to honour it.  A developer who has pointed the build at a
-///    specific toolchain must not have it silently replaced.
-/// 2. **Otherwise, probe candidates in order** and take the first that
+/// 1. **An explicit compiler wins.**  If the environment already names a
+///    compiler for this target in a variable `cc` itself consults
+///    (`CC_<target>`, `TARGET_CC`, `CC`), this function does nothing and
+///    leaves `cc` to honour it.  A developer who has pointed the build at
+///    a specific toolchain must not have it silently replaced.
+/// 2. **`CROSS_COMPILE` is applied, not merely detected.**  It is the
+///    conventional toolchain *prefix* and `cc` does **not** read it, so
+///    returning early on it left `cc` to fall back to the host compiler
+///    -- the failure this function exists to prevent.  The prefix is
+///    expanded (`<prefix>gcc`, then `cc`, then `clang`), probed, and
+///    installed via `build.compiler`.  A prefix that cannot assemble for
+///    the target warns and falls through rather than being honoured
+///    blindly or ignored.
+/// 3. **Otherwise, probe candidates in order** and take the first that
 ///    actually assembles a trivial aarch64 translation unit:
 ///    the bare `cc` (only when the host is already aarch64, where it is
 ///    the native compiler), then the conventional bare-metal and
@@ -1898,18 +1906,18 @@ fn select_cross_assembler(build: &mut cc::Build) {
     let target = std::env::var("TARGET").unwrap_or_default();
     let host = std::env::var("HOST").unwrap_or_default();
 
-    // 1. Respect an explicit override.  These are the variables `cc`
-    // itself consults; if any is set, it has already decided.
+    // 1a. Respect an explicit override.  These are the variables `cc`
+    // ITSELF consults, so if any is set it has already decided and this
+    // function must not second-guess it.
     let target_underscores = target.replace('-', "_");
-    let overrides = [
+    let cc_consulted = [
         format!("CC_{target}"),
         format!("CC_{target_underscores}"),
         "TARGET_CC".to_string(),
         "CC".to_string(),
-        "CROSS_COMPILE".to_string(),
     ];
     let mut overridden = false;
-    for var in &overrides {
+    for var in &cc_consulted {
         println!("cargo:rerun-if-env-changed={var}");
         if std::env::var_os(var).is_some() {
             overridden = true;
@@ -1918,9 +1926,46 @@ fn select_cross_assembler(build: &mut cc::Build) {
     if overridden {
         println!(
             "sele4n-hal: assembler selection deferred to the environment \
-             (one of {overrides:?} is set)"
+             (one of {cc_consulted:?} is set)"
         );
         return;
+    }
+
+    // 1b. `CROSS_COMPILE` is the conventional toolchain PREFIX, and `cc`
+    // does NOT consult it.  Treating it as an override -- returning and
+    // leaving `cc` to honour it -- was wrong in the one direction that
+    // matters: `cc` resumed its default lookup, which on an x86 host is
+    // the bare `cc`, which is exactly the host-assembler fallback this
+    // whole function exists to prevent.  A developer who sets
+    // `CROSS_COMPILE=aarch64-linux-gnu-` got the host assembler and 54
+    // errors that look like broken ARM64 assembly (PR #883 review round
+    // 5).
+    //
+    // So the prefix is APPLIED rather than merely detected: expanded to a
+    // concrete compiler and probed like any other candidate.  If it does
+    // not assemble for the target the probe falls through with a warning
+    // rather than silently using it -- the developer named a toolchain,
+    // and being told it cannot build this target is more useful than
+    // either honouring it blindly or ignoring them.
+    println!("cargo:rerun-if-env-changed=CROSS_COMPILE");
+    if let Some(prefix) = std::env::var_os("CROSS_COMPILE") {
+        let prefix = prefix.to_string_lossy().into_owned();
+        for suffix in ["gcc", "cc", "clang"] {
+            let candidate = format!("{prefix}{suffix}");
+            if probe_assembles_aarch64(&candidate, &target) {
+                println!(
+                    "sele4n-hal: assembling .S sources for {target} with \
+                     `{candidate}` (from CROSS_COMPILE={prefix})"
+                );
+                build.compiler(&candidate);
+                return;
+            }
+        }
+        println!(
+            "cargo:warning=sele4n-hal: CROSS_COMPILE={prefix} names a \
+             toolchain whose gcc/cc/clang cannot assemble for {target}; \
+             falling through to the standard probe."
+        );
     }
 
     // 2. Probe candidates.  `cc` is only a candidate when the host is

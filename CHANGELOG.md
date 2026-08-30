@@ -1,3 +1,50 @@
+## v0.34.46 — A detected override that was never applied, and three more no-op forms
+
+**WS-RR RR1.12**, round 5.  One functional build defect and three gate
+weaknesses, all reproduced before fixing.
+
+### The build defect
+
+`select_cross_assembler` counted `CROSS_COMPILE` among "the variables `cc`
+itself consults" and returned early when it was set.  **`cc` does not consult
+it.**  A developer setting the conventional
+`CROSS_COMPILE=aarch64-linux-gnu-` therefore got `cc`'s default lookup —
+which on an x86 host is the bare `cc` — the host-assembler fallback this
+function exists to prevent, and the source of the 54 ARM64 "no such
+instruction" errors RR1.6 was written to stop.  Detecting an override
+without applying it is worse than not looking at all: it disables the probe
+that would otherwise have found a working assembler.
+
+`CROSS_COMPILE` is now **applied**: expanded to `<prefix>gcc`, then `cc`,
+then `clang`, probed by actually assembling an AArch64 translation unit, and
+installed via `build.compiler`.  A prefix whose toolchain cannot assemble
+for the target emits a `cargo:warning` and falls through to the standard
+probe, rather than being honoured blindly or ignored silently.
+
+### Three no-op forms the gates accepted
+
+| Form | Documented as | Was accepted because |
+|---|---|---|
+| `bash -n ./gate.sh` | "Read commands but do not execute them" | the interpreter path skipped every `-`-prefixed token before looking for the path |
+| `cargo test --all --features host_tools --no-run` | "Compile, but don't run tests" | `selects_oracle` checked target selection, which `--no-run` satisfies while running nothing |
+| a `.file("src/trap.S")` on an unused `cc::Build` | — | membership was a byte-offset interval, not the receiver `.compile()` is called on |
+
+Fixes: `interpreter_executes` reads options as options (short clusters
+expanded, `--` ending them) and fails closed on any it does not recognise;
+`selects_oracle` rejects `--no-run` before considering selectors, and stops
+reading post-`--` tokens as cargo selectors (`cargo test --all -- --doc` is
+an unrestricted run with a harness argument); `chain_root` resolves the
+identifier a method chain is rooted in, so a `.file()` counts only in the
+chain of the builder that is actually compiled.
+
+Five new self-test cases, two asserting the **accepting** direction —
+`bash -ex` still runs the gate, and a harness argument after `--` is not a
+selector.  39 cases in the cross-target gate, 5/5 checks token-preserving.
+
+`test_rust.sh` 1149 + 108, `test_aarch64_cross_build.sh` and `test_full.sh`
+green; the cross build verified to still succeed with `CROSS_COMPILE` set to
+a toolchain that is not installed.
+
 ## v0.34.45 — Sweep the concept, not the reported call site
 
 **WS-RR RR1.12**, round 4.  A different failure mode from the first three:

@@ -421,6 +421,19 @@ def selects_oracle(argv: list[str]) -> bool:
     or explicitly -- and only when its package selection includes the crate.
     Both halves are required, and neither is implied by the feature flag.
     """
+    # Everything after `--` is passed to the test harness, not to cargo, so
+    # it must not be read as a cargo selector: `cargo test --all -- --doc`
+    # is an unrestricted run with a harness argument, and reading the
+    # trailing `--doc` as a target-kind restriction would reject it.
+    if "--" in argv:
+        argv = argv[: argv.index("--")]
+    # `--no-run` COMPILES the selected targets and runs none of them, so it
+    # satisfies every selector below while executing zero oracle tests --
+    # the `--doc` finding again, one flag over (PR #883 review round 5).
+    # Checked before selection, because selection is irrelevant once
+    # nothing runs.
+    if "--no-run" in argv:
+        return False
     if "--bins" in argv or "--all-targets" in argv:
         return True
     if ORACLE_BIN in option_values(argv, "bin"):
@@ -654,6 +667,50 @@ def _names_gate(token: str) -> bool:
     )
 
 
+# Shell options that make the interpreter NOT execute what it reads.
+# `bash -n` is documented as "Read commands but do not execute them", so a
+# step spelled `bash -n ./gate.sh` type-checks the script and runs no build.
+# Skipping every `-`-prefixed token before looking for the path accepted it
+# (PR #883 review round 5): the options are not noise, they decide whether
+# execution happens at all.
+NON_EXECUTING_SHELL_OPTIONS = frozenset("n")
+
+
+def interpreter_executes(argv: list[str]) -> bool:
+    """Does this interpreter invocation actually run the gate script?
+
+    Options are read as options -- short clusters expanded, `--` ending
+    them -- rather than skipped.  A non-executing mode anywhere in the
+    cluster (`-n`, `-en`, `--noexec`) disqualifies the invocation; an
+    unrecognised long option does too, since this scanner cannot know
+    whether it suppresses execution, and that is the fail-closed side.
+    """
+    index = 1
+    while index < len(argv):
+        token = argv[index]
+        if token == "--":
+            index += 1
+            break
+        if token.startswith("--"):
+            if token in ("--noexec",):
+                return False
+            if token not in ("--norc", "--noprofile", "--posix", "--login"):
+                return False
+            index += 1
+            continue
+        if token.startswith("-") and len(token) > 1:
+            if set(token[1:]) & NON_EXECUTING_SHELL_OPTIONS:
+                return False
+            if "c" in token[1:]:
+                # `-c` takes the script as a STRING, so the next argument
+                # is a command, not a path this scanner can resolve.
+                return False
+            index += 1
+            continue
+        break
+    return any(_names_gate(token) for token in argv[index:])
+
+
 def job_runs_gate(body: str) -> bool:
     """Does some `run:` step of this job actually execute the gate script?"""
     for script in run_scripts(body):
@@ -664,9 +721,7 @@ def job_runs_gate(body: str) -> bool:
                 continue
             if _names_gate(argv[0]):
                 return True
-            if argv[0] in SCRIPT_INTERPRETERS and any(
-                _names_gate(token) for token in argv[1:] if not token.startswith("-")
-            ):
+            if argv[0] in SCRIPT_INTERPRETERS and interpreter_executes(argv):
                 return True
     return False
 
@@ -745,16 +800,34 @@ def check_build_script(root: str) -> list[str]:
             f"sources stay pinned to the live chain."
         ]
 
-    # Derived from the filesystem, with the known three as a floor: an
-    # enumeration cannot see a source that does not exist yet, and a new
-    # `.S` that no `.file()` mentions assembles nowhere while every check
-    # here stays green.
+    # Membership in the COMPILED builder's chain, not merely a byte offset
+    # inside an interval.  An interval test accepts a `.file()` on any
+    # receiver that happens to sit between the two landmarks, so
+    #
+    #     let mut unused = cc::Build::new();
+    #     unused.file("src/trap.S");
+    #
+    #     asm.file("src/boot.S").file("src/vectors.S")
+    #        .compile("sele4n_hal_asm");
+    #
+    # reports `trap.S` covered while nothing assembles it (PR #883 review
+    # round 5).  So the receiver that `.compile("sele4n_hal_asm")` is
+    # called on is resolved first, and only `.file()` calls in ITS chain
+    # count.
+    receiver = compiled_builder_name(code, compile_at)
+    if receiver is None:
+        return [
+            f"{BUILD_SCRIPT}: cannot resolve the receiver of "
+            f'`.compile("sele4n_hal_asm")`. If the assembly chain was '
+            f"restructured, update this gate so the `.S` sources stay "
+            f"pinned to the builder that is actually compiled."
+        ]
     sources = sorted(set(ASM_SOURCES) | assembly_sources(root))
     missing = [
         src
         for src in sources
         if not any(
-            gate_at < pos < compile_at
+            gate_at < pos < compile_at and chain_root(code, pos) == receiver
             for pos in _occurrences(code, f'.file("{src}")')
         )
     ]
@@ -762,10 +835,11 @@ def check_build_script(root: str) -> list[str]:
         return [
             f"{BUILD_SCRIPT}: {', '.join(missing)} is not handed to the "
             f"assembler in the live chain (expected a `.file(\"<path>\")` "
-            f"call between the `CARGO_CFG_TARGET_ARCH` gate and "
-            f'`.compile("sele4n_hal_asm")`). Dropping a source -- or '
-            f"leaving it only in an unreachable one -- removes its only "
-            f"compile coverage without failing any build."
+            f"call on `{receiver}`, the builder that "
+            f'`.compile("sele4n_hal_asm")` is called on). Dropping a '
+            f"source -- or leaving it on a builder that is never compiled "
+            f"-- removes its only compile coverage without failing any "
+            f"build."
         ]
     return []
 
@@ -780,6 +854,44 @@ def assembly_sources(root: str) -> set[str]:
                 rel = os.path.relpath(os.path.join(dirpath, name), base)
                 found.add(rel.replace(os.sep, "/"))
     return found
+
+
+def chain_root(code: str, dot_at: int) -> str | None:
+    """The identifier a method chain ending at `dot_at` is rooted in.
+
+    `asm.file("a").file("b").compile("c")` roots at `asm` from any link.
+    Returns `None` when the root is not a plain identifier -- a temporary
+    (`cc::Build::new().file(...)`) or an expression this scanner cannot
+    attribute -- which fails its callers closed rather than guessing.
+    """
+    head = code[:dot_at]
+    while True:
+        stripped = head.rstrip()
+        if not stripped.endswith(")"):
+            break
+        depth, index = 0, len(stripped) - 1
+        while index >= 0:
+            if stripped[index] == ")":
+                depth += 1
+            elif stripped[index] == "(":
+                depth -= 1
+                if depth == 0:
+                    break
+            index -= 1
+        if index < 0:
+            return None
+        before = stripped[:index].rstrip()
+        dot = before.rfind(".")
+        if dot < 0:
+            return None
+        head = before[:dot]
+    match = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*$", head.rstrip())
+    return match.group(1) if match else None
+
+
+def compiled_builder_name(code: str, compile_at: int) -> str | None:
+    """The receiver `.compile("sele4n_hal_asm")` is called on."""
+    return chain_root(code, compile_at)
 
 
 def _occurrences(haystack: str, needle: str) -> list[int]:
@@ -1332,6 +1444,92 @@ def self_test() -> int:
             True,
             check="build_script",
             mutation="preserving",
+        )
+    )
+
+    # `trap.S` moved onto a builder that is never compiled.  Every token
+    # is present and every byte offset is in the right interval -- only
+    # the receiver changed, so nothing assembles the source.
+    unused_builder = baseline()
+    unused_builder[BUILD_SCRIPT] = GOOD_BUILD_RS.replace(
+        '        .file("src/trap.S")\n',
+        "",
+    ).replace(
+        "    let mut asm = cc::Build::new();",
+        "    let mut unused = cc::Build::new();\n"
+        '    unused.file("src/trap.S");\n'
+        "    let mut asm = cc::Build::new();",
+    )
+    cases.append(
+        Case(
+            "a .S source on a builder that is never compiled is uncovered",
+            unused_builder,
+            True,
+            check="build_script",
+            mutation="preserving",
+        )
+    )
+
+    # `bash -n` reads the script and executes nothing.  The interpreter,
+    # the path and the command position are all intact.
+    noexec_shell = baseline()
+    noexec_shell[WORKFLOW_FILE] = GOOD_WORKFLOW.replace(
+        f"run: ./{GATE_SCRIPT}", f"run: bash -n ./{GATE_SCRIPT}"
+    )
+    cases.append(
+        Case(
+            "workflow runs the gate under `bash -n`, which executes nothing",
+            noexec_shell,
+            True,
+            check="workflow",
+            mutation="preserving",
+        )
+    )
+
+    # ... and an option that does NOT suppress execution must still pass.
+    errexit_shell = baseline()
+    errexit_shell[WORKFLOW_FILE] = GOOD_WORKFLOW.replace(
+        f"run: ./{GATE_SCRIPT}", f"run: bash -ex ./{GATE_SCRIPT}"
+    )
+    cases.append(
+        Case(
+            "`bash -ex` still counts as running the gate",
+            errexit_shell,
+            False,
+            check="workflow",
+            mutation="none",
+        )
+    )
+
+    # `--no-run` compiles the oracle and runs none of its tests.
+    no_run_lane = baseline()
+    no_run_lane[HOST_LANE] = GOOD_HOST_LANE.replace(
+        "cargo test --all --features std,host_tools",
+        "cargo test --all --features std,host_tools --no-run",
+    )
+    cases.append(
+        Case(
+            "host lane compiles the oracle with --no-run and runs nothing",
+            no_run_lane,
+            True,
+            check="host_lane",
+            mutation="preserving",
+        )
+    )
+
+    # ... and a harness argument after `--` is not a cargo selector.
+    harness_args = baseline()
+    harness_args[HOST_LANE] = GOOD_HOST_LANE.replace(
+        "cargo test --all --features std,host_tools",
+        "cargo test --all --features std,host_tools -- --test-threads=1",
+    )
+    cases.append(
+        Case(
+            "a harness argument after `--` is not read as a cargo selector",
+            harness_args,
+            False,
+            check="host_lane",
+            mutation="none",
         )
     )
 
