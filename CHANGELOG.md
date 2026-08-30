@@ -1,3 +1,47 @@
+## v0.34.22 — two bypasses that lived in `main`, where no witness was looking; Codex review round 17
+
+Four findings. The two that matter were found by running the **command**; every
+witness I had written called a helper function directly, so none of them could
+see a defect in the CLI's control flow. Both defects lived exactly there, and
+both reported exit 0.
+
+**Deleting the last exact-count plan skipped the citation check.** With no plan
+left to validate, `main` printed "no plan declares a Sub-task count header" and
+returned 0 — before the check that a departing plan's citations must not
+survive it. The check that deletion is supposed to trip was placed after the
+early return for having nothing to check. Reproduced: sole plan deleted,
+`CLAUDE.md` still citing `XX0.1`, exit 0. The global citation pass now runs
+first, and that case exits 1 naming the orphaned prefix.
+
+**One letter-group row grandfathered an entire flat plan.** A file-wide search
+for `RR2.A.1`-shaped rows classified the whole plan as legacy and skipped every
+sequential-ID, phase-count, total and dependency check. Reproduced with a
+deliberately wrong phase count (99 against 3 real rows) plus one stray row:
+"0 workstream plan(s) checked", exit 0. Legacy now means *only* letter-group
+rows; a letter-group row mixed into a flat plan is a malformed row and is
+reported as one — after which the count errors it was masking fire too.
+
+**Two CLI-level witnesses** now build a throwaway repository, copy the checker
+into it, run it as a subprocess and assert on the exit status, which is the only
+thing CI reads. Confirmed adversarially: reverting the letter-group fix makes
+the witness fail with `(0, 'PASS: 0 workstream plan(s)...')`.
+
+That is the third time a witness certified the environment it happened to run
+in — helper-not-CLI here, staged-not-committed and local-not-CI before. The
+pattern is that I verify where it is convenient; the correction is to build the
+hostile case first.
+
+**Two stale references**, both consequences of earlier renumbering that no gate
+covers: the `What's next` summary still said 149 sub-tasks against a plan that
+declares and sums to 148, and the RR6 split guidance and risk row still pointed
+at RR6.12 for the D-4 bisimulation, which the RR6 merge moved to RR6.11 —
+RR6.12 is now the unrelated Loom task, so an implementer would have split the
+wrong work.
+
+Gate witnesses: 16.
+
+Refs: scripts/check_workstream_plan.py
+
 ## v0.34.21 — the gate still could not run in CI, and could not tell an archive from a deletion; Codex review round 16
 
 Seven findings — three on the gate, four on the plan and its mirrors.

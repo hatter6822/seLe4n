@@ -22,7 +22,7 @@ The pre-SM10 completeness audit (`docs/planning/UNFINISHED_SMP_WORK.md`,
 audited at v0.34.3) found the project not ready to begin SM10: three findings
 block starting it, SM10's §1 scope statement is false against the tree, and a
 set of fail-open latents become reachable exactly when the boot path goes live.
-WS-RR closes that work first — 149 sub-tasks across RR0..RR8, planned in
+WS-RR closes that work first — 148 sub-tasks across RR0..RR8, planned in
 [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
 See the **WS-RR** section below for the phase table and the three blockers.
 

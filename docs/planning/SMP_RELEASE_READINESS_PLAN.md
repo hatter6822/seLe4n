@@ -428,7 +428,7 @@ Tier-5 oracle drives real locks; neither refinement theorem assumes its own
 conclusion or contains a tautological conjunct; `loom` and `miri` gates run.
 
 **Note on the two XLs**: RR6.4 (the queued lock's own operational model and
-refinement) and RR6.12 (the D-4 bisimulation for the CAS-retry lock) are the
+refinement) and RR6.11 (the D-4 bisimulation for the CAS-retry lock) are the
 phase's largest items and the likeliest to need splitting. Take the trace-shape
 predicate and the composition proof as separate PRs, landing the predicate
 first so the composition has something to consume.
@@ -540,7 +540,7 @@ PASS — the contract landed at `v0.34.2` and pinned by
 |------|------------|--------|------------|
 | RR4 fault IPC is larger than XL and slips the phase | HIGH | HIGH | Split at the sub-task boundaries §RR4 names. Partial delivery is **not** safe: RR4.9's no-handler policy is unreachable until RR4.21 wires the abort arms and RR4.23 routes the Rust trap path to them, so until both land aborts still take the old `.error .vmFault` path and return to the faulting instruction. If RR4 slips, the release waits |
 | RR3 de-threading blocks on an ordering cycle between invariant modules | MED | HIGH | RR3.2 addresses ordering before any bundle edit; the per-transition establishers already exist |
-| RR6.12 bisimulation does not close | MED | MED | Land the trace-shape predicate independently so the composition has something to consume; RR6 stays open and the release waits — deferring the deployed-lock corollary past v1.0.0 would ship the exact gap this phase exists to close |
+| RR6.11 bisimulation does not close | MED | MED | Land the trace-shape predicate independently so the composition has something to consume; RR6 stays open and the release waits — deferring the deployed-lock corollary past v1.0.0 would ship the exact gap this phase exists to close |
 | RR1 surfaces a large volume of aarch64 compile errors | MED | MED | Expected and desirable — it is cheaper here than at SM10.E; RR1.2 and RR1.3 are sized L for this reason |
 | Repointing the FFI pool at `QueuedRwLock` (RR6.6) regresses performance | LOW | MED | The Tier-5 oracle covers both implementations after RR6.3; keep `rw_lock.rs` until measurements land |
 | Two phases edit the trap seam concurrently | MED | MED | §2.3 sequences RR4 and RR5 apart in the same files |

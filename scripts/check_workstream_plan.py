@@ -337,16 +337,37 @@ def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return self_test()
     plans, companions, ranged = collect([a for a in argv if not a.startswith("-")])
+    # Deliberately before the "nothing to validate" exit: deleting the last
+    # exact-count plan while a companion still cites it left `plans` empty, so
+    # returning here skipped the very check that deletion is supposed to trip.
+    orphan_errors = companion_citation_errors(companions)
     if not plans:
+        if orphan_errors:
+            print(f"FAIL: {len(orphan_errors)} workstream-plan structure error(s):")
+            for e in orphan_errors:
+                print(f"  {e}")
+            return 1
         print("check_workstream_plan: no plan declares a 'Sub-task count' header.")
         return 0
-    errors, legacy, checked = companion_citation_errors(companions), [], []
+    errors, legacy, checked = list(orphan_errors), [], []
     for rel in plans:
         body = read_indexed(rel)
         assert body is not None
-        if LEGACY_ROW.search(body):
+        flat = list(SUBTASK_ROW.finditer(body))
+        letter = list(LEGACY_ROW.finditer(body))
+        if letter and not flat:
+            # Genuinely legacy: the whole plan predates flat numbering.
             legacy.append(rel)
             continue
+        if letter:
+            # A flat plan with one letter-group row is not a legacy plan; it is
+            # a flat plan with a malformed row.  Treating it as legacy skipped
+            # every sequential-ID, phase-count, total and dependency check for
+            # the entire file, which is a bypass rather than a grandfather.
+            errors.append(
+                f"{rel}: mixes {len(letter)} letter-group row(s) into a flat "
+                f"plan (first: {letter[0].group(0).strip()}); flat plans use "
+                f"<PREFIX><phase>.<sub> throughout")
         checked.append(rel)
         errors += check_plan(rel, body, {k: v for k, v in companions.items() if k != rel})
     seen, deduped = set(), []
@@ -396,6 +417,64 @@ CLEAN = """
 | XX1.1 | consumes XX0.2 | b | M |
 | XX1.2 | last | b | M |
 """
+
+
+def _cli_cases():
+    """Drive the command, not the helpers.
+
+    Every earlier witness called a function directly, so none of them could see
+    a defect in `main`'s control flow — and two lived there: deleting the last
+    exact-count plan returned before the citation check ran, and one
+    letter-group row grandfathered an entire flat plan past every check.  Both
+    reported exit 0.  These cases run the CLI in a throwaway repository and
+    assert on its exit status, which is the only thing CI actually reads.
+    """
+    import shutil
+    import tempfile
+    out = []
+    src = Path(__file__).resolve()
+
+    def build(td, mutate):
+        root = Path(td)
+        (root / "docs" / "planning").mkdir(parents=True)
+        (root / "scripts").mkdir()
+        shutil.copy(src, root / "scripts" / src.name)
+        (root / "docs" / "planning" / "XX_PLAN.md").write_text(CLEAN, encoding="utf-8")
+        (root / "CLAUDE.md").write_text("cites XX0.1\n", encoding="utf-8")
+        git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, check=True)
+        git("init", "-q", "-b", "main")
+        git("config", "user.email", "gate@example.invalid")
+        git("config", "user.name", "gate")
+        git("add", "-A"); git("commit", "-qm", "base")
+        mutate(root, git)
+        env = {**os.environ, "SELE4N_PLAN_BASE_REF": "main"}
+        return subprocess.run([sys.executable, "scripts/" + src.name],
+                              cwd=root, capture_output=True, text=True, env=env)
+
+    def drop_sole_plan(root, git):
+        git("checkout", "-q", "-b", "topic")
+        git("rm", "-q", "docs/planning/XX_PLAN.md")
+        git("commit", "-qm", "delete the sole plan")
+
+    def stray_letter_row(root, git):
+        p2 = root / "docs" / "planning" / "XX_PLAN.md"
+        p2.write_text(CLEAN.replace("| XX0 | first | 3 |", "| XX0 | first | 99 |")
+                      .replace("| XX1.2 | last | b | M |",
+                               "| XX1.2 | last | b | M |\n| XX2.A.1 | stray | c | S |"),
+                      encoding="utf-8")
+        git("add", "-A")
+
+    with tempfile.TemporaryDirectory() as td:
+        r = build(td, drop_sole_plan)
+        out.append(("CLI: deleting the last plan with a live citation exits non-zero",
+                    r.returncode != 0 and "nothing in the tree defines XX" in r.stdout,
+                    (r.returncode, r.stdout.strip()[:110])))
+    with tempfile.TemporaryDirectory() as td:
+        r = build(td, stray_letter_row)
+        out.append(("CLI: a stray letter-group row does not grandfather a flat plan",
+                    r.returncode != 0 and "phase map says XX0" in r.stdout,
+                    (r.returncode, r.stdout.strip()[:110])))
+    return out
 
 
 def _archive_and_reprefix_cases():
@@ -579,6 +658,7 @@ def self_test() -> int:
     cases.append(_deleted_plan_case())
     cases.append(_committed_deletion_case())
     cases.extend(_archive_and_reprefix_cases())
+    cases.extend(_cli_cases())
 
     # A phase listed twice must be reported, not collapsed by the assignment.
     dup = CLEAN.replace("| XX1 | second | 2 |", "| XX1 | second | 2 |\n| XX1 | second again | 9 |")
