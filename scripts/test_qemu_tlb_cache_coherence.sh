@@ -6,8 +6,10 @@
 #
 # See docs/HARDWARE_TESTING.md §4.1 for the procedure.
 #
-# Skips with status 0 if QEMU is not available so CI runners without
-# emulation can still complete the smoke gate.
+# Exits SELE4N_SKIP_EXIT (77), never 0, when it cannot certify anything —
+# QEMU absent, or the stub ending it still has pending the image pipeline.
+# Callers must invoke it through `run_gate_check`, which records the gate as
+# NOT RUN; a direct call under `set -e` will treat 77 as a failure.
 
 set -euo pipefail
 

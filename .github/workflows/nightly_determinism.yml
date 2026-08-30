@@ -56,14 +56,19 @@ jobs:
         run: ./scripts/setup_lean_env.sh
 
       # Every tier-4 gate is a QEMU boot check, and a gate that cannot run
-      # certifies nothing.  setup_lean_env.sh installs the emulator too, but
-      # it does so in the background (test deps are non-blocking there), so
-      # install it synchronously here: the tier must not start racing the
-      # package manager and then record its gates as NOT RUN.
-      - name: Install QEMU (tier-4 SMP acceptance gates)
+      # certifies nothing.  `setup_lean_env.sh` installs the emulator and
+      # *waits* for that install before returning, so there is no race to
+      # resolve here and no second install to perform: running `apt-get update`
+      # unconditionally would only add a network-dependent failure point, and a
+      # transient mirror outage would abort the nightly with the emulator
+      # already present.  Verify, and install only if setup did not.
+      - name: Ensure QEMU is present (tier-4 SMP acceptance gates)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-arm
+          if ! command -v qemu-system-aarch64 >/dev/null 2>&1; then
+            echo "setup did not provide qemu-system-aarch64 — installing"
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends qemu-system-arm
+          fi
           qemu-system-aarch64 --version
 
       # Tier 4 reports NOT RUN (exit 77) when its acceptance gates cannot

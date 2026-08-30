@@ -37,6 +37,7 @@ silently, which is how the drift survived review in the first place.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -68,11 +69,19 @@ ACCEPT_TOTAL = re.compile(r"\*\*Acceptance\*\*:\s*all\s*\*\*(\d+)\*\*\s*findings
 def phase_map_rows(text: str, prefix: str) -> dict[int, int]:
     """`| RR0 | scope | 11 | S-M |` -> {0: 11}.  Sub-task rows are excluded by
     the absence of a dot, so the two table shapes cannot be confused."""
-    out = {}
+    out: dict[int, int] = {}
+    dupes: list[str] = []
     pat = re.compile(r"^\|\s*" + prefix + r"(\d+)\s*\|[^|]*\|\s*(\d+)\s*\|", re.M)
     for m in pat.finditer(text):
-        out[int(m.group(1))] = int(m.group(2))
-    return out
+        ph, n = int(m.group(1)), int(m.group(2))
+        if ph in out:
+            # Assigning over the earlier row would de-duplicate the map before
+            # any comparison ran, so a plan listing a phase twice -- with two
+            # different counts -- would pass on whichever row came last.
+            dupes.append(f"{prefix}{ph} appears twice in the phase map "
+                         f"(counts {out[ph]} and {n}); one of them is wrong")
+        out[ph] = n
+    return out, dupes
 
 
 def read_indexed(rel: str) -> str | None:
@@ -112,7 +121,8 @@ def check_plan(rel: str, text: str, companions: dict[str, str]) -> list[str]:
                 f"{rel}: {prefix}{ph} sub-task numbers are not 1..{len(nums)}: {nums}")
 
     # 2 + 3. phase map and declared total
-    declared = phase_map_rows(text, prefix)
+    declared, dupes = phase_map_rows(text, prefix)
+    errors += [f"{rel}: {d}" for d in dupes]
     for ph in sorted(set(declared) | set(by_phase)):
         want, have = declared.get(ph), len(by_phase.get(ph, []))
         if ph not in declared:
@@ -189,14 +199,47 @@ def read_at(ref: str, rel: str) -> str | None:
         return None
 
 
+def baseline_refs() -> list[str]:
+    """Revisions a plan may have existed in but the index no longer carries.
+
+    `HEAD` alone covers only a *staged* deletion.  In CI the deletion is
+    already committed, so HEAD and the index name the same tree and the
+    difference is always empty -- the check would be dead exactly where it is
+    meant to run.  The integration base is therefore consulted too, so a
+    committed deletion on the branch is still compared against a revision that
+    predates it.
+    """
+    refs = ["HEAD"]
+    override = os.environ.get("SELE4N_PLAN_BASE_REF")
+    for cand in ([override] if override else ["origin/main", "main"]):
+        if cand and subprocess.run(["git", "rev-parse", "--verify", "-q", cand],
+                                   cwd=REPO, capture_output=True).returncode == 0:
+            refs.append(cand)
+            break
+    return refs
+
+
+def baseline_is_complete() -> bool:
+    """Whether an integration base was available.  A shallow clone with no
+    base is reported rather than silently narrowing the check."""
+    return len(baseline_refs()) > 1
+
+
 def deleted_plan_errors(companions: dict[str, str]) -> list[str]:
     """A plan may not be deleted while its sub-tasks are still cited.  Removing
     the plan removes the only definition of those IDs, so every citation to it
     becomes dangling in the same commit that hides it from the gate."""
     errors = []
-    gone = set(list_tracked("HEAD")) - set(list_tracked(":"))
+    # Remember which revision still holds each departing plan: on a branch
+    # where the deletion is already committed, HEAD no longer has the file, so
+    # reading its body from HEAD would find nothing and the check would pass.
+    present: dict[str, str] = {}
+    for base in baseline_refs():
+        for rel in list_tracked(base):
+            present.setdefault(rel, base)
+    gone = set(present) - set(list_tracked(":"))
     for rel in sorted(gone):
-        body = read_at("HEAD", rel)
+        body = read_at(present[rel], rel)
         if not body or not HEADER_TOTAL.search(body):
             continue
         rows = list(SUBTASK_ROW.finditer(body))
@@ -257,6 +300,11 @@ def main(argv: list[str]) -> int:
           f"no forward dependencies); "
           f"{len(legacy)} legacy letter-group plan(s) and {ranged} declaring an "
           f"estimate range are not held to flat numbering.")
+    if not baseline_is_complete():
+        # Narrower coverage is said out loud rather than inferred from a pass.
+        print("  NOTE: no integration base resolved (shallow clone?), so a plan "
+              "deletion committed on this branch was not compared against a "
+              "revision predating it; set SELE4N_PLAN_BASE_REF to restore it.")
     return 0
 
 
@@ -282,6 +330,39 @@ CLEAN = """
 | XX1.1 | consumes XX0.2 | b | M |
 | XX1.2 | last | b | M |
 """
+
+
+def _committed_deletion_case():
+    """The CI path.  The staged-deletion witness passed while this was dead:
+    once the deletion is committed, HEAD and the index agree, so a HEAD-only
+    comparison sees nothing.  Here the deletion is committed on a branch and
+    the check must still find it by consulting the integration base."""
+    import tempfile
+    global REPO
+    saved = REPO
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "docs" / "planning").mkdir(parents=True)
+            (root / "docs" / "planning" / "XX_PLAN.md").write_text(CLEAN, encoding="utf-8")
+            (root / "CLAUDE.md").write_text("scheduled at XX0.2\n", encoding="utf-8")
+            git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, check=True)
+            git("init", "-q", "-b", "main")
+            git("config", "user.email", "gate@example.invalid")
+            git("config", "user.name", "gate")
+            git("add", "-A"); git("commit", "-qm", "plan and citation")
+            git("checkout", "-q", "-b", "topic")
+            git("rm", "-q", "docs/planning/XX_PLAN.md")
+            git("commit", "-qm", "delete the plan, keep the citation")
+            REPO = root
+            os.environ["SELE4N_PLAN_BASE_REF"] = "main"
+            errs = deleted_plan_errors({"CLAUDE.md": (root / "CLAUDE.md").read_text()})
+            hit = any("cites XX0.2" in e for e in errs)
+            return ("a COMMITTED plan deletion is caught, not just a staged one",
+                    hit, errs)
+    finally:
+        REPO = saved
+        os.environ.pop("SELE4N_PLAN_BASE_REF", None)
 
 
 def _deleted_plan_case():
@@ -384,6 +465,13 @@ def self_test() -> int:
     # throwaway repository, because the defect was in how plans are
     # *enumerated* -- a fixture string cannot exercise that.
     cases.append(_deleted_plan_case())
+    cases.append(_committed_deletion_case())
+
+    # A phase listed twice must be reported, not collapsed by the assignment.
+    dup = CLEAN.replace("| XX1 | second | 2 |", "| XX1 | second | 2 |\n| XX1 | second again | 9 |")
+    derrs = check_plan("plan.md", dup, {})
+    cases.append(("a duplicated phase-map row is rejected",
+                  any("appears twice in the phase map" in e for e in derrs), derrs))
 
     failed = 0
     for name, ok, detail in cases:

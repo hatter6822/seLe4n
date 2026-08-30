@@ -1,3 +1,45 @@
+## v0.34.20 — the deletion gate was dead in CI, where it was meant to run; Codex review round 15
+
+Four findings, two of them on the gate added two cuts ago.
+
+**The deletion check could not fire in CI.** v0.34.19 computed departing plans
+as `HEAD − index`. On a fresh CI checkout those name the same tree, so the set
+was always empty and a committed plan deletion with surviving citations passed
+— the check was live only for an *uncommitted staged* deletion, which is
+exactly what its witness exercised. The witness passed while the CI path was
+dead: a scanner that under-reaches, one level up from the flaw it was written
+to fix.
+
+Departing plans are now taken against the integration base as well as `HEAD`
+(`origin/main`, or `SELE4N_PLAN_BASE_REF`), and each plan's body is read from
+the revision that still holds it — reading from `HEAD` was a second, hidden
+half of the same bug, since on a branch where the deletion is committed `HEAD`
+no longer has the file. When no base resolves (a shallow clone) the narrowed
+coverage is printed rather than inferred from a pass.
+
+The new witness commits the deletion on a branch and requires the citation to
+be reported. It failed on first run and found the read-from-`HEAD` half; both
+halves are now covered.
+
+**A duplicated phase-map row was silently collapsed.** `out[phase] = count`
+overwrote the earlier entry, so a plan listing a phase twice with two different
+counts passed on whichever row came last, and both the per-phase comparison and
+the declared total ran on a de-duplicated map. Duplicates are now reported.
+
+**`test_qemu_tlb_cache_coherence.sh` still promised a status-0 skip** while
+returning 77 from both its QEMU-absent branch and its stub ending. Third
+instance of the class fixed at v0.34.14 for `test_qemu.sh` and
+`test_qemu_smp_bringup.sh`; a sweep now finds none left.
+
+**The nightly reinstalled QEMU for a race that does not exist.**
+`setup_lean_env.sh` waits for its background package install before returning,
+so the synchronous `apt-get update` added a network-dependent failure point on
+a path that already had the emulator — a transient mirror outage would abort
+the nightly with QEMU present. The step now verifies first and installs only if
+setup did not.
+
+Refs: scripts/check_workstream_plan.py
+
 ## v0.34.19 — the new gate could be blinded by deleting the plan; Codex review round 14
 
 **The gate had the flaw it exists to prevent.** `check_workstream_plan.py`
