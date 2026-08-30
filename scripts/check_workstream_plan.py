@@ -99,6 +99,8 @@ def read_indexed(rel: str) -> str | None:
 
 def check_plan(rel: str, text: str, companions: dict[str, str]) -> list[str]:
     errors: list[str] = []
+    text = prose_view(text)
+    companions = {k: prose_view(v) for k, v in companions.items()}
     rows = list(SUBTASK_ROW.finditer(text))
     if not rows:
         return [f"{rel}: declares a sub-task count but has no sub-task rows"]
@@ -200,6 +202,23 @@ def read_at(ref: str, rel: str) -> str | None:
         return None
 
 
+FENCE = re.compile(r"^```.*?^```", re.M | re.S)
+
+
+def prose_view(text: str) -> str:
+    """The document with fenced blocks blanked out, line count preserved.
+
+    A plan illustrating a row shape or citing an example ID inside a fence is
+    showing the reader what one looks like, not declaring one.  Parsing those
+    as data made the gate fail legitimate documents — a phantom phase from a
+    fenced table, a dangling citation from an example ID — which is the mirror
+    of a bypass: it pushes authors to contort prose to satisfy the scanner,
+    which this project forbids in as many words.  Lines are replaced rather
+    than removed so any position the caller reports still lines up.
+    """
+    return FENCE.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+
+
 def global_definitions(clashes: list | None = None) -> dict[str, tuple[str, set[str]]]:
     """Every sub-task ID the indexed tree defines, keyed by prefix.
 
@@ -216,6 +235,7 @@ def global_definitions(clashes: list | None = None) -> dict[str, tuple[str, set[
         body = read_indexed(rel)
         if not body:
             continue
+        body = prose_view(body)
         rows = list(SUBTASK_ROW.finditer(body))
         if not rows:
             continue
@@ -254,7 +274,7 @@ def companion_citation_errors(companions: dict[str, str]) -> list[str]:
     for rel in list_tracked(":"):
         body = read_indexed(rel)
         if body:
-            sources.setdefault(rel, body)
+            sources.setdefault(rel, prose_view(body))
     baseline_prefixes: dict[str, str] = {}
     for base in baseline_refs():
         for rel in list_tracked(base):
@@ -263,6 +283,7 @@ def companion_citation_errors(companions: dict[str, str]) -> list[str]:
             if rows:
                 baseline_prefixes.setdefault(rows[0].group(1), rel)
 
+    sources = {k: prose_view(v) for k, v in sources.items()}
     for where, text in sources.items():
         for m in sorted({(a, b, c) for a, b, c in
                          re.findall(r"\b([A-Z]{2,})(\d+)\.(\d+)\b", text)}):
@@ -727,6 +748,18 @@ def self_test() -> int:
     cases.append(_committed_deletion_case())
     cases.extend(_archive_and_reprefix_cases())
     cases.extend(_cli_cases())
+
+    # Fenced blocks illustrate; they do not declare.  Both directions matter:
+    # an example must not fail a legitimate plan, and blanking fences must not
+    # blind the gate to a real defect sitting outside one.
+    fenced = CLEAN + "\n```\nsee XX9.9, and a row like\n| XX3.1 | fenced | a | S |\n```\n"
+    ferrs = check_plan("plan.md", fenced, {})
+    cases.append(("an example inside a code fence is not parsed as data",
+                  ferrs == [], ferrs))
+    still = check_plan("plan.md",
+                       fenced.replace("| XX0 | first | 3 |", "| XX0 | first | 42 |"), {})
+    cases.append(("a real defect outside a fence is still caught",
+                  any("phase map says XX0 has 42" in e for e in still), still))
 
     # A phase listed twice must be reported, not collapsed by the assignment.
     dup = CLEAN.replace("| XX1 | second | 2 |", "| XX1 | second | 2 |\n| XX1 | second again | 9 |")

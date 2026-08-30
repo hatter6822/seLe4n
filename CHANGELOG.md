@@ -1,3 +1,29 @@
+## v0.34.25 — the gate read examples as data; found by probing, not by review
+
+Round 18 found two bypasses after my single probe pass, so I widened the probe
+instead of stopping at one. It found the mirror problem: not a bypass, a pair of
+**false positives**.
+
+A plan that illustrates a citation or a row shape inside a fenced block had that
+example parsed as data. `see XX9.9 for the shape` became a dangling reference; a
+fenced `| XX3.1 | … |` became a phantom phase with no phase-map entry. Both
+failed the gate on a document that is entirely correct.
+
+That is as damaging as a miss, and in a specific way this project already names:
+it pushes an author to contort prose to satisfy a scanner, which CLAUDE.md
+forbids in as many words. The gate exists so plans can be written plainly.
+
+Fenced blocks are now blanked before parsing — line counts preserved, so any
+position reported still lines up. Both directions are witnessed, because a
+stripper that over-reaches would be the same defect inverted: an example inside
+a fence must not fail a correct plan, and a real defect outside one must still
+be caught. Confirmed adversarially — removing the stripper makes the first
+witness fail with exactly the two false positives above.
+
+21 witnesses.
+
+Refs: scripts/check_workstream_plan.py
+
 ## v0.34.24 — a plan row that told you to weaken the claim; Codex review round 18
 
 **The one that matters is mine.** RR7.7, as I wrote it at v0.34.21, said to
