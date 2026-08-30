@@ -47,6 +47,16 @@ this gate keeps it, because every way of losing it again is silent:
    and the step still reports a clean pass over one fewer binary -- which is
    how this gate found the defect on the very cut that introduced it.
 
+A presence check is not a relation check.  Each check below resolves the
+text into the structure it stands for -- the script's variables are expanded
+so flags are read ON the build command, the build script's `.file` calls are
+located between the arch gate and the `.compile` that consumes them, the
+toolchain's `targets` array is matched by element -- because searching for a
+token anywhere in the file is satisfied by an unused assignment, a step name
+or a dead helper.  Seven such holes shipped in this cut; see CLAUDE.md's
+"A presence check is not a relation check".  Add a check here only with a
+negative case that KEEPS its token and breaks its relation.
+
 Gates read code, prose reads prose: the YAML, TOML and shell files scanned
 here are stripped of ``#`` comments (quote-aware) first and ``build.rs`` of
 its ``//`` comments, so the sentences in this docstring -- and the
@@ -114,6 +124,50 @@ def rust_code_view(text: str) -> str:
     return "\n".join(out)
 
 
+SHELL_ASSIGN = re.compile(
+    r"""^\s*([A-Za-z_][A-Za-z0-9_]*)=(?:"([^"\n]*)"|'([^'\n]*)'|(\S*))\s*$""",
+    re.MULTILINE,
+)
+
+
+def expand_shell_vars(code: str) -> str:
+    """Substitute simple `NAME=value` assignments into `$NAME` / `${NAME}`.
+
+    The gate script keeps its settings in variables and passes them to
+    cargo, so a check that looks for the target triple or the feature name
+    anywhere in the file is satisfied by the *assignment* and says nothing
+    about the command.  Expanding first means the checks below read what
+    cargo will actually receive.
+
+    Deliberately simple: literal single-line assignments only, applied
+    longest-name-first so `$CROSS_TARGET` is not partly eaten by a shorter
+    `$CROSS`.  A value this cannot resolve is left as the bare `$NAME`,
+    which fails the checks -- the safe direction for a gate.
+
+    A name assigned more than once is NOT expanded, for the same reason.
+    Taking the first assignment would read `CROSS_FEATURES="hw_target"`
+    while the command that runs receives a later `CROSS_FEATURES=""`, and
+    taking the last is equally wrong under a conditional.  Leaving it
+    unresolved makes the checks fail rather than pass on a value the gate
+    cannot actually determine -- which is the whole point of this cut.
+    """
+    values: dict[str, str] = {}
+    reassigned: set[str] = set()
+    for match in SHELL_ASSIGN.finditer(code):
+        name = match.group(1)
+        value = next(g for g in match.groups()[1:] if g is not None)
+        if name in values and values[name] != value:
+            reassigned.add(name)
+        values.setdefault(name, value)
+    for name in reassigned:
+        del values[name]
+    for name in sorted(values, key=len, reverse=True):
+        code = code.replace(f"${{{name}}}", values[name]).replace(
+            f"${name}", values[name]
+        )
+    return code
+
+
 def read(root: str, rel: str) -> str | None:
     path = os.path.join(root, rel)
     try:
@@ -139,10 +193,17 @@ def check_toolchain(root: str) -> list[str]:
             f"installs it on first use from rust/; without it a fresh clone "
             f"fails the aarch64 gate with a missing `core` crate."
         ]
-    if CROSS_TARGET not in match.group(1):
+    # Exact ELEMENTS, not a substring of the array text.
+    # `targets = ["aarch64-unknown-none-softfloat"]` is a real and
+    # different target that contains the triple as a prefix, so a
+    # substring test passes while rustup installs something the gate
+    # script never builds for.
+    elements = re.findall(r'"([^"]*)"|\'([^\']*)\'', match.group(1))
+    listed = {a or b for a, b in elements}
+    if CROSS_TARGET not in listed:
         return [
             f"{TOOLCHAIN_FILE}: `targets` does not list `{CROSS_TARGET}` "
-            f"(found: {match.group(1).strip()})."
+            f"as an element (found: {sorted(listed) or match.group(1).strip()})."
         ]
     return []
 
@@ -160,35 +221,51 @@ def check_gate_script(root: str) -> list[str]:
     if not os.access(path, os.X_OK):
         problems.append(f"{GATE_SCRIPT}: not executable (chmod +x).")
 
-    code = code_view(text)
-    if CROSS_TARGET not in code:
-        problems.append(f"{GATE_SCRIPT}: no longer names `{CROSS_TARGET}`.")
-    if not re.search(r"\bhw_target\b", code) or "--features" not in code:
+    # Expand the script's own shell variables before matching.  Searching
+    # for the target triple and the feature name as free-floating tokens
+    # would be satisfied by their `CROSS_TARGET=`/`CROSS_FEATURES=`
+    # assignments alone, so a script that kept those assignments unused and
+    # built `--target x86_64-unknown-linux-gnu --features other` would pass
+    # a gate whose entire purpose is that CI still compiles the AArch64
+    # paths.  The settings are therefore checked ON the build commands.
+    code = expand_shell_vars(code_view(text))
+
+    cross_builds = [
+        line
+        for line in code.splitlines()
+        if re.search(r"cargo\s+build\b", line)
+    ]
+    targeted = [
+        line
+        for line in cross_builds
+        if re.search(rf"--target[=\s]+\S*{re.escape(CROSS_TARGET)}", line)
+    ]
+    if not targeted:
         problems.append(
-            f"{GATE_SCRIPT}: no longer passes `--features hw_target`. "
-            f"The feature is empty by default and guards the hardware-only "
+            f"{GATE_SCRIPT}: no `cargo build` names `--target "
+            f"{CROSS_TARGET}`. `cargo check` stops before code generation, "
+            f"so it never reaches the backend and cannot surface an `asm!` "
+            f"or codegen error -- which is the defect class this gate "
+            f"exists for -- and a build for any other target compiles none "
+            f"of the cross surface."
+        )
+    unfeatured = [
+        line
+        for line in targeted
+        if not re.search(r"--features[=\s]+\S*\bhw_target\b", line)
+        and "--all-features" not in line
+    ]
+    if targeted and unfeatured:
+        problems.append(
+            f"{GATE_SCRIPT}: a cross `cargo build` does not pass "
+            f"`--features hw_target`: {unfeatured[0].strip()!r}. The "
+            f"feature is empty by default and guards the hardware-only "
             f"paths (the Lean calls in timer.rs, trap.rs and smp.rs), so "
             f"without it the gate compiles none of the code it exists to "
             f"cover and stays green through a regression in exactly those "
             f"blocks."
         )
-    # `--target` on the same line: a `cargo build` for the HOST would
-    # satisfy a bare `cargo\s+build` search while compiling none of the
-    # cross surface.
-    cross_builds = [
-        line
-        for line in code.splitlines()
-        if re.search(r"cargo\s+build\b.*--target\b", line)
-    ]
-    if not cross_builds:
-        problems.append(
-            f"{GATE_SCRIPT}: no longer runs a `cargo build --target ...`. "
-            f"`cargo check` stops before code generation, so it never "
-            f"reaches the backend and cannot surface an `asm!` or codegen "
-            f"error -- which is the defect class this gate exists for -- and "
-            f"a host-target build compiles none of the cross surface."
-        )
-    else:
+    if targeted:
         # Both profiles, because inline-asm register allocation and
         # constraint checking depend on the optimisation level: an `asm!`
         # block the allocator satisfies at `-O0` can fail to at `-O2`, and
@@ -256,8 +333,16 @@ def check_workflow(root: str) -> list[str]:
     code = code_view(text)
     jobs = workflow_jobs(code)
 
+    # A job runs the gate only if a `run:` value invokes it.  Matching the
+    # path anywhere in the job body is satisfied by a step *name* --
+    # "Build sele4n-hal for aarch64-unknown-none" is one line away from
+    # "replaced ./scripts/test_aarch64_cross_build.sh" -- so a job could
+    # look like the runner while running nothing.
+    run_invokes = re.compile(
+        rf"^\s*(?:-\s*)?run\s*:.*{re.escape(GATE_SCRIPT)}", re.MULTILINE
+    )
     runners = [
-        name for name, body in jobs.items() if GATE_SCRIPT in "\n".join(body)
+        name for name, body in jobs.items() if run_invokes.search("\n".join(body))
     ]
     if not runners:
         return [
@@ -294,17 +379,51 @@ def check_build_script(root: str) -> list[str]:
     if text is None:
         return [f"{BUILD_SCRIPT}: missing"]
     code = rust_code_view(text)
+
+    # The `.file` calls must sit in the LIVE assembly chain: after the
+    # `CARGO_CFG_TARGET_ARCH` gate that returns early on non-aarch64, and
+    # before the `.compile(...)` that consumes them.  Presence anywhere in
+    # the file is satisfied by a dead helper or a second, unused
+    # `cc::Build`, which assembles nothing while the check reports the
+    # source covered.
+    gate_at = code.find("CARGO_CFG_TARGET_ARCH")
+    compile_at = code.find('.compile("sele4n_hal_asm")')
+    if gate_at < 0 or compile_at < 0 or gate_at > compile_at:
+        return [
+            f"{BUILD_SCRIPT}: cannot locate the assembly block "
+            f"(`CARGO_CFG_TARGET_ARCH` gate at {gate_at}, "
+            f'`.compile("sele4n_hal_asm")` at {compile_at}). If the build '
+            f"script was restructured, update this gate so the three `.S` "
+            f"sources stay pinned to the live chain."
+        ]
+
     missing = [
-        src for src in ASM_SOURCES if f'.file("{src}")' not in code
+        src
+        for src in ASM_SOURCES
+        if not any(
+            gate_at < pos < compile_at
+            for pos in _occurrences(code, f'.file("{src}")')
+        )
     ]
     if missing:
         return [
-            f"{BUILD_SCRIPT}: no longer assembles {', '.join(missing)} "
-            f"(expected a `.file(\"<path>\")` call for each). Dropping a "
-            f"source removes its only compile coverage without failing any "
-            f"build."
+            f"{BUILD_SCRIPT}: {', '.join(missing)} is not handed to the "
+            f"assembler in the live chain (expected a `.file(\"<path>\")` "
+            f"call between the `CARGO_CFG_TARGET_ARCH` gate and "
+            f'`.compile("sele4n_hal_asm")`). Dropping a source -- or '
+            f"leaving it only in an unreachable one -- removes its only "
+            f"compile coverage without failing any build."
         ]
     return []
+
+
+def _occurrences(haystack: str, needle: str) -> list[int]:
+    """Every start offset of `needle` in `haystack`."""
+    found, start = [], haystack.find(needle)
+    while start >= 0:
+        found.append(start)
+        start = haystack.find(needle, start + 1)
+    return found
 
 
 def check_host_lane(root: str) -> list[str]:
@@ -315,7 +434,9 @@ def check_host_lane(root: str) -> list[str]:
             f"{HOST_LANE}: missing. It is the host half of the Rust "
             f"coverage; the cross gate does not run any tests."
         ]
-    code = code_view(text)
+    # Expanded for the same reason as the gate script above: the flags are
+    # read ON the command, so a settings variable must be resolved first.
+    code = expand_shell_vars(code_view(text))
     test_lines = [
         line for line in code.splitlines() if re.search(r"cargo\s+test\b", line)
     ]
@@ -403,9 +524,18 @@ cargo test --all --features std,host_tools
 cargo clippy --all-targets --all-features -- -D warnings
 """
 
+# Mirrors the real `build.rs` shape: an arch gate that returns early, then
+# the live `cc::Build` chain.  A fixture without the gate is thinner than
+# the file under test, and a check calibrated against it measures less than
+# it appears to.
 GOOD_BUILD_RS = """fn main() {
-    cc::Build::new()
-        .file("src/boot.S")
+    let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+    if target_arch != "aarch64" {
+        return;
+    }
+
+    let mut asm = cc::Build::new();
+    asm.file("src/boot.S")
         .file("src/vectors.S")
         .file("src/trap.S")
         .compile("sele4n_hal_asm");
@@ -509,6 +639,44 @@ def self_test() -> int:
     )
     cases.append(("workflow comments the gate out", job_in_prose, True))
 
+    # The exact shape the PR #883 review reproduced: the settings stay in
+    # the file as unused assignments while the builds target something
+    # else, so a token search anywhere in the file still finds them.
+    settings_unbound = baseline()
+    settings_unbound[GATE_SCRIPT] = GOOD_GATE.replace(
+        '--target "$CROSS_TARGET" -p sele4n-hal --features hw_target',
+        "--target x86_64-unknown-linux-gnu -p sele4n-hal --features other",
+    )
+    cases.append(
+        (
+            "gate keeps the settings as unused variables while building "
+            "another target",
+            settings_unbound,
+            True,
+        )
+    )
+
+    feature_unbound = baseline()
+    feature_unbound[GATE_SCRIPT] = GOOD_GATE.replace(
+        "--features hw_target", "--features other"
+    )
+    cases.append(
+        ("gate builds the cross target without hw_target", feature_unbound, True)
+    )
+
+    settings_reassigned = baseline()
+    settings_reassigned[GATE_SCRIPT] = GOOD_GATE.replace(
+        'CROSS_TARGET="', 'CROSS_FEATURES="hw_target"\nCROSS_FEATURES=""\nCROSS_TARGET="'
+    ).replace("--features hw_target", '--features "$CROSS_FEATURES"')
+    cases.append(
+        (
+            "gate re-assigns a settings variable, so its value is not "
+            "determinable from the text",
+            settings_reassigned,
+            True,
+        )
+    )
+
     no_targets_input = baseline()
     no_targets_input[WORKFLOW_FILE] = GOOD_WORKFLOW.replace(
         f"          targets: {CROSS_TARGET}\n", ""
@@ -517,10 +685,59 @@ def self_test() -> int:
 
     for dropped in ASM_SOURCES:
         broken = baseline()
-        broken[BUILD_SCRIPT] = GOOD_BUILD_RS.replace(
-            f'        .file("{dropped}")\n', ""
-        )
+        # Remove the call itself rather than a whole indented line: the
+        # first source sits on `asm.file("…")` and the rest on continuation
+        # lines, so a line-shaped mutation silently no-ops on one of them
+        # and leaves a case that asserts nothing.
+        broken[BUILD_SCRIPT] = GOOD_BUILD_RS.replace(f'.file("{dropped}")', "")
         cases.append((f"build.rs drops {dropped}", broken, True))
+
+    # --- The mutation class that finds "presence checked, relation not" ---
+    #
+    # Each case below KEEPS the token a naive check looks for and breaks
+    # the relation the check actually means.  Deleting the token is the
+    # easy mutation and every presence check survives it; these are the
+    # ones that do not.  A new check here needs at least one.
+
+    asm_in_dead_code = baseline()
+    asm_in_dead_code[BUILD_SCRIPT] = GOOD_BUILD_RS.replace(
+        '    asm.file("src/boot.S")\n', "    asm\n"
+    ) + '\nfn unused_helper() {\n    cc::Build::new().file("src/boot.S");\n}\n'
+    cases.append(
+        (
+            "build.rs keeps `.file(\"src/boot.S\")` only in an unreachable helper",
+            asm_in_dead_code,
+            True,
+        )
+    )
+
+    toolchain_prefix_target = baseline()
+    toolchain_prefix_target[TOOLCHAIN_FILE] = GOOD_TOOLCHAIN.replace(
+        f'"{CROSS_TARGET}"', f'"{CROSS_TARGET}-softfloat"'
+    )
+    cases.append(
+        (
+            "toolchain lists a different target that CONTAINS the triple",
+            toolchain_prefix_target,
+            True,
+        )
+    )
+
+    workflow_name_only = baseline()
+    workflow_name_only[WORKFLOW_FILE] = GOOD_WORKFLOW.replace(
+        f"        run: ./{GATE_SCRIPT}",
+        f"        run: true",
+    ).replace(
+        f"      - name: Build sele4n-hal for {CROSS_TARGET}",
+        f"      - name: replaced ./{GATE_SCRIPT}",
+    )
+    cases.append(
+        (
+            "workflow names the gate in a step NAME while running nothing",
+            workflow_name_only,
+            True,
+        )
+    )
 
     asm_in_prose = baseline()
     asm_in_prose[BUILD_SCRIPT] = GOOD_BUILD_RS.replace(
@@ -561,8 +778,18 @@ def self_test() -> int:
         ("host lane selects host_tools via --all-features", host_lane_all_features, False)
     )
 
+    # A case expected to be CAUGHT must actually differ from the clean
+    # baseline.  A mutation that silently no-ops -- because the string it
+    # replaced is not in the fixture -- produces a case that asserts
+    # nothing while reading as coverage.  That happened here once already,
+    # so it is checked rather than trusted.
+    clean = baseline()
     failures = 0
     for label, files, expect_problems in cases:
+        if expect_problems and files == clean:
+            failures += 1
+            print(f"[SELF-TEST FAIL] inert mutation, fixture unchanged: {label}")
+            continue
         with tempfile.TemporaryDirectory() as tmp:
             write_tree(tmp, files)
             problems = run_checks(tmp)

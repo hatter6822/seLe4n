@@ -1,3 +1,69 @@
+## v0.34.42 — A presence check is not a relation check
+
+Eight holes in the two gates `v0.34.41` added, all one defect. Four came
+from the PR #883 review; applying the lens to the checks it did not name
+found three more; and the eighth was in the fix for the first.
+
+**The class.** Each check asserted that a *token was present* where the
+property it meant was a *relation*: that the flag reaches **this command**,
+that the guard precedes **this instruction**, that the artefact came from
+**this run**, that the reference is **this occurrence**. Presence is
+necessary and almost never sufficient, and the gap is invisible because the
+token really is there.
+
+- `CROSS_TARGET=` / `CROSS_FEATURES=` assignments satisfied the flag checks
+  while the builds could pass `--target x86_64-unknown-linux-gnu --features
+  other`. The script's variables are now expanded and the flags are read on
+  the `cargo build` lines themselves.
+- `body.contains("require_feat_tlbios()")` passed with the guard moved
+  *below* the `asm!` it protects — the UNDEFINED `TLBI *OS` would execute
+  before the fail-closed halt. Position is now compared, per wrapper, and
+  the `.arch_extension` pair is checked as `enable < mnemonic < restore`
+  rather than as a file-wide count of 4 and 4, which a reversed pair
+  satisfies.
+- A call-syntax regex missed `use crate::tlb::tlbi_vae1 as invalidate_local`
+  and `let f = crate::tlb::tlbi_vae1`, both of which reach a non-broadcast
+  invalidation. The allowlist now matches any *reference*.
+- The Lean declaration exemption was computed on **raw text**, so a
+  docstring quoting `@[extern "ffi_tlbi_all"]` exempted every real
+  reference in that file — in the gate written to enforce *gates read code,
+  prose reads prose*. It is now resolved per occurrence over the stripped
+  code, so the declaring module's own calls are still checked.
+- Three more the review did not name: a `targets` array matched by
+  substring accepted `aarch64-unknown-none-softfloat`, a real and different
+  target; a job "ran" the gate if its path appeared anywhere in the body,
+  which a step *name* satisfies; and `.file("src/boot.S")` counted from
+  anywhere in `build.rs`, including a dead helper. All three now check the
+  relation — array element, `run:` value, and position inside the live
+  assembly chain between the arch gate and `.compile`.
+
+**The eighth was in the fix.** Expanding the gate script's shell variables
+took the *first* assignment of each name, so a script assigning
+`CROSS_FEATURES="hw_target"` and later `CROSS_FEATURES=""` would be read at
+its first value while the command received the second — a presence check
+wearing the fix's clothes. A name assigned more than once is now left
+unexpanded, which makes the checks fail rather than pass on a value the gate
+cannot determine from the text. That is the rule the whole cut is about, and
+it took writing the rule down to see it.
+
+**Why the self-tests missed all seven.** Every fixture mutated by
+*deletion*, which any presence check survives. The mutation that finds this
+class keeps the token and breaks the relation. Both gates now carry such
+cases, and both harnesses reject a mutation that leaves the fixture
+unchanged — an inert mutation reads as coverage while asserting nothing,
+which had already happened once here. The `build.rs` fixture also gained
+the arch gate it had been missing: a fixture thinner than the file it
+stands for passes checks the real file would fail, which is how a missing
+`re.MULTILINE` survived earlier in the same cut.
+
+Both rules are now `CLAUDE.md` / `AGENTS.md` conventions rather than
+findings, since the failure is generic to text-scanner gates and this
+repository is mostly text-scanner gates.
+
+No kernel behaviour changed: the fixes are to gates and their tests.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR1
+
 ## v0.34.41 — The first aarch64 compile, and the six defects nothing could see
 
 **WS-RR RR1 lands (all eleven sub-tasks).** No aarch64 target had ever been

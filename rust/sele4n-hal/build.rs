@@ -1627,7 +1627,11 @@ fn scan_queued_rw_lock_protocol_intact() {
 ///     pinned here rather than left to the aarch64 build to notice.
 ///
 /// The scan runs over the comment-stripped source, so a docstring
-/// mentioning `require_feat_tlbios` cannot satisfy it.
+/// mentioning `require_feat_tlbios` cannot satisfy it.  Both properties are
+/// checked as ORDER, not presence: a guard below the `asm!` and a reversed
+/// `.arch_extension` pair each leave every token in place while breaking
+/// what the check means.  See CLAUDE.md's "A presence check is not a
+/// relation check".
 fn scan_tlb_rs_outer_shareable_guards_intact() {
     let path = "src/tlb.rs";
     println!("cargo:rerun-if-changed={path}");
@@ -1700,22 +1704,66 @@ fn scan_tlb_rs_outer_shareable_guards_intact() {
             .unwrap_or(stripped.len());
         let body = &stripped[body_start..body_end];
 
-        if !body.contains("require_feat_tlbios()") {
-            panic!(
+        let upper = name.trim_start_matches("tlbi_").to_ascii_uppercase();
+
+        // POSITION, not mere presence.  A refactor that moved the guard
+        // below the `asm!` would leave the call in the body and satisfy a
+        // `contains` check, while the PE executed the UNDEFINED encoding
+        // before ever reaching the fail-closed halt (PR #883 review).
+        let guard_at = body.find("require_feat_tlbios()");
+        let asm_at = body.find("asm!");
+        match (guard_at, asm_at) {
+            (None, _) => panic!(
                 "WS-RR RR1.4 regression: `{path}::{name}` no longer calls \
                  `require_feat_tlbios()` before its `asm!`.\n\
                  `TLBI {upper}` is FEAT_TLBIOS (ARMv8.4-A) and is NOT \
                  implemented by Cortex-A76, the core in the RPi5's \
                  BCM2712.  Without the guard, a platform binding whose \
                  `sharingDomain` is `.outer` executes an UNDEFINED \
-                 encoding instead of halting with a diagnosis.",
-                upper = name.trim_start_matches("tlbi_").to_ascii_uppercase(),
-            );
+                 encoding instead of halting with a diagnosis."
+            ),
+            (Some(_), None) => panic!(
+                "WS-RR RR1.4 scanner: `{path}::{name}` no longer contains \
+                 an `asm!` block.  If the wrapper was rewritten, update \
+                 this scanner so the FEAT_TLBIOS contract stays pinned."
+            ),
+            (Some(guard), Some(asm)) if guard > asm => panic!(
+                "WS-RR RR1.4 regression: `{path}::{name}` calls \
+                 `require_feat_tlbios()` AFTER its `asm!`, so the \
+                 fail-closed guard runs only once the UNDEFINED `TLBI \
+                 {upper}` has already executed.  The guard must precede \
+                 the instruction it protects."
+            ),
+            _ => {}
+        }
+
+        // The `.arch_extension` bracket is checked PER WRAPPER and in
+        // order.  File-wide counts cannot see a pair that is mismatched
+        // across two wrappers, or a restore that precedes its own enable.
+        let enable_at = body.find(".arch_extension tlb-rmi");
+        let restore_at = body.find(".arch_extension notlb-rmi");
+        let mnemonic = format!("tlbi {}", upper.to_ascii_lowercase());
+        let mnemonic_at = body.find(&mnemonic);
+        match (enable_at, mnemonic_at, restore_at) {
+            (Some(enable), Some(instr), Some(restore)) if enable < instr && instr < restore => {}
+            (enable, instr, restore) => panic!(
+                "WS-RR RR1.4 regression: `{path}::{name}` no longer wraps \
+                 `{mnemonic}` in an ordered `.arch_extension tlb-rmi` … \
+                 `notlb-rmi` pair (enable: {enable:?}, mnemonic: \
+                 {instr:?}, restore: {restore:?}, as byte offsets in the \
+                 function body).\n\
+                 Without the enable the aarch64 build fails loudly; \
+                 without the restore the extension stays live for every \
+                 later inline-asm block in the same object, so a v8.4-only \
+                 instruction added elsewhere would assemble silently and \
+                 trap on the ARMv8.2-A target.  That direction fails OPEN, \
+                 which is why the order is pinned rather than the count."
+            ),
         }
     }
 
-    // The `.arch_extension` bracket must balance: one restore per enable,
-    // and exactly one pair per wrapper.
+    // File-wide totals as well, so a stray enable outside any wrapper --
+    // which the per-wrapper checks above cannot see -- is still caught.
     let enables = stripped.matches(".arch_extension tlb-rmi").count();
     let restores = stripped.matches(".arch_extension notlb-rmi").count();
     if enables != OS_WRAPPERS.len() || restores != OS_WRAPPERS.len() {
@@ -1724,10 +1772,9 @@ fn scan_tlb_rs_outer_shareable_guards_intact() {
              `.arch_extension tlb-rmi` enable(s) and {restores} \
              `notlb-rmi` restore(s); expected {expected} of each — one \
              pair per outer-shareable wrapper.\n\
-             An unmatched enable leaves FEAT_TLBIOS mnemonics \
-             assemblable for every later inline-asm block in the same \
-             object, so a v8.4-only instruction added elsewhere would \
-             compile silently and trap on the ARMv8.2-A target.",
+             A pair outside the four wrappers leaves FEAT_TLBIOS \
+             mnemonics assemblable for inline asm this scanner does not \
+             inspect.",
             expected = OS_WRAPPERS.len(),
         );
     }

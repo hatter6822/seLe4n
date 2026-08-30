@@ -32,18 +32,30 @@ Three invariants are checked:
 
 2. **ALLOWLIST** -- outside ``tlb.rs``, the local (non-broadcast) wrappers
    ``tlbi_vmalle1`` / ``tlbi_vae1`` / ``tlbi_aside1`` / ``tlbi_vale1`` /
-   ``tlbi_local`` may be called only from sites registered in
+   ``tlbi_local`` may be *referenced* only from sites registered in
    ``scripts/tlbi_local_allowlist.txt``, each with the reason the calling
-   PE is the only one whose TLB needs the entry gone.
+   PE is the only one whose TLB needs the entry gone.  Reference, not
+   call: an aliasing ``use`` or a function-pointer binding reaches the
+   same instruction while naming it nowhere at the call site.
 
 3. **LEAN** -- the Lean bindings for the local FFI exports
    (``ffiTlbiAll`` / ``ffiTlbiByAsid`` / ``ffiTlbiByVaddr``) may be
    referenced only from registered production modules.  Everything else
-   uses ``ffiTlbiForSharing``.
+   uses ``ffiTlbiForSharing``.  The declaration sites are exempt per
+   occurrence -- the binder line under an ``@[extern "ffi_tlbi_*"]``
+   attribute -- never per file, so a module that declares one binding
+   still has its other references checked.
 
 The allowlist is checked in both directions: an unregistered call site
 fails, and so does a registered site that no longer exists, so the file
 cannot accumulate entries for code that is gone.
+
+A presence check is not a relation check.  The allowlist matches any
+*reference* rather than call syntax (an aliasing `use` reaches the same
+instruction), and the declaration exemption is resolved per occurrence over
+the stripped code rather than per file over raw text.  See CLAUDE.md's
+"A presence check is not a relation check"; add a check here only with a
+negative case that KEEPS its token and breaks its relation.
 
 Gates read code, prose reads prose: Rust and assembly sources are stripped
 of ``//`` comments here, the allowlist of its ``#`` comments, and Lean
@@ -86,12 +98,19 @@ LOCAL_WRAPPERS = (
 # The Lean bindings of the local FFI exports.
 LEAN_LOCAL_BINDINGS = ("ffiTlbiAll", "ffiTlbiByAsid", "ffiTlbiByVaddr")
 
-# `tlbi_vmalle1` is a prefix of `tlbi_vmalle1is` / `tlbi_vmalle1os`, so the
-# trailing boundary must exclude the broadcast suffixes explicitly: a plain
-# `\b` matches between `1` and `i`.
-LOCAL_CALL_RE = re.compile(
-    r"\b(" + "|".join(LOCAL_WRAPPERS) + r")\s*\("
-)
+# Any REFERENCE to a local wrapper, not only a call.  Requiring `name(`
+# missed every way of reaching the function without naming it at the call
+# site -- `use crate::tlb::tlbi_vae1 as invalidate_local;` then
+# `invalidate_local(...)`, or `let f = crate::tlb::tlbi_vae1;` -- each of
+# which performs a non-broadcast invalidation while matching nothing (PR
+# #883 review).  A reference is the right granularity: the name has to
+# appear *somewhere* to reach the function, and that somewhere is what the
+# allowlist should register.
+#
+# `\b` on both sides is exact even though `tlbi_vmalle1` is a prefix of
+# `tlbi_vmalle1is`: `1` and `i` are both word characters, so there is no
+# boundary between them and the broadcast wrappers cannot match.
+LOCAL_WRAPPER_RE = re.compile(r"\b(" + "|".join(LOCAL_WRAPPERS) + r")\b")
 
 # A `tlbi` mnemonic at the head of an assembly statement.  Anchored on a
 # statement boundary (start of the template, or after a `;` or a newline)
@@ -230,7 +249,7 @@ def check_rust_allowlist(root: str, allowed: set[str]) -> tuple[list[str], set[s
         if rel == TLB_MODULE:
             continue
         code = strip_rust(read(root, rel))
-        for match in LOCAL_CALL_RE.finditer(code):
+        for match in LOCAL_WRAPPER_RE.finditer(code):
             fn = enclosing_rust_fn(code, match.start())
             site = f"{rel}::{fn}"
             if site in allowed:
@@ -238,16 +257,49 @@ def check_rust_allowlist(root: str, allowed: set[str]) -> tuple[list[str], set[s
                 continue
             lineno = code.count("\n", 0, match.start()) + 1
             problems.append(
-                f"{rel}:{lineno}: `{match.group(1)}` called from `{fn}`, "
+                f"{rel}:{lineno}: `{match.group(1)}` referenced from `{fn}`, "
                 f"which is not in {ALLOWLIST}.\n"
                 f"      A non-broadcast TLBI invalidates only the calling "
                 f"PE. Under SMP another core keeps walking the translation "
-                f"this call believes it removed. Route through "
+                f"this reference reaches. Route through "
                 f"`tlb::tlbi_for_sharing(domain, op)` — or, if the calling "
                 f"PE really is the only one whose TLB needs the entry gone, "
                 f"register `{site}` in {ALLOWLIST} with the reason."
             )
     return problems, used
+
+
+LEAN_EXTERN_TLBI = re.compile(r'@\[\s*extern\s+"ffi_tlbi_[a-z_]*"\s*\]')
+LEAN_BINDER = re.compile(
+    r"^\s*(?:private\s+|protected\s+|partial\s+|noncomputable\s+|unsafe\s+)*"
+    r"(?:opaque|def|abbrev)\s+([A-Za-z_][A-Za-z0-9_'.!?]*)"
+)
+
+
+def lean_extern_declaration_lines(code: str) -> set[int]:
+    """1-based line numbers that DECLARE an `@[extern "ffi_tlbi_*"]` binding.
+
+    A declaration is an `opaque`/`def` binder on the attribute's own line or
+    on one of the lines following it, before any other binder intervenes.
+    Returning line numbers rather than a per-file flag keeps the exemption
+    to the declaration itself: a *call* elsewhere in the same file is still
+    checked, which a whole-file flag could not do.
+    """
+    lines = code.splitlines()
+    declared: set[int] = set()
+    for index, line in enumerate(lines):
+        if not LEAN_EXTERN_TLBI.search(line):
+            continue
+        # The binder may sit on the attribute's line or below it; scan a
+        # short window so an attribute with no binder cannot exempt the
+        # rest of the file.
+        for offset in range(0, 4):
+            if index + offset >= len(lines):
+                break
+            if LEAN_BINDER.match(lines[index + offset]):
+                declared.add(index + offset + 1)
+                break
+    return declared
 
 
 def check_lean_allowlist(root: str, allowed: set[str]) -> tuple[list[str], set[str]]:
@@ -256,14 +308,19 @@ def check_lean_allowlist(root: str, allowed: set[str]) -> tuple[list[str], set[s
     used: set[str] = set()
     binding_re = re.compile(r"\b(" + "|".join(LEAN_LOCAL_BINDINGS) + r")\b")
     for rel in walk(root, LEAN_ROOT, (".lean",)):
-        raw = read(root, rel)
-        # `SeLe4n/Platform/FFI.lean` DECLARES the bindings; declaring them
-        # is not calling them, and the declaration is the thing every other
-        # module's reference resolves to.
-        declares = "@[extern \"ffi_tlbi_" in raw
-        code = lean_code_view.strip(raw)
+        code = lean_code_view.strip(read(root, rel))
+        # The declaration sites -- `opaque ffiTlbiAll` and friends under an
+        # `@[extern "ffi_tlbi_*"]` attribute -- are what every other
+        # module's reference resolves to; declaring a binding is not
+        # calling it.  Resolved PER OCCURRENCE and over the comment-free
+        # code view, because both looser forms fail open: a whole-file flag
+        # exempts every real reference in the file that happens to declare
+        # one, and reading raw text lets a docstring quoting the attribute
+        # set that flag (PR #883 review) -- in the gate written to enforce
+        # "gates read code, prose reads prose".
+        declaration_lines = lean_extern_declaration_lines(code)
         for match in binding_re.finditer(code):
-            if declares:
+            if code.count("\n", 0, match.start()) + 1 in declaration_lines:
                 continue
             decl = enclosing_lean_decl(code, match.start())
             site = f"{rel}::{decl}"
@@ -464,6 +521,60 @@ def self_test() -> int:
     )
     cases.append(("a Lean comment naming the binding is not a call", lean_prose, False))
 
+    # --- The mutation class that finds "presence checked, relation not" ---
+    #
+    # Each case below KEEPS the token a naive check looks for and breaks
+    # the relation the check actually means.  Deleting the token is the
+    # easy mutation and every presence check survives it; these are the
+    # ones that do not.  A new check here needs at least one.
+
+    aliased_use = fixture()
+    aliased_use[f"{RUST_SRC}/vspace.rs"] = (
+        "\nuse crate::tlb::tlbi_vae1 as invalidate_local;\n\n"
+        "fn unmap_page(asid: u16, vaddr: u64) {\n"
+        "    invalidate_local(asid, vaddr);\n}\n"
+    )
+    cases.append(("local wrapper reached through an aliasing `use`", aliased_use, True))
+
+    fn_pointer = fixture()
+    fn_pointer[f"{RUST_SRC}/vspace.rs"] = (
+        "\nfn unmap_page(asid: u16, vaddr: u64) {\n"
+        "    let invalidate_local = crate::tlb::tlbi_vae1;\n"
+        "    invalidate_local(asid, vaddr);\n}\n"
+    )
+    cases.append(
+        ("local wrapper bound to a function pointer, then called", fn_pointer, True)
+    )
+
+    lean_attr_in_prose = fixture()
+    lean_attr_in_prose["SeLe4n/Kernel/Architecture/VSpace.lean"] = (
+        "import SeLe4n.Platform.FFI\n\n"
+        "/-- Resolves against `@[extern \"ffi_tlbi_by_vaddr\"] ffiTlbiByVaddr`,\n"
+        "    quoted here so the docstring cannot exempt this file. -/\n"
+        "def unmapPage : BaseIO Unit :=\n"
+        "  SeLe4n.Platform.FFI.ffiTlbiByVaddr\n"
+    )
+    cases.append(
+        (
+            "a docstring quoting the extern attribute does not exempt the file",
+            lean_attr_in_prose,
+            True,
+        )
+    )
+
+    lean_declarer_also_calls = fixture()
+    lean_declarer_also_calls["SeLe4n/Platform/FFI.lean"] = (
+        BASE_FFI_LEAN
+        + "\ndef strayLocalFlush : BaseIO Unit :=\n  ffiTlbiAll\n"
+    )
+    cases.append(
+        (
+            "the declaring module's own unregistered CALL is still checked",
+            lean_declarer_also_calls,
+            True,
+        )
+    )
+
     stale = fixture()
     stale[ALLOWLIST] = BASE_ALLOWLIST + "rust/sele4n-hal/src/gone.rs::gone\n"
     cases.append(("allowlist entry with no call site", stale, True))
@@ -472,8 +583,16 @@ def self_test() -> int:
     del no_allowlist[ALLOWLIST]
     cases.append(("allowlist file missing", no_allowlist, True))
 
+    # A case expected to be CAUGHT must actually differ from the clean
+    # fixture.  A mutation that silently no-ops reads as coverage while
+    # asserting nothing, so it is checked rather than trusted.
+    clean = fixture()
     failures = 0
     for label, files, expect in cases:
+        if expect and files == clean:
+            failures += 1
+            print(f"[SELF-TEST FAIL] inert mutation, fixture unchanged: {label}")
+            continue
         with tempfile.TemporaryDirectory() as tmp:
             write_tree(tmp, files)
             problems = run_checks(tmp)

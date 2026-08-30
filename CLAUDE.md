@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.41.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.42.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -556,6 +556,41 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   than a design choice. Three strippers is two too many; consolidating
   them onto `lean_code_view.strip` is a follow-up, deliberately not
   done in the same cut as the mechanism they would depend on.
+- **A presence check is not a relation check.**  Nearly every gate here
+  is a text scanner, and the recurring way one fails is that it asserts a
+  *token is present* when the property it means is a *relation*: that the
+  flag reaches **this command**, that the guard precedes **this
+  instruction**, that the artefact came from **this run**, that the
+  reference is **this occurrence**.  Presence is necessary and almost
+  never sufficient, and the gap is invisible because the token really is
+  there.  Seven instances shipped in one cut (WS-RR RR1, `v0.34.41`):
+  a workflow step *name* satisfying a check for an installed target; a
+  two-profile script satisfying a `cargo build` check after one profile
+  became a `check`; `CROSS_TARGET=`/`CROSS_FEATURES=` assignments
+  satisfying flag checks while the builds passed something else; a stale
+  archive satisfying "the sources assembled"; `body.contains(guard)`
+  passing with the guard moved *below* the instruction it protects; a
+  call-syntax regex missing `use … as alias`; and a whole-file exemption
+  set from a docstring — that last one in the gate written to enforce
+  *gates read code, prose reads prose*.  So: **resolve the text into the
+  structure it stands for before asserting** — expand the script's
+  variables and check the command, take byte offsets and check the order,
+  parse the array and check the element.  Where a scanner genuinely
+  cannot (reachability, aliasing through a value), say so in its
+  docstring and make it over-approximate, so it fails **closed**.
+- **Test a gate by breaking the relation, not by deleting the token.**
+  The corollary, and the reason the seven above passed their own
+  self-tests: every fixture mutated by *removal*, which any presence check
+  survives.  The mutation that finds this class **keeps the token and
+  breaks the relation** — leave `hw_target` in the file but build another
+  target; keep `cargo build` on the release line only; keep the guard but
+  move it after the `asm!`.  Every check in a self-tested gate needs at
+  least one such case, and the harness must reject a mutation that leaves
+  the fixture unchanged, since an inert mutation reads as coverage while
+  asserting nothing.  A fixture must also be **no thinner than the file it
+  stands for**: a `mod`-less, gate-less toy passes checks the real file
+  would fail, which is how a missing `re.MULTILINE` and an unanchored
+  `.file()` search both survived.
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
   this separation.
