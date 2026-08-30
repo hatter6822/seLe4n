@@ -316,27 +316,40 @@ def deleted_plan_errors(companions: dict[str, str]) -> list[str]:
 
 
 def collect(paths: list[str]) -> tuple[list[str], dict[str, str], int]:
-    plans, ranged = [], 0
+    plans, ranged, legacy_only = [], 0, []
     for rel in (list_tracked(":") if not paths else paths):
         body = read_indexed(rel)
-        if not body or not HEADER_RANGE.search(body):
+        if not body:
             continue
-        if HEADER_TOTAL.search(body):
-            plans.append(rel)
-        else:
+        # Structural checking follows the *rows*, not the header.  Keying off
+        # the `Sub-task count` line made the gate opt-in: a plan with
+        # non-sequential numbering and a forward dependency passed simply by
+        # omitting one line, which is the easiest bypass to trip by accident.
+        # The declared-total comparison still needs an exact count; everything
+        # else needs only flat rows.
+        if not SUBTASK_ROW.search(body):
+            # No flat rows: either a genuinely legacy letter-group plan, or a
+            # document with no sub-task table to check at all.
+            if LEGACY_ROW.search(body):
+                legacy_only.append(rel)
+            elif HEADER_RANGE.search(body):
+                ranged += 1
+            continue
+        plans.append(rel)
+        if not HEADER_TOTAL.search(body):
             ranged += 1
     companions = {}
     for c in COMPANIONS:
         body = read_indexed(c)
         if body is not None:
             companions[c] = body
-    return plans, companions, ranged
+    return plans, companions, ranged, legacy_only
 
 
 def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return self_test()
-    plans, companions, ranged = collect([a for a in argv if not a.startswith("-")])
+    plans, companions, ranged, legacy_only = collect([a for a in argv if not a.startswith("-")])
     # Deliberately before the "nothing to validate" exit: deleting the last
     # exact-count plan while a companion still cites it left `plans` empty, so
     # returning here skipped the very check that deletion is supposed to trip.
@@ -349,7 +362,7 @@ def main(argv: list[str]) -> int:
             return 1
         print("check_workstream_plan: no plan declares a 'Sub-task count' header.")
         return 0
-    errors, legacy, checked = list(orphan_errors), [], []
+    errors, legacy, checked = list(orphan_errors), list(legacy_only), []
     for rel in plans:
         body = read_indexed(rel)
         assert body is not None
@@ -456,6 +469,17 @@ def _cli_cases():
         git("rm", "-q", "docs/planning/XX_PLAN.md")
         git("commit", "-qm", "delete the sole plan")
 
+    def headerless_plan(root, git):
+        # Found by probing the gate rather than by review: keying coverage off
+        # the `Sub-task count` line made it opt-in, so omitting one line took a
+        # plan with non-sequential numbering AND a forward dependency to exit 0.
+        p2 = root / "docs" / "planning" / "XX_PLAN.md"
+        p2.write_text(
+            CLEAN.replace("> **Sub-task count**: 5 across 2 phases (XX0..XX1)\n", "")
+                 .replace("| XX0.3 | third | a | S |", "| XX0.7 | third | a | S |"),
+            encoding="utf-8")
+        git("add", "-A")
+
     def stray_letter_row(root, git):
         p2 = root / "docs" / "planning" / "XX_PLAN.md"
         p2.write_text(CLEAN.replace("| XX0 | first | 3 |", "| XX0 | first | 99 |")
@@ -468,6 +492,11 @@ def _cli_cases():
         r = build(td, drop_sole_plan)
         out.append(("CLI: deleting the last plan with a live citation exits non-zero",
                     r.returncode != 0 and "nothing in the tree defines XX" in r.stdout,
+                    (r.returncode, r.stdout.strip()[:110])))
+    with tempfile.TemporaryDirectory() as td:
+        r = build(td, headerless_plan)
+        out.append(("CLI: a plan without a count header is still checked",
+                    r.returncode != 0 and "not 1..3" in r.stdout,
                     (r.returncode, r.stdout.strip()[:110])))
     with tempfile.TemporaryDirectory() as td:
         r = build(td, stray_letter_row)

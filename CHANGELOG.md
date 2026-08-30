@@ -1,3 +1,34 @@
+## v0.34.23 — the gate was opt-in, and I found that one myself
+
+No review round prompted this. After round 17 I wrote, for the third time, that
+the correction to my witness problem is to construct the hostile case *before*
+claiming a fix rather than confirming in whichever environment is convenient.
+This cut is the first time I did that instead of saying it.
+
+**The gate was opt-in.** Coverage keyed off the `Sub-task count` header, so a
+plan that omitted one line got no structural checking at all. Probed against a
+fixture carrying two real defects at once — sub-task numbers `[1, 2, 7]` and a
+row consuming a later one — the CLI printed "no plan declares a 'Sub-task count'
+header" and exited **0**. That is the easiest bypass in the set to trip by
+accident: a new plan simply not written with the line.
+
+Checking now follows the **rows**, not the header. Any plan with flat
+`<PREFIX><phase>.<sub>` rows is held to sequential numbering, phase-map
+agreement, citation resolution and the no-forward-dependency rule; only the
+declared-total comparison still requires a declared total, because only that
+check needs one. The same fixture now exits 1 naming both defects.
+
+Reclassification fell out of it: coverage is 1 plan checked, 10 legacy
+letter-group plans, 3 declaring an estimate range — previously reported as 2
+legacy and 11 ranged, because plans were bucketed before their rows were
+examined. The total is unchanged at 14; the labels are now accurate.
+
+Witness count 17, including a CLI-level case for this bypass. Confirmed
+adversarially: restoring the header condition makes it fail with
+`(0, "no plan declares a 'Sub-task count' header.")`.
+
+Refs: scripts/check_workstream_plan.py
+
 ## v0.34.22 — two bypasses that lived in `main`, where no witness was looking; Codex review round 17
 
 Four findings. The two that matter were found by running the **command**; every
