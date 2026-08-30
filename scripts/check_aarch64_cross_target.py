@@ -74,6 +74,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import sys
 import tempfile
 
@@ -204,31 +205,82 @@ def expand_shell_vars(code: str) -> str:
 # reads an argv.
 # ---------------------------------------------------------------------------
 
-# `&&` and `||` must precede the single `|` in the alternation, or a `||`
-# would be split as two empty pipes.
-_COMMAND_SPLIT = re.compile(r"&&|\|\||[;\n|]")
-
-
 def shell_commands(script: str) -> list[str]:
     """Split a comment-stripped, variable-expanded script into commands.
 
     Backslash-continuations are joined first, so a command wrapped across
     lines is read whole -- the cross gate's `cargo clippy` invocation is
     written that way, and a line-based reader sees only its head.
+
+    QUOTE-AWARE, and that is not a nicety.  A regex split on `;`/`|`/`&&`
+    cuts inside string literals too, and the fragment after the cut reads as
+    a fresh command, so
+
+        run: echo "building; ./scripts/test_aarch64_cross_build.sh next"
+
+    yielded `./scripts/test_aarch64_cross_build.sh next"` with the path in
+    command position and satisfied the check that a job RUNS the gate --
+    the very hole this splitter was written to close, reintroduced one
+    layer down.  Found by self-audit of this cut, not by review.  Splitting
+    text without respecting the quoting it stands for is the same
+    substitution as every other instance of the class.
     """
     joined = re.sub(r"\\\n\s*", " ", script)
-    return [part.strip() for part in _COMMAND_SPLIT.split(joined) if part.strip()]
+    commands: list[str] = []
+    current: list[str] = []
+    quote: str | None = None
+    index = 0
+    while index < len(joined):
+        char = joined[index]
+        if quote is not None:
+            current.append(char)
+            if char == quote:
+                quote = None
+            elif char == "\\" and quote == '"' and index + 1 < len(joined):
+                current.append(joined[index + 1])
+                index += 1
+            index += 1
+            continue
+        if char in ("'", '"'):
+            quote = char
+            current.append(char)
+            index += 1
+            continue
+        if joined.startswith("&&", index) or joined.startswith("||", index):
+            commands.append("".join(current))
+            current = []
+            index += 2
+            continue
+        if char in ";\n|":
+            commands.append("".join(current))
+            current = []
+            index += 1
+            continue
+        current.append(char)
+        index += 1
+    commands.append("".join(current))
+    return [command.strip() for command in commands if command.strip()]
 
 
 def argv_of(command: str) -> list[str]:
-    """Whitespace-split a command, dropping token-surrounding quotes.
+    """Tokenise a command the way a shell would.
 
-    `--target "${CROSS_TARGET}"` expands to `--target "aarch64-unknown-none"`,
-    so the quotes survive expansion and would otherwise make every value
-    comparison fail -- in the fail-*open* direction for an equality test
-    written the other way round.
+    `shlex`, not `split()` plus `strip("\"'")`.  Quotes must be resolved by
+    the same rules that produced them: `--target "${CROSS_TARGET}"` expands
+    to `--target "aarch64-unknown-none"`, so the quotes survive expansion
+    and a naive comparison fails; and a quoted value CONTAINING A SPACE --
+    `RUSTFLAGS="-D warnings" ./gate.sh` -- splits into two tokens under
+    whitespace splitting, which pushed the real command word out of
+    position and made the check miss a job that does run the gate.
+
+    An unbalanced quote raises, and the fallback is the naive split: a
+    script this cannot tokenise is one the checks should read
+    pessimistically rather than not at all.
     """
-    return [token.strip("\"'") for token in command.split()]
+    try:
+        return shlex.split(command)
+    except ValueError:
+        return [token.strip("\"'") for token in command.split()]
 
 
 def option_values(argv: list[str], *names: str) -> list[str]:
@@ -483,7 +535,13 @@ def run_scripts(body: str) -> list[str]:
         if not match:
             continue
         indent, inline = match.group(1), match.group(2).strip()
-        if not re.fullmatch(r"[|>][+-]?\d*", inline):
+        # `|`, `>`, with an optional explicit indent and an optional
+        # chomping indicator IN EITHER ORDER (`|2-` and `|-2` are both
+        # valid YAML).  Taking only one order made a correctly-configured
+        # workflow read as running nothing -- fail-closed, but wrongly, and
+        # the natural repair would be to weaken the check back toward a
+        # substring search.
+        if not re.fullmatch(r"[|>](?:[+-]?\d*|\d*[+-]?)", inline):
             if inline:
                 scripts.append(inline)
             continue
@@ -1056,6 +1114,63 @@ def self_test() -> int:
             True,
             check="workflow",
             mutation="preserving",
+        )
+    )
+
+    # The path is in a `run:` value AND the step executes -- inside a
+    # quoted argument to `echo`, where a quote-unaware splitter cuts on the
+    # `;` and reads the tail as a fresh command.  This is the same hole as
+    # the `echo` case above, one layer down, in the splitter written to
+    # close it; found by self-audit of this cut.
+    quoted_echo = baseline()
+    quoted_echo[WORKFLOW_FILE] = GOOD_WORKFLOW.replace(
+        f"run: ./{GATE_SCRIPT}",
+        f'run: echo "building; ./{GATE_SCRIPT} next"',
+    )
+    cases.append(
+        Case(
+            "workflow hides the gate path inside a quoted echo argument",
+            quoted_echo,
+            True,
+            check="workflow",
+            mutation="preserving",
+        )
+    )
+
+    # ... and the other direction, which must NOT be reported: a real
+    # invocation whose quoted environment prefix contains a space.  A
+    # whitespace splitter pushes the command word out of position and
+    # reports a job that does run the gate as running nothing -- fail-
+    # closed, but wrongly, and the natural repair is to weaken the check.
+    env_prefixed = baseline()
+    env_prefixed[WORKFLOW_FILE] = GOOD_WORKFLOW.replace(
+        f"run: ./{GATE_SCRIPT}",
+        f'run: RUSTFLAGS="-D warnings" ./{GATE_SCRIPT}',
+    )
+    cases.append(
+        Case(
+            "a quoted env prefix containing a space still counts as running it",
+            env_prefixed,
+            False,
+            check="workflow",
+            mutation="none",
+        )
+    )
+
+    # A block scalar with the indent before the chomping indicator (`|2-`)
+    # is valid YAML and must be read as a script, not as a command.
+    block_scalar = baseline()
+    block_scalar[WORKFLOW_FILE] = GOOD_WORKFLOW.replace(
+        f"        run: ./{GATE_SCRIPT}\n",
+        f"        run: |2-\n          set -e\n          ./{GATE_SCRIPT}\n",
+    )
+    cases.append(
+        Case(
+            "a `|2-` block scalar running the gate is still a runner",
+            block_scalar,
+            False,
+            check="workflow",
+            mutation="none",
         )
     )
 

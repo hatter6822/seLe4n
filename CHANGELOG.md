@@ -1,3 +1,39 @@
+## v0.34.44 — Two more of the same, found by self-audit rather than review
+
+**WS-RR RR1.12**, continued.  `v0.34.43` replaced the ad-hoc text slices with
+structural views; auditing that cut's own new code found the class had
+reappeared one layer down, in the splitter written to close it.
+
+* **`shell_commands` was not quote-aware.**  Splitting on `;` / `|` / `&&`
+  cuts inside string literals too, and the fragment after the cut reads as a
+  fresh command, so `run: echo "building; ./scripts/test_aarch64_cross_build.sh
+  next"` yielded a command whose first word was the gate script — satisfying
+  the check that a job **runs** it.  That is the `v0.34.43` finding exactly,
+  reintroduced by its own fix.  The splitter now tracks quoting.
+* **`argv_of` whitespace-split.**  A quoted value containing a space
+  (`RUSTFLAGS="-D warnings" ./gate.sh`) became two tokens, pushing the real
+  command word out of position, so a job that **does** run the gate read as
+  running nothing.  Replaced with `shlex`, which resolves quotes by the rules
+  that produced them; an untokenisable command falls back to the naive split,
+  the pessimistic direction.
+* **Block scalar indicators were read in one order only.**  YAML accepts both
+  `|2-` and `|-2`; the regex took only chomp-then-indent, so a workflow that
+  moved its command into a `|2-` block read as running nothing.  Fail-closed,
+  but wrongly — and the natural repair would have been to weaken the check
+  back toward a substring search.
+
+Also measured rather than assumed: `rust_code_view.fn_bodies` resolves a body
+for **every** `fn` in the tree that has one (0 unresolved across 64 files), so
+the scope attribution behind the `v0.34.43` fix has no silent gaps.
+
+Three new self-test cases, two of them asserting the *accepting* direction —
+a quoted env prefix and a `|2-` block must both still count as running the
+gate — because a check that only ever tightens ends up rejecting correct
+configurations, and that is how a gate gets weakened on purpose.
+
+`test_rust.sh` 1149 + 108, `test_aarch64_cross_build.sh` and Tier 0 clean;
+31 self-test cases in the cross-target gate, 5/5 checks token-preserving.
+
 ## v0.34.43 — Read the program, not the line: shared Rust and shell views for every gate
 
 **WS-RR RR1.12** (PR #883 review round 3).  Eight more instances of *a
