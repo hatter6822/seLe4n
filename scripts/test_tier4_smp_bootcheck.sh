@@ -22,7 +22,7 @@
 # of printing "All checks passed" over work nothing performed.
 #
 # `SELE4N_REQUIRE_GATES=1` promotes any skipped gate to a hard failure;
-# that is the mode the v1.0.0 release validation (SM10.E) must run in,
+# that is the mode the v1.0.0 release validation (SM10.1) must run in,
 # since a release may not certify phases whose gates never ran.
 #
 # Future phases populate additional sub-tests:
@@ -137,7 +137,7 @@ run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_scheduler.sh"
 
 # WS-SM SM6.F.5 — the cross-core IPC handshake exerciser (plan §SM6.F).  SKIPs at
 # SM6.F if the cross-core IPC driver isn't wired in the kernel image (needs the
-# SM10.E bootable kernel-image [[bin]] target; the live Lean dispatch is already
+# SM10.1 bootable kernel-image [[bin]] target; the live Lean dispatch is already
 # fully cross-core — .call/.reply/.replyRecv/.notificationSignal/.notificationWait
 # route through the SM6 OnCore operations and the SGI-firing seam).  The
 # cross-core IPC correctness — a rendezvous with a remote-homed receiver fires a
@@ -155,7 +155,7 @@ run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_ipc.sh"
 # unmap invalidating a translation core 1 has cached, through the live
 # completeShootdownRounds bracket (masked reset → .tlbShootdownReq SGIs at
 # online targets → local broadcast TLBIs → bounded allAcked wait → catch-up).
-# SKIPs until the SM10.E bootable kernel image + in-image shootdown driver
+# SKIPs until the SM10.1 bootable kernel image + in-image shootdown driver
 # exist.  The shootdown correctness — Theorem 3.3.1 over per-core views, the
 # coalescing remote case, the B.4 release-acquire publication (single- and
 # multi-pair witnesses), and the exact B.6 timeout verdict — is established
@@ -169,7 +169,7 @@ run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_shootdown.sh"
 # tests/SmpTlbShootdownSuite.lean §6.  It hunts the two contention-only failure
 # modes: a round-serialisation break (an initiator observing someone else's
 # allAcked and returning with a stale TLB live — SMP-C4) and a round-lock
-# deadlock (the SM7.B.6 fail-closed timeout, or a hang).  SKIPs until the SM10.E
+# deadlock (the SM7.B.6 fail-closed timeout, or a hang).  SKIPs until the SM10.1
 # bootable kernel image + in-image stress driver exist.  Interleaving-
 # independence itself is established FORMALLY for all executions by
 # handleTlbShootdownReqOnCorePerCore_comm (distinct cores' handler steps

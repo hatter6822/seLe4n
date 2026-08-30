@@ -1638,7 +1638,7 @@ relative choice, not a safety property, and "fails closed" describes the syscall
 boundary alone.
 
 The switch is therefore coupled to its prerequisite rather than described
-alongside it.  Today this is `post`; when SM10.E flips `contextRestoreSeamLive`
+alongside it.  Today this is `post`; when SM10.1 flips `contextRestoreSeamLive`
 it becomes the dispatch, with no other edit.  The vacated-core liveness defect
 stays open and stays recorded (`contextSwitchSites_restore_pending`), as does
 the larger fact it belongs to: with no context restore and no registered
@@ -1646,7 +1646,7 @@ INTID-0 handler, *no* modelled thread switch reaches hardware on any path —
 timer preemption, cross-core wake, or syscall.
 
 Deliberately a *wrapper*: folding the guard into `scheduleLocalSuccessor` would
-make every theorem about it conditional, and those theorems are what SM10.E
+make every theorem about it conditional, and those theorems are what SM10.1
 enables rather than has to re-prove. -/
 def scheduleLocalSuccessorLive (pre post : SystemState) (execCore : CoreId) : SystemState :=
   if contextRestoreSeamLive then scheduleLocalSuccessor pre post execCore else post
@@ -2018,7 +2018,7 @@ and it is not merely cosmetic: `syscallDispatchFromAbi` identifies its caller
 from the thread hardware actually resumed would be attributed to the thread the
 model believes is current.
 
-Registered rather than fixed because the fix is the SM10.E bring-up seam —
+Registered rather than fixed because the fix is the SM10.1 bring-up seam —
 outgoing-context save, incoming-context restore, `ELR`/`SPSR`/`TTBR0`/ASID —
 which is a coherent slice of its own and not part of a non-interference proof
 cut.  `contextRestoreWired` is the partition: wiring one means flipping its
@@ -2042,7 +2042,7 @@ hardware context yet.
 
 Stated as the full list rather than as "some are pending", because today the
 gap is total — this is the one form that makes the *scope* of the divergence
-checkable.  When SM10.E wires the first restore, this theorem fails and the
+checkable.  When SM10.1 wires the first restore, this theorem fails and the
 register must be updated in the same commit.
 
 Note the direction of the round-17 change against this backdrop.  Before it, a
@@ -2082,7 +2082,7 @@ undispatched, which is coherent; for unbind it is not.
 scheduled at all.  That is also why gating is not a fix but a containment: with
 the tick ungated, a gated syscall path delays a misattributed context by one
 tick rather than preventing one.  The gates exist so this cut adds no new
-instances, not because they close the class; SM10.E closes it.
+instances, not because they close the class; SM10.1 closes it.
 
 **Why wrappers rather than in-transition guards** (round 34).  An earlier cut of
 this PR folded the guard into `resumeThreadOnCore` and `priorityRescheduleOnCore`
@@ -2118,7 +2118,7 @@ model and the hardware disagreeing about who is running — and
 syscall.  Since `currentOnCore = none` instead fails closed (`.illegalState`),
 dispatching an uninstallable successor is strictly worse than dispatching none.
 
-Both sides read `contextRestoreSeamLive`, so SM10.E flips one constant and the
+Both sides read `contextRestoreSeamLive`, so SM10.1 flips one constant and the
 dispatch and its register move together. -/
 theorem scheduleLocalSuccessorLive_guard_eq_register :
     contextRestoreSeamLive = contextRestoreWired .vacatedCoreSuccessor := rfl

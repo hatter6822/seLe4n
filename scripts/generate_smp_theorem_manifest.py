@@ -5,7 +5,7 @@
 literal: "16 SM0 + 1 SM1 + 22 SM2 + 28 SM3 + ~50 SM4 + 30 SM5 + 25 SM6 +
 14 SM7 + 18 SM8 + 5 SM10 = 209 ~= 210".  That sum runs SM8 -> SM10 with **no
 SM9 term**, though SM9 is a landed phase, so `wsm_theorem_count` and
-SM10.B.13 would both have certified a number computed as if SM9 never
+SM10.3.13 would both have certified a number computed as if SM9 never
 happened.  A hand-sum cannot detect its own staleness: nothing breaks when a
 phase is added, renamed, or grows.
 
@@ -118,7 +118,7 @@ PHASE_CODES = list(EXPECTED_PHASE_CODES.values())
 # A false positive here is fail-*closed*: a phantom inventory that no phase
 # claims is a loud error, never a silent pass.  That asymmetry is what makes
 # the permissive pattern the safe one.
-_DECL_START = r"(?<![\w'!?.\u2080-\u209c])"
+_DECL_START = r"(?<![\w'!?.\u2080-\u209c\u00bb])"
 
 # Lean accepts `lemma` wherever it accepts `theorem`, and this repository uses
 # both.  Keying discovery on `theorem` alone made a `lemma`-declared witness
@@ -145,13 +145,46 @@ _THEOREM = r"(?:theorem|lemma)"
 # code points are category `No` and therefore outside `\w`.
 _IDENT_HEAD = r"[^\W\d]"
 _IDENT_TAIL = r"[\w'!?\u2080-\u209c]"
-_IDENT = _IDENT_HEAD + _IDENT_TAIL + r"*"
+_PLAIN_IDENT = _IDENT_HEAD + _IDENT_TAIL + r"*"
+
+# Lean's escaped-identifier syntax: «anything but the guillemets», which admits
+# spaces and punctuation a plain identifier cannot carry.  An inventory named
+# this way was invisible to discovery — the seventh legal spelling this pattern
+# has had to learn, and the last one Lean's grammar offers for a *name*.
+_ESCAPED_IDENT = r"\u00ab[^\u00ab\u00bb\n]+\u00bb"
+
+_IDENT = r"(?:" + _PLAIN_IDENT + r"|" + _ESCAPED_IDENT + r")"
 _QUALIFIED = _IDENT + r"(?:\." + _IDENT + r")*"
 
 
 # `<inventory>_identifiers_nodup` — the discovery key.
+
+def _suffixed(suffix: str, group: str | None = None) -> str:
+    """A declaration named `<inventory><suffix>`, in both escaped spellings.
+
+    Lean writes an escaped name either around the stem — `«odd Theorems»_count`
+    — or around the whole declaration, `«odd Theorems_count»`.  The second form
+    was the one that slipped: the suffix sits *inside* the guillemets, so a
+    pattern expecting it outside the capture matched nothing.  Both spellings
+    denote the same inventory, so both are reconstructed to `«odd Theorems»`.
+    """
+    g = "" if group is None else "?P<" + group + ">"
+    esc = "?P<" + group + "_esc>" if group is not None else ""
+    return (r"(?:(" + g + _QUALIFIED + r")" + re.escape(suffix) + r"\b"
+            r"|\u00ab(" + esc + r"[^\u00ab\u00bb\n]+?)" + re.escape(suffix)
+            + r"\u00bb)")
+
+
+def _inventory_of(m: "re.Match[str]", group: str) -> str:
+    """The inventory name a `_suffixed` match denotes, in written form."""
+    plain = m.group(group)
+    if plain is not None:
+        return plain
+    return "\u00ab" + m.group(group + "_esc") + "\u00bb"
+
+
 NODUP_RE = re.compile(
-    _DECL_START + _THEOREM + r"\s+(" + _QUALIFIED + r")_identifiers_nodup\b",
+    _DECL_START + _THEOREM + r"\s+" + _suffixed("_identifiers_nodup", "inv"),
     re.M,
 )
 
@@ -234,7 +267,7 @@ def _any_count_re() -> re.Pattern[str]:
     resolves elsewhere is not this inventory's size witness.
     """
     return re.compile(
-        _DECL_START + _THEOREM + r"\s+(?P<name>" + _QUALIFIED + r")_count\b\s*:\s*"
+        _DECL_START + _THEOREM + r"\s+" + _suffixed("_count", "name") + r"\s*:\s*"
         r"(?:\r?\n\s*)?(?P<subject>" + _QUALIFIED + r")\.length\s*=\s*(?P<n>\d+)",
         re.M,
     )
@@ -257,9 +290,17 @@ def _count_re(inv: str) -> re.Pattern[str]:
     to; anything else is "no readable size witness", a hard failure naming the
     declaration it wanted.
     """
-    name = re.escape(inv)
+    # Accept the escaped stem spelling and the whole-name spelling alike.
+    stem = inv[1:-1] if inv.startswith("\u00ab") and inv.endswith("\u00bb") else None
+    if stem is None:
+        name = re.escape(inv)
+        decl = name + r"_count\b"
+    else:
+        e = re.escape(stem)
+        name = r"\u00ab" + e + r"\u00bb"
+        decl = r"(?:" + name + r"_count\b|\u00ab" + e + r"_count\u00bb)"
     return re.compile(
-        _DECL_START + _THEOREM + r"\s+" + name + r"_count\b\s*:\s*"
+        _DECL_START + _THEOREM + r"\s+" + decl + r"\s*:\s*"
         r"(?:\r?\n\s*)?" + name + r"\.length\s*=\s*(?P<n>\d+)",
         re.M,
     )
@@ -294,7 +335,7 @@ def discover_in(sources: dict[str, str]) -> tuple[dict[str, dict[str, object]], 
     for rel, src in sources.items():
         ns_at = _namespace_at(src)
         for m in NODUP_RE.finditer(src):
-            written = m.group(1)
+            written = _inventory_of(m, "inv")
             # The manifest claims an inventory by its bare name, so that is the
             # key.  Two inventories whose qualified names share a final
             # component therefore collide here — and that collision is an
@@ -316,7 +357,7 @@ def discover_in(sources: dict[str, str]) -> tuple[dict[str, dict[str, object]], 
             if ns_at is not None:
                 want = _full_name(ns_at(m.start()), written)
                 for c in _any_count_re().finditer(src):
-                    if _full_name(ns_at(c.start()), c.group("name")) == want and \
+                    if _full_name(ns_at(c.start()), _inventory_of(c, "name")) == want and \
                             _full_name(ns_at(c.start()), c.group("subject")) == want:
                         cm = c
                         break
@@ -1088,6 +1129,35 @@ def _self_test() -> int:
     check("a broken tree yields errors and a partial manifest",
           bool(errs) and bool(partial),
           f"errors={len(errs)} partial={len(partial)}")
+
+    # 33-35. Lean's escaped-identifier syntax.  An inventory named
+    #     `«odd Theorems»` was invisible to discovery — and it has two legal
+    #     spellings, because the guillemets may wrap the stem alone or the
+    #     whole declaration with its suffix inside.  Both denote one inventory
+    #     and both must reconstruct to the same name, or a single inventory
+    #     would read as two.  (Codex review round 9, PR #882; the first case is
+    #     the reviewer's own fixture.)
+    for label, body in [
+        ("whole name escaped",
+         "theorem \u00abodd Theorems_identifiers_nodup\u00bb : True := trivial\n"
+         "theorem \u00abodd Theorems_count\u00bb : "
+         "\u00abodd Theorems\u00bb.length = 4 := by decide\n"),
+        ("stem escaped, suffix outside",
+         "theorem \u00abodd Theorems\u00bb_identifiers_nodup : True := trivial\n"
+         "theorem \u00abodd Theorems\u00bb_count : "
+         "\u00abodd Theorems\u00bb.length = 4 := by decide\n"),
+        ("the two spellings mixed",
+         "theorem \u00abodd Theorems_identifiers_nodup\u00bb : True := trivial\n"
+         "theorem \u00abodd Theorems\u00bb_count : "
+         "\u00abodd Theorems\u00bb.length = 4 := by decide\n"),
+    ]:
+        src = dict(_CLEAN_SOURCES)
+        src["P.lean"] = body
+        _, errs = _run(src, _CLEAN_MANIFEST)
+        check(f"an escaped inventory is discovered ({label})",
+              any("'\u00abodd Theorems\u00bb'" in e and "claimed by no" in e
+                  for e in errs),
+              "; ".join(errs))
 
     failed = [c for c in cases if not c[1]]
     for name, ok, detail in cases:

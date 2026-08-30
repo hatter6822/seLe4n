@@ -8,7 +8,7 @@
 > follow-up item 4 named a tracking home that carries no entry for it
 > (now in the *Registered debt index* of
 > [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md), RR0.9).
-> **Archived by**: SM10.C.4.
+> **Archived by**: SM10.6.4.
 
 > Companion to the SM6.C/SM6.D reply-object slices in
 > [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md) and the

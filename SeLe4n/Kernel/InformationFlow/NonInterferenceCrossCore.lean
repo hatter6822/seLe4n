@@ -2798,7 +2798,7 @@ calls**): resuming a thread onto its home core is invisible to any core outside
 the write set, in **both** settings of the context-restore seam and with no
 hypothesis on the resumed thread's clearance.
 
-Holding in both settings is the point: it is what makes the SM10.E flip a
+Holding in both settings is the point: it is what makes the SM10.1 flip a
 one-constant change that owes no new information-flow proof. -/
 theorem resumeThreadOnCoreLive_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)

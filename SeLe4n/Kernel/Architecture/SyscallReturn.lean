@@ -514,7 +514,7 @@ Writes `x0`-`x5` of `tcb.registerContext` from the frame and touches
 nothing else: not `x7`, not `pc`/`sp`, no other TCB field
 (`TCB.withReturnFrame`), and **deliberately not `machine.regs` /
 `regsOnCore`** — that mirror is already stale for x6, x8..x30 after the
-argument spill (the `ContextRestoreSeam` note), the SM10.E outgoing-frame
+argument spill (the `ContextRestoreSeam` note), the SM10.1 outgoing-frame
 save is the registered closure for the whole staleness class, and keeping
 the write out of `machine` is part of what makes the RA.B.10 projection
 preservation hold for every observer.
@@ -640,7 +640,7 @@ staging for the non-blocking consume paths (`.receive` / `.replyRecv`).
 Guarded on the caller's post-state being `.ready`: a caller that blocked
 has no fresh delivery (its `pendingMessage` may hold a stale message from
 an earlier exchange), stages nothing here, and its frame is owed by the
-unblocking transition (RA.B.5b) with delivery at the SM10.E context
+unblocking transition (RA.B.5b) with delivery at the SM10.1 context
 restore.  A `.ready` caller with no `pendingMessage` (a zero-length
 delivery is still `some` with an empty register array) stages nothing —
 the boundary's shape-driven read then sees whatever the arm staged, so
@@ -738,7 +738,7 @@ def returnFrameOfWord (w : UInt64) : SyscallReturnFrame :=
 -- The blocked-waiter half of §3.5: when an unblocking syscall wakes a
 -- counterparty that was blocked in ITS OWN syscall, the woken thread's
 -- return frame must be staged now — its own boundary crossing ended in
--- `.blocks` with no frame written, and the SM10.E context restore delivers
+-- `.blocks` with no frame written, and the SM10.1 context restore delivers
 -- whatever its `registerContext` holds.  Every wake in the tree delivers
 -- through one of two shapes, and each gets a guarded Option-lifted stager
 -- so the dispatch arms compose them in one call:
@@ -903,7 +903,7 @@ into a counterparty (post-state `.ready` with `pendingMessage = some msg`
 — the `storeTcbIpcStateAndMessage`/`storeTcbReceiveComplete` shape every
 wake in the tree produces), the staging step writes exactly
 `returnFrameOfMessage msg` into its saved register context, and the
-boundary read recovers it bit for bit.  Delivery is the SM10.E context
+boundary read recovers it bit for bit.  Delivery is the SM10.1 context
 restore's; what this pins is that the frame is *there* to deliver. -/
 theorem blockedReturn_staged_in_waiter_frame
     (st : SystemState) (w : SeLe4n.ThreadId) (tcb : TCB) (msg : IpcMessage)
@@ -1015,7 +1015,7 @@ theorem errorFrame_x1_decodes (e : KernelError) :
 
 /-- What a syscall execution hands the FFI boundary: a frame to write back,
 or the fact that the caller blocked and the frame will be staged by the
-unblocking transition (delivered at the SM10.E context restore).  Outcome
+unblocking transition (delivered at the SM10.1 context restore).  Outcome
 is decided from the caller's **post-state** — whether `.notificationWait`
 blocks depends on `pendingBadge`, `.receive` on the sender queue, `.send`
 on a waiting receiver — never from the syscall id alone. -/
@@ -1041,7 +1041,7 @@ theorem tagWord_blocks_ne_returns (f : SyscallReturnFrame) :
 
 /-- The mailbox frame for an outcome: a blocked caller's mailbox stays
 zeroed (no return value exists for it — RA.C.9; its real frame is staged
-by the unblocking arm and delivered by the SM10.E context restore).
+by the unblocking arm and delivered by the SM10.1 context restore).
 Until that seam flips, the hardware trap layer substitutes a fail-closed
 poison frame for the premature resume (`blocked_resume_sentinel_regs` in
 `svc_dispatch.rs`) — an interim HAL artifact, deliberately NOT part of

@@ -547,7 +547,7 @@ pub static SHOOTDOWN_ROUND_SEQ: AtomicU64 = AtomicU64::new(0);
 /// bare `assert!`, which takes the ordinary panic/abort path — and the
 /// repository defines no `#[panic_handler]` at all, so what that path
 /// does is decided by a final binary crate that does not exist until
-/// SM10.E.  Meanwhile the caller has already committed its page-table
+/// SM10.1.  Meanwhile the caller has already committed its page-table
 /// transition and holds the round lock, and has published neither
 /// operands nor SGIs, so the other PEs hold stale translations that
 /// nothing will ever invalidate.  Stopping this PE alone does not
@@ -2279,7 +2279,7 @@ mod tests {
     // precisely so contenders never touch a shared static. This is not a
     // substitute for hardware: the host has no SGIs, no per-PE TLB and a
     // different memory model, so what is pinned here is the ORDERING
-    // DISCIPLINE, not the invalidation. The rest waits for SM10.E.
+    // DISCIPLINE, not the invalidation. The rest waits for SM10.1.
     //
     // Each carries its own non-vacuity assertion — a witness that observes
     // nothing must fail, not pass quietly (PR #854 rounds 17/24/25/27).

@@ -31,10 +31,10 @@ It is aligned to the **current project state**:
   `kernel_entry::with_kernel_entry` and ordered before `enable_irq`; the
   bracketed committing-entry roster is now five, and the primary
   `lean_kernel_main` install-ordering obligation is registered against
-  SM10.E.  All three seams are **dormant on hardware behind the per-core
+  SM10.1.  All three seams are **dormant on hardware behind the per-core
   `lean_ready` gate** (`rust/sele4n-hal/src/lean_ready.rs`: no core is marked
   ready anywhere in the tree today, so each seam degrades to its Rust-only
-  half) until SM10.E's per-core Lean runtime initialization flips them live.
+  half) until SM10.1's per-core Lean runtime initialization flips them live.
   SM10 (release closure → v1.0.0) is the remaining phase.
   Interleaved: **WS-RA (Syscall Return ABI) core LANDED
   (v0.33.37)** — the kernel returns the full seL4 ARM64 frame end to end (`x0`
@@ -52,7 +52,7 @@ It is aligned to the **current project state**:
   pinned on all three sides; completed at v0.33.38 with RA.B.5b (the blocked
   orderings staged end to end by the unblocking arms — eleven staging sites,
   `blockedReturn_staged_in_waiter_frame`, five two-core suite scenarios) and
-  RA.B.8 (the per-arm shape-coherence family); SM10.E owes only frame delivery
+  RA.B.8 (the per-arm shape-coherence family); SM10.1 owes only frame delivery
   + cancellation error frames — SM9 is unblocked (plan:
   [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](planning/SYSCALL_RETURN_ABI_PLAN.md)).
   **WS-SM phase SM9 (declassification completion) CLOSED (v0.33.100)** — five
@@ -492,7 +492,7 @@ It is aligned to the **current project state**:
   mutex stress (HAL 769 → 772); suite 22 groups / 160 runtime assertions incl.
   the live `.vspaceUnmap` `dispatchSyscall` scenario;
   `scripts/test_qemu_smp_shootdown.sh` seeded (Tier-4-registered; SKIPs until
-  the SM10.E image).  **v0.32.78 debt-closure cut — every SM7.B tracked-debt
+  the SM10.1 image).  **v0.32.78 debt-closure cut — every SM7.B tracked-debt
   item closed or narrowed**: the `.tlbShootdownReq` handler retires the
   round's EXACT operands per-descriptor (`tlb::tlbi_local`) instead of a
   blanket `vmalle1`, matching the Lean `handleTlbShootdownReqOnCore` — the
@@ -501,7 +501,7 @@ It is aligned to the **current project state**:
   retires a stable snapshot per-descriptor with a fail-safe local `vmalle1`
   fallback on any torn read / overflow / undecodable operand (HAL 772 → 780,
   trace byte-identical); the formal refinement narrows to operand-for-operand
-  (residual: the SM10.E linked-runtime proof); B.10 is a confirmed
+  (residual: the SM10.1 linked-runtime proof); B.10 is a confirmed
   no-safety-gap completeness deferral (no runtime ASID-reuse path exists) with
   closure target SM8; step-4d direct-ack is closed by design (the spin wait +
   masked SVC path make it informationless); the `withLockSet` shootdown slice
@@ -580,7 +580,7 @@ It is aligned to the **current project state**:
   `.sha256`): the deterministic 16-line `[smp-ipc-4core]` golden trace,
   byte-for-byte verified in-suite and auto-gated by the Tier-2 companion walk.
   `scripts/test_qemu_smp_ipc.sh`: the Tier-4 QEMU `-smp 4` handshake exerciser
-  (SKIPs until the SM10.E bootable image, the SM5-sibling discipline).
+  (SKIPs until the SM10.1 bootable image, the SM5-sibling discipline).
   Surface anchors: in-suite `#check` blocks + Tier-3 grep anchors.  The plan
   §8 acceptance gate is fully checked.  Prior: **SM6.E cancellation across
   cores LANDED (v0.32.60; completed v0.32.61; PR-review cuts v0.32.62–65;
@@ -1117,7 +1117,7 @@ SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh
 ```
 
 which turns a skipped gate into a hard failure. The v1.0.0 release
-validation (SM10.E) must run in that mode. When adding a check that
+validation (SM10.1) must run in that mode. When adding a check that
 certifies phase acceptance criteria, call `run_gate_check`, not
 `run_check`.
 

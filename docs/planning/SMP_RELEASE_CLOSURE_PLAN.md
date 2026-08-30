@@ -16,7 +16,7 @@
 > **Calendar estimate**: the original 4–6 weeks covered documentation only and
 > is superseded; the replacement is derived from the measured aarch64 surface
 > by **RR1.11** and lands here in the same cut
-> **Sub-task count**: 25-35 across ~10-15 PRs, **plus SM10.E** — sized by
+> **Sub-task count**: 25-35 across ~10-15 PRs, **plus SM10.1** — sized by
 > RR1.11, not by this line
 
 ## 1. Phase goal
@@ -25,12 +25,12 @@ SM10 ships v1.0.0.  Two distinct kinds of work sit under that heading, and
 conflating them is what the pre-SM10 audit filed as a finding against this
 plan's own §1:
 
-1. **SM10.E — the boot path.**  A bare-metal Lean runtime port: an aarch64
+1. **SM10.1 — the boot path.**  A bare-metal Lean runtime port: an aarch64
    image target, Lean cross-compilation, runtime hosting on the metal, the
    `@[export] lean_kernel_main` entry, the install-ordering resolution
    `rust/sele4n-hal/src/kernel_entry.rs` demands, and the context-restore seam.
    This is kernel implementation, not release bookkeeping.
-2. **SM10.A/B/C/D — the release cut.**  Documentation sync, test-suite
+2. **SM10.2–SM10.6 — the release cut.**  Documentation sync, test-suite
    completion, the version bump, the AN12-B inventory closure, and the tag.
 
 **The phase goal this section carried until `v0.34.26` was false.**  It read
@@ -61,43 +61,43 @@ between that surface and a running image, plus the remediation WS-RR owns.
 
 **Concrete deliverables**:
 
-1. **The boot path** (SM10.E): aarch64 image target, Lean cross-compile,
+1. **The boot path** (SM10.1): aarch64 image target, Lean cross-compile,
    bare-metal runtime hosting, `@[export] lean_kernel_main`, the install
    ordering, the context-restore seam and the two WS-RA obligations §2 names.
    Sequenced and sized by RR1.11 from the measured aarch64 surface.
-2. **Specification update** (SM10.A.1): spec §6.4 rewritten for
+2. **Specification update** (SM10.2.1): spec §6.4 rewritten for
    SMP with 5 new subsections.
-3. **GitBook chapters** (SM10.A.2, .A.3): new chapter 16 (SMP
+3. **GitBook chapters** (SM10.2.2, .A.3): new chapter 16 (SMP
    architecture), chapter 17 (verified lock primitives).
-4. **README sync** (SM10.A.4): metrics, capability claim, 11
+4. **README sync** (SM10.2.4): metrics, capability claim, 11
    i18n locales.
-5. **DEVELOPMENT.md + CLAIM_EVIDENCE_INDEX.md** (SM10.A.5, .A.6).
-6. **WORKSTREAM_HISTORY.md** WS-SM closure (SM10.A.7).
-7. **codebase_map.json regeneration** (SM10.A.8).
-8. **website manifest** (SM10.A.9).
-9. **SMP test-suite completion** (SM10.B) over the suites and fixtures that
-   already exist — see §3 SM10.B for what is new and what is extension.
-10. **Version bump to v1.0.0** (SM10.C.1), synchronized across every site
+5. **DEVELOPMENT.md + CLAIM_EVIDENCE_INDEX.md** (SM10.2.5, .A.6).
+6. **WORKSTREAM_HISTORY.md** WS-SM closure (SM10.2.7).
+7. **codebase_map.json regeneration** (SM10.2.8).
+8. **website manifest** (SM10.2.9).
+9. **SMP test-suite completion** (SM10.3) over the suites and fixtures that
+   already exist — see §3 SM10.3 for what is new and what is extension.
+10. **Version bump to v1.0.0** (SM10.6.1), synchronized across every site
     `scripts/version_locations.sh` registers.
-11. **CHANGELOG closure** (SM10.C.2).
-12. **Archive WS-RC + WS-SM artefacts** (SM10.C.3, .C.4).
-13. **Tag v1.0.0** (SM10.C.5).
+11. **CHANGELOG closure** (SM10.6.2).
+12. **Archive WS-RC + WS-SM artefacts** (SM10.6.3, .C.4).
+13. **Tag v1.0.0** (SM10.6.5).
 
 ## 2. Dependencies
 
 - All of SM0..SM9 complete.
 - Acceptance gates for SM0..SM9 green.
 - **WS-RA complete** ([`SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md)).
-  SM10.E ships a bootable image, and a kernel whose every successful syscall
+  SM10.1 ships a bootable image, and a kernel whose every successful syscall
   returns the caller's own capability pointer — which userspace decodes as a
   `KernelError` — is not bootable in any useful sense.  WS-RA was sequenced
   **before SM9** and its core landed at v0.33.37 (the immediate-return
-  convention is live end to end), but it is listed here because SM10.E is the
-  gate that would otherwise have exposed it.  **SM10.E inherits two named
+  convention is live end to end), but it is listed here because SM10.1 is the
+  gate that would otherwise have exposed it.  **SM10.1 inherits two named
   obligations from WS-RA**: (1) **frame delivery** — RA.B.5b's staging half
   landed at v0.33.38 (the unblocking arms stage the woken waiter's frame;
   `blockedReturn_staged_in_waiter_frame`), so what remains is exactly
-  **SM10.E's context restore delivering the staged frame** (WS-RA §3.5); the
+  **SM10.1's context restore delivering the staged frame** (WS-RA §3.5); the
   wait-before-signal badge ordering is staged end to end and completes when
   the restore seam goes live.  (2) The cancellation/timeout error-frame
   staging (WS-RA §9 registered debt): before `contextRestoreSeamLive` flips,
@@ -114,8 +114,8 @@ between that surface and a running image, plus the remediation WS-RR owns.
   **post-state hypotheses**, so `ipcInvariantFull` is not today an end-to-end
   machine-checked property of the live kernel, and neither
   `dispatchWithCap_preserves_ipcInvariantFull` nor
-  `syscallDispatch_preserves_ipcInvariantFull` exists.  SM10.A.4 (README
-  capability claim) and SM10.A.6 (`CLAIM_EVIDENCE_INDEX.md` entries) are the
+  `syscallDispatch_preserves_ipcInvariantFull` exists.  SM10.2.4 (README
+  capability claim) and SM10.2.6 (`CLAIM_EVIDENCE_INDEX.md` entries) are the
   sub-tasks that would otherwise write v1.0.0 verification claims over this
   surface.  **Closed by WS-RR phase RR3**, which absorbs all three slices and
   retires the plan at RR3.17.
@@ -123,50 +123,94 @@ between that surface and a running image, plus the remediation WS-RR owns.
 
 ## 3. Sub-tasks
 
-> **Known ordering defect — the sub-phase letters are not execution order.**
-> Flagged by review on PR #882 and confirmed: **SM10.B.7** (the 4-core boot
-> fixture) and **SM10.B.10** (running the Tier-4 gate green) both consume
-> **SM10.E.D1**'s bootable image, and **SM10.C** performs the version bump and
-> tag before SM10.E runs at all.  A reader following the letters reaches
-> fixture generation, release closure and the tag before the image exists.
+> **The sub-phases are numbered, and the numbers are execution order.**
+> Until `v0.34.36` they were lettered A–E and the letters were *not* the
+> order: **SM10.3.7** (the 4-core boot fixture) and **SM10.3.10** (running the
+> Tier-4 gate green) both consume the bootable image, and the version bump and
+> tag ran before the image existed at all.  A reader following the letters
+> reached fixture generation, release closure and the tag before there was
+> anything to boot.  A prose note said so and asked the reader to compensate,
+> which CLAUDE.md rejects outright: "*Phase number is execution order… A
+> 'sequencing note' that contradicts the numbering means the numbering is
+> wrong, not that the note is helpful.*"  The numbering was wrong, so it was
+> re-sequenced rather than annotated.
 >
-> CLAUDE.md is unambiguous about this shape: "*Phase number is execution
-> order… A 'sequencing note' that contradicts the numbering means the numbering
-> is wrong, not that the note is helpful.*"  So the note you are reading is
-> **not** the remedy — the remedy is to re-sequence, putting the image build
-> ahead of everything that consumes it.
+> **Old letter → new number.**  The labels are *numbers* rather than
+> re-assigned letters on purpose: `SM10.E` is cited in `CHANGELOG.md` entries
+> and closed audit plans, which the project's rules never renumber, so reusing
+> a letter would silently repurpose those citations.  Nothing is ambiguous —
+> an old letter always means what it meant.
 >
-> It is recorded rather than performed here because it is not RR0's to do and
-> not small: `SM10.E` alone is cited 377 times across 60 files, including
-> production Lean docstrings, `rust/` comments, historical `CHANGELOG.md`
-> entries and closed audit plans that the project's own rule says are not
-> renumbered.  Doing it inside a registration cut would smuggle a 532-citation
-> rewrite into a PR about bookkeeping.
+> | Was | Is | Why it moved |
+> |-----|----|--------------|
+> | `SM10.E` (boot path, `SM10.E.D1` image build) | **SM10.1** (`SM10.1.1`) | Everything downstream consumes the image; it is the prerequisite, so it is first |
+> | `SM10.A` | **SM10.2** | Unchanged in order |
+> | `SM10.B` | **SM10.3** | Now follows the image its fixture and Tier-4 rows need |
+> | `SM10.D` | **SM10.4** | Unchanged in order |
+> | `SM10.E.1`–`.3` (final QEMU validation) | **SM10.5** | Split out of the boot-path phase: it runs *on* the image, against completed suites |
+> | `SM10.C` (version bump + tag) | **SM10.6** | The tag is the last act, not the third |
 >
-> **Owner**: WS-RR **RR7.5** ("SM10 plan-text corrections"), which already owns
-> the §1 scope statement and the `contextRestoreSeamLive` prerequisites, taken
-> together with the register's bootpath findings 40–42 ("re-scope before
-> starting: split SM10.E out … into its own phase with a proper PR sequence").
-> Registered in `docs/WORKSTREAM_HISTORY.md`.  Until it lands, **read the
-> execution order as: SM10.E's image build first, then SM10.A/B/D, then
-> SM10.C's version bump and tag.**
+> The one sub-phase that split is the old `SM10.E`, which carried both the
+> image build and the validation that consumes it — a phase that was its own
+> prerequisite.  Historical prose (`CHANGELOG.md`, `docs/dev_history/`,
+> `docs/audits/`) keeps the old letters by design.
 
+### SM10.1 — Bootable image and boot path (1 sub-task + the runtime port)
 
-### SM10.A — Documentation sync (9 sub-tasks)
+The bare-metal Lean runtime port: an aarch64 image target, Lean
+cross-compilation, runtime hosting on the metal, the `@[export]
+lean_kernel_main` entry, the install-ordering resolution below, and the
+context-restore seam.  **Everything downstream consumes this**, which is why
+it is first: `SM10.3.7`'s 4-core boot fixture cannot be generated without an
+image, `SM10.3.10`'s Tier-4 gate reports NOT RUN until one exists, and
+`SM10.5` boots the artefact this phase produces.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| SM10.A.1 | Spec §6.4 rewrite (5 subsections) | `docs/spec/SELE4N_SPEC.md` | L |
-| SM10.A.2 | New GitBook chapter 16 (SMP architecture, ~300 LoC) | `docs/gitbook/16-smp-architecture.md` | L |
-| SM10.A.3 | New GitBook chapter 17 (verified lock primitives) | `docs/gitbook/17-verified-lock-primitives.md` | L |
-| SM10.A.4 | README metrics + capability claim; 11 i18n locales | (12 files) | M |
-| SM10.A.5 | DEVELOPMENT.md updates | (1 file) | S |
-| SM10.A.6 | CLAIM_EVIDENCE_INDEX.md entries | (1 file) | M |
-| SM10.A.7 | WORKSTREAM_HISTORY.md WS-SM closure summary | (1 file) | L |
-| SM10.A.8 | Regenerate codebase_map.json | (1 file) | T |
-| SM10.A.9 | Update website_link_manifest.txt | (1 file) | S |
+| SM10.1.1 | Bootable image target — `kernel8.img` + `config.txt` packaging, and the `sele4n-hal` bootable binary it packages | `scripts/build_rpi5_image.sh` | XL |
 
-**SM10.A's documentation work-list** is not "re-audit the docs".  WS-RR
+**Registered obligation — `lean_kernel_main` install ordering.**  When
+SM10.1.1 defines the primary's boot seam (`lean_kernel_main`, the
+symbol the image target resolves), its `initialiseKernelState` install
+is a kernel-state **write** that today would run *outside* the
+kernel-entry lock and *after* Phase 5 has released the secondaries —
+whose bracketed timer ticks and `.reschedule` receivers are already
+committing against the same `IO.Ref`.  An unbracketed install racing a
+bracketed commit can be overwritten by a post-state derived from the
+pre-install default state (the lost-commit shape
+`kernel_entry.rs`'s module docs describe).  SM10.1 MUST close this by
+one of:
+
+1. **Order** — perform the Lean kernel-state install *before*
+   `apply_cmdline_and_start_smp` releases any secondary (splitting the
+   install from the primary's run loop if `lean_kernel_main` combines
+   them), so no concurrent committer exists during the install; or
+2. **Bracket** — run the install inside
+   `kernel_entry::with_kernel_entry`, joining the five already-bracketed
+   committing entries.
+
+Option 1 is preferred (it also lets the secondaries' bring-up
+reschedule observe the real boot state — with per-core idle threads
+installed — instead of the empty default).  Cross-references:
+`SeLe4n/Platform/FFI.lean` (`modifyGetKernelState` docstring) and
+`rust/sele4n-hal/src/kernel_entry.rs` (module docs) both name this
+obligation.
+
+### SM10.2 — Documentation sync (9 sub-tasks)
+
+| Sub | Description | Files | Est |
+|-----|-------------|-------|-----|
+| SM10.2.1 | Spec §6.4 rewrite (5 subsections) | `docs/spec/SELE4N_SPEC.md` | L |
+| SM10.2.2 | New GitBook chapter 16 (SMP architecture, ~300 LoC) | `docs/gitbook/16-smp-architecture.md` | L |
+| SM10.2.3 | New GitBook chapter 17 (verified lock primitives) | `docs/gitbook/17-verified-lock-primitives.md` | L |
+| SM10.2.4 | README metrics + capability claim; 11 i18n locales | (12 files) | M |
+| SM10.2.5 | DEVELOPMENT.md updates | (1 file) | S |
+| SM10.2.6 | CLAIM_EVIDENCE_INDEX.md entries | (1 file) | M |
+| SM10.2.7 | WORKSTREAM_HISTORY.md WS-SM closure summary | (1 file) | L |
+| SM10.2.8 | Regenerate codebase_map.json | (1 file) | T |
+| SM10.2.9 | Update website_link_manifest.txt | (1 file) | S |
+
+**SM10.2's documentation work-list** is not "re-audit the docs".  WS-RR
 RR0.11 triaged the pre-SM10 audit's 99 low-severity findings by remedy and
 routed **37** of them here, enumerated as destination 5 in
 [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) §7.1 with a per-row cite.
@@ -179,7 +223,7 @@ docstring citing a theorem that does not exist.  Four of the 37 (register rows
 41, 52, 62, 70) are **source comments**, not documents; read the code beside
 each before editing it.
 
-### SM10.B — Test suite completion (13 sub-tasks)
+### SM10.3 — Test suite completion (13 sub-tasks)
 
 **Refreshed against the tree by RR0.8 at `v0.34.26`.**  This table was written
 at `v0.31.2` and described as *new files* five suites, two fixtures and two
@@ -197,48 +241,67 @@ landed with their own phases and are wired in Tier 2.
 
 | Sub | Description | State at `v0.34.26` | Est |
 |-----|-------------|---------------------|-----|
-| SM10.B.1 | `tests/SmpSchedulerSuite.lean` | **exists** (441 lines, `smp_scheduler_suite`, Tier-2 wired, golden `smp_4core_scheduler.expected` from SM5.K.4).  Owed: extension only, if SM10.E's boot path exposes an uncovered path | S |
-| SM10.B.2 | `tests/SmpIpcSuite.lean` | **exists** (1,373 lines, Tier-2 wired, golden `smp_ipc_4core.expected` from SM6.F.4).  Owed: extension only | S |
-| SM10.B.3 | `tests/SmpCapabilitySuite.lean` | **absent** — the one suite of the six that was never written.  Cross-core capability coverage today is incidental, inside the IPC and cross-core suites | L |
-| SM10.B.4 | `tests/SmpTlbShootdownSuite.lean` | **exists** (3,354 lines, Tier-2 wired, golden `smp_tlb_shootdown.expected`).  Owed: extension only | S |
-| SM10.B.5 | `tests/SmpInformationFlowSuite.lean` | **exists** (11,756 lines, Tier-2 wired, golden `smp_information_flow.expected`).  Owed: nothing; do not rewrite | T |
-| SM10.B.6 | `tests/SmpFoundationsSuite.lean` | **exists** (965 lines, `smp_foundations_suite`, Tier-2 wired).  Owed: nothing | T |
-| SM10.B.7 | `tests/fixtures/smp_4core_boot.expected` | **absent**, and correctly so: a boot trace fixture cannot be produced before SM10.E.D1 builds the image.  Sequence it **after** the image, not before | M |
-| SM10.B.8 | `tests/fixtures/smp_ipc_4core.expected` | **exists**, with its `.sha256` and Tier-3 anchors | T |
-| SM10.B.9 | `tests/fixtures/smp_tlb_shootdown.expected` | **exists**, with its `.sha256` and Tier-3 anchors | T |
-| SM10.B.10 | Tier-4 SMP script | **exists** as `scripts/test_tier4_smp_bootcheck.sh` — populated, not a stub; it is the gate that reports NOT RUN until SM10.E.D1's image exists.  There is no `scripts/test_tier4_smp.sh` and none is needed.  Owed: run it green once the image lands | M |
-| SM10.B.11 | Tier-5 cross-language script | **exists** as `scripts/test_tier5_cross_language.sh`.  There is no `scripts/test_tier5_lock_correspondence.sh`.  Owed: RR6.2–RR6.3 make the oracle drive the real locks; SM10 runs it | M |
-| SM10.B.12 | Wire tier-4/5 into `test_nightly.sh` | **done** — `test_tier4_nightly_candidates.sh` (via `run_gate_check`) and `test_tier5_cross_language.sh` are both invoked there | T |
-| SM10.B.13 | Verify the SM theorem manifest lands at HEAD | **mechanism landed** (RR0.6): `docs/smp_theorem_manifest.json` is generated from the tree and cross-checked in Tier 0, so "210 theorems" is no longer the criterion — the criterion is that the manifest agrees with the tree and every phase has an entry.  Owed: build the missing per-phase inventories (SM1, SM6..SM10), which contribute zero today | M |
+| SM10.3.1 | `tests/SmpSchedulerSuite.lean` | **exists** (441 lines, `smp_scheduler_suite`, Tier-2 wired, golden `smp_4core_scheduler.expected` from SM5.K.4).  Owed: extension only, if SM10.1's boot path exposes an uncovered path | S |
+| SM10.3.2 | `tests/SmpIpcSuite.lean` | **exists** (1,373 lines, Tier-2 wired, golden `smp_ipc_4core.expected` from SM6.F.4).  Owed: extension only | S |
+| SM10.3.3 | `tests/SmpCapabilitySuite.lean` | **absent** — the one suite of the six that was never written.  Cross-core capability coverage today is incidental, inside the IPC and cross-core suites | L |
+| SM10.3.4 | `tests/SmpTlbShootdownSuite.lean` | **exists** (3,354 lines, Tier-2 wired, golden `smp_tlb_shootdown.expected`).  Owed: extension only | S |
+| SM10.3.5 | `tests/SmpInformationFlowSuite.lean` | **exists** (11,756 lines, Tier-2 wired, golden `smp_information_flow.expected`).  Owed: nothing; do not rewrite | T |
+| SM10.3.6 | `tests/SmpFoundationsSuite.lean` | **exists** (965 lines, `smp_foundations_suite`, Tier-2 wired).  Owed: nothing | T |
+| SM10.3.7 | `tests/fixtures/smp_4core_boot.expected` | **absent**, and correctly so: a boot trace fixture cannot be produced before SM10.1.1 builds the image.  Sequence it **after** the image, not before | M |
+| SM10.3.8 | `tests/fixtures/smp_ipc_4core.expected` | **exists**, with its `.sha256` and Tier-3 anchors | T |
+| SM10.3.9 | `tests/fixtures/smp_tlb_shootdown.expected` | **exists**, with its `.sha256` and Tier-3 anchors | T |
+| SM10.3.10 | Tier-4 SMP script | **exists** as `scripts/test_tier4_smp_bootcheck.sh` — populated, not a stub; it is the gate that reports NOT RUN until SM10.1.1's image exists.  There is no `scripts/test_tier4_smp.sh` and none is needed.  Owed: run it green once the image lands | M |
+| SM10.3.11 | Tier-5 cross-language script | **exists** as `scripts/test_tier5_cross_language.sh`.  There is no `scripts/test_tier5_lock_correspondence.sh`.  Owed: RR6.2–RR6.3 make the oracle drive the real locks; SM10 runs it | M |
+| SM10.3.12 | Wire tier-4/5 into `test_nightly.sh` | **done** — `test_tier4_nightly_candidates.sh` (via `run_gate_check`) and `test_tier5_cross_language.sh` are both invoked there | T |
+| SM10.3.13 | Verify the SM theorem manifest lands at HEAD | **mechanism landed** (RR0.6): `docs/smp_theorem_manifest.json` is generated from the tree and cross-checked in Tier 0, so "210 theorems" is no longer the criterion — the criterion is that the manifest agrees with the tree and every phase has an entry.  Owed: build the missing per-phase inventories (SM1, SM6..SM10), which contribute zero today | M |
 
 **Registered debt — hardware-validation scripts** (from the v0.34.0
 documentation audit; each is a runnable procedure `docs/HARDWARE_TESTING.md`
 documents whose script does not exist yet, with today's partial coverage
-noted there per section). Closure target: this phase (SM10.B for the QEMU
-scripts, SM10.E for the image build):
+noted there per section). Closure target: this phase (SM10.3 for the QEMU
+scripts, SM10.1 for the image build):
 
 | Debt | Script owed | HARDWARE_TESTING.md § |
 |------|-------------|------------------------|
-| SM10.B.D1 | `scripts/test_qemu_tlb_barrier_audit.sh` (TLBI bracket audit over `-d in_asm`) | §4.2 |
-| SM10.B.D2 | `scripts/test_qemu_suspend_atomicity.sh` (suspend stress under 1 kHz tick) | §4.3 |
-| SM10.B.D3 | `scripts/test_qemu_svc_roundtrip.sh` (userspace `svc #0` per `SyscallId`) | §4.4 |
-| SM10.B.D4 | `scripts/test_qemu_wfe_bounded.sh` (bounded-WFE fall-through wallclock) | §4.5 |
-| SM10.B.D5 | `scripts/test_barrier_kind_emission.sh` (objdump emission check) | §4.6 |
-| SM10.B.D6 | `scripts/test_rpi5_osh_widening.sh` (on-board OSH latency probe) | §4.7 |
-| SM10.E.D1 | `scripts/build_rpi5_image.sh` (kernel8.img + config.txt packaging; also the `sele4n-hal` bootable binary target it packages) | §3.3 |
-| SM10.B.D7 | Wire `scripts/test_qemu_tlb_cache_coherence.sh` — the script exists but is a self-skipping stub until SM10.E.D1's image lands | §4.1 |
+| SM10.3.D1 | `scripts/test_qemu_tlb_barrier_audit.sh` (TLBI bracket audit over `-d in_asm`) | §4.2 |
+| SM10.3.D2 | `scripts/test_qemu_suspend_atomicity.sh` (suspend stress under 1 kHz tick) | §4.3 |
+| SM10.3.D3 | `scripts/test_qemu_svc_roundtrip.sh` (userspace `svc #0` per `SyscallId`) | §4.4 |
+| SM10.3.D4 | `scripts/test_qemu_wfe_bounded.sh` (bounded-WFE fall-through wallclock) | §4.5 |
+| SM10.3.D5 | `scripts/test_barrier_kind_emission.sh` (objdump emission check) | §4.6 |
+| SM10.3.D6 | `scripts/test_rpi5_osh_widening.sh` (on-board OSH latency probe) | §4.7 |
+| SM10.1.1 | `scripts/build_rpi5_image.sh` (kernel8.img + config.txt packaging; also the `sele4n-hal` bootable binary target it packages) | §3.3 |
+| SM10.3.D7 | Wire `scripts/test_qemu_tlb_cache_coherence.sh` — the script exists but is a self-skipping stub until SM10.1.1's image lands | §4.1 |
 
-### SM10.C — Version bump + closure (5 sub-tasks)
+### SM10.4 — AN12-B inventory closure (3 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| SM10.C.1 | Version bump to v1.0.0 via `./scripts/bump_version.sh` (every site in `scripts/version_locations.sh`; §4) | M |
-| SM10.C.2 | CHANGELOG v1.0.0 closure entry | `CHANGELOG.md` | M |
-| SM10.C.3 | Move WS-RC artefacts to dev_history/audits/, plus `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (a WS-RC artefact that sits under `docs/planning/`) | (file moves) | S |
-| SM10.C.4 | Move WS-SM plan + per-phase docs to dev_history/planning/ — **19 file moves**, enumerated below | (19 file moves) | T |
-| SM10.C.5 | Tag v1.0.0 (maintainer-cut) | git tag | T |
+| SM10.4.1 | Each `smpLatentInventory` entry's `smpDischarge` updated to "SMP-implemented in WS-SM" | `Concurrency/Assumptions.lean` | M |
+| SM10.4.2 | Rename `smpLatentInventory` to `smpDischargedInventory` (or retire entirely) | (refactor) | M |
+| SM10.4.3 | 8-entry size witness retained | Theorem | T |
 
-**SM10.C.4 archive list.**  The plan carried "11 file moves" against a list
+### SM10.5 — Final release validation (3 sub-tasks)
+
+Runs on the image `SM10.1` produced, against the suites `SM10.3` completed —
+which is why it sits here and not beside the image build.
+
+| Sub | Description | Files | Est |
+|-----|-------------|-------|-----|
+| SM10.5.1 | Full QEMU `-smp 4` boot + workload run | `scripts/test_v1_0_0_release_validation.sh` | L |
+| SM10.5.2 | All 5 tiers green on the release candidate | (verification) | M |
+| SM10.5.3 | Release-candidate trace fixture commit | (1 file) | S |
+
+### SM10.6 — Version bump + closure (5 sub-tasks)
+
+| Sub | Description | Files | Est |
+|-----|-------------|-------|-----|
+| SM10.6.1 | Version bump to v1.0.0 via `./scripts/bump_version.sh` (every site in `scripts/version_locations.sh`; §4) | M |
+| SM10.6.2 | CHANGELOG v1.0.0 closure entry | `CHANGELOG.md` | M |
+| SM10.6.3 | Move WS-RC artefacts to dev_history/audits/, plus `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (a WS-RC artefact that sits under `docs/planning/`) | (file moves) | S |
+| SM10.6.4 | Move WS-SM plan + per-phase docs to dev_history/planning/ — **19 file moves**, enumerated below | (19 file moves) | T |
+| SM10.6.5 | Tag v1.0.0 (maintainer-cut) | git tag | T |
+
+**SM10.6.4 archive list.**  The plan carried "11 file moves" against a list
 that omitted SM9's own phase plan and every other WS-SM-adjacent planning
 document — so the sub-task that retires the workstream's paper trail would
 have left a third of it in `docs/planning/`, where a later reader would take
@@ -260,10 +323,10 @@ it for live work.  The list is enumerated here rather than left to the mover:
 | 12 | `SMP_RELEASE_CLOSURE_PLAN.md` | SM10 (this file) |
 | 13 | `SMP_RELEASE_READINESS_PLAN.md` | WS-RR, the phase that gates this one |
 | 14 | `UNFINISHED_SMP_WORK.md` | the register WS-RR closes; its own footer says it moves with them |
-| 15 | `SMP_FINE_LOCK_MIGRATION_PLAN.md` | SM3.C.9's migration, closed by RR7.7 and SM10.E |
+| 15 | `SMP_FINE_LOCK_MIGRATION_PLAN.md` | SM3.C.9's migration, closed by RR7.7 and SM10.1 |
 | 16 | `SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | SM2.C-defer, absorbed by RR6 |
 | 17 | `SMP_PANIC_HANG_REMEDIATION_PLAN.md` | the SM2.E remediation |
-| 18 | `SYSCALL_RETURN_ABI_PLAN.md` | WS-RA, whose remaining obligations SM10.E discharges |
+| 18 | `SYSCALL_RETURN_ABI_PLAN.md` | WS-RA, whose remaining obligations SM10.1 discharges |
 | 19 | `REPLY_OBJECTS_COMPLETION_PLAN.md` | the SM6.C/SM6.D reply-object companion |
 
 **Not moved by this sub-task**, and each for a stated reason — an archive list
@@ -274,55 +337,12 @@ is only correct if the exclusions are as deliberate as the inclusions:
   still in `docs/planning/` when SM10 opens means RR3 did not close.
 - `HARDWARE_PARTITION_ISOLATION_PLAN.md` — post-v1.0.0 and explicitly out of
   scope for the WS-SM audit.  It stays live.
-- `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` — a WS-RC artefact; **SM10.C.3**
+- `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` — a WS-RC artefact; **SM10.6.3**
   moves it with the rest of WS-RC.
 
 No path in this list appears in `scripts/website_link_manifest.txt`, so the
 moves cannot 404 the website; `scripts/check_markdown_links.py` still has to
 pass, so in-repo links to the moved paths are updated in the same PR.
-
-### SM10.D — AN12-B inventory closure (3 sub-tasks)
-
-| Sub | Description | Files | Est |
-|-----|-------------|-------|-----|
-| SM10.D.1 | Each `smpLatentInventory` entry's `smpDischarge` updated to "SMP-implemented in WS-SM" | `Concurrency/Assumptions.lean` | M |
-| SM10.D.2 | Rename `smpLatentInventory` to `smpDischargedInventory` (or retire entirely) | (refactor) | M |
-| SM10.D.3 | 8-entry size witness retained | Theorem | T |
-
-### SM10.E — Final QEMU validation (3 sub-tasks)
-
-| Sub | Description | Files | Est |
-|-----|-------------|-------|-----|
-| SM10.E.1 | Full QEMU `-smp 4` boot + workload run | `scripts/test_v1_0_0_release_validation.sh` | L |
-| SM10.E.2 | All 5 tiers green on the release candidate | (verification) | M |
-| SM10.E.3 | Release-candidate trace fixture commit | (1 file) | S |
-
-**Registered obligation — `lean_kernel_main` install ordering.**  When
-SM10.E.D1 defines the primary's boot seam (`lean_kernel_main`, the
-symbol the image target resolves), its `initialiseKernelState` install
-is a kernel-state **write** that today would run *outside* the
-kernel-entry lock and *after* Phase 5 has released the secondaries —
-whose bracketed timer ticks and `.reschedule` receivers are already
-committing against the same `IO.Ref`.  An unbracketed install racing a
-bracketed commit can be overwritten by a post-state derived from the
-pre-install default state (the lost-commit shape
-`kernel_entry.rs`'s module docs describe).  SM10.E MUST close this by
-one of:
-
-1. **Order** — perform the Lean kernel-state install *before*
-   `apply_cmdline_and_start_smp` releases any secondary (splitting the
-   install from the primary's run loop if `lean_kernel_main` combines
-   them), so no concurrent committer exists during the install; or
-2. **Bracket** — run the install inside
-   `kernel_entry::with_kernel_entry`, joining the five already-bracketed
-   committing entries.
-
-Option 1 is preferred (it also lets the secondaries' bring-up
-reschedule observe the real boot state — with per-core idle threads
-installed — instead of the empty default).  Cross-references:
-`SeLe4n/Platform/FFI.lean` (`modifyGetKernelState` docstring) and
-`rust/sele4n-hal/src/kernel_entry.rs` (module docs) both name this
-obligation.
 
 ## 4. Version-bump file list
 
@@ -340,7 +360,7 @@ literal version at all, and listed `CHANGELOG.md`, `docs/DEVELOPMENT.md`,
 which are version sites.  Following it literally would have failed
 `check_version_sync.sh`.
 
-SM10.C.1 runs the bump in one step:
+SM10.6.1 runs the bump in one step:
 
 ```bash
 ./scripts/bump_version.sh 1.0.0      # rewrites every registered site, then self-verifies
@@ -357,7 +377,7 @@ At `v0.34.29` that reads **36 sites** across 13 path patterns.  Quote the
 command, not the number: the count is a fact about the registry on the day
 you run it, which is exactly why it is not written down here.
 
-**What the bumper does not do** — the genuinely manual half of SM10.C.1,
+**What the bumper does not do** — the genuinely manual half of SM10.6.1,
 and the only part that belongs in a plan:
 
 | Manual step | Why the bumper cannot do it |
@@ -423,7 +443,7 @@ Plan: docs/dev_history/planning/SMP_MULTICORE_COMPLETION_PLAN.md
        docs/dev_history/planning/SMP_RELEASE_CLOSURE_PLAN.md (SM10)
        docs/dev_history/planning/SMP_RELEASE_READINESS_PLAN.md (WS-RR)
        plus the five WS-SM-adjacent plans and the register that
-       SM10.C.4 enumerates -- nineteen files in total.
+       SM10.6.4 enumerates -- nineteen files in total.
 ```
 
 **Why the tally is not written out here.**  Until `v0.34.26` this section
@@ -434,7 +454,7 @@ carried the count as a hand-summed literal:
 
 That sum runs SM8 → SM10 with **no SM9 term**, though SM9 closed at
 v0.33.100 — so this template, the `wsm_theorem_count` marker theorem and
-SM10.B.13's "verify all 210 SM theorems land at HEAD" would each have
+SM10.3.13's "verify all 210 SM theorems land at HEAD" would each have
 certified a number computed as if a landed phase never happened.  Nothing
 would have broken when it did; that is what a hand-sum cannot do.
 
@@ -469,7 +489,7 @@ estimate of headline theorems per phase catalogue and is not recoverable from
 the tree.  Six phases — SM1 and SM6..SM10 — have **no** theorem inventory and
 are registered as contributing zero rather than given a plausible figure, so
 902 *understates* what those phases prove.  Building the missing inventories is
-registered debt with closure target **SM10.B.13**
+registered debt with closure target **SM10.3.13**
 (`docs/WORKSTREAM_HISTORY.md`); until they exist, the release note must say
 "registered in a machine-checked inventory" rather than "proved", because
 those are different claims.
@@ -486,11 +506,11 @@ authors the remaining three under names that describe what they assert.
 
 | Marker | State | Note |
 |--------|-------|------|
-| `smpRetiredInventory_complete` | SM10.D.3 | all 8 entries discharged |
+| `smpRetiredInventory_complete` | SM10.4.3 | all 8 entries discharged |
 | `SmpCompletionPhase.all_length = 11` | **landed** (RR0.6) | replaces `wsm_phase_count = 10`, which was both workstream-coded and wrong: SM0..SM10 is **eleven** phases, and SM0 is a phase whose theorems the manifest counts |
 | acceptance-gate count | SM10 | replaces `wsm_acceptance_gate_count`; name it for what it counts (e.g. `smpAcceptanceGate_count`) |
 | `smp_inventoried_theorem_count` | **landed** (RR0.6) | replaces `wsm_theorem_count`; a sum over `smpPhaseTheoremManifest`, not a literal — see §5 |
-| release witness | SM10.C.5 | replaces `v1_0_0_release_witness`, whose `v1_0_0` component the naming gate reads as a version stamped into an identifier; spell the version without the `v` prefix (e.g. `release_witness_1_0_0`) |
+| release witness | SM10.6.5 | replaces `v1_0_0_release_witness`, whose `v1_0_0` component the naming gate reads as a version stamped into an identifier; spell the version without the `v` prefix (e.g. `release_witness_1_0_0`) |
 
 The two landed markers live in
 `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` and are exercised by the
@@ -506,10 +526,10 @@ Tier-0 gate `scripts/generate_smp_theorem_manifest.py --check`.
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| Documentation drift between phase plans and live tree | MED | LOW | SM10.A audits each cross-reference |
+| Documentation drift between phase plans and live tree | MED | LOW | SM10.2 audits each cross-reference |
 | Version bump misses a file | LOW | MED | `scripts/check_version_sync.sh` gate |
 | CHANGELOG entry incomplete | LOW | LOW | Template above lists all SM-phase closures |
-| Archive move breaks website manifest | LOW | LOW | SM10.A.9 updates manifest in same PR |
+| Archive move breaks website manifest | LOW | LOW | SM10.2.9 updates manifest in same PR |
 | QEMU release-validation script fails | MED | HIGH | Iterate on test infrastructure as needed |
 | Tier-5 (lock correspondence) misses a divergence | LOW | HIGH | Cross-language stress test catches |
 | Maintainer signs off on release without all gates green | LOW | CRIT | Explicit acceptance-gate checklist |
@@ -567,8 +587,8 @@ python3 ./scripts/generate_smp_theorem_manifest.py --check
 ./scripts/test_qemu_smp_bringup.sh
 ```
 
-`scripts/test_v1_0_0_release_validation.sh` — named by SM10.E.1 — **does not
-exist yet**; it is SM10.E's to write, and it cannot run before SM10.E.D1
+`scripts/test_v1_0_0_release_validation.sh` — named by SM10.5.1 — **does not
+exist yet**; it is SM10.1's to write, and it cannot run before SM10.1.1
 produces the image.  It is listed as a deliverable rather than a command
 here, because a verification block that prints a command nothing can run
 teaches a reader the block is decorative.

@@ -26,7 +26,7 @@ namespace SeLe4n.Kernel.PriorityInheritance
 /-- WS-SM SM8.B (PR #861 review round 20): **is the hardware context-restore
 seam live?**
 
-`false` until SM10.E, and the single source of truth for that fact — the
+`false` until SM10.1, and the single source of truth for that fact — the
 `contextRestoreWired` register (`Scheduler/PriorityInheritance/PerCore.lean`)
 reads it rather than carrying its own literals, as do the **three** live
 guards, so none of them can drift and the flip is one constant:

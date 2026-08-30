@@ -250,7 +250,7 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // context restore — `x0` the value, the offset error label on
             // `x1`, `x2`-`x5` message registers.  A blocked caller has NO
             // return frame (its stale registers are not a return value;
-            // the staged frame is delivered by the SM10.E context restore
+            // the staged frame is delivered by the SM10.1 context restore
             // — RA.C.9's hook is the `Blocked` arm).  Prefilter rejections
             // surface as label-encoded error frames like every kernel
             // rejection, retiring the raw-discriminant `x0` write and its
@@ -258,7 +258,7 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             match crate::svc_dispatch::dispatch_svc(syscall_id, &args) {
                 Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),
                 Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {
-                    // SM10.E context-restore hook: the successor's frame
+                    // SM10.1 context-restore hook: the successor's frame
                     // install lands here when `contextRestoreSeamLive`
                     // flips.  Until then `trap.S` restores and `eret`s
                     // through the blocked caller's own saved frame, so

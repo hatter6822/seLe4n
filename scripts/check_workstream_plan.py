@@ -224,7 +224,7 @@ def global_definitions(clashes: list | None = None) -> dict[str, tuple[str, set[
 
     Built across `docs/planning/` **and** `docs/dev_history/planning/`, because
     checking a companion's citation against one plan at a time cannot see two
-    things: a plan archived on close still defines its IDs (SM10.C.4 moves this
+    things: a plan archived on close still defines its IDs (SM10.6.4 moves this
     very plan), and a plan whose rows are re-prefixed wholesale leaves the old
     prefix cited nowhere the per-plan scan looks.  A map keyed by prefix
     answers both.
@@ -590,7 +590,7 @@ def _archive_and_reprefix_cases():
             os.environ["SELE4N_PLAN_BASE_REF"] = "main"
             companions = {"CLAUDE.md": (root / "CLAUDE.md").read_text()}
 
-            # Archiving on close: SM10.C.4 does exactly this to the live plan.
+            # Archiving on close: SM10.6.4 does exactly this to the live plan.
             git("mv", "docs/planning/XX_PLAN.md",
                 "docs/dev_history/planning/XX_PLAN.md")
             out.append(("archiving a closed plan does not orphan its citations",

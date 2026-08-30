@@ -1,3 +1,73 @@
+## v0.34.36 — SM10 is numbered, and the numbers are execution order
+
+Closes the last three open review findings on PR #882, including the P1 that
+had been registered rather than performed.  Maintainer direction: re-sequence
+in this PR.
+
+**SM10's sub-phase letters were not execution order.**  `SM10.B.7` (the 4-core
+boot fixture) and `SM10.B.10` (the Tier-4 gate green) both consumed the
+bootable image that `SM10.E.D1` produces, and `SM10.C` bumped the version and
+cut the tag before `SM10.E` ran at all.  A reader following the letters
+reached fixture generation, release closure and the tag before there was
+anything to boot.  A prose note said so and asked the reader to compensate,
+which CLAUDE.md rejects outright — a sequencing note that contradicts the
+numbering means the numbering is wrong.
+
+The sub-phases are now **numbers**, in execution order:
+
+| Was | Is |
+|-----|----|
+| `SM10.E` boot path, `SM10.E.D1` image build | **SM10.1** (`SM10.1.1`) |
+| `SM10.A` documentation sync | **SM10.2** |
+| `SM10.B` test-suite completion | **SM10.3** |
+| `SM10.D` AN12-B inventory closure | **SM10.4** |
+| `SM10.E.1`–`.3` final QEMU validation | **SM10.5** |
+| `SM10.C` version bump + tag | **SM10.6** |
+
+**Numbers rather than re-assigned letters, deliberately.**  `SM10.E` is cited
+in `CHANGELOG.md` entries, `docs/dev_history/` and closed audit plans, which
+the project's rules never renumber; reusing a letter would silently repurpose
+those citations.  With numbers, an old letter always means what it meant, and
+the plan's §3 carries the mapping.
+
+**One phase genuinely split.**  The old `SM10.E` held both the image build and
+the QEMU validation that boots it — a phase that was its own prerequisite.
+The build is now `SM10.1` and the validation `SM10.5`, which also settles a
+second confusion: the phase heading read "Final QEMU validation" while the
+whole tree used `SM10.E` to mean the boot path (*"the SM10.E image"*,
+*"SM10.E's boot seam"*, *"SM10.E's context-restore seam"*).  The heading was
+describing three sub-tasks; every citation meant the phase.
+
+Re-sequenced across every live citation — planning docs, `WORKSTREAM_HISTORY`,
+`CLAIM_EVIDENCE_INDEX`, `DEVELOPMENT`, GitBook, production Lean docstrings,
+Rust HAL comments, test suites and scripts (58 files).  `CHANGELOG.md`,
+`docs/dev_history/` and `docs/audits/` keep the letters by design.  The
+register row closes; RR7.5 keeps only its `contextRestoreSeamLive`
+prerequisites, so RR7's acceptance total moves 66 → 65 (sub-task count
+unchanged at 155).
+
+**Lean's escaped identifiers are discovered.**  `«odd Theorems»` was invisible
+to the manifest gate, and it has two legal spellings — the guillemets may wrap
+the stem (`«odd Theorems»_count`) or the whole declaration
+(`«odd Theorems_count»`).  Both denote one inventory and both now reconstruct
+to the same name; three witnesses, one per spelling and one for the mix.
+
+**Census names are bound to their payloads.**  `censusCoversManifest` proved
+length plus membership — a statement about the *set* of names, blind to a
+permutation — so exchanging two tuples' labels passed while attributing each
+payload's proposition count to the other inventory.  Two new theorems close
+it: `censusInventoryNamesNodup` makes the label a key, and
+`censusPayloadsMatchTheirNames` checks each payload against its own
+inventory's length witness, so a swapped label puts the wrong length beside
+the name and fails elaboration.  Verified by swapping two labels: `decide`
+proves the proposition false.
+
+35 manifest witnesses, 16 deferral witnesses.  All 30 review threads on PR
+#882 are now addressed.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
 ## v0.34.35 — match the claim, not the adjective; and one figure that did not add up
 
 Three findings on PR #882.  Two are fixed here; the third is real, conceded,

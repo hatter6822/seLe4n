@@ -389,7 +389,7 @@ register no transition wrote, so both would have computed the right answer
 and handed the caller back its own preloaded `x0`.  The return path now
 exists (arm-level staging via `writeReturnFrameToTcb`, the total
 `syscallReturnShape` both SM9 syscalls must extend, the full seL4 frame at
-the boundary); WS-RA's remaining blocked-waiter half (RA.B.5b) rides SM10.E's
+the boundary); WS-RA's remaining blocked-waiter half (RA.B.5b) rides SM10.1's
 context restore and does not gate SM9's immediate value returns.
 
 61 sub-tasks across ~21-26 PRs.  Closes the four follow-ons SM8
@@ -515,7 +515,7 @@ WS-RC and WS-SM are merged. Opens immediately at v0.31.2 boundary.
 | SM6 | v0.31.65 → v0.32.68 (LANDED) | cross-core IPC A–F (original estimate v0.83.0 → v0.90.x) |
 | SM7 | v0.32.72 → v0.32.151 (LANDED; SM7.D closed at model level) | TLB shootdown + cache maintenance (original estimate v0.91.0 → v0.97.x parallel with SM8) |
 | SM8 | v0.33.2 → v0.33.23 (CLOSED) | SMP information flow A–E |
-| **WS-RA** | v0.33.36 → v0.33.38 | **COMPLETE** (estimate was 5-8 weeks; the flip collapsed to one atomic cut, RA.B.5b + RA.B.8 followed at v0.33.38.  SM10.E owes delivery + cancellation error frames) |
+| **WS-RA** | v0.33.36 → v0.33.38 | **COMPLETE** (estimate was 5-8 weeks; the flip collapsed to one atomic cut, RA.B.5b + RA.B.8 followed at v0.33.38.  SM10.1 owes delivery + cancellation error frames) |
 | SM9 | after WS-RA — **CLOSED (v0.33.100)** | closed at SM9.E: A (the audit trail's reader — the 256-entry cliff SM8.C.8 left, closed), B (refusal auditing), C (the data-carrying declassification), D (causal provenance), E (tests + closure — the acceptance scenarios pinned as golden fixtures) |
 | SM10 | v0.98.0 → **v1.0.0** | 4-6 weeks |
 | **Total** | | **84-119 weeks (~19-28 months)** |

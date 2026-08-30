@@ -269,7 +269,7 @@ Follow-up (pre-existing, NOT SM7.A-specific, out of this phase's
 scope): a crate-wide conformance audit of the SM1-era
 `@[extern] … BaseIO` ↔ plain `extern "C" fn` calling convention
 (world-token/boxed-return ABI) once a linked runtime path exists to
-exercise it (SM10.E QEMU image); SM7.A merely follows the established
+exercise it (SM10.1 QEMU image); SM7.A merely follows the established
 convention.
 
 | Sub | Description | Landed artefact | Status |
@@ -455,7 +455,7 @@ A follow-on cut closing every depth item the landing deferred:
   CSpace resolution + authority gate + posting + fail-closed no-cap /
   read-only-cap) — 22 scenario groups, 160 runtime assertions.
   SM7.E.2 seeded: `scripts/test_qemu_smp_shootdown.sh` (Tier-4,
-  registered in `test_tier4_smp_bootcheck.sh`; SKIPs until the SM10.E
+  registered in `test_tier4_smp_bootcheck.sh`; SKIPs until the SM10.1
   bootable image, as its SM5/SM6 siblings).
 * **Testing note**: `Testing/InvariantChecks.lean` mirrors
   `crossSubsystemInvariant` only; the new bundle conjunct is
@@ -495,7 +495,7 @@ residual with an explicit target.
   ↔ `TlbInvalidation.toOpTag`/`toAsid`/`toVaddr`, exercised in suite
   §4.11), and the retire path is unit-tested to issue exactly the
   published operands.  Residual: the end-to-end machine-checked
-  refinement of the *linked* Rust↔Lean runtime still needs the SM10.E
+  refinement of the *linked* Rust↔Lean runtime still needs the SM10.1
   bootable image (unchanged target — it is the linked-runtime proof,
   not the effect correspondence, that remains).
 * **B.10 syscall-level reachability — deferred, NO safety gap
@@ -1138,7 +1138,7 @@ be delivered inside a later round's `reset → publish` window.  Its handler
 then retired the *previous* round's operands and acknowledged, satisfying the
 new round's `all_acked` wait with that target's TLB still holding the
 translation the round was supposed to retire: an under-invalidation, the
-SMP-C4 stale-TLB hazard.  High severity once bootable (SM10.E); latent today.
+SMP-C4 stale-TLB hazard.  High severity once bootable (SM10.1); latent today.
 
 The fix makes an acknowledgment *name the round it discharged*:
 `ShootdownAckSlot` holds a monotone `acked_gen : AtomicU64` advanced by
@@ -1260,7 +1260,7 @@ the scrub's own extent at v0.32.101.  Every operand SM7.D emits is correct
 inherited abstraction gap the whole lifecycle layer shares: the physical
 addresses are the model's allocation convention rather than the untyped
 allocator's, so on hardware the emitted maintenance names the wrong extent
-until the AN4-G.3 / LIF-M03 scrub bridge lands (deferred item 5; owner SM10.E).
+until the AN4-G.3 / LIF-M03 scrub bridge lands (deferred item 5; owner SM10.1).
 That gap is the *scrub's*, and the cache operand follows it by construction —
 see the v0.32.101 section.  The cache-side companion of SM7.C.  SM7.C closed the
 *translation* half of SMP-C4 (a stale TLB entry on a remote core); SM7.D closes
@@ -1282,7 +1282,7 @@ D7.2), so a line cached from a page whose executable mapping is later torn down
 stays hittable through *any* later executable mapping of the same frame, in *any*
 address space — the instruction-side twin of the SMP-C4 stale-TLB hazard, and one
 the TLB shootdown cannot close (it retires translations, not cache lines).  It is
-latent rather than exploitable today (no bootable image until SM10.E), but it was
+latent rather than exploitable today (no bootable image until SM10.1), but it was
 a genuine gap in both the model and the HAL surface, so the plan's
 "documentation" framing for D.1–D.3 was superseded per the project's
 implement-the-improvement rule.
@@ -1398,7 +1398,7 @@ along with a granularity defect found while analysing them.
   image load); an instruction fetch reads at PoU, so a store not yet pushed
   there can be fetched stale even on the storing PE.  The *emission* needs each
   object's physical extent, which the model does not carry (only
-  `UntypedObject` has `regionBase`/`regionSize`), so it is scoped to SM10.E —
+  `UntypedObject` has `regionBase`/`regionSize`), so it is scoped to SM10.1 —
   also the first point at which memory is physically backed and the omission
   could bite.  What lands now is the obligation as an object:
   `KernelCodeWriteSite` enumerates the two sites,
@@ -1625,7 +1625,7 @@ later executable mapping of the frame, in any address space.  seL4's
 reason.
 
 Severity **High** once the kernel boots on hardware; not exploitable at v0.32.99
-(no bootable image — SM10.E).  No Lean theorem was false: `ICacheState` models no
+(no bootable image — SM10.1).  No Lean theorem was false: `ICacheState` models no
 data-cache content, so the model could not see the omission.  What was wrong was
 the emitted hardware sequence.
 
@@ -1682,7 +1682,7 @@ computes the `DC CVAU` loop the HAL runs and checks it covers every line of
 `[base, base+size)` for each allocation size and for a line-straddling base.
 Trace byte-identical; zero sorry/axiom; Tier 0–3 green.
 
-### SM7.D deferred items — registered against SM10.E
+### SM7.D deferred items — registered against SM10.1
 
 Findings from the PR #845 review that were verified as real but deliberately
 **not** fixed in that PR.  Each is recorded here as tracked debt with an owning
@@ -1696,18 +1696,18 @@ still reports as owing an emission.)
 
 | # | Finding | Why deferred | Owner |
 |---|---------|--------------|-------|
-| 1 | **`op.toPaddr` is used directly as the VA operand for `DC CVAU` / `IC IVAU`.**  `mmu.rs` populates only L1 entries 0..3 — `0x0000_0000–0xBFFF_FFFF` Normal WB cacheable, `0xC000_0000–0xFFFF_FFFF` Device-nGnRnE, nothing above 4 GiB — while `rpi5MachineConfig.physicalAddressWidth = 44`.  The model therefore admits frames the boot tables do not cacheably map, and maintenance against such a VA faults at EL1 or operates through a Device alias. | Pre-existing since v0.32.94 (`.ivauPage` carries the same convention; `.unifyPage` inherits it).  Not reachable today — no bootable image until SM10.E and no allocator path hands out frames above 3 GiB — but live the moment the image boots on a 4 GB or 8 GB Pi 5.  The fix is a PA→kernel-VA translation with a fail-closed reject for frames outside the cacheable window, which belongs with the runtime mapping work.  **Must cover the whole operand family, not just `.unifyPage`.** | SM10.E |
-| 2 | **The post-state is published before the maintenance is emitted.**  `modifyGetKernelState` installs the committed state and clears the ledger atomically; `completeIcacheMaintenance` runs outside that step, so another core can observe a retyped frame, map it and execute from it while stale instruction lines are still resident. | Structural to the whole SM7 runtime bracket, not to the cache seam: `completeShootdownRounds` sits in the same position and has since v0.32.76.  The TLB side is saved by the blocking `SHOOTDOWN_ACK` handshake; `IC IALLUIS` is fire-and-forget, so there is nothing to wait on.  "Emit before publishing" is unavailable to a pure-transition kernel (the operand is only known *after* the transition computes it — the reason the ledger exists), leaving "hold serialization across the barrier sequence", which changes the syscall bracket's locking discipline and interacts with the SM3 hierarchy and the SM7.B round lock.  Wants designing once for both the TLB and cache sides.  Mitigation today: the model applies the invalidation to `perCoreICache` atomically *inside* the transition, so the committed state is coherent — the gap is exactly the model-vs-hardware refinement gap SM10.E closes. | SM10.E |
-| 4 | **The `.bootImageLoad` clean-to-PoU is declared but not emitted.**  The boot pipeline materialises the initial task's objects — including its code — before the first instruction fetch, and owes the same `DC CVAU` → `DSB ISH` → invalidate sequence the re-type now emits.  `kernelCodeWriteEmitted .bootImageLoad = false` records this, and `kernelCodeWriteSites_emission_pending` pins that it is the **only** remaining site. | Unlike `.retypeScrub`, this site genuinely cannot name its extent today: boot materialises objects through the builder, with no transition to hang an operand on and no physical backing until the image runs.  Closure means emitting the range clean as part of boot's object materialisation, which is the SM10.E bring-up work.  Flipping the `kernelCodeWriteEmitted` arm breaks the `decide`, so the closure cannot land silently. | SM10.E |
-| 5 | **The cleaned extent is the model's abstract convention, not the allocator's.**  `scrubExtent` — which `scrubObjectMemory` zeroes and `retypeIcacheOp` cleans — is `(ObjId × objectTypeAllocSize, objectTypeAllocSize)`.  The real child extent is the untyped allocator's `regionBase + offset` (recorded in state as `UntypedChild.offset` / `.size`), so on hardware neither the zeroing stores nor the `DC CVAU` lands on the object's actual backing memory. | **This is AN4-G.3 / LIF-M03, not a new finding** — the pre-existing scrub bridge, re-labelled at v0.32.101 as a High-severity-once-bootable *data*-disclosure gap (a scrub that misses real memory hands the previous owner's bytes to the new one, not merely stale instruction lines).  Deferred because the fix belongs to the **scrub**, not the cache seam: it needs a reverse child→untyped resolver that does not exist, a fallback for objects with no parent record (boot-built objects, in-place re-types), and a change to `scrubObjectMemory` itself, whose projection lemmas quantify over the abstract range.  Correcting the cache operand alone would be strictly worse — it would clean an extent the scrub does not zero.  v0.32.101 made this a **one-line** change when AN9 lands: both consumers read `scrubExtent`, so the bridge rewrites that single function and the operand follows (`retypeIcacheOp_cleans_scrub_extent` fails if they ever drift). | SM10.E (AN4-G.3) |
-| 3 | **The legacy `syscallDispatchInner` entry does not drain the ledger.** | Vestigial: the Rust `svc_dispatch` extern was flipped to `lean_syscall_dispatch_cross_core` at v0.31.67 (SM6.A), so nothing calls `syscall_dispatch_inner` on the production path.  Since v0.32.96 replaced the operand *join* with an append-only list, an operand committed through the legacy entry is **deferred** (drained by the next cross-core-entry syscall), never silently dropped — `recordIcacheMaintenanceList_mem_of_mem` is the no-loss property.  **Draining there was attempted and reverted**: `icMaintenanceBroadcast` carries an `@[extern]` symbol supplied by the Rust HAL, which simulation builds do not link, and `tests/SyscallDispatchSuite.lean` calls this entry directly — so the emission breaks every host test binary that exercises the bridge.  The module's link-gating policy requires that to fail loudly rather than be stubbed, so the only sound closures are (a) linking the HAL into test binaries, which defeats the gating, or (b) **removing the export** and repointing `SyscallDispatchSuite` at the cross-core entry.  **CLOSED at v0.33.37 (WS-RA), via (b)**: the `syscall_dispatch_inner` export and `syscallDispatchInner` body are deleted with the bit-63 protocol they spoke, and `SyscallDispatchSuite` drives the pure `syscallDispatchFromAbi` directly through its `dispatchViaRef` helper — no legacy entry exists to leave an operand deferred. | ~~SM10.E~~ CLOSED v0.33.37 |
+| 1 | **`op.toPaddr` is used directly as the VA operand for `DC CVAU` / `IC IVAU`.**  `mmu.rs` populates only L1 entries 0..3 — `0x0000_0000–0xBFFF_FFFF` Normal WB cacheable, `0xC000_0000–0xFFFF_FFFF` Device-nGnRnE, nothing above 4 GiB — while `rpi5MachineConfig.physicalAddressWidth = 44`.  The model therefore admits frames the boot tables do not cacheably map, and maintenance against such a VA faults at EL1 or operates through a Device alias. | Pre-existing since v0.32.94 (`.ivauPage` carries the same convention; `.unifyPage` inherits it).  Not reachable today — no bootable image until SM10.1 and no allocator path hands out frames above 3 GiB — but live the moment the image boots on a 4 GB or 8 GB Pi 5.  The fix is a PA→kernel-VA translation with a fail-closed reject for frames outside the cacheable window, which belongs with the runtime mapping work.  **Must cover the whole operand family, not just `.unifyPage`.** | SM10.1 |
+| 2 | **The post-state is published before the maintenance is emitted.**  `modifyGetKernelState` installs the committed state and clears the ledger atomically; `completeIcacheMaintenance` runs outside that step, so another core can observe a retyped frame, map it and execute from it while stale instruction lines are still resident. | Structural to the whole SM7 runtime bracket, not to the cache seam: `completeShootdownRounds` sits in the same position and has since v0.32.76.  The TLB side is saved by the blocking `SHOOTDOWN_ACK` handshake; `IC IALLUIS` is fire-and-forget, so there is nothing to wait on.  "Emit before publishing" is unavailable to a pure-transition kernel (the operand is only known *after* the transition computes it — the reason the ledger exists), leaving "hold serialization across the barrier sequence", which changes the syscall bracket's locking discipline and interacts with the SM3 hierarchy and the SM7.B round lock.  Wants designing once for both the TLB and cache sides.  Mitigation today: the model applies the invalidation to `perCoreICache` atomically *inside* the transition, so the committed state is coherent — the gap is exactly the model-vs-hardware refinement gap SM10.1 closes. | SM10.1 |
+| 4 | **The `.bootImageLoad` clean-to-PoU is declared but not emitted.**  The boot pipeline materialises the initial task's objects — including its code — before the first instruction fetch, and owes the same `DC CVAU` → `DSB ISH` → invalidate sequence the re-type now emits.  `kernelCodeWriteEmitted .bootImageLoad = false` records this, and `kernelCodeWriteSites_emission_pending` pins that it is the **only** remaining site. | Unlike `.retypeScrub`, this site genuinely cannot name its extent today: boot materialises objects through the builder, with no transition to hang an operand on and no physical backing until the image runs.  Closure means emitting the range clean as part of boot's object materialisation, which is the SM10.1 bring-up work.  Flipping the `kernelCodeWriteEmitted` arm breaks the `decide`, so the closure cannot land silently. | SM10.1 |
+| 5 | **The cleaned extent is the model's abstract convention, not the allocator's.**  `scrubExtent` — which `scrubObjectMemory` zeroes and `retypeIcacheOp` cleans — is `(ObjId × objectTypeAllocSize, objectTypeAllocSize)`.  The real child extent is the untyped allocator's `regionBase + offset` (recorded in state as `UntypedChild.offset` / `.size`), so on hardware neither the zeroing stores nor the `DC CVAU` lands on the object's actual backing memory. | **This is AN4-G.3 / LIF-M03, not a new finding** — the pre-existing scrub bridge, re-labelled at v0.32.101 as a High-severity-once-bootable *data*-disclosure gap (a scrub that misses real memory hands the previous owner's bytes to the new one, not merely stale instruction lines).  Deferred because the fix belongs to the **scrub**, not the cache seam: it needs a reverse child→untyped resolver that does not exist, a fallback for objects with no parent record (boot-built objects, in-place re-types), and a change to `scrubObjectMemory` itself, whose projection lemmas quantify over the abstract range.  Correcting the cache operand alone would be strictly worse — it would clean an extent the scrub does not zero.  v0.32.101 made this a **one-line** change when AN9 lands: both consumers read `scrubExtent`, so the bridge rewrites that single function and the operand follows (`retypeIcacheOp_cleans_scrub_extent` fails if they ever drift). | SM10.1 (AN4-G.3) |
+| 3 | **The legacy `syscallDispatchInner` entry does not drain the ledger.** | Vestigial: the Rust `svc_dispatch` extern was flipped to `lean_syscall_dispatch_cross_core` at v0.31.67 (SM6.A), so nothing calls `syscall_dispatch_inner` on the production path.  Since v0.32.96 replaced the operand *join* with an append-only list, an operand committed through the legacy entry is **deferred** (drained by the next cross-core-entry syscall), never silently dropped — `recordIcacheMaintenanceList_mem_of_mem` is the no-loss property.  **Draining there was attempted and reverted**: `icMaintenanceBroadcast` carries an `@[extern]` symbol supplied by the Rust HAL, which simulation builds do not link, and `tests/SyscallDispatchSuite.lean` calls this entry directly — so the emission breaks every host test binary that exercises the bridge.  The module's link-gating policy requires that to fail loudly rather than be stubbed, so the only sound closures are (a) linking the HAL into test binaries, which defeats the gating, or (b) **removing the export** and repointing `SyscallDispatchSuite` at the cross-core entry.  **CLOSED at v0.33.37 (WS-RA), via (b)**: the `syscall_dispatch_inner` export and `syscallDispatchInner` body are deleted with the bit-63 protocol they spoke, and `SyscallDispatchSuite` drives the pure `syscallDispatchFromAbi` directly through its `dispatchViaRef` helper — no legacy entry exists to leave an operand deferred. | ~~SM10.1~~ CLOSED v0.33.37 |
 
 ### SM7.E — Tests (3 PRs, 6 sub-tasks) — LANDED (v0.32.103)
 
 | Sub | Description | Status |
 |-----|-------------|--------|
 | SM7.E.1 | `tests/SmpTlbShootdownSuite.lean` (15+ scenarios) — seeded at SM7.A, 22 groups at the SM7.B completion cut, 32 at the SM7.F cuts | **LANDED** — 35 runtime groups / 272 assertions (§3.1–§3.12, §4.1–§4.11, §5.1–§5.10, §6, §7, §8) |
-| SM7.E.2 | QEMU shootdown integration — `scripts/test_qemu_smp_shootdown.sh` | **LANDED** (seeded at the SM7.B completion cut; Tier-4 registered, SKIPs until the SM10.E bootable image) |
+| SM7.E.2 | QEMU shootdown integration — `scripts/test_qemu_smp_shootdown.sh` | **LANDED** (seeded at the SM7.B completion cut; Tier-4 registered, SKIPs until the SM10.1 bootable image) |
 | SM7.E.3 | Shootdown stress test (4 cores × concurrent unmaps) | **LANDED** — suite §6 (model tier) + `scripts/test_qemu_smp_shootdown_stress.sh` (Tier-4 hardware tier) |
 | SM7.E.4 | Cross-cluster mock test | **LANDED** — suite §7 (TLB side) + `SmpCacheMaintenanceSuite` §3.15 (I-cache reach side) |
 | SM7.E.5 | Surface anchors | **LANDED** — §1 `#check` blocks + Tier-3 `rg` anchors for every new symbol, runner, fixture and script |
@@ -1803,7 +1803,7 @@ Auto-gated by the Tier-2 trace walk (which discovers every
 refresh fails CI.
 
 **SM7.E.3 hardware tier** — `scripts/test_qemu_smp_shootdown_stress.sh`
-(Tier-4-registered, SKIPs until SM10.E) drives the one thing the pure model
+(Tier-4-registered, SKIPs until SM10.1) drives the one thing the pure model
 cannot: the real interleaving of the global round lock, the SGI delivery order
 and the `SHOOTDOWN_ACK` handshake under contention.  It hunts the two §7 risks
 by name — a round-serialisation break (an initiator observing someone else's
@@ -1887,7 +1887,7 @@ SM7.B.6 fail-closed timeout, or a hang) — with a distinct diagnostic for each.
       SM7.B, at the SM7.D landing, and at the SM7.E landing; the two QEMU
       exercisers — `test_qemu_smp_shootdown.sh` (SM7.E.2) and
       `test_qemu_smp_shootdown_stress.sh` (SM7.E.3) — are Tier-4 registered
-      and SKIP until the SM10.E bootable image exists).
+      and SKIP until the SM10.1 bootable image exists).
 - [x] **Closes SMP-C4 formally**: SM7.C's per-core TLB model and SM7.D's
       per-core cache invariant have both landed, so every per-PE cached view
       of a mapping the kernel destroys — translation *and* instruction line —
@@ -1968,7 +1968,7 @@ abstractly.*
 > one global lock rather than SM3.C.9's per-object fine locks, so live
 > WCRT is weaker than `PerCoreWcrt.lean`'s bound — that bound remains a
 > statement about the intended discipline and now says so. And nothing
-> here runs on hardware before SM10.E.
+> here runs on hardware before SM10.1.
 
 ### Original record (tracked debt, owner SM5.I)
 
@@ -2013,7 +2013,7 @@ present**.
 ### Severity
 
 **Unreachable in a shipped artifact.** SMP is off by default and no
-bootable image exists before SM10.E, so no configuration runs two cores
+bootable image exists before SM10.1, so no configuration runs two cores
 in the kernel today. High once bootable — a lost commit can drop a
 capability revocation, a suspend, or a shootdown post, and the caller is
 told it succeeded.
@@ -2025,7 +2025,7 @@ calling `bring_up_secondaries` — so a boot with no `smp_enabled=false`
 on the command line would have brought all four cores up, and the
 lost-update race would have been reachable on the first bootable image
 rather than gated behind an opt-in. Only "no bootable image before
-SM10.E" was carrying the unreachability claim.
+SM10.1" was carrying the unreachability claim.
 
 The default is now `false`, which restores the precondition maintainer
 decision #7 states for itself — "SMP enabled by default at v1.0.0 *once

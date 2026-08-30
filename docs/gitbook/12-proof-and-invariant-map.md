@@ -899,7 +899,7 @@ the executing PE, so the kernel must issue the broadcast variant:
   `dischargesPoUClean`, which is expressed through `covers` so the question is
   answered by the ledger's own preorder); `.bootImageLoad` is not, and the
   theorem pins it as the only remaining site — flipping it breaks the `decide`,
-  so the SM10.E closure cannot land silently
+  so the SM10.1 closure cannot land silently
 - `icFetchOnCore` (SM7.D.1) — the hardware instruction fetch filling one core's
   view; an *environment* step, not a kernel transition
 - `icInvalidateOnCore` (SM7.D.1) — `IC IALLU`, whose
@@ -3478,7 +3478,7 @@ so taint propagates through ordinary IPC.
   Recorded rather than assumed: the model writes the field whole, so the
   key-local reading is sound only if the runtime realises the table as
   per-object storage — precisely the obligation `SystemState.objects` already
-  carries for `storeObject`, discharged the same way, at SM10.E.
+  carries for `storeObject`, discharged the same way, at SM10.1.
 
 * **Non-interference carriage** (SM9.D.18).  The propagation writes a field no
   observer projects, so `applySyscallTaint_confinedToCores_nil` is confinement

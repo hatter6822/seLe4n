@@ -2159,7 +2159,7 @@ the table as per-object storage — a store at slot `o` for
 from their own pre-states would each write the whole field and the later commit
 would discard the other's provenance.  That is precisely the obligation
 `SystemState.objects` already carries for `storeObject` under the same
-discipline, and it is discharged the same way: by the representation, at SM10.E.
+discipline, and it is discharged the same way: by the representation, at SM10.1.
 
 It is carried as `UncoveredLockDomain.taintTablePerKeyStore`
 (`InformationFlow/FineLockFlow.lean`), not as this paragraph.  A docstring is

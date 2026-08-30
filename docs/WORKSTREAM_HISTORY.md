@@ -40,7 +40,7 @@ A pre-SM10 sweep of the WS-SM headline findings (SMP-C1..C4, SMP-H1..H4,
 the MED/LOW set) confirmed every closure in place — and surfaced three
 runtime seams that SM5 had promised in prose but never landed, each one a
 proven transition with no consumer.  All three are now wired (dormant on
-hardware behind the per-core `lean_ready` gate until SM10.E's runtime
+hardware behind the per-core `lean_ready` gate until SM10.1's runtime
 initialization marks cores ready — see the review-round paragraph below),
 plus the serialisation gap the third one exposed:
 
@@ -94,7 +94,7 @@ discharge because a not-yet-IRQ-ready core is excluded from every round.
 The bracketed-entry roster is now five (syscall dispatch, per-core tick,
 `.reschedule` receiver, secondary bring-up, cross-core suspend); the
 primary's `lean_kernel_main` install-ordering obligation is recorded
-against SM10.E in the release-closure plan, `Platform/FFI.lean` and
+against SM10.1 in the release-closure plan, `Platform/FFI.lean` and
 `kernel_entry.rs`.
 
 Alongside: the `timer::handle_timer_interrupt` misnomer (a function that
@@ -116,7 +116,7 @@ exist, while the hardware seams compiled unconditional Lean calls behind
 `hw_target`.  New `rust/sele4n-hal/src/lean_ready.rs`: a per-core readiness
 mask, `false` everywhere at boot, consulted by the timer ISR, the reschedule
 handler and the secondary bring-up entry; each degrades to its Rust-only
-half until SM10.E's image initialization marks the core ready.  The seams
+half until SM10.1's image initialization marks the core ready.  The seams
 are wired, dormant, and cannot fire early.  (2) **The domain transition,
 composed** — `timerTickOnCore`'s own comment required "the SM5.I run loop
 invokes `timerTickOnCore` then `scheduleDomainOnCore`", and the run-loop
@@ -137,7 +137,7 @@ reappear (the AI1-C/M-26 single-path invariant, owner relocated).  Suite
 pins: boot-core step advances by exactly 1, non-boot step doesn't, the
 in-domain decrement runs through the step; Rust tests pin the mirrored
 `TICK_COUNT` ownership.  Findings (4) context-restore coupling and (5)
-install-before-release are the registered SM10.E obligations (the restore
+install-before-release are the registered SM10.1 obligations (the restore
 seam and the boot-entry ordering already recorded in
 `SMP_RELEASE_CLOSURE_PLAN.md`); with the readiness gate, neither hazard is
 reachable before that work exists — and the gate is the structural piece
@@ -166,7 +166,7 @@ it is off the live path (the run loop drives the per-core composition) and
 its alignment is Scheduler-subsystem follow-up scope, deliberately not
 widened into this cut (19 proof-file consumers ride the single-core
 definition).  (2) Honesty: "live end to end" → wired, dormant behind
-`lean_ready` until SM10.E (DEVELOPMENT.md, this file, CHANGELOG).
+`lean_ready` until SM10.1 (DEVELOPMENT.md, this file, CHANGELOG).
 (3) `mark_lean_ready` is `unsafe fn` with the Safety contract the flip
 actually carries.  (4) The lean-ready scanner is body-scoped: gate before
 Lean symbol within each seam function, not file-level containment.
@@ -609,7 +609,7 @@ recorded rather than assumed**: the model writes the field whole, so the
 key-local reading is sound only if the runtime realises the table as per-object
 storage.  That is precisely the obligation `SystemState.objects` already
 carries for `storeObject` under the same discipline, and it is discharged the
-same way, by the representation, at SM10.E.
+same way, by the representation, at SM10.1.
 
 **D.18 — NI carriage.**  The propagation writes a field no observer projects,
 so `applySyscallTaint_confinedToCores_nil` is confinement to **no** core, and
@@ -1483,7 +1483,7 @@ landed at the arms (two Option-lifted stagers composing at eleven sites, the
 blocked orderings staged end to end with `blockedReturn_staged_in_waiter_frame`
 + its unit dual, five two-core suite scenarios) and RA.B.8 landed as the
 five-theorem value-half family with the unit half structural
-(`frameForShape_unit`).  SM10.E owes only frame *delivery* (the context
+(`frameForShape_unit`).  SM10.1 owes only frame *delivery* (the context
 restore) and the cancellation/timeout error-frame staging.  Plan:
 [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](planning/SYSCALL_RETURN_ABI_PLAN.md).
 
@@ -2203,7 +2203,7 @@ state LANDED (v0.32.72); completion cut (v0.32.73); audit cut
 **SM7.E tests + fixtures (v0.32.103) — the SM7 closure phase (plan §5
 SM7.E).**  SM7.E.1 and SM7.E.2 had already landed alongside SM7.A/SM7.B
 (the aggregate `tests/SmpTlbShootdownSuite.lean`; the Tier-4-registered
-`scripts/test_qemu_smp_shootdown.sh`, which SKIPs until the SM10.E bootable
+`scripts/test_qemu_smp_shootdown.sh`, which SKIPs until the SM10.1 bootable
 image).  This cut lands E.3–E.6.
 
 **The model gap the test work surfaced — and closed rather than
@@ -2250,7 +2250,7 @@ retirement in flight together — each core's drain retires exactly *its*
 queue, so the ASID round's initiator keeps the three translations it never
 queued (a blanket-flush regression in the handler fails right there).
 Hardware tier: `scripts/test_qemu_smp_shootdown_stress.sh`
-(Tier-4-registered, SKIPs until SM10.E) drives what the pure model cannot —
+(Tier-4-registered, SKIPs until SM10.1) drives what the pure model cannot —
 the real interleaving of the global round lock, the SGI delivery order and
 the `SHOOTDOWN_ACK` handshake under contention — hunting the two plan §7
 risks by name (a round-serialisation break; a round-lock deadlock) with a
@@ -2315,7 +2315,7 @@ is later torn down stays hittable through *any* later executable mapping of
 the same frame, in *any* address space — the instruction-side twin of the
 SMP-C4 stale-TLB hazard, and one the TLB shootdown cannot close (it retires
 translations, not cache lines).  Latent rather than exploitable today (no
-bootable image until SM10.E), but a real gap in the model and in the HAL
+bootable image until SM10.1), but a real gap in the model and in the HAL
 surface, so the plan's "documentation" framing for D.1–D.3 was superseded per
 the implement-the-improvement rule.
 
@@ -2430,7 +2430,7 @@ and its failure mode is under-invalidation.
 *Data-side dual.*  Nothing cleans the D-cache to the Point of Unification
 after the kernel writes memory a subject may later execute (`scrubObjectMemory`
 during a re-type, the boot image load).  The emission needs object physical
-extents, which the model does not carry, so it is scoped to SM10.E; what lands
+extents, which the model does not carry, so it is scoped to SM10.1; what lands
 is the obligation as a checked object — `KernelCodeWriteSite` +
 `kernelCodeWriteSites_owe_pou_clean` + the `…_complete` tripwire.
 `Architecture.TlbCacheComposition` promoted staged → production as its
@@ -2484,7 +2484,7 @@ of the frame, in any address space.  seL4's `clearMemory` is `memzero` followed
 by `cleanCacheRange_PoU` for exactly this reason.
 
 Severity **High** once the kernel boots on hardware; not exploitable at
-v0.32.99, since there is no bootable image until SM10.E.  No Lean theorem was
+v0.32.99, since there is no bootable image until SM10.1.  No Lean theorem was
 false — `ICacheState` models no data-cache content, so the model could not see
 the omission.  What was incomplete was the emitted hardware sequence.
 
@@ -2602,7 +2602,7 @@ extent is the untyped allocator's `regionBase + offset`, so on hardware the
 
 *Narrower*: this is not a defect the cache operand introduced.  The operand
 deliberately mirrors the scrub, and the scrub's own hardware gap is
-pre-existing, registered as **AN4-G.3 / LIF-M03**, and owned by AN9/SM10.E.
+pre-existing, registered as **AN4-G.3 / LIF-M03**, and owned by AN9/SM10.1.
 Retargeting the operand on its own would be strictly worse — the clean would
 then name an extent `scrubObjectMemory` does not zero.  They have to move
 together.
@@ -2611,7 +2611,7 @@ together.
 to its new owner still holding the previous owner's **data**, not merely stale
 instruction lines.  That is the more serious half; it lives in the scrub bridge
 rather than the cache seam, and AN4-G.3 is re-labelled High-severity-once-
-bootable with an explicit SM10.E closure target.
+bootable with an explicit SM10.1 closure target.
 
 **The genuine weakness in what v0.32.100 shipped.**
 `retypeIcacheOp_cleans_scrub_extent` was described as "an equality between the
@@ -2934,7 +2934,7 @@ Rust mailbox + `publish_*`/`snapshot_*`/`retire_round_ops_in` +
 unit tests (HAL 772 → 780); trace byte-identical.  **(2) Formal
 refinement (NARROWED)**: the handler refines the Lean TLB effect
 operand-for-operand (op-tag decode pinned identical both sides); the
-residual is only the SM10.E linked-runtime proof.  **(3) B.10
+residual is only the SM10.1 linked-runtime proof.  **(3) B.10
 (deferred, NO safety gap)**: `asidAllocateWithShootdown` is complete
 and proven but user-unreachable — audit confirms no runtime
 ASID-reuse path exists (`lifecycleRetype` creates fresh ASID-0 roots;
@@ -3020,7 +3020,7 @@ assertions vacuous), `round_lock_try_acquire_in`/`_release_in` + an
 `dispatchSyscall`: CSpace resolution + authority gate + posting +
 fail-closed no-cap / read-only-cap) — 22 groups / 160 runtime
 assertions; SM7.E.2 seeded (`scripts/test_qemu_smp_shootdown.sh`,
-Tier-4-registered, SKIPs until the SM10.E image); the legacy Rust
+Tier-4-registered, SKIPs until the SM10.1 image); the legacy Rust
 `dispatch_irq` deprecated (masked-EOI form, tests annotated).
 Golden trace byte-identical; zero sorry/axiom.  Tracked debt
 registered in plan §SM7.B completion cut.  Record: plan §5 SM7.B.
@@ -3118,7 +3118,7 @@ the new-descriptor-only theorem.  Suite 73 → **75 assertions**;
 Tier-3 anchors extended; Rust 750 / clippy / rustfmt green; golden
 trace byte-identical.  Follow-up registered (pre-existing, not
 SM7.A-specific): crate-wide `@[extern] … BaseIO` ↔ `extern "C"` ABI
-conformance audit once a linked runtime path exists (SM10.E).
+conformance audit once a linked runtime path exists (SM10.1).
 
 **PR #838 review P1 (v0.32.75) — offline cores stay acknowledged.**
 The Codex review caught a liveness defect the audit's serialised-regime
@@ -3273,7 +3273,7 @@ decisions, verified byte-for-byte in-suite and auto-gated by
 `test_tier2_trace.sh`'s companion walk.  **SM6.F.5**
 `scripts/test_qemu_smp_ipc.sh`: the Tier-4 QEMU `-smp 4` cross-core IPC
 handshake exerciser (registered in `test_tier4_smp_bootcheck.sh`; SKIPs
-with the formal-coverage banner until the SM10.E bootable kernel-image
+with the formal-coverage banner until the SM10.1 bootable kernel-image
 target exists, the SM5-sibling discipline).  **SM6.F.6** surface
 anchors: in-suite `#check` blocks + Tier-3 grep anchors (runner defs,
 Tier-2 wiring, pipeline/trace emitters, fixture + sha256 presence,
@@ -7187,7 +7187,7 @@ is archived.
 | Cancellation/timeout error-frame staging, owed before the context-restore seam flips | `SeLe4n/Kernel/IPC/Operations/Timeout.lean` | RR7.8 |
 | WS-RA's application-IPC-label follow-on, registered only inside a review narrative | [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](planning/SYSCALL_RETURN_ABI_PLAN.md) | RR7.11 |
 | SM7's ASID completeness gap — `asidAllocateWithShootdown` is complete and proven with no callers, and the ASIDControl/ASIDPool object family does not exist.  Registered against SM8; **SM8 closed without absorbing it** | `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` | RR7.14 |
-| SM7.D's four SM10.E-owned deferred cache-maintenance items appear in no SM10 sub-task | [`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`](planning/SMP_TLB_SHOOTDOWN_PLAN.md) | RR7.14 |
+| SM7.D's four SM10.1-owned deferred cache-maintenance items appear in no SM10 sub-task | [`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`](planning/SMP_TLB_SHOOTDOWN_PLAN.md) | RR7.14 |
 | SM6's tracked debt carries no explicit closure target, and its `schedContextConfigure` entry went stale after the debt closed | [`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md`](planning/SMP_CROSS_CORE_IPC_PLAN.md) | RR7.16 |
 | The Tier-0 grep gate banning non-IS TLBI, which the Rust HAL plan §4.4 claims exists, does not exist | `scripts/test_tier0_hygiene.sh` | RR1.9 |
 | No aarch64 target is compiled anywhere: 67 cfg-gated blocks, 60 `asm!` sites and all three `.S` files have zero compile coverage | `rust/`, `.github/workflows/` | RR1.1–RR1.8 |
@@ -7196,21 +7196,21 @@ is archived.
 ### B — owned by SM10
 
 These cannot close before SM10 opens, because each needs the image or the
-runtime seam SM10.E produces.  WS-RR's obligation is that they are visible
+runtime seam SM10.1 produces.  WS-RR's obligation is that they are visible
 here rather than only inside a phase plan.
 
 | Debt | Where it lives | Closure target |
 |------|----------------|----------------|
-| The boot path does not exist: no `[[bin]]`, no aarch64 Lean object code, no `libsele4n.a`, no bare-metal runtime hosting, no `@[export] lean_kernel_main` | `rust/`, `lakefile.toml`, `SeLe4n/Platform/FFI.lean` | SM10.E.D1 |
-| `lean_kernel_main`'s `initialiseKernelState` install would run outside the kernel-entry lock and after the secondaries are released — the lost-commit shape | `rust/sele4n-hal/src/kernel_entry.rs`, `SeLe4n/Platform/FFI.lean` | SM10.E (order or bracket; §3) |
-| WS-RA frame delivery: the staged return frame is not delivered until the context restore goes live | `SeLe4n/Kernel/Concurrency/ContextRestoreSeam.lean` | SM10.E (§2) |
-| Fine-lock migration **Track D** — commit partitioning, which that plan seam-gates to SM10.E; the one part of the fine-lock work WS-RR cannot land | [`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`](planning/SMP_FINE_LOCK_MIGRATION_PLAN.md) | SM10.E, registered as a named dependency by RR6.19 |
-| `UncoveredLockDomain.taintTablePerKeyStore` names SM10.E as owner; the SM10 plan carries no sub-task for it | `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` | SM10.E — RR0.11 routes the plan-side row |
-| Six WS-SM phases (SM1, SM6..SM10) have **no** machine-checked theorem inventory, so they contribute zero to `smpInventoriedTheoremCount` (902 of 1111 registered entries are propositions; the six phases add neither) | `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` | SM10.B.13 |
-| Hardware-validation scripts SM10.B.D1–D7 and the SM10.E.D1 image build, each a runnable procedure `docs/HARDWARE_TESTING.md` documents with no script | `scripts/` | SM10.B, SM10.E.D1 |
-| Tier-4 acceptance gates have never executed: they need the bootable image, so `SMP_RELEASE_CLOSURE_PLAN.md` §2's "acceptance gates for SM0..SM9 green" is **unmet**, not merely unverified | `scripts/test_tier4_smp_bootcheck.sh` | SM10.E, immediately after D1 |
-| SM10.C.3 archives the WS-RC artefacts; its still-open items (R7, R14) migrate here rather than into the archive | `docs/audits/` | SM10.C.3 |
-| **SM10's sub-phase letters are not execution order**: SM10.B.7 and SM10.B.10 consume SM10.E.D1's image, and SM10.C bumps the version and cuts the tag before SM10.E runs — a backward dependency the project's own plan rule forbids, and one a sequencing note does not fix | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` §3 | **RR7.5** plus register bootpath findings 40–42; the re-sequence touches 532 `SM10.<letter>` citations across 60 files, so it is a phase of its own, not a passing edit.  Found by review on PR #882 (v0.34.27) |
+| The boot path does not exist: no `[[bin]]`, no aarch64 Lean object code, no `libsele4n.a`, no bare-metal runtime hosting, no `@[export] lean_kernel_main` | `rust/`, `lakefile.toml`, `SeLe4n/Platform/FFI.lean` | SM10.1.1 |
+| `lean_kernel_main`'s `initialiseKernelState` install would run outside the kernel-entry lock and after the secondaries are released — the lost-commit shape | `rust/sele4n-hal/src/kernel_entry.rs`, `SeLe4n/Platform/FFI.lean` | SM10.1 (order or bracket; §3) |
+| WS-RA frame delivery: the staged return frame is not delivered until the context restore goes live | `SeLe4n/Kernel/Concurrency/ContextRestoreSeam.lean` | SM10.1 (§2) |
+| Fine-lock migration **Track D** — commit partitioning, which that plan seam-gates to SM10.1; the one part of the fine-lock work WS-RR cannot land | [`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`](planning/SMP_FINE_LOCK_MIGRATION_PLAN.md) | SM10.1, registered as a named dependency by RR6.19 |
+| `UncoveredLockDomain.taintTablePerKeyStore` names SM10.1 as owner; the SM10 plan carries no sub-task for it | `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` | SM10.1 — RR0.11 routes the plan-side row |
+| Six WS-SM phases (SM1, SM6..SM10) have **no** machine-checked theorem inventory, so they contribute zero to `smpInventoriedTheoremCount` (902 of 1111 registered entries are propositions; the six phases add neither) | `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` | SM10.3.13 |
+| Hardware-validation scripts SM10.3.D1–D7 and the SM10.1.1 image build, each a runnable procedure `docs/HARDWARE_TESTING.md` documents with no script | `scripts/` | SM10.3, SM10.1.1 |
+| Tier-4 acceptance gates have never executed: they need the bootable image, so `SMP_RELEASE_CLOSURE_PLAN.md` §2's "acceptance gates for SM0..SM9 green" is **unmet**, not merely unverified | `scripts/test_tier4_smp_bootcheck.sh` | SM10.1, immediately after D1 |
+| SM10.6.3 archives the WS-RC artefacts; its still-open items (R7, R14) migrate here rather than into the archive | `docs/audits/` | SM10.6.3 |
+| **SM10's sub-phases were lettered, and the letters were not execution order** — SM10.3.7 and SM10.3.10 consume the bootable image, and the version bump and tag ran before it existed | Closed at **v0.34.36**: re-sequenced into numbered sub-phases SM10.1..SM10.6 with the image build first and the tag last, and the old boot-path phase split from the validation that consumes it.  Old letters are preserved in historical prose and mapped in the plan's §3 table | **CLOSED** — no longer RR7.5's; found by review on PR #882 (v0.34.27), fixed at v0.34.36 |
 
 ### C — deferrals with no pre-v1.0.0 owner
 
@@ -7222,10 +7222,10 @@ constrains what v1.0.0 may claim, and RR8.4's hand-off check reads this table.
 | **WS-SL** — the scheduler liveness trace step relation (`stepPrecondition` / `stepPost` / `ValidTrace`) is `bootCoreId`-pinned, so no `ValidTrace` exhibits a step on a secondary core; and `hBandProgress` is an externalized deployment hypothesis whose FIFO/bucket-rotation composition was never built | Model completeness, not soundness: the per-core liveness *predicates* were lifted by SM5.J, and the capstones state their hypothesis explicitly.  v1.0.0 must therefore not claim unconditional SMP starvation-freedom | **WS-SL**, post-v1.0.0 (section below) |
 | WS-RC **R7** — CDT `descendantsOf` fuel-sufficiency proofs; `descendantsOf_fuel_sufficient` proves only `edges.length ≥ 0` | Proof hygiene: CDT operations are sound under the fuel-bound discipline; the sufficiency theorem is defence in depth | post-v1.0.0 hardening |
 | WS-RC **R14** — the v1.x backlog the WS-RC plan deferred | Explicitly scoped out of v1.0 closure by that plan | post-v1.0.0 |
-| WS-RC R4's two deliberate follow-on type-level promotions, registered only inside [`docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`](planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md), a plan marked COMPLETE | Both are strengthenings of an already-sound surface | post-v1.0.0 hardening; SM10.C.3 archives the plan, so the items must not travel with it |
+| WS-RC R4's two deliberate follow-on type-level promotions, registered only inside [`docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`](planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md), a plan marked COMPLETE | Both are strengthenings of an already-sound surface | post-v1.0.0 hardening; SM10.6.3 archives the plan, so the items must not travel with it |
 | `REPLY_OBJECTS_COMPLETION_PLAN.md`'s deferred follow-up item 4 (reply-object lock stress) named a tracking home that carries no entry for it | The plan it named is a live plan; the item simply never arrived there | post-v1.0.0; the reply-object plan's status header now points here |
 | Two SM2.C debts raised by SM8.D's review rounds were assigned to a phase already CLOSED and appear in no live plan | Both are completeness strengthenings of the RwLock surface RR6 is already reworking | RR6 — if RR6 does not absorb them, RR6.18 re-registers them here |
-| The v0.32.148 queued-lock closure — [`docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md`](planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md)'s SM2.E remediation, whose header and two-thirds of its body still describe the MCS queue that cut deleted — was recorded in an unrelated plan and never reached this file | Bookkeeping, not behaviour: the closure itself is real and in the tree, and the shipped artefact is a ticket lock | recorded here by RR0.9; the plan-side prose is SM10.A's work-list (register §7 row 33) |
+| The v0.32.148 queued-lock closure — [`docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md`](planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md)'s SM2.E remediation, whose header and two-thirds of its body still describe the MCS queue that cut deleted — was recorded in an unrelated plan and never reached this file | Bookkeeping, not behaviour: the closure itself is real and in the tree, and the shipped artefact is a ticket lock | recorded here by RR0.9; the plan-side prose is SM10.2's work-list (register §7 row 33) |
 | Idle TCBs carry `ObjId.sentinel` cspace/vspace roots | The idle thread never faults a user mapping; it becomes live work when RR5.10 installs idle threads on the production path, and RR5.10 must not close over it | RR5.10 must either give idle TCBs real roots or re-register this row |
 | SM9.D.11 — taint propagation at capability transfer shipped as a scope reduction, leaving `capabilityBadgeChannel_out_of_scope`: a registered false-negative channel in the causal detector | A false *negative* in a detector, not a policy bypass | post-v1.0.0; RR0.11 routes the plan-side row |
 | The SM8 class-C follow-on: the CC-1 capacity figure is stated in two places rather than single-sourced | Cosmetic duplication of a bound both sites agree on | post-v1.0.0 |
@@ -12559,7 +12559,7 @@ portfolio also has a narrative section above with full gate results.
 
 | Portfolio | Version | Scope | Workstreams |
 |-----------|---------|-------|-------------|
-| **WS-RA** | v0.33.37–v0.33.38 | Syscall return ABI — the kernel returns seL4's exact ARM64 frame (`x0` result, `x1` MessageInfo offset-error label, `x2`–`x5` message registers); `SYSCALL_ABI_VERSION = 2` pinned in Lean, `sele4n-types` and the HAL; blocked-waiter staging + per-arm return-shape family. **COMPLETE** (frame delivery at context restore owed to SM10.E) | RA.A–RA.B |
+| **WS-RA** | v0.33.37–v0.33.38 | Syscall return ABI — the kernel returns seL4's exact ARM64 frame (`x0` result, `x1` MessageInfo offset-error label, `x2`–`x5` message registers); `SYSCALL_ABI_VERSION = 2` pinned in Lean, `sele4n-types` and the HAL; blocked-waiter staging + per-arm return-shape family. **COMPLETE** (frame delivery at context restore owed to SM10.1) | RA.A–RA.B |
 | **WS-RC** | v0.30.11–v0.31.2 | Pre-1.0 audit remediation of the v0.30.11 baseline — R0–R5 landed (R3 boot VSpace production wiring, R4 type-level structural promotion, R5 scheduler/lifecycle symmetry); R6–R14 absorbed into WS-SM per SM0.Q. **CLOSED** | R0–R5 |
 | **WS-AN** | v0.30.6–v0.30.11 | Comprehensive audit remediation of the v0.30.6 baseline — 12 phases and the v0.30.11 re-audit cut. **PORTFOLIO COMPLETE** | AN0–AN12 |
 | **WS-AM** | v0.30.0 | AK7 cascade hygiene closure (post-delivery cascade continuation). **COMPLETE** | AM |

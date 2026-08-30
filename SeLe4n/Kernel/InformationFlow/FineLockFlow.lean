@@ -3035,7 +3035,7 @@ def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
    (.dynamicPipChain, "WS-RR RR7.7 (fine-lock Track C)"),
    (.queueOwnershipProtocol, "WS-RR RR7.32"),
    (.capTransferReceiverCnode, "WS-RR RR7.7 (fine-lock Track B)"),
-   (.taintTablePerKeyStore, "SM10.E (fine-lock Track D)"),
+   (.taintTablePerKeyStore, "SM10.1 (fine-lock Track D)"),
    (.cdtNodeAllocation, "WS-RR RR7.7 (fine-lock Track B)")]
 
 /-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
@@ -3088,7 +3088,7 @@ the direction this subsystem must never err in.  The same is true of
 `SystemState.objects` under `storeObject`, which is why the per-key realisation
 is a property of the *commit*, not of this field: a per-key taint store shipped
 on its own would leave the identical lost update reachable through the object
-store, so the two land together in the commit-partitioning cut (SM10.E / the
+store, so the two land together in the commit-partitioning cut (SM10.1 / the
 `SMP_FINE_LOCK_MIGRATION_PLAN` Track D) or neither does.
 
 **What this buys.**  The reviewer's ask on PR #873 was "implement that

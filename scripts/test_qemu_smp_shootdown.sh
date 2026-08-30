@@ -34,9 +34,9 @@
 #   and hold for ALL executions — the QEMU test is a complementary *runtime*
 #   spot-check with a real GIC delivering the SGIs.
 #
-# **Prerequisites (SM10.E)**:
+# **Prerequisites (SM10.1)**:
 #   * A bootable kernel-image `[[bin]]` target linking the Rust HAL against the
-#     Lean kernel object code (the recurring SM10.E closure item).
+#     Lean kernel object code (the recurring SM10.1 closure item).
 #   * A shootdown driver in the kernel image: two threads homed on different
 #     cores sharing a mapping, the initiator unmapping through the live
 #     `syscallDispatchCrossCoreEntry` seam, the target probing the stale VA,
@@ -76,7 +76,7 @@ fi
 # --------------------------------------------------------------------------
 # Pre-condition: the shootdown driver must be wired in the kernel image.
 # We detect it by the banner the driver emits.  At SM7.B the driver is NOT
-# present (it needs the SM10.E bootable kernel-image binary target), so this
+# present (it needs the SM10.1 bootable kernel-image binary target), so this
 # SKIPs.
 #
 # Capture `strings` output into a variable first, *then* grep it: under
@@ -89,7 +89,7 @@ KERNEL_STRINGS="$(strings "${KERNEL_IMAGE}" 2>/dev/null || true)"
 if ! grep -q "smp-test.*tlb-shootdown" <<<"${KERNEL_STRINGS}"; then
   echo "[SKIP] WS-SM SM7.B Tier-4: TLB shootdown driver not wired in kernel image"
   echo ""
-  echo "  Reason: exercising a real cross-core shootdown requires the SM10.E"
+  echo "  Reason: exercising a real cross-core shootdown requires the SM10.1"
   echo "          bootable kernel-image [[bin]] target (Rust HAL linked against"
   echo "          the Lean kernel object code) plus an in-image driver: a thread"
   echo "          on core 0 unmapping a page core 1 has cached, through the live"
@@ -103,7 +103,7 @@ if ! grep -q "smp-test.*tlb-shootdown" <<<"${KERNEL_STRINGS}"; then
   echo "            coalescingRound_restores_quiescent               (live-round capstone)"
   echo "          machine-checked in tests/SmpTlbShootdownSuite.lean."
   echo ""
-  echo "  When wired (SM10.E), this script will:"
+  echo "  When wired (SM10.1), this script will:"
   echo "    1. Boot QEMU virt -smp 4."
   echo "    2. Map a shared page; have core 1 touch it (cache the translation)."
   echo "    3. Have core 0 unmap it through the live dispatch seam; the round"

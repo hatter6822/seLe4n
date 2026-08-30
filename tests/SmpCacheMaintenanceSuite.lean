@@ -29,7 +29,7 @@ sub-tasks SM7.D.1–SM7.D.4):
 * **SM7.D.2** — data-cache maintenance by VA to the Point of Coherency is
   system-wide, with no target set to get wrong; and the *clean-to-PoU*
   obligation kernel code-write sites carry, which the re-type discharges
-  by emission (§3.13) and boot still owes (SM10.E).
+  by emission (§3.13) and boot still owes (SM10.1).
 * **SM7.D.3** — the DMA scope boundary, machine-checked as a tripwire.
 * **SM7.D.4** — `icacheCoherent_perCore`, the 14th
   `proofLayerInvariantBundle` conjunct, and its live-path preservation.
@@ -803,7 +803,7 @@ private def runCodeWriteObligationChecks : IO Unit := do
   -- The emission partition: the re-type's clean is live, boot's is not.
   assertBool "the re-type site's clean-to-PoU is EMITTED by a live transition"
     (kernelCodeWriteEmitted .retypeScrub)
-  assertBool "the boot-image site's emission is still pending (SM10.E)"
+  assertBool "the boot-image site's emission is still pending (SM10.1)"
     (!(kernelCodeWriteEmitted .bootImageLoad))
   assertBool "exactly one site still owes an emission"
     (kernelCodeWriteSites.filter (fun s => !kernelCodeWriteEmitted s) ==

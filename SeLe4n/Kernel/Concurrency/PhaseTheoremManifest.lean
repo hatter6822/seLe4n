@@ -381,7 +381,7 @@ theorem smpPhase_perCoreState_theoremCount_zero :
 
 /-- The six phases with no machine-checked theorem inventory contribute zero
     — an honest gap rather than an estimate.  Registered as debt in
-    `docs/WORKSTREAM_HISTORY.md` with closure target SM10.B.13. -/
+    `docs/WORKSTREAM_HISTORY.md` with closure target SM10.3.13. -/
 theorem smpPhase_unregistered_theoremCount_zero :
     smpPhaseTheoremCount .rustHal = 0
     ∧ smpPhaseTheoremCount .crossCoreIpc = 0
@@ -564,6 +564,54 @@ theorem censusCoversManifest :
         (fun n => ((smpPhaseTheoremManifest.filter
             (fun e => e.kind == PhaseInventoryKind.theoremInventory)).flatMap
               (·.inventories)).contains n) := by
+  decide
+
+/-- The census names are pairwise distinct.
+
+    Length-plus-membership is a statement about the *set* of names, and a set
+    is blind to a permutation: exchanging two entries' labels leaves it
+    satisfied.  Uniqueness is the half that makes the label a key at all —
+    without it `propsOf` could find a name twice and the first match would
+    silently decide which payload a phase was credited with. -/
+theorem censusInventoryNamesNodup :
+    (censusInventories.map (·.1)).Nodup := by
+  decide
+
+-- `decide` over fourteen inventories evaluates every registered list; the
+-- default recursion depth is not sized for that.
+set_option maxRecDepth 8000 in
+/-- **Each census name is bound to its own payload.**
+
+    `censusCoversManifest` proves the name set is right and
+    `censusInventoryNamesNodup` proves the names are keys, but neither says a
+    name sits beside the identifier list it names: swapping two tuples' labels
+    passes both while attributing each payload's proposition count to the
+    other inventory, and the per-phase literals could then be "corrected" to
+    the mismatched values with Lean and the generator both content.
+
+    This closes that by pinning the correspondence itself.  Each pair is
+    checked against the inventory's *own* length witness, so a swapped label
+    puts the wrong length beside the name and fails elaboration — the payload
+    is identified by something only the real inventory can supply, not by
+    repeating the list here. -/
+theorem censusPayloadsMatchTheirNames :
+    censusInventories.all (fun e =>
+      match e.1 with
+      | "lockSetTheorems"                 => e.2.2.length == lockSetTheorems.length
+      | "withLockSetTheorems"             => e.2.2.length == withLockSetTheorems.length
+      | "deadlockTheorems"                => e.2.2.length == deadlockTheorems.length
+      | "serializabilityTheorems"         => e.2.2.length == serializabilityTheorems.length
+      | "lockPrimitives"                  => e.2.2.length == lockPrimitives.length
+      | "perObjectLockTheorems"           => e.2.2.length == Model.perObjectLockTheorems.length
+      | "crossCoreWakeTheorems"           => e.2.2.length == crossCoreWakeTheorems.length
+      | "perCoreTimerTheorems"            => e.2.2.length == perCoreTimerTheorems.length
+      | "perCoreIdleTheorems"             => e.2.2.length == perCoreIdleTheorems.length
+      | "perCorePipTheorems"              => e.2.2.length == PriorityInheritance.perCorePipTheorems.length
+      | "perCoreDomainTheorems"           => e.2.2.length == perCoreDomainTheorems.length
+      | "perCoreCbsTheorems"              => e.2.2.length == perCoreCbsTheorems.length
+      | "perCoreInvariantSuiteTheorems"   => e.2.2.length == perCoreInvariantSuiteTheorems.length
+      | "perCoreWcrtTheorems"             => e.2.2.length == perCoreWcrtTheorems.length
+      | _                                 => false) := by
   decide
 
 /-- Does `n` end with every component of `want`?

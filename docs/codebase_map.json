@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr0-registration-plan-correction-cr1z0k",
-      "commit_sha": "f25090979af2f4d5a415a040e7e71727b3d93a6e",
-      "tree_sha": "41733ac96625308aee228cc77e134a41b06239dd",
-      "committed_at_utc": "2026-08-30T09:30:58+00:00"
+      "commit_sha": "17310bdc6dd0d45fb3926aae199977d0e163ad0a",
+      "tree_sha": "618d2e60a584b8225f6a044f97d2e24724295c99",
+      "committed_at_utc": "2026-08-30T10:12:31+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1b5a89f7938131ec5b7f26a13cffcde5ab1aa8b368c6d79d13ed775000976e49"
+    "source_digest": "b6fa78bb6d5b4bbb016b8d5ea51f61c12e0f88f63e7ae8c6ea6740d30c9014fd"
   },
   "summary": {
     "module_count": 357,
-    "declaration_count": 17080
+    "declaration_count": 17082
   },
   "readme_sync": {
-    "version": "0.34.35",
+    "version": "0.34.36",
     "lean_toolchain": "v4.28.0",
     "production_files": 288,
-    "production_loc": 289618,
+    "production_loc": 289666,
     "test_files": 69,
     "test_loc": 64535,
-    "proved_theorem_lemma_decls": 9685,
+    "proved_theorem_lemma_decls": 9687,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -46653,7 +46653,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.PhaseTheoremManifest",
       "path": "SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean",
-      "declaration_count": 37,
+      "declaration_count": 39,
       "declarations": [
         {
           "kind": "namespace",
@@ -46971,9 +46971,24 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "censusInventoryNamesNodup",
+          "line": 576,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "censusPayloadsMatchTheirNames",
+          "line": 597,
+          "called": [
+            "all",
+            "length"
+          ]
+        },
+        {
           "kind": "def",
           "name": "censusNameMatches",
-          "line": 576,
+          "line": 624,
           "called": [
             "length"
           ]
@@ -46981,7 +46996,7 @@
         {
           "kind": "def",
           "name": "censusResolve",
-          "line": 595,
+          "line": 643,
           "called": [
             "censusNameMatches",
             "filter",
@@ -46991,14 +47006,14 @@
         },
         {
           "kind": "constant",
-          "name": "<anonymous:constant:623>",
-          "line": 623,
+          "name": "<anonymous:constant:671>",
+          "line": 671,
           "called": []
         },
         {
           "kind": "def",
           "name": "censusIndex",
-          "line": 627,
+          "line": 675,
           "called": [
             "censusInventories",
             "censusResolve",

@@ -2487,7 +2487,7 @@ theorem bootFromPlatform_perCoreICache_eq (config : PlatformConfig) :
 /-- WS-SM SM7.D.1: boot owes no instruction-cache maintenance — it fills no
 cache and destroys no mapping, so the emission ledger is the empty default.
 (When the boot image itself becomes real memory, the *data*-side clean to the
-Point of Unification lands with SM10.E — see the SM7.D obligation registered in
+Point of Unification lands with SM10.1 — see the SM7.D obligation registered in
 `Architecture/CacheModel.lean`.) -/
 theorem bootFromPlatform_pendingIcacheMaintenance_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.pendingIcacheMaintenance =

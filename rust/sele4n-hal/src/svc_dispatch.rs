@@ -448,7 +448,7 @@ pub enum SvcOutcome {
     Frame([u64; 6]),
     /// The caller blocked: **no return frame exists for it** (its stale
     /// registers are not a return value; the real frame is staged by the
-    /// unblocking arm and delivered by the SM10.E context restore).  This
+    /// unblocking arm and delivered by the SM10.1 context restore).  This
     /// variant is that seam's trap-layer hook — when
     /// `contextRestoreSeamLive` flips, the trap layer installs a runnable
     /// successor's context here.  Until then the hardware `eret`s back
@@ -494,7 +494,7 @@ const _: () = assert!(BLOCKED_RESUME_SENTINEL_LABEL > 57);
 ///
 /// A blocked caller has **no** return value — its real frame is staged
 /// into its TCB by the unblocking arm (plan §4d) and delivered by the
-/// SM10.E context restore.  Until `contextRestoreSeamLive` flips, the
+/// SM10.1 context restore.  Until `contextRestoreSeamLive` flips, the
 /// trap path cannot install a successor, so `trap.S` restores and
 /// `eret`s through the blocked caller's own saved frame; left
 /// untouched, those registers are the caller's request (`x1` typically
@@ -505,7 +505,7 @@ const _: () = assert!(BLOCKED_RESUME_SENTINEL_LABEL > 57);
 /// [`BLOCKED_RESUME_SENTINEL_LABEL`] decodes as `UnknownKernelError`,
 /// never as success and never as any kernel-emitted error.
 ///
-/// The SM10.E context restore REPLACES the write with the successor's
+/// The SM10.1 context restore REPLACES the write with the successor's
 /// frame install; the sentinel is the interim occupant of that seam,
 /// not part of the verified return convention (the Lean model stages
 /// real frames only — `SyscallOutcome.mailboxFrame .blocks = .zero`).
@@ -537,7 +537,7 @@ pub fn blocked_resume_sentinel_regs() -> [u64; 6] {
 ///                                   exists (the trap layer poisons the
 ///                                   frame with the fail-closed
 ///                                   [`blocked_resume_sentinel_regs`]
-///                                   until the SM10.E context restore
+///                                   until the SM10.1 context restore
 ///                                   installs a successor instead).
 ///   `Err(error)`                  — prefilter rejection (invalid syscall
 ///                                   id / argument count); the trap layer
@@ -946,7 +946,7 @@ mod tests {
     /// userspace decoder reads the sentinel as `UnknownKernelError`, an
     /// error the verified kernel never emits.  This is the property the
     /// trap-layer write exists for: a blocked caller that the hardware
-    /// resumes prematurely (the SM10.E context restore is not live)
+    /// resumes prematurely (the SM10.1 context restore is not live)
     /// observes a fail-closed error, never a false success built from its
     /// own stale request registers.
     #[test]

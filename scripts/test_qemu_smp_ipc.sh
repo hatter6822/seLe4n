@@ -37,9 +37,9 @@
 #   and hold for ALL executions — the QEMU test is a complementary *runtime*
 #   spot-check.
 #
-# **Prerequisites (SM10.E)**:
+# **Prerequisites (SM10.1)**:
 #   * A bootable kernel-image `[[bin]]` target linking the Rust HAL against the
-#     Lean kernel object code (the recurring SM10.E closure item).
+#     Lean kernel object code (the recurring SM10.1 closure item).
 #   * A cross-core IPC driver in the kernel image: two threads homed on
 #     different cores performing a Call/Reply handshake through the live
 #     `syscallDispatchCrossCoreEntry` seam, emitting the banner below.
@@ -84,7 +84,7 @@ fi
 # --------------------------------------------------------------------------
 # Pre-condition: the cross-core IPC driver must be wired in the kernel image.
 # We detect it by the banner the driver emits.  At SM6.F the driver is NOT
-# present (it needs the SM10.E bootable kernel-image binary target), so this
+# present (it needs the SM10.1 bootable kernel-image binary target), so this
 # SKIPs.
 #
 # Capture `strings` output into a variable first, *then* grep it: under
@@ -98,7 +98,7 @@ KERNEL_STRINGS="$(strings "${KERNEL_IMAGE}" 2>/dev/null || true)"
 if ! grep -q "smp-test.*cross-core-ipc" <<<"${KERNEL_STRINGS}"; then
   echo "[SKIP] WS-SM SM6.F.5: cross-core IPC driver not wired in kernel image"
   echo ""
-  echo "  Reason: exercising a real cross-core IPC handshake requires the SM10.E"
+  echo "  Reason: exercising a real cross-core IPC handshake requires the SM10.1"
   echo "          bootable kernel-image [[bin]] target (Rust HAL linked against the"
   echo "          Lean kernel object code) plus an in-image driver: a client on"
   echo "          core 0 Call-ing an endpoint whose server is homed on core 1,"
@@ -113,7 +113,7 @@ if ! grep -q "smp-test.*cross-core-ipc" <<<"${KERNEL_STRINGS}"; then
   echo "          machine-checked in tests/SmpIpcSuite.lean and"
   echo "          tests/SmpNotificationSuite.lean."
   echo ""
-  echo "  When wired (SM10.E), this script will:"
+  echo "  When wired (SM10.1), this script will:"
   echo "    1. Boot QEMU virt -smp 4."
   echo "    2. Have a client on core 0 Call an endpoint whose server is homed on"
   echo "       core 1; the kernel wakes the server on core 1 and fires the"

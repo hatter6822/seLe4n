@@ -746,7 +746,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 -- Round 17: the third per-core scheduler slot.  The gate checked `current` and
 -- the run queues; the replenish queue is the one it could not see.
 -- Round 18: the model switches threads; the runtime has no restore seam yet.
--- Registered as a checked partition so SM10.E cannot wire one silently.
+-- Registered as a checked partition so SM10.1 cannot wire one silently.
 #check @SeLe4n.Kernel.PriorityInheritance.ContextSwitchSite
 #check @SeLe4n.Kernel.PriorityInheritance.contextSwitchSites
 #check @SeLe4n.Kernel.PriorityInheritance.contextSwitchSites_complete
@@ -4953,7 +4953,7 @@ private def runVacatedCoreChecks : IO Unit := do
   -- Review round 18: the model dispatches a successor; hardware does not yet
   -- know.  No context-switch site restores the incoming context before
   -- exception return, so the register is the whole list — and stays so until
-  -- SM10.E wires the first one, at which point this assertion fails.
+  -- SM10.1 wires the first one, at which point this assertion fails.
   assertBool "the context-restore obligation is registered for all four sites"
     (decide (SeLe4n.Kernel.PriorityInheritance.contextSwitchSites.length = 4) &&
      SeLe4n.Kernel.PriorityInheritance.contextSwitchSites.all
