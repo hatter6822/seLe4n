@@ -132,20 +132,6 @@ _IDENT = r"[A-Za-z_][A-Za-z0-9_'!?]*"
 _QUALIFIED = _IDENT + r"(?:\." + _IDENT + r")*"
 
 
-def _name_alternatives(inv: str) -> str:
-    """`Foo.xTheorems` -> `(?:Foo\.xTheorems|xTheorems)`.
-
-    A qualified witness may refer to its own inventory either way: written as
-    `theorem Foo.xTheorems_count : Foo.xTheorems.length = N` at the top level,
-    or as `xTheorems.length` from inside `namespace Foo`.  Both name the same
-    list, so both are accepted.
-    """
-    bare = inv.rsplit(".", 1)[-1]
-    if bare == inv:
-        return re.escape(inv)
-    return r"(?:" + re.escape(inv) + r"|" + re.escape(bare) + r")"
-
-
 # `<inventory>_identifiers_nodup` — the discovery key.
 NODUP_RE = re.compile(
     r"^" + _LEAD + _MODIFIERS + _THEOREM + r"\s+(" + _QUALIFIED + r")_identifiers_nodup\b",
@@ -154,11 +140,26 @@ NODUP_RE = re.compile(
 
 
 def _count_re(inv: str) -> re.Pattern[str]:
-    """`theorem <inv>_count : <inv>.length = N` — statement may wrap a line."""
-    alt = _name_alternatives(inv)
+    """`theorem <inv>_count : <inv>.length = N` — statement may wrap a line.
+
+    `inv` is the name **as written** on the nodup witness, and the size
+    witness must repeat it exactly.  Accepting a bare `<tail>_count` for a
+    qualified `Foo.<tail>_identifiers_nodup` looks harmless — inside
+    `namespace Foo` that is how the same list is spelled — but this pattern
+    has no namespace context, so it also matched a bare `<tail>_count`
+    declared inside `namespace Bar`, and bound Bar's length to Foo's
+    inventory: a wrong number, reported silently, which is the one outcome
+    this gate exists to prevent.  Tracking Lean's namespace stack here would
+    make the bare form safe, and a subtly wrong namespace tracker would
+    reintroduce exactly this failure with more machinery in the way.  So the
+    size witness must match the qualification of the nodup witness it belongs
+    to; anything else is "no readable size witness", a hard failure naming the
+    declaration it wanted.
+    """
+    name = re.escape(inv)
     return re.compile(
-        r"^" + _LEAD + _MODIFIERS + _THEOREM + r"\s+" + alt + r"_count\b\s*:\s*"
-        r"(?:\r?\n\s*)?" + alt + r"\.length\s*=\s*(\d+)",
+        r"^" + _LEAD + _MODIFIERS + _THEOREM + r"\s+" + name + r"_count\b\s*:\s*"
+        r"(?:\r?\n\s*)?" + name + r"\.length\s*=\s*(\d+)",
         re.M,
     )
 
@@ -789,18 +790,24 @@ def _self_test() -> int:
           any("'xTheorems'" in e and "claimed by no" in e for e in errs),
           "; ".join(errs))
 
-    # 21. The same inventory written the other legal way: the witness carries
-    #     the namespace but the list is named bare, as it would be from inside
-    #     `namespace Foo`.  Both spellings name one list, so both must resolve
-    #     to the same inventory rather than one of them reading as sizeless.
+    # 21. A bare size witness must NOT satisfy a qualified nodup witness.  It
+    #     reads as the same list only inside the matching namespace, and this
+    #     parser has no namespace context: accepting the bare form also
+    #     accepted a `<tail>_count` declared under `namespace Bar`, binding
+    #     Bar's length to Foo's inventory — a wrong number reported silently,
+    #     which is worse than any omission.  The mismatch must surface as a
+    #     hard "no readable size witness" failure instead.  (Codex review
+    #     round 4, PR #882 — a regression the round-3 fix introduced.)
     src = dict(_CLEAN_SOURCES)
     src["I.lean"] = (
         "theorem Foo.yTheorems_identifiers_nodup : True := trivial\n"
-        "theorem yTheorems_count : yTheorems.length = 6 := by decide\n")
-    _, errs = _run(src, _CLEAN_MANIFEST)
-    check("a qualified witness finds its bare size witness",
-          any("'yTheorems'" in e and "claimed by no" in e for e in errs)
-          and not any("no readable size witness" in e for e in errs),
+        "namespace Bar\n"
+        "theorem yTheorems_count : yTheorems.length = 9999 := by decide\n"
+        "end Bar\n")
+    built, errs = _run(src, _CLEAN_MANIFEST)
+    check("a foreign bare size witness does not satisfy a qualified inventory",
+          any("no readable size witness" in e for e in errs)
+          and not any("9999" in str(built) for _ in [0]),
           "; ".join(errs))
 
     failed = [c for c in cases if not c[1]]

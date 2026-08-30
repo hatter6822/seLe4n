@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr0-registration-plan-correction-cr1z0k",
-      "commit_sha": "0f2c5a4016d693a64ab38562509eb7afdab63fd5",
-      "tree_sha": "aae278ca79e0ac4b089ada2dcc3d99d146449b02",
-      "committed_at_utc": "2026-08-30T06:33:37+00:00"
+      "commit_sha": "79ecd97c48181c4cbbdfc7f4052e84d54737a7cf",
+      "tree_sha": "222d86177ed78ebfb091541dcb4c8e3b88c059ee",
+      "committed_at_utc": "2026-08-30T07:04:50+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 17080
   },
   "readme_sync": {
-    "version": "0.34.29",
+    "version": "0.34.30",
     "lean_toolchain": "v4.28.0",
     "production_files": 288,
     "production_loc": 289615,

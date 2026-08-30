@@ -1,3 +1,45 @@
+## v0.34.30 — the fix that widened a match too far; Codex review round 4
+
+One finding, and it is a regression `v0.34.29` introduced one commit earlier.
+
+**A bare size witness could belong to another namespace.**  Round 3 taught
+discovery to see a qualified nodup witness (`theorem
+Foo.xTheorems_identifiers_nodup`), and — reasoning that inside `namespace Foo`
+the same list is spelled bare — also let the *size* witness be found under
+either spelling.  That widening had no namespace context behind it.  A bare
+`xTheorems_count` declared inside `namespace Bar`, elsewhere in the same file,
+matched too, and the gate recorded **Bar's length for Foo's inventory**: a
+wrong number, reported silently, with `--check` green.  Reproduced exactly as
+the reviewer described before fixing — the fixture returned
+`{'xTheorems': {'count': 9999}}` and an empty error list.
+
+Silently wrong is worse than any omission this gate can produce, and it is
+precisely the outcome the module exists to prevent, so the remedy is the
+fail-closed one of the reviewer's two: **the size witness must repeat the
+qualification of the nodup witness it belongs to.**  The same fixture now
+yields no inventory and a hard error naming the declaration it wanted.
+
+The alternative — parse Lean's namespace stack and make the bare form provably
+safe — was rejected deliberately.  It admits one legal spelling no inventory
+in this tree uses, at the cost of a hand-written `namespace`/`section`/`end`
+tracker whose own subtle bug would reintroduce this identical failure with
+more machinery hiding it.  A gate that refuses what it cannot verify is doing
+its job; a gate that guesses is the thing being fixed.  All 16 real
+inventories write both witnesses bare in the same namespace and are unaffected
+— for a bare nodup witness the matcher is byte-for-byte what it was before
+round 3.
+
+Round 3's actual fix stands: a qualified inventory is still *discovered*, so
+it can no longer sit unclaimed while Tier 0 reports PASS.  Only the size
+witness tightened.
+
+Witness 21 is inverted to pin the new behaviour — it asserts the foreign bare
+count is refused, and fails if the bare alternative is reinstated.  23
+witnesses, all mutation-tested.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
 ## v0.34.29 — a plan that lists what a registry already knows; Codex review round 3
 
 Three findings on PR #882, all verified, all real.  One is the third
