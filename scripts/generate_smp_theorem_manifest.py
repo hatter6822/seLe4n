@@ -60,6 +60,7 @@ import json
 import os
 import pathlib
 import re
+import subprocess
 import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -67,7 +68,13 @@ MANIFEST_JSON = REPO_ROOT / "docs" / "smp_theorem_manifest.json"
 LEAN_MANIFEST = (
     REPO_ROOT / "SeLe4n" / "Kernel" / "Concurrency" / "PhaseTheoremManifest.lean"
 )
-LEAN_ROOTS = ("SeLe4n",)
+# Deliberately not a root list.  The gate's guarantee is repository-wide --
+# "an inventory no phase claims fails Tier 0" -- and a hard-coded `SeLe4n/`
+# quietly narrowed that to production source, so a phase-owned acceptance
+# inventory under `tests/`, or a root module, could sit unclaimed while
+# `--check` reported PASS.  Every tracked `.lean` file is scanned instead; the
+# enumeration comes from the git index, so it is what is being committed.
+LEAN_SKIP_PREFIXES = (".lake/", "docs/dev_history/")
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import lean_code_view  # noqa: E402  (needs the path insert above)
@@ -312,10 +319,16 @@ def read_code(path: pathlib.Path) -> str:
 
 
 def lean_files() -> list[pathlib.Path]:
-    out: list[pathlib.Path] = []
-    for root in LEAN_ROOTS:
-        out.extend(sorted((REPO_ROOT / root).rglob("*.lean")))
-    return out
+    """Every tracked `.lean` file, from the index."""
+    try:
+        tracked = subprocess.run(
+            ["git", "ls-files", "-z", "--", "*.lean"], cwd=REPO_ROOT,
+            capture_output=True, text=True, check=True).stdout.split("\0")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # No git: fall back to walking the tree rather than scanning nothing.
+        return sorted(REPO_ROOT.rglob("*.lean"))
+    return [REPO_ROOT / rel for rel in sorted(x for x in tracked if x)
+            if not rel.startswith(LEAN_SKIP_PREFIXES)]
 
 
 def discover_in(sources: dict[str, str]) -> tuple[dict[str, dict[str, object]], list[str]]:
@@ -1158,6 +1171,24 @@ def _self_test() -> int:
               any("'\u00abodd Theorems\u00bb'" in e and "claimed by no" in e
                   for e in errs),
               "; ".join(errs))
+
+    # The *enumeration*, not the parser.  Every witness above drives
+    # `discover_in` over fixtures, so none of them could see that `lean_files()`
+    # only ever offered it `SeLe4n/`: an inventory under `tests/` or at the
+    # root was never presented to discovery at all, and the repository-wide
+    # completeness guarantee was quietly a production-source guarantee.
+    scanned = {str(f.relative_to(REPO_ROOT)) for f in lean_files()}
+    check("the Lean scan reaches beyond the production source tree",
+          any(r.startswith("tests/") for r in scanned)
+          and any(r.startswith("SeLe4n/") for r in scanned),
+          f"{len(scanned)} files, "
+          f"{sum(1 for r in scanned if r.startswith('tests/'))} under tests/")
+    check("root-level Lean modules are scanned",
+          any("/" not in r for r in scanned),
+          "no root module enumerated")
+    check("build output is not scanned",
+          not any(r.startswith(".lake/") for r in scanned),
+          "a .lake path is being scanned")
 
     failed = [c for c in cases if not c[1]]
     for name, ok, detail in cases:

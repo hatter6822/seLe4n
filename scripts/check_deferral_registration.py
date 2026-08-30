@@ -94,8 +94,31 @@ REGISTER_RE = re.compile(
     r"Registered debt index|WORKSTREAM_HISTORY", re.I
 )
 
-# `row 29`, `rows 24-26` — the citation form every re-pointed site uses.
-ROW_CITE_RE = re.compile(r"\brows?\s+(\d+)", re.I)
+# `row 29`, `rows 24-26`, `rows 24, 25 and 31` — the citation forms the
+# re-pointed sites use.  Capturing only the first number made a range's other
+# members unchecked: `rows 24-26` passed while 25 and 26 were absent from the
+# register, which is the half of the citation a reader actually follows.
+ROW_CITE_RE = re.compile(
+    r"\brows?\s+(\d+(?:\s*(?:[-\u2013]|,|and)\s*\d+)*)", re.I)
+_ROW_RANGE_RE = re.compile(r"(\d+)\s*[-\u2013]\s*(\d+)")
+# A range wider than this is prose that happens to contain two numbers, not a
+# citation; expanding it would invent hundreds of row numbers to check.
+MAX_ROW_SPAN = 100
+
+
+def cited_rows(blob: str) -> list[int]:
+    """Every row number a citation names, ranges expanded."""
+    out: list[int] = []
+    for m in ROW_CITE_RE.finditer(blob):
+        for part in re.split(r"\s*(?:,|and)\s*", m.group(1)):
+            rng = _ROW_RANGE_RE.fullmatch(part.strip())
+            if rng:
+                lo, hi = int(rng.group(1)), int(rng.group(2))
+                out.extend(range(lo, hi + 1) if lo <= hi <= lo + MAX_ROW_SPAN
+                           else (lo, hi))
+            elif part.strip().isdigit():
+                out.append(int(part.strip()))
+    return out
 
 REGISTER_PATH = "docs/WORKSTREAM_HISTORY.md"
 _REGISTER_ROW_RE = re.compile(r"^\|\s*(\d+)\s*\|\s*`([^`]+)`", re.M)
@@ -152,8 +175,9 @@ def _flatten(lines: list[str]) -> tuple[str, list[int]]:
 def scan_text(rel: str, text: str, register: RegisterIndex | None = None) -> list[str]:
     """Return one finding per untracked claim that is not properly registered.
 
-    A claim is compliant when it cites the register **and**, if it names a
-    `row N`, that row exists in the register's enumerated table.  Citing the
+    A claim is compliant when it cites the register **and**, if it names any
+    `row N` — including every member of a range like `rows 24-26` — that row
+    exists in the register's enumerated table.  Citing the
     register while naming a row that does not exist is the failure this
     correlation closes: the diagnostic always said a deferral must be both
     cited and listed, and only the citation was ever checked.
@@ -171,8 +195,8 @@ def scan_text(rel: str, text: str, register: RegisterIndex | None = None) -> lis
             out.append(f"{rel}:{i + 1}: cites no register -- {lines[i].strip()}")
             continue
         if register is not None:
-            for row in ROW_CITE_RE.findall(context):
-                if int(row) not in register.rows:
+            for row in cited_rows(context):
+                if row not in register.rows:
                     out.append(
                         f"{rel}:{i + 1}: cites row {row}, which the register's "
                         f"enumerated table does not contain -- {lines[i].strip()}"
@@ -364,6 +388,30 @@ def _self_test() -> int:
     check("the register table is parsed into rows",
           reg.rows == {29: "scripts/check_deferral_registration.py"}, repr(reg.rows))
 
+    # A range's other members were unchecked: the citation form the comment
+    # above ROW_CITE_RE advertises was the one the pattern could not read.
+    check("a range citation expands to every member",
+          cited_rows("see rows 24-26") == [24, 25, 26]
+          and cited_rows("rows 3\u20135") == [3, 4, 5]
+          and cited_rows("rows 24, 25 and 31") == [24, 25, 31]
+          and cited_rows("row 29") == [29],
+          repr(cited_rows("see rows 24-26")))
+    check("a range whose later members are absent is caught",
+          any("does not contain" in f for f in scan_text(
+              "X.lean",
+              "-- no currently-active plan tracks it; WORKSTREAM_HISTORY.md rows 29-31.\n",
+              reg)),
+          "should fire: 30 and 31 are not in the register")
+    check("a range whose members all exist passes",
+          not scan_text(
+              "X.lean",
+              "-- no currently-active plan tracks it; WORKSTREAM_HISTORY.md rows 29-29.\n",
+              reg),
+          "should not fire")
+    check("an implausibly wide range is not expanded into hundreds of rows",
+          cited_rows("rows 1-100000") == [1, 100000],
+          repr(cited_rows("rows 1-100000"))[:60])
+
     # An assembly deferral is a deferral.  `//` is already stripped as comment
     # punctuation, so the only thing that ever excluded `boot.S` was the
     # suffix allowlist -- which is why the fix was to delete the allowlist
@@ -455,10 +503,16 @@ def main(argv: list[str]) -> int:
     findings: list[str] = []
     # Every enumerated row must name a file that still exists; a row pointing
     # at a deleted path is a deferral that has quietly lost its site.
+    indexed = set(tracked_files())
     for row, path in sorted(register.rows.items()):
-        if not (REPO_ROOT / path).is_file():
+        if path not in indexed:
+            # The index, for the same reason the sources are read from it: a
+            # commit that deletes a registered site while the working copy
+            # still holds the file would otherwise pass, and the deletion is
+            # what ships.
             findings.append(
-                f"{REGISTER_PATH}: row {row} cites `{path}`, which does not exist"
+                f"{REGISTER_PATH}: row {row} cites `{path}`, which the index "
+                f"does not track"
             )
     paths = files_to_scan()
     contents = indexed_contents(paths)
@@ -485,8 +539,9 @@ def main(argv: list[str]) -> int:
             print(f"  {f}")
         return 1
     print(f"PASS: {scanned} tracked text file(s) scanned **as staged**; every "
-          f"deferral cites the register, all cited rows exist among the "
-          f"{len(register.rows)} enumerated, and every row's file is present.")
+          f"deferral cites the register, every cited row (ranges expanded) "
+          f"exists among the {len(register.rows)} enumerated, and every row's "
+          f"path is tracked.")
     return 0
 
 

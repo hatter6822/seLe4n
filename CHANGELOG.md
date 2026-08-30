@@ -1,3 +1,59 @@
+## v0.34.39 — The bump that would have invalidated its own validation, and three gates that under-reached
+
+Six findings from the thirteenth review round, one of them a P1 ordering
+defect that sat inside the plan the numbering gate could not read.
+
+**The version bump moved ahead of the validation it certifies.**
+`scripts/bump_version.sh` rewrites `KERNEL_VERSION` in
+`rust/sele4n-hal/src/boot.rs` — a compiled-in `const` the kernel prints at
+boot — so `SM10.6.1` bumping *after* `SM10.5` validated meant the tagged
+v1.0.0 image was not the artefact the release evidence described. The bump is
+now `SM10.5.1`, first in the validation phase and explicitly followed by an
+image rebuild; `SM10.5`'s remaining rows shift by one, `SM10.6` becomes
+closure and tag only, and §3's mapping note carries the shift so prose written
+before this cut stays translatable.
+
+**`check_workstream_plan.py` now parses sub-phase-numbered plans.** Its ID
+model was `<PREFIX><phase>.<sub>`, which cannot read `SM10.3.14`, so the live
+41-row release schedule was reported as NOT CHECKED — honest, but not
+checking, and the ordering defect above lived there unseen. A phase key is now
+"everything left of the final `.N`", so one parser holds both shapes; plan
+depth is the deepest ID present, because in a three-level plan a *phase-map*
+row is shaped exactly like a two-level sub-task row. Citation matching,
+forward-dependency comparison and the deletion check are all depth-aware, and
+a phase key is no longer mistaken for a dangling sub-task citation. The
+release plan gains a phase map and an exact declared total (41), so the
+number, the map and the rows are held equal. Two witnesses replace the
+NOT-CHECKED one: a well-formed sub-phase-numbered plan passes, and one with a
+forward dependency plus a numbering gap is caught.
+
+**`check_deferral_registration.py`**: two more half-measures from the previous
+cut. Registered-row paths were still tested on disk, so staging a deletion of
+a registered site and recreating it in the working copy passed — the same
+index-vs-worktree split, one function further on; they are now checked against
+the index. And `ROW_CITE_RE` captured only the first number of a range, so
+`rows 24-26` was satisfied by row 24 alone while 25 and 26 could be absent —
+the comment above it had advertised ranges as supported since the rule was
+written. Ranges and comma lists now expand, with a span cap so prose
+containing two numbers is not read as a citation of hundreds of rows.
+
+**`generate_smp_theorem_manifest.py` scanned only `SeLe4n/`.** The gate's
+guarantee is repository-wide — an inventory no phase claims must fail Tier 0 —
+but `lean_files()` hard-coded the production tree, so a phase-owned acceptance
+inventory under `tests/`, or a root module, was never presented to discovery.
+It now enumerates every tracked `.lean` file from the index. Three witnesses
+pin the enumeration itself rather than the parser, which is why the earlier 35
+could not see this.
+
+Also: the release-validator script `scripts/test_v1_0_0_release_validation.sh`
+was still assigned to SM10.1 in prose while `SM10.5.2`'s row names it; it now
+belongs to SM10.5.2 with SM10.1.1's image as a prerequisite. And
+`check_workstream_plan.py`'s new `WS_PREFIX` constant was renamed
+`ID_ALPHA_PREFIX` — the internal-first naming gate reads `WS` as a workstream
+code, correctly.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+
 ## v0.34.38 — The swap my last cut did not close, a gate reading the wrong tree, and two more phases at zero
 
 Three findings from the twelfth review round. The first is a defect in

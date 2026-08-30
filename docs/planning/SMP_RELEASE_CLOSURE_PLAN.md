@@ -16,14 +16,13 @@
 > **Calendar estimate**: the original 4–6 weeks covered documentation only and
 > is superseded; the replacement is derived from the measured aarch64 surface
 > by **RR1.11** and lands here in the same cut
-> **Sub-task count**: 25-35 was the pre-audit forecast and is superseded; the
-> tables below enumerate **41** rows — SM10.1: 1, SM10.2: 9, SM10.3: 20,
-> SM10.4: 3, SM10.5: 3, SM10.6: 5 — across ~10-15 PRs, **plus the SM10.1
-> runtime port**, which RR1.11 decomposes into rows this line cannot
-> pre-count.  The figure is therefore a floor, not a total, which is why it is
-> not declared as an exact count: `scripts/check_workstream_plan.py` holds a
-> declared total to its phase map, and a number that is knowingly incomplete
-> must not be offered to a gate as if it were the record
+> **Sub-task count**: 41 enumerated rows across ~10-15 PRs (phase map in §3),
+> **plus the SM10.1 runtime port**, which RR1.11 decomposes into rows this
+> line cannot pre-count.  41 is therefore a floor on the work and an exact
+> count of the schedule as written — which is the thing a gate can hold, and
+> `scripts/check_workstream_plan.py` now does: the number, the phase map and
+> the rows must agree, so decomposing the runtime port means updating all
+> three in the same cut
 
 ## 1. Phase goal
 
@@ -83,11 +82,12 @@ between that surface and a running image, plus the remediation WS-RR owns.
 8. **website manifest** (SM10.2.9).
 9. **SMP test-suite completion** (SM10.3) over the suites and fixtures that
    already exist — see §3 SM10.3 for what is new and what is extension.
-10. **Version bump to v1.0.0** (SM10.6.1), synchronized across every site
-    `scripts/version_locations.sh` registers.
-11. **CHANGELOG closure** (SM10.6.2).
-12. **Archive WS-RC + WS-SM artefacts** (SM10.6.3, SM10.6.4).
-13. **Tag v1.0.0** (SM10.6.5).
+10. **Version bump to v1.0.0** (SM10.5.1), synchronized across every site
+    `scripts/version_locations.sh` registers — **before** the final
+    validation, because `KERNEL_VERSION` is compiled into the image.
+11. **CHANGELOG closure** (SM10.6.1).
+12. **Archive WS-RC + WS-SM artefacts** (SM10.6.2, SM10.6.3).
+13. **Tag v1.0.0** (SM10.6.4).
 
 ## 2. Dependencies
 
@@ -156,10 +156,34 @@ between that surface and a running image, plus the remediation WS-RR owns.
 > | `SM10.E.1`–`.3` (final QEMU validation) | **SM10.5** | Split out of the boot-path phase: it runs *on* the image, against completed suites |
 > | `SM10.C` (version bump + tag) | **SM10.6** | The tag is the last act, not the third |
 >
+> A second, smaller shift landed at `v0.34.39`: the version bump moved from
+> `SM10.6.1` into `SM10.5.1`, ahead of the validation it would otherwise have
+> invalidated, so `SM10.5`'s rows each shift by one and `SM10.6`'s each shift
+> down by one (old `SM10.6.2`–`.5` are now `SM10.6.1`–`.4`).  Prose written
+> before that cut — `CHANGELOG.md` entries in particular — keeps the old
+> numbers, as this project's rules require; translate with the sentence above.
+>
 > The one sub-phase that split is the old `SM10.E`, which carried both the
 > image build and the validation that consumes it — a phase that was its own
 > prerequisite.  Historical prose (`CHANGELOG.md`, `docs/dev_history/`,
 > `docs/audits/`) keeps the old letters by design.
+
+### Phase map
+
+The declared total, this map and the sub-task tables are held equal by
+`scripts/check_workstream_plan.py` (Tier 0).  Until `v0.34.39` the gate's
+ID model was two-level and could not read `SM10.3.14` at all, so it reported
+this plan as NOT CHECKED — and a version-bump ordering defect (see SM10.5)
+sat inside it unseen.
+
+| Phase | Scope | Subs | Est |
+|-------|-------|------|-----|
+| SM10.1 | Bootable image and boot path | 1 | XL |
+| SM10.2 | Documentation sync | 9 | L |
+| SM10.3 | Test suite completion | 20 | L |
+| SM10.4 | AN12-B inventory closure | 3 | M |
+| SM10.5 | Version bump and final release validation | 4 | L |
+| SM10.6 | Closure and tag | 4 | M |
 
 ### SM10.1 — Bootable image and boot path (1 sub-task + the runtime port)
 
@@ -293,28 +317,40 @@ restated here.
 | SM10.4.2 | Rename `smpLatentInventory` to `smpDischargedInventory` (or retire entirely) | (refactor) | M |
 | SM10.4.3 | 8-entry size witness retained | Theorem | T |
 
-### SM10.5 — Final release validation (3 sub-tasks)
+### SM10.5 — Version bump and final release validation (4 sub-tasks)
 
 Runs on the image `SM10.1` produced, against the suites `SM10.3` completed —
 which is why it sits here and not beside the image build.
 
+**The bump is inside this phase, and first, because it is not metadata.**
+`scripts/bump_version.sh` rewrites `KERNEL_VERSION` in
+`rust/sele4n-hal/src/boot.rs` — a compiled-in `const` the kernel prints at
+boot — so bumping *after* validation would tag an image that differs from the
+one validated, and the release evidence would be about a binary nobody ships.
+Bumping first costs an image rebuild; bumping last costs the meaning of the
+validation.  This phase therefore owns the bump, and `SM10.6` is closure and
+the tag only.
+
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| SM10.5.1 | Full QEMU `-smp 4` boot + workload run | `scripts/test_v1_0_0_release_validation.sh` | L |
-| SM10.5.2 | All 5 tiers green on the release candidate | (verification) | M |
-| SM10.5.3 | Release-candidate trace fixture commit | (1 file) | S |
+| SM10.5.1 | Version bump to v1.0.0 via `./scripts/bump_version.sh` (every site in `scripts/version_locations.sh`; §4), **then rebuild the image**, so `KERNEL_VERSION` in the validated artefact reads `1.0.0` | M |
+| SM10.5.2 | Full QEMU `-smp 4` boot + workload run, on the rebuilt v1.0.0 image | `scripts/test_v1_0_0_release_validation.sh` | L |
+| SM10.5.3 | All 5 tiers green on the release candidate | (verification) | M |
+| SM10.5.4 | Release-candidate trace fixture commit | (1 file) | S |
 
-### SM10.6 — Version bump + closure (5 sub-tasks)
+### SM10.6 — Closure and tag (4 sub-tasks)
+
+Nothing here changes a byte of the validated artefact — which is the point:
+every step that does now sits in `SM10.5`, ahead of the validation.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| SM10.6.1 | Version bump to v1.0.0 via `./scripts/bump_version.sh` (every site in `scripts/version_locations.sh`; §4) | M |
-| SM10.6.2 | CHANGELOG v1.0.0 closure entry | `CHANGELOG.md` | M |
-| SM10.6.3 | Move WS-RC artefacts to dev_history/audits/, plus `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (a WS-RC artefact that sits under `docs/planning/`) | (file moves) | S |
-| SM10.6.4 | Move WS-SM plan + per-phase docs to dev_history/planning/ — **19 file moves**, enumerated below | (19 file moves) | T |
-| SM10.6.5 | Tag v1.0.0 (maintainer-cut) | git tag | T |
+| SM10.6.1 | CHANGELOG v1.0.0 closure entry | `CHANGELOG.md` | M |
+| SM10.6.2 | Move WS-RC artefacts to dev_history/audits/, plus `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (a WS-RC artefact that sits under `docs/planning/`) | (file moves) | S |
+| SM10.6.3 | Move WS-SM plan + per-phase docs to dev_history/planning/ — **19 file moves**, enumerated below | (19 file moves) | T |
+| SM10.6.4 | Tag v1.0.0 (maintainer-cut) | git tag | T |
 
-**SM10.6.4 archive list.**  The plan carried "11 file moves" against a list
+**SM10.6.3 archive list.**  The plan carried "11 file moves" against a list
 that omitted SM9's own phase plan and every other WS-SM-adjacent planning
 document — so the sub-task that retires the workstream's paper trail would
 have left a third of it in `docs/planning/`, where a later reader would take
@@ -350,7 +386,7 @@ is only correct if the exclusions are as deliberate as the inclusions:
   still in `docs/planning/` when SM10 opens means RR3 did not close.
 - `HARDWARE_PARTITION_ISOLATION_PLAN.md` — post-v1.0.0 and explicitly out of
   scope for the WS-SM audit.  It stays live.
-- `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` — a WS-RC artefact; **SM10.6.3**
+- `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` — a WS-RC artefact; **SM10.6.2**
   moves it with the rest of WS-RC.
 
 No path in this list appears in `scripts/website_link_manifest.txt`, so the
@@ -373,7 +409,7 @@ literal version at all, and listed `CHANGELOG.md`, `docs/DEVELOPMENT.md`,
 which are version sites.  Following it literally would have failed
 `check_version_sync.sh`.
 
-SM10.6.1 runs the bump in one step:
+SM10.5.1 runs the bump in one step:
 
 ```bash
 ./scripts/bump_version.sh 1.0.0      # rewrites every registered site, then self-verifies
@@ -390,7 +426,7 @@ At `v0.34.29` that reads **36 sites** across 13 path patterns.  Quote the
 command, not the number: the count is a fact about the registry on the day
 you run it, which is exactly why it is not written down here.
 
-**What the bumper does not do** — the genuinely manual half of SM10.6.1,
+**What the bumper does not do** — the genuinely manual half of SM10.5.1,
 and the only part that belongs in a plan:
 
 | Manual step | Why the bumper cannot do it |
@@ -456,7 +492,7 @@ Plan: docs/dev_history/planning/SMP_MULTICORE_COMPLETION_PLAN.md
        docs/dev_history/planning/SMP_RELEASE_CLOSURE_PLAN.md (SM10)
        docs/dev_history/planning/SMP_RELEASE_READINESS_PLAN.md (WS-RR)
        plus the five WS-SM-adjacent plans and the register that
-       SM10.6.4 enumerates -- nineteen files in total.
+       SM10.6.3 enumerates -- nineteen files in total.
 ```
 
 **Why the tally is not written out here.**  Until `v0.34.26` this section
@@ -528,7 +564,7 @@ authors the remaining three under names that describe what they assert.
 | `SmpCompletionPhase.all_length = 11` | **landed** (RR0.6) | replaces `wsm_phase_count = 10`, which was both workstream-coded and wrong: SM0..SM10 is **eleven** phases, and SM0 is a phase whose theorems the manifest counts |
 | acceptance-gate count | SM10 | replaces `wsm_acceptance_gate_count`; name it for what it counts (e.g. `smpAcceptanceGate_count`) |
 | `smp_inventoried_theorem_count` | **landed** (RR0.6) | replaces `wsm_theorem_count`; a sum over `smpPhaseTheoremManifest`, not a literal — see §5 |
-| release witness | SM10.6.5 | replaces `v1_0_0_release_witness`, whose `v1_0_0` component the naming gate reads as a version stamped into an identifier; spell the version without the `v` prefix (e.g. `release_witness_1_0_0`) |
+| release witness | SM10.6.4 | replaces `v1_0_0_release_witness`, whose `v1_0_0` component the naming gate reads as a version stamped into an identifier; spell the version without the `v` prefix (e.g. `release_witness_1_0_0`) |
 
 The two landed markers live in
 `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` and are exercised by the
@@ -605,9 +641,11 @@ python3 ./scripts/generate_smp_theorem_manifest.py --check
 ./scripts/test_qemu_smp_bringup.sh
 ```
 
-`scripts/test_v1_0_0_release_validation.sh` — named by SM10.5.1 — **does not
-exist yet**; it is SM10.1's to write, and it cannot run before SM10.1.1
-produces the image.  It is listed as a deliverable rather than a command
+`scripts/test_v1_0_0_release_validation.sh` — named by SM10.5.2 — **does not
+exist yet**; it is **SM10.5.2's to write**, with `SM10.1.1`'s image as its
+prerequisite rather than its owner.  Assigning the script to SM10.1 (as this
+sentence did) would have had the boot-path phase build a validator for a
+release it does not perform.  It is listed as a deliverable rather than a command
 here, because a verification block that prints a command nothing can run
 teaches a reader the block is decorative.
 

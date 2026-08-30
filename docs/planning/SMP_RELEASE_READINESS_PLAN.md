@@ -169,7 +169,7 @@ register is accurate. RR0.1–RR0.3 close audit blocker 1's registration half.
 | RR0.4 | Rewrite `SMP_RELEASE_CLOSURE_PLAN.md` §1 phase goal against the real SM10.1 scope (§2.2 of the register) | (1 file) | S |
 | RR0.5 | Add the missing SM9 term to the §5 theorem tally | (1 file) | T |
 | RR0.6 | Replace the hand-summed `wsm_theorem_count` literal with a generated manifest, so the marker theorem cannot certify a stale number | `scripts/`, `SeLe4n/Kernel/Concurrency/` | M |
-| RR0.7 | Correct the SM10.6.4 archive list: add the SM9 plan, this plan, and the register; update the file-move count | (1 file) | T |
+| RR0.7 | Correct the SM10.6.3 archive list: add the SM9 plan, this plan, and the register; update the file-move count | (1 file) | T |
 | RR0.8 | Refresh the SM10.3 sub-task table against the tree — five of six suites and two of three fixtures already exist | (1 file) | S |
 | RR0.9 | Register the remaining unregistered debt the debt sweep found, each with an owner and closure target | `docs/WORKSTREAM_HISTORY.md` | M |
 | RR0.10 | Fix SM4.C.11's circular closure target (the phase that owns it is marked LANDED); re-home it to a phase that can close it | (2 files) | S |
