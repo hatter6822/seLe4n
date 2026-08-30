@@ -1,3 +1,49 @@
+## v0.34.18 — four sub-tasks that could not have done what they said; Codex review round 12
+
+The first round whose findings are entirely about plan *content* rather than
+bookkeeping — which is precisely the class v0.34.17's gate says it cannot catch.
+All four verified against source before acting.
+
+**RR4.3 could not build the faults RR4.1 requires.** It mapped
+`SynchronousExceptionClass → Fault`, but that inductive is nullary — six
+constructors, no payloads — while the fault address and syndrome exist only in
+`ExceptionContext.far` and `.esr`. The map could only have invented them,
+corrupting every VM-fault message before the encoding round trip. Now defined
+over `ExceptionContext`, with the nullary variants taking their payload from
+the trap/syscall inputs on the same path.
+
+**RR5.10 (was RR5.9) switched the boot base without enqueueing anything.**
+`installIdleThread` creates the idle TCB and sets `currentOnCore` — it never
+touches `runQueueOnCore` — while `idleThreadEnqueuedOnCore`'s *first* conjunct
+is run-queue membership. So the switch left the register's idle-enqueue
+remediation open and the premise `chooseThreadOnCore_always_succeeds` consumes
+unmet: a core reaching selection with no runnable user thread would still lack
+its idle fallback. The slice now owes the per-core enqueue and a proof of
+`∀ c, idleThreadEnqueuedOnCore st c` on the live boot state.
+
+**The readiness-gate finding had a second half nobody scheduled.** The SVC and
+suspend Lean externs are declared under `cfg(not(test))`, not `hw_target`, so a
+host non-test build still compiles call paths to bare-metal Lean symbols. New
+RR5.8 changes the cfgs; RR5.9's seam check now also enforces that no Lean
+extern is declared outside `hw_target`, so neither a sixth seam nor an ungated
+extern can be added without one.
+
+**RR6.13's Loom gate explored nothing.** Its scope was `Cargo.toml` alone, but
+`queued_rw_lock.rs` imports `core::sync::atomic` directly and Loom only sees its
+own instrumented atomics — so a dev-dependency satisfies §8's "loom gate runs"
+with a manifest entry. The row now owes the `cfg(loom)` aliases, `loom::model`
+tests, and a CI or nightly invocation.
+
+**The new gate earned itself immediately.** It rejected this very edit twice
+before commit: a duplicated `RR5.11` left by the insert, and a forward
+reference to `RR4.5` in RR4.3's own text — the rule I had just written, broken
+in the act of writing the row that states it. Both were fixed before the commit
+rather than in round 13.
+
+Counts: 149 (RR5 14).
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §5 (RR4, RR5, RR6)
+
 ## v0.34.17 — the plan's arithmetic becomes a gate instead of a habit
 
 Eleven review rounds on WS-RR fixed instances of five recurring classes. This

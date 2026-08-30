@@ -6,7 +6,7 @@
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 148 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 149 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -140,7 +140,7 @@ Nothing else may overlap without re-reading the dependency list above.
 | RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live | 19 | M–L |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 | L–XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
-| RR5 | Boot-path fail-open closure | 13 | M–L |
+| RR5 | Boot-path fail-open closure | 14 | M–L |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 | L |
 | RR7 | Medium-severity sweep | 26 | M |
 | RR8 | Phase closure and hand-off to SM10 | 5 | S |
@@ -313,7 +313,7 @@ Rust wiring that makes the Lean path the live one.
 |-----|-------------|-------|-----|
 | RR4.1 | `Fault` inductive, every constructor carrying the payload its message needs at seL4 parity: `vmFault` (address, FSR/status, prefetch flag), `capFault` (the faulting capability address and the receive-phase flag), `unknownSyscall` (the syscall number), `userException` (exception number and code). Nullary constructors would make the wire layout unable to carry what a handler needs to diagnose or restart the fault, and the round-trip theorem would then only preserve an already-impoverished value | `SeLe4n/Kernel/Architecture/Fault.lean` (new) | M |
 | RR4.2 | `DecidableEq` + `BEq` + congruence lemmas for `Fault` | (same) | S |
-| RR4.3 | Map `SynchronousExceptionClass` → `Fault`, replacing the `.error .vmFault` arms' classification role | (same) | S |
+| RR4.3 | Map `ExceptionContext` → `Fault`, replacing the `.error .vmFault` arms' classification role. **Not from `SynchronousExceptionClass`**: that inductive is nullary, while the fault address and syndrome exist only in `ExceptionContext.far` / `.esr`, so a class-to-fault map could only invent them and would corrupt the VM-fault message before the encoding round trip below. The nullary variants (unknown syscall, user exception) take their payload from the trap/syscall inputs on the same path | (same) | M |
 | RR4.4 | Fault message layout: `Fault` → `MessageInfo` label + message registers, at seL4 parity | `SeLe4n/Kernel/Architecture/Fault.lean` | M |
 | RR4.5 | Round-trip theorem: encoding then decoding a fault is the identity | (same) | M |
 | RR4.6 | Length theorem: every fault encodes within the message-register budget | (same) | S |
@@ -362,12 +362,13 @@ becomes live the moment SM10.E succeeds, so each must close before it.
 | RR5.5 | Theorem: the production context passes the guard and the test context does not | (same) | S |
 | RR5.6 | Add the `lean_ready` gate to the SVC dispatch seam, which has none despite `kernel_entry.rs`'s claim that every seam consults it | `rust/sele4n-hal/src/svc_dispatch.rs` | S |
 | RR5.7 | Add it to the suspend seam | `rust/sele4n-hal/src/ffi.rs` | S |
-| RR5.8 | Build-time or test-time check that every seam in the five-entry table consults the gate, so a sixth seam cannot be added without one | `rust/sele4n-hal/build.rs` | M |
-| RR5.9 | Wire `bootFromPlatformWithIdleThreads` into the production boot path — it is proven correct (`…_all_cores_have_idle`) but has no caller, so the proof does not carry through to runtime — **and** update `bootFromPlatformChecked`'s downstream theorem chain in the same slice. These cannot be separate PRs: the existing theorems unfold the checked function and characterize its result in terms of `bootFromPlatform config`, so switching the base without them either fails to compile or ships a live boot path its own theorems no longer cover | `SeLe4n/Platform/Boot.lean` | L |
-| RR5.10 | Make the three staged state-committing kernel entries production-reachable, so a linked image carries their `@[export]` symbols | `SeLe4n.lean`, `scripts/staged_module_allowlist.txt` | M |
-| RR5.11 | Verify each expected `@[export]` symbol is present in the built archive | `scripts/` | M |
-| RR5.12 | Bracket `suspend_thread_inner`, which commits kernel state outside the kernel-entry lock | `SeLe4n/Platform/FFI.lean` | S |
-| RR5.13 | Replace the two `debug_assert!` lock/vector tripwires, which vanish from the release image, with checks that survive it | `rust/sele4n-hal/src/` | S |
+| RR5.8 | Gate the SVC and suspend Lean `extern` declarations on `hw_target` rather than `cfg(not(test))`, the other half of the same finding: under `cfg(not(test))` a host non-test build still compiles call paths to bare-metal Lean symbols, so the readiness checks above do not close it | `rust/sele4n-hal/src/svc_dispatch.rs`, `rust/sele4n-hal/src/ffi.rs` | S |
+| RR5.9 | Build-time or test-time check that every seam in the five-entry table consults the gate **and that no Lean extern is declared outside `hw_target`**, so neither a sixth seam nor an ungated extern can be added without one | `rust/sele4n-hal/build.rs` | M |
+| RR5.10 | Wire `bootFromPlatformWithIdleThreads` into the production boot path — it is proven correct (`…_all_cores_have_idle`) but has no caller, so the proof does not carry through to runtime — **and** update `bootFromPlatformChecked`'s downstream theorem chain in the same slice. These cannot be separate PRs: the existing theorems unfold the checked function and characterize its result in terms of `bootFromPlatform config`, so switching the base without them either fails to compile or ships a live boot path its own theorems no longer cover. **The switch alone is not the remediation**: `installIdleThread` creates the idle TCB and sets `currentOnCore`, and never touches `runQueueOnCore`, while `idleThreadEnqueuedOnCore`'s first conjunct is run-queue membership — so this slice must also call the per-core enqueue and prove `∀ c, idleThreadEnqueuedOnCore st c` of the live boot state, which is the premise `chooseThreadOnCore_always_succeeds` consumes. Without it a core reaching selection with no runnable user thread still lacks its idle fallback | `SeLe4n/Platform/Boot.lean` | XL |
+| RR5.11 | Make the three staged state-committing kernel entries production-reachable, so a linked image carries their `@[export]` symbols | `SeLe4n.lean`, `scripts/staged_module_allowlist.txt` | M |
+| RR5.12 | Verify each expected `@[export]` symbol is present in the built archive | `scripts/` | M |
+| RR5.13 | Bracket `suspend_thread_inner`, which commits kernel state outside the kernel-entry lock | `SeLe4n/Platform/FFI.lean` | S |
+| RR5.14 | Replace the two `debug_assert!` lock/vector tripwires, which vanish from the release image, with checks that survive it | `rust/sele4n-hal/src/` | S |
 
 **Acceptance**: a hardware boot without an explicit production labeling
 context fails closed; every seam consults the readiness gate; idle threads
@@ -414,7 +415,7 @@ would have caught that drives neither.
 | RR6.10 | Trace correspondence (`blockBisim` / `ListBlockBisim` analogue) replacing the counter arithmetic in `rust_ticketLock_refines_lean` | (same) | L |
 | RR6.11 | Replace the tautological conjunct with a statement that can fail | (same) | M |
 | RR6.12 | D-4: prove `opCorresponds`-chain plus an explicit load-then-CAS trace-shape predicate implies `ListBlockBisim`, so the twelve discharge lemmas compose into the main theorem instead of it assuming its own conclusion | `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` | XL |
-| RR6.13 | Add `loom` as a `cfg(loom)` dev-dependency with bounded exhaustive interleavings | `rust/sele4n-hal/Cargo.toml` | M |
+| RR6.13 | Run the deployed queued lock under Loom: the dev-dependency alone explores nothing, because `queued_rw_lock.rs` imports `core::sync::atomic` directly and Loom only sees its own instrumented atomics. Add the `cfg(loom)` synchronisation aliases so the lock compiles against them, write `loom::model` tests over the bounded interleavings, and invoke them from CI or the nightly — otherwise §8's "loom gate runs" is satisfied by a manifest entry | `rust/sele4n-hal/Cargo.toml`, `rust/sele4n-hal/src/queued_rw_lock.rs`, `.github/workflows/` | L |
 | RR6.14 | Add a nightly `miri` job for the queued lock | `.github/workflows/` | M |
 | RR6.15 | Raise the FIFO and stress iteration counts to the plan's stated thresholds | `rust/sele4n-hal/src/queued_rw_lock.rs` | S |
 | RR6.16 | Prove the D-2.5 writer-bounded-wait statement as specified — the ingredients exist; only a single-state `_weak` corollary landed | `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` | M |
