@@ -66,6 +66,12 @@ Prior stage: **WS-AK Phase AK10 COMPLETE — PORTFOLIO CLOSED (v0.30.6). Testing
   - broader local verification (smoke + Tier 3 anchor coverage).
 - `./scripts/test_nightly.sh`
   - full + Tier 4 staged-candidate wrapper (explicit opt-in by environment flag).
+  - Without `NIGHTLY_ENABLE_EXPERIMENTAL=1` the Tier-4 candidates do not run and
+    this exits **0**, which is the mode the PR checklist means. With the flag
+    set, a gate that cannot run (no bootable kernel image) reports NOT RUN and
+    the command exits **77** — incomplete coverage, not a failure. Add
+    `SELE4N_REQUIRE_GATES=1` to turn a skipped gate into a hard failure; that is
+    the mode a release must pass.
 
 CI should execute these repository scripts directly to avoid local/CI drift.
 

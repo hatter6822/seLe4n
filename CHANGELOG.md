@@ -1,3 +1,45 @@
+## v0.34.16 — a disabled tier that ran anyway, and a premise I accepted without checking; Codex review round 11
+
+**Correction to v0.34.15.** Round 10's P1 said the disabled branch of
+`test_tier4_nightly_candidates.sh` "exits successfully before invoking
+`test_tier4_smp_bootcheck.sh`". It does not, and I did not verify that clause
+before acting on it. `finalize_report` **returns** on a clean report — it exits
+only on a failure or a skip — so the "not enabled" branch printed its report and
+then fell straight through into the tier body, running the boot-check regardless.
+The strict run was therefore never vacuous the way the finding described: the
+boot-check ran, skipped, and under `SELE4N_REQUIRE_GATES=1` failed correctly.
+
+The fall-through was the real defect, and it is what round 11 surfaced: because
+the disabled branch kept going, plain `./scripts/test_nightly.sh` — the command
+`.github/pull_request_template.md` gives contributors — exited 77 on every run,
+Tier 4 being opt-in by default.
+
+Now the branch terminates, and the two cases are kept distinct:
+
+| invocation | before | after |
+|---|---|---|
+| disabled, default | 77 | **0** — opt-in declined, nothing ran, as documented |
+| disabled, `SELE4N_REQUIRE_GATES=1` | 1 | **1** — asking for every gate over a tier that never started must fail |
+| enabled, default | 77 | 77 — the boot-check genuinely cannot run |
+
+A missing prerequisite (no QEMU, no kernel image) is a gate that was supposed to
+run and could not; a declined opt-in is not. Conflating them is what made the
+documented PR command unusable.
+
+**RR5.9 and RR5.10 could not have landed separately.** RR5.9 switched the
+production checked boot path to `bootFromPlatformWithIdleThreads` while RR5.10
+deferred the downstream theorem chain — but those theorems unfold the checked
+function and characterize its result in terms of `bootFromPlatform config`, so
+the switch alone either fails to compile or ships a live boot path its own
+theorems no longer cover. Merged into one slice, sized L. This is the third
+instance of the live-before-proof class in this plan (RR2, RR4, now RR5).
+
+Counts resynced to 148 (RR5 13). The exit-77 contract is now stated where the
+command is actually invoked — the PR template and the GitBook entrypoint list —
+rather than only in the library that implements it.
+
+Refs: docs/gitbook/07-testing-and-ci.md entrypoint list
+
 ## v0.34.15 — the strict release run never reached the gates it was strict about; Codex review round 10
 
 Four findings. Two are new; two are residue of this PR's own earlier fixes,

@@ -6,7 +6,7 @@
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 149 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 148 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -140,7 +140,7 @@ Nothing else may overlap without re-reading the dependency list above.
 | RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live | 19 | M–L |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 | L–XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
-| RR5 | Boot-path fail-open closure | 14 | M–L |
+| RR5 | Boot-path fail-open closure | 13 | M–L |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 | L |
 | RR7 | Medium-severity sweep | 26 | M |
 | RR8 | Phase closure and hand-off to SM10 | 5 | S |
@@ -363,12 +363,11 @@ becomes live the moment SM10.E succeeds, so each must close before it.
 | RR5.6 | Add the `lean_ready` gate to the SVC dispatch seam, which has none despite `kernel_entry.rs`'s claim that every seam consults it | `rust/sele4n-hal/src/svc_dispatch.rs` | S |
 | RR5.7 | Add it to the suspend seam | `rust/sele4n-hal/src/ffi.rs` | S |
 | RR5.8 | Build-time or test-time check that every seam in the five-entry table consults the gate, so a sixth seam cannot be added without one | `rust/sele4n-hal/build.rs` | M |
-| RR5.9 | Wire `bootFromPlatformWithIdleThreads` into the production boot path — it is proven correct (`…_all_cores_have_idle`) but has no caller, so the proof does not carry through to runtime | `SeLe4n/Platform/Boot.lean` | M |
-| RR5.10 | Update `bootFromPlatformChecked`'s downstream theorems for the new base | (same) | M |
-| RR5.11 | Make the three staged state-committing kernel entries production-reachable, so a linked image carries their `@[export]` symbols | `SeLe4n.lean`, `scripts/staged_module_allowlist.txt` | M |
-| RR5.12 | Verify each expected `@[export]` symbol is present in the built archive | `scripts/` | M |
-| RR5.13 | Bracket `suspend_thread_inner`, which commits kernel state outside the kernel-entry lock | `SeLe4n/Platform/FFI.lean` | S |
-| RR5.14 | Replace the two `debug_assert!` lock/vector tripwires, which vanish from the release image, with checks that survive it | `rust/sele4n-hal/src/` | S |
+| RR5.9 | Wire `bootFromPlatformWithIdleThreads` into the production boot path — it is proven correct (`…_all_cores_have_idle`) but has no caller, so the proof does not carry through to runtime — **and** update `bootFromPlatformChecked`'s downstream theorem chain in the same slice. These cannot be separate PRs: the existing theorems unfold the checked function and characterize its result in terms of `bootFromPlatform config`, so switching the base without them either fails to compile or ships a live boot path its own theorems no longer cover | `SeLe4n/Platform/Boot.lean` | L |
+| RR5.10 | Make the three staged state-committing kernel entries production-reachable, so a linked image carries their `@[export]` symbols | `SeLe4n.lean`, `scripts/staged_module_allowlist.txt` | M |
+| RR5.11 | Verify each expected `@[export]` symbol is present in the built archive | `scripts/` | M |
+| RR5.12 | Bracket `suspend_thread_inner`, which commits kernel state outside the kernel-entry lock | `SeLe4n/Platform/FFI.lean` | S |
+| RR5.13 | Replace the two `debug_assert!` lock/vector tripwires, which vanish from the release image, with checks that survive it | `rust/sele4n-hal/src/` | S |
 
 **Acceptance**: a hardware boot without an explicit production labeling
 context fails closed; every seam consults the readiness gate; idle threads
