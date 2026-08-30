@@ -1,3 +1,67 @@
+## v0.34.37 — Two regressions from the SM10 re-sequence, and three gates that reached too narrowly
+
+Five findings from the eleventh review round on the RR0 cut. Two are
+regressions introduced by v0.34.36's own re-sequence, which is what a
+mechanical rename across 77 files risks and what the spot-check missed.
+
+**The re-sequence's own damage.**
+
+- Three citations in `SMP_RELEASE_CLOSURE_PLAN.md` §1 were written in the
+  un-prefixed short form (`.A.3`, `.A.6`, `.C.4`) and the rename map only
+  matched `SM10`-prefixed spellings, so they survived as dangling references
+  to letters that no longer exist. They now read `SM10.2.3`, `SM10.2.6` and
+  `SM10.6.4`.
+- Four citations that meant the **release validation** phase were rewritten to
+  `SM10.1`, the image build, because the map sent every bare `SM10.E` to one
+  destination while the old letter covered both halves of the split. The
+  sites that assign strict-gate mode to the v1.0.0 release run —
+  `docs/HARDWARE_TESTING.md`, `docs/DEVELOPMENT.md`, `scripts/test_lib.sh` and
+  `scripts/test_tier4_smp_bootcheck.sh` — now read `SM10.5`. Every other
+  `SM10.1` in the tree was re-read against its sentence and is correct: they
+  name the image, the boot path, or the per-core runtime initialization.
+
+**SM10.3's letter group is gone.** `SM10.3.D1`–`D7`, the hardware-validation
+script debt, sat outside the phase's advertised 13 sub-tasks in a scheme the
+plan had just abolished. They are now `SM10.3.14`–`SM10.3.20`, numbered in
+`HARDWARE_TESTING.md` section order, and the phase heading says 20. The
+`SM10.1.1` image-build row that shared their table has moved to prose: it is
+SM10.1's row and restating it inside SM10.3's numbering was what made the
+group look like a separate ledger. The plan's `Sub-task count` header, which
+still forecast 25-35, now states the 41 enumerated rows and says why that
+figure is a floor rather than a declared total.
+
+**`check_workstream_plan.py` names what it cannot read.** With SM10 flat but
+three-level (`SM10.3.14`), the gate's `<PREFIX><phase>.<sub>` model parses
+none of its rows — and reported the plan under "declaring an estimate range",
+which is a different fact about coverage. Sub-phase-numbered plans now get
+their own bucket and are named in the summary, so zero coverage reads as zero
+coverage. Witness: a three-level plan must be reported as NOT CHECKED and must
+not increment the range count.
+
+**The census pins payloads, not lengths.** `censusPayloadsMatchTheirNames`
+compared each inventory's identifier list against that inventory's own
+*length*, so two equal-length inventories could still be exchanged, and the
+namespace beside each payload was never checked at all. The tuple list is no
+longer written: `censusPayloadOf` is the single site pairing a published name
+with a namespace and a payload, and `censusInventories` is derived from it, so
+there is no second pairing to disagree with. `censusPayloadsAreTotal` forbids
+the derivation from silently dropping a name, and a new elaboration-time check
+holds each arm's namespace to the environment by requiring `ns ++ name` to
+name a real constant. Verified by mutation: a swapped payload trips the
+duplicate-registration error, a wrong namespace names no constant, and a
+missing arm fails the totality theorem.
+
+**`check_deferral_registration.py` scans the index, not a list.** Its five
+scan roots and seven suffixes excluded `rust/sele4n-hal/src/boot.S`, the root
+`README.md` and `CLAUDE.md`, and everything under `.github/` — while the
+module's own docstring argues twice that guessing a list is the mistake that
+kept letting sites through. The allowlist is deleted: every tracked file that
+decodes as UTF-8 is scanned (683 of them), minus the narratives that quote the
+phrasing by nature. Six new witnesses pin the surface itself, not just the
+matcher.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+
 ## v0.34.36 — SM10 is numbered, and the numbers are execution order
 
 Closes the last three open review findings on PR #882, including the P1 that

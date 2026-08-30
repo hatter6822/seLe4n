@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr0-registration-plan-correction-cr1z0k",
-      "commit_sha": "17310bdc6dd0d45fb3926aae199977d0e163ad0a",
-      "tree_sha": "618d2e60a584b8225f6a044f97d2e24724295c99",
-      "committed_at_utc": "2026-08-30T10:12:31+00:00"
+      "commit_sha": "0a6f33c136d90e08be60104b3810efb98377f9cd",
+      "tree_sha": "13971e67174f6aea29b4c5958e7015bf58f6e3bd",
+      "committed_at_utc": "2026-08-30T16:16:56+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b6fa78bb6d5b4bbb016b8d5ea51f61c12e0f88f63e7ae8c6ea6740d30c9014fd"
+    "source_digest": "d4341daaa62152910bafc93c7db4312a8cec69816c6dbfb3c7bef3f18f28b321"
   },
   "summary": {
     "module_count": 357,
-    "declaration_count": 17082
+    "declaration_count": 17087
   },
   "readme_sync": {
-    "version": "0.34.36",
+    "version": "0.34.37",
     "lean_toolchain": "v4.28.0",
     "production_files": 288,
-    "production_loc": 289666,
+    "production_loc": 289706,
     "test_files": 69,
     "test_loc": 64535,
-    "proved_theorem_lemma_decls": 9687,
+    "proved_theorem_lemma_decls": 9688,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -46653,7 +46653,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.PhaseTheoremManifest",
       "path": "SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean",
-      "declaration_count": 39,
+      "declaration_count": 44,
       "declarations": [
         {
           "kind": "namespace",
@@ -46953,16 +46953,31 @@
         },
         {
           "kind": "def",
-          "name": "censusInventories",
-          "line": 524,
+          "name": "censusInventoryNames",
+          "line": 526,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "censusPayloadOf",
+          "line": 544,
           "called": [
-            "Kernel"
+            "Kernel",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusInventories",
+          "line": 581,
+          "called": [
+            "censusPayloadOf"
           ]
         },
         {
           "kind": "theorem",
           "name": "censusCoversManifest",
-          "line": 558,
+          "line": 589,
           "called": [
             "all",
             "contains",
@@ -46973,22 +46988,44 @@
         {
           "kind": "theorem",
           "name": "censusInventoryNamesNodup",
-          "line": 576,
+          "line": 607,
           "called": []
         },
         {
           "kind": "theorem",
-          "name": "censusPayloadsMatchTheirNames",
-          "line": 597,
+          "name": "censusPayloadsAreTotal",
+          "line": 620,
           "called": [
-            "all",
             "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "censusInventoryNamesSourceNodup",
+          "line": 631,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "censusNamespacesResolve",
+          "line": 646,
+          "called": [
+            "censusInventories",
+            "contains"
+          ]
+        },
+        {
+          "kind": "namespace",
+          "name": "<anonymous:namespace:652>",
+          "line": 652,
+          "called": [
+            "censusNamespacesResolve"
           ]
         },
         {
           "kind": "def",
           "name": "censusNameMatches",
-          "line": 624,
+          "line": 664,
           "called": [
             "length"
           ]
@@ -46996,7 +47033,7 @@
         {
           "kind": "def",
           "name": "censusResolve",
-          "line": 643,
+          "line": 683,
           "called": [
             "censusNameMatches",
             "filter",
@@ -47006,14 +47043,14 @@
         },
         {
           "kind": "constant",
-          "name": "<anonymous:constant:671>",
-          "line": 671,
+          "name": "<anonymous:constant:711>",
+          "line": 711,
           "called": []
         },
         {
           "kind": "def",
           "name": "censusIndex",
-          "line": 675,
+          "line": 715,
           "called": [
             "censusInventories",
             "censusResolve",

@@ -22,7 +22,7 @@
 # of printing "All checks passed" over work nothing performed.
 #
 # `SELE4N_REQUIRE_GATES=1` promotes any skipped gate to a hard failure;
-# that is the mode the v1.0.0 release validation (SM10.1) must run in,
+# that is the mode the v1.0.0 release validation (SM10.5) must run in,
 # since a release may not certify phases whose gates never ran.
 #
 # Future phases populate additional sub-tests:

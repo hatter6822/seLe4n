@@ -1117,7 +1117,7 @@ SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh
 ```
 
 which turns a skipped gate into a hard failure. The v1.0.0 release
-validation (SM10.1) must run in that mode. When adding a check that
+validation (SM10.5) must run in that mode. When adding a check that
 certifies phase acceptance criteria, call `run_gate_check`, not
 `run_check`.
 

@@ -62,6 +62,14 @@ HEADER_TOTAL = re.compile(r"^>\s*\*\*Sub-task count\*\*:\s*(\d+)(?![\d\s]*[-\u20
 # nobody can see is how this class survived in the first place.
 LEGACY_ROW = re.compile(r"^\|\s*[A-Z]{2,}\d*\.[A-Z]\.\d+\s*\|", re.M)
 SUBTASK_ROW = re.compile(r"^\|\s*([A-Z]{2,})(\d+)\.(\d+)\s*\|(.*)$", re.M)
+# A plan whose sub-phases are themselves numbered (`SM10.3.14`) is flat and in
+# execution order, but its IDs carry one level more than this gate's
+# `<PREFIX><phase>.<sub>` model reads, so none of the structural checks apply
+# to it.  It is named in the summary under its own heading rather than folded
+# into the estimate-range count: "not held because it declares a forecast" and
+# "not held because this gate cannot parse its IDs" are different facts about
+# coverage, and reporting the second as the first is how a gap stays invisible.
+DEEP_ROW = re.compile(r"^\|\s*[A-Z]{2,}\d+(?:\.\d+){2,}\s*\|", re.M)
 FINDINGS_ROW = re.compile(r"^\|\s*[A-Z]{2,}\d+\.\d+\s*\|[^|]*\|\s*(\d+)\s*\|", re.M)
 ACCEPT_TOTAL = re.compile(r"\*\*Acceptance\*\*:\s*all\s*\*\*(\d+)\*\*\s*findings", re.M)
 
@@ -357,7 +365,7 @@ def deleted_plan_errors(companions: dict[str, str]) -> list[str]:
 
 
 def collect(paths: list[str]) -> tuple[list[str], dict[str, str], int]:
-    plans, ranged, legacy_only = [], 0, []
+    plans, ranged, legacy_only, deep = [], [], [], []
     for rel in (list_tracked(":") if not paths else paths):
         body = read_indexed(rel)
         if not body:
@@ -373,24 +381,27 @@ def collect(paths: list[str]) -> tuple[list[str], dict[str, str], int]:
             # document with no sub-task table to check at all.
             if LEGACY_ROW.search(body):
                 legacy_only.append(rel)
+            elif DEEP_ROW.search(body):
+                deep.append(rel)
             elif HEADER_RANGE.search(body):
-                ranged += 1
+                ranged.append(rel)
             continue
         plans.append(rel)
         if not HEADER_TOTAL.search(body):
-            ranged += 1
+            ranged.append(rel)
     companions = {}
     for c in COMPANIONS:
         body = read_indexed(c)
         if body is not None:
             companions[c] = body
-    return plans, companions, ranged, legacy_only
+    return plans, companions, ranged, legacy_only, deep
 
 
 def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return self_test()
-    plans, companions, ranged, legacy_only = collect([a for a in argv if not a.startswith("-")])
+    plans, companions, ranged, legacy_only, deep = collect(
+        [a for a in argv if not a.startswith("-")])
     # Deliberately before the "nothing to validate" exit: deleting the last
     # exact-count plan while a companion still cites it left `plans` empty, so
     # returning here skipped the very check that deletion is supposed to trip.
@@ -439,8 +450,14 @@ def main(argv: list[str]) -> int:
     print(f"PASS: {len(checked)} workstream plan(s) structurally consistent "
           f"(sequential IDs, phase counts, declared totals, cross-references, "
           f"no forward dependencies); "
-          f"{len(legacy)} legacy letter-group plan(s) and {ranged} declaring an "
+          f"{len(legacy)} legacy letter-group plan(s) and {len(ranged)} declaring an "
           f"estimate range are not held to flat numbering.")
+    if deep:
+        # Named, not counted: a reader has to be able to see *which* plan this
+        # gate is silent about, or the silence reads as a pass over it.
+        print(f"  NOT CHECKED — sub-phase-numbered IDs "
+              f"(<PREFIX><phase>.<sub-phase>.<sub>), which this gate's "
+              f"two-level model does not parse: {', '.join(deep)}")
     if not baseline_is_complete():
         # Narrower coverage is said out loud rather than inferred from a pass.
         print("  NOTE: no integration base resolved (shallow clone?), so a plan "
@@ -532,6 +549,21 @@ def _cli_cases():
         (d / "CC_TWO.md").write_text(CLEAN.replace("XX", "CC"), encoding="utf-8")
         git("add", "-A")
 
+    def sub_phase_numbered_plan(root, git):
+        """Three-level IDs (`XX0.1.1`).  The gate cannot parse them, and the
+        failure mode being witnessed is not a false PASS but a *misreported*
+        one: before this bucket existed such a plan was counted under
+        \"declaring an estimate range\", so its zero coverage was indistinguishable
+        from a forecast the gate had deliberately declined to hold."""
+        (root / "docs" / "planning" / "YY_PLAN.md").write_text(
+            "> **Sub-task count**: 2 across 1 sub-phase\n\n"
+            "| Sub | Description | Files | Est |\n"
+            "|-----|-------------|-------|-----|\n"
+            "| YY0.1.1 | groundwork | a | S |\n"
+            "| YY0.1.2 | builds on it | a | S |\n",
+            encoding="utf-8")
+        git("add", "-A")
+
     def stray_letter_row(root, git):
         p2 = root / "docs" / "planning" / "XX_PLAN.md"
         p2.write_text(CLEAN.replace("| XX0 | first | 3 |", "| XX0 | first | 99 |")
@@ -558,6 +590,14 @@ def _cli_cases():
         out.append(("CLI: a plan without a count header is still checked",
                     r.returncode != 0 and "not 1..3" in r.stdout,
                     (r.returncode, r.stdout.strip()[:110])))
+    with tempfile.TemporaryDirectory() as td:
+        r = build(td, sub_phase_numbered_plan)
+        out.append(("CLI: a sub-phase-numbered plan is named as NOT CHECKED, "
+                    "not counted as an estimate range",
+                    r.returncode == 0 and "NOT CHECKED" in r.stdout
+                    and "YY_PLAN.md" in r.stdout.split("NOT CHECKED", 1)[-1]
+                    and "0 declaring an estimate range" in r.stdout,
+                    (r.returncode, r.stdout.strip()[:220])))
     with tempfile.TemporaryDirectory() as td:
         r = build(td, stray_letter_row)
         out.append(("CLI: a stray letter-group row does not grandfather a flat plan",

@@ -26,15 +26,24 @@ from __future__ import annotations
 
 import pathlib
 import re
+import subprocess
 import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-# Where a self-declared deferral would live.  Documentation is included: the
-# first miss this gate would have caught was in `docs/AUDIT_NOTES.md`, not in
-# Lean.
-SCAN_ROOTS = ("SeLe4n", "tests", "rust", "scripts", "docs")
-SCAN_SUFFIXES = (".lean", ".rs", ".py", ".sh", ".md", ".toml", ".json")
+# **Every tracked text file**, not a list of roots and suffixes.
+#
+# The first cut of this gate enumerated five directories and seven suffixes,
+# and that allowlist was wrong in three ways at once: `rust/sele4n-hal/src/boot.S`
+# (assembly carries `//` comments and is where the boot-path deferrals live),
+# the root `README.md` and `CLAUDE.md`, and everything under `.github/`.  A
+# deferral does not become tracked by living in a file extension nobody
+# enumerated -- and this module already argues, twice, that guessing a list is
+# the mistake that kept letting sites through.  So the enumeration is the git
+# index, minus the narratives that necessarily quote the phrasing, and minus
+# whatever does not decode as UTF-8.
+BINARY_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".woff",
+                   ".woff2", ".ttf", ".zip", ".gz", ".o", ".a", ".so")
 
 # Files whose subject *is* the register or the audit that found it, so they
 # necessarily quote the phrasing while describing it.  This list is
@@ -170,22 +179,41 @@ def scan_text(rel: str, text: str, register: RegisterIndex | None = None) -> lis
     return out
 
 
+def tracked_files() -> list[str]:
+    """Paths as git sees them.  Walking the working tree instead would scan
+    build output and untracked scratch while still missing nothing that
+    matters, so the index is both narrower and the right authority: a deferral
+    that is not committed is not yet a deferral."""
+    try:
+        out = subprocess.run(["git", "ls-files", "-z"], cwd=REPO_ROOT,
+                             capture_output=True, text=True, check=True).stdout
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return []
+    return sorted(x for x in out.split("\0") if x)
+
+
 def files_to_scan() -> list[pathlib.Path]:
     out: list[pathlib.Path] = []
-    for root in SCAN_ROOTS:
-        base = REPO_ROOT / root
-        if not base.is_dir():
+    for rel in tracked_files():
+        if rel in NARRATIVE_EXEMPT:
             continue
-        for p in sorted(base.rglob("*")):
-            if not p.is_file() or p.suffix not in SCAN_SUFFIXES:
-                continue
-            rel = str(p.relative_to(REPO_ROOT))
-            if rel in NARRATIVE_EXEMPT:
-                continue
-            if any(rel.startswith(pre) for pre in EXEMPT_PREFIXES):
-                continue
-            out.append(p)
+        if any(rel.startswith(pre) for pre in EXEMPT_PREFIXES):
+            continue
+        p = REPO_ROOT / rel
+        if not p.is_file() or p.suffix.lower() in BINARY_SUFFIXES:
+            continue
+        out.append(p)
     return out
+
+
+def read_text_or_none(p: pathlib.Path) -> str | None:
+    """`None` for anything that is not UTF-8 text.  Deciding by content rather
+    than by extension is what lets the scan cover `.S`, `.ld`, `.expected` and
+    extensionless files without an allowlist to keep in step with the tree."""
+    try:
+        return p.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return None
 
 
 def _self_test() -> int:
@@ -276,6 +304,36 @@ def _self_test() -> int:
     check("the register table is parsed into rows",
           reg.rows == {29: "scripts/check_deferral_registration.py"}, repr(reg.rows))
 
+    # An assembly deferral is a deferral.  `//` is already stripped as comment
+    # punctuation, so the only thing that ever excluded `boot.S` was the
+    # suffix allowlist -- which is why the fix was to delete the allowlist
+    # rather than to add one more entry to it.
+    check("a claim in assembly `//` comments is caught",
+          bool(scan_text("rust/sele4n-hal/src/boot.S",
+                         "// secondary entry; no currently-active plan tracks it.\n")),
+          "should fire")
+    check("a claim in a YAML `#` comment is caught",
+          bool(scan_text(".github/workflows/ci.yml",
+                         "# pinned by hand; no concrete plan file tracks it yet.\n")),
+          "should fire")
+
+    # The scan surface itself, not just the matcher.  Three real paths the
+    # allowlist excluded -- assembly, the repository root, and `.github/` --
+    # must be enumerated, and the exemptions must survive the widening.
+    scanned = {str(x.relative_to(REPO_ROOT)) for x in files_to_scan()}
+    if scanned:
+        for probe in ("rust/sele4n-hal/src/boot.S", "README.md", "CLAUDE.md",
+                      ".github/workflows/lean_action_ci.yml"):
+            check(f"scan surface covers {probe}", probe in scanned,
+                  "excluded from files_to_scan()")
+        check("the narrative exemptions survive the widening",
+              not (NARRATIVE_EXEMPT & scanned)
+              and not any(r.startswith(EXEMPT_PREFIXES) for r in scanned),
+              "an exempt narrative is being scanned")
+        check("binaries are excluded by suffix",
+              not any(r.endswith(BINARY_SUFFIXES) for r in scanned),
+              "a binary is being scanned")
+
     failed = [c for c in cases if not c[1]]
     for name, ok, detail in cases:
         print(f"  {'PASS' if ok else 'FAIL'}: {name}" + (f" -- {detail}" if not ok else ""))
@@ -296,11 +354,12 @@ def main(argv: list[str]) -> int:
             findings.append(
                 f"{REGISTER_PATH}: row {row} cites `{path}`, which does not exist"
             )
+    scanned = 0
     for p in files_to_scan():
-        try:
-            text = p.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
+        text = read_text_or_none(p)
+        if text is None:
             continue
+        scanned += 1
         findings.extend(scan_text(str(p.relative_to(REPO_ROOT)), text, register))
     if findings:
         print("FAIL: deferral registration is incomplete.")
@@ -312,8 +371,9 @@ def main(argv: list[str]) -> int:
         for f in findings:
             print(f"  {f}")
         return 1
-    print(f"PASS: every deferral cites the register; all cited rows exist "
-          f"among the {len(register.rows)} enumerated, and every row's file is present.")
+    print(f"PASS: {scanned} tracked text file(s) scanned; every deferral cites "
+          f"the register, all cited rows exist among the {len(register.rows)} "
+          f"enumerated, and every row's file is present.")
     return 0
 
 

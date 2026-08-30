@@ -140,7 +140,7 @@ and emits the canonical `dsb ishst → dc cvac → dsb ish → tlbi → dsb ish
 the new mapping.
 
 **Procedure** (the script currently **self-skips** — it needs the SM10.1
-kernel image; registered debt SM10.3.D7 in
+kernel image; registered debt SM10.3.14 in
 `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` — so the steps below describe
 the run once it is wired):
 
@@ -189,7 +189,7 @@ cargo test --manifest-path rust/Cargo.toml -p sele4n-hal barriers
 
 > `scripts/test_qemu_tlb_cache_coherence.sh` exists but is a
 > **self-skipping stub** until the SM10.1 image pipeline lands (registered
-> as SM10.3.D7 in `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`) — it
+> as SM10.3.14 in `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`) — it
 > reports `[SKIP]` unconditionally today and exits `SELE4N_SKIP_EXIT`
 > (77), so it can never be mistaken for coherence coverage.
 
@@ -506,7 +506,7 @@ certifies phase acceptance criteria. A sub-test that cannot run exits
 the tier then names every unexecuted gate and reports that coverage is
 incomplete, instead of printing "All checks passed" over work nothing
 performed. Set `SELE4N_REQUIRE_GATES=1` to promote a skipped gate to a
-hard failure; the v1.0.0 release validation (SM10.1) must run in that
+hard failure; the v1.0.0 release validation (SM10.5) must run in that
 mode, since a release may not certify phases whose gates never ran.
 
 This lets full-fat CI runners exercise the runtime steps while

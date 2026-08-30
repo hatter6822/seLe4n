@@ -515,41 +515,72 @@ section Census
 
 open Lean Elab Command Meta
 
+/-- The inventory names the census measures.
+
+    A `String` in `PhaseTheoremEntry.inventories` cannot be dereferenced, so
+    the bridge from a published name to the list it names has to be written
+    once, by hand.  It is written **once**: this list supplies the names, and
+    `censusPayloadOf` below is the sole place a name is paired with a payload.
+    `censusInventories` is then *derived*, so there is no second site at which
+    a label and a list could be paired inconsistently. -/
+private def censusInventoryNames : List String :=
+  [ "perObjectLockTheorems", "lockSetTheorems", "withLockSetTheorems"
+  , "deadlockTheorems", "serializabilityTheorems", "lockPrimitives"
+  , "crossCoreWakeTheorems", "perCoreTimerTheorems", "perCoreIdleTheorems"
+  , "perCorePipTheorems", "perCoreDomainTheorems", "perCoreCbsTheorems"
+  , "perCoreInvariantSuiteTheorems", "perCoreWcrtTheorems" ]
+
+/-- The one place a published inventory name is bound to a namespace and to
+    the identifiers of the list it names.
+
+    Every arm spells the name twice — once as the `String` the manifest
+    publishes, once as the constant whose identifiers it returns — on a single
+    line, so the two are checkable by eye.  Nothing else in this module pairs a
+    name with a payload, which is what removes the swap class outright: there
+    is no second tuple to disagree with.  The namespace is not taken on trust
+    either; `censusNamespacesResolve` below holds each arm's namespace to the
+    environment by requiring `ns ++ name` to be the constant that arm returns
+    the identifiers of. -/
+private def censusPayloadOf (n : String) : Option (Name × List String) :=
+  match n with
+  | "perObjectLockTheorems" =>
+      some (`SeLe4n.Model, SeLe4n.Model.perObjectLockTheorems.map (·.identifier))
+  | "lockSetTheorems" =>
+      some (`SeLe4n.Kernel.Concurrency, lockSetTheorems.map (·.identifier))
+  | "withLockSetTheorems" =>
+      some (`SeLe4n.Kernel.Concurrency, withLockSetTheorems.map (·.identifier))
+  | "deadlockTheorems" =>
+      some (`SeLe4n.Kernel.Concurrency, deadlockTheorems.map (·.identifier))
+  | "serializabilityTheorems" =>
+      some (`SeLe4n.Kernel.Concurrency, serializabilityTheorems.map (·.identifier))
+  | "lockPrimitives" =>
+      some (`SeLe4n.Kernel.Concurrency, lockPrimitives.map (·.identifier.toString))
+  | "crossCoreWakeTheorems" =>
+      some (`SeLe4n.Kernel, SeLe4n.Kernel.crossCoreWakeTheorems.map (·.identifier))
+  | "perCoreTimerTheorems" =>
+      some (`SeLe4n.Kernel, SeLe4n.Kernel.perCoreTimerTheorems.map (·.identifier))
+  | "perCoreIdleTheorems" =>
+      some (`SeLe4n.Kernel, SeLe4n.Kernel.perCoreIdleTheorems.map (·.identifier))
+  | "perCorePipTheorems" =>
+      some (`SeLe4n.Kernel.PriorityInheritance,
+        SeLe4n.Kernel.PriorityInheritance.perCorePipTheorems.map (·.identifier))
+  | "perCoreDomainTheorems" =>
+      some (`SeLe4n.Kernel, SeLe4n.Kernel.perCoreDomainTheorems.map (·.identifier))
+  | "perCoreCbsTheorems" =>
+      some (`SeLe4n.Kernel, SeLe4n.Kernel.perCoreCbsTheorems.map (·.identifier))
+  | "perCoreInvariantSuiteTheorems" =>
+      some (`SeLe4n.Kernel, SeLe4n.Kernel.perCoreInvariantSuiteTheorems.map (·.identifier))
+  | "perCoreWcrtTheorems" =>
+      some (`SeLe4n.Kernel, SeLe4n.Kernel.perCoreWcrtTheorems.map (·.identifier))
+  | _ => none
+
 /-- Every inventory the manifest names, paired with its entries' identifiers.
 
-    Hard-wired against the real lists because a `String` in
-    `PhaseTheoremEntry.inventories` cannot be dereferenced.  The two are held
-    equal by `censusCoversManifest` below, so this list cannot drift from the
-    manifest it is supposed to measure. -/
+    Derived, never written: each name carries whatever `censusPayloadOf`
+    returns for it. -/
 private def censusInventories : List (String × Name × List String) :=
-  [ ("perObjectLockTheorems", `SeLe4n.Model,
-      SeLe4n.Model.perObjectLockTheorems.map (·.identifier))
-  , ("lockSetTheorems", `SeLe4n.Kernel.Concurrency,
-      lockSetTheorems.map (·.identifier))
-  , ("withLockSetTheorems", `SeLe4n.Kernel.Concurrency,
-      withLockSetTheorems.map (·.identifier))
-  , ("deadlockTheorems", `SeLe4n.Kernel.Concurrency,
-      deadlockTheorems.map (·.identifier))
-  , ("serializabilityTheorems", `SeLe4n.Kernel.Concurrency,
-      serializabilityTheorems.map (·.identifier))
-  , ("lockPrimitives", `SeLe4n.Kernel.Concurrency,
-      lockPrimitives.map (·.identifier.toString))
-  , ("crossCoreWakeTheorems", `SeLe4n.Kernel,
-      SeLe4n.Kernel.crossCoreWakeTheorems.map (·.identifier))
-  , ("perCoreTimerTheorems", `SeLe4n.Kernel,
-      SeLe4n.Kernel.perCoreTimerTheorems.map (·.identifier))
-  , ("perCoreIdleTheorems", `SeLe4n.Kernel,
-      SeLe4n.Kernel.perCoreIdleTheorems.map (·.identifier))
-  , ("perCorePipTheorems", `SeLe4n.Kernel.PriorityInheritance,
-      SeLe4n.Kernel.PriorityInheritance.perCorePipTheorems.map (·.identifier))
-  , ("perCoreDomainTheorems", `SeLe4n.Kernel,
-      SeLe4n.Kernel.perCoreDomainTheorems.map (·.identifier))
-  , ("perCoreCbsTheorems", `SeLe4n.Kernel,
-      SeLe4n.Kernel.perCoreCbsTheorems.map (·.identifier))
-  , ("perCoreInvariantSuiteTheorems", `SeLe4n.Kernel,
-      SeLe4n.Kernel.perCoreInvariantSuiteTheorems.map (·.identifier))
-  , ("perCoreWcrtTheorems", `SeLe4n.Kernel,
-      SeLe4n.Kernel.perCoreWcrtTheorems.map (·.identifier)) ]
+  censusInventoryNames.filterMap
+    (fun n => (censusPayloadOf n).map (fun p => (n, p.1, p.2)))
 
 /-- The census measures exactly the inventories the `theoremInventory` phases
     claim — neither more nor fewer.  Adding an inventory to a phase without
@@ -577,42 +608,51 @@ theorem censusInventoryNamesNodup :
     (censusInventories.map (·.1)).Nodup := by
   decide
 
--- `decide` over fourteen inventories evaluates every registered list; the
--- default recursion depth is not sized for that.
-set_option maxRecDepth 8000 in
-/-- **Each census name is bound to its own payload.**
+/-- **No published name is silently unmeasured.**
 
-    `censusCoversManifest` proves the name set is right and
-    `censusInventoryNamesNodup` proves the names are keys, but neither says a
-    name sits beside the identifier list it names: swapping two tuples' labels
-    passes both while attributing each payload's proposition count to the
-    other inventory, and the per-phase literals could then be "corrected" to
-    the mismatched values with Lean and the generator both content.
-
-    This closes that by pinning the correspondence itself.  Each pair is
-    checked against the inventory's *own* length witness, so a swapped label
-    puts the wrong length beside the name and fails elaboration — the payload
-    is identified by something only the real inventory can supply, not by
-    repeating the list here. -/
-theorem censusPayloadsMatchTheirNames :
-    censusInventories.all (fun e =>
-      match e.1 with
-      | "lockSetTheorems"                 => e.2.2.length == lockSetTheorems.length
-      | "withLockSetTheorems"             => e.2.2.length == withLockSetTheorems.length
-      | "deadlockTheorems"                => e.2.2.length == deadlockTheorems.length
-      | "serializabilityTheorems"         => e.2.2.length == serializabilityTheorems.length
-      | "lockPrimitives"                  => e.2.2.length == lockPrimitives.length
-      | "perObjectLockTheorems"           => e.2.2.length == Model.perObjectLockTheorems.length
-      | "crossCoreWakeTheorems"           => e.2.2.length == crossCoreWakeTheorems.length
-      | "perCoreTimerTheorems"            => e.2.2.length == perCoreTimerTheorems.length
-      | "perCoreIdleTheorems"             => e.2.2.length == perCoreIdleTheorems.length
-      | "perCorePipTheorems"              => e.2.2.length == PriorityInheritance.perCorePipTheorems.length
-      | "perCoreDomainTheorems"           => e.2.2.length == perCoreDomainTheorems.length
-      | "perCoreCbsTheorems"              => e.2.2.length == perCoreCbsTheorems.length
-      | "perCoreInvariantSuiteTheorems"   => e.2.2.length == perCoreInvariantSuiteTheorems.length
-      | "perCoreWcrtTheorems"             => e.2.2.length == perCoreWcrtTheorems.length
-      | _                                 => false) := by
+    `censusInventories` is a `filterMap`, so a name `censusPayloadOf` has no
+    arm for would be dropped rather than reported: the census would then
+    measure thirteen inventories while the manifest published fourteen, and
+    `censusCoversManifest` — which compares the *derived* list against the
+    manifest — would fail with a length mismatch that reads as a manifest
+    error rather than a missing arm.  Requiring the derivation to be total
+    names the real fault at the real site. -/
+theorem censusPayloadsAreTotal :
+    censusInventories.length = censusInventoryNames.length := by
   decide
+
+/-- The census names are pairwise distinct **as published**.
+
+    `censusInventoryNamesNodup` states this of the derived list; a duplicate in
+    `censusInventoryNames` would survive the derivation and be caught there
+    too, but only after `filterMap` had already paired it with a payload
+    twice.  Held at the source as well, so the diagnostic points at the list a
+    reader edits. -/
+theorem censusInventoryNamesSourceNodup :
+    censusInventoryNames.Nodup := by
+  decide
+
+-- **The namespace is held to the environment, not asserted.**
+--
+-- Each arm of `censusPayloadOf` returns a namespace beside its payload, and
+-- `censusResolve` searches from that namespace outward.  A wrong namespace is
+-- therefore not inert: it changes which constant an identifier resolves to,
+-- and a resolution that still succeeds from a wider prefix would leave the
+-- error invisible.  The pairing is checkable because the namespace and the
+-- name compose: `ns ++ name` must be the very constant whose identifiers that
+-- arm returns.  Checking that it *exists* is what makes the namespace field
+-- evidence rather than a restatement -- a swapped or stale namespace names no
+-- constant and fails this module's elaboration.
+private def censusNamespacesResolve : MetaM Unit := do
+  let env ← getEnv
+  for (nm, ns, _) in censusInventories do
+    let full := ns ++ nm.toName
+    if !(env.contains full) then
+      throwError "census namespace check: inventory '{nm}' is registered under \
+        namespace {ns}, but {full} names no constant -- the namespace and the \
+        payload beside it disagree"
+
+run_cmd liftTermElabM censusNamespacesResolve
 
 /-- Does `n` end with every component of `want`?
 

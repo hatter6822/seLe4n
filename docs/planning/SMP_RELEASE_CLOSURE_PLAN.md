@@ -16,8 +16,14 @@
 > **Calendar estimate**: the original 4–6 weeks covered documentation only and
 > is superseded; the replacement is derived from the measured aarch64 surface
 > by **RR1.11** and lands here in the same cut
-> **Sub-task count**: 25-35 across ~10-15 PRs, **plus SM10.1** — sized by
-> RR1.11, not by this line
+> **Sub-task count**: 25-35 was the pre-audit forecast and is superseded; the
+> tables below enumerate **41** rows — SM10.1: 1, SM10.2: 9, SM10.3: 20,
+> SM10.4: 3, SM10.5: 3, SM10.6: 5 — across ~10-15 PRs, **plus the SM10.1
+> runtime port**, which RR1.11 decomposes into rows this line cannot
+> pre-count.  The figure is therefore a floor, not a total, which is why it is
+> not declared as an exact count: `scripts/check_workstream_plan.py` holds a
+> declared total to its phase map, and a number that is knowingly incomplete
+> must not be offered to a gate as if it were the record
 
 ## 1. Phase goal
 
@@ -67,11 +73,11 @@ between that surface and a running image, plus the remediation WS-RR owns.
    Sequenced and sized by RR1.11 from the measured aarch64 surface.
 2. **Specification update** (SM10.2.1): spec §6.4 rewritten for
    SMP with 5 new subsections.
-3. **GitBook chapters** (SM10.2.2, .A.3): new chapter 16 (SMP
+3. **GitBook chapters** (SM10.2.2, SM10.2.3): new chapter 16 (SMP
    architecture), chapter 17 (verified lock primitives).
 4. **README sync** (SM10.2.4): metrics, capability claim, 11
    i18n locales.
-5. **DEVELOPMENT.md + CLAIM_EVIDENCE_INDEX.md** (SM10.2.5, .A.6).
+5. **DEVELOPMENT.md + CLAIM_EVIDENCE_INDEX.md** (SM10.2.5, SM10.2.6).
 6. **WORKSTREAM_HISTORY.md** WS-SM closure (SM10.2.7).
 7. **codebase_map.json regeneration** (SM10.2.8).
 8. **website manifest** (SM10.2.9).
@@ -80,7 +86,7 @@ between that surface and a running image, plus the remediation WS-RR owns.
 10. **Version bump to v1.0.0** (SM10.6.1), synchronized across every site
     `scripts/version_locations.sh` registers.
 11. **CHANGELOG closure** (SM10.6.2).
-12. **Archive WS-RC + WS-SM artefacts** (SM10.6.3, .C.4).
+12. **Archive WS-RC + WS-SM artefacts** (SM10.6.3, SM10.6.4).
 13. **Tag v1.0.0** (SM10.6.5).
 
 ## 2. Dependencies
@@ -223,7 +229,7 @@ docstring citing a theorem that does not exist.  Four of the 37 (register rows
 41, 52, 62, 70) are **source comments**, not documents; read the code beside
 each before editing it.
 
-### SM10.3 — Test suite completion (13 sub-tasks)
+### SM10.3 — Test suite completion (20 sub-tasks)
 
 **Refreshed against the tree by RR0.8 at `v0.34.26`.**  This table was written
 at `v0.31.2` and described as *new files* five suites, two fixtures and two
@@ -255,22 +261,29 @@ landed with their own phases and are wired in Tier 2.
 | SM10.3.12 | Wire tier-4/5 into `test_nightly.sh` | **done** — `test_tier4_nightly_candidates.sh` (via `run_gate_check`) and `test_tier5_cross_language.sh` are both invoked there | T |
 | SM10.3.13 | Verify the SM theorem manifest lands at HEAD | **mechanism landed** (RR0.6): `docs/smp_theorem_manifest.json` is generated from the tree and cross-checked in Tier 0, so "210 theorems" is no longer the criterion — the criterion is that the manifest agrees with the tree and every phase has an entry.  Owed: build the missing per-phase inventories (SM1, SM6..SM10), which contribute zero today | M |
 
-**Registered debt — hardware-validation scripts** (from the v0.34.0
-documentation audit; each is a runnable procedure `docs/HARDWARE_TESTING.md`
-documents whose script does not exist yet, with today's partial coverage
-noted there per section). Closure target: this phase (SM10.3 for the QEMU
-scripts, SM10.1 for the image build):
+**Rows 14–20 — the hardware-validation scripts** (registered debt from the
+v0.34.0 documentation audit; each is a runnable procedure
+`docs/HARDWARE_TESTING.md` documents whose script does not exist yet, with
+today's partial coverage noted there per section).  They are sub-tasks of this
+phase, not a separate ledger, and are numbered in `HARDWARE_TESTING.md`
+section order — the order a reader validating the board works through.  Six of
+the seven boot the kernel and so consume `SM10.1.1`'s image, which is why they
+sit in a higher-numbered phase than the image build rather than beside it; the
+exception is **`SM10.3.19`**, whose objdump check (§4.6) compiles a probe to an
+ARM64 object and disassembles it, needing no image at all — it may be written
+at any point.  The image build itself is **`SM10.1.1`**
+(`scripts/build_rpi5_image.sh`, §3.3); it is a row of SM10.1 and is not
+restated here.
 
-| Debt | Script owed | HARDWARE_TESTING.md § |
-|------|-------------|------------------------|
-| SM10.3.D1 | `scripts/test_qemu_tlb_barrier_audit.sh` (TLBI bracket audit over `-d in_asm`) | §4.2 |
-| SM10.3.D2 | `scripts/test_qemu_suspend_atomicity.sh` (suspend stress under 1 kHz tick) | §4.3 |
-| SM10.3.D3 | `scripts/test_qemu_svc_roundtrip.sh` (userspace `svc #0` per `SyscallId`) | §4.4 |
-| SM10.3.D4 | `scripts/test_qemu_wfe_bounded.sh` (bounded-WFE fall-through wallclock) | §4.5 |
-| SM10.3.D5 | `scripts/test_barrier_kind_emission.sh` (objdump emission check) | §4.6 |
-| SM10.3.D6 | `scripts/test_rpi5_osh_widening.sh` (on-board OSH latency probe) | §4.7 |
-| SM10.1.1 | `scripts/build_rpi5_image.sh` (kernel8.img + config.txt packaging; also the `sele4n-hal` bootable binary target it packages) | §3.3 |
-| SM10.3.D7 | Wire `scripts/test_qemu_tlb_cache_coherence.sh` — the script exists but is a self-skipping stub until SM10.1.1's image lands | §4.1 |
+| Sub | Script owed | HARDWARE_TESTING.md § | Est |
+|-----|-------------|-----------------------|-----|
+| SM10.3.14 | Wire `scripts/test_qemu_tlb_cache_coherence.sh` — the script exists but is a self-skipping stub until SM10.1.1's image lands | §4.1 | M |
+| SM10.3.15 | `scripts/test_qemu_tlb_barrier_audit.sh` (TLBI bracket audit over `-d in_asm`) | §4.2 | M |
+| SM10.3.16 | `scripts/test_qemu_suspend_atomicity.sh` (suspend stress under 1 kHz tick) | §4.3 | M |
+| SM10.3.17 | `scripts/test_qemu_svc_roundtrip.sh` (userspace `svc #0` per `SyscallId`) | §4.4 | L |
+| SM10.3.18 | `scripts/test_qemu_wfe_bounded.sh` (bounded-WFE fall-through wallclock) | §4.5 | M |
+| SM10.3.19 | `scripts/test_barrier_kind_emission.sh` (objdump emission check) | §4.6 | S |
+| SM10.3.20 | `scripts/test_rpi5_osh_widening.sh` (on-board OSH latency probe) | §4.7 | M |
 
 ### SM10.4 — AN12-B inventory closure (3 sub-tasks)
 
