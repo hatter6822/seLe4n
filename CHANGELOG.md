@@ -1,3 +1,51 @@
+## v0.34.21 — the gate still could not run in CI, and could not tell an archive from a deletion; Codex review round 16
+
+Seven findings — three on the gate, four on the plan and its mirrors.
+
+**The gate was still inert in CI.** v0.34.20 added an integration base, but the
+Tier-0 job uses the default shallow checkout and fetches neither `origin/main`
+nor a base SHA, so `baseline_refs()` fell back to `HEAD` — where a committed
+deletion is already present — printed its note and exited 0. The fix worked
+locally, where `origin/main` resolves, and nowhere else. Both Tier-0 workflows
+now fetch the PR base (or the push's `before` SHA) and export
+`SELE4N_PLAN_BASE_REF` before running the tier.
+
+**A closed plan's archive move read as a deletion.** SM10.C.4 moves this very
+plan into `docs/dev_history/planning/`, where its rows still define every ID
+the canonical history cites — but a set difference over `docs/planning/` alone
+would have rejected the repository for a legitimate archive.
+
+**A wholesale prefix rename bypassed the foreign-key check entirely**, because
+companion citations were scanned only for the *new* prefix; the old one was
+simply not looked for.
+
+Both share one cause: citations were checked one plan at a time. They are now
+checked against a **global definition map** keyed by prefix, built across
+`docs/planning/` and the archive. A prefix nothing defines any more is reported
+wholesale — deleted, or renamed out from under its citations — and a prefix
+still defined has each citation checked individually. Witnessed on real
+repositories: archiving passes, re-prefixing fails.
+
+**Four in the plan and its mirrors:**
+
+- `DEVELOPMENT.md` still named WS-SM the active workstream with v0.34.1 the
+  latest cut, and the testing GitBook still called SM10 merely pending — so
+  both contributor-facing summaries routed readers straight past the blocker
+  registered two cuts ago.
+- The WS-RR history entry said RR8.4 updates its row; after the RR8 swap that
+  is RR8.5, and following the stale reference would have recreated the
+  premature-closure ordering the swap exists to prevent.
+- RR3's acceptance requires both payoff theorems cited from
+  `CLAIM_EVIDENCE_INDEX.md`, and no RR3 row owned that file. Paired with the
+  theorem that changes the claim surface.
+- RR6 switched the deployed lock one PR before correcting the documentation
+  naming the old one, shipping a version whose canonical Lean-side concurrency
+  docs name the wrong runtime primitive. Merged into the switch.
+
+Counts: 148 (RR6 18). Gate witnesses: 14.
+
+Refs: scripts/check_workstream_plan.py
+
 ## v0.34.20 — the deletion gate was dead in CI, where it was meant to run; Codex review round 15
 
 Four findings, two of them on the gate added two cuts ago.

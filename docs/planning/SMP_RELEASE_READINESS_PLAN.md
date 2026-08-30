@@ -6,7 +6,7 @@
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 149 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 148 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -141,7 +141,7 @@ Nothing else may overlap without re-reading the dependency list above.
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 | L–XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
 | RR5 | Boot-path fail-open closure | 14 | M–L |
-| RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 | L |
+| RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 18 | L |
 | RR7 | Medium-severity sweep | 26 | M |
 | RR8 | Phase closure and hand-off to SM10 | 5 | S |
 
@@ -269,7 +269,7 @@ must carry bundles first.
 | RR3.13 | Build the reachability bundle that discharges the remaining pre-state preconditions | `SeLe4n/Kernel/IPC/Invariant/Reachability.lean` (new) | L |
 | RR3.14 | Prove the boot state satisfies it, so the bundle is inhabited rather than vacuous | (same) | M |
 | RR3.15 | `dispatchWithCap_preserves_ipcInvariantFull` (**depends on RR2**) | `SeLe4n/Kernel/API.lean` | L |
-| RR3.16 | `syscallDispatch_preserves_ipcInvariantFull` — the D8 payoff | (same) | L |
+| RR3.16 | `syscallDispatch_preserves_ipcInvariantFull` — the D8 payoff — **and** cite both payoff theorems from `docs/CLAIM_EVIDENCE_INDEX.md`, which this phase's acceptance requires and no other row owned: the theorem that changes the claim surface is the one that must update the claim | `SeLe4n/Kernel/API.lean`, `docs/CLAIM_EVIDENCE_INDEX.md` | L |
 | RR3.17 | Retire `IPC_INVARIANT_DETHREADING_PLAN.md`: mark closed, record the closure version, move to `docs/dev_history/planning/` | (file move) | S |
 
 **Acceptance**: the RR3.1 gate reports zero post-state bindings of
@@ -409,20 +409,19 @@ would have caught that drives neither.
 | RR6.3 | Extend the oracle to the queued lock, so both implementations are covered | (same) | M |
 | RR6.4 | Operational step model for `QueuedRwLock` plus its refinement to the Lean FIFO spec. `RwLockRefinement.lean` models the **CAS-retry** `rw_lock.rs`, and the `queued_*` theorems in `RwLock.lean` are about the abstract spec's waiter queue — neither is a bridge to the queued Rust algorithm this phase deploys, so without this the next sub-task's corollary has nothing to compose | `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (new) | XL |
 | RR6.5 | Corollary: `QueuedRwLock` refines the Lean FIFO spec end to end, closing the spec-to-implementation gap for the lock the next sub-task deploys — proved before the switch, so no version ships an unrefined core lock | (same) | L |
-| RR6.6 | Point `STATIC_RW_LOCK_POOL` and the `ffi_rw_lock_*` entries at `QueuedRwLock`, so the deployed lock is the FIFO one the spec describes | `rust/sele4n-hal/src/lock_bridge.rs` | M |
-| RR6.7 | Update the FFI and information-flow docs that name the CAS-retry lock as deployed | `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` | S |
-| RR6.8 | Decide and record the fate of `rw_lock.rs`: retained for compatibility, or retired | (2 files) | S |
-| RR6.9 | `TicketLockConcrete` operational step function, mirroring the RwLock refinement's shape | `SeLe4n/Kernel/Concurrency/Locks/TicketLockRefinement.lean` | L |
-| RR6.10 | Trace correspondence (`blockBisim` / `ListBlockBisim` analogue) replacing the counter arithmetic in `rust_ticketLock_refines_lean` | (same) | L |
-| RR6.11 | Replace the tautological conjunct with a statement that can fail | (same) | M |
-| RR6.12 | D-4: prove `opCorresponds`-chain plus an explicit load-then-CAS trace-shape predicate implies `ListBlockBisim`, so the twelve discharge lemmas compose into the main theorem instead of it assuming its own conclusion | `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` | XL |
-| RR6.13 | Run the deployed queued lock under Loom: the dev-dependency alone explores nothing, because `queued_rw_lock.rs` imports `core::sync::atomic` directly and Loom only sees its own instrumented atomics. Add the `cfg(loom)` synchronisation aliases so the lock compiles against them, write `loom::model` tests over the bounded interleavings, and invoke them from CI or the nightly — otherwise §8's "loom gate runs" is satisfied by a manifest entry | `rust/sele4n-hal/Cargo.toml`, `rust/sele4n-hal/src/queued_rw_lock.rs`, `.github/workflows/` | L |
-| RR6.14 | Add a nightly `miri` job for the queued lock | `.github/workflows/` | M |
-| RR6.15 | Raise the FIFO and stress iteration counts to the plan's stated thresholds | `rust/sele4n-hal/src/queued_rw_lock.rs` | S |
-| RR6.16 | Prove the D-2.5 writer-bounded-wait statement as specified — the ingredients exist; only a single-state `_weak` corollary landed | `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` | M |
-| RR6.17 | Repoint the R-10 aggregator entry at the theorem that proves writer liveness; keep the safety theorem registered under its accurate name | `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` | S |
-| RR6.18 | Plan corrections: the retired-MCS design section, the D-1.9 landed row, the false §3.2.6.1 theorem statement, and the Appendix A commands that name a nonexistent script | `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | M |
-| RR6.19 | Retitle the plan: it is no longer post-v1.0.0; add an SM2.C-defer row to `docs/WORKSTREAM_HISTORY.md` with closure target RR6 — this phase, not the boot-path phase that precedes it | (2 files) | S |
+| RR6.6 | Point `STATIC_RW_LOCK_POOL` and the `ffi_rw_lock_*` entries at `QueuedRwLock`, so the deployed lock is the FIFO one the spec describes — **and** correct the FFI and information-flow docs naming the CAS-retry lock as deployed in the same slice, since landing them apart ships a version whose canonical Lean-side concurrency documentation names the wrong runtime primitive | `rust/sele4n-hal/src/lock_bridge.rs`, `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` | M |
+| RR6.7 | Decide and record the fate of `rw_lock.rs`: retained for compatibility, or retired | (2 files) | S |
+| RR6.8 | `TicketLockConcrete` operational step function, mirroring the RwLock refinement's shape | `SeLe4n/Kernel/Concurrency/Locks/TicketLockRefinement.lean` | L |
+| RR6.9 | Trace correspondence (`blockBisim` / `ListBlockBisim` analogue) replacing the counter arithmetic in `rust_ticketLock_refines_lean` | (same) | L |
+| RR6.10 | Replace the tautological conjunct with a statement that can fail | (same) | M |
+| RR6.11 | D-4: prove `opCorresponds`-chain plus an explicit load-then-CAS trace-shape predicate implies `ListBlockBisim`, so the twelve discharge lemmas compose into the main theorem instead of it assuming its own conclusion | `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` | XL |
+| RR6.12 | Run the deployed queued lock under Loom: the dev-dependency alone explores nothing, because `queued_rw_lock.rs` imports `core::sync::atomic` directly and Loom only sees its own instrumented atomics. Add the `cfg(loom)` synchronisation aliases so the lock compiles against them, write `loom::model` tests over the bounded interleavings, and invoke them from CI or the nightly — otherwise §8's "loom gate runs" is satisfied by a manifest entry | `rust/sele4n-hal/Cargo.toml`, `rust/sele4n-hal/src/queued_rw_lock.rs`, `.github/workflows/` | L |
+| RR6.13 | Add a nightly `miri` job for the queued lock | `.github/workflows/` | M |
+| RR6.14 | Raise the FIFO and stress iteration counts to the plan's stated thresholds | `rust/sele4n-hal/src/queued_rw_lock.rs` | S |
+| RR6.15 | Prove the D-2.5 writer-bounded-wait statement as specified — the ingredients exist; only a single-state `_weak` corollary landed | `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` | M |
+| RR6.16 | Repoint the R-10 aggregator entry at the theorem that proves writer liveness; keep the safety theorem registered under its accurate name | `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` | S |
+| RR6.17 | Plan corrections: the retired-MCS design section, the D-1.9 landed row, the false §3.2.6.1 theorem statement, and the Appendix A commands that name a nonexistent script | `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | M |
+| RR6.18 | Retitle the plan: it is no longer post-v1.0.0; add an SM2.C-defer row to `docs/WORKSTREAM_HISTORY.md` with closure target RR6 — this phase, not the boot-path phase that precedes it | (2 files) | S |
 
 **Acceptance**: the deployed RwLock is the one the Lean spec describes; the
 Tier-5 oracle drives real locks; neither refinement theorem assumes its own

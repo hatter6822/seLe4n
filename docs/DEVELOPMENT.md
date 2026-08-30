@@ -7,9 +7,17 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 
 It is aligned to the **current project state**:
 
-- **active workstream:** **WS-SM (SMP multi-core completion) IN FLIGHT**
+- **active workstream:** **WS-RR (SMP Release Readiness) PLANNED — the
+  pre-SM10 remediation, 148 sub-tasks across RR0..RR8.  SM10 is BLOCKED on it
+  and must not open until RR8 closes**; the pre-SM10 completeness audit found
+  three findings that block starting SM10, a false scope statement in its own
+  plan, and fail-open latents that become reachable when the boot path goes
+  live.  Plan:
+  [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md);
+  register: [`docs/planning/UNFINISHED_SMP_WORK.md`](planning/UNFINISHED_SMP_WORK.md).
+- **parent workstream:** **WS-SM (SMP multi-core completion) IN FLIGHT**
   (v0.31.2 → v1.0.0; closes with a bootable verified SMP microkernel on
-  Raspberry Pi 5).  **Latest cut (v0.34.1): the SM5 runtime-seam completion**
+  Raspberry Pi 5).  **Preceding cut (v0.34.1): the SM5 runtime-seam completion**
   — the three seams SM5's docstrings promised between the verified per-core
   scheduler and the hardware IRQ path are closed: `trap.S`'s IRQ vectors
   branch to `handle_irq_per_core` (the legacy single-core `handle_irq`

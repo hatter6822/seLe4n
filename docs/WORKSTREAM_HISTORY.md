@@ -7124,7 +7124,7 @@ path goes live. WS-RR closes that work first, so SM10 can be the release-closure
 phase it was scoped as. **SM10 is BLOCKED on WS-RR** and must not open until
 RR8 closes.
 
-149 sub-tasks across nine phases, numbered in execution order:
+148 sub-tasks across nine phases, numbered in execution order:
 
 | Phase | Scope | Subs |
 |-------|-------|------|
@@ -7134,7 +7134,7 @@ RR8 closes.
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 |
 | RR5 | Boot-path fail-open closure | 14 |
-| RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 |
+| RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 18 |
 | RR7 | Medium-severity sweep | 26 |
 | RR8 | Phase closure and hand-off to SM10 | 5 |
 
@@ -7146,7 +7146,8 @@ preservation while SM6.D claims coverage (RR2).
 
 This entry is written at **opening**, not at closure: a workstream that is
 active but absent from this file is the precise defect the audit filed as its
-first blocker, and RR8.4 updates the row rather than creating it.
+first blocker, and RR8.5 updates the row rather than creating it — after
+RR8.4 has confirmed SM10's dependencies are actually met.
 
 ## WS-RC — Pre-1.0 Audit Remediation (v0.30.11 → v0.31.2, **CLOSED** — R0–R5 landed; R6..R14 absorbed into WS-SM per SM0.Q)
 

@@ -181,8 +181,9 @@ def list_tracked(ref: str) -> list[str]:
     its prefix would never be checked and a companion still citing its
     sub-tasks would pass.  The gate reads the index for content, so it must
     enumerate from the index too."""
-    cmd = (["git", "ls-files", "--", "docs/planning/*.md"] if ref == ":"
-           else ["git", "ls-tree", "-r", "--name-only", ref, "--", "docs/planning/"])
+    paths = ["docs/planning/", "docs/dev_history/planning/"]
+    cmd = (["git", "ls-files", "--", *[x + "*.md" for x in paths]] if ref == ":"
+           else ["git", "ls-tree", "-r", "--name-only", ref, "--", *paths])
     try:
         out = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True,
                              check=True).stdout
@@ -197,6 +198,65 @@ def read_at(ref: str, rel: str) -> str | None:
                               cwd=REPO, capture_output=True, text=True, check=True).stdout
     except subprocess.CalledProcessError:
         return None
+
+
+def global_definitions() -> dict[str, tuple[str, set[str]]]:
+    """Every sub-task ID the indexed tree defines, keyed by prefix.
+
+    Built across `docs/planning/` **and** `docs/dev_history/planning/`, because
+    checking a companion's citation against one plan at a time cannot see two
+    things: a plan archived on close still defines its IDs (SM10.C.4 moves this
+    very plan), and a plan whose rows are re-prefixed wholesale leaves the old
+    prefix cited nowhere the per-plan scan looks.  A map keyed by prefix
+    answers both.
+    """
+    out: dict[str, tuple[str, set[str]]] = {}
+    for rel in list_tracked(":"):
+        body = read_indexed(rel)
+        if not body:
+            continue
+        rows = list(SUBTASK_ROW.finditer(body))
+        if not rows:
+            continue
+        prefix = rows[0].group(1)
+        ids = {f"{prefix}{m.group(2)}.{m.group(3)}" for m in rows
+               if m.group(1) == prefix}
+        where, known = out.get(prefix, (rel, set()))
+        out[prefix] = (where, known | ids)
+    return out
+
+
+def companion_citation_errors(companions: dict[str, str]) -> list[str]:
+    """Hold every companion citation against the global map.
+
+    A prefix the tree no longer defines anywhere is reported wholesale: that is
+    a plan deleted, or renamed out from under its citations.  A prefix that is
+    still defined has each citation checked individually.
+    """
+    errors: list[str] = []
+    defined = global_definitions()
+    baseline_prefixes: dict[str, str] = {}
+    for base in baseline_refs():
+        for rel in list_tracked(base):
+            body = read_at(base, rel)
+            rows = list(SUBTASK_ROW.finditer(body)) if body else []
+            if rows:
+                baseline_prefixes.setdefault(rows[0].group(1), rel)
+
+    for where, text in companions.items():
+        for m in sorted({(a, b, c) for a, b, c in
+                         re.findall(r"\b([A-Z]{2,})(\d+)\.(\d+)\b", text)}):
+            prefix, cite = m[0], f"{m[0]}{m[1]}.{m[2]}"
+            if prefix in defined:
+                if cite not in defined[prefix][1]:
+                    errors.append(f"{where}: reference to {cite}, which is not a "
+                                  f"sub-task in {defined[prefix][0]}")
+            elif prefix in baseline_prefixes:
+                errors.append(
+                    f"{where}: cites {cite}, but nothing in the tree defines "
+                    f"{prefix} any more — {baseline_prefixes[prefix]} defined it "
+                    f"before this change (deleted, or its rows re-prefixed)")
+    return errors
 
 
 def baseline_refs() -> list[str]:
@@ -280,7 +340,7 @@ def main(argv: list[str]) -> int:
     if not plans:
         print("check_workstream_plan: no plan declares a 'Sub-task count' header.")
         return 0
-    errors, legacy, checked = deleted_plan_errors(companions), [], []
+    errors, legacy, checked = companion_citation_errors(companions), [], []
     for rel in plans:
         body = read_indexed(rel)
         assert body is not None
@@ -289,6 +349,12 @@ def main(argv: list[str]) -> int:
             continue
         checked.append(rel)
         errors += check_plan(rel, body, {k: v for k, v in companions.items() if k != rel})
+    seen, deduped = set(), []
+    for e in errors:
+        if e not in seen:
+            seen.add(e)
+            deduped.append(e)
+    errors = deduped
     if errors:
         print(f"FAIL: {len(errors)} workstream-plan structure error(s):")
         for e in errors:
@@ -330,6 +396,52 @@ CLEAN = """
 | XX1.1 | consumes XX0.2 | b | M |
 | XX1.2 | last | b | M |
 """
+
+
+def _archive_and_reprefix_cases():
+    """Two moves that look identical to a naive set difference but are not:
+    archiving a closed plan keeps its IDs defined, re-prefixing its rows does
+    not."""
+    import tempfile
+    global REPO
+    saved, out = REPO, []
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            plan = root / "docs" / "planning" / "XX_PLAN.md"
+            plan.parent.mkdir(parents=True)
+            (root / "docs" / "dev_history" / "planning").mkdir(parents=True)
+            plan.write_text(CLEAN, encoding="utf-8")
+            (root / "CLAUDE.md").write_text("scheduled at XX0.2\n", encoding="utf-8")
+            git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, check=True)
+            git("init", "-q", "-b", "main")
+            git("config", "user.email", "gate@example.invalid")
+            git("config", "user.name", "gate")
+            git("add", "-A"); git("commit", "-qm", "plan and citation")
+            REPO = root
+            os.environ["SELE4N_PLAN_BASE_REF"] = "main"
+            companions = {"CLAUDE.md": (root / "CLAUDE.md").read_text()}
+
+            # Archiving on close: SM10.C.4 does exactly this to the live plan.
+            git("mv", "docs/planning/XX_PLAN.md",
+                "docs/dev_history/planning/XX_PLAN.md")
+            out.append(("archiving a closed plan does not orphan its citations",
+                        companion_citation_errors(companions) == [],
+                        companion_citation_errors(companions)))
+
+            # Re-prefixing every row: the IDs the companion cites cease to exist.
+            git("mv", "docs/dev_history/planning/XX_PLAN.md",
+                "docs/planning/XX_PLAN.md")
+            plan.write_text(CLEAN.replace("XX", "YY"), encoding="utf-8")
+            git("add", "-A")
+            errs = companion_citation_errors(companions)
+            out.append(("re-prefixing a plan's rows is caught, not bypassed",
+                        any("nothing in the tree defines XX" in e for e in errs),
+                        errs))
+            return out
+    finally:
+        REPO = saved
+        os.environ.pop("SELE4N_PLAN_BASE_REF", None)
 
 
 def _committed_deletion_case():
@@ -466,6 +578,7 @@ def self_test() -> int:
     # *enumerated* -- a fixture string cannot exercise that.
     cases.append(_deleted_plan_case())
     cases.append(_committed_deletion_case())
+    cases.extend(_archive_and_reprefix_cases())
 
     # A phase listed twice must be reported, not collapsed by the assignment.
     dup = CLEAN.replace("| XX1 | second | 2 |", "| XX1 | second | 2 |\n| XX1 | second again | 9 |")
