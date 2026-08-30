@@ -1,7 +1,7 @@
 {
   "schema": "wsm-theorem-manifest/1",
   "generator": "scripts/generate_smp_theorem_manifest.py",
-  "note": "Generated from the tree, not hand-summed. `entryCount` is the number a Lean size witness proves for that inventory \u2014 every registered declaration, whatever its type. `theoremCount` is the subset whose declaration type is a Prop, verified by the propositionality census in SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean (this script reads text and has no elaborator, so it cannot check that itself). Quote theoremTotal, not entryTotal: the inventories register a phase's whole surface, so 209 entries are defs rather than proofs. Regenerate with `python3 scripts/generate_smp_theorem_manifest.py --write`.",
+  "note": "Generated from the tree, not hand-summed. `entryCount` is the number a Lean size witness proves for that inventory \u2014 every registered declaration, whatever its type. `theoremCount` is the subset whose declaration type is a Prop, verified by the propositionality census in SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean (this script reads text and has no elaborator, so it cannot check that itself). Quote theoremTotal, not entryTotal: the inventories register a phase's whole surface, so 209 entries are defs rather than proofs. SCOPE: entryTotal and theoremTotal cover the THEOREM INVENTORIES only, matching Lean's smpInventoriedEntryCount, which scores a non-theoremInventory phase as zero. The assumption ledgers are registered (so they cannot go unclaimed) and their entries are reported per phase, so summing phases[].entryCount exceeds entryTotal by exactly ledgerEntryTotal; registeredEntryTotal is that sum. Regenerate with `python3 scripts/generate_smp_theorem_manifest.py --write`.",
   "phases": [
     {
       "phase": "SM0",
@@ -189,5 +189,9 @@
     }
   ],
   "entryTotal": 1111,
-  "theoremTotal": 902
+  "theoremTotal": 902,
+  "ledgerEntryTotal": 16,
+  "registeredEntryTotal": 1127,
+  "theoremInventoryCount": 14,
+  "ledgerInventoryCount": 2
 }

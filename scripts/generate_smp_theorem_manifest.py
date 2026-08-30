@@ -55,6 +55,7 @@ Exit status: 0 when the manifest agrees with the tree, 1 on any drift.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import pathlib
@@ -117,7 +118,7 @@ PHASE_CODES = list(EXPECTED_PHASE_CODES.values())
 # A false positive here is fail-*closed*: a phantom inventory that no phase
 # claims is a loud error, never a silent pass.  That asymmetry is what makes
 # the permissive pattern the safe one.
-_DECL_START = r"(?<![A-Za-z0-9_'!?.])"
+_DECL_START = r"(?<![\w'!?.\u2080-\u209c])"
 
 # Lean accepts `lemma` wherever it accepts `theorem`, and this repository uses
 # both.  Keying discovery on `theorem` alone made a `lemma`-declared witness
@@ -136,7 +137,15 @@ _THEOREM = r"(?:theorem|lemma)"
 # pattern (`lemma`, then indentation, now qualification), so the fix is the
 # general one: match Lean's identifier grammar rather than enumerate the
 # spellings that happen to appear in the tree today.
-_IDENT = r"[A-Za-z_][A-Za-z0-9_'!?]*"
+# Lean identifiers are not ASCII.  `σTheorems`, `α`, `x₁` all elaborate, and
+# an ASCII-only class made a Unicode-named inventory invisible — the same
+# fail-open as every prefix gap above.  `[^\W\d]` is Python's Unicode-aware
+# "letter or underscore" (a word character that is not a digit); the tail adds
+# Lean's own extras: primes, `!`, `?`, and the subscript block, whose
+# code points are category `No` and therefore outside `\w`.
+_IDENT_HEAD = r"[^\W\d]"
+_IDENT_TAIL = r"[\w'!?\u2080-\u209c]"
+_IDENT = _IDENT_HEAD + _IDENT_TAIL + r"*"
 _QUALIFIED = _IDENT + r"(?:\." + _IDENT + r")*"
 
 
@@ -145,6 +154,90 @@ NODUP_RE = re.compile(
     _DECL_START + _THEOREM + r"\s+(" + _QUALIFIED + r")_identifiers_nodup\b",
     re.M,
 )
+
+
+_NS_OPEN_RE = re.compile(r"^[ \t]*namespace[ \t]+(" + _QUALIFIED + r")", re.M)
+_SECTION_OPEN_RE = re.compile(r"^[ \t]*section(?:[ \t]+(" + _QUALIFIED + r"))?[ \t]*$", re.M)
+_END_RE = re.compile(r"^[ \t]*end(?:[ \t]+(" + _QUALIFIED + r"))?[ \t]*$", re.M)
+
+
+def _namespace_at(src: str):
+    """Return `pos -> enclosing namespace components`, or `None` if unparseable.
+
+    Two witnesses belong to the same inventory only when they name the same
+    *fully qualified* list.  Textual name equality cannot decide that: a bare
+    `xTheorems_identifiers_nodup` inside `namespace Foo` and a bare
+    `xTheorems_count` inside `namespace Bar` are different declarations that
+    read identically, and pairing them bound Bar's length to Foo's inventory —
+    a wrong number, reported silently.  Round 4 tightened the *qualified*
+    spelling and left this one, which is the spelling every real inventory
+    uses; strictness cannot separate them, only context can.
+
+    `None` means the scanner lost track (an `end` matching no open frame).
+    Callers must then fall back to exact-name matching, which refuses loudly
+    rather than guessing — a tracker bug must not become a wrong number.
+    """
+    events: list[tuple[int, str, str | None]] = []
+    for m in _NS_OPEN_RE.finditer(src):
+        events.append((m.start(), "namespace", m.group(1)))
+    for m in _SECTION_OPEN_RE.finditer(src):
+        events.append((m.start(), "section", m.group(1)))
+    for m in _END_RE.finditer(src):
+        events.append((m.start(), "end", m.group(1)))
+    events.sort(key=lambda e: e[0])
+
+    # (position, components-in-scope-from-here)
+    timeline: list[tuple[int, tuple[str, ...]]] = [(0, ())]
+    stack: list[tuple[str, str | None]] = []
+    for pos, kind, name in events:
+        if kind == "end":
+            # Close the innermost frame this `end` can name.  A bare `end`
+            # closes a bare `section`; `end X` closes the innermost frame
+            # named X, which may be either a namespace or a section.
+            for i in range(len(stack) - 1, -1, -1):
+                if stack[i][1] == name:
+                    del stack[i:]
+                    break
+            else:
+                return None
+        else:
+            stack.append((kind, name))
+        comps: tuple[str, ...] = ()
+        for k, n in stack:
+            if k == "namespace" and n:
+                comps = comps + tuple(n.split("."))
+        timeline.append((pos, comps))
+
+    def at(pos: int) -> tuple[str, ...]:
+        found: tuple[str, ...] = ()
+        for p, comps in timeline:
+            if p <= pos:
+                found = comps
+            else:
+                break
+        return found
+
+    return at
+
+
+def _full_name(ns: tuple[str, ...], written: str) -> str:
+    """The declaration's fully qualified name: enclosing namespace + as written."""
+    return ".".join(ns + tuple(written.split(".")))
+
+
+@functools.lru_cache(maxsize=1)
+def _any_count_re() -> re.Pattern[str]:
+    """Every `<name>_count : <subject>.length = N` in a file, name-agnostic.
+
+    Both the declaration name and the `.length` subject are captured so each
+    can be resolved against its enclosing namespace; a witness whose subject
+    resolves elsewhere is not this inventory's size witness.
+    """
+    return re.compile(
+        _DECL_START + _THEOREM + r"\s+(?P<name>" + _QUALIFIED + r")_count\b\s*:\s*"
+        r"(?:\r?\n\s*)?(?P<subject>" + _QUALIFIED + r")\.length\s*=\s*(?P<n>\d+)",
+        re.M,
+    )
 
 
 def _count_re(inv: str) -> re.Pattern[str]:
@@ -167,7 +260,7 @@ def _count_re(inv: str) -> re.Pattern[str]:
     name = re.escape(inv)
     return re.compile(
         _DECL_START + _THEOREM + r"\s+" + name + r"_count\b\s*:\s*"
-        r"(?:\r?\n\s*)?" + name + r"\.length\s*=\s*(\d+)",
+        r"(?:\r?\n\s*)?" + name + r"\.length\s*=\s*(?P<n>\d+)",
         re.M,
     )
 
@@ -199,6 +292,7 @@ def discover_in(sources: dict[str, str]) -> tuple[dict[str, dict[str, object]], 
     found: dict[str, dict[str, object]] = {}
     errors: list[str] = []
     for rel, src in sources.items():
+        ns_at = _namespace_at(src)
         for m in NODUP_RE.finditer(src):
             written = m.group(1)
             # The manifest claims an inventory by its bare name, so that is the
@@ -214,14 +308,39 @@ def discover_in(sources: dict[str, str]) -> tuple[dict[str, dict[str, object]], 
                     f"{found[inv]['module']} and {rel}"
                 )
                 continue
-            cm = _count_re(written).search(src)
+            # Pair the size witness by *fully qualified* name, not by the text
+            # of either declaration.  With namespace context available, a
+            # witness may be written bare or qualified and still be matched,
+            # while a same-looking declaration in another namespace is not.
+            cm = None
+            if ns_at is not None:
+                want = _full_name(ns_at(m.start()), written)
+                for c in _any_count_re().finditer(src):
+                    if _full_name(ns_at(c.start()), c.group("name")) == want and \
+                            _full_name(ns_at(c.start()), c.group("subject")) == want:
+                        cm = c
+                        break
+            else:
+                # The scanner lost track of the namespace structure, so no
+                # pairing can be verified.  Refuse the whole file loudly.
+                # Falling back to exact-name matching would silently pair the
+                # bare/bare cross-namespace case — the very defect namespace
+                # tracking exists to close — so a tracker failure must surface
+                # as a red gate, never as a number.
+                errors.append(
+                    f"{rel}: namespace structure is unparseable (an `end` closes no "
+                    f"open `namespace`/`section`), so inventory {inv!r} cannot have "
+                    f"its size witness verified"
+                )
+                continue
             if cm is None:
                 errors.append(
                     f"inventory {inv!r} ({rel}) has {written}_identifiers_nodup but no "
-                    f"readable size witness `theorem {written}_count : {written}.length = N`"
+                    f"readable size witness `theorem {written}_count : {written}.length = N` "
+                    f"in the same namespace"
                 )
                 continue
-            found[inv] = {"module": rel, "count": int(cm.group(1))}
+            found[inv] = {"module": rel, "count": int(cm.group("n"))}
     return found, errors
 
 
@@ -514,13 +633,41 @@ def build_manifest(
             "reads text and has no elaborator, so it cannot check that itself). "
             "Quote theoremTotal, not entryTotal: the inventories register a "
             "phase's whole surface, so 209 entries are defs rather than proofs. "
-            "Regenerate with `python3 scripts/generate_smp_theorem_manifest.py "
-            "--write`."
+            "SCOPE: entryTotal and theoremTotal cover the THEOREM INVENTORIES "
+            "only, matching Lean's smpInventoriedEntryCount, which scores a "
+            "non-theoremInventory phase as zero. The assumption ledgers are "
+            "registered (so they cannot go unclaimed) and their entries are "
+            "reported per phase, so summing phases[].entryCount exceeds "
+            "entryTotal by exactly ledgerEntryTotal; registeredEntryTotal is "
+            "that sum. Regenerate with `python3 "
+            "scripts/generate_smp_theorem_manifest.py --write`."
         ),
         "phases": phases,
         "entryTotal": total,
         "theoremTotal": sum(
             int(p["theoremCount"]) for p in phases  # type: ignore[index,call-overload]
+        ),
+        # Emitted so the artefact reconciles with itself.  Reporting only the
+        # theorem-inventory total while listing every phase's entryCount left a
+        # consumer summing the array with a different number and no way to tell
+        # which was meant.
+        "ledgerEntryTotal": sum(
+            int(p["entryCount"])  # type: ignore[index,call-overload]
+            for p in phases
+            if p["kind"] != "theoremInventory"
+        ),
+        "registeredEntryTotal": sum(
+            int(p["entryCount"]) for p in phases  # type: ignore[index,call-overload]
+        ),
+        # Inventories, not phases: three phases carry theorem inventories, but
+        # between them they carry fourteen of the sixteen.
+        "theoremInventoryCount": sum(
+            len(p["inventories"]) for p in phases  # type: ignore[arg-type]
+            if p["kind"] == "theoremInventory"
+        ),
+        "ledgerInventoryCount": sum(
+            len(p["inventories"]) for p in phases  # type: ignore[arg-type]
+            if p["kind"] != "theoremInventory"
         ),
     }, errors
 
@@ -848,6 +995,81 @@ def _self_test() -> int:
     check("a wrapped total marker is still read",
           any("99" in e for e in errs), "; ".join(errs))
 
+    # 26. Lean identifiers are not ASCII.  `σTheorems` elaborates, and an
+    #     ASCII-only class made such an inventory invisible to discovery.
+    #     (Codex review round 6, PR #882 — the reviewer's own `σ` fixture.)
+    src = dict(_CLEAN_SOURCES)
+    src["K.lean"] = ("theorem σTheorems_identifiers_nodup : True := trivial\n"
+                     "theorem σTheorems_count : σTheorems.length = 5 := by decide\n")
+    _, errs = _run(src, _CLEAN_MANIFEST)
+    check("a Unicode-named inventory is discovered",
+          any("'σTheorems'" in e and "claimed by no" in e for e in errs),
+          "; ".join(errs))
+
+    # 27. Lean subscripts (`x₁`) are category `No` and outside `\w`, so they
+    #     need their own range or the same fail-open returns.
+    src = dict(_CLEAN_SOURCES)
+    src["L.lean"] = ("theorem x₁Theorems_identifiers_nodup : True := trivial\n"
+                     "theorem x₁Theorems_count : x₁Theorems.length = 7 := by decide\n")
+    _, errs = _run(src, _CLEAN_MANIFEST)
+    check("a subscripted inventory name is discovered",
+          any("'x₁Theorems'" in e and "claimed by no" in e for e in errs),
+          "; ".join(errs))
+
+    # 28. **The wrong number.**  Two bare witnesses in different namespaces read
+    #     identically and are different declarations; pairing them bound one
+    #     namespace's length to the other's inventory and reported it silently.
+    #     Round 4 fixed only the qualified spelling and left this one — the
+    #     spelling every real inventory uses.  Strictness cannot separate them;
+    #     only namespace context can.  (Codex review round 6, PR #882.)
+    src = dict(_CLEAN_SOURCES)
+    src["M.lean"] = (
+        "namespace Foo\ntheorem pTheorems_identifiers_nodup : True := trivial\nend Foo\n"
+        "namespace Bar\ntheorem pTheorems_count : pTheorems.length = 9999 := by decide\n"
+        "end Bar\n")
+    built, errs = _run(src, _CLEAN_MANIFEST)
+    check("bare witnesses in different namespaces are not paired",
+          any("size witness" in e and "same namespace" in e for e in errs)
+          and "9999" not in str(built), "; ".join(errs))
+
+    # 29. The same-namespace pairing must still work, in both spellings — a
+    #     fix that refused everything would pass witness 28 and be useless.
+    src = dict(_CLEAN_SOURCES)
+    src["N.lean"] = (
+        "namespace Foo\ntheorem qTheorems_identifiers_nodup : True := trivial\n"
+        "theorem qTheorems_count : qTheorems.length = 6 := by decide\nend Foo\n")
+    _, errs = _run(src, _CLEAN_MANIFEST)
+    check("bare witnesses in the same namespace are paired",
+          any("'qTheorems'" in e and "claimed by no" in e for e in errs)
+          and not any("size witness" in e for e in errs), "; ".join(errs))
+
+    # 30. A namespace structure the scanner cannot follow must fail closed.
+    #     Falling back to exact-name matching would silently pair the very case
+    #     witness 28 pins, so a tracker failure surfaces as a red gate.
+    src = dict(_CLEAN_SOURCES)
+    src["O.lean"] = (
+        "end Nope\nnamespace Foo\ntheorem rTheorems_identifiers_nodup : True := trivial\n"
+        "end Foo\nnamespace Bar\ntheorem rTheorems_count : rTheorems.length = 9999 "
+        ":= by decide\nend Bar\n")
+    built, errs = _run(src, _CLEAN_MANIFEST)
+    check("an unparseable namespace structure fails closed",
+          any("unparseable" in e for e in errs) and "9999" not in str(built),
+          "; ".join(errs))
+
+    # 31. The artefact must reconcile with itself: reporting only the
+    #     theorem-inventory total while listing every phase's entryCount left a
+    #     consumer summing the array with a different number and no way to tell
+    #     which was meant.  (Codex review round 6, PR #882.)
+    built, errs = _run(dict(_CLEAN_SOURCES), _CLEAN_MANIFEST)
+    check("the emitted totals reconcile with the phase array",
+          built["entryTotal"] + built["ledgerEntryTotal"]
+              == built["registeredEntryTotal"]
+          and built["registeredEntryTotal"]
+              == sum(int(p["entryCount"]) for p in built["phases"])
+          and built["ledgerEntryTotal"] == 9,
+          f"{built['entryTotal']}+{built['ledgerEntryTotal']}"
+          f"!={built['registeredEntryTotal']}")
+
     failed = [c for c in cases if not c[1]]
     for name, ok, detail in cases:
         print(f"  {'PASS' if ok else 'FAIL'}: {name}" + (f" -- {detail}" if not ok else ""))
@@ -916,9 +1138,11 @@ def main(argv: list[str]) -> int:
         n_inv = sum(1 for p in manifest["phases"] for _ in p["inventories"])
         print(
             f"OK: WS-SM theorem manifest consistent "
-            f"({len(PHASE_CODES)} phases, {n_inv} inventories, "
-            f"{manifest['entryTotal']} entries of which "
-            f"{manifest['theoremTotal']} are theorems)."
+            f"({len(PHASE_CODES)} phases, {n_inv} inventories: "
+            f"{manifest['entryTotal']} entries across the theorem inventories, of "
+            f"which {manifest['theoremTotal']} are theorems; "
+            f"{manifest['ledgerEntryTotal']} more in the assumption ledgers, "
+            f"{manifest['registeredEntryTotal']} registered in all)."
         )
     return 0
 

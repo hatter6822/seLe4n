@@ -1,3 +1,56 @@
+## v0.34.32 — the wrong number was in the spelling every inventory uses
+
+Three findings on PR #882, all verified, all real.  One is a silent wrong
+number in the case round 4 left open after I argued the fix was sufficient.
+
+**Two bare witnesses in different namespaces were paired.**  A bare
+`xTheorems_identifiers_nodup` inside `namespace Foo` and a bare
+`xTheorems_count` inside `namespace Bar` read identically and are different
+declarations; discovery bound **Bar's length to Foo's inventory** and reported
+it with no error.  Round 4 fixed the *qualified* spelling of this defect and
+declined namespace tracking, arguing that a gate refusing what it cannot
+verify is doing its job.  That argument was sound only for the case it fixed:
+here the gate does not refuse, it silently mispairs — and bare/bare is the
+spelling all 16 real inventories use.  The rejected remedy was the necessary
+one, because when both witnesses are bare no amount of strictness can tell
+them apart.  Only context can.
+
+Witnesses are now paired by **fully qualified name** — enclosing namespace
+plus the name as written — so either spelling matches within its namespace and
+neither matches across.  This also accepts the combination round 4 had to
+reject (qualified nodup, bare size witness inside the matching namespace),
+which is strictly better than that cut.
+
+The namespace scanner is **fail-closed by construction**: an `end` closing no
+open `namespace`/`section` makes the file's structure unknown, and the gate
+then refuses that inventory loudly rather than falling back to name matching —
+which would silently pair the very case this closes.  A tracker bug must
+surface as a red gate, never as a number.  The real tree parses cleanly:
+all 16 inventories, same counts.
+
+**Lean identifiers are not ASCII.**  `σTheorems` elaborates and was invisible
+to discovery; so was `x₁Theorems`, whose subscript is category `No` and
+outside `\w`.  The round-5 comment claimed to match Lean's identifier grammar
+while the class was `[A-Za-z_]`, so per the implement-the-improvement rule the
+class is now Unicode-aware (`[^\W\d]` plus primes, `!`, `?` and the subscript
+block) rather than the claim being trimmed.
+
+**The generated manifest did not reconcile with itself.**  `entryTotal` was
+**1111** while its own `phases[].entryCount` summed to **1127**, and the CLI
+paired that total with "16 inventories" when it covers 14.  The total was not
+wrong — it matches Lean's `smpInventoriedEntryCount`, which scores a
+non-theoremInventory phase as zero — but a consumer summing the array got a
+different number with nothing saying which was meant.  The artefact now emits
+`ledgerEntryTotal` (16), `registeredEntryTotal` (1127),
+`theoremInventoryCount` (14) and `ledgerInventoryCount` (2); the note states
+the scope; and the CLI says what each figure covers.  **The headline figures
+are unchanged: 902 theorems across 1111 theorem-inventory entries.**
+
+Six new witnesses, all mutation-tested; 31 total.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
 ## v0.34.31 — four things may precede a `theorem`; stop enumerating them
 
 Four findings on PR #882, all verified, all real.  Three are registration
