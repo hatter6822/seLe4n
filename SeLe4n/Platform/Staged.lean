@@ -117,6 +117,17 @@ import SeLe4n.Kernel.Concurrency.LockBridge
 -- witness.  Used by the cross-language symmetry script
 -- `scripts/check_lock_ffi_symmetry.sh`.
 import SeLe4n.Kernel.Concurrency.LockPrimitives
+-- WS-RR RR0.6: the SMP completion-phase theorem manifest.  One entry per
+-- WS-SM phase SM0..SM10, each naming the theorem inventories that phase
+-- owns; `smpInventoriedTheoremCount` is the sum over those entries, and
+-- each entry's declared count is proved equal to the real inventory
+-- lengths.  This is the SM10 theorem marker the release-closure plan
+-- listed as a hand-summed literal — the sum that ran SM8 -> SM10 with no
+-- SM9 term.  `SmpCompletionPhase.all` + `smpPhaseTheoremManifest_covers_all`
+-- make an omitted phase fail elaboration; the Tier-0 gate
+-- `scripts/generate_smp_theorem_manifest.py --check` makes an unclaimed
+-- inventory fail the build lane.
+import SeLe4n.Kernel.Concurrency.PhaseTheoremManifest
 -- WS-SM SM3.B + SM3.C + SM3.D + SM3.E: LockSet + per-transition lockSet
 -- declarations + the canonical sort and ordered/complete/canonical theorems +
 -- LockId.fromObject / LockId.lookup projection layer +

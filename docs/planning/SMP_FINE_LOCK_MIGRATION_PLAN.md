@@ -1,5 +1,16 @@
 # SMP Fine-Lock Migration & Commit-Partitioning Plan
 
+> **Status**: **PARTIAL — 2 of 12 PRs landed.**  Track A (security) is
+> closed; its High revocation-precision finding closed at v0.33.88 (§3.1).
+> **Tracks B, C and D are entirely unstarted**, including the phase's
+> headline SM3.C.9 deliverable, so the per-object fine locks remain a
+> model-level discipline and the v1.0.0 "per-object reader-writer fine
+> locks" capability claim is not yet true.
+> **Closure targets**: Tracks B and C → WS-RR **RR7.7**; Track D
+> (commit partitioning) is seam-gated to **SM10.E** and registered as a
+> named dependency by RR6.19.  A reader could not previously tell any of
+> this from the plan, which carried no status header at all (RR0, v0.34.26).
+
 > **Phase**: SM3.C.9 (deferred `withLockSet` migration at the live kernel
 > entry) + the `capTransferReceiverCnode` footprint closure + commit
 > partitioning (the fine-lock end-state).

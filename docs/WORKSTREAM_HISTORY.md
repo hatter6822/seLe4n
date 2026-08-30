@@ -15,16 +15,22 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
-**Current workstream: WS-RR (SMP Release Readiness) — PLANNED, open.
+**Current workstream: WS-RR (SMP Release Readiness) — IN FLIGHT.
+RR0 landed at v0.34.26; RR1..RR8 remain.
 SM10 is BLOCKED on it and must not start until RR8 closes.**
 
 The pre-SM10 completeness audit (`docs/planning/UNFINISHED_SMP_WORK.md`,
 audited at v0.34.3) found the project not ready to begin SM10: three findings
 block starting it, SM10's §1 scope statement is false against the tree, and a
 set of fail-open latents become reachable exactly when the boot path goes live.
-WS-RR closes that work first — 149 sub-tasks across RR0..RR8, planned in
+WS-RR closes that work first — 154 sub-tasks across RR0..RR8, planned in
 [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
 See the **WS-RR** section below for the phase table and the three blockers.
+
+**Also open: WS-DT (IPC `ipcInvariantFull` de-threading)** — in flight since
+v0.31.157, seven of ten slices closed, D1/D6/D8 open.  Registered here by RR0.1
+at v0.34.26 after the audit filed its absence from this file as blocker 1; its
+closure target is WS-RR phase RR3.  See the **WS-DT** section below.
 
 *Preceding cut*: the SM5 runtime-seam completion LANDED (v0.34.1) — every
 seam the SM5 docstrings promised between the verified per-core scheduler
@@ -7110,9 +7116,164 @@ WS-RC R3 (v1.0.0-blocking) respectively. Cleanups for TLB+cache
 composition, secondary-core bring-up / SMP and the explicit
 single-core kernel model were closed in WS-AN AN9.
 
+## Registered debt index
+
+**This section is the project's single debt register.**  CLAUDE.md's
+deferral rule says every deferred item is lifted into a tracked register "with
+an explicit closure target, not absorbed silently", and forbids "in-source
+TODOs that age out with the surrounding workstream".  The pre-SM10
+completeness audit's debt sweep found that rule held in *code* — zero
+`sorry`, zero `axiom`, zero whole-word TODO/FIXME/XXX survive the comment-free
+code view — while the register itself did not hold together:
+
+- the file four separate authorities named as the register,
+  `docs/audits/AUDIT_v0.30.11_DEFERRED.md`, **was never created**, so an entire
+  class of deferrals was registered nowhere;
+- 23 in-source deferrals across **16** production files stated **in their own
+  words** that "no currently-active plan file tracks it" (the sweep reported 17
+  files; §C.1 below is the enumerated set, and 16 is what it measures);
+- **five** of six machine-enforced `UncoveredLockDomain` entries named a
+  sub-task inside SM3, a phase closed at v0.31.9, as their owner — three
+  spelled `SM3.B`, which is the trio the sweep counted, plus `SM3.C.9` and
+  `SM3.C.11`;
+- SM7's ASID completeness gap was registered against SM8, and SM8 closed
+  without absorbing it;
+- an in-flight verification workstream sat in `docs/planning/` referenced by no
+  index at all (now **WS-DT**, registered by RR0.1).
+
+RR0.9 closes that at `v0.34.26` by making this section the register and giving
+every open item an owner and a closure target.  **There is one register, and
+it is this one.**  `docs/audits/AUDIT_v0.30.11_DEFERRED.md` is not going to be
+created: a second register competing with the file CLAUDE.md already declares
+canonical is how the first divergence happened.  Citations to it — the
+`SeLe4n/Platform/RPi5/Contract.lean` docstring, `docs/audits/README.md`'s
+lifecycle table, and the WS-RC plan's own rows — now point here.
+
+**How to use it.**  Three tables, by who can close the item:
+**A** — owned by a live WS-RR phase; **B** — owned by SM10; **C** —
+deliberate deferrals with no pre-v1.0.0 owner, each with the reason it may
+wait.  A row leaves the register only when the work lands or the deferral is
+retracted; RR8.2 records closing versions.
+
+### A — owned by a live WS-RR phase
+
+Every row here has a numbered sub-task in
+[`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
+The register exists so the item is visible from this file even when the plan
+is archived.
+
+| Debt | Where it lives | Closure target |
+|------|----------------|----------------|
+| WS-DT slices D1, D6, D8 — two `ipcInvariantFull` conjuncts still threaded as post-state hypotheses; no dispatch payoff theorem | `SeLe4n/Kernel/IPC/Invariant/`, `SeLe4n/Kernel/API.lean` | RR3.1–RR3.17 |
+| Cross-core SchedContext donation never migrates the CBS replenish queue, breaking the SM5.H affinity invariant on a live path | `SeLe4n/Kernel/IPC/Operations/Donation.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | RR2.1–RR2.12 |
+| The live `.send` arm carries no `ipcInvariantFull` preservation while SM6.D claims coverage | `SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean` | RR2.14, RR2.15 |
+| Cancellation NI rests on a `hTeardownProj` hypothesis whose closure form returns its own premise | `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` | RR2.18 |
+| VM faults are unhandled: a data or instruction abort returns to the faulting instruction, wedging the core.  Unreachable only because nothing boots | `SeLe4n/Kernel/Architecture/ExceptionModel.lean`, `rust/sele4n-hal/src/trap.rs` | RR4.1–RR4.27 |
+| `TCB.faultHandler : Option CPtr` has no consumer | `SeLe4n/Model/Object/Structures.lean` | RR4.7 |
+| No production `LabelingContext`: the hardware boot path leaves `testLabelingContext`, which maps every non-zero id to `publicLabel`, installed | `SeLe4n/Kernel/InformationFlow/Policy.lean`, `SeLe4n/Platform/FFI.lean` | RR5.1–RR5.5 |
+| Two kernel seams (SVC dispatch, cross-core suspend) do not consult the per-core `lean_ready` gate, though `kernel_entry.rs` claims every seam does | `rust/sele4n-hal/src/svc_dispatch.rs`, `rust/sele4n-hal/src/ffi.rs` | RR5.6–RR5.9 |
+| Three `@[export]` runtime-seam modules are staged-only, outside the production import closure, so a linked image would not carry their symbols | `scripts/staged_module_allowlist.txt`, `SeLe4n.lean` | RR5.11 |
+| SM4.G residue: `bootFromPlatformWithIdleThreads` is proven correct and has no production caller, so `idleThreadEnqueuedOnCore` is never established at boot and `schedulerNoStall_smp`'s `hIdle` is discharged by hypothesis only | `SeLe4n/Platform/Boot.lean` | RR5.10 |
+| `suspend_thread_inner` commits kernel state outside the kernel-entry lock | `SeLe4n/Platform/FFI.lean` | RR5.13 |
+| Two `debug_assert!` lock/vector tripwires vanish from the release image | `rust/sele4n-hal/src/` | RR5.14 |
+| SM2.C-defer (verified RwLock completion) had no durable registration or closure target outside its own plan | [`docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md) | RR6.18 |
+| The deployed RwLock is the CAS-retry `rw_lock.rs` while the Lean spec was tightened to strict FIFO; `QueuedRwLock`, the FIFO implementation, has zero consumers | `rust/sele4n-hal/src/lock_bridge.rs`, `rust/sele4n-hal/src/queued_rw_lock.rs` | RR6.4–RR6.6 |
+| The Tier-5 oracle models the lock instead of driving it, by its own docstring | `rust/sele4n-hal/src/bin/rw_lock_oracle.rs` | RR6.1–RR6.3 |
+| `loom` and `miri` gates the RwLock plan declares mandatory are unmet — neither tool reaches the deployed lock | `rust/sele4n-hal/Cargo.toml`, `.github/workflows/` | RR6.12, RR6.13 |
+| Fine-lock migration Tracks B and C: the `capTransferReceiverCnode` footprint closure and SM3.C.9's `withLockSet` wrapping of the `@[export]` bodies — 10 of the plan's 12 PRs | [`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`](planning/SMP_FINE_LOCK_MIGRATION_PLAN.md) | RR7.7 |
+| Six production `native_decide` uses, against a release note claiming zero | `SeLe4n/Kernel/Concurrency/Locks/*Inventory.lean` and siblings | RR7.6 |
+| Cancellation/timeout error-frame staging, owed before the context-restore seam flips | `SeLe4n/Kernel/IPC/Operations/Timeout.lean` | RR7.8 |
+| WS-RA's application-IPC-label follow-on, registered only inside a review narrative | [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](planning/SYSCALL_RETURN_ABI_PLAN.md) | RR7.11 |
+| SM7's ASID completeness gap — `asidAllocateWithShootdown` is complete and proven with no callers, and the ASIDControl/ASIDPool object family does not exist.  Registered against SM8; **SM8 closed without absorbing it** | `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` | RR7.14 |
+| SM7.D's four SM10.E-owned deferred cache-maintenance items appear in no SM10 sub-task | [`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`](planning/SMP_TLB_SHOOTDOWN_PLAN.md) | RR7.14 |
+| SM6's tracked debt carries no explicit closure target, and its `schedContextConfigure` entry went stale after the debt closed | [`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md`](planning/SMP_CROSS_CORE_IPC_PLAN.md) | RR7.16 |
+| The Tier-0 grep gate banning non-IS TLBI, which the Rust HAL plan §4.4 claims exists, does not exist | `scripts/test_tier0_hygiene.sh` | RR1.9 |
+| No aarch64 target is compiled anywhere: 67 cfg-gated blocks, 60 `asm!` sites and all three `.S` files have zero compile coverage | `rust/`, `.github/workflows/` | RR1.1–RR1.8 |
+| `numCores` is a literal `4` rather than `PlatformBinding.coreCount`, so the Sim binding's `coreCount := 1` can never shape kernel state | `SeLe4n/Kernel/Concurrency/Types.lean` | RR7.24 |
+
+### B — owned by SM10
+
+These cannot close before SM10 opens, because each needs the image or the
+runtime seam SM10.E produces.  WS-RR's obligation is that they are visible
+here rather than only inside a phase plan.
+
+| Debt | Where it lives | Closure target |
+|------|----------------|----------------|
+| The boot path does not exist: no `[[bin]]`, no aarch64 Lean object code, no `libsele4n.a`, no bare-metal runtime hosting, no `@[export] lean_kernel_main` | `rust/`, `lakefile.toml`, `SeLe4n/Platform/FFI.lean` | SM10.E.D1 |
+| `lean_kernel_main`'s `initialiseKernelState` install would run outside the kernel-entry lock and after the secondaries are released — the lost-commit shape | `rust/sele4n-hal/src/kernel_entry.rs`, `SeLe4n/Platform/FFI.lean` | SM10.E (order or bracket; §3) |
+| WS-RA frame delivery: the staged return frame is not delivered until the context restore goes live | `SeLe4n/Kernel/Concurrency/ContextRestoreSeam.lean` | SM10.E (§2) |
+| Fine-lock migration **Track D** — commit partitioning, which that plan seam-gates to SM10.E; the one part of the fine-lock work WS-RR cannot land | [`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`](planning/SMP_FINE_LOCK_MIGRATION_PLAN.md) | SM10.E, registered as a named dependency by RR6.19 |
+| `UncoveredLockDomain.taintTablePerKeyStore` names SM10.E as owner; the SM10 plan carries no sub-task for it | `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` | SM10.E — RR0.11 routes the plan-side row |
+| Six WS-SM phases (SM1, SM6..SM10) have **no** machine-checked theorem inventory, so they contribute zero to `smpInventoriedTheoremCount` | `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` | SM10.B.13 |
+| Hardware-validation scripts SM10.B.D1–D7 and the SM10.E.D1 image build, each a runnable procedure `docs/HARDWARE_TESTING.md` documents with no script | `scripts/` | SM10.B, SM10.E.D1 |
+| Tier-4 acceptance gates have never executed: they need the bootable image, so `SMP_RELEASE_CLOSURE_PLAN.md` §2's "acceptance gates for SM0..SM9 green" is **unmet**, not merely unverified | `scripts/test_tier4_smp_bootcheck.sh` | SM10.E, immediately after D1 |
+| SM10.C.3 archives the WS-RC artefacts; its still-open items (R7, R14) migrate here rather than into the archive | `docs/audits/` | SM10.C.3 |
+
+### C — deferrals with no pre-v1.0.0 owner
+
+Each row states why it may wait.  "Registered" is not "ignored": a row here
+constrains what v1.0.0 may claim, and RR8.4's hand-off check reads this table.
+
+| Debt | Why it may wait | Owner / closure target |
+|------|-----------------|------------------------|
+| **WS-SL** — the scheduler liveness trace step relation (`stepPrecondition` / `stepPost` / `ValidTrace`) is `bootCoreId`-pinned, so no `ValidTrace` exhibits a step on a secondary core; and `hBandProgress` is an externalized deployment hypothesis whose FIFO/bucket-rotation composition was never built | Model completeness, not soundness: the per-core liveness *predicates* were lifted by SM5.J, and the capstones state their hypothesis explicitly.  v1.0.0 must therefore not claim unconditional SMP starvation-freedom | **WS-SL**, post-v1.0.0 (section below) |
+| WS-RC **R7** — CDT `descendantsOf` fuel-sufficiency proofs; `descendantsOf_fuel_sufficient` proves only `edges.length ≥ 0` | Proof hygiene: CDT operations are sound under the fuel-bound discipline; the sufficiency theorem is defence in depth | post-v1.0.0 hardening |
+| WS-RC **R14** — the v1.x backlog the WS-RC plan deferred | Explicitly scoped out of v1.0 closure by that plan | post-v1.0.0 |
+| WS-RC R4's two deliberate follow-on type-level promotions, registered only inside [`docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`](planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md), a plan marked COMPLETE | Both are strengthenings of an already-sound surface | post-v1.0.0 hardening; SM10.C.3 archives the plan, so the items must not travel with it |
+| `REPLY_OBJECTS_COMPLETION_PLAN.md`'s deferred follow-up item 4 (reply-object lock stress) named a tracking home that carries no entry for it | The plan it named is a live plan; the item simply never arrived there | post-v1.0.0; the reply-object plan's status header now points here |
+| Two SM2.C debts raised by SM8.D's review rounds were assigned to a phase already CLOSED and appear in no live plan | Both are completeness strengthenings of the RwLock surface RR6 is already reworking | RR6 — if RR6 does not absorb them, RR6.18 re-registers them here |
+| The v0.32.148 queued-lock closure — [`docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md`](planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md)'s SM2.E remediation, whose header and two-thirds of its body still describe the MCS queue that cut deleted — was recorded in an unrelated plan and never reached this file | Bookkeeping, not behaviour: the closure itself is real and in the tree, and the shipped artefact is a ticket lock | recorded here by RR0.9; the plan-side prose is SM10.A's work-list (register §7 row 33) |
+| Idle TCBs carry `ObjId.sentinel` cspace/vspace roots | The idle thread never faults a user mapping; it becomes live work when RR5.10 installs idle threads on the production path, and RR5.10 must not close over it | RR5.10 must either give idle TCBs real roots or re-register this row |
+| SM9.D.11 — taint propagation at capability transfer shipped as a scope reduction, leaving `capabilityBadgeChannel_out_of_scope`: a registered false-negative channel in the causal detector | A false *negative* in a detector, not a policy bypass | post-v1.0.0; RR0.11 routes the plan-side row |
+| The SM8 class-C follow-on: the CC-1 capacity figure is stated in two places rather than single-sourced | Cosmetic duplication of a bound both sites agree on | post-v1.0.0 |
+| ARM CCA + MPAM hardware partition isolation | Targets a successor SoC; not RPi5 | [`docs/planning/HARDWARE_PARTITION_ISOLATION_PLAN.md`](planning/HARDWARE_PARTITION_ISOLATION_PLAN.md), unscheduled |
+| The 23 in-source post-1.0 hardening candidates enumerated below | Each is a strengthening of a surface that is already correct; none is a soundness gap | post-v1.0.0 hardening, listed individually so none ages out with its comment |
+
+#### C.1 — The 23 in-source post-1.0 hardening candidates
+
+Each of these stated in its own docstring that "no currently-active plan file
+tracks it".  That sentence made the deferral self-describing and unfindable at
+once: a reader could only meet it by opening the file it lived in.  They are
+enumerated here, and the source comments now point at this table instead of
+declaring themselves untracked.  Line numbers are the `v0.34.26` positions and
+will drift; the identifier beside each is stable.
+
+| # | Site | Deferred item |
+|---|------|---------------|
+| 1 | `SeLe4n/Platform/Boot.lean` (`applyGicTimerSetup`) | TLB/ASID maintenance for HAL-parity boot |
+| 2 | `SeLe4n/Platform/Boot.lean` (`bootFromPlatform`) | Minimum-configuration validation (≥ 1 initial thread, valid scheduler state) |
+| 3 | `SeLe4n/Platform/Boot.lean` (bundle bridge) | Builder operations preserve only 4 of the 12 `proofLayerInvariantBundle` components for general configs |
+| 4 | `SeLe4n/Platform/RPi5/MmioAdapter.lean` (P-L2) | `readCString` fuel-exhaustion return-type upgrade |
+| 5 | `SeLe4n/Platform/RPi5/MmioAdapter.lean` (P-L4) | `extractPeripherals` beyond 2-level DTB nesting |
+| 6 | `SeLe4n/Platform/RPi5/MmioAdapter.lean` (P-L5) | Multi-core extension of the MMIO write-sequence atomicity argument |
+| 7 | `SeLe4n/Platform/RPi5/MmioAdapter.lean` (P-L11) | FFI `opaque BaseIO` contract bridging |
+| 8 | `SeLe4n/Model/Builder.lean` (AF5-F) | Anonymous invariant tuples → named structures (100+ destructuring proof sites) |
+| 9 | `SeLe4n/Model/Object/Structures.lean` (`descendantsOf_fuel_sufficient`) | Substantive CDT fuel-sufficiency proof; today it proves `edges.length ≥ 0` |
+| 10 | `SeLe4n/Model/Object/Structures.lean` (`CdtChildReachable`) | Transitive-closure bridge from reachability depth to BFS fuel bounds |
+| 11 | `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` | Section-scope split of the acyclicity proof idiom |
+| 12 | `SeLe4n/Kernel/Service/Operations.lean` (`serviceBfsFuel`) | Rename to match the DFS-equivalent search it implements (~77 call sites) |
+| 13 | `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (`donationChainAcyclic`) | Formal bridge from donation edges to `blockingAcyclic` for cycles of length > 2 |
+| 14 | `SeLe4n/Kernel/FrozenOps/Core.lean` | Integration of the frozen-state monad into the production API layer |
+| 15 | `SeLe4n/Kernel/FrozenOps/Commutativity.lean` | Promotion of the frozen commutativity proofs into the production chain |
+| 16 | `SeLe4n/Kernel/FrozenOps/Invariant.lean` | Promotion of the frozen invariant layer into the production chain |
+| 17 | `SeLe4n/Kernel/FrozenOps/Operations.lean` | Promotion of the frozen operations into the production chain |
+| 18 | `SeLe4n/Kernel/RobinHood/Bridge.lean` (DS-L2) | `Except`-returning `insertNoResize` (~50 call sites) |
+| 19 | `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (`retypeFromUntyped_atomicity_under_sequential_semantics`) | Re-establishing retype atomicity under SMP/preemption on real hardware |
+| 20 | `SeLe4n/Kernel/CrossSubsystem.lean` (`collectQueueMembers_fuel_sufficiency_documented`) | `QueueNextPath` → `queueNext` traversal bridge (the IPC subsystem's sole remaining TPI-DOC item) |
+| 21 | `SeLe4n/Kernel/CrossSubsystem.lean` (`crossSubsystemInvariant`) | Compositional proof that all 11 predicates hold under arbitrary interleaving of all 34 operations |
+| 22 | `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (AF5-F) | Right-associative `∧` chains → named structure |
+| 23 | `SeLe4n/Kernel/API.lean` (`resolveExtraCapsDetailed_empty`) | Fold-level induction generalising swap-invariance beyond the empty-input base case |
+
+**None is a soundness gap.**  Every one strengthens a surface that is already
+correct — a tautological witness replaced by a substantive proof, a fuel bound
+made structural, a tuple given a name, a validated-elsewhere precondition
+internalised.  That is why they may wait; it is not why they may be forgotten.
+
 ## WS-RR — SMP Release Readiness (pre-SM10 remediation, **PLANNED — OPEN**, opened v0.34.13)
 
-**Status**: PLANNED, no sub-task started. **Closes**: before SM10 opens.
+**Status**: IN FLIGHT — **RR0 LANDED at v0.34.26** (all eleven sub-tasks:
+registration, the debt register, the generated theorem manifest, and the SM10
+plan corrections); RR1..RR8 not started. **Closes**: before SM10 opens.
 **Plan**: [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
 **Source register**: [`docs/planning/UNFINISHED_SMP_WORK.md`](planning/UNFINISHED_SMP_WORK.md)
 (171 confirmed findings, audited at `v0.34.3`).
@@ -7124,18 +7285,18 @@ path goes live. WS-RR closes that work first, so SM10 can be the release-closure
 phase it was scoped as. **SM10 is BLOCKED on WS-RR** and must not open until
 RR8 closes.
 
-149 sub-tasks across nine phases, numbered in execution order:
+154 sub-tasks across nine phases, numbered in execution order:
 
 | Phase | Scope | Subs |
 |-------|-------|------|
-| RR0 | Registration and plan correction | 11 |
+| RR0 | Registration and plan correction — **LANDED v0.34.26** | 11 |
 | RR1 | aarch64 compile coverage | 11 |
 | RR2 | Live-path correctness: dispatch-arm bundles, donation queue migration | 19 |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 |
 | RR5 | Boot-path fail-open closure | 14 |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 |
-| RR7 | Medium-severity sweep | 26 |
+| RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 31 |
 | RR8 | Phase closure and hand-off to SM10 | 5 |
 
 **The three blockers**: the IPC de-threading workstream is registered in no
@@ -7148,6 +7309,110 @@ This entry is written at **opening**, not at closure: a workstream that is
 active but absent from this file is the precise defect the audit filed as its
 first blocker, and RR8.5 updates the row rather than creating it — after
 RR8.4 has confirmed SM10's dependencies are actually met.
+
+## WS-DT — IPC `ipcInvariantFull` de-threading (**IN FLIGHT — OPEN**, opened v0.31.157, registered v0.34.26)
+
+**Status**: IN FLIGHT — seven of ten slices closed, three open.
+**Closure target**: **WS-RR phase RR3** (`SMP_RELEASE_READINESS_PLAN.md` §RR3,
+17 sub-tasks), which absorbs D1, D6 and D8 and retires the plan at RR3.17.
+**Plan**: [`docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md`](planning/IPC_INVARIANT_DETHREADING_PLAN.md).
+
+**Why this row exists.** The pre-SM10 completeness audit
+([`docs/planning/UNFINISHED_SMP_WORK.md`](planning/UNFINISHED_SMP_WORK.md) §3
+blocker 1) filed the absence of this row as its **first blocker**: an open,
+materially incomplete verification workstream that appeared in no canonical
+index, so SM10 would have closed WS-SM with it silently dropped.  This file is
+the project's declared single canonical source for workstream status; the
+workstream had been in flight since v0.31.157 without an entry here.  Registered
+by RR0.1 at v0.34.26.
+
+**What the workstream is.** Every IPC transition carries a
+`*_preserves_ipcInvariantFull` theorem.  Historically those theorems *threaded*
+the structural conjuncts: they took `conjunct st'` — the conjunct applied to the
+**post** state — as a hypothesis, so the theorem proved "*if* the post-state
+already satisfies the structural invariant, the transition is fine" rather than
+"the transition *establishes* the structural invariant".  De-threading replaces
+each threaded post-state hypothesis with a concrete per-transition establisher
+proved from the pre-state and the step.  Until every conjunct is de-threaded,
+`ipcInvariantFull` is **not** an end-to-end machine-checked property of the live
+kernel, and the top-level "every IPC syscall preserves `ipcInvariantFull`"
+theorem cannot be stated.
+
+**Per-slice state at v0.34.26** (the plan's Status table carries the detail):
+
+| Slice | Conjunct(s) | State | Version |
+|-------|-------------|-------|---------|
+| D0 | `blockedOnReplyHasReplyObject` named predicate + `ipcInvariantFull_of_components` assembly | **closed** | v0.31.157 |
+| D1 | `dualQueueSystemInvariant`, `blockedThreadsPendingMessageConsistent`, `endpointQueueNoDup`, `ipcStateQueueMembershipConsistent` wiring | **open** — 3 of 4 conjuncts de-threaded from the 7 reachable bundles; `blockedThreadsPendingMessageConsistent` blocked on module ordering (its establishers live in `PerOperation`, downstream of the bundles), and the 3 `*WithCaps` + cross-core `endpointCallOnCore` establishers are unbuilt | v0.32.28 |
+| D2 | `replyCallerLinkage` third clause + consumer | **closed** | v0.31.157 |
+| D2′ | lifecycle/retype third clause | **closed** | v0.31.165 |
+| D3 | `blockedOnReplyHasTarget` + `pendingReceiveReplyWellFormed` | **closed** — 15/15 bundles | v0.31.174 |
+| D4 | `queueNextBlockingConsistent`, `endpointQueueTailBlockedConsistent`, `queueHeadBlockedConsistent`, `queueNextTargetBlocked` | **closed** — zero threading sites | v0.32.45 |
+| D5 | `blockedThreadTimeoutConsistent` | **closed** — 13/13 bundles | v0.32.10 |
+| D6 | `donationOwnerValid` + `donationBudgetTransfer` + `passiveServerIdle` | **open** — `donationBudgetTransfer` and `passiveServerIdle` de-threaded; `donationOwnerValid` remains on the 2 reply bundles (composite-only: the bare reply transitions wake the `.blockedOnReply` owner without returning the donation) | v0.32.9 |
+| D7 | `donationChainAcyclic` | **closed** — all 13 bundles | v0.31.176 |
+| D8 | close-out + the dispatch payoff theorems | **open** — dispatch integration in progress (slices 1–4 landed v0.32.46→49, latest cut v0.32.57); `dispatchWithCap_preserves_ipcInvariantFull` and `syscallDispatch_preserves_ipcInvariantFull` do not exist | v0.32.57 |
+
+**What is still threaded, and why it matters.**  Two of the twenty
+`ipcInvariantFull` conjuncts remain post-state hypotheses on nearly every
+bundle — `blockedThreadsPendingMessageConsistent` and
+`replyCallerLinkageReciprocal`.  The audit put them at 33 and 31 of the 35
+bundles; those are the audit's figures and **no gate reproduces them**, because
+neither conjunct has a canonical primed
+binder name (they appear under `hInv`, `hRecip`, `hWtpmn` and bare `h`), so a
+name-based grep reports success without measuring anything; RR3.1 builds the
+gate that measures the property over the comment-free code view instead.  The
+standing constraint in `CLAUDE.md` / `AGENTS.md` (added by RR0.3, retired by
+RR8.3 once RR3.16 lands) states this so new code does not assume
+`ipcInvariantFull` is end-to-end machine-checked.
+
+**Registered debt carried by this workstream**:
+
+| Debt | Owner | Closure target |
+|------|-------|----------------|
+| D1 residue — module-ordering obstruction + the 4 unbuilt `*WithCaps`/cross-core establishers | WS-RR | RR3.2–RR3.6 |
+| D6 residue — `donationOwnerValid` on the 2 reply bundles | WS-RR | RR3.12 |
+| D8 — the two dispatch payoff theorems and their `CLAIM_EVIDENCE_INDEX.md` citation | WS-RR | RR3.15, RR3.16 |
+| The `consumeCallerReply` documented exception | WS-RR | RR3.10 |
+| Plan retirement to `docs/dev_history/planning/` | WS-RR | RR3.17 |
+
+## WS-SL — Scheduler liveness completion (**REGISTERED — OPEN**, opened v0.34.26)
+
+**Status**: REGISTERED, no sub-task started.  **Closure target**: post-v1.0.0.
+**Owner**: Scheduler subsystem.
+**Opened by**: WS-RR RR0.10, to give SM4.C.11's residual a target that is not
+a sub-task inside a plan marked LANDED.
+
+**Why it exists.**  SM4.C.11's registered closure target was **SM4.C.11** — a
+sub-task of `SMP_PER_CORE_STATE_PLAN.md`, whose own header reads LANDED.  No
+open phase owned it, `grep SM4.C.11` over the SM10 plan returned nothing, and
+the note describing it was stale in both directions at once: pessimistic about
+what SM5.J had delivered, and silent about what actually remained.  A closure
+target inside a closed phase is not a closure target.
+
+**What SM5.J already delivered** (v0.31.64, so the old note was wrong): the
+per-core liveness *predicates* — `eventuallyExitsOnCore`,
+`higherBandExhaustedOnCore`, `CanonicalDeploymentProgressOnCore`,
+`WCRTHypothesesOnCore`, `wcrtBound_unfold_onCore`, `selectedAtOnCore`,
+`runnableAtOnCore`, `countHigherOrEqualEffectivePriorityOnCore`,
+`maxBudgetInBandOnCore`, `maxPeriodInBandOnCore`, `bucketPositionOnCore` —
+all read `currentOnCore c` / `runQueueOnCore c` with an `rfl` boot-core bridge.
+
+**What this workstream owes**, in the order it must be done:
+
+| # | Item | Where |
+|---|------|-------|
+| SL1 | Lift the trace step relation: `stepPrecondition`, `stepPost` and `ValidTrace` read `bootCoreId`, so no `ValidTrace` exhibits a step taken on a secondary core.  The per-core predicates are evaluated over traces that cannot leave the boot core | `SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean` |
+| SL2 | Construct `hBandProgress` rather than externalising it: the FIFO/bucket-rotation composition that would discharge the band-progress obligation `thread_eventually_scheduled_onCore` and `no_starvation_under_smp` consume.  Only its `eventuallyExits` sub-piece has an RPi5 discharge today | `SeLe4n/Kernel/Scheduler/Liveness/Yield.lean` |
+| SL3 | Restate the liveness capstones over the lifted traces, so the SMP starvation-freedom result is a statement about multi-core executions | `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` |
+
+**Why it may wait, and what that costs.**  None of the three is a soundness
+defect: the per-core forms are correct, and the capstones state `hBandProgress`
+explicitly rather than hiding it.  The cost is that v1.0.0's liveness claim is
+**conditional**, and must be stated that way — the standing constraint in
+`CLAUDE.md` / `AGENTS.md` already requires every document citing these
+theorems to state the hypothesis.  **SM10 may not claim unconditional SMP
+starvation-freedom**; RR8.4's hand-off check reads this row.
 
 ## WS-RC — Pre-1.0 Audit Remediation (v0.30.11 → v0.31.2, **CLOSED** — R0–R5 landed; R6..R14 absorbed into WS-SM per SM0.Q)
 

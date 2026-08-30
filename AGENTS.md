@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.25.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.26.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -784,7 +784,8 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 | SM2 | LANDED | v0.31.9 | Memory model, TicketLock, RwLock, FFI bridge, refinement |
 | SM3 | CLOSED | v0.31.9 | Per-object locks, lock sets, 2PL, deadlock-freedom, serializability |
 | SM4 | LANDED | v0.31.37 | Per-core Vector state, SchedulerState, register banks, invariant migration, idle bootstrap |
-| SM5.A–I | LANDED | v0.31.38–62 | Per-core scheduler: selection, switch, wake, timer, idle, PIP, domain, CBS, invariant suite |
+| SM5.A–H | LANDED | v0.31.38–62 | Per-core scheduler: selection, switch, wake, timer, idle, PIP, domain, CBS |
+| SM5.I | LANDED | v0.31.61; entry lock v0.32.142 | Per-core invariant suite + register banks; the global kernel-entry ticket lock (see the standing constraint below — the table read v0.31.38–62, which the constraint contradicted) |
 | SM5.J | LANDED | v0.31.63→64 | WCRT under fine locks; per-core eventually-scheduled liveness |
 | SM5.K | LANDED | v0.31.63→64 | Scheduler tests + fixtures: 4-thread/4-core aggregate suite, WCRT suite, golden trace |
 | SM6.A | LANDED | v0.31.65→67 | Endpoint call across cores, live `.call` dispatch + SGI-firing seam |
@@ -810,7 +811,8 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 | SM9.D | LANDED | v0.33.53→56 | Causal declassification provenance — the laundering detector stops guessing |
 | SM9.E | LANDED | v0.33.100 | Tests + closure: acceptance scenarios run live and pinned as golden fixtures; seam boundary coverage of both declassifying syscalls; the epoch exercised with survivors |
 | SM9 | CLOSED | v0.33.100 | Declassification completion — reader, refusal auditing, data-carrying signal, causal provenance, acceptance fixtures |
-| WS-RR | PLANNED | — | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (149 subs across RR0..RR8) |
+| SM5 runtime seams | LANDED | v0.34.1 | The three seams SM5's docstrings promised between the verified per-core scheduler and the hardware IRQ path — IRQ vector redirect, `.reschedule` SGI receiver, secondary bring-up entry — all dormant behind the per-core `lean_ready` gate until SM10.E |
+| WS-RR | IN FLIGHT | RR0 v0.34.26 | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (154 subs across RR0..RR8) |
 | SM10 | BLOCKED on WS-RR | — | Release closure (→ v1.0.0) |
 
 **Plans**: master overview at
@@ -832,8 +834,12 @@ code may assume:
   Live WCRT is therefore weaker
   than `PerCoreWcrt.lean`'s fine-lock bound, which remains a statement about the
   intended discipline.
-- **SM3.C.9 is deferred**: the `@[export]` bodies are not yet wrapped in
-  `withLockSet`, so the per-object fine locks are a model-level discipline.  The
+- **SM3.C.9 is deferred**: the `@[export]` bodies are, with one exception, not
+  yet wrapped in `withLockSet`, so the per-object fine locks are a model-level
+  discipline.  The exception is the `.tcbSuspend` arm of
+  `syscallDispatchCrossCoreEntry` (`SeLe4n/Kernel/SyscallDispatchEntry.lean`),
+  which resolves `lockSetForSyscall` and brackets its action — it is the one
+  arm `lockSetForSyscall` answers `some` for; the other 32 answer `none`.  The
   migration plus commit partitioning is planned in
   [`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`](docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md),
   whose High-severity revocation-precision finding is **closed** at v0.33.88
@@ -848,8 +854,39 @@ code may assume:
   (`revokePendingTransfersFrom`, v0.33.88), because revoking a derived subtree
   leaves the source slot live and so never trips the creator's check.  New code
   must not assume a carried `TransferCap` will install.
-- **SM4.C.11**: per-core Liveness forms (`Scheduler/Liveness/*.lean`) remain
-  `bootCoreId`-pinned; migration is Scheduler-subsystem scope, not SM4.D.
+- **`ipcInvariantFull` is not yet end-to-end machine-checked.**  Two of its
+  twenty conjuncts are still assumed as **post-state hypotheses** on nearly
+  every `*_preserves_ipcInvariantFull` bundle:
+  `blockedThreadsPendingMessageConsistent` and `replyCallerLinkageReciprocal`.
+  The pre-SM10 audit put it at 33 and 31 of 35 bundles; treat those as the
+  audit's figures, not a measured baseline — **nothing in the tree measures
+  this property yet**, which is what RR3.1 exists to build.  A bundle that threads
+  `conjunct st'` proves "*if* the post-state already satisfies the conjunct,
+  the transition is fine" — not that the transition establishes it — so new
+  code must not treat a `_preserves_ipcInvariantFull` theorem as an
+  unconditional post-state guarantee, and no top-level dispatch payoff theorem
+  exists (`dispatchWithCap_preserves_ipcInvariantFull` and
+  `syscallDispatch_preserves_ipcInvariantFull` are both absent).  Neither
+  conjunct has a canonical primed binder name — they appear under `hInv`,
+  `hRecip`, `hWtpmn` and bare `h` — so grepping a binder name to zero measures
+  nothing; the property is measured over the comment-free code view instead.
+  The workstream is registered as **WS-DT** in
+  [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) (plan:
+  [`docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md`](docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md));
+  closure target **WS-RR phase RR3**, and RR8.3 retires this bullet once RR3.16
+  lands.
+- **The scheduler liveness trace model is boot-core-pinned** (SM4.C.11's
+  residual).  SM5.J lifted the per-core Liveness *predicates* at v0.31.64 —
+  `eventuallyExitsOnCore`, `higherBandExhaustedOnCore`,
+  `CanonicalDeploymentProgressOnCore`, `WCRTHypothesesOnCore`,
+  `selectedAtOnCore` and siblings all read `currentOnCore c` / `runQueueOnCore
+  c` — but `stepPrecondition`, `stepPost` and `ValidTrace`
+  (`Scheduler/Liveness/TraceModel.lean`) still read `bootCoreId`, so no
+  `ValidTrace` exhibits a step taken on a secondary core.  New code must not
+  read an SMP liveness result off a trace: the predicates are per-core, the
+  traces are not.  Owned by **WS-SL** (`docs/WORKSTREAM_HISTORY.md`), closure
+  target post-v1.0.0; the old target was a sub-task inside a plan marked
+  LANDED, so no open phase owned it.
 - **The WCRT liveness theorems are hypothesis-conditional**: the band-progress
   obligation `hBandProgress` consumed by `thread_eventually_scheduled_onCore` /
   `no_starvation_under_smp` is an externalized deployment hypothesis whose
@@ -859,13 +896,32 @@ code may assume:
   Scheduler-subsystem follow-up (`Liveness/Yield.lean` scope — AN5-E.4
   honest-framing note, `Scheduler/Liveness/RPi5CanonicalConfig.lean`). Docs
   citing these theorems must state the hypothesis.
+- **No core is marked ready anywhere in the tree**, so every seam behind the
+  per-core `lean_ready` gate (`rust/sele4n-hal/src/lean_ready.rs`) degrades to
+  its Rust-only half on hardware: the IRQ vector redirect, the `.reschedule`
+  SGI receiver and the secondary bring-up entry are all wired end to end and
+  all dormant until SM10.E's per-core Lean runtime initialization flips them.
+  New code must not assume a Lean seam executes on hardware merely because it
+  is wired.  Two seams — SVC dispatch and cross-core suspend — do not consult
+  the gate at all; closing that is RR5.6–RR5.9.
 - **Registered uncovered lock domains** are enumerated in Lean, not in prose:
   `UncoveredLockDomain` (`InformationFlow/FineLockFlow.lean`) names each gap and
   its owner, and its completeness theorem forces a new domain to be registered.
-- **Staged modules**: 60 staged-only, listed in
+- **Staged modules**: 62 staged-only, listed in
   `scripts/staged_module_allowlist.txt` and gated by
   `scripts/check_production_staging_partition.sh`.  Production must not import
   staged.
+- **The WS-SM theorem total is measured, not summed.**
+  `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per
+  phase SM0..SM10, each naming the theorem inventories that phase owns, and
+  `smpInventoriedTheoremCount` is the sum over those entries — 1111 theorems
+  registered in a machine-checked inventory today.  Six phases (SM1 and SM6..SM10)
+  have **no** theorem inventory and are registered as `unregistered`
+  contributing zero; that gap is real, and the honest zero is what makes it
+  visible.  Adding a phase without an entry fails elaboration; adding an
+  inventory no phase claims fails Tier 0
+  (`scripts/generate_smp_theorem_manifest.py --check`).  New code must not
+  reintroduce a hand-written per-phase figure.
 
 ### Closed workstreams
 

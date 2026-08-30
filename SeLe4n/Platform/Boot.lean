@@ -408,7 +408,8 @@ theorem applyMachineConfig_machine_fields (ist : IntermediateState) (config : Ma
 
     AI6-C (M-17) context: A full HAL-parity boot sequence additionally
     issues TLB/ASID maintenance — recorded here as a post-1.0 hardening
-    candidate; no currently-active plan file tracks it. This step (AK9-G)
+    candidate; registered in `docs/WORKSTREAM_HISTORY.md`
+    (Registered debt index, C.1). This step (AK9-G)
     closes the smaller, isolable divergence identified by P-M06. -/
 def bootEnableInterruptsOp (ist : IntermediateState) : IntermediateState where
   state := { ist.state with
@@ -578,7 +579,7 @@ validation. Use `bootFromPlatformChecked` for production boot paths,
 which validates `PlatformConfig.wellFormed` and rejects duplicates.
 Minimum-configuration validation (e.g., at least one initial thread,
 valid scheduler state) is recorded as a post-1.0 hardening candidate;
-no currently-active plan file tracks it.
+registered in `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C.1).
 
 WS-RC R3 (DEEP-BOOT-01): The unchecked path deliberately does NOT
 install `config.bootVSpaceRoot`.  Boot VSpaceRoot threading is
@@ -1385,7 +1386,8 @@ configs, the gap is that builder operations (`registerIrq`, `createObject`)
 only preserve 4 structural invariants, not the full 12-component
 `proofLayerInvariantBundle`. Extending to general configs requires proving
 that each builder operation preserves all 12 components — recorded as a
-post-1.0 hardening candidate; no currently-active plan file tracks it.
+post-1.0 hardening candidate; registered in `docs/WORKSTREAM_HISTORY.md`
+(Registered debt index, C.1).
 -/
 
 /-- U6-G Step 1: Boot from empty config produces the default state. -/

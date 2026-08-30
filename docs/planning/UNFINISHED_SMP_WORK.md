@@ -541,7 +541,12 @@ Each blocks *starting* SM10, as distinct from work SM10 is itself supposed to do
 
 ## 7. Low-severity findings
 
-99 confirmed — documentation drift, stale cross-references, cosmetic inconsistency. Listed so SM10.A's documentation sweep has a work-list.
+99 confirmed. The table is *not* uniformly documentation drift, and §7.1 below
+triages every row by what closes it: 20 were closed outright by the WS-RR RR0
+cut, 9 more by registering them in the project debt register, 18 belong to a
+phase already reworking the same artefact, **15 need code, a proof, a test or a
+wiring change and became RR7 rows (RR7.27–RR7.31)**, and 37 are genuinely
+SM10.A's documentation work-list.
 
 | # | Plan | Finding | Tree cite |
 |---|------|---------|-----------|
@@ -644,6 +649,50 @@ Each blocks *starting* SM10, as distinct from work SM10 is itself supposed to do
 | 97 | `bootpath` | CLAUDE.md reports 60 staged-only modules; the gate verifies 61 | scripts/staged_module_allowlist.txt (61 entries); scripts/check_production_staging_partition.sh output |
 | 98 | `improvement` | Per-core statistics accessors are declared, wrapped and proven but read by nothing | SeLe4n/Kernel/Concurrency/Runtime.lean (perCoreIrqCount),161,166,171 (four wrappers, 0 consumers) |
 | 99 | `improvement` | Stale "stub" markers on RPi5 platform surfaces that H3 has since made substantive | SeLe4n/Platform/RPi5/Board.lean; SeLe4n/Platform/Contract.lean — contradicted by SeLe4n/Platform/RPi5/Contract.le… |
+
+### 7.1 Triage by remedy (WS-RR RR0.11, `v0.34.26`)
+
+Low severity means the *consequence* is small.  It does not mean the *remedy*
+is a sentence, and handing all 99 rows to a documentation sweep would have let
+real work reach release closure as prose — four per-core statistics accessors
+declared, wrapped and proven with no consumer are not a stale sentence, and a
+live docstring citing a theorem that does not exist is not a typo.
+
+Every row is therefore routed by what closes it, not by its severity.  The
+five destinations below partition the 99: **20 + 9 + 18 + 15 + 37 = 99**.
+
+| Destination | Rows | Count |
+|-------------|------|-------|
+| **1. Closed by the RR0 cut** — the defect no longer exists at `v0.34.26` | 13, 18, 48, 49, 57, 75, 76, 79, 80, 81, 82, 83, 86, 88, 90, 91, 92, 94, 95, 97 | 20 |
+| **2. Closed by registration** — the defect *was* the absence of a durable entry; each now has one in the *Registered debt index* of [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md), with an owner and a closure target | 5, 10, 11, 24, 27, 36, 37, 43, 73 | 9 |
+| **3. Already owned by a numbered row** — the owning phase closes it in passing, because it is retiring or reworking the same artefact.  RR3: 1, 2, 3.  RR4: 9, 96.  RR6: 34, 54, 55, 56, 58, 64, 65, 66.  RR7.7: 14, 16, 17.  RR7.24: 46.  SM10.D: 19 | 1, 2, 3, 9, 14, 16, 17, 19, 34, 46, 54, 55, 56, 58, 64, 65, 66, 96 | 18 |
+| **4. New RR7 rows** — needs code, a proof, a test or a wiring change, and had no owner.  RR7.27: 15, 98.  RR7.28: 6, 26, 71, 77, 93.  RR7.29: 22, 28, 78, 87.  RR7.30: 42.  RR7.31: 59, 74, 84 | 6, 15, 22, 26, 28, 42, 59, 71, 74, 77, 78, 84, 87, 93, 98 | 15 |
+| **5. SM10.A's documentation work-list** — genuinely prose: a stale count, a renamed symbol in a landing note, a plan section describing a design the tree replaced | 4, 7, 8, 12, 20, 21, 23, 25, 29, 30, 31, 32, 33, 35, 38, 39, 40, 41, 44, 45, 47, 50, 51, 52, 53, 60, 61, 62, 63, 67, 68, 69, 70, 72, 85, 89, 99 | 37 |
+
+**Destination 5 is cross-referenced from
+[`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) §3 SM10.A**, so
+the sweep has a work-list rather than an instruction to re-audit.  Four of its
+rows (41, 52, 62, 70) are **source comments** rather than documents — a
+`cmdline.rs` docstring that contradicts the code it documents, a `Staged.lean`
+note describing the live syscall entry as staged via an export WS-RA deleted —
+and they are prose only in the sense that the fix is a comment; SM10.A must
+read the code beside each before editing it.
+
+**Why some rows are in destination 3 rather than 5.**  A row that corrects a
+plan an earlier phase *retires* is that phase's, not the sweep's: RR3.17 moves
+the de-threading plan to `dev_history`, so rows 1–3 must be right before it
+moves rather than corrected after.  The same holds for RR6's plan corrections
+(RR6.17) and RR4's `trap.rs` rewrite.
+
+**Rows the triage deliberately did not route to a sweep.**  Row 98 (four
+per-core statistics accessors with zero consumers) and row 15 (`ipcUnwrapCaps`'s
+dead `senderCspaceRoot`, whose own registered closure target passed without it)
+are implement-the-improvement cases: a computed-and-proven structure the
+surrounding code does not consume gets wired in, never deleted and never
+documented as absent.  Row 22 ("every `dev_history` cross-reference removed from
+production sources" — nine remain, and no gate enforces the claim) is a claim
+with no mechanism, which is the same shape as the tier-4 gates that scored a
+skip as a pass.
 
 ## 8. What the audit cleared
 
@@ -1216,7 +1265,7 @@ The sweep found the proof surface, capability gating, ABI design and Rust unsafe
 
 > **This sequence is now planned in full.** Every item below, plus the
 > security findings of §4 and the medium sweep of §6, is decomposed into
-> 149 PR-sized sub-tasks across nine phases in
+> 154 PR-sized sub-tasks across nine phases in
 > [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) (WS-RR).
 > The §7 low-severity table is not enumerated in that plan; RR0.11 triages it
 > by remedy, sending prose fixes to SM10.A's documentation sweep and anything
@@ -1285,5 +1334,6 @@ settled ground without new evidence.
 
 *This register is open until every §3 blocker is closed and the §4
 findings are remediated. When SM10 archives the WS-SM plans
-(SM10.C.4), this document moves with them — and its file-move count is
-one higher than the plan's current "11 file moves" figure.*
+(SM10.C.4), this document moves with them: RR0.7 enumerated that list
+at v0.34.26 — nineteen files, this register among them, against the
+"11 file moves" the plan previously carried.*

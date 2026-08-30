@@ -1,3 +1,114 @@
+## v0.34.26 — RR0: the workstream nobody was tracking, and a theorem total that could not go stale
+
+WS-RR phase **RR0 — Registration and plan correction** — all eleven sub-tasks.
+The phase is cheap and ordered first because every later phase assumes the
+register is accurate, and at `v0.34.3` it was not.
+
+**The blocker (RR0.1–RR0.3).**  An open, materially incomplete verification
+workstream was registered in no durable index.  `grep -c
+IPC_INVARIANT_DETHREADING` returned **0** for `CLAUDE.md`, `AGENTS.md`,
+`docs/WORKSTREAM_HISTORY.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, the SM10 plan,
+the overview, `README.md` and the spec — every canonical index — while SM10's
+own §1 asserted "all substantive SMP work is complete".  SM10.A.4 and SM10.A.6
+are the sub-tasks that would have written v1.0.0 verification claims over that
+surface.  It is now **WS-DT**, with per-slice state (D0/D2/D2′/D3/D4/D5/D7
+closed; D1/D6/D8 open), a closure target of RR3, and a standing constraint in
+`CLAUDE.md`/`AGENTS.md` naming the two conjuncts —
+`blockedThreadsPendingMessageConsistent` and `replyCallerLinkageReciprocal` —
+that are still threaded as post-state hypotheses (the audit put them at 33 and
+31 of 35 bundles; no gate reproduces that yet, which is RR3.1's job), so no one writes code assuming `ipcInvariantFull` is an
+end-to-end machine-checked property of the live kernel.
+
+**The theorem total (RR0.5, RR0.6).**  SM10's tally read `16 SM0 + 1 SM1 + 22
+SM2 + 28 SM3 + ~50 SM4 + 30 SM5 + 25 SM6 + 14 SM7 + 18 SM8 + 5 SM10 = 209 ≈
+210` — SM8 straight to SM10, **no SM9 term**, though SM9 closed at v0.33.100.
+The marker theorem and SM10.B.13's "verify all 210 SM theorems land at HEAD"
+would each have certified a number computed as if a landed phase never
+happened, and nothing would have broken when it did.
+
+That is not fixed by adding a term.  A hand-sum cannot detect its own
+staleness, so the sum is replaced by a measurement, pinned three ways:
+
+- `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per
+  phase SM0..SM10 and derives `smpInventoriedTheoremCount` as a `List.sum` over
+  them — **1111** theorems registered in a machine-checked inventory.
+- Each entry's declared count is **proved** equal to the real inventory lengths
+  (`…_theoremCount_eq_inventories`), so an inventory that grows fails
+  elaboration rather than invalidating a literal.
+- `SmpCompletionPhase.all` plus `smpPhaseTheoremManifest_covers_all` make an
+  omitted phase unrepresentable — the SM9 shape cannot recur.
+
+Lean cannot see the fourth failure, though: a manifest that never *mentions* an
+inventory elaborates perfectly.  So `scripts/generate_smp_theorem_manifest.py`
+discovers every theorem inventory in the tree from its `_identifiers_nodup`
+witness, over the comment-free code view, and fails Tier 0 when one is claimed
+by no phase, claimed twice, or claimed with a count the tree does not measure.
+Both directions are witnessed: a witness that survives only inside a comment
+must not be discovered, and a real one must be.
+
+The number changed meaning as well as value.  1111 counts theorems that are
+*named, resolving and unique*; the old ~210 was an estimate of headline
+theorems per phase catalogue and is not recoverable from the tree.  Six phases
+— SM1 and SM6..SM10 — have no inventory and are registered as contributing
+**zero** rather than given a plausible figure, so the total understates them.
+That gap is now visible instead of hidden behind a round number, and it is
+registered debt with closure target SM10.B.13.
+
+**The register that was never created (RR0.9).**  `docs/audits/AUDIT_v0.30.11_DEFERRED.md`
+was cited as the deferral register by production Lean source, by the WS-RC plan
+in nine places, and by `docs/audits/README.md`'s own lifecycle table.  It does
+not exist.  Underneath it: 23 in-source deferrals across 16 production files
+stating **in their own words** that "no currently-active plan file tracks it",
+five of six machine-enforced `UncoveredLockDomain` entries naming a sub-task
+inside an SM3 that closed at v0.31.9 as their owner, and SM7's ASID gap registered against an SM8 that closed
+without it.
+
+`docs/WORKSTREAM_HISTORY.md` now carries a **Registered debt index** — three
+tables by who can close each item, plus all 23 in-source deferrals enumerated
+individually.  The source comments point at it instead of declaring themselves
+untracked; the `UncoveredLockDomain` owners name live targets; the three
+dangling citations point at the one register.  A second register competing with
+the file CLAUDE.md already declares canonical is how the first divergence
+happened, so there will not be one.
+
+**The circular closure target (RR0.10).**  SM4.C.11's registered closure target
+was **SM4.C.11** — a sub-task of a plan whose own header reads LANDED.  Its note
+was wrong in both directions at once: pessimistic about the eleven per-core
+liveness predicates SM5.J delivered at v0.31.64, and silent about what actually
+remains, which is that `stepPrecondition`, `stepPost` and `ValidTrace` still
+read `bootCoreId` — so no `ValidTrace` exhibits a step taken on a secondary
+core.  The predicates are per-core; the traces they are evaluated over are not.
+Re-homed to **WS-SL**, a registered Scheduler-subsystem follow-on with closure
+target post-v1.0.0 and an explicit constraint on what v1.0.0 may claim.
+
+**The triage (RR0.11).**  All 99 low-severity findings routed by remedy rather
+than severity: 20 closed by this cut, 9 closed by registration, 18 already owned
+by a phase reworking the same artefact, **15 that need code and became
+RR7.27–RR7.31**, and 37 that are genuinely SM10.A's work-list, cross-referenced
+from the SM10 plan.  Four per-core statistics accessors declared, wrapped and
+proven with no consumer are not a stale sentence; a live docstring citing a
+theorem that does not exist is not a typo.  WS-RR is 149 → **154** sub-tasks.
+
+**Plan corrections (RR0.4, RR0.7, RR0.8).**  SM10's §1 says what the phase owns
+— a bare-metal Lean runtime port *and* a release cut — against the register's
+measured table of what does not exist.  The SM10.C.4 archive list goes 11 → 19
+files with SM9's own plan among them, and every exclusion stated.  The SM10.B
+test table is refreshed against the tree: five of six suites, both fixtures and
+both tier scripts already exist, one suite at 11,756 lines, and the two tier
+scripts were named as files nothing in the tree carries.
+
+Every plan under `docs/planning/` now carries a status header — five did not.
+
+**One warning, closed.**  The default host `cargo build` warned on
+`per_core_timer_tick_isr`'s `core_id`: the parameter is read only by the two
+`hw_target` blocks (the `TPIDR_EL1` assert and the `lean_ready` gate), and
+`cargo clippy --all-features -D warnings` never saw it because the feature it
+enables is exactly what makes the parameter used.  Named the condition
+(`cfg_attr(not(feature = "hw_target"), allow(unused_variables))`) rather than
+renaming to `_core_id`, which would tell a reader it is unused everywhere.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+
 ## v0.34.25 — the gate read examples as data; found by probing, not by review
 
 Round 18 found two bypasses after my single probe pass, so I widened the probe

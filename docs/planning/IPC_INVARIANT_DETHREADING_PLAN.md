@@ -1,5 +1,17 @@
 # IPC `ipcInvariantFull` De-Threading — Workstream Plan
 
+> **Status**: **IN FLIGHT — OPEN**.  Seven of ten slices closed (D0, D2,
+> D2′, D3, D4, D5, D7); **D1, D6 and D8 are open**, so two of the twenty
+> `ipcInvariantFull` conjuncts are still threaded as post-state hypotheses
+> and neither dispatch payoff theorem exists.  Registered as **WS-DT** in
+> [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) (RR0.1, v0.34.26)
+> after the pre-SM10 audit filed its absence from every canonical index as
+> its first blocker.
+> **Closure target**: WS-RR phase **RR3**
+> ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)), which
+> absorbs all three open slices and retires this plan at RR3.17.
+> **Per-slice detail**: the Status table below.
+
 > **Goal.** Make every IPC transition's `*_preserves_ipcInvariantFull` theorem
 > *concretely prove* `ipcInvariantFull st'` from `ipcInvariantFull st` + the step,
 > with **no threaded post-state hypotheses**.  Today these theorems assume ~14

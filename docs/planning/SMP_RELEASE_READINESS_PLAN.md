@@ -1,12 +1,13 @@
 # WS-RR — SMP Release Readiness (pre-SM10 remediation)
 
-> **Status**: PLANNED — no sub-task started.
+> **Status**: IN FLIGHT — **RR0 LANDED at v0.34.26** (all eleven sub-tasks);
+> RR1..RR8 not started.
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Source register**: [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) (171 confirmed findings)
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 149 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 154 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -58,7 +59,7 @@ placed to close them**, not by severity alone:
 | Security / soundness | 11 | RR4, RR5, RR6, RR7 | Become reachable when the boot path goes live |
 | High (other) | 12 | RR1..RR6 | Real incomplete work in phases marked complete |
 | Medium | 46 | RR7 (and RR0..RR6 where thematic) | Genuine gaps SM10 would otherwise absorb |
-| Low | 99 | RR0.11 triage → **SM10.A** or RR7 | Mostly documentation sync, but not uniformly — see below |
+| Low | 99 | RR0.11 triage → **SM10.A**, RR7.27–RR7.31, or the debt register | Triaged at v0.34.26 (register §7.1): 20 closed by the RR0 cut, 9 closed by registration, 18 already owned by a phase reworking the same artefact, **15 needed code and became RR7.27–RR7.31**, 37 are SM10.A's work-list |
 
 Most of the 99 lows are documentation drift, and those are deliberately **not**
 duplicated into this phase: re-homing a documentation sweep into a remediation
@@ -76,6 +77,10 @@ implement-the-improvement case, not a stale sentence; finding 8 in §4 is a
 work-list, and every row that needs code, a proof or a wiring change becomes a
 numbered RR7 row or an explicitly registered deferral with an owner. A low
 severity means the consequence is small, not that the remedy is a sentence.
+**Triage result at `v0.34.26`** (register §7.1, per-row): 20 closed by the RR0
+cut, 9 closed by registration in the debt register, 18 already owned by a phase
+reworking the same artefact, **15 routed to new rows RR7.27–RR7.31**, and 37
+to SM10.A's work-list — 20 + 9 + 18 + 15 + 37 = 99.
 
 ### 2.2 Why a separate phase rather than SM10 sub-tasks
 
@@ -135,14 +140,14 @@ Nothing else may overlap without re-reading the dependency list above.
 
 | Phase | Scope (one line) | Subs | Est |
 |-------|------------------|------|-----|
-| RR0 | Registration and plan correction — nothing further is lost | 11 | S–M |
+| RR0 | Registration and plan correction — nothing further is lost.  **LANDED v0.34.26** | 11 | S–M |
 | RR1 | aarch64 compile coverage, plus the Rust HAL gate no other phase owns | 11 | M |
 | RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live | 19 | M–L |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 | L–XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
 | RR5 | Boot-path fail-open closure | 14 | M–L |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 | L |
-| RR7 | Medium-severity sweep | 26 | M |
+| RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 31 | M |
 | RR8 | Phase closure and hand-off to SM10 | 5 | S |
 
 ## 5. Sub-tasks
@@ -173,6 +178,18 @@ register is accurate. RR0.1–RR0.3 close audit blocker 1's registration half.
 **Acceptance**: `grep` for each open workstream name returns a hit in
 `docs/WORKSTREAM_HISTORY.md`; no plan in `docs/planning/` lacks a status
 header; the SM10 tally arithmetic includes every landed phase.
+
+**Met at `v0.34.26`.**  Every plan under `docs/planning/` is cited from
+`docs/WORKSTREAM_HISTORY.md` and carries a status header — five did not, and
+two (`SMP_PANIC_HANG_REMEDIATION_PLAN.md`,
+`WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`) were cited from nowhere.  The SM10
+tally is no longer arithmetic at all: `smpInventoriedTheoremCount` is a
+`List.sum` over one manifest entry per phase SM0..SM10, and
+`smpPhaseTheoremManifest_covers_all` makes an omitted phase fail elaboration —
+so "includes every landed phase" is now a proof obligation rather than a
+property of a sentence.  Two open workstreams that existed only as plan files,
+**WS-DT** and **WS-SL**, are registered with owners and closure targets, and
+the *Registered debt index* gives every deferred item a home.
 
 
 ### RR1 — aarch64 compile coverage
@@ -442,9 +459,11 @@ then the corollary, then the switch.
 
 ### RR7 — Medium-severity sweep
 
-Every confirmed medium finding, batched so each PR touches one subsystem.
-**50 findings**: the 46 in the register's §6 table, plus the four §4 rows
-RR7.1–RR7.4 that are remediation work rather than security fixes. Every other
+Every confirmed medium finding, batched so each PR touches one subsystem,
+plus the §7 low-severity rows whose remedy is code rather than prose.
+**65 findings**: the 46 in the register's §6 table, the four §4 rows
+RR7.1–RR7.4 that are remediation work rather than security fixes, and the 15
+§7 rows RR0.11's triage routed here (RR7.27–RR7.31). Every other
 §4 item is owned by the phase carrying its siblings — the unhandled VM-fault
 loop and the fault-return ABI convention by RR4, the cancellation-NI hypothesis
 by RR2, the RwLock/Rust refinement gap by RR6, the `suspend_thread_inner`
@@ -485,12 +504,21 @@ acceptance gate below can actually be checked against the work list.
 | RR7.24 | SMP foundations medium | 1 | S |
 | RR7.25 | Master plan medium | 1 | S |
 | RR7.26 | Doc-sync medium | 1 | S |
+| RR7.27 | Unwired proven structures (§7): the four per-core statistics accessors that are declared, wrapped and proven with zero consumers, and `ipcUnwrapCaps`'s dead `senderCspaceRoot`, whose own registered closure target passed without it | 2 | M |
+| RR7.28 | Plan-named artefacts that do not exist (§7): `donation_perCore_consistent`, the two unresolvable SM8 theorem names — one of them cited from a **live docstring** — `notification_waiters_nodup`, the SM0-cited Tier-0 gate script, and the four `CLAIM_EVIDENCE_INDEX.md` identifiers.  Per implement-the-improvement each is authored, not struck from the catalogue | 5 | L |
+| RR7.29 | Gate coverage the claims assume (§7): the nine `dev_history` cross-references still in production sources plus the gate that would enforce their absence; the three declared `lean_exe` targets no gate compiles; the SMP-M1 surface difference no gate or phase owns; and the documentation-metrics sync, which covers two files while the sync matrix claims the transitive set — eleven i18n READMEs and four GitBook chapters carry `v0.33.101`-era metrics | 4 | M |
+| RR7.30 | Boot-core-pinned thread-state classification (§7): `inferThreadState` / `syncThreadStates` / `threadStateConsistent` read `bootCoreId`, so a thread running on a secondary core classifies as `.Inactive` | 1 | M |
+| RR7.31 | Test-surface corrections (§7): the D-1 admission-order `decide` fixtures the RwLock gate asks for and the suite lacks; the `r4a_`/`r4c_` test identifiers that encode sub-task codes against the plan's own self-certified naming rule; and the vacuous `trap.rs` SVC test with its stale "pre-FFI stub" prose | 3 | M |
 
-**Acceptance**: all **50** findings this phase owns — the 46 in the register's
-§6 table and the four §4 items in RR7.1–RR7.4 — are closed or carry an
-explicit, registered deferral with a closure target. A medium may be deferred;
-it may not be dropped, and the four §4 rows may not be left open on the
-strength of the §6 table alone.
+**Acceptance**: all **65** findings this phase owns — the 46 in the register's
+§6 table, the four §4 items in RR7.1–RR7.4, and the 15 §7 rows RR0.11's triage
+routed here (RR7.27–RR7.31) — are closed or carry an explicit, registered
+deferral with a closure target. A medium may be deferred; it may not be
+dropped, and neither the four §4 rows nor the 15 §7 rows may be left open on
+the strength of the §6 table alone. **A low severity means the consequence is
+small, not that the remedy is a sentence**: every row in RR7.27–RR7.31 needs
+code, a proof, a test or a wiring change, which is why the triage did not hand
+them to a documentation sweep.
 
 
 ### RR8 — Phase closure and hand-off to SM10

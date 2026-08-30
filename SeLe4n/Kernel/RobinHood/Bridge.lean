@@ -40,8 +40,8 @@ Phase AK8-K:
   via return type (returns the original table unmodified; callers must
   check via the size-preserving theorem). The "Except-returning" variant
   is not introduced in AK8 — it would cascade through ~50 insert call
-  sites. Recorded as post-1.0 hygiene work; no active plan file tracks
-  it.
+  sites. Recorded as post-1.0 hygiene work; registered in
+  `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C.1).
 - **DS-L3 (`RHTable.erase` saturation):** documented. `Nat.sub` saturates
   at zero, so `size - 1` on an empty table remains 0. The existing
   `erase_size_bounded` theorem discharges the safety property without

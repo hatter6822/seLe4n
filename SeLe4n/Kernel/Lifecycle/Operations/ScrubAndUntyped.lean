@@ -468,8 +468,8 @@ sequential semantic level. On real hardware (SMP / preemption-capable
 AArch64) the same atomicity must be re-established by a critical section
 around `retypeFromUntyped`; the obligation is tracked for AN9-D (HAL
 bracket) and AN12-B (SMP inventory confirmation — recorded as a post-1.0
-hardening candidate; no currently-active plan file tracks it beyond
-cross-reference). -/
+hardening candidate; registered in `docs/WORKSTREAM_HISTORY.md`
+(Registered debt index, C.1)). -/
 theorem retypeFromUntyped_atomicity_under_sequential_semantics
     (st st' : SystemState)
     (authority : CSpaceAddr)

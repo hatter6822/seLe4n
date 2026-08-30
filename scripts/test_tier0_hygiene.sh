@@ -137,6 +137,26 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py"
 
+# WS-RR RR0.6: the SMP completion-phase theorem manifest.  The release-closure
+# plan carried its theorem total as a hand-summed literal that ran SM8 -> SM10
+# with no SM9 term, so the marker theorem and the "verify all 210 SM theorems
+# land at HEAD" gate would both have certified a number computed as if a landed
+# phase never happened -- and nothing would have broken when it did.  Lean now
+# derives the total from per-phase entries, which stops a *count* going stale;
+# it cannot see an inventory the manifest never mentions, which is exactly the
+# shape that produced the defect.  This gate discovers every theorem inventory
+# in the tree, over the comment-free code view, and fails when one is claimed
+# by no phase, claimed twice, or claimed with a count the tree does not
+# measure.  `run_check`, not `run_gate_check`: it reads the tree and has no
+# legitimate skip, so "could not run" would be a defect rather than an absent
+# emulator.  Self-test first, for the same reason the plan gate runs one: a
+# scanner that under-reaches reports PASS, and the whole point of this gate is
+# that a number nobody was checking looked fine for two minor versions.  The
+# suite witnesses both directions — every defect reproduced and caught, and a
+# witness surviving only inside a comment NOT discovered.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/generate_smp_theorem_manifest.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/generate_smp_theorem_manifest.py" --check
+
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per
 # round — `.tcbResume`, `.send`, `.tcbSetPriority`/`.tcbSetMCPriority` — each

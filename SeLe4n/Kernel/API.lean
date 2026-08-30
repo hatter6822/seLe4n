@@ -1124,7 +1124,7 @@ register_option sele4n.debug.noisyResolution : Bool := {
     property between the two variants; the fully-general form (equal caps
     for all inputs) requires a fold-level induction that is tractable but
     beyond the AN7-E landing scope and recorded as a post-1.0 hardening
-    candidate; no currently-active plan file tracks it. -/
+    candidate; registered in `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C.1). -/
 theorem resolveExtraCapsDetailed_empty
     (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (granted : Bool) (st : SystemState) :
     resolveExtraCapsDetailed cspaceRoot #[] depth granted st = ((#[], false), st) := by

@@ -5812,6 +5812,50 @@ import SeLe4n.Kernel.Concurrency.LockPrimitives
 #check @SeLe4n.Kernel.Concurrency.lockPrimitives_descriptions_nodup
 EOF'
 
+# WS-RR RR0.6 — SMP completion-phase theorem manifest surface anchors.
+# The SM10 theorem marker, derived from the per-phase inventories rather than
+# hand-summed.  Anchored because the defect it closes was a number nobody was
+# checking: a tally running SM8 -> SM10 with no SM9 term looked plausible for
+# two minor versions.  The completeness and derivation witnesses are named
+# individually — deleting one is the edit that would let the number drift
+# again, and a surface scan is what makes that deletion visible.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.PhaseTheoremManifest'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.PhaseTheoremManifest
+
+#check @SeLe4n.Kernel.Concurrency.SmpCompletionPhase
+#check @SeLe4n.Kernel.Concurrency.SmpCompletionPhase.all
+#check @SeLe4n.Kernel.Concurrency.SmpCompletionPhase.mem_all
+#check @SeLe4n.Kernel.Concurrency.SmpCompletionPhase.all_nodup
+#check @SeLe4n.Kernel.Concurrency.SmpCompletionPhase.all_length
+#check @SeLe4n.Kernel.Concurrency.PhaseInventoryKind
+#check @SeLe4n.Kernel.Concurrency.PhaseInventoryKind.theoremInventory
+#check @SeLe4n.Kernel.Concurrency.PhaseInventoryKind.assumptionLedger
+#check @SeLe4n.Kernel.Concurrency.PhaseInventoryKind.unregistered
+#check @SeLe4n.Kernel.Concurrency.PhaseTheoremEntry
+#check @SeLe4n.Kernel.Concurrency.PhaseTheoremEntry.phase
+#check @SeLe4n.Kernel.Concurrency.PhaseTheoremEntry.label
+#check @SeLe4n.Kernel.Concurrency.PhaseTheoremEntry.kind
+#check @SeLe4n.Kernel.Concurrency.PhaseTheoremEntry.inventories
+#check @SeLe4n.Kernel.Concurrency.PhaseTheoremEntry.theoremCount
+#check @SeLe4n.Kernel.Concurrency.smpPhaseTheoremManifest
+#check @SeLe4n.Kernel.Concurrency.smpPhaseEntry?
+#check @SeLe4n.Kernel.Concurrency.smpPhaseTheoremCount
+#check @SeLe4n.Kernel.Concurrency.smpInventoriedTheoremCount
+#check @SeLe4n.Kernel.Concurrency.smpPhaseTheoremManifest_covers_all
+#check @SeLe4n.Kernel.Concurrency.smpPhaseTheoremManifest_covers
+#check @SeLe4n.Kernel.Concurrency.smpPhaseTheoremManifest_phases_nodup
+#check @SeLe4n.Kernel.Concurrency.smpPhaseTheoremManifest_length
+#check @SeLe4n.Kernel.Concurrency.smpPhase_verifiedLockPrimitives_theoremCount_eq_inventories
+#check @SeLe4n.Kernel.Concurrency.smpPhase_perObjectLocks_theoremCount_eq_inventories
+#check @SeLe4n.Kernel.Concurrency.smpPhase_perCoreScheduler_theoremCount_eq_inventories
+#check @SeLe4n.Kernel.Concurrency.smpPhase_foundations_theoremCount_zero
+#check @SeLe4n.Kernel.Concurrency.smpPhase_perCoreState_theoremCount_zero
+#check @SeLe4n.Kernel.Concurrency.smpPhase_unregistered_theoremCount_zero
+#check @SeLe4n.Kernel.Concurrency.smp_inventoried_theorem_count
+#check @SeLe4n.Kernel.Concurrency.smp_inventoried_theorem_count_decomposition
+EOF'
+
 # WS-SM SM2.D TicketLockRefinement (F-01 refinement bridge anchor).
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"

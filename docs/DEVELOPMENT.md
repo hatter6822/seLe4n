@@ -7,8 +7,9 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 
 It is aligned to the **current project state**:
 
-- **active workstream:** **WS-RR (SMP Release Readiness) PLANNED — the
-  pre-SM10 remediation, 148 sub-tasks across RR0..RR8.  SM10 is BLOCKED on it
+- **active workstream:** **WS-RR (SMP Release Readiness) IN FLIGHT — the
+  pre-SM10 remediation, 154 sub-tasks across RR0..RR8; **RR0 landed at
+  v0.34.26** (registration and plan correction).  SM10 is BLOCKED on it
   and must not open until RR8 closes**; the pre-SM10 completeness audit found
   three findings that block starting SM10, a false scope statement in its own
   plan, and fail-open latents that become reachable when the boot path goes
@@ -770,7 +771,20 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 5. theorem discoverability through stable naming,
 6. fixture-backed executable evidence (`Main.lean` + trace fixture),
 7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),
-8. top-level import hygiene: keep `SeLe4n.lean` free of duplicate/redundant subsystem imports by relying on `SeLe4n/Kernel/API.lean` as the canonical aggregate surface.
+8. top-level import hygiene: keep `SeLe4n.lean` free of duplicate/redundant subsystem imports by relying on `SeLe4n/Kernel/API.lean` as the canonical aggregate surface,
+9. **one debt register**: every deferred item goes to the *Registered debt index*
+   in [`WORKSTREAM_HISTORY.md`](WORKSTREAM_HISTORY.md) with an owner and a
+   closure target.  Not a source comment saying it is untracked, and not a new
+   per-workstream `AUDIT_v<X>_DEFERRED.md` — the one that convention produced
+   was cited by production Lean source and two authorities and never existed
+   (WS-RR RR0.9, v0.34.26).  A closure target inside a plan marked LANDED or a
+   phase already CLOSED is not a closure target,
+10. **counts that span artefacts are derived, never restated**: a number written
+   in two places is a number that can disagree with itself.  The WS-SM theorem
+   total is a `List.sum` over
+   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean`'s per-phase entries,
+   each proved equal to a real inventory length, and cross-checked against the
+   tree by a Tier-0 gate — see the regeneration process below.
 
 ---
 
@@ -1343,6 +1357,27 @@ When modifying production Lean source files:
 2. `./scripts/report_current_state.py` remains available as a manual
    cross-check of the derived metrics.
 3. Verify: `./scripts/test_docs_sync.sh` (checks codebase map freshness).
+
+### SMP theorem-manifest regeneration (WS-RR RR0.6)
+
+When adding, resizing, renaming or deleting a **theorem inventory** — a list of
+theorem identifiers carrying `<name>_identifiers_nodup` and
+`<name>_count : <name>.length = N`:
+
+1. Update the phase's entry in
+   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` (add the inventory to
+   `inventories`, adjust `theoremCount`, and the total in
+   `smp_inventoried_theorem_count`).  The per-phase
+   `…_theoremCount_eq_inventories` theorem will not compile until the declared
+   count matches the real lengths, which is the point.
+2. Regenerate the artifact:
+   `python3 scripts/generate_smp_theorem_manifest.py --write`.
+3. Verify: `python3 scripts/generate_smp_theorem_manifest.py --check` (also run
+   by Tier 0, after its `--self-test`).
+
+An inventory that no phase claims is a **hard failure**, not an omission — that
+is the case Lean cannot see, and it is the shape that let a theorem tally run
+SM8 → SM10 with no SM9 term for two minor versions.
 
 ---
 

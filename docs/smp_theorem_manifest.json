@@ -1,0 +1,181 @@
+{
+  "schema": "wsm-theorem-manifest/1",
+  "generator": "scripts/generate_smp_theorem_manifest.py",
+  "note": "Generated from the tree, not hand-summed. Each count is the number a Lean size witness proves for that inventory; the total is their sum over phases whose kind is theoremInventory. Regenerate with `python3 scripts/generate_smp_theorem_manifest.py --write`.",
+  "phases": [
+    {
+      "phase": "SM0",
+      "constructor": "foundations",
+      "label": "SM0 \u2014 foundations",
+      "kind": "assumptionLedger",
+      "inventories": [
+        {
+          "name": "smpLatentInventory",
+          "module": "SeLe4n/Kernel/Concurrency/Assumptions.lean",
+          "count": 8
+        }
+      ],
+      "theoremCount": 0
+    },
+    {
+      "phase": "SM1",
+      "constructor": "rustHal",
+      "label": "SM1 \u2014 Rust HAL",
+      "kind": "unregistered",
+      "inventories": [],
+      "theoremCount": 0
+    },
+    {
+      "phase": "SM2",
+      "constructor": "verifiedLockPrimitives",
+      "label": "SM2 \u2014 verified lock primitives",
+      "kind": "theoremInventory",
+      "inventories": [
+        {
+          "name": "lockPrimitives",
+          "module": "SeLe4n/Kernel/Concurrency/LockPrimitives.lean",
+          "count": 22
+        }
+      ],
+      "theoremCount": 22
+    },
+    {
+      "phase": "SM3",
+      "constructor": "perObjectLocks",
+      "label": "SM3 \u2014 per-object locks",
+      "kind": "theoremInventory",
+      "inventories": [
+        {
+          "name": "perObjectLockTheorems",
+          "module": "SeLe4n/Model/Object/PerObjectLockInventory.lean",
+          "count": 37
+        },
+        {
+          "name": "lockSetTheorems",
+          "module": "SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean",
+          "count": 109
+        },
+        {
+          "name": "withLockSetTheorems",
+          "module": "SeLe4n/Kernel/Concurrency/Locks/WithLockSetInventory.lean",
+          "count": 86
+        },
+        {
+          "name": "deadlockTheorems",
+          "module": "SeLe4n/Kernel/Concurrency/Locks/DeadlockInventory.lean",
+          "count": 66
+        },
+        {
+          "name": "serializabilityTheorems",
+          "module": "SeLe4n/Kernel/Concurrency/Locks/SerializabilityInventory.lean",
+          "count": 111
+        }
+      ],
+      "theoremCount": 409
+    },
+    {
+      "phase": "SM4",
+      "constructor": "perCoreState",
+      "label": "SM4 \u2014 per-core state",
+      "kind": "assumptionLedger",
+      "inventories": [
+        {
+          "name": "smpRetiredInventory",
+          "module": "SeLe4n/Kernel/Concurrency/Assumptions.lean",
+          "count": 8
+        }
+      ],
+      "theoremCount": 0
+    },
+    {
+      "phase": "SM5",
+      "constructor": "perCoreScheduler",
+      "label": "SM5 \u2014 per-core scheduler",
+      "kind": "theoremInventory",
+      "inventories": [
+        {
+          "name": "crossCoreWakeTheorems",
+          "module": "SeLe4n/Kernel/Scheduler/Operations/CrossCoreWakeInventory.lean",
+          "count": 83
+        },
+        {
+          "name": "perCoreTimerTheorems",
+          "module": "SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerInventory.lean",
+          "count": 101
+        },
+        {
+          "name": "perCoreIdleTheorems",
+          "module": "SeLe4n/Kernel/Scheduler/Operations/PerCoreIdleInventory.lean",
+          "count": 64
+        },
+        {
+          "name": "perCorePipTheorems",
+          "module": "SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCoreInventory.lean",
+          "count": 99
+        },
+        {
+          "name": "perCoreDomainTheorems",
+          "module": "SeLe4n/Kernel/Scheduler/Operations/PerCoreDomainInventory.lean",
+          "count": 75
+        },
+        {
+          "name": "perCoreCbsTheorems",
+          "module": "SeLe4n/Kernel/Scheduler/Operations/PerCoreCbsInventory.lean",
+          "count": 119
+        },
+        {
+          "name": "perCoreInvariantSuiteTheorems",
+          "module": "SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuiteInventory.lean",
+          "count": 95
+        },
+        {
+          "name": "perCoreWcrtTheorems",
+          "module": "SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrtInventory.lean",
+          "count": 44
+        }
+      ],
+      "theoremCount": 680
+    },
+    {
+      "phase": "SM6",
+      "constructor": "crossCoreIpc",
+      "label": "SM6 \u2014 cross-core IPC",
+      "kind": "unregistered",
+      "inventories": [],
+      "theoremCount": 0
+    },
+    {
+      "phase": "SM7",
+      "constructor": "tlbShootdown",
+      "label": "SM7 \u2014 TLB shootdown",
+      "kind": "unregistered",
+      "inventories": [],
+      "theoremCount": 0
+    },
+    {
+      "phase": "SM8",
+      "constructor": "informationFlow",
+      "label": "SM8 \u2014 information flow",
+      "kind": "unregistered",
+      "inventories": [],
+      "theoremCount": 0
+    },
+    {
+      "phase": "SM9",
+      "constructor": "declassification",
+      "label": "SM9 \u2014 declassification",
+      "kind": "unregistered",
+      "inventories": [],
+      "theoremCount": 0
+    },
+    {
+      "phase": "SM10",
+      "constructor": "releaseClosure",
+      "label": "SM10 \u2014 release closure",
+      "kind": "unregistered",
+      "inventories": [],
+      "theoremCount": 0
+    }
+  ],
+  "theoremTotal": 1111
+}

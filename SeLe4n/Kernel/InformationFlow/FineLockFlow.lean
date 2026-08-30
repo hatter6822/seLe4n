@@ -3019,11 +3019,24 @@ inductive UncoveredLockDomain where
   deriving DecidableEq, Repr
 
 /-- SM8.D.5: the domains this bracket does **not** cover, and the workstream that
-owns composing them. -/
+owns composing them.
+
+**Owners re-pointed at v0.34.26 (WS-RR RR0.9).**  Five of the six named a
+sub-task inside SM3, a phase closed at v0.31.9 — `SM3.B` three times, plus
+`SM3.C.9` and `SM3.C.11`.  (The debt sweep reported three; it counted the
+literal `SM3.B` trio.)  An owner field naming a closed phase does not identify anyone who
+can close the domain, which is the same defect as a closure target inside a
+plan marked LANDED, and it is the reason the debt sweep found this register
+incoherent.  Each now names a **live** target; the fine-lock tracks are
+enumerated in `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` and the register
+row for each sits in `docs/WORKSTREAM_HISTORY.md`. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
-  [(.schedulerDomain, "SM3.C.9"), (.dynamicPipChain, "SM3.C.11"),
-   (.queueOwnershipProtocol, "SM3.B"), (.capTransferReceiverCnode, "SM3.B"),
-   (.taintTablePerKeyStore, "SM10.E"), (.cdtNodeAllocation, "SM3.B")]
+  [(.schedulerDomain, "WS-RR RR7.7 (fine-lock Track C)"),
+   (.dynamicPipChain, "WS-RR RR7.7 (fine-lock Track C)"),
+   (.queueOwnershipProtocol, "WS-RR RR7.7 (fine-lock Track B)"),
+   (.capTransferReceiverCnode, "WS-RR RR7.7 (fine-lock Track B)"),
+   (.taintTablePerKeyStore, "SM10.E (fine-lock Track D)"),
+   (.cdtNodeAllocation, "WS-RR RR7.7 (fine-lock Track B)")]
 
 /-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
 inventory uses — so completeness can be quantified over the *constructors*
@@ -3089,8 +3102,10 @@ def fineLockDisciplineComplete : Bool :=
   declaredFootprintUncoveredDomains.isEmpty
 
 /-- SM8.D.5 (PR #873 round 6): **it is false today**, and this is the pin that
-makes flipping it a deliberate act.  Deleting it is the same edit as claiming the
-five registered domains are covered. -/
+makes flipping it a deliberate act.  Deleting it is the same edit as claiming
+every registered domain is covered — six of them today, and the count is read
+off `declaredFootprintUncoveredDomains` rather than restated here, because a
+number written twice is a number that can disagree with itself. -/
 theorem fineLockDisciplineComplete_is_false : fineLockDisciplineComplete = false := by
   decide
 

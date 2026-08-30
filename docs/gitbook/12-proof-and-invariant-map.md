@@ -474,6 +474,19 @@ Bundle level:
 
 - `ipcInvariantFull` (WS-RC R4.C.7 close-out: 15-conjunct — `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed ∧ blockedThreadsPendingMessageConsistent ∧ endpointQueueNoDup ∧ ipcStateQueueMembershipConsistent ∧ queueNextBlockingConsistent ∧ queueHeadBlockedConsistent ∧ blockedThreadTimeoutConsistent ∧ donationChainAcyclic ∧ donationOwnerValid ∧ passiveServerIdle ∧ donationBudgetTransfer ∧ blockedOnReplyHasTarget`. The legacy 15th-slot `uniqueWaiters` conjunct was retired when `Notification.waitingThreads` was promoted to `SeLe4n.NoDupList ThreadId`, carrying the `List.Nodup` witness structurally via `NoDupList.hNodup`. WS-H12c + WS-H12d + WS-F5 + V3-G6 + V3-K + V3-J + V3-J-cross + Z6-J + Z7-F/G/H/I + AG1-C + AJ1-B + WS-RC R4.C.7)
 - `ipcInvariantFull` — **grown to twenty conjuncts** since the WS-RC R4.C.7 close-out described above: the WS-SM SM6.D reply-object hardening (v0.31.115→v0.32.57) appended `replyCallerLinkage` (16th), `pendingReceiveReplyWellFormed` (17th), `donationOwnerUnique` (18th), `endpointQueueTailBlockedConsistent` (19th), and `queueNextTargetBlocked` (20th).  Canonical definition: `SeLe4n/Kernel/IPC/Invariant/Defs.lean`.
+  **`ipcInvariantFull` is not yet an end-to-end machine-checked property of
+  the live kernel** (WS-RR RR0.3, v0.34.26): two of the twenty conjuncts —
+  `blockedThreadsPendingMessageConsistent` and
+  `replyCallerLinkageReciprocal` — are still assumed as **post-state
+  hypotheses** on nearly every `*_preserves_ipcInvariantFull` bundle, so
+  such a theorem proves "*if* the post-state already satisfies the
+  conjunct, the transition is fine", not that the transition establishes
+  it; and neither top-level dispatch payoff theorem
+  (`dispatchWithCap_preserves_ipcInvariantFull`,
+  `syscallDispatch_preserves_ipcInvariantFull`) exists.  The workstream is
+  **WS-DT** in [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md),
+  closure target WS-RR phase RR3.  Canonical statement of the constraint:
+  `CLAUDE.md` / `AGENTS.md`, "Standing constraints and registered debt".
 - `blockedThreadsPendingMessageConsistent` — **strengthened to both directions**
   (PR #873 round 11, v0.33.86), and renamed from `waitingThreadsPendingMessageNone`
   because the old name described only the half it stated.  It now ties

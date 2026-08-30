@@ -391,6 +391,14 @@ pub fn get_tick_count() -> u64 {
 /// **Re-entrancy.** The IRQ is acknowledged + EOI'd before this runs, and the
 /// CPU-interface running-priority mask holds INTID 30 off until `PSTATE.I` clears
 /// on exception return, so the comparator re-arm cannot itself re-trigger.
+// `core_id` is consumed only by the two `hw_target` blocks below — the
+// `debug_assert_eq!` against `TPIDR_EL1` and the `lean_ready` gate that fronts
+// the Lean entry.  Without the feature there is no kernel image to enter, so
+// the parameter is genuinely unused and the default host build warns.  Naming
+// the exact condition is better than renaming the parameter to `_core_id`: the
+// hardware paths read it, the signature is the ISR's contract with `trap.rs`,
+// and a leading underscore would tell a reader it is unused everywhere.
+#[cfg_attr(not(feature = "hw_target"), allow(unused_variables))]
 pub fn per_core_timer_tick_isr(core_id: u64) {
     // Pin the consistency invariant the per-core stat recording relies on: step 1
     // (`record_timer_tick`) selects the per-CPU slot by re-reading `TPIDR_EL1`, so
