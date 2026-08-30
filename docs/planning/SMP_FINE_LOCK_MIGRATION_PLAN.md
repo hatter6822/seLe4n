@@ -1,5 +1,16 @@
 # SMP Fine-Lock Migration & Commit-Partitioning Plan
 
+> **Status**: **PARTIAL — 2 of 12 PRs landed.**  Track A (security) is
+> closed; its High revocation-precision finding closed at v0.33.88 (§3.1).
+> **Tracks B, C and D are entirely unstarted**, including the phase's
+> headline SM3.C.9 deliverable, so the per-object fine locks remain a
+> model-level discipline and the v1.0.0 "per-object reader-writer fine
+> locks" capability claim is not yet true.
+> **Closure targets**: Tracks B and C → WS-RR **RR7.7**; Track D
+> (commit partitioning) is seam-gated to **SM10.1** and registered as a
+> named dependency by RR6.19.  A reader could not previously tell any of
+> this from the plan, which carried no status header at all (RR0, v0.34.26).
+
 > **Phase**: SM3.C.9 (deferred `withLockSet` migration at the live kernel
 > entry) + the `capTransferReceiverCnode` footprint closure + commit
 > partitioning (the fine-lock end-state).
@@ -17,7 +28,7 @@ Three coupled closures, sequenced security-first:
    transfer misattributed CDT provenance to a synthetic source slot, so
    `cspaceRevokeCdt` missed transferred children. High severity, single-core
    reachable, model-level (would have been a live CVE-class defect once the
-   kernel boots at SM10.E). **CLOSED at v0.33.88 across five cuts — see
+   kernel boots at SM10.1). **CLOSED at v0.33.88 across five cuts — see
    §3.1 for the closure record**; items 2 and 3 below remain open.
 2. **Close the registered footprint defect** `UncoveredLockDomain.capTransferReceiverCnode`
    — the receiver-CNode write (and the previously-undeclared CDT write on
@@ -26,7 +37,7 @@ Three coupled closures, sequenced security-first:
 3. **Land the deferred SM3.C.9 fine-locks work** — migrate the live
    `@[export]` state-committing bodies to wrap their transitions in
    `withLockSet`, then implement the **partitioned commit** that lets the SM5.I
-   global entry ticket lock finally be removed (seam-gated to SM10.E hardware
+   global entry ticket lock finally be removed (seam-gated to SM10.1 hardware
    validation).
 
 ## 2. Context
@@ -148,7 +159,7 @@ transferred caps.
 **Severity / reachability**: High — revocation of derived authority is a core
 capability-system guarantee. Single-core reachable, requires only the `Grant`
 right the transfer already needs; **not** concurrency-gated, so SM5.I does not
-mask it. Model-level today; live once the kernel boots (SM10.E). No theorem is
+mask it. Model-level today; live once the kernel boots (SM10.1). No theorem is
 false — the model faithfully exhibits the bypass.
 
 **Remediation** (PR 2): thread the real source `SlotRef` through the transfer
@@ -370,7 +381,7 @@ bracket or an explicit fail-closed-`none` justification; `--self-test` plants a
 bare-commit body and asserts detection. Precedent:
 `scripts/check_live_arm_per_core_routing.py`.
 
-### Track D — Commit partitioning (the end-state; seam-gated to SM10.E)
+### Track D — Commit partitioning (the end-state; seam-gated to SM10.1)
 
 **PR 10 — Striped object-lock table (Rust).**
 - *Step 1:* confirm the current carrier in `rust/sele4n-hal/src/lock_bridge.rs`
@@ -395,7 +406,7 @@ serializability theorem in
   fresh state (sound by `transition_footprint_local`); bounded rebase fuel,
   fail-closed halt on exhaustion (SM7.B.6 discipline).
 - *Step 2:* seam flag — retain SM5.I's global entry ticket lock behind a flag
-  (`contextRestoreSeamLive` precedent), flipping only after SM10.E hardware
+  (`contextRestoreSeamLive` precedent), flipping only after SM10.1 hardware
   validation.
 - *Step 3:* host stress both flag settings.
 - *Step 4:* release-closure re-pins (`SMP_RELEASE_CLOSURE_PLAN.md` SMP-C3 made
@@ -416,7 +427,7 @@ serializability theorem in
   a new one; conservative (never under-serializes). *Runtime obligation
   (Track D)*: the key-local reading of the object-store lock is sound only if the
   runtime realises `SystemState.objects` as per-object storage — the same
-  obligation `storeObject` already carries, discharged at SM10.E.
+  obligation `storeObject` already carries, discharged at SM10.1.
 - **Caps-presence gating, not receiver-presence.** The capless-rendezvous
   `= 5`/900µs tick-fit pin (`tests/SmpIpcSuite.lean`) *has* a waiting
   receiver; receiver-gating would break it for all rendezvous calls. The
@@ -487,7 +498,7 @@ race-free under contention with the seam flag in **both** settings.
   ops are not on the 1 ms IPC path).
 - **Rebase livelock / stripe collision** (PR 12/10) — bounded fuel + fail-closed
   halt; stripe collisions over-serialize (safe). Seam flag validated both
-  settings on host before any SM10.E flip.
+  settings on host before any SM10.1 flip.
 
 ## 8. Acceptance / closure
 
@@ -503,7 +514,7 @@ race-free under contention with the seam flag in **both** settings.
 - [ ] PR 12: partitioned CAS-rebase commit host-validated; SM5.I global entry
       lock behind a seam flag; timer-tick registered as SM3.C.9.b.
 
-The **timer-tick fine-lock migration (SM3.C.9.b)** and the **SM10.E seam flip**
+The **timer-tick fine-lock migration (SM3.C.9.b)** and the **SM10.1 seam flip**
 are the two items that remain open after this plan; both are named follow-ons,
 not silent gaps.
 

@@ -18,7 +18,7 @@ A typical audit goes through four stages:
 |-------|-------------------------|-------|
 | **Audit cut** | `AUDIT_v<X>_COMPREHENSIVE.md` | Initial finding inventory + severity table. |
 | **Workstream planning** | `+ AUDIT_v<X>_WORKSTREAM_PLAN.md`, `+ AUDIT_v<X>_WS_*_BASELINE.txt` | Per-phase decomposition + numeric snapshot at workstream start. |
-| **In-flight remediation** | `+ AUDIT_v<X>_DISCHARGE_INDEX.md`, `+ AUDIT_v<X>_DEFERRED.md` (if any items defer past this workstream) | Discharge index aggregates the closure-form proof obligations; deferred file lists items pushed to a future workstream. |
+| **In-flight remediation** | `+ AUDIT_v<X>_DISCHARGE_INDEX.md` | Discharge index aggregates the closure-form proof obligations.  **Deferrals do not get their own file**: they go to the *Registered debt index* in [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md), which CLAUDE.md declares canonical.  The `AUDIT_v<X>_DEFERRED.md` convention this row used to declare produced exactly one such file (`AUDIT_v0.29.0_DEFERRED.md`, since absorbed) and one dangling reference: `AUDIT_v0.30.11_DEFERRED.md` was cited by production Lean source, by the WS-RC plan in nine places and by this table, and was never created (WS-RR RR0.9, v0.34.26). |
 | **Workstream closure** | `+ AUDIT_v<X>_ERRATA.md` (if any) | Audit-text corrections discovered during remediation. |
 
 Once the workstream closes:

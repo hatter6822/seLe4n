@@ -1,7 +1,7 @@
 # SM4 — Path-a Per-Core State Replacement (WS-SM Phase 4)
 
 > **Phase**: SM4 of WS-SM
-> **Status**: LANDED (v0.31.37) — per-core Vector state, SchedulerState, register banks, invariant migration, idle bootstrap (SM4.C.11 liveness-form migration is Scheduler-subsystem scope)
+> **Status**: LANDED (v0.31.37) — per-core Vector state, SchedulerState, register banks, invariant migration, idle bootstrap.  SM4.C.11's liveness-form migration was Scheduler-subsystem scope and is now **mostly delivered by SM5.J** (v0.31.64); its residual — the `bootCoreId`-pinned `stepPrecondition`/`stepPost`/`ValidTrace` step relation — is owned by **WS-SL**, not by this plan (RR0.10, v0.34.26)
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
 > **Target releases (original estimate)**: v0.53.0 .. v0.70.x (largest phase)
@@ -485,15 +485,40 @@ invariant file. Pattern (from §3.4):
 | SM4.C.29 | Aggregate invariant `schedulerInvariant_perCore` | New aggregate | L |
 | SM4.C.30 | Cross-core `schedulerInvariant_perCore_pairwise` | Theorem | M |
 
-> **OPEN (tracked debt) — SM4.C.11**: the `Scheduler/Liveness/*.lean`
-> per-core forms (`eventuallyExits`, `higherBandExhausted`,
-> `rpi5CanonicalConfig`, `WCRTHypotheses`, `wcrtBound`, the `TraceModel`
-> step/selection predicates, … ~15 scheduler-reading decls) were **not**
-> delivered in SM4.C's landing — they remain `bootCoreId`-pinned (correct
-> single-core surface; SMP liveness needs `∀ c` forms).  Surfaced by the
-> SM4.D audit-pass-4 whole-tree re-scan (see §5.4); closure target stays
-> **SM4.C.11**.  This is a Scheduler-subsystem item, deliberately *not*
-> pulled into the SM4.D cross-subsystem cut.
+> **PARTIALLY CLOSED — SM4.C.11** (re-registered by WS-RR RR0.10 at
+> `v0.34.26`).  This note previously said the `Scheduler/Liveness/*.lean`
+> per-core forms "were **not** delivered" and that the "closure target stays
+> **SM4.C.11**".  Both halves were wrong.
+>
+> **The migrated half.**  SM5.J delivered most of the named list at
+> `v0.31.64`, with genuine per-core bodies (`currentOnCore c` /
+> `runQueueOnCore c`, not `bootCoreId`) and an `rfl` boot-core bridge each:
+> `eventuallyExitsOnCore` and `higherBandExhaustedOnCore`
+> (`Liveness/BandExhaustion.lean`), `CanonicalDeploymentProgressOnCore`
+> (`Liveness/RPi5CanonicalConfig.lean`), `WCRTHypothesesOnCore` and
+> `wcrtBound_unfold_onCore` (`Liveness/WCRT.lean`), and
+> `selectedAtOnCore` / `runnableAtOnCore` /
+> `countHigherOrEqualEffectivePriorityOnCore` / `maxBudgetInBandOnCore` /
+> `maxPeriodInBandOnCore` / `bucketPositionOnCore` (`Liveness/TraceModel.lean`).
+> Leaving this note pessimistic was the legitimate documentation direction to
+> correct — the code was better than the text.
+>
+> **The residual, stated precisely.**  What remains boot-core-pinned is the
+> *trace step relation itself*: `stepPrecondition`, `stepPost` and
+> `ValidTrace` (`Liveness/TraceModel.lean`) read `bootCoreId`, so no
+> `ValidTrace` can exhibit a step taken on a secondary core — the per-core
+> predicates above are lifted, but the traces they are evaluated over are
+> not.  That is a **model-completeness** gap, not a soundness defect: the
+> per-core forms are correct, and the SMP liveness capstones state their
+> `hBandProgress` hypothesis explicitly.  The register named nothing at all
+> here, which is why the debt read as closed-by-SM5.J when it is not.
+>
+> **Closure target: WS-SL** (Scheduler liveness completion), registered in
+> [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — a live
+> Scheduler-subsystem follow-on, not a sub-task ID inside this LANDED plan.
+> The old target was circular: SM4.C.11 belongs to a phase whose own header
+> reads LANDED, so no open phase owned it and `grep SM4.C.11` over the SM10
+> plan returned nothing.
 
 **Migration discipline**: each PR (covering 1-3 sub-tasks)
 follows the same pattern:
@@ -608,9 +633,10 @@ migrations.
 > (pinned to `bootCoreId`) and have no per-core form — but they are
 > **SM4.C.11** scope (the §5.3 row `Scheduler/Liveness/*.lean (incl.
 > WCRT)`), the Scheduler-subsystem migration, NOT the SM4.D cross-subsystem
-> boundary.  Their per-core SMP forms remain **open tracked debt against
-> SM4.C.11** (SMP liveness needs `∀ c` reasoning; the bootCoreId-pinned
-> predicates are correct single-core surface).  No SM4.D code change —
+> boundary.  **Superseded in part**: SM5.J lifted most of that list at
+> v0.31.64; only the `stepPrecondition`/`stepPost`/`ValidTrace` step relation
+> is still `bootCoreId`-pinned, and it is owned by **WS-SL** — see the
+> corrected §5.3 note.  No SM4.D code change —
 > migrating Liveness inside this cut would misattribute SM4.C work and
 > break one-coherent-slice.  SM4.D's per-core cross-subsystem surface is
 > complete and axiom-clean.

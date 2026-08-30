@@ -52,15 +52,15 @@
 //! access to `kernelStateRef`; it does not make the Lean runtime exist
 //! on a PE.  Every hardware seam above therefore also consults the
 //! per-core readiness gate ([`crate::lean_ready`]) before its Lean
-//! call — a core SM10.E's initialization has not marked ready degrades
+//! call — a core SM10.1's initialization has not marked ready degrades
 //! to its Rust-only half instead of entering a runtime it never
 //! initialized.
 //!
-//! `lean_kernel_main` (the primary's boot seam, owed by the SM10.E
+//! `lean_kernel_main` (the primary's boot seam, owed by the SM10.1
 //! image target) is the one committing path outside the bracket today.
 //! Phase 6 runs it after Phase 5 has released the secondaries, so its
 //! `initialiseKernelState` install would race their bracketed ticks:
-//! SM10.E MUST either order the install before secondary release or
+//! SM10.1 MUST either order the install before secondary release or
 //! take this bracket around it (recorded in
 //! `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`).
 //!
@@ -370,7 +370,7 @@ mod tests {
     //
     // Host scope, as for the SM7.F.3 witnesses: no SGIs, no per-PE TLB, a
     // different memory model. What is pinned is the mutual exclusion and
-    // the fairness, not anything about TLBs. Hardware waits for SM10.E.
+    // the fairness, not anything about TLBs. Hardware waits for SM10.1.
     // ========================================================================
 
     /// Contenders, capped at the host's real parallelism (min 2, so the

@@ -432,7 +432,7 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     -- descriptors, which is only worth having once kernel entry is
     -- serialised.  Owed by SM5.I; unreachable today (SMP off by default —
     -- enforced by `CmdlineConfig::default`, which returned `true` until
-    -- v0.32.136 — and no bootable image before SM10.E).
+    -- v0.32.136 — and no bootable image before SM10.1).
     Concurrency.shootdownRoundLockRelease
 
 /-- **WS-SM SM7.D.1** (the live instruction-cache maintenance seam): emit the
@@ -524,7 +524,7 @@ return-frame mailbox (`ffiSyscallReturnFrame` — the `ShootdownOpMailbox`
 pattern, since a scalar export return cannot carry six words), and the export's
 scalar return is the **outcome tag**: `0` = the mailbox frame is the caller's
 return, `1` = the caller blocked and no frame exists for it (RA.C.9; the
-staged frame is delivered by the SM10.E context restore).  The pure dispatch
+staged frame is delivered by the SM10.1 context restore).  The pure dispatch
 never takes the `.error` arm (`syscallDispatchFromAbi_total`); the arm is
 discharged inertly with an error frame.
 

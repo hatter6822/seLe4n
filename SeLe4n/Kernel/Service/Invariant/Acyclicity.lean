@@ -43,7 +43,7 @@ proofs. The split is therefore deferred to a follow-up workstream that
 can refactor the proof idiom in a dedicated commit. The file's 1012 LOC
 are well under the 2000 LOC ceiling CLAUDE.md tracks for "large files",
 so delivering SVC-M04 now is not gating. Recorded as a post-1.0 hardening
-candidate; no currently-active plan file tracks it beyond this note. -/
+candidate; registered in `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C.1). -/
 
 namespace SeLe4n.Kernel
 

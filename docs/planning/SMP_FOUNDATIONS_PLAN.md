@@ -1,5 +1,8 @@
 # SM0 — Foundations & Honesty Patches (WS-SM Phase 0)
 
+> **Status**: CLOSED (v0.31.3) — all SM0 sub-tasks landed; the phase's
+> theorem inventory is registered as SM0 in
+> `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean`
 > **Phase**: SM0 of WS-SM
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`

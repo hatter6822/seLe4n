@@ -583,7 +583,7 @@ pub(crate) const fn validate_secondary_context_id(context_id: u64) -> Option<usi
 /// was opt-in (v0.32.136–141) and before SM1 wired PSCI at all.  The
 /// host test suite exercises the function signature and the per-helper
 /// call sites; QEMU `-smp 4` (SM1.H) is the first runtime exerciser of
-/// the full path, and nothing here runs on hardware before SM10.E.
+/// the full path, and nothing here runs on hardware before SM10.1.
 #[no_mangle]
 pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     let core_id = context_id;
@@ -722,7 +722,7 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // -----------------------------------------------------------------
     #[cfg(feature = "hw_target")]
     {
-        // Lean-runtime readiness gate: SM10.E's image initialization runs
+        // Lean-runtime readiness gate: SM10.1's image initialization runs
         // this core's per-core Lean runtime init earlier in this function
         // and marks the core ready; until that work exists, no core is
         // ever ready and the bring-up entry is skipped — a PE must never
@@ -793,7 +793,7 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // `.reschedule` SGI drives the verified reschedule, both via
     // `trap.rs::handle_irq_per_core` under the kernel-entry lock, and
     // each returns here.  Actually *running* a dispatched thread's
-    // context on this core is the SM10.E context-restore seam
+    // context on this core is the SM10.1 context-restore seam
     // (`contextRestoreSeamLive`); until it flips, kernel state tracks
     // the dispatch decisions while the core idles between interrupts.
     // -----------------------------------------------------------------

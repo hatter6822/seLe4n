@@ -28,7 +28,7 @@ FAILURE_MESSAGES=()
 # never claims a clean run while any gate was skipped.
 #
 # `SELE4N_REQUIRE_GATES=1` promotes a skipped gate to a hard failure —
-# the mode a release cut (SM10.E) runs in, where "the emulator was
+# the mode a release cut (SM10.5) runs in, where "the emulator was
 # absent" must stop the release rather than decorate it.
 SELE4N_SKIP_EXIT=77
 SKIP_COUNT=0

@@ -758,7 +758,7 @@ holds, and was simply false for the re-type: `scrubObjectMemory` computes
 `(base, size)` from `(ObjId, KernelObjectType)` at the point of the write.
 `.bootImageLoad` remains genuinely un-emittable today (boot materialises objects
 through the builder, with no transition to hang an operand on) and is scoped to
-SM10.E hardware bring-up, which is also the first point at which the memory is
+SM10.1 hardware bring-up, which is also the first point at which the memory is
 physically backed and the omission could bite.
 
 **PR #845 review (P2)** replaced the previous obligation form, which took
@@ -874,7 +874,7 @@ today?
   from an untyped region.
 * `.bootImageLoad` — not yet.  Boot materialises objects before any extent
   bookkeeping exists, and there is no transition to hang an operand on; scoped
-  to SM10.E hardware bring-up, which is also the first point at which the memory
+  to SM10.1 hardware bring-up, which is also the first point at which the memory
   is physically backed and the omission could bite. -/
 def kernelCodeWriteEmitted : KernelCodeWriteSite → Bool
   | .retypeScrub   => true

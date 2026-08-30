@@ -132,8 +132,8 @@ theorem collectQueueMembers_none (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe
 --   the path predicate to `queueNext` field traversal. This is the sole
 --   remaining TPI-DOC item for the IPC subsystem.
 -- TPI-DOC / AJ-L08: fuel-sufficiency formal connection to `tcbQueueChainAcyclic`
--- recorded as a post-1.0 hardening candidate; no currently-active plan file
--- tracks it. Closure requires connecting `QueueNextPath` (inductive path
+-- recorded as a post-1.0 hardening candidate; registered in `docs/WORKSTREAM_HISTORY.md`
+-- (Registered debt index, C.1). Closure requires connecting `QueueNextPath` (inductive path
 -- predicate) to `queueNext` field traversal in `collectQueueMembers`. See INFO-06.
 theorem collectQueueMembers_fuel_sufficiency_documented
     (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
@@ -463,7 +463,8 @@ is not exercised by any test and the API dispatch never produces a
 well-formed child untyped anyway. A richer invariant (transitive
 ancestor/descendant tracking via a CDT-style closure) would be a
 standalone model-refinement effort; it is NOT part of the Phase AK8
-scope and is NOT tracked in any currently-active WS-AK plan file.
+scope; it is registered in the *Registered debt index* (table C.1) in
+`docs/WORKSTREAM_HISTORY.md`, row 27.
 See `retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild`
 for the machine-checked non-`.untyped` retype preservation proof that
 covers every retype path currently exercised by the API.
@@ -665,11 +666,12 @@ theorem storeObject_sameRegion_untyped_preserves_untypedRegionsDisjoint
         (1) IPC queue membership ↔ service registry endpoint tracking
         (2) Capability revocation ↔ service endpoint lifecycle
       - Assessment: no known concrete violation. The gap is theoretical —
-        frame lemmas ensure each operation preserves all 11 predicates
-        individually. The missing piece is a formal proof that ALL 11
+        frame lemmas ensure each operation preserves the predicates
+        individually. The missing piece is a formal proof that ALL **12**
         predicates compose correctly under arbitrary interleaving of all
         34 operations (exponential combinatorics; recorded as a post-1.0
-        hardening candidate — no currently-active plan file tracks it). -/
+        hardening candidate — registered in `docs/WORKSTREAM_HISTORY.md`,
+        Registered debt index, C.1). -/
 def crossSubsystemInvariant (st : SystemState) : Prop :=
   registryEndpointValid st ∧
   registryInterfaceValid st ∧  -- AE5-C (SVC-04): Added
@@ -786,7 +788,8 @@ theorem default_crossSubsystemInvariant :
 
 /-- AE4-D (U-36/C-CAP06): Full cross-subsystem invariant with CDT mint completeness.
 
-Combines `crossSubsystemInvariant` (11 predicates after WS-AM AM4) with
+Combines `crossSubsystemInvariant` (12 predicates: 11 after WS-AM AM4, plus
+`untypedRegionsDisjoint`) with
 `capabilityInvariantBundleWithMintCompleteness` (standard bundle + mint completeness).
 This ensures CDT-based revocation via `cspaceRevokeCdt` is exhaustive at the
 composition layer without modifying the 60+ theorems that destructure the
@@ -1337,8 +1340,18 @@ def crossSubsystemFieldSets : List (String × List StateField) :=
   , ("blockingAcyclic", blockingAcyclic_fields)  -- AF1-B1
   , ("lifecycleObjectTypeLockstep", lifecycleObjectTypeLockstep_fields) ]  -- AM4 audit remediation
 
-/-- V6-A4 + Z9-E + AE5-C + AF1-B1 + AM4: Field-set count matches predicate
-    count (11 predicates since AM4 extension). -/
+/-- V6-A4 + Z9-E + AE5-C + AF1-B1 + AM4: the field-set table's size.
+
+    **11, while `crossSubsystemInvariant` now has 12 conjuncts.**  The table
+    predates `untypedRegionsDisjoint`, which was appended to the invariant
+    without a matching `_fields` entry, so the pairwise disjointness analysis
+    below and every frame lemma derived from it cover 11 of the 12 predicates.
+    That is incompleteness, not unsoundness — nothing false is proved, and the
+    uncovered predicate simply gets no frame lemma, so proofs needing it must
+    establish it directly.  Found during the WS-RR RR0 review round and
+    registered in `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C);
+    closing it means adding `untypedRegionsDisjoint_fields` and redoing the
+    analysis over C(12,2) = 66 pairs. -/
 theorem crossSubsystemFieldSets_count :
     crossSubsystemFieldSets.length = 11 := by rfl
 

@@ -7,8 +7,9 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 
 It is aligned to the **current project state**:
 
-- **active workstream:** **WS-RR (SMP Release Readiness) PLANNED — the
-  pre-SM10 remediation, 148 sub-tasks across RR0..RR8.  SM10 is BLOCKED on it
+- **active workstream:** **WS-RR (SMP Release Readiness) IN FLIGHT — the
+  pre-SM10 remediation, 155 sub-tasks across RR0..RR8; **RR0 landed at
+  v0.34.26** (registration and plan correction).  SM10 is BLOCKED on it
   and must not open until RR8 closes**; the pre-SM10 completeness audit found
   three findings that block starting SM10, a false scope statement in its own
   plan, and fail-open latents that become reachable when the boot path goes
@@ -30,10 +31,10 @@ It is aligned to the **current project state**:
   `kernel_entry::with_kernel_entry` and ordered before `enable_irq`; the
   bracketed committing-entry roster is now five, and the primary
   `lean_kernel_main` install-ordering obligation is registered against
-  SM10.E.  All three seams are **dormant on hardware behind the per-core
+  SM10.1.  All three seams are **dormant on hardware behind the per-core
   `lean_ready` gate** (`rust/sele4n-hal/src/lean_ready.rs`: no core is marked
   ready anywhere in the tree today, so each seam degrades to its Rust-only
-  half) until SM10.E's per-core Lean runtime initialization flips them live.
+  half) until SM10.1's per-core Lean runtime initialization flips them live.
   SM10 (release closure → v1.0.0) is the remaining phase.
   Interleaved: **WS-RA (Syscall Return ABI) core LANDED
   (v0.33.37)** — the kernel returns the full seL4 ARM64 frame end to end (`x0`
@@ -51,7 +52,7 @@ It is aligned to the **current project state**:
   pinned on all three sides; completed at v0.33.38 with RA.B.5b (the blocked
   orderings staged end to end by the unblocking arms — eleven staging sites,
   `blockedReturn_staged_in_waiter_frame`, five two-core suite scenarios) and
-  RA.B.8 (the per-arm shape-coherence family); SM10.E owes only frame delivery
+  RA.B.8 (the per-arm shape-coherence family); SM10.1 owes only frame delivery
   + cancellation error frames — SM9 is unblocked (plan:
   [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](planning/SYSCALL_RETURN_ABI_PLAN.md)).
   **WS-SM phase SM9 (declassification completion) CLOSED (v0.33.100)** — five
@@ -491,7 +492,7 @@ It is aligned to the **current project state**:
   mutex stress (HAL 769 → 772); suite 22 groups / 160 runtime assertions incl.
   the live `.vspaceUnmap` `dispatchSyscall` scenario;
   `scripts/test_qemu_smp_shootdown.sh` seeded (Tier-4-registered; SKIPs until
-  the SM10.E image).  **v0.32.78 debt-closure cut — every SM7.B tracked-debt
+  the SM10.1 image).  **v0.32.78 debt-closure cut — every SM7.B tracked-debt
   item closed or narrowed**: the `.tlbShootdownReq` handler retires the
   round's EXACT operands per-descriptor (`tlb::tlbi_local`) instead of a
   blanket `vmalle1`, matching the Lean `handleTlbShootdownReqOnCore` — the
@@ -500,7 +501,7 @@ It is aligned to the **current project state**:
   retires a stable snapshot per-descriptor with a fail-safe local `vmalle1`
   fallback on any torn read / overflow / undecodable operand (HAL 772 → 780,
   trace byte-identical); the formal refinement narrows to operand-for-operand
-  (residual: the SM10.E linked-runtime proof); B.10 is a confirmed
+  (residual: the SM10.1 linked-runtime proof); B.10 is a confirmed
   no-safety-gap completeness deferral (no runtime ASID-reuse path exists) with
   closure target SM8; step-4d direct-ack is closed by design (the spin wait +
   masked SVC path make it informationless); the `withLockSet` shootdown slice
@@ -579,7 +580,7 @@ It is aligned to the **current project state**:
   `.sha256`): the deterministic 16-line `[smp-ipc-4core]` golden trace,
   byte-for-byte verified in-suite and auto-gated by the Tier-2 companion walk.
   `scripts/test_qemu_smp_ipc.sh`: the Tier-4 QEMU `-smp 4` handshake exerciser
-  (SKIPs until the SM10.E bootable image, the SM5-sibling discipline).
+  (SKIPs until the SM10.1 bootable image, the SM5-sibling discipline).
   Surface anchors: in-suite `#check` blocks + Tier-3 grep anchors.  The plan
   §8 acceptance gate is fully checked.  Prior: **SM6.E cancellation across
   cores LANDED (v0.32.60; completed v0.32.61; PR-review cuts v0.32.62–65;
@@ -770,7 +771,25 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 5. theorem discoverability through stable naming,
 6. fixture-backed executable evidence (`Main.lean` + trace fixture),
 7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),
-8. top-level import hygiene: keep `SeLe4n.lean` free of duplicate/redundant subsystem imports by relying on `SeLe4n/Kernel/API.lean` as the canonical aggregate surface.
+8. top-level import hygiene: keep `SeLe4n.lean` free of duplicate/redundant subsystem imports by relying on `SeLe4n/Kernel/API.lean` as the canonical aggregate surface,
+9. **one debt register**: every deferred item goes to the *Registered debt index*
+   in [`WORKSTREAM_HISTORY.md`](WORKSTREAM_HISTORY.md) with an owner and a
+   closure target.  Not a source comment saying it is untracked, and not a new
+   per-workstream `AUDIT_v<X>_DEFERRED.md` — the one that convention produced
+   was cited by production Lean source and two authorities and never existed
+   (WS-RR RR0.9, v0.34.26).  A closure target inside a plan marked LANDED or a
+   phase already CLOSED is not a closure target,
+10. **counts that span artefacts are derived, never restated**: a number written
+   in two places is a number that can disagree with itself.  The WS-SM theorem
+   total is a `List.sum` over
+   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean`'s per-phase entries,
+   cross-checked against the tree by a Tier-0 gate — see the regeneration
+   process below.
+11. **a count of theorems counts propositions**: `List.length` over an
+   inventory counts *registrations*, and the inventories register a phase's
+   whole surface — 209 of their 1111 entries are `def`s.  Quote
+   `smpInventoriedTheoremCount` (902), not `smpInventoriedEntryCount` (1111),
+   and never infer one from the other.
 
 ---
 
@@ -1098,7 +1117,7 @@ SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh
 ```
 
 which turns a skipped gate into a hard failure. The v1.0.0 release
-validation (SM10.E) must run in that mode. When adding a check that
+validation (SM10.5) must run in that mode. When adding a check that
 certifies phase acceptance criteria, call `run_gate_check`, not
 `run_check`.
 
@@ -1343,6 +1362,31 @@ When modifying production Lean source files:
 2. `./scripts/report_current_state.py` remains available as a manual
    cross-check of the derived metrics.
 3. Verify: `./scripts/test_docs_sync.sh` (checks codebase map freshness).
+
+### SMP theorem-manifest regeneration (WS-RR RR0.6)
+
+When adding, resizing, renaming or deleting a **theorem inventory** — a list of
+theorem identifiers carrying `<name>_identifiers_nodup` and
+`<name>_count : <name>.length = N`:
+
+1. Update the phase's entry in
+   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean`: add the inventory to
+   `inventories`, adjust **both** `entryCount` (registrations) and
+   `theoremCount` (propositions), and the two totals.  Two independent checks
+   hold you to it — the per-phase `…_entryCount_eq_inventories` theorem will
+   not compile until `entryCount` matches the real `List.length`, and the
+   propositionality census at the end of the module will not elaborate until
+   `theoremCount` matches the number of entries whose type is a `Prop`.  If you
+   do not know the proposition count, put anything in and read the correct
+   value out of the census's error.
+2. Regenerate the artifact:
+   `python3 scripts/generate_smp_theorem_manifest.py --write`.
+3. Verify: `python3 scripts/generate_smp_theorem_manifest.py --check` (also run
+   by Tier 0, after its `--self-test`).
+
+An inventory that no phase claims is a **hard failure**, not an omission — that
+is the case Lean cannot see, and it is the shape that let a theorem tally run
+SM8 → SM10 with no SM9 term for two minor versions.
 
 ---
 

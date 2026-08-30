@@ -46,7 +46,7 @@ workstream that closes the v0.30.11 audit cycle. It is paired with:
 | `AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (this file) | Per-phase remediation plan | **NEW — this PR** |
 | `AUDIT_v0.30.11_WS_RC_BASELINE.txt` | Numeric baseline at WS-RC start | To be cut at first remediation PR |
 | `AUDIT_v0.30.11_DISCHARGE_INDEX.md` | Closure-form proof obligation index | To be added if any phase produces closure-form theorems |
-| `AUDIT_v0.30.11_DEFERRED.md` | Items pushed past WS-RC | To be added at WS-RC closure if any items defer |
+| `AUDIT_v0.30.11_DEFERRED.md` | Items pushed past WS-RC | **Never created.**  WS-RC closed at v0.31.2 without it, so R7's and R14's deferrals were registered nowhere while this plan referenced the file in nine places.  Their home is the *Registered debt index* in [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) (WS-RR RR0.9, v0.34.26); read every later `AUDIT_v0.30.11_DEFERRED.md` mention in this plan as pointing there |
 | `AUDIT_v0.30.11_ERRATA.md` | Audit-text corrections (this plan introduces one) | To be added when phase R0 lands |
 
 **Reading order.** New contributors should read §1 (executive summary),

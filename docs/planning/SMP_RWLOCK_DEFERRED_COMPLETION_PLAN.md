@@ -1,5 +1,15 @@
 # SM2.C Deferred Completion Plan — Verified RwLock (pre-v1.0.0)
 
+> **Status**: **PARTIAL — OPEN**, re-scoped **pre**-v1.0.0.  Most of
+> D-1..D-6 landed; the residue concentrates in one theme — the refinement
+> bridges connect the Lean specs to transliterations and to their own
+> assumptions rather than to the lock the kernel deploys.
+> **Closure target**: WS-RR phase **RR6**
+> ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md));
+> RR6.18 registers SM2.C-defer in
+> [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md), which it had
+> never reached.
+
 > **Phase**: SM2.C-defer (closure of WS-SM SM2.C) — **re-scoped pre-v1.0.0**
 > and absorbed by WS-RR phase RR6
 > ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)).

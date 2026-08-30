@@ -1,3 +1,882 @@
+## v0.34.40 — A third index/worktree split, and three plan defects the numbering gate could finally see
+
+Five findings from the fourteenth review round. Two are the same class of
+defect one file further on; three are ordering and ownership faults in the
+SM10 schedule — found, this time, in a plan the gate had started parsing the
+round before.
+
+**`generate_smp_theorem_manifest.py` read the working tree.** `lean_files()`
+enumerated the index (v0.34.39) but `read_code()` read the bytes off disk, so
+staging an inventory's `_identifiers_nodup`/`_count` witnesses and reverting
+the module in the working copy let it be committed with no phase claiming it —
+the one failure this gate exists to prevent. Both halves now come from the
+index, via one `git cat-file --batch` for all 358 tracked Lean modules; the
+working tree is read only for paths the index does not carry. A witness drives
+the mechanism in a throwaway repository and fails when the fallback is
+restored. This is the third instance of the split (sources, then register
+paths, now Lean text), so the check now is: does *every* read in a gate come
+from where its enumeration does.
+
+**A cited debt row had to exist, but not to be about anything.** The register
+check validated `row N`'s number and stopped, so a new deferral in any file
+could cite an arbitrary real row and pass without ever being listed. At least
+one cited row must now name the citing file — not every row, since a range may
+legitimately span a group of related sites, but the one that makes this file
+registered. The bundled fixtures were themselves citing a row recorded against
+a different path, which is how the hole stayed invisible.
+
+**The metrics regeneration ran before the work it measures.** `SM10.2.8`
+regenerates `docs/codebase_map.json`, but `SM10.3.3` adds a Lean suite and
+`SM10.3.13` adds eight phase inventories afterwards, so the map and README
+synchronized in SM10.2 are stale at the tag. SM10.2.8 is now marked interim
+and `SM10.5.2` re-runs it after the Lean-producing phases — placed before the
+validation, so the validated tree is the documented tree.
+
+**Three marker theorems had no task that authors them.** §6.1 advertises five;
+two landed at RR0.6, and the other three were assigned to a bare phase
+(`SM10`), to a row that only retains a witness, and to the row that cuts the
+tag. Every sub-task could be ticked with three markers still absent. All three
+are now rows in `SM10.4` — renamed *Inventory closure and marker theorems* —
+which sits ahead of the metrics regeneration precisely because a theorem
+authored after it would leave the map stale.
+
+**The v1.0.0 release-note skeleton embedded today's theorem figures.** It said
+to take the count from the manifest and then wrote `902`, `SM2 22`, `SM3 276`,
+`SM5 604` — which `SM10.3.13` necessarily changes, reintroducing the
+hand-written total the manifest was built to eliminate. The skeleton now
+carries the command that reads `theoremTotal` and `entryTotal` out of the
+regenerated JSON and forbids copying a figure forward.
+
+Version bump to v1.0.0 and the closure phase renumber accordingly: SM10.4 is 5
+sub-tasks, SM10.5 is 5, and the declared total is 44. The extended plan gate
+earned its keep immediately — it rejected a forward reference this very cut
+introduced, in the SM10.2.8 row, which the two-level parser could not have
+seen.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+
+## v0.34.39 — The bump that would have invalidated its own validation, and three gates that under-reached
+
+Six findings from the thirteenth review round, one of them a P1 ordering
+defect that sat inside the plan the numbering gate could not read.
+
+**The version bump moved ahead of the validation it certifies.**
+`scripts/bump_version.sh` rewrites `KERNEL_VERSION` in
+`rust/sele4n-hal/src/boot.rs` — a compiled-in `const` the kernel prints at
+boot — so `SM10.6.1` bumping *after* `SM10.5` validated meant the tagged
+v1.0.0 image was not the artefact the release evidence described. The bump is
+now `SM10.5.1`, first in the validation phase and explicitly followed by an
+image rebuild; `SM10.5`'s remaining rows shift by one, `SM10.6` becomes
+closure and tag only, and §3's mapping note carries the shift so prose written
+before this cut stays translatable.
+
+**`check_workstream_plan.py` now parses sub-phase-numbered plans.** Its ID
+model was `<PREFIX><phase>.<sub>`, which cannot read `SM10.3.14`, so the live
+41-row release schedule was reported as NOT CHECKED — honest, but not
+checking, and the ordering defect above lived there unseen. A phase key is now
+"everything left of the final `.N`", so one parser holds both shapes; plan
+depth is the deepest ID present, because in a three-level plan a *phase-map*
+row is shaped exactly like a two-level sub-task row. Citation matching,
+forward-dependency comparison and the deletion check are all depth-aware, and
+a phase key is no longer mistaken for a dangling sub-task citation. The
+release plan gains a phase map and an exact declared total (41), so the
+number, the map and the rows are held equal. Two witnesses replace the
+NOT-CHECKED one: a well-formed sub-phase-numbered plan passes, and one with a
+forward dependency plus a numbering gap is caught.
+
+**`check_deferral_registration.py`**: two more half-measures from the previous
+cut. Registered-row paths were still tested on disk, so staging a deletion of
+a registered site and recreating it in the working copy passed — the same
+index-vs-worktree split, one function further on; they are now checked against
+the index. And `ROW_CITE_RE` captured only the first number of a range, so
+`rows 24-26` was satisfied by row 24 alone while 25 and 26 could be absent —
+the comment above it had advertised ranges as supported since the rule was
+written. Ranges and comma lists now expand, with a span cap so prose
+containing two numbers is not read as a citation of hundreds of rows.
+
+**`generate_smp_theorem_manifest.py` scanned only `SeLe4n/`.** The gate's
+guarantee is repository-wide — an inventory no phase claims must fail Tier 0 —
+but `lean_files()` hard-coded the production tree, so a phase-owned acceptance
+inventory under `tests/`, or a root module, was never presented to discovery.
+It now enumerates every tracked `.lean` file from the index. Three witnesses
+pin the enumeration itself rather than the parser, which is why the earlier 35
+could not see this.
+
+Also: the release-validator script `scripts/test_v1_0_0_release_validation.sh`
+was still assigned to SM10.1 in prose while `SM10.5.2`'s row names it; it now
+belongs to SM10.5.2 with SM10.1.1's image as a prerequisite. And
+`check_workstream_plan.py`'s new `WS_PREFIX` constant was renamed
+`ID_ALPHA_PREFIX` — the internal-first naming gate reads `WS` as a workstream
+code, correctly.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+
+## v0.34.38 — The swap my last cut did not close, a gate reading the wrong tree, and two more phases at zero
+
+Three findings from the twelfth review round. The first is a defect in
+v0.34.37's own fix, found by a mutation I did not run.
+
+**The census swap was not closed — now it is unwritable.** v0.34.37 replaced
+the census tuple list with `censusPayloadOf` plus a derived list, on the
+argument that a derivation removes the label/payload swap. It removes one
+*spelling* of the swap. Exchanging the payload expressions of two arms still
+elaborates cleanly: the cross-inventory de-duplication sees the same union of
+declarations and the per-phase count sees the same aggregate, so nothing that
+inspects the result can see it. Reproduced by swapping `lockSetTheorems` and
+`withLockSetTheorems`; the build was clean. My round-11 mutation had been a
+one-sided substitution, which the duplicate check catches — and generalising
+from it was the error.
+
+`censusInventories` is now built by a `census_entry` macro taking **one
+token**: the published label, the namespace and the payload are all derived
+from the same fully-qualified inventory name, so no arm can pair one
+inventory's name with another's identifiers. `census_entry_named` is the
+variant for `lockPrimitives`, whose `identifier` field is a `Name`.
+`censusNamespacesResolve` recomposes `ns ++ name` and requires it to be a real
+constant, which is also what rejects an unqualified spelling. Verified:
+reordering rows is inert (label and payload move together), a hand-written
+`censusEntryOf` mismatch trips the duplicate check, and an unqualified name
+fails the recomposition.
+
+**`check_deferral_registration.py` read the wrong tree.** It enumerated paths
+from the git index and then read their contents from the working copy. Stage a
+source edit carrying an unregistered deferral, revert it on disk, and the gate
+reported all 683 files clean while the very next commit carried the deferral —
+a gate certifying a commit it had not read. Both halves now come from the
+index: one `git cat-file --batch` for the sources, `git show :path` for the
+register itself, and reading nothing is reported as a failure rather than as a
+clean run. Three witnesses, mutation-tested: a clean index passes, a deferral
+staged but reverted on disk is caught, and a deferral only in the working tree
+is correctly not reported.
+
+**Eight phases register zero theorems, not six.** Every statement of the gap —
+`CLAUDE.md`/`AGENTS.md`, the manifest module, the closure plan §5 and its
+`SM10.3.13` row, `CLAIM_EVIDENCE_INDEX.md`, and the register — named the six
+phases with no inventory (SM1, SM6..SM10) and stopped there. SM0 and SM4 also
+contribute zero: they carry `smpLatentInventory` and `smpRetiredInventory`,
+which are **assumption ledgers**, and `smpPhaseTheoremCount` excludes those by
+design. Their own theorem catalogues are therefore unmeasured for a different
+reason and by the same amount, and `SM10.3.13` as written would have closed a
+scope that left two phases at zero. Only SM2, SM3 and SM5 contribute to the
+902.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+
+## v0.34.37 — Two regressions from the SM10 re-sequence, and three gates that reached too narrowly
+
+Five findings from the eleventh review round on the RR0 cut. Two are
+regressions introduced by v0.34.36's own re-sequence, which is what a
+mechanical rename across 77 files risks and what the spot-check missed.
+
+**The re-sequence's own damage.**
+
+- Three citations in `SMP_RELEASE_CLOSURE_PLAN.md` §1 were written in the
+  un-prefixed short form (`.A.3`, `.A.6`, `.C.4`) and the rename map only
+  matched `SM10`-prefixed spellings, so they survived as dangling references
+  to letters that no longer exist. They now read `SM10.2.3`, `SM10.2.6` and
+  `SM10.6.4`.
+- Four citations that meant the **release validation** phase were rewritten to
+  `SM10.1`, the image build, because the map sent every bare `SM10.E` to one
+  destination while the old letter covered both halves of the split. The
+  sites that assign strict-gate mode to the v1.0.0 release run —
+  `docs/HARDWARE_TESTING.md`, `docs/DEVELOPMENT.md`, `scripts/test_lib.sh` and
+  `scripts/test_tier4_smp_bootcheck.sh` — now read `SM10.5`. Every other
+  `SM10.1` in the tree was re-read against its sentence and is correct: they
+  name the image, the boot path, or the per-core runtime initialization.
+
+**SM10.3's letter group is gone.** `SM10.3.D1`–`D7`, the hardware-validation
+script debt, sat outside the phase's advertised 13 sub-tasks in a scheme the
+plan had just abolished. They are now `SM10.3.14`–`SM10.3.20`, numbered in
+`HARDWARE_TESTING.md` section order, and the phase heading says 20. The
+`SM10.1.1` image-build row that shared their table has moved to prose: it is
+SM10.1's row and restating it inside SM10.3's numbering was what made the
+group look like a separate ledger. The plan's `Sub-task count` header, which
+still forecast 25-35, now states the 41 enumerated rows and says why that
+figure is a floor rather than a declared total.
+
+**`check_workstream_plan.py` names what it cannot read.** With SM10 flat but
+three-level (`SM10.3.14`), the gate's `<PREFIX><phase>.<sub>` model parses
+none of its rows — and reported the plan under "declaring an estimate range",
+which is a different fact about coverage. Sub-phase-numbered plans now get
+their own bucket and are named in the summary, so zero coverage reads as zero
+coverage. Witness: a three-level plan must be reported as NOT CHECKED and must
+not increment the range count.
+
+**The census pins payloads, not lengths.** `censusPayloadsMatchTheirNames`
+compared each inventory's identifier list against that inventory's own
+*length*, so two equal-length inventories could still be exchanged, and the
+namespace beside each payload was never checked at all. The tuple list is no
+longer written: `censusPayloadOf` is the single site pairing a published name
+with a namespace and a payload, and `censusInventories` is derived from it, so
+there is no second pairing to disagree with. `censusPayloadsAreTotal` forbids
+the derivation from silently dropping a name, and a new elaboration-time check
+holds each arm's namespace to the environment by requiring `ns ++ name` to
+name a real constant. Verified by mutation: a swapped payload trips the
+duplicate-registration error, a wrong namespace names no constant, and a
+missing arm fails the totality theorem.
+
+**`check_deferral_registration.py` scans the index, not a list.** Its five
+scan roots and seven suffixes excluded `rust/sele4n-hal/src/boot.S`, the root
+`README.md` and `CLAUDE.md`, and everything under `.github/` — while the
+module's own docstring argues twice that guessing a list is the mistake that
+kept letting sites through. The allowlist is deleted: every tracked file that
+decodes as UTF-8 is scanned (683 of them), minus the narratives that quote the
+phrasing by nature. Six new witnesses pin the surface itself, not just the
+matcher.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+
+## v0.34.36 — SM10 is numbered, and the numbers are execution order
+
+Closes the last three open review findings on PR #882, including the P1 that
+had been registered rather than performed.  Maintainer direction: re-sequence
+in this PR.
+
+**SM10's sub-phase letters were not execution order.**  `SM10.B.7` (the 4-core
+boot fixture) and `SM10.B.10` (the Tier-4 gate green) both consumed the
+bootable image that `SM10.E.D1` produces, and `SM10.C` bumped the version and
+cut the tag before `SM10.E` ran at all.  A reader following the letters
+reached fixture generation, release closure and the tag before there was
+anything to boot.  A prose note said so and asked the reader to compensate,
+which CLAUDE.md rejects outright — a sequencing note that contradicts the
+numbering means the numbering is wrong.
+
+The sub-phases are now **numbers**, in execution order:
+
+| Was | Is |
+|-----|----|
+| `SM10.E` boot path, `SM10.E.D1` image build | **SM10.1** (`SM10.1.1`) |
+| `SM10.A` documentation sync | **SM10.2** |
+| `SM10.B` test-suite completion | **SM10.3** |
+| `SM10.D` AN12-B inventory closure | **SM10.4** |
+| `SM10.E.1`–`.3` final QEMU validation | **SM10.5** |
+| `SM10.C` version bump + tag | **SM10.6** |
+
+**Numbers rather than re-assigned letters, deliberately.**  `SM10.E` is cited
+in `CHANGELOG.md` entries, `docs/dev_history/` and closed audit plans, which
+the project's rules never renumber; reusing a letter would silently repurpose
+those citations.  With numbers, an old letter always means what it meant, and
+the plan's §3 carries the mapping.
+
+**One phase genuinely split.**  The old `SM10.E` held both the image build and
+the QEMU validation that boots it — a phase that was its own prerequisite.
+The build is now `SM10.1` and the validation `SM10.5`, which also settles a
+second confusion: the phase heading read "Final QEMU validation" while the
+whole tree used `SM10.E` to mean the boot path (*"the SM10.E image"*,
+*"SM10.E's boot seam"*, *"SM10.E's context-restore seam"*).  The heading was
+describing three sub-tasks; every citation meant the phase.
+
+Re-sequenced across every live citation — planning docs, `WORKSTREAM_HISTORY`,
+`CLAIM_EVIDENCE_INDEX`, `DEVELOPMENT`, GitBook, production Lean docstrings,
+Rust HAL comments, test suites and scripts (58 files).  `CHANGELOG.md`,
+`docs/dev_history/` and `docs/audits/` keep the letters by design.  The
+register row closes; RR7.5 keeps only its `contextRestoreSeamLive`
+prerequisites, so RR7's acceptance total moves 66 → 65 (sub-task count
+unchanged at 155).
+
+**Lean's escaped identifiers are discovered.**  `«odd Theorems»` was invisible
+to the manifest gate, and it has two legal spellings — the guillemets may wrap
+the stem (`«odd Theorems»_count`) or the whole declaration
+(`«odd Theorems_count»`).  Both denote one inventory and both now reconstruct
+to the same name; three witnesses, one per spelling and one for the mix.
+
+**Census names are bound to their payloads.**  `censusCoversManifest` proved
+length plus membership — a statement about the *set* of names, blind to a
+permutation — so exchanging two tuples' labels passed while attributing each
+payload's proposition count to the other inventory.  Two new theorems close
+it: `censusInventoryNamesNodup` makes the label a key, and
+`censusPayloadsMatchTheirNames` checks each payload against its own
+inventory's length witness, so a swapped label puts the wrong length beside
+the name and fails elaboration.  Verified by swapping two labels: `decide`
+proves the proposition false.
+
+35 manifest witnesses, 16 deferral witnesses.  All 30 review threads on PR
+#882 are now addressed.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
+## v0.34.35 — match the claim, not the adjective; and one figure that did not add up
+
+Three findings on PR #882.  Two are fixed here; the third is real, conceded,
+and deliberately not chased — see the closing note.
+
+**A sixth phrasing, and the last one this pattern will need.**  C-L3 in
+`Capability/Operations.lean` says "no **concrete** plan file tracks it yet",
+and the detector required `currently-active|active`, so a known deferral sat
+outside the register while Tier 0 reported PASS — which also made the
+register's published count wrong.
+
+The pattern had been enumerating the *words* it expected rather than the
+*claim* being made.  It now matches the relationship — a negation, a plan or
+workstream, and a tracking verb — with the modifier between them free text.
+Both orders are covered: "no ⟨anything⟩ plan file tracks it" and "not tracked
+in any ⟨anything⟩ workstream plan".
+
+Generalising it wrongly first is what showed where the bound belongs.  A wide
+`[^.]{0,100}` span between negation and noun over-matched immediately, because
+text is flattened before matching and *code contains few periods*: it flagged
+"runs no unwrap at all (… tracked debt, see the plan …)" in a docstring and
+"does not declare it tracked" in a Python f-string.  Binding the negation
+tightly to the noun it negates — at most three words — separates the claim
+from prose that merely contains the same vocabulary.  Both false positives
+are gone and all sixteen witnesses still hold.
+
+C-L3 is now **row 32**: a sender-rights field on `CdtEdgeKind`, so a
+transferred capability's CDT edge records the rights the sender held.  Its
+comment cites the register.
+
+**The canonical phase table did not sum to its own total.**  `WORKSTREAM_HISTORY.md`
+still carried RR7 at **31** after RR7.32 was added, so the table's rows summed
+to 154 against the 155 published two lines above it — and the summary omitted
+the queue-ownership task entirely.  Now 32, and the column sums to 155:
+`11+11+19+17+27+14+19+32+5`.
+
+**Not fixed: Lean's escaped-identifier syntax** (`«odd Theorems»`).  The
+finding is correct — such an inventory would be invisible to discovery.  No
+inventory in this tree uses the syntax, no published figure is wrong because
+of it, and this is the sixth consecutive round in which the only remaining
+findings are robustness gaps in the two gate scripts this workstream added.
+Nine rounds and twelve commits on a registration cut is past the point where
+further hardening of the scanners serves the change; the item is recorded here
+as follow-up rather than chased, and the decision to take it now or later
+belongs to the reviewer.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
+## v0.34.34 — a gate that claimed more than it checked
+
+Five findings on PR #882, all verified, all real: two stale figures this
+branch introduced, two holes in the gate the previous cut added, and a
+regeneration path that destroyed the artefact it failed to produce.
+
+**The new gate claimed a deferral must be "cited and listed"; only the
+citation was checked.**  Mentioning `WORKSTREAM_HISTORY.md` within six lines
+suppressed the finding even when the register held no such row — so Tier 0
+could report PASS on a deferral registered nowhere, which is the exact failure
+the gate exists to prevent, reintroduced one level up.  It now parses the
+enumerated table and rejects a citation naming a row that does not exist, and
+checks the converse too: every row must name a file that still exists, or the
+deferral has quietly lost its site.  The correlation is deliberately shallow
+and now *says so* — it confirms a row exists, never that the row describes the
+deferral beside it, which no scanner can.  Overclaiming in the diagnostic is
+what let this through, so the message was rewritten to match the check.
+
+**Guessing a window size is the same mistake as guessing a prefix list.**  The
+first version scanned single lines and missed a two-line wrap; the fix used a
+two-line window and missed a three-line one — ordinary formatter output.  There
+is no window now: the file is flattened and the *sentence* is the unit,
+bounded by the period the patterns already refuse to cross.  Witnesses pin
+three- and four-line wraps and confirm a period still bounds the claim.
+
+**`--write` overwrote the artefact before validating it.**  A tree that failed
+discovery yields a partial manifest — inventories with `null` module and count
+— and the old path wrote it, destroying the last good artefact while still
+reporting failure.  The regeneration a contributor runs after breaking
+something must not also delete the evidence of what it used to say.  `--write`
+now refuses when any error is present and leaves the file intact.  Verified end
+to end: renaming a real inventory makes `--write` refuse with four errors, and
+the committed artefact is byte-identical afterwards.
+
+**Two figures this branch left stale.**  `UNFINISHED_SMP_WORK.md` still handed
+readers **154** sub-tasks after RR7.32 took the plan to 155 (its phase counts
+sum to 155: 11+11+19+17+27+14+19+32+5).  And the register's own coverage
+summary said "31 in-source deferrals across **19** production files … and 16 is
+what it measures" — a sentence contradicting itself, left when 23→31 / 16→19
+updated the leading figures and not the parenthetical.  Both corrected; the
+parenthetical now states the audit's 23-across-17 against the measured set
+rather than a number that agrees with nothing.
+
+Six new gate witnesses (16 total) and one for the write guard (32 total), all
+mutation-tested.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
+## v0.34.33 — the sweep was the wrong mechanism; gate it
+
+One finding on PR #882, and it is the third time a review round has found the
+register's in-source sweep incomplete.  So this cut closes the eight items and
+then replaces the sweep with a gate.
+
+**Eight deferrals were declaring themselves untracked outside the register.**
+RR0.9 enumerated 23 in-source deferrals by grepping one sentence — "no
+currently-active plan file tracks it" — and the tree uses at least four
+phrasings.  The review named two (`Bridge.lean`'s DS-L5 and DS-M04);
+sweeping every variant found six more: three `retypeFromUntyped`
+untyped-region obligations in `Architecture/Invariant.lean`, the transitive
+CDT-closure invariant in `CrossSubsystem.lean` that the other three reduce to,
+`BlockingGraph.lean`'s formal blocking-cycle detection, and
+`Capability/Operations.lean`'s AN12-B fold-monotonicity lemma.  C.1 goes
+**23 → 31 rows across 19 files**, every one of the nine source comments now
+points at the register, and no Lean source outside one honest false positive
+(`AsidManager.lean`'s "currently-active ASID") still says it is untracked.
+
+**The mechanism, not the miss, is the defect.**  A person grepping one string
+has now been wrong three times: the first miss was in a documentation file
+rather than in Lean, the second and third in phrasings the string did not
+cover.  `scripts/check_deferral_registration.py` is a Tier 0 prose gate that
+fails when any source declares a deferral untracked without citing the
+register.  Compliance is **citing the register, not avoiding the words**, so
+the files whose subject *is* the register keep working and a new comment that
+quietly opts out does not.
+
+Three details the gate needed to be right.  It matches over a **two-line
+window**, because prose wraps and one of the real sites is split across a
+newline — a line-based scan missed it, and the self-test now pins that.  It is
+a `run_prose_check`, not a `run_check`: the subject genuinely is the comment
+text, and the comment-free code view would strip the very sentences it looks
+for.  And its own wiring comment in `test_tier0_hygiene.sh` tripped it on
+first run — the classic negative anchor firing on the sentence that explains
+what it forbids — which was fixed by making that comment cite the register
+like every other site, rather than by carving out an exemption for the
+explanation.
+
+Ten self-test witnesses, both directions: every phrasing the hand sweep missed
+is caught, a citation inside the context window passes and one beyond it does
+not, and `currently-active ASID` stays quiet.  Verified against the finding
+itself — reverting the DS-M04 re-point makes the gate fail, naming the line.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
+## v0.34.32 — the wrong number was in the spelling every inventory uses
+
+Three findings on PR #882, all verified, all real.  One is a silent wrong
+number in the case round 4 left open after I argued the fix was sufficient.
+
+**Two bare witnesses in different namespaces were paired.**  A bare
+`xTheorems_identifiers_nodup` inside `namespace Foo` and a bare
+`xTheorems_count` inside `namespace Bar` read identically and are different
+declarations; discovery bound **Bar's length to Foo's inventory** and reported
+it with no error.  Round 4 fixed the *qualified* spelling of this defect and
+declined namespace tracking, arguing that a gate refusing what it cannot
+verify is doing its job.  That argument was sound only for the case it fixed:
+here the gate does not refuse, it silently mispairs — and bare/bare is the
+spelling all 16 real inventories use.  The rejected remedy was the necessary
+one, because when both witnesses are bare no amount of strictness can tell
+them apart.  Only context can.
+
+Witnesses are now paired by **fully qualified name** — enclosing namespace
+plus the name as written — so either spelling matches within its namespace and
+neither matches across.  This also accepts the combination round 4 had to
+reject (qualified nodup, bare size witness inside the matching namespace),
+which is strictly better than that cut.
+
+The namespace scanner is **fail-closed by construction**: an `end` closing no
+open `namespace`/`section` makes the file's structure unknown, and the gate
+then refuses that inventory loudly rather than falling back to name matching —
+which would silently pair the very case this closes.  A tracker bug must
+surface as a red gate, never as a number.  The real tree parses cleanly:
+all 16 inventories, same counts.
+
+**Lean identifiers are not ASCII.**  `σTheorems` elaborates and was invisible
+to discovery; so was `x₁Theorems`, whose subscript is category `No` and
+outside `\w`.  The round-5 comment claimed to match Lean's identifier grammar
+while the class was `[A-Za-z_]`, so per the implement-the-improvement rule the
+class is now Unicode-aware (`[^\W\d]` plus primes, `!`, `?` and the subscript
+block) rather than the claim being trimmed.
+
+**The generated manifest did not reconcile with itself.**  `entryTotal` was
+**1111** while its own `phases[].entryCount` summed to **1127**, and the CLI
+paired that total with "16 inventories" when it covers 14.  The total was not
+wrong — it matches Lean's `smpInventoriedEntryCount`, which scores a
+non-theoremInventory phase as zero — but a consumer summing the array got a
+different number with nothing saying which was meant.  The artefact now emits
+`ledgerEntryTotal` (16), `registeredEntryTotal` (1127),
+`theoremInventoryCount` (14) and `ledgerInventoryCount` (2); the note states
+the scope; and the CLI says what each figure covers.  **The headline figures
+are unchanged: 902 theorems across 1111 theorem-inventory entries.**
+
+Six new witnesses, all mutation-tested; 31 total.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
+## v0.34.31 — four things may precede a `theorem`; stop enumerating them
+
+Four findings on PR #882, all verified, all real.  Three are registration
+defects in RR0's own deliverable; the fourth shows the round-3 "general fix"
+was only half general.
+
+**Nothing is matched to the left of the declaration keyword now.**  Lean
+accepts `set_option maxRecDepth 1000 in theorem foo …` on one line, and the
+matcher required the keyword after leading whitespace, so such an inventory
+was invisible and could stay claimed by no phase with Tier 0 reporting PASS.
+That is the *fourth* legal prefix to defeat this pattern — `private`/`@[simp]`
+modifiers, indentation, qualification, and now a scoped command — and round 3
+claimed to have generalised it while only generalising the *identifier* half.
+The prefix half stayed an enumeration, and the list is open-ended (`open X
+in`, attributes, any future combinator).  So discovery keys on the token pair
+— declaration keyword followed by name — wherever it occurs, and matches
+nothing to its left.  A false positive here is fail-*closed*: a phantom
+inventory no phase claims is a loud error, never a silent pass, and that
+asymmetry is what makes the permissive pattern the safe one.  The two
+module-level total markers carried the same exposure and got the same
+treatment; a wrapped marker read as absent, and an absent marker is not
+compared against anything.  Two witnesses, both mutation-tested; 25 total.
+
+**One uncovered lock domain had an owner that would never close it.**  RR0.9
+re-pointed `UncoveredLockDomain.queueOwnershipProtocol` at RR7.7's fine-lock
+Track B, which is titled for and scoped to `capTransferReceiverCnode`: its
+PRs add the receiver-CNode footprint, prove `ipcUnwrapCaps` coverage and cover
+CDT-writing CSpace operations, and touch splice neighbours nowhere.  A closure
+target that cannot delete the entry is worse than none, because it reads as
+tracked.  Now **RR7.32**, a numbered row naming both candidate remedies —
+extend the `tcbSetPriority` footprint, or hold the endpoint lock across the
+splice.  WS-RR 154 → 155 sub-tasks, RR7 31 → 32, acceptance 65 → 66, synced
+across the plan, `WORKSTREAM_HISTORY.md`, `DEVELOPMENT.md`, `CLAUDE.md` and
+`AGENTS.md`.
+
+**A plan the RR0 cut certified as having a status header did not have one.**
+`SMP_FOUNDATIONS_PLAN.md`'s only `> **Status**` sits inside a fenced
+edit-pattern example describing a line to add to a *different* plan, so the
+claim "every plan carries a status header" was false for it and status
+discovery could read quoted instructions as the plan's own state.  It now
+carries a real header (CLOSED, v0.31.3).  Re-swept all plans: the two others
+without a blockquote header carry the `**Status**:` form and were never
+missing one.
+
+**The register omitted the one v0.29.0 R-ABI item still open.**  R-ABI-L6 —
+cross-crate duplication of `MAX_METHOD_COUNT`, `MAX_PRIORITY`, `MAX_DOMAIN`
+and `MAX_SERVICE_MESSAGE_SIZE` — declared in `docs/AUDIT_NOTES.md` that no
+active plan tracked it, and a repo-wide search confirmed it.  RR0.9 swept the
+in-source Lean deferrals and did not sweep the docs.  Registered in table C
+with owner and closure target; the note now points at the register instead of
+declaring itself untracked.  Checked its seven siblings: L3, L4, L5, L7 and L8
+record settled decisions, not deferrals, so L6 was the only miss.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
+## v0.34.30 — the fix that widened a match too far; Codex review round 4
+
+One finding, and it is a regression `v0.34.29` introduced one commit earlier.
+
+**A bare size witness could belong to another namespace.**  Round 3 taught
+discovery to see a qualified nodup witness (`theorem
+Foo.xTheorems_identifiers_nodup`), and — reasoning that inside `namespace Foo`
+the same list is spelled bare — also let the *size* witness be found under
+either spelling.  That widening had no namespace context behind it.  A bare
+`xTheorems_count` declared inside `namespace Bar`, elsewhere in the same file,
+matched too, and the gate recorded **Bar's length for Foo's inventory**: a
+wrong number, reported silently, with `--check` green.  Reproduced exactly as
+the reviewer described before fixing — the fixture returned
+`{'xTheorems': {'count': 9999}}` and an empty error list.
+
+Silently wrong is worse than any omission this gate can produce, and it is
+precisely the outcome the module exists to prevent, so the remedy is the
+fail-closed one of the reviewer's two: **the size witness must repeat the
+qualification of the nodup witness it belongs to.**  The same fixture now
+yields no inventory and a hard error naming the declaration it wanted.
+
+The alternative — parse Lean's namespace stack and make the bare form provably
+safe — was rejected deliberately.  It admits one legal spelling no inventory
+in this tree uses, at the cost of a hand-written `namespace`/`section`/`end`
+tracker whose own subtle bug would reintroduce this identical failure with
+more machinery hiding it.  A gate that refuses what it cannot verify is doing
+its job; a gate that guesses is the thing being fixed.  All 16 real
+inventories write both witnesses bare in the same namespace and are unaffected
+— for a bare nodup witness the matcher is byte-for-byte what it was before
+round 3.
+
+Round 3's actual fix stands: a qualified inventory is still *discovered*, so
+it can no longer sit unclaimed while Tier 0 reports PASS.  Only the size
+witness tightened.
+
+Witness 21 is inverted to pin the new behaviour — it asserts the foreign bare
+count is refused, and fails if the bare alternative is reinstated.  23
+witnesses, all mutation-tested.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
+## v0.34.29 — a plan that lists what a registry already knows; Codex review round 3
+
+Three findings on PR #882, all verified, all real.  One is the third
+declaration form to slip past the same regex; two are plans that carry a copy
+of something a machine already computes.
+
+**The third missed declaration form.**  Lean accepts a qualified name at the
+top level — `theorem Foo.xTheorems_identifiers_nodup` elaborates exactly like
+the same declaration written inside `namespace Foo` — and the discovery
+capture stopped at the dot, so the inventory vanished and could stay claimed
+by no phase while Tier 0 reported PASS.  That is the third distinct form to
+have slipped past this pattern: `lemma` (round 1), indentation (round 2),
+qualification (round 3).  Three rounds of the same shape is a signal about the
+approach, not about the instance, so this cut matches **Lean's identifier
+grammar** — `_IDENT`, `_QUALIFIED` — rather than enumerating the spellings
+that happen to appear in the tree.  A qualified inventory's size witness is
+accepted under either spelling (`Foo.xTheorems.length` or, from inside the
+namespace, `xTheorems.length`), since both name one list; it is keyed on the
+bare name, because that is what the manifest claims, and two qualified names
+sharing a final component collide into the existing duplicate error rather
+than being silently disambiguated — the manifest's `inventories : List
+String` could not tell them apart either.
+
+Two new self-test witnesses, both mutation-tested, the first built from the
+reviewer's own four-entry `Foo.xTheorems` fixture.  23 witnesses total.
+
+**RR7.5 budgeted work that RR0.4 had already done.**  Its row still counted
+the false §1 phase goal among its findings, though this very cut corrected it
+at v0.34.26 — so the 154-sub-task schedule and RR7's acceptance total both
+overstated remaining work.  Chasing it found the half the review did not
+reach: the SM10 sub-phase **re-sequencing**, which the debt register routes to
+RR7.5, was never listed in RR7.5's own row.  The register cited a target that
+did not describe the item.  The row now names what it actually owns — the
+re-sequence and the `contextRestoreSeamLive` prerequisites — records the phase
+goal as closed, and is re-sized S → L, a 532-citation re-sequence not being a
+small edit.  The finding count stays 2, so no acceptance total moves.
+
+**§4 listed the version sites by hand.**  The list had drifted in both
+directions at once: 10 i18n locales where the registry carries 11 (each
+contributing two sites), all three GitBook sites missing, the four per-crate
+`Cargo.toml`s listed though they hold `version.workspace = true` and no
+literal version, and four non-sites listed as sites — `CHANGELOG.md`,
+`DEVELOPMENT.md`, `CLAIM_EVIDENCE_INDEX.md` and `check_version_sync.sh`
+itself.  Following it literally fails the gate.  The remedy is not a corrected
+list: a second copy of a registry can only drift again, which is the same
+defect as the hand-summed theorem total this workstream opened by removing.
+§4 now names `scripts/version_locations.sh` as the authority, gives the
+command that prints the live count, and keeps only what the bumper genuinely
+cannot do — the CHANGELOG entry, the WS-SM status transition, the closure
+entries, the metrics regeneration.  The two other sites quoting "25 files"
+were corrected the same way.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
+## v0.34.28 — one declaration, two registrations; Codex review round 2
+
+Three findings on PR #882, all verified against the tree, all real, all in the
+same gate.  Round 1 found the count was measuring the wrong property; round 2
+found three ways the measurement could stop being a measurement without
+anything failing.
+
+**A duplicate registration would have counted twice.**  Each inventory carries
+an `_identifiers_nodup` witness, and that witness compares the identifier
+*strings* it stores, within its own list.  It therefore cannot see the same
+declaration registered under two spellings (`wakeThreadLockSet` and
+`SeLe4n.Kernel.wakeThreadLockSet` are distinct strings naming one theorem), nor
+the same declaration claimed by two phases — and `smpInventoriedTheoremCount`
+would have counted it once per registration.  That is precisely the failure
+this module exists to prevent, one level below where the previous cut fixed it.
+The propositionality census now de-duplicates on the **resolved `Name`** and
+throws on a repeat, naming both registrations.
+
+Measured today: 902 identifiers resolve to 902 distinct declarations, **zero
+duplicates**.  The published figure was already right; what it lacked was a
+reason to stay right.  Verified adversarially by registering one theorem twice
+under two spellings — `_identifiers_nodup` accepted it, the census did not.
+
+**Discovery depended on formatting.**  `NODUP_RE` and the size-witness regex
+were anchored at column zero, but Lean accepts an indented top-level
+declaration and elaborates it identically.  An inventory whose witnesses
+happened to be indented was invisible to the gate — and an inventory the gate
+cannot see is one no phase has to claim, which is the fail-open the gate was
+built to close.  Both patterns now admit leading whitespace.
+
+**Swapped labels passed every check.**  The gate verified that the set of
+constructors was complete and that the set of phase codes was complete, but
+never that a given constructor carried *its own* code.  Exchanging two entries'
+labels left both completeness checks satisfied, every count correct and every
+total right, while attributing one phase's theorems to another.
+`EXPECTED_PHASE_CODES` now binds each constructor to its code and the parser
+enforces the binding; an unknown constructor fails as an unknown key rather
+than passing quietly.
+
+Three new self-test witnesses (21 total, all mutation-tested: each fails when
+its mechanism is weakened and passes when it is restored).  No Lean statement
+changed; the theorem total remains 902 propositions across 1111 registered
+entries.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
+## v0.34.27 — the theorem count was counting definitions; Codex review round 1
+
+Six findings on PR #882, all verified against the tree, all real.  The one that
+matters is mine, and it is the same defect I had just spent a cut removing —
+one layer down.
+
+**A `List.length` is not a theorem count.**  v0.34.26 replaced a hand-summed
+theorem total with a measurement and published **1111**.  The measurement was
+of the wrong thing.  Every inventory's construction macro resolves its
+identifier — `let _ := @$ident` — and so proves the *name exists*; not one
+checks that its **type is a `Prop`**.  The inventories register a phase's whole
+surface, so they carry `def`s alongside proofs: `wakeThreadLockSet` and
+`determineTargetCore` in SM5.C's, `replenishOnCore` and
+`migrateSchedContextReplenishment` in SM5.H's, the per-core invariant
+*predicates* in SM5.I's, the WCRT cost functions in SM5.J's.
+
+Measured: **209 of the 1111 entries are definitions.**  The true theorem count
+is **902**.  I had replaced an estimate with a measurement and then labelled
+the measurement wrong — a `List.length` counts registrations, and no amount of
+deriving it from per-phase entries makes it count proofs.
+
+The fix is the one the review named: check the declaration types.
+
+- `PhaseTheoremEntry` now carries **both** `entryCount` (registrations, proved
+  from `List.length` as before) and `theoremCount` (propositions).
+- A **propositionality census** runs at elaboration: it resolves every
+  registered identifier against the environment in Lean's own namespace order,
+  requires the resolution to be **unambiguous**, counts those whose type is a
+  `Prop`, and fails the build when any phase's declared count disagrees.
+  Ambiguity is an error rather than a guess — `waitGraph` is both a `def` and a
+  `DeadlockCategory` constructor, and a resolver that picked a winner would be
+  a gate that lies.
+- This has to be a command elaborator: propositionality is a fact about the
+  environment, not a value, so no `decide` can see it — and neither can the
+  Python gate, which reads text.  `smp_inventoried_theorem_count_lt_entry_count`
+  pins the 209 difference so collapsing the two figures is a visible edit.
+
+**The gate took its own subject's word for things.**  Two fail-opens, both
+reproduced as witnesses before fixing:
+
+- Discovery matched `theorem` only.  Lean accepts `lemma` equally and this repo
+  uses it, so a `lemma`-declared inventory was invisible — unclaimed, with the
+  gate reporting PASS.
+- The manifest's `kind` field was trusted.  Relabelling a theorem inventory
+  `assumptionLedger` (or `unregistered`) with a zero count made its entries
+  leave the total silently; the reviewer reproduced this. The two assumption
+  ledgers are now pinned by name, and anything else claiming to be one is an
+  error.
+
+19 witnesses, up from 15, and each new one confirmed to fail when the gate is
+weakened.
+
+**Two counts that were wrong, and a third nobody had noticed.**
+`crossSubsystemInvariant` has **12** conjuncts; the register row and two source
+comments said 11.  Chasing that turned up something the review did not reach:
+`crossSubsystemFieldSets` has **11** entries, so `untypedRegionsDisjoint` has no
+`_fields` entry and the pairwise disjointness analysis — and every frame lemma
+derived from it — covers 11 of the 12.  Incompleteness rather than unsoundness,
+now registered with its arithmetic (C(12,2) = 66 pairs to redo).
+
+**SM10's letters are not execution order.**  SM10.B.7 and SM10.B.10 consume
+SM10.E.D1's image; SM10.C bumps the version and cuts the tag before SM10.E runs.
+CLAUDE.md says a sequencing note that contradicts the numbering means the
+numbering is wrong — so this is recorded, not papered over, and left to RR7.5
+with the register's bootpath findings: `SM10.E` alone is cited 377 times across
+60 files including production docstrings and historical CHANGELOG entries, and
+a 532-citation re-sequence does not belong inside a registration cut.
+
+Also: the WS-RR heading still read PLANNED while its body said IN FLIGHT.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+
+## v0.34.26 — RR0: the workstream nobody was tracking, and a theorem total that could not go stale
+
+WS-RR phase **RR0 — Registration and plan correction** — all eleven sub-tasks.
+The phase is cheap and ordered first because every later phase assumes the
+register is accurate, and at `v0.34.3` it was not.
+
+**The blocker (RR0.1–RR0.3).**  An open, materially incomplete verification
+workstream was registered in no durable index.  `grep -c
+IPC_INVARIANT_DETHREADING` returned **0** for `CLAUDE.md`, `AGENTS.md`,
+`docs/WORKSTREAM_HISTORY.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, the SM10 plan,
+the overview, `README.md` and the spec — every canonical index — while SM10's
+own §1 asserted "all substantive SMP work is complete".  SM10.A.4 and SM10.A.6
+are the sub-tasks that would have written v1.0.0 verification claims over that
+surface.  It is now **WS-DT**, with per-slice state (D0/D2/D2′/D3/D4/D5/D7
+closed; D1/D6/D8 open), a closure target of RR3, and a standing constraint in
+`CLAUDE.md`/`AGENTS.md` naming the two conjuncts —
+`blockedThreadsPendingMessageConsistent` and `replyCallerLinkageReciprocal` —
+that are still threaded as post-state hypotheses (the audit put them at 33 and
+31 of 35 bundles; no gate reproduces that yet, which is RR3.1's job), so no one writes code assuming `ipcInvariantFull` is an
+end-to-end machine-checked property of the live kernel.
+
+**The theorem total (RR0.5, RR0.6).**  SM10's tally read `16 SM0 + 1 SM1 + 22
+SM2 + 28 SM3 + ~50 SM4 + 30 SM5 + 25 SM6 + 14 SM7 + 18 SM8 + 5 SM10 = 209 ≈
+210` — SM8 straight to SM10, **no SM9 term**, though SM9 closed at v0.33.100.
+The marker theorem and SM10.B.13's "verify all 210 SM theorems land at HEAD"
+would each have certified a number computed as if a landed phase never
+happened, and nothing would have broken when it did.
+
+That is not fixed by adding a term.  A hand-sum cannot detect its own
+staleness, so the sum is replaced by a measurement, pinned three ways:
+
+- `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per
+  phase SM0..SM10 and derives `smpInventoriedTheoremCount` as a `List.sum` over
+  them — **1111** theorems registered in a machine-checked inventory.
+- Each entry's declared count is **proved** equal to the real inventory lengths
+  (`…_theoremCount_eq_inventories`), so an inventory that grows fails
+  elaboration rather than invalidating a literal.
+- `SmpCompletionPhase.all` plus `smpPhaseTheoremManifest_covers_all` make an
+  omitted phase unrepresentable — the SM9 shape cannot recur.
+
+Lean cannot see the fourth failure, though: a manifest that never *mentions* an
+inventory elaborates perfectly.  So `scripts/generate_smp_theorem_manifest.py`
+discovers every theorem inventory in the tree from its `_identifiers_nodup`
+witness, over the comment-free code view, and fails Tier 0 when one is claimed
+by no phase, claimed twice, or claimed with a count the tree does not measure.
+Both directions are witnessed: a witness that survives only inside a comment
+must not be discovered, and a real one must be.
+
+The number changed meaning as well as value.  1111 counts theorems that are
+*named, resolving and unique*; the old ~210 was an estimate of headline
+theorems per phase catalogue and is not recoverable from the tree.  Six phases
+— SM1 and SM6..SM10 — have no inventory and are registered as contributing
+**zero** rather than given a plausible figure, so the total understates them.
+That gap is now visible instead of hidden behind a round number, and it is
+registered debt with closure target SM10.B.13.
+
+**The register that was never created (RR0.9).**  `docs/audits/AUDIT_v0.30.11_DEFERRED.md`
+was cited as the deferral register by production Lean source, by the WS-RC plan
+in nine places, and by `docs/audits/README.md`'s own lifecycle table.  It does
+not exist.  Underneath it: 23 in-source deferrals across 16 production files
+stating **in their own words** that "no currently-active plan file tracks it",
+five of six machine-enforced `UncoveredLockDomain` entries naming a sub-task
+inside an SM3 that closed at v0.31.9 as their owner, and SM7's ASID gap registered against an SM8 that closed
+without it.
+
+`docs/WORKSTREAM_HISTORY.md` now carries a **Registered debt index** — three
+tables by who can close each item, plus all 23 in-source deferrals enumerated
+individually.  The source comments point at it instead of declaring themselves
+untracked; the `UncoveredLockDomain` owners name live targets; the three
+dangling citations point at the one register.  A second register competing with
+the file CLAUDE.md already declares canonical is how the first divergence
+happened, so there will not be one.
+
+**The circular closure target (RR0.10).**  SM4.C.11's registered closure target
+was **SM4.C.11** — a sub-task of a plan whose own header reads LANDED.  Its note
+was wrong in both directions at once: pessimistic about the eleven per-core
+liveness predicates SM5.J delivered at v0.31.64, and silent about what actually
+remains, which is that `stepPrecondition`, `stepPost` and `ValidTrace` still
+read `bootCoreId` — so no `ValidTrace` exhibits a step taken on a secondary
+core.  The predicates are per-core; the traces they are evaluated over are not.
+Re-homed to **WS-SL**, a registered Scheduler-subsystem follow-on with closure
+target post-v1.0.0 and an explicit constraint on what v1.0.0 may claim.
+
+**The triage (RR0.11).**  All 99 low-severity findings routed by remedy rather
+than severity: 20 closed by this cut, 9 closed by registration, 18 already owned
+by a phase reworking the same artefact, **15 that need code and became
+RR7.27–RR7.31**, and 37 that are genuinely SM10.A's work-list, cross-referenced
+from the SM10 plan.  Four per-core statistics accessors declared, wrapped and
+proven with no consumer are not a stale sentence; a live docstring citing a
+theorem that does not exist is not a typo.  WS-RR is 149 → **154** sub-tasks.
+
+**Plan corrections (RR0.4, RR0.7, RR0.8).**  SM10's §1 says what the phase owns
+— a bare-metal Lean runtime port *and* a release cut — against the register's
+measured table of what does not exist.  The SM10.C.4 archive list goes 11 → 19
+files with SM9's own plan among them, and every exclusion stated.  The SM10.B
+test table is refreshed against the tree: five of six suites, both fixtures and
+both tier scripts already exist, one suite at 11,756 lines, and the two tier
+scripts were named as files nothing in the tree carries.
+
+Every plan under `docs/planning/` now carries a status header — five did not.
+
+**One warning, closed.**  The default host `cargo build` warned on
+`per_core_timer_tick_isr`'s `core_id`: the parameter is read only by the two
+`hw_target` blocks (the `TPIDR_EL1` assert and the `lean_ready` gate), and
+`cargo clippy --all-features -D warnings` never saw it because the feature it
+enables is exactly what makes the parameter used.  Named the condition
+(`cfg_attr(not(feature = "hw_target"), allow(unused_variables))`) rather than
+renaming to `_core_id`, which would tell a reader it is unused everywhere.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+
 ## v0.34.25 — the gate read examples as data; found by probing, not by review
 
 Round 18 found two bypasses after my single probe pass, so I widened the probe

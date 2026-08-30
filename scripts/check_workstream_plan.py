@@ -61,24 +61,43 @@ HEADER_TOTAL = re.compile(r"^>\s*\*\*Sub-task count\*\*:\s*(\d+)(?![\d\s]*[-\u20
 # reported as legacy rather than skipped silently -- an unchecked document
 # nobody can see is how this class survived in the first place.
 LEGACY_ROW = re.compile(r"^\|\s*[A-Z]{2,}\d*\.[A-Z]\.\d+\s*\|", re.M)
-SUBTASK_ROW = re.compile(r"^\|\s*([A-Z]{2,})(\d+)\.(\d+)\s*\|(.*)$", re.M)
+# A sub-task ID is a **phase key** plus a final `.N`.  The phase key is
+# `<PREFIX><phase>` (`RR0`) or, where a plan numbers its sub-phases,
+# `<PREFIX><phase>.<sub-phase>` (`SM10.3`).  Keying on "everything left of the
+# last dot" is what lets one parser hold both shapes: sub-tasks are numbered
+# within their immediate parent whatever that parent is called.
+#
+# The earlier two-level model could not read `SM10.3.14` at all, and the plan
+# it could not read is the live 41-row release schedule -- reported as NOT
+# CHECKED, which is honest but is not checking.  A version-bump ordering defect
+# sat inside it while the gate was silent.
+SUBTASK_ROW = re.compile(r"^\|\s*([A-Z]{2,}\d+(?:\.\d+)*)\.(\d+)\s*\|(.*)$", re.M)
+ID_ALPHA_PREFIX = re.compile(r"^[A-Z]{2,}")
 FINDINGS_ROW = re.compile(r"^\|\s*[A-Z]{2,}\d+\.\d+\s*\|[^|]*\|\s*(\d+)\s*\|", re.M)
 ACCEPT_TOTAL = re.compile(r"\*\*Acceptance\*\*:\s*all\s*\*\*(\d+)\*\*\s*findings", re.M)
 
 
-def phase_map_rows(text: str, prefix: str) -> dict[int, int]:
-    """`| RR0 | scope | 11 | S-M |` -> {0: 11}.  Sub-task rows are excluded by
-    the absence of a dot, so the two table shapes cannot be confused."""
-    out: dict[int, int] = {}
+def phase_map_rows(text: str, prefix: str, depth: int) -> dict[str, int]:
+    """`| RR0 | scope | 11 | S-M |` -> {"RR0": 11}.
+
+    `depth` is how many dots the plan's own phase keys carry (0 for `RR0`, 1
+    for `SM10.3`), and only keys at that depth are read.  Without it the
+    pattern would also match a sub-task row whose third cell happens to be a
+    bare number -- which is exactly the shape of the findings tables
+    (`| RR7.27 | scope | 3 | ... |`), so every findings row would be read as a
+    phase claiming three sub-tasks.  The old model got this for free from
+    "no dot allowed"; carrying the depth is what replaces that."""
+    out: dict[str, int] = {}
     dupes: list[str] = []
-    pat = re.compile(r"^\|\s*" + prefix + r"(\d+)\s*\|[^|]*\|\s*(\d+)\s*\|", re.M)
+    pat = re.compile(r"^\|\s*(" + prefix + r"\d+" + (r"(?:\.\d+)" * depth) +
+                     r")\s*\|[^|]*\|\s*(\d+)\s*\|", re.M)
     for m in pat.finditer(text):
-        ph, n = int(m.group(1)), int(m.group(2))
+        ph, n = m.group(1), int(m.group(2))
         if ph in out:
             # Assigning over the earlier row would de-duplicate the map before
             # any comparison ran, so a plan listing a phase twice -- with two
             # different counts -- would pass on whichever row came last.
-            dupes.append(f"{prefix}{ph} appears twice in the phase map "
+            dupes.append(f"{ph} appears twice in the phase map "
                          f"(counts {out[ph]} and {n}); one of them is wrong")
         out[ph] = n
     return out, dupes
@@ -105,33 +124,49 @@ def check_plan(rel: str, text: str, companions: dict[str, str]) -> list[str]:
     if not rows:
         return [f"{rel}: declares a sub-task count but has no sub-task rows"]
 
-    prefix = rows[0].group(1)
-    by_phase: dict[int, list[tuple[int, str]]] = defaultdict(list)
+    prefix = ID_ALPHA_PREFIX.match(rows[0].group(1)).group(0)
+    # Depth is a property of the plan, taken as the deepest ID it contains --
+    # not from the first row, because in a sub-phase-numbered plan a *phase-map*
+    # row (`| SM10.3 | scope | 20 | L |`) is shaped exactly like a two-level
+    # sub-task row and usually comes first.  Reading depth off row zero made
+    # every real sub-task row look mis-nested.  Shallower matches are therefore
+    # phase-map rows and are left to `phase_map_rows`.
+    depth = max(m.group(1).count(".") for m in rows)
+    by_phase: dict[str, list[tuple[int, str]]] = defaultdict(list)
     for m in rows:
-        if m.group(1) != prefix:
-            errors.append(f"{rel}: mixed ID prefixes {prefix} and {m.group(1)}")
+        stem = m.group(1)
+        if ID_ALPHA_PREFIX.match(stem).group(0) != prefix:
+            errors.append(f"{rel}: mixed ID prefixes {prefix} and "
+                          f"{ID_ALPHA_PREFIX.match(stem).group(0)}")
             continue
-        by_phase[int(m.group(2))].append((int(m.group(3)), m.group(4)))
+        if stem.count(".") != depth:
+            continue
+        by_phase[stem].append((int(m.group(2)), m.group(3)))
 
-    defined = {f"{prefix}{ph}.{n}" for ph, subs in by_phase.items() for n, _ in subs}
+    defined = {f"{ph}.{n}" for ph, subs in by_phase.items() for n, _ in subs}
+
+    def key(stem: str) -> tuple[int, ...]:
+        """Sort and compare phase keys numerically, component by component, so
+        `SM10.10` follows `SM10.9` rather than preceding it."""
+        return tuple(int(x) for x in stem[len(prefix):].split("."))
 
     # 1. sequential within each phase
-    for ph in sorted(by_phase):
+    for ph in sorted(by_phase, key=key):
         nums = sorted(n for n, _ in by_phase[ph])
         if nums != list(range(1, len(nums) + 1)):
             errors.append(
-                f"{rel}: {prefix}{ph} sub-task numbers are not 1..{len(nums)}: {nums}")
+                f"{rel}: {ph} sub-task numbers are not 1..{len(nums)}: {nums}")
 
     # 2 + 3. phase map and declared total
-    declared, dupes = phase_map_rows(text, prefix)
+    declared, dupes = phase_map_rows(text, prefix, depth)
     errors += [f"{rel}: {d}" for d in dupes]
-    for ph in sorted(set(declared) | set(by_phase)):
+    for ph in sorted(set(declared) | set(by_phase), key=key):
         want, have = declared.get(ph), len(by_phase.get(ph, []))
         if ph not in declared:
-            errors.append(f"{rel}: {prefix}{ph} has {have} rows but no phase-map entry")
+            errors.append(f"{rel}: {ph} has {have} rows but no phase-map entry")
         elif want != have:
             errors.append(
-                f"{rel}: phase map says {prefix}{ph} has {want} sub-tasks, table has {have}")
+                f"{rel}: phase map says {ph} has {want} sub-tasks, table has {have}")
     m = HEADER_TOTAL.search(text)
     if m and declared:
         total, summed = int(m.group(1)), sum(declared.values())
@@ -139,22 +174,26 @@ def check_plan(rel: str, text: str, companions: dict[str, str]) -> list[str]:
             errors.append(
                 f"{rel}: declared total {total} != phase-map sum {summed}")
 
-    # 4. every reference resolves, here and in the companions
-    ref = re.compile(r"\b" + prefix + r"(\d+)\.(\d+)\b")
+    # 4. every reference resolves, here and in the companions.  Matched at the
+    # plan's own depth so a two-level citation of a three-level plan is a
+    # dangling reference rather than an unmatched string.
+    ref = re.compile(r"\b(" + prefix + r"\d+" + (r"(?:\.\d+)" * depth) +
+                     r")\.(\d+)\b")
     for where, body in [(rel, text)] + list(companions.items()):
-        for r in sorted({f"{prefix}{a}.{b}" for a, b in ref.findall(body)}):
+        for r in sorted({f"{a}.{b}" for a, b in ref.findall(body)}):
             if r not in defined:
                 errors.append(f"{where}: reference to {r}, which is not a sub-task in {rel}")
 
     # 5. no self- or forward-reference inside a sub-task row
-    for ph in sorted(by_phase):
+    for ph in sorted(by_phase, key=key):
         for n, body in sorted(by_phase[ph]):
+            here = key(ph) + (n,)
             for a, b in ref.findall(body):
-                a, b = int(a), int(b)
-                if a > ph or (a == ph and b >= n):
-                    kind = "itself" if (a, b) == (ph, n) else f"the later {prefix}{a}.{b}"
+                there = key(a) + (int(b),)
+                if there >= here:
+                    kind = "itself" if there == here else f"the later {a}.{b}"
                     errors.append(
-                        f"{rel}: {prefix}{ph}.{n} depends on {kind}; "
+                        f"{rel}: {ph}.{n} depends on {kind}; "
                         "a sub-task may only consume a lower-numbered one")
 
     # 6. per-row findings counts sum to the declared acceptance total
@@ -224,7 +263,7 @@ def global_definitions(clashes: list | None = None) -> dict[str, tuple[str, set[
 
     Built across `docs/planning/` **and** `docs/dev_history/planning/`, because
     checking a companion's citation against one plan at a time cannot see two
-    things: a plan archived on close still defines its IDs (SM10.C.4 moves this
+    things: a plan archived on close still defines its IDs (SM10.6.3 moves this
     very plan), and a plan whose rows are re-prefixed wholesale leaves the old
     prefix cited nowhere the per-plan scan looks.  A map keyed by prefix
     answers both.
@@ -239,9 +278,9 @@ def global_definitions(clashes: list | None = None) -> dict[str, tuple[str, set[
         rows = list(SUBTASK_ROW.finditer(body))
         if not rows:
             continue
-        prefix = rows[0].group(1)
-        ids = {f"{prefix}{m.group(2)}.{m.group(3)}" for m in rows
-               if m.group(1) == prefix}
+        prefix = ID_ALPHA_PREFIX.match(rows[0].group(1)).group(0)
+        ids = {f"{m.group(1)}.{m.group(2)}" for m in rows
+               if ID_ALPHA_PREFIX.match(m.group(1)).group(0) == prefix}
         if prefix in out and out[prefix][0] != rel:
             # Unioning two plans' IDs under one prefix makes every citation
             # ambiguous and hides duplicate definitions; record the clash so
@@ -276,23 +315,36 @@ def companion_citation_errors(companions: dict[str, str]) -> list[str]:
         if body:
             sources.setdefault(rel, prose_view(body))
     baseline_prefixes: dict[str, str] = {}
+    baseline_depth: dict[str, int] = {}
     for base in baseline_refs():
         for rel in list_tracked(base):
             body = read_at(base, rel)
             rows = list(SUBTASK_ROW.finditer(body)) if body else []
             if rows:
-                baseline_prefixes.setdefault(rows[0].group(1), rel)
+                pfx = ID_ALPHA_PREFIX.match(rows[0].group(1)).group(0)
+                baseline_prefixes.setdefault(pfx, rel)
+                baseline_depth.setdefault(pfx, rows[0].group(1).count(".") + 1)
+
+    # How many dots a *sub-task* citation of each prefix carries, read off the
+    # IDs the plan actually defines.  Without it a three-level plan's phase key
+    # (`SM10.3`) reads as a two-level sub-task citation and is reported as
+    # dangling -- the plan's own headings would fail their own gate.
+    cite_depth = {pfx: next(iter(ids)).count(".")
+                  for pfx, (_, ids) in defined.items() if ids}
 
     sources = {k: prose_view(v) for k, v in sources.items()}
     for where, text in sources.items():
-        for m in sorted({(a, b, c) for a, b, c in
-                         re.findall(r"\b([A-Z]{2,})(\d+)\.(\d+)\b", text)}):
-            prefix, cite = m[0], f"{m[0]}{m[1]}.{m[2]}"
+        for cite in sorted(set(re.findall(r"\b[A-Z]{2,}\d+(?:\.\d+)+\b", text))):
+            prefix = ID_ALPHA_PREFIX.match(cite).group(0)
             if prefix in defined:
+                if cite.count(".") != cite_depth.get(prefix, cite.count(".")):
+                    continue          # a phase key, not a sub-task citation
                 if cite not in defined[prefix][1]:
                     errors.append(f"{where}: reference to {cite}, which is not a "
                                   f"sub-task in {defined[prefix][0]}")
             elif prefix in baseline_prefixes:
+                if cite.count(".") != baseline_depth.get(prefix, cite.count(".")):
+                    continue
                 errors.append(
                     f"{where}: cites {cite}, but nothing in the tree defines "
                     f"{prefix} any more — {baseline_prefixes[prefix]} defined it "
@@ -346,18 +398,20 @@ def deleted_plan_errors(companions: dict[str, str]) -> list[str]:
         rows = list(SUBTASK_ROW.finditer(body))
         if not rows:
             continue
-        prefix = rows[0].group(1)
-        ref = re.compile(r"\b" + prefix + r"(\d+)\.(\d+)\b")
+        prefix = ID_ALPHA_PREFIX.match(rows[0].group(1)).group(0)
+        depth = rows[0].group(1).count(".")
+        ref = re.compile(r"\b(" + prefix + r"\d+" + (r"(?:\.\d+)" * depth) +
+                         r"\.\d+)\b")
         for where, text in companions.items():
-            for a, b in sorted({(x, y) for x, y in ref.findall(text)}):
+            for cite in sorted(set(ref.findall(text))):
                 errors.append(
-                    f"{where}: cites {prefix}{a}.{b}, but this change deletes "
+                    f"{where}: cites {cite}, but this change deletes "
                     f"{rel}, which is where that sub-task is defined")
     return errors
 
 
 def collect(paths: list[str]) -> tuple[list[str], dict[str, str], int]:
-    plans, ranged, legacy_only = [], 0, []
+    plans, ranged, legacy_only = [], [], []
     for rel in (list_tracked(":") if not paths else paths):
         body = read_indexed(rel)
         if not body:
@@ -374,11 +428,11 @@ def collect(paths: list[str]) -> tuple[list[str], dict[str, str], int]:
             if LEGACY_ROW.search(body):
                 legacy_only.append(rel)
             elif HEADER_RANGE.search(body):
-                ranged += 1
+                ranged.append(rel)
             continue
         plans.append(rel)
         if not HEADER_TOTAL.search(body):
-            ranged += 1
+            ranged.append(rel)
     companions = {}
     for c in COMPANIONS:
         body = read_indexed(c)
@@ -390,7 +444,8 @@ def collect(paths: list[str]) -> tuple[list[str], dict[str, str], int]:
 def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return self_test()
-    plans, companions, ranged, legacy_only = collect([a for a in argv if not a.startswith("-")])
+    plans, companions, ranged, legacy_only = collect(
+        [a for a in argv if not a.startswith("-")])
     # Deliberately before the "nothing to validate" exit: deleting the last
     # exact-count plan while a companion still cites it left `plans` empty, so
     # returning here skipped the very check that deletion is supposed to trip.
@@ -439,7 +494,7 @@ def main(argv: list[str]) -> int:
     print(f"PASS: {len(checked)} workstream plan(s) structurally consistent "
           f"(sequential IDs, phase counts, declared totals, cross-references, "
           f"no forward dependencies); "
-          f"{len(legacy)} legacy letter-group plan(s) and {ranged} declaring an "
+          f"{len(legacy)} legacy letter-group plan(s) and {len(ranged)} declaring an "
           f"estimate range are not held to flat numbering.")
     if not baseline_is_complete():
         # Narrower coverage is said out loud rather than inferred from a pass.
@@ -532,6 +587,39 @@ def _cli_cases():
         (d / "CC_TWO.md").write_text(CLEAN.replace("XX", "CC"), encoding="utf-8")
         git("add", "-A")
 
+    SUBPHASE = (
+        "> **Sub-task count**: 3 across 2 sub-phases\n\n"
+        "| Phase | Scope | Subs | Est |\n"
+        "|-------|-------|------|-----|\n"
+        "| YY0.1 | first | 2 | S |\n"
+        "| YY0.2 | second | 1 | M |\n\n"
+        "| Sub | Description | Files | Est |\n"
+        "|-----|-------------|-------|-----|\n"
+        "| YY0.1.1 | groundwork | a | S |\n"
+        "| YY0.1.2 | builds on YY0.1.1 | a | S |\n"
+        "| YY0.2.1 | consumes YY0.1.2 | b | M |\n"
+    )
+
+    def sub_phase_numbered_plan(root, git):
+        """Three-level IDs (`YY0.1.1`), which the two-level model could not
+        read at all -- it reported the plan as NOT CHECKED, which is honest but
+        is not checking, and the plan it could not read was the live release
+        schedule."""
+        (root / "docs" / "planning" / "YY_PLAN.md").write_text(
+            SUBPHASE, encoding="utf-8")
+        git("add", "-A")
+
+    def sub_phase_numbered_defect(root, git):
+        """The same plan with a forward dependency and a gap in one sub-phase:
+        both must be reported, or "checked" means nothing."""
+        (root / "docs" / "planning" / "YY_PLAN.md").write_text(
+            SUBPHASE.replace("| YY0.1.2 | builds on YY0.1.1 | a | S |",
+                             "| YY0.1.2 | needs YY0.2.1 | a | S |")
+                    .replace("| YY0.2.1 | consumes YY0.1.2 | b | M |",
+                             "| YY0.2.2 | consumes YY0.1.2 | b | M |"),
+            encoding="utf-8")
+        git("add", "-A")
+
     def stray_letter_row(root, git):
         p2 = root / "docs" / "planning" / "XX_PLAN.md"
         p2.write_text(CLEAN.replace("| XX0 | first | 3 |", "| XX0 | first | 99 |")
@@ -558,6 +646,18 @@ def _cli_cases():
         out.append(("CLI: a plan without a count header is still checked",
                     r.returncode != 0 and "not 1..3" in r.stdout,
                     (r.returncode, r.stdout.strip()[:110])))
+    with tempfile.TemporaryDirectory() as td:
+        r = build(td, sub_phase_numbered_plan)
+        out.append(("CLI: a well-formed sub-phase-numbered plan passes",
+                    r.returncode == 0 and "NOT CHECKED" not in r.stdout,
+                    (r.returncode, r.stdout.strip()[:220])))
+    with tempfile.TemporaryDirectory() as td:
+        r = build(td, sub_phase_numbered_defect)
+        out.append(("CLI: a sub-phase-numbered plan's defects are caught",
+                    r.returncode != 0
+                    and "YY0.1.2 depends on the later YY0.2.1" in r.stdout
+                    and "YY0.2 sub-task numbers are not 1..1" in r.stdout,
+                    (r.returncode, r.stdout.strip()[:300])))
     with tempfile.TemporaryDirectory() as td:
         r = build(td, stray_letter_row)
         out.append(("CLI: a stray letter-group row does not grandfather a flat plan",
@@ -590,7 +690,7 @@ def _archive_and_reprefix_cases():
             os.environ["SELE4N_PLAN_BASE_REF"] = "main"
             companions = {"CLAUDE.md": (root / "CLAUDE.md").read_text()}
 
-            # Archiving on close: SM10.C.4 does exactly this to the live plan.
+            # Archiving on close: SM10.6.3 does exactly this to the live plan.
             git("mv", "docs/planning/XX_PLAN.md",
                 "docs/dev_history/planning/XX_PLAN.md")
             out.append(("archiving a closed plan does not orphan its citations",

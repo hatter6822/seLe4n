@@ -1,5 +1,15 @@
 # Reply Objects (seL4-MCS) — Completion Plan: deferred Phase-C-invariants / D6 / H items
 
+> **Status**: **COMPLETE (v0.31.155)** — all three completeness items and
+> every residual-debt item landed; the sections below are retained as
+> completion records.  **Two items remain open against it**, both
+> registered elsewhere rather than here: the #2.d acceptance test never
+> crosses the syscall gate (register §6, owner **RR7.23**), and deferred
+> follow-up item 4 named a tracking home that carries no entry for it
+> (now in the *Registered debt index* of
+> [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md), RR0.9).
+> **Archived by**: SM10.6.3.
+
 > Companion to the SM6.C/SM6.D reply-object slices in
 > [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md) and the
 > PR #822 hardening pass. This plan tracked the three remaining **completeness**

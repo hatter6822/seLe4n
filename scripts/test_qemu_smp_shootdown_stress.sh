@@ -44,9 +44,9 @@
 #   ALL executions — this script is a complementary *runtime* spot-check with a
 #   real GIC delivering the SGIs and a real CAS lock serialising the rounds.
 #
-# **Prerequisites (SM10.E)**:
+# **Prerequisites (SM10.1)**:
 #   * A bootable kernel-image `[[bin]]` target linking the Rust HAL against the
-#     Lean kernel object code (the recurring SM10.E closure item).
+#     Lean kernel object code (the recurring SM10.1 closure item).
 #   * A stress driver in the kernel image: four threads homed one per core,
 #     each repeatedly mapping and unmapping its own page through the live
 #     `syscallDispatchCrossCoreEntry` seam while probing its peers' VAs.
@@ -85,7 +85,7 @@ fi
 # --------------------------------------------------------------------------
 # Pre-condition: the concurrent-unmap stress driver must be wired in the kernel
 # image.  We detect it by the banner the driver emits.  At SM7.E the driver is
-# NOT present (it needs the SM10.E bootable kernel-image binary target), so this
+# NOT present (it needs the SM10.1 bootable kernel-image binary target), so this
 # SKIPs.
 #
 # Capture `strings` output into a variable first, *then* grep it: under
@@ -100,7 +100,7 @@ if ! grep -q "smp-test.*tlb-shootdown-stress" <<<"${KERNEL_STRINGS}"; then
   echo "[SKIP] WS-SM SM7.E.3: TLB shootdown stress driver not wired in kernel image"
   echo ""
   echo "  Reason: exercising four cores' concurrent shootdown rounds requires"
-  echo "          the SM10.E bootable kernel-image [[bin]] target (Rust HAL"
+  echo "          the SM10.1 bootable kernel-image [[bin]] target (Rust HAL"
   echo "          linked against the Lean kernel object code) plus an in-image"
   echo "          driver: four threads homed one per core, each repeatedly"
   echo "          unmapping its own page through the live"
@@ -115,7 +115,7 @@ if ! grep -q "smp-test.*tlb-shootdown-stress" <<<"${KERNEL_STRINGS}"; then
   echo "          machine-checked in tests/SmpTlbShootdownSuite.lean (§6 drives"
   echo "          the four-core storm on a real page-table-backed state)."
   echo ""
-  echo "  When wired (SM10.E), this script will:"
+  echo "  When wired (SM10.1), this script will:"
   echo "    1. Boot QEMU virt -smp 4."
   echo "    2. Map one page per core and have every core touch every page"
   echo "       (each PE caches all four translations)."

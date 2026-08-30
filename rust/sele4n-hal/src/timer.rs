@@ -363,7 +363,7 @@ pub fn get_tick_count() -> u64 {
 ///    replenishment wakes produce — the pure `perCoreTimerTickStep` composition).
 ///    Gated on `feature = "hw_target"` AND on this core's Lean-runtime
 ///    readiness ([`crate::lean_ready::lean_ready`]): on the host the call is
-///    omitted (no kernel image is linked), and on hardware a core that SM10.E's
+///    omitted (no kernel image is linked), and on hardware a core that SM10.1's
 ///    initialization has not marked ready degrades to the record-and-rearm
 ///    seam — a PE must never enter a Lean runtime it has not initialized.
 ///
@@ -380,7 +380,7 @@ pub fn get_tick_count() -> u64 {
 /// same atomic commit, under the kernel-entry lock this ISR holds around the
 /// Lean call.  The pairing is therefore exact on every arm: a pre-readiness
 /// tick runs no entry (neither clock moves — no offset can accumulate before
-/// the SM10.E handoff), a non-boot core's entry reports no advance, and a
+/// the SM10.1 handoff), a non-boot core's entry reports no advance, and a
 /// fail-closed entry commits nothing and advances nothing (the divergence an
 /// invocation-time increment carried; PR #880 follow-up).  History: the
 /// increment sat in the uncalled `ffi_timer_reprogram` (now re-arm-only, so
@@ -391,6 +391,14 @@ pub fn get_tick_count() -> u64 {
 /// **Re-entrancy.** The IRQ is acknowledged + EOI'd before this runs, and the
 /// CPU-interface running-priority mask holds INTID 30 off until `PSTATE.I` clears
 /// on exception return, so the comparator re-arm cannot itself re-trigger.
+// `core_id` is consumed only by the two `hw_target` blocks below — the
+// `debug_assert_eq!` against `TPIDR_EL1` and the `lean_ready` gate that fronts
+// the Lean entry.  Without the feature there is no kernel image to enter, so
+// the parameter is genuinely unused and the default host build warns.  Naming
+// the exact condition is better than renaming the parameter to `_core_id`: the
+// hardware paths read it, the signature is the ISR's contract with `trap.rs`,
+// and a leading underscore would tell a reader it is unused everywhere.
+#[cfg_attr(not(feature = "hw_target"), allow(unused_variables))]
 pub fn per_core_timer_tick_isr(core_id: u64) {
     // Pin the consistency invariant the per-core stat recording relies on: step 1
     // (`record_timer_tick`) selects the per-CPU slot by re-reading `TPIDR_EL1`, so
@@ -416,7 +424,7 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
     // 2. Re-arm the per-core comparator for the next tick.
     reprogram_timer();
     // 3. Drive the Lean per-core scheduler timer tick (hardware only),
-    // gated on this core's Lean-runtime readiness: until SM10.E's image
+    // gated on this core's Lean-runtime readiness: until SM10.1's image
     // initialization marks the core ready (`lean_ready::mark_lean_ready`),
     // the ISR is the record-and-rearm seam only — a PE must never enter
     // the Lean runtime it has not initialized (the constraint

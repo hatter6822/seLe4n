@@ -1076,8 +1076,8 @@ theorem dsb_guarantees_mmio_completion (st st' : SystemState)
 - **P-L2** `readCString` fuel 256: the 256-byte cap reflects FDT string-
   table entries which are always short property names (spec-mandated
   sub-32-char names). A fuel-exhaustion return type upgrade is tracked
-  as a post-1.0 hardening candidate; no currently-active plan file
-  tracks it.
+  as a post-1.0 hardening candidate; registered in
+  `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C.1).
 
 - **P-L3** `physicalAddressWidth` bounds: **RESOLVED** via AK9-F —
   `applyMachineConfigChecked` enforces `physicalAddressWidth ≤ 52`
@@ -1087,7 +1087,7 @@ theorem dsb_guarantees_mmio_completion (st st' : SystemState)
 - **P-L4** `extractPeripherals` 2-level: documented at `DeviceTree.lean`
   (AF-32). The BCM2712 DTB has peripherals at depth 1–2; deeper nesting
   for non-RPi5 platforms is recorded here as a post-1.0 hardening
-  candidate; no currently-active plan file tracks it.
+  candidate; registered in `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C.1).
 
 - **P-L5** MMIO operations do not issue interrupts-disable guards:
   single-core sequential model — the MMIO write sequence is atomic by
@@ -1096,7 +1096,7 @@ theorem dsb_guarantees_mmio_completion (st st' : SystemState)
   is the runtime guard. Proofs depending on atomicity of MMIO sequences
   through interrupt windows are tracked under `barrierOrdered`; the
   multi-core extension is recorded here as a post-1.0 hardening
-  candidate; no currently-active plan file tracks it.
+  candidate; registered in `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C.1).
 
 - **P-L6** `buildValidated` unstructured strings: test-surface
   diagnostic, not proof-layer. A `BuildValidationError` inductive with
@@ -1131,7 +1131,8 @@ theorem dsb_guarantees_mmio_completion (st st' : SystemState)
   field names rather than re-introduce the unused parameter.
 
 - **P-L11** FFI `opaque BaseIO` contract bridging: recorded here as a
-  post-1.0 hardening candidate; no currently-active plan file tracks it.
+  post-1.0 hardening candidate; registered in
+  `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C.1).
   A formal soundness bridge between `@[extern]`-declared FFI functions
   and their Rust HAL counterparts would supplement the existing
   production AdapterProofHooks.

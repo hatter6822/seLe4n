@@ -979,13 +979,13 @@ def updateKernelState (f : SystemState → SystemState) : BaseIO Unit :=
     reschedule — bracketed *and* invoked before `enable_irq` on its core, so a
     tick cannot re-enter the non-reentrant lock on the same core) and
     `suspend_thread_cross_core` (`ffi::sele4n_suspend_thread`).  The primary
-    bring-up entry (`lean_kernel_main`, the SM10.E image target's boot seam) is
+    bring-up entry (`lean_kernel_main`, the SM10.1 image target's boot seam) is
     the one committing path outside the bracket: its `initialiseKernelState`
     install runs while secondaries may already be executing bracketed entries,
-    so SM10.E MUST either order the install before Phase 5 releases the
+    so SM10.1 MUST either order the install before Phase 5 releases the
     secondaries or take this same bracket — an unbracketed install racing a
     bracketed tick can be overwritten by a commit derived from the
-    pre-install state (the lost-commit shape above).  Recorded as an SM10.E
+    pre-install state (the lost-commit shape above).  Recorded as an SM10.1
     obligation in `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`.
 
     The lock is the SM2 verified `TicketLock`, so entry is FIFO and no core
@@ -1901,7 +1901,7 @@ theorem icMaintenanceBroadcast_cleanRangeIallu_encoding
 -- The Rust `svc_dispatch` extern was flipped to
 -- `lean_syscall_dispatch_cross_core` at v0.31.67 (SM6.A), no Rust source
 -- declared the symbol since, and it was the last production consumer of the
--- retired bit-63 protocol (`encodeOk` / `encodeError`).  Its planned SM10.E
+-- retired bit-63 protocol (`encodeOk` / `encodeError`).  Its planned SM10.1
 -- removal moved into the WS-RA flip: a dead export still speaking a retired
 -- protocol is a half-migrated artifact (plan §3.7).
 -- `tests/SyscallDispatchSuite.lean`'s bridge coverage now drives the pure

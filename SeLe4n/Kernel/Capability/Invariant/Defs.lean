@@ -219,8 +219,9 @@ standalone operation-correctness lemmas in `Authority.lean`.
   `CapDerivationTree.edgeWellFounded_sub` (edge subset preserves well-foundedness).
 - AF5-F (AF-26): This conjunction uses right-associative `∧` chains
   accessed via `.2.2.2...` projections. Refactoring to a named structure is
-  recorded as a post-1.0 hardening candidate; no currently-active plan file
-  tracks it (see Builder.lean AF5-F annotation for rationale).
+  recorded as a post-1.0 hardening candidate; registered in
+  `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C.1); see the
+  Builder.lean AF5-F annotation for the rationale.
 
 WS-RC R4.A.6: The historical `cspaceSlotUnique` conjunct was removed when
 `CNode.slots : SeLe4n.UniqueSlotMap Capability` carried the slot-uniqueness

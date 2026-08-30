@@ -83,8 +83,8 @@ violation), PIP propagation stops at the cycle boundary. Threads in the cycle
 retain stale priority boosts until the cycle is broken by IPC completion or
 timeout. This is conservative (not unsound): stale boosts cause over-promotion,
 not under-promotion, so no priority inversion results. Formal cycle detection
-and removal is recorded as a post-1.0 hardening candidate; no currently-active
-plan file tracks it. -/
+and removal is a post-1.0 hardening candidate, registered in the *Registered debt index* (table C.1) in `docs/WORKSTREAM_HISTORY.md`,
+row 28. -/
 def blockingChain (st : SystemState) (tid : ThreadId) (fuel : Nat := st.objectIndex.length)
     : List ThreadId :=
   match fuel with

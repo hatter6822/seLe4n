@@ -114,15 +114,15 @@ For maximum confidence (real silicon validation):
   USB-to-serial adapter on the host.
 - **Power**: 27 W USB-C PD (Pi 5 official supply).
 
-Building the deployable image (`kernel8.img` + `config.txt`) is **SM10.E
+Building the deployable image (`kernel8.img` + `config.txt`) is **SM10.1
 scope** — the image-packaging script (`scripts/build_rpi5_image.sh`) is
 registered debt tracked in
 [`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md)
-(SM10.E ships the bootable image). There is **no interim manual path**:
+(SM10.1 ships the bootable image). There is **no interim manual path**:
 `sele4n-hal` currently builds as a library crate (no `[[bin]]` target, no
 `main.rs`), so `cargo build -p sele4n-hal` produces an `.rlib` for the
 linker, not a flashable kernel binary — the bootable ELF target, its
-linker script, and the image packaging all arrive together with SM10.E.
+linker script, and the image packaging all arrive together with SM10.1.
 Once they land, flash the packaged image to the SD card and boot the
 board.  All Section 2 tests
 that require real silicon (TLB coherence, OSH multi-cluster,
@@ -139,8 +139,8 @@ and emits the canonical `dsb ishst → dc cvac → dsb ish → tlbi → dsb ish
 → isb → ic iallu` sequence, subsequent instruction fetches must see
 the new mapping.
 
-**Procedure** (the script currently **self-skips** — it needs the SM10.E
-kernel image; registered debt SM10.B.D7 in
+**Procedure** (the script currently **self-skips** — it needs the SM10.1
+kernel image; registered debt SM10.3.14 in
 `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` — so the steps below describe
 the run once it is wired):
 
@@ -188,13 +188,13 @@ cargo test --manifest-path rust/Cargo.toml -p sele4n-hal barriers
 ```
 
 > `scripts/test_qemu_tlb_cache_coherence.sh` exists but is a
-> **self-skipping stub** until the SM10.E image pipeline lands (registered
-> as SM10.B.D7 in `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`) — it
+> **self-skipping stub** until the SM10.1 image pipeline lands (registered
+> as SM10.3.14 in `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`) — it
 > reports `[SKIP]` unconditionally today and exits `SELE4N_SKIP_EXIT`
 > (77), so it can never be mistaken for coherence coverage.
 
 > **Planned** — the dedicated instruction-trace audit
-> (`scripts/test_qemu_tlb_barrier_audit.sh`) is registered SM10.B debt
+> (`scripts/test_qemu_tlb_barrier_audit.sh`) is registered SM10.3 debt
 > (see `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`). The planned runtime check captures the `-d in_asm` trace, greps for every
 `tlbi` mnemonic, and asserts the immediately-following two
 instructions are `dsb ish` and `isb`.
@@ -221,7 +221,7 @@ cargo test --manifest-path rust/Cargo.toml -p sele4n-hal cpu
 ```
 
 > **Planned** — the QEMU-level stress script
-> (`scripts/test_qemu_suspend_atomicity.sh`) is registered SM10.B debt
+> (`scripts/test_qemu_suspend_atomicity.sh`) is registered SM10.3 debt
 > (see `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`). The planned test:
 1. Spawns 100 threads, each performing 1000 suspend/resume cycles.
 2. Concurrent timer ticks try to interleave.
@@ -253,7 +253,7 @@ cargo test --manifest-path rust/Cargo.toml -p sele4n-hal svc_dispatch
 ```
 
 > **Planned** — the QEMU userspace round-trip script
-> (`scripts/test_qemu_svc_roundtrip.sh`) is registered SM10.B debt
+> (`scripts/test_qemu_svc_roundtrip.sh`) is registered SM10.3 debt
 > (see `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`); it drives the
 > userspace program below through every `SyscallId` variant.
 
@@ -301,7 +301,7 @@ cargo test --manifest-path rust/Cargo.toml -p sele4n-hal cpu
 ```
 
 > **Planned** — the QEMU boot-level script
-> (`scripts/test_qemu_wfe_bounded.sh`) is registered SM10.B debt (see
+> (`scripts/test_qemu_wfe_bounded.sh`) is registered SM10.3 debt (see
 > `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`). The planned test boots the kernel, masks all event sources, and enters
 `wfe_bounded(540_000)` (the 10 ms RPi5 default).  If the WFE was
 unconditional, the kernel would hang forever; the bounded variant
@@ -329,7 +329,7 @@ cargo test --manifest-path rust/Cargo.toml -p sele4n-hal barriers
 ```
 
 > **Planned** — the objdump disassembly check
-> (`scripts/test_barrier_kind_emission.sh`) is registered SM10.B debt
+> (`scripts/test_barrier_kind_emission.sh`) is registered SM10.3 debt
 > (see `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`). The planned script:
 1. Generates a `barrier_emission_test.rs` that calls each
    `BarrierKind::emit()` variant.
@@ -357,7 +357,7 @@ cargo test --manifest-path rust/Cargo.toml -p sele4n-hal barriers
 ```
 
 > **Planned** — the on-board latency probe
-> (`scripts/test_rpi5_osh_widening.sh`) is registered SM10.B debt (see
+> (`scripts/test_rpi5_osh_widening.sh`) is registered SM10.3 debt (see
 > `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`); it requires real silicon.
 > The planned test uses an MMIO write to a device register visible across
 clusters and verifies that after `dsb oshst` the write is observed
@@ -415,7 +415,7 @@ kernel command line):**
 ./scripts/test_qemu.sh
 ```
 
-> Note: until SM10.E lands the `sele4n-hal` bootable binary target, this
+> Note: until SM10.1 lands the `sele4n-hal` bootable binary target, this
 > script SKIPs gracefully at its kernel-binary check (the crate builds as
 > a library today). Once the binary exists and QEMU runs, the assertions
 > are **hard failures**: empty serial output, a missing boot banner, or
@@ -497,7 +497,7 @@ anything, so wire a hardware test in directly rather than behind a
 ```bash
 # Add to scripts/test_tier4_smp_bootcheck.sh:
 run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_bringup.sh"
-# ... plus the SM10.B scripts as they land
+# ... plus the SM10.3 scripts as they land
 ```
 
 Use **`run_gate_check`**, never `run_check`, for any check that
@@ -506,7 +506,7 @@ certifies phase acceptance criteria. A sub-test that cannot run exits
 the tier then names every unexecuted gate and reports that coverage is
 incomplete, instead of printing "All checks passed" over work nothing
 performed. Set `SELE4N_REQUIRE_GATES=1` to promote a skipped gate to a
-hard failure; the v1.0.0 release validation (SM10.E) must run in that
+hard failure; the v1.0.0 release validation (SM10.5) must run in that
 mode, since a release may not certify phases whose gates never ran.
 
 This lets full-fat CI runners exercise the runtime steps while
@@ -534,7 +534,7 @@ checklist before tagging:
         `NIGHTLY_ENABLE_EXPERIMENTAL=1` is what makes Tier 4 run at all, and
         without it the tier reports NOT RUN and strict mode fails — which is
         the intended behaviour, since a strict run that never reached the
-        gates certifies nothing. Run this after SM10.E.D1 produces the
+        gates certifies nothing. Run this after SM10.1.1 produces the
         bootable image; before that image exists the gates report NOT RUN and
         this box cannot be ticked.
   - [ ] §4.1 — TLB+Cache coherency (AN9-A)

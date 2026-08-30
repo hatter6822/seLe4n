@@ -1845,7 +1845,7 @@ recorded rather than assumed**: the model writes the field whole, so the
 key-local reading is sound only if the runtime realises the table as per-object
 storage.  That is precisely the obligation `SystemState.objects` already
 carries for `storeObject` under the same discipline, and it is discharged the
-same way, by the representation, at SM10.E.
+same way, by the representation, at SM10.1.
 
 **D.18 — NI carriage.**  The propagation writes a field no observer projects,
 so `applySyscallTaint_confinedToCores_nil` is confinement to **no** core, and

@@ -22,12 +22,12 @@
 //! is skipped) — exactly the behaviour of a host build, and safe by
 //! construction.
 //!
-//! **Who marks ready (SM10.E)**: the bootable-image work owns the flips.
+//! **Who marks ready (SM10.1)**: the bootable-image work owns the flips.
 //! The boot core is marked after `lean_kernel_main` initializes the Lean
-//! runtime and installs the kernel state (and per the registered SM10.E
+//! runtime and installs the kernel state (and per the registered SM10.1
 //! ordering obligation, before secondaries are released or under the
 //! kernel-entry bracket).  Each secondary is marked in
-//! `rust_secondary_main` once SM10.E's per-core runtime initialization
+//! `rust_secondary_main` once SM10.1's per-core runtime initialization
 //! for that PE has run — after which the already-wired gate passes and
 //! the bring-up reschedule proceeds unmodified.  Nothing in the tree
 //! marks a core ready today, which is precisely the point: the seams are
@@ -57,7 +57,7 @@ pub fn lean_ready(core_id: usize) -> bool {
 
 /// Mark `core_id` ready to enter the Lean runtime.
 ///
-/// Called by the SM10.E image's initialization path once the Lean
+/// Called by the SM10.1 image's initialization path once the Lean
 /// runtime is initialized for this PE (boot core: after
 /// `lean_kernel_main`'s runtime init + kernel-state install; secondary:
 /// after its per-core runtime init in `rust_secondary_main`).  Release
@@ -76,7 +76,7 @@ pub fn lean_ready(core_id: usize) -> bool {
 ///    initializers run; the PE's runtime thread-state established), and
 /// 2. the kernel state the entries commit against is installed (the
 ///    boot core's `lean_kernel_main` install has happened-before, per
-///    the registered SM10.E ordering obligation).
+///    the registered SM10.1 ordering obligation).
 ///
 /// Marking a core whose runtime is not initialized is undefined
 /// behaviour at that core's next gated interrupt — exactly the hazard

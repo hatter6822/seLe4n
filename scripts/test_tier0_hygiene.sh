@@ -137,6 +137,46 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py"
 
+# WS-RR RR0.6: the SMP completion-phase theorem manifest.  The release-closure
+# plan carried its theorem total as a hand-summed literal that ran SM8 -> SM10
+# with no SM9 term, so the marker theorem and the "verify all 210 SM theorems
+# land at HEAD" gate would both have certified a number computed as if a landed
+# phase never happened -- and nothing would have broken when it did.  Lean now
+# derives the total from per-phase entries, which stops a *count* going stale;
+# it cannot see an inventory the manifest never mentions, which is exactly the
+# shape that produced the defect.  This gate discovers every theorem inventory
+# in the tree, over the comment-free code view, and fails when one is claimed
+# by no phase, claimed twice, or claimed with a count the tree does not
+# measure.  `run_check`, not `run_gate_check`: it reads the tree and has no
+# legitimate skip, so "could not run" would be a defect rather than an absent
+# emulator.  Self-test first, for the same reason the plan gate runs one: a
+# scanner that under-reaches reports PASS, and the whole point of this gate is
+# that a number nobody was checking looked fine for two minor versions.  The
+# suite witnesses both directions — every defect reproduced and caught, and a
+# witness surviving only inside a comment NOT discovered.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/generate_smp_theorem_manifest.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/generate_smp_theorem_manifest.py" --check
+
+# Every deferral cites the one register — the *Registered debt index* in
+# docs/WORKSTREAM_HISTORY.md.  A comment saying "no currently-active plan file
+# tracks it" is a deferral that opted out of it: self-describing and
+# unfindable at once.  Keeping that true by hand did not work —
+#
+# (These lines name the register, which is what the gate below requires; a
+# comment explaining what a check forbids must not trip the check, and citing
+# the register is the same remedy every real site takes rather than an
+# exemption carved out for the explanation.)
+# three review rounds on the cut that built the register each found the sweep
+# incomplete, every time because it matched one phrasing and the tree used
+# another.  `run_prose_check`, not `run_check`: the subject genuinely IS the
+# comment text, so this one must read the real tree rather than the
+# comment-free code view, which would strip the very sentences it looks for.
+# Self-test first, and it witnesses both directions: every phrasing the hand
+# sweep missed is caught, and `currently-active ASID` — the tree's one honest
+# false positive — is not.
+run_prose_check "HYGIENE" python3 "${SCRIPT_DIR}/check_deferral_registration.py" --self-test
+run_prose_check "HYGIENE" python3 "${SCRIPT_DIR}/check_deferral_registration.py"
+
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per
 # round — `.tcbResume`, `.send`, `.tcbSetPriority`/`.tcbSetMCPriority` — each

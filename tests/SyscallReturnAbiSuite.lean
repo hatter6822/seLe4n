@@ -39,7 +39,7 @@ that it fixed something observable.  What the same scenarios now assert:
   `Architecture.bit63Encoding_not_injective_on_badges`.
 * §7 — the blocked outcome: `.notificationWait` with no pending badge
   blocks the caller, and the boundary hands back `.blocks` — no frame
-  exists for the caller (plan §3.5; delivery is the SM10.E context
+  exists for the caller (plan §3.5; delivery is the SM10.1 context
   restore's).
 
 §2's decoder is a byte-faithful Lean mirror of the **new**
@@ -429,7 +429,7 @@ private def runFullWidthBadgeWitness : IO Unit := do
 caller blocks, and the boundary's outcome is `.blocks` — the badge does
 not exist yet, no frame may be written for the caller, and the staged
 frame is the unblocking transition's to write with delivery at the
-SM10.E context restore (plan §3.5). -/
+SM10.1 context restore (plan §3.5). -/
 private def runBlockedOutcomeWitness : IO Unit := do
   IO.println "-- §7 the blocked outcome: a wait with no pending badge blocks, no frame"
   match dispatchFromAbi SyscallId.notificationWait.toNat 0 0 witnessState with
@@ -811,7 +811,7 @@ private def runTraceFixtureCheck : IO Unit := do
 
 -- ============================================================================
 -- §9  RA.B.5b — the blocked orderings: the unblocking syscall stages the
---      woken thread's frame (delivery is the SM10.E context restore)
+--      woken thread's frame (delivery is the SM10.1 context restore)
 -- ============================================================================
 
 private def runBlockedWaiterStagingWitnesses : IO Unit := do

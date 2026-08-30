@@ -38,7 +38,7 @@ Use this file during planning and PR review to keep documentation status aligned
 
 | Validation area | Command | What it verifies |
 |---|---|---|
-| Hygiene + forbidden markers + fixture isolation | `./scripts/test_tier0_hygiene.sh` | No `sorry`/`axiom` debt in proof surface; no test contract leakage into production kernel modules; theorem-body spot-check; SHA-pinning regression guard. |
+| Hygiene + forbidden markers + fixture isolation | `./scripts/test_tier0_hygiene.sh` | No `sorry`/`axiom` debt in proof surface; no test contract leakage into production kernel modules; theorem-body spot-check; SHA-pinning regression guard; version sync; workstream-plan arithmetic; **SMP theorem-manifest drift** (`generate_smp_theorem_manifest.py --self-test` then `--check`: every theorem inventory in the tree is claimed by exactly one WS-SM phase, with the entry count the tree measures and a kind the gate validates rather than trusts; the *proposition* count is checked instead by the census inside `PhaseTheoremManifest.lean`, since a text scanner has no elaborator). |
 | Lean build soundness | `./scripts/test_tier1_build.sh` | Project compiles successfully via `lake build`. |
 | End-to-end executable trace fixture | `./scripts/test_tier2_trace.sh` | Runtime trace still satisfies fixture expectations and scenario/risk-tagged entries. |
 | Negative/adversarial malformed-state suite | `./scripts/test_tier2_negative.sh` | Malformed capability/object/IPC/VSpace/scheduler states fail safely with explicit modeled errors. |
@@ -73,5 +73,10 @@ For documentation/planning PRs:
   evidence, Tier 5 cross-language correspondence (nightly, experimental).
 - **Hardware target**: Raspberry Pi 5 (ARM64), SMP-on by default.
 - **Metrics**: live values in `docs/codebase_map.json` → `readme_sync`
-  (at v0.33.101: 286,841 production LoC, 64,078 test LoC, 9,601 proved
-  declarations; zero sorry/axiom).
+  (at v0.34.26: 289,335 production LoC across 288 files, 64,535 test LoC
+  across 69 suites, 9,680 proved declarations; zero sorry/axiom).
+  **This figure is hand-copied**: `scripts/sync_documentation_metrics.sh`
+  drives `README.md` and `docs/spec/SELE4N_SPEC.md` only, so this file — and
+  the eleven i18n READMEs and four GitBook chapters — drift silently between
+  hand updates.  Registered as WS-RR **RR7.29**; until it lands, treat any
+  metric here as of the version stamped beside it.

@@ -13,8 +13,8 @@ import SeLe4n.Model.FreezeProofs
 /-!
 # Q7-A: Frozen Kernel Monad and Core Primitives
 
-**STATUS: Experimental — post-1.0 hardening candidate; no currently-active
-plan file tracks integration. Not in production import chain.**
+**STATUS: Experimental — post-1.0 hardening candidate, registered in the *Registered debt index* (table C.1) in `docs/WORKSTREAM_HISTORY.md`,
+row 14. Not in production import chain.**
 
 AG8-D production decision (H3-PROOF-05): FrozenOps evaluated for H3 promotion.
 Decision: **defer as post-1.0 hardening candidate**. Rationale:
@@ -32,7 +32,8 @@ These modules implement the frozen-state kernel monad for a future
 architecture where syscall processing operates on immutable
 `FrozenSystemState` snapshots. Currently exercised by test suites only.
 Integration into the production API layer is a post-1.0 hardening candidate
-(no currently-active plan file tracks it) pending RPi5 benchmark data.
+(registered in `docs/WORKSTREAM_HISTORY.md`, Registered debt index, C.1)
+pending RPi5 benchmark data.
 (AE2-E / U-02 / AG8-D)
 
 **Subsystem status (W3-G):** FrozenOps has zero production consumers — the

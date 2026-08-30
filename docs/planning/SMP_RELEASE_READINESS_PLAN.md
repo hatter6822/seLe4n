@@ -1,12 +1,13 @@
 # WS-RR — SMP Release Readiness (pre-SM10 remediation)
 
-> **Status**: PLANNED — no sub-task started.
+> **Status**: IN FLIGHT — **RR0 LANDED at v0.34.26** (all eleven sub-tasks);
+> RR1..RR8 not started.
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Source register**: [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) (171 confirmed findings)
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 149 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 155 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -26,7 +27,7 @@ real — so this phase is remediation and completion, not new architecture.
 1. **RR0** — every open workstream carries a durable registry entry with a
    closure target, so no phase can close over work nobody is tracking.
 2. **RR1** — aarch64 code is compiled somewhere, so the 67 cfg-gated blocks
-   and 60 `asm!` sites SM10.E depends on are not first exercised at
+   and 60 `asm!` sites SM10.1 depends on are not first exercised at
    image-build time; the result also sizes SM10's estimate.
 3. **RR2** — the four live SMP dispatch arms carry `ipcInvariantFull`
    bundles, and cross-core SchedContext donation migrates the CBS replenish
@@ -58,11 +59,11 @@ placed to close them**, not by severity alone:
 | Security / soundness | 11 | RR4, RR5, RR6, RR7 | Become reachable when the boot path goes live |
 | High (other) | 12 | RR1..RR6 | Real incomplete work in phases marked complete |
 | Medium | 46 | RR7 (and RR0..RR6 where thematic) | Genuine gaps SM10 would otherwise absorb |
-| Low | 99 | RR0.11 triage → **SM10.A** or RR7 | Mostly documentation sync, but not uniformly — see below |
+| Low | 99 | RR0.11 triage → **SM10.2**, RR7.27–RR7.31, or the debt register | Triaged at v0.34.26 (register §7.1): 20 closed by the RR0 cut, 9 closed by registration, 18 already owned by a phase reworking the same artefact, **15 needed code and became RR7.27–RR7.31**, 37 are SM10.2's work-list |
 
 Most of the 99 lows are documentation drift, and those are deliberately **not**
 duplicated into this phase: re-homing a documentation sweep into a remediation
-phase, and then running SM10.A's sweep over the same files, is two passes for
+phase, and then running SM10.2's sweep over the same files, is two passes for
 one outcome.
 
 But the section is **not** uniformly doc-sync, and handing it wholesale to a
@@ -72,10 +73,14 @@ finding 98, for instance, is four per-core statistics accessors that are
 declared, wrapped and proven with zero consumers, which is an
 implement-the-improvement case, not a stale sentence; finding 8 in §4 is a
 `soundness` item that happens to carry low severity. RR0.11 therefore
-**triages** §7 before handing anything over: doc-sync rows go to SM10.A as its
+**triages** §7 before handing anything over: doc-sync rows go to SM10.2 as its
 work-list, and every row that needs code, a proof or a wiring change becomes a
 numbered RR7 row or an explicitly registered deferral with an owner. A low
 severity means the consequence is small, not that the remedy is a sentence.
+**Triage result at `v0.34.26`** (register §7.1, per-row): 20 closed by the RR0
+cut, 9 closed by registration in the debt register, 18 already owned by a phase
+reworking the same artefact, **15 routed to new rows RR7.27–RR7.31**, and 37
+to SM10.2's work-list — 20 + 9 + 18 + 15 + 37 = 99.
 
 ### 2.2 Why a separate phase rather than SM10 sub-tasks
 
@@ -127,7 +132,7 @@ Nothing else may overlap without re-reading the dependency list above.
 - SM0..SM9 landed (they are; see the register's per-plan verified evidence).
 - Tier 0..3 green at HEAD — true at `v0.34.3`.
 - Tier 4 gate accounting honest — landed at `v0.34.2`; the gates themselves
-  still cannot run until SM10.E.D1 produces an image, which is SM10's work
+  still cannot run until SM10.1.1 produces an image, which is SM10's work
   and deliberately not a WS-RR dependency.
 - No dependency on SM10. WS-RR closes first.
 
@@ -135,14 +140,14 @@ Nothing else may overlap without re-reading the dependency list above.
 
 | Phase | Scope (one line) | Subs | Est |
 |-------|------------------|------|-----|
-| RR0 | Registration and plan correction — nothing further is lost | 11 | S–M |
+| RR0 | Registration and plan correction — nothing further is lost.  **LANDED v0.34.26** | 11 | S–M |
 | RR1 | aarch64 compile coverage, plus the Rust HAL gate no other phase owns | 11 | M |
 | RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live | 19 | M–L |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 | L–XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
 | RR5 | Boot-path fail-open closure | 14 | M–L |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 | L |
-| RR7 | Medium-severity sweep | 26 | M |
+| RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 32 | M |
 | RR8 | Phase closure and hand-off to SM10 | 5 | S |
 
 ## 5. Sub-tasks
@@ -161,25 +166,37 @@ register is accurate. RR0.1–RR0.3 close audit blocker 1's registration half.
 | RR0.1 | Add an IPC de-threading workstream row to `docs/WORKSTREAM_HISTORY.md` recording per-slice state (D0/D2/D2′/D3/D4/D5/D7 closed; D1/D6/D8 open) with closure target RR3 | `docs/WORKSTREAM_HISTORY.md` | S |
 | RR0.2 | Add it to `SMP_RELEASE_CLOSURE_PLAN.md` §2 Dependencies | (1 file) | T |
 | RR0.3 | Add a CLAUDE.md standing-constraint bullet naming the two still-threaded conjuncts, so new code does not assume `ipcInvariantFull` is end-to-end machine-checked; mirror to `AGENTS.md` | `CLAUDE.md`, `AGENTS.md` | S |
-| RR0.4 | Rewrite `SMP_RELEASE_CLOSURE_PLAN.md` §1 phase goal against the real SM10.E scope (§2.2 of the register) | (1 file) | S |
+| RR0.4 | Rewrite `SMP_RELEASE_CLOSURE_PLAN.md` §1 phase goal against the real SM10.1 scope (§2.2 of the register) | (1 file) | S |
 | RR0.5 | Add the missing SM9 term to the §5 theorem tally | (1 file) | T |
 | RR0.6 | Replace the hand-summed `wsm_theorem_count` literal with a generated manifest, so the marker theorem cannot certify a stale number | `scripts/`, `SeLe4n/Kernel/Concurrency/` | M |
-| RR0.7 | Correct the SM10.C.4 archive list: add the SM9 plan, this plan, and the register; update the file-move count | (1 file) | T |
-| RR0.8 | Refresh the SM10.B sub-task table against the tree — five of six suites and two of three fixtures already exist | (1 file) | S |
+| RR0.7 | Correct the SM10.6.3 archive list: add the SM9 plan, this plan, and the register; update the file-move count | (1 file) | T |
+| RR0.8 | Refresh the SM10.3 sub-task table against the tree — five of six suites and two of three fixtures already exist | (1 file) | S |
 | RR0.9 | Register the remaining unregistered debt the debt sweep found, each with an owner and closure target | `docs/WORKSTREAM_HISTORY.md` | M |
 | RR0.10 | Fix SM4.C.11's circular closure target (the phase that owns it is marked LANDED); re-home it to a phase that can close it | (2 files) | S |
-| RR0.11 | Triage the register's §7 low-severity table by remedy, not by severity: rows fixed by editing prose become SM10.A's documentation work-list (cross-referenced from `SMP_RELEASE_CLOSURE_PLAN.md`); rows needing code, a proof or a wiring change become numbered RR7 rows or registered deferrals with owners. Handing all 99 to a documentation sweep would close the release over unwired proven structures | (2 files) | S |
+| RR0.11 | Triage the register's §7 low-severity table by remedy, not by severity: rows fixed by editing prose become SM10.2's documentation work-list (cross-referenced from `SMP_RELEASE_CLOSURE_PLAN.md`); rows needing code, a proof or a wiring change become numbered RR7 rows or registered deferrals with owners. Handing all 99 to a documentation sweep would close the release over unwired proven structures | (2 files) | S |
 
 **Acceptance**: `grep` for each open workstream name returns a hit in
 `docs/WORKSTREAM_HISTORY.md`; no plan in `docs/planning/` lacks a status
 header; the SM10 tally arithmetic includes every landed phase.
+
+**Met at `v0.34.26`.**  Every plan under `docs/planning/` is cited from
+`docs/WORKSTREAM_HISTORY.md` and carries a status header — five did not, and
+two (`SMP_PANIC_HANG_REMEDIATION_PLAN.md`,
+`WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`) were cited from nowhere.  The SM10
+tally is no longer arithmetic at all: `smpInventoriedTheoremCount` is a
+`List.sum` over one manifest entry per phase SM0..SM10, and
+`smpPhaseTheoremManifest_covers_all` makes an omitted phase fail elaboration —
+so "includes every landed phase" is now a proof obligation rather than a
+property of a sentence.  Two open workstreams that existed only as plan files,
+**WS-DT** and **WS-SL**, are registered with owners and closure targets, and
+the *Registered debt index* gives every deferred item a home.
 
 
 ### RR1 — aarch64 compile coverage
 
 Cheap, early, and it de-risks every later Rust change. No aarch64 target is
 compiled anywhere in the tree or CI today, so 67 cfg-gated blocks, 60 `asm!`
-sites and all three `.S` files have **zero** compile coverage. SM10.E would
+sites and all three `.S` files have **zero** compile coverage. SM10.1 would
 otherwise be the first thing that ever compiles them, while also being the
 first thing that links and boots them.
 
@@ -200,7 +217,7 @@ first thing that links and boots them.
 **Acceptance**: `cargo build --target aarch64-unknown-none -p sele4n-hal
 --features hw_target` passes in CI — a real code
 generation over all 60 `asm!` sites, not a type-check that stops before the
-backend; the `.S` files assemble; SM10.E's estimate is derived from a real
+backend; the `.S` files assemble; SM10.1's estimate is derived from a real
 compile rather than a guess.
 
 
@@ -294,7 +311,7 @@ The largest phase, and the one that closes the audit's most serious security
 finding: data and instruction aborts today set `x0` and return to the
 faulting instruction with `ELR_EL1` restored verbatim, so any user thread
 touching an unmapped page wedges its core forever. It is not exploitable at
-`v0.34.3` because nothing boots — it becomes reachable precisely when SM10.E
+`v0.34.3` because nothing boots — it becomes reachable precisely when SM10.1
 succeeds, which is the wrong moment to discover it.
 
 **What already exists.** The TCB carries a `faultHandler : Option CPtr`
@@ -352,7 +369,7 @@ split it into the block-the-sender half and the enqueue-on-handler half.
 ### RR5 — Boot-path fail-open closure
 
 Three latents that are unreachable today only because nothing boots. Each
-becomes live the moment SM10.E succeeds, so each must close before it.
+becomes live the moment SM10.1 succeeds, so each must close before it.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
@@ -422,7 +439,7 @@ would have caught that drives neither.
 | RR6.16 | Repoint the R-10 aggregator entry at the theorem that proves writer liveness; keep the safety theorem registered under its accurate name | `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` | S |
 | RR6.17 | Plan corrections: the retired-MCS design section, the D-1.9 landed row, the false §3.2.6.1 theorem statement, and the Appendix A commands that name a nonexistent script | `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | M |
 | RR6.18 | Retitle the plan: it is no longer post-v1.0.0; add an SM2.C-defer row to `docs/WORKSTREAM_HISTORY.md` with closure target RR6 — this phase, not the boot-path phase that precedes it | (2 files) | S |
-| RR6.19 | Register Track D of `SMP_FINE_LOCK_MIGRATION_PLAN.md` — the commit-model partitioning, which that plan seam-gates to SM10.E — as a named SM10.E dependency in `SMP_RELEASE_CLOSURE_PLAN.md` §2 and the debt register, so the one part of the fine-lock work WS-RR cannot land is tracked rather than absorbed silently | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`, `docs/WORKSTREAM_HISTORY.md` | S |
+| RR6.19 | Register Track D of `SMP_FINE_LOCK_MIGRATION_PLAN.md` — the commit-model partitioning, which that plan seam-gates to SM10.1 — as a named SM10.1 dependency in `SMP_RELEASE_CLOSURE_PLAN.md` §2 and the debt register, so the one part of the fine-lock work WS-RR cannot land is tracked rather than absorbed silently | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`, `docs/WORKSTREAM_HISTORY.md` | S |
 
 **Acceptance**: the deployed RwLock is the one the Lean spec describes; the
 Tier-5 oracle drives real locks; neither refinement theorem assumes its own
@@ -442,9 +459,13 @@ then the corollary, then the switch.
 
 ### RR7 — Medium-severity sweep
 
-Every confirmed medium finding, batched so each PR touches one subsystem.
-**50 findings**: the 46 in the register's §6 table, plus the four §4 rows
-RR7.1–RR7.4 that are remediation work rather than security fixes. Every other
+Every confirmed medium finding, batched so each PR touches one subsystem,
+plus the §7 low-severity rows whose remedy is code rather than prose.
+**65 findings**: the 45 still open of the register's §6 table — RR7.5's
+re-sequencing item closed at v0.34.36 — the four §4 rows RR7.1–RR7.4 that are
+remediation work rather than security fixes, the 15 §7 rows RR0.11's triage
+routed here (RR7.27–RR7.31), and the one uncovered lock domain the RR0 review
+round found with no owner that would close it (RR7.32). Every other
 §4 item is owned by the phase carrying its siblings — the unhandled VM-fault
 loop and the fault-return ABI convention by RR4, the cancellation-NI hypothesis
 by RR2, the RwLock/Rust refinement gap by RR6, the `suspend_thread_inner`
@@ -463,9 +484,9 @@ acceptance gate below can actually be checked against the work list.
 | RR7.2 | Satisfy the FFI unqualified boot identity-map claim, which the boot tables do not provide above 3 GiB — per the implement-the-improvement rule, extend the tables rather than qualify the claim (§4) | 1 | M |
 | RR7.3 | Extend the flagship "syscall entry implies capability held" theorem to the live checked dispatch path; it covers only the legacy path today (§4) | 1 | L |
 | RR7.4 | Give the `_atomic_under_lockSet` family operation-specific content: its atomicity half is today a `rfl` instance of a body-agnostic lemma, and five `lockSet_observer_atomic_on` instantiations are missing (§4) | 1 | M |
-| RR7.5 | SM10 plan-text corrections: §1's false "all substantive SMP work is complete" phase goal, and the three `contextRestoreSeamLive` prerequisites absent from SM10's dependencies, sub-tasks and acceptance gate | 2 | S |
+| RR7.5 | Add SM10's three `contextRestoreSeamLive` prerequisites, absent from its dependencies, sub-tasks and acceptance gate.  This row's two other items are **closed**: §1's false "all substantive SMP work is complete" phase goal (RR0.4, v0.34.26) and the sub-phase re-sequencing (v0.34.36 — SM10 is now numbered SM10.1..SM10.6 in execution order) | 1 | M |
 | RR7.6 | Production `native_decide`: six uses are live in Lean at HEAD while §5's release-note template claims zero. Per implement-the-improvement, replace them with proofs rather than weaken the claim | 1 | L |
-| RR7.7 | Make the v1.0.0 "per-object reader-writer fine locks" claim **true**, do not reconcile the text to what ships. RR6 refines and deploys the queued lock primitive but performs none of SM3.C.9's exported-body migration, so the claim stays false after it. This row owns Tracks B and C of `SMP_FINE_LOCK_MIGRATION_PLAN.md` — the `capTransferReceiverCnode` footprint closure and the object-domain/dispatch-entry `withLockSet` wrapping of the `@[export]` bodies — and RR6.19 below records what Track D still owes SM10.E. Weakening the capability text instead is the outcome the implement-the-improvement rule forbids | 1 | XL |
+| RR7.7 | Make the v1.0.0 "per-object reader-writer fine locks" claim **true**, do not reconcile the text to what ships. RR6 refines and deploys the queued lock primitive but performs none of SM3.C.9's exported-body migration, so the claim stays false after it. This row owns Tracks B and C of `SMP_FINE_LOCK_MIGRATION_PLAN.md` — the `capTransferReceiverCnode` footprint closure and the object-domain/dispatch-entry `withLockSet` wrapping of the `@[export]` bodies — and RR6.19 below records what Track D still owes SM10.1. Weakening the capability text instead is the outcome the implement-the-improvement rule forbids | 1 | XL |
 | RR7.8 | Cancellation/timeout error-frame staging, unimplemented at HEAD and owed before the context-restore seam flips | 1 | M |
 | RR7.9 | Boot-path sweep mediums | 5 | M |
 | RR7.10 | Rust HAL mediums | 4 | M |
@@ -485,12 +506,22 @@ acceptance gate below can actually be checked against the work list.
 | RR7.24 | SMP foundations medium | 1 | S |
 | RR7.25 | Master plan medium | 1 | S |
 | RR7.26 | Doc-sync medium | 1 | S |
+| RR7.27 | Unwired proven structures (§7): the four per-core statistics accessors that are declared, wrapped and proven with zero consumers, and `ipcUnwrapCaps`'s dead `senderCspaceRoot`, whose own registered closure target passed without it | 2 | M |
+| RR7.28 | Plan-named artefacts that do not exist (§7): `donation_perCore_consistent`, the two unresolvable SM8 theorem names — one of them cited from a **live docstring** — `notification_waiters_nodup`, the SM0-cited Tier-0 gate script, and the four `CLAIM_EVIDENCE_INDEX.md` identifiers.  Per implement-the-improvement each is authored, not struck from the catalogue | 5 | L |
+| RR7.29 | Gate coverage the claims assume (§7): the nine `dev_history` cross-references still in production sources plus the gate that would enforce their absence; the three declared `lean_exe` targets no gate compiles; the SMP-M1 surface difference no gate or phase owns; and the documentation-metrics sync, which covers two files while the sync matrix claims the transitive set — eleven i18n READMEs and four GitBook chapters carry `v0.33.101`-era metrics | 4 | M |
+| RR7.30 | Boot-core-pinned thread-state classification (§7): `inferThreadState` / `syncThreadStates` / `threadStateConsistent` read `bootCoreId`, so a thread running on a secondary core classifies as `.Inactive` | 1 | M |
+| RR7.31 | Test-surface corrections (§7): the D-1 admission-order `decide` fixtures the RwLock gate asks for and the suite lacks; the `r4a_`/`r4c_` test identifiers that encode sub-task codes against the plan's own self-certified naming rule; and the vacuous `trap.rs` SVC test with its stale "pre-FFI stub" prose | 3 | M |
+| RR7.32 | Splice-neighbour queue ownership (`UncoveredLockDomain.queueOwnershipProtocol`): `queueOwnership_violated_by_tcbSetPriority` states the violation as a `¬`, and the domain had no owner that would close it — RR0.9 pointed it at RR7.7's fine-lock Track B, which closes `capTransferReceiverCnode` and `cdtNodeAllocation` but never touches splice neighbours.  Either extend the `tcbSetPriority` footprint to declare the queue-owning locks, or hold the endpoint lock across the splice; the `UncoveredLockDomain` entry is deleted only when the domain is actually covered | 1 | M |
 
-**Acceptance**: all **50** findings this phase owns — the 46 in the register's
-§6 table and the four §4 items in RR7.1–RR7.4 — are closed or carry an
-explicit, registered deferral with a closure target. A medium may be deferred;
-it may not be dropped, and the four §4 rows may not be left open on the
-strength of the §6 table alone.
+**Acceptance**: all **65** findings this phase owns — the 46 in the register's
+§6 table, the four §4 items in RR7.1–RR7.4, and the 15 §7 rows RR0.11's triage
+routed here (RR7.27–RR7.31) — are closed or carry an explicit, registered
+deferral with a closure target. A medium may be deferred; it may not be
+dropped, and neither the four §4 rows nor the 15 §7 rows may be left open on
+the strength of the §6 table alone. **A low severity means the consequence is
+small, not that the remedy is a sentence**: every row in RR7.27–RR7.31 needs
+code, a proof, a test or a wiring change, which is why the triage did not hand
+them to a documentation sweep.
 
 
 ### RR8 — Phase closure and hand-off to SM10
@@ -508,7 +539,7 @@ strength of the §6 table alone.
 ### 6.1 What each phase proves
 
 - **RR1** — every aarch64 code path compiles, so no cfg-gated block or `asm!`
-  site reaches SM10.E unexercised.
+  site reaches SM10.1 unexercised.
 - **RR2** — every live SMP dispatch arm carries a `_preserves_ipcInvariantFull`
   theorem; both donation paths preserve the SM5.H affinity invariant.
 - **RR3** — `ipcInvariantFull` holds end to end: the top-level dispatch
@@ -542,7 +573,7 @@ PASS — the contract landed at `v0.34.2` and pinned by
 | RR4 fault IPC is larger than XL and slips the phase | HIGH | HIGH | Split at the sub-task boundaries §RR4 names. Partial delivery is **not** safe: RR4.9's no-handler policy is unreachable until RR4.21 wires the abort arms and RR4.23 routes the Rust trap path to them, so until both land aborts still take the old `.error .vmFault` path and return to the faulting instruction. If RR4 slips, the release waits |
 | RR3 de-threading blocks on an ordering cycle between invariant modules | MED | HIGH | RR3.2 addresses ordering before any bundle edit; the per-transition establishers already exist |
 | RR6.11 bisimulation does not close | MED | MED | Land the trace-shape predicate independently so the composition has something to consume; RR6 stays open and the release waits — deferring the deployed-lock corollary past v1.0.0 would ship the exact gap this phase exists to close |
-| RR1 surfaces a large volume of aarch64 compile errors | MED | MED | Expected and desirable — it is cheaper here than at SM10.E; RR1.2 and RR1.3 are sized L for this reason |
+| RR1 surfaces a large volume of aarch64 compile errors | MED | MED | Expected and desirable — it is cheaper here than at SM10.1; RR1.2 and RR1.3 are sized L for this reason |
 | Repointing the FFI pool at `QueuedRwLock` (RR6.6) regresses performance | LOW | MED | The Tier-5 oracle covers both implementations after RR6.3; keep `rw_lock.rs` until measurements land |
 | Two phases edit the trap seam concurrently | MED | MED | §2.3 sequences RR4 and RR5 apart in the same files |
 | Medium findings are quietly dropped rather than deferred | MED | LOW | RR7's acceptance gate requires a registered deferral, not silence |

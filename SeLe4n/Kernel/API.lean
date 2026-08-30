@@ -1124,7 +1124,7 @@ register_option sele4n.debug.noisyResolution : Bool := {
     property between the two variants; the fully-general form (equal caps
     for all inputs) requires a fold-level induction that is tractable but
     beyond the AN7-E landing scope and recorded as a post-1.0 hardening
-    candidate; no currently-active plan file tracks it. -/
+    candidate; registered in `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C.1). -/
 theorem resolveExtraCapsDetailed_empty
     (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (granted : Bool) (st : SystemState) :
     resolveExtraCapsDetailed cspaceRoot #[] depth granted st = ((#[], false), st) := by
@@ -1827,7 +1827,7 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
                 -- WS-RA RA.B.5b: a rendezvous woke the blocked receiver with the
                 -- message in its `pendingMessage`; stage its return frame now
                 -- (its own boundary crossing ended `.blocks` — delivery is the
-                -- SM10.E context restore).  Inert when the send parked instead.
+                -- SM10.1 context restore).  Inert when the send parked instead.
                 -- PR #866 round-2: the frame's `extraCaps` is the transfer
                 -- summary's INSTALLED count — a grant-denied or slot-exhausted
                 -- transfer reports zero, never the requested `msg.caps.size`.
@@ -2069,7 +2069,7 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           -- `.blockedOnReceive` TCB delivers the badge into its
           -- `pendingMessage`; stage the woken thread's return frame (its own
           -- wait blocked with no frame — §3.5's split, now closed on the
-          -- staging side; delivery is the SM10.E context restore).  The two
+          -- staging side; delivery is the SM10.1 context restore).  The two
           -- targets are mutually exclusive (the bound path requires an empty
           -- wait queue), and each stager is inert when its target was not
           -- woken.
@@ -2624,7 +2624,7 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
   -- ordinary arm owes its woken threads, this arm owes them too.  Dropping the
   -- stash clear would leave a woken bound receiver holding a server-first reply
   -- stash the ordinary path clears; dropping the stagers would leave the woken
-  -- thread's badge undeliverable at the SM10.E context restore.
+  -- thread's badge undeliverable at the SM10.1 context restore.
   --
   -- Neither domain is an operand.  The source is the *actor's* — read off the
   -- subject the executing core is running — and the two destinations are the
