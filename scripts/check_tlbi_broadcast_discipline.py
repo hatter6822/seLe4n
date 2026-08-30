@@ -261,7 +261,19 @@ def resolve_concat(code: str) -> tuple[str, list[str]]:
             if literal:
                 text += literal.group(1)
                 continue
-            if not text.rstrip() or text.rstrip().endswith((";", "\\n", "\n")):
+            # A non-literal is replaced by a PLACEHOLDER token rather than
+            # dropped.  `concat!("tlbi ", stringify!(vmalle1))` expands to
+            # `"tlbi vmalle1"` and emits; dropping the argument left
+            # `"tlbi "` in the view, which the mnemonic regex -- needing a
+            # letter after the space -- did not match, so an emission whose
+            # OPERAND comes from a macro was invisible (PR #883 review
+            # round 8).  The placeholder keeps the statement's token shape,
+            # so `tlbi <something>` still reads as a `tlbi` and
+            # `concat!("mrs {}, ", $reg)` still reads as an `mrs`.
+            text += "x"
+            if not text[:-1].rstrip() or text[:-1].rstrip().endswith((";", "\\n", "\n")):
+                # ... and where the non-literal could supply the MNEMONIC
+                # itself, no placeholder can stand in for it: report.
                 unresolvable = True
         if unresolvable:
             lineno = out.count("\n", 0, match.start()) + 1
@@ -566,58 +578,66 @@ def check_local_wrapper_inventory(root: str) -> list[str]:
 
 
 def local_ffi_exports(root: str) -> set[str]:
-    """`ffi_tlbi_*` exports whose bodies reach a LOCAL wrapper.
+    """`ffi_tlbi_*` exports that transitively reach a LOCAL wrapper.
 
-    Derived from `ffi.rs` rather than listed, so a new local export cannot
-    be added without its Lean binding being checked.  `ffi_tlbi_for_sharing`
-    routes through the broadcast wrappers and is excluded by construction.
+    CRATE-WIDE, not per module.  A previous cut computed the closure inside
+    `ffi.rs` only and argued that a call *out* of the module was covered by
+    the Rust allowlist check on the callee's module.  That reasoning was
+    wrong, and the review was right to press it: the allowlist establishes
+    that `helpers::local_flush` may reference a local wrapper -- it says
+    nothing about an FFI export that re-exposes that helper to Lean, which
+    is a different obligation on a different symbol.  So
+    `ffi_tlbi_sneaky -> helpers::local_flush -> tlbi_vmalle1` slipped
+    through with its Lean binding unregistered (PR #883 review round 8).
+
+    The call graph now spans every `.rs` file under the HAL's `src/`.
+    Edges are resolved by bare callee name, which OVER-approximates when
+    two modules define the same function name: an over-approximation marks
+    an export local that might not be, which fails closed -- the safe
+    direction, and the one this gate should err in.
     """
-    text = read(root, FFI_MODULE)
-    # TWO views, byte-aligned so the offsets are interchangeable. The
-    # signature is matched in the string-KEEPING view because `extern "C"`
-    # carries a string literal that is part of the language construct --
-    # blanking it makes the signature unmatchable, which is fail-open here
-    # since an unfound export is an unchecked one. The body is read in the
-    # string-blanked view, because a wrapper name inside a literal is a
-    # mention rather than a call.
-    signatures = rust_code_view.code(text)
-    code = rust_code_view.code_no_strings(text)
-    bodies = rust_code_view.fn_bodies(text)
-    spans = {name: (start, end) for name, start, end in bodies}
-    # TRANSITIVE, not just the export's own body.  An export that reaches a
-    # local wrapper through a helper -- `ffi_tlbi_by_page` -> `helper` ->
-    # `tlbi_vale1` -- has no wrapper name in its own body, so a one-level
-    # scan omitted it and its Lean binding went unregistered and unchecked
-    # (PR #883 review round 6).  Reachability is computed over the call
-    # graph of functions defined in this module; a call OUT of the module
-    # that itself reaches a wrapper is covered by the Rust allowlist check
-    # on that module, which is why the closure can stop at the boundary.
-    reaches: dict[str, set[str]] = {}
-    direct: set[str] = set()
-    for name, (start, end) in spans.items():
-        body = code[start:end]
-        if LOCAL_WRAPPER_RE.search(body):
-            direct.add(name)
-        reaches[name] = {
+    bodies: dict[str, tuple[str, str]] = {}
+    signatures_by_file: dict[str, str] = {}
+    for rel in walk(root, RUST_SRC, (".rs",)):
+        text = read(root, rel)
+        code = rust_code_view.code_no_strings(text)
+        signatures_by_file[rel] = rust_code_view.code(text)
+        for name, start, end in rust_code_view.fn_bodies(text):
+            # A duplicate name across modules keeps the longer body; the
+            # over-approximation is deliberate (see the docstring).
+            existing = bodies.get(name)
+            candidate = code[start:end]
+            if existing is None or len(candidate) > len(existing[1]):
+                bodies[name] = (rel, candidate)
+
+    direct = {
+        name
+        for name, (_rel, body) in bodies.items()
+        if LOCAL_WRAPPER_RE.search(body)
+    }
+    calls = {
+        name: {
             callee
-            for callee in spans
+            for callee in bodies
             if callee != name and re.search(rf"\b{re.escape(callee)}\s*\(", body)
         }
+        for name, (_rel, body) in bodies.items()
+    }
 
     reaching = set(direct)
     changed = True
     while changed:
         changed = False
-        for name, callees in reaches.items():
+        for name, callees in calls.items():
             if name not in reaching and callees & reaching:
                 reaching.add(name)
                 changed = True
 
     local: set[str] = set()
-    for match in _FFI_TLBI_EXPORT_RE.finditer(signatures):
-        name = match.group(1)
-        if name in reaching:
-            local.add(name)
+    for signatures in signatures_by_file.values():
+        for match in _FFI_TLBI_EXPORT_RE.finditer(signatures):
+            if match.group(1) in reaching:
+                local.add(match.group(1))
     return local
 
 
@@ -1300,6 +1320,47 @@ def self_test() -> int:
             False,
             check="containment",
             mutation="none",
+        )
+    )
+
+    # An FFI export reaching a wrapper through a helper in ANOTHER module.
+    # The helper is registered, so the Rust allowlist is satisfied -- and
+    # that says nothing about the export re-exposing it to Lean.
+    cross_module_ffi = fixture()
+    cross_module_ffi[f"{RUST_SRC}/helpers.rs"] = (
+        "pub fn local_flush() {\n    crate::tlb::tlbi_vmalle1();\n}\n"
+    )
+    cross_module_ffi[FFI_MODULE] = BASE_FFI_RS + (
+        '\n#[no_mangle]\npub extern "C" fn ffi_tlbi_sneaky() {\n'
+        "    crate::helpers::local_flush();\n}\n"
+    )
+    cross_module_ffi[ALLOWLIST] = (
+        BASE_ALLOWLIST + "rust/sele4n-hal/src/helpers.rs::local_flush\n"
+    )
+    cases.append(
+        Case(
+            "an FFI export reaching a wrapper in another module is still local",
+            cross_module_ffi,
+            True,
+            check="lean_binding_inventory",
+            mutation="preserving",
+        )
+    )
+
+    # `concat!("tlbi ", stringify!(vmalle1))` expands to a real
+    # instruction; the mnemonic is literal and only the OPERAND is a macro.
+    stringify_operand = fixture()
+    stringify_operand[f"{RUST_SRC}/vspace.rs"] = (
+        "\nfn unmap_page() {\n"
+        '    unsafe { core::arch::asm!(concat!("tlbi ", stringify!(vmalle1))); }\n}\n'
+    )
+    cases.append(
+        Case(
+            "a concat! whose operand is a macro is still an emission",
+            stringify_operand,
+            True,
+            check="containment",
+            mutation="preserving",
         )
     )
 

@@ -358,6 +358,41 @@ def body_execs_arguments(body: str) -> bool:
     return False
 
 
+def matching_shell_brace(script: str, opened: int) -> int | None:
+    """Offset of the `}` closing the block at `opened`, ignoring quoted ones.
+
+    QUOTE-AWARE, and that is load-bearing: a raw brace counter reading
+    `log_only() { echo "{"; }` never closes the body, absorbs the NEXT
+    function into it, and then classifies the logger as executing because
+    some later function contains `"$@"` (PR #883 review round 8).  The
+    shell splitter was made quote-aware two rounds earlier and this counter,
+    six lines away, was left raw -- the same sibling-site miss again.
+
+    Returns None on an unbalanced block, which drops the candidate rather
+    than guessing: an unrecognised wrapper means `cargo` behind it is not
+    resolved, and the check reports instead of passing.
+    """
+    depth, index, quote = 0, opened, None
+    while index < len(script):
+        char = script[index]
+        if quote is not None:
+            if char == "\\" and quote == '"':
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+        elif char in ("'", '"'):
+            quote = char
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+        index += 1
+    return None
+
+
 def executing_wrappers(script: str) -> dict[str, int]:
     """Shell functions in `script` that exec `"$@"`, and how much they shift.
 
@@ -374,15 +409,9 @@ def executing_wrappers(script: str) -> dict[str, int]:
     wrappers: dict[str, int] = {}
     for match in _SHELL_FUNCTION_RE.finditer(script):
         body_start = script.index("{", match.start())
-        depth, index = 0, body_start
-        while index < len(script):
-            if script[index] == "{":
-                depth += 1
-            elif script[index] == "}":
-                depth -= 1
-                if depth == 0:
-                    break
-            index += 1
+        index = matching_shell_brace(script, body_start)
+        if index is None:
+            continue
         body = script[body_start:index]
         if not body_execs_arguments(body):
             continue
@@ -1852,6 +1881,33 @@ def self_test() -> int:
         Case(
             "a positional test-name filter is not oracle coverage",
             name_filtered,
+            True,
+            check="host_lane",
+            mutation="preserving",
+        )
+    )
+
+    # A logging wrapper whose body contains a quoted `{`: a raw brace
+    # counter never closes it, absorbs the next function, and inherits its
+    # `"$@"`.  Both functions and both bodies are present and unchanged.
+    quoted_brace = baseline()
+    quoted_brace[HOST_LANE] = (
+        "#!/usr/bin/env bash\n"
+        "log_only() {\n"
+        "    shift\n"
+        '    echo "{"\n'
+        '    echo "$@"\n'
+        "}\n"
+        "runner() {\n"
+        "    shift\n"
+        '    "$@"\n'
+        "}\n"
+        'log_only "Unit tests" cargo test --all --features std,host_tools\n'
+    )
+    cases.append(
+        Case(
+            "a quoted brace does not merge a logger with the next function",
+            quoted_brace,
             True,
             check="host_lane",
             mutation="preserving",
