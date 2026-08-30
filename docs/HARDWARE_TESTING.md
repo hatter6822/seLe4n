@@ -528,10 +528,15 @@ checklist before tagging:
 
 - [ ] **Hardware (RPi 5 board or QEMU virt) — required to tag v1.0.0,
       recommended for any other release:**
-  - [ ] `SELE4N_REQUIRE_GATES=1 ./scripts/test_nightly.sh` completes with
-        every Tier-4 acceptance gate **executed**, not skipped. Run it after
-        SM10.E.D1 produces the bootable image; before that image exists the
-        gates report NOT RUN and this box cannot be ticked.
+  - [ ] `NIGHTLY_ENABLE_EXPERIMENTAL=1 SELE4N_REQUIRE_GATES=1
+        ./scripts/test_nightly.sh` completes with every Tier-4 acceptance gate
+        **executed**, not skipped. Both variables are required:
+        `NIGHTLY_ENABLE_EXPERIMENTAL=1` is what makes Tier 4 run at all, and
+        without it the tier reports NOT RUN and strict mode fails — which is
+        the intended behaviour, since a strict run that never reached the
+        gates certifies nothing. Run this after SM10.E.D1 produces the
+        bootable image; before that image exists the gates report NOT RUN and
+        this box cannot be ticked.
   - [ ] §4.1 — TLB+Cache coherency (AN9-A)
   - [ ] §4.2 — TLBI bracket audit (AN9-B)
   - [ ] §4.3 — `suspendThread` atomicity (AN9-D)

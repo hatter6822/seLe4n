@@ -15,10 +15,20 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
-**Current cut: the SM5 runtime-seam completion LANDED (v0.34.1) — every
+**Current workstream: WS-RR (SMP Release Readiness) — PLANNED, open.
+SM10 is BLOCKED on it and must not start until RR8 closes.**
+
+The pre-SM10 completeness audit (`docs/planning/UNFINISHED_SMP_WORK.md`,
+audited at v0.34.3) found the project not ready to begin SM10: three findings
+block starting it, SM10's §1 scope statement is false against the tree, and a
+set of fail-open latents become reachable exactly when the boot path goes live.
+WS-RR closes that work first — 149 sub-tasks across RR0..RR8, planned in
+[`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
+See the **WS-RR** section below for the phase table and the three blockers.
+
+*Preceding cut*: the SM5 runtime-seam completion LANDED (v0.34.1) — every
 seam the SM5 docstrings promised between the verified per-core scheduler
-and the hardware IRQ path is closed.  SM10 (release closure → v1.0.0) is
-next.**
+and the hardware IRQ path is closed.
 
 A pre-SM10 sweep of the WS-SM headline findings (SMP-C1..C4, SMP-H1..H4,
 the MED/LOW set) confirmed every closure in place — and surfaced three
@@ -7114,7 +7124,7 @@ path goes live. WS-RR closes that work first, so SM10 can be the release-closure
 phase it was scoped as. **SM10 is BLOCKED on WS-RR** and must not open until
 RR8 closes.
 
-146 sub-tasks across nine phases, numbered in execution order:
+149 sub-tasks across nine phases, numbered in execution order:
 
 | Phase | Scope | Subs |
 |-------|-------|------|
@@ -7125,7 +7135,7 @@ RR8 closes.
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 |
 | RR5 | Boot-path fail-open closure | 14 |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 |
-| RR7 | Medium-severity sweep | 23 |
+| RR7 | Medium-severity sweep | 26 |
 | RR8 | Phase closure and hand-off to SM10 | 5 |
 
 **The three blockers**: the IPC de-threading workstream is registered in no

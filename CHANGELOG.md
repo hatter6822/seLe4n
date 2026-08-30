@@ -1,3 +1,45 @@
+## v0.34.15 — the strict release run never reached the gates it was strict about; Codex review round 10
+
+Four findings. Two are new; two are residue of this PR's own earlier fixes,
+including one edit that was silently lost.
+
+**The strict Tier-4 command certified nothing (P1).** v0.34.11 added a v1.0.0
+checklist item reading `SELE4N_REQUIRE_GATES=1 ./scripts/test_nightly.sh` — but
+without `NIGHTLY_ENABLE_EXPERIMENTAL=1`, `test_tier4_nightly_candidates.sh`
+takes its disabled branch, calls `finalize_report` with `SKIP_COUNT` at zero,
+and exits 0 before reaching the boot-check runner. Strict mode saw no skipped
+gates to promote, so the box was tickable with **zero** Tier-4 acceptance gates
+executed — the same vacuous acceptance the §6 fix existed to close, reproduced
+inside it.
+
+Fixed at both ends. The checklist now sets both variables. More importantly the
+disabled branch `record_skip`s instead of exiting 0, so the wrong command
+cannot quietly pass either: disabled now exits **77** (NOT RUN) by default and
+**fails** under `SELE4N_REQUIRE_GATES=1`. Verified both.
+
+**`What's next` still sent contributors past the blocker.** v0.34.13 added the
+WS-RR opening entry, but the same file's `What's next` — the section
+contributors are explicitly told to consult for current priorities — still said
+the SM5 cut was current and SM10 was next. Registering a blocker in a section
+nobody is directed to read is half a registration. It now names WS-RR as the
+current workstream and SM10 as blocked.
+
+**RR7's arithmetic was internally impossible.** The phase claimed 49 findings
+while owning 46 §6 rows plus four §4 rows — 50 — and still referred to "the §4
+three". This was an edit lost in round 8: the script carrying it aborted on an
+unrelated assertion before writing, and the follow-up did not re-include it. Now
+50 throughout, with §4 ownership stated per item rather than as a total.
+
+**RR7.5 bundled five subsystems.** Register findings 18–22 share a source plan
+but not a remedy surface: two are SM10 plan-text corrections, one is six live
+`native_decide` uses in production Lean, one is the fine-lock capability claim,
+one is cancellation/timeout error-frame staging. Split into RR7.5–RR7.8.
+
+Counts resynced to 149 (RR7 26) across the plan, register, history, `CLAUDE.md`
+and `AGENTS.md`; every `RR<n>.<m>` reference resolves to a real row.
+
+Refs: docs/HARDWARE_TESTING.md §6 pre-tag checklist
+
 ## v0.34.14 — three documented contracts that the behavior had outgrown; Codex review round 9
 
 All three are places where a change landed and its description did not follow.

@@ -14,9 +14,16 @@ parse_common_args "$@"
 cd "${REPO_ROOT}"
 
 if [[ "${NIGHTLY_ENABLE_EXPERIMENTAL:-0}" != "1" ]]; then
-  log_section "META" "Tier 4 candidates staged but not enabled (set NIGHTLY_ENABLE_EXPERIMENTAL=1 to run)."
   log_section "META" "Staged candidates: extended determinism seed probe + full suite replay + WS-SM SMP boot-check stub."
   log_section "META" "Note: basic determinism validation is now mandatory in Tier 2 (WS-I1/R-02)."
+  # Recorded, not merely announced.  Exiting 0 here made the whole tier
+  # invisible: `SELE4N_REQUIRE_GATES=1 ./scripts/test_nightly.sh` — the strict
+  # run a release is supposed to certify on — returned clean without ever
+  # reaching the boot-check runner, because there were no skipped gates to
+  # promote.  A caller who asks for strict gates and gets a silent pass over a
+  # tier that never ran is exactly the vacuous acceptance this status exists to
+  # prevent, so a disabled tier reports NOT RUN and strict mode fails on it.
+  record_skip "META" "Tier 4 candidates not enabled (set NIGHTLY_ENABLE_EXPERIMENTAL=1 to run them)"
   finalize_report
 fi
 

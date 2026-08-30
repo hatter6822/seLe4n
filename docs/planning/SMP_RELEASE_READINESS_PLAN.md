@@ -6,7 +6,7 @@
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 146 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 149 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -110,8 +110,8 @@ twice. The dependencies that produced this order:
 - **RR6 is independent** of everything above; it sits late because nothing
   depends on it, not because it is optional.
 - **RR7 is not independent, despite being a sweep.** Several of its rows own
-  findings whose primary owner is an earlier phase — RR7.16 the RwLock-deferred
-  mediums that RR6 implements, RR7.19 the IPC de-threading medium RR3 closes,
+  findings whose primary owner is an earlier phase — RR7.19 the RwLock-deferred
+  mediums that RR6 implements, RR7.22 the IPC de-threading medium RR3 closes,
   and its cross-core IPC batches touch RR2 and RR3 surfaces. It therefore runs
   **after** those phases, and its overlapping rows are verification that the
   owning phase actually closed the finding, not a second attempt at it.
@@ -142,7 +142,7 @@ Nothing else may overlap without re-reading the dependency list above.
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
 | RR5 | Boot-path fail-open closure | 14 | M–L |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 | L |
-| RR7 | Medium-severity sweep | 23 | M |
+| RR7 | Medium-severity sweep | 26 | M |
 | RR8 | Phase closure and hand-off to SM10 | 5 | S |
 
 ## 5. Sub-tasks
@@ -442,11 +442,15 @@ then the corollary, then the switch.
 ### RR7 — Medium-severity sweep
 
 Every confirmed medium finding, batched so each PR touches one subsystem.
-**49 findings**: the 46 in the register's §6 table, plus three the register
-classifies under §4 (security) that are remediation work rather than security
-fixes and so land here. The other two §4 mediums are owned by the phases that
-carry their siblings — the cancellation-NI hypothesis by RR2, the
-fault-return ABI convention by RR4 — and are not counted again here.
+**50 findings**: the 46 in the register's §6 table, plus the four §4 rows
+RR7.1–RR7.4 that are remediation work rather than security fixes. Every other
+§4 item is owned by the phase carrying its siblings — the unhandled VM-fault
+loop and the fault-return ABI convention by RR4, the cancellation-NI hypothesis
+by RR2, the RwLock/Rust refinement gap by RR6, the `suspend_thread_inner`
+bracket and the `debug_assert!` tripwires by RR5, and the stale `trap.rs`
+comment with low finding 96 — and none is counted twice. The ownership is
+stated per item rather than as a total because two §4 rows had no owner until
+review found them.
 
 The register's §6 table remains the authoritative per-item list; the batches
 below say who owns what, and their counts sum to the register's totals so the
@@ -458,31 +462,34 @@ acceptance gate below can actually be checked against the work list.
 | RR7.2 | Satisfy the FFI unqualified boot identity-map claim, which the boot tables do not provide above 3 GiB — per the implement-the-improvement rule, extend the tables rather than qualify the claim (§4) | 1 | M |
 | RR7.3 | Extend the flagship "syscall entry implies capability held" theorem to the live checked dispatch path; it covers only the legacy path today (§4) | 1 | L |
 | RR7.4 | Give the `_atomic_under_lockSet` family operation-specific content: its atomicity half is today a `rfl` instance of a body-agnostic lemma, and five `lockSet_observer_atomic_on` instantiations are missing (§4) | 1 | M |
-| RR7.5 | SM10 release-closure plan mediums | 5 | M |
-| RR7.6 | Boot-path sweep mediums | 5 | M |
-| RR7.7 | Rust HAL mediums | 4 | M |
-| RR7.8 | Syscall return ABI mediums | 4 | M |
-| RR7.9 | Per-object lock mediums | 4 | M |
-| RR7.10 | Fine-lock migration mediums | 3 | M |
-| RR7.11 | TLB shootdown mediums | 3 | M |
-| RR7.12 | Debt-register mediums | 3 | M |
-| RR7.13 | Cross-core IPC mediums | 2 | S |
-| RR7.14 | Declassification mediums | 2 | S |
-| RR7.15 | Panic-hang remediation mediums | 2 | S |
-| RR7.16 | RwLock-deferred mediums | 2 | S |
-| RR7.17 | Implement-the-improvement sweep: route the per-core scheduler entries through the HAL context-switch seam | 1 | S |
-| RR7.18 | Implement-the-improvement sweep: the DeviceTree-to-`PlatformConfig` boot bridge — a platform/boot surface unrelated to the row above, so its own task | 1 | S |
-| RR7.19 | IPC de-threading medium | 1 | S |
-| RR7.20 | Reply objects medium | 1 | S |
-| RR7.21 | SMP foundations medium | 1 | S |
-| RR7.22 | Master plan medium | 1 | S |
-| RR7.23 | Doc-sync medium | 1 | S |
+| RR7.5 | SM10 plan-text corrections: §1's false "all substantive SMP work is complete" phase goal, and the three `contextRestoreSeamLive` prerequisites absent from SM10's dependencies, sub-tasks and acceptance gate | 2 | S |
+| RR7.6 | Production `native_decide`: six uses are live in Lean at HEAD while §5's release-note template claims zero. Per implement-the-improvement, replace them with proofs rather than weaken the claim | 1 | L |
+| RR7.7 | Reconcile the v1.0.0 "per-object reader-writer fine locks" capability claim with what actually ships: SM3.C.9 is registered-deferred and live kernel entry is one global ticket lock. Depends on what RR6 lands | 1 | M |
+| RR7.8 | Cancellation/timeout error-frame staging, unimplemented at HEAD and owed before the context-restore seam flips | 1 | M |
+| RR7.9 | Boot-path sweep mediums | 5 | M |
+| RR7.10 | Rust HAL mediums | 4 | M |
+| RR7.11 | Syscall return ABI mediums | 4 | M |
+| RR7.12 | Per-object lock mediums | 4 | M |
+| RR7.13 | Fine-lock migration mediums | 3 | M |
+| RR7.14 | TLB shootdown mediums | 3 | M |
+| RR7.15 | Debt-register mediums | 3 | M |
+| RR7.16 | Cross-core IPC mediums | 2 | S |
+| RR7.17 | Declassification mediums | 2 | S |
+| RR7.18 | Panic-hang remediation mediums | 2 | S |
+| RR7.19 | RwLock-deferred mediums | 2 | S |
+| RR7.20 | Implement-the-improvement sweep: route the per-core scheduler entries through the HAL context-switch seam | 1 | S |
+| RR7.21 | Implement-the-improvement sweep: the DeviceTree-to-`PlatformConfig` boot bridge — a platform/boot surface unrelated to the row above, so its own task | 1 | S |
+| RR7.22 | IPC de-threading medium | 1 | S |
+| RR7.23 | Reply objects medium | 1 | S |
+| RR7.24 | SMP foundations medium | 1 | S |
+| RR7.25 | Master plan medium | 1 | S |
+| RR7.26 | Doc-sync medium | 1 | S |
 
-**Acceptance**: all **49** findings this phase owns — the 46 in the register's
+**Acceptance**: all **50** findings this phase owns — the 46 in the register's
 §6 table and the four §4 items in RR7.1–RR7.4 — are closed or carry an
 explicit, registered deferral with a closure target. A medium may be deferred;
-it may not be dropped, and the §4 three may not be left open on the strength of
-the §6 table alone.
+it may not be dropped, and the four §4 rows may not be left open on the
+strength of the §6 table alone.
 
 
 ### RR8 — Phase closure and hand-off to SM10
