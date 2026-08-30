@@ -95,8 +95,9 @@ commands but do not execute them"), `cargo test --no-run` ("compile, but
 don't run tests"), a `.file()` on a `cc::Build` that is never compiled, a
 wrapper that `echo`es `"$@"` instead of executing it, an optimised
 `--profile production` counting as the `-O0` build, a deleted cross-clippy
-lane, a removed `set -euo pipefail`, and an `asm!(concat!("tlbi ",
-"vmalle1"))` the mnemonic regex could not see.
+lane, a removed `set -euo pipefail`, an `asm!(concat!("tlbi ", "vmalle1"))`
+the mnemonic regex could not see, and a positional `cargo test … <TESTNAME>`
+filter that selects the oracle binary and runs none of its tests.
 
 And **one functional defect**: `select_cross_assembler` counted
 `CROSS_COMPILE` among "the variables `cc` itself consults" and returned early

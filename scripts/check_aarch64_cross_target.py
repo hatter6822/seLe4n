@@ -454,6 +454,40 @@ def cargo_invocations(script: str, subcommand: str) -> list[list[str]]:
     return found
 
 
+# Cargo options that consume the following token as their value.  Needed to
+# tell a value (`--features std,host_tools`) from a positional argument
+# (`cargo test some_name`), which is a test-name filter.
+VALUE_TAKING_OPTIONS = (
+    "--features", "-F", "--package", "-p", "--target", "--bin", "--test",
+    "--example", "--bench", "--profile", "--manifest-path", "--target-dir",
+    "--jobs", "-j", "--color", "--message-format", "--config", "--exclude",
+    "--lib",
+)
+
+
+def positional_arguments(argv: list[str]) -> list[str]:
+    """Non-option arguments before `--`, i.e. cargo's positional operands.
+
+    Option VALUES are skipped, so `--features std,host_tools` contributes
+    nothing; what remains is what cargo treats as `[TESTNAME]`.
+    """
+    positional: list[str] = []
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token == "--":
+            break
+        if token in VALUE_TAKING_OPTIONS:
+            index += 2
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        positional.append(token)
+        index += 1
+    return positional
+
+
 def selects_oracle(argv: list[str]) -> bool:
     """Would this `cargo test` argv run `src/bin/rw_lock_oracle.rs`'s tests?
 
@@ -475,6 +509,14 @@ def selects_oracle(argv: list[str]) -> bool:
     # Checked before selection, because selection is irrelevant once
     # nothing runs.
     if "--no-run" in argv:
+        return False
+    # A positional `[TESTNAME]` filters by name substring, so
+    # `cargo test --all --features host_tools some_other_test` selects the
+    # oracle binary, runs zero of its tests and exits 0 -- the `--doc` and
+    # `--no-run` findings a third time, now in the argument that is not a
+    # flag at all (PR #883 review round 8).  This gate cannot prove a
+    # filter matches the oracle's 14 tests, so any filter is rejected.
+    if positional_arguments(argv[2:]):
         return False
     if "--bins" in argv or "--all-targets" in argv:
         return True
@@ -1795,6 +1837,23 @@ def self_test() -> int:
             block_commented_source,
             True,
             check="build_script",
+            mutation="preserving",
+        )
+    )
+
+    # A positional test-name filter: the command runs, selects the oracle
+    # binary, and executes none of its tests because none match the name.
+    name_filtered = baseline()
+    name_filtered[HOST_LANE] = GOOD_HOST_LANE.replace(
+        "cargo test --all --features std,host_tools",
+        "cargo test --all --features std,host_tools definitely_no_oracle_test",
+    )
+    cases.append(
+        Case(
+            "a positional test-name filter is not oracle coverage",
+            name_filtered,
+            True,
+            check="host_lane",
             mutation="preserving",
         )
     )
