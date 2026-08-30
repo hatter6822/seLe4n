@@ -215,6 +215,19 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/test_identifier_naming_gate.py"
 # byte, which is what keeps `rg -n` line numbers pointing at real lines.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/lean_code_view.py" --self-test
 
+# WS-RR RR1.12 (PR #883 review round 3): the Rust counterpart.  Three gates
+# read Rust source — the TLBI broadcast discipline, the cross-target
+# configuration gate, and `rust/sele4n-hal/build.rs`'s own scanners — and
+# each carried a private `line[:line.find("//")]` stripper.  That proxy is
+# wrong in both directions: it deletes an `asm!` template line whose sibling
+# carries an assembler comment (so an emitted `tlbi` vanishes from the view),
+# and it keeps an identifier inside a string literal (so `let _note =
+# "require_feat_tlbios()";` stood in for the call that keeps an UNDEFINED
+# instruction off a Cortex-A76).  One quote-aware view now serves them all,
+# and it is pinned here because a stripper that stops stripping fails
+# silently — every gate reading it keeps reporting a clean tree.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/rust_code_view.py" --self-test
+
 # ... and the wiring, which fails differently: a `test_lib.sh` refactor that
 # dropped the routing would leave every anchor green while 1500 of them went
 # back to reading prose.  This drives `run_check` itself over a fixture whose

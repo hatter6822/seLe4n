@@ -84,6 +84,21 @@ WORKFLOW_FILE = ".github/workflows/lean_action_ci.yml"
 BUILD_SCRIPT = "rust/sele4n-hal/build.rs"
 HOST_LANE = "scripts/test_rust.sh"
 ASM_SOURCES = ("src/boot.S", "src/vectors.S", "src/trap.S")
+ORACLE_PKG = "sele4n-hal"
+ORACLE_BIN = "rw_lock_oracle"
+# Cargo flags that RESTRICT which target kinds a `cargo test` runs. Any
+# of them excludes a `[[bin]]` target unless the binary is re-selected
+# explicitly, so the oracle's `#[cfg(test)]` module does not execute.
+TARGET_KIND_FLAGS = (
+    "--doc",
+    "--lib",
+    "--test",
+    "--tests",
+    "--example",
+    "--examples",
+    "--bench",
+    "--benches",
+)
 
 
 def split_comment(line: str) -> str:
@@ -168,6 +183,119 @@ def expand_shell_vars(code: str) -> str:
     return code
 
 
+# ---------------------------------------------------------------------------
+# Shell structure.
+#
+# Every remaining hole in this gate had the same shape: the question is
+# about a COMMAND ("does cargo receive this flag", "is this script the thing
+# being run", "does this invocation select that target") and the answer was
+# read off a LINE.  A line is not a command -- it may hold several, it may
+# hold half of one, and a token on it may belong to `echo`.  Three bypasses
+# followed from that single substitution (PR #883 review round 3):
+#
+#   * a host `cargo build --release` satisfied the requirement that the
+#     CROSS build be done in both profiles;
+#   * `cargo test --doc ... --features host_tools` satisfied "the host lane
+#     tests with host_tools" while running no oracle test at all;
+#   * `run: echo ./scripts/test_aarch64_cross_build.sh` satisfied "a job
+#     runs the gate script".
+#
+# So the script is split into commands once, here, and every check below
+# reads an argv.
+# ---------------------------------------------------------------------------
+
+# `&&` and `||` must precede the single `|` in the alternation, or a `||`
+# would be split as two empty pipes.
+_COMMAND_SPLIT = re.compile(r"&&|\|\||[;\n|]")
+
+
+def shell_commands(script: str) -> list[str]:
+    """Split a comment-stripped, variable-expanded script into commands.
+
+    Backslash-continuations are joined first, so a command wrapped across
+    lines is read whole -- the cross gate's `cargo clippy` invocation is
+    written that way, and a line-based reader sees only its head.
+    """
+    joined = re.sub(r"\\\n\s*", " ", script)
+    return [part.strip() for part in _COMMAND_SPLIT.split(joined) if part.strip()]
+
+
+def argv_of(command: str) -> list[str]:
+    """Whitespace-split a command, dropping token-surrounding quotes.
+
+    `--target "${CROSS_TARGET}"` expands to `--target "aarch64-unknown-none"`,
+    so the quotes survive expansion and would otherwise make every value
+    comparison fail -- in the fail-*open* direction for an equality test
+    written the other way round.
+    """
+    return [token.strip("\"'") for token in command.split()]
+
+
+def option_values(argv: list[str], *names: str) -> list[str]:
+    """Every value passed to any of `names`, in `--n v`, `--n=v` and `-n v`.
+
+    Comma-separated values are split, since cargo accepts `--features a,b`
+    as two features.
+    """
+    flags = tuple((f"--{n}" if len(n) > 1 else f"-{n}") for n in names)
+    values: list[str] = []
+    for index, token in enumerate(argv):
+        if token in flags and index + 1 < len(argv):
+            values.append(argv[index + 1])
+        else:
+            for flag in flags:
+                if token.startswith(f"{flag}="):
+                    values.append(token[len(flag) + 1 :])
+    return [piece for value in values for piece in value.split(",") if piece]
+
+
+def cargo_invocations(script: str, subcommand: str) -> list[list[str]]:
+    """Every `cargo <subcommand>` in `script`, as argv from `cargo` onwards.
+
+    Found by token rather than by substring, so a `cargo test` named in a
+    log message or passed to `echo` is not mistaken for one that runs, and
+    a wrapper in command position (`run_cargo_step "..." cargo test --all`,
+    which is how the host lane invokes every step) still resolves to the
+    cargo argv it will exec.
+    """
+    found: list[list[str]] = []
+    for command in shell_commands(script):
+        argv = argv_of(command)
+        for index, token in enumerate(argv):
+            if (
+                (token == "cargo" or token.endswith("/cargo"))
+                and index + 1 < len(argv)
+                and argv[index + 1] == subcommand
+            ):
+                found.append(argv[index:])
+                break
+    return found
+
+
+def selects_oracle(argv: list[str]) -> bool:
+    """Would this `cargo test` argv run `src/bin/rw_lock_oracle.rs`'s tests?
+
+    Enabling `host_tools` makes the target *buildable*; it does not make it
+    *selected*.  Cargo runs a `[[bin]]`'s `#[cfg(test)]` module only when
+    the invocation's target-kind selection includes binaries -- by default,
+    or explicitly -- and only when its package selection includes the crate.
+    Both halves are required, and neither is implied by the feature flag.
+    """
+    if "--bins" in argv or "--all-targets" in argv:
+        return True
+    if ORACLE_BIN in option_values(argv, "bin"):
+        return True
+    if any(
+        token in TARGET_KIND_FLAGS or token.split("=", 1)[0] in TARGET_KIND_FLAGS
+        for token in argv
+    ):
+        return False
+    if "--all" in argv or "--workspace" in argv:
+        return True
+    packages = option_values(argv, "p", "package")
+    return not packages or ORACLE_PKG in packages
+
+
 def read(root: str, rel: str) -> str | None:
     path = os.path.join(root, rel)
     try:
@@ -230,15 +358,9 @@ def check_gate_script(root: str) -> list[str]:
     # paths.  The settings are therefore checked ON the build commands.
     code = expand_shell_vars(code_view(text))
 
-    cross_builds = [
-        line
-        for line in code.splitlines()
-        if re.search(r"cargo\s+build\b", line)
-    ]
+    builds = cargo_invocations(code, "build")
     targeted = [
-        line
-        for line in cross_builds
-        if re.search(rf"--target[=\s]+\S*{re.escape(CROSS_TARGET)}", line)
+        argv for argv in builds if CROSS_TARGET in option_values(argv, "target")
     ]
     if not targeted:
         problems.append(
@@ -250,15 +372,15 @@ def check_gate_script(root: str) -> list[str]:
             f"of the cross surface."
         )
     unfeatured = [
-        line
-        for line in targeted
-        if not re.search(r"--features[=\s]+\S*\bhw_target\b", line)
-        and "--all-features" not in line
+        argv
+        for argv in targeted
+        if "hw_target" not in option_values(argv, "features")
+        and "--all-features" not in argv
     ]
     if targeted and unfeatured:
         problems.append(
             f"{GATE_SCRIPT}: a cross `cargo build` does not pass "
-            f"`--features hw_target`: {unfeatured[0].strip()!r}. The "
+            f"`--features hw_target`: {' '.join(unfeatured[0])!r}. The "
             f"feature is empty by default and guards the hardware-only "
             f"paths (the Lean calls in timer.rs, trap.rs and smp.rs), so "
             f"without it the gate compiles none of the code it exists to "
@@ -272,18 +394,29 @@ def check_gate_script(root: str) -> list[str]:
         # the deployed kernel is a release build.  Losing one profile still
         # leaves a `cargo build --target` in the file, so the pair is
         # checked rather than the presence of a build.
+        # Derived from `targeted`, NOT from every `cargo build` in the
+        # file.  Asking "is there a release build anywhere" is a presence
+        # check standing in for "is the CROSS build done in release": a
+        # host `cargo build --release` on any other line satisfied it while
+        # the aarch64 surface was compiled at `-O0` only, which is exactly
+        # half the coverage this pair exists to give (PR #883 review
+        # round 3).
+        def is_release(argv: list[str]) -> bool:
+            return "--release" in argv or "release" in option_values(argv, "profile")
+
         missing = [
             profile
             for profile, present in (
-                ("debug", any("--release" not in b for b in cross_builds)),
-                ("release", any("--release" in b for b in cross_builds)),
+                ("debug", any(not is_release(argv) for argv in targeted)),
+                ("release", any(is_release(argv) for argv in targeted)),
             )
             if not present
         ]
         if missing:
             problems.append(
-                f"{GATE_SCRIPT}: no cross `cargo build` for the "
-                f"{' and '.join(missing)} profile. Both are built because "
+                f"{GATE_SCRIPT}: no cross `cargo build --target "
+                f"{CROSS_TARGET}` for the {' and '.join(missing)} profile. "
+                f"Both are built because "
                 f"inline-asm register allocation depends on the "
                 f"optimisation level -- an `asm!` block that satisfies the "
                 f"allocator at `-O0` can fail to at `-O2`, and the deployed "
@@ -325,6 +458,79 @@ def workflow_jobs(code: str) -> dict[str, list[str]]:
     return jobs
 
 
+# Commands that execute their script argument.  Anything else in command
+# position (`echo`, `cat`, `ls`) names the script without running it, so the
+# list is an allowlist and an unrecognised command fails the check closed.
+SCRIPT_INTERPRETERS = ("bash", "sh", "dash", "zsh", "ksh", "source", ".")
+
+
+def run_scripts(body: str) -> list[str]:
+    """Every `run:` value in a job body, block scalars included.
+
+    `run: <command>` yields its inline value; `run: |` (or `>`), with an
+    optional chomping/indent indicator, yields the indented block that
+    follows.  Reading only the inline form would make a job that moved its
+    command into a block scalar look like it runs nothing -- fail-closed,
+    but wrongly, and the fix would then be to weaken the check.
+    """
+    lines = body.splitlines()
+    scripts: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        match = re.match(r"^(\s*)(?:-\s*)?run\s*:\s*(.*)$", line)
+        index += 1
+        if not match:
+            continue
+        indent, inline = match.group(1), match.group(2).strip()
+        if not re.fullmatch(r"[|>][+-]?\d*", inline):
+            if inline:
+                scripts.append(inline)
+            continue
+        block: list[str] = []
+        while index < len(lines):
+            nxt = lines[index]
+            if nxt.strip() and len(nxt) - len(nxt.lstrip()) <= len(indent):
+                break
+            block.append(nxt)
+            index += 1
+        scripts.append("\n".join(block))
+    return scripts
+
+
+def _names_gate(token: str) -> bool:
+    """Is `token` a path referring to the gate script?"""
+    basename = os.path.basename(GATE_SCRIPT)
+    return (
+        token.lstrip("./") == GATE_SCRIPT.lstrip("./")
+        or token.endswith("/" + basename)
+        or token == basename
+    )
+
+
+def job_runs_gate(body: str) -> bool:
+    """Does some `run:` step of this job actually execute the gate script?"""
+    for script in run_scripts(body):
+        for command in shell_commands(script):
+            argv = argv_of(command)
+            # Skip leading `VAR=value` prefixes and wrappers that do not
+            # change what is ultimately executed.
+            while argv and (
+                re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", argv[0])
+                or argv[0] in ("sudo", "env", "time", "exec")
+            ):
+                argv = argv[1:]
+            if not argv:
+                continue
+            if _names_gate(argv[0]):
+                return True
+            if argv[0] in SCRIPT_INTERPRETERS and any(
+                _names_gate(token) for token in argv[1:] if not token.startswith("-")
+            ):
+                return True
+    return False
+
+
 def check_workflow(root: str) -> list[str]:
     """Some CI job runs the gate script, and installs the target for it."""
     text = read(root, WORKFLOW_FILE)
@@ -333,16 +539,18 @@ def check_workflow(root: str) -> list[str]:
     code = code_view(text)
     jobs = workflow_jobs(code)
 
-    # A job runs the gate only if a `run:` value invokes it.  Matching the
-    # path anywhere in the job body is satisfied by a step *name* --
-    # "Build sele4n-hal for aarch64-unknown-none" is one line away from
-    # "replaced ./scripts/test_aarch64_cross_build.sh" -- so a job could
-    # look like the runner while running nothing.
-    run_invokes = re.compile(
-        rf"^\s*(?:-\s*)?run\s*:.*{re.escape(GATE_SCRIPT)}", re.MULTILINE
-    )
+    # A job runs the gate only if the script sits in an EXECUTABLE COMMAND
+    # POSITION of a `run:` script.  Two weaker forms both passed before:
+    # matching the path anywhere in the job body is satisfied by a step
+    # *name* ("Build sele4n-hal for aarch64-unknown-none" is one line from
+    # "replaced ./scripts/test_aarch64_cross_build.sh"), and matching it
+    # anywhere in a `run:` value is satisfied by `run: echo
+    # ./scripts/test_aarch64_cross_build.sh`, which executes nothing (PR
+    # #883 review round 3).  So the run script is split into commands and
+    # the path must be the command word -- or the argument of an
+    # interpreter that would exec it.
     runners = [
-        name for name, body in jobs.items() if run_invokes.search("\n".join(body))
+        name for name, body in jobs.items() if job_runs_gate("\n".join(body))
     ]
     if not runners:
         return [
@@ -437,25 +645,45 @@ def check_host_lane(root: str) -> list[str]:
     # Expanded for the same reason as the gate script above: the flags are
     # read ON the command, so a settings variable must be resolved first.
     code = expand_shell_vars(code_view(text))
-    test_lines = [
-        line for line in code.splitlines() if re.search(r"cargo\s+test\b", line)
-    ]
-    if not test_lines:
+    invocations = cargo_invocations(code, "test")
+    if not invocations:
         return [f"{HOST_LANE}: no `cargo test` invocation found."]
     # `--all-features` enables `host_tools` along with everything else, so
     # it satisfies the requirement; rejecting it would fail a
     # configuration that is in fact correct.
-    if not any(
-        "host_tools" in line or "--all-features" in line for line in test_lines
-    ):
+    featured = [
+        argv
+        for argv in invocations
+        if "host_tools" in option_values(argv, "features")
+        or "--all-features" in argv
+    ]
+    if not featured:
         return [
             f"{HOST_LANE}: no `cargo test` invocation selects `host_tools`. "
-            f"`src/bin/rw_lock_oracle.rs` carries "
+            f"`src/bin/{ORACLE_BIN}.rs` carries "
             f"`required-features = [\"host_tools\"]` so the bare-metal build "
             f"skips it -- and cargo does not run a skipped target's "
             f"`#[cfg(test)]` module either, so without the feature its tests "
             f"stop running and the step still reports a clean pass over one "
             f"fewer binary."
+        ]
+    # The feature must reach an invocation that WOULD RUN the oracle.
+    # Checking only that `host_tools` appears on some `cargo test` line is
+    # a presence check standing in for that: `cargo test --doc -p
+    # sele4n-hal --features host_tools` carries the feature and runs
+    # doctests only, so the 14 oracle tests still never execute and the
+    # step still reports a clean pass (PR #883 review round 3).
+    if not any(selects_oracle(argv) for argv in featured):
+        return [
+            f"{HOST_LANE}: `host_tools` is passed only to `cargo test` "
+            f"invocations that cannot run `src/bin/{ORACLE_BIN}.rs`: "
+            f"{[' '.join(a) for a in featured]}. Enabling the feature is "
+            f"not the same as selecting the target it gates -- a `--doc`, "
+            f"`--lib` or `--test <name>` run carries the flag and executes "
+            f"none of the oracle's tests, and the step still passes. The "
+            f"invocation must select the binary (`--bins`, `--all-targets` "
+            f"or `--bin {ORACLE_BIN}`) or leave the target kinds "
+            f"unrestricted over a package set including `{ORACLE_PKG}`."
         ]
     return []
 
@@ -564,80 +792,106 @@ def baseline() -> dict[str, str]:
     }
 
 
-def self_test() -> int:
-    cases: list[tuple[str, dict[str, str], bool]] = []
+# The checks `run_checks` performs, by id.  Each must be exercised by at
+# least one PRESERVING negative case below; the harness enforces it.
+CHECKS = ("toolchain", "gate_script", "workflow", "build_script", "host_lane")
 
-    cases.append(("clean baseline", baseline(), False))
+
+class Case:
+    """One self-test fixture, tagged with what it proves.
+
+    `mutation` records HOW the fixture differs from the clean baseline:
+    ``"deleting"`` removes the token a check searches for -- necessary, and
+    passed by every presence check ever written -- while ``"preserving"``
+    KEEPS that token and breaks only the relation it stands in.  Only the
+    second kind can find the defect this gate keeps shipping: a host
+    `--release` standing in for a cross one, a `--doc` run carrying the
+    feature that gates a binary it never runs, `echo` in front of the
+    script path.  Enforced below rather than asserted in a comment, because
+    asserting it in a comment did not stop three review rounds.
+    """
+
+    def __init__(
+        self,
+        label: str,
+        files: dict[str, str],
+        expect: bool,
+        check: str | None = None,
+        mutation: str = "deleting",
+    ) -> None:
+        assert check is None or check in CHECKS, check
+        assert mutation in ("none", "deleting", "preserving"), mutation
+        self.label = label
+        self.files = files
+        self.expect = expect
+        self.check = check
+        self.mutation = mutation
+
+
+def self_test() -> int:
+    cases: list[Case] = []
+
+    cases.append(Case("clean baseline", baseline(), False, mutation="none"))
 
     drop_target = baseline()
     drop_target[TOOLCHAIN_FILE] = GOOD_TOOLCHAIN.replace(
         f'targets = ["{CROSS_TARGET}"]\n', ""
     )
-    cases.append(("toolchain drops the targets key", drop_target, True))
+    cases.append(Case("toolchain drops the targets key", drop_target, True, check="toolchain"))
 
     comment_target = baseline()
     comment_target[TOOLCHAIN_FILE] = GOOD_TOOLCHAIN.replace(
         f'targets = ["{CROSS_TARGET}"]',
         f'targets = ["aarch64-unknown-linux-gnu"]',
     )
-    cases.append(("toolchain lists the wrong target", comment_target, True))
+    cases.append(Case("toolchain lists the wrong target", comment_target, True, check="toolchain", mutation="preserving"))
 
     no_feature = baseline()
     no_feature[GATE_SCRIPT] = GOOD_GATE.replace(" --features hw_target", "")
-    cases.append(("gate drops --features hw_target", no_feature, True))
+    cases.append(Case("gate drops --features hw_target", no_feature, True, check="gate_script"))
 
     feature_in_prose = baseline()
     feature_in_prose[GATE_SCRIPT] = GOOD_GATE.replace(
         " --features hw_target", "  # was --features hw_target"
     )
-    cases.append(("gate keeps hw_target only in a comment", feature_in_prose, True))
+    cases.append(Case("gate keeps hw_target only in a comment", feature_in_prose, True, check="gate_script", mutation="preserving"))
 
     feature_unpassed = baseline()
     feature_unpassed[GATE_SCRIPT] = GOOD_GATE.replace(
         "--features hw_target", "hw_target"
     )
-    cases.append(
-        ("gate keeps the feature name but drops --features", feature_unpassed, True)
-    )
+    cases.append(Case("gate keeps the feature name but drops --features", feature_unpassed, True, check="gate_script", mutation="preserving"))
 
     check_not_build = baseline()
     check_not_build[GATE_SCRIPT] = GOOD_GATE.replace(
         "cargo build --target", "cargo check --target", 1
     )
-    cases.append(
-        (
-            "gate downgrades only the debug build to check, leaving the "
+    cases.append(Case("gate downgrades only the debug build to check, leaving the "
             "release line saying `cargo build`",
             check_not_build,
-            True,
-        )
-    )
+            True, check="gate_script", mutation="preserving"))
 
     check_both_profiles = baseline()
     check_both_profiles[GATE_SCRIPT] = GOOD_GATE.replace("cargo build", "cargo check")
-    cases.append(("gate downgrades every build to check", check_both_profiles, True))
+    cases.append(Case("gate downgrades every build to check", check_both_profiles, True, check="gate_script"))
 
     host_target_build = baseline()
     host_target_build[GATE_SCRIPT] = GOOD_GATE.replace('--target "$CROSS_TARGET" ', "")
-    cases.append(
-        (
-            "gate builds the host target instead of the cross one",
+    cases.append(Case("gate builds the host target instead of the cross one",
             host_target_build,
-            True,
-        )
-    )
+            True, check="gate_script", mutation="preserving"))
 
     no_job = baseline()
     no_job[WORKFLOW_FILE] = GOOD_WORKFLOW.replace(
         f"        run: ./{GATE_SCRIPT}\n", ""
     )
-    cases.append(("workflow stops running the gate", no_job, True))
+    cases.append(Case("workflow stops running the gate", no_job, True, check="workflow"))
 
     job_in_prose = baseline()
     job_in_prose[WORKFLOW_FILE] = GOOD_WORKFLOW.replace(
         f"        run: ./{GATE_SCRIPT}", f"        # run: ./{GATE_SCRIPT}"
     )
-    cases.append(("workflow comments the gate out", job_in_prose, True))
+    cases.append(Case("workflow comments the gate out", job_in_prose, True, check="workflow", mutation="preserving"))
 
     # The exact shape the PR #883 review reproduced: the settings stay in
     # the file as unused assignments while the builds target something
@@ -647,41 +901,31 @@ def self_test() -> int:
         '--target "$CROSS_TARGET" -p sele4n-hal --features hw_target',
         "--target x86_64-unknown-linux-gnu -p sele4n-hal --features other",
     )
-    cases.append(
-        (
-            "gate keeps the settings as unused variables while building "
+    cases.append(Case("gate keeps the settings as unused variables while building "
             "another target",
             settings_unbound,
-            True,
-        )
-    )
+            True, check="gate_script", mutation="preserving"))
 
     feature_unbound = baseline()
     feature_unbound[GATE_SCRIPT] = GOOD_GATE.replace(
         "--features hw_target", "--features other"
     )
-    cases.append(
-        ("gate builds the cross target without hw_target", feature_unbound, True)
-    )
+    cases.append(Case("gate builds the cross target without hw_target", feature_unbound, True, check="gate_script"))
 
     settings_reassigned = baseline()
     settings_reassigned[GATE_SCRIPT] = GOOD_GATE.replace(
         'CROSS_TARGET="', 'CROSS_FEATURES="hw_target"\nCROSS_FEATURES=""\nCROSS_TARGET="'
     ).replace("--features hw_target", '--features "$CROSS_FEATURES"')
-    cases.append(
-        (
-            "gate re-assigns a settings variable, so its value is not "
+    cases.append(Case("gate re-assigns a settings variable, so its value is not "
             "determinable from the text",
             settings_reassigned,
-            True,
-        )
-    )
+            True, check="gate_script", mutation="preserving"))
 
     no_targets_input = baseline()
     no_targets_input[WORKFLOW_FILE] = GOOD_WORKFLOW.replace(
         f"          targets: {CROSS_TARGET}\n", ""
     )
-    cases.append(("workflow job stops installing the target", no_targets_input, True))
+    cases.append(Case("workflow job stops installing the target", no_targets_input, True, check="workflow"))
 
     for dropped in ASM_SOURCES:
         broken = baseline()
@@ -690,7 +934,7 @@ def self_test() -> int:
         # lines, so a line-shaped mutation silently no-ops on one of them
         # and leaves a case that asserts nothing.
         broken[BUILD_SCRIPT] = GOOD_BUILD_RS.replace(f'.file("{dropped}")', "")
-        cases.append((f"build.rs drops {dropped}", broken, True))
+        cases.append(Case(f"build.rs drops {dropped}", broken, True, check="build_script"))
 
     # --- The mutation class that finds "presence checked, relation not" ---
     #
@@ -703,25 +947,17 @@ def self_test() -> int:
     asm_in_dead_code[BUILD_SCRIPT] = GOOD_BUILD_RS.replace(
         '    asm.file("src/boot.S")\n', "    asm\n"
     ) + '\nfn unused_helper() {\n    cc::Build::new().file("src/boot.S");\n}\n'
-    cases.append(
-        (
-            "build.rs keeps `.file(\"src/boot.S\")` only in an unreachable helper",
+    cases.append(Case("build.rs keeps `.file(\"src/boot.S\")` only in an unreachable helper",
             asm_in_dead_code,
-            True,
-        )
-    )
+            True, check="build_script", mutation="preserving"))
 
     toolchain_prefix_target = baseline()
     toolchain_prefix_target[TOOLCHAIN_FILE] = GOOD_TOOLCHAIN.replace(
         f'"{CROSS_TARGET}"', f'"{CROSS_TARGET}-softfloat"'
     )
-    cases.append(
-        (
-            "toolchain lists a different target that CONTAINS the triple",
+    cases.append(Case("toolchain lists a different target that CONTAINS the triple",
             toolchain_prefix_target,
-            True,
-        )
-    )
+            True, check="toolchain", mutation="preserving"))
 
     workflow_name_only = baseline()
     workflow_name_only[WORKFLOW_FILE] = GOOD_WORKFLOW.replace(
@@ -731,33 +967,25 @@ def self_test() -> int:
         f"      - name: Build sele4n-hal for {CROSS_TARGET}",
         f"      - name: replaced ./{GATE_SCRIPT}",
     )
-    cases.append(
-        (
-            "workflow names the gate in a step NAME while running nothing",
+    cases.append(Case("workflow names the gate in a step NAME while running nothing",
             workflow_name_only,
-            True,
-        )
-    )
+            True, check="workflow", mutation="preserving"))
 
     asm_in_prose = baseline()
     asm_in_prose[BUILD_SCRIPT] = GOOD_BUILD_RS.replace(
         '        .file("src/trap.S")\n',
         '        // .file("src/trap.S")\n',
     )
-    cases.append(("build.rs keeps trap.S only in a comment", asm_in_prose, True))
+    cases.append(Case("build.rs keeps trap.S only in a comment", asm_in_prose, True, check="build_script", mutation="preserving"))
 
     host_lane_unfeatured = baseline()
     host_lane_unfeatured[HOST_LANE] = GOOD_HOST_LANE.replace(
         "cargo test --all --features std,host_tools",
         "cargo test --all --features std",
     )
-    cases.append(
-        (
-            "host lane TESTS without host_tools though its build has it",
+    cases.append(Case("host lane TESTS without host_tools though its build has it",
             host_lane_unfeatured,
-            True,
-        )
-    )
+            True, check="host_lane"))
 
     host_lane_prose = baseline()
     host_lane_prose[HOST_LANE] = GOOD_HOST_LANE.replace(
@@ -765,17 +993,70 @@ def self_test() -> int:
         "# was: cargo test --all --features std,host_tools\n"
         "cargo test --all --features std",
     )
-    cases.append(
-        ("host lane keeps host_tools only in a comment", host_lane_prose, True)
-    )
+    cases.append(Case("host lane keeps host_tools only in a comment", host_lane_prose, True, check="host_lane", mutation="preserving"))
 
     host_lane_all_features = baseline()
     host_lane_all_features[HOST_LANE] = GOOD_HOST_LANE.replace(
         "cargo test --all --features std,host_tools",
         "cargo test --all --all-features",
     )
+    cases.append(Case("host lane selects host_tools via --all-features", host_lane_all_features, False, check="host_lane", mutation="none"))
+
+    # A HOST release build standing in for the cross one.  Every token is
+    # present -- `cargo build`, `--release`, the triple, both profiles
+    # somewhere in the file -- and only the relation is false: the release
+    # build is not the cross build, so the aarch64 surface is compiled at
+    # `-O0` only.
+    host_release_stand_in = baseline()
+    host_release_stand_in[GATE_SCRIPT] = GOOD_GATE.replace(
+        'cargo build --release --target "$CROSS_TARGET" '
+        "-p sele4n-hal --features hw_target",
+        "cargo build --release -p sele4n-abi",
+    )
     cases.append(
-        ("host lane selects host_tools via --all-features", host_lane_all_features, False)
+        Case(
+            "gate replaces the cross release build with a host one",
+            host_release_stand_in,
+            True,
+            check="gate_script",
+            mutation="preserving",
+        )
+    )
+
+    # The feature reaches a `cargo test`, and that invocation runs
+    # doctests only -- so the oracle's `#[cfg(test)]` module, the thing
+    # `host_tools` exists to make runnable, never executes.
+    doc_only_feature = baseline()
+    doc_only_feature[HOST_LANE] = (
+        "#!/usr/bin/env bash\n"
+        "cargo build --all --features host_tools\n"
+        "cargo test --doc -p sele4n-hal --features host_tools\n"
+        "cargo test --all\n"
+    )
+    cases.append(
+        Case(
+            "host lane passes host_tools only to a --doc run",
+            doc_only_feature,
+            True,
+            check="host_lane",
+            mutation="preserving",
+        )
+    )
+
+    # The script path is in the `run:` value, and the step executes -- it
+    # just executes `echo`.
+    echoed_gate = baseline()
+    echoed_gate[WORKFLOW_FILE] = GOOD_WORKFLOW.replace(
+        f"run: ./{GATE_SCRIPT}", f"run: echo ./{GATE_SCRIPT}"
+    )
+    cases.append(
+        Case(
+            "workflow echoes the gate script instead of running it",
+            echoed_gate,
+            True,
+            check="workflow",
+            mutation="preserving",
+        )
     )
 
     # A case expected to be CAUGHT must actually differ from the clean
@@ -785,29 +1066,57 @@ def self_test() -> int:
     # so it is checked rather than trusted.
     clean = baseline()
     failures = 0
-    for label, files, expect_problems in cases:
-        if expect_problems and files == clean:
+    for case in cases:
+        if case.expect and case.files == clean:
             failures += 1
-            print(f"[SELF-TEST FAIL] inert mutation, fixture unchanged: {label}")
+            print(
+                f"[SELF-TEST FAIL] inert mutation, fixture unchanged: "
+                f"{case.label}"
+            )
             continue
         with tempfile.TemporaryDirectory() as tmp:
-            write_tree(tmp, files)
+            write_tree(tmp, case.files)
             problems = run_checks(tmp)
-            detected = bool(problems)
-            if detected != expect_problems:
+            if bool(problems) != case.expect:
                 failures += 1
-                verb = "missed" if expect_problems else "false-positived on"
-                print(f"[SELF-TEST FAIL] gate {verb}: {label}")
+                verb = "missed" if case.expect else "false-positived on"
+                print(f"[SELF-TEST FAIL] gate {verb}: {case.label}")
                 for problem in problems:
                     print(f"                 reported: {problem}")
             else:
-                state = "caught" if expect_problems else "accepted"
-                print(f"[SELF-TEST OK]   {state}: {label}")
+                state = "caught" if case.expect else "accepted"
+                mark = " [preserving]" if case.mutation == "preserving" else ""
+                print(f"[SELF-TEST OK]   {state}: {case.label}{mark}")
+
+    # Every check must be exercised by a mutation that KEEPS its token and
+    # breaks only the relation.  Deleting the token is passed by any
+    # presence check, so a suite made only of deletions certifies nothing
+    # about the property the check is named for -- which is how nine holes
+    # in this file reached review across three rounds while the suite
+    # reported PASS on every one of them.  Enforced, not asserted.
+    covered = {
+        case.check
+        for case in cases
+        if case.expect and case.mutation == "preserving" and case.check
+    }
+    for check in CHECKS:
+        if check not in covered:
+            failures += 1
+            print(
+                f"[SELF-TEST FAIL] check `{check}` has no token-preserving "
+                f"negative case. Add one that keeps the token the check "
+                f"searches for and breaks only its relation (CLAUDE.md, "
+                f"\"Test a gate by breaking the relation, not by deleting "
+                f"the token\")."
+            )
 
     if failures:
         print(f"\n[FAIL] {failures} self-test case(s) failed")
         return 1
-    print(f"\n[PASS] {len(cases)} self-test case(s)")
+    print(
+        f"\n[PASS] {len(cases)} self-test case(s); "
+        f"{len(CHECKS)}/{len(CHECKS)} checks have a token-preserving case"
+    )
     return 0
 
 

@@ -79,6 +79,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lean_code_view  # noqa: E402  (path set up immediately above)
+import rust_code_view  # noqa: E402
 
 ALLOWLIST = "scripts/tlbi_local_allowlist.txt"
 TLB_MODULE = "rust/sele4n-hal/src/tlb.rs"
@@ -117,7 +118,6 @@ LOCAL_WRAPPER_RE = re.compile(r"\b(" + "|".join(LOCAL_WRAPPERS) + r")\b")
 # so an identifier such as `tlbi_vae1` inside a template cannot match.
 TLBI_MNEMONIC_RE = re.compile(r'(?:^|[\s;"])tlbi\s+[a-z]', re.IGNORECASE)
 
-RUST_FN_RE = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*[(<]")
 # `re.MULTILINE` is load-bearing: without it `^` anchors only at offset 0, so
 # every declaration after the first line is invisible and every reference
 # reports `<file scope>`.  The first version of this gate had exactly that
@@ -133,19 +133,28 @@ LEAN_DECL_RE = re.compile(
 
 
 def strip_rust(text: str) -> str:
-    """Blank `//` line comments, preserving line structure.
+    """The Rust code view: comments blanked, string contents KEPT.
 
-    Rust block comments are not stripped: none of the sources scanned here
-    use them, and a stripper that half-handles nesting is worse than one
-    that is explicit about its scope.  A `//` inside a string literal would
-    over-strip, which can only make the gate *stricter* about containment
-    and cannot let a real call site through, since a call site is never
-    inside a string.
+    Delegated to `rust_code_view`, the repository's one Rust stripper, for
+    a reason the first version of this gate got backwards.  It reasoned that
+    a `//` inside a string literal "can only make the gate *stricter* about
+    containment ... since a call site is never inside a string".  A call
+    site is not, but an *instruction* is: the containment check's whole
+    subject is the text inside an `asm!` template, and
+
+        core::arch::asm!("// note", "tlbi vmalle1")
+
+    is two template lines joined with a newline.  The `//` opens a comment
+    for the assembler, on its own line; the `tlbi` on the next line is
+    emitted.  A line-based stripper truncates at that `//` and deletes the
+    instruction from the view -- fail-open, in the check that matters most
+    (PR #883 review round 3).
+
+    So string contents are preserved here, and the allowlist check reads
+    the same view: a wrapper name appearing in a literal is then reported
+    rather than skipped, which is the direction a gate should err in.
     """
-    return "\n".join(
-        (line if (idx := line.find("//")) < 0 else line[:idx])
-        for line in text.splitlines()
-    )
+    return rust_code_view.code(text)
 
 
 def strip_hash(text: str) -> str:
@@ -154,11 +163,21 @@ def strip_hash(text: str) -> str:
 
 
 def enclosing_rust_fn(code: str, offset: int) -> str:
-    """Name of the last `fn` declared at or before `offset`."""
-    last = "<file scope>"
-    for match in RUST_FN_RE.finditer(code, 0, offset):
-        last = match.group(1)
-    return last
+    """Name of the INNERMOST `fn` whose body contains `offset`.
+
+    Delegated to `rust_code_view.enclosing_fn`, which brace-matches bodies.
+    The first version took "the last `fn` declared at or before `offset`",
+    which is a presence check standing in for a containment relation: a
+    module-scope item such as
+
+        static BAD: fn() = crate::tlb::tlbi_vmalle1;
+
+    placed after an allowlisted function was attributed to that function and
+    inherited an exemption written for somebody else's body (PR #883 review
+    round 3).  A module-scope reference now reports `<file scope>`, which no
+    allowlist entry can match -- the fail-closed answer, and the true one.
+    """
+    return rust_code_view.enclosing_fn(code, offset)
 
 
 def enclosing_lean_decl(code: str, offset: int) -> str:
@@ -233,12 +252,19 @@ def check_containment(root: str) -> list[str]:
 
 
 def strip_asm(text: str) -> str:
-    """Blank `//` and `/* */`-free assembly comments, preserving lines.
+    """Blank `//` comments in a `.S` source, preserving line structure.
 
-    The `.S` sources use `//` exclusively (they are preprocessed by a C
-    compiler), so the Rust stripper's rule applies unchanged.
+    Deliberately NOT `strip_rust`.  In assembly a `//` opens a comment
+    wherever it appears; there are no Rust string literals to protect, and
+    routing `.S` through the quote-aware Rust view would let a stray `"`
+    earlier in the file swallow a later real comment -- or, worse, make a
+    commented-out `tlbi` read as live code.  Line-based is the correct
+    grammar here, which is why the two strippers stay distinct.
     """
-    return strip_rust(text)
+    return "\n".join(
+        (line if (idx := line.find("//")) < 0 else line[:idx])
+        for line in text.splitlines()
+    )
 
 
 def check_rust_allowlist(root: str, allowed: set[str]) -> tuple[list[str], set[str]]:
@@ -249,8 +275,9 @@ def check_rust_allowlist(root: str, allowed: set[str]) -> tuple[list[str], set[s
         if rel == TLB_MODULE:
             continue
         code = strip_rust(read(root, rel))
+        bodies = rust_code_view.fn_bodies(code)
         for match in LOCAL_WRAPPER_RE.finditer(code):
-            fn = enclosing_rust_fn(code, match.start())
+            fn = rust_code_view.enclosing_fn(code, match.start(), bodies=bodies)
             site = f"{rel}::{fn}"
             if site in allowed:
                 used.add(site)
@@ -451,24 +478,67 @@ def write_tree(root: str, files: dict[str, str]) -> None:
             handle.write(content)
 
 
-def self_test() -> int:
-    cases: list[tuple[str, dict[str, str], bool]] = []
+# The checks `run_checks` performs, by id.  Each must be exercised by at
+# least one PRESERVING negative case below; the harness enforces it.
+CHECKS = ("containment", "rust_allowlist", "lean_allowlist", "stale_entries")
 
-    cases.append(("clean baseline", fixture(), False))
+
+class Case:
+    """One self-test fixture, tagged with what it proves.
+
+    `mutation` records HOW the fixture differs from the clean baseline:
+
+      * ``"deleting"`` removes or omits the token a check searches for.
+        Necessary, and passed by every presence check ever written -- which
+        is why it cannot be the only kind.
+      * ``"preserving"`` KEEPS that token and breaks only the relation it
+        is supposed to stand in: the reference stays but moves outside the
+        allowlisted body, the `//` stays but moves inside a string literal,
+        the allowlist entry stays and names a symbol that still exists but
+        no longer calls anything local.  This is the mutation that finds the
+        defect class this repository keeps shipping (CLAUDE.md, "Test a gate
+        by breaking the relation, not by deleting the token").
+
+    Writing that rule down did not stop three review rounds from finding
+    fifteen more instances, so it is enforced here instead of asserted: the
+    harness fails when any check id in `CHECKS` has no preserving case.
+    """
+
+    def __init__(
+        self,
+        label: str,
+        files: dict[str, str],
+        expect: bool,
+        check: str | None = None,
+        mutation: str = "deleting",
+    ) -> None:
+        assert check is None or check in CHECKS, check
+        assert mutation in ("none", "deleting", "preserving"), mutation
+        self.label = label
+        self.files = files
+        self.expect = expect
+        self.check = check
+        self.mutation = mutation
+
+
+def self_test() -> int:
+    cases: list[Case] = []
+
+    cases.append(Case("clean baseline", fixture(), False, mutation="none"))
 
     unregistered = fixture()
     unregistered[f"{RUST_SRC}/vspace.rs"] = (
         "\nfn unmap_page(asid: u16, vaddr: u64) {\n"
         "    crate::tlb::tlbi_vae1(asid, vaddr);\n}\n"
     )
-    cases.append(("unregistered local call in Rust", unregistered, True))
+    cases.append(Case("unregistered local call in Rust", unregistered, True, check="rust_allowlist"))
 
     via_local = fixture()
     via_local[f"{RUST_SRC}/vspace.rs"] = (
         "\nfn unmap_page(asid: u16, vaddr: u64) {\n"
         "    crate::tlb::tlbi_local(1);\n}\n"
     )
-    cases.append(("unregistered `tlbi_local` call", via_local, True))
+    cases.append(Case("unregistered `tlbi_local` call", via_local, True, check="rust_allowlist"))
 
     prose_only = fixture()
     prose_only[f"{RUST_SRC}/vspace.rs"] = (
@@ -476,31 +546,31 @@ def self_test() -> int:
         "    // never call crate::tlb::tlbi_vae1(asid, vaddr) here\n"
         "    crate::tlb::tlbi_for_sharing(0, 1);\n}\n"
     )
-    cases.append(("a comment naming the wrapper is not a call", prose_only, False))
+    cases.append(Case("a comment naming the wrapper is not a call", prose_only, False, check="rust_allowlist", mutation="none"))
 
     broadcast_ok = fixture()
     broadcast_ok[f"{RUST_SRC}/vspace.rs"] = (
         "\nfn unmap_page(asid: u16, vaddr: u64) {\n"
         "    crate::tlb::tlbi_vmalle1is();\n}\n"
     )
-    cases.append(("the IS broadcast wrapper is never flagged", broadcast_ok, False))
+    cases.append(Case("the IS broadcast wrapper is never flagged", broadcast_ok, False, check="rust_allowlist", mutation="none"))
 
     raw_asm = fixture()
     raw_asm[f"{RUST_SRC}/vspace.rs"] = (
         "\nfn unmap_page(asid: u16, vaddr: u64) {\n"
         '    unsafe { core::arch::asm!("tlbi vae1is, {0}", in(reg) 0u64); }\n}\n'
     )
-    cases.append(("raw `tlbi` in Rust outside tlb.rs", raw_asm, True))
+    cases.append(Case("raw `tlbi` in Rust outside tlb.rs", raw_asm, True, check="containment"))
 
     raw_asm_s = fixture()
     raw_asm_s[f"{RUST_SRC}/boot.S"] = "_start:\n    tlbi vmalle1\n    nop\n"
-    cases.append(("raw `tlbi` in a .S source", raw_asm_s, True))
+    cases.append(Case("raw `tlbi` in a .S source", raw_asm_s, True, check="containment"))
 
     asm_prose = fixture()
     asm_prose[f"{RUST_SRC}/boot.S"] = (
         "// the MMU enable path issues tlbi vmalle1 from Rust\n_start:\n    nop\n"
     )
-    cases.append(("a .S comment naming tlbi is not an emission", asm_prose, False))
+    cases.append(Case("a .S comment naming tlbi is not an emission", asm_prose, False, check="containment", mutation="none"))
 
     lean_unregistered = fixture()
     lean_unregistered["SeLe4n/Kernel/Architecture/VSpace.lean"] = (
@@ -510,7 +580,7 @@ def self_test() -> int:
         "def unmapPage : BaseIO Unit :=\n"
         "  SeLe4n.Platform.FFI.ffiTlbiByVaddr\n"
     )
-    cases.append(("unregistered Lean local-FFI reference", lean_unregistered, True))
+    cases.append(Case("unregistered Lean local-FFI reference", lean_unregistered, True, check="lean_allowlist"))
 
     lean_prose = fixture()
     lean_prose["SeLe4n/Kernel/Architecture/VSpace.lean"] = (
@@ -519,7 +589,7 @@ def self_test() -> int:
         "def unmapPage : BaseIO Unit :=\n"
         "  SeLe4n.Platform.FFI.ffiTlbiForSharing 0 1\n"
     )
-    cases.append(("a Lean comment naming the binding is not a call", lean_prose, False))
+    cases.append(Case("a Lean comment naming the binding is not a call", lean_prose, False, check="lean_allowlist", mutation="none"))
 
     # --- The mutation class that finds "presence checked, relation not" ---
     #
@@ -534,7 +604,7 @@ def self_test() -> int:
         "fn unmap_page(asid: u16, vaddr: u64) {\n"
         "    invalidate_local(asid, vaddr);\n}\n"
     )
-    cases.append(("local wrapper reached through an aliasing `use`", aliased_use, True))
+    cases.append(Case("local wrapper reached through an aliasing `use`", aliased_use, True, check="rust_allowlist", mutation="preserving"))
 
     fn_pointer = fixture()
     fn_pointer[f"{RUST_SRC}/vspace.rs"] = (
@@ -543,7 +613,13 @@ def self_test() -> int:
         "    invalidate_local(asid, vaddr);\n}\n"
     )
     cases.append(
-        ("local wrapper bound to a function pointer, then called", fn_pointer, True)
+        Case(
+            "local wrapper bound to a function pointer, then called",
+            fn_pointer,
+            True,
+            check="rust_allowlist",
+            mutation="preserving",
+        )
     )
 
     lean_attr_in_prose = fixture()
@@ -555,10 +631,12 @@ def self_test() -> int:
         "  SeLe4n.Platform.FFI.ffiTlbiByVaddr\n"
     )
     cases.append(
-        (
+        Case(
             "a docstring quoting the extern attribute does not exempt the file",
             lean_attr_in_prose,
             True,
+            check="lean_allowlist",
+            mutation="preserving",
         )
     )
 
@@ -568,48 +646,136 @@ def self_test() -> int:
         + "\ndef strayLocalFlush : BaseIO Unit :=\n  ffiTlbiAll\n"
     )
     cases.append(
-        (
+        Case(
             "the declaring module's own unregistered CALL is still checked",
             lean_declarer_also_calls,
             True,
+            check="lean_allowlist",
+            mutation="preserving",
+        )
+    )
+
+    # The reference sits at MODULE scope, after the allowlisted `enable_mmu`.
+    # Every token a presence check looks for is still there -- the wrapper
+    # name, the allowlisted function, its registration -- and only the
+    # containment relation is false: the `static` is in no function's body.
+    # A last-declaration-wins scan hands it `enable_mmu`'s exemption.
+    module_scope = fixture()
+    module_scope[f"{RUST_SRC}/mmu.rs"] = (
+        BASE_MMU_RS
+        + "\nstatic INVALIDATE_LOCAL: fn() = crate::tlb::tlbi_vmalle1;\n"
+    )
+    cases.append(
+        Case(
+            "a module-scope reference does not inherit the preceding fn's entry",
+            module_scope,
+            True,
+            check="rust_allowlist",
+            mutation="preserving",
+        )
+    )
+
+    # The `tlbi` is emitted, and a `//` is present -- inside a sibling
+    # template string, where it is an ASSEMBLER comment on its own line and
+    # does not reach the next one.  A line-based stripper truncates there
+    # and deletes the instruction from the view.
+    asm_comment_line = fixture()
+    asm_comment_line[f"{RUST_SRC}/vspace.rs"] = (
+        "\nfn unmap_page(asid: u16, vaddr: u64) {\n"
+        '    unsafe { core::arch::asm!("// invalidate", "tlbi vae1, {0}", '
+        "in(reg) 0u64); }\n}\n"
+    )
+    cases.append(
+        Case(
+            "a `//` inside an asm template does not hide the next template line",
+            asm_comment_line,
+            True,
+            check="containment",
+            mutation="preserving",
+        )
+    )
+
+    # The entry's path exists and its symbol exists; what is gone is the
+    # local reference that made the exemption mean anything.  An entry
+    # checked only for "does this file/symbol exist" survives this.
+    stale_but_resolvable = fixture()
+    stale_but_resolvable[f"{RUST_SRC}/mmu.rs"] = BASE_MMU_RS.replace(
+        "crate::tlb::tlbi_vmalle1()", "crate::tlb::tlbi_vmalle1is()"
+    )
+    cases.append(
+        Case(
+            "a registered site whose local call became a broadcast is stale",
+            stale_but_resolvable,
+            True,
+            check="stale_entries",
+            mutation="preserving",
         )
     )
 
     stale = fixture()
     stale[ALLOWLIST] = BASE_ALLOWLIST + "rust/sele4n-hal/src/gone.rs::gone\n"
-    cases.append(("allowlist entry with no call site", stale, True))
+    cases.append(Case("allowlist entry with no call site", stale, True, check="stale_entries"))
 
     no_allowlist = fixture()
     del no_allowlist[ALLOWLIST]
-    cases.append(("allowlist file missing", no_allowlist, True))
+    cases.append(Case("allowlist file missing", no_allowlist, True, check="stale_entries"))
 
     # A case expected to be CAUGHT must actually differ from the clean
     # fixture.  A mutation that silently no-ops reads as coverage while
     # asserting nothing, so it is checked rather than trusted.
     clean = fixture()
     failures = 0
-    for label, files, expect in cases:
-        if expect and files == clean:
+    for case in cases:
+        if case.expect and case.files == clean:
             failures += 1
-            print(f"[SELF-TEST FAIL] inert mutation, fixture unchanged: {label}")
+            print(
+                f"[SELF-TEST FAIL] inert mutation, fixture unchanged: "
+                f"{case.label}"
+            )
             continue
         with tempfile.TemporaryDirectory() as tmp:
-            write_tree(tmp, files)
+            write_tree(tmp, case.files)
             problems = run_checks(tmp)
-            if bool(problems) != expect:
+            if bool(problems) != case.expect:
                 failures += 1
-                verb = "missed" if expect else "false-positived on"
-                print(f"[SELF-TEST FAIL] gate {verb}: {label}")
+                verb = "missed" if case.expect else "false-positived on"
+                print(f"[SELF-TEST FAIL] gate {verb}: {case.label}")
                 for problem in problems:
                     print(f"                 reported: {problem}")
             else:
-                state = "caught" if expect else "accepted"
-                print(f"[SELF-TEST OK]   {state}: {label}")
+                state = "caught" if case.expect else "accepted"
+                mark = " [preserving]" if case.mutation == "preserving" else ""
+                print(f"[SELF-TEST OK]   {state}: {case.label}{mark}")
+
+    # Every check must be exercised by a mutation that KEEPS its token and
+    # breaks only the relation.  Deleting the token is passed by any
+    # presence check, so a suite made only of deletions certifies nothing
+    # about the property the check is named for -- which is how fifteen
+    # fail-open holes reached review across three rounds while every suite
+    # reported PASS.  Enforced, not asserted in a comment.
+    covered = {
+        case.check
+        for case in cases
+        if case.expect and case.mutation == "preserving" and case.check
+    }
+    for check in CHECKS:
+        if check not in covered:
+            failures += 1
+            print(
+                f"[SELF-TEST FAIL] check `{check}` has no token-preserving "
+                f"negative case. Add one that keeps the token the check "
+                f"searches for and breaks only its relation (CLAUDE.md, "
+                f"\"Test a gate by breaking the relation, not by deleting "
+                f"the token\")."
+            )
 
     if failures:
         print(f"\n[FAIL] {failures} self-test case(s) failed")
         return 1
-    print(f"\n[PASS] {len(cases)} self-test case(s)")
+    print(
+        f"\n[PASS] {len(cases)} self-test case(s); "
+        f"{len(CHECKS)}/{len(CHECKS)} checks have a token-preserving case"
+    )
     return 0
 
 

@@ -1,3 +1,72 @@
+## v0.34.43 — Read the program, not the line: shared Rust and shell views for every gate
+
+**WS-RR RR1.12** (PR #883 review round 3).  Eight more instances of *a
+presence check is not a relation check* — six reported by review, two found
+while fixing those — and, because patching instances had stopped converging,
+the ad-hoc text slices they all shared were replaced by structural views.
+
+### The eight holes
+
+Each was reproduced against the real tree before it was fixed, and each is
+now pinned by a self-test case that KEEPS the token and breaks only the
+relation.
+
+| Where | Read as | Actually meant | Bypass |
+|-------|---------|----------------|--------|
+| `check_aarch64_cross_target.py` | `--release` on any `cargo build` line | the **cross** build is done in release | a host `cargo build --release` satisfied it while aarch64 compiled at `-O0` only |
+| `check_aarch64_cross_target.py` | `host_tools` on any `cargo test` line | an invocation that **runs** the oracle | `cargo test --doc … --features host_tools` carries the flag and runs none of its 14 tests |
+| `check_aarch64_cross_target.py` | the script path inside a `run:` value | the script is **executed** | `run: echo ./scripts/test_aarch64_cross_build.sh` |
+| `build.rs` | `fatal_halt()` inside the `if !has_feat_tlbios()` branch | the branch **diverges** | `if has_feat_tlbios() { fatal_halt(); }` nested inside it — diverges on exactly the PEs that do not need it |
+| `check_tlbi_broadcast_discipline.py` | the last `fn` declared before an offset | the **enclosing** function | a module-scope `static BAD: fn() = crate::tlb::tlbi_vmalle1;` inherited the allowlist entry of the function above it |
+| `check_tlbi_broadcast_discipline.py` | `line[:line.find("//")]` | Rust comments removed | `asm!("// note", "tlbi vmalle1")` — the `//` is *inside a string*, and truncating there deleted the emitted instruction from the view |
+| `build.rs` (found while fixing the above) | `require_feat_tlbios()` in the wrapper body | the wrapper **calls** the guard | `let _note = "require_feat_tlbios()";` replaced the call and the scanner passed — fail-open on the check that keeps an UNDEFINED `TLBI *OS` off a Cortex-A76 |
+| `build.rs` (likewise) | `.arch_extension` counted over the identifier view | counted over the **template** view | the directives are string contents, so blanking strings zeroed the file-wide count |
+
+### The mechanism, not another patch
+
+* **`scripts/rust_code_view.py`** (new, Tier 0 self-tested) — one quote-aware
+  Rust view for every Python-side gate, mirroring `lean_code_view` for Lean.
+  Handles `//`, nested `/* */`, `"…"` with escapes, `r#"…"#`, `b"…"`, `c"…"`,
+  and `'c'` versus a lifetime `'a`.  Two views, both **byte-aligned** with the
+  original so offsets are comparable: `code` keeps string contents (an `asm!`
+  template is data the assembler consumes), `code_no_strings` blanks them (an
+  identifier in a literal is a mention, not a reference).  `fn_bodies` /
+  `enclosing_fn` brace-match over the string-blanked view, so a brace in a
+  literal cannot desynchronise nesting and a module-scope item honestly
+  reports `<file scope>` — the answer no allowlist entry can match.
+* **`rust_code_views` in `rust/sele4n-hal/build.rs`** — the same two views for
+  the build script's own scanners, which cannot import Python.  Pinned by
+  `verify_rust_code_views()`, run before every other scanner because a
+  stripper that stops stripping makes all of them report a clean tree.
+* **`shell_commands` / `argv_of` / `option_values` / `cargo_invocations`** in
+  the cross-target gate — a flag is now read on a **command**, not on a line.
+  Backslash-continuations are joined first, so the cross `cargo clippy`
+  invocation is read whole rather than by its head.
+* **`selects_oracle`** — encodes cargo's actual target selection: enabling
+  `host_tools` makes `rw_lock_oracle` *buildable*, not *selected*, and a
+  `--doc` / `--lib` / `--test <name>` run executes none of its tests.
+* **`statements_at_block_level`** in `build.rs` — a divergence check now reads
+  the branch's own statement level, with nested blocks removed, so a
+  `fatal_halt()` the scanner cannot prove executes is rejected rather than
+  accepted.
+
+### The self-test rule is now enforced, not asserted
+
+`v0.34.42` added "test a gate by breaking the relation, not by deleting the
+token" to `CLAUDE.md`, and the next round shipped eight more instances anyway.
+Both gates' self-tests now tag every case with the check it exercises and
+whether its mutation is `preserving` or `deleting`, and **the harness fails
+when any check has no token-preserving case**.  Coverage went from 0 to 4/4
+checks in the TLBI gate (19 cases) and 5/5 in the cross-target gate (28
+cases); `build.rs` gained three token-preserving witnesses of its own.
+
+### Validation
+
+`test_rust.sh` 1149 tests across 10 binaries + 108 conformance, fmt and
+clippy clean; `test_aarch64_cross_build.sh` clean in both profiles with all
+three `.S` sources assembled and clippy clean on the cross target; Tier 0
+hygiene, and `test_full.sh` green.
+
 ## v0.34.42 — A presence check is not a relation check
 
 Nine holes in the two gates `v0.34.41` added, all one defect. Four came

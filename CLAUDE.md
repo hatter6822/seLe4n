@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.42.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.43.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -563,41 +563,75 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   instruction**, that the artefact came from **this run**, that the
   reference is **this occurrence**.  Presence is necessary and almost
   never sufficient, and the gap is invisible because the token really is
-  there.  Nine instances shipped in one cut (WS-RR RR1, `v0.34.41`), two of them
-  inside the fixes for the others:
-  a workflow step *name* satisfying a check for an installed target; a
-  two-profile script satisfying a `cargo build` check after one profile
-  became a `check`; `CROSS_TARGET=`/`CROSS_FEATURES=` assignments
-  satisfying flag checks while the builds passed something else; a stale
-  archive satisfying "the sources assembled"; `body.contains(guard)`
-  passing with the guard moved *below* the instruction it protects; a
-  call-syntax regex missing `use … as alias`; and a whole-file exemption
-  set from a docstring — that last one in the gate written to enforce
-  *gates read code, prose reads prose*.  The two self-inflicted ones are
-  the most instructive: expanding a script's shell variables took the
-  *first* assignment, so a re-assigned setting read at a value the command
-  never receives; and a scanner asserting that a guard diverges tested for
-  `fatal_halt()` **file-wide**, so neutering the guard while any other
-  occurrence remained in the file passed.  Writing the rule down is not the
-  same as applying it.  So: **resolve the text into the
-  structure it stands for before asserting** — expand the script's
-  variables and check the command, take byte offsets and check the order,
-  parse the array and check the element.  Where a scanner genuinely
-  cannot (reachability, aliasing through a value), say so in its
-  docstring and make it over-approximate, so it fails **closed**.
+  there.  **Seventeen instances** shipped across three review rounds of one
+  cut (WS-RR RR1, `v0.34.41`–`v0.34.43`), and the count is the point: each
+  round fixed the instances it was shown and the next round found more, in
+  the code written to fix the last.  Round 1 (`v0.34.41`): a workflow step
+  *name* satisfying a check for an installed target; a two-profile script
+  satisfying a `cargo build` check after one profile became a `check`;
+  `CROSS_TARGET=`/`CROSS_FEATURES=` assignments satisfying flag checks
+  while the builds passed something else; a stale archive satisfying "the
+  sources assembled"; `body.contains(guard)` passing with the guard moved
+  *below* the instruction it protects; a call-syntax regex missing
+  `use … as alias`; a whole-file exemption set from a docstring — that one
+  in the gate written to enforce *gates read code, prose reads prose*; and
+  two self-inflicted, inside the fixes for the others (a shell expander
+  taking the *first* assignment, so a re-assigned setting read at a value
+  the command never receives; a divergence check testing for `fatal_halt()`
+  **file-wide**).  Round 3 (`v0.34.43`) found eight more, six of them
+  reported and two found while fixing those: a host `--release` build
+  satisfying "the *cross* build is done in both profiles"; `cargo test
+  --doc … --features host_tools` satisfying "the host lane tests with
+  `host_tools`" while running none of the tests the feature gates; `run:
+  echo ./script.sh` satisfying "a job runs the gate"; a nested
+  `if has_feat_tlbios() { fatal_halt(); }` satisfying the
+  *branch*-scoped divergence check written in round 2; a module-scope
+  `static` inheriting the allowlist entry of the function textually above
+  it; a `//` inside an `asm!` template deleting the emitted instruction
+  from the view; a string literal `"require_feat_tlbios()"` standing in for
+  the call that keeps an UNDEFINED instruction off a Cortex-A76; and a
+  file-wide directive count read from a view that had blanked the templates
+  holding them.
+
+  What the third round changed is the response.  Patching instances was not
+  converging, because every one of them substituted an *ad-hoc slice of
+  text* for a question about a *program*, and the ways text can diverge
+  from structure are unbounded.  So the slices were replaced by shared
+  structural views: `scripts/rust_code_view.py` (comments blanked, with
+  string contents kept or blanked as the question requires, brace-matched
+  `fn` bodies, byte-aligned) for the Python-side gates, its counterpart
+  `rust_code_views` in `rust/sele4n-hal/build.rs`, and a `shell_commands` /
+  `argv_of` / `option_values` layer so a flag is read on a **command**
+  rather than on a line.  The rule is unchanged and now has a mechanism:
+  **resolve the text into the structure it stands for before asserting** —
+  expand the script's variables and check the command, take byte offsets
+  and check the order, parse the array and check the element, lex the
+  source and check the scope.  Where a scanner genuinely cannot
+  (reachability, aliasing through a value), say so in its docstring and
+  make it over-approximate, so it fails **closed**.
 - **Test a gate by breaking the relation, not by deleting the token.**
-  The corollary, and the reason the seven above passed their own
-  self-tests: every fixture mutated by *removal*, which any presence check
+  The corollary, and the reason every instance above passed its own
+  self-test: the fixtures mutated by *removal*, which any presence check
   survives.  The mutation that finds this class **keeps the token and
   breaks the relation** — leave `hw_target` in the file but build another
-  target; keep `cargo build` on the release line only; keep the guard but
-  move it after the `asm!`.  Every check in a self-tested gate needs at
-  least one such case, and the harness must reject a mutation that leaves
-  the fixture unchanged, since an inert mutation reads as coverage while
-  asserting nothing.  A fixture must also be **no thinner than the file it
-  stands for**: a `mod`-less, gate-less toy passes checks the real file
-  would fail, which is how a missing `re.MULTILINE` and an unanchored
-  `.file()` search both survived.
+  target; keep `--release` but put it on a *host* build; keep the guard but
+  move it after the `asm!`; keep `fatal_halt()` but nest it under the
+  negation of its own branch condition; keep the reference but move it out
+  of the function whose allowlist entry covers it.
+
+  Every check in a self-tested gate needs at least one such case, and
+  **that requirement is now enforced rather than asserted**: each case in
+  `check_aarch64_cross_target.py` and `check_tlbi_broadcast_discipline.py`
+  declares the check it exercises and whether its mutation is `preserving`
+  or `deleting`, and the harness fails when any check has no preserving
+  case.  Writing the rule in this file did not stop the next round from
+  shipping eight more instances; a harness that refuses to pass does.  The
+  harness must also reject a mutation that leaves the fixture unchanged,
+  since an inert mutation reads as coverage while asserting nothing.  A
+  fixture must also be **no thinner than the file it stands for**: a
+  `mod`-less, gate-less toy passes checks the real file would fail, which
+  is how a missing `re.MULTILINE` and an unanchored `.file()` search both
+  survived.
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
   this separation.

@@ -158,6 +158,9 @@ fn main() {
     // into an undefined-instruction trap on Cortex-A76 instead of a
     // diagnosed halt.  Runs on every target so the check fires in host
     // builds too.
+    // The views come first: every scanner below reads them, so a
+    // stripper defect would otherwise be reported as a clean tree.
+    verify_rust_code_views();
     scan_tlb_rs_outer_shareable_guards_intact();
 
     // Only build assembly for aarch64 targets
@@ -1643,17 +1646,16 @@ fn scan_tlb_rs_outer_shareable_guards_intact() {
         }
     };
 
-    // Strip `//` line comments (which subsumes `///` docstrings) so the
-    // prose that explains the contract cannot be mistaken for the code
-    // that implements it.
-    let stripped: String = contents
-        .lines()
-        .map(|line| match line.find("//") {
-            Some(idx) => &line[..idx],
-            None => line,
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // TWO views, byte-aligned with each other and with the file (see
+    // `rust_code_views`).  `templates` keeps string contents, because the
+    // assembly this scanner checks -- the `tlbi` mnemonics and the
+    // `.arch_extension` bracket -- lives inside `asm!` template strings.
+    // `code` blanks them, because an identifier inside a string is a
+    // mention and must not satisfy a check that the wrapper CALLS its
+    // guard: with one view for both, `let _note = "require_feat_tlbios()";`
+    // stood in for the call and the scanner passed (PR #883 review round 3).
+    let (templates, code) = rust_code_views(&contents);
+    let stripped = &code;
 
     // The fail-closed helper itself must exist and must diverge.
     if !stripped.contains("fn require_feat_tlbios()") {
@@ -1673,15 +1675,14 @@ fn scan_tlb_rs_outer_shareable_guards_intact() {
     // `fatal_halt()` remained elsewhere in the file passed cleanly -- the
     // per-wrapper ordering checks then proved only that an ineffective
     // helper was called before the `asm!` (PR #883 review, round 2).
-    let guard_body =
-        enclosing_fn_body(&stripped, "fn require_feat_tlbios()").unwrap_or_else(|| {
-            panic!(
-                "WS-RR RR1.4 scanner: could not delimit the body of \
+    let guard_body = enclosing_fn_body(stripped, "fn require_feat_tlbios()").unwrap_or_else(|| {
+        panic!(
+            "WS-RR RR1.4 scanner: could not delimit the body of \
                  `{path}::require_feat_tlbios`.  If the helper was \
                  restructured, update this scanner so the fail-closed \
                  contract stays pinned."
-            )
-        });
+        )
+    });
     let negative_branch =
         braced_block_after(guard_body, "if !has_feat_tlbios()").unwrap_or_else(|| {
             panic!(
@@ -1693,17 +1694,38 @@ fn scan_tlb_rs_outer_shareable_guards_intact() {
                  re-pinned deliberately."
             )
         });
-    if !negative_branch.contains("fatal_halt()") || negative_branch.contains("return") {
+    // The call must be UNCONDITIONAL within that branch, which means it has
+    // to sit at the branch's own statement level.  `contains` cannot see
+    // that: it is satisfied by a `fatal_halt()` nested inside any construct,
+    // including one whose condition is the negation of the branch's own --
+    //
+    //     if !has_feat_tlbios() { if has_feat_tlbios() { fatal_halt(); } }
+    //
+    // -- which keeps every token the check searched for and diverges on
+    // exactly the PEs that do not need it (PR #883 review round 3).  So
+    // nested blocks are removed and the remaining top-level statements are
+    // what must reach the call.
+    let top_level = statements_at_block_level(negative_branch);
+    let halt_at = top_level.find("fatal_halt()");
+    let escapes_first = halt_at.is_some_and(|at| top_level[..at].contains("return"));
+    if halt_at.is_none() || escapes_first {
         panic!(
             "WS-RR RR1.4 regression: the `if !has_feat_tlbios()` branch of \
-             `{path}::require_feat_tlbios` does not diverge into \
-             `cpu::fatal_halt()` (branch body: {negative_branch:?}).\n\
+             `{path}::require_feat_tlbios` does not unconditionally diverge \
+             into `cpu::fatal_halt()`.\n\
+             Branch body: {negative_branch:?}\n\
+             At the branch's own statement level (nested blocks removed): \
+             {top_level:?}\n\
              The guard must DIVERGE when FEAT_TLBIOS is absent.  Returning \
              normally leaves the caller to execute the UNDEFINED `TLBI \
              *OS` encoding, and falling back to the inner-shareable \
              variant would service only the inner domain while the caller \
              asked for the outer one -- leaving live stale translations on \
-             the PEs outside it."
+             the PEs outside it.\n\
+             A `fatal_halt()` reached only from inside a nested `if`, \
+             `match` or loop is not something this scanner can prove \
+             executes, so it is rejected rather than accepted: the guard \
+             must be re-pinned deliberately if it is ever restructured."
         );
     }
 
@@ -1770,10 +1792,14 @@ fn scan_tlb_rs_outer_shareable_guards_intact() {
         // The `.arch_extension` bracket is checked PER WRAPPER and in
         // order.  File-wide counts cannot see a pair that is mismatched
         // across two wrappers, or a restore that precedes its own enable.
-        let enable_at = body.find(".arch_extension tlb-rmi");
-        let restore_at = body.find(".arch_extension notlb-rmi");
+        // Read from the STRING-KEEPING view at the same byte offsets: the
+        // assembler directives and the mnemonic are template contents, and
+        // the identifier view has blanked them.
+        let template_body = &templates[body_start..body_end];
+        let enable_at = template_body.find(".arch_extension tlb-rmi");
+        let restore_at = template_body.find(".arch_extension notlb-rmi");
         let mnemonic = format!("tlbi {}", upper.to_ascii_lowercase());
-        let mnemonic_at = body.find(&mnemonic);
+        let mnemonic_at = template_body.find(&mnemonic);
         match (enable_at, mnemonic_at, restore_at) {
             (Some(enable), Some(instr), Some(restore)) if enable < instr && instr < restore => {}
             (enable, instr, restore) => panic!(
@@ -1794,8 +1820,9 @@ fn scan_tlb_rs_outer_shareable_guards_intact() {
 
     // File-wide totals as well, so a stray enable outside any wrapper --
     // which the per-wrapper checks above cannot see -- is still caught.
-    let enables = stripped.matches(".arch_extension tlb-rmi").count();
-    let restores = stripped.matches(".arch_extension notlb-rmi").count();
+    // Counted over the template view: the directives are string contents.
+    let enables = templates.matches(".arch_extension tlb-rmi").count();
+    let restores = templates.matches(".arch_extension notlb-rmi").count();
     if enables != OS_WRAPPERS.len() || restores != OS_WRAPPERS.len() {
         panic!(
             "WS-RR RR1.4 regression: `{path}` has {enables} \
@@ -1994,6 +2021,312 @@ fn enclosing_fn_body<'a>(source: &'a str, signature: &str) -> Option<&'a str> {
     let start = source.find(signature)? + signature.len();
     let end = source[start..].find("\n}\n").map(|i| start + i)?;
     Some(&source[start..end])
+}
+
+/// **WS-RR RR1.12**: pin `rust_code_views`, because a stripper that stops
+/// stripping fails SILENTLY -- every scanner reading it keeps reporting a
+/// clean tree.
+///
+/// Each witness KEEPS the token it is about and changes only the relation:
+/// the `//` moves inside a string, the identifier moves inside a string,
+/// the brace moves inside a literal.  A witness that deletes the token is
+/// passed by the line-based stripper this replaced, and so certifies
+/// nothing (CLAUDE.md, "Test a gate by breaking the relation, not by
+/// deleting the token").
+fn verify_rust_code_views() {
+    let case = |label: &str, source: &str, in_templates: &[&str], not_in_code: &[&str]| {
+        let (templates, code) = rust_code_views(source);
+        assert_eq!(
+            templates.len(),
+            source.len(),
+            "WS-RR RR1.12: `{label}` -- template view is not byte-aligned"
+        );
+        assert_eq!(
+            code.len(),
+            source.len(),
+            "WS-RR RR1.12: `{label}` -- code view is not byte-aligned"
+        );
+        for needle in in_templates {
+            assert!(
+                templates.contains(needle),
+                "WS-RR RR1.12: `{label}` -- template view lost {needle:?}\n\
+                 view: {templates:?}"
+            );
+        }
+        for needle in not_in_code {
+            assert!(
+                !code.contains(needle),
+                "WS-RR RR1.12: `{label}` -- code view kept {needle:?}, which \
+                 is inside a string literal and is a mention, not a call\n\
+                 view: {code:?}"
+            );
+        }
+    };
+
+    // An assembler comment and an instruction as sibling template lines on
+    // ONE source line: the shape a line-based stripper deletes.
+    case(
+        "asm template comment does not hide the next template line",
+        "asm!(\"// note\", \"tlbi vae1os, {0}\");\n",
+        &["tlbi vae1os"],
+        &["tlbi vae1os"],
+    );
+    // An identifier inside a string is a mention: it must not satisfy a
+    // check that the code CALLS it.
+    case(
+        "an identifier in a string is not a call",
+        "let _note = \"require_feat_tlbios()\";\nfoo();\n",
+        &["require_feat_tlbios()"],
+        &["require_feat_tlbios()"],
+    );
+    // A real comment is blanked in BOTH views.
+    let (templates, code) = rust_code_views("let a = 1; // secret\n");
+    assert!(
+        !templates.contains("secret") && !code.contains("secret"),
+        "WS-RR RR1.12: a real `//` comment survived the views"
+    );
+    // Raw strings, escapes and nested block comments.
+    let (templates, _) = rust_code_views("let s = r#\"a \" b // c\"#;\n");
+    assert!(
+        templates.contains("a \" b // c"),
+        "WS-RR RR1.12: raw string body did not survive the template view"
+    );
+    let (_, code) = rust_code_views("let s = \"a\\\" // still string\"; let t = 1;\n");
+    assert!(
+        code.contains("let t = 1;"),
+        "WS-RR RR1.12: an escaped quote ended the string early"
+    );
+    let (_, code) = rust_code_views("/* outer /* inner */ still */ let a = 1;\n");
+    assert!(
+        code.contains("let a = 1;") && !code.contains("still"),
+        "WS-RR RR1.12: nested block comment mishandled"
+    );
+    // A lifetime is code, not a char literal; mistaking it swallows the
+    // rest of the file.
+    let (_, code) = rust_code_views("fn f<'a>(x: &'a str) -> &'a str { x }\n");
+    assert!(
+        code.contains("-> &'a str { x }"),
+        "WS-RR RR1.12: a lifetime was lexed as a char literal: {code:?}"
+    );
+    // A brace inside a literal must not desynchronise block nesting.
+    let (_, code) = rust_code_views("fn a() { let s = \"}\"; done(); }\n");
+    assert_eq!(
+        statements_at_block_level(&code).trim(),
+        "fn a()",
+        "WS-RR RR1.12: a brace inside a string literal closed the block"
+    );
+}
+
+/// **WS-RR RR1.12**: the two Rust code views this build script scans.
+///
+/// Returns `(strings_kept, strings_blanked)`.  Both blank every comment;
+/// they differ in whether a string literal's contents survive.  Both are
+/// BYTE-ALIGNED with `contents` -- comment and string bytes are replaced by
+/// spaces rather than removed, newlines preserved -- so an offset found in
+/// one view names the same position in the other and in the original file,
+/// and the two can be compared directly.
+///
+/// The distinction is load-bearing in both directions, and the line-based
+/// stripper this replaces got both wrong:
+///
+///   * an `asm!` template is DATA the assembler consumes, so `tlbi vae1os`
+///     and `.arch_extension tlb-rmi` must survive.  Truncating a line at
+///     its first `//` deletes them whenever a sibling template line carries
+///     an assembler comment.
+///   * an identifier inside a string is a MENTION, not a call, so
+///     `let _note = "require_feat_tlbios()";` must not satisfy the check
+///     that the wrapper calls its guard.  It did: the scanner accepted a
+///     `tlbi_vae1os` whose guard call had been replaced by that string,
+///     which is the fail-open direction on the check that keeps an
+///     UNDEFINED instruction off a Cortex-A76.
+///
+/// This mirrors `scripts/rust_code_view.py`, which serves the Python-side
+/// gates; the two exist separately only because a build script cannot
+/// import Python.  `verify_rust_code_views()` pins the semantics here.
+fn rust_code_views(contents: &str) -> (String, String) {
+    let src = contents.as_bytes();
+    let mut kept = src.to_vec();
+    let mut blanked = src.to_vec();
+    let blank = |buffer: &mut [u8], from: usize, to: usize| {
+        for byte in buffer.iter_mut().take(to).skip(from) {
+            if *byte != b'\n' {
+                *byte = b' ';
+            }
+        }
+    };
+
+    let mut i = 0usize;
+    while i < src.len() {
+        // Line comment.
+        if src[i] == b'/' && i + 1 < src.len() && src[i + 1] == b'/' {
+            let end = src[i..]
+                .iter()
+                .position(|&b| b == b'\n')
+                .map_or(src.len(), |p| i + p);
+            blank(&mut kept, i, end);
+            blank(&mut blanked, i, end);
+            i = end;
+            continue;
+        }
+        // Block comment, nested.
+        if src[i] == b'/' && i + 1 < src.len() && src[i + 1] == b'*' {
+            let start = i;
+            let mut depth = 0usize;
+            while i < src.len() {
+                if src[i..].starts_with(b"/*") {
+                    depth += 1;
+                    i += 2;
+                } else if src[i..].starts_with(b"*/") {
+                    depth -= 1;
+                    i += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                } else {
+                    i += 1;
+                }
+            }
+            blank(&mut kept, start, i);
+            blank(&mut blanked, start, i);
+            continue;
+        }
+        // Raw string: r"…", r#"…"#, br#"…"#, cr#"…"#.
+        if let Some((body_start, body_end, end)) = raw_string_at(src, i) {
+            blank(&mut blanked, body_start, body_end);
+            i = end;
+            continue;
+        }
+        // Ordinary, byte and C strings.
+        if let Some((body_start, body_end, end)) = quoted_string_at(src, i) {
+            blank(&mut blanked, body_start, body_end);
+            i = end;
+            continue;
+        }
+        // Char literal (a lifetime such as `'a` is code and is left alone).
+        if src[i] == b'\'' {
+            if let Some(end) = char_literal_end(src, i) {
+                blank(&mut blanked, i + 1, end - 1);
+                i = end;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    (
+        String::from_utf8(kept).expect("blanking preserves UTF-8"),
+        String::from_utf8(blanked).expect("blanking preserves UTF-8"),
+    )
+}
+
+/// Start of body, end of body, and end of literal for a raw string at `at`.
+fn raw_string_at(src: &[u8], at: usize) -> Option<(usize, usize, usize)> {
+    let mut cursor = at;
+    if matches!(src.get(cursor), Some(b'b' | b'c')) {
+        cursor += 1;
+    }
+    if src.get(cursor) != Some(&b'r') {
+        return None;
+    }
+    // A preceding identifier byte means this is part of a longer name.
+    if at > 0 && (src[at - 1].is_ascii_alphanumeric() || src[at - 1] == b'_') {
+        return None;
+    }
+    cursor += 1;
+    let hash_start = cursor;
+    while src.get(cursor) == Some(&b'#') {
+        cursor += 1;
+    }
+    if src.get(cursor) != Some(&b'"') {
+        return None;
+    }
+    let hashes = cursor - hash_start;
+    let body_start = cursor + 1;
+    let mut scan = body_start;
+    while scan < src.len() {
+        // The length bound is part of the terminator test, not an
+        // afterthought: `take(hashes)` over a short tail yields fewer
+        // elements and `all` is vacuously true, so without it a `"` near
+        // end-of-file would close a raw string whose hashes are not there.
+        if src[scan] == b'"'
+            && scan + 1 + hashes <= src.len()
+            && src[scan + 1..scan + 1 + hashes].iter().all(|&b| b == b'#')
+        {
+            return Some((body_start, scan, scan + 1 + hashes));
+        }
+        scan += 1;
+    }
+    panic!("WS-RR RR1.12: unterminated raw string at byte {at}");
+}
+
+/// Start of body, end of body, and end of literal for a `"`-string at `at`.
+fn quoted_string_at(src: &[u8], at: usize) -> Option<(usize, usize, usize)> {
+    let quote = if src[at] == b'"' {
+        at
+    } else if matches!(src[at], b'b' | b'c')
+        && src.get(at + 1) == Some(&b'"')
+        && !(at > 0 && (src[at - 1].is_ascii_alphanumeric() || src[at - 1] == b'_'))
+    {
+        at + 1
+    } else {
+        return None;
+    };
+    let body_start = quote + 1;
+    let mut scan = body_start;
+    while scan < src.len() {
+        match src[scan] {
+            b'\\' => scan += 2,
+            b'"' => return Some((body_start, scan, scan + 1)),
+            _ => scan += 1,
+        }
+    }
+    panic!("WS-RR RR1.12: unterminated string at byte {at}");
+}
+
+/// End offset of the char literal at `at`, or `None` for a lifetime.
+///
+/// `'a'` closes after one character or one escape; `'a` in `&'a str` or
+/// `'outer: loop` never does.
+fn char_literal_end(src: &[u8], at: usize) -> Option<usize> {
+    let mut scan = at + 1;
+    if src.get(scan) == Some(&b'\\') {
+        scan += 2;
+        while scan < src.len() && src[scan] != b'\'' {
+            scan += 1;
+        }
+        return (src.get(scan) == Some(&b'\'')).then_some(scan + 1);
+    }
+    // Step over one whole UTF-8 scalar.
+    scan += 1;
+    while scan < src.len() && (src[scan] & 0xC0) == 0x80 {
+        scan += 1;
+    }
+    (src.get(scan) == Some(&b'\'')).then_some(scan + 1)
+}
+
+/// **WS-RR RR1.4**: `block` with every nested `{...}` removed.
+///
+/// What remains is the block's OWN statement level -- the statements that
+/// run unconditionally when the block is entered.  The distinction is the
+/// whole content of a divergence check: a `fatal_halt()` anywhere inside
+/// the block satisfies `contains`, but only one at this level is reached
+/// on every path through it.
+///
+/// Removal, not extraction: an unbalanced block (which cannot occur in
+/// source the compiler has already accepted, since this scanner runs on
+/// `tlb.rs` at build time) leaves the tail dropped, which makes the result
+/// *shorter* and so fails the caller's check rather than passing it.
+fn statements_at_block_level(block: &str) -> String {
+    let mut depth = 0usize;
+    let mut out = String::with_capacity(block.len());
+    for ch in block.chars() {
+        match ch {
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => out.push(ch),
+            _ => {}
+        }
+    }
+    out
 }
 
 /// **WS-RR RR1.4**: the brace-delimited block introduced by `header`.
