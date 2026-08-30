@@ -5818,7 +5818,10 @@ EOF'
 # checking: a tally running SM8 -> SM10 with no SM9 term looked plausible for
 # two minor versions.  The completeness and derivation witnesses are named
 # individually — deleting one is the edit that would let the number drift
-# again, and a surface scan is what makes that deletion visible.
+# again, and a surface scan is what makes that deletion visible.  The entry /
+# theorem pair is anchored deliberately: collapsing them is exactly the defect
+# review found at v0.34.26, when 1111 registrations were published as a theorem
+# count.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.PhaseTheoremManifest'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Concurrency.PhaseTheoremManifest
@@ -5840,20 +5843,26 @@ import SeLe4n.Kernel.Concurrency.PhaseTheoremManifest
 #check @SeLe4n.Kernel.Concurrency.PhaseTheoremEntry.theoremCount
 #check @SeLe4n.Kernel.Concurrency.smpPhaseTheoremManifest
 #check @SeLe4n.Kernel.Concurrency.smpPhaseEntry?
+#check @SeLe4n.Kernel.Concurrency.smpPhaseEntryCount
 #check @SeLe4n.Kernel.Concurrency.smpPhaseTheoremCount
+#check @SeLe4n.Kernel.Concurrency.smpInventoriedEntryCount
 #check @SeLe4n.Kernel.Concurrency.smpInventoriedTheoremCount
 #check @SeLe4n.Kernel.Concurrency.smpPhaseTheoremManifest_covers_all
 #check @SeLe4n.Kernel.Concurrency.smpPhaseTheoremManifest_covers
 #check @SeLe4n.Kernel.Concurrency.smpPhaseTheoremManifest_phases_nodup
 #check @SeLe4n.Kernel.Concurrency.smpPhaseTheoremManifest_length
-#check @SeLe4n.Kernel.Concurrency.smpPhase_verifiedLockPrimitives_theoremCount_eq_inventories
-#check @SeLe4n.Kernel.Concurrency.smpPhase_perObjectLocks_theoremCount_eq_inventories
-#check @SeLe4n.Kernel.Concurrency.smpPhase_perCoreScheduler_theoremCount_eq_inventories
+#check @SeLe4n.Kernel.Concurrency.smpPhase_verifiedLockPrimitives_entryCount_eq_inventories
+#check @SeLe4n.Kernel.Concurrency.smpPhase_perObjectLocks_entryCount_eq_inventories
+#check @SeLe4n.Kernel.Concurrency.smpPhase_perCoreScheduler_entryCount_eq_inventories
 #check @SeLe4n.Kernel.Concurrency.smpPhase_foundations_theoremCount_zero
 #check @SeLe4n.Kernel.Concurrency.smpPhase_perCoreState_theoremCount_zero
 #check @SeLe4n.Kernel.Concurrency.smpPhase_unregistered_theoremCount_zero
 #check @SeLe4n.Kernel.Concurrency.smp_inventoried_theorem_count
+#check @SeLe4n.Kernel.Concurrency.smp_inventoried_entry_count
+#check @SeLe4n.Kernel.Concurrency.smp_inventoried_theorem_count_lt_entry_count
 #check @SeLe4n.Kernel.Concurrency.smp_inventoried_theorem_count_decomposition
+#check @SeLe4n.Kernel.Concurrency.smp_inventoried_entry_count_decomposition
+#check @SeLe4n.Kernel.Concurrency.censusCoversManifest
 EOF'
 
 # WS-SM SM2.D TicketLockRefinement (F-01 refinement bridge anchor).

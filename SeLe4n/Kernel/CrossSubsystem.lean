@@ -665,8 +665,8 @@ theorem storeObject_sameRegion_untyped_preserves_untypedRegionsDisjoint
         (1) IPC queue membership ↔ service registry endpoint tracking
         (2) Capability revocation ↔ service endpoint lifecycle
       - Assessment: no known concrete violation. The gap is theoretical —
-        frame lemmas ensure each operation preserves all 11 predicates
-        individually. The missing piece is a formal proof that ALL 11
+        frame lemmas ensure each operation preserves the predicates
+        individually. The missing piece is a formal proof that ALL **12**
         predicates compose correctly under arbitrary interleaving of all
         34 operations (exponential combinatorics; recorded as a post-1.0
         hardening candidate — registered in `docs/WORKSTREAM_HISTORY.md`,
@@ -787,7 +787,8 @@ theorem default_crossSubsystemInvariant :
 
 /-- AE4-D (U-36/C-CAP06): Full cross-subsystem invariant with CDT mint completeness.
 
-Combines `crossSubsystemInvariant` (11 predicates after WS-AM AM4) with
+Combines `crossSubsystemInvariant` (12 predicates: 11 after WS-AM AM4, plus
+`untypedRegionsDisjoint`) with
 `capabilityInvariantBundleWithMintCompleteness` (standard bundle + mint completeness).
 This ensures CDT-based revocation via `cspaceRevokeCdt` is exhaustive at the
 composition layer without modifying the 60+ theorems that destructure the
@@ -1338,8 +1339,18 @@ def crossSubsystemFieldSets : List (String × List StateField) :=
   , ("blockingAcyclic", blockingAcyclic_fields)  -- AF1-B1
   , ("lifecycleObjectTypeLockstep", lifecycleObjectTypeLockstep_fields) ]  -- AM4 audit remediation
 
-/-- V6-A4 + Z9-E + AE5-C + AF1-B1 + AM4: Field-set count matches predicate
-    count (11 predicates since AM4 extension). -/
+/-- V6-A4 + Z9-E + AE5-C + AF1-B1 + AM4: the field-set table's size.
+
+    **11, while `crossSubsystemInvariant` now has 12 conjuncts.**  The table
+    predates `untypedRegionsDisjoint`, which was appended to the invariant
+    without a matching `_fields` entry, so the pairwise disjointness analysis
+    below and every frame lemma derived from it cover 11 of the 12 predicates.
+    That is incompleteness, not unsoundness — nothing false is proved, and the
+    uncovered predicate simply gets no frame lemma, so proofs needing it must
+    establish it directly.  Found during the WS-RR RR0 review round and
+    registered in `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C);
+    closing it means adding `untypedRegionsDisjoint_fields` and redoing the
+    analysis over C(12,2) = 66 pairs. -/
 theorem crossSubsystemFieldSets_count :
     crossSubsystemFieldSets.length = 11 := by rfl
 

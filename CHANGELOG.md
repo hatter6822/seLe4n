@@ -1,3 +1,75 @@
+## v0.34.27 — the theorem count was counting definitions; Codex review round 1
+
+Six findings on PR #882, all verified against the tree, all real.  The one that
+matters is mine, and it is the same defect I had just spent a cut removing —
+one layer down.
+
+**A `List.length` is not a theorem count.**  v0.34.26 replaced a hand-summed
+theorem total with a measurement and published **1111**.  The measurement was
+of the wrong thing.  Every inventory's construction macro resolves its
+identifier — `let _ := @$ident` — and so proves the *name exists*; not one
+checks that its **type is a `Prop`**.  The inventories register a phase's whole
+surface, so they carry `def`s alongside proofs: `wakeThreadLockSet` and
+`determineTargetCore` in SM5.C's, `replenishOnCore` and
+`migrateSchedContextReplenishment` in SM5.H's, the per-core invariant
+*predicates* in SM5.I's, the WCRT cost functions in SM5.J's.
+
+Measured: **209 of the 1111 entries are definitions.**  The true theorem count
+is **902**.  I had replaced an estimate with a measurement and then labelled
+the measurement wrong — a `List.length` counts registrations, and no amount of
+deriving it from per-phase entries makes it count proofs.
+
+The fix is the one the review named: check the declaration types.
+
+- `PhaseTheoremEntry` now carries **both** `entryCount` (registrations, proved
+  from `List.length` as before) and `theoremCount` (propositions).
+- A **propositionality census** runs at elaboration: it resolves every
+  registered identifier against the environment in Lean's own namespace order,
+  requires the resolution to be **unambiguous**, counts those whose type is a
+  `Prop`, and fails the build when any phase's declared count disagrees.
+  Ambiguity is an error rather than a guess — `waitGraph` is both a `def` and a
+  `DeadlockCategory` constructor, and a resolver that picked a winner would be
+  a gate that lies.
+- This has to be a command elaborator: propositionality is a fact about the
+  environment, not a value, so no `decide` can see it — and neither can the
+  Python gate, which reads text.  `smp_inventoried_theorem_count_lt_entry_count`
+  pins the 209 difference so collapsing the two figures is a visible edit.
+
+**The gate took its own subject's word for things.**  Two fail-opens, both
+reproduced as witnesses before fixing:
+
+- Discovery matched `theorem` only.  Lean accepts `lemma` equally and this repo
+  uses it, so a `lemma`-declared inventory was invisible — unclaimed, with the
+  gate reporting PASS.
+- The manifest's `kind` field was trusted.  Relabelling a theorem inventory
+  `assumptionLedger` (or `unregistered`) with a zero count made its entries
+  leave the total silently; the reviewer reproduced this. The two assumption
+  ledgers are now pinned by name, and anything else claiming to be one is an
+  error.
+
+19 witnesses, up from 15, and each new one confirmed to fail when the gate is
+weakened.
+
+**Two counts that were wrong, and a third nobody had noticed.**
+`crossSubsystemInvariant` has **12** conjuncts; the register row and two source
+comments said 11.  Chasing that turned up something the review did not reach:
+`crossSubsystemFieldSets` has **11** entries, so `untypedRegionsDisjoint` has no
+`_fields` entry and the pairwise disjointness analysis — and every frame lemma
+derived from it — covers 11 of the 12.  Incompleteness rather than unsoundness,
+now registered with its arithmetic (C(12,2) = 66 pairs to redo).
+
+**SM10's letters are not execution order.**  SM10.B.7 and SM10.B.10 consume
+SM10.E.D1's image; SM10.C bumps the version and cuts the tag before SM10.E runs.
+CLAUDE.md says a sequencing note that contradicts the numbering means the
+numbering is wrong — so this is recorded, not papered over, and left to RR7.5
+with the register's bootpath findings: `SM10.E` alone is cited 377 times across
+60 files including production docstrings and historical CHANGELOG entries, and
+a 532-citation re-sequence does not belong inside a registration cut.
+
+Also: the WS-RR heading still read PLANNED while its body said IN FLIGHT.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+
 ## v0.34.26 — RR0: the workstream nobody was tracking, and a theorem total that could not go stale
 
 WS-RR phase **RR0 — Registration and plan correction** — all eleven sub-tasks.

@@ -11,6 +11,8 @@
 -- landed early by WS-RR RR0.6, which replaces the hand-summed literal
 -- the marker would otherwise have certified).
 
+import Lean.Elab.Command
+import Lean.Meta.Basic
 import SeLe4n.Model.Object.PerObjectLockInventory
 import SeLe4n.Kernel.Concurrency.Assumptions
 import SeLe4n.Kernel.Concurrency.LockPrimitives
@@ -168,7 +170,16 @@ structure PhaseTheoremEntry where
   kind         : PhaseInventoryKind
   /-- Unqualified names of the phase's inventory definitions. -/
   inventories  : List String
-  /-- Theorems registered by those inventories; zero for every non-theorem kind. -/
+  /-- **Entries** in those inventories — every registered declaration, whatever
+      its type.  Proved equal to the inventories' `List.length` below. -/
+  entryCount   : Nat
+  /-- **Theorems** among those entries: the entries whose declaration type is a
+      `Prop`.  This is the number `smpInventoriedTheoremCount` sums, and it is
+      *not* `entryCount`: the inventories register a phase's whole surface, so
+      209 of the 1111 entries are `def`s — lock-set footprints, per-core
+      invariant predicates, WCRT cost functions — rather than proofs.  Checked
+      against the environment by the census at the end of this module, which
+      fails elaboration on drift; zero for every non-theorem kind. -/
   theoremCount : Nat
   deriving Repr, Inhabited
 
@@ -182,16 +193,19 @@ def smpPhaseTheoremManifest : List PhaseTheoremEntry :=
       label := "SM0 — foundations",
       kind := .assumptionLedger,
       inventories := ["smpLatentInventory"],
+      entryCount := 8,
       theoremCount := 0 },
     { phase := .rustHal,
       label := "SM1 — Rust HAL",
       kind := .unregistered,
       inventories := [],
+      entryCount := 0,
       theoremCount := 0 },
     { phase := .verifiedLockPrimitives,
       label := "SM2 — verified lock primitives",
       kind := .theoremInventory,
       inventories := ["lockPrimitives"],
+      entryCount := 22,
       theoremCount := 22 },
     { phase := .perObjectLocks,
       label := "SM3 — per-object locks",
@@ -199,11 +213,13 @@ def smpPhaseTheoremManifest : List PhaseTheoremEntry :=
       inventories := ["perObjectLockTheorems", "lockSetTheorems",
                       "withLockSetTheorems", "deadlockTheorems",
                       "serializabilityTheorems"],
-      theoremCount := 409 },
+      entryCount := 409,
+      theoremCount := 276 },
     { phase := .perCoreState,
       label := "SM4 — per-core state",
       kind := .assumptionLedger,
       inventories := ["smpRetiredInventory"],
+      entryCount := 8,
       theoremCount := 0 },
     { phase := .perCoreScheduler,
       label := "SM5 — per-core scheduler",
@@ -212,47 +228,70 @@ def smpPhaseTheoremManifest : List PhaseTheoremEntry :=
                       "perCoreIdleTheorems", "perCorePipTheorems",
                       "perCoreDomainTheorems", "perCoreCbsTheorems",
                       "perCoreInvariantSuiteTheorems", "perCoreWcrtTheorems"],
-      theoremCount := 680 },
+      entryCount := 680,
+      theoremCount := 604 },
     { phase := .crossCoreIpc,
       label := "SM6 — cross-core IPC",
       kind := .unregistered,
       inventories := [],
+      entryCount := 0,
       theoremCount := 0 },
     { phase := .tlbShootdown,
       label := "SM7 — TLB shootdown",
       kind := .unregistered,
       inventories := [],
+      entryCount := 0,
       theoremCount := 0 },
     { phase := .informationFlow,
       label := "SM8 — information flow",
       kind := .unregistered,
       inventories := [],
+      entryCount := 0,
       theoremCount := 0 },
     { phase := .declassification,
       label := "SM9 — declassification",
       kind := .unregistered,
       inventories := [],
+      entryCount := 0,
       theoremCount := 0 },
     { phase := .releaseClosure,
       label := "SM10 — release closure",
       kind := .unregistered,
       inventories := [],
+      entryCount := 0,
       theoremCount := 0 } ]
 
 /-- The manifest entry registering `p`, if any. -/
 def smpPhaseEntry? (p : SmpCompletionPhase) : Option PhaseTheoremEntry :=
   smpPhaseTheoremManifest.find? (fun e => e.phase == p)
 
-/-- Theorems `p` registers.  Zero for a phase whose inventories are an
-    assumption ledger or absent. -/
+/-- **Entries** `p` registers — every declaration in its inventories, whatever
+    its type.  Zero for a phase whose inventories are an assumption ledger or
+    absent. -/
+def smpPhaseEntryCount (p : SmpCompletionPhase) : Nat :=
+  match smpPhaseEntry? p with
+  | some e => if e.kind == PhaseInventoryKind.theoremInventory then e.entryCount else 0
+  | none   => 0
+
+/-- **Theorems** `p` registers — the entries whose declaration type is a `Prop`.
+    Zero for a phase whose inventories are an assumption ledger or absent. -/
 def smpPhaseTheoremCount (p : SmpCompletionPhase) : Nat :=
   match smpPhaseEntry? p with
   | some e => if e.kind == PhaseInventoryKind.theoremInventory then e.theoremCount else 0
   | none   => 0
 
-/-- Theorems registered in a machine-checked inventory across every SMP
+/-- Entries registered in a machine-checked inventory across every SMP
     completion phase — the sum of the per-phase entries, never a literal
     written beside them. -/
+def smpInventoriedEntryCount : Nat :=
+  (SmpCompletionPhase.all.map smpPhaseEntryCount).sum
+
+/-- **Theorems** registered in a machine-checked inventory across every SMP
+    completion phase: entries whose declaration type is a `Prop`.
+
+    This is the number to quote.  `smpInventoriedEntryCount` counts the same
+    inventories' *entries*, which is a larger and weaker figure — the
+    inventories register a phase's surface, not only its proofs. -/
 def smpInventoriedTheoremCount : Nat :=
   (SmpCompletionPhase.all.map smpPhaseTheoremCount).sum
 
@@ -288,15 +327,19 @@ size witnesses.  An inventory that gains or loses an entry changes its
 `…_count` witness, which changes the right-hand side here, which fails this
 module.  That is what makes the manifest a measurement rather than a copy. -/
 
-/-- SM2's registered count is the SM2.D.7 lock-primitive inventory's length. -/
-theorem smpPhase_verifiedLockPrimitives_theoremCount_eq_inventories :
-    smpPhaseTheoremCount .verifiedLockPrimitives = lockPrimitives.length := by
+/-- SM2's registered **entry** count is the SM2.D.7 lock-primitive inventory's
+    length.  Its theorem count coincides only because every `lockPrimitives`
+    entry happens to be a proposition; the census below is what establishes
+    that, not this theorem. -/
+theorem smpPhase_verifiedLockPrimitives_entryCount_eq_inventories :
+    smpPhaseEntryCount .verifiedLockPrimitives = lockPrimitives.length := by
   rw [lockPrimitives_count]
   decide
 
-/-- SM3's registered count is the sum of its five SM3.A–E inventories. -/
-theorem smpPhase_perObjectLocks_theoremCount_eq_inventories :
-    smpPhaseTheoremCount .perObjectLocks
+/-- SM3's registered **entry** count is the sum of its five SM3.A–E
+    inventories' lengths.  Of those 409 entries, 276 are propositions. -/
+theorem smpPhase_perObjectLocks_entryCount_eq_inventories :
+    smpPhaseEntryCount .perObjectLocks
       = Model.perObjectLockTheorems.length + lockSetTheorems.length
         + withLockSetTheorems.length + deadlockTheorems.length
         + serializabilityTheorems.length := by
@@ -305,9 +348,10 @@ theorem smpPhase_perObjectLocks_theoremCount_eq_inventories :
       serializabilityTheorems_count]
   decide
 
-/-- SM5's registered count is the sum of its eight SM5.C–J inventories. -/
-theorem smpPhase_perCoreScheduler_theoremCount_eq_inventories :
-    smpPhaseTheoremCount .perCoreScheduler
+/-- SM5's registered **entry** count is the sum of its eight SM5.C–J
+    inventories' lengths.  Of those 680 entries, 604 are propositions. -/
+theorem smpPhase_perCoreScheduler_entryCount_eq_inventories :
+    smpPhaseEntryCount .perCoreScheduler
       = crossCoreWakeTheorems.length + perCoreTimerTheorems.length
         + perCoreIdleTheorems.length + PriorityInheritance.perCorePipTheorems.length
         + perCoreDomainTheorems.length + perCoreCbsTheorems.length
@@ -353,7 +397,20 @@ here is written twice. -/
     summands are each pinned to a real inventory length above.  Changing any
     inventory changes this number, and the Tier-0 gate fails until the
     manifest and `docs/smp_theorem_manifest.json` agree with the tree. -/
-theorem smp_inventoried_theorem_count : smpInventoriedTheoremCount = 1111 := by
+theorem smp_inventoried_theorem_count : smpInventoriedTheoremCount = 902 := by
+  decide
+
+/-- Entries in the same inventories: 1111, of which 209 are `def`s rather than
+    proofs.  Kept beside the theorem count so the gap is a number a reader can
+    see, not a caveat they have to be told. -/
+theorem smp_inventoried_entry_count : smpInventoriedEntryCount = 1111 := by
+  decide
+
+/-- The two differ, and by how much.  Stated so that collapsing them — quoting
+    1111 as a theorem count, which this module did until `v0.34.27` — is a
+    visible edit rather than a silent one. -/
+theorem smp_inventoried_theorem_count_lt_entry_count :
+    smpInventoriedTheoremCount + 209 = smpInventoriedEntryCount := by
   decide
 
 /-- The total is the sum of the two phases that carry inventories today.
@@ -364,6 +421,14 @@ theorem smp_inventoried_theorem_count_decomposition :
       = smpPhaseTheoremCount .verifiedLockPrimitives
         + smpPhaseTheoremCount .perObjectLocks
         + smpPhaseTheoremCount .perCoreScheduler := by
+  decide
+
+/-- The same decomposition for entries. -/
+theorem smp_inventoried_entry_count_decomposition :
+    smpInventoriedEntryCount
+      = smpPhaseEntryCount .verifiedLockPrimitives
+        + smpPhaseEntryCount .perObjectLocks
+        + smpPhaseEntryCount .perCoreScheduler := by
   decide
 
 /-! ## Build anchor
@@ -410,5 +475,178 @@ example : True := by
   let _ := @smpRetiredInventory
   let _ := @smpRetiredInventory_count
   trivial
+
+/-! ## The propositionality census — what makes `theoremCount` a theorem count
+
+`entryCount` is proved from `List.length`, which counts *registrations*.  It
+cannot distinguish a proof from a definition, and the inventories deliberately
+register both: `crossCoreWakeTheorems` carries `wakeThreadLockSet` and
+`determineTargetCore`, `perCoreCbsTheorems` carries `replenishOnCore` and
+`migrateSchedContextReplenishment`, and so on — 209 such entries across the
+fourteen inventories.  Every inventory's construction macro resolves its
+identifier (`let _ := @$ident`) and so proves the name exists; **none** checks
+that its type is a `Prop`.
+
+So a `List.length` is the wrong witness for a claim about theorems, and until
+`v0.34.27` this module made exactly that mistake: it published 1111 as a
+theorem total.  The census below is the right one.  It resolves every
+registered identifier against the environment, requires the resolution to be
+**unambiguous**, and counts those whose type is a proposition — then compares
+the result with each manifest entry's `theoremCount` and fails elaboration on
+any disagreement.  A gate that guessed which constant an ambiguous name meant
+would be a gate that lies, so ambiguity is an error rather than a coin flip.
+
+This has to be a command elaborator rather than a theorem: propositionality is
+a fact about the *environment*, not about a value, so no `decide` can see it.
+That is also why the Python gate cannot check it — `generate_smp_theorem_manifest.py`
+reads text and has no elaborator — and why the two mechanisms are
+complementary rather than redundant.
+-/
+
+section Census
+
+open Lean Elab Command Meta
+
+/-- Every inventory the manifest names, paired with its entries' identifiers.
+
+    Hard-wired against the real lists because a `String` in
+    `PhaseTheoremEntry.inventories` cannot be dereferenced.  The two are held
+    equal by `censusCoversManifest` below, so this list cannot drift from the
+    manifest it is supposed to measure. -/
+private def censusInventories : List (String × Name × List String) :=
+  [ ("perObjectLockTheorems", `SeLe4n.Model,
+      SeLe4n.Model.perObjectLockTheorems.map (·.identifier))
+  , ("lockSetTheorems", `SeLe4n.Kernel.Concurrency,
+      lockSetTheorems.map (·.identifier))
+  , ("withLockSetTheorems", `SeLe4n.Kernel.Concurrency,
+      withLockSetTheorems.map (·.identifier))
+  , ("deadlockTheorems", `SeLe4n.Kernel.Concurrency,
+      deadlockTheorems.map (·.identifier))
+  , ("serializabilityTheorems", `SeLe4n.Kernel.Concurrency,
+      serializabilityTheorems.map (·.identifier))
+  , ("lockPrimitives", `SeLe4n.Kernel.Concurrency,
+      lockPrimitives.map (·.identifier.toString))
+  , ("crossCoreWakeTheorems", `SeLe4n.Kernel,
+      SeLe4n.Kernel.crossCoreWakeTheorems.map (·.identifier))
+  , ("perCoreTimerTheorems", `SeLe4n.Kernel,
+      SeLe4n.Kernel.perCoreTimerTheorems.map (·.identifier))
+  , ("perCoreIdleTheorems", `SeLe4n.Kernel,
+      SeLe4n.Kernel.perCoreIdleTheorems.map (·.identifier))
+  , ("perCorePipTheorems", `SeLe4n.Kernel.PriorityInheritance,
+      SeLe4n.Kernel.PriorityInheritance.perCorePipTheorems.map (·.identifier))
+  , ("perCoreDomainTheorems", `SeLe4n.Kernel,
+      SeLe4n.Kernel.perCoreDomainTheorems.map (·.identifier))
+  , ("perCoreCbsTheorems", `SeLe4n.Kernel,
+      SeLe4n.Kernel.perCoreCbsTheorems.map (·.identifier))
+  , ("perCoreInvariantSuiteTheorems", `SeLe4n.Kernel,
+      SeLe4n.Kernel.perCoreInvariantSuiteTheorems.map (·.identifier))
+  , ("perCoreWcrtTheorems", `SeLe4n.Kernel,
+      SeLe4n.Kernel.perCoreWcrtTheorems.map (·.identifier)) ]
+
+/-- The census measures exactly the inventories the `theoremInventory` phases
+    claim — neither more nor fewer.  Adding an inventory to a phase without
+    adding it here (or the reverse) fails this proof, so the census cannot
+    quietly measure a different set than the manifest publishes. -/
+theorem censusCoversManifest :
+    (censusInventories.map (·.1)).length
+      = ((smpPhaseTheoremManifest.filter
+            (fun e => e.kind == PhaseInventoryKind.theoremInventory)).flatMap
+              (·.inventories)).length
+    ∧ (censusInventories.map (·.1)).all
+        (fun n => ((smpPhaseTheoremManifest.filter
+            (fun e => e.kind == PhaseInventoryKind.theoremInventory)).flatMap
+              (·.inventories)).contains n) := by
+  decide
+
+/-- Does `n` end with every component of `want`?
+
+    The inventories store identifiers at varying qualification — bare
+    (`wakeThreadLockSet`), partly qualified (`TCB.lock`), or fully
+    (`SeLe4n.Kernel.schedulerInvariantStructural_perCore`).  Matching on the
+    final component alone makes `TCB.lock` ambiguous across ten structures, so
+    the whole stored suffix has to match. -/
+private def censusNameMatches (want n : Name) : Bool :=
+  let wc := want.components
+  let nc := n.components
+  wc.length ≤ nc.length && (nc.drop (nc.length - wc.length)) == wc
+
+/-- Resolve an inventory identifier to the unique `SeLe4n.*` constant it names,
+    and say whether its type is a proposition.
+
+    Ambiguity and absence are both hard errors: the census exists to make a
+    number trustworthy, and a resolver that picked a winner among candidates
+    would defeat that. -/
+private def censusIsProp (idx : Std.HashMap String (List Name)) (ns : Name)
+    (ident : String) : MetaM Bool := do
+  let env ← getEnv
+  let want := ident.toName
+  -- Lean's own resolution order: the enclosing namespace first, then each
+  -- shorter prefix, then the root.  `waitGraph` inside
+  -- `SeLe4n.Kernel.Concurrency` is that namespace's `def`, not the
+  -- `DeadlockCategory.waitGraph` constructor that shares its final component —
+  -- suffix search alone cannot tell those apart and must not try.
+  -- The prefix chain, longest first, ending at the root (`Name.anonymous ++ n`
+  -- is `n`).  Built by `take` rather than by recursing on `getPrefix`, which
+  -- Lean cannot see as decreasing.
+  let cs := ns.components
+  let prefixes : List Name :=
+    ((List.range (cs.length + 1)).map
+      (fun k => (cs.take k).foldl (· ++ ·) Name.anonymous)).reverse
+  match prefixes.findSome? (fun p => env.find? (p ++ want)) with
+  | some c => isProp c.type
+  | none =>
+    -- Fallback for an identifier stored at a qualification the walk cannot
+    -- reach.  Ambiguity here is a hard error: a resolver that picked a winner
+    -- would defeat the census.
+    match (idx.getD want.getString! []).filter (censusNameMatches want) with
+    | [n] =>
+      match env.find? n with
+      | none   => throwError "propositionality census: '{ident}' has no declaration"
+      | some c => isProp c.type
+    | []  => throwError "propositionality census: '{ident}' resolves to no SeLe4n \
+               constant (searched from namespace {ns})"
+    | cs  => throwError "propositionality census: '{ident}' is ambiguous ({cs})"
+
+/-- Index every `SeLe4n.*` constant by its final name component. -/
+private def censusIndex : MetaM (Std.HashMap String (List Name)) := do
+  let env ← getEnv
+  let mut m : Std.HashMap String (List Name) := {}
+  for (n, _) in env.constants.toList do
+    if n.isInternal then continue
+    if (`SeLe4n).isPrefixOf n then
+      let k := n.getString!
+      m := m.insert k ((m.getD k []) ++ [n])
+  return m
+
+-- **The check.**  Fails this module's elaboration when the propositions the
+-- environment actually holds disagree with any phase's declared
+-- `theoremCount`, or with the module-level total.
+run_cmd liftTermElabM do
+  let idx ← censusIndex
+  let mut perInventory : List (String × Nat) := []
+  for (nm, ns, ids) in censusInventories do
+    let mut props := 0
+    for i in ids do
+      if (← censusIsProp idx ns i) then props := props + 1
+    perInventory := perInventory ++ [(nm, props)]
+  let propsOf (names : List String) : Nat :=
+    names.foldl (fun acc n => acc + ((perInventory.find? (·.1 == n)).map (·.2)).getD 0) 0
+  let mut total := 0
+  for e in smpPhaseTheoremManifest do
+    if e.kind == PhaseInventoryKind.theoremInventory then
+      let measured := propsOf e.inventories
+      if measured != e.theoremCount then
+        throwError "propositionality census: phase {e.label} declares theoremCount = \
+          {e.theoremCount}, the environment holds {measured} propositions across \
+          {e.inventories}"
+      total := total + measured
+    else if e.theoremCount != 0 then
+      throwError "propositionality census: phase {e.label} is not a theoremInventory \
+        yet declares theoremCount = {e.theoremCount}"
+  if total != smpInventoriedTheoremCount then
+    throwError "propositionality census: the per-phase propositions sum to {total}, \
+      but smpInventoriedTheoremCount is {smpInventoriedTheoremCount}"
+
+end Census
 
 end SeLe4n.Kernel.Concurrency

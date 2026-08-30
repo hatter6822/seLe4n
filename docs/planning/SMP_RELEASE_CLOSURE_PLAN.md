@@ -123,6 +123,35 @@ between that surface and a running image, plus the remediation WS-RR owns.
 
 ## 3. Sub-tasks
 
+> **Known ordering defect — the sub-phase letters are not execution order.**
+> Flagged by review on PR #882 and confirmed: **SM10.B.7** (the 4-core boot
+> fixture) and **SM10.B.10** (running the Tier-4 gate green) both consume
+> **SM10.E.D1**'s bootable image, and **SM10.C** performs the version bump and
+> tag before SM10.E runs at all.  A reader following the letters reaches
+> fixture generation, release closure and the tag before the image exists.
+>
+> CLAUDE.md is unambiguous about this shape: "*Phase number is execution
+> order… A 'sequencing note' that contradicts the numbering means the numbering
+> is wrong, not that the note is helpful.*"  So the note you are reading is
+> **not** the remedy — the remedy is to re-sequence, putting the image build
+> ahead of everything that consumes it.
+>
+> It is recorded rather than performed here because it is not RR0's to do and
+> not small: `SM10.E` alone is cited 377 times across 60 files, including
+> production Lean docstrings, `rust/` comments, historical `CHANGELOG.md`
+> entries and closed audit plans that the project's own rule says are not
+> renumbered.  Doing it inside a registration cut would smuggle a 532-citation
+> rewrite into a PR about bookkeeping.
+>
+> **Owner**: WS-RR **RR7.5** ("SM10 plan-text corrections"), which already owns
+> the §1 scope statement and the `contextRestoreSeamLive` prerequisites, taken
+> together with the register's bootpath findings 40–42 ("re-scope before
+> starting: split SM10.E out … into its own phase with a proper PR sequence").
+> Registered in `docs/WORKSTREAM_HISTORY.md`.  Until it lands, **read the
+> execution order as: SM10.E's image build first, then SM10.A/B/D, then
+> SM10.C's version bump and tag.**
+
+
 ### SM10.A — Documentation sync (9 sub-tasks)
 
 | Sub | Description | Files | Est |
@@ -349,10 +378,11 @@ Closures (from the WS-SM audit):
 - 7 MEDIUM + 5 LOW findings closed.
 
 Theorem count: take it from docs/smp_theorem_manifest.json,
-regenerated in this cut — 1111 theorems registered in a
+regenerated in this cut — 902 theorems registered in a
 machine-checked inventory across SM0..SM10, of which SM2
-contributes 22, SM3 409 and SM5 680.  Do NOT restate a
-per-phase sum here; see the note below.
+contributes 22, SM3 276 and SM5 604.  The same inventories hold
+1111 entries; the other 209 are defs, not proofs.  Quote the
+902.  Do NOT restate a per-phase sum here; see the note below.
 Zero Lean axioms.  Zero sorry/native_decide.  Tier 0..5 all
 green.
 
@@ -400,16 +430,31 @@ count proved equal to the real inventory lengths.
 manifest, the Lean total, or the JSON disagree.  Read the number; do not
 re-derive it.
 
-**What the number counts, and what it does not.**  1111 is the number of
-theorems registered in a machine-checked inventory: named, resolving at
-elaboration, duplicate-free.  It is not the earlier "~210 substantive
-theorems", which was an estimate of headline theorems per phase catalogue and
-is not recoverable from the tree.  Six phases — SM1 and SM6..SM10 — have **no** theorem inventory and are registered as contributing zero
-rather than given a plausible figure, so the total *understates* what those
-phases prove.  Building the missing inventories is registered debt with
-closure target **SM10.B.13** (`docs/WORKSTREAM_HISTORY.md`); until they exist,
-the release note must say "registered in a machine-checked inventory" rather
-than "proved", because those are different claims.
+**What the number counts, and what it does not.**  902 is the number of
+**theorems** registered in a machine-checked inventory: named, resolving at
+elaboration, duplicate-free, and — verified by the propositionality census —
+of a type that is a `Prop`.
+
+That last clause is not decoration.  The inventories register a phase's whole
+surface, so 209 of their 1111 entries are `def`s: `wakeThreadLockSet` and
+`determineTargetCore` in SM5.C's, `replenishOnCore` and
+`migrateSchedContextReplenishment` in SM5.H's, the per-core invariant
+*predicates* in SM5.I's, the WCRT cost functions in SM5.J's.  Every
+inventory's construction macro proves its identifier resolves; none checks the
+type.  A `List.length` therefore measures registrations, and quoting it as a
+theorem count is the mistake this plan made at `v0.34.26` and corrected at
+`v0.34.27` after review.  **`entryTotal` is 1111; `theoremTotal` is 902; quote
+the second.**
+
+Neither figure is the earlier "~210 substantive theorems", which was an
+estimate of headline theorems per phase catalogue and is not recoverable from
+the tree.  Six phases — SM1 and SM6..SM10 — have **no** theorem inventory and
+are registered as contributing zero rather than given a plausible figure, so
+902 *understates* what those phases prove.  Building the missing inventories is
+registered debt with closure target **SM10.B.13**
+(`docs/WORKSTREAM_HISTORY.md`); until they exist, the release note must say
+"registered in a machine-checked inventory" rather than "proved", because
+those are different claims.
 
 ## 6. Verification strategy
 

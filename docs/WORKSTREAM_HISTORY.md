@@ -7204,10 +7204,11 @@ here rather than only inside a phase plan.
 | WS-RA frame delivery: the staged return frame is not delivered until the context restore goes live | `SeLe4n/Kernel/Concurrency/ContextRestoreSeam.lean` | SM10.E (§2) |
 | Fine-lock migration **Track D** — commit partitioning, which that plan seam-gates to SM10.E; the one part of the fine-lock work WS-RR cannot land | [`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`](planning/SMP_FINE_LOCK_MIGRATION_PLAN.md) | SM10.E, registered as a named dependency by RR6.19 |
 | `UncoveredLockDomain.taintTablePerKeyStore` names SM10.E as owner; the SM10 plan carries no sub-task for it | `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` | SM10.E — RR0.11 routes the plan-side row |
-| Six WS-SM phases (SM1, SM6..SM10) have **no** machine-checked theorem inventory, so they contribute zero to `smpInventoriedTheoremCount` | `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` | SM10.B.13 |
+| Six WS-SM phases (SM1, SM6..SM10) have **no** machine-checked theorem inventory, so they contribute zero to `smpInventoriedTheoremCount` (902 of 1111 registered entries are propositions; the six phases add neither) | `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` | SM10.B.13 |
 | Hardware-validation scripts SM10.B.D1–D7 and the SM10.E.D1 image build, each a runnable procedure `docs/HARDWARE_TESTING.md` documents with no script | `scripts/` | SM10.B, SM10.E.D1 |
 | Tier-4 acceptance gates have never executed: they need the bootable image, so `SMP_RELEASE_CLOSURE_PLAN.md` §2's "acceptance gates for SM0..SM9 green" is **unmet**, not merely unverified | `scripts/test_tier4_smp_bootcheck.sh` | SM10.E, immediately after D1 |
 | SM10.C.3 archives the WS-RC artefacts; its still-open items (R7, R14) migrate here rather than into the archive | `docs/audits/` | SM10.C.3 |
+| **SM10's sub-phase letters are not execution order**: SM10.B.7 and SM10.B.10 consume SM10.E.D1's image, and SM10.C bumps the version and cuts the tag before SM10.E runs — a backward dependency the project's own plan rule forbids, and one a sequencing note does not fix | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` §3 | **RR7.5** plus register bootpath findings 40–42; the re-sequence touches 532 `SM10.<letter>` citations across 60 files, so it is a phase of its own, not a passing edit.  Found by review on PR #882 (v0.34.27) |
 
 ### C — deferrals with no pre-v1.0.0 owner
 
@@ -7228,6 +7229,7 @@ constrains what v1.0.0 may claim, and RR8.4's hand-off check reads this table.
 | The SM8 class-C follow-on: the CC-1 capacity figure is stated in two places rather than single-sourced | Cosmetic duplication of a bound both sites agree on | post-v1.0.0 |
 | ARM CCA + MPAM hardware partition isolation | Targets a successor SoC; not RPi5 | [`docs/planning/HARDWARE_PARTITION_ISOLATION_PLAN.md`](planning/HARDWARE_PARTITION_ISOLATION_PLAN.md), unscheduled |
 | The 23 in-source post-1.0 hardening candidates enumerated below | Each is a strengthening of a surface that is already correct; none is a soundness gap | post-v1.0.0 hardening, listed individually so none ages out with its comment |
+| `crossSubsystemFieldSets` lists 11 field-sets while `crossSubsystemInvariant` has **12** conjuncts: `untypedRegionsDisjoint` was appended without a matching `_fields` entry, so the pairwise disjointness analysis and every frame lemma derived from it cover 11 of the 12 | Incompleteness, not unsoundness — the uncovered predicate simply gets no frame lemma, so proofs needing it establish it directly; nothing false is proved | post-v1.0.0; closing it means adding `untypedRegionsDisjoint_fields` and redoing the analysis over C(12,2) = 66 pairs.  Found during the RR0 review round (v0.34.27), not by the pre-SM10 audit |
 
 #### C.1 — The 23 in-source post-1.0 hardening candidates
 
@@ -7260,7 +7262,7 @@ will drift; the identifier beside each is stable.
 | 18 | `SeLe4n/Kernel/RobinHood/Bridge.lean` (DS-L2) | `Except`-returning `insertNoResize` (~50 call sites) |
 | 19 | `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (`retypeFromUntyped_atomicity_under_sequential_semantics`) | Re-establishing retype atomicity under SMP/preemption on real hardware |
 | 20 | `SeLe4n/Kernel/CrossSubsystem.lean` (`collectQueueMembers_fuel_sufficiency_documented`) | `QueueNextPath` → `queueNext` traversal bridge (the IPC subsystem's sole remaining TPI-DOC item) |
-| 21 | `SeLe4n/Kernel/CrossSubsystem.lean` (`crossSubsystemInvariant`) | Compositional proof that all 11 predicates hold under arbitrary interleaving of all 34 operations |
+| 21 | `SeLe4n/Kernel/CrossSubsystem.lean` (`crossSubsystemInvariant`) | Compositional proof that all **12** predicates hold under arbitrary interleaving of all 34 operations |
 | 22 | `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (AF5-F) | Right-associative `∧` chains → named structure |
 | 23 | `SeLe4n/Kernel/API.lean` (`resolveExtraCapsDetailed_empty`) | Fold-level induction generalising swap-invariance beyond the empty-input base case |
 
@@ -7269,7 +7271,7 @@ correct — a tautological witness replaced by a substantive proof, a fuel bound
 made structural, a tuple given a name, a validated-elsewhere precondition
 internalised.  That is why they may wait; it is not why they may be forgotten.
 
-## WS-RR — SMP Release Readiness (pre-SM10 remediation, **PLANNED — OPEN**, opened v0.34.13)
+## WS-RR — SMP Release Readiness (pre-SM10 remediation, **IN FLIGHT — OPEN**, opened v0.34.13; RR0 landed v0.34.26)
 
 **Status**: IN FLIGHT — **RR0 LANDED at v0.34.26** (all eleven sub-tasks:
 registration, the debt register, the generated theorem manifest, and the SM10

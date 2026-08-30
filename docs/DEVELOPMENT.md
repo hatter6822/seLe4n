@@ -783,8 +783,13 @@ Unless a PR explicitly proposes spec-level change control, preserve:
    in two places is a number that can disagree with itself.  The WS-SM theorem
    total is a `List.sum` over
    `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean`'s per-phase entries,
-   each proved equal to a real inventory length, and cross-checked against the
-   tree by a Tier-0 gate — see the regeneration process below.
+   cross-checked against the tree by a Tier-0 gate — see the regeneration
+   process below.
+11. **a count of theorems counts propositions**: `List.length` over an
+   inventory counts *registrations*, and the inventories register a phase's
+   whole surface — 209 of their 1111 entries are `def`s.  Quote
+   `smpInventoriedTheoremCount` (902), not `smpInventoriedEntryCount` (1111),
+   and never infer one from the other.
 
 ---
 
@@ -1365,11 +1370,15 @@ theorem identifiers carrying `<name>_identifiers_nodup` and
 `<name>_count : <name>.length = N`:
 
 1. Update the phase's entry in
-   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` (add the inventory to
-   `inventories`, adjust `theoremCount`, and the total in
-   `smp_inventoried_theorem_count`).  The per-phase
-   `…_theoremCount_eq_inventories` theorem will not compile until the declared
-   count matches the real lengths, which is the point.
+   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean`: add the inventory to
+   `inventories`, adjust **both** `entryCount` (registrations) and
+   `theoremCount` (propositions), and the two totals.  Two independent checks
+   hold you to it — the per-phase `…_entryCount_eq_inventories` theorem will
+   not compile until `entryCount` matches the real `List.length`, and the
+   propositionality census at the end of the module will not elaborate until
+   `theoremCount` matches the number of entries whose type is a `Prop`.  If you
+   do not know the proposition count, put anything in and read the correct
+   value out of the census's error.
 2. Regenerate the artifact:
    `python3 scripts/generate_smp_theorem_manifest.py --write`.
 3. Verify: `python3 scripts/generate_smp_theorem_manifest.py --check` (also run

@@ -85,10 +85,17 @@ PHASE_CODES = [f"SM{i}" for i in range(11)]
 # since an inventory the gate cannot see is an inventory no phase has to claim.
 _MODIFIERS = r"(?:@\[[^\]]*\]\s*|private\s+|protected\s+|nonrec\s+)*"
 
+# Lean accepts `lemma` wherever it accepts `theorem`, and this repository uses
+# both.  Keying discovery on `theorem` alone made a `lemma`-declared witness
+# invisible to the gate, so its inventory could stay unclaimed while the gate
+# reported PASS — the same fail-open shape as the modifier gap above, and
+# contrary to the completeness this gate exists to provide.
+_THEOREM = r"(?:theorem|lemma)"
+
 # `<inventory>_identifiers_nodup` — the discovery key.  Anchored at column 0
 # because every inventory witness is a top-level declaration.
 NODUP_RE = re.compile(
-    r"^" + _MODIFIERS + r"theorem\s+([A-Za-z_][A-Za-z0-9_'!?]*)_identifiers_nodup\b",
+    r"^" + _MODIFIERS + _THEOREM + r"\s+([A-Za-z_][A-Za-z0-9_'!?]*)_identifiers_nodup\b",
     re.M,
 )
 
@@ -96,7 +103,7 @@ NODUP_RE = re.compile(
 def _count_re(inv: str) -> re.Pattern[str]:
     """`theorem <inv>_count : <inv>.length = N` — statement may wrap a line."""
     return re.compile(
-        r"^" + _MODIFIERS + r"theorem\s+" + re.escape(inv) + r"_count\b\s*:\s*"
+        r"^" + _MODIFIERS + _THEOREM + r"\s+" + re.escape(inv) + r"_count\b\s*:\s*"
         r"(?:\r?\n\s*)?" + re.escape(inv) + r"\.length\s*=\s*(\d+)",
         re.M,
     )
@@ -164,6 +171,7 @@ ENTRY_RE = re.compile(
     r"\s*label\s*:=\s*\"(?P<label>[^\"]*)\"\s*,"
     r"\s*kind\s*:=\s*\.(?P<kind>theoremInventory|assumptionLedger|unregistered)\s*,"
     r"\s*inventories\s*:=\s*\[(?P<invs>[^\]]*)\]\s*,"
+    r"\s*entryCount\s*:=\s*(?P<entries>\d+)\s*,"
     r"\s*theoremCount\s*:=\s*(?P<count>\d+)\s*\}",
     re.S,
 )
@@ -178,11 +186,27 @@ PHASE_ALL_RE = re.compile(
 )
 PHASE_CTOR_RE = re.compile(r"\.([A-Za-z][A-Za-z0-9]*)")
 
+# The gate measures ENTRIES.  Propositionality is a fact about the Lean
+# environment, so `smpInventoriedTheoremCount` is verified by the census inside
+# `PhaseTheoremManifest.lean`, not here — this gate reads it only to confirm it
+# is not larger than the entry total, which would be incoherent on its face.
 TOTAL_RE = re.compile(
-    r"^theorem\s+smp_inventoried_theorem_count\s*:\s*"
+    r"^" + _MODIFIERS + _THEOREM + r"\s+smp_inventoried_entry_count\s*:\s*"
+    r"smpInventoriedEntryCount\s*=\s*(\d+)",
+    re.M,
+)
+THEOREM_TOTAL_RE = re.compile(
+    r"^" + _MODIFIERS + _THEOREM + r"\s+smp_inventoried_theorem_count\s*:\s*"
     r"smpInventoriedTheoremCount\s*=\s*(\d+)",
     re.M,
 )
+
+# The two inventories that enumerate ASSUMPTIONS rather than proved statements.
+# Pinned by name, deliberately.  Trusting the manifest's own `kind` field would
+# let a theorem inventory be labelled `assumptionLedger` (or `unregistered`)
+# with a zero count and vanish from the total while every check still passed —
+# the gate would be taking the word of the thing it is checking.
+KNOWN_ASSUMPTION_LEDGERS = {"smpLatentInventory", "smpRetiredInventory"}
 
 
 def parse_manifest_text(
@@ -211,6 +235,7 @@ def parse_manifest_text(
                 "label": m.group("label"),
                 "kind": m.group("kind"),
                 "inventories": INV_NAME_RE.findall(m.group("invs")),
+                "entryCount": int(m.group("entries")),
                 "theoremCount": int(m.group("count")),
             }
         )
@@ -219,7 +244,19 @@ def parse_manifest_text(
     if total is None:
         errors.append(
             "Lean manifest has no readable "
+            "`theorem smp_inventoried_entry_count : smpInventoriedEntryCount = N`"
+        )
+    ttm = THEOREM_TOTAL_RE.search(src)
+    if ttm is None:
+        errors.append(
+            "Lean manifest has no readable "
             "`theorem smp_inventoried_theorem_count : smpInventoriedTheoremCount = N`"
+        )
+    elif total is not None and int(ttm.group(1)) > total:
+        errors.append(
+            f"smpInventoriedTheoremCount ({ttm.group(1)}) exceeds "
+            f"smpInventoriedEntryCount ({total}): a subset cannot be larger than "
+            f"the set it is drawn from"
         )
     return entries, ctors, total, errors
 
@@ -274,6 +311,31 @@ def build_manifest(
     # Two independent completeness checks.  The first holds the manifest to the
     # Lean inductive: a constructor added to `SmpCompletionPhase.all` with no
     # entry is caught here as well as by `smpPhaseTheoremManifest_covers_all`.
+    # Validate the declared kind against the pinned ledger set.  An inventory
+    # that is not one of the two assumption ledgers is a theorem inventory, and
+    # the phase claiming it must say so — otherwise its entries silently leave
+    # the total.
+    for e in entries:
+        invs = [str(i) for i in e["inventories"]]  # type: ignore[arg-type]
+        ledgers = [i for i in invs if i in KNOWN_ASSUMPTION_LEDGERS]
+        others = [i for i in invs if i not in KNOWN_ASSUMPTION_LEDGERS]
+        if e["kind"] == "assumptionLedger" and others:
+            errors.append(
+                f"phase {e['phase']} is declared assumptionLedger but claims "
+                f"{others}, which are not among the known assumption ledgers "
+                f"{sorted(KNOWN_ASSUMPTION_LEDGERS)} — their entries would leave "
+                f"the total unnoticed"
+            )
+        if e["kind"] == "unregistered" and invs:
+            errors.append(
+                f"phase {e['phase']} is declared unregistered but claims {invs}"
+            )
+        if e["kind"] == "theoremInventory" and ledgers:
+            errors.append(
+                f"phase {e['phase']} is declared theoremInventory but claims the "
+                f"assumption ledger(s) {ledgers}"
+            )
+
     seen_phases = [str(e["phase"]) for e in entries]
     for ctor in ctors:
         if seen_phases.count(ctor) == 0:
@@ -310,15 +372,25 @@ def build_manifest(
         invs = [str(i) for i in e["inventories"]]  # type: ignore[arg-type]
         measured = sum(int(inventories[i]["count"]) for i in invs if i in inventories)
         contributes = e["kind"] == "theoremInventory"
-        if int(e["theoremCount"]) != (measured if contributes else 0):
+        if int(e["entryCount"]) != measured:
             breakdown = "+".join(
                 "{}={}".format(i, inventories[i]["count"])
                 for i in invs
                 if i in inventories
             ) or "no inventories"
             errors.append(
-                f"phase {e['phase']} declares theoremCount = {e['theoremCount']}, "
-                f"tree measures {measured if contributes else 0} ({breakdown})"
+                f"phase {e['phase']} declares entryCount = {e['entryCount']}, "
+                f"tree measures {measured} ({breakdown})"
+            )
+        if contributes and int(e["theoremCount"]) > int(e["entryCount"]):
+            errors.append(
+                f"phase {e['phase']} declares theoremCount = {e['theoremCount']} > "
+                f"entryCount = {e['entryCount']}"
+            )
+        if not contributes and int(e["theoremCount"]) != 0:
+            errors.append(
+                f"phase {e['phase']} is {e['kind']} yet declares theoremCount = "
+                f"{e['theoremCount']}"
             )
         if contributes:
             total += measured
@@ -336,7 +408,8 @@ def build_manifest(
                     }
                     for i in invs
                 ],
-                "theoremCount": measured if contributes else 0,
+                "entryCount": measured,
+                "theoremCount": int(e["theoremCount"]) if contributes else 0,
             }
         )
 
@@ -344,13 +417,22 @@ def build_manifest(
         "schema": "wsm-theorem-manifest/1",
         "generator": "scripts/generate_smp_theorem_manifest.py",
         "note": (
-            "Generated from the tree, not hand-summed. Each count is the number a "
-            "Lean size witness proves for that inventory; the total is their sum "
-            "over phases whose kind is theoremInventory. Regenerate with "
-            "`python3 scripts/generate_smp_theorem_manifest.py --write`."
+            "Generated from the tree, not hand-summed. `entryCount` is the number "
+            "a Lean size witness proves for that inventory — every registered "
+            "declaration, whatever its type. `theoremCount` is the subset whose "
+            "declaration type is a Prop, verified by the propositionality census "
+            "in SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean (this script "
+            "reads text and has no elaborator, so it cannot check that itself). "
+            "Quote theoremTotal, not entryTotal: the inventories register a "
+            "phase's whole surface, so 209 entries are defs rather than proofs. "
+            "Regenerate with `python3 scripts/generate_smp_theorem_manifest.py "
+            "--write`."
         ),
         "phases": phases,
-        "theoremTotal": total,
+        "entryTotal": total,
+        "theoremTotal": sum(
+            int(p["theoremCount"]) for p in phases  # type: ignore[index,call-overload]
+        ),
     }, errors
 
 
@@ -376,12 +458,17 @@ def smpPhaseTheoremManifest : List PhaseTheoremEntry :=
       label := "SM0 - alpha",
       kind := .theoremInventory,
       inventories := ["aTheorems"],
+      entryCount := 3,
       theoremCount := 3 },
     { phase := .beta,
       label := "SM1 - beta",
       kind := .assumptionLedger,
-      inventories := ["bInventory"],
+      inventories := ["smpLatentInventory"],
+      entryCount := 9,
       theoremCount := 0 } ]
+
+theorem smp_inventoried_entry_count : smpInventoriedEntryCount = 3 := by
+  decide
 
 theorem smp_inventoried_theorem_count : smpInventoriedTheoremCount = 3 := by
   decide
@@ -390,8 +477,11 @@ theorem smp_inventoried_theorem_count : smpInventoriedTheoremCount = 3 := by
 _CLEAN_SOURCES = {
     "A.lean": "theorem aTheorems_identifiers_nodup :\n    True := trivial\n"
               "theorem aTheorems_count :\n    aTheorems.length = 3 := by decide\n",
-    "B.lean": "theorem bInventory_identifiers_nodup : True := trivial\n"
-              "theorem bInventory_count : bInventory.length = 9 := by decide\n",
+    # `bInventory` is one of the pinned assumption ledgers, so the fixtures use
+    # a real ledger name: the kind check below is only meaningful against the
+    # set the production gate pins.
+    "B.lean": "theorem smpLatentInventory_identifiers_nodup : True := trivial\n"
+              "theorem smpLatentInventory_count : smpLatentInventory.length = 9 := by decide\n",
 }
 
 
@@ -405,7 +495,7 @@ def _run(sources: dict[str, str], manifest: str, codes: list[str] | None = None)
         entries, ctors, total, perrs = parse_manifest_text(manifest)
         built, berrs = build_manifest(inv, entries, ctors)
         errs = errs + perrs + berrs
-        if total is not None and total != built["theoremTotal"]:
+        if total is not None and total != built["entryTotal"]:
             errs.append("total mismatch")
         return built, errs
     finally:
@@ -421,8 +511,8 @@ def _self_test() -> int:
     # 1. A clean manifest reports nothing, and measures what the tree proves.
     built, errs = _run(dict(_CLEAN_SOURCES), _CLEAN_MANIFEST)
     check("a clean manifest reports nothing", not errs, "; ".join(errs))
-    check("the total is measured, not read", built["theoremTotal"] == 3,
-          f"got {built['theoremTotal']}")
+    check("the total is measured, not read", built["entryTotal"] == 3,
+          f"got {built['entryTotal']}")
 
     # 2. An inventory no phase claims is caught.  This is the shape Lean cannot
     #    see: a manifest that never mentions an inventory elaborates perfectly.
@@ -439,7 +529,8 @@ def _self_test() -> int:
         """    { phase := .beta,
       label := "SM1 - beta",
       kind := .assumptionLedger,
-      inventories := ["bInventory"],
+      inventories := ["smpLatentInventory"],
+      entryCount := 9,
       theoremCount := 0 } ]""", "  ]")
     _, errs = _run(dict(_CLEAN_SOURCES), dropped)
     check("a dropped phase is caught by constructor",
@@ -450,14 +541,14 @@ def _self_test() -> int:
           "; ".join(errs))
 
     # 4. A declared count the tree does not measure is caught.
-    wrong = _CLEAN_MANIFEST.replace("theoremCount := 3 }", "theoremCount := 4 }")
+    wrong = _CLEAN_MANIFEST.replace("entryCount := 3,", "entryCount := 4,")
     _, errs = _run(dict(_CLEAN_SOURCES), wrong)
     check("a wrong declared count is caught",
-          any("declares theoremCount = 4" in e for e in errs), "; ".join(errs))
+          any("declares entryCount = 4" in e for e in errs), "; ".join(errs))
 
     # 5. A Lean total that disagrees with the measurement is caught.
     bad_total = _CLEAN_MANIFEST.replace(
-        "smpInventoriedTheoremCount = 3", "smpInventoriedTheoremCount = 4")
+        "smpInventoriedEntryCount = 3", "smpInventoriedEntryCount = 4")
     _, errs = _run(dict(_CLEAN_SOURCES), bad_total)
     check("a drifted Lean total is caught",
           any("total mismatch" in e for e in errs), "; ".join(errs))
@@ -466,7 +557,7 @@ def _self_test() -> int:
     #    proves 9, and the total stays 3.
     built, errs = _run(dict(_CLEAN_SOURCES), _CLEAN_MANIFEST)
     check("an assumption ledger contributes zero",
-          built["theoremTotal"] == 3 and not errs, f"got {built['theoremTotal']}")
+          built["entryTotal"] == 3 and not errs, f"got {built['entryTotal']}")
 
     # 7. A witness that survives only in a comment must NOT be discovered.
     #    The real gate reads through `lean_code_view.strip`, so this drives the
@@ -497,7 +588,7 @@ def _self_test() -> int:
           "; ".join(errs))
 
     # 10. One inventory claimed by two phases is caught (it would be counted twice).
-    twice = _CLEAN_MANIFEST.replace('inventories := ["bInventory"]',
+    twice = _CLEAN_MANIFEST.replace('inventories := ["smpLatentInventory"]',
                                     'inventories := ["bInventory", "aTheorems"]')
     _, errs = _run(dict(_CLEAN_SOURCES), twice)
     check("an inventory claimed twice is caught",
@@ -522,6 +613,56 @@ def _self_test() -> int:
     _, errs = _run(dict(_CLEAN_SOURCES), mislabelled)
     check("a label naming no phase is caught",
           any("names no WS-SM phase" in e for e in errs), "; ".join(errs))
+
+    # 14. `lemma` is a theorem form.  An inventory declaring its witnesses with
+    #     `lemma` must still be discovered — otherwise it can stay unclaimed
+    #     while the gate reports PASS.  (Codex review, PR #882.)
+    src = dict(_CLEAN_SOURCES)
+    src["F.lean"] = ("lemma fTheorems_identifiers_nodup : True := trivial\n"
+                     "lemma fTheorems_count : fTheorems.length = 4 := by decide\n")
+    _, errs = _run(src, _CLEAN_MANIFEST)
+    check("a lemma-form witness is discovered",
+          any("'fTheorems'" in e and "claimed by no" in e for e in errs),
+          "; ".join(errs))
+
+    # 15. The manifest's own `kind` must not be taken on trust.  Codex's
+    #     reproduction: relabel a theorem inventory `assumptionLedger` with a
+    #     zero count and its entries leave the total with nothing reported.
+    mislabelled = _CLEAN_MANIFEST.replace(
+        """      kind := .theoremInventory,
+      inventories := ["aTheorems"],
+      entryCount := 3,
+      theoremCount := 3 },""",
+        """      kind := .assumptionLedger,
+      inventories := ["aTheorems"],
+      entryCount := 3,
+      theoremCount := 0 },""")
+    _, errs = _run(dict(_CLEAN_SOURCES), mislabelled)
+    check("a theorem inventory mislabelled as a ledger is caught",
+          any("not among the known assumption ledgers" in e for e in errs),
+          "; ".join(errs))
+
+    # 16. The same dodge via `unregistered`: claim the inventory but declare the
+    #     phase as carrying none.
+    hidden = _CLEAN_MANIFEST.replace(
+        """      kind := .theoremInventory,
+      inventories := ["aTheorems"],
+      entryCount := 3,
+      theoremCount := 3 },""",
+        """      kind := .unregistered,
+      inventories := ["aTheorems"],
+      entryCount := 3,
+      theoremCount := 0 },""")
+    _, errs = _run(dict(_CLEAN_SOURCES), hidden)
+    check("an inventory hidden behind `unregistered` is caught",
+          any("declared unregistered but claims" in e for e in errs),
+          "; ".join(errs))
+
+    # 17. A theorem count larger than the entry count it is drawn from.
+    impossible = _CLEAN_MANIFEST.replace("theoremCount := 3 },", "theoremCount := 5 },")
+    _, errs = _run(dict(_CLEAN_SOURCES), impossible)
+    check("a theorem count exceeding its entry count is caught",
+          any("theoremCount = 5 > entryCount" in e for e in errs), "; ".join(errs))
 
     failed = [c for c in cases if not c[1]]
     for name, ok, detail in cases:
@@ -555,11 +696,10 @@ def main(argv: list[str]) -> int:
     manifest, berrors = build_manifest(inventories, entries, ctors)
     errors += berrors
 
-    if lean_total is not None and lean_total != manifest["theoremTotal"]:
+    if lean_total is not None and lean_total != manifest["entryTotal"]:
         errors.append(
-            f"Lean `smp_inventoried_theorem_count` proves smpInventoriedTheoremCount "
-            f"= {lean_total}, "
-            f"tree measures {manifest['theoremTotal']}"
+            f"Lean `smp_inventoried_entry_count` proves smpInventoriedEntryCount "
+            f"= {lean_total}, tree measures {manifest['entryTotal']}"
         )
 
     if args.write:
@@ -593,7 +733,8 @@ def main(argv: list[str]) -> int:
         print(
             f"OK: WS-SM theorem manifest consistent "
             f"({len(PHASE_CODES)} phases, {n_inv} inventories, "
-            f"{manifest['theoremTotal']} inventoried theorems)."
+            f"{manifest['entryTotal']} entries of which "
+            f"{manifest['theoremTotal']} are theorems)."
         )
     return 0
 

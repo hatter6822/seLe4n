@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.26.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.27.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -911,15 +911,21 @@ code may assume:
   `scripts/staged_module_allowlist.txt` and gated by
   `scripts/check_production_staging_partition.sh`.  Production must not import
   staged.
-- **The WS-SM theorem total is measured, not summed.**
+- **The WS-SM theorem total is measured, not summed — and it counts
+  propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per
-  phase SM0..SM10, each naming the theorem inventories that phase owns, and
-  `smpInventoriedTheoremCount` is the sum over those entries — 1111 theorems
-  registered in a machine-checked inventory today.  Six phases (SM1 and SM6..SM10)
-  have **no** theorem inventory and are registered as `unregistered`
-  contributing zero; that gap is real, and the honest zero is what makes it
-  visible.  Adding a phase without an entry fails elaboration; adding an
-  inventory no phase claims fails Tier 0
+  phase SM0..SM10, each naming the theorem inventories that phase owns.  Those
+  inventories hold **1111 entries**, of which **902 are theorems**: the
+  inventories register a phase's whole surface, so 209 entries are `def`s —
+  lock-set footprints, per-core invariant predicates, WCRT cost functions — and
+  every inventory's construction macro proves only that the name *resolves*,
+  never that its type is a `Prop`.  **Quote 902, and quote it as theorems; 1111
+  is the entry count.**  A `List.length` cannot tell the two apart, so the
+  propositionality census at the end of that module resolves each identifier
+  against the environment and fails elaboration on drift.  Six phases (SM1 and
+  SM6..SM10) have **no** theorem inventory and register zero; that gap is real,
+  and the honest zero is what makes it visible.  Adding a phase without an entry
+  fails elaboration; adding an inventory no phase claims fails Tier 0
   (`scripts/generate_smp_theorem_manifest.py --check`).  New code must not
   reintroduce a hand-written per-phase figure.
 

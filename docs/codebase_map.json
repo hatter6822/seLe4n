@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr0-registration-plan-correction-cr1z0k",
-      "commit_sha": "9bea04a85e9b952d91721198b33c7d799a1f6f97",
-      "tree_sha": "c4a570b35ec5e1f3c1c8121e960a4a5135856da7",
-      "committed_at_utc": "2026-08-29T22:41:21-04:00"
+      "commit_sha": "fd74efcf4626411baf3dafd3585bc676d450c8dd",
+      "tree_sha": "1796e7aad3fc71d80815a222f773f489862cab66",
+      "committed_at_utc": "2026-08-30T04:31:05+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5d056ec5c2560e62f13b8412cf8528ffd2f9024cb9c65b1bb55555c1533ff480"
+    "source_digest": "beb50c47963b469bce14b052d07435ae95164eccf746bbc3fdbef280d1e41fd3"
   },
   "summary": {
     "module_count": 357,
-    "declaration_count": 17068
+    "declaration_count": 17080
   },
   "readme_sync": {
-    "version": "0.34.26",
+    "version": "0.34.27",
     "lean_toolchain": "v4.28.0",
     "production_files": 288,
-    "production_loc": 289336,
+    "production_loc": 289585,
     "test_files": 69,
     "test_loc": 64535,
-    "proved_theorem_lemma_decls": 9680,
+    "proved_theorem_lemma_decls": 9685,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -46653,24 +46653,24 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.PhaseTheoremManifest",
       "path": "SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean",
-      "declaration_count": 25,
+      "declaration_count": 37,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Concurrency",
-          "line": 91,
+          "line": 93,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "SmpCompletionPhase",
-          "line": 98,
+          "line": 100,
           "called": []
         },
         {
           "kind": "def",
           "name": "SmpCompletionPhase.all",
-          "line": 124,
+          "line": 126,
           "called": [
             "SmpCompletionPhase"
           ]
@@ -46678,7 +46678,7 @@
         {
           "kind": "theorem",
           "name": "SmpCompletionPhase.mem_all",
-          "line": 131,
+          "line": 133,
           "called": [
             "SmpCompletionPhase",
             "SmpCompletionPhase.all"
@@ -46687,13 +46687,13 @@
         {
           "kind": "theorem",
           "name": "SmpCompletionPhase.all_nodup",
-          "line": 136,
+          "line": 138,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "SmpCompletionPhase.all_length",
-          "line": 140,
+          "line": 142,
           "called": [
             "length"
           ]
@@ -46701,13 +46701,13 @@
         {
           "kind": "inductive",
           "name": "PhaseInventoryKind",
-          "line": 143,
+          "line": 145,
           "called": []
         },
         {
           "kind": "structure",
           "name": "PhaseTheoremEntry",
-          "line": 162,
+          "line": 164,
           "called": [
             "PhaseInventoryKind",
             "SmpCompletionPhase"
@@ -46716,7 +46716,7 @@
         {
           "kind": "def",
           "name": "smpPhaseTheoremManifest",
-          "line": 180,
+          "line": 191,
           "called": [
             "PhaseTheoremEntry"
           ]
@@ -46724,7 +46724,7 @@
         {
           "kind": "def",
           "name": "smpPhaseEntry",
-          "line": 243,
+          "line": 265,
           "called": [
             "PhaseTheoremEntry",
             "SmpCompletionPhase"
@@ -46732,8 +46732,8 @@
         },
         {
           "kind": "def",
-          "name": "smpPhaseTheoremCount",
-          "line": 248,
+          "name": "smpPhaseEntryCount",
+          "line": 271,
           "called": [
             "SmpCompletionPhase",
             "none",
@@ -46742,8 +46742,26 @@
         },
         {
           "kind": "def",
+          "name": "smpPhaseTheoremCount",
+          "line": 278,
+          "called": [
+            "SmpCompletionPhase",
+            "none",
+            "smpPhaseEntry"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "smpInventoriedEntryCount",
+          "line": 286,
+          "called": [
+            "smpPhaseEntryCount"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "smpInventoriedTheoremCount",
-          "line": 256,
+          "line": 295,
           "called": [
             "smpPhaseTheoremCount"
           ]
@@ -46751,7 +46769,7 @@
         {
           "kind": "theorem",
           "name": "smpPhaseTheoremManifest_covers_all",
-          "line": 267,
+          "line": 306,
           "called": [
             "all",
             "smpPhaseEntry"
@@ -46760,7 +46778,7 @@
         {
           "kind": "theorem",
           "name": "smpPhaseTheoremManifest_covers",
-          "line": 271,
+          "line": 310,
           "called": [
             "SmpCompletionPhase",
             "smpPhaseEntry"
@@ -46769,45 +46787,45 @@
         {
           "kind": "theorem",
           "name": "smpPhaseTheoremManifest_phases_nodup",
-          "line": 276,
+          "line": 315,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "smpPhaseTheoremManifest_length",
-          "line": 280,
+          "line": 319,
           "called": [
             "length"
           ]
         },
         {
           "kind": "theorem",
-          "name": "smpPhase_verifiedLockPrimitives_theoremCount_eq_inventories",
-          "line": 292,
+          "name": "smpPhase_verifiedLockPrimitives_entryCount_eq_inventories",
+          "line": 334,
           "called": [
             "length",
             "lockPrimitives_count",
-            "smpPhaseTheoremCount"
+            "smpPhaseEntryCount"
           ]
         },
         {
           "kind": "theorem",
-          "name": "smpPhase_perObjectLocks_theoremCount_eq_inventories",
-          "line": 298,
+          "name": "smpPhase_perObjectLocks_entryCount_eq_inventories",
+          "line": 341,
           "called": [
             "deadlockTheorems_count",
             "length",
             "lockSetTheorems_count",
             "perObjectLockTheorems_count",
             "serializabilityTheorems_count",
-            "smpPhaseTheoremCount",
+            "smpPhaseEntryCount",
             "withLockSetTheorems_count"
           ]
         },
         {
           "kind": "theorem",
-          "name": "smpPhase_perCoreScheduler_theoremCount_eq_inventories",
-          "line": 309,
+          "name": "smpPhase_perCoreScheduler_entryCount_eq_inventories",
+          "line": 353,
           "called": [
             "crossCoreWakeTheorems_count",
             "length",
@@ -46818,13 +46836,13 @@
             "perCorePipTheorems_count",
             "perCoreTimerTheorems_count",
             "perCoreWcrtTheorems_count",
-            "smpPhaseTheoremCount"
+            "smpPhaseEntryCount"
           ]
         },
         {
           "kind": "theorem",
           "name": "smpPhase_foundations_theoremCount_zero",
-          "line": 323,
+          "line": 367,
           "called": [
             "smpPhaseTheoremCount"
           ]
@@ -46832,7 +46850,7 @@
         {
           "kind": "theorem",
           "name": "smpPhase_perCoreState_theoremCount_zero",
-          "line": 327,
+          "line": 371,
           "called": [
             "smpPhaseTheoremCount"
           ]
@@ -46840,7 +46858,7 @@
         {
           "kind": "theorem",
           "name": "smpPhase_unregistered_theoremCount_zero",
-          "line": 333,
+          "line": 377,
           "called": [
             "smpPhaseTheoremCount"
           ]
@@ -46848,24 +46866,50 @@
         {
           "kind": "theorem",
           "name": "smp_inventoried_theorem_count",
-          "line": 356,
+          "line": 400,
           "called": [
             "smpInventoriedTheoremCount"
           ]
         },
         {
           "kind": "theorem",
+          "name": "smp_inventoried_entry_count",
+          "line": 406,
+          "called": [
+            "smpInventoriedEntryCount"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "smp_inventoried_theorem_count_lt_entry_count",
+          "line": 412,
+          "called": [
+            "smpInventoriedEntryCount",
+            "smpInventoriedTheoremCount"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "smp_inventoried_theorem_count_decomposition",
-          "line": 362,
+          "line": 419,
           "called": [
             "smpInventoriedTheoremCount",
             "smpPhaseTheoremCount"
           ]
         },
         {
+          "kind": "theorem",
+          "name": "smp_inventoried_entry_count_decomposition",
+          "line": 427,
+          "called": [
+            "smpInventoriedEntryCount",
+            "smpPhaseEntryCount"
+          ]
+        },
+        {
           "kind": "example",
-          "name": "<anonymous:example:379>",
-          "line": 379,
+          "name": "<anonymous:example:444>",
+          "line": 444,
           "called": [
             "crossCoreWakeTheorems",
             "crossCoreWakeTheorems_count",
@@ -46899,6 +46943,69 @@
             "smpRetiredInventory_count",
             "withLockSetTheorems",
             "withLockSetTheorems_count"
+          ]
+        },
+        {
+          "kind": "section",
+          "name": "Census",
+          "line": 506,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "censusInventories",
+          "line": 516,
+          "called": [
+            "Kernel"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "censusCoversManifest",
+          "line": 550,
+          "called": [
+            "all",
+            "contains",
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusNameMatches",
+          "line": 568,
+          "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusIsProp",
+          "line": 579,
+          "called": [
+            "censusNameMatches",
+            "filter",
+            "length",
+            "none"
+          ]
+        },
+        {
+          "kind": "constant",
+          "name": "<anonymous:constant:607>",
+          "line": 607,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "censusIndex",
+          "line": 611,
+          "called": [
+            "censusInventories",
+            "censusIsProp",
+            "insert",
+            "smpInventoriedTheoremCount",
+            "smpPhaseTheoremManifest",
+            "toList"
           ]
         }
       ]
@@ -48255,7 +48362,7 @@
         {
           "kind": "def",
           "name": "crossSubsystemInvariantWithCdtCoverage",
-          "line": 795,
+          "line": 796,
           "called": [
             "SystemState",
             "capabilityInvariantBundleWithMintCompleteness",
@@ -48266,7 +48373,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariantWithCdtCoverage_to_mintCompleteness",
-          "line": 800,
+          "line": 801,
           "called": [
             "SystemState",
             "cdtMintCompleteness",
@@ -48277,7 +48384,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariantWithCdtCoverage_to_capabilityBundle",
-          "line": 805,
+          "line": 806,
           "called": [
             "SystemState",
             "capabilityInvariantBundle",
@@ -48288,7 +48395,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_composition_gap_documented",
-          "line": 835,
+          "line": 836,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -48310,13 +48417,13 @@
         {
           "kind": "inductive",
           "name": "StateField",
-          "line": 869,
+          "line": 870,
           "called": []
         },
         {
           "kind": "def",
           "name": "registryEndpointValid_fields",
-          "line": 888,
+          "line": 889,
           "called": [
             "StateField"
           ]
@@ -48324,7 +48431,7 @@
         {
           "kind": "def",
           "name": "registryInterfaceValid_fields",
-          "line": 892,
+          "line": 893,
           "called": [
             "StateField"
           ]
@@ -48332,7 +48439,7 @@
         {
           "kind": "def",
           "name": "registryDependencyConsistent_fields",
-          "line": 895,
+          "line": 896,
           "called": [
             "StateField"
           ]
@@ -48340,7 +48447,7 @@
         {
           "kind": "def",
           "name": "noStaleEndpointQueueReferences_fields",
-          "line": 898,
+          "line": 899,
           "called": [
             "StateField"
           ]
@@ -48348,7 +48455,7 @@
         {
           "kind": "def",
           "name": "noStaleNotificationWaitReferences_fields",
-          "line": 901,
+          "line": 902,
           "called": [
             "StateField"
           ]
@@ -48356,7 +48463,7 @@
         {
           "kind": "def",
           "name": "serviceGraphInvariant_fields",
-          "line": 904,
+          "line": 905,
           "called": [
             "StateField"
           ]
@@ -48364,7 +48471,7 @@
         {
           "kind": "def",
           "name": "schedContextStoreConsistent_fields",
-          "line": 909,
+          "line": 910,
           "called": [
             "StateField"
           ]
@@ -48372,7 +48479,7 @@
         {
           "kind": "def",
           "name": "schedContextNotDualBound_fields",
-          "line": 914,
+          "line": 915,
           "called": [
             "StateField"
           ]
@@ -48380,7 +48487,7 @@
         {
           "kind": "def",
           "name": "schedContextRunQueueConsistent_fields",
-          "line": 919,
+          "line": 920,
           "called": [
             "StateField"
           ]
@@ -48388,7 +48495,7 @@
         {
           "kind": "def",
           "name": "blockingAcyclic_fields",
-          "line": 924,
+          "line": 925,
           "called": [
             "StateField"
           ]
@@ -48396,7 +48503,7 @@
         {
           "kind": "def",
           "name": "lifecycleObjectTypeLockstep_fields",
-          "line": 931,
+          "line": 932,
           "called": [
             "StateField"
           ]
@@ -48404,7 +48511,7 @@
         {
           "kind": "def",
           "name": "fieldsDisjoint",
-          "line": 935,
+          "line": 936,
           "called": [
             "StateField",
             "all"
@@ -48413,7 +48520,7 @@
         {
           "kind": "theorem",
           "name": "regDepConsistent_disjoint_staleEndpoint",
-          "line": 940,
+          "line": 941,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -48423,7 +48530,7 @@
         {
           "kind": "theorem",
           "name": "regDepConsistent_disjoint_staleNotification",
-          "line": 946,
+          "line": 947,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -48433,7 +48540,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraph_disjoint_staleEndpoint",
-          "line": 952,
+          "line": 953,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -48443,7 +48550,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraph_disjoint_staleNotification",
-          "line": 958,
+          "line": 959,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -48453,7 +48560,7 @@
         {
           "kind": "theorem",
           "name": "regDepConsistent_disjoint_regEndpointValid",
-          "line": 966,
+          "line": 967,
           "called": [
             "fieldsDisjoint",
             "registryDependencyConsistent_fields",
@@ -48463,7 +48570,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraph_disjoint_regEndpointValid",
-          "line": 972,
+          "line": 973,
           "called": [
             "fieldsDisjoint",
             "registryEndpointValid_fields",
@@ -48473,7 +48580,7 @@
         {
           "kind": "theorem",
           "name": "staleEndpoint_shares_staleNotification",
-          "line": 979,
+          "line": 980,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -48483,7 +48590,7 @@
         {
           "kind": "theorem",
           "name": "regEndpointValid_shares_staleEndpoint",
-          "line": 985,
+          "line": 986,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -48493,7 +48600,7 @@
         {
           "kind": "theorem",
           "name": "regEndpointValid_shares_staleNotification",
-          "line": 991,
+          "line": 992,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -48503,7 +48610,7 @@
         {
           "kind": "theorem",
           "name": "regDepConsistent_shares_serviceGraph",
-          "line": 997,
+          "line": 998,
           "called": [
             "fieldsDisjoint",
             "registryDependencyConsistent_fields",
@@ -48513,7 +48620,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_disjoint_regDepConsistent",
-          "line": 1010,
+          "line": 1011,
           "called": [
             "fieldsDisjoint",
             "registryDependencyConsistent_fields",
@@ -48523,7 +48630,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_disjoint_serviceGraph",
-          "line": 1016,
+          "line": 1017,
           "called": [
             "fieldsDisjoint",
             "schedContextStoreConsistent_fields",
@@ -48533,7 +48640,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_disjoint_regDepConsistent",
-          "line": 1022,
+          "line": 1023,
           "called": [
             "fieldsDisjoint",
             "registryDependencyConsistent_fields",
@@ -48543,7 +48650,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_disjoint_serviceGraph",
-          "line": 1028,
+          "line": 1029,
           "called": [
             "fieldsDisjoint",
             "schedContextNotDualBound_fields",
@@ -48553,7 +48660,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxRunQueue_disjoint_regDepConsistent",
-          "line": 1034,
+          "line": 1035,
           "called": [
             "fieldsDisjoint",
             "registryDependencyConsistent_fields",
@@ -48563,7 +48670,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxRunQueue_disjoint_serviceGraph",
-          "line": 1040,
+          "line": 1041,
           "called": [
             "fieldsDisjoint",
             "schedContextRunQueueConsistent_fields",
@@ -48573,7 +48680,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_shares_regEndpointValid",
-          "line": 1046,
+          "line": 1047,
           "called": [
             "fieldsDisjoint",
             "registryEndpointValid_fields",
@@ -48583,7 +48690,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_shares_staleEndpoint",
-          "line": 1052,
+          "line": 1053,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -48593,7 +48700,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_shares_staleNotification",
-          "line": 1058,
+          "line": 1059,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -48603,7 +48710,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_shares_schedCtxNotDualBound",
-          "line": 1064,
+          "line": 1065,
           "called": [
             "fieldsDisjoint",
             "schedContextNotDualBound_fields",
@@ -48613,7 +48720,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_shares_schedCtxRunQueue",
-          "line": 1070,
+          "line": 1071,
           "called": [
             "fieldsDisjoint",
             "schedContextRunQueueConsistent_fields",
@@ -48623,7 +48730,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_shares_regEndpointValid",
-          "line": 1076,
+          "line": 1077,
           "called": [
             "fieldsDisjoint",
             "registryEndpointValid_fields",
@@ -48633,7 +48740,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_shares_staleEndpoint",
-          "line": 1082,
+          "line": 1083,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -48643,7 +48750,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_shares_staleNotification",
-          "line": 1088,
+          "line": 1089,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -48653,7 +48760,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_shares_schedCtxRunQueue",
-          "line": 1094,
+          "line": 1095,
           "called": [
             "fieldsDisjoint",
             "schedContextNotDualBound_fields",
@@ -48663,7 +48770,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxRunQueue_shares_regEndpointValid",
-          "line": 1100,
+          "line": 1101,
           "called": [
             "fieldsDisjoint",
             "registryEndpointValid_fields",
@@ -48673,7 +48780,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxRunQueue_shares_staleEndpoint",
-          "line": 1106,
+          "line": 1107,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -48683,7 +48790,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxRunQueue_shares_staleNotification",
-          "line": 1112,
+          "line": 1113,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -48693,7 +48800,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystem_pairwise_coverage_complete",
-          "line": 1143,
+          "line": 1144,
           "called": [
             "blockingAcyclic_fields",
             "fieldsDisjoint",
@@ -48712,7 +48819,7 @@
         {
           "kind": "def",
           "name": "storeObject_modifiedFields",
-          "line": 1174,
+          "line": 1175,
           "called": [
             "StateField"
           ]
@@ -48720,7 +48827,7 @@
         {
           "kind": "def",
           "name": "serviceRegisterDependency_modifiedFields",
-          "line": 1179,
+          "line": 1180,
           "called": [
             "StateField"
           ]
@@ -48728,7 +48835,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeObject_modifiedFields",
-          "line": 1184,
+          "line": 1185,
           "called": [
             "StateField"
           ]
@@ -48736,7 +48843,7 @@
         {
           "kind": "def",
           "name": "ipcEndpointOp_modifiedFields",
-          "line": 1191,
+          "line": 1192,
           "called": [
             "StateField"
           ]
@@ -48744,7 +48851,7 @@
         {
           "kind": "def",
           "name": "capabilityOp_modifiedFields",
-          "line": 1198,
+          "line": 1199,
           "called": [
             "StateField"
           ]
@@ -48752,7 +48859,7 @@
         {
           "kind": "def",
           "name": "revokeService_modifiedFields",
-          "line": 1204,
+          "line": 1205,
           "called": [
             "StateField"
           ]
@@ -48760,7 +48867,7 @@
         {
           "kind": "theorem",
           "name": "noStaleEndpointQueueReferences_frame",
-          "line": 1214,
+          "line": 1215,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences",
@@ -48770,7 +48877,7 @@
         {
           "kind": "theorem",
           "name": "noStaleNotificationWaitReferences_frame",
-          "line": 1232,
+          "line": 1233,
           "called": [
             "SystemState",
             "noStaleNotificationWaitReferences",
@@ -48780,7 +48887,7 @@
         {
           "kind": "theorem",
           "name": "registryEndpointValid_frame",
-          "line": 1244,
+          "line": 1245,
           "called": [
             "SystemState",
             "epId",
@@ -48791,7 +48898,7 @@
         {
           "kind": "theorem",
           "name": "registryInterfaceValid_frame",
-          "line": 1257,
+          "line": 1258,
           "called": [
             "SystemState",
             "registryInterfaceValid",
@@ -48801,7 +48908,7 @@
         {
           "kind": "theorem",
           "name": "fieldDisjointness_frameIndependence_documented",
-          "line": 1309,
+          "line": 1310,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -48814,7 +48921,7 @@
         {
           "kind": "def",
           "name": "crossSubsystemFieldSets",
-          "line": 1328,
+          "line": 1329,
           "called": [
             "StateField",
             "blockingAcyclic_fields",
@@ -48833,7 +48940,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemFieldSets_count",
-          "line": 1343,
+          "line": 1354,
           "called": [
             "length"
           ]
@@ -48841,7 +48948,7 @@
         {
           "kind": "theorem",
           "name": "registryDependencyConsistent_frame",
-          "line": 1349,
+          "line": 1360,
           "called": [
             "SystemState",
             "registryDependencyConsistent",
@@ -48851,7 +48958,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraphInvariant_frame",
-          "line": 1367,
+          "line": 1378,
           "called": [
             "SystemState",
             "cons",
@@ -48866,7 +48973,7 @@
         {
           "kind": "theorem",
           "name": "schedContextStoreConsistent_frame",
-          "line": 1397,
+          "line": 1408,
           "called": [
             "SystemState",
             "scId",
@@ -48877,7 +48984,7 @@
         {
           "kind": "theorem",
           "name": "schedContextNotDualBound_frame",
-          "line": 1410,
+          "line": 1421,
           "called": [
             "SystemState",
             "scId",
@@ -48888,7 +48995,7 @@
         {
           "kind": "theorem",
           "name": "schedContextRunQueueConsistent_frame",
-          "line": 1420,
+          "line": 1431,
           "called": [
             "SystemState",
             "runnable",
@@ -48900,7 +49007,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraphInvariant_monotone",
-          "line": 1441,
+          "line": 1452,
           "called": [
             "SystemState",
             "cons",
@@ -48916,7 +49023,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_preserves_noStaleNotificationWaitReferences",
-          "line": 1472,
+          "line": 1483,
           "called": [
             "ServiceId",
             "SystemState",
@@ -48930,7 +49037,7 @@
         {
           "kind": "theorem",
           "name": "sharingPair1_objects_frame",
-          "line": 1511,
+          "line": 1522,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences",
@@ -48943,7 +49050,7 @@
         {
           "kind": "theorem",
           "name": "sharingPair23_objects_frame",
-          "line": 1524,
+          "line": 1535,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences",
@@ -48958,7 +49065,7 @@
         {
           "kind": "theorem",
           "name": "sharingPair4_services_frame",
-          "line": 1542,
+          "line": 1553,
           "called": [
             "SystemState",
             "registryDependencyConsistent",
@@ -48971,7 +49078,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_preserves_sharingPairs_objects",
-          "line": 1556,
+          "line": 1567,
           "called": [
             "ServiceId",
             "SystemState",
@@ -48987,7 +49094,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_objects_frame",
-          "line": 1572,
+          "line": 1583,
           "called": [
             "SystemState",
             "blockingAcyclic_frame",
@@ -49010,7 +49117,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_services_change",
-          "line": 1608,
+          "line": 1619,
           "called": [
             "SystemState",
             "blockingAcyclic_frame",
@@ -49033,7 +49140,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_composition_complete",
-          "line": 1663,
+          "line": 1674,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -49049,7 +49156,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedContextStoreConsistent",
-          "line": 1711,
+          "line": 1722,
           "called": [
             "SystemState",
             "schedContextStoreConsistent",
@@ -49060,7 +49167,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedContextNotDualBound",
-          "line": 1721,
+          "line": 1732,
           "called": [
             "SystemState",
             "schedContextNotDualBound",
@@ -49071,7 +49178,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedContextRunQueueConsistent",
-          "line": 1731,
+          "line": 1742,
           "called": [
             "SystemState",
             "runnable",
@@ -49083,7 +49190,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedContextPredicates",
-          "line": 1742,
+          "line": 1753,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -49100,7 +49207,7 @@
         {
           "kind": "theorem",
           "name": "donation_frame_preserves_schedContextNotDualBound",
-          "line": 1760,
+          "line": 1771,
           "called": [
             "SystemState",
             "schedContextNotDualBound",
@@ -49111,7 +49218,7 @@
         {
           "kind": "theorem",
           "name": "donation_frame_preserves_schedContextStoreConsistent",
-          "line": 1772,
+          "line": 1783,
           "called": [
             "SystemState",
             "schedContextStoreConsistent",
@@ -49122,7 +49229,7 @@
         {
           "kind": "theorem",
           "name": "cleanup_frame_preserves_schedContextPredicates",
-          "line": 1785,
+          "line": 1796,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -49137,7 +49244,7 @@
         {
           "kind": "theorem",
           "name": "threadCleanup_frame_preserves_schedContextPredicates",
-          "line": 1802,
+          "line": 1813,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -49152,7 +49259,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_objects_change_bridge",
-          "line": 1912,
+          "line": 1923,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49174,7 +49281,7 @@
         {
           "kind": "theorem",
           "name": "ipcSend_crossSubsystemInvariant_bridge",
-          "line": 1946,
+          "line": 1957,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49194,7 +49301,7 @@
         {
           "kind": "theorem",
           "name": "ipcReceive_crossSubsystemInvariant_bridge",
-          "line": 1971,
+          "line": 1982,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49214,7 +49321,7 @@
         {
           "kind": "theorem",
           "name": "ipcReply_crossSubsystemInvariant_bridge",
-          "line": 1996,
+          "line": 2007,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49234,7 +49341,7 @@
         {
           "kind": "theorem",
           "name": "ipcCall_crossSubsystemInvariant_bridge",
-          "line": 2022,
+          "line": 2033,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49254,7 +49361,7 @@
         {
           "kind": "theorem",
           "name": "ipcReplyRecv_crossSubsystemInvariant_bridge",
-          "line": 2048,
+          "line": 2059,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49274,7 +49381,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignal_crossSubsystemInvariant_bridge",
-          "line": 2074,
+          "line": 2085,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49294,7 +49401,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_crossSubsystemInvariant_bridge",
-          "line": 2100,
+          "line": 2111,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49314,7 +49421,7 @@
         {
           "kind": "theorem",
           "name": "schedule_crossSubsystemInvariant_bridge",
-          "line": 2131,
+          "line": 2142,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49334,7 +49441,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_crossSubsystemInvariant_bridge",
-          "line": 2157,
+          "line": 2168,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49354,7 +49461,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_crossSubsystemInvariant_bridge",
-          "line": 2182,
+          "line": 2193,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49374,7 +49481,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_crossSubsystemInvariant_bridge",
-          "line": 2207,
+          "line": 2218,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49394,7 +49501,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomain_crossSubsystemInvariant_bridge",
-          "line": 2232,
+          "line": 2243,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49414,7 +49521,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_crossSubsystemInvariant_bridge",
-          "line": 2259,
+          "line": 2270,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49434,7 +49541,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_crossSubsystemInvariant_bridge",
-          "line": 2285,
+          "line": 2296,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49454,7 +49561,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_retype_bridge",
-          "line": 2313,
+          "line": 2324,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49477,7 +49584,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMint_crossSubsystemInvariant_bridge",
-          "line": 2347,
+          "line": 2358,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49497,7 +49604,7 @@
         {
           "kind": "theorem",
           "name": "cspaceCopy_crossSubsystemInvariant_bridge",
-          "line": 2370,
+          "line": 2381,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49517,7 +49624,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMove_crossSubsystemInvariant_bridge",
-          "line": 2393,
+          "line": 2404,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49537,7 +49644,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMutate_crossSubsystemInvariant_bridge",
-          "line": 2415,
+          "line": 2426,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49557,7 +49664,7 @@
         {
           "kind": "theorem",
           "name": "cspaceInsertSlot_crossSubsystemInvariant_bridge",
-          "line": 2437,
+          "line": 2448,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49577,7 +49684,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_crossSubsystemInvariant_bridge",
-          "line": 2459,
+          "line": 2470,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49597,7 +49704,7 @@
         {
           "kind": "theorem",
           "name": "cspaceRevoke_crossSubsystemInvariant_bridge",
-          "line": 2482,
+          "line": 2493,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49617,7 +49724,7 @@
         {
           "kind": "theorem",
           "name": "schedContextConfigure_crossSubsystemInvariant_bridge",
-          "line": 2509,
+          "line": 2520,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49637,7 +49744,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_crossSubsystemInvariant_bridge",
-          "line": 2533,
+          "line": 2544,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49657,7 +49764,7 @@
         {
           "kind": "theorem",
           "name": "schedContextUnbind_crossSubsystemInvariant_bridge",
-          "line": 2556,
+          "line": 2567,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49677,7 +49784,7 @@
         {
           "kind": "theorem",
           "name": "schedContextYieldTo_crossSubsystemInvariant_bridge",
-          "line": 2580,
+          "line": 2591,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49697,7 +49804,7 @@
         {
           "kind": "theorem",
           "name": "setPriority_crossSubsystemInvariant_bridge",
-          "line": 2608,
+          "line": 2619,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49717,7 +49824,7 @@
         {
           "kind": "theorem",
           "name": "setMCPriority_crossSubsystemInvariant_bridge",
-          "line": 2632,
+          "line": 2643,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49737,7 +49844,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_crossSubsystemInvariant_bridge",
-          "line": 2660,
+          "line": 2671,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49757,7 +49864,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_crossSubsystemInvariant_bridge",
-          "line": 2683,
+          "line": 2694,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49777,7 +49884,7 @@
         {
           "kind": "theorem",
           "name": "setIPCBuffer_crossSubsystemInvariant_bridge",
-          "line": 2713,
+          "line": 2724,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49797,7 +49904,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetype_crossSubsystemInvariant_bridge",
-          "line": 2741,
+          "line": 2752,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49818,7 +49925,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanup_crossSubsystemInvariant_bridge",
-          "line": 2765,
+          "line": 2776,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49839,7 +49946,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_crossSubsystemInvariant_bridge",
-          "line": 2789,
+          "line": 2800,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49860,7 +49967,7 @@
         {
           "kind": "theorem",
           "name": "handleInterrupt_crossSubsystemInvariant_bridge",
-          "line": 2823,
+          "line": 2834,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -49880,13 +49987,13 @@
         {
           "kind": "def",
           "name": "capabilityInvariantBundle_cdt_hypothesis_discharge_index",
-          "line": 2888,
+          "line": 2899,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceCopy_cdt_hypothesis_discharged_at",
-          "line": 2894,
+          "line": 2905,
           "called": [
             "SystemState",
             "capabilityInvariantBundle",
@@ -49897,7 +50004,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMove_cdt_hypothesis_discharged_at",
-          "line": 2902,
+          "line": 2913,
           "called": [
             "SystemState",
             "capabilityInvariantBundle",
@@ -49908,7 +50015,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMintWithCdt_cdt_hypothesis_discharged_at",
-          "line": 2909,
+          "line": 2920,
           "called": [
             "SystemState",
             "capabilityInvariantBundle",
@@ -49919,7 +50026,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMutate_cdt_hypothesis_discharged_at",
-          "line": 2918,
+          "line": 2929,
           "called": [
             "SystemState",
             "capabilityInvariantBundle",
@@ -49930,7 +50037,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_cdt_hypothesis_discharged_at",
-          "line": 2926,
+          "line": 2937,
           "called": [
             "SystemState",
             "capabilityInvariantBundle",
@@ -49941,7 +50048,7 @@
         {
           "kind": "theorem",
           "name": "cspaceRevoke_cdt_hypothesis_discharged_at",
-          "line": 2935,
+          "line": 2946,
           "called": [
             "SystemState",
             "capabilityInvariantBundle",
@@ -49952,13 +50059,13 @@
         {
           "kind": "theorem",
           "name": "closureForm_discharge_index_documented",
-          "line": 2956,
+          "line": 2967,
           "called": []
         },
         {
           "kind": "def",
           "name": "untypedAncestorChain",
-          "line": 3047,
+          "line": 3058,
           "called": [
             "ObjId",
             "SystemState",
@@ -49969,13 +50076,13 @@
         {
           "kind": "def",
           "name": "maxRetypeDepth",
-          "line": 3068,
+          "line": 3079,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "untypedAncestorChain_bounded",
-          "line": 3071,
+          "line": 3082,
           "called": [
             "ObjId",
             "SystemState",
@@ -49988,7 +50095,7 @@
         {
           "kind": "def",
           "name": "untypedAncestorRegionsDisjoint",
-          "line": 3108,
+          "line": 3119,
           "called": [
             "ObjId",
             "SystemState",
@@ -50001,7 +50108,7 @@
         {
           "kind": "theorem",
           "name": "default_untypedAncestorRegionsDisjoint",
-          "line": 3121,
+          "line": 3132,
           "called": [
             "RHTable.getElem",
             "RHTable_getElem",
@@ -50015,7 +50122,7 @@
         {
           "kind": "theorem",
           "name": "untypedAncestorChain_collapses_when_all_parents_none",
-          "line": 3142,
+          "line": 3153,
           "called": [
             "ObjId",
             "SystemState",
@@ -50029,7 +50136,7 @@
         {
           "kind": "theorem",
           "name": "collectQueueMembers_some_start_nonEmpty_result",
-          "line": 3170,
+          "line": 3181,
           "called": [
             "KernelObject",
             "ObjId",
@@ -50047,7 +50154,7 @@
         {
           "kind": "theorem",
           "name": "collectQueueMembers_head_is_start",
-          "line": 3208,
+          "line": 3219,
           "called": [
             "KernelObject",
             "ObjId",
@@ -50066,19 +50173,19 @@
         {
           "kind": "theorem",
           "name": "r4_structural_fix_discharge_index_documented",
-          "line": 3371,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "cspaceSlotUnique_promoted_to_structural",
           "line": 3382,
           "called": []
         },
         {
           "kind": "theorem",
-          "name": "uniqueWaiters_promoted_to_structural",
+          "name": "cspaceSlotUnique_promoted_to_structural",
           "line": 3393,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "uniqueWaiters_promoted_to_structural",
+          "line": 3404,
           "called": [
             "Kernel"
           ]
