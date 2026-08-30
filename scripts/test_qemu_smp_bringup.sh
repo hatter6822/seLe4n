@@ -24,8 +24,12 @@
 #   * QEMU exited unexpectedly with errors
 #
 # Exit codes:
-#   0  PASS or SKIP (both are non-failure for CI tier-4)
-#   1  FAIL (boot trace incomplete)
+#   0   PASS
+#   77  SKIP / NOT RUN (SELE4N_SKIP_EXIT) — a prerequisite was missing, so
+#       this gate certified nothing.  Non-failure, but not a pass: invoke via
+#       `run_gate_check` so the tier records incomplete coverage rather than
+#       counting it green.  SELE4N_REQUIRE_GATES=1 promotes it to a failure.
+#   1   FAIL (boot trace incomplete)
 #
 # **Note on kernel image availability**: at SM1.H landing the
 # workspace has no kernel binary target — `sele4n-hal` is a Rust

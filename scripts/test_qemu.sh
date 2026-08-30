@@ -24,8 +24,12 @@
 #   QEMU_TIMEOUT=120 ./scripts/test_qemu.sh  # Custom timeout (seconds)
 #
 # CI Integration:
-#   This script exits 0 if QEMU is not available (graceful skip for CI
-#   environments without QEMU). Set REQUIRE_QEMU=1 to force failure.
+#   A gate that cannot run certifies nothing, so an unavailable prerequisite
+#   (no QEMU, no cargo, no cross target, no kernel binary) exits
+#   SELE4N_SKIP_EXIT (77) — NOT 0.  Callers must invoke this through
+#   `run_gate_check`, which records the gate as NOT RUN; a plain `run_check`,
+#   or a direct call under `set -e`, will treat 77 as a failure.  Set
+#   REQUIRE_QEMU=1 to fail outright instead of skipping.
 
 set -euo pipefail
 

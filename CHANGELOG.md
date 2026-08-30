@@ -1,3 +1,32 @@
+## v0.34.14 — three documented contracts that the behavior had outgrown; Codex review round 9
+
+All three are places where a change landed and its description did not follow.
+
+**Two scripts documented an exit contract they no longer honour.**
+`test_qemu.sh`'s header promised "exits 0 if QEMU is not available (graceful
+skip)"; it now exits 77. A caller trusting that header under `set -e` aborts
+without having asked for strict mode. The reviewer cited one; the class has
+two — `test_qemu_smp_bringup.sh` still listed "`0` PASS or SKIP (both are
+non-failure for CI tier-4)". Both headers now state 77, name `run_gate_check`
+as the required caller, and say what `SELE4N_REQUIRE_GATES=1` does.
+
+**The deferred RwLock plan pointed at the wrong phase.** Its header still read
+"absorbed by WS-RR phase RR5" — the boot-path phase, which owns none of that
+work. v0.34.6 corrected the source register to RR6 and left the plan's own
+header behind, so an implementer entering through the canonical deferred plan
+was sent to the wrong phase. Now RR6, matching the plan and the register.
+
+**The GitBook testing chapter documented only `run_check`.** `run_gate_check`
+is mandatory for any check certifying a phase acceptance criterion, and the
+mirror chapter never mentioned it — so a contributor following it would route a
+new hardware gate through the wrapper that reads 77 as FAIL. §"Shared test
+library behavior" now covers the reserved skip status, why routing a gate
+through `run_check` turns incomplete coverage red while the old exit-0 idiom
+turned it green, the `record_skip`-or-exit rule its Tier-0 witness pins, and
+the strict mode v1.0.0 must run in.
+
+Refs: docs/gitbook/07-testing-and-ci.md "Shared test library behavior"
+
 ## v0.34.13 — the audit's own first blocker, committed by the audit; Codex review round 8
 
 Three findings, all verified against the tree, all new ground.

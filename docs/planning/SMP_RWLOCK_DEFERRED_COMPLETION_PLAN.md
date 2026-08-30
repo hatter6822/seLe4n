@@ -1,7 +1,7 @@
 # SM2.C Deferred Completion Plan — Verified RwLock (pre-v1.0.0)
 
 > **Phase**: SM2.C-defer (closure of WS-SM SM2.C) — **re-scoped pre-v1.0.0**
-> and absorbed by WS-RR phase RR5
+> and absorbed by WS-RR phase RR6
 > ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)).
 > Shipping a verified microkernel whose core concurrency primitive carries a
 > known-deferred completeness story understates what "verified" means on the

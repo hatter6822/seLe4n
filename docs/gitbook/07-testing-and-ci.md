@@ -80,9 +80,34 @@ WS-A8 baseline maturity automation is implemented in `.github/workflows/platform
 All test entrypoints use `scripts/test_lib.sh` for:
 
 1. common argument handling (`--continue`; disables `set -e` in continue mode per WS-H3/H-12),
-2. command execution wrappers (`run_check` — returns 0 on success, 1 on failure),
-3. centralized pass/fail accounting and final report,
+2. command execution wrappers (`run_check` — returns 0 on success, 1 on failure;
+   `run_gate_check` — the same, plus it understands the reserved skip status),
+3. centralized pass/fail, **and skip**, accounting and final report,
 4. optional automatic Lean setup helper path if `lake` is missing.
+
+### `run_gate_check` and the reserved skip status
+
+A check that certifies a phase acceptance criterion must go through
+**`run_gate_check`**, never `run_check`. A gate whose prerequisite is missing
+(no QEMU, no bootable kernel image, no `devmem2`) exits **`SELE4N_SKIP_EXIT`
+(77)** rather than 0, and `run_gate_check` records it as **NOT RUN**:
+`finalize_report` then names every unexecuted gate and itself exits 77, so the
+status survives the process boundary into the parent tier instead of being
+scored PASS one level up.
+
+Routing such a gate through `run_check` is the bug this exists to prevent —
+`run_check` reads 77 as a non-zero exit and reports FAIL, turning honest
+incomplete coverage into a red build, while the older idiom of exiting 0 from a
+skip branch turned it into a green one. Neither is true. A skip announcement
+must therefore be emitted through `record_skip` or followed by an exit carrying
+the skip status; `scripts/test_gate_skip_accounting.sh` (Tier 0) pins both
+directions, since a witness that cannot see a fall-through certifies nothing
+either.
+
+Set **`SELE4N_REQUIRE_GATES=1`** to promote any skipped gate to a hard failure.
+The v1.0.0 release validation must run in that mode — a release may not certify
+phases whose gates never executed (see
+[`docs/HARDWARE_TESTING.md`](../HARDWARE_TESTING.md) §5–§6).
 
 ### Color-coded prefixes
 
