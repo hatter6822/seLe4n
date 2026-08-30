@@ -127,6 +127,16 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"
 # AH4-F: Version sync — validate all version-bearing files match lakefile.toml.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 
+# A plan's numbering, counts and cross-references are relational data kept in
+# prose.  They drifted in five consecutive cuts -- declared totals of
+# 126/143/145/146/149 against the real row count, references to rows that a
+# renumber had moved, and a phase whose acceptance arithmetic (46 + 4 = 49)
+# could not be satisfied -- each found by review and fixed by hand.  The same
+# failure mode for code is why check_version_sync.sh exists; a plan gets the
+# same treatment.  Self-test first: a scanner that under-reaches fails silently.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py"
+
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per
 # round — `.tcbResume`, `.send`, `.tcbSetPriority`/`.tcbSetMCPriority` — each

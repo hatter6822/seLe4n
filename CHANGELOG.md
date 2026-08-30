@@ -1,3 +1,57 @@
+## v0.34.17 — the plan's arithmetic becomes a gate instead of a habit
+
+Eleven review rounds on WS-RR fixed instances of five recurring classes. This
+cut addresses why the classes recurred.
+
+**The diagnosis.** A plan under `docs/planning/` is relational data written as
+prose: sub-task IDs are keys, the phase map is an aggregate over them, the
+declared total is an aggregate over that, and cross-references are foreign
+keys. None of it was machine-checked. Tier 0 runs 33 gate invocations over 18
+checker scripts — identifier naming with a per-file occurrence baseline,
+version sync across 36 sites, the website link manifest, the staged/production
+partition, proof depth, source-line citations — and **not one of them reads
+`docs/planning/`**. Every mention of that directory in `scripts/` is a comment
+or a single prose grep.
+
+So the plan's invariants were enforced by attention. They failed the way
+unenforced invariants do: declared totals of 126, 143, 145, 146 and 149 against
+the real row count, across five consecutive cuts; references to rows a renumber
+had moved; a phase whose acceptance arithmetic (46 + 4 = 49) could not be
+satisfied; a §4 finding with no owner at all. Each was found by review and
+fixed by re-running an ad-hoc verification script — the same script, five
+times, never committed. That is the churn engine: the fix was written
+repeatedly and thrown away every time.
+
+`scripts/check_workstream_plan.py` is that script, kept. It holds every plan
+declaring an exact `Sub-task count` to its own arithmetic, reads the **git
+index** so it checks what is being committed, and carries a nine-case witness
+suite because a scanner that under-reaches fails silently — which is how this
+class survived twelve rounds of review. Replayed against four real defects from
+this PR's history, it catches the count drift, the acceptance-arithmetic
+impossibility, the numeric half of the ordering defect, and dangling references
+both in the plan and in a companion document.
+
+Scope is stated rather than assumed: 1 plan checked, 2 legacy letter-group
+plans and 11 declaring an estimate range reported but not held to flat
+numbering. Closed workstreams are not renumbered.
+
+**The rule that was checking the wrong property.** The ordering rule authored
+at v0.34.5 covers numeric ordering only — phase number is execution order,
+sub-tasks sequential, no backward dependencies. It says nothing about proofs
+preceding the switch that makes a transition reachable, which is why RR2, RR4
+and RR5 each shipped a live-before-proof ordering while passing that rule, and
+each was caught a round at a time. The rule now has its semantic half: a
+transition goes live only after the proofs covering it, or both land in one
+sub-task — and when the theorems unfold the very function the switch replaces,
+that is the signal to merge the rows rather than order them.
+
+The limits are stated too. The gate cannot tell that a reference which still
+resolves has stopped meaning what it did, and it cannot see the semantic rule.
+Those remain a reader's job, which is why the rule is written down and not
+merely gated.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §5
+
 ## v0.34.16 — a disabled tier that ran anyway, and a premise I accepted without checking; Codex review round 11
 
 **Correction to v0.34.15.** Round 10's P1 said the disabled branch of

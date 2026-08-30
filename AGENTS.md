@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.16.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.17.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -900,12 +900,45 @@ Concretely:
 - **Genuine parallelism is stated, not implied.**  Say which phases may
   overlap and which may never (typically because they edit the same files).
   Absent that statement, sequential execution is the contract.
+- **A transition goes live only after the proofs that cover it.**  When one
+  sub-task makes a transition reachable — wiring a dispatch arm, flipping a
+  seam, repointing a caller at a new base — and another supplies its
+  preservation, progress or refinement obligations, the proofs carry the lower
+  number, or both land in one sub-task.  This is the numbering rule's
+  *semantic* half and the numeric half does not imply it: a plan can be
+  perfectly sequential with no backward dependency and still schedule a live
+  kernel transition three PRs ahead of its own invariant surface, which is
+  precisely the blocker most remediation phases exist to close.  Three
+  independent instances of this shipped in one plan (WS-RR phases RR2, RR4 and
+  RR5), each caught one review round at a time, because the rule as first
+  written checked only that the numbers ascended.  When splitting is
+  impossible — the theorems unfold the very function the switch replaces, so
+  neither half compiles alone — that is the signal to merge the rows, not to
+  order them.
+
 - **Renumbering is cheap before work starts and expensive after.**  Get the
   order right at authoring time; once sub-task IDs appear in commit messages
   and CHANGELOG entries they are effectively frozen.
 
 This applies to every plan under `docs/planning/`, and to the per-phase
 tables in `CLAUDE.md`'s status index.
+
+**The structural half is machine-checked.**
+`scripts/check_workstream_plan.py` (Tier 0) holds every plan that declares an
+exact `Sub-task count` to its own arithmetic: sub-task numbers run 1..N per
+phase, the phase map matches the rows, the declared total matches the phase
+map, a findings column sums to its acceptance total, no row consumes itself or
+a later one, and every `<PREFIX><phase>.<sub>` citation — in the plan and in
+`UNFINISHED_SMP_WORK.md`, `WORKSTREAM_HISTORY.md`, `CLAUDE.md` and `AGENTS.md`
+— resolves to a real row.  It reads the git index, so it checks what is being
+committed rather than what happens to be in the tree.  Legacy letter-group
+plans (`SM6.A.1`) and plans declaring an estimate range are reported but not
+held to flat numbering; closed workstreams are not renumbered.
+
+What it deliberately does **not** check is whether a reference that resolves
+still *means* what it did before a renumber, and it cannot see the semantic
+ordering rule above.  Those stay a reader's job — which is why the rule is
+stated, not merely gated.
 
 ## PR checklist
 
