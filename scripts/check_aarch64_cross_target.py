@@ -517,6 +517,45 @@ def positional_arguments(argv: list[str]) -> list[str]:
     return positional
 
 
+# libtest options that do not change WHICH tests run.  An allowlist, not a
+# denylist: libtest has non-executing modes (`--list`, `--help`) and
+# selection modes (`--ignored`, `--skip`, a positional filter), and a new
+# one would be silently accepted by anything but an allowlist.
+HARNESS_SAFE_FLAGS = frozenset({
+    "--nocapture", "--show-output", "--quiet", "-q", "--report-time",
+    "--ensure-time", "--exact", "--include-ignored", "--force-run-in-process",
+    "--test", "--bench", "--shuffle",
+})
+HARNESS_SAFE_VALUED = frozenset({
+    "--test-threads", "--color", "--format", "--logfile", "--shuffle-seed",
+})
+
+
+def harness_runs_tests(harness: list[str]) -> bool:
+    """Does this libtest argument list still run the whole suite?
+
+    Rejects anything not on the safe lists: the non-executing modes
+    (`--list`, `--help`), the selection modes (`--ignored`, `--skip`), and
+    a positional test-name filter -- libtest takes one just as cargo does.
+    """
+    index = 0
+    while index < len(harness):
+        token = harness[index]
+        if token in HARNESS_SAFE_FLAGS:
+            index += 1
+            continue
+        if token in HARNESS_SAFE_VALUED:
+            index += 2
+            continue
+        if token.split("=", 1)[0] in HARNESS_SAFE_VALUED:
+            index += 1
+            continue
+        # A positional filter, a non-executing mode, or an option this
+        # scanner does not know: none can be certified.
+        return False
+    return True
+
+
 def selects_oracle(argv: list[str]) -> bool:
     """Would this `cargo test` argv run `src/bin/rw_lock_oracle.rs`'s tests?
 
@@ -526,12 +565,18 @@ def selects_oracle(argv: list[str]) -> bool:
     or explicitly -- and only when its package selection includes the crate.
     Both halves are required, and neither is implied by the feature flag.
     """
-    # Everything after `--` is passed to the test harness, not to cargo, so
+    # Everything after `--` is passed to the test HARNESS, not to cargo, so
     # it must not be read as a cargo selector: `cargo test --all -- --doc`
-    # is an unrestricted run with a harness argument, and reading the
-    # trailing `--doc` as a target-kind restriction would reject it.
+    # is an unrestricted run with a harness argument.  But "not a cargo
+    # selector" is not "irrelevant": libtest has its own non-executing
+    # modes and its own filters, and discarding the tail accepted
+    # `-- --list`, which prints test names and runs none (PR #883 review
+    # round 9).  The tail is therefore checked on its own terms.
     if "--" in argv:
+        harness = argv[argv.index("--") + 1 :]
         argv = argv[: argv.index("--")]
+        if not harness_runs_tests(harness):
+            return False
     # `--no-run` COMPILES the selected targets and runs none of them, so it
     # satisfies every selector below while executing zero oracle tests --
     # the `--doc` finding again, one flag over (PR #883 review round 5).
@@ -555,6 +600,13 @@ def selects_oracle(argv: list[str]) -> bool:
         token in TARGET_KIND_FLAGS or token.split("=", 1)[0] in TARGET_KIND_FLAGS
         for token in argv
     ):
+        return False
+    # An exclusion beats any selection: `--workspace --exclude sele4n-hal`
+    # selects every package EXCEPT the one holding the oracle, and reading
+    # `--workspace` alone as proof accepted exactly that (PR #883 review
+    # round 9).  Checked before the selectors, for the same reason
+    # `--no-run` is: no selection rescues a package that is excluded.
+    if ORACLE_PKG in option_values(argv, "exclude"):
         return False
     if "--all" in argv or "--workspace" in argv:
         return True
@@ -600,6 +652,53 @@ def check_toolchain(root: str) -> list[str]:
             f"as an element (found: {sorted(listed) or match.group(1).strip()})."
         ]
     return []
+
+
+# `set` short flags, by the long name shell uses for them.
+_SET_SHORT_FLAGS = {"e": "errexit", "u": "nounset", "x": "xtrace", "f": "noglob"}
+
+
+def shell_option_state(code: str) -> dict[str, bool]:
+    """Effective `set` options after running `code`, in command order.
+
+    `-x` ENABLES option x and `+x` disables it -- the polarity is inverted
+    from the usual convention, which is why reading only the names is not
+    merely imprecise but backwards for half the inputs.  The last setting
+    of an option wins, so the result is the state a command at the end of
+    the script would run under.
+    """
+    state: dict[str, bool] = {}
+    for command in shell_commands(code):
+        argv = argv_of(command)
+        if not argv or argv[0] != "set":
+            continue
+        index = 1
+        while index < len(argv):
+            token = argv[index]
+            if token in ("-o", "+o") and index + 1 < len(argv):
+                state[argv[index + 1]] = token == "-o"
+                index += 2
+                continue
+            if len(token) > 1 and token[0] in "-+":
+                polarity = token[0] == "-"
+                letters = token[1:]
+                # A cluster ENDING in `o` takes the option name as its next
+                # argument: `set -euo pipefail` is `-e`, `-u` and
+                # `-o pipefail`, which is how every script in this repo
+                # spells it.  Reading the cluster alone lost `pipefail`
+                # entirely and reported the real gate script as missing it.
+                if letters.endswith("o") and index + 1 < len(argv):
+                    state[argv[index + 1]] = polarity
+                    letters = letters[:-1]
+                    index += 1
+                for letter in letters:
+                    name = _SET_SHORT_FLAGS.get(letter)
+                    if name:
+                        state[name] = polarity
+                index += 1
+                continue
+            index += 1
+    return state
 
 
 def check_gate_script(root: str) -> list[str]:
@@ -759,15 +858,13 @@ def check_gate_script(root: str) -> list[str]:
     # successful release build, archive check and clippy, and the script
     # exits 0 on its final `echo` (PR #883 review round 6). The commands
     # being present says nothing about whether their failure is observed.
-    directives: set[str] = set()
-    for command in shell_commands(code):
-        argv = argv_of(command)
-        if argv and argv[0] == "set":
-            directives.update(argv[1:])
-    short_flags = "".join(
-        d.lstrip("-") for d in directives if d.startswith("-") and not d.startswith("--")
-    )
-    if "e" not in short_flags and "errexit" not in directives:
+    # EFFECTIVE state in command order, not a union of tokens.  A set of
+    # names cannot tell `set -o pipefail` from `set +o pipefail`, and knows
+    # nothing of a later `set +e` undoing an earlier `set -e`; both
+    # configurations passed (PR #883 review round 9).  In shell, `-`
+    # enables an option and `+` disables it, and the last one wins.
+    enabled = shell_option_state(code)
+    if not enabled.get("errexit"):
         problems.append(
             f"{GATE_SCRIPT}: no `set -e` (or `set -o errexit`). Without it "
             f"bash runs past a failed command, so a broken cross build is "
@@ -775,7 +872,7 @@ def check_gate_script(root: str) -> list[str]:
             f"final `echo` with status 0 -- CI green over a build that "
             f"failed."
         )
-    if "pipefail" not in directives:
+    if not enabled.get("pipefail"):
         problems.append(
             f"{GATE_SCRIPT}: no `set -o pipefail`. A build step piped into "
             f"a filter takes the pipeline's status from the last command, "
@@ -984,6 +1081,37 @@ def check_workflow(root: str) -> list[str]:
     return problems
 
 
+def reachable_from_main(code: str, target: str) -> bool:
+    """Is `target` called, directly or transitively, from `main`?
+
+    Edges are bare-name call sites inside each brace-matched `fn` body.
+    That over-approximates -- a name mentioned in a nested closure counts
+    -- which can only make a dead path look reachable in a *narrower* way
+    than a whole-file scan does, and the alternative (no reachability at
+    all) accepted an uncalled helper outright.
+    """
+    if target == "main":
+        return True
+    bodies = {
+        name: code[start:end] for name, start, end in _shared_rust_view.fn_bodies(code)
+    }
+    if "main" not in bodies:
+        return False
+    seen, frontier = {"main"}, ["main"]
+    while frontier:
+        current = frontier.pop()
+        body = bodies.get(current, "")
+        for name in bodies:
+            if name in seen:
+                continue
+            if re.search(rf"\b{re.escape(name)}\s*\(", body):
+                if name == target:
+                    return True
+                seen.add(name)
+                frontier.append(name)
+    return False
+
+
 def check_build_script(root: str) -> list[str]:
     """`build.rs` still hands all three `.S` sources to the assembler."""
     text = read(root, BUILD_SCRIPT)
@@ -1022,6 +1150,23 @@ def check_build_script(root: str) -> list[str]:
     # round 5).  So the receiver that `.compile("sele4n_hal_asm")` is
     # called on is resolved first, and only `.file()` calls in ITS chain
     # count.
+    # The chain must also be REACHED. Selecting the first `.compile` proves
+    # only that a builder would assemble the sources if invoked; moving the
+    # whole chain into an uncalled helper left this check clean over a dead
+    # assembly path (PR #883 review round 9).
+    owner = _shared_rust_view.enclosing_fn(text, compile_at)
+    if owner == _shared_rust_view.FILE_SCOPE or not reachable_from_main(
+        code, owner
+    ):
+        return [
+            f"{BUILD_SCRIPT}: the `.compile(\"sele4n_hal_asm\")` chain is in "
+            f"`{owner}`, which this gate cannot show is called from `main`. "
+            f"A builder that would assemble the sources if invoked "
+            f"assembles nothing if nothing invokes it, so the `.S` sources "
+            f"would have no compile coverage while every check here stays "
+            f"green."
+        ]
+
     receiver = compiled_builder_name(code, compile_at)
     if receiver is None:
         return [
@@ -1910,6 +2055,103 @@ def self_test() -> int:
             quoted_brace,
             True,
             check="host_lane",
+            mutation="preserving",
+        )
+    )
+
+    # The whole assembly chain moved into a helper nothing calls: the
+    # architecture gate stays in `main`, the builder, its `.file()` calls
+    # and the `.compile` are all intact, and nothing assembles.
+    dead_chain = baseline()
+    dead_chain[BUILD_SCRIPT] = GOOD_BUILD_RS.replace("fn main() {", "fn unused_asm() {", 1)
+    dead_chain[BUILD_SCRIPT] += (
+        '\nfn main() {\n    let _ = std::env::var("CARGO_CFG_TARGET_ARCH");\n}\n'
+    )
+    cases.append(
+        Case(
+            "an assembly chain in an uncalled helper is not coverage",
+            dead_chain,
+            True,
+            check="build_script",
+            mutation="preserving",
+        )
+    )
+
+    # `-- --list` prints test names and runs none.
+    harness_list = baseline()
+    harness_list[HOST_LANE] = GOOD_HOST_LANE.replace(
+        "cargo test --all --features std,host_tools",
+        "cargo test --all --features std,host_tools -- --list",
+    )
+    cases.append(
+        Case(
+            "a `-- --list` harness mode runs no tests",
+            harness_list,
+            True,
+            check="host_lane",
+            mutation="preserving",
+        )
+    )
+
+    # ... while a harness option that does not change which tests run must
+    # still be accepted.
+    harness_threads = baseline()
+    harness_threads[HOST_LANE] = GOOD_HOST_LANE.replace(
+        "cargo test --all --features std,host_tools",
+        "cargo test --all --features std,host_tools -- --test-threads 1 --nocapture",
+    )
+    cases.append(
+        Case(
+            "harness options that do not select tests are accepted",
+            harness_threads,
+            False,
+            check="host_lane",
+            mutation="none",
+        )
+    )
+
+    # `--workspace` with the oracle's own package excluded.
+    excluded_pkg = baseline()
+    excluded_pkg[HOST_LANE] = GOOD_HOST_LANE.replace(
+        "cargo test --all --features std,host_tools",
+        "cargo test --workspace --exclude sele4n-hal --features std,host_tools",
+    )
+    cases.append(
+        Case(
+            "a workspace run excluding the oracle's package is not coverage",
+            excluded_pkg,
+            True,
+            check="host_lane",
+            mutation="preserving",
+        )
+    )
+
+    # `set +o errexit` keeps the directive and inverts its polarity.
+    disabled_errexit = baseline()
+    disabled_errexit[GATE_SCRIPT] = GOOD_GATE.replace(
+        "set -euo pipefail", "set +o errexit\nset +o pipefail"
+    )
+    cases.append(
+        Case(
+            "a `set +o` directive disables rather than enables",
+            disabled_errexit,
+            True,
+            check="gate_script",
+            mutation="preserving",
+        )
+    )
+
+    # ... and a later `set +e` undoing an earlier `set -e`.
+    reenabled_then_off = baseline()
+    reenabled_then_off[GATE_SCRIPT] = GOOD_GATE.replace(
+        "set -euo pipefail", "set -euo pipefail\nset +e"
+    )
+    cases.append(
+        Case(
+            "a later `set +e` undoes the earlier `set -e`",
+            reenabled_then_off,
+            True,
+            check="gate_script",
             mutation="preserving",
         )
     )

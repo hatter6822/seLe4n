@@ -106,7 +106,16 @@ a claim made in an earlier round, that the module boundary was covered by
 the Rust allowlist. It is not: the allowlist governs the helper's reference,
 which is a different obligation from an export re-exposing it to Lean.
 Reachability is now crate-wide, over-approximating on duplicate function
-names because that direction fails closed.
+names because that direction fails closed.  A ninth round found four more of
+the same shape: `-- --list` (libtest prints names and runs nothing, so the
+harness tail is now read on its own terms rather than discarded);
+`--workspace --exclude sele4n-hal` (an exclusion beats any selection);
+`set +o errexit` and a later `set +e` (the effective option state is now
+derived in command order — `-` enables and `+` disables, which is inverted
+from the usual convention, so reading names alone was backwards rather than
+merely imprecise); and the whole `.compile` chain moved into an uncalled
+helper, which proved only that a builder *would* assemble the sources if
+anything invoked it.
 
 And **one functional defect**: `select_cross_assembler` counted
 `CROSS_COMPILE` among "the variables `cc` itself consults" and returned early
