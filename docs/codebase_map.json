@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/smp-multicore-completion-6nuj04",
-      "commit_sha": "8388430bcf3319e6cf743208abff68f84d0e3312",
-      "tree_sha": "6f9ac134ae82f38ffd3648048c2999dc893b1f87",
-      "committed_at_utc": "2026-08-29T03:37:13+00:00"
+      "branch": "claude/workstream-plans-audit-lwg7ui",
+      "commit_sha": "17d2bd30d042f05648bad36fcbff34b5e63c5a3f",
+      "tree_sha": "98b23b4cc3d3ffbd77d5041a4ad944f3a5a03ed2",
+      "committed_at_utc": "2026-08-29T23:46:14+00:00"
     }
   },
   "source_sync": {
@@ -17,14 +17,14 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "646d1bc40f4ec653a362d8cf6a5863a9a984380f433570f16e16b2a3d3856d83"
+    "source_digest": "e4290e7501c21bfb0f67f9d3dcaedafef94547388065fe5fb5cce202415fbc2a"
   },
   "summary": {
     "module_count": 356,
     "declaration_count": 17043
   },
   "readme_sync": {
-    "version": "0.34.12",
+    "version": "0.34.13",
     "lean_toolchain": "v4.28.0",
     "production_files": 287,
     "production_loc": 288883,

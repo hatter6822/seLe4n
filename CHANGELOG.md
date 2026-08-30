@@ -1,3 +1,46 @@
+## v0.34.13 — the audit's own first blocker, committed by the audit; Codex review round 8
+
+Three findings, all verified against the tree, all new ground.
+
+**WS-RR was an unregistered workstream.** `CLAUDE.md` and `AGENTS.md` declared
+it PLANNED and moved SM10 to BLOCKED, while `grep -c WS-RR
+docs/WORKSTREAM_HISTORY.md` returned **0** — and RR8.4 deferred the first
+history entry to closure. So for the entire 146-sub-task window, the project's
+declared canonical source for workstream status would show neither the active
+remediation workstream nor SM10's blocker. This is verbatim the defect the
+audit filed as blocker 1 against the IPC de-threading plan, committed by the
+document that filed it. The opening entry is now written, and RR8.4 updates the
+row rather than creating it.
+
+**RR4 wired the fault path live three PRs before fixing its return frame.**
+The ABI-v2 correction sat at RR4.25, after RR4.22 made aborts deliver — so
+intermediate releases would ship a live fault path whose return frame decodes
+as success whenever `x1` carries a label under 512. Worse, the row pointed at
+`rust/sele4n-hal/src/svc_dispatch.rs`, which already holds the correct
+`error_frame_regs` helper; the four defective `set_x0`-only arms are in
+`trap.rs`. The register's own remediation said to fold this into the
+fault-delivery cut, so the plan contradicted its source. The correction is now
+RR4.22, targets `trap.rs`, and precedes the wiring at RR4.23.
+
+**Two §4 findings had no owner, and the low table was not what it claimed.**
+`lockSet_observer_atomic_on` and `_atomic_under_lockSet` appeared **zero**
+times in the plan — a security-section finding silently dropped, now RR7.4.
+Separately, §7's 99 lows were routed wholesale to SM10.A's *documentation*
+sweep on the stated basis that they are all documentation drift. They are not:
+at least fourteen rows are classed `improvement`, `debt`, `gates` or
+`bootpath`, and §4 finding 8 is a `soundness` item carrying low severity.
+Finding 98 is four per-core statistics accessors declared, wrapped and proven
+with zero consumers — an implement-the-improvement case, not a stale sentence.
+RR0.11 now triages §7 by **remedy** rather than severity: prose fixes to
+SM10.A, anything needing code, a proof or wiring back into RR7 as a numbered
+row or a registered deferral. Low means the consequence is small, not that the
+remedy is a sentence.
+
+Counts resynced to 146 (RR7 23). Every `RR<n>.<m>` reference across the plan,
+register, history, `CLAUDE.md` and `AGENTS.md` now resolves to a real row.
+
+Refs: docs/WORKSTREAM_HISTORY.md WS-RR opening entry
+
 ## v0.34.12 — CI fix: the skip messages carried a workstream ID into a code file
 
 `v0.34.11` put `SM10.E.D1` in two strings in `scripts/test_hw_crosscheck.sh` —

@@ -6,7 +6,7 @@
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 145 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 146 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -58,12 +58,24 @@ placed to close them**, not by severity alone:
 | Security / soundness | 11 | RR4, RR5, RR6, RR7 | Become reachable when the boot path goes live |
 | High (other) | 12 | RR1..RR6 | Real incomplete work in phases marked complete |
 | Medium | 46 | RR7 (and RR0..RR6 where thematic) | Genuine gaps SM10 would otherwise absorb |
-| Low (documentation drift) | 99 | **SM10.A** | Documentation sync is literally SM10.A's assigned job |
+| Low | 99 | RR0.11 triage → **SM10.A** or RR7 | Mostly documentation sync, but not uniformly — see below |
 
-The 99 low findings are deliberately **not** duplicated into this phase.
-Re-homing a documentation sweep into a remediation phase, and then running
-SM10.A's documentation sweep over the same files, is two passes for one
-outcome. RR0.11 instead hands SM10.A the register section as its work-list.
+Most of the 99 lows are documentation drift, and those are deliberately **not**
+duplicated into this phase: re-homing a documentation sweep into a remediation
+phase, and then running SM10.A's sweep over the same files, is two passes for
+one outcome.
+
+But the section is **not** uniformly doc-sync, and handing it wholesale to a
+documentation sweep would let real work reach release closure as prose. At
+least fourteen rows are classed `improvement`, `debt`, `gates` or `bootpath` —
+finding 98, for instance, is four per-core statistics accessors that are
+declared, wrapped and proven with zero consumers, which is an
+implement-the-improvement case, not a stale sentence; finding 8 in §4 is a
+`soundness` item that happens to carry low severity. RR0.11 therefore
+**triages** §7 before handing anything over: doc-sync rows go to SM10.A as its
+work-list, and every row that needs code, a proof or a wiring change becomes a
+numbered RR7 row or an explicitly registered deferral with an owner. A low
+severity means the consequence is small, not that the remedy is a sentence.
 
 ### 2.2 Why a separate phase rather than SM10 sub-tasks
 
@@ -98,8 +110,8 @@ twice. The dependencies that produced this order:
 - **RR6 is independent** of everything above; it sits late because nothing
   depends on it, not because it is optional.
 - **RR7 is not independent, despite being a sweep.** Several of its rows own
-  findings whose primary owner is an earlier phase — RR7.15 the RwLock-deferred
-  mediums that RR6 implements, RR7.18 the IPC de-threading medium RR3 closes,
+  findings whose primary owner is an earlier phase — RR7.16 the RwLock-deferred
+  mediums that RR6 implements, RR7.19 the IPC de-threading medium RR3 closes,
   and its cross-core IPC batches touch RR2 and RR3 surfaces. It therefore runs
   **after** those phases, and its overlapping rows are verification that the
   owning phase actually closed the finding, not a second attempt at it.
@@ -130,7 +142,7 @@ Nothing else may overlap without re-reading the dependency list above.
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
 | RR5 | Boot-path fail-open closure | 14 | M–L |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 | L |
-| RR7 | Medium-severity sweep | 22 | M |
+| RR7 | Medium-severity sweep | 23 | M |
 | RR8 | Phase closure and hand-off to SM10 | 5 | S |
 
 ## 5. Sub-tasks
@@ -156,7 +168,7 @@ register is accurate. RR0.1–RR0.3 close audit blocker 1's registration half.
 | RR0.8 | Refresh the SM10.B sub-task table against the tree — five of six suites and two of three fixtures already exist | (1 file) | S |
 | RR0.9 | Register the remaining unregistered debt the debt sweep found, each with an owner and closure target | `docs/WORKSTREAM_HISTORY.md` | M |
 | RR0.10 | Fix SM4.C.11's circular closure target (the phase that owns it is marked LANDED); re-home it to a phase that can close it | (2 files) | S |
-| RR0.11 | Hand SM10.A the register's §7 low-severity table as its documentation work-list, cross-referenced from `SMP_RELEASE_CLOSURE_PLAN.md` SM10.A | (2 files) | T |
+| RR0.11 | Triage the register's §7 low-severity table by remedy, not by severity: rows fixed by editing prose become SM10.A's documentation work-list (cross-referenced from `SMP_RELEASE_CLOSURE_PLAN.md`); rows needing code, a proof or a wiring change become numbered RR7 rows or registered deferrals with owners. Handing all 99 to a documentation sweep would close the release over unwired proven structures | (2 files) | S |
 
 **Acceptance**: `grep` for each open workstream name returns a hit in
 `docs/WORKSTREAM_HISTORY.md`; no plan in `docs/planning/` lacks a status
@@ -320,10 +332,10 @@ Rust wiring that makes the Lean path the live one.
 | RR4.19 | **Progress theorem**: a faulted thread cannot re-execute the faulting instruction without an intervening handler action — the theorem that makes the livelock unrepresentable | `SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean` (new) | L |
 | RR4.20 | Non-interference: fault delivery respects the information-flow policy, and a fault message carries no data across a label boundary | `SeLe4n/Kernel/InformationFlow/` | L |
 | RR4.21 | Wire `dispatchSynchronousException`'s `.dataAbort` / `.instrAbort` arms to the delivery transition, retiring the bare `.error .vmFault`. Deliberately **after** the preservation, progress and non-interference proofs above: this is the sub-task that makes the transition reachable, and a live kernel transition must not land ahead of its own invariant surface | `SeLe4n/Kernel/Architecture/ExceptionModel.lean` | M |
-| RR4.22 | Rust: `trap.rs` abort arms call the Lean fault entry through a new `@[export]`, inside `with_kernel_entry` | `rust/sele4n-hal/src/trap.rs`, `SeLe4n/Platform/FFI.lean` | M |
-| RR4.23 | Rust: `ELR_EL1` writeback on resume vs restart — the trap frame gains the mutator it currently lacks | `rust/sele4n-hal/src/trap.rs` | M |
-| RR4.24 | Retire the duplicate classification path: `trap.rs` classifies via the Lean model rather than its own `esr_ec` match, so the two cannot diverge | `rust/sele4n-hal/src/trap.rs` | M |
-| RR4.25 | Fault-return arms use the v2 offset-label ABI, not the retired raw-discriminant-in-`x0` convention | `rust/sele4n-hal/src/svc_dispatch.rs` | S |
+| RR4.22 | `trap.rs`'s four `set_x0`-only exception arms write a full v2 offset-label frame via `error_frame_regs`, retiring the raw-discriminant-in-`x0` convention that leaves `x1` untouched. **Before** the wiring below, not after: once aborts deliver, a resumed thread whose `x1` carries a label under 512 decodes a fault as a successful syscall. The defective arms are in `trap.rs` — `svc_dispatch.rs` already holds the correct helper | `rust/sele4n-hal/src/trap.rs` | S |
+| RR4.23 | Rust: `trap.rs` abort arms call the Lean fault entry through a new `@[export]`, inside `with_kernel_entry` | `rust/sele4n-hal/src/trap.rs`, `SeLe4n/Platform/FFI.lean` | M |
+| RR4.24 | Rust: `ELR_EL1` writeback on resume vs restart — the trap frame gains the mutator it currently lacks | `rust/sele4n-hal/src/trap.rs` | M |
+| RR4.25 | Retire the duplicate classification path: `trap.rs` classifies via the Lean model rather than its own `esr_ec` match, so the two cannot diverge | `rust/sele4n-hal/src/trap.rs` | M |
 | RR4.26 | Tests: fault delivery, resume, restart, no-handler suspend, and the negative that a fault never returns to the faulting instruction | `tests/FaultHandlingSuite.lean` (new) | L |
 | RR4.27 | Golden fixture: a 4-core trace with a faulting thread and a handler | `tests/fixtures/` | M |
 
@@ -445,28 +457,29 @@ acceptance gate below can actually be checked against the work list.
 | RR7.1 | Boot MMU corrections: 960 MiB of RAM mapped as Device, and nothing mapped above 4 GiB (§4) | 1 | L |
 | RR7.2 | Satisfy the FFI unqualified boot identity-map claim, which the boot tables do not provide above 3 GiB — per the implement-the-improvement rule, extend the tables rather than qualify the claim (§4) | 1 | M |
 | RR7.3 | Extend the flagship "syscall entry implies capability held" theorem to the live checked dispatch path; it covers only the legacy path today (§4) | 1 | L |
-| RR7.4 | SM10 release-closure plan mediums | 5 | M |
-| RR7.5 | Boot-path sweep mediums | 5 | M |
-| RR7.6 | Rust HAL mediums | 4 | M |
-| RR7.7 | Syscall return ABI mediums | 4 | M |
-| RR7.8 | Per-object lock mediums | 4 | M |
-| RR7.9 | Fine-lock migration mediums | 3 | M |
-| RR7.10 | TLB shootdown mediums | 3 | M |
-| RR7.11 | Debt-register mediums | 3 | M |
-| RR7.12 | Cross-core IPC mediums | 2 | S |
-| RR7.13 | Declassification mediums | 2 | S |
-| RR7.14 | Panic-hang remediation mediums | 2 | S |
-| RR7.15 | RwLock-deferred mediums | 2 | S |
-| RR7.16 | Implement-the-improvement sweep: route the per-core scheduler entries through the HAL context-switch seam | 1 | S |
-| RR7.17 | Implement-the-improvement sweep: the DeviceTree-to-`PlatformConfig` boot bridge — a platform/boot surface unrelated to the row above, so its own task | 1 | S |
-| RR7.18 | IPC de-threading medium | 1 | S |
-| RR7.19 | Reply objects medium | 1 | S |
-| RR7.20 | SMP foundations medium | 1 | S |
-| RR7.21 | Master plan medium | 1 | S |
-| RR7.22 | Doc-sync medium | 1 | S |
+| RR7.4 | Give the `_atomic_under_lockSet` family operation-specific content: its atomicity half is today a `rfl` instance of a body-agnostic lemma, and five `lockSet_observer_atomic_on` instantiations are missing (§4) | 1 | M |
+| RR7.5 | SM10 release-closure plan mediums | 5 | M |
+| RR7.6 | Boot-path sweep mediums | 5 | M |
+| RR7.7 | Rust HAL mediums | 4 | M |
+| RR7.8 | Syscall return ABI mediums | 4 | M |
+| RR7.9 | Per-object lock mediums | 4 | M |
+| RR7.10 | Fine-lock migration mediums | 3 | M |
+| RR7.11 | TLB shootdown mediums | 3 | M |
+| RR7.12 | Debt-register mediums | 3 | M |
+| RR7.13 | Cross-core IPC mediums | 2 | S |
+| RR7.14 | Declassification mediums | 2 | S |
+| RR7.15 | Panic-hang remediation mediums | 2 | S |
+| RR7.16 | RwLock-deferred mediums | 2 | S |
+| RR7.17 | Implement-the-improvement sweep: route the per-core scheduler entries through the HAL context-switch seam | 1 | S |
+| RR7.18 | Implement-the-improvement sweep: the DeviceTree-to-`PlatformConfig` boot bridge — a platform/boot surface unrelated to the row above, so its own task | 1 | S |
+| RR7.19 | IPC de-threading medium | 1 | S |
+| RR7.20 | Reply objects medium | 1 | S |
+| RR7.21 | SMP foundations medium | 1 | S |
+| RR7.22 | Master plan medium | 1 | S |
+| RR7.23 | Doc-sync medium | 1 | S |
 
 **Acceptance**: all **49** findings this phase owns — the 46 in the register's
-§6 table and the three §4 items in RR7.1–RR7.3 — are closed or carry an
+§6 table and the four §4 items in RR7.1–RR7.4 — are closed or carry an
 explicit, registered deferral with a closure target. A medium may be deferred;
 it may not be dropped, and the §4 three may not be left open on the strength of
 the §6 table alone.
@@ -518,7 +531,7 @@ PASS — the contract landed at `v0.34.2` and pinned by
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| RR4 fault IPC is larger than XL and slips the phase | HIGH | HIGH | Split at the sub-task boundaries §RR4 names. Partial delivery is **not** safe: RR4.9's no-handler policy is unreachable until RR4.21 wires the abort arms and RR4.22 routes the Rust trap path to them, so until both land aborts still take the old `.error .vmFault` path and return to the faulting instruction. If RR4 slips, the release waits |
+| RR4 fault IPC is larger than XL and slips the phase | HIGH | HIGH | Split at the sub-task boundaries §RR4 names. Partial delivery is **not** safe: RR4.9's no-handler policy is unreachable until RR4.21 wires the abort arms and RR4.23 routes the Rust trap path to them, so until both land aborts still take the old `.error .vmFault` path and return to the faulting instruction. If RR4 slips, the release waits |
 | RR3 de-threading blocks on an ordering cycle between invariant modules | MED | HIGH | RR3.2 addresses ordering before any bundle edit; the per-transition establishers already exist |
 | RR6.12 bisimulation does not close | MED | MED | Land the trace-shape predicate independently so the composition has something to consume; RR6 stays open and the release waits — deferring the deployed-lock corollary past v1.0.0 would ship the exact gap this phase exists to close |
 | RR1 surfaces a large volume of aarch64 compile errors | MED | MED | Expected and desirable — it is cheaper here than at SM10.E; RR1.2 and RR1.3 are sized L for this reason |

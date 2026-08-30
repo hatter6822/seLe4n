@@ -7100,6 +7100,44 @@ WS-RC R3 (v1.0.0-blocking) respectively. Cleanups for TLB+cache
 composition, secondary-core bring-up / SMP and the explicit
 single-core kernel model were closed in WS-AN AN9.
 
+## WS-RR — SMP Release Readiness (pre-SM10 remediation, **PLANNED — OPEN**, opened v0.34.13)
+
+**Status**: PLANNED, no sub-task started. **Closes**: before SM10 opens.
+**Plan**: [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
+**Source register**: [`docs/planning/UNFINISHED_SMP_WORK.md`](planning/UNFINISHED_SMP_WORK.md)
+(171 confirmed findings, audited at `v0.34.3`).
+
+The pre-SM10 completeness audit found the project **not** ready to begin SM10:
+three findings block starting it, SM10's own scope statement is false against
+the tree, and a set of fail-open latents become reachable exactly when the boot
+path goes live. WS-RR closes that work first, so SM10 can be the release-closure
+phase it was scoped as. **SM10 is BLOCKED on WS-RR** and must not open until
+RR8 closes.
+
+146 sub-tasks across nine phases, numbered in execution order:
+
+| Phase | Scope | Subs |
+|-------|-------|------|
+| RR0 | Registration and plan correction | 11 |
+| RR1 | aarch64 compile coverage | 11 |
+| RR2 | Live-path correctness: dispatch-arm bundles, donation queue migration | 19 |
+| RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 |
+| RR4 | Fault handling: full fault IPC with reply-based restart | 27 |
+| RR5 | Boot-path fail-open closure | 14 |
+| RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 |
+| RR7 | Medium-severity sweep | 23 |
+| RR8 | Phase closure and hand-off to SM10 | 5 |
+
+**The three blockers**: the IPC de-threading workstream is registered in no
+durable index (RR0.1–RR0.3, closed by RR3); cross-core SchedContext donation
+never migrates the CBS replenish queue, breaking the SM5.H affinity invariant
+on a live path (RR2); and the live `.send` arm carries no `ipcInvariantFull`
+preservation while SM6.D claims coverage (RR2).
+
+This entry is written at **opening**, not at closure: a workstream that is
+active but absent from this file is the precise defect the audit filed as its
+first blocker, and RR8.4 updates the row rather than creating it.
+
 ## WS-RC — Pre-1.0 Audit Remediation (v0.30.11 → v0.31.2, **CLOSED** — R0–R5 landed; R6..R14 absorbed into WS-SM per SM0.Q)
 
 **Audit (comprehensive):** [`docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md`](audits/AUDIT_v0.30.11_COMPREHENSIVE.md)

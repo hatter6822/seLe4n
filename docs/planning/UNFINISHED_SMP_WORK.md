@@ -1216,10 +1216,11 @@ The sweep found the proof surface, capability gating, ABI design and Rust unsafe
 
 > **This sequence is now planned in full.** Every item below, plus the
 > security findings of §4 and the medium sweep of §6, is decomposed into
-> 145 PR-sized sub-tasks across nine phases in
+> 146 PR-sized sub-tasks across nine phases in
 > [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) (WS-RR).
-> The §7 low-severity table is deliberately *not* in that plan — it is
-> handed to SM10.A, whose assigned job is the documentation sweep.
+> The §7 low-severity table is not enumerated in that plan; RR0.11 triages it
+> by remedy, sending prose fixes to SM10.A's documentation sweep and anything
+> needing code or a proof back into RR7 as a numbered row.
 
 
 Ordered so each step unblocks the next. Steps 1–3 close the blockers;
@@ -1258,7 +1259,13 @@ boot seam flips.
  gates for SM0..SM9 green" is unmet, not merely unverified — and that is a
  statement SM10 must satisfy, not one WS-RR can close.
 
-The **§7** table is the natural work-list for SM10.A's documentation sweep.
+The **§7** table is triaged by RR0.11 before anyone works it: most of its rows
+are documentation drift and become SM10.A's work-list, but the table is not
+uniformly doc-sync — rows classed `improvement`, `debt`, `gates` and `bootpath`
+need code, proofs or wiring, and finding 8 is a `soundness` item that merely
+carries low severity. Low means the consequence is small, not that the remedy
+is a sentence, so those rows return to RR7 as numbered work or become
+registered deferrals with owners.
 The §6 mediums are **not** SM10.A's: WS-RR phase RR7 owns them and must close
 or explicitly defer each one, so routing them into a documentation sweep would
 let substantive remediations lapse while RR7 still read as complete. The §8
