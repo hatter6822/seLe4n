@@ -200,7 +200,7 @@ def read_at(ref: str, rel: str) -> str | None:
         return None
 
 
-def global_definitions() -> dict[str, tuple[str, set[str]]]:
+def global_definitions(clashes: list | None = None) -> dict[str, tuple[str, set[str]]]:
     """Every sub-task ID the indexed tree defines, keyed by prefix.
 
     Built across `docs/planning/` **and** `docs/dev_history/planning/`, because
@@ -211,6 +211,7 @@ def global_definitions() -> dict[str, tuple[str, set[str]]]:
     answers both.
     """
     out: dict[str, tuple[str, set[str]]] = {}
+    clashes = clashes if clashes is not None else []
     for rel in list_tracked(":"):
         body = read_indexed(rel)
         if not body:
@@ -221,6 +222,12 @@ def global_definitions() -> dict[str, tuple[str, set[str]]]:
         prefix = rows[0].group(1)
         ids = {f"{prefix}{m.group(2)}.{m.group(3)}" for m in rows
                if m.group(1) == prefix}
+        if prefix in out and out[prefix][0] != rel:
+            # Unioning two plans' IDs under one prefix makes every citation
+            # ambiguous and hides duplicate definitions; record the clash so
+            # the caller can report it rather than silently merging.
+            clashes.append((prefix, out[prefix][0], rel))
+            continue
         where, known = out.get(prefix, (rel, set()))
         out[prefix] = (where, known | ids)
     return out
@@ -234,7 +241,20 @@ def companion_citation_errors(companions: dict[str, str]) -> list[str]:
     still defined has each citation checked individually.
     """
     errors: list[str] = []
-    defined = global_definitions()
+    clashes: list[tuple[str, str, str]] = []
+    defined = global_definitions(clashes)
+    for prefix, first, second in clashes:
+        errors.append(f"prefix {prefix} is defined by two plans, {first} and "
+                      f"{second}; a citation to it cannot be resolved")
+    # Plans cite one another's rows, so every tracked plan is scanned too, not
+    # just the four companion documents: a cross-plan citation was invisible to
+    # both passes — the global one never looked at plan bodies, and the
+    # per-plan one searched each plan only for its own prefix.
+    sources = dict(companions)
+    for rel in list_tracked(":"):
+        body = read_indexed(rel)
+        if body:
+            sources.setdefault(rel, body)
     baseline_prefixes: dict[str, str] = {}
     for base in baseline_refs():
         for rel in list_tracked(base):
@@ -243,7 +263,7 @@ def companion_citation_errors(companions: dict[str, str]) -> list[str]:
             if rows:
                 baseline_prefixes.setdefault(rows[0].group(1), rel)
 
-    for where, text in companions.items():
+    for where, text in sources.items():
         for m in sorted({(a, b, c) for a, b, c in
                          re.findall(r"\b([A-Z]{2,})(\d+)\.(\d+)\b", text)}):
             prefix, cite = m[0], f"{m[0]}{m[1]}.{m[2]}"
@@ -480,6 +500,17 @@ def _cli_cases():
             encoding="utf-8")
         git("add", "-A")
 
+    def cross_plan_and_duplicate_prefix(root, git):
+        d = root / "docs" / "planning"
+        (d / "AA_PLAN.md").write_text(
+            CLEAN.replace("XX", "AA").replace("| AA0.1 | groundwork",
+                                              "| AA0.1 | consumes BB0.9"),
+            encoding="utf-8")
+        (d / "BB_PLAN.md").write_text(CLEAN.replace("XX", "BB"), encoding="utf-8")
+        (d / "CC_ONE.md").write_text(CLEAN.replace("XX", "CC"), encoding="utf-8")
+        (d / "CC_TWO.md").write_text(CLEAN.replace("XX", "CC"), encoding="utf-8")
+        git("add", "-A")
+
     def stray_letter_row(root, git):
         p2 = root / "docs" / "planning" / "XX_PLAN.md"
         p2.write_text(CLEAN.replace("| XX0 | first | 3 |", "| XX0 | first | 99 |")
@@ -492,6 +523,14 @@ def _cli_cases():
         r = build(td, drop_sole_plan)
         out.append(("CLI: deleting the last plan with a live citation exits non-zero",
                     r.returncode != 0 and "nothing in the tree defines XX" in r.stdout,
+                    (r.returncode, r.stdout.strip()[:110])))
+    with tempfile.TemporaryDirectory() as td:
+        r = build(td, cross_plan_and_duplicate_prefix)
+        out.append(("CLI: a plan citing another plan's missing row is caught",
+                    r.returncode != 0 and "reference to BB0.9" in r.stdout,
+                    (r.returncode, r.stdout.strip()[:110])))
+        out.append(("CLI: two plans claiming one prefix are rejected",
+                    r.returncode != 0 and "defined by two plans" in r.stdout,
                     (r.returncode, r.stdout.strip()[:110])))
     with tempfile.TemporaryDirectory() as td:
         r = build(td, headerless_plan)

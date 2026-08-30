@@ -22,7 +22,7 @@ The pre-SM10 completeness audit (`docs/planning/UNFINISHED_SMP_WORK.md`,
 audited at v0.34.3) found the project not ready to begin SM10: three findings
 block starting it, SM10's §1 scope statement is false against the tree, and a
 set of fail-open latents become reachable exactly when the boot path goes live.
-WS-RR closes that work first — 148 sub-tasks across RR0..RR8, planned in
+WS-RR closes that work first — 149 sub-tasks across RR0..RR8, planned in
 [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
 See the **WS-RR** section below for the phase table and the three blockers.
 
@@ -7124,7 +7124,7 @@ path goes live. WS-RR closes that work first, so SM10 can be the release-closure
 phase it was scoped as. **SM10 is BLOCKED on WS-RR** and must not open until
 RR8 closes.
 
-148 sub-tasks across nine phases, numbered in execution order:
+149 sub-tasks across nine phases, numbered in execution order:
 
 | Phase | Scope | Subs |
 |-------|-------|------|
@@ -7134,7 +7134,7 @@ RR8 closes.
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 |
 | RR5 | Boot-path fail-open closure | 14 |
-| RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 18 |
+| RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 |
 | RR7 | Medium-severity sweep | 26 |
 | RR8 | Phase closure and hand-off to SM10 | 5 |
 

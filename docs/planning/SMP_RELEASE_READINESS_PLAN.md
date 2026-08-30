@@ -6,7 +6,7 @@
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 148 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 149 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -141,7 +141,7 @@ Nothing else may overlap without re-reading the dependency list above.
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 | L–XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
 | RR5 | Boot-path fail-open closure | 14 | M–L |
-| RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 18 | L |
+| RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 | L |
 | RR7 | Medium-severity sweep | 26 | M |
 | RR8 | Phase closure and hand-off to SM10 | 5 | S |
 
@@ -422,6 +422,7 @@ would have caught that drives neither.
 | RR6.16 | Repoint the R-10 aggregator entry at the theorem that proves writer liveness; keep the safety theorem registered under its accurate name | `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` | S |
 | RR6.17 | Plan corrections: the retired-MCS design section, the D-1.9 landed row, the false §3.2.6.1 theorem statement, and the Appendix A commands that name a nonexistent script | `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | M |
 | RR6.18 | Retitle the plan: it is no longer post-v1.0.0; add an SM2.C-defer row to `docs/WORKSTREAM_HISTORY.md` with closure target RR6 — this phase, not the boot-path phase that precedes it | (2 files) | S |
+| RR6.19 | Register Track D of `SMP_FINE_LOCK_MIGRATION_PLAN.md` — the commit-model partitioning, which that plan seam-gates to SM10.E — as a named SM10.E dependency in `SMP_RELEASE_CLOSURE_PLAN.md` §2 and the debt register, so the one part of the fine-lock work WS-RR cannot land is tracked rather than absorbed silently | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`, `docs/WORKSTREAM_HISTORY.md` | S |
 
 **Acceptance**: the deployed RwLock is the one the Lean spec describes; the
 Tier-5 oracle drives real locks; neither refinement theorem assumes its own
@@ -464,7 +465,7 @@ acceptance gate below can actually be checked against the work list.
 | RR7.4 | Give the `_atomic_under_lockSet` family operation-specific content: its atomicity half is today a `rfl` instance of a body-agnostic lemma, and five `lockSet_observer_atomic_on` instantiations are missing (§4) | 1 | M |
 | RR7.5 | SM10 plan-text corrections: §1's false "all substantive SMP work is complete" phase goal, and the three `contextRestoreSeamLive` prerequisites absent from SM10's dependencies, sub-tasks and acceptance gate | 2 | S |
 | RR7.6 | Production `native_decide`: six uses are live in Lean at HEAD while §5's release-note template claims zero. Per implement-the-improvement, replace them with proofs rather than weaken the claim | 1 | L |
-| RR7.7 | Reconcile the v1.0.0 "per-object reader-writer fine locks" capability claim with what actually ships: SM3.C.9 is registered-deferred and live kernel entry is one global ticket lock. Depends on what RR6 lands | 1 | M |
+| RR7.7 | Make the v1.0.0 "per-object reader-writer fine locks" claim **true**, do not reconcile the text to what ships. RR6 refines and deploys the queued lock primitive but performs none of SM3.C.9's exported-body migration, so the claim stays false after it. This row owns Tracks B and C of `SMP_FINE_LOCK_MIGRATION_PLAN.md` — the `capTransferReceiverCnode` footprint closure and the object-domain/dispatch-entry `withLockSet` wrapping of the `@[export]` bodies — and RR6.19 below records what Track D still owes SM10.E. Weakening the capability text instead is the outcome the implement-the-improvement rule forbids | 1 | XL |
 | RR7.8 | Cancellation/timeout error-frame staging, unimplemented at HEAD and owed before the context-restore seam flips | 1 | M |
 | RR7.9 | Boot-path sweep mediums | 5 | M |
 | RR7.10 | Rust HAL mediums | 4 | M |

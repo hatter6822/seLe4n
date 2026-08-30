@@ -1,3 +1,38 @@
+## v0.34.24 — a plan row that told you to weaken the claim; Codex review round 18
+
+**The one that matters is mine.** RR7.7, as I wrote it at v0.34.21, said to
+"reconcile the v1.0.0 *per-object reader-writer fine locks* capability claim
+with what actually ships". That is the outcome the implement-the-improvement
+rule exists to forbid, written into the plan by the same cut that was fixing
+other people's version of it — and it would have worked, because RR6 refines
+and deploys the queued lock primitive while performing none of SM3.C.9's
+exported-body migration, so the claim stays false after RR6 closes and the row
+invited editing the text instead.
+
+RR7.7 now owns Tracks B and C of `SMP_FINE_LOCK_MIGRATION_PLAN.md` — the
+`capTransferReceiverCnode` footprint closure and the object-domain and
+dispatch-entry `withLockSet` wrapping of the `@[export]` bodies — sized XL,
+because making the claim true is the work. New RR6.19 registers Track D, the
+commit-model partitioning that plan seam-gates to SM10.E, as a named SM10.E
+dependency: the one part WS-RR cannot land is tracked rather than absorbed.
+
+**Two more gate bypasses, both reproduced at exit 0:**
+
+- **Cross-plan citations were never validated.** The global pass read only the
+  four companion documents and the per-plan pass searched each plan for its own
+  prefix, so a plan citing another plan's row fell between them. `AA0.1` citing
+  a nonexistent `BB0.9` passed with both plans called structurally consistent.
+  Every tracked plan body is now a citation source.
+- **Two plans could claim one prefix.** The definition map unioned their IDs and
+  kept one path, making every citation to that prefix ambiguous while hiding
+  the duplicate definitions. Now rejected by name.
+
+Gate witnesses: 19, including CLI cases for both.
+
+Counts: 149 (RR6 19).
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §4 (Tracks B–D)
+
 ## v0.34.23 — the gate was opt-in, and I found that one myself
 
 No review round prompted this. After round 17 I wrote, for the third time, that
