@@ -1,3 +1,54 @@
+## v0.34.38 — The swap my last cut did not close, a gate reading the wrong tree, and two more phases at zero
+
+Three findings from the twelfth review round. The first is a defect in
+v0.34.37's own fix, found by a mutation I did not run.
+
+**The census swap was not closed — now it is unwritable.** v0.34.37 replaced
+the census tuple list with `censusPayloadOf` plus a derived list, on the
+argument that a derivation removes the label/payload swap. It removes one
+*spelling* of the swap. Exchanging the payload expressions of two arms still
+elaborates cleanly: the cross-inventory de-duplication sees the same union of
+declarations and the per-phase count sees the same aggregate, so nothing that
+inspects the result can see it. Reproduced by swapping `lockSetTheorems` and
+`withLockSetTheorems`; the build was clean. My round-11 mutation had been a
+one-sided substitution, which the duplicate check catches — and generalising
+from it was the error.
+
+`censusInventories` is now built by a `census_entry` macro taking **one
+token**: the published label, the namespace and the payload are all derived
+from the same fully-qualified inventory name, so no arm can pair one
+inventory's name with another's identifiers. `census_entry_named` is the
+variant for `lockPrimitives`, whose `identifier` field is a `Name`.
+`censusNamespacesResolve` recomposes `ns ++ name` and requires it to be a real
+constant, which is also what rejects an unqualified spelling. Verified:
+reordering rows is inert (label and payload move together), a hand-written
+`censusEntryOf` mismatch trips the duplicate check, and an unqualified name
+fails the recomposition.
+
+**`check_deferral_registration.py` read the wrong tree.** It enumerated paths
+from the git index and then read their contents from the working copy. Stage a
+source edit carrying an unregistered deferral, revert it on disk, and the gate
+reported all 683 files clean while the very next commit carried the deferral —
+a gate certifying a commit it had not read. Both halves now come from the
+index: one `git cat-file --batch` for the sources, `git show :path` for the
+register itself, and reading nothing is reported as a failure rather than as a
+clean run. Three witnesses, mutation-tested: a clean index passes, a deferral
+staged but reverted on disk is caught, and a deferral only in the working tree
+is correctly not reported.
+
+**Eight phases register zero theorems, not six.** Every statement of the gap —
+`CLAUDE.md`/`AGENTS.md`, the manifest module, the closure plan §5 and its
+`SM10.3.13` row, `CLAIM_EVIDENCE_INDEX.md`, and the register — named the six
+phases with no inventory (SM1, SM6..SM10) and stopped there. SM0 and SM4 also
+contribute zero: they carry `smpLatentInventory` and `smpRetiredInventory`,
+which are **assumption ledgers**, and `smpPhaseTheoremCount` excludes those by
+design. Their own theorem catalogues are therefore unmeasured for a different
+reason and by the same amount, and `SM10.3.13` as written would have closed a
+scope that left two phases at zero. Only SM2, SM3 and SM5 contribute to the
+902.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+
 ## v0.34.37 — Two regressions from the SM10 re-sequence, and three gates that reached too narrowly
 
 Five findings from the eleventh review round on the RR0 cut. Two are

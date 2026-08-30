@@ -379,8 +379,15 @@ theorem smpPhase_foundations_theoremCount_zero :
 theorem smpPhase_perCoreState_theoremCount_zero :
     smpPhaseTheoremCount .perCoreState = 0 := by decide
 
-/-- The six phases with no machine-checked theorem inventory contribute zero
-    — an honest gap rather than an estimate.  Registered as debt in
+/-- The six phases with no inventory of any kind contribute zero — an honest
+    gap rather than an estimate.
+
+    They are not the whole gap.  `smpPhase_foundations_theoremCount_zero` and
+    `smpPhase_perCoreState_theoremCount_zero` above say the same of SM0 and
+    SM4, which *do* carry inventories — but assumption ledgers, which
+    `smpPhaseTheoremCount` excludes by design.  **Eight of eleven phases
+    therefore register zero theorems**, and closing only these six would leave
+    SM0's and SM4's own theorems unmeasured.  Registered as debt in
     `docs/WORKSTREAM_HISTORY.md` with closure target SM10.3.13. -/
 theorem smpPhase_unregistered_theoremCount_zero :
     smpPhaseTheoremCount .rustHal = 0
@@ -515,72 +522,67 @@ section Census
 
 open Lean Elab Command Meta
 
-/-- The inventory names the census measures.
+/-- One census entry, decomposed from the *single* name that produced it.
 
-    A `String` in `PhaseTheoremEntry.inventories` cannot be dereferenced, so
-    the bridge from a published name to the list it names has to be written
-    once, by hand.  It is written **once**: this list supplies the names, and
-    `censusPayloadOf` below is the sole place a name is paired with a payload.
-    `censusInventories` is then *derived*, so there is no second site at which
-    a label and a list could be paired inconsistently. -/
-private def censusInventoryNames : List String :=
-  [ "perObjectLockTheorems", "lockSetTheorems", "withLockSetTheorems"
-  , "deadlockTheorems", "serializabilityTheorems", "lockPrimitives"
-  , "crossCoreWakeTheorems", "perCoreTimerTheorems", "perCoreIdleTheorems"
-  , "perCorePipTheorems", "perCoreDomainTheorems", "perCoreCbsTheorems"
-  , "perCoreInvariantSuiteTheorems", "perCoreWcrtTheorems" ]
+    `full` is the inventory constant's own fully-qualified name, so the
+    published label and the namespace are computed from it rather than written
+    beside it. -/
+private def censusEntryOf (full : Name) (ids : List String) :
+    String × Name × List String :=
+  (full.getString!, full.getPrefix, ids)
 
-/-- The one place a published inventory name is bound to a namespace and to
-    the identifiers of the list it names.
+/-- Build a census entry from one fully-qualified inventory name.
 
-    Every arm spells the name twice — once as the `String` the manifest
-    publishes, once as the constant whose identifiers it returns — on a single
-    line, so the two are checkable by eye.  Nothing else in this module pairs a
-    name with a payload, which is what removes the swap class outright: there
-    is no second tuple to disagree with.  The namespace is not taken on trust
-    either; `censusNamespacesResolve` below holds each arm's namespace to the
-    environment by requiring `ns ++ name` to be the constant that arm returns
-    the identifiers of. -/
-private def censusPayloadOf (n : String) : Option (Name × List String) :=
-  match n with
-  | "perObjectLockTheorems" =>
-      some (`SeLe4n.Model, SeLe4n.Model.perObjectLockTheorems.map (·.identifier))
-  | "lockSetTheorems" =>
-      some (`SeLe4n.Kernel.Concurrency, lockSetTheorems.map (·.identifier))
-  | "withLockSetTheorems" =>
-      some (`SeLe4n.Kernel.Concurrency, withLockSetTheorems.map (·.identifier))
-  | "deadlockTheorems" =>
-      some (`SeLe4n.Kernel.Concurrency, deadlockTheorems.map (·.identifier))
-  | "serializabilityTheorems" =>
-      some (`SeLe4n.Kernel.Concurrency, serializabilityTheorems.map (·.identifier))
-  | "lockPrimitives" =>
-      some (`SeLe4n.Kernel.Concurrency, lockPrimitives.map (·.identifier.toString))
-  | "crossCoreWakeTheorems" =>
-      some (`SeLe4n.Kernel, SeLe4n.Kernel.crossCoreWakeTheorems.map (·.identifier))
-  | "perCoreTimerTheorems" =>
-      some (`SeLe4n.Kernel, SeLe4n.Kernel.perCoreTimerTheorems.map (·.identifier))
-  | "perCoreIdleTheorems" =>
-      some (`SeLe4n.Kernel, SeLe4n.Kernel.perCoreIdleTheorems.map (·.identifier))
-  | "perCorePipTheorems" =>
-      some (`SeLe4n.Kernel.PriorityInheritance,
-        SeLe4n.Kernel.PriorityInheritance.perCorePipTheorems.map (·.identifier))
-  | "perCoreDomainTheorems" =>
-      some (`SeLe4n.Kernel, SeLe4n.Kernel.perCoreDomainTheorems.map (·.identifier))
-  | "perCoreCbsTheorems" =>
-      some (`SeLe4n.Kernel, SeLe4n.Kernel.perCoreCbsTheorems.map (·.identifier))
-  | "perCoreInvariantSuiteTheorems" =>
-      some (`SeLe4n.Kernel, SeLe4n.Kernel.perCoreInvariantSuiteTheorems.map (·.identifier))
-  | "perCoreWcrtTheorems" =>
-      some (`SeLe4n.Kernel, SeLe4n.Kernel.perCoreWcrtTheorems.map (·.identifier))
-  | _ => none
+    **Why a macro and not a table.**  Every earlier shape of this code spelled
+    the label and the payload separately — first as a tuple list, then as a
+    name list plus a `match` returning payloads.  Both admit the same defect:
+    exchanging two arms' payload expressions leaves every downstream check
+    invariant, because the de-duplication sees the same union of declarations
+    and the per-phase count sees the same aggregate.  Nothing that inspects the
+    *result* can see it, so the round-11 argument that a derived list removed
+    the class was wrong: it removed one spelling of the swap, not the swap.
+
+    Here the label, the namespace and the payload all come from the **same
+    token**.  `census_entry SeLe4n.Kernel.Concurrency.lockSetTheorems` cannot
+    be made to publish one inventory's name over another's identifiers,
+    because there is only one name in the expression.  The defect is not
+    detected; it is unwritable.
+
+    Write the name **fully qualified**: `censusEntryOf` reads the namespace off
+    the name as written, and `censusNamespacesResolve` rejects a decomposition
+    that does not name a real constant, so an unqualified spelling fails
+    elaboration rather than registering an empty namespace. -/
+macro "census_entry " x:ident : term =>
+  `(censusEntryOf $(Lean.quote x.getId) (($x).map (·.identifier)))
+
+/-- `census_entry` for an inventory whose `identifier` field is a `Name`.
+
+    `lockPrimitives` is the only one; its field is the primitive's declaration
+    name rather than a string.  A separate form rather than a coercion, so the
+    conversion is visible at the call site. -/
+macro "census_entry_named " x:ident : term =>
+  `(censusEntryOf $(Lean.quote x.getId) (($x).map (·.identifier.toString)))
 
 /-- Every inventory the manifest names, paired with its entries' identifiers.
 
-    Derived, never written: each name carries whatever `censusPayloadOf`
-    returns for it. -/
+    A `String` in `PhaseTheoremEntry.inventories` cannot be dereferenced, so
+    the bridge from a published name to the list it names has to be written by
+    hand — but each row is now a single token, not a pairing. -/
 private def censusInventories : List (String × Name × List String) :=
-  censusInventoryNames.filterMap
-    (fun n => (censusPayloadOf n).map (fun p => (n, p.1, p.2)))
+  [ census_entry SeLe4n.Model.perObjectLockTheorems
+  , census_entry SeLe4n.Kernel.Concurrency.lockSetTheorems
+  , census_entry SeLe4n.Kernel.Concurrency.withLockSetTheorems
+  , census_entry SeLe4n.Kernel.Concurrency.deadlockTheorems
+  , census_entry SeLe4n.Kernel.Concurrency.serializabilityTheorems
+  , census_entry_named SeLe4n.Kernel.Concurrency.lockPrimitives
+  , census_entry SeLe4n.Kernel.crossCoreWakeTheorems
+  , census_entry SeLe4n.Kernel.perCoreTimerTheorems
+  , census_entry SeLe4n.Kernel.perCoreIdleTheorems
+  , census_entry SeLe4n.Kernel.PriorityInheritance.perCorePipTheorems
+  , census_entry SeLe4n.Kernel.perCoreDomainTheorems
+  , census_entry SeLe4n.Kernel.perCoreCbsTheorems
+  , census_entry SeLe4n.Kernel.perCoreInvariantSuiteTheorems
+  , census_entry SeLe4n.Kernel.perCoreWcrtTheorems ]
 
 /-- The census measures exactly the inventories the `theoremInventory` phases
     claim — neither more nor fewer.  Adding an inventory to a phase without
@@ -608,41 +610,16 @@ theorem censusInventoryNamesNodup :
     (censusInventories.map (·.1)).Nodup := by
   decide
 
-/-- **No published name is silently unmeasured.**
-
-    `censusInventories` is a `filterMap`, so a name `censusPayloadOf` has no
-    arm for would be dropped rather than reported: the census would then
-    measure thirteen inventories while the manifest published fourteen, and
-    `censusCoversManifest` — which compares the *derived* list against the
-    manifest — would fail with a length mismatch that reads as a manifest
-    error rather than a missing arm.  Requiring the derivation to be total
-    names the real fault at the real site. -/
-theorem censusPayloadsAreTotal :
-    censusInventories.length = censusInventoryNames.length := by
-  decide
-
-/-- The census names are pairwise distinct **as published**.
-
-    `censusInventoryNamesNodup` states this of the derived list; a duplicate in
-    `censusInventoryNames` would survive the derivation and be caught there
-    too, but only after `filterMap` had already paired it with a payload
-    twice.  Held at the source as well, so the diagnostic points at the list a
-    reader edits. -/
-theorem censusInventoryNamesSourceNodup :
-    censusInventoryNames.Nodup := by
-  decide
-
--- **The namespace is held to the environment, not asserted.**
+-- **The decomposition is held to the environment, not asserted.**
 --
--- Each arm of `censusPayloadOf` returns a namespace beside its payload, and
--- `censusResolve` searches from that namespace outward.  A wrong namespace is
--- therefore not inert: it changes which constant an identifier resolves to,
--- and a resolution that still succeeds from a wider prefix would leave the
--- error invisible.  The pairing is checkable because the namespace and the
--- name compose: `ns ++ name` must be the very constant whose identifiers that
--- arm returns.  Checking that it *exists* is what makes the namespace field
--- evidence rather than a restatement -- a swapped or stale namespace names no
--- constant and fails this module's elaboration.
+-- `censusEntryOf` splits one name into a published label and a namespace, and
+-- `censusResolve` then searches from that namespace outward.  A decomposition
+-- that does not name a real constant is not inert: it changes which constant
+-- an identifier resolves to, and a resolution that still succeeds from a wider
+-- prefix would leave the error invisible.  Recomposing is what checks it --
+-- `ns ++ name` must be the very constant the entry was built from -- which is
+-- also what rejects an unqualified `census_entry`, whose namespace would be
+-- anonymous and whose recomposition would name nothing.
 private def censusNamespacesResolve : MetaM Unit := do
   let env ← getEnv
   for (nm, ns, _) in censusInventories do

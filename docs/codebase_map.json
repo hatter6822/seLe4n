@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr0-registration-plan-correction-cr1z0k",
-      "commit_sha": "0a6f33c136d90e08be60104b3810efb98377f9cd",
-      "tree_sha": "13971e67174f6aea29b4c5958e7015bf58f6e3bd",
-      "committed_at_utc": "2026-08-30T16:16:56+00:00"
+      "commit_sha": "36ebcfa8508771016c0672dbcc2f18021a608b96",
+      "tree_sha": "c752fa2937d42e8a049e8ac853e3e5341e143477",
+      "committed_at_utc": "2026-08-30T16:58:37+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d4341daaa62152910bafc93c7db4312a8cec69816c6dbfb3c7bef3f18f28b321"
+    "source_digest": "871a1aee70a9b0b8db4557b17175c27a64e218c6cb3411da5d6dbe1e4cbd005b"
   },
   "summary": {
     "module_count": 357,
-    "declaration_count": 17087
+    "declaration_count": 17086
   },
   "readme_sync": {
-    "version": "0.34.37",
+    "version": "0.34.38",
     "lean_toolchain": "v4.28.0",
     "production_files": 288,
-    "production_loc": 289706,
+    "production_loc": 289683,
     "test_files": 69,
     "test_loc": 64535,
-    "proved_theorem_lemma_decls": 9688,
+    "proved_theorem_lemma_decls": 9686,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -46653,7 +46653,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.PhaseTheoremManifest",
       "path": "SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean",
-      "declaration_count": 44,
+      "declaration_count": 43,
       "declarations": [
         {
           "kind": "namespace",
@@ -46858,7 +46858,7 @@
         {
           "kind": "theorem",
           "name": "smpPhase_unregistered_theoremCount_zero",
-          "line": 385,
+          "line": 392,
           "called": [
             "smpPhaseTheoremCount"
           ]
@@ -46866,7 +46866,7 @@
         {
           "kind": "theorem",
           "name": "smp_inventoried_theorem_count",
-          "line": 408,
+          "line": 415,
           "called": [
             "smpInventoriedTheoremCount"
           ]
@@ -46874,7 +46874,7 @@
         {
           "kind": "theorem",
           "name": "smp_inventoried_entry_count",
-          "line": 414,
+          "line": 421,
           "called": [
             "smpInventoriedEntryCount"
           ]
@@ -46882,7 +46882,7 @@
         {
           "kind": "theorem",
           "name": "smp_inventoried_theorem_count_lt_entry_count",
-          "line": 420,
+          "line": 427,
           "called": [
             "smpInventoriedEntryCount",
             "smpInventoriedTheoremCount"
@@ -46891,7 +46891,7 @@
         {
           "kind": "theorem",
           "name": "smp_inventoried_theorem_count_decomposition",
-          "line": 427,
+          "line": 434,
           "called": [
             "smpInventoriedTheoremCount",
             "smpPhaseTheoremCount"
@@ -46900,7 +46900,7 @@
         {
           "kind": "theorem",
           "name": "smp_inventoried_entry_count_decomposition",
-          "line": 435,
+          "line": 442,
           "called": [
             "smpInventoriedEntryCount",
             "smpPhaseEntryCount"
@@ -46908,8 +46908,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:452>",
-          "line": 452,
+          "name": "<anonymous:example:459>",
+          "line": 459,
           "called": [
             "crossCoreWakeTheorems",
             "crossCoreWakeTheorems_count",
@@ -46948,36 +46948,56 @@
         {
           "kind": "section",
           "name": "Census",
-          "line": 514,
+          "line": 521,
           "called": []
         },
         {
           "kind": "def",
-          "name": "censusInventoryNames",
-          "line": 526,
+          "name": "censusEntryOf",
+          "line": 530,
           "called": []
         },
         {
-          "kind": "def",
-          "name": "censusPayloadOf",
-          "line": 544,
+          "kind": "macro",
+          "name": "\"census_entry \"",
+          "line": 555,
           "called": [
-            "Kernel",
-            "none"
+            "censusEntryOf"
+          ]
+        },
+        {
+          "kind": "macro",
+          "name": "\"census_entry_named \"",
+          "line": 563,
+          "called": [
+            "censusEntryOf"
           ]
         },
         {
           "kind": "def",
           "name": "censusInventories",
-          "line": 581,
+          "line": 571,
           "called": [
-            "censusPayloadOf"
+            "crossCoreWakeTheorems",
+            "deadlockTheorems",
+            "lockPrimitives",
+            "lockSetTheorems",
+            "perCoreCbsTheorems",
+            "perCoreDomainTheorems",
+            "perCoreIdleTheorems",
+            "perCoreInvariantSuiteTheorems",
+            "perCorePipTheorems",
+            "perCoreTimerTheorems",
+            "perCoreWcrtTheorems",
+            "perObjectLockTheorems",
+            "serializabilityTheorems",
+            "withLockSetTheorems"
           ]
         },
         {
           "kind": "theorem",
           "name": "censusCoversManifest",
-          "line": 589,
+          "line": 591,
           "called": [
             "all",
             "contains",
@@ -46988,27 +47008,13 @@
         {
           "kind": "theorem",
           "name": "censusInventoryNamesNodup",
-          "line": 607,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "censusPayloadsAreTotal",
-          "line": 620,
-          "called": [
-            "length"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "censusInventoryNamesSourceNodup",
-          "line": 631,
+          "line": 609,
           "called": []
         },
         {
           "kind": "def",
           "name": "censusNamespacesResolve",
-          "line": 646,
+          "line": 623,
           "called": [
             "censusInventories",
             "contains"
@@ -47016,8 +47022,8 @@
         },
         {
           "kind": "namespace",
-          "name": "<anonymous:namespace:652>",
-          "line": 652,
+          "name": "<anonymous:namespace:629>",
+          "line": 629,
           "called": [
             "censusNamespacesResolve"
           ]
@@ -47025,7 +47031,7 @@
         {
           "kind": "def",
           "name": "censusNameMatches",
-          "line": 664,
+          "line": 641,
           "called": [
             "length"
           ]
@@ -47033,7 +47039,7 @@
         {
           "kind": "def",
           "name": "censusResolve",
-          "line": 683,
+          "line": 660,
           "called": [
             "censusNameMatches",
             "filter",
@@ -47043,14 +47049,14 @@
         },
         {
           "kind": "constant",
-          "name": "<anonymous:constant:711>",
-          "line": 711,
+          "name": "<anonymous:constant:688>",
+          "line": 688,
           "called": []
         },
         {
           "kind": "def",
           "name": "censusIndex",
-          "line": 715,
+          "line": 692,
           "called": [
             "censusInventories",
             "censusResolve",

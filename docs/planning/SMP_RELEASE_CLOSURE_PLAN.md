@@ -259,7 +259,7 @@ landed with their own phases and are wired in Tier 2.
 | SM10.3.10 | Tier-4 SMP script | **exists** as `scripts/test_tier4_smp_bootcheck.sh` — populated, not a stub; it is the gate that reports NOT RUN until SM10.1.1's image exists.  There is no `scripts/test_tier4_smp.sh` and none is needed.  Owed: run it green once the image lands | M |
 | SM10.3.11 | Tier-5 cross-language script | **exists** as `scripts/test_tier5_cross_language.sh`.  There is no `scripts/test_tier5_lock_correspondence.sh`.  Owed: RR6.2–RR6.3 make the oracle drive the real locks; SM10 runs it | M |
 | SM10.3.12 | Wire tier-4/5 into `test_nightly.sh` | **done** — `test_tier4_nightly_candidates.sh` (via `run_gate_check`) and `test_tier5_cross_language.sh` are both invoked there | T |
-| SM10.3.13 | Verify the SM theorem manifest lands at HEAD | **mechanism landed** (RR0.6): `docs/smp_theorem_manifest.json` is generated from the tree and cross-checked in Tier 0, so "210 theorems" is no longer the criterion — the criterion is that the manifest agrees with the tree and every phase has an entry.  Owed: build the missing per-phase inventories (SM1, SM6..SM10), which contribute zero today | M |
+| SM10.3.13 | Verify the SM theorem manifest lands at HEAD | **mechanism landed** (RR0.6): `docs/smp_theorem_manifest.json` is generated from the tree and cross-checked in Tier 0, so "210 theorems" is no longer the criterion — the criterion is that the manifest agrees with the tree and every phase has an entry.  Owed: build the missing per-phase theorem inventories for the **eight** phases that register zero — SM1, SM6..SM10 (no inventory at all) **and SM0, SM4** (an assumption ledger apiece, which `smpPhaseTheoremCount` excludes, so their own theorem catalogues are unmeasured too).  Closing only the six would leave two phases at zero | L |
 
 **Rows 14–20 — the hardware-validation scripts** (registered debt from the
 v0.34.0 documentation audit; each is a runnable procedure
@@ -499,10 +499,15 @@ the second.**
 
 Neither figure is the earlier "~210 substantive theorems", which was an
 estimate of headline theorems per phase catalogue and is not recoverable from
-the tree.  Six phases — SM1 and SM6..SM10 — have **no** theorem inventory and
-are registered as contributing zero rather than given a plausible figure, so
-902 *understates* what those phases prove.  Building the missing inventories is
-registered debt with closure target **SM10.3.13**
+the tree.  **Eight of the eleven phases register zero theorems** — only SM2,
+SM3 and SM5 contribute.  Six (SM1, SM6..SM10) carry no inventory at all; **SM0
+and SM4 carry assumption ledgers** (`smpLatentInventory`,
+`smpRetiredInventory`), which `smpPhaseTheoremCount` excludes by design, so
+their own theorem catalogues are unmeasured for a different reason and by the
+same amount.  All eight are registered as contributing zero rather than given a
+plausible figure, so 902 *understates* what those phases prove.  Building the
+missing inventories — **eight phases, not six** — is registered debt with
+closure target **SM10.3.13**
 (`docs/WORKSTREAM_HISTORY.md`); until they exist, the release note must say
 "registered in a machine-checked inventory" rather than "proved", because
 those are different claims.

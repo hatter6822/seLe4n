@@ -117,8 +117,10 @@ class RegisterIndex:
 
     @classmethod
     def load(cls, root: pathlib.Path) -> "RegisterIndex":
-        p = root / REGISTER_PATH
-        return cls(p.read_text(encoding="utf-8") if p.is_file() else "")
+        # The staged register, for the same reason the sources are staged: a
+        # commit that adds a citation and the row it cites must be validated
+        # against each other, not against whichever half is on disk.
+        return cls(read_indexed(REGISTER_PATH) or "")
 
 
 CONTEXT_LINES = 6
@@ -192,28 +194,86 @@ def tracked_files() -> list[str]:
     return sorted(x for x in out.split("\0") if x)
 
 
-def files_to_scan() -> list[pathlib.Path]:
-    out: list[pathlib.Path] = []
+def files_to_scan() -> list[str]:
+    """The paths the gate is responsible for, as the index names them."""
+    out: list[str] = []
     for rel in tracked_files():
         if rel in NARRATIVE_EXEMPT:
             continue
         if any(rel.startswith(pre) for pre in EXEMPT_PREFIXES):
             continue
-        p = REPO_ROOT / rel
-        if not p.is_file() or p.suffix.lower() in BINARY_SUFFIXES:
+        if pathlib.PurePath(rel).suffix.lower() in BINARY_SUFFIXES:
             continue
-        out.append(p)
+        out.append(rel)
     return out
 
 
-def read_text_or_none(p: pathlib.Path) -> str | None:
+def _decode(raw: bytes) -> str | None:
     """`None` for anything that is not UTF-8 text.  Deciding by content rather
     than by extension is what lets the scan cover `.S`, `.ld`, `.expected` and
     extensionless files without an allowlist to keep in step with the tree."""
     try:
-        return p.read_text(encoding="utf-8")
-    except (UnicodeDecodeError, OSError):
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
         return None
+
+
+def indexed_contents(paths: list[str]) -> dict[str, str]:
+    """Each path's **staged** content.
+
+    Enumerating from the index while reading from the working tree is a hole,
+    not an inconsistency: stage a source edit carrying an unregistered
+    deferral, revert it in the working copy, and the gate reports every file
+    clean while the very next commit carries the deferral.  The paths and the
+    bytes have to come from the same place, and for a gate the place is the
+    index -- what is being committed, not what happens to be on disk.
+
+    One `git cat-file --batch` rather than 683 `git show` calls; the batch
+    protocol answers `<sha> <type> <size>` and then the raw bytes, so a
+    missing entry is reported per line instead of failing the run.
+    """
+    if not paths:
+        return {}
+    try:
+        out = subprocess.run(
+            ["git", "cat-file", "--batch"], cwd=REPO_ROOT,
+            input="".join(f":{p}\n" for p in paths).encode(),
+            capture_output=True, check=True).stdout
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # No git, or no index (a tarball checkout).  Fall back to the working
+        # tree rather than scanning nothing -- narrower, and said out loud by
+        # the caller rather than inferred from a pass.
+        return {}
+    res: dict[str, str] = {}
+    i = 0
+    for rel in paths:
+        nl = out.find(b"\n", i)
+        if nl < 0:
+            break
+        header = out[i:nl].decode("utf-8", "replace")
+        i = nl + 1
+        if header.endswith(("missing", "ambiguous")):
+            continue
+        try:
+            size = int(header.rsplit(" ", 1)[1])
+        except (IndexError, ValueError):
+            break
+        text = _decode(out[i:i + size])
+        i += size + 1                      # blob, then its trailing newline
+        if text is not None:
+            res[rel] = text
+    return res
+
+
+def read_indexed(rel: str) -> str | None:
+    """One file's staged content, falling back to the working tree."""
+    try:
+        return _decode(subprocess.run(
+            ["git", "show", f":{rel}"], cwd=REPO_ROOT,
+            capture_output=True, check=True).stdout)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        p = REPO_ROOT / rel
+        return _decode(p.read_bytes()) if p.is_file() else None
 
 
 def _self_test() -> int:
@@ -320,7 +380,7 @@ def _self_test() -> int:
     # The scan surface itself, not just the matcher.  Three real paths the
     # allowlist excluded -- assembly, the repository root, and `.github/` --
     # must be enumerated, and the exemptions must survive the widening.
-    scanned = {str(x.relative_to(REPO_ROOT)) for x in files_to_scan()}
+    scanned = set(files_to_scan())
     if scanned:
         for probe in ("rust/sele4n-hal/src/boot.S", "README.md", "CLAUDE.md",
                       ".github/workflows/lean_action_ci.yml"):
@@ -333,6 +393,52 @@ def _self_test() -> int:
         check("binaries are excluded by suffix",
               not any(r.endswith(BINARY_SUFFIXES) for r in scanned),
               "a binary is being scanned")
+
+    # The paths and the bytes must come from the same place.  Enumerating the
+    # index while reading the working tree let a staged deferral, reverted on
+    # disk, pass as clean -- so the gate certified a commit it had not read.
+    # Driven through the CLI in a throwaway repository, because the defect
+    # lives in how `main` sources its content, not in any helper.
+    import shutil
+    import tempfile
+    src = pathlib.Path(__file__).resolve()
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        (root / "scripts").mkdir()
+        (root / "docs").mkdir()
+        shutil.copy(src, root / "scripts" / src.name)
+        (root / "docs" / "WORKSTREAM_HISTORY.md").write_text(
+            "| 1 | `scripts/probe.S` | a row |\n", encoding="utf-8")
+        probe = root / "scripts" / "probe.S"
+        probe.write_text("// clean\n", encoding="utf-8")
+        git = lambda *a: subprocess.run(["git", *a], cwd=root,
+                                        capture_output=True, check=True)
+        git("init", "-q", "-b", "main")
+        git("config", "user.email", "gate@example.invalid")
+        git("config", "user.name", "gate")
+        git("add", "-A")
+        run = lambda: subprocess.run([sys.executable, "scripts/" + src.name],
+                                     cwd=root, capture_output=True, text=True)
+        check("a clean index passes", run().returncode == 0, "should pass")
+
+        # Stage the deferral, then revert it on disk: the commit carries it.
+        probe.write_text(
+            "// no currently-active plan file tracks it.\n", encoding="utf-8")
+        git("add", "scripts/probe.S")
+        probe.write_text("// clean\n", encoding="utf-8")
+        r = run()
+        check("a deferral staged but reverted on disk is caught",
+              r.returncode != 0 and "probe.S" in r.stdout,
+              (r.returncode, r.stdout.strip()[:160]))
+
+        # And the converse: a deferral only in the working tree is not the
+        # gate's business, since it is not what would be committed.
+        probe.write_text("// clean\n", encoding="utf-8")
+        git("add", "scripts/probe.S")          # index clean again
+        probe.write_text(                       # deferral on disk only
+            "// no currently-active plan file tracks it.\n", encoding="utf-8")
+        check("a deferral only in the working tree is not reported",
+              run().returncode == 0, "should pass: nothing is staged")
 
     failed = [c for c in cases if not c[1]]
     for name, ok, detail in cases:
@@ -354,13 +460,20 @@ def main(argv: list[str]) -> int:
             findings.append(
                 f"{REGISTER_PATH}: row {row} cites `{path}`, which does not exist"
             )
-    scanned = 0
-    for p in files_to_scan():
-        text = read_text_or_none(p)
+    paths = files_to_scan()
+    contents = indexed_contents(paths)
+    if not contents and paths:
+        # Reading nothing is not a clean run.  Said out loud rather than
+        # reported as 683 files with no findings.
+        print("FAIL: could not read any file from the git index "
+              "(no repository, or no index); nothing was scanned.")
+        return 1
+    for rel in paths:
+        text = contents.get(rel)
         if text is None:
             continue
-        scanned += 1
-        findings.extend(scan_text(str(p.relative_to(REPO_ROOT)), text, register))
+        findings.extend(scan_text(rel, text, register))
+    scanned = len(contents)
     if findings:
         print("FAIL: deferral registration is incomplete.")
         print("Each deferral must cite the *Registered debt index* in "
@@ -371,9 +484,9 @@ def main(argv: list[str]) -> int:
         for f in findings:
             print(f"  {f}")
         return 1
-    print(f"PASS: {scanned} tracked text file(s) scanned; every deferral cites "
-          f"the register, all cited rows exist among the {len(register.rows)} "
-          f"enumerated, and every row's file is present.")
+    print(f"PASS: {scanned} tracked text file(s) scanned **as staged**; every "
+          f"deferral cites the register, all cited rows exist among the "
+          f"{len(register.rows)} enumerated, and every row's file is present.")
     return 0
 
 

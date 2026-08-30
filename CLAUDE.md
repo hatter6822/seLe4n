@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.37.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.38.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -922,9 +922,15 @@ code may assume:
   never that its type is a `Prop`.  **Quote 902, and quote it as theorems; 1111
   is the entry count.**  A `List.length` cannot tell the two apart, so the
   propositionality census at the end of that module resolves each identifier
-  against the environment and fails elaboration on drift.  Six phases (SM1 and
-  SM6..SM10) have **no** theorem inventory and register zero; that gap is real,
-  and the honest zero is what makes it visible.  Adding a phase without an entry
+  against the environment and fails elaboration on drift.  **Eight of the eleven
+  phases register zero theorems**, so only SM2, SM3 and SM5 contribute: six
+  (SM1, SM6..SM10) carry no inventory at all, and **SM0 and SM4 carry
+  *assumption ledgers*** — `smpLatentInventory` and `smpRetiredInventory` —
+  which `smpPhaseTheoremCount` correctly excludes, leaving those two phases'
+  own theorems unmeasured just the same.  Building only the six missing
+  inventories would therefore not close the gap; the debt is eight phases wide.
+  That gap is real, and the honest zero is what makes it visible.  Adding a
+  phase without an entry
   fails elaboration; adding an inventory no phase claims fails Tier 0
   (`scripts/generate_smp_theorem_manifest.py --check`).  New code must not
   reintroduce a hand-written per-phase figure.
