@@ -7130,8 +7130,10 @@ code view — while the register itself did not hold together:
   `docs/audits/AUDIT_v0.30.11_DEFERRED.md`, **was never created**, so an entire
   class of deferrals was registered nowhere;
 - 31 in-source deferrals across **19** production files stated **in their own
-  words** that "no currently-active plan file tracks it" (the sweep reported 17
-  files; §C.1 below is the enumerated set, and 16 is what it measures);
+  words** that "no currently-active plan file tracks it" (the pre-SM10 audit
+  reported 23 deferrals across 17 files by matching one phrasing; §C.1 below is
+  the enumerated set, measured over every phrasing the tree uses, and
+  `scripts/check_deferral_registration.py` now holds it complete);
 - **five** of six machine-enforced `UncoveredLockDomain` entries named a
   sub-task inside SM3, a phase closed at v0.31.9, as their owner — three
   spelled `SM3.B`, which is the trio the sweep counted, plus `SM3.C.9` and

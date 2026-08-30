@@ -52,11 +52,11 @@ EXEMPT_PREFIXES = ("docs/dev_history/",)
 # on the *claim* — a plan/workstream not tracking something — rather than on
 # any one sentence, since matching one sentence is what kept failing.
 UNTRACKED_RE = re.compile(
-    r"(?:no|not)\b[^.\n]{0,80}?"
-    r"(?:currently[- ]active|active)\b[^.\n]{0,80}?"
+    r"(?:no|not)\b[^.]{0,80}?"
+    r"(?:currently[- ]active|active)\b[^.]{0,80}?"
     r"(?:plan|workstream)"
     r"|(?:plan|workstream)[^.\n]{0,80}?(?:does not|doesn't|do not|don't)\s+track"
-    r"|(?:not|never)\s+tracked\s+(?:by|in)\s+(?:any|an?)\b[^.\n]{0,60}"
+    r"|(?:not|never)\s+tracked\s+(?:by|in)\s+(?:any|an?)\b[^.]{0,60}"
     r"(?:plan|workstream|register)",
     re.I,
 )
@@ -66,39 +66,88 @@ REGISTER_RE = re.compile(
     r"Registered debt index|WORKSTREAM_HISTORY", re.I
 )
 
+# `row 29`, `rows 24-26` — the citation form every re-pointed site uses.
+ROW_CITE_RE = re.compile(r"\brows?\s+(\d+)", re.I)
+
+REGISTER_PATH = "docs/WORKSTREAM_HISTORY.md"
+_REGISTER_ROW_RE = re.compile(r"^\|\s*(\d+)\s*\|\s*`([^`]+)`", re.M)
+
+
+class RegisterIndex:
+    """The enumerated debt table, parsed from the register.
+
+    Correlation is deliberately shallow and says so: it confirms that a cited
+    row *exists* and that each row's file *exists*.  It cannot confirm the row
+    describes the deferral beside it — no scanner can — and the diagnostic no
+    longer implies otherwise.
+    """
+
+    def __init__(self, text: str) -> None:
+        self.rows: dict[int, str] = {}
+        for m in _REGISTER_ROW_RE.finditer(text):
+            self.rows[int(m.group(1))] = m.group(2)
+
+    @classmethod
+    def load(cls, root: pathlib.Path) -> "RegisterIndex":
+        p = root / REGISTER_PATH
+        return cls(p.read_text(encoding="utf-8") if p.is_file() else "")
+
+
 CONTEXT_LINES = 6
 
 
-# Comment punctuation, stripped before joining so a claim wrapped across two
-# lines still reads as one sentence.  A line-based scan missed exactly that —
-# and one of the real sites this gate was built for is wrapped.
+# Comment punctuation, stripped before joining so a wrapped claim reads as one
+# sentence.
 _COMMENT_LEAD_RE = re.compile(r"^\s*(?:--+|//+|/\*+|\*+/?|#+|>+)?\s*")
 
 
-def scan_text(rel: str, text: str) -> list[str]:
-    """Return one finding per untracked claim that cites no register.
+def _flatten(lines: list[str]) -> tuple[str, list[int]]:
+    """Join comment lines into one string, with an offset -> line-number map.
 
-    Claims are matched over a two-line window, because prose wraps and a
-    sentence split across a newline is the same sentence.  Findings are
-    reported once per claim, not once per window that contains it.
+    A line-based scan missed a claim wrapped across two lines; widening to a
+    two-line window then missed one wrapped across three.  Guessing a window
+    size is the same mistake as guessing a prefix list, so there is no window:
+    the file is flattened and the *sentence* is the unit, bounded by the period
+    the patterns already refuse to cross.
+    """
+    parts: list[str] = []
+    line_of: list[int] = []
+    for i, ln in enumerate(lines):
+        text = _COMMENT_LEAD_RE.sub("", ln)
+        parts.append(text)
+        line_of.extend([i] * (len(text) + 1))   # +1 for the joining space
+    return " ".join(parts), line_of
+
+
+def scan_text(rel: str, text: str, register: RegisterIndex | None = None) -> list[str]:
+    """Return one finding per untracked claim that is not properly registered.
+
+    A claim is compliant when it cites the register **and**, if it names a
+    `row N`, that row exists in the register's enumerated table.  Citing the
+    register while naming a row that does not exist is the failure this
+    correlation closes: the diagnostic always said a deferral must be both
+    cited and listed, and only the citation was ever checked.
     """
     lines = text.splitlines()
+    flat, line_of = _flatten(lines)
     out: list[str] = []
-    reported: set[int] = set()
-    for i in range(len(lines)):
-        window = " ".join(
-            _COMMENT_LEAD_RE.sub("", ln) for ln in lines[i:i + 2]
-        )
-        if not UNTRACKED_RE.search(window):
-            continue
-        if i in reported or (i - 1) in reported:
-            continue
+    for m in UNTRACKED_RE.finditer(flat):
+        idx = min(m.start(), len(line_of) - 1) if line_of else 0
+        i = line_of[idx] if line_of else 0
         lo = max(0, i - CONTEXT_LINES)
-        hi = min(len(lines), i + CONTEXT_LINES + 2)
-        if REGISTER_RE.search("\n".join(lines[lo:hi])):
+        hi = min(len(lines), i + CONTEXT_LINES + 1)
+        context = "\n".join(lines[lo:hi])
+        if not REGISTER_RE.search(context):
+            out.append(f"{rel}:{i + 1}: cites no register -- {lines[i].strip()}")
             continue
-        reported.add(i)
-        out.append(f"{rel}:{i + 1}: {lines[i].strip()}")
+        if register is not None:
+            for row in ROW_CITE_RE.findall(context):
+                if int(row) not in register.rows:
+                    out.append(
+                        f"{rel}:{i + 1}: cites row {row}, which the register's "
+                        f"enumerated table does not contain -- {lines[i].strip()}"
+                    )
+                    break
     return out
 
 
@@ -168,6 +217,46 @@ def _self_test() -> int:
           not scan_text("A.lean", "-- The active plan is to ship this.\n"),
           "should not fire")
 
+    # A sentence wrapped across three lines is one sentence.  The first fix
+    # here scanned single lines and missed a two-line wrap; the second used a
+    # two-line window and missed a three-line one.  Guessing a window size is
+    # the same mistake as guessing a prefix list, so there is no window.
+    # (Codex review round 8, PR #882 — the reviewer's own three-line split.)
+    check("a three-line wrapped claim is caught",
+          bool(scan_text("X.lean",
+                         "-- This debt is not tracked\n"
+                         "-- in any currently-active\n"
+                         "-- workstream plan.\n")),
+          "should fire")
+    check("a four-line wrapped claim is caught",
+          bool(scan_text("X.lean",
+                         "-- This debt\n-- is not tracked\n"
+                         "-- in any currently-active\n-- workstream plan.\n")),
+          "should fire")
+    check("a period still bounds the claim",
+          not scan_text("X.lean",
+                        "-- Nothing here is not. The active plan tracks everything.\n"),
+          "should not fire")
+
+    # Citing the register is necessary but was also *sufficient* — a site could
+    # name a row that does not exist and the gate passed, while its own
+    # diagnostic claimed the deferral must be listed there.
+    reg = RegisterIndex("| 29 | `scripts/check_deferral_registration.py` | thing |\n")
+    check("a citation naming a nonexistent row is caught",
+          any("does not contain" in f for f in scan_text(
+              "X.lean",
+              "-- no currently-active plan tracks it; see WORKSTREAM_HISTORY.md row 99.\n",
+              reg)),
+          "should fire")
+    check("a citation naming a real row passes",
+          not scan_text(
+              "X.lean",
+              "-- no currently-active plan tracks it; see WORKSTREAM_HISTORY.md row 29.\n",
+              reg),
+          "should not fire")
+    check("the register table is parsed into rows",
+          reg.rows == {29: "scripts/check_deferral_registration.py"}, repr(reg.rows))
+
     failed = [c for c in cases if not c[1]]
     for name, ok, detail in cases:
         print(f"  {'PASS' if ok else 'FAIL'}: {name}" + (f" -- {detail}" if not ok else ""))
@@ -179,21 +268,33 @@ def _self_test() -> int:
 def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return _self_test()
+    register = RegisterIndex.load(REPO_ROOT)
     findings: list[str] = []
+    # Every enumerated row must name a file that still exists; a row pointing
+    # at a deleted path is a deferral that has quietly lost its site.
+    for row, path in sorted(register.rows.items()):
+        if not (REPO_ROOT / path).is_file():
+            findings.append(
+                f"{REGISTER_PATH}: row {row} cites `{path}`, which does not exist"
+            )
     for p in files_to_scan():
         try:
             text = p.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        findings.extend(scan_text(str(p.relative_to(REPO_ROOT)), text))
+        findings.extend(scan_text(str(p.relative_to(REPO_ROOT)), text, register))
     if findings:
-        print("FAIL: deferral(s) declare themselves untracked and cite no register.")
-        print("Each must point at the *Registered debt index* in "
-              "docs/WORKSTREAM_HISTORY.md, and be listed there:")
+        print("FAIL: deferral registration is incomplete.")
+        print("Each deferral must cite the *Registered debt index* in "
+              "docs/WORKSTREAM_HISTORY.md; a cited `row N` must exist in its "
+              "enumerated table, and each row must name a file that exists. "
+              "(Whether a row *describes* the deferral beside it is a reader's "
+              "judgement, not this gate's.)")
         for f in findings:
             print(f"  {f}")
         return 1
-    print("PASS: no source declares a deferral untracked without citing the register.")
+    print(f"PASS: every deferral cites the register; all cited rows exist "
+          f"among the {len(register.rows)} enumerated, and every row's file is present.")
     return 0
 
 

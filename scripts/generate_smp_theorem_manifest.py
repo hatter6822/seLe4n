@@ -1070,6 +1070,25 @@ def _self_test() -> int:
           f"{built['entryTotal']}+{built['ledgerEntryTotal']}"
           f"!={built['registeredEntryTotal']}")
 
+    # 32. The precondition the `--write` guard keys on: a tree that failed
+    #     discovery yields BOTH errors and a partial manifest whose inventory
+    #     entries carry `null` module/count.  Writing that partial artefact
+    #     destroys the last good one while still reporting failure, so
+    #     `--write` refuses when any error is present.  (Codex review round 8,
+    #     PR #882; the refusal itself is verified end to end by renaming a real
+    #     inventory and confirming the committed artefact is byte-identical
+    #     afterwards.)
+    src = dict(_CLEAN_SOURCES)
+    del src["A.lean"]
+    built, errs = _run(src, _CLEAN_MANIFEST)
+    partial = [
+        i for p_ in built["phases"] for i in p_["inventories"]
+        if i["module"] is None or i["count"] is None
+    ]
+    check("a broken tree yields errors and a partial manifest",
+          bool(errs) and bool(partial),
+          f"errors={len(errs)} partial={len(partial)}")
+
     failed = [c for c in cases if not c[1]]
     for name, ok, detail in cases:
         print(f"  {'PASS' if ok else 'FAIL'}: {name}" + (f" -- {detail}" if not ok else ""))
@@ -1109,11 +1128,25 @@ def main(argv: list[str]) -> int:
         )
 
     if args.write:
-        MANIFEST_JSON.parent.mkdir(parents=True, exist_ok=True)
-        MANIFEST_JSON.write_text(
-            json.dumps(manifest, indent=2, sort_keys=False) + "\n", encoding="utf-8"
-        )
-        print(f"wrote {MANIFEST_JSON.relative_to(REPO_ROOT)}")
+        # Validate before overwriting.  A manifest built from a tree that
+        # failed discovery is partial — inventories carry `null` module and
+        # count — and writing it destroys the last good artefact while the
+        # command still reports failure.  The regeneration a contributor runs
+        # after breaking something must not also delete the evidence of what
+        # it used to say.
+        if errors:
+            print(
+                f"REFUSED to write {MANIFEST_JSON.relative_to(REPO_ROOT)}: "
+                f"{len(errors)} problem(s) below; the existing artefact is "
+                f"left intact.  Fix these, then re-run --write."
+            )
+        else:
+            MANIFEST_JSON.parent.mkdir(parents=True, exist_ok=True)
+            MANIFEST_JSON.write_text(
+                json.dumps(manifest, indent=2, sort_keys=False) + "\n",
+                encoding="utf-8",
+            )
+            print(f"wrote {MANIFEST_JSON.relative_to(REPO_ROOT)}")
     elif args.check:
         if not MANIFEST_JSON.is_file():
             errors.append(f"missing generated manifest: {MANIFEST_JSON}")

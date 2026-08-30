@@ -1,3 +1,52 @@
+## v0.34.34 — a gate that claimed more than it checked
+
+Five findings on PR #882, all verified, all real: two stale figures this
+branch introduced, two holes in the gate the previous cut added, and a
+regeneration path that destroyed the artefact it failed to produce.
+
+**The new gate claimed a deferral must be "cited and listed"; only the
+citation was checked.**  Mentioning `WORKSTREAM_HISTORY.md` within six lines
+suppressed the finding even when the register held no such row — so Tier 0
+could report PASS on a deferral registered nowhere, which is the exact failure
+the gate exists to prevent, reintroduced one level up.  It now parses the
+enumerated table and rejects a citation naming a row that does not exist, and
+checks the converse too: every row must name a file that still exists, or the
+deferral has quietly lost its site.  The correlation is deliberately shallow
+and now *says so* — it confirms a row exists, never that the row describes the
+deferral beside it, which no scanner can.  Overclaiming in the diagnostic is
+what let this through, so the message was rewritten to match the check.
+
+**Guessing a window size is the same mistake as guessing a prefix list.**  The
+first version scanned single lines and missed a two-line wrap; the fix used a
+two-line window and missed a three-line one — ordinary formatter output.  There
+is no window now: the file is flattened and the *sentence* is the unit,
+bounded by the period the patterns already refuse to cross.  Witnesses pin
+three- and four-line wraps and confirm a period still bounds the claim.
+
+**`--write` overwrote the artefact before validating it.**  A tree that failed
+discovery yields a partial manifest — inventories with `null` module and count
+— and the old path wrote it, destroying the last good artefact while still
+reporting failure.  The regeneration a contributor runs after breaking
+something must not also delete the evidence of what it used to say.  `--write`
+now refuses when any error is present and leaves the file intact.  Verified end
+to end: renaming a real inventory makes `--write` refuse with four errors, and
+the committed artefact is byte-identical afterwards.
+
+**Two figures this branch left stale.**  `UNFINISHED_SMP_WORK.md` still handed
+readers **154** sub-tasks after RR7.32 took the plan to 155 (its phase counts
+sum to 155: 11+11+19+17+27+14+19+32+5).  And the register's own coverage
+summary said "31 in-source deferrals across **19** production files … and 16 is
+what it measures" — a sentence contradicting itself, left when 23→31 / 16→19
+updated the leading figures and not the parenthetical.  Both corrected; the
+parenthetical now states the audit's 23-across-17 against the measured set
+rather than a number that agrees with nothing.
+
+Six new gate witnesses (16 total) and one for the write guard (32 total), all
+mutation-tested.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
 ## v0.34.33 — the sweep was the wrong mechanism; gate it
 
 One finding on PR #882, and it is the third time a review round has found the
