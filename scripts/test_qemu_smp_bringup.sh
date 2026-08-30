@@ -24,8 +24,12 @@
 #   * QEMU exited unexpectedly with errors
 #
 # Exit codes:
-#   0  PASS or SKIP (both are non-failure for CI tier-4)
-#   1  FAIL (boot trace incomplete)
+#   0   PASS
+#   77  SKIP / NOT RUN (SELE4N_SKIP_EXIT) — a prerequisite was missing, so
+#       this gate certified nothing.  Non-failure, but not a pass: invoke via
+#       `run_gate_check` so the tier records incomplete coverage rather than
+#       counting it green.  SELE4N_REQUIRE_GATES=1 promotes it to a failure.
+#   1   FAIL (boot trace incomplete)
 #
 # **Note on kernel image availability**: at SM1.H landing the
 # workspace has no kernel binary target — `sele4n-hal` is a Rust
@@ -59,7 +63,7 @@ if ! command -v qemu-system-aarch64 &>/dev/null; then
   echo "[SKIP] WS-SM SM1.H.1: qemu-system-aarch64 not found on PATH"
   echo "       Install with: sudo apt-get install qemu-system-arm  (Debian/Ubuntu)"
   echo "                     brew install qemu                      (macOS)"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # Kernel image must be set explicitly via $SELE4N_KERNEL_IMAGE — at
@@ -78,13 +82,13 @@ if [[ -z "${KERNEL_IMAGE}" ]]; then
   echo ""
   echo "  To test with a pre-built kernel ELF, set:"
   echo "    export SELE4N_KERNEL_IMAGE=/path/to/kernel.elf"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 if [[ ! -f "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM1.H.1: kernel image not found at ${KERNEL_IMAGE}"
   echo "       (\$SELE4N_KERNEL_IMAGE = ${SELE4N_KERNEL_IMAGE})"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # ---------------------------------------------------------------------------

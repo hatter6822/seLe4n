@@ -127,6 +127,16 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"
 # AH4-F: Version sync — validate all version-bearing files match lakefile.toml.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 
+# A plan's numbering, counts and cross-references are relational data kept in
+# prose.  They drifted in five consecutive cuts -- declared totals of
+# 126/143/145/146/149 against the real row count, references to rows that a
+# renumber had moved, and a phase whose acceptance arithmetic (46 + 4 = 49)
+# could not be satisfied -- each found by review and fixed by hand.  The same
+# failure mode for code is why check_version_sync.sh exists; a plan gets the
+# same treatment.  Self-test first: a scanner that under-reaches fails silently.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py"
+
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per
 # round — `.tcbResume`, `.send`, `.tcbSetPriority`/`.tcbSetMCPriority` — each
@@ -170,6 +180,17 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/lean_code_view.py" --self-test
 # back to reading prose.  This drives `run_check` itself over a fixture whose
 # symbol exists only in a comment.
 run_check "HYGIENE" "${SCRIPT_DIR}/test_code_view_wiring.sh"
+
+# ... and the acceptance-gate skip accounting, whose failure mode is the
+# same shape: a sub-test that cannot run used to `exit 0`, `run_check`
+# scored it PASS, and tier 4 printed "All checks passed" over fourteen
+# QEMU gates that had never executed — so SM1/SM3/SM5/SM6/SM7 read as
+# hardware-validated on a machine with no emulator.  A regression stays
+# green by construction, so the mechanism is pinned rather than trusted:
+# the suite drives `run_gate_check` over skip/pass/fail fixtures and
+# re-asserts at the source that no QEMU sub-test exits 0 from a [SKIP]
+# branch.
+run_check "HYGIENE" "${SCRIPT_DIR}/test_gate_skip_accounting.sh"
 
 # PR #873: the anchor set must be SATISFIABLE.  `run_check` asserts a pattern is
 # present and `run_negative_check` asserts it is absent, and nothing compared the

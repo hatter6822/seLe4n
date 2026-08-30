@@ -28,7 +28,7 @@ cd "${REPO_ROOT}"
 
 if ! command -v qemu-system-aarch64 &>/dev/null; then
   echo "[SKIP] WS-SM SM1.H.3: qemu-system-aarch64 not found on PATH"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # Kernel image must be set explicitly via $SELE4N_KERNEL_IMAGE — at
@@ -40,12 +40,12 @@ if [[ -z "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM1.H.3: SELE4N_KERNEL_IMAGE env var not set"
   echo "       Set SELE4N_KERNEL_IMAGE=/path/to/kernel.elf to enable."
   echo "       See scripts/test_qemu_smp_bringup.sh for kernel-image-availability rationale."
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 if [[ ! -f "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM1.H.3: kernel image not found at ${KERNEL_IMAGE}"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 LOG="$(mktemp -t sele4n-smp-minimal.XXXXXX.log)"

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.1.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.25.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,7 +182,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~45767 lines)
+- `CHANGELOG.md` (~45876 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~20336 lines)
 - `docs/WORKSTREAM_HISTORY.md` (~12326 lines)
 - `tests/SmpInformationFlowSuite.lean` (~11756 lines)
@@ -287,15 +287,16 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `tests/LockSetSuite.lean` (~1375 lines)
 - `tests/SmpIpcSuite.lean` (~1373 lines)
+- `docs/DEVELOPMENT.md` (~1360 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md` (~1349 lines)
-- `docs/DEVELOPMENT.md` (~1344 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1337 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1321 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1316 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1288 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
+- `docs/planning/UNFINISHED_SMP_WORK.md` (~1260 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `tests/FrozenOpsSuite.lean` (~1252 lines)
 - `tests/SmpCancellationSuite.lean` (~1246 lines)
@@ -809,7 +810,8 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 | SM9.D | LANDED | v0.33.53→56 | Causal declassification provenance — the laundering detector stops guessing |
 | SM9.E | LANDED | v0.33.100 | Tests + closure: acceptance scenarios run live and pinned as golden fixtures; seam boundary coverage of both declassifying syscalls; the epoch exercised with survivors |
 | SM9 | CLOSED | v0.33.100 | Declassification completion — reader, refusal auditing, data-carrying signal, causal provenance, acceptance fixtures |
-| SM10 | PENDING | — | Release closure (→ v1.0.0) |
+| WS-RR | PLANNED | — | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (149 subs across RR0..RR8) |
+| SM10 | BLOCKED on WS-RR | — | Release closure (→ v1.0.0) |
 
 **Plans**: master overview at
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);
@@ -872,6 +874,71 @@ code may assume:
 - **WS-AN** portfolio COMPLETE (v0.30.11): 12 phases (AN0–AN12).
 - **WS-AK through WS-AA**: archived to
   [`docs/CLAUDE_HISTORY.md`](docs/CLAUDE_HISTORY.md).
+
+## Workstream planning documents
+
+**Phases and sub-tasks are numbered in the order they are to be
+implemented.**  A plan's numbering is its schedule: a reader who works
+`RR0, RR1, RR2, …` in order must never violate a dependency, and must never
+need a separate note telling them to take a later-numbered phase early.
+
+Concretely:
+
+- **Phase number is execution order.**  If phase 6 has to run second, it is
+  phase 1 — renumber it.  A "sequencing note" that contradicts the numbering
+  means the numbering is wrong, not that the note is helpful; the plan then
+  has to be read twice and will be misread once.
+- **Sub-task numbers run sequentially within a phase** (`RR2.1`, `RR2.2`,
+  …), in execution order, with no letter groups and no `.0`.  Thematic
+  grouping belongs in prose or a column, not in the identifier — a reader
+  cannot tell from `RR2.C.3` whether it precedes `RR2.B.1`.
+- **No backward dependencies.**  A sub-task may only consume the output of a
+  lower-numbered sub-task.  If step 3 needs what step 9 measures, either the
+  order is wrong or the two steps belong in the same phase.  State the
+  dependency in the row that consumes it, so the constraint is visible where
+  it binds.
+- **Genuine parallelism is stated, not implied.**  Say which phases may
+  overlap and which may never (typically because they edit the same files).
+  Absent that statement, sequential execution is the contract.
+- **A transition goes live only after the proofs that cover it.**  When one
+  sub-task makes a transition reachable — wiring a dispatch arm, flipping a
+  seam, repointing a caller at a new base — and another supplies its
+  preservation, progress or refinement obligations, the proofs carry the lower
+  number, or both land in one sub-task.  This is the numbering rule's
+  *semantic* half and the numeric half does not imply it: a plan can be
+  perfectly sequential with no backward dependency and still schedule a live
+  kernel transition three PRs ahead of its own invariant surface, which is
+  precisely the blocker most remediation phases exist to close.  Three
+  independent instances of this shipped in one plan (WS-RR phases RR2, RR4 and
+  RR5), each caught one review round at a time, because the rule as first
+  written checked only that the numbers ascended.  When splitting is
+  impossible — the theorems unfold the very function the switch replaces, so
+  neither half compiles alone — that is the signal to merge the rows, not to
+  order them.
+
+- **Renumbering is cheap before work starts and expensive after.**  Get the
+  order right at authoring time; once sub-task IDs appear in commit messages
+  and CHANGELOG entries they are effectively frozen.
+
+This applies to every plan under `docs/planning/`, and to the per-phase
+tables in `CLAUDE.md`'s status index.
+
+**The structural half is machine-checked.**
+`scripts/check_workstream_plan.py` (Tier 0) holds every plan that declares an
+exact `Sub-task count` to its own arithmetic: sub-task numbers run 1..N per
+phase, the phase map matches the rows, the declared total matches the phase
+map, a findings column sums to its acceptance total, no row consumes itself or
+a later one, and every `<PREFIX><phase>.<sub>` citation — in the plan and in
+`UNFINISHED_SMP_WORK.md`, `WORKSTREAM_HISTORY.md`, `CLAUDE.md` and `AGENTS.md`
+— resolves to a real row.  It reads the git index, so it checks what is being
+committed rather than what happens to be in the tree.  Legacy letter-group
+plans (`SM6.A.1`) and plans declaring an estimate range are reported but not
+held to flat numbering; closed workstreams are not renumbered.
+
+What it deliberately does **not** check is whether a reference that resolves
+still *means* what it did before a renumber, and it cannot see the semantic
+ordering rule above.  Those stay a reader's job — which is why the rule is
+stated, not merely gated.
 
 ## PR checklist
 

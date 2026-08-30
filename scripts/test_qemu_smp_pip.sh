@@ -67,7 +67,7 @@ cd "${REPO_ROOT}"
 
 if ! command -v qemu-system-aarch64 &>/dev/null; then
   echo "[SKIP] WS-SM SM5.F.10: qemu-system-aarch64 not found on PATH"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-}"
@@ -75,12 +75,12 @@ KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-}"
 if [[ -z "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM5.F.10: SELE4N_KERNEL_IMAGE env var not set"
   echo "       Set SELE4N_KERNEL_IMAGE=/path/to/kernel.elf to enable."
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 if [[ ! -f "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM5.F.10: kernel image not found at ${KERNEL_IMAGE}"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # --------------------------------------------------------------------------
@@ -124,7 +124,7 @@ if ! grep -q "smp-test.*cross-core-pip" <<<"${KERNEL_STRINGS}"; then
   echo ""
   echo "  Formal coverage at SM5.F (already passing):"
   echo "    lake exe smp_pip_suite"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # --------------------------------------------------------------------------

@@ -14,10 +14,38 @@ parse_common_args "$@"
 cd "${REPO_ROOT}"
 
 if [[ "${NIGHTLY_ENABLE_EXPERIMENTAL:-0}" != "1" ]]; then
-  log_section "META" "Tier 4 candidates staged but not enabled (set NIGHTLY_ENABLE_EXPERIMENTAL=1 to run)."
   log_section "META" "Staged candidates: extended determinism seed probe + full suite replay + WS-SM SMP boot-check stub."
   log_section "META" "Note: basic determinism validation is now mandatory in Tier 2 (WS-I1/R-02)."
+  # Two different things look alike here and must not be conflated.
+  #
+  # A *missing prerequisite* (no QEMU, no kernel image) is a gate that was
+  # supposed to run and could not: that is NOT RUN, and it propagates.
+  # NIGHTLY_ENABLE_EXPERIMENTAL is different — Tier 4 is an explicit opt-in
+  # (`docs/gitbook/07-testing-and-ci.md`), so a caller who did not set it did
+  # not ask for these gates, and `./scripts/test_nightly.sh` is the documented
+  # PR-validation command in `.github/pull_request_template.md`.  Reporting NOT
+  # RUN there would make the standard command exit non-zero for every
+  # contributor.
+  #
+  # But a caller who sets SELE4N_REQUIRE_GATES=1 *is* asking for every gate to
+  # have run, and answering that with a clean exit over a tier that never
+  # started is the vacuous acceptance the skip status exists to prevent — it is
+  # how `SELE4N_REQUIRE_GATES=1 ./scripts/test_nightly.sh` came to certify a
+  # release having executed zero Tier-4 gates.  So strict mode fails here, and
+  # default mode passes as documented.
+  if [[ "${SELE4N_REQUIRE_GATES:-0}" -eq 1 ]]; then
+    record_skip "META" \
+      "Tier 4 candidates not enabled — SELE4N_REQUIRE_GATES=1 demands they run; set NIGHTLY_ENABLE_EXPERIMENTAL=1"
+  else
+    log_section "META" "Tier 4 candidates staged but not enabled (set NIGHTLY_ENABLE_EXPERIMENTAL=1 to run)."
+  fi
   finalize_report
+  # `finalize_report` RETURNS on a clean report — it only exits on a failure or
+  # a skip — so without this the "not enabled" branch printed its report and
+  # then fell through and ran the boot-check anyway, which is how a disabled
+  # tier still exited 77.  Terminating here is what makes "not enabled" mean
+  # nothing ran.
+  exit 0
 fi
 
 # WS-SM SM0.T — Reserved tier-4 slot for the SMP boot-check evidence.
@@ -26,7 +54,7 @@ sm0t_sub_args=()
 if [[ "${CONTINUE_MODE:-0}" -eq 1 ]]; then
   sm0t_sub_args+=("--continue")
 fi
-run_check "META" "${SCRIPT_DIR}/test_tier4_smp_bootcheck.sh" "${sm0t_sub_args[@]}"
+run_gate_check "META" "${SCRIPT_DIR}/test_tier4_smp_bootcheck.sh" "${sm0t_sub_args[@]}"
 
 ensure_lake_available
 

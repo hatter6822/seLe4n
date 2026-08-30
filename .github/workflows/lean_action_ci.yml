@@ -28,6 +28,24 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The plan gate compares the index against a revision predating the
+      # change, so it can tell a deleted plan from one that was never there.
+      # The default checkout is shallow and fetches no base, which left the
+      # check inert in exactly the place it is meant to run: it fell back to
+      # HEAD, where a committed deletion is already present, and passed.
+      - name: Provide a base revision for the workstream-plan gate
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -n "${base}" ] && [ "${base}" != "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags --depth=1 origin "${base}" 2>/dev/null || true
+            if git rev-parse --verify -q "${base}^{commit}" >/dev/null; then
+              echo "SELE4N_PLAN_BASE_REF=${base}" >> "${GITHUB_ENV}"
+              echo "plan-gate base: ${base}"
+              exit 0
+            fi
+          fi
+          echo "no base revision resolved; the gate will say so in its output"
+
       - name: Restore Lean and Lake caches
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

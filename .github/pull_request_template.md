@@ -8,7 +8,7 @@
 
 - [ ] `./scripts/test_smoke.sh`
 - [ ] `./scripts/test_full.sh`
-- [ ] `./scripts/test_nightly.sh` (or justify omission)
+- [ ] `./scripts/test_nightly.sh` (or justify omission) — exit 77 means a Tier-4 gate reported NOT RUN, which is incomplete coverage rather than a failure
 - [ ] Targeted `rg -n` checks for new docs/anchors
 
 ## Documentation synchronization checklist (required)

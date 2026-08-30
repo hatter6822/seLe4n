@@ -12244,13 +12244,13 @@ theorem linkServerStashedReply_preserves_pendingReceiveReplyWellFormed
               rw [hEq, hServerObj] at hRRobj; cases hRRobj
             refine ⟨rr, ?_, hRRfree⟩
             -- frame `ridX` across the link (≠ rid, ≠ caller) and the server-clear (≠ server).
-            have hRR1 : st1.getReply? ridX = some rr := by
+            have hReplyPresentAtSt1 : st1.getReply? ridX = some rr := by
               have hRRobj : st.objects[ridX.toObjId]? = some (.reply rr) :=
                 (getReply?_eq_some_iff st ridX rr).mp hGetRR
               rw [getReply?_eq_some_iff, hFrame1 ridX.toObjId hRidXneObjSt hRidXneCaller]; exact hRRobj
             rw [getReply?_eq_some_iff,
               storeObject_objects_ne st1 st' server.toObjId ridX.toObjId _ hRidXneServer hObjInv1 hStore]
-            exact (getReply?_eq_some_iff st1 ridX rr).mp hRR1
+            exact (getReply?_eq_some_iff st1 ridX rr).mp hReplyPresentAtSt1
         · -- C2 at `st'`: two stashers must both be `≠ server` (the cleared server stashes
           -- nothing), and a non-server stash is unchanged from `st1`, where uniqueness holds.
           intro tid₁ tid₂ tcb₁ tcb₂ ridX hT₁ hT₂ hStash₁ hStash₂

@@ -48,7 +48,7 @@ cd "${REPO_ROOT}"
 
 if ! command -v qemu-system-aarch64 &>/dev/null; then
   echo "[SKIP] WS-SM SM1.H.5: qemu-system-aarch64 not found on PATH"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # Kernel image must be set explicitly via $SELE4N_KERNEL_IMAGE — at
@@ -59,12 +59,12 @@ KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-}"
 if [[ -z "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM1.H.5: SELE4N_KERNEL_IMAGE env var not set"
   echo "       Set SELE4N_KERNEL_IMAGE=/path/to/kernel.elf to enable."
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 if [[ ! -f "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM1.H.5: kernel image not found at ${KERNEL_IMAGE}"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # --------------------------------------------------------------------------
@@ -97,7 +97,7 @@ if ! strings "${KERNEL_IMAGE}" 2>/dev/null | grep -q "smp-test.*SGI round-trip";
   echo "  HAL-level coverage at SM1.F (already passing):"
   echo "    cargo test -p sele4n-hal --lib gic::tests::sm1f"
   echo "    cargo test -p sele4n-hal --lib ffi::tests::sm1f6"
-  exit 0
+  exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # --------------------------------------------------------------------------

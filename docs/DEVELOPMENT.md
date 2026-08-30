@@ -7,9 +7,17 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 
 It is aligned to the **current project state**:
 
-- **active workstream:** **WS-SM (SMP multi-core completion) IN FLIGHT**
+- **active workstream:** **WS-RR (SMP Release Readiness) PLANNED — the
+  pre-SM10 remediation, 148 sub-tasks across RR0..RR8.  SM10 is BLOCKED on it
+  and must not open until RR8 closes**; the pre-SM10 completeness audit found
+  three findings that block starting SM10, a false scope statement in its own
+  plan, and fail-open latents that become reachable when the boot path goes
+  live.  Plan:
+  [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md);
+  register: [`docs/planning/UNFINISHED_SMP_WORK.md`](planning/UNFINISHED_SMP_WORK.md).
+- **parent workstream:** **WS-SM (SMP multi-core completion) IN FLIGHT**
   (v0.31.2 → v1.0.0; closes with a bootable verified SMP microkernel on
-  Raspberry Pi 5).  **Latest cut (v0.34.1): the SM5 runtime-seam completion**
+  Raspberry Pi 5).  **Preceding cut (v0.34.1): the SM5 runtime-seam completion**
   — the three seams SM5's docstrings promised between the verified per-core
   scheduler and the hardware IRQ path are closed: `trap.S`'s IRQ vectors
   branch to `handle_irq_per_core` (the legacy single-core `handle_irq`
@@ -1077,6 +1085,22 @@ Optional nightly/staged checks:
 ```bash
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh
 ```
+
+Tier 4 is the QEMU SMP acceptance tier. Its sub-tests need
+`qemu-system-aarch64` (installed by `setup_lean_env.sh`) and a bootable
+kernel image in `SELE4N_KERNEL_IMAGE`. A sub-test that cannot run exits
+`SELE4N_SKIP_EXIT` (77) and is recorded **NOT RUN** — never PASS — so the
+tier reports how many acceptance gates did not execute rather than
+claiming a clean run over them. To require that every gate actually ran:
+
+```bash
+SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh
+```
+
+which turns a skipped gate into a hard failure. The v1.0.0 release
+validation (SM10.E) must run in that mode. When adding a check that
+certifies phase acceptance criteria, call `run_gate_check`, not
+`run_check`.
 
 Module-specific build targets (SchedContext):
 

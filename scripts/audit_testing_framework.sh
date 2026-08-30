@@ -30,14 +30,35 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${ROOT_DIR}"
 
+# A tier that reports incomplete coverage exits `SELE4N_SKIP_EXIT` (77) rather
+# than 0, so that a gate which did not run is never scored as one that passed.
+# Under `set -e` a bare invocation would abort this script at the first such
+# tier — and on every checkout without a kernel image that is `test_nightly.sh`,
+# four lines before the control-fixture check this audit exists to perform.
+# Tolerate the status, say so, and carry on; anything else still aborts.
+SELE4N_SKIP_EXIT="${SELE4N_SKIP_EXIT:-77}"
+run_tier() {
+  local rc=0
+  "$@" || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then
+    return 0
+  fi
+  if [[ "${rc}" -eq "${SELE4N_SKIP_EXIT}" ]]; then
+    echo "[AUDIT] NOT RUN (incomplete coverage): $* — see that tier's output for the gates it skipped"
+    return 0
+  fi
+  echo "[AUDIT] FAILED (exit ${rc}): $*" >&2
+  return "${rc}"
+}
+
 echo "[AUDIT] Running baseline tiered entrypoint checks"
-"${SCRIPT_DIR}/test_fast.sh"
-"${SCRIPT_DIR}/test_smoke.sh"
-"${SCRIPT_DIR}/test_full.sh"
-"${SCRIPT_DIR}/test_nightly.sh"
+run_tier "${SCRIPT_DIR}/test_fast.sh"
+run_tier "${SCRIPT_DIR}/test_smoke.sh"
+run_tier "${SCRIPT_DIR}/test_full.sh"
+run_tier "${SCRIPT_DIR}/test_nightly.sh"
 
 echo "[AUDIT] Running Tier 4 staged candidates in experimental mode"
-NIGHTLY_ENABLE_EXPERIMENTAL=1 "${SCRIPT_DIR}/test_tier4_nightly_candidates.sh"
+NIGHTLY_ENABLE_EXPERIMENTAL=1 run_tier "${SCRIPT_DIR}/test_tier4_nightly_candidates.sh"
 
 echo "[AUDIT] Verifying Tier 2 control-data failure behavior"
 TMP_FIXTURE="$(mktemp)"

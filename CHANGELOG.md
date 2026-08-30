@@ -1,3 +1,1097 @@
+## v0.34.25 — the gate read examples as data; found by probing, not by review
+
+Round 18 found two bypasses after my single probe pass, so I widened the probe
+instead of stopping at one. It found the mirror problem: not a bypass, a pair of
+**false positives**.
+
+A plan that illustrates a citation or a row shape inside a fenced block had that
+example parsed as data. `see XX9.9 for the shape` became a dangling reference; a
+fenced `| XX3.1 | … |` became a phantom phase with no phase-map entry. Both
+failed the gate on a document that is entirely correct.
+
+That is as damaging as a miss, and in a specific way this project already names:
+it pushes an author to contort prose to satisfy a scanner, which CLAUDE.md
+forbids in as many words. The gate exists so plans can be written plainly.
+
+Fenced blocks are now blanked before parsing — line counts preserved, so any
+position reported still lines up. Both directions are witnessed, because a
+stripper that over-reaches would be the same defect inverted: an example inside
+a fence must not fail a correct plan, and a real defect outside one must still
+be caught. Confirmed adversarially — removing the stripper makes the first
+witness fail with exactly the two false positives above.
+
+21 witnesses.
+
+Refs: scripts/check_workstream_plan.py
+
+## v0.34.24 — a plan row that told you to weaken the claim; Codex review round 18
+
+**The one that matters is mine.** RR7.7, as I wrote it at v0.34.21, said to
+"reconcile the v1.0.0 *per-object reader-writer fine locks* capability claim
+with what actually ships". That is the outcome the implement-the-improvement
+rule exists to forbid, written into the plan by the same cut that was fixing
+other people's version of it — and it would have worked, because RR6 refines
+and deploys the queued lock primitive while performing none of SM3.C.9's
+exported-body migration, so the claim stays false after RR6 closes and the row
+invited editing the text instead.
+
+RR7.7 now owns Tracks B and C of `SMP_FINE_LOCK_MIGRATION_PLAN.md` — the
+`capTransferReceiverCnode` footprint closure and the object-domain and
+dispatch-entry `withLockSet` wrapping of the `@[export]` bodies — sized XL,
+because making the claim true is the work. New RR6.19 registers Track D, the
+commit-model partitioning that plan seam-gates to SM10.E, as a named SM10.E
+dependency: the one part WS-RR cannot land is tracked rather than absorbed.
+
+**Two more gate bypasses, both reproduced at exit 0:**
+
+- **Cross-plan citations were never validated.** The global pass read only the
+  four companion documents and the per-plan pass searched each plan for its own
+  prefix, so a plan citing another plan's row fell between them. `AA0.1` citing
+  a nonexistent `BB0.9` passed with both plans called structurally consistent.
+  Every tracked plan body is now a citation source.
+- **Two plans could claim one prefix.** The definition map unioned their IDs and
+  kept one path, making every citation to that prefix ambiguous while hiding
+  the duplicate definitions. Now rejected by name.
+
+Gate witnesses: 19, including CLI cases for both.
+
+Counts: 149 (RR6 19).
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §4 (Tracks B–D)
+
+## v0.34.23 — the gate was opt-in, and I found that one myself
+
+No review round prompted this. After round 17 I wrote, for the third time, that
+the correction to my witness problem is to construct the hostile case *before*
+claiming a fix rather than confirming in whichever environment is convenient.
+This cut is the first time I did that instead of saying it.
+
+**The gate was opt-in.** Coverage keyed off the `Sub-task count` header, so a
+plan that omitted one line got no structural checking at all. Probed against a
+fixture carrying two real defects at once — sub-task numbers `[1, 2, 7]` and a
+row consuming a later one — the CLI printed "no plan declares a 'Sub-task count'
+header" and exited **0**. That is the easiest bypass in the set to trip by
+accident: a new plan simply not written with the line.
+
+Checking now follows the **rows**, not the header. Any plan with flat
+`<PREFIX><phase>.<sub>` rows is held to sequential numbering, phase-map
+agreement, citation resolution and the no-forward-dependency rule; only the
+declared-total comparison still requires a declared total, because only that
+check needs one. The same fixture now exits 1 naming both defects.
+
+Reclassification fell out of it: coverage is 1 plan checked, 10 legacy
+letter-group plans, 3 declaring an estimate range — previously reported as 2
+legacy and 11 ranged, because plans were bucketed before their rows were
+examined. The total is unchanged at 14; the labels are now accurate.
+
+Witness count 17, including a CLI-level case for this bypass. Confirmed
+adversarially: restoring the header condition makes it fail with
+`(0, "no plan declares a 'Sub-task count' header.")`.
+
+Refs: scripts/check_workstream_plan.py
+
+## v0.34.22 — two bypasses that lived in `main`, where no witness was looking; Codex review round 17
+
+Four findings. The two that matter were found by running the **command**; every
+witness I had written called a helper function directly, so none of them could
+see a defect in the CLI's control flow. Both defects lived exactly there, and
+both reported exit 0.
+
+**Deleting the last exact-count plan skipped the citation check.** With no plan
+left to validate, `main` printed "no plan declares a Sub-task count header" and
+returned 0 — before the check that a departing plan's citations must not
+survive it. The check that deletion is supposed to trip was placed after the
+early return for having nothing to check. Reproduced: sole plan deleted,
+`CLAUDE.md` still citing `XX0.1`, exit 0. The global citation pass now runs
+first, and that case exits 1 naming the orphaned prefix.
+
+**One letter-group row grandfathered an entire flat plan.** A file-wide search
+for `RR2.A.1`-shaped rows classified the whole plan as legacy and skipped every
+sequential-ID, phase-count, total and dependency check. Reproduced with a
+deliberately wrong phase count (99 against 3 real rows) plus one stray row:
+"0 workstream plan(s) checked", exit 0. Legacy now means *only* letter-group
+rows; a letter-group row mixed into a flat plan is a malformed row and is
+reported as one — after which the count errors it was masking fire too.
+
+**Two CLI-level witnesses** now build a throwaway repository, copy the checker
+into it, run it as a subprocess and assert on the exit status, which is the only
+thing CI reads. Confirmed adversarially: reverting the letter-group fix makes
+the witness fail with `(0, 'PASS: 0 workstream plan(s)...')`.
+
+That is the third time a witness certified the environment it happened to run
+in — helper-not-CLI here, staged-not-committed and local-not-CI before. The
+pattern is that I verify where it is convenient; the correction is to build the
+hostile case first.
+
+**Two stale references**, both consequences of earlier renumbering that no gate
+covers: the `What's next` summary still said 149 sub-tasks against a plan that
+declares and sums to 148, and the RR6 split guidance and risk row still pointed
+at RR6.12 for the D-4 bisimulation, which the RR6 merge moved to RR6.11 —
+RR6.12 is now the unrelated Loom task, so an implementer would have split the
+wrong work.
+
+Gate witnesses: 16.
+
+Refs: scripts/check_workstream_plan.py
+
+## v0.34.21 — the gate still could not run in CI, and could not tell an archive from a deletion; Codex review round 16
+
+Seven findings — three on the gate, four on the plan and its mirrors.
+
+**The gate was still inert in CI.** v0.34.20 added an integration base, but the
+Tier-0 job uses the default shallow checkout and fetches neither `origin/main`
+nor a base SHA, so `baseline_refs()` fell back to `HEAD` — where a committed
+deletion is already present — printed its note and exited 0. The fix worked
+locally, where `origin/main` resolves, and nowhere else. Both Tier-0 workflows
+now fetch the PR base (or the push's `before` SHA) and export
+`SELE4N_PLAN_BASE_REF` before running the tier.
+
+**A closed plan's archive move read as a deletion.** SM10.C.4 moves this very
+plan into `docs/dev_history/planning/`, where its rows still define every ID
+the canonical history cites — but a set difference over `docs/planning/` alone
+would have rejected the repository for a legitimate archive.
+
+**A wholesale prefix rename bypassed the foreign-key check entirely**, because
+companion citations were scanned only for the *new* prefix; the old one was
+simply not looked for.
+
+Both share one cause: citations were checked one plan at a time. They are now
+checked against a **global definition map** keyed by prefix, built across
+`docs/planning/` and the archive. A prefix nothing defines any more is reported
+wholesale — deleted, or renamed out from under its citations — and a prefix
+still defined has each citation checked individually. Witnessed on real
+repositories: archiving passes, re-prefixing fails.
+
+**Four in the plan and its mirrors:**
+
+- `DEVELOPMENT.md` still named WS-SM the active workstream with v0.34.1 the
+  latest cut, and the testing GitBook still called SM10 merely pending — so
+  both contributor-facing summaries routed readers straight past the blocker
+  registered two cuts ago.
+- The WS-RR history entry said RR8.4 updates its row; after the RR8 swap that
+  is RR8.5, and following the stale reference would have recreated the
+  premature-closure ordering the swap exists to prevent.
+- RR3's acceptance requires both payoff theorems cited from
+  `CLAIM_EVIDENCE_INDEX.md`, and no RR3 row owned that file. Paired with the
+  theorem that changes the claim surface.
+- RR6 switched the deployed lock one PR before correcting the documentation
+  naming the old one, shipping a version whose canonical Lean-side concurrency
+  docs name the wrong runtime primitive. Merged into the switch.
+
+Counts: 148 (RR6 18). Gate witnesses: 14.
+
+Refs: scripts/check_workstream_plan.py
+
+## v0.34.20 — the deletion gate was dead in CI, where it was meant to run; Codex review round 15
+
+Four findings, two of them on the gate added two cuts ago.
+
+**The deletion check could not fire in CI.** v0.34.19 computed departing plans
+as `HEAD − index`. On a fresh CI checkout those name the same tree, so the set
+was always empty and a committed plan deletion with surviving citations passed
+— the check was live only for an *uncommitted staged* deletion, which is
+exactly what its witness exercised. The witness passed while the CI path was
+dead: a scanner that under-reaches, one level up from the flaw it was written
+to fix.
+
+Departing plans are now taken against the integration base as well as `HEAD`
+(`origin/main`, or `SELE4N_PLAN_BASE_REF`), and each plan's body is read from
+the revision that still holds it — reading from `HEAD` was a second, hidden
+half of the same bug, since on a branch where the deletion is committed `HEAD`
+no longer has the file. When no base resolves (a shallow clone) the narrowed
+coverage is printed rather than inferred from a pass.
+
+The new witness commits the deletion on a branch and requires the citation to
+be reported. It failed on first run and found the read-from-`HEAD` half; both
+halves are now covered.
+
+**A duplicated phase-map row was silently collapsed.** `out[phase] = count`
+overwrote the earlier entry, so a plan listing a phase twice with two different
+counts passed on whichever row came last, and both the per-phase comparison and
+the declared total ran on a de-duplicated map. Duplicates are now reported.
+
+**`test_qemu_tlb_cache_coherence.sh` still promised a status-0 skip** while
+returning 77 from both its QEMU-absent branch and its stub ending. Third
+instance of the class fixed at v0.34.14 for `test_qemu.sh` and
+`test_qemu_smp_bringup.sh`; a sweep now finds none left.
+
+**The nightly reinstalled QEMU for a race that does not exist.**
+`setup_lean_env.sh` waits for its background package install before returning,
+so the synchronous `apt-get update` added a network-dependent failure point on
+a path that already had the emulator — a transient mirror outage would abort
+the nightly with QEMU present. The step now verifies first and installs only if
+setup did not.
+
+Refs: scripts/check_workstream_plan.py
+
+## v0.34.19 — the new gate could be blinded by deleting the plan; Codex review round 14
+
+**The gate had the flaw it exists to prevent.** `check_workstream_plan.py`
+enumerated plans with a working-tree `glob` while reading their content from
+the git index. Stage a plan's deletion and the glob stops finding it, so its
+prefix is never checked and every companion still citing its sub-tasks passes
+Tier 0 — a scanner that under-reaches, silently, which is the failure mode its
+own witness suite was written to catch. It caught the parsing defects and
+missed the enumeration one.
+
+Enumeration now comes from the index (`git ls-files`), and a plan present in
+`HEAD` but absent from the index is inspected before it disappears: deleting a
+plan while its sub-tasks are still cited is rejected, because the deletion
+removes the only definition of those IDs in the same commit that would hide it.
+Replayed against the real repository — staging the WS-RR plan's deletion now
+reports nine outstanding citations across the register, the history and
+`CLAUDE.md`.
+
+The witness for it builds a throwaway git repository, commits a plan and a
+citation, stages the deletion and requires the error; a fixture string cannot
+exercise how plans are *enumerated*. Confirmed real by reverting the fix — the
+witness fails, and passes again once restored. Two earlier drafts of this
+witness asserted things that were true whether or not the fix was present;
+they were discarded rather than shipped.
+
+**The permanent aarch64 gate compiled none of the code RR1 exists to cover.**
+RR1.2's diagnostic runs `-p sele4n-hal --features hw_target`, but the gate at
+RR1.5, the CI job at RR1.7, the §7 verification and the §8 checkbox all said
+plain `cargo build`. `hw_target` is empty by default and guards the
+hardware-only paths — the Lean calls in `timer.rs`, `trap.rs`, `smp.rs` — so
+the advertised gate would stay green through a regression in exactly the
+cfg-gated blocks it was added to cover. All four sites now name the feature.
+
+**RR8 advertised closure before checking it.** RR8.4 wrote the WS-RR closure
+entry and RR8.5 then confirmed SM10's dependencies were met. Since each row may
+land as its own PR, an unmet dependency found at RR8.5 would have to be
+retracted from the canonical history rather than simply fixed. Swapped: the
+hand-off check is now RR8.4 and the closure entry RR8.5, recorded on evidence
+rather than ahead of it.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §5 (RR1, RR8)
+
+## v0.34.18 — four sub-tasks that could not have done what they said; Codex review round 12
+
+The first round whose findings are entirely about plan *content* rather than
+bookkeeping — which is precisely the class v0.34.17's gate says it cannot catch.
+All four verified against source before acting.
+
+**RR4.3 could not build the faults RR4.1 requires.** It mapped
+`SynchronousExceptionClass → Fault`, but that inductive is nullary — six
+constructors, no payloads — while the fault address and syndrome exist only in
+`ExceptionContext.far` and `.esr`. The map could only have invented them,
+corrupting every VM-fault message before the encoding round trip. Now defined
+over `ExceptionContext`, with the nullary variants taking their payload from
+the trap/syscall inputs on the same path.
+
+**RR5.10 (was RR5.9) switched the boot base without enqueueing anything.**
+`installIdleThread` creates the idle TCB and sets `currentOnCore` — it never
+touches `runQueueOnCore` — while `idleThreadEnqueuedOnCore`'s *first* conjunct
+is run-queue membership. So the switch left the register's idle-enqueue
+remediation open and the premise `chooseThreadOnCore_always_succeeds` consumes
+unmet: a core reaching selection with no runnable user thread would still lack
+its idle fallback. The slice now owes the per-core enqueue and a proof of
+`∀ c, idleThreadEnqueuedOnCore st c` on the live boot state.
+
+**The readiness-gate finding had a second half nobody scheduled.** The SVC and
+suspend Lean externs are declared under `cfg(not(test))`, not `hw_target`, so a
+host non-test build still compiles call paths to bare-metal Lean symbols. New
+RR5.8 changes the cfgs; RR5.9's seam check now also enforces that no Lean
+extern is declared outside `hw_target`, so neither a sixth seam nor an ungated
+extern can be added without one.
+
+**RR6.13's Loom gate explored nothing.** Its scope was `Cargo.toml` alone, but
+`queued_rw_lock.rs` imports `core::sync::atomic` directly and Loom only sees its
+own instrumented atomics — so a dev-dependency satisfies §8's "loom gate runs"
+with a manifest entry. The row now owes the `cfg(loom)` aliases, `loom::model`
+tests, and a CI or nightly invocation.
+
+**The new gate earned itself immediately.** It rejected this very edit twice
+before commit: a duplicated `RR5.11` left by the insert, and a forward
+reference to `RR4.5` in RR4.3's own text — the rule I had just written, broken
+in the act of writing the row that states it. Both were fixed before the commit
+rather than in round 13.
+
+Counts: 149 (RR5 14).
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §5 (RR4, RR5, RR6)
+
+## v0.34.17 — the plan's arithmetic becomes a gate instead of a habit
+
+Eleven review rounds on WS-RR fixed instances of five recurring classes. This
+cut addresses why the classes recurred.
+
+**The diagnosis.** A plan under `docs/planning/` is relational data written as
+prose: sub-task IDs are keys, the phase map is an aggregate over them, the
+declared total is an aggregate over that, and cross-references are foreign
+keys. None of it was machine-checked. Tier 0 runs 33 gate invocations over 18
+checker scripts — identifier naming with a per-file occurrence baseline,
+version sync across 36 sites, the website link manifest, the staged/production
+partition, proof depth, source-line citations — and **not one of them reads
+`docs/planning/`**. Every mention of that directory in `scripts/` is a comment
+or a single prose grep.
+
+So the plan's invariants were enforced by attention. They failed the way
+unenforced invariants do: declared totals of 126, 143, 145, 146 and 149 against
+the real row count, across five consecutive cuts; references to rows a renumber
+had moved; a phase whose acceptance arithmetic (46 + 4 = 49) could not be
+satisfied; a §4 finding with no owner at all. Each was found by review and
+fixed by re-running an ad-hoc verification script — the same script, five
+times, never committed. That is the churn engine: the fix was written
+repeatedly and thrown away every time.
+
+`scripts/check_workstream_plan.py` is that script, kept. It holds every plan
+declaring an exact `Sub-task count` to its own arithmetic, reads the **git
+index** so it checks what is being committed, and carries a nine-case witness
+suite because a scanner that under-reaches fails silently — which is how this
+class survived twelve rounds of review. Replayed against four real defects from
+this PR's history, it catches the count drift, the acceptance-arithmetic
+impossibility, the numeric half of the ordering defect, and dangling references
+both in the plan and in a companion document.
+
+Scope is stated rather than assumed: 1 plan checked, 2 legacy letter-group
+plans and 11 declaring an estimate range reported but not held to flat
+numbering. Closed workstreams are not renumbered.
+
+**The rule that was checking the wrong property.** The ordering rule authored
+at v0.34.5 covers numeric ordering only — phase number is execution order,
+sub-tasks sequential, no backward dependencies. It says nothing about proofs
+preceding the switch that makes a transition reachable, which is why RR2, RR4
+and RR5 each shipped a live-before-proof ordering while passing that rule, and
+each was caught a round at a time. The rule now has its semantic half: a
+transition goes live only after the proofs covering it, or both land in one
+sub-task — and when the theorems unfold the very function the switch replaces,
+that is the signal to merge the rows rather than order them.
+
+The limits are stated too. The gate cannot tell that a reference which still
+resolves has stopped meaning what it did, and it cannot see the semantic rule.
+Those remain a reader's job, which is why the rule is written down and not
+merely gated.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §5
+
+## v0.34.16 — a disabled tier that ran anyway, and a premise I accepted without checking; Codex review round 11
+
+**Correction to v0.34.15.** Round 10's P1 said the disabled branch of
+`test_tier4_nightly_candidates.sh` "exits successfully before invoking
+`test_tier4_smp_bootcheck.sh`". It does not, and I did not verify that clause
+before acting on it. `finalize_report` **returns** on a clean report — it exits
+only on a failure or a skip — so the "not enabled" branch printed its report and
+then fell straight through into the tier body, running the boot-check regardless.
+The strict run was therefore never vacuous the way the finding described: the
+boot-check ran, skipped, and under `SELE4N_REQUIRE_GATES=1` failed correctly.
+
+The fall-through was the real defect, and it is what round 11 surfaced: because
+the disabled branch kept going, plain `./scripts/test_nightly.sh` — the command
+`.github/pull_request_template.md` gives contributors — exited 77 on every run,
+Tier 4 being opt-in by default.
+
+Now the branch terminates, and the two cases are kept distinct:
+
+| invocation | before | after |
+|---|---|---|
+| disabled, default | 77 | **0** — opt-in declined, nothing ran, as documented |
+| disabled, `SELE4N_REQUIRE_GATES=1` | 1 | **1** — asking for every gate over a tier that never started must fail |
+| enabled, default | 77 | 77 — the boot-check genuinely cannot run |
+
+A missing prerequisite (no QEMU, no kernel image) is a gate that was supposed to
+run and could not; a declined opt-in is not. Conflating them is what made the
+documented PR command unusable.
+
+**RR5.9 and RR5.10 could not have landed separately.** RR5.9 switched the
+production checked boot path to `bootFromPlatformWithIdleThreads` while RR5.10
+deferred the downstream theorem chain — but those theorems unfold the checked
+function and characterize its result in terms of `bootFromPlatform config`, so
+the switch alone either fails to compile or ships a live boot path its own
+theorems no longer cover. Merged into one slice, sized L. This is the third
+instance of the live-before-proof class in this plan (RR2, RR4, now RR5).
+
+Counts resynced to 148 (RR5 13). The exit-77 contract is now stated where the
+command is actually invoked — the PR template and the GitBook entrypoint list —
+rather than only in the library that implements it.
+
+Refs: docs/gitbook/07-testing-and-ci.md entrypoint list
+
+## v0.34.15 — the strict release run never reached the gates it was strict about; Codex review round 10
+
+Four findings. Two are new; two are residue of this PR's own earlier fixes,
+including one edit that was silently lost.
+
+**The strict Tier-4 command certified nothing (P1).** v0.34.11 added a v1.0.0
+checklist item reading `SELE4N_REQUIRE_GATES=1 ./scripts/test_nightly.sh` — but
+without `NIGHTLY_ENABLE_EXPERIMENTAL=1`, `test_tier4_nightly_candidates.sh`
+takes its disabled branch, calls `finalize_report` with `SKIP_COUNT` at zero,
+and exits 0 before reaching the boot-check runner. Strict mode saw no skipped
+gates to promote, so the box was tickable with **zero** Tier-4 acceptance gates
+executed — the same vacuous acceptance the §6 fix existed to close, reproduced
+inside it.
+
+Fixed at both ends. The checklist now sets both variables. More importantly the
+disabled branch `record_skip`s instead of exiting 0, so the wrong command
+cannot quietly pass either: disabled now exits **77** (NOT RUN) by default and
+**fails** under `SELE4N_REQUIRE_GATES=1`. Verified both.
+
+**`What's next` still sent contributors past the blocker.** v0.34.13 added the
+WS-RR opening entry, but the same file's `What's next` — the section
+contributors are explicitly told to consult for current priorities — still said
+the SM5 cut was current and SM10 was next. Registering a blocker in a section
+nobody is directed to read is half a registration. It now names WS-RR as the
+current workstream and SM10 as blocked.
+
+**RR7's arithmetic was internally impossible.** The phase claimed 49 findings
+while owning 46 §6 rows plus four §4 rows — 50 — and still referred to "the §4
+three". This was an edit lost in round 8: the script carrying it aborted on an
+unrelated assertion before writing, and the follow-up did not re-include it. Now
+50 throughout, with §4 ownership stated per item rather than as a total.
+
+**RR7.5 bundled five subsystems.** Register findings 18–22 share a source plan
+but not a remedy surface: two are SM10 plan-text corrections, one is six live
+`native_decide` uses in production Lean, one is the fine-lock capability claim,
+one is cancellation/timeout error-frame staging. Split into RR7.5–RR7.8.
+
+Counts resynced to 149 (RR7 26) across the plan, register, history, `CLAUDE.md`
+and `AGENTS.md`; every `RR<n>.<m>` reference resolves to a real row.
+
+Refs: docs/HARDWARE_TESTING.md §6 pre-tag checklist
+
+## v0.34.14 — three documented contracts that the behavior had outgrown; Codex review round 9
+
+All three are places where a change landed and its description did not follow.
+
+**Two scripts documented an exit contract they no longer honour.**
+`test_qemu.sh`'s header promised "exits 0 if QEMU is not available (graceful
+skip)"; it now exits 77. A caller trusting that header under `set -e` aborts
+without having asked for strict mode. The reviewer cited one; the class has
+two — `test_qemu_smp_bringup.sh` still listed "`0` PASS or SKIP (both are
+non-failure for CI tier-4)". Both headers now state 77, name `run_gate_check`
+as the required caller, and say what `SELE4N_REQUIRE_GATES=1` does.
+
+**The deferred RwLock plan pointed at the wrong phase.** Its header still read
+"absorbed by WS-RR phase RR5" — the boot-path phase, which owns none of that
+work. v0.34.6 corrected the source register to RR6 and left the plan's own
+header behind, so an implementer entering through the canonical deferred plan
+was sent to the wrong phase. Now RR6, matching the plan and the register.
+
+**The GitBook testing chapter documented only `run_check`.** `run_gate_check`
+is mandatory for any check certifying a phase acceptance criterion, and the
+mirror chapter never mentioned it — so a contributor following it would route a
+new hardware gate through the wrapper that reads 77 as FAIL. §"Shared test
+library behavior" now covers the reserved skip status, why routing a gate
+through `run_check` turns incomplete coverage red while the old exit-0 idiom
+turned it green, the `record_skip`-or-exit rule its Tier-0 witness pins, and
+the strict mode v1.0.0 must run in.
+
+Refs: docs/gitbook/07-testing-and-ci.md "Shared test library behavior"
+
+## v0.34.13 — the audit's own first blocker, committed by the audit; Codex review round 8
+
+Three findings, all verified against the tree, all new ground.
+
+**WS-RR was an unregistered workstream.** `CLAUDE.md` and `AGENTS.md` declared
+it PLANNED and moved SM10 to BLOCKED, while `grep -c WS-RR
+docs/WORKSTREAM_HISTORY.md` returned **0** — and RR8.4 deferred the first
+history entry to closure. So for the entire 146-sub-task window, the project's
+declared canonical source for workstream status would show neither the active
+remediation workstream nor SM10's blocker. This is verbatim the defect the
+audit filed as blocker 1 against the IPC de-threading plan, committed by the
+document that filed it. The opening entry is now written, and RR8.4 updates the
+row rather than creating it.
+
+**RR4 wired the fault path live three PRs before fixing its return frame.**
+The ABI-v2 correction sat at RR4.25, after RR4.22 made aborts deliver — so
+intermediate releases would ship a live fault path whose return frame decodes
+as success whenever `x1` carries a label under 512. Worse, the row pointed at
+`rust/sele4n-hal/src/svc_dispatch.rs`, which already holds the correct
+`error_frame_regs` helper; the four defective `set_x0`-only arms are in
+`trap.rs`. The register's own remediation said to fold this into the
+fault-delivery cut, so the plan contradicted its source. The correction is now
+RR4.22, targets `trap.rs`, and precedes the wiring at RR4.23.
+
+**Two §4 findings had no owner, and the low table was not what it claimed.**
+`lockSet_observer_atomic_on` and `_atomic_under_lockSet` appeared **zero**
+times in the plan — a security-section finding silently dropped, now RR7.4.
+Separately, §7's 99 lows were routed wholesale to SM10.A's *documentation*
+sweep on the stated basis that they are all documentation drift. They are not:
+at least fourteen rows are classed `improvement`, `debt`, `gates` or
+`bootpath`, and §4 finding 8 is a `soundness` item carrying low severity.
+Finding 98 is four per-core statistics accessors declared, wrapped and proven
+with zero consumers — an implement-the-improvement case, not a stale sentence.
+RR0.11 now triages §7 by **remedy** rather than severity: prose fixes to
+SM10.A, anything needing code, a proof or wiring back into RR7 as a numbered
+row or a registered deferral. Low means the consequence is small, not that the
+remedy is a sentence.
+
+Counts resynced to 146 (RR7 23). Every `RR<n>.<m>` reference across the plan,
+register, history, `CLAUDE.md` and `AGENTS.md` now resolves to a real row.
+
+Refs: docs/WORKSTREAM_HISTORY.md WS-RR opening entry
+
+## v0.34.12 — CI fix: the skip messages carried a workstream ID into a code file
+
+`v0.34.11` put `SM10.E.D1` in two strings in `scripts/test_hw_crosscheck.sh` —
+one log line and one `record_skip` message. A shell script is code, so the
+internal-first naming rule applies and `check_identifier_naming.py` (Tier 0)
+counted the occurrences 0 → 2 and failed the gate.
+
+Both now say what is actually missing — "no kernel image is built yet", "no
+bootable kernel image exists to read them from" — which is the better text
+regardless of the gate: a reader learns what blocks the check rather than a
+phase code that ages out when the phase closes.
+
+The gate reads the **git index**, not the working tree. `test_fast.sh` had been
+run before `git add`, so it scanned the pre-change index and passed on content
+that no longer existed. Staging first is what makes the local run predictive.
+
+Refs: CLAUDE.md "Internal-first naming"
+
+## v0.34.11 — the cross-check reported PASS having verified the page size; Codex review round 6
+
+Two findings, both genuine, both swept as a class rather than at the cited line.
+
+**A gate that announced a skip and then passed.** `test_hw_crosscheck.sh`
+logged `SKIP: devmem2/devmem not available` and fell through to
+`finalize_report` with `SKIP_COUNT` still at zero — so it exited 0, and
+`test_hw_full.sh` scored it PASS with its MMIO checks never run. The cited
+line was one of seven: checks 2, 6 and 7 printed `PENDING` and fell through
+the same way, and checks 3 and 8 emitted *nothing at all* when their evidence
+source was missing. On an ARM64 host with no device tree and no devmem, the
+constant cross-check verified the page size — a `getconf` with no bearing on
+BCM2712 — and reported success. Every such path now calls `record_skip`, so
+the script exits `SELE4N_SKIP_EXIT` and names what did not run. Verified under
+a faked `uname -m`: exit 77, five gates named, no "All checks passed".
+
+The seven constants that need a bare-metal boot are recorded as one skip
+rather than seven log lines, keeping the count a signal.
+
+**The witness could not have caught it.** `test_gate_skip_accounting.sh`
+detected only an explicit `exit 0` after a skip message, which a fall-through
+does not have. It now also requires the converse — every skip announcement is
+either emitted through `record_skip` or followed by an exit carrying the skip
+status — scoped by indentation so a skip branch containing an `if` block is
+not a false positive. Confirmed by planting the original defect: the witness
+fails on it and passes once fixed.
+
+**A release checklist that contradicted itself.** §5 of
+`docs/HARDWARE_TESTING.md` says the v1.0.0 validation must run under
+`SELE4N_REQUIRE_GATES=1` because a release may not certify phases whose gates
+never ran; §6 immediately below labelled the hardware steps "recommended" and
+declared the project "green to ship" once the static gate passed. A maintainer
+following the checklist could tag v1.0.0 having executed no SMP acceptance
+gate. §6 now requires the strict Tier-4 run to tag v1.0.0 and states plainly
+that the static gate is necessary and not sufficient — it compiles the kernel
+and checks the proofs, and executes nothing on a core. Per the
+implement-the-improvement rule the weaker half was raised to the stronger, not
+the reverse.
+
+Refs: docs/HARDWARE_TESTING.md §5, §6
+
+## v0.34.10 — a plan that told you to prove a thing after making it live; Codex review round 5
+
+Documentation-only. Seven findings from the fifth review round on
+`docs/planning/SMP_RELEASE_READINESS_PLAN.md` and
+`docs/planning/UNFINISHED_SMP_WORK.md`, all verified against the tree before
+being acted on.
+
+**The ordering defect worth naming.** Round 4's fix moved the two live-dispatch
+switches earlier in RR2 so the blocker closed sooner, and in doing so put both
+of them *before* the preservation bundles for the very operations they make
+reachable. That is backwards: a live switch on an operation with no
+`_preserves_ipcInvariantFull` theorem is exactly the blocker the phase exists
+to close, reintroduced one sub-task at a time. RR2 is renumbered so each
+bundle precedes its switch — 5 donation-primitive preservation, 6 call
+dispatch bundle, 7 live call switch; 11 reply bundle, 12 live reply switch —
+and the donation-primitive proof is lifted out of RR3 (where it was RR3.15,
+after the switch that needs it) into RR2 where it binds.
+
+**Also fixed:**
+
+- **Binder names are not a measurement.** Three RR3 rows and the §8 acceptance
+  checklist asked for `hBTPM'` and `hRCL'` to reach zero occurrences. Neither
+  conjunct has a canonical primed binder name, so that check passes without
+  measuring anything. All four now name the predicate and defer to the RR3.1
+  gate, which reads statement shape over the code view.
+- **A risk mitigation that was false.** "The RR4.9 no-handler suspend alone
+  removes the livelock, so partial delivery is still safe" — RR4.9's policy is
+  unreachable until RR4.21 wires the abort arms and RR4.22 routes the Rust trap
+  path to them. Until both land, an abort still takes the old `.error .vmFault`
+  path and returns to the faulting instruction. The row now says partial
+  delivery is not safe and the release waits.
+- **RR7 is not independent.** It was described as overlappable with anything;
+  several of its rows own findings whose primary owner is RR2, RR3 or RR6.
+  §2.3 now states it runs after those phases and may not overlap them.
+- **A standing constraint with no retirement.** RR0.3 writes a CLAUDE.md
+  constraint saying `ipcInvariantFull` is not end-to-end machine-checked;
+  nothing retracted it once RR3.16 makes it false. New RR8.3 does.
+- **RR7.16 bundled two unrelated surfaces** (per-core scheduler HAL seam;
+  DeviceTree-to-`PlatformConfig` boot bridge) into one row. Split.
+- **A circular schedule in the register.** §10 step 5 told WS-RR to run the
+  Tier-4 acceptance gates before SM10 opens, using an image SM10.E.D1
+  produces. Execution is reassigned to SM10.E, immediately after D1.
+
+Counts resynced: 145 sub-tasks (RR2 19, RR3 17, RR7 22, RR8 5) in the phase
+map, plan header, register §10, `CLAUDE.md` and `AGENTS.md`. Four prose
+cross-references to renumbered RR3/RR7 rows corrected.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §2.3, §5 (RR2, RR3, RR7, RR8)
+
+## v0.34.9 — the audit script broke under its own skip status; Codex review round 4
+
+Eight findings on `906e6f9`, all verified and all genuine.  Four are residue
+from the previous cut's own fixes: I corrected the line the reviewer cited and
+did not sweep for the same defect elsewhere.  This cut sweeps each class.
+
+**A second caller of the propagating skip status, and it breaks today.**
+`scripts/audit_testing_framework.sh` runs under `set -euo pipefail` and invokes
+`test_nightly.sh` and `test_tier4_nightly_candidates.sh` bare.  Both now exit
+`SELE4N_SKIP_EXIT`, so on any checkout without a kernel image the script aborts
+four lines before the deliberately-broken-fixture check it exists to perform —
+the canonical self-test of the testing framework, silently not running.  It
+gains a `run_tier` helper that reports NOT RUN and continues while any other
+non-zero status still aborts.  A repo-wide sweep confirms it was the last
+unhandled caller: the other matches are `rg` greps of script text and a
+checklist string in a PR-body template.
+
+**`cargo check` survived in two more gates.**  Last cut moved RR1.5, RR1.7 and
+Appendix A to `cargo build`; §6.2's verification statement and the §8
+acceptance checkbox still said `check`, which can close RR1 without ever code-
+generating the 60 inline-assembly sites the phase exists to cover.  Both now
+say `build`.
+
+**The queued lock was still deployed before it was refined.**  RR6.11 supplied
+the missing model last cut but sat seven steps after RR6.4's deployment, so
+several versions would ship a core concurrency primitive with no refinement to
+the spec it is claimed to satisfy.  The model and its corollary now precede the
+switch: RR6.4, RR6.5, then RR6.6.
+
+**The donation blocker was modelled but never wired.**  RR2 added
+`applyCallDonationOnCore` and proved it while the live
+`endpointCallCrossCoreDispatch` kept calling `applyCallDonation`, so the phase
+could satisfy every proof task with the reachable `.call` path still leaving the
+replenish queue unmigrated.  Two sub-tasks now replace the live calls on both
+paths.  Two more extend `lockSet_endpointCall` / `lockSet_endpointReply` with
+`migrateSchedContextReplenishmentLockSet`: the migration writes both cores'
+replenish queues, and doing that inside the existing `withLockSet` bracket
+without widening the declared footprint would invalidate the SM3
+serializability argument — which the source register's own remediation already
+required.
+
+**Fault constructors carried no payload.**  RR4.1 gave only `vmFault` an
+address and status; `capFault`, `unknownSyscall` and `userException` were
+nullary, so the wire layout could not carry the faulting capability address and
+receive phase, the syscall number, or the exception number and code, and a
+handler could not diagnose or safely restart those cases.  Every constructor now
+carries its seL4-parity payload.
+
+Two register corrections, both mine from the renumbering: the deferred RwLock
+residue was routed to RR5, the boot-path phase that owns none of that work and
+is closed before RR6 runs; and the concluding ownership sentence handed both the
+§6 mediums and the §7 lows to SM10.A, contradicting the §2.1 table two
+paragraphs above — RR7 owns the mediums and must close or explicitly defer each,
+so a documentation sweep must not absorb them.
+
+Total 139 → 143, verified sequential per phase with no forward dependencies.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md
+Refs: docs/planning/UNFINISHED_SMP_WORK.md
+
+## v0.34.8 — the nightly would have gone red forever; Codex review round 3
+
+Nine findings on `dc5dc55`, all verified against the tree and all genuine.  One
+is a CI-breaking regression the previous cut introduced.
+
+**The skip propagation would have failed every scheduled nightly, permanently.**
+`ci_capture_timing.sh` propagates any nonzero status, `test_nightly.sh` now
+exits `SELE4N_SKIP_EXIT` when a gate did not run, and the nightly workflow
+neither builds nor sets `SELE4N_KERNEL_IMAGE` — so every QEMU gate skips, the
+tier returns 77, and the job fails.  Not once: on every run, until SM10.E.D1
+produces an image.  A signal that is always red is one nobody reads, which is
+the same end state as the "All checks passed" this whole line of work set out
+to remove, reached from the other direction.  The nightly now handles the
+incomplete-coverage status explicitly: a warning annotation plus a run-summary
+block naming the cause, the job completing rather than failing, and
+`SELE4N_REQUIRE_GATES=1` still the mode that fails outright — the mode SM10.E's
+release validation must use.
+
+**`cargo check` cannot provide the compile coverage RR1 promises.**  It stops
+before code generation, so it never reaches the backend where an inline-`asm!`
+error surfaces — and covering the 60 `asm!` sites is most of why the phase
+exists.  The post-fix and CI gates are now an aarch64 `cargo build`; `check`
+survives only as the earlier diagnostic pass, where its speed is the point.
+
+**A live kernel transition was scheduled ahead of its own invariant surface.**
+RR4 wired the fault-delivery transition into `dispatchSynchronousException`
+before the `ipcInvariantFull`, scheduler, capability, progress and
+non-interference proofs.  Since each sub-task lands as its own PR, that would
+ship a reachable transition with none of its proofs.  The wiring now sits after
+them, as RR4.21.
+
+**Switching the deployed lock left the refinement behind.**  RR6.4 points the
+FFI pool at `QueuedRwLock`, but `RwLockRefinement.lean` models the CAS-retry
+`rw_lock.rs`, and `RwLock.lean`'s `queued_*` theorems are about the abstract
+spec's waiter queue — neither bridges the queued Rust algorithm.  The
+deployed-lock corollary would have had nothing to compose from.  RR6.11 now
+adds the queued lock's own operational model and refinement, ahead of the
+corollary.
+
+Also: RR7.12–RR7.13 batched ten and five findings across unrelated subsystems
+while the section promised one subsystem per PR — split into RR7.12–RR7.21, one
+per subsystem; RR7's acceptance gate required closure only of the §6 table
+though the phase owns 49 findings including three from §4, so a phase could
+close with the boot-MMU correction and the live-dispatch capability theorem
+still open; and the RR1 ordering note still named the pre-renumber sub-tasks.
+
+Two register corrections.  The staged-`@[export]` finding claimed four modules;
+only three exist — `EndpointCallEntry` had its C export removed and is retained
+as a reference driver, so promoting it would add a staged dependency resolving
+no Rust symbol.  And the SM1.H remediation proposed restating a checked
+four-core boot gate as "script authored; execution blocked", which converts a
+hardware-behaviour criterion into an artifact-existence one: the documentation
+is stronger than the code there, which is the forbidden direction rather than
+the exception.  Both boxes are now simply unchecked until the gate runs.
+
+Total 130 → 139, verified sequential per phase with no forward dependencies.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md
+Refs: docs/planning/UNFINISHED_SMP_WORK.md
+
+## v0.34.7 — CI fix: the witness's literal-match grep tripped shellcheck SC2016
+
+`v0.34.6` turned CI red on two checks, both from one line I added.
+`scripts/test_gate_skip_accounting.sh`'s propagation witness greps the parent
+tier scripts for `run_check "META" "${SCRIPT_DIR}/test_tier4`, in single quotes
+so the pattern matches that text **literally** — expanding it would search for
+the running process's own `SCRIPT_DIR` and match nothing, silently passing the
+witness.  Tier 0 runs `shellcheck` with only SC1090 and SC1091 excluded, so the
+info-level SC2016 ("expressions don't expand in single quotes") failed the gate.
+
+Fixed with a scoped `# shellcheck disable=SC2016` and the rationale, since
+non-expansion is precisely the property under test.  Both red checks trace to
+this one line: *Tiered Tests / Fast* runs Tier 0 directly and *Platform Signal /
+ARM64 Fast Gate* runs `test_fast.sh`, which runs Tier 0.
+
+The miss was a process gap, not a judgement call: `shellcheck` was not
+installed in the authoring environment, so the pre-push validation fell back to
+`bash -n`, which checks syntax and not lint.  Adding a new script to a
+repository whose Tier 0 lints every script, without the linter available, is
+how a one-character-class defect reaches CI.  `shellcheck` is installed now and
+every touched script verifies clean against the exact Tier 0 invocation.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md
+
+## v0.34.6 — the skip status survives the process boundary; Codex review round 1
+
+Eight review threads from the Codex bot on PR #881.  Six were confirmed against
+the tree and fixed; one was confirmed in substance while its stated mechanism
+was wrong, and fixing the real gap uncovered three more affected scripts; one
+was already closed by `v0.34.5`.
+
+**The P1, and it was my own defect one level up.**  `finalize_report` returned
+0 when gates had been skipped, so the NOT RUN verdict died at the process
+boundary.  `test_tier4_nightly_candidates.sh` runs the tier-4 bootcheck through
+`run_check` and `test_nightly.sh` does the same to that runner, so each parent
+recorded PASS and the nightly still printed "All checks passed" over fourteen
+gates that never ran — precisely the defect `v0.34.2` set out to close, one
+layer up.  `finalize_report` now exits `SELE4N_SKIP_EXIT`, and both parents
+invoke their child runner with `run_gate_check`.  Verified end to end: the
+bootcheck exits 77, the candidates runner records it NOT RUN and itself exits
+77.
+
+**The witness only recognised one skip idiom.**  It armed on the literal
+`[SKIP]`, missing branches written with the shared logger
+(`log_section "META" "SKIP: …"`).  The bot's specific claim — that
+`scripts/test_qemu.sh` was already inside the witness's `test_qemu_*.sh` glob —
+is false; that filename has no underscore.  But the underlying concern was
+real, and checking it surfaced three gates the fix had never reached:
+`test_qemu.sh` (a live gate, run from `test_hw_full.sh`) and
+`test_hw_crosscheck.sh` skip with `exit 0`, and `test_hw_full.sh`'s own inline
+guards only *printed* SKIP, leaving both counters at zero so the suite still
+ended on "All checks passed" having run no hardware check at all.  All three
+now use the skip status and `record_skip`, and the witness matches both idioms
+over a glob that includes them.
+
+**Setup could complete without the emulator it promises.**  `fast_path_ready`
+returned before `install_missing_packages`, so a repeat session with Lean
+already configured never installed QEMU; the fast path now includes it unless
+`--skip-test-deps` was passed.  And on macOS the Debian split name reached
+`brew install qemu-system-arm`, which fails into `|| true` — Homebrew ships one
+`qemu` formula, as the repo's own instructions already said.
+
+**Three new witnesses**, each verified to fail against the pre-fix tree: the
+skip status is not 0, nested runners are invoked skip-aware, and no gate script
+exits 0 from either skip idiom.  The last two counters were initially shared,
+so one defect reported two failures; they are now separate.
+
+**Plan corrections.**  RR7's batch counts summed to 34 against 46 medium
+findings, leaving twelve with no owner and its acceptance gate uncheckable
+against the work list.  Three of its rows also drew from the register's §4
+(security) set rather than §6, and the non-IS TLBI ban gate it carried is a
+*high* that no phase owned at all.  RR7 now allocates 49 — the 46 in §6 plus
+the three §4 items that are remediation rather than security work, with the
+other two named as owned by RR2 and RR4 — and the TLBI gate moves to RR1, where
+the rest of the Rust HAL hygiene lives.  Total 125 → 130.
+
+Appendix A's cross-check ran `cargo` from the repository root with
+`--manifest-path`, which does not move rustup's directory override:
+`rust-toolchain.toml` lives under `rust/`, and the root resolves to `stable`
+rather than the pinned 1.94.1 that RR1.1 adds the cross target to.  It now runs
+from `rust/`.
+
+**One remediation violated the project's own rule.**  The register's FFI
+identity-map finding prescribed qualifying the docstring "until the fix lands".
+CLAUDE.md forbids rewriting a description to match inferior code and requires
+deferring the release instead — and there is a better answer than either: a
+fail-closed reject of operands outside the cacheable window makes the existing
+claim *true* within an enforced bound.  That is now the prescribed minimal
+closure, and the stopgap is gone.
+
+
+**Codex review round 2** (five findings on the reordered plan, all confirmed —
+and all of them execution-order defects, which is what the new rule exists to
+catch).  Three were stale references left by the renumbering: `RR3.16` still
+named RR1 as its dependency where the analysis says RR2, `RR6.18` registered
+the lock workstream against RR5 (the preceding boot-path phase, which neither
+owns those tasks nor is open when RR6 runs), and `RR4`'s negative test pointed
+at a row seven positions later.  My remap had deliberately skipped §5 to
+protect sub-task IDs, and hand-checking caught only the references outside
+table rows; a scan of references *inside* rows found exactly the set Codex
+reported.
+
+Two were real ordering violations.  `RR1.2` required the aarch64 `cargo check`
+to **succeed** before RR1.3 and RR1.4 fix the errors it surfaces — impossible
+under a one-PR-per-sub-task contract — so it is now the diagnostic pass that
+records the error inventory, with a separate success gate after the fixes.  And
+`RR4`'s no-handler fail-closed policy now precedes the negative test that
+exercises it, rather than following it by seven rows.
+
+The RR6 risk row also permitted the deployed-lock corollary to land after
+v1.0.0 if the bisimulation stalled — which would ship precisely the gap the
+phase exists to close, and contradicts its own acceptance criterion.  RR6 now
+stays open and the release waits.
+
+The plan is checked mechanically for both properties: sub-task numbering is
+sequential within every phase, and no sub-task references a higher-numbered one
+in its own phase.  Total 130.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md
+Refs: docs/planning/UNFINISHED_SMP_WORK.md
+
+## v0.34.5 — a plan's numbering is its schedule: WS-RR reordered into execution order
+
+`v0.34.4` shipped WS-RR with phases numbered RR0..RR8 and a separate §2.3 note
+saying to run RR6 early and RR1 before RR3.  That is a plan that has to be read
+twice and will be misread once: if the numbering does not carry the order,
+the numbering is decoration.  It also concealed a real defect — RR0.B.2 revised
+SM10's estimate "derived from the RR6 compile-coverage result", a backward
+dependency from the first phase to the seventh.
+
+**Phases renumbered so phase number is execution order.**  RR0 registration;
+RR1 aarch64 compile coverage (was RR6 — cheap, de-risks every later Rust
+change, and it produces the measurement the estimate consumes); RR2 live-path
+correctness (was RR1); RR3 de-threading closure (unchanged); RR4 fault handling
+(was RR2); RR5 boot-path fail-open (was RR4); RR6 verified lock primitives (was
+RR5); RR7 medium sweep; RR8 closure.  The backward dependency is gone: the
+measurement is recorded at RR1.8 and consumed at RR1.9, in that order, inside
+one phase.
+
+**Sub-tasks renumbered sequentially within each phase** — `RR4.1`..`RR4.27`
+rather than `RR2.A.1`..`RR2.Q.2`.  Letter groups encoded theme, not order, so a
+reader could not tell whether `RR2.C.3` preceded `RR2.B.1`; thematic grouping
+now lives in prose where it belongs.  This also retires the `RR3.A.0` that the
+previous cut had to invent to insert a step before `RR3.A.1` — a numbering
+scheme that cannot express "before the first item" is telling you something.
+
+The §2.3 sequencing note is replaced by the dependency list that produced the
+order, plus an explicit statement of which phases may overlap.  Absent that
+statement, sequential execution is the contract.
+
+**The rule is codified, not just applied.**  `CLAUDE.md` and `AGENTS.md` gain a
+"Workstream planning documents" section: phase number is execution order,
+sub-tasks run sequentially within a phase with no letter groups and no `.0`, no
+sub-task may consume the output of a higher-numbered one, and genuine
+parallelism is stated rather than implied.  It applies to every plan under
+`docs/planning/` and to the status index's own phase tables.
+
+Also corrected: the sub-task total is **125**, not the 126 `v0.34.4` claimed —
+an off-by-one introduced when that cut resynced its own counts.  Every phase
+table, cross-reference and CHANGELOG mention now agrees, and the count is
+verified against the tables rather than asserted.  The `asm!`-site figure is
+60, measured, where the plan said 59.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md
+
+## v0.34.4 — WS-RR: the pre-SM10 remediation phase, planned end to end
+
+The `v0.34.3` audit register said the project was not ready to begin SM10 and
+listed what stood in the way.  This cut turns that register into a workstream:
+`docs/planning/SMP_RELEASE_READINESS_PLAN.md` decomposes every open finding
+into **125 PR-sized sub-tasks across nine phases** (RR0..RR8), each with files,
+estimates, acceptance criteria and explicit ordering constraints.
+
+**Why a separate phase rather than more SM10 sub-tasks.**  SM10's acceptance
+gate is a release checklist — spec rewritten, chapters published, version
+bumped, tag cut.  Folding a fault-IPC implementation and an invariant
+de-threading closure into it would make "is the release well-formed" and "is
+the kernel finished" the same question, which is the conflation that let the
+tier-4 gates certify phases nothing had run.  WS-RR closes first; SM10 then
+does what it was scoped to do.
+
+**The phases**, numbered in the order they are to be implemented: RR0
+registration and plan correction (nothing further is lost); RR1 aarch64
+compile coverage; RR2 live-path correctness — the four live SMP dispatch arms
+gain `ipcInvariantFull` bundles and both cross-core donation paths migrate the
+CBS replenish queue; RR3 the `ipcInvariantFull` de-threading closure; RR4 fault
+handling; RR5 boot-path fail-open closure; RR6 verified lock primitives; RR7
+the medium sweep; RR8 hand-off.
+
+**Fault handling is scoped to full seL4-style fault IPC with reply-based
+restart** (27 sub-tasks), not a minimal fail-safe.  The groundwork is better
+than it looked: the TCB already carries a `faultHandler` field with no
+consumer, and `ExceptionModel.lean` already classifies exceptions — its abort
+arms simply return `.error .vmFault` as a pure error, and its only callers are
+tests, because `trap.rs` runs a parallel `esr_ec` match of its own.  So the
+work is an unwired field, a missing `Fault` type and delivery transition, and
+the retirement of a duplicate classification path — with a progress theorem
+(RR4.20) that makes the livelock unrepresentable rather than merely absent.
+
+**The IPC de-threading workstream closes before v1.0.0**, not after.  Two of
+twenty `ipcInvariantFull` conjuncts are still assumed as post-state hypotheses
+on 31–33 of 35 bundles; RR3 de-threads both and lands the top-level dispatch
+payoff theorems, so the invariant is end-to-end machine-checked rather than
+conditionally so.
+
+**`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` is re-scoped pre-v1.0.0** and
+absorbed as RR6.  Shipping a verified microkernel whose core concurrency
+primitive carries a known-deferred completeness story understates what
+"verified" means on the one component every other subsystem's serialisability
+argument rests on.  The residue concentrates in one theme: the refinement
+bridges connect the Lean specs to transliterations and to their own
+assumptions rather than to the deployed locks.  Three facts frame it —
+`lock_bridge.rs` builds its pool from the CAS-retry `rw_lock.rs` while the Lean
+spec was tightened to strict FIFO; `QueuedRwLock`, the FIFO implementation D-5
+landed, has zero consumers outside its own module; and the Tier-5 oracle's own
+docstring states it models rather than drives the real lock.  The deployed lock
+is not the one the spec describes, and the harness that would have caught that
+drives neither.
+
+**RR1 runs early by design.**  No aarch64 target is compiled
+anywhere in tree or CI, so 67 cfg-gated blocks, 59 `asm!` sites and all three
+`.S` files would first be exercised by SM10.E — the same step that first links
+and boots them.  A `cargo check` against `aarch64-unknown-none` is cheap and
+de-risks every later Rust change; its result also sizes SM10.E's estimate
+(RR1.9), replacing a guess with a measurement.
+
+The register's 99 low-severity findings are deliberately **not** in this plan.
+Documentation sync is SM10.A's assigned job, and running the same sweep twice
+is two passes for one outcome; RR0.H.1 hands SM10.A the table as its work-list.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md
+Refs: docs/planning/UNFINISHED_SMP_WORK.md
+
+## v0.34.3 — the unfinished-work register: what SM10 must absorb before it opens
+
+A deep completeness audit of `docs/planning/` — every plan except
+`HARDWARE_PARTITION_ISOLATION_PLAN.md`, which was out of scope — asked one
+question: is the project ready to begin SM10?  Nineteen plans and six
+cross-cutting sweeps were each audited against the tree, and every resulting
+finding was re-checked by an independent adversarial pass instructed to refute
+it: 171 findings confirmed, 53 refuted.  This cut lands the register as
+`docs/planning/UNFINISHED_SMP_WORK.md`.
+
+**The answer is not yet, and the reason is scoping rather than missing proofs.**
+The substance of SM0–SM9 is real and the tree is healthy: `lake build` 436/436,
+Tier 0–3 green, zero `sorry`/`axiom`, 36/36 version sites.  Nine of nineteen
+plans verify as complete or complete-with-registered-debt.  What blocks SM10 is
+three findings plus a phase whose own scope statement is wrong.
+
+**The three blockers.**  `IPC_INVARIANT_DETHREADING_PLAN.md` is an active
+workstream — its status table marks D1/D6/D8 in progress, two of twenty
+`ipcInvariantFull` conjuncts are still threaded as hypotheses on 31–33 of 35
+bundles, and the payoff theorems do not exist — yet it is registered in no
+durable index: zero mentions in `CLAUDE.md`, `AGENTS.md`,
+`docs/WORKSTREAM_HISTORY.md`, the WS-SM overview, the SM10 plan or
+`CLAIM_EVIDENCE_INDEX.md`.  SM10 would close WS-SM over it silently.  Cross-core
+SchedContext donation never migrates the CBS replenish queue, breaking the SM5.H
+affinity invariant on a live path.  The live `.send` arm carries no
+`ipcInvariantFull` preservation while SM6.D claims the surface closed.
+
+**SM10.E is a bare-metal Lean runtime port, not a version bump.**  Its plan
+scopes the phase as documentation sync plus a version bump at 4–6 weeks.
+Measured against the tree, the boot path does not exist in any form: `rust/` has
+no `[[bin]]` target, `lakefile.toml` declares only host artifacts with no
+cross-compilation rule, nothing produces `libsele4n.a` for aarch64, there are no
+Lean-runtime-init symbols anywhere, `@[export] lean_kernel_main` is absent (only
+the *staged* secondary entry exists), and no aarch64 target is compiled anywhere
+in tree or CI — 67 cfg-gated blocks, 59 `asm!` sites and all three `.S` files
+have zero compile coverage.  Separately, the SM10 plan predates SM9 and never
+absorbed it: its theorem tally runs SM8 to SM10 with no SM9 term and its archive
+list omits the SM9 plan, so `wsm_theorem_count` would certify a number computed
+as if a landed phase had not happened.
+
+**Fail-open latents that go live exactly when the kernel boots.**  Recorded in
+§4 with remediations, none exploitable today because nothing boots: data and
+instruction aborts set `x0` and return to the faulting instruction with `ELR_EL1`
+restored verbatim, so any user thread touching an unmapped page wedges its core
+forever; the boot wrapper's labeling context is optional and defaults to the
+all-public test context, which the insecure-default guard deliberately does not
+flag; and two of the five kernel seams call into Lean without the readiness gate
+their own module docs say every seam consults.
+
+Citations throughout name a file and a symbol rather than a line number, per the
+`check_source_line_citations.py` contract — 812 line citations were resolved to
+their enclosing declaration rather than renumbered.
+
+Refs: docs/planning/UNFINISHED_SMP_WORK.md
+Refs: docs/planning/SMP_RELEASE_CLOSURE_PLAN.md §2 (SM10 dependencies)
+
+## v0.34.2 — the tier-4 acceptance gates stop reporting PASS for work they never did
+
+A pre-SM10 audit of `docs/planning/` found the WS-SM hardware acceptance
+gates certifying phases on machines that had never run them.  Every one of
+the fourteen QEMU sub-tests behind `test_tier4_smp_bootcheck.sh` exits when
+its prerequisites are missing; each exited `0`; `run_check` scored that as
+`PASS`; and the tier signed off with `All checks passed`.  `qemu-system-aarch64`
+was installed by neither `setup_lean_env.sh` nor any CI workflow, so on the
+nightly runner all fourteen skipped and the tier passed — meaning the SM1,
+SM3, SM5, SM6 and SM7 acceptance criteria have never executed anywhere.  A
+gate that reports success for work it did not perform is worse than no gate,
+because the phase it certifies reads as validated.
+
+**The emulator is a test dependency now, not an optional extra.**
+`setup_lean_env.sh` installs `qemu-system-arm` (which provides
+`qemu-system-aarch64`) alongside `shellcheck` and `ripgrep`, with the
+per-distro name mapping for dnf/yum/pacman.  Because test deps install in
+the background there, the `nightly-tier4` job also installs it synchronously
+before running the tier, so the gates cannot race the package manager and
+then record themselves NOT RUN.
+
+**A skip is no longer a pass.**  `test_lib.sh` gains a reserved exit code
+`SELE4N_SKIP_EXIT` (77) and `run_gate_check`, the variant to use for any
+check certifying phase acceptance criteria: a sub-test that cannot run is
+recorded NOT RUN, counted separately from failures, and named in the
+summary.  `finalize_report` no longer prints `All checks passed` while any
+gate was skipped — it reports how many did not run and that coverage is
+incomplete.  All fifteen `test_qemu_*.sh` scripts exit the skip code from
+their `[SKIP]` branches (56 call sites), and all fourteen tier-4
+invocations route through `run_gate_check`.
+
+**`SELE4N_REQUIRE_GATES=1` promotes a skipped gate to a hard failure.**
+This is the mode the v1.0.0 release validation (SM10.E) must run in: a
+release may not certify phases whose gates never ran.
+
+**The mechanism is pinned, not trusted.**  A regression here stays green by
+construction — the tier still exits 0 and still looks clean — so
+`scripts/test_gate_skip_accounting.sh` joins `test_code_view_wiring.sh` and
+`test_identifier_naming_gate.py` as a Tier 0 witness.  Nine checks drive
+`run_gate_check` over skip/pass/fail fixtures, assert the summary never
+claims a clean run over an unexecuted gate, assert strict mode fails, and
+re-assert at the source that no QEMU sub-test exits 0 from a `[SKIP]`
+branch — the last being what stops the defect returning one script at a
+time.  Verified to fail against the pre-fix tree.
+
+Installing the emulator removes one of the two skip causes outright; the
+remaining fourteen skips are all `SELE4N_KERNEL_IMAGE env var not set` and
+cannot be closed by installing anything.  They need the bootable image owed
+by SM10.E.D1 (`scripts/build_rpi5_image.sh`), which does not exist yet — the
+tier now reports that fact instead of concealing it.
+
+Refs: docs/planning/SMP_RELEASE_CLOSURE_PLAN.md §2 (SM10 dependencies), §3 (SM10.B.D1..D7)
+
 ## v0.34.1 — the SM5 runtime seams close: the verified per-core scheduler reaches the hardware IRQ path
 
 A pre-SM10 validation sweep of the WS-SM headline findings (SMP-C1..C4,

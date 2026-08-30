@@ -15,10 +15,15 @@
 #   3. SM1.H.5 — `test_qemu_smp_sgi_roundtrip.sh` (cross-core SGI)
 #
 # Each sub-test handles its own SKIP conditions (qemu missing, kernel
-# image missing, kernel-side handlers unwired) and exits 0 in those
-# cases — so the tier-4 wrapper passes when the environment is bare,
-# and exercises the substantive checks only when the prerequisites
-# are met.
+# image missing, kernel-side handlers unwired).  A sub-test that cannot
+# run exits `SELE4N_SKIP_EXIT` and is invoked through `run_gate_check`,
+# which records it as NOT RUN — never as PASS.  A bare environment
+# therefore reports how many acceptance gates did not execute instead
+# of printing "All checks passed" over work nothing performed.
+#
+# `SELE4N_REQUIRE_GATES=1` promotes any skipped gate to a hard failure;
+# that is the mode the v1.0.0 release validation (SM10.E) must run in,
+# since a release may not certify phases whose gates never ran.
 #
 # Future phases populate additional sub-tests:
 #   * SM7.E — TLB shootdown ACK timing
@@ -37,22 +42,22 @@ parse_common_args "$@"
 cd "${REPO_ROOT}"
 
 log_section "META" "WS-SM tier-4 SMP boot-check (populated at SM1.H)"
-log_section "META" "  Sub-tests handle their own SKIP conditions (qemu/kernel-image)."
+log_section "META" "  A gate that cannot run is reported NOT RUN, never PASS."
 log_section "META" "  Future phases (SM7.E, SM8.E) extend this slot."
 
 # SM1.H.1 — full 4-core bringup.
-run_check "META" "${SCRIPT_DIR}/test_qemu_smp_bringup.sh"
+run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_bringup.sh"
 
 # SM1.H.3 — minimal 2-core bringup (boot + 1 secondary).
-run_check "META" "${SCRIPT_DIR}/test_qemu_smp_minimal.sh"
+run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_minimal.sh"
 
 # SM1.H.5 — cross-core SGI round-trip.  SKIPs at SM1.H if kernel-side
 # handlers are not yet wired (SM5+ follow-on).
-run_check "META" "${SCRIPT_DIR}/test_qemu_smp_sgi_roundtrip.sh"
+run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_sgi_roundtrip.sh"
 
 # SM1.G.3 — cross-core kprintln stress test.  SKIPs at SM1.G if the
 # stress-test routine isn't wired in the kernel image (SM5+ follow-on).
-run_check "META" "${SCRIPT_DIR}/test_qemu_smp_kprintln_stress.sh"
+run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_kprintln_stress.sh"
 
 # SM3.D.7 — cross-core deadlock-freedom stress (plan §6.3).  SKIPs at
 # SM3.D if the multi-core lock-contention driver isn't wired in the
@@ -60,7 +65,7 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_kprintln_stress.sh"
 # is established FORMALLY for all executions in
 # tests/DeadlockFreedomSuite.lean; this is a complementary runtime
 # spot-check on real hardware-modelled cores.
-run_check "META" "${SCRIPT_DIR}/test_qemu_smp_deadlock_stress.sh"
+run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_deadlock_stress.sh"
 
 # SM5.C.12 — cross-core wake-via-SGI round-trip (plan §6).  SKIPs at
 # SM5.C if the cross-core wake driver isn't wired in the kernel image
@@ -70,7 +75,7 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_deadlock_stress.sh"
 # established FORMALLY for all executions in tests/SmpWakeSuite.lean;
 # this is a complementary runtime spot-check on real cores with a real
 # GIC delivering the SGI.
-run_check "META" "${SCRIPT_DIR}/test_qemu_smp_wake.sh"
+run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_wake.sh"
 
 # SM5.D — per-core timer-tick boot test (plan §6).  SKIPs at SM5.D if the
 # per-core timer driver isn't wired in the kernel image (needs SM5.I
@@ -80,7 +85,7 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_wake.sh"
 # preempts on budget exhaustion, and fires cross-core CBS-replenish wakes —
 # is established FORMALLY for all executions in tests/SmpTimerSuite.lean;
 # this is a complementary runtime spot-check on real cores with a real GIC.
-run_check "META" "${SCRIPT_DIR}/test_qemu_smp_timer.sh"
+run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_timer.sh"
 
 # SM5.F — cross-core priority-inheritance round-trip test (plan §6).  SKIPs at
 # SM5.F if the cross-core PIP driver isn't wired in the kernel image (needs
@@ -92,7 +97,7 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_timer.sh"
 # boost happens-before the home core observes it on the SGI — is established
 # FORMALLY for all executions in tests/SmpPipSuite.lean; this is a complementary
 # runtime spot-check on real cores with a real GIC.
-run_check "META" "${SCRIPT_DIR}/test_qemu_smp_pip.sh"
+run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_pip.sh"
 
 # SM5.G — per-core domain-scheduling rotation test (plan §6).  SKIPs at SM5.G if
 # the per-core domain-rotation driver isn't wired in the kernel image (needs
@@ -104,7 +109,7 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_pip.sh"
 # leaves the others' selection unchanged — is established FORMALLY for all
 # executions in tests/SmpDomainSuite.lean; this is a complementary runtime
 # spot-check on real cores.
-run_check "META" "${SCRIPT_DIR}/test_qemu_smp_domain.sh"
+run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_domain.sh"
 
 # WS-SM SM5.H — per-core CBS replenishment + affinity-driven thread migration.
 # SKIP-only until SM5.I wires the per-core scheduler tick (driving timerTickOnCore
@@ -116,7 +121,7 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_domain.sh"
 # CBS affinity consistency, B7/A5) and emits the cross-core SGI under the verified
 # happens-before ordering (C10) — is established FORMALLY for all executions in
 # tests/SmpCbsSuite.lean; this is a complementary runtime spot-check on real cores.
-run_check "META" "${SCRIPT_DIR}/test_qemu_smp_cbs.sh"
+run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_cbs.sh"
 
 # WS-SM SM5.K.5 — the 4-thread/4-core per-core scheduler acceptance test (plan §6 /
 # §8).  SKIPs at SM5.K if the per-core scheduler run loop isn't wired in the kernel
@@ -128,7 +133,7 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_cbs.sh"
 # is established FORMALLY for all executions in tests/SmpSchedulerSuite.lean (the
 # 4-thread/4-core aggregate, 50+ scenarios + the golden trace fixture) and
 # tests/SmpWcrtSuite.lean; this is a complementary runtime spot-check on real cores.
-run_check "META" "${SCRIPT_DIR}/test_qemu_smp_scheduler.sh"
+run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_scheduler.sh"
 
 # WS-SM SM6.F.5 — the cross-core IPC handshake exerciser (plan §SM6.F).  SKIPs at
 # SM6.F if the cross-core IPC driver isn't wired in the kernel image (needs the
@@ -144,7 +149,7 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_scheduler.sh"
 # aggregates + the smp_ipc_4core golden trace fixture) and the per-phase SM6
 # suites; this is a complementary runtime spot-check on real cores with a real
 # GIC delivering the SGIs.
-run_check "META" "${SCRIPT_DIR}/test_qemu_smp_ipc.sh"
+run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_ipc.sh"
 
 # WS-SM SM7.B (plan Appendix A Tier-4): TLB shootdown round-trip — a core-0
 # unmap invalidating a translation core 1 has cached, through the live
@@ -156,7 +161,7 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_ipc.sh"
 # multi-pair witnesses), and the exact B.6 timeout verdict — is established
 # FORMALLY for all executions in tests/SmpTlbShootdownSuite.lean; this is a
 # complementary runtime spot-check with a real GIC delivering the SGIs.
-run_check "META" "${SCRIPT_DIR}/test_qemu_smp_shootdown.sh"
+run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_shootdown.sh"
 
 # WS-SM SM7.E.3 (plan §5 SM7.E / §7 risk inventory): the concurrent-unmap
 # stress — four cores issuing shootdown rounds inside one another's windows,
@@ -171,6 +176,6 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_shootdown.sh"
 # commute, so the model's one catch-up order stands for every hardware
 # interleaving); this is a complementary runtime spot-check under real
 # contention.
-run_check "META" "${SCRIPT_DIR}/test_qemu_smp_shootdown_stress.sh"
+run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_shootdown_stress.sh"
 
 finalize_report

@@ -24,8 +24,12 @@
 #   QEMU_TIMEOUT=120 ./scripts/test_qemu.sh  # Custom timeout (seconds)
 #
 # CI Integration:
-#   This script exits 0 if QEMU is not available (graceful skip for CI
-#   environments without QEMU). Set REQUIRE_QEMU=1 to force failure.
+#   A gate that cannot run certifies nothing, so an unavailable prerequisite
+#   (no QEMU, no cargo, no cross target, no kernel binary) exits
+#   SELE4N_SKIP_EXIT (77) — NOT 0.  Callers must invoke this through
+#   `run_gate_check`, which records the gate as NOT RUN; a plain `run_check`,
+#   or a direct call under `set -e`, will treat 77 as a failure.  Set
+#   REQUIRE_QEMU=1 to fail outright instead of skipping.
 
 set -euo pipefail
 
@@ -60,7 +64,7 @@ if ! command -v "${QEMU_BIN}" &>/dev/null; then
     if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
         echo "QEMU_TESTS_SKIPPED=true" >> "${GITHUB_OUTPUT}"
     fi
-    exit 0
+    exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 QEMU_VERSION=$("${QEMU_BIN}" --version | head -1)
@@ -69,7 +73,7 @@ log_section "META" "QEMU found: ${QEMU_VERSION}"
 # ── Rust cross-compilation target check ────────────────────────────────────
 if ! command -v cargo &>/dev/null; then
     log_section "META" "SKIP: cargo not found — cannot build kernel binary"
-    exit 0
+    exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 # Check if aarch64 target is installed
@@ -77,7 +81,7 @@ if ! rustup target list --installed 2>/dev/null | grep -q "${RUST_TARGET}"; then
     log_section "BUILD" "Installing Rust target: ${RUST_TARGET}"
     rustup target add "${RUST_TARGET}" 2>/dev/null || {
         log_section "META" "SKIP: Cannot install ${RUST_TARGET} target"
-        exit 0
+        exit "${SELE4N_SKIP_EXIT:-77}"
     }
 fi
 
@@ -96,13 +100,13 @@ if ! cargo build --release --target "${RUST_TARGET}" -p sele4n-hal 2>"${QEMU_BUI
     log_section "META" "SKIP: Cross-compilation failed (expected without aarch64 linker)"
     log_section "META" "       Configure .cargo/config.toml with linker for ${RUST_TARGET}"
     tail -10 "${QEMU_BUILD_LOG}"
-    exit 0
+    exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 cd "${REPO_ROOT}"
 
 if [[ ! -f "${KERNEL_BIN}" ]]; then
     log_section "META" "SKIP: Kernel binary not found at ${KERNEL_BIN}"
-    exit 0
+    exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 log_section "BUILD" "Kernel binary built: $(wc -c < "${KERNEL_BIN}") bytes"
