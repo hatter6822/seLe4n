@@ -118,19 +118,47 @@ _MODIFIERS = r"(?:@\[[^\]]*\]\s*|private\s+|protected\s+|nonrec\s+)*"
 # contrary to the completeness this gate exists to provide.
 _THEOREM = r"(?:theorem|lemma)"
 
-# `<inventory>_identifiers_nodup` — the discovery key.  Anchored at column 0
-# because every inventory witness is a top-level declaration.
+# A Lean identifier, and a possibly-qualified one.  A declaration may be
+# written under an explicit namespace prefix — `theorem Foo.xTheorems_count`
+# elaborates exactly like `theorem xTheorems_count` inside `namespace Foo` —
+# and a capture that stopped at the dot matched neither form, so the whole
+# inventory vanished from discovery while Tier 0 reported PASS.
+#
+# This is the third distinct declaration form to have slipped past this
+# pattern (`lemma`, then indentation, now qualification), so the fix is the
+# general one: match Lean's identifier grammar rather than enumerate the
+# spellings that happen to appear in the tree today.
+_IDENT = r"[A-Za-z_][A-Za-z0-9_'!?]*"
+_QUALIFIED = _IDENT + r"(?:\." + _IDENT + r")*"
+
+
+def _name_alternatives(inv: str) -> str:
+    """`Foo.xTheorems` -> `(?:Foo\.xTheorems|xTheorems)`.
+
+    A qualified witness may refer to its own inventory either way: written as
+    `theorem Foo.xTheorems_count : Foo.xTheorems.length = N` at the top level,
+    or as `xTheorems.length` from inside `namespace Foo`.  Both name the same
+    list, so both are accepted.
+    """
+    bare = inv.rsplit(".", 1)[-1]
+    if bare == inv:
+        return re.escape(inv)
+    return r"(?:" + re.escape(inv) + r"|" + re.escape(bare) + r")"
+
+
+# `<inventory>_identifiers_nodup` — the discovery key.
 NODUP_RE = re.compile(
-    r"^" + _LEAD + _MODIFIERS + _THEOREM + r"\s+([A-Za-z_][A-Za-z0-9_'!?]*)_identifiers_nodup\b",
+    r"^" + _LEAD + _MODIFIERS + _THEOREM + r"\s+(" + _QUALIFIED + r")_identifiers_nodup\b",
     re.M,
 )
 
 
 def _count_re(inv: str) -> re.Pattern[str]:
     """`theorem <inv>_count : <inv>.length = N` — statement may wrap a line."""
+    alt = _name_alternatives(inv)
     return re.compile(
-        r"^" + _LEAD + _MODIFIERS + _THEOREM + r"\s+" + re.escape(inv) + r"_count\b\s*:\s*"
-        r"(?:\r?\n\s*)?" + re.escape(inv) + r"\.length\s*=\s*(\d+)",
+        r"^" + _LEAD + _MODIFIERS + _THEOREM + r"\s+" + alt + r"_count\b\s*:\s*"
+        r"(?:\r?\n\s*)?" + alt + r"\.length\s*=\s*(\d+)",
         re.M,
     )
 
@@ -163,18 +191,25 @@ def discover_in(sources: dict[str, str]) -> tuple[dict[str, dict[str, object]], 
     errors: list[str] = []
     for rel, src in sources.items():
         for m in NODUP_RE.finditer(src):
-            inv = m.group(1)
+            written = m.group(1)
+            # The manifest claims an inventory by its bare name, so that is the
+            # key.  Two inventories whose qualified names share a final
+            # component therefore collide here — and that collision is an
+            # error rather than something to disambiguate, because the
+            # manifest's `inventories : List String` could not tell them apart
+            # either.  It is reported by the duplicate branch below.
+            inv = written.rsplit(".", 1)[-1]
             if inv in found:
                 errors.append(
                     f"inventory {inv!r} declared in two modules: "
                     f"{found[inv]['module']} and {rel}"
                 )
                 continue
-            cm = _count_re(inv).search(src)
+            cm = _count_re(written).search(src)
             if cm is None:
                 errors.append(
-                    f"inventory {inv!r} ({rel}) has {inv}_identifiers_nodup but no "
-                    f"readable size witness `theorem {inv}_count : {inv}.length = N`"
+                    f"inventory {inv!r} ({rel}) has {written}_identifiers_nodup but no "
+                    f"readable size witness `theorem {written}_count : {written}.length = N`"
                 )
                 continue
             found[inv] = {"module": rel, "count": int(cm.group(1))}
@@ -737,6 +772,35 @@ def _self_test() -> int:
     check("swapped phase labels are caught",
           any("labelled 'SM1' but belongs to 'SM0'" in e for e in errs)
           and any("labelled 'SM0' but belongs to 'SM1'" in e for e in errs),
+          "; ".join(errs))
+
+    # 20. Lean accepts a qualified declaration name at the top level, so an
+    #     inventory whose witnesses are written `theorem Foo.xTheorems_count`
+    #     is a real inventory.  A capture that stopped at the dot matched
+    #     neither form and the inventory vanished, unclaimed, with the gate
+    #     reporting PASS.  (Codex review round 3, PR #882 — reproduced with
+    #     the reviewer's own four-entry `Foo.xTheorems` fixture.)
+    src = dict(_CLEAN_SOURCES)
+    src["H.lean"] = (
+        "theorem Foo.xTheorems_identifiers_nodup : True := trivial\n"
+        "theorem Foo.xTheorems_count : Foo.xTheorems.length = 4 := by decide\n")
+    _, errs = _run(src, _CLEAN_MANIFEST)
+    check("a qualified witness is discovered",
+          any("'xTheorems'" in e and "claimed by no" in e for e in errs),
+          "; ".join(errs))
+
+    # 21. The same inventory written the other legal way: the witness carries
+    #     the namespace but the list is named bare, as it would be from inside
+    #     `namespace Foo`.  Both spellings name one list, so both must resolve
+    #     to the same inventory rather than one of them reading as sizeless.
+    src = dict(_CLEAN_SOURCES)
+    src["I.lean"] = (
+        "theorem Foo.yTheorems_identifiers_nodup : True := trivial\n"
+        "theorem yTheorems_count : yTheorems.length = 6 := by decide\n")
+    _, errs = _run(src, _CLEAN_MANIFEST)
+    check("a qualified witness finds its bare size witness",
+          any("'yTheorems'" in e and "claimed by no" in e for e in errs)
+          and not any("no readable size witness" in e for e in errs),
           "; ".join(errs))
 
     failed = [c for c in cases if not c[1]]

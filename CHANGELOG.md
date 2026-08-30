@@ -1,3 +1,58 @@
+## v0.34.29 — a plan that lists what a registry already knows; Codex review round 3
+
+Three findings on PR #882, all verified, all real.  One is the third
+declaration form to slip past the same regex; two are plans that carry a copy
+of something a machine already computes.
+
+**The third missed declaration form.**  Lean accepts a qualified name at the
+top level — `theorem Foo.xTheorems_identifiers_nodup` elaborates exactly like
+the same declaration written inside `namespace Foo` — and the discovery
+capture stopped at the dot, so the inventory vanished and could stay claimed
+by no phase while Tier 0 reported PASS.  That is the third distinct form to
+have slipped past this pattern: `lemma` (round 1), indentation (round 2),
+qualification (round 3).  Three rounds of the same shape is a signal about the
+approach, not about the instance, so this cut matches **Lean's identifier
+grammar** — `_IDENT`, `_QUALIFIED` — rather than enumerating the spellings
+that happen to appear in the tree.  A qualified inventory's size witness is
+accepted under either spelling (`Foo.xTheorems.length` or, from inside the
+namespace, `xTheorems.length`), since both name one list; it is keyed on the
+bare name, because that is what the manifest claims, and two qualified names
+sharing a final component collide into the existing duplicate error rather
+than being silently disambiguated — the manifest's `inventories : List
+String` could not tell them apart either.
+
+Two new self-test witnesses, both mutation-tested, the first built from the
+reviewer's own four-entry `Foo.xTheorems` fixture.  23 witnesses total.
+
+**RR7.5 budgeted work that RR0.4 had already done.**  Its row still counted
+the false §1 phase goal among its findings, though this very cut corrected it
+at v0.34.26 — so the 154-sub-task schedule and RR7's acceptance total both
+overstated remaining work.  Chasing it found the half the review did not
+reach: the SM10 sub-phase **re-sequencing**, which the debt register routes to
+RR7.5, was never listed in RR7.5's own row.  The register cited a target that
+did not describe the item.  The row now names what it actually owns — the
+re-sequence and the `contextRestoreSeamLive` prerequisites — records the phase
+goal as closed, and is re-sized S → L, a 532-citation re-sequence not being a
+small edit.  The finding count stays 2, so no acceptance total moves.
+
+**§4 listed the version sites by hand.**  The list had drifted in both
+directions at once: 10 i18n locales where the registry carries 11 (each
+contributing two sites), all three GitBook sites missing, the four per-crate
+`Cargo.toml`s listed though they hold `version.workspace = true` and no
+literal version, and four non-sites listed as sites — `CHANGELOG.md`,
+`DEVELOPMENT.md`, `CLAIM_EVIDENCE_INDEX.md` and `check_version_sync.sh`
+itself.  Following it literally fails the gate.  The remedy is not a corrected
+list: a second copy of a registry can only drift again, which is the same
+defect as the hand-summed theorem total this workstream opened by removing.
+§4 now names `scripts/version_locations.sh` as the authority, gives the
+command that prints the live count, and keeps only what the bumper genuinely
+cannot do — the CHANGELOG entry, the WS-SM status transition, the closure
+entries, the metrics regeneration.  The two other sites quoting "25 files"
+were corrected the same way.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
 ## v0.34.28 — one declaration, two registrations; Codex review round 2
 
 Three findings on PR #882, all verified against the tree, all real, all in the
