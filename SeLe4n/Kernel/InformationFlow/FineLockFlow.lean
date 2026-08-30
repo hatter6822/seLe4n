@@ -3033,7 +3033,7 @@ row for each sits in `docs/WORKSTREAM_HISTORY.md`. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
   [(.schedulerDomain, "WS-RR RR7.7 (fine-lock Track C)"),
    (.dynamicPipChain, "WS-RR RR7.7 (fine-lock Track C)"),
-   (.queueOwnershipProtocol, "WS-RR RR7.7 (fine-lock Track B)"),
+   (.queueOwnershipProtocol, "WS-RR RR7.32"),
    (.capTransferReceiverCnode, "WS-RR RR7.7 (fine-lock Track B)"),
    (.taintTablePerKeyStore, "SM10.E (fine-lock Track D)"),
    (.cdtNodeAllocation, "WS-RR RR7.7 (fine-lock Track B)")]

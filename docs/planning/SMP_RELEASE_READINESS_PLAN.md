@@ -7,7 +7,7 @@
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 154 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 155 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -147,7 +147,7 @@ Nothing else may overlap without re-reading the dependency list above.
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
 | RR5 | Boot-path fail-open closure | 14 | M–L |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 | L |
-| RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 31 | M |
+| RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 32 | M |
 | RR8 | Phase closure and hand-off to SM10 | 5 | S |
 
 ## 5. Sub-tasks
@@ -461,9 +461,11 @@ then the corollary, then the switch.
 
 Every confirmed medium finding, batched so each PR touches one subsystem,
 plus the §7 low-severity rows whose remedy is code rather than prose.
-**65 findings**: the 46 in the register's §6 table, the four §4 rows
-RR7.1–RR7.4 that are remediation work rather than security fixes, and the 15
-§7 rows RR0.11's triage routed here (RR7.27–RR7.31). Every other
+**66 findings**: the 46 in the register's §6 table, the four §4 rows
+RR7.1–RR7.4 that are remediation work rather than security fixes, the 15
+§7 rows RR0.11's triage routed here (RR7.27–RR7.31), and the one uncovered
+lock domain the RR0 review round found with no owner that would close it
+(RR7.32). Every other
 §4 item is owned by the phase carrying its siblings — the unhandled VM-fault
 loop and the fault-return ABI convention by RR4, the cancellation-NI hypothesis
 by RR2, the RwLock/Rust refinement gap by RR6, the `suspend_thread_inner`
@@ -509,8 +511,9 @@ acceptance gate below can actually be checked against the work list.
 | RR7.29 | Gate coverage the claims assume (§7): the nine `dev_history` cross-references still in production sources plus the gate that would enforce their absence; the three declared `lean_exe` targets no gate compiles; the SMP-M1 surface difference no gate or phase owns; and the documentation-metrics sync, which covers two files while the sync matrix claims the transitive set — eleven i18n READMEs and four GitBook chapters carry `v0.33.101`-era metrics | 4 | M |
 | RR7.30 | Boot-core-pinned thread-state classification (§7): `inferThreadState` / `syncThreadStates` / `threadStateConsistent` read `bootCoreId`, so a thread running on a secondary core classifies as `.Inactive` | 1 | M |
 | RR7.31 | Test-surface corrections (§7): the D-1 admission-order `decide` fixtures the RwLock gate asks for and the suite lacks; the `r4a_`/`r4c_` test identifiers that encode sub-task codes against the plan's own self-certified naming rule; and the vacuous `trap.rs` SVC test with its stale "pre-FFI stub" prose | 3 | M |
+| RR7.32 | Splice-neighbour queue ownership (`UncoveredLockDomain.queueOwnershipProtocol`): `queueOwnership_violated_by_tcbSetPriority` states the violation as a `¬`, and the domain had no owner that would close it — RR0.9 pointed it at RR7.7's fine-lock Track B, which closes `capTransferReceiverCnode` and `cdtNodeAllocation` but never touches splice neighbours.  Either extend the `tcbSetPriority` footprint to declare the queue-owning locks, or hold the endpoint lock across the splice; the `UncoveredLockDomain` entry is deleted only when the domain is actually covered | 1 | M |
 
-**Acceptance**: all **65** findings this phase owns — the 46 in the register's
+**Acceptance**: all **66** findings this phase owns — the 46 in the register's
 §6 table, the four §4 items in RR7.1–RR7.4, and the 15 §7 rows RR0.11's triage
 routed here (RR7.27–RR7.31) — are closed or carry an explicit, registered
 deferral with a closure target. A medium may be deferred; it may not be

@@ -23,7 +23,7 @@ The pre-SM10 completeness audit (`docs/planning/UNFINISHED_SMP_WORK.md`,
 audited at v0.34.3) found the project not ready to begin SM10: three findings
 block starting it, SM10's §1 scope statement is false against the tree, and a
 set of fail-open latents become reachable exactly when the boot path goes live.
-WS-RR closes that work first — 154 sub-tasks across RR0..RR8, planned in
+WS-RR closes that work first — 155 sub-tasks across RR0..RR8, planned in
 [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
 See the **WS-RR** section below for the phase table and the three blockers.
 
@@ -7228,6 +7228,7 @@ constrains what v1.0.0 may claim, and RR8.4's hand-off check reads this table.
 | SM9.D.11 — taint propagation at capability transfer shipped as a scope reduction, leaving `capabilityBadgeChannel_out_of_scope`: a registered false-negative channel in the causal detector | A false *negative* in a detector, not a policy bypass | post-v1.0.0; RR0.11 routes the plan-side row |
 | The SM8 class-C follow-on: the CC-1 capacity figure is stated in two places rather than single-sourced | Cosmetic duplication of a bound both sites agree on | post-v1.0.0 |
 | ARM CCA + MPAM hardware partition isolation | Targets a successor SoC; not RPi5 | [`docs/planning/HARDWARE_PARTITION_ISOLATION_PLAN.md`](planning/HARDWARE_PARTITION_ISOLATION_PLAN.md), unscheduled |
+| **R-ABI-L6** — cross-crate duplication of `MAX_METHOD_COUNT`, `MAX_PRIORITY`, `MAX_DOMAIN` and `MAX_SERVICE_MESSAGE_SIZE` between `sele4n-abi` (limits) and `sele4n-types` (identifiers + error enums) | Duplication, not divergence — the values agree and the ABI conformance tests compare them; the risk is that a future edit changes one copy | post-v1.0.0 hardening.  Recorded in [`docs/AUDIT_NOTES.md`](AUDIT_NOTES.md) §R-ABI-L6, which declared itself untracked and is the one v0.29.0 R-ABI item still open — L3, L4, L5, L7 and L8 record settled decisions, not deferrals.  Found during the RR0 review round (v0.34.31), not by the pre-SM10 audit |
 | The 23 in-source post-1.0 hardening candidates enumerated below | Each is a strengthening of a surface that is already correct; none is a soundness gap | post-v1.0.0 hardening, listed individually so none ages out with its comment |
 | `crossSubsystemFieldSets` lists 11 field-sets while `crossSubsystemInvariant` has **12** conjuncts: `untypedRegionsDisjoint` was appended without a matching `_fields` entry, so the pairwise disjointness analysis and every frame lemma derived from it cover 11 of the 12 | Incompleteness, not unsoundness — the uncovered predicate simply gets no frame lemma, so proofs needing it establish it directly; nothing false is proved | post-v1.0.0; closing it means adding `untypedRegionsDisjoint_fields` and redoing the analysis over C(12,2) = 66 pairs.  Found during the RR0 review round (v0.34.27), not by the pre-SM10 audit |
 
@@ -7287,7 +7288,7 @@ path goes live. WS-RR closes that work first, so SM10 can be the release-closure
 phase it was scoped as. **SM10 is BLOCKED on WS-RR** and must not open until
 RR8 closes.
 
-154 sub-tasks across nine phases, numbered in execution order:
+155 sub-tasks across nine phases, numbered in execution order:
 
 | Phase | Scope | Subs |
 |-------|-------|------|

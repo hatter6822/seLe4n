@@ -8,7 +8,7 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 It is aligned to the **current project state**:
 
 - **active workstream:** **WS-RR (SMP Release Readiness) IN FLIGHT — the
-  pre-SM10 remediation, 154 sub-tasks across RR0..RR8; **RR0 landed at
+  pre-SM10 remediation, 155 sub-tasks across RR0..RR8; **RR0 landed at
   v0.34.26** (registration and plan correction).  SM10 is BLOCKED on it
   and must not open until RR8 closes**; the pre-SM10 completeness audit found
   three findings that block starting SM10, a false scope statement in its own

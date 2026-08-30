@@ -1,3 +1,59 @@
+## v0.34.31 — four things may precede a `theorem`; stop enumerating them
+
+Four findings on PR #882, all verified, all real.  Three are registration
+defects in RR0's own deliverable; the fourth shows the round-3 "general fix"
+was only half general.
+
+**Nothing is matched to the left of the declaration keyword now.**  Lean
+accepts `set_option maxRecDepth 1000 in theorem foo …` on one line, and the
+matcher required the keyword after leading whitespace, so such an inventory
+was invisible and could stay claimed by no phase with Tier 0 reporting PASS.
+That is the *fourth* legal prefix to defeat this pattern — `private`/`@[simp]`
+modifiers, indentation, qualification, and now a scoped command — and round 3
+claimed to have generalised it while only generalising the *identifier* half.
+The prefix half stayed an enumeration, and the list is open-ended (`open X
+in`, attributes, any future combinator).  So discovery keys on the token pair
+— declaration keyword followed by name — wherever it occurs, and matches
+nothing to its left.  A false positive here is fail-*closed*: a phantom
+inventory no phase claims is a loud error, never a silent pass, and that
+asymmetry is what makes the permissive pattern the safe one.  The two
+module-level total markers carried the same exposure and got the same
+treatment; a wrapped marker read as absent, and an absent marker is not
+compared against anything.  Two witnesses, both mutation-tested; 25 total.
+
+**One uncovered lock domain had an owner that would never close it.**  RR0.9
+re-pointed `UncoveredLockDomain.queueOwnershipProtocol` at RR7.7's fine-lock
+Track B, which is titled for and scoped to `capTransferReceiverCnode`: its
+PRs add the receiver-CNode footprint, prove `ipcUnwrapCaps` coverage and cover
+CDT-writing CSpace operations, and touch splice neighbours nowhere.  A closure
+target that cannot delete the entry is worse than none, because it reads as
+tracked.  Now **RR7.32**, a numbered row naming both candidate remedies —
+extend the `tcbSetPriority` footprint, or hold the endpoint lock across the
+splice.  WS-RR 154 → 155 sub-tasks, RR7 31 → 32, acceptance 65 → 66, synced
+across the plan, `WORKSTREAM_HISTORY.md`, `DEVELOPMENT.md`, `CLAUDE.md` and
+`AGENTS.md`.
+
+**A plan the RR0 cut certified as having a status header did not have one.**
+`SMP_FOUNDATIONS_PLAN.md`'s only `> **Status**` sits inside a fenced
+edit-pattern example describing a line to add to a *different* plan, so the
+claim "every plan carries a status header" was false for it and status
+discovery could read quoted instructions as the plan's own state.  It now
+carries a real header (CLOSED, v0.31.3).  Re-swept all plans: the two others
+without a blockquote header carry the `**Status**:` form and were never
+missing one.
+
+**The register omitted the one v0.29.0 R-ABI item still open.**  R-ABI-L6 —
+cross-crate duplication of `MAX_METHOD_COUNT`, `MAX_PRIORITY`, `MAX_DOMAIN`
+and `MAX_SERVICE_MESSAGE_SIZE` — declared in `docs/AUDIT_NOTES.md` that no
+active plan tracked it, and a repo-wide search confirmed it.  RR0.9 swept the
+in-source Lean deferrals and did not sweep the docs.  Registered in table C
+with owner and closure target; the note now points at the register instead of
+declaring itself untracked.  Checked its seven siblings: L3, L4, L5, L7 and L8
+record settled decisions, not deferrals, so L6 was the only miss.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR0
+Refs: #882
+
 ## v0.34.30 — the fix that widened a match too far; Codex review round 4
 
 One finding, and it is a regression `v0.34.29` introduced one commit earlier.

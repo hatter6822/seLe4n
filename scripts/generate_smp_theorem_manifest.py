@@ -97,19 +97,27 @@ EXPECTED_PHASE_CODES = {
 }
 PHASE_CODES = list(EXPECTED_PHASE_CODES.values())
 
-# A declaration's leading modifiers.  Matching them is not cosmetic: keying
-# discovery on a bare `^theorem` would let `private theorem
-# fooTheorems_identifiers_nodup` hide a whole inventory from this gate while
-# Lean elaborated it happily — a fail-open in the one direction that matters,
-# since an inventory the gate cannot see is an inventory no phase has to claim.
-# Lean accepts a top-level declaration at any indentation — `theorem foo …`
-# nested two spaces inside a `namespace` block elaborates exactly like an
-# unindented one.  Anchoring discovery at a bare `^` therefore made the
-# completeness guarantee depend on FORMATTING: indent an inventory's witnesses
-# and it vanishes from the gate while Tier 0 still reports PASS.  Verified
-# against the elaborator, not assumed.
-_LEAD = r"[ \t]*"
-_MODIFIERS = r"(?:@\[[^\]]*\]\s*|private\s+|protected\s+|nonrec\s+)*"
+# **Nothing is matched to the left of the declaration keyword.**
+#
+# Four review rounds found four different things that may legally precede
+# `theorem`, and each defeated a pattern that tried to enumerate them: a
+# `private` / `@[simp]` modifier, leading indentation, a qualified name, and
+# `set_option maxRecDepth 1000 in theorem …` on one line.  Every one was the
+# same fail-open — an inventory the gate cannot see is an inventory no phase
+# has to claim, so it stays unclaimed while Tier 0 reports PASS.
+#
+# Enumerating prefixes is what kept failing, and the list is open-ended:
+# `open X in`, attributes, `set_option … in`, `@[…] private`, any future
+# combinator.  So discovery keys on the *token pair* — declaration keyword
+# followed by the name — wherever it appears, and matches nothing to its left.
+# The lookbehind exists only to stop `theorem` being read out of the tail of a
+# longer identifier; Lean identifiers may contain `'`, `!` and `?`, which
+# `\b` alone would not exclude.
+#
+# A false positive here is fail-*closed*: a phantom inventory that no phase
+# claims is a loud error, never a silent pass.  That asymmetry is what makes
+# the permissive pattern the safe one.
+_DECL_START = r"(?<![A-Za-z0-9_'!?.])"
 
 # Lean accepts `lemma` wherever it accepts `theorem`, and this repository uses
 # both.  Keying discovery on `theorem` alone made a `lemma`-declared witness
@@ -134,7 +142,7 @@ _QUALIFIED = _IDENT + r"(?:\." + _IDENT + r")*"
 
 # `<inventory>_identifiers_nodup` — the discovery key.
 NODUP_RE = re.compile(
-    r"^" + _LEAD + _MODIFIERS + _THEOREM + r"\s+(" + _QUALIFIED + r")_identifiers_nodup\b",
+    _DECL_START + _THEOREM + r"\s+(" + _QUALIFIED + r")_identifiers_nodup\b",
     re.M,
 )
 
@@ -158,7 +166,7 @@ def _count_re(inv: str) -> re.Pattern[str]:
     """
     name = re.escape(inv)
     return re.compile(
-        r"^" + _LEAD + _MODIFIERS + _THEOREM + r"\s+" + name + r"_count\b\s*:\s*"
+        _DECL_START + _THEOREM + r"\s+" + name + r"_count\b\s*:\s*"
         r"(?:\r?\n\s*)?" + name + r"\.length\s*=\s*(\d+)",
         re.M,
     )
@@ -253,12 +261,12 @@ PHASE_CTOR_RE = re.compile(r"\.([A-Za-z][A-Za-z0-9]*)")
 # `PhaseTheoremManifest.lean`, not here — this gate reads it only to confirm it
 # is not larger than the entry total, which would be incoherent on its face.
 TOTAL_RE = re.compile(
-    r"^" + _LEAD + _MODIFIERS + _THEOREM + r"\s+smp_inventoried_entry_count\s*:\s*"
+    _DECL_START + _THEOREM + r"\s+smp_inventoried_entry_count\s*:\s*"
     r"smpInventoriedEntryCount\s*=\s*(\d+)",
     re.M,
 )
 THEOREM_TOTAL_RE = re.compile(
-    r"^" + _LEAD + _MODIFIERS + _THEOREM + r"\s+smp_inventoried_theorem_count\s*:\s*"
+    _DECL_START + _THEOREM + r"\s+smp_inventoried_theorem_count\s*:\s*"
     r"smpInventoriedTheoremCount\s*=\s*(\d+)",
     re.M,
 )
@@ -809,6 +817,36 @@ def _self_test() -> int:
           any("no readable size witness" in e for e in errs)
           and not any("9999" in str(built) for _ in [0]),
           "; ".join(errs))
+
+    # 24. `set_option … in theorem …` on one line.  Lean accepts a scoped
+    #     command prefix before a declaration, and it is the fourth legal
+    #     thing found to precede `theorem` after modifiers, indentation and
+    #     qualification.  Enumerating prefixes is what kept failing, so the
+    #     matcher now reads nothing to the left of the keyword; this witness
+    #     pins that.  (Codex review round 5, PR #882 — the reviewer's own
+    #     `set_option maxRecDepth 1000 in` reproduction.)
+    src = dict(_CLEAN_SOURCES)
+    src["J.lean"] = (
+        "set_option maxRecDepth 1000 in theorem zTheorems_identifiers_nodup : "
+        "True := trivial\n"
+        "set_option maxRecDepth 1000 in theorem zTheorems_count : "
+        "zTheorems.length = 4 := by decide\n")
+    _, errs = _run(src, _CLEAN_MANIFEST)
+    check("a set_option-wrapped witness is discovered",
+          any("'zTheorems'" in e and "claimed by no" in e for e in errs),
+          "; ".join(errs))
+
+    # 25. The module-level total markers are matched by the same machinery and
+    #     carry the same exposure: a wrapped `smp_inventoried_theorem_count`
+    #     would read as absent, and an absent marker is not compared against
+    #     the measured total at all.
+    wrapped = _CLEAN_MANIFEST.replace(
+        "theorem smp_inventoried_theorem_count : smpInventoriedTheoremCount = 3",
+        "set_option maxRecDepth 1000 in theorem smp_inventoried_theorem_count : "
+        "smpInventoriedTheoremCount = 99")
+    _, errs = _run(dict(_CLEAN_SOURCES), wrapped)
+    check("a wrapped total marker is still read",
+          any("99" in e for e in errs), "; ".join(errs))
 
     failed = [c for c in cases if not c[1]]
     for name, ok, detail in cases:
