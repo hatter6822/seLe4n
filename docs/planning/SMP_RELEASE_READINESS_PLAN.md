@@ -189,15 +189,16 @@ first thing that links and boots them.
 | RR1.2 | Run `cargo check --target aarch64-unknown-none -p sele4n-hal --features hw_target` **from `rust/`** and record the complete error inventory — this is the diagnostic pass, not a green gate; `rust-toolchain.toml` lives under `rust/`, so rustup's directory override selects the pinned toolchain only inside it, and `--manifest-path` from the repo root silently uses the default toolchain that RR1.1 never added the target to | `rust/sele4n-hal/` | M |
 | RR1.3 | Fix what it surfaces in the cfg-gated blocks | (same) | L |
 | RR1.4 | Fix what it surfaces in the `asm!` sites | (same) | L |
-| RR1.5 | The cross target now **builds**: `cargo build --target aarch64-unknown-none` is clean from `rust/`, with the RR1.2 inventory discharged. `cargo check` stops before code generation, so it never reaches the backend and cannot surface an `asm!` or codegen error — the diagnostic pass uses `check` for speed, but the gate must be a real build | `rust/sele4n-hal/` | M |
+| RR1.5 | The cross target now **builds**: `cargo build --target aarch64-unknown-none -p sele4n-hal --features hw_target` is clean from `rust/`, with the RR1.2 inventory discharged. **`--features hw_target` is not optional here**: the feature is empty by default and guards the hardware-only paths — the Lean calls in `timer.rs`, `trap.rs` and `smp.rs` — so a build without it compiles none of the code this phase exists to cover, and later regressions in exactly those cfg-gated blocks would merge with the aarch64 gate green. `cargo check` stops before code generation, so it never reaches the backend and cannot surface an `asm!` or codegen error — the diagnostic pass uses `check` for speed, but the gate must be a real build | `rust/sele4n-hal/` | M |
 | RR1.6 | Assemble the three `.S` files under the cross target | `rust/sele4n-hal/build.rs` | M |
-| RR1.7 | CI job running the aarch64 **build** on every PR (not `check`, for the codegen-coverage reason in RR1.5) | `.github/workflows/` | M |
+| RR1.7 | CI job running `cargo build --target aarch64-unknown-none -p sele4n-hal --features hw_target` on every PR — a build not a `check`, for the codegen reason in RR1.5, and with the feature named, since without it the job compiles none of the hardware-only paths and stays green through a regression in them | `.github/workflows/` | M |
 | RR1.8 | Tier 0 check that the cross target stays configured, so it cannot be silently dropped | `scripts/test_tier0_hygiene.sh` | S |
 | RR1.9 | Implement the Tier-0 grep gate banning non-IS TLBI that `SMP_RUST_HAL_PLAN.md` §4.4 claims exists — a high finding that no other phase owns, and Rust HAL hygiene like the rest of this phase | `scripts/test_tier0_hygiene.sh` | M |
 | RR1.10 | Record the measured aarch64 surface in the register — the input the next sub-task consumes | `docs/planning/UNFINISHED_SMP_WORK.md` | S |
 | RR1.11 | Revise SM10's calendar estimate from that measurement, replacing the plan's 4–6 week guess with a figure derived from the real aarch64 surface | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` | S |
 
-**Acceptance**: `cargo build` for aarch64 passes in CI — a real code
+**Acceptance**: `cargo build --target aarch64-unknown-none -p sele4n-hal
+--features hw_target` passes in CI — a real code
 generation over all 60 `asm!` sites, not a type-check that stops before the
 backend; the `.S` files assemble; SM10.E's estimate is derived from a real
 compile rather than a guess.
@@ -499,8 +500,8 @@ strength of the §6 table alone.
 | RR8.1 | Walk the RR0..RR7 acceptance gates and record the closing version for each | (1 file) | S |
 | RR8.2 | Update `UNFINISHED_SMP_WORK.md`: mark each closed finding with its version, leaving open items visible | `docs/planning/UNFINISHED_SMP_WORK.md` | M |
 | RR8.3 | Retire the RR0.3 standing constraint from `CLAUDE.md` and `AGENTS.md` once RR3 has closed — it says two conjuncts remain threaded and `ipcInvariantFull` is not end-to-end checked, which becomes false at RR3.16 and would otherwise misdirect every later contributor | `CLAUDE.md`, `AGENTS.md` | S |
-| RR8.4 | WS-RR closure entry in `docs/WORKSTREAM_HISTORY.md`; update the CLAUDE.md phase table | (3 files) | S |
-| RR8.5 | Hand-off: confirm SM10's §2 dependencies are genuinely met, and that its §1 scope statement now matches the tree | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` | S |
+| RR8.4 | Hand-off check **before** the closure entry: confirm SM10's §2 dependencies are genuinely met and its §1 scope statement matches the tree. Ordered first deliberately — each row may land as its own PR, so recording closure first would advertise the workstream complete for an intervening release, and an unmet dependency found afterwards would have to be retracted rather than simply fixed | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` | S |
+| RR8.5 | WS-RR closure entry in `docs/WORKSTREAM_HISTORY.md`; update the CLAUDE.md phase table — last, on evidence RR8.4 established | (3 files) | S |
 
 ## 6. Verification strategy
 
@@ -565,7 +566,8 @@ PASS — the contract landed at `v0.34.2` and pinned by
 - [ ] Every kernel seam consults the readiness gate.
 - [ ] The deployed RwLock is the one the Lean spec describes.
 - [ ] Neither lock refinement theorem assumes its own conclusion.
-- [ ] aarch64 `cargo build` runs in CI and passes (a build, not a `check`:
+- [ ] aarch64 `cargo build` **with `--features hw_target`** runs in CI and
+      passes (a build, not a `check`:
       `check` never reaches code generation, so it cannot cover the `asm!` sites).
 - [ ] Every medium finding is closed or has a registered deferral.
 - [ ] Tier 0..3 green at HEAD; Tier 4 honest about what did not run.

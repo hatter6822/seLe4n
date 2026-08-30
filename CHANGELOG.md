@@ -1,3 +1,45 @@
+## v0.34.19 — the new gate could be blinded by deleting the plan; Codex review round 14
+
+**The gate had the flaw it exists to prevent.** `check_workstream_plan.py`
+enumerated plans with a working-tree `glob` while reading their content from
+the git index. Stage a plan's deletion and the glob stops finding it, so its
+prefix is never checked and every companion still citing its sub-tasks passes
+Tier 0 — a scanner that under-reaches, silently, which is the failure mode its
+own witness suite was written to catch. It caught the parsing defects and
+missed the enumeration one.
+
+Enumeration now comes from the index (`git ls-files`), and a plan present in
+`HEAD` but absent from the index is inspected before it disappears: deleting a
+plan while its sub-tasks are still cited is rejected, because the deletion
+removes the only definition of those IDs in the same commit that would hide it.
+Replayed against the real repository — staging the WS-RR plan's deletion now
+reports nine outstanding citations across the register, the history and
+`CLAUDE.md`.
+
+The witness for it builds a throwaway git repository, commits a plan and a
+citation, stages the deletion and requires the error; a fixture string cannot
+exercise how plans are *enumerated*. Confirmed real by reverting the fix — the
+witness fails, and passes again once restored. Two earlier drafts of this
+witness asserted things that were true whether or not the fix was present;
+they were discarded rather than shipped.
+
+**The permanent aarch64 gate compiled none of the code RR1 exists to cover.**
+RR1.2's diagnostic runs `-p sele4n-hal --features hw_target`, but the gate at
+RR1.5, the CI job at RR1.7, the §7 verification and the §8 checkbox all said
+plain `cargo build`. `hw_target` is empty by default and guards the
+hardware-only paths — the Lean calls in `timer.rs`, `trap.rs`, `smp.rs` — so
+the advertised gate would stay green through a regression in exactly the
+cfg-gated blocks it was added to cover. All four sites now name the feature.
+
+**RR8 advertised closure before checking it.** RR8.4 wrote the WS-RR closure
+entry and RR8.5 then confirmed SM10's dependencies were met. Since each row may
+land as its own PR, an unmet dependency found at RR8.5 would have to be
+retracted from the canonical history rather than simply fixed. Swapped: the
+hand-off check is now RR8.4 and the closure entry RR8.5, recorded on evidence
+rather than ahead of it.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §5 (RR1, RR8)
+
 ## v0.34.18 — four sub-tasks that could not have done what they said; Codex review round 12
 
 The first round whose findings are entirely about plan *content* rather than

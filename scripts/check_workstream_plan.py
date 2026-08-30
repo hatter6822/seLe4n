@@ -165,10 +165,56 @@ def check_plan(rel: str, text: str, companions: dict[str, str]) -> list[str]:
 HEADER_RANGE = re.compile(r"^>\s*\*\*Sub-task count\*\*:", re.M)
 
 
+def list_tracked(ref: str) -> list[str]:
+    """Plans as `ref` sees them.  Enumerating the working tree instead would
+    make a plan staged for deletion invisible: the glob would not find it, so
+    its prefix would never be checked and a companion still citing its
+    sub-tasks would pass.  The gate reads the index for content, so it must
+    enumerate from the index too."""
+    cmd = (["git", "ls-files", "--", "docs/planning/*.md"] if ref == ":"
+           else ["git", "ls-tree", "-r", "--name-only", ref, "--", "docs/planning/"])
+    try:
+        out = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True,
+                             check=True).stdout
+    except subprocess.CalledProcessError:
+        return []
+    return sorted(x for x in out.splitlines() if x.endswith(".md"))
+
+
+def read_at(ref: str, rel: str) -> str | None:
+    try:
+        return subprocess.run(["git", "show", f"{ref}{rel}" if ref == ":" else f"{ref}:{rel}"],
+                              cwd=REPO, capture_output=True, text=True, check=True).stdout
+    except subprocess.CalledProcessError:
+        return None
+
+
+def deleted_plan_errors(companions: dict[str, str]) -> list[str]:
+    """A plan may not be deleted while its sub-tasks are still cited.  Removing
+    the plan removes the only definition of those IDs, so every citation to it
+    becomes dangling in the same commit that hides it from the gate."""
+    errors = []
+    gone = set(list_tracked("HEAD")) - set(list_tracked(":"))
+    for rel in sorted(gone):
+        body = read_at("HEAD", rel)
+        if not body or not HEADER_TOTAL.search(body):
+            continue
+        rows = list(SUBTASK_ROW.finditer(body))
+        if not rows:
+            continue
+        prefix = rows[0].group(1)
+        ref = re.compile(r"\b" + prefix + r"(\d+)\.(\d+)\b")
+        for where, text in companions.items():
+            for a, b in sorted({(x, y) for x, y in ref.findall(text)}):
+                errors.append(
+                    f"{where}: cites {prefix}{a}.{b}, but this change deletes "
+                    f"{rel}, which is where that sub-task is defined")
+    return errors
+
+
 def collect(paths: list[str]) -> tuple[list[str], dict[str, str], int]:
     plans, ranged = [], 0
-    for p in sorted((REPO / "docs" / "planning").glob("*.md")) if not paths else [REPO / x for x in paths]:
-        rel = str(p.relative_to(REPO))
+    for rel in (list_tracked(":") if not paths else paths):
         body = read_indexed(rel)
         if not body or not HEADER_RANGE.search(body):
             continue
@@ -191,7 +237,7 @@ def main(argv: list[str]) -> int:
     if not plans:
         print("check_workstream_plan: no plan declares a 'Sub-task count' header.")
         return 0
-    errors, legacy, checked = [], [], []
+    errors, legacy, checked = deleted_plan_errors(companions), [], []
     for rel in plans:
         body = read_indexed(rel)
         assert body is not None
@@ -236,6 +282,34 @@ CLEAN = """
 | XX1.1 | consumes XX0.2 | b | M |
 | XX1.2 | last | b | M |
 """
+
+
+def _deleted_plan_case():
+    """Build a real repository, stage the plan's deletion, and require the
+    outstanding citation to be reported."""
+    import tempfile
+    global REPO
+    saved = REPO
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "docs" / "planning").mkdir(parents=True)
+            (root / "docs" / "planning" / "XX_PLAN.md").write_text(CLEAN, encoding="utf-8")
+            (root / "CLAUDE.md").write_text("the work is scheduled at XX0.2\n", encoding="utf-8")
+            git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, check=True)
+            git("init", "-q")
+            git("config", "user.email", "gate@example.invalid")
+            git("config", "user.name", "gate")
+            git("add", "-A")
+            git("commit", "-qm", "plan and a citation of it")
+            git("rm", "-q", "--cached", "docs/planning/XX_PLAN.md")
+            REPO = root
+            errs = deleted_plan_errors({"CLAUDE.md": (root / "CLAUDE.md").read_text()})
+            hit = any("cites XX0.2" in e and "deletes docs/planning/XX_PLAN.md" in e
+                      for e in errs)
+            return ("deleting a plan that is still cited is rejected", hit, errs)
+    finally:
+        REPO = saved
 
 
 def _case(name, mutate, expect):
@@ -303,6 +377,13 @@ def self_test() -> int:
     cases.append(("findings column does not sum to the acceptance total",
                   any("acceptance claims 5 findings, its rows sum to 3" in e for e in ferrs),
                   ferrs))
+
+    # The deleted-plan case, which the first version of this gate missed: it
+    # globbed the working tree, so a plan staged for deletion vanished from
+    # discovery and every citation to it passed unchecked.  Witnessed against a
+    # throwaway repository, because the defect was in how plans are
+    # *enumerated* -- a fixture string cannot exercise that.
+    cases.append(_deleted_plan_case())
 
     failed = 0
     for name, ok, detail in cases:
