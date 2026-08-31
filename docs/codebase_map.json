@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr2-live-path-correctness-xfjr7b",
-      "commit_sha": "b949c76a972963063d8716eac93bd322ebcecf40",
-      "tree_sha": "8ad9a42528578959e553bd75adad68ae4622c96e",
-      "committed_at_utc": "2026-08-31T16:29:56+00:00"
+      "commit_sha": "20d61194d08e7cd3a2fda4ddd1f3f1d326451370",
+      "tree_sha": "a90db54a8419b2c6813c95c2a00273c762e0a47d",
+      "committed_at_utc": "2026-08-31T16:30:42+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1157cc8cbbf3563d69c158f477aea4c43ba47a0dad96073c39f5ded19707816e"
+    "source_digest": "bd221377962a653afa410ca1936bb12111606f3219e63c99850ed3900f613814"
   },
   "summary": {
     "module_count": 364,
-    "declaration_count": 17339
+    "declaration_count": 17343
   },
   "readme_sync": {
     "version": "0.34.42",
     "lean_toolchain": "v4.28.0",
     "production_files": 295,
-    "production_loc": 297915,
+    "production_loc": 298000,
     "test_files": 69,
-    "test_loc": 64986,
+    "test_loc": 65058,
     "proved_theorem_lemma_decls": 9888,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -55827,22 +55827,29 @@
         {
           "kind": "theorem",
           "name": "endpointCallWithCapsOnCore_preserves_ipcInvariantFull",
-          "line": 198,
+          "line": 216,
           "called": [
             "AccessRightSet",
             "CoreId",
+            "Endpoint",
             "IpcMessage",
             "ObjId",
             "Slot",
             "SystemState",
+            "TCB",
             "ThreadId",
             "TransferCap",
+            "allTimeoutBudgetsNone",
             "badge",
+            "blockedThreadsPendingMessageConsistent",
             "endpointCallOnCore",
+            "endpointCallOnCore_preserves_ipcInvariantFull",
             "endpointCallOnCore_preserves_objects_invExt",
             "endpointCallWithCapsOnCore",
             "endpointId",
+            "epId",
             "getEndpoint",
+            "getTcb",
             "head",
             "invExt",
             "ipcInvariantFull",
@@ -55851,14 +55858,16 @@
             "lookupCspaceRoot",
             "mem",
             "none",
+            "replyCallerLinkageReciprocal",
             "st",
+            "tail",
             "valid"
           ]
         },
         {
           "kind": "theorem",
           "name": "endpointCallWithCapsOnCore_preserves_objects_invExt",
-          "line": 256,
+          "line": 312,
           "called": [
             "AccessRightSet",
             "CoreId",
@@ -55885,7 +55894,7 @@
         {
           "kind": "theorem",
           "name": "endpointCallWithCapsOnCore_getTcb",
-          "line": 302,
+          "line": 358,
           "called": [
             "AccessRightSet",
             "CoreId",
@@ -55916,7 +55925,7 @@
         {
           "kind": "theorem",
           "name": "endpointCallWithCapsOnCore_ok_implies_call_ok",
-          "line": 367,
+          "line": 423,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -55937,10 +55946,11 @@
         {
           "kind": "theorem",
           "name": "endpointCallCrossCoreDispatch_preserves_ipcInvariantFull",
-          "line": 399,
+          "line": 455,
           "called": [
             "AccessRightSet",
             "CoreId",
+            "Endpoint",
             "IpcMessage",
             "Kernel",
             "ObjId",
@@ -55950,12 +55960,14 @@
             "TCB",
             "ThreadId",
             "TransferCap",
+            "allTimeoutBudgetsNone",
             "applyCallDonationOnCore",
             "applyCallDonationOnCore_objects_eq",
             "applyCallDonationOnCore_ok_decompose",
             "applyCallDonationOnCore_preserves_ipcInvariantFull",
             "applyCallDonation_preserves_objects_invExt",
             "badge",
+            "blockedThreadsPendingMessageConsistent",
             "determineTargetCore",
             "donationOwnerValid",
             "endpointCallCrossCoreDispatch",
@@ -55967,6 +55979,7 @@
             "endpointCallWithCapsOnCore_preserves_ipcInvariantFull",
             "endpointCallWithCapsOnCore_preserves_objects_invExt",
             "endpointId",
+            "epId",
             "getEndpoint",
             "getTcb",
             "head",
@@ -55976,8 +55989,10 @@
             "mem",
             "none",
             "propagatePipChainCrossCore_preserves_ipcInvariantFull",
+            "replyCallerLinkageReciprocal",
             "scId",
             "st",
+            "tail",
             "toValid",
             "valid"
           ]
@@ -245543,7 +245558,7 @@
     {
       "module": "tests.SmpIpcSuite",
       "path": "tests/SmpIpcSuite.lean",
-      "declaration_count": 122,
+      "declaration_count": 126,
       "declarations": [
         {
           "kind": "namespace",
@@ -246509,8 +246524,49 @@
         },
         {
           "kind": "def",
+          "name": "scCaller2",
+          "line": 922,
+          "called": [
+            "SchedContextId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "donCaller2",
+          "line": 923,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "donCaller2Sc",
+          "line": 925,
+          "called": [
+            "SchedContext",
+            "donCaller2",
+            "scCaller2",
+            "scId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "donCaller2Tcb",
+          "line": 931,
+          "called": [
+            "TCB",
+            "c3",
+            "donEp",
+            "donServer",
+            "mkTcb",
+            "scCaller2"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "replenishEntriesOn",
-          "line": 908,
+          "line": 937,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -246522,7 +246578,7 @@
         {
           "kind": "def",
           "name": "replenishCountFor",
-          "line": 912,
+          "line": 941,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -246537,14 +246593,18 @@
         {
           "kind": "def",
           "name": "runDonationMigrationChecks",
-          "line": 916,
+          "line": 945,
           "called": [
             "SystemState",
             "assertBool",
             "c0",
             "c1",
             "c2",
+            "c3",
             "cnRoot",
+            "donCaller2",
+            "donCaller2Sc",
+            "donCaller2Tcb",
             "donClient",
             "donDelegate",
             "donDelegateTcb",
@@ -246556,6 +246616,7 @@
             "endpointReceiveDualOnCore",
             "endpointReplyCrossCoreDispatch",
             "filter",
+            "getTcb",
             "handleRescheduleSgiOnCore",
             "insert",
             "none",
@@ -246566,7 +246627,9 @@
             "replenishEntriesOn",
             "replyRecvReturnDonation",
             "scBystander",
+            "scCaller2",
             "scClient",
+            "setReplenishQueueOnCore",
             "stDonWithReplenishments",
             "toObjId"
           ]
@@ -246574,7 +246637,7 @@
         {
           "kind": "def",
           "name": "capCallerCn",
-          "line": 1007,
+          "line": 1079,
           "called": [
             "ObjId"
           ]
@@ -246582,7 +246645,7 @@
         {
           "kind": "def",
           "name": "capEp",
-          "line": 1008,
+          "line": 1080,
           "called": [
             "ObjId"
           ]
@@ -246590,7 +246653,7 @@
         {
           "kind": "def",
           "name": "capCaller",
-          "line": 1009,
+          "line": 1081,
           "called": [
             "ThreadId"
           ]
@@ -246598,7 +246661,7 @@
         {
           "kind": "def",
           "name": "capServer",
-          "line": 1010,
+          "line": 1082,
           "called": [
             "ThreadId"
           ]
@@ -246606,7 +246669,7 @@
         {
           "kind": "def",
           "name": "capReply",
-          "line": 1011,
+          "line": 1083,
           "called": [
             "ReplyId"
           ]
@@ -246614,7 +246677,7 @@
         {
           "kind": "def",
           "name": "capServerCn",
-          "line": 1012,
+          "line": 1084,
           "called": [
             "ObjId"
           ]
@@ -246622,7 +246685,7 @@
         {
           "kind": "def",
           "name": "capMarkerObj",
-          "line": 1013,
+          "line": 1085,
           "called": [
             "ObjId"
           ]
@@ -246630,7 +246693,7 @@
         {
           "kind": "def",
           "name": "recvSlot",
-          "line": 1014,
+          "line": 1086,
           "called": [
             "Slot",
             "ofNat"
@@ -246639,7 +246702,7 @@
         {
           "kind": "def",
           "name": "payloadCap",
-          "line": 1018,
+          "line": 1090,
           "called": [
             "Capability",
             "capMarkerObj",
@@ -246649,7 +246712,7 @@
         {
           "kind": "def",
           "name": "payloadSrcSlot",
-          "line": 1025,
+          "line": 1097,
           "called": [
             "Slot",
             "ofNat"
@@ -246658,7 +246721,7 @@
         {
           "kind": "def",
           "name": "tooManyCapsMsg",
-          "line": 1028,
+          "line": 1100,
           "called": [
             "IpcMessage",
             "TransferCap.fromNode",
@@ -246671,7 +246734,7 @@
         {
           "kind": "def",
           "name": "stCapBase",
-          "line": 1041,
+          "line": 1113,
           "called": [
             "SystemState",
             "build",
@@ -246696,7 +246759,7 @@
         {
           "kind": "def",
           "name": "capSourceMint",
-          "line": 1059,
+          "line": 1131,
           "called": [
             "CdtNodeId",
             "SystemState",
@@ -246709,7 +246772,7 @@
         {
           "kind": "def",
           "name": "stCapBound",
-          "line": 1062,
+          "line": 1134,
           "called": [
             "SystemState"
           ]
@@ -246717,7 +246780,7 @@
         {
           "kind": "def",
           "name": "capMsg",
-          "line": 1063,
+          "line": 1135,
           "called": [
             "IpcMessage",
             "badge",
@@ -246728,7 +246791,7 @@
         {
           "kind": "def",
           "name": "summaryInstalledInto",
-          "line": 1071,
+          "line": 1143,
           "called": [
             "CapTransferSummary",
             "ObjId",
@@ -246738,7 +246801,7 @@
         {
           "kind": "def",
           "name": "summaryAllGrantDenied",
-          "line": 1074,
+          "line": 1146,
           "called": [
             "CapTransferSummary",
             "all",
@@ -246748,7 +246811,7 @@
         {
           "kind": "def",
           "name": "cnodeSlotCap",
-          "line": 1077,
+          "line": 1149,
           "called": [
             "Capability",
             "ObjId",
@@ -246761,7 +246824,7 @@
         {
           "kind": "def",
           "name": "slotHoldsPayload",
-          "line": 1086,
+          "line": 1158,
           "called": [
             "ObjId",
             "Slot",
@@ -246775,7 +246838,7 @@
         {
           "kind": "def",
           "name": "runCapTransferChecks",
-          "line": 1091,
+          "line": 1163,
           "called": [
             "assertBool",
             "c0",
@@ -246810,7 +246873,7 @@
         {
           "kind": "def",
           "name": "lowLabel",
-          "line": 1134,
+          "line": 1206,
           "called": [
             "SecurityLabel"
           ]
@@ -246818,7 +246881,7 @@
         {
           "kind": "def",
           "name": "highLabel",
-          "line": 1135,
+          "line": 1207,
           "called": [
             "SecurityLabel"
           ]
@@ -246826,7 +246889,7 @@
         {
           "kind": "def",
           "name": "callDeniedCtx",
-          "line": 1138,
+          "line": 1210,
           "called": [
             "LabelingContext",
             "clientA",
@@ -246837,7 +246900,7 @@
         {
           "kind": "def",
           "name": "allPublicCtx",
-          "line": 1144,
+          "line": 1216,
           "called": [
             "LabelingContext",
             "lowLabel"
@@ -246846,7 +246909,7 @@
         {
           "kind": "def",
           "name": "replyDeniedCtx",
-          "line": 1148,
+          "line": 1220,
           "called": [
             "LabelingContext",
             "highLabel",
@@ -246857,7 +246920,7 @@
         {
           "kind": "def",
           "name": "runFlowCheckedChecks",
-          "line": 1154,
+          "line": 1226,
           "called": [
             "allPublicCtx",
             "assertBool",
@@ -246887,7 +246950,7 @@
         {
           "kind": "def",
           "name": "apiCn",
-          "line": 1236,
+          "line": 1308,
           "called": [
             "ObjId"
           ]
@@ -246895,7 +246958,7 @@
         {
           "kind": "def",
           "name": "apiEp",
-          "line": 1237,
+          "line": 1309,
           "called": [
             "ObjId"
           ]
@@ -246903,7 +246966,7 @@
         {
           "kind": "def",
           "name": "apiCaller",
-          "line": 1238,
+          "line": 1310,
           "called": [
             "ThreadId"
           ]
@@ -246911,7 +246974,7 @@
         {
           "kind": "def",
           "name": "apiServer",
-          "line": 1239,
+          "line": 1311,
           "called": [
             "ThreadId"
           ]
@@ -246919,7 +246982,7 @@
         {
           "kind": "def",
           "name": "apiReply",
-          "line": 1240,
+          "line": 1312,
           "called": [
             "ReplyId"
           ]
@@ -246927,7 +246990,7 @@
         {
           "kind": "def",
           "name": "apiEpCap",
-          "line": 1241,
+          "line": 1313,
           "called": [
             "Capability",
             "apiEp",
@@ -246937,7 +247000,7 @@
         {
           "kind": "def",
           "name": "apiEpCapRO",
-          "line": 1242,
+          "line": 1314,
           "called": [
             "Capability",
             "apiEp",
@@ -246947,7 +247010,7 @@
         {
           "kind": "def",
           "name": "apiWrongKindCap",
-          "line": 1245,
+          "line": 1317,
           "called": [
             "Capability",
             "ofList",
@@ -246957,7 +247020,7 @@
         {
           "kind": "def",
           "name": "apiCallDecoded",
-          "line": 1249,
+          "line": 1321,
           "called": [
             "SyscallDecodeResult",
             "length",
@@ -246967,7 +247030,7 @@
         {
           "kind": "def",
           "name": "stApi",
-          "line": 1254,
+          "line": 1326,
           "called": [
             "Capability",
             "Slot",
@@ -246991,7 +247054,7 @@
         {
           "kind": "def",
           "name": "apiDispatch",
-          "line": 1268,
+          "line": 1340,
           "called": [
             "Capability",
             "KernelError",
@@ -247010,7 +247073,7 @@
         {
           "kind": "def",
           "name": "runLiveApiChecks",
-          "line": 1274,
+          "line": 1346,
           "called": [
             "LabelingContext",
             "allPublicCtx",
@@ -247039,7 +247102,7 @@
         {
           "kind": "def",
           "name": "runCancellationCompositionChecks",
-          "line": 1317,
+          "line": 1389,
           "called": [
             "assertBool",
             "c0",
@@ -247061,7 +247124,7 @@
         {
           "kind": "def",
           "name": "runSuspendArmChecks",
-          "line": 1356,
+          "line": 1428,
           "called": [
             "assertBool",
             "c0",
@@ -247096,7 +247159,7 @@
         {
           "kind": "def",
           "name": "highPrioT",
-          "line": 1414,
+          "line": 1486,
           "called": [
             "ThreadId"
           ]
@@ -247104,7 +247167,7 @@
         {
           "kind": "def",
           "name": "stContention",
-          "line": 1425,
+          "line": 1497,
           "called": [
             "SystemState",
             "build",
@@ -247126,7 +247189,7 @@
         {
           "kind": "def",
           "name": "contentionAfterHandle",
-          "line": 1439,
+          "line": 1511,
           "called": [
             "SystemState",
             "c0",
@@ -247147,7 +247210,7 @@
         {
           "kind": "def",
           "name": "runHandlerContentionChecks",
-          "line": 1444,
+          "line": 1516,
           "called": [
             "assertBool",
             "c1",
@@ -247164,7 +247227,7 @@
         {
           "kind": "def",
           "name": "threadLabel",
-          "line": 1466,
+          "line": 1538,
           "called": [
             "ThreadId",
             "clientA",
@@ -247177,7 +247240,7 @@
         {
           "kind": "def",
           "name": "sgiLabel",
-          "line": 1472,
+          "line": 1544,
           "called": [
             "CoreId",
             "SgiKind",
@@ -247187,7 +247250,7 @@
         {
           "kind": "def",
           "name": "ipcStateLabel",
-          "line": 1478,
+          "line": 1550,
           "called": [
             "SystemState",
             "ThreadId",
@@ -247199,7 +247262,7 @@
         {
           "kind": "def",
           "name": "currentLabel",
-          "line": 1491,
+          "line": 1563,
           "called": [
             "CoreId",
             "SystemState",
@@ -247212,7 +247275,7 @@
         {
           "kind": "def",
           "name": "payloadLabel",
-          "line": 1497,
+          "line": 1569,
           "called": [
             "SystemState",
             "ThreadId",
@@ -247225,7 +247288,7 @@
         {
           "kind": "def",
           "name": "ipcFourCoreTraceLines",
-          "line": 1513,
+          "line": 1585,
           "called": [
             "c0",
             "c1",
@@ -247249,13 +247312,13 @@
         {
           "kind": "def",
           "name": "fixturePath",
-          "line": 1534,
+          "line": 1606,
           "called": []
         },
         {
           "kind": "def",
           "name": "runTraceFixtureCheck",
-          "line": 1542,
+          "line": 1614,
           "called": [
             "fixturePath",
             "ipcFourCoreTraceLines",
@@ -247265,7 +247328,7 @@
         {
           "kind": "def",
           "name": "runSmpIpcChecks",
-          "line": 1562,
+          "line": 1634,
           "called": [
             "runCancellationCompositionChecks",
             "runCapTransferChecks",
@@ -247289,7 +247352,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1587,
+          "line": 1659,
           "called": [
             "runSmpIpcChecks"
           ]

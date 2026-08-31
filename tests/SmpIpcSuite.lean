@@ -905,6 +905,35 @@ private def donDelegate : SeLe4n.ThreadId := ⟨846⟩
 private def donDelegateTcb : TCB :=
   { mkTcb 846 30 (some c2) with threadState := ThreadState.Ready }
 
+/-- WS-RR RR2.20 (PR #885 review round 1): the **distinct queued caller**.
+
+The rendezvous arm below re-donates *this* thread's SchedContext rather than the
+one being replied to.  That matters because `replyRecvReturnDonation` branches on
+`nextThread`'s `.blockedOnReply` — and the thread being replied to is *already*
+`.blockedOnReply` from its own outgoing call, so passing it as `nextThread` lets
+the branch fire for a reason the live `.replyRecv` ordering would not produce
+(there the reply leg unblocks that thread before the receive leg dequeues the
+next request).  With a distinct caller the two hops move **two different
+SchedContexts**, so neither can stand in for the other: the return hop is
+`scClient` core 1 → core 0, and the re-donation hop is `scCaller2` core 3 →
+core 2.
+
+Homed on core 3 so its hop is distinguishable from every other core in play. -/
+private def scCaller2 : SeLe4n.SchedContextId := SchedContextId.ofNat 847
+private def donCaller2 : SeLe4n.ThreadId := ⟨848⟩
+
+private def donCaller2Sc : SchedContext :=
+  { scId := scCaller2, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩, deadline := ⟨0⟩,
+    domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThread := some donCaller2, isActive := true }
+
+/-- The queued caller as the endpoint left it: blocked awaiting a reply from the
+server, still holding its own SchedContext. -/
+private def donCaller2Tcb : TCB :=
+  { mkTcb 848 40 (some c3) with
+      schedContextBinding := .bound scCaller2
+      ipcState := .blockedOnReply donEp (some donServer)
+      threadState := ThreadState.Ready }
+
 private def replenishEntriesOn (st : SystemState) (c : CoreId) :
     List (SeLe4n.SchedContextId × Nat) :=
   (st.scheduler.replenishQueueOnCore c).entries
@@ -999,6 +1028,49 @@ private def runDonationMigrationChecks : IO Unit := do
       assertBool "the two-hop migration preserves each replenishment's eligibility time"
         (decide (((replenishEntriesOn stRr c2).filter (fun e => e.1 == scClient)).map (·.2)
           = [100, 200]))
+    -- RR2.20 (PR #885 review round 1): the same rendezvous with a **distinct**
+    -- queued caller.  The arm above re-donates the replied-to thread's own
+    -- context, so it cannot tell "the re-donation branch fired because a new
+    -- request was dequeued" from "it fired because that thread's outgoing call
+    -- was still parked `.blockedOnReply`".  Here the returned context
+    -- (`scClient`) and the re-donated one (`scCaller2`) are different
+    -- SchedContexts homed on different cores, so each hop is pinned
+    -- independently and neither can stand in for the other.
+    let stCallQ : SystemState :=
+      { stCall with
+          objects := ((stCall.objects.insert donDelegate.toObjId (.tcb donDelegateTcb)).insert
+            donCaller2.toObjId (.tcb donCaller2Tcb)).insert scCaller2.toObjId
+              (.schedContext donCaller2Sc)
+          scheduler := stCall.scheduler.setReplenishQueueOnCore c3
+            ((ReplenishQueue.empty.insert scCaller2 400).insert scCaller2 500) }
+    assertBool "pre: the queued caller's SC holds both replenishments on its home core 3"
+      (decide (replenishCountFor stCallQ c3 scCaller2 = 2))
+    match replyRecvReturnDonation donDelegate donServer donCaller2 c1 stCallQ with
+    | .error _ => assertBool "the .replyRecv distinct-caller rendezvous arm succeeds" false
+    | .ok ((), stQ) =>
+      assertBool "the .replyRecv distinct-caller rendezvous arm succeeds" true
+      -- The return hop, on the replied-to thread's context.
+      assertBool "return hop: the returned SC leaves the server's core 1"
+        (decide (replenishCountFor stQ c1 scClient = 0))
+      assertBool "return hop: the returned SC lands on its owner's home core 0"
+        (decide (replenishCountFor stQ c0 scClient = 2))
+      -- The re-donation hop, on the *queued caller's* context — a SchedContext
+      -- that took no part in the return.
+      assertBool "re-donation hop: the queued caller's SC leaves its home core 3"
+        (decide (replenishCountFor stQ c3 scCaller2 = 0))
+      assertBool "re-donation hop: it lands on the delegated receiver's home core 2"
+        (decide (replenishCountFor stQ c2 scCaller2 = 2))
+      assertBool "the delegate holds the QUEUED CALLER's context, owner recorded"
+        (match stQ.getTcb? donDelegate with
+         | some t => decide (t.schedContextBinding = .donated scCaller2 donCaller2)
+         | none => false)
+      assertBool "the two contexts never cross: the returned SC does not reach core 2"
+        (decide (replenishCountFor stQ c2 scClient = 0))
+      assertBool "the distinct-caller hops leave the bystander SchedContext alone"
+        (decide (replenishCountFor stQ c1 scBystander = 1))
+      assertBool "the distinct-caller hops preserve each replenishment's eligibility time"
+        (decide (((replenishEntriesOn stQ c2).filter (fun e => e.1 == scCaller2)).map (·.2)
+          = [400, 500]))
 
 -- ============================================================================
 -- §3.10  Capability transfer across cores (ipcUnwrapCaps, grant-gated)

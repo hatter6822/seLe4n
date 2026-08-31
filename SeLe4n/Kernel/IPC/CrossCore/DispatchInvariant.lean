@@ -191,6 +191,24 @@ theorem endpointCallOnCore_rendezvous_post_ipcState
 /-- WS-RR RR2.6: `endpointCallWithCapsOnCore` preserves the bundle — the
 cross-core rendezvous, then (on the arm that carries capabilities) the transfer.
 
+**States the rendezvous' own hypotheses, not its conclusion.**  An earlier cut
+took the whole post-rendezvous `ipcInvariantFull` as a hypothesis `hBare`, which
+made the theorem say only "*if* the bundle survives the rendezvous, the transfer
+keeps it" — true, dischargeable from
+`endpointCallOnCore_preserves_ipcInvariantFull`, and yet not what the name
+claims, since a reader counting `_preserves_ipcInvariantFull` theorems to
+measure live-arm coverage would have read a presence for a relation (`CLAUDE.md`,
+*a presence check is not a relation check*).  It also made this the one bundle
+in the RR2 surface that did not take a pre-state bundle, asymmetric with its own
+`.send` sibling — and the rule for two paths handling the same condition
+asymmetrically is to make them symmetric, not to document the asymmetry.  The
+rendezvous' obligations are therefore threaded and discharged here, exactly as
+`endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull` does.
+
+`hWtpmn'` / `hRCLRecip'` remain post-rendezvous hypotheses: they are the two
+conjuncts the whole `ipcInvariantFull` surface still threads (WS-DT, closure
+target RR3), and this theorem inherits that debt rather than adding to it.
+
 The transfer's two input conditions are stated over the post-rendezvous state,
 which is what it actually runs on; see
 `endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull` for the same pair on
@@ -199,9 +217,15 @@ theorem endpointCallWithCapsOnCore_preserves_ipcInvariantFull
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (endpointRights : AccessRightSet) (callerCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hBare : ipcInvariantFull (endpointCallOnCore endpointId caller
-      { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
+      (endpointCallOnCore endpointId caller
+        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hRCLRecip' : replyCallerLinkageReciprocal
+      (endpointCallOnCore endpointId caller
+        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
     (hRecvRootCNode : ∀ (t : SeLe4n.ThreadId) (r : SeLe4n.ObjId),
       lookupCspaceRoot (endpointCallOnCore endpointId caller
         { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1 t
@@ -210,9 +234,41 @@ theorem endpointCallWithCapsOnCore_preserves_ipcInvariantFull
         { msg with capsGranted := endpointRights.mem AccessRight.grant }
         executingCore st).1.objects[r]? = some (.cnode cn))
     (hCapBadges : ∀ (i : Nat) (c : TransferCap), msg.caps[i]? = some c →
-      ∀ b, c.cap.badge = some b → b.valid) :
+      ∀ b, c.cap.badge = some b → b.valid)
+    (hFreshCaller : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some caller ∧ ep.sendQ.tail ≠ some caller ∧
+      ep.receiveQ.head ≠ some caller ∧ ep.receiveQ.tail ≠ some caller)
+    (hSendTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.receiveQ.tail ≠ some tailTid))
+    -- Stated with the typed `getTcb?` reader rather than a raw object-store
+    -- index, matching `hCallerNotRecv` above and the AK7 typed-helper
+    -- migration; the raw form the rendezvous theorem wants is recovered by
+    -- `getTcb?_eq_some_iff` at the application below.
+    (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    (hCallerReady : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        tcb.ipcState = .ready)
+    (hCallerNotReply : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hCallerNotUnbound : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        tcb.schedContextBinding ≠ .unbound) :
     ipcInvariantFull (endpointCallWithCapsOnCore endpointId caller msg endpointRights
       callerCspaceRoot receiverSlotBase executingCore st).1 := by
+  have hBare := endpointCallOnCore_preserves_ipcInvariantFull endpointId caller
+    { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st _
+    hInv hObjInv hFreshCaller hSendTailFresh rfl hWtpmn' hAllBudgetsNone hRCLRecip'
+    hCallerNotRecv
+    (fun tcb h => hCallerReady tcb ((SystemState.getTcb?_eq_some_iff st caller tcb).mpr h))
+    (fun tcb h => hCallerNotReply tcb ((SystemState.getTcb?_eq_some_iff st caller tcb).mpr h))
+    (fun tcb h => hCallerNotUnbound tcb ((SystemState.getTcb?_eq_some_iff st caller tcb).mpr h))
   have hBareInv := endpointCallOnCore_preserves_objects_invExt endpointId caller
     { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st hObjInv
   unfold endpointCallWithCapsOnCore
@@ -400,9 +456,15 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (endpointRights : AccessRightSet) (callerCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hBare : ipcInvariantFull (endpointCallOnCore endpointId caller
-      { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
+      (endpointCallOnCore endpointId caller
+        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hRCLRecip' : replyCallerLinkageReciprocal
+      (endpointCallOnCore endpointId caller
+        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
     (hRecvRootCNode : ∀ (t : SeLe4n.ThreadId) (r : SeLe4n.ObjId),
       lookupCspaceRoot (endpointCallOnCore endpointId caller
         { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1 t
@@ -412,6 +474,27 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
         executingCore st).1.objects[r]? = some (.cnode cn))
     (hCapBadges : ∀ (i : Nat) (c : TransferCap), msg.caps[i]? = some c →
       ∀ b, c.cap.badge = some b → b.valid)
+    (hFreshCaller : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some caller ∧ ep.sendQ.tail ≠ some caller ∧
+      ep.receiveQ.head ≠ some caller ∧ ep.receiveQ.tail ≠ some caller)
+    (hSendTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.receiveQ.tail ≠ some tailTid))
+    (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    (hCallerReady : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        tcb.ipcState = .ready)
+    (hCallerNotReply : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hCallerNotUnbound : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        tcb.schedContextBinding ≠ .unbound)
     (hNe : ∀ ep receiverTid, st.getEndpoint? endpointId = some ep →
       ep.receiveQ.head = some receiverTid → caller ≠ receiverTid) :
     ipcInvariantFull (endpointCallCrossCoreDispatch endpointId caller msg endpointRights
@@ -419,7 +502,9 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
   have hWithCaps : ipcInvariantFull (endpointCallWithCapsOnCore endpointId caller msg
       endpointRights callerCspaceRoot receiverSlotBase executingCore st).1 :=
     endpointCallWithCapsOnCore_preserves_ipcInvariantFull endpointId caller msg endpointRights
-      callerCspaceRoot receiverSlotBase executingCore st hObjInv hBare hRecvRootCNode hCapBadges
+      callerCspaceRoot receiverSlotBase executingCore st hInv hObjInv hWtpmn' hAllBudgetsNone
+      hRCLRecip' hRecvRootCNode hCapBadges hFreshCaller hSendTailFresh hCallerNotRecv
+      hCallerReady hCallerNotReply hCallerNotUnbound
   have hWithCapsInv : (endpointCallWithCapsOnCore endpointId caller msg endpointRights
       callerCspaceRoot receiverSlotBase executingCore st).1.objects.invExt :=
     endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller msg endpointRights

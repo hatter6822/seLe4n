@@ -324,6 +324,45 @@ runtime assertions.  The table-C row is retired; with the three donation
 paths (RR2.20) this closes the `boundThread`-writer family the audit's sweep
 derived.
 
+### Review round 1 — a presence check standing in for a relation, again
+
+An automated review of the cut raised two findings.  Both were verified against
+the tree before acting, and one of the two claims in the first did not survive
+that check.
+
+* **The `.call` chain's two bundles took the post-rendezvous bundle as a
+  hypothesis, not the pre-state one.**  `endpointCallWithCapsOnCore_preserves_
+  ipcInvariantFull` and `endpointCallCrossCoreDispatch_preserves_ipcInvariantFull`
+  asked their caller for `hBare : ipcInvariantFull (endpointCallOnCore … st).1`,
+  so each said only "*if* the bundle survives the rendezvous, the transfer keeps
+  it".  That is true and `hBare` was dischargeable from the existing
+  `endpointCallOnCore_preserves_ipcInvariantFull`, so this was not the false
+  closure the review reported — but the name still did not mean what a reader
+  counting `_preserves_ipcInvariantFull` theorems would take it to mean, which
+  is `CLAUDE.md`'s *a presence check is not a relation check* applied to a
+  theorem statement rather than to a gate.  Measuring the whole RR2 surface
+  rather than the reported site found these two were the **only** bundles in it
+  that did not take a pre-state `ipcInvariantFull st` — asymmetric with their
+  own `.send` sibling, which composes exactly this way.  Both now thread the
+  rendezvous' own obligations and discharge `hBare` internally.  The review's
+  second claim, that the same shape affects
+  `notificationWaitCrossCoreDispatch_preserves_ipcInvariantFull` and
+  `endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull`, is **false**:
+  both already take the pre-state bundle.  `hWtpmn'` / `hRCLRecip'` stay
+  threaded everywhere — that is the registered WS-DT debt (closure target RR3),
+  inherited, not added to.
+* **The `.replyRecv` rendezvous check could not distinguish its own branch
+  condition.**  It passed the replied-to thread as `nextThread`, and that thread
+  is already `.blockedOnReply` from its own outgoing call — so the re-donation
+  branch fired for a reason the live ordering would not produce, and one
+  SchedContext carried both hops.  `tests/SmpIpcSuite.lean` §3.9b gains a
+  distinct queued caller (`donCaller2` / `scCaller2`, homed on core 3): the
+  returned context and the re-donated one are now different SchedContexts on
+  different cores, so each hop is pinned independently, and the delegate is
+  asserted to end up holding `.donated scCaller2 donCaller2` — the queued
+  caller's context, which is the fact the old fixture could not establish.
+  Driving `replyRecvBody` itself remains RR3.15's composition layer.
+
 ## v0.34.41 — WS-RR RR1: the first aarch64 compile, and the gates that keep it
 
 **One PR, one version.**  The sections below record the six review rounds this
