@@ -406,7 +406,7 @@ message `{ msg with capsGranted := endpointRights.mem .grant }`, because that is
 what the wrapper transmits (PR #873 round 13) — saying otherwise would be saying
 something false about the state the send parks.
 
-`hRecvRootCNode` / `hCapBadges` are the capability transfer's two *input*
+`hCapBadges` is the capability transfer's *input*
 conditions — a CNode at the destination CSpace root, and valid badges on the
 capabilities the message carries.  Neither is a post-state conjunct: they
 constrain what the caller hands the transfer, so the transition cannot satisfy
@@ -426,14 +426,7 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
     -- property of the syscall argument, which no state invariant constrains).
     -- These replace the post-state `dualQueueSystemInvariant` / `badgeWellFormed`
     -- an earlier cut threaded here.
-    (hRecvRootCNode : ∀ (t : SeLe4n.ThreadId) (r : SeLe4n.ObjId),
-      lookupCspaceRoot (endpointSendDualOnCore endpointId sender
-        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1 t
-        = some r →
-      ∃ cn, (endpointSendDualOnCore endpointId sender
-        { msg with capsGranted := endpointRights.mem AccessRight.grant }
-        executingCore st).1.objects[r]? = some (.cnode cn))
-    (hCapBadges : ∀ (i : Nat) (c : TransferCap), msg.caps[i]? = some c →
+(hCapBadges : ∀ (i : Nat) (c : TransferCap), msg.caps[i]? = some c →
       ∀ b, c.cap.badge = some b → b.valid)
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -467,7 +460,7 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
   cases hSend : endpointSendDualOnCore endpointId sender
       { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
   | mk stSend res =>
-    rw [hSend] at hBare hBareInv hRecvRootCNode
+    rw [hSend] at hBare hBareInv
     cases res with
     | error e => exact hBare
     | ok sgi =>
@@ -494,9 +487,8 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
               | ok pair =>
                 obtain ⟨summary, stFinal⟩ := pair
                 simp only
-                obtain ⟨cn, hCn⟩ := hRecvRootCNode receiverId recvRoot hRoot
                 exact ipcUnwrapCaps_preserves_ipcInvariantFull _ senderCspaceRoot recvRoot
-                  receiverSlotBase _ stSend stFinal summary cn hBare hBareInv hCn
+                  receiverSlotBase _ stSend stFinal summary hBare hBareInv
                   hCapBadges hUnwrap
 
 open SeLe4n.Model.SystemState in
@@ -572,14 +564,7 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
     -- property of the syscall argument, which no state invariant constrains).
     -- These replace the post-state `dualQueueSystemInvariant` / `badgeWellFormed`
     -- an earlier cut threaded here.
-    (hRecvRootCNode : ∀ (t : SeLe4n.ThreadId) (r : SeLe4n.ObjId),
-      lookupCspaceRoot (endpointSendDualOnCore endpointId sender
-        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1 t
-        = some r →
-      ∃ cn, (endpointSendDualOnCore endpointId sender
-        { msg with capsGranted := endpointRights.mem AccessRight.grant }
-        executingCore st).1.objects[r]? = some (.cnode cn))
-    (hCapBadges : ∀ (i : Nat) (c : TransferCap), msg.caps[i]? = some c →
+(hCapBadges : ∀ (i : Nat) (c : TransferCap), msg.caps[i]? = some c →
       ∀ b, c.cap.badge = some b → b.valid)
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -607,7 +592,7 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
   ipcInvariantFull_perCore_of_full
     (endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull endpointId sender msg
       endpointRights senderCspaceRoot receiverSlotBase executingCore st
-      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone hRecvRootCNode
+      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone
       hCapBadges hFreshSender hSendTailFresh hSenderNotRecv hSenderNotReply hSenderNotUnbound)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointSendDualWithCapsOnCore_passiveServerIdleFrameOnCore endpointId sender msg

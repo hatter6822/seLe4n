@@ -97,16 +97,21 @@ their own preservation theorems in the tree
 `ipcUnwrapCaps_preserves_badgeWellFormed`); what they need is not a post-state
 hypothesis but two *pre*-state side conditions, so they are taken as such:
 
-* `hCn` — the receiver's CSpace root holds a CNode.  The transfer's own loop
-  short-circuits (rather than failing) when it does not, so success alone does
-  not witness it; the caller resolves the root and knows.
 * `hCaps` — every badge carried in the message is valid.  This is a property of
   the syscall's *argument*, not of the state: `badgeWellFormed` constrains
   badges in CNodes and notifications, and says nothing about an `IpcMessage`.
 
-Both are ordinary preconditions on the operation's inputs, categorically unlike
-a threaded post-state conjunct: neither can be satisfied by the transition it is
+That is an ordinary precondition on the operation's input, categorically unlike a
+threaded post-state conjunct: it cannot be satisfied by the transition it is
 supposed to constrain.
+
+WS-RR RR3.11 removed the second side condition this bundle used to carry (`hCn`,
+the receiver's CSpace root holding a CNode).  Quantified over the wrapper
+transitions above it, that hypothesis read "*every* ObjId is a CNode", which no
+state holding the endpoint the step requires satisfies — so the wrappers were
+vacuous on their own success path.  The transfer's own frame now covers the
+non-CNode case directly (`ipcUnwrapCaps_state_eq_of_root_not_cnode`: it writes
+nothing there), so nothing needs to be assumed.
 
 The donation quartet falls out of the two donation frames: the transfer writes no
 TCB, so `sameSchedContextBindings` holds outright, and `donationOwnerFrame`
@@ -115,10 +120,8 @@ theorem ipcUnwrapCaps_preserves_ipcInvariantFull
     (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
-    (cn : CNode)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hCn : st.objects[receiverRoot]? = some (.cnode cn))
     (hCaps : ∀ (i : Nat) (c : TransferCap), msg.caps[i]? = some c →
       ∀ b, c.cap.badge = some b → b.valid)
     (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
@@ -126,7 +129,7 @@ theorem ipcUnwrapCaps_preserves_ipcInvariantFull
     ipcInvariantFull st' := by
   have hDualQueue' : dualQueueSystemInvariant st' :=
     ipcUnwrapCaps_preserves_dualQueueSystemInvariant msg senderRoot receiverRoot slotBase
-      grantRight st st' summary cn hCn hInv.dualQueueSystemInvariant hObjInv hStep
+      grantRight st st' summary hInv.dualQueueSystemInvariant hObjInv hStep
   have hBadge' : badgeWellFormed st' :=
     ipcUnwrapCaps_preserves_badgeWellFormed msg senderRoot receiverRoot slotBase grantRight
       st st' summary hInv.badgeWellFormed hObjInv hCaps hStep

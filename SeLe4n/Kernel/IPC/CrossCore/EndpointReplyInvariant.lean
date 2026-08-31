@@ -1444,7 +1444,7 @@ calls preserves the whole IPC invariant bundle.**
 
 The composition is §9's bare cross-core bundle, then
 `ipcUnwrapCaps_preserves_ipcInvariantFull` on the arm that installs the parked
-sender's capabilities.  `hRecvRootCNode` / `hCapBadges` are the transfer's two
+sender's capabilities.  `hCapBadges` is the transfer's
 *input* conditions, exactly as on the `.send` side (RR2.14): a CNode at the
 destination CSpace root — here the arm's own `receiverCspaceRoot` parameter,
 so no lookup quantifier is needed — and valid badges on the capabilities the
@@ -1476,10 +1476,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         tcb.ipcState = .ready)
-    (hRecvRootCNode : ∃ cn,
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore
-        st).1.objects[receiverCspaceRoot]? = some (.cnode cn))
-    (hCapBadges : ∀ (tcb : TCB),
+(hCapBadges : ∀ (tcb : TCB),
       (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.getTcb? receiver
         = some tcb →
       ∀ m, tcb.pendingMessage = some m →
@@ -1496,7 +1493,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
   unfold endpointReceiveDualWithCapsOnCore
   cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
   | mk stRecv res =>
-    rw [hRecv] at hBare hBareInv hRecvRootCNode hCapBadges
+    rw [hRecv] at hBare hBareInv hCapBadges
     cases res with
     | error e => exact hBare
     | ok pr =>
@@ -1524,10 +1521,9 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
                 | ok pair =>
                   obtain ⟨summary, stFinal⟩ := pair
                   simp only
-                  obtain ⟨cn, hCn⟩ := hRecvRootCNode
                   exact ipcUnwrapCaps_preserves_ipcInvariantFull msg senderRoot
                     receiverCspaceRoot receiverSlotBase msg.capsGranted stRecv stFinal summary
-                    cn hBare hBareInv hCn (hCapBadges receiverTcb hT msg hM) hUnwrap
+                    hBare hBareInv (hCapBadges receiverTcb hT msg hM) hUnwrap
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR2 (closure audit): the capability-carrying cross-core receive frames
@@ -1613,10 +1609,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         tcb.ipcState = .ready)
-    (hRecvRootCNode : ∃ cn,
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore
-        st).1.objects[receiverCspaceRoot]? = some (.cnode cn))
-    (hCapBadges : ∀ (tcb : TCB),
+(hCapBadges : ∀ (tcb : TCB),
       (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.getTcb? receiver
         = some tcb →
       ∀ m, tcb.pendingMessage = some m →
@@ -1630,7 +1623,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
     (endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull endpointId receiver replyId
       receiverCspaceRoot receiverSlotBase executingCore st (ipcInvariantFull_of_smp hInv)
       hObjInv hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid
-      hReceiverNotRecv hReceiverReady hRecvRootCNode hCapBadges)
+      hReceiverNotRecv hReceiverReady hCapBadges)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointReceiveDualWithCapsOnCore_passiveServerIdleFrameOnCore endpointId receiver
         replyId receiverCspaceRoot receiverSlotBase executingCore st c hObjInv hReceiverReady)

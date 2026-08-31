@@ -265,6 +265,36 @@ def allPendingMessagesBounded (st : SystemState) : Prop :=
     tcb.pendingMessage = some msg →
     msg.bounded
 
+/-- WS-RR RR3.11: **every in-flight message satisfies `P`** — the shape shared by
+every property of messages parked in a TCB's `pendingMessage`.
+
+`allPendingMessagesBounded` is the `P := IpcMessage.bounded` instance and
+`pendingMessageCapBadgesWellFormed` below is the in-flight badge instance; the
+transitions preserve the family once, parametrically, rather than once per
+property.  The transport is genuinely generic: no step of an IPC transition reads
+the *content* of a parked message, it only moves the message from one TCB to
+another or leaves it alone, so the same fold discharges any `P`. -/
+def pendingMessagesSatisfy (P : IpcMessage → Prop) (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (msg : IpcMessage),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    tcb.pendingMessage = some msg →
+    P msg
+
+/-- WS-RR RR3.11: `allPendingMessagesBounded` is the boundedness instance of the
+generic in-flight family.  Definitional, so either form may be supplied where the
+other is expected; stated so the relationship is a checked fact rather than a
+convention. -/
+theorem allPendingMessagesBounded_iff_pendingMessagesSatisfy (st : SystemState) :
+    allPendingMessagesBounded st ↔ pendingMessagesSatisfy IpcMessage.bounded st := Iff.rfl
+
+/-- WS-RR RR3.11: the in-flight family depends only on the object store. -/
+theorem pendingMessagesSatisfy_of_getElem_eq {P : IpcMessage → Prop} {s1 s2 : SystemState}
+    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
+    (h : pendingMessagesSatisfy P s1) : pendingMessagesSatisfy P s2 := by
+  intro tid tcb msg hTcb hMsg
+  rw [hEq] at hTcb
+  exact h tid tcb msg hTcb hMsg
+
 -- ============================================================================
 -- WS-F5/D1d: Badge well-formedness invariant
 -- ============================================================================
@@ -297,6 +327,36 @@ def capabilityBadgesWellFormed (st : SystemState) : Prop :=
 and capabilities are word-bounded to `machineWordBits` (64 bits). -/
 def badgeWellFormed (st : SystemState) : Prop :=
   notificationBadgesWellFormed st ∧ capabilityBadgesWellFormed st
+
+/-- WS-RR RR3.11: every capability carried by a message has a word-bounded badge —
+the in-flight counterpart of `capabilityBadgesWellFormed`, which says the same of
+the badges at rest in a CNode. -/
+def messageCapBadgesValid (m : IpcMessage) : Prop :=
+  ∀ (i : Nat) (c : TransferCap) (badge : SeLe4n.Badge),
+    m.caps[i]? = some c →
+    c.cap.badge = some badge →
+    badge.valid
+
+/-- WS-RR RR3.11: badges on capabilities **in flight** — carried inside a TCB's
+`pendingMessage` — are word-bounded, exactly as `capabilityBadgesWellFormed`
+requires of the badges at rest in a CNode.
+
+`badgeWellFormed` constrains badges *at rest*; the IPC capability transfer
+installs an in-flight capability into the receiver's CNode verbatim
+(`ipcTransferSingleCap` stores `tc.cap`, it does not re-resolve it), so without
+this the transfer can turn an out-of-range in-flight badge into an out-of-range
+badge at rest.  That is the hole the `*WithCaps` `ipcInvariantFull` bundles were
+covering by threading `badgeWellFormed` on their post-state; stated here as a
+pre-state property, it is dischargeable and the bundles establish the conjunct
+instead. -/
+def pendingMessageCapBadgesWellFormed (st : SystemState) : Prop :=
+  pendingMessagesSatisfy messageCapBadgesValid st
+
+/-- WS-RR RR3.11: the in-flight badge property depends only on the object store. -/
+theorem pendingMessageCapBadgesWellFormed_of_getElem_eq {s1 s2 : SystemState}
+    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
+    (h : pendingMessageCapBadgesWellFormed s1) : pendingMessageCapBadgesWellFormed s2 :=
+  pendingMessagesSatisfy_of_getElem_eq hEq h
 
 /-- V3-G1 (M-PRF-5): **`pendingMessage` agrees with the blocking state, in both
     directions.**
@@ -4160,14 +4220,17 @@ theorem returnDonatedSchedContext_tcb_queue_forward
                     exact ⟨tcb2, hTcb2Obj, by rw [hQN2, hQN1], by rw [hQP2, hQP1], by rw [hIpc2, hIpc1], by rw [hMsg2, hMsg1]⟩
     | _ => simp only []; intro h; cases h
 
-/-- AI4-A: cleanupPreReceiveDonation preserves allPendingMessagesBounded.
-The invariant quantifies over TCBs and their pendingMessage field, which is
-unchanged by returnDonatedSchedContext (only schedContextBinding is modified). -/
-theorem cleanupPreReceiveDonation_preserves_allPendingMessagesBounded
+/-- AI4-A (WS-RR RR3.11, generic in the message property): cleanupPreReceiveDonation
+preserves `pendingMessagesSatisfy`.  The family quantifies over TCBs and their
+`pendingMessage` field, which is unchanged by returnDonatedSchedContext (only
+schedContextBinding is modified) — so the transport never reads the message and
+holds for every `P`. -/
+theorem cleanupPreReceiveDonation_preserves_pendingMessagesSatisfy
+    {P : IpcMessage → Prop}
     (st : SystemState) (receiver : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
-    (hInv : allPendingMessagesBounded st) :
-    allPendingMessagesBounded (cleanupPreReceiveDonation st receiver) := by
+    (hInv : pendingMessagesSatisfy P st) :
+    pendingMessagesSatisfy P (cleanupPreReceiveDonation st receiver) := by
   exact cleanupPreReceiveDonation_frame_helper st receiver hInv
     fun scId originalOwner st' hRet => by
       intro tid tcb' msg hTcb' hMsg'
@@ -4176,6 +4239,23 @@ theorem cleanupPreReceiveDonation_preserves_allPendingMessagesBounded
           tid.toObjId tcb' hTcb'
       rw [← hMsgEq] at hMsg'
       exact hInv tid tcb msg hTcb hMsg'
+
+/-- AI4-A: cleanupPreReceiveDonation preserves allPendingMessagesBounded — the
+boundedness instance of the generic in-flight transport above. -/
+theorem cleanupPreReceiveDonation_preserves_allPendingMessagesBounded
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded (cleanupPreReceiveDonation st receiver) :=
+  cleanupPreReceiveDonation_preserves_pendingMessagesSatisfy st receiver hObjInv hInv
+
+/-- WS-RR RR3.11: cleanupPreReceiveDonation preserves the in-flight badge invariant. -/
+theorem cleanupPreReceiveDonation_preserves_pendingMessageCapBadgesWellFormed
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : pendingMessageCapBadgesWellFormed st) :
+    pendingMessageCapBadgesWellFormed (cleanupPreReceiveDonation st receiver) :=
+  cleanupPreReceiveDonation_preserves_pendingMessagesSatisfy st receiver hObjInv hInv
 
 /-- AI4-A: cleanupPreReceiveDonation preserves badgeWellFormed.
 The invariant quantifies over notifications and CNodes, neither of which is

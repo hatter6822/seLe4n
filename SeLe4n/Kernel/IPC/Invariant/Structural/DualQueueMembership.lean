@@ -14772,9 +14772,42 @@ theorem consumeCallerReply_preserves_ipcInvariantFull
     (r0 : SeLe4n.Kernel.Reply)
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
     (hGetR0 : st.getReply? rid = some r0) (hLinked : r0.caller = some caller)
-    (hRCL' : replyCallerLinkage st')
+    -- WS-RR RR3.10: the answered caller has already been woken.  This replaces the
+    -- threaded `hRCL' : replyCallerLinkage st'` and closes the documented exception:
+    -- a *standalone* consume clears `replyObject` without unblocking, so on a
+    -- still-`.blockedOnReply` caller it would strand the third clause
+    -- (`blockedOnReply ⇒ replyObject`).  The live reply paths wake the caller
+    -- **before** the consume — `endpointReply` and `endpointReplyOnCore` both store
+    -- `.ready` and only then tear the link down — so the precondition is exactly
+    -- what every caller of this primitive already satisfies, and the reciprocal
+    -- half needs nothing extra (`consumeCallerReply_preserves_replyCallerLinkageReciprocal`).
+    (hCallerWoken : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
     ipcInvariantFull st' := by
+  have hRCL' : replyCallerLinkage st' := by
+    refine ⟨consumeCallerReply_preserves_replyCallerLinkageReciprocal st st' caller rid r0
+      hInv.replyCallerLinkage.1 hObjInv hGetR0 hLinked hStep, ?_⟩
+    -- third clause: the consume clears exactly one thread's `replyObject`, and that
+    -- thread is not `.blockedOnReply` (`hCallerWoken`), so no `.blockedOnReply` TCB
+    -- loses its reply object.
+    intro tid tcb ep rt hTcb hBlk
+    obtain ⟨ty, hSt, hIS, _, _, _, _, _, _⟩ :=
+      consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep tid.toObjId tcb hTcb
+    by_cases hTC : tid.toObjId = caller.toObjId
+    · exfalso
+      rw [hTC] at hSt
+      exact hCallerWoken ty hSt ep rt (by rw [← hIS]; exact hBlk)
+    · -- a different thread's slot frames past the consume unchanged: it is neither
+      -- the caller's nor the Reply's (the latter holds a reply, not a TCB).
+      have hTR : tid.toObjId ≠ rid.toObjId := by
+        intro hEq
+        rw [hEq, (getReply?_eq_some_iff st rid r0).mp hGetR0] at hSt
+        cases hSt
+      have hTcbPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
+        rw [← consumeCallerReply_objects_frame st st' caller rid hObjInv hStep tid.toObjId hTR hTC]
+        exact hTcb
+      exact hInv.replyCallerLinkage.2 tid tcb ep rt hTcbPre hBlk
   refine ipcInvariantFull_of_core_replyCallerLinkage ?core hRCL'
     (consumeCallerReply_preserves_pendingReceiveReplyWellFormed st st' caller rid hObjInv
       hInv.pendingReceiveReplyWellFormed hStep)
@@ -21919,8 +21952,12 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hBadge' : badgeWellFormed st')
+    -- WS-RR RR3.11: the badges carried in the syscall's message argument are valid.
+    -- A condition on the operation's *input*, replacing the threaded `hBadge'`;
+    -- `badgeWellFormed` is now **established** via
+    -- `endpointSendDualWithCaps_preserves_badgeWellFormed`, and
+    -- `dualQueueSystemInvariant` via the M3-E4 wrapper theorem the tree already had.
+    (hMsgCaps : messageCapBadgesValid msg)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     -- IPC de-threading D4 Slice 2b: enqueue freshness (the running sender is `.ready`, hence not a
     -- queue member, and the old sendQ tail is not a cross-queue tail) — dischargeable, replacing the
@@ -21962,11 +21999,17 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
     hInv.passiveServerIdle hStep
   exact ⟨endpointSendDualWithCaps_preserves_ipcInvariant endpointId sender msg
      endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
-   hDualQueue',
+   -- WS-RR RR3.11: `dualQueueSystemInvariant` **established** (base send + cap-transfer frame).
+   endpointSendDualWithCaps_preserves_dualQueueSystemInvariant endpointId sender msg
+     endpointRights senderCspaceRoot receiverSlotBase st st' summary
+     hInv.dualQueueSystemInvariant hFreshSender hSendTailFresh hObjInv hStep,
    -- IPC de-threading D8: allPendingMessagesBounded **established** (base + cap-transfer frame).
    endpointSendDualWithCaps_preserves_allPendingMessagesBounded endpointId sender msg endpointRights
      senderCspaceRoot receiverSlotBase st st' summary hInv.2.2.1 hObjInv hStep,
-   hBadge',
+   -- WS-RR RR3.11: `badgeWellFormed` **established** (base send frame + the transfer's own
+   -- frame, discharged by the message-argument condition `hMsgCaps`).
+   endpointSendDualWithCaps_preserves_badgeWellFormed endpointId sender msg endpointRights
+     senderCspaceRoot receiverSlotBase st st' summary hInv.badgeWellFormed hObjInv hMsgCaps hStep,
    -- WS-RR RR3.3: `blockedThreadsPendingMessageConsistent` **established** (base + cap-transfer frame).
    endpointSendDualWithCaps_preserves_blockedThreadsPendingMessageConsistent endpointId sender msg
      endpointRights senderCspaceRoot receiverSlotBase st st' summary hObjInv
@@ -22029,8 +22072,11 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hBadge' : badgeWellFormed st')
+    -- WS-RR RR3.11: the pre-state in-flight badge invariant.  The caps this wrapper
+    -- installs are the ones in the message the base receive just delivered, so the
+    -- transfer's side condition is discharged by transporting a *pre*-state property
+    -- rather than by threading `badgeWellFormed` on the result.
+    (hPendingCaps : pendingMessageCapBadgesWellFormed st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     -- IPC de-threading D4 Slice 2b: enqueue freshness (the running receiver is `.ready`, hence not a
     -- queue member, and the old receiveQ tail is not a cross-queue tail) — dischargeable, replacing the
@@ -22068,10 +22114,17 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     hObjInv hInv.passiveServerIdle hStep
   exact ⟨endpointReceiveDualWithCaps_preserves_ipcInvariant endpointId receiver replyId
      receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.1 hObjInv hStep,
-   hDualQueue',
+   -- WS-RR RR3.11: `dualQueueSystemInvariant` **established** (base receive + cap-transfer frame).
+   endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant endpointId receiver replyId
+     receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.dualQueueSystemInvariant
+     hFreshReceiver hRecvTailFresh hObjInv hStep,
    -- IPC de-threading D8: allPendingMessagesBounded **established** (base + cap-transfer frame).
    endpointReceiveDualWithCaps_preserves_allPendingMessagesBounded endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.2.2.1 hObjInv hStep,
-   hBadge',
+   -- WS-RR RR3.11: `badgeWellFormed` **established** (base receive frame + the transfer's own
+   -- frame, discharged by the transported in-flight badge invariant).
+   endpointReceiveDualWithCaps_preserves_badgeWellFormed endpointId receiver replyId
+     receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.badgeWellFormed hObjInv
+     hPendingCaps hStep,
    -- WS-RR RR3.3: `blockedThreadsPendingMessageConsistent` **established** (base + cap-transfer frame).
    endpointReceiveDualWithCaps_preserves_blockedThreadsPendingMessageConsistent endpointId receiver
      replyId receiverCspaceRoot receiverSlotBase st st' senderId summary hObjInv
@@ -22127,8 +22180,12 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hBadge' : badgeWellFormed st')
+    -- WS-RR RR3.11: the badges carried in the syscall's message argument are valid.
+    -- A condition on the operation's *input*, replacing the threaded `hBadge'`;
+    -- `badgeWellFormed` is now **established** via
+    -- `endpointCallWithCaps_preserves_badgeWellFormed`, and `dualQueueSystemInvariant`
+    -- via `endpointCallWithCaps_preserves_dualQueueSystemInvariant`.
+    (hMsgCaps : messageCapBadgesValid msg)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     -- IPC de-threading D4 Slice 2b: enqueue freshness (the running caller is `.ready`, hence not a
     -- queue member, and the old sendQ tail is not a cross-queue tail) — dischargeable, replacing the
@@ -22174,11 +22231,17 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull
     hInv.passiveServerIdle hStep
   exact ⟨endpointCallWithCaps_preserves_ipcInvariant endpointId caller msg
      endpointRights callerCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
-   hDualQueue',
+   -- WS-RR RR3.11: `dualQueueSystemInvariant` **established** (base call + cap-transfer frame).
+   endpointCallWithCaps_preserves_dualQueueSystemInvariant endpointId caller msg endpointRights
+     callerCspaceRoot receiverSlotBase st st' summary hInv.dualQueueSystemInvariant hObjInv
+     hFreshCaller hSendTailFresh hStep,
    -- IPC de-threading D8: allPendingMessagesBounded **established** (base + cap-transfer frame).
    endpointCallWithCaps_preserves_allPendingMessagesBounded endpointId caller msg endpointRights
      callerCspaceRoot receiverSlotBase st st' summary hInv.2.2.1 hObjInv hStep,
-   hBadge',
+   -- WS-RR RR3.11: `badgeWellFormed` **established** (base call frame + the transfer's own
+   -- frame, discharged by the message-argument condition `hMsgCaps`).
+   endpointCallWithCaps_preserves_badgeWellFormed endpointId caller msg endpointRights
+     callerCspaceRoot receiverSlotBase st st' summary hInv.badgeWellFormed hObjInv hMsgCaps hStep,
    -- WS-RR RR3.3: `blockedThreadsPendingMessageConsistent` **established** (base + cap-transfer frame).
    endpointCallWithCaps_preserves_blockedThreadsPendingMessageConsistent endpointId caller msg
      endpointRights callerCspaceRoot receiverSlotBase st st' summary hObjInv

@@ -143,12 +143,13 @@ private theorem linkCallerReply_preserves_badgeWellFormed
 /-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves `allPendingMessagesBounded`.
 The `.reply` store touches no TCB; the caller `.tcb` store leaves `pendingMessage`
 unchanged (`{ tcb with replyObject := … }.pendingMessage = tcb.pendingMessage`). -/
-private theorem linkCallerReply_preserves_allPendingMessagesBounded
+private theorem linkCallerReply_preserves_pendingMessagesSatisfy
+    {P : IpcMessage → Prop}
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt)
     (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st'))
-    (hInv : allPendingMessagesBounded st) :
-    allPendingMessagesBounded st' := by
+    (hInv : pendingMessagesSatisfy P st) :
+    pendingMessagesSatisfy P st' := by
   unfold SystemState.linkCallerReply at hStep
   cases hLink : SystemState.linkReply rid caller st with
   | error e => simp [hLink] at hStep
@@ -156,7 +157,7 @@ private theorem linkCallerReply_preserves_allPendingMessagesBounded
     obtain ⟨_, st1⟩ := p1
     simp only [hLink] at hStep
     -- The `.reply` store: a TCB present post-store sits at an OTHER slot.
-    have hInv1 : allPendingMessagesBounded st1 := by
+    have hInv1 : pendingMessagesSatisfy P st1 := by
       unfold SystemState.linkReply at hLink
       cases hGetR : st.getReply? rid with
       | none => simp [hGetR] at hLink
@@ -189,6 +190,16 @@ private theorem linkCallerReply_preserves_allPendingMessagesBounded
             rwa [storeObject_objects_ne st1 st' caller.toObjId t.toObjId _ hEq hObjInv1 hStep] at hObj
           exact hInv1 t tcb' msg hObjPre hMsg
       · simp at hStep
+
+/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves `allPendingMessagesBounded`
+— the boundedness instance of the generic in-flight transport above. -/
+private theorem linkCallerReply_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st'))
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' :=
+  linkCallerReply_preserves_pendingMessagesSatisfy st st' caller rid hObjInv hStep hInv
 
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves
 `dualQueueSystemInvariant`.  Composes `linkCallerReply` (whose `.reply` + caller
@@ -983,23 +994,41 @@ theorem removeRunnable_preserves_contextMatchesCurrent
 
 /-- WS-H12e: ensureRunnable preserves allPendingMessagesBounded.
 ensureRunnable only modifies scheduler state; the object store is unchanged. -/
-theorem ensureRunnable_preserves_allPendingMessagesBounded
+theorem ensureRunnable_preserves_pendingMessagesSatisfy
+    {P : IpcMessage → Prop}
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hInv : allPendingMessagesBounded st) :
-    allPendingMessagesBounded (ensureRunnable st tid) := by
+    (hInv : pendingMessagesSatisfy P st) :
+    pendingMessagesSatisfy P (ensureRunnable st tid) := by
   intro t tcb msg hObj hMsg
   rw [ensureRunnable_preserves_objects] at hObj
   exact hInv t tcb msg hObj hMsg
 
-/-- WS-H12e: removeRunnable preserves allPendingMessagesBounded.
-removeRunnable only modifies scheduler state; the object store is unchanged. -/
-theorem removeRunnable_preserves_allPendingMessagesBounded
+/-- WS-H12e: ensureRunnable preserves allPendingMessagesBounded — the boundedness
+instance of the generic in-flight transport above. -/
+theorem ensureRunnable_preserves_allPendingMessagesBounded
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : allPendingMessagesBounded st) :
-    allPendingMessagesBounded (removeRunnable st tid) := by
+    allPendingMessagesBounded (ensureRunnable st tid) :=
+  ensureRunnable_preserves_pendingMessagesSatisfy st tid hInv
+
+/-- WS-H12e: removeRunnable preserves allPendingMessagesBounded.
+removeRunnable only modifies scheduler state; the object store is unchanged. -/
+theorem removeRunnable_preserves_pendingMessagesSatisfy
+    {P : IpcMessage → Prop}
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : pendingMessagesSatisfy P st) :
+    pendingMessagesSatisfy P (removeRunnable st tid) := by
   intro t tcb msg hObj hMsg
   rw [removeRunnable_preserves_objects] at hObj
   exact hInv t tcb msg hObj hMsg
+
+/-- WS-H12e: removeRunnable preserves allPendingMessagesBounded — the boundedness
+instance of the generic in-flight transport above. -/
+theorem removeRunnable_preserves_allPendingMessagesBounded
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded (removeRunnable st tid) :=
+  removeRunnable_preserves_pendingMessagesSatisfy st tid hInv
 
 /-- WS-H12e: storeTcbIpcState preserves allPendingMessagesBounded.
 storeTcbIpcState only changes `ipcState`, not `pendingMessage`. -/
@@ -1031,14 +1060,15 @@ theorem storeTcbIpcState_preserves_allPendingMessagesBounded
 
 /-- WS-H12e: storeTcbIpcStateAndMessage preserves allPendingMessagesBounded
 when the new pending message (if any) satisfies `bounded`. -/
-theorem storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
+theorem storeTcbIpcStateAndMessage_preserves_pendingMessagesSatisfy
+    {P : IpcMessage → Prop}
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
-    (hMsgBounded : ∀ m, msg = some m → m.bounded)
+    (hMsgP : ∀ m, msg = some m → P m)
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
-    (hInv : allPendingMessagesBounded st) :
-    allPendingMessagesBounded st' := by
+    (hInv : pendingMessagesSatisfy P st) :
+    pendingMessagesSatisfy P st' := by
   unfold storeTcbIpcStateAndMessage at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
@@ -1053,10 +1083,24 @@ theorem storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
           by_cases hEq : t.toObjId = tid.toObjId
           · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore] at hObj
             cases hObj; simp at hPend
-            exact hMsgBounded m hPend
+            exact hMsgP m hPend
           · have hObjPre : st.objects[t.toObjId]? = some (.tcb tcb') := by
               rwa [storeObject_objects_ne st pair.2 tid.toObjId t.toObjId _ hEq hObjInv hStore] at hObj
             exact hInv t tcb' m hObjPre hPend
+
+/-- WS-H12e: storeTcbIpcStateAndMessage preserves allPendingMessagesBounded when the
+new pending message (if any) is bounded — the boundedness instance of the generic
+in-flight transport above. -/
+theorem storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hMsgBounded : ∀ m, msg = some m → m.bounded)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' :=
+  storeTcbIpcStateAndMessage_preserves_pendingMessagesSatisfy st st' tid ipc msg
+    hMsgBounded hObjInv hStep hInv
 
 /-- Finding F-1: `storeTcbReceiveComplete` preserves allPendingMessagesBounded
 when the delivered message satisfies `bounded`.  Mirror of
@@ -1117,12 +1161,13 @@ theorem storeTcbPendingMessage_preserves_allPendingMessagesBounded
 
 /-- WS-H12e: storeObject for endpoint preserves allPendingMessagesBounded.
 Endpoints don't carry pending messages, so the TCB predicate is unaffected. -/
-theorem storeObject_endpoint_preserves_allPendingMessagesBounded
+theorem storeObject_endpoint_preserves_pendingMessagesSatisfy
+    {P : IpcMessage → Prop}
     (st st' : SystemState) (oid : SeLe4n.ObjId) (ep : Endpoint)
     (hObjInv : st.objects.invExt)
     (hStore : storeObject oid (.endpoint ep) st = .ok ((), st'))
-    (hInv : allPendingMessagesBounded st) :
-    allPendingMessagesBounded st' := by
+    (hInv : pendingMessagesSatisfy P st) :
+    pendingMessagesSatisfy P st' := by
   intro t tcb msg hObj hMsg
   by_cases hEq : t.toObjId = oid
   · rw [hEq, storeObject_objects_eq st st' oid _ hObjInv hStore] at hObj; cases hObj
@@ -1130,17 +1175,28 @@ theorem storeObject_endpoint_preserves_allPendingMessagesBounded
       rwa [storeObject_objects_ne st st' oid t.toObjId _ hEq hObjInv hStore] at hObj
     exact hInv t tcb msg hObjPre hMsg
 
+/-- WS-H12e: storeObject for endpoint preserves allPendingMessagesBounded — the
+boundedness instance of the generic in-flight transport above. -/
+theorem storeObject_endpoint_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid (.endpoint ep) st = .ok ((), st'))
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' :=
+  storeObject_endpoint_preserves_pendingMessagesSatisfy st st' oid ep hObjInv hStore hInv
+
 /-- WS-H12e: storeTcbQueueLinks preserves allPendingMessagesBounded.
 Queue link updates only change `queuePrev`/`queueNext`/`queuePPrev`,
 not `pendingMessage`. -/
-theorem storeTcbQueueLinks_preserves_allPendingMessagesBounded
+theorem storeTcbQueueLinks_preserves_pendingMessagesSatisfy
+    {P : IpcMessage → Prop}
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
     (next : Option SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
-    (hInv : allPendingMessagesBounded st) :
-    allPendingMessagesBounded st' := by
+    (hInv : pendingMessagesSatisfy P st) :
+    pendingMessagesSatisfy P st' := by
   unfold storeTcbQueueLinks at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
@@ -1161,6 +1217,19 @@ theorem storeTcbQueueLinks_preserves_allPendingMessagesBounded
           · have hObjPre : st.objects[t.toObjId]? = some (.tcb tcb') := by
               rwa [storeObject_objects_ne st pair.2 tid.toObjId t.toObjId _ hEq hObjInv hStore] at hObj
             exact hInv t tcb' msg hObjPre hMsg
+
+/-- WS-H12e: storeTcbQueueLinks preserves allPendingMessagesBounded — the
+boundedness instance of the generic in-flight transport above. -/
+theorem storeTcbQueueLinks_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' :=
+  storeTcbQueueLinks_preserves_pendingMessagesSatisfy st st' tid prev pprev next
+    hObjInv hStep hInv
 
 /-- WS-H12e: storeObject for notification preserves allPendingMessagesBounded.
 Notifications are not TCBs, so no TCB's pendingMessage is affected. -/
@@ -1183,13 +1252,14 @@ theorem storeObject_notification_preserves_allPendingMessagesBounded
 
 /-- U4-K: endpointQueuePopHead preserves allPendingMessagesBounded.
 Composed from storeObject_endpoint + storeTcbQueueLinks (×1–2) primitives. -/
-theorem endpointQueuePopHead_preserves_allPendingMessagesBounded
+theorem endpointQueuePopHead_preserves_pendingMessagesSatisfy
+    {P : IpcMessage → Prop}
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (headTcb : TCB)
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st'))
-    (hInv : allPendingMessagesBounded st) :
-    allPendingMessagesBounded st' := by
+    (hInv : pendingMessagesSatisfy P st) :
+    pendingMessagesSatisfy P st' := by
   unfold endpointQueuePopHead at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
@@ -1213,7 +1283,7 @@ theorem endpointQueuePopHead_preserves_allPendingMessagesBounded
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
-            have hInv1 := storeObject_endpoint_preserves_allPendingMessagesBounded
+            have hInv1 := storeObject_endpoint_preserves_pendingMessagesSatisfy
               st pair.2 endpointId _ hObjInv hStore hInv
             have hObjInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
             cases hNext : tcb.queueNext with
@@ -1224,7 +1294,7 @@ theorem endpointQueuePopHead_preserves_allPendingMessagesBounded
               | ok st3 =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
                 intro ⟨_, _, rfl⟩
-                exact storeTcbQueueLinks_preserves_allPendingMessagesBounded
+                exact storeTcbQueueLinks_preserves_pendingMessagesSatisfy
                   _ _ headTid _ _ _ hObjInv1 hFinal hInv1
             | some nextTid =>
               simp only []
@@ -1236,7 +1306,7 @@ theorem endpointQueuePopHead_preserves_allPendingMessagesBounded
                 | error e => simp
                 | ok st2 =>
                   simp only []
-                  have hInv2 := storeTcbQueueLinks_preserves_allPendingMessagesBounded
+                  have hInv2 := storeTcbQueueLinks_preserves_pendingMessagesSatisfy
                     _ _ nextTid _ _ _ hObjInv1 hLink hInv1
                   have hObjInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ nextTid _ _ _ hObjInv1 hLink
                   cases hFinal : storeTcbQueueLinks st2 headTid none none none with
@@ -1244,8 +1314,20 @@ theorem endpointQueuePopHead_preserves_allPendingMessagesBounded
                   | ok st3 =>
                     simp only [Except.ok.injEq, Prod.mk.injEq]
                     intro ⟨_, _, rfl⟩
-                    exact storeTcbQueueLinks_preserves_allPendingMessagesBounded
+                    exact storeTcbQueueLinks_preserves_pendingMessagesSatisfy
                       _ _ headTid _ _ _ hObjInv2 hFinal hInv2
+
+/-- U4-K: endpointQueuePopHead preserves allPendingMessagesBounded — the
+boundedness instance of the generic in-flight transport above. -/
+theorem endpointQueuePopHead_preserves_allPendingMessagesBounded
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (headTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st'))
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' :=
+  endpointQueuePopHead_preserves_pendingMessagesSatisfy endpointId isReceiveQ st st'
+    tid headTcb hObjInv hStep hInv
 
 /-- U4-K: endpointQueuePopHead preserves badgeWellFormed.
 Composed from storeObject_endpoint + storeTcbQueueLinks (×1–2) primitives. -/
@@ -1315,13 +1397,14 @@ theorem endpointQueuePopHead_preserves_badgeWellFormed
 
 /-- U4-K: endpointQueueEnqueue preserves allPendingMessagesBounded.
 Composed from storeObject_endpoint + storeTcbQueueLinks (×1–2) primitives. -/
-theorem endpointQueueEnqueue_preserves_allPendingMessagesBounded
+theorem endpointQueueEnqueue_preserves_pendingMessagesSatisfy
+    {P : IpcMessage → Prop}
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st')
-    (hInv : allPendingMessagesBounded st) :
-    allPendingMessagesBounded st' := by
+    (hInv : pendingMessagesSatisfy P st) :
+    pendingMessagesSatisfy P st' := by
   unfold endpointQueueEnqueue at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
@@ -1344,11 +1427,11 @@ theorem endpointQueueEnqueue_preserves_allPendingMessagesBounded
               | error e => simp
               | ok pair =>
                 simp only []
-                have hInv1 := storeObject_endpoint_preserves_allPendingMessagesBounded
+                have hInv1 := storeObject_endpoint_preserves_pendingMessagesSatisfy
                   st pair.2 endpointId _ hObjInv hStore hInv
                 have hObjInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
                 intro hStep
-                exact storeTcbQueueLinks_preserves_allPendingMessagesBounded
+                exact storeTcbQueueLinks_preserves_pendingMessagesSatisfy
                   _ _ tid _ _ _ hObjInv1 hStep hInv1
             | some tailTid =>
               cases hLookupT : lookupTcb st tailTid
@@ -1359,19 +1442,31 @@ theorem endpointQueueEnqueue_preserves_allPendingMessagesBounded
                 · simp
                 · rename_i pair
                   simp only []
-                  have hInv1 := storeObject_endpoint_preserves_allPendingMessagesBounded
+                  have hInv1 := storeObject_endpoint_preserves_pendingMessagesSatisfy
                     st pair.2 endpointId _ hObjInv hStore hInv
                   have hObjInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
                   cases hLink1 : storeTcbQueueLinks pair.2 tailTid _ _ (some tid)
                   · simp
                   · rename_i st2
                     simp only []
-                    have hInv2 := storeTcbQueueLinks_preserves_allPendingMessagesBounded
+                    have hInv2 := storeTcbQueueLinks_preserves_pendingMessagesSatisfy
                       _ _ tailTid _ _ _ hObjInv1 hLink1 hInv1
                     have hObjInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ tailTid _ _ _ hObjInv1 hLink1
                     intro hStep
-                    exact storeTcbQueueLinks_preserves_allPendingMessagesBounded
+                    exact storeTcbQueueLinks_preserves_pendingMessagesSatisfy
                       _ _ tid _ _ _ hObjInv2 hStep hInv2
+
+/-- U4-K: endpointQueueEnqueue preserves allPendingMessagesBounded — the
+boundedness instance of the generic in-flight transport above. -/
+theorem endpointQueueEnqueue_preserves_allPendingMessagesBounded
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st')
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' :=
+  endpointQueueEnqueue_preserves_pendingMessagesSatisfy endpointId isReceiveQ tid st st'
+    hObjInv hStep hInv
 
 /-- U4-K: endpointQueueEnqueue preserves badgeWellFormed.
 Composed from storeObject_endpoint + storeTcbQueueLinks (×1–2) primitives. -/
@@ -2069,14 +2164,15 @@ Path A (sender waiting): PopHead + storeTcbIpcStateAndMessage(sender, none) +
   [ensureRunnable|id] + storeTcbPendingMessage(receiver, senderMsg).
   The senderMsg was bounded in the pre-state by the invariant.
 Path B (no sender): Enqueue + storeTcbIpcState + removeRunnable. -/
-theorem endpointReceiveDual_preserves_allPendingMessagesBounded
+theorem endpointReceiveDual_preserves_pendingMessagesSatisfy
+    {P : IpcMessage → Prop}
     (endpointId : SeLe4n.ObjId) (receiver senderId : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
     (st st' : SystemState)
-    (hInv : allPendingMessagesBounded st)
+    (hInv : pendingMessagesSatisfy P st)
     (hObjInv : st.objects.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
-    allPendingMessagesBounded st' := by
+    pendingMessagesSatisfy P st' := by
   unfold endpointReceiveDual at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
@@ -2093,12 +2189,12 @@ theorem endpointReceiveDual_preserves_allPendingMessagesBounded
         | ok pair =>
           simp only [hPop] at hStep
           obtain ⟨sender, senderTcb, stPop⟩ := pair
-          have hInv1 := endpointQueuePopHead_preserves_allPendingMessagesBounded
+          have hInv1 := endpointQueuePopHead_preserves_pendingMessagesSatisfy
             endpointId false st stPop sender senderTcb hObjInv hPop hInv
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt
             endpointId false st stPop sender senderTcb hObjInv hPop
           -- senderTcb.pendingMessage was bounded in pre-state
-          have hSenderMsgBounded : ∀ m, senderTcb.pendingMessage = some m → m.bounded := by
+          have hSenderMsgP : ∀ m, senderTcb.pendingMessage = some m → P m := by
             intro m hm
             have hPreTcb := endpointQueuePopHead_returns_pre_tcb endpointId false st ep sender senderTcb stPop hObj hPop
             exact hInv sender senderTcb m hPreTcb hm
@@ -2109,7 +2205,7 @@ theorem endpointReceiveDual_preserves_allPendingMessagesBounded
             | error e => simp [hStore] at hStep
             | ok st2 =>
               simp only [hStore] at hStep
-              have hInv2 := storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
+              have hInv2 := storeTcbIpcStateAndMessage_preserves_pendingMessagesSatisfy
                 stPop st2 sender _ _ (by intro m hm; cases hm) hObjInv1 hStore hInv1
               have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt stPop st2 sender _ _ hObjInv1 hStore
               -- WS-SM SM6.D (#7.1 fold): atomic reply-link of the dequeued caller.
@@ -2124,7 +2220,7 @@ theorem endpointReceiveDual_preserves_allPendingMessagesBounded
                   simp only [hLink] at hStep
                   have hObjInvLink : stLinked.objects.invExt :=
                     linkCallerReply_preserves_objects_invExt st2 stLinked sender rid hObjInv2 hLink
-                  have hInvLink := linkCallerReply_preserves_allPendingMessagesBounded
+                  have hInvLink := linkCallerReply_preserves_pendingMessagesSatisfy
                     st2 stLinked sender rid hObjInv2 hLink hInv2
                   -- AK1-D: atomic (.ready, senderMsg) receiver update
                   cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready senderTcb.pendingMessage with
@@ -2132,17 +2228,17 @@ theorem endpointReceiveDual_preserves_allPendingMessagesBounded
                   | ok st3 =>
                     simp [hPend] at hStep
                     obtain ⟨_, hEq⟩ := hStep; subst hEq
-                    exact storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
-                      stLinked st3 receiver .ready _ hSenderMsgBounded hObjInvLink hPend hInvLink
+                    exact storeTcbIpcStateAndMessage_preserves_pendingMessagesSatisfy
+                      stLinked st3 receiver .ready _ hSenderMsgP hObjInvLink hPend hInvLink
           · -- Send path: storeTcbIpcStateAndMessage(sender, none) + ensureRunnable + storeTcbPendingMessage(receiver, senderMsg)
             cases hStore : storeTcbIpcStateAndMessage stPop sender .ready none with
             | error e => simp [hStore] at hStep
             | ok st2 =>
               simp only [hStore] at hStep
-              have hInv2 := storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
+              have hInv2 := storeTcbIpcStateAndMessage_preserves_pendingMessagesSatisfy
                 stPop st2 sender _ _ (by intro m hm; cases hm) hObjInv1 hStore hInv1
               have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt stPop st2 sender _ _ hObjInv1 hStore
-              have hInv3 := ensureRunnable_preserves_allPendingMessagesBounded st2 sender hInv2
+              have hInv3 := ensureRunnable_preserves_pendingMessagesSatisfy st2 sender hInv2
               have hObjInv3 : (ensureRunnable st2 sender).objects.invExt := by
                 rw [ensureRunnable_preserves_objects]; exact hObjInv2
               -- AK1-D: atomic (.ready, senderMsg) receiver update
@@ -2151,8 +2247,8 @@ theorem endpointReceiveDual_preserves_allPendingMessagesBounded
               | ok st4 =>
                 simp [hPend] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
-                exact storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
-                  _ st4 receiver .ready _ hSenderMsgBounded hObjInv3 hPend hInv3
+                exact storeTcbIpcStateAndMessage_preserves_pendingMessagesSatisfy
+                  _ st4 receiver .ready _ hSenderMsgP hObjInv3 hPend hInv3
       | none =>
         -- AI4-A: cleanupPreReceiveDonation before enqueue
         -- AK1-A (I-H01): Destructure checked variant, bridge to defensive form.
@@ -2165,12 +2261,12 @@ theorem endpointReceiveDual_preserves_allPendingMessagesBounded
           simp only [hChecked] at hStep
           rw [hBridge] at hStep
           have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
-          have hInvClean := cleanupPreReceiveDonation_preserves_allPendingMessagesBounded st receiver hObjInv hInv
+          have hInvClean := cleanupPreReceiveDonation_preserves_pendingMessagesSatisfy st receiver hObjInv hInv
           cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
           | error e => simp [hEnq] at hStep
           | ok st1 =>
             simp only [hEnq] at hStep
-            have hInv1 := endpointQueueEnqueue_preserves_allPendingMessagesBounded
+            have hInv1 := endpointQueueEnqueue_preserves_pendingMessagesSatisfy
               endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq hInvClean
             have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt
               endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
@@ -2180,7 +2276,7 @@ theorem endpointReceiveDual_preserves_allPendingMessagesBounded
               simp only [hIpc] at hStep
               -- PR #873 round 11: the block now clears `pendingMessage`, so the
               -- boundedness obligation on the stored message is vacuous.
-              have hInv2 := storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
+              have hInv2 := storeTcbIpcStateAndMessage_preserves_pendingMessagesSatisfy
                 st1 st2 receiver _ none (fun _ h => by cases h) hObjInv1 hIpc hInv1
               have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 receiver _ _ hObjInv1 hIpc
               -- WS-SM SM6.D (#7.1 fold): server-first stash store on the blocked receiver.
@@ -2188,7 +2284,7 @@ theorem endpointReceiveDual_preserves_allPendingMessagesBounded
               | none =>
                 simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
-                exact removeRunnable_preserves_allPendingMessagesBounded st2 receiver hInv2
+                exact removeRunnable_preserves_pendingMessagesSatisfy st2 receiver hInv2
               | some rTcb =>
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
@@ -2208,7 +2304,7 @@ theorem endpointReceiveDual_preserves_allPendingMessagesBounded
                   have hTcbPre : st2.objects[receiver.toObjId]? = some (.tcb rTcb) :=
                     (SystemState.getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
                   -- The stash store leaves `pendingMessage` unchanged.
-                  have hInv3 : allPendingMessagesBounded stStashed := by
+                  have hInv3 : pendingMessagesSatisfy P stStashed := by
                     intro t tcb' m hObjT hPend
                     by_cases hEqT : t.toObjId = receiver.toObjId
                     · rw [hEqT, storeObject_objects_eq st2 stStashed receiver.toObjId _ hObjInv2 hStash] at hObjT
@@ -2217,7 +2313,36 @@ theorem endpointReceiveDual_preserves_allPendingMessagesBounded
                     · have hObjPre : st2.objects[t.toObjId]? = some (.tcb tcb') := by
                         rwa [storeObject_objects_ne st2 stStashed receiver.toObjId t.toObjId _ hEqT hObjInv2 hStash] at hObjT
                       exact hInv2 t tcb' m hObjPre hPend
-                  exact removeRunnable_preserves_allPendingMessagesBounded stStashed receiver hInv3
+                  exact removeRunnable_preserves_pendingMessagesSatisfy stStashed receiver hInv3
+
+/-- U4-K: endpointReceiveDual preserves allPendingMessagesBounded — the boundedness
+instance of the generic in-flight transport above. -/
+theorem endpointReceiveDual_preserves_allPendingMessagesBounded
+    (endpointId : SeLe4n.ObjId) (receiver senderId : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (st st' : SystemState)
+    (hInv : allPendingMessagesBounded st)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
+    allPendingMessagesBounded st' :=
+  endpointReceiveDual_preserves_pendingMessagesSatisfy endpointId receiver senderId replyId
+    st st' hInv hObjInv hStep
+
+/-- WS-RR RR3.11: endpointReceiveDual preserves the in-flight badge invariant — the
+`messageCapBadgesValid` instance.  This is what lets `endpointReceiveDualWithCaps`
+**establish** `badgeWellFormed` instead of assuming it on its own post-state: the
+message whose caps the transfer installs is the one the receive just delivered, and
+the receive only moves messages between TCBs. -/
+theorem endpointReceiveDual_preserves_pendingMessageCapBadgesWellFormed
+    (endpointId : SeLe4n.ObjId) (receiver senderId : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (st st' : SystemState)
+    (hInv : pendingMessageCapBadgesWellFormed st)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
+    pendingMessageCapBadgesWellFormed st' :=
+  endpointReceiveDual_preserves_pendingMessagesSatisfy endpointId receiver senderId replyId
+    st st' hInv hObjInv hStep
 
 /-- U4-K: endpointReceiveDual preserves badgeWellFormed. -/
 theorem endpointReceiveDual_preserves_badgeWellFormed

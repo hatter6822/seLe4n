@@ -1664,8 +1664,10 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hBadge' : badgeWellFormed st')
+    -- WS-RR RR3.11: replaces the threaded `hDualQueue'` / `hBadge'`.  The base
+    -- bundle now **establishes** both conjuncts; what it needs instead is this
+    -- condition on the operation's *input*.
+    (hMsgCaps : messageCapBadgesValid msg)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1693,7 +1695,7 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
   ipcInvariantFull_perCore_of_full
     (endpointSendDualWithCaps_preserves_ipcInvariantFull endpointId sender msg endpointRights
       senderCspaceRoot receiverSlotBase st st' summary (ipcInvariantFull_of_smp hInv) hObjInv
-      hDualQueue' hBadge' hAllBudgetsNone hFreshSender hSendTailFresh
+      hMsgCaps hAllBudgetsNone hFreshSender hSendTailFresh
       hSenderNotRecv
       (fun tcb hRaw => hSenderNotReply tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
       (fun tcb hRaw => hSenderNotUnbound tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
@@ -1714,8 +1716,10 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hBadge' : badgeWellFormed st')
+    -- WS-RR RR3.11: replaces the threaded `hDualQueue'` / `hBadge'`.  The base bundle
+    -- now **establishes** both conjuncts; the in-flight badge invariant it needs
+    -- instead is a property of the *pre*-state.
+    (hPendingCaps : pendingMessageCapBadgesWellFormed st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1741,7 +1745,7 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointReceiveDualWithCaps_preserves_ipcInvariantFull endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary
-      (ipcInvariantFull_of_smp hInv) hObjInv hDualQueue' hBadge' hAllBudgetsNone
+      (ipcInvariantFull_of_smp hInv) hObjInv hPendingCaps hAllBudgetsNone
       hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
       hStep)
@@ -1760,8 +1764,10 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull_perCore
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hBadge' : badgeWellFormed st')
+    -- WS-RR RR3.11: replaces the threaded `hDualQueue'` / `hBadge'`.  The base
+    -- bundle now **establishes** both conjuncts; what it needs instead is this
+    -- condition on the operation's *input*.
+    (hMsgCaps : messageCapBadgesValid msg)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshCaller : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1791,7 +1797,7 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull_perCore
   ipcInvariantFull_perCore_of_full
     (endpointCallWithCaps_preserves_ipcInvariantFull endpointId caller msg endpointRights
       callerCspaceRoot receiverSlotBase st st' summary (ipcInvariantFull_of_smp hInv) hObjInv
-      hDualQueue' hBadge' hAllBudgetsNone hFreshCaller hSendTailFresh
+      hMsgCaps hAllBudgetsNone hFreshCaller hSendTailFresh
       hCallerNotRecv
       (fun tcb hRaw => hCallerNotReply tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw))
       (fun tcb hRaw => hCallerNotUnbound tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw))

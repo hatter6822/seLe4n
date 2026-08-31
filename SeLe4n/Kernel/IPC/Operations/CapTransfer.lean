@@ -188,6 +188,57 @@ example
   unfold ipcUnwrapCaps
   simp
 
+/-- WS-RR RR3.11: **a cap transfer into a non-CNode receiver root is a state
+no-op.**
+
+`ipcTransferSingleCap` resolves the receiver root through `getCNode?` and fails
+`.objectNotFound` when it is absent or wrong-kinded; the loop treats that as
+fatal, pads the remaining results with `.noSlot` and returns the state it was
+given.  Stated because it is what lets the conjunct frames drop their CNode
+hypothesis: without it they had to *assume* a CNode at the root, and the WithCaps
+wrappers stated that assumption in a shape (`∀ recvRoot`) no state satisfies, so
+the theorems above them were vacuous. -/
+theorem ipcUnwrapCapsLoop_state_eq_of_root_not_cnode
+    (caps : Array TransferCap) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
+    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
+    (hNotCnode : st.getCNode? receiverRoot = none)
+    (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase accResults fuel st
+             = .ok (summary, st')) :
+    st' = st := by
+  cases fuel with
+  | zero =>
+    simp only [ipcUnwrapCapsLoop, Except.ok.injEq, Prod.mk.injEq] at hStep
+    exact hStep.2.symm
+  | succ fuel' =>
+    simp only [ipcUnwrapCapsLoop] at hStep
+    cases hCap : caps[idx]? with
+    | none =>
+      simp only [hCap, Except.ok.injEq, Prod.mk.injEq] at hStep
+      exact hStep.2.symm
+    | some tc =>
+      simp only [hCap] at hStep
+      have hErr : ipcTransferSingleCap tc.cap tc.srcNode receiverRoot nextBase maxExtraCaps st
+          = .error .objectNotFound := by
+        simp only [ipcTransferSingleCap, hNotCnode]
+      simp only [hErr, Except.ok.injEq, Prod.mk.injEq] at hStep
+      exact hStep.2.symm
+
+/-- WS-RR RR3.11: the `ipcUnwrapCaps` form of the no-op above. -/
+theorem ipcUnwrapCaps_state_eq_of_root_not_cnode
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hNotCnode : st.getCNode? receiverRoot = none)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st')) :
+    st' = st := by
+  unfold ipcUnwrapCaps at hStep
+  split at hStep
+  · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep; exact hStep.2.symm
+  · exact ipcUnwrapCapsLoop_state_eq_of_root_not_cnode _ senderRoot receiverRoot _ _ _ _ st st'
+      summary hNotCnode hStep
+
 theorem ipcUnwrapCapsLoop_preserves_scheduler
     (caps : Array TransferCap) (senderRoot receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
