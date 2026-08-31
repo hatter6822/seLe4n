@@ -639,6 +639,49 @@ theorem preemptCurrentOnCore_getTcb?_ne_current (st : SystemState) (c : CoreId)
           tid.toObjId _ hNeO hInv]
       · rfl
 
+/-- WS-RR RR2.17: `preemptCurrentOnCore`'s only object write stores a `.tcb`
+(the preempted thread's register-context save), so every notification the
+post-state holds was already there.  This is the reading `ipcInvariant` makes,
+and the reason the suspend path's local scheduling point cannot disturb it. -/
+theorem preemptCurrentOnCore_notification_backward (st : SystemState) (c : CoreId)
+    (incoming : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (h : (preemptCurrentOnCore st c incoming).objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
+  revert h
+  unfold preemptCurrentOnCore
+  split
+  · exact id
+  · next prevTid hCur =>
+    split
+    · exact id
+    · next _ =>
+      split
+      · next prevTcb _ =>
+        intro h
+        simp only [RHTable_getElem?_eq_get?] at h ⊢
+        by_cases hEq : (prevTid.toObjId == oid) = true
+        · exfalso
+          obtain rfl : prevTid.toObjId = oid := eq_of_beq hEq
+          rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects prevTid.toObjId
+            _ hInv] at h
+          cases h
+        · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects prevTid.toObjId oid
+            _ hEq hInv] at h
+          exact h
+      · exact id
+
+/-- WS-RR RR2.17: a successful `switchToThreadOnCore` inherits the frame — its
+whole object footprint is the preempt's. -/
+theorem switchToThreadOnCore_notification_backward (st : SystemState) (c : CoreId)
+    (chosen : SeLe4n.ThreadId) (st' : SystemState) (hInv : st.objects.invExt)
+    (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hStep : switchToThreadOnCore st c chosen = .ok st')
+    (h : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
+  rw [switchToThreadOnCore_objects_eq_preempt st c chosen st' hStep] at h
+  exact preemptCurrentOnCore_notification_backward st c chosen hInv oid ntfn h
+
 /-- WS-SM SM5.F.6 (PR #811 P2-5 support): a successful `switchToThreadOnCore` frames
 out **any** thread that is not core `c`'s current thread (the preempted thread is the
 only TCB written, via its register-context save).  Composes
