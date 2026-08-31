@@ -202,10 +202,14 @@ def split_top_level(arguments: str) -> list[str]:
     return [part for part in parts if part.strip()]
 
 
-_CONCAT_RE = re.compile(r"\bconcat!\s*\(")
+# Macros that produce an `asm!` template.  `concat!` joins its arguments;
+# `stringify!` turns its raw tokens into a string, so
+# `asm!(stringify!(tlbi vmalle1))` emits the instruction with no string
+# literal anywhere in the source (PR #883 review round 10).
+_TEMPLATE_MACRO_RE = re.compile(r"\b(concat|stringify)!\s*\(")
 
 
-def resolve_concat(code: str) -> tuple[str, list[str]]:
+def resolve_template_macros(code: str) -> tuple[str, list[str]]:
     """Fold `concat!("a", "b")` into `"ab"`, byte-aligned by padding.
 
     `asm!(concat!("tlbi ", "vmalle1"))` emits the instruction: `concat!`
@@ -229,7 +233,7 @@ def resolve_concat(code: str) -> tuple[str, list[str]]:
     problems: list[str] = []
     out = code
     while True:
-        match = _CONCAT_RE.search(out)
+        match = _TEMPLATE_MACRO_RE.search(out)
         if match is None:
             return out, problems
         open_paren = match.end() - 1
@@ -245,6 +249,11 @@ def resolve_concat(code: str) -> tuple[str, list[str]]:
         if index >= len(out):
             return out, problems
         span = out[match.start() : index + 1]
+        if match.group(1) == "stringify":
+            # `stringify!` yields its argument tokens verbatim as a string.
+            folded = '"' + out[open_paren + 1 : index].strip() + '"'
+            out = out[: match.start()] + folded.ljust(len(span))[: len(span)] + out[index + 1 :]
+            continue
         arguments = split_top_level(out[open_paren + 1 : index])
 
         # A non-literal argument matters only where it could start a NEW
@@ -321,10 +330,17 @@ LEAN_NAMED_DECL_KEYWORDS = (
 )
 # Column-0 forms that are NOT declarations: they neither open a body nor end
 # the previous one for attribution purposes.
+# `mutual` is deliberately ABSENT from this tuple: it opens a block of
+# indented declarations that the column-0 scan cannot see, so classifying it
+# as a non-declaration let everything inside inherit the PRECEDING
+# declaration's allowlist entry (PR #883 review round 10).  Falling through
+# to the unknown-form branch ends the previous declaration and reports
+# `<file scope>` inside the block -- the conservative attribution the review
+# asked for, and the one no allowlist entry can match.
 LEAN_NON_DECL_KEYWORDS = (
     "import", "open", "namespace", "end", "section", "variable", "variables",
     "set_option", "attribute", "export", "universe", "local", "scoped",
-    "deriving", "mutual", "where", "in", "run_cmd", "example",
+    "deriving", "where", "in", "run_cmd", "example",
     "macro_rules", "elab_rules", "declare_syntax_cat", "binder_predicate",
 )
 LEAN_MODIFIERS = (
@@ -450,7 +466,7 @@ def check_containment(root: str) -> list[str]:
         text = read(root, rel)
         code = strip_rust(text) if rel.endswith(".rs") else strip_asm(text)
         if rel.endswith(".rs"):
-            code, concat_problems = resolve_concat(code)
+            code, concat_problems = resolve_template_macros(code)
             problems += [f"{rel}:{note}" for note in concat_problems]
         for match in TLBI_MNEMONIC_RE.finditer(code):
             lineno = code.count("\n", 0, match.start()) + 1
@@ -537,10 +553,17 @@ def local_emitters_in_tlb_module(root: str) -> tuple[set[str], list[str]]:
     view, since the mnemonic is `asm!` template content.
     """
     text = read(root, TLB_MODULE)
-    code = rust_code_view.code(text)
+    # The SAME resolver the containment check uses.  Applying it there and
+    # not here left `flush_entry` -- a new local emitter written as
+    # `asm!(concat!("tlbi ", "vae1"))` -- underivable: containment skips
+    # `tlb.rs`, and this inventory read the unresolved fragments, so the
+    # emitter was never registered and its callers were never checked (PR
+    # #883 review round 10).  Sixth instance of a resolver wired into one
+    # of its call sites.
+    code, template_problems = resolve_template_macros(rust_code_view.code(text))
     bodies = rust_code_view.fn_bodies(text)
     emitters: set[str] = set()
-    problems: list[str] = []
+    problems: list[str] = [f"{TLB_MODULE}:{note}" for note in template_problems]
     for match in TLBI_OPERATION_RE.finditer(code):
         operation = match.group(1).lower()
         if operation.endswith(("is", "os")):
@@ -1395,6 +1418,63 @@ def self_test() -> int:
             decoy_duplicate,
             True,
             check="lean_binding_inventory",
+            mutation="preserving",
+        )
+    )
+
+    # A new local emitter in `tlb.rs` written with `concat!`: containment
+    # skips the module, and the inventory read the unresolved fragments.
+    concat_emitter = fixture()
+    concat_emitter[TLB_MODULE] = BASE_TLB_RS + (
+        "\npub fn flush_entry(vaddr: u64) {\n"
+        '    unsafe { core::arch::asm!(concat!("tlbi ", "vae1"), in(reg) vaddr); }\n}\n'
+    )
+    concat_emitter[f"{RUST_SRC}/vspace.rs"] = (
+        "\nfn unmap_page(vaddr: u64) {\n"
+        "    crate::tlb::flush_entry(vaddr);\n}\n"
+    )
+    cases.append(
+        Case(
+            "a concat!-written local emitter is still derived",
+            concat_emitter,
+            True,
+            check="local_wrapper_inventory",
+            mutation="preserving",
+        )
+    )
+
+    # `stringify!` turns raw tokens into a template with no string literal
+    # anywhere in the source.
+    stringify_template = fixture()
+    stringify_template[f"{RUST_SRC}/vspace.rs"] = (
+        "\nfn unmap_page() {\n"
+        "    unsafe { core::arch::asm!(stringify!(tlbi vmalle1)); }\n}\n"
+    )
+    cases.append(
+        Case(
+            "a stringify!-composed asm template is still an emission",
+            stringify_template,
+            True,
+            check="containment",
+            mutation="preserving",
+        )
+    )
+
+    # A `mutual` block opens indented declarations the column-0 scan cannot
+    # see; classifying it as a non-declaration let them inherit the
+    # preceding definition's allowlist entry.
+    lean_mutual = fixture()
+    lean_mutual["SeLe4n/Kernel/Concurrency/Runtime.lean"] = (
+        BASE_LEAN
+        + "\nmutual\n\ndef hiddenLocalFlush : BaseIO Unit :=\n"
+        "  SeLe4n.Platform.FFI.ffiTlbiAll\n\nend\n"
+    )
+    cases.append(
+        Case(
+            "a declaration inside `mutual` does not inherit the previous entry",
+            lean_mutual,
+            True,
+            check="lean_allowlist",
             mutation="preserving",
         )
     )

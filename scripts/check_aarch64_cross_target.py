@@ -119,14 +119,26 @@ def split_comment(line: str) -> str:
     which is why one function serves all three file kinds scanned here.
     """
     quote = None
-    for i, ch in enumerate(line):
+    index = 0
+    while index < len(line):
+        ch = line[index]
+        # A backslash escapes the next character outside quotes and inside
+        # double quotes (not inside single quotes).  Ignoring it read an
+        # escaped `\"` as OPENING a quoted region, so `echo \" # fake "`
+        # -- a literal quote followed by a real comment in bash -- kept its
+        # tail in the view and a line that runs nothing looked like a live
+        # command (PR #883 review round 10).
+        if ch == "\\" and quote != "'":
+            index += 2
+            continue
         if quote is not None:
             if ch == quote:
                 quote = None
         elif ch in ('"', "'"):
             quote = ch
-        elif ch == "#" and (i == 0 or line[i - 1] in " \t"):
-            return line[:i]
+        elif ch == "#" and (index == 0 or line[index - 1] in " \t"):
+            return line[:index]
+        index += 1
     return line
 
 
@@ -2150,6 +2162,24 @@ def self_test() -> int:
         Case(
             "a later `set +e` undoes the earlier `set -e`",
             reenabled_then_off,
+            True,
+            check="gate_script",
+            mutation="preserving",
+        )
+    )
+
+    # An escaped `\"` is a LITERAL quote in shell, so the `#` after it
+    # opens a real comment and the rest of the line never runs.  A quote
+    # tracker without escape handling reads it as opening a quoted region
+    # and keeps the tail in the view.
+    escaped_quote = baseline()
+    escaped_quote[GATE_SCRIPT] = GOOD_GATE.replace(
+        "cargo build", 'echo \\" # fake " ; cargo build'
+    ).replace("cargo clippy", 'echo \\" # fake " ; cargo clippy')
+    cases.append(
+        Case(
+            "an escaped quote does not hide a `#` comment from the view",
+            escaped_quote,
             True,
             check="gate_script",
             mutation="preserving",

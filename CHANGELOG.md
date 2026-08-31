@@ -122,6 +122,18 @@ arbitrary choice — a longer unrelated `decoy::local_flush` displaced the
 short `helpers::local_flush` that actually reached a wrapper.  Duplicate
 bodies are now unioned, which is the over-approximation that was claimed.
 
+A tenth round found four more: an escaped `\"` read as *opening* a quoted
+region, so `echo \" # fake "` — a literal quote followed by a real bash
+comment — kept its tail in the view and a line running nothing looked live;
+`asm!(stringify!(tlbi vmalle1))`, which composes a template with no string
+literal in the source at all; a `mutual` block, whose indented declarations
+the column-0 scan cannot see and which was classified as a non-declaration,
+so they inherited the preceding definition's allowlist entry; and the
+template resolver applied in the containment check but **not** in the
+local-emitter inventory, so a `flush_entry` written as `asm!(concat!("tlbi ",
+"vae1"))` inside `tlb.rs` was never derived — the sixth instance of a
+resolver wired into one of its call sites.
+
 And **one functional defect**: `select_cross_assembler` counted
 `CROSS_COMPILE` among "the variables `cc` itself consults" and returned early
 on it.  `cc` does not consult it, so the conventional
