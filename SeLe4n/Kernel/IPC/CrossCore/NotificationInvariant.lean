@@ -547,10 +547,6 @@ theorem notificationSignalOnCore_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (notificationSignalOnCore notificationId badge executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (notificationSignalOnCore notificationId badge executingCore st).1)
     (hNWC : notificationWaiterConsistent st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st) :
     ipcInvariantFull (notificationSignalOnCore notificationId badge executingCore st).1 := by
@@ -565,10 +561,6 @@ theorem notificationSignalOnCore_preserves_ipcInvariantFull
   · rw [hPre]; exact hInv
   · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
       (notificationSignal_preserves_ipcInvariantFull st r1 notificationId badge hInv hObjInv
-        (blockedThreadsPendingMessageConsistent_of_getElem_eq
-          (fun oid => (hAgree.objects oid).symm) hWtpmn')
-        (replyCallerLinkageReciprocal_of_getElem_eq
-          (fun oid => (hAgree.objects oid).symm) hRCLRecip')
         hNWC hAllBudgetsNone hStep1)
 
 open SeLe4n.Model.SystemState in
@@ -582,10 +574,6 @@ theorem notificationWaitOnCore_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (notificationWaitOnCore notificationId waiter executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (notificationWaitOnCore notificationId waiter executingCore st).1)
     (hWaiterNotRecv : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hWaiterNotReply : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
@@ -605,10 +593,6 @@ theorem notificationWaitOnCore_preserves_ipcInvariantFull
   · rw [hPre]; exact hInv
   · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
       (notificationWait_preserves_ipcInvariantFull st r1 notificationId waiter result hInv hObjInv
-        (blockedThreadsPendingMessageConsistent_of_getElem_eq
-          (fun oid => (hAgree.objects oid).symm) hWtpmn')
-        (replyCallerLinkageReciprocal_of_getElem_eq
-          (fun oid => (hAgree.objects oid).symm) hRCLRecip')
         hWaiterNotRecv
         (fun tcb hRaw => hWaiterNotReply tcb ((getTcb?_eq_some_iff st waiter tcb).mpr hRaw))
         hAllBudgetsNone
@@ -629,17 +613,13 @@ theorem notificationSignalOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (notificationSignalOnCore notificationId badge executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (notificationSignalOnCore notificationId badge executingCore st).1)
     (hNWC : notificationWaiterConsistent st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (c : CoreId) :
     ipcInvariantFull_perCore (notificationSignalOnCore notificationId badge executingCore st).1 c :=
   ipcInvariantFull_perCore_of_full
     (notificationSignalOnCore_preserves_ipcInvariantFull notificationId badge executingCore st
-      (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hRCLRecip' hNWC hAllBudgetsNone)
+      (ipcInvariantFull_of_smp hInv) hObjInv hNWC hAllBudgetsNone)
     (passiveServerIdle_perCore_of_frameOnCore
       (notificationSignalOnCore_passiveServerIdleFrameOnCore notificationId badge executingCore
         st c hObjInv)
@@ -654,10 +634,6 @@ theorem notificationWaitOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (notificationWaitOnCore notificationId waiter executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (notificationWaitOnCore notificationId waiter executingCore st).1)
     (hWaiterNotRecv : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hWaiterNotReply : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
@@ -669,7 +645,7 @@ theorem notificationWaitOnCore_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore (notificationWaitOnCore notificationId waiter executingCore st).1 c :=
   ipcInvariantFull_perCore_of_full
     (notificationWaitOnCore_preserves_ipcInvariantFull notificationId waiter executingCore st
-      (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hRCLRecip' hWaiterNotRecv hWaiterNotReply
+      (ipcInvariantFull_of_smp hInv) hObjInv hWaiterNotRecv hWaiterNotReply
       hAllBudgetsNone hWaiterReady)
     (passiveServerIdle_perCore_of_frameOnCore
       (notificationWaitOnCore_passiveServerIdleFrameOnCore notificationId waiter executingCore

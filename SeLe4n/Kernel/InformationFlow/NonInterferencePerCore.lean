@@ -1147,8 +1147,8 @@ theorem notificationWait_confinedToBootCore (st st' : SystemState)
                   refine observableSlotsConfinedToCore_trans
                     (storeObject_confinedToCore st st1 notificationId _ bootCoreId hStore) ?_
                   refine observableSlotsConfinedToCore_trans
-                    (storeTcbIpcState_fromTcb_confinedToCore st1 st2 waiter tcb _ bootCoreId
-                      hStore2) ?_
+                    (storeTcbIpcStateAndMessage_fromTcb_confinedToCore st1 st2 waiter tcb _ _
+                      bootCoreId hStore2) ?_
                   exact removeRunnable_confinedToBootCore st2 waiter
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
       simp [hObj] at hStep

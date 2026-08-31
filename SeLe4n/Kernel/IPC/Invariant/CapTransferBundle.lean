@@ -54,46 +54,19 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- WS-RR RR2.14: a Reply object present after a capability transfer was present
-before it.  The transfer writes the receiver's CSpace root and nothing else
-(`ipcUnwrapCaps_preserves_objects_ne`), and the root holds a CNode after the
-write, so a post-state Reply is at a different key and reads through.  The
-missing sibling of `ipcUnwrapCaps_tcb_backward` / `_endpoint_backward`. -/
-theorem ipcUnwrapCaps_reply_backward
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (oid : SeLe4n.ObjId) (r : Reply)
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
-             = .ok (summary, st'))
-    (hReply' : st'.objects[oid]? = some (.reply r)) :
-    st.objects[oid]? = some (.reply r) := by
-  by_cases hNe : oid = receiverRoot
-  · rw [hNe] at hReply' ⊢
-    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode msg senderRoot receiverRoot slotBase
-      grantRight st st' summary hObjInv hStep with h | ⟨cn, h⟩
-    · rw [← h]; exact hReply'
-    · rw [h] at hReply'; cases hReply'
-  · rw [ipcUnwrapCaps_preserves_objects_ne msg senderRoot receiverRoot slotBase grantRight
-      st st' summary oid hNe hObjInv hStep] at hReply'
-    exact hReply'
 
-/-- WS-RR RR2.14: the capability transfer preserves
-`blockedThreadsPendingMessageConsistent` — it writes no TCB, so every post-state
-TCB is its pre-state self (`ipcUnwrapCaps_tcb_backward`). -/
-theorem ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (hObjInv : st.objects.invExt)
-    (hInv : blockedThreadsPendingMessageConsistent st)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    blockedThreadsPendingMessageConsistent st' := by
-  intro tid tcb hTcb'
-  exact hInv tid tcb (ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight
-    st st' summary tid.toObjId tcb hObjInv hStep hTcb')
+
+-- WS-RR RR3.3 / RR3.8: `ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent`,
+-- `ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal` and the
+-- `ipcUnwrapCaps_reply_backward` transport the second rests on, moved UP to
+-- `Structural/PerOperation.lean`, beside the other `ipcUnwrapCaps` conjunct
+-- frames.  The `*WithCaps` `ipcInvariantFull` bundles (in
+-- `Structural/DualQueueMembership.lean`, upstream of this module) now
+-- **establish** both conjuncts instead of threading them, and an establisher
+-- has to be reachable from the bundle that calls it.  Both rest only on
+-- `IPC/Operations/CapTransfer.lean`'s transport drivers, so the move is a
+-- relocation, not a re-proof; every consumer here resolves them through the
+-- `Structural` import unchanged.
 
 /-- WS-RR RR2.14: the capability transfer preserves
 `blockedThreadTimeoutConsistent` — every post-state TCB is its pre-state self,
@@ -114,32 +87,6 @@ theorem ipcUnwrapCaps_preserves_blockedThreadTimeoutConsistent
   exact ⟨⟨sc, ipcUnwrapCaps_preserves_schedContext_objects msg senderRoot receiverRoot slotBase
     grantRight st st' summary scId.toObjId sc hSc hObjInv hStep⟩, hBlk⟩
 
-/-- WS-RR RR2.14: the capability transfer preserves the **reciprocal** half of
-`replyCallerLinkage`.  Neither direction can break: a post-state TCB is its
-pre-state self, a pre-state Reply survives forward, and a post-state Reply was
-one before (`ipcUnwrapCaps_reply_backward`). -/
-theorem ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (hObjInv : st.objects.invExt)
-    (hInv : replyCallerLinkageReciprocal st)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    replyCallerLinkageReciprocal st' := by
-  refine ⟨?_, ?_⟩
-  · intro tid tcb rid hTcb' hRO
-    obtain ⟨r, hr, hrc⟩ := hInv.1 tid tcb rid
-      (ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight
-        st st' summary tid.toObjId tcb hObjInv hStep hTcb') hRO
-    exact ⟨r, ipcUnwrapCaps_preserves_reply_objects msg senderRoot receiverRoot slotBase
-      grantRight st st' summary rid.toObjId r hr hObjInv hStep, hrc⟩
-  · intro rid r tid hr' hrc
-    obtain ⟨tcb, hTcb, hRO, hBlk⟩ := hInv.2 rid r tid
-      (ipcUnwrapCaps_reply_backward msg senderRoot receiverRoot slotBase grantRight
-        st st' summary rid.toObjId r hObjInv hStep hr') hrc
-    exact ⟨tcb, ipcUnwrapCaps_preserves_tcb_objects msg senderRoot receiverRoot slotBase
-      grantRight st st' summary tid.toObjId tcb hTcb hObjInv hStep, hRO, hBlk⟩
 
 /-- **WS-RR RR2.14 / RR2.6: the capability transfer preserves `ipcInvariantFull`.**
 

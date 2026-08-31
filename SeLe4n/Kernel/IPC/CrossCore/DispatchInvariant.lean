@@ -219,13 +219,7 @@ theorem endpointCallWithCapsOnCore_preserves_ipcInvariantFull
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointCallOnCore endpointId caller
-        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointCallOnCore endpointId caller
-        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
     (hRecvRootCNode : ∀ (t : SeLe4n.ThreadId) (r : SeLe4n.ObjId),
       lookupCspaceRoot (endpointCallOnCore endpointId caller
         { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1 t
@@ -264,7 +258,7 @@ theorem endpointCallWithCapsOnCore_preserves_ipcInvariantFull
       callerCspaceRoot receiverSlotBase executingCore st).1 := by
   have hBare := endpointCallOnCore_preserves_ipcInvariantFull endpointId caller
     { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st _
-    hInv hObjInv hFreshCaller hSendTailFresh rfl hWtpmn' hAllBudgetsNone hRCLRecip'
+    hInv hObjInv hFreshCaller hSendTailFresh rfl hAllBudgetsNone 
     hCallerNotRecv
     (fun tcb h => hCallerReady tcb ((SystemState.getTcb?_eq_some_iff st caller tcb).mpr h))
     (fun tcb h => hCallerNotReply tcb ((SystemState.getTcb?_eq_some_iff st caller tcb).mpr h))
@@ -458,13 +452,7 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointCallOnCore endpointId caller
-        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointCallOnCore endpointId caller
-        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
     (hRecvRootCNode : ∀ (t : SeLe4n.ThreadId) (r : SeLe4n.ObjId),
       lookupCspaceRoot (endpointCallOnCore endpointId caller
         { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1 t
@@ -502,8 +490,8 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
   have hWithCaps : ipcInvariantFull (endpointCallWithCapsOnCore endpointId caller msg
       endpointRights callerCspaceRoot receiverSlotBase executingCore st).1 :=
     endpointCallWithCapsOnCore_preserves_ipcInvariantFull endpointId caller msg endpointRights
-      callerCspaceRoot receiverSlotBase executingCore st hInv hObjInv hWtpmn' hAllBudgetsNone
-      hRCLRecip' hRecvRootCNode hCapBadges hFreshCaller hSendTailFresh hCallerNotRecv
+      callerCspaceRoot receiverSlotBase executingCore st hInv hObjInv hAllBudgetsNone
+      hRecvRootCNode hCapBadges hFreshCaller hSendTailFresh hCallerNotRecv
       hCallerReady hCallerNotReply hCallerNotUnbound
   have hWithCapsInv : (endpointCallWithCapsOnCore endpointId caller msg endpointRights
       callerCspaceRoot receiverSlotBase executingCore st).1.objects.invExt :=

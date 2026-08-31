@@ -308,11 +308,7 @@ theorem endpointSendDualOnCore_preserves_ipcInvariantFull
     (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointSendDualOnCore endpointId sender msg executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointSendDualOnCore endpointId sender msg executingCore st).1)
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
@@ -347,11 +343,7 @@ theorem endpointSendDualOnCore_preserves_ipcInvariantFull
   · rw [hPre]; exact hInv
   · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
       (endpointSendDual_preserves_ipcInvariantFull st r1 endpointId sender msg hInv hObjInv
-        (blockedThreadsPendingMessageConsistent_of_getElem_eq
-          (fun oid => (hAgree.objects oid).symm) hWtpmn')
         hAllBudgetsNone
-        (replyCallerLinkageReciprocal_of_getElem_eq
-          (fun oid => (hAgree.objects oid).symm) hRCLRecip')
         hFreshSender hSendTailFresh hSenderNotRecv
         (fun tcb hRaw => hSenderNotReply tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
         (fun tcb hRaw => hSenderNotUnbound tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
@@ -365,11 +357,7 @@ theorem endpointSendDualOnCore_preserves_ipcInvariantFull_perCore
     (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointSendDualOnCore endpointId sender msg executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointSendDualOnCore endpointId sender msg executingCore st).1)
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
@@ -394,7 +382,7 @@ theorem endpointSendDualOnCore_preserves_ipcInvariantFull_perCore
       (endpointSendDualOnCore endpointId sender msg executingCore st).1 c :=
   ipcInvariantFull_perCore_of_full
     (endpointSendDualOnCore_preserves_ipcInvariantFull endpointId sender msg executingCore st
-      (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hAllBudgetsNone hRCLRecip' hFreshSender
+      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone hFreshSender
       hSendTailFresh hSenderNotRecv hSenderNotReply hSenderNotUnbound)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointSendDualOnCore_passiveServerIdleFrameOnCore endpointId sender msg executingCore
@@ -430,13 +418,7 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointSendDualOnCore endpointId sender
-        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointSendDualOnCore endpointId sender
-        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
     -- WS-RR RR2.6: the two conditions `ipcUnwrapCaps_preserves_ipcInvariantFull`
     -- needs, both on the transfer's *inputs*: the destination CSpace root holds a
     -- CNode (a structural property of the state, and part of what the capability
@@ -477,7 +459,7 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
         receiverSlotBase executingCore st).1 := by
   have hBare := endpointSendDualOnCore_preserves_ipcInvariantFull endpointId sender
     { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st hInv
-    hObjInv hWtpmn' hAllBudgetsNone hRCLRecip' hFreshSender hSendTailFresh hSenderNotRecv
+    hObjInv hAllBudgetsNone hFreshSender hSendTailFresh hSenderNotRecv
     hSenderNotReply hSenderNotUnbound
   have hBareInv := endpointSendDualOnCore_preserves_objects_invExt endpointId sender
     { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st hObjInv
@@ -582,13 +564,7 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointSendDualOnCore endpointId sender
-        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointSendDualOnCore endpointId sender
-        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
     -- WS-RR RR2.6: the two conditions `ipcUnwrapCaps_preserves_ipcInvariantFull`
     -- needs, both on the transfer's *inputs*: the destination CSpace root holds a
     -- CNode (a structural property of the state, and part of what the capability
@@ -631,7 +607,7 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
   ipcInvariantFull_perCore_of_full
     (endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull endpointId sender msg
       endpointRights senderCspaceRoot receiverSlotBase executingCore st
-      (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hAllBudgetsNone hRCLRecip' hRecvRootCNode
+      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone hRecvRootCNode
       hCapBadges hFreshSender hSendTailFresh hSenderNotRecv hSenderNotReply hSenderNotUnbound)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointSendDualWithCapsOnCore_passiveServerIdleFrameOnCore endpointId sender msg

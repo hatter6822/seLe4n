@@ -133,8 +133,6 @@ theorem endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReplyOnCore replier target msg executingCore st).1)
     (hDOV' : donationOwnerValid
       (endpointReplyOnCore replier target msg executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
@@ -144,7 +142,7 @@ theorem endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull
     ipcInvariantFull (endpointReplyCrossCoreDispatch replier target msg executingCore st).1 := by
   have hReply : ipcInvariantFull (endpointReplyOnCore replier target msg executingCore st).1 :=
     endpointReplyOnCore_preserves_ipcInvariantFull replier target msg executingCore st hInv
-      hObjInv hWtpmn' hDOV' hAllBudgetsNone
+      hObjInv hDOV' hAllBudgetsNone
   have hReplyInv : (endpointReplyOnCore replier target msg executingCore st).1.objects.invExt :=
     endpointReplyOnCore_preserves_objects_invExt replier target msg executingCore st hObjInv
   have hBack := endpointReplyOnCore_tcb_backward replier target msg executingCore st hObjInv

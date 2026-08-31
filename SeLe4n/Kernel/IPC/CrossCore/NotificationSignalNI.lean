@@ -213,7 +213,8 @@ theorem notificationWaitOnCore_block_path_NI
     (hCons : ntfn.waitingThreads.consWithGuard? waiter = some wt')
     (hStore : storeObject notificationId (.notification
         { state := .waiting, waitingThreads := wt', pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
-    (hTcb : storeTcbIpcState_fromTcb st' waiter tcb (.blockedOnNotification notificationId) = .ok st'')
+    (hTcb : storeTcbIpcStateAndMessage_fromTcb st' waiter tcb
+        (.blockedOnNotification notificationId) none = .ok st'')
     (hObjInv : st.objects.invExt)
     (hNtfnHigh : objectObservable ctx observer notificationId = false)
     (hWaiterHigh : threadObservable ctx observer waiter = false)
@@ -222,15 +223,16 @@ theorem notificationWaitOnCore_block_path_NI
       = projectState ctx observer st := by
   have hLk' : lookupTcb st' waiter = some tcb :=
     lookupTcb_preserved_by_storeObject_notification hLk hObj hObjInv hStore
-  have hTcb' : storeTcbIpcState st' waiter (.blockedOnNotification notificationId) = .ok st'' := by
-    rw [← storeTcbIpcState_fromTcb_eq hLk']; exact hTcb
+  have hTcb' : storeTcbIpcStateAndMessage st' waiter (.blockedOnNotification notificationId) none
+      = .ok st'' := by
+    rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk']; exact hTcb
   have hInv' := storeObject_preserves_objects_invExt st st' notificationId _ hObjInv hStore
   rw [notificationWaitOnCore_block_eq notificationId waiter executingCore st ntfn tcb wt' st' st''
         hObj hBadge hLk hNotWaiting hCons hStore hTcb]
   show projectState ctx observer (removeRunnableOnCore st'' waiter executingCore)
     = projectState ctx observer st
   rw [removeRunnableOnCore_preserves_projection ctx observer st'' waiter executingCore hWaiterHigh,
-      storeTcbIpcState_preserves_projection ctx observer st' st'' waiter _ hWaiterObjHigh hInv' hTcb',
+      storeTcbIpcStateAndMessage_preserves_projection ctx observer st' st'' waiter _ _ hWaiterObjHigh hInv' hTcb',
       storeObject_preserves_projection ctx observer st st' notificationId _ hNtfnHigh hObjInv hStore]
 
 /-- WS-SM SM6.B.7 (`notificationWait_perCore_NI`, ∀-core form): the blocking wait
@@ -248,7 +250,8 @@ theorem notificationWaitOnCore_block_path_NI_smp
     (hCons : ntfn.waitingThreads.consWithGuard? waiter = some wt')
     (hStore : storeObject notificationId (.notification
         { state := .waiting, waitingThreads := wt', pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
-    (hTcb : storeTcbIpcState_fromTcb st' waiter tcb (.blockedOnNotification notificationId) = .ok st'')
+    (hTcb : storeTcbIpcStateAndMessage_fromTcb st' waiter tcb
+        (.blockedOnNotification notificationId) none = .ok st'')
     (hObjInv : st.objects.invExt)
     (hNtfnHigh : objectObservable ctx observer notificationId = false)
     (hWaiterHigh : threadObservable ctx observer waiter = false)
@@ -258,8 +261,9 @@ theorem notificationWaitOnCore_block_path_NI_smp
   intro c
   have hLk' : lookupTcb st' waiter = some tcb :=
     lookupTcb_preserved_by_storeObject_notification hLk hObj hObjInv hStore
-  have hTcb' : storeTcbIpcState st' waiter (.blockedOnNotification notificationId) = .ok st'' := by
-    rw [← storeTcbIpcState_fromTcb_eq hLk']; exact hTcb
+  have hTcb' : storeTcbIpcStateAndMessage st' waiter (.blockedOnNotification notificationId) none
+      = .ok st'' := by
+    rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk']; exact hTcb
   have hInv' := storeObject_preserves_objects_invExt st st' notificationId _ hObjInv hStore
   show projectStateOnCore ctx observer
       (notificationWaitOnCore notificationId waiter executingCore st).1 c
@@ -269,7 +273,7 @@ theorem notificationWaitOnCore_block_path_NI_smp
   show projectStateOnCore ctx observer (removeRunnableOnCore st'' waiter executingCore) c
     = projectStateOnCore ctx observer st c
   rw [removeRunnableOnCore_preserves_projectionOnCore ctx observer st'' waiter executingCore c hWaiterHigh,
-      storeTcbIpcState_preserves_projectionOnCore ctx observer st' st'' waiter _ c hWaiterObjHigh hInv' hTcb',
+      storeTcbIpcStateAndMessage_preserves_projectionOnCore ctx observer st' st'' waiter _ _ c hWaiterObjHigh hInv' hTcb',
       storeObject_preserves_projectionOnCore ctx observer st st' notificationId _ c
         hNtfnHigh hObjInv hStore]
 

@@ -292,8 +292,6 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReplyOnCore replier target msg executingCore st).1)
     (hDOV' : donationOwnerValid
       (endpointReplyOnCore replier target msg executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st) :
@@ -309,8 +307,6 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull
   · rw [hPre]; exact hInv
   · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
       (endpointReply_preserves_ipcInvariantFull st r1 expected target msg hInv hObjInv
-        (blockedThreadsPendingMessageConsistent_of_getElem_eq
-          (fun oid => (hAgree.objects oid).symm) hWtpmn')
         hAllBudgetsNone
         (donationOwnerValid_of_getElem_eq (fun oid => (hAgree.objects oid).symm) hDOV')
         hStep1)
@@ -323,8 +319,6 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReplyOnCore replier target msg executingCore st).1)
     (hDOV' : donationOwnerValid
       (endpointReplyOnCore replier target msg executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
@@ -332,7 +326,7 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore (endpointReplyOnCore replier target msg executingCore st).1 c :=
   ipcInvariantFull_perCore_of_full
     (endpointReplyOnCore_preserves_ipcInvariantFull replier target msg executingCore st
-      (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hDOV' hAllBudgetsNone)
+      (ipcInvariantFull_of_smp hInv) hObjInv hDOV' hAllBudgetsNone)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointReplyOnCore_passiveServerIdleFrameOnCore replier target msg executingCore
         st c hObjInv)
@@ -661,10 +655,6 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -699,11 +689,7 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull
   · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
       (endpointReceiveDual_preserves_ipcInvariantFull endpointId receiver sender replyId st r1
         hInv hObjInv
-        (blockedThreadsPendingMessageConsistent_of_getElem_eq
-          (fun oid => (hAgree.objects oid).symm) hWtpmn')
         hAllBudgetsNone
-        (replyCallerLinkageReciprocal_of_getElem_eq
-          (fun oid => (hAgree.objects oid).symm) hRCLRecip')
         hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
         (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
         hStep1)
@@ -718,10 +704,6 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -746,7 +728,7 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore
       (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1 c :=
   ipcInvariantFull_perCore_of_full
     (endpointReceiveDualOnCore_preserves_ipcInvariantFull endpointId receiver replyId
-      executingCore st (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hRCLRecip'
+      executingCore st (ipcInvariantFull_of_smp hInv) hObjInv 
       hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       hReceiverReady)
     (passiveServerIdle_perCore_of_frameOnCore
@@ -1152,10 +1134,6 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1)
     (hDOVMid : donationOwnerValid
       (endpointReplyOnCore receiver replyTarget msg executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
@@ -1184,14 +1162,14 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
         tcb.ipcState = .ready) :
     ipcInvariantFull
       (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1 := by
-  unfold endpointReplyRecvOnCore at hWtpmn' hRCLRecip' ⊢
+  unfold endpointReplyRecvOnCore
   cases hR : endpointReplyOnCore receiver replyTarget msg executingCore st with
   | mk st1 res1 =>
-    rw [hR] at hWtpmn' hRCLRecip'
+
     cases res1 with
     | error e => exact hInv
     | ok sgi1 =>
-      simp only at hWtpmn' hRCLRecip' ⊢
+      simp only
       have hStEq : (endpointReplyOnCore receiver replyTarget msg executingCore st).1 = st1 := by
         rw [hR]
       have hObjInv1 := endpointReplyOnCore_preserves_objects_invExt receiver replyTarget msg
@@ -1217,7 +1195,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
       have hInv1 : ipcInvariantFull st1 := by
         rw [← hStEq]
         exact endpointReplyOnCore_preserves_ipcInvariantFull receiver replyTarget msg
-          executingCore st hInv hObjInv (by rw [hStEq]; exact hWtpmnMid)
+          executingCore st hInv hObjInv
           (by rw [hStEq]; exact hDOVMid1) hAllBudgetsNone
       have hBudgets1 : allTimeoutBudgetsNone st1 := by
         intro tid tcb hRaw
@@ -1266,18 +1244,18 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
             st st1 rid sgi1 hObjInv hUnstashed r hGetR tcbT hTcbT hRO hR
       cases hR2 : endpointReceiveDualOnCore endpointId receiver replyId executingCore st1 with
       | mk st2 res2 =>
-        rw [hR2] at hWtpmn' hRCLRecip'
+
         cases res2 with
         | error e => exact hInv
         | ok pr =>
-          simp only at hWtpmn' hRCLRecip' ⊢
+          simp only
           have hStEq2 :
               (endpointReceiveDualOnCore endpointId receiver replyId executingCore st1).1
                 = st2 := by
             rw [hR2]
           have hFull2 := endpointReceiveDualOnCore_preserves_ipcInvariantFull endpointId
             receiver replyId executingCore st1 hInv1 hObjInv1
-            (by rw [hStEq2]; exact hWtpmn') (by rw [hStEq2]; exact hRCLRecip')
+            
             hBudgets1 hFresh1 hTailFresh1 hReplyIdValid1 hNotRecv1 hReady1
           rwa [hStEq2] at hFull2
 
@@ -1291,10 +1269,6 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1)
     (hDOVMid : donationOwnerValid
       (endpointReplyOnCore receiver replyTarget msg executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
@@ -1327,7 +1301,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
       c :=
   ipcInvariantFull_perCore_of_full
     (endpointReplyRecvOnCore_preserves_ipcInvariantFull endpointId receiver replyTarget msg
-      replyId executingCore st (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hRCLRecip'
+      replyId executingCore st (ipcInvariantFull_of_smp hInv) hObjInv 
       hDOVMid hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       hReceiverReady)
     (passiveServerIdle_perCore_of_frameOnCore
@@ -1483,10 +1457,6 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
     (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1519,7 +1489,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
       (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
         receiverSlotBase executingCore st).1 := by
   have hBare := endpointReceiveDualOnCore_preserves_ipcInvariantFull endpointId receiver replyId
-    executingCore st hInv hObjInv hWtpmn' hRCLRecip' hAllBudgetsNone hFreshReceiver
+    executingCore st hInv hObjInv hAllBudgetsNone hFreshReceiver
     hRecvTailFresh hReplyIdValid hReceiverNotRecv hReceiverReady
   have hBareInv := endpointReceiveDualOnCore_preserves_objects_invExt endpointId receiver replyId
     executingCore st hObjInv
@@ -1624,10 +1594,6 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
     (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1663,7 +1629,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
   ipcInvariantFull_perCore_of_full
     (endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull endpointId receiver replyId
       receiverCspaceRoot receiverSlotBase executingCore st (ipcInvariantFull_of_smp hInv)
-      hObjInv hWtpmn' hRCLRecip' hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid
+      hObjInv hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid
       hReceiverNotRecv hReceiverReady hRecvRootCNode hCapBadges)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointReceiveDualWithCapsOnCore_passiveServerIdleFrameOnCore endpointId receiver

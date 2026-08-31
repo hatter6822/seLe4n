@@ -1808,6 +1808,149 @@ theorem of_objects_scheduler_eq {st st' : SystemState}
 
 end passiveServerIdleFrame
 
+/-- WS-RR RR3.7: **a linked caller is always `.blockedOnReply`.**
+
+Reading the two clauses of `replyCallerLinkageReciprocal` in sequence: a TCB with
+`replyObject = some rid` has a Reply naming it (forward), and a Reply naming a
+thread has that thread `.blockedOnReply` (backward).  The composite is the fact
+every de-threading proof in this phase actually uses, because its contrapositive
+— *a thread that is not `.blockedOnReply` carries no reply object* — turns the
+`hSenderNotReply` / `hWaiterNotReply` / `hCallerNotReply` side conditions the
+bundles already carry into the "unlinked" premise the linkage frames need. -/
+theorem replyCallerLinkageReciprocal.linkedIsBlockedOnReply {st : SystemState}
+    (h : replyCallerLinkageReciprocal st) {tid : SeLe4n.ThreadId} {tcb : TCB}
+    {rid : SeLe4n.ReplyId}
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hRO : tcb.replyObject = some rid) :
+    ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId), tcb.ipcState = .blockedOnReply ep rt := by
+  obtain ⟨r, hReply, hCaller⟩ := h.1 tid tcb rid hTcb hRO
+  obtain ⟨tcb2, hTcb2, _, hBlk⟩ := h.2 rid r tid hReply hCaller
+  rw [hTcb2] at hTcb
+  obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcb.symm)
+  exact hBlk
+
+/-- WS-RR RR3.7: the contrapositive, in the shape the bundles supply it — a thread
+the transition is about to rewrite, known not to be awaiting a reply, carries no
+reply object and so is invisible to `replyCallerLinkageReciprocal`. -/
+theorem replyCallerLinkageReciprocal.unlinkedOfNotBlockedOnReply {st : SystemState}
+    (h : replyCallerLinkageReciprocal st) {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hNotReply : ∀ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+      tcb.ipcState ≠ .blockedOnReply ep rt) :
+    tcb.replyObject = none := by
+  cases hRO : tcb.replyObject with
+  | none => rfl
+  | some rid =>
+    obtain ⟨ep, rt, hBlk⟩ := h.linkedIsBlockedOnReply hTcb hRO
+    exact absurd hBlk (hNotReply ep rt)
+
+/-- WS-RR RR3.7: the reply-linkage data `replyCallerLinkageReciprocal` reads.
+
+Three obligations, one per thing the conjunct looks at: every Reply object's
+`caller` back-link, every TCB's `replyObject` forward link, and — for a TCB that
+**is** linked — its `.blockedOnReply`-ness, which the backward clause demands.
+
+An **unlinked** thread's `ipcState` is deliberately unconstrained.  That is what
+makes the frame usable at all: a send blocks its sender, a wake readies its
+receiver, a notification parks its waiter, and none of those touches the linkage
+— provided the rewritten thread carries no reply object, which
+`replyCallerLinkageReciprocal.unlinkedOfNotBlockedOnReply` derives from the
+`hSenderNotReply`-shaped side conditions the bundles already have.
+
+Mirrors `passiveServerIdleFrame`: reflexive, transitive, and trivially satisfied
+by any step that leaves the object map untouched, so a folded transition's frame
+is the composition of its primitives'. -/
+structure replyLinkageFrame (st st' : SystemState) : Prop where
+  /-- No Reply object is created, destroyed or rewritten. -/
+  replyAgree : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+    st'.objects[rid.toObjId]? = some (.reply r) ↔ st.objects[rid.toObjId]? = some (.reply r)
+  /-- Every post-state TCB came from a pre-state TCB with the same `replyObject`. -/
+  pullback : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+    st'.objects[tid.toObjId]? = some (.tcb tcb') →
+    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧ tcb'.replyObject = tcb.replyObject
+  /-- A **linked** pre-state TCB survives with the same `replyObject`, and stays
+  `.blockedOnReply` if it was. -/
+  pushLinked : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    tcb.replyObject = some rid →
+    ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') ∧
+      tcb'.replyObject = tcb.replyObject ∧
+      ∀ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+        tcb.ipcState = .blockedOnReply ep rt →
+        ∃ (ep' : SeLe4n.ObjId) (rt' : Option SeLe4n.ThreadId),
+          tcb'.ipcState = .blockedOnReply ep' rt'
+
+namespace replyLinkageFrame
+
+/-- Reflexivity: a state frames onto itself. -/
+theorem refl (st : SystemState) : replyLinkageFrame st st :=
+  ⟨fun _ _ => Iff.rfl, fun _ tcb' h => ⟨tcb', h, rfl⟩,
+   fun _ tcb _ h _ => ⟨tcb, h, rfl, fun ep rt hb => ⟨ep, rt, hb⟩⟩⟩
+
+/-- Transitivity: chain two reply-linkage frames.  The middle state's TCB is
+still linked (its `replyObject` is the pre-state's), which is what lets
+`pushLinked` compose. -/
+theorem trans {st st' st'' : SystemState}
+    (h1 : replyLinkageFrame st st') (h2 : replyLinkageFrame st' st'') :
+    replyLinkageFrame st st'' :=
+  ⟨fun rid r => (h2.replyAgree rid r).trans (h1.replyAgree rid r),
+   fun tid tcb'' h => by
+     obtain ⟨tcb', h', hEq'⟩ := h2.pullback tid tcb'' h
+     obtain ⟨tcb, hh, hEq⟩ := h1.pullback tid tcb' h'
+     exact ⟨tcb, hh, hEq'.trans hEq⟩,
+   fun tid tcb rid h hRO => by
+     obtain ⟨tcb', h', hEq', hBlk'⟩ := h1.pushLinked tid tcb rid h hRO
+     obtain ⟨tcb'', h'', hEq'', hBlk''⟩ :=
+       h2.pushLinked tid tcb' rid h' (hEq'.trans hRO)
+     refine ⟨tcb'', h'', hEq''.trans hEq', fun ep rt hb => ?_⟩
+     obtain ⟨ep', rt', hb'⟩ := hBlk' ep rt hb
+     exact hBlk'' ep' rt' hb'⟩
+
+/-- A step that leaves the object map untouched frames trivially. -/
+theorem of_objects_eq {st st' : SystemState} (hObjs : st'.objects = st.objects) :
+    replyLinkageFrame st st' :=
+  ⟨fun _ _ => by rw [hObjs], fun _ tcb' h => ⟨tcb', by rw [hObjs] at h; exact h, rfl⟩,
+   fun _ tcb _ h _ => ⟨tcb, by rw [hObjs]; exact h, rfl, fun ep rt hb => ⟨ep, rt, hb⟩⟩⟩
+
+/-- The pointwise form, for steps whose object map agrees key by key rather than
+definitionally. -/
+theorem of_getElem_eq {st st' : SystemState}
+    (hObjs : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]?) :
+    replyLinkageFrame st st' :=
+  ⟨fun rid _ => by rw [hObjs], fun tid tcb' h => ⟨tcb', by rw [hObjs] at h; exact h, rfl⟩,
+   fun tid tcb _ h _ => ⟨tcb, by rw [hObjs]; exact h, rfl, fun ep rt hb => ⟨ep, rt, hb⟩⟩⟩
+
+/-- WS-RR RR3.7: unlinkedness transports forward across a frame — a slot whose
+pre-state thread carried no reply object still carries none, because the frame
+preserves `replyObject`.  The step every folded transition needs to state its
+"the rewritten thread is unlinked" premise on the *intermediate* state. -/
+theorem unlinked_forward {st st' : SystemState} (hF : replyLinkageFrame st st')
+    {tid : SeLe4n.ThreadId}
+    (hU : ∀ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.replyObject = none) :
+    ∀ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') → tcb'.replyObject = none := by
+  intro tcb' hTcb'
+  obtain ⟨tcb, hTcb, hEq⟩ := hF.pullback tid tcb' hTcb'
+  rw [hEq]; exact hU tcb hTcb
+
+end replyLinkageFrame
+
+/-- WS-RR RR3.7: `replyCallerLinkageReciprocal` preservation from the reusable
+frame — the de-threading lever for every transition that does not itself create
+or consume a caller↔Reply edge. -/
+theorem replyCallerLinkageReciprocal_of_frame {st st' : SystemState}
+    (hFrame : replyLinkageFrame st st')
+    (hInv : replyCallerLinkageReciprocal st) :
+    replyCallerLinkageReciprocal st' := by
+  refine ⟨fun tid tcb' rid hTcb' hRO' => ?_, fun rid r tid hReply' hCaller => ?_⟩
+  · obtain ⟨tcb, hTcb, hEq⟩ := hFrame.pullback tid tcb' hTcb'
+    obtain ⟨r, hReply, hCaller⟩ := hInv.1 tid tcb rid hTcb (hEq ▸ hRO')
+    exact ⟨r, (hFrame.replyAgree rid r).mpr hReply, hCaller⟩
+  · obtain ⟨tcb, hTcb, hRO, hBlk⟩ :=
+      hInv.2 rid r tid ((hFrame.replyAgree rid r).mp hReply') hCaller
+    obtain ⟨tcb', hTcb', hEq, hBlk'⟩ := hFrame.pushLinked tid tcb rid hTcb hRO
+    obtain ⟨ep, rt, hb⟩ := hBlk
+    exact ⟨tcb', hTcb', hEq.trans hRO, hBlk' ep rt hb⟩
+
 /-- IPC de-threading D6 (`passiveServerIdle`): preservation from the reusable frame. -/
 theorem passiveServerIdle_of_frame {st st' : SystemState}
     (hFrame : passiveServerIdleFrame st st')

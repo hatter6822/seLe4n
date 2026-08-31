@@ -1131,8 +1131,6 @@ theorem notificationSignal_preserves_ipcInvariantFull_perCore
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
-    (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hNWC : notificationWaiterConsistent st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st'))
@@ -1140,7 +1138,7 @@ theorem notificationSignal_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (notificationSignal_preserves_ipcInvariantFull st st' notificationId badge
-      (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hRCLRecip' hNWC hAllBudgetsNone hStep)
+      (ipcInvariantFull_of_smp hInv) hObjInv hNWC hAllBudgetsNone hStep)
     (passiveServerIdle_perCore_of_frameOnCore
       (notificationSignal_passiveServerIdleFrameOnCore st st' notificationId badge c hObjInv hStep)
       (hInv c).passiveServerIdle)
@@ -1153,8 +1151,6 @@ theorem notificationWait_preserves_ipcInvariantFull_perCore
     (result : Option SeLe4n.Badge)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
-    (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hWaiterNotRecv : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hWaiterNotReply : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
@@ -1167,7 +1163,7 @@ theorem notificationWait_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (notificationWait_preserves_ipcInvariantFull st st' notificationId waiter result
-      (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hRCLRecip' hWaiterNotRecv
+      (ipcInvariantFull_of_smp hInv) hObjInv hWaiterNotRecv
       (fun tcb hRaw => hWaiterNotReply tcb ((getTcb?_eq_some_iff st waiter tcb).mpr hRaw))
       hAllBudgetsNone
       (fun tcb hRaw => hWaiterReady tcb ((getTcb?_eq_some_iff st waiter tcb).mpr hRaw))
@@ -1184,9 +1180,7 @@ theorem endpointSendDual_preserves_ipcInvariantFull_perCore
     (sender : SeLe4n.ThreadId) (msg : IpcMessage)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
@@ -1211,7 +1205,7 @@ theorem endpointSendDual_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointSendDual_preserves_ipcInvariantFull st st' endpointId sender msg
-      (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hAllBudgetsNone hRCLRecip'
+      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone 
       hFreshSender hSendTailFresh hSenderNotRecv
       (fun tcb hRaw => hSenderNotReply tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
       (fun tcb hRaw => hSenderNotUnbound tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
@@ -1230,9 +1224,7 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull_perCore
     (st st' : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
@@ -1256,7 +1248,7 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointReceiveDual_preserves_ipcInvariantFull endpointId receiver senderId replyId st st'
-      (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hAllBudgetsNone hRCLRecip'
+      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone 
       hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
       hStep)
@@ -1273,9 +1265,7 @@ theorem endpointCall_preserves_ipcInvariantFull_perCore
     (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hFreshCaller : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some caller ∧ ep.sendQ.tail ≠ some caller ∧
@@ -1302,7 +1292,7 @@ theorem endpointCall_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointCall_preserves_ipcInvariantFull st st' endpointId caller msg
-      (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hAllBudgetsNone hRCLRecip'
+      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone 
       hFreshCaller hSendTailFresh hCallerNotRecv
       (fun tcb hRaw => hCallerNotReply tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw))
       (fun tcb hRaw => hCallerNotUnbound tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw))
@@ -1321,7 +1311,6 @@ theorem endpointReply_preserves_ipcInvariantFull_perCore
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hDOV' : donationOwnerValid st')
     (hStep : endpointReply replier target msg st = .ok ((), st'))
@@ -1329,7 +1318,7 @@ theorem endpointReply_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointReply_preserves_ipcInvariantFull st st' replier target msg
-      (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hAllBudgetsNone hDOV' hStep)
+      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone hDOV' hStep)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointReply_passiveServerIdleFrameOnCore st st' replier target msg c hObjInv hStep)
       (hInv c).passiveServerIdle)
@@ -1343,10 +1332,8 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull_perCore
     (replyId : Option SeLe4n.ReplyId)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hDOV' : donationOwnerValid st')
-    (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
@@ -1370,7 +1357,7 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointReplyRecv_preserves_ipcInvariantFull st st' endpointId receiver replyTarget msg replyId
-      (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hAllBudgetsNone hDOV' hRCLRecip'
+      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone hDOV' 
       hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
       hStep)
@@ -1679,9 +1666,7 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
     (hObjInv : st.objects.invExt)
     (hDualQueue' : dualQueueSystemInvariant st')
     (hBadge' : badgeWellFormed st')
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
@@ -1708,7 +1693,7 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
   ipcInvariantFull_perCore_of_full
     (endpointSendDualWithCaps_preserves_ipcInvariantFull endpointId sender msg endpointRights
       senderCspaceRoot receiverSlotBase st st' summary (ipcInvariantFull_of_smp hInv) hObjInv
-      hDualQueue' hBadge' hWtpmn' hAllBudgetsNone hRCLRecip' hFreshSender hSendTailFresh
+      hDualQueue' hBadge' hAllBudgetsNone hFreshSender hSendTailFresh
       hSenderNotRecv
       (fun tcb hRaw => hSenderNotReply tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
       (fun tcb hRaw => hSenderNotUnbound tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
@@ -1731,9 +1716,7 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
     (hObjInv : st.objects.invExt)
     (hDualQueue' : dualQueueSystemInvariant st')
     (hBadge' : badgeWellFormed st')
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
@@ -1758,8 +1741,8 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointReceiveDualWithCaps_preserves_ipcInvariantFull endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary
-      (ipcInvariantFull_of_smp hInv) hObjInv hDualQueue' hBadge' hWtpmn' hAllBudgetsNone
-      hRCLRecip' hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
+      (ipcInvariantFull_of_smp hInv) hObjInv hDualQueue' hBadge' hAllBudgetsNone
+      hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
       hStep)
     (passiveServerIdle_perCore_of_frameOnCore
@@ -1779,9 +1762,7 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull_perCore
     (hObjInv : st.objects.invExt)
     (hDualQueue' : dualQueueSystemInvariant st')
     (hBadge' : badgeWellFormed st')
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hFreshCaller : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some caller ∧ ep.sendQ.tail ≠ some caller ∧
@@ -1810,7 +1791,7 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull_perCore
   ipcInvariantFull_perCore_of_full
     (endpointCallWithCaps_preserves_ipcInvariantFull endpointId caller msg endpointRights
       callerCspaceRoot receiverSlotBase st st' summary (ipcInvariantFull_of_smp hInv) hObjInv
-      hDualQueue' hBadge' hWtpmn' hAllBudgetsNone hRCLRecip' hFreshCaller hSendTailFresh
+      hDualQueue' hBadge' hAllBudgetsNone hFreshCaller hSendTailFresh
       hCallerNotRecv
       (fun tcb hRaw => hCallerNotReply tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw))
       (fun tcb hRaw => hCallerNotUnbound tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw))

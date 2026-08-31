@@ -716,7 +716,7 @@ theorem notificationWaitOnCore_confinedToCores (notificationId : SeLe4n.ObjId)
                 exact observableSlotsConfinedToCores_trans
                   (observableSlotsConfinedToCores_trans
                     (storeObject_confinedToCores st st1 _ _ hStore)
-                    (storeTcbIpcState_fromTcb_confinedToCores st1 st2 waiter tcb _ hIpc))
+                    (storeTcbIpcStateAndMessage_fromTcb_confinedToCores st1 st2 waiter tcb _ _ hIpc))
                   (removeRunnableOnCore_confinedToCores st2 waiter executingCore)
 
 /-- SM8.B.2: **the cores a bound-aware cross-core signal may write** — the bound

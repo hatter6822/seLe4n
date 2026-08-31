@@ -491,15 +491,13 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
 bundle view. -/
 example (st st' : SystemState) (ntfnId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
-    (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hNWC : notificationWaiterConsistent st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hStep : notificationSignal ntfnId badge st = .ok ((), st'))
     (c : CoreId) :
     ipcInvariantFull_perCore st' c :=
   notificationSignal_preserves_ipcInvariantFull_perCore st st' ntfnId badge hInv hObjInv
-    hWtpmn' hRCLRecip' hNWC hAllBudgetsNone hStep c
+    hNWC hAllBudgetsNone hStep c
 
 /-- SM6.D: the freshly-booted system satisfies every core's bundle view. -/
 example (c : CoreId) : ipcInvariantFull_perCore (default : SystemState) c :=
@@ -509,13 +507,11 @@ example (c : CoreId) : ipcInvariantFull_perCore (default : SystemState) c :=
 every core's bundle view, unconditionally over success/failure. -/
 example (st : SystemState) (ntfnId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (ec c : CoreId)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent (notificationSignalOnCore ntfnId badge ec st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal (notificationSignalOnCore ntfnId badge ec st).1)
     (hNWC : notificationWaiterConsistent st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st) :
     ipcInvariantFull_perCore (notificationSignalOnCore ntfnId badge ec st).1 c :=
   notificationSignalOnCore_preserves_ipcInvariantFull_perCore ntfnId badge ec st hInv hObjInv
-    hWtpmn' hRCLRecip' hNWC hAllBudgetsNone c
+    hNWC hAllBudgetsNone c
 
 /-- SM6.D completion (representative): the **cross-core** reply preserves the
 whole twenty-conjunct bundle for any reply-cap holder (delegated authority
@@ -524,12 +520,11 @@ off-scheduler agreement dichotomy). -/
 example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
     (st : SystemState)
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent (endpointReplyOnCore replier target msg ec st).1)
     (hDOV' : donationOwnerValid (endpointReplyOnCore replier target msg ec st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st) :
     ipcInvariantFull (endpointReplyOnCore replier target msg ec st).1 :=
   endpointReplyOnCore_preserves_ipcInvariantFull replier target msg ec st hInv hObjInv
-    hWtpmn' hDOV' hAllBudgetsNone
+    hDOV' hAllBudgetsNone
 
 /-- SM6.D completion (seL4-MCS one-object reuse): the composed cross-core
 `replyRecv` accepts a reply object that is *in use by the answered caller* —
@@ -538,10 +533,6 @@ The disjunctive `hReplyIdValid` premise's reuse arm is exercised here. -/
 example (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
     (msg : IpcMessage) (rid : SeLe4n.ReplyId) (ec c : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReplyRecvOnCore endpointId receiver replyTarget msg (some rid) ec st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointReplyRecvOnCore endpointId receiver replyTarget msg (some rid) ec st).1)
     (hDOVMid : donationOwnerValid (endpointReplyOnCore receiver replyTarget msg ec st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
@@ -568,7 +559,7 @@ example (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
     ipcInvariantFull_perCore
       (endpointReplyRecvOnCore endpointId receiver replyTarget msg (some rid) ec st).1 c :=
   endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore endpointId receiver replyTarget
-    msg (some rid) ec st hInv hObjInv hWtpmn' hRCLRecip' hDOVMid hAllBudgetsNone
+    msg (some rid) ec st hInv hObjInv hDOVMid hAllBudgetsNone
     hFreshReceiver hRecvTailFresh
     (fun rid' hRid' => Or.inr (by
       obtain rfl : rid = rid' := Option.some.inj hRid'
@@ -584,9 +575,7 @@ example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
     (hDualQueue' : dualQueueSystemInvariant st') (hBadge' : badgeWellFormed st')
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
@@ -610,7 +599,7 @@ example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     ipcInvariantFull_perCore st' c :=
   endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore endpointId sender msg
     endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv hObjInv
-    hDualQueue' hBadge' hWtpmn' hAllBudgetsNone hRCLRecip' hFreshSender hSendTailFresh
+    hDualQueue' hBadge' hAllBudgetsNone hFreshSender hSendTailFresh
     hSenderNotRecv hSenderNotReply hSenderNotUnbound hStep c
 
 /-- SM6.D runtime: `threadHomeCore` and `determineTargetCore` agree on the

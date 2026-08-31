@@ -2073,10 +2073,6 @@ theorem notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthro
     (st st' : SystemState) (sgi : Option (CoreId × SgiKind))
     (hNoBound : boundDeliveryTarget? st notificationId = none)
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (notificationSignalOnCore notificationId badge c st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (notificationSignalOnCore notificationId badge c st).1)
     (hNWC : notificationWaiterConsistent st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hStep : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
@@ -2086,7 +2082,7 @@ theorem notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthro
     notificationId badge c st st' sgi ?_ hStep
   rw [notificationSignalBoundOnCore_fallthrough_eq notificationId badge c st hNoBound]
   exact notificationSignalOnCore_preserves_ipcInvariantFull notificationId badge c st hInv
-    hObjInv hWtpmn' hRCLRecip' hNWC hAllBudgetsNone
+    hObjInv hNWC hAllBudgetsNone
 
 /-- WS-SM SM9.C.3: **the per-core bundle**, from the whole-bundle form and core
 `c`'s passive slice — which the audit append leaves alone for the same reason

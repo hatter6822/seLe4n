@@ -139,6 +139,74 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
         exact .cons x y z tcbX hObjPre hNext ih
     intro t hp; exact hAcyclic t (hTransfer t t hp)
 
+/-- WS-RR RR2.14: a Reply object present after a capability transfer was present
+before it.  The transfer writes the receiver's CSpace root and nothing else
+(`ipcUnwrapCaps_preserves_objects_ne`), and the root holds a CNode after the
+write, so a post-state Reply is at a different key and reads through.  The
+missing sibling of `ipcUnwrapCaps_tcb_backward` / `_endpoint_backward`. -/
+theorem ipcUnwrapCaps_reply_backward
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (oid : SeLe4n.ObjId) (r : Reply)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st'))
+    (hReply' : st'.objects[oid]? = some (.reply r)) :
+    st.objects[oid]? = some (.reply r) := by
+  by_cases hNe : oid = receiverRoot
+  · rw [hNe] at hReply' ⊢
+    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode msg senderRoot receiverRoot slotBase
+      grantRight st st' summary hObjInv hStep with h | ⟨cn, h⟩
+    · rw [← h]; exact hReply'
+    · rw [h] at hReply'; cases hReply'
+  · rw [ipcUnwrapCaps_preserves_objects_ne msg senderRoot receiverRoot slotBase grantRight
+      st st' summary oid hNe hObjInv hStep] at hReply'
+    exact hReply'
+
+/-- WS-RR RR2.14: the capability transfer preserves
+`blockedThreadsPendingMessageConsistent` — it writes no TCB, so every post-state
+TCB is its pre-state self (`ipcUnwrapCaps_tcb_backward`). -/
+theorem ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedThreadsPendingMessageConsistent st)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st')) :
+    blockedThreadsPendingMessageConsistent st' := by
+  intro tid tcb hTcb'
+  exact hInv tid tcb (ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight
+    st st' summary tid.toObjId tcb hObjInv hStep hTcb')
+
+/-- WS-RR RR2.14: the capability transfer preserves the **reciprocal** half of
+`replyCallerLinkage`.  Neither direction can break: a post-state TCB is its
+pre-state self, a pre-state Reply survives forward, and a post-state Reply was
+one before (`ipcUnwrapCaps_reply_backward`). -/
+theorem ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hInv : replyCallerLinkageReciprocal st)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st')) :
+    replyCallerLinkageReciprocal st' := by
+  refine ⟨?_, ?_⟩
+  · intro tid tcb rid hTcb' hRO
+    obtain ⟨r, hr, hrc⟩ := hInv.1 tid tcb rid
+      (ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight
+        st st' summary tid.toObjId tcb hObjInv hStep hTcb') hRO
+    exact ⟨r, ipcUnwrapCaps_preserves_reply_objects msg senderRoot receiverRoot slotBase
+      grantRight st st' summary rid.toObjId r hr hObjInv hStep, hrc⟩
+  · intro rid r tid hr' hrc
+    obtain ⟨tcb, hTcb, hRO, hBlk⟩ := hInv.2 rid r tid
+      (ipcUnwrapCaps_reply_backward msg senderRoot receiverRoot slotBase grantRight
+        st st' summary rid.toObjId r hObjInv hStep hr') hrc
+    exact ⟨tcb, ipcUnwrapCaps_preserves_tcb_objects msg senderRoot receiverRoot slotBase
+      grantRight st st' summary tid.toObjId tcb hTcb hObjInv hStep, hRO, hBlk⟩
+
 /-- M3-E4: endpointSendDualWithCaps preserves dualQueueSystemInvariant.
 Composes endpointSendDual base preservation with ipcUnwrapCaps preservation.
 The CNode precondition requires that when immediate rendezvous occurs, the
@@ -1572,7 +1640,9 @@ open SeLe4n.Model.SystemState in
 `blockedThreadsPendingMessageConsistent`.  Composes `linkCallerReply` with one server
 `.tcb` re-store that clears `pendingReceiveReply` (`ipcState` + `pendingMessage`
 unchanged, both `rfl`). -/
-private theorem linkServerStashedReply_preserves_blockedThreadsPendingMessageConsistent
+-- WS-RR RR3.3: public — `endpointCallOnCore`'s own establisher (in
+-- `IPC/CrossCore/EndpointCallInvariant.lean`) composes this link step.
+theorem linkServerStashedReply_preserves_blockedThreadsPendingMessageConsistent
     (st st' : SystemState) (caller server : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st'))
