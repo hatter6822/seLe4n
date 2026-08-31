@@ -417,7 +417,8 @@ private def runDonationChecks : IO Unit := do
   match SeLe4n.ThreadId.toValid? serverTid with
   | some serverV =>
       assertBool "applyReplyDonationOnCore on a non-donating replier is a no-op (ok)"
-        (match applyReplyDonationOnCore stBase serverV bootCoreId with | .ok _ => true | .error _ => false)
+        (match applyReplyDonationOnCore stBase serverV bootCoreId bootCoreId bootCoreId with
+         | .ok _ => true | .error _ => false)
   | none => assertBool "serverTid is a valid thread id" false
   -- WS-SM SM6.D (PR #822 review 6J90-... donation): the donation return is keyed on
   -- the RECORDED SERVER, not the (possibly delegated) cap holder.  Build a state

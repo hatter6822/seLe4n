@@ -80,6 +80,17 @@ single-core `removeRunnable` — the backward-compatibility bridge. -/
     (tid : SeLe4n.ThreadId) :
     removeRunnableOnCore st tid bootCoreId = removeRunnable st tid := rfl
 
+/-- WS-RR RR2.9 (frame): descheduling a thread on a core writes that core's run
+queue and current slot and nothing else — in particular **no** replenish queue.
+The reply path's donation return composes the SM5.H replenishment migration with
+this deschedule, so the affinity invariant the migration establishes has to
+survive it. -/
+@[simp] theorem removeRunnableOnCore_replenishQueueOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c c' : CoreId) :
+    (removeRunnableOnCore st tid c).scheduler.replenishQueueOnCore c'
+      = st.scheduler.replenishQueueOnCore c' := by
+  simp [removeRunnableOnCore]
+
 -- ============================================================================
 -- §2  Lock-set pre-resolution helpers (plan §3.1 / §4.2)
 -- ============================================================================
@@ -730,5 +741,210 @@ theorem lockSet_endpointCall_caller_tcb_write_mem
     refine mem_insertOrMerge_of_mem_of_ne _ _ _ _ hRecv ?_
     show tcbLock caller ≠ schedContextLock sc
     intro h; simp [tcbLock, schedContextLock] at h
+
+-- ============================================================================
+-- §9  WS-RR RR2.4 — the scheduler-domain footprint of the cross-core `.call`
+-- ============================================================================
+--
+-- `lockSet_endpointCall` is a `LockSet` over the SM0.I **object** domain
+-- (`LockId` = kind × ObjId).  The RR2.2 replenishment migration writes two
+-- **per-core replenish-queue** slots, which are not object locks at all — they
+-- live in the `SchedLockId` domain, whose whole reason for existing (SM5.A.2)
+-- is that a per-core scheduler slot has no `ObjId` to key a `LockId` on.  So
+-- "extend the call's footprint with `migrateSchedContextReplenishmentLockSet`"
+-- is a statement in the cross-domain `SchedLockId` order, exactly as SM6.E's
+-- `cancelDonatedDonationOnCoreSchedLockSet` is for the `.tcbSuspend` arm that
+-- runs the same migration.  Both footprints below are `SchedLockId` lists in
+-- plan §4.4 ascending order (`object < runQueue < replenishQueue`), each
+-- same-kind segment `CoreId`-ascending, so the list *is* the SM3.D acquisition
+-- sequence.
+
+/-- WS-RR RR2.4: the scheduler-domain footprint of the cross-core `.call`
+**donation** (`applyCallDonationOnCore`) — the object-store table write lock
+plus the replenish-queue write locks of **both** migration endpoints (the
+donor's home core, purged, and the donee's home core, receiving), emitted in
+`CoreId`-ascending order.  On a shared home core the two endpoints coincide, the
+migration is a definitional no-op, and the footprint collapses to the single
+slot.
+
+Structurally identical to `cancelDonatedDonationOnCoreSchedLockSet`, and for the
+same reason: it is the same primitive, moving the same SchedContext's
+replenishments between the same two kinds of core. -/
+def applyCallDonationOnCoreSchedLockSet (donorHome doneeHome : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  (SchedLockId.object schedObjStoreLockId, .write) ::
+    sortedSchedCorePair (fun c => SchedLockId.replenishQueue ⟨c⟩) donorHome doneeHome
+
+/-- RR2.4: every lock in the donation footprint is acquired in **write** mode
+(the rebinding writes the object store; the migration writes both queues). -/
+theorem applyCallDonationOnCoreSchedLockSet_write_only (donorHome doneeHome : CoreId) :
+    ∀ p ∈ applyCallDonationOnCoreSchedLockSet donorHome doneeHome,
+      p.2 = Concurrency.AccessMode.write := by
+  intro p hp
+  simp only [applyCallDonationOnCoreSchedLockSet, List.mem_cons] at hp
+  rcases hp with h | hp
+  · subst h; rfl
+  · unfold sortedSchedCorePair at hp
+    split at hp
+    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hp; subst hp; rfl
+    · split at hp <;>
+        (simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
+         rcases hp with h | h <;> subst h <;> rfl)
+
+/-- RR2.4: the donor's home-core replenish-queue write lock is in the footprint
+(the migration's source / purge slot). -/
+theorem applyCallDonationOnCoreSchedLockSet_contains_donorHome_write
+    (donorHome doneeHome : CoreId) :
+    (SchedLockId.replenishQueue ⟨donorHome⟩, Concurrency.AccessMode.write)
+      ∈ applyCallDonationOnCoreSchedLockSet donorHome doneeHome := by
+  unfold applyCallDonationOnCoreSchedLockSet sortedSchedCorePair
+  by_cases hEq : donorHome = doneeHome
+  · simp [hEq]
+  · by_cases hLe : donorHome ≤ doneeHome <;> simp [hEq, hLe]
+
+/-- RR2.4: the donee's home-core replenish-queue write lock is in the footprint
+(the migration's destination). -/
+theorem applyCallDonationOnCoreSchedLockSet_contains_doneeHome_write
+    (donorHome doneeHome : CoreId) :
+    (SchedLockId.replenishQueue ⟨doneeHome⟩, Concurrency.AccessMode.write)
+      ∈ applyCallDonationOnCoreSchedLockSet donorHome doneeHome := by
+  unfold applyCallDonationOnCoreSchedLockSet sortedSchedCorePair
+  by_cases hEq : donorHome = doneeHome
+  · simp [hEq]
+  · by_cases hLe : donorHome ≤ doneeHome <;> simp [hEq, hLe]
+
+/-- **RR2.4's coverage obligation**: the footprint covers
+`migrateSchedContextReplenishmentLockSet` member for member.  This is the
+statement that makes the SM3 serializability argument hold across the donation:
+the migration writes only the two replenish-queue slots, and the `.call`
+footprint declares both, so no write escapes the declared `withLockSet`
+bracket. -/
+theorem applyCallDonationOnCoreSchedLockSet_covers_migration
+    (donorHome doneeHome : CoreId) :
+    ∀ p ∈ migrateSchedContextReplenishmentLockSet donorHome doneeHome,
+      p ∈ applyCallDonationOnCoreSchedLockSet donorHome doneeHome := by
+  intro p hp
+  simp only [migrateSchedContextReplenishmentLockSet, List.mem_cons,
+    List.not_mem_nil, or_false] at hp
+  rcases hp with h | h <;> subst h
+  · exact applyCallDonationOnCoreSchedLockSet_contains_donorHome_write donorHome doneeHome
+  · exact applyCallDonationOnCoreSchedLockSet_contains_doneeHome_write donorHome doneeHome
+
+/-- RR2.4: the donation footprint's keys form a `SchedLockId`-ascending
+acquisition sequence — `object < replenishQueue` across domains, and the two
+replenish endpoints in `CoreId`-ascending order. -/
+theorem applyCallDonationOnCoreSchedLockSet_pairwise_le (donorHome doneeHome : CoreId) :
+    ((applyCallDonationOnCoreSchedLockSet donorHome doneeHome).map (·.1)).Pairwise (· ≤ ·) := by
+  have hObjLe : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
+      ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
+    fun c => (SchedLockId.object_lt_replenishQueue _ _).1
+  unfold applyCallDonationOnCoreSchedLockSet
+  rw [List.map_cons, List.pairwise_cons]
+  refine ⟨?_, sortedSchedCorePair_pairwise_le _ _ _ (fun c d h => h)⟩
+  intro x hx
+  rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;> exact hObjLe _
+
+/-- RR2.4: the donation footprint is within the SM3.D `maxLockSetSize` (= 8)
+cap — three locks at most (object store plus at most two replenish queues). -/
+theorem applyCallDonationOnCoreSchedLockSet_size_le_maxLockSetSize
+    (donorHome doneeHome : CoreId) :
+    (applyCallDonationOnCoreSchedLockSet donorHome doneeHome).length ≤ 8 := by
+  unfold applyCallDonationOnCoreSchedLockSet sortedSchedCorePair
+  by_cases hEq : donorHome = doneeHome
+  · simp [hEq]
+  · by_cases hLe : donorHome ≤ doneeHome <;> simp [hEq, hLe]
+
+/-- WS-RR RR2.4: the scheduler-domain footprint of the **whole** cross-core
+`.call` dispatch — the union of what its three scheduling effects write:
+
+* the object-store table lock (the rendezvous' TCB / endpoint / CSpace writes
+  and the donation's rebinding);
+* the **run-queue** write locks of the executing core (the block path's
+  `removeRunnableOnCore` deschedule of the caller) and of the receiver's home
+  core (the rendezvous' `wakeThread` enqueue) — one entry when they coincide;
+* the **replenish-queue** write locks of the two donation endpoints (RR2.2).
+
+**Dynamic chain extension (declared, not static).**  The dispatch also runs
+`propagatePipChainCrossCore`, which re-buckets each blocking-chain member's run
+queue on *that member's* home core.  The chain is state-discovered, so no static
+footprint can enumerate those cores — the SM3.C.11 obligation
+(`pipChainStart_tcbSuspend`, `LockSetTransitions.lean`) covers this walk too:
+per chain step the walker acquires the member's TCB write lock *and* its
+home-core run-queue write lock.  SM6.E's suspend footprint carries the identical
+caveat for the identical walk. -/
+def endpointCallCrossCoreDispatchSchedLockSet
+    (executingCore receiverHome donorHome doneeHome : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  (SchedLockId.object schedObjStoreLockId, .write) ::
+  (sortedSchedCorePair (fun c => SchedLockId.runQueue ⟨c⟩) executingCore receiverHome
+    ++ sortedSchedCorePair (fun c => SchedLockId.replenishQueue ⟨c⟩) donorHome doneeHome)
+
+/-- RR2.4: the dispatch footprint's keys form a `SchedLockId`-ascending
+acquisition sequence — the full three-domain ladder `object < runQueue <
+replenishQueue`, each same-kind segment `CoreId`-ascending. -/
+theorem endpointCallCrossCoreDispatchSchedLockSet_pairwise_le
+    (executingCore receiverHome donorHome doneeHome : CoreId) :
+    ((endpointCallCrossCoreDispatchSchedLockSet executingCore receiverHome donorHome
+      doneeHome).map (·.1)).Pairwise (· ≤ ·) := by
+  have hObjRQ : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
+      ≤ SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
+    fun c => (SchedLockId.object_lt_runQueue _ _).1
+  have hObjRep : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
+      ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
+    fun c => (SchedLockId.object_lt_replenishQueue _ _).1
+  have hRQRep : ∀ (c d : CoreId), SchedLockId.runQueue (⟨c⟩ : RunQueueLockId)
+      ≤ SchedLockId.replenishQueue (⟨d⟩ : ReplenishQueueLockId) :=
+    fun c d => (SchedLockId.runQueue_lt_replenishQueue _ _).1
+  unfold endpointCallCrossCoreDispatchSchedLockSet
+  rw [List.map_cons, List.map_append, List.pairwise_cons]
+  refine ⟨?_, ?_⟩
+  · intro x hx
+    rcases List.mem_append.mp hx with hx | hx
+    · rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;> exact hObjRQ _
+    · rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;> exact hObjRep _
+  · rw [List.pairwise_append]
+    refine ⟨sortedSchedCorePair_pairwise_le _ _ _ (fun c d h => h),
+      sortedSchedCorePair_pairwise_le _ _ _ (fun c d h => h), ?_⟩
+    intro x hx y hy
+    rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;>
+    rcases sortedSchedCorePair_map_fst_mem hy with rfl | rfl <;> exact hRQRep _ _
+
+/-- RR2.4: the dispatch footprint is write-only. -/
+theorem endpointCallCrossCoreDispatchSchedLockSet_write_only
+    (executingCore receiverHome donorHome doneeHome : CoreId) :
+    ∀ p ∈ endpointCallCrossCoreDispatchSchedLockSet executingCore receiverHome donorHome doneeHome,
+      p.2 = Concurrency.AccessMode.write := by
+  intro p hp
+  simp only [endpointCallCrossCoreDispatchSchedLockSet, List.mem_cons] at hp
+  rcases hp with h | hp
+  · subst h; rfl
+  · have hAny : ∀ (f : CoreId → SchedLockId) (a b : CoreId),
+        p ∈ sortedSchedCorePair f a b → p.2 = Concurrency.AccessMode.write := by
+      intro f a b hmem
+      unfold sortedSchedCorePair at hmem
+      split at hmem
+      · simp only [List.mem_cons, List.not_mem_nil, or_false] at hmem; subst hmem; rfl
+      · split at hmem <;>
+          (simp only [List.mem_cons, List.not_mem_nil, or_false] at hmem
+           rcases hmem with h | h <;> subst h <;> rfl)
+    rcases List.mem_append.mp hp with hp | hp
+    · exact hAny _ _ _ hp
+    · exact hAny _ _ _ hp
+
+/-- **RR2.4 (dispatch-level coverage)**: the whole-dispatch footprint covers the
+donation footprint member for member, hence — by
+`applyCallDonationOnCoreSchedLockSet_covers_migration` — the migration's two
+replenish-queue write locks.  A `withLockSet` bracket over the dispatch
+footprint therefore holds every lock the RR2.2 migration writes under, which is
+what keeps the SM3 serializability argument valid across the new write. -/
+theorem endpointCallCrossCoreDispatchSchedLockSet_covers_donation
+    (executingCore receiverHome donorHome doneeHome : CoreId) :
+    ∀ p ∈ applyCallDonationOnCoreSchedLockSet donorHome doneeHome,
+      p ∈ endpointCallCrossCoreDispatchSchedLockSet executingCore receiverHome donorHome doneeHome := by
+  intro p hp
+  simp only [applyCallDonationOnCoreSchedLockSet, List.mem_cons] at hp
+  rcases hp with h | hp
+  · subst h; exact List.mem_cons_self ..
+  · exact List.mem_cons_of_mem _ (List.mem_append_right _ hp)
 
 end SeLe4n.Kernel

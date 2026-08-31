@@ -502,6 +502,14 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyNI
 -- single-core teardown/return projection obligations that the production
 -- closure forms (`suspendThread_preserves_projection` G3/G5) document.
 import SeLe4n.Kernel.IPC.CrossCore.CancellationNI
+-- WS-RR RR2.6 / RR2.11: the two live cross-core dispatch chains preserve
+-- `ipcInvariantFull` — `endpointCallCrossCoreDispatch` (WithCaps → SchedContext
+-- donation → priority-inheritance walk) and `endpointReplyCrossCoreDispatch`
+-- (delivery → donation return → PIP reversion).  Also carries the chain walk's
+-- own bundle theorem (`propagatePipChainCrossCore_preserves_ipcInvariantFull`),
+-- which nothing had before, and the per-core donation return's.  Staged with the
+-- cross-core call/reply invariant surfaces it composes.
+import SeLe4n.Kernel.IPC.CrossCore.DispatchInvariant
 -- WS-SM SM8.A: the per-core observable state — the SMP information-flow
 -- observer `(c, L)` (plan Definition 3.1.1) and the state it observes
 -- (`ObservableState.onCore`, Definition 3.2.1), layered on the SM4.D

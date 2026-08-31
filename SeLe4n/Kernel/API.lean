@@ -12,8 +12,10 @@ import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.IPC.Invariant
+import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointSend
+import SeLe4n.Kernel.IPC.CrossCore.EndpointSendInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatch
 import SeLe4n.Kernel.IPC.CrossCore.NotificationBindDispatch
 -- WS-SM SM6.E: the live per-core suspend (`suspendThreadOnCore`) behind the
@@ -541,6 +543,178 @@ theorem clearWokenReceiverStash_machine_eq
         exact storeObject_machine_eq st pair.2 _ _ (by
           obtain ⟨u, st2⟩ := pair; cases u; exact hStep)
 
+-- ============================================================================
+-- WS-RR RR2.16 — `clearWokenReceiverStash` preserves the IPC invariant bundle
+-- ============================================================================
+
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR2.16 (helper): a TCB store that leaves `replyObject` and `ipcState`
+alone preserves the bidirectional reply linkage.  Neither clause can move: the
+forward clause reads the stored thread's `replyObject` (unchanged) and the Reply
+object (a different key, so untouched), and the backward clause reads the Reply
+and then the thread's `replyObject` and `ipcState` (both unchanged).
+
+The reply-linkage counterpart of
+`storeObject_tcb_preserveIpc_preserves_endpointQueueTailBlockedConsistent`; it
+did not exist because until RR2.16 no bundle needed a *stash-only* TCB store to
+carry the linkage. -/
+theorem storeObject_tcb_preserveReplyLinkFields_preserves_replyCallerLinkage
+    (st st' : SystemState) (tid₀ : SeLe4n.ThreadId) (oldTcb newTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hOld : st.getTcb? tid₀ = some oldTcb)
+    (hSameReply : newTcb.replyObject = oldTcb.replyObject)
+    (hSameIpc : newTcb.ipcState = oldTcb.ipcState)
+    (hInv : replyCallerLinkage st)
+    (hStore : storeObject tid₀.toObjId (.tcb newTcb) st = .ok ((), st')) :
+    replyCallerLinkage st' := by
+  have hEqAt := storeObject_objects_eq st st' tid₀.toObjId (.tcb newTcb) hObjInv hStore
+  have hOldRaw := (getTcb?_eq_some_iff st tid₀ oldTcb).mp hOld
+  have hFrame : ∀ x, x ≠ tid₀.toObjId → st'.objects[x]? = st.objects[x]? :=
+    fun x hNe => storeObject_objects_ne st st' tid₀.toObjId x (.tcb newTcb) hNe hObjInv hStore
+  -- Every post-state TCB has a pre-state twin agreeing on `replyObject` / `ipcState`.
+  have hBack : ∀ (t : SeLe4n.ThreadId) (tcbT : TCB),
+      st'.getTcb? t = some tcbT →
+      ∃ tcbT', st.getTcb? t = some tcbT' ∧
+        tcbT'.replyObject = tcbT.replyObject ∧ tcbT'.ipcState = tcbT.ipcState := by
+    intro t tcbT hTt
+    have hT := (getTcb?_eq_some_iff st' t tcbT).mp hTt
+    by_cases hEq : t.toObjId = tid₀.toObjId
+    · rw [hEq, hEqAt] at hT
+      obtain rfl : newTcb = tcbT := by
+        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hT
+      exact ⟨oldTcb, by rw [getTcb?_eq_some_iff, hEq]; exact hOldRaw,
+        hSameReply.symm, hSameIpc.symm⟩
+    · rw [hFrame t.toObjId hEq] at hT
+      exact ⟨tcbT, (getTcb?_eq_some_iff st t tcbT).mpr hT, rfl, rfl⟩
+  -- And every pre-state TCB has a post-state twin agreeing on the same two fields.
+  have hFwd : ∀ (t : SeLe4n.ThreadId) (tcbT : TCB),
+      st.getTcb? t = some tcbT →
+      ∃ tcbT', st'.getTcb? t = some tcbT' ∧
+        tcbT'.replyObject = tcbT.replyObject ∧ tcbT'.ipcState = tcbT.ipcState := by
+    intro t tcbT hTt
+    have hT := (getTcb?_eq_some_iff st t tcbT).mp hTt
+    by_cases hEq : t.toObjId = tid₀.toObjId
+    · rw [hEq] at hT
+      obtain rfl : oldTcb = tcbT := by
+        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hOldRaw.symm.trans hT
+      exact ⟨newTcb, by rw [getTcb?_eq_some_iff, hEq]; exact hEqAt, hSameReply, hSameIpc⟩
+    · exact ⟨tcbT, by rw [getTcb?_eq_some_iff, hFrame t.toObjId hEq]; exact hT, rfl, rfl⟩
+  -- Reply objects live at a different key from the stored TCB, so they read through.
+  have hReplyFrame : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      st'.objects[rid.toObjId]? = some (.reply r) ↔ st.objects[rid.toObjId]? = some (.reply r) := by
+    intro rid r
+    by_cases hEq : rid.toObjId = tid₀.toObjId
+    · rw [hEq, hEqAt, hOldRaw]
+      constructor <;> (intro h; cases h)
+    · rw [hFrame rid.toObjId hEq]
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · intro tid tcb rid hTcb' hRO
+    obtain ⟨tcb0, hTcb0, hRO0, _⟩ := hBack tid tcb ((getTcb?_eq_some_iff st' tid tcb).mpr hTcb')
+    obtain ⟨r, hr, hrc⟩ := hInv.1.1 tid tcb0 rid ((getTcb?_eq_some_iff st tid tcb0).mp hTcb0)
+      (hRO0.trans hRO)
+    exact ⟨r, (hReplyFrame rid r).mpr hr, hrc⟩
+  · intro rid r tid hr' hrc
+    obtain ⟨tcb0, hTcb0, hRO0, hBlk0⟩ := hInv.1.2 rid r tid ((hReplyFrame rid r).mp hr') hrc
+    obtain ⟨tcb', hTcb', hROeq, hIpcEq⟩ :=
+      hFwd tid tcb0 ((getTcb?_eq_some_iff st tid tcb0).mpr hTcb0)
+    obtain ⟨ep, rt, hIpc⟩ := hBlk0
+    exact ⟨tcb', (getTcb?_eq_some_iff st' tid tcb').mp hTcb', hROeq.trans hRO0,
+      ⟨ep, rt, hIpcEq.trans hIpc⟩⟩
+  · intro tid tcb ep rt hTcb' hBlk
+    obtain ⟨tcb0, hTcb0, hRO0, hIpc0⟩ := hBack tid tcb ((getTcb?_eq_some_iff st' tid tcb).mpr hTcb')
+    obtain ⟨rid, hRid⟩ := hInv.2 tid tcb0 ep rt ((getTcb?_eq_some_iff st tid tcb0).mp hTcb0)
+      (hIpc0.trans hBlk)
+    exact ⟨rid, hRO0 ▸ hRid⟩
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR2.16**: `clearWokenReceiverStash` — the dispatch-level
+post-processing step the live `.send`, `.signal` and `.declassifySignal` arms run
+after their transition — preserves the whole IPC invariant bundle.
+
+Every arm but one returns the state untouched.  The one that stores writes a
+single TCB differing only in `pendingReceiveReply := none`, and:
+
+* the fifteen structural conjuncts read no `pendingReceiveReply`
+  (`storeObject_tcb_pendingReceiveReply_preserves_ipcInvariantCore`);
+* the reply linkage reads `replyObject` and `ipcState`, both unchanged;
+* `pendingReceiveReplyWellFormed` — the one conjunct that *does* read the field —
+  is preserved because the write **clears** it: both of its obligations on the
+  stored thread are about a `some rid` stash, and the new stash is `none`, so
+  they are vacuous.  Clearing a stash can only discharge obligations, never
+  create one, which is precisely why the clear was introduced (a woken server
+  leaving `.blockedOnReceive` with a live stash violates the conjunct);
+* the donation quartet's binding half is framed, and the tail/queue-target
+  conjuncts are framed by the unchanged `ipcState` / `queueNext`.
+
+Unconditional in the post-state: nothing here is threaded. -/
+theorem clearWokenReceiverStash_preserves_ipcInvariantFull
+    (receiver? : Option SeLe4n.ThreadId) (st : SystemState) (pair : Unit × SystemState)
+    (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st)
+    (hStep : clearWokenReceiverStash receiver? st = .ok pair) :
+    ipcInvariantFull pair.2 := by
+  unfold clearWokenReceiverStash at hStep
+  cases receiver? with
+  | none => cases hStep; exact hInv
+  | some receiver =>
+    simp only at hStep
+    cases hTcb : st.getTcb? receiver with
+    | none => rw [hTcb] at hStep; cases hStep; exact hInv
+    | some rTcb =>
+      rw [hTcb] at hStep
+      simp only at hStep
+      cases hStash : rTcb.pendingReceiveReply with
+      | none => rw [hStash] at hStep; cases hStep; exact hInv
+      | some rid =>
+        rw [hStash] at hStep
+        obtain ⟨u, st'⟩ := pair
+        cases u
+        have hRaw :=
+          (getTcb?_eq_some_iff st receiver rTcb).mp hTcb
+        exact ipcInvariantFull_of_core_replyCallerLinkage
+          (storeObject_tcb_pendingReceiveReply_preserves_ipcInvariantCore st st'
+            receiver.toObjId rTcb none hInv.toCore hObjInv hRaw hStep)
+          (storeObject_tcb_preserveReplyLinkFields_preserves_replyCallerLinkage st st'
+            receiver rTcb { rTcb with pendingReceiveReply := none } hObjInv hTcb rfl rfl
+            hInv.replyCallerLinkage hStep)
+          (storeObject_tcb_preserves_pendingReceiveReplyWellFormed st st' receiver rTcb
+            { rTcb with pendingReceiveReply := none } hObjInv hTcb
+            hInv.pendingReceiveReplyWellFormed
+            (fun rid' h => by cases h) (fun rid' h => by cases h) hStep)
+          (donationOwnerUnique_of_sameSchedContextBindings
+            (storeObject_modifiedTcb_sameSchedContextBindings st st' receiver.toObjId rTcb
+              { rTcb with pendingReceiveReply := none } hRaw rfl hObjInv hStep)
+            hInv.donationOwnerUnique)
+          (storeObject_tcb_preserveIpc_preserves_endpointQueueTailBlockedConsistent st st'
+            receiver rTcb { rTcb with pendingReceiveReply := none } hObjInv hRaw rfl
+            hInv.endpointQueueTailBlockedConsistent hStep)
+          (storeObject_tcb_preserveIpcAndQueueNext_preserves_queueNextTargetBlocked st st'
+            receiver rTcb { rTcb with pendingReceiveReply := none } hObjInv hRaw rfl rfl
+            hInv.queueNextTargetBlocked hStep)
+
+/-- WS-RR RR2.16: `clearWokenReceiverStash` preserves the Robin Hood object-store
+invariant — every arm is the identity or a single `storeObject`. -/
+theorem clearWokenReceiverStash_preserves_objects_invExt
+    (receiver? : Option SeLe4n.ThreadId) (st : SystemState) (pair : Unit × SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : clearWokenReceiverStash receiver? st = .ok pair) :
+    pair.2.objects.invExt := by
+  unfold clearWokenReceiverStash at hStep
+  cases receiver? with
+  | none => cases hStep; exact hObjInv
+  | some receiver =>
+    simp only at hStep
+    cases hTcb : st.getTcb? receiver with
+    | none => rw [hTcb] at hStep; cases hStep; exact hObjInv
+    | some rTcb =>
+      rw [hTcb] at hStep
+      simp only at hStep
+      cases hStash : rTcb.pendingReceiveReply with
+      | none => rw [hStash] at hStep; cases hStep; exact hObjInv
+      | some rid =>
+        rw [hStash] at hStep
+        exact storeObject_preserves_objects_invExt' st _ _ pair hObjInv hStep
+
 /-- WS-SM SM6.D (faithful seL4-MCS `ReplyRecv`): resolve the server-supplied reply
 capability named in `ReplyRecvArgs.replyCPtr` to the `(ReplyId, prevCaller)` pair
 it authorizes — `prevCaller` is the reply object's `caller`, the previous caller
@@ -593,7 +767,11 @@ both the reply and the receive legs (so the server is never descheduled *before*
 it can rendezvous with a queued `Call`):
 
 * the **recorded server** returns its OLD donated SchedContext to the client it was
-  serving (`returnDonatedSchedContextValid`).  On a *delegated* reply cap the cap
+  serving (`returnDonatedSchedContextValid`), and the SchedContext's pending CBS
+  replenishments migrate with it (WS-RR RR2.20 — the SM5.H.4 obligation this arm
+  had been missing: the replenishments live on the SC's *bound thread's* home
+  core, and the return moves that binding, so without the migration they strand
+  on the server's core where nothing drains them).  On a *delegated* reply cap the cap
   holder / receiver `tid` is **not** the server the previous caller donated to —
   the donation lives on `recordedServer` (`recordedReplyServer? st prevCaller`,
   captured by the caller *before* the reply consumed `prevCaller.blockedOnReply`),
@@ -604,15 +782,26 @@ it can rendezvous with a queued `Call`):
 * if the receive rendezvoused with a **Call** — `nextThread` is now
   `.blockedOnReply`, i.e. a freshly dequeued request whose donation the queued
   `Call` deferred — the new client's SchedContext is donated to the **receiver**
-  `tid` (`applyCallDonation`, still keyed on `tid` — the thread that will serve the
-  next request), so the passive server keeps running on the new request's budget;
+  `tid` (`applyCallDonationOnCore`, still keyed on `tid` — the thread that will serve
+  the next request), so the passive server keeps running on the new request's budget;
+  that donation migrates its own replenishments too, for the same reason;
 * otherwise (a plain `Send` rendezvous, or the server blocked with no waiter) the
   now-passive `recordedServer` is descheduled on its own core (`removeRunnableOnCore`).
 
 A recorded server that holds **no** donated SC (an active server with its own budget,
 or an already-`.unbound` one) needs no donation change — its run-queue state is left
 to the receive leg.  Always reverts the reply-leg priority-inheritance boost via the
-cross-core chain walk (`propagatePipChainCrossCore`) from `recordedServer`. -/
+cross-core chain walk (`propagatePipChainCrossCore`) from `recordedServer`.
+
+Both migration endpoints are read from the hop's own **pre**-state, which is
+sound because neither donation primitive writes a `cpuAffinity`
+(`returnDonatedSchedContext_getTcb?_cpuAffinity_eq`,
+`donateSchedContext_getTcb?_cpuAffinity_eq`) — the same argument the two
+`*OnCore` donation primitives make for resolving them at their own call sites.
+Unlike those two, the endpoints are resolved *inside* rather than by the caller:
+`nextThread` is not known until the receive leg has run, so there is no earlier
+state to read it from.  When SM3.C.9's `withLockSet` migration reaches this body
+the resolution moves outward with the bracket. -/
 def replyRecvReturnDonation (tid recordedServer : SeLe4n.ThreadId)
     (nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId) : Kernel Unit :=
   fun st =>
@@ -625,17 +814,28 @@ def replyRecvReturnDonation (tid recordedServer : SeLe4n.ThreadId)
             | some srvV, some ownerV =>
                 match returnDonatedSchedContextValid st srvV oldScId ownerV with
                 | .error e => .error e
-                | .ok st1 =>
+                | .ok st1' =>
+                    -- WS-RR RR2.20: the return moved the SC's binding from the
+                    -- recorded server to `owner`, so its pending CBS replenishments
+                    -- must follow (SM5.H.4).  Endpoints read from *this hop's*
+                    -- pre-state `st`; `returnDonatedSchedContextValid` never writes a
+                    -- `cpuAffinity`, so that is the post-state's reading too.
+                    let st1 := migrateSchedContextReplenishment st1' oldScId
+                      (determineTargetCore st recordedServer) (determineTargetCore st owner)
                     -- Did the receive leg rendezvous with a queued `Call`?
                     match lookupTcb st1 nextThread with
                     | some nextTcb =>
                         match nextTcb.ipcState with
                         | .blockedOnReply _ _ =>
                             -- New Call: donate to the RECEIVER `tid`, not the (possibly
-                            -- delegated) recorded server.
+                            -- delegated) recorded server.  WS-RR RR2.20: via the
+                            -- cross-core form, so the new client's replenishments
+                            -- migrate to the receiver's home core as well.
                             match nextThread.toValid?, tid.toValid? with
                             | some nextV, some tidV =>
-                                match applyCallDonation st1 nextV tidV with
+                                match applyCallDonationOnCore st1 nextV tidV
+                                    (determineTargetCore st1 nextThread)
+                                    (determineTargetCore st1 tid) with
                                 | .error e => .error e
                                 | .ok st2 =>
                                     .ok ((), (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer serverCore).1)
@@ -649,6 +849,366 @@ def replyRecvReturnDonation (tid recordedServer : SeLe4n.ThreadId)
             | _, _ => .error .invalidArgument
         | _ =>
             .ok ((), (PriorityInheritance.propagatePipChainCrossCore st recordedServer serverCore).1)
+
+/-- **WS-RR RR2.20: the `.replyRecv` donation resolution restores replenish-queue
+affinity consistency on every core.**
+
+This arm performs *two* SchedContext hand-offs — the recorded server's return to
+its original owner, and the immediate re-donation of the next caller's context to
+the receiver — and until RR2.20 it migrated the replenishments for neither, so
+the SM5.H invariant `replenishQueueAffinityConsistentOnCore` was false from the
+instant a cross-core `.replyRecv` committed.  It is the third live donation path,
+alongside the two the pre-SM10 audit named.
+
+The proof is four frames and two substantive steps, in the operation's own order:
+
+1. the **return + migration** is RR2.9's shared lemma;
+2. the **re-donation** is RR2.3's call-path theorem, whose two home-core
+   hypotheses are `rfl` here because the call site resolves both from that hop's
+   own pre-state;
+3. the **deschedule** on the non-rendezvous arms writes a run queue and a current
+   slot, never a replenish queue and never an object;
+4. the **priority-inheritance chain walk** that closes every arm writes
+   `pipBoost` and re-keys run-queue buckets, and the invariant reads none of
+   that. -/
+theorem replyRecvReturnDonation_preserves_replenishQueueAffinityConsistent_smp
+    (tid recordedServer nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
+    (st st' : SystemState) (u : Unit)
+    (hObjInv : st.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st)
+    (h : replyRecvReturnDonation tid recordedServer nextThread serverCore st = .ok (u, st')) :
+    replenishQueueAffinityConsistent_smp st' := by
+  -- The chain walk that closes every arm is a frame for the invariant.
+  have hPip : ∀ (s : SystemState), s.objects.invExt → replenishQueueAffinityConsistent_smp s →
+      replenishQueueAffinityConsistent_smp
+        (PriorityInheritance.propagatePipChainCrossCore s recordedServer serverCore).1 :=
+    fun s hInv hc =>
+      propagatePipChainCrossCore_preserves_replenishQueueAffinityConsistent_smp s recordedServer
+        serverCore _ hInv hc
+  -- So is the deschedule on the non-rendezvous arms.
+  have hDesched : ∀ (s : SystemState), replenishQueueAffinityConsistent_smp s →
+      replenishQueueAffinityConsistent_smp (removeRunnableOnCore s recordedServer serverCore) :=
+    fun s hc c => (replenishQueueAffinityConsistentOnCore_frame
+      (removeRunnableOnCore_replenishQueueOnCore _ _ _ _)
+      (removeRunnableOnCore_preserves_objects _ _ _)).mpr (hc c)
+  have hDeschedInv : ∀ (s : SystemState), s.objects.invExt →
+      (removeRunnableOnCore s recordedServer serverCore).objects.invExt := by
+    intro s hInv; rw [removeRunnableOnCore_preserves_objects]; exact hInv
+  simp only [replyRecvReturnDonation] at h
+  cases hSrv : lookupTcb st recordedServer with
+  | none => rw [hSrv] at h; cases h
+  | some srvTcb =>
+    rw [hSrv] at h; simp only [] at h
+    cases hBind : srvTcb.schedContextBinding with
+    | unbound => rw [hBind] at h; simp only [] at h; cases h; exact hPip st hObjInv hCons
+    | bound _ => rw [hBind] at h; simp only [] at h; cases h; exact hPip st hObjInv hCons
+    | donated oldScId owner =>
+      rw [hBind] at h; simp only [] at h
+      cases hSrvV : recordedServer.toValid? with
+      | none => rw [hSrvV] at h; simp only [] at h; cases h
+      | some srvV =>
+        cases hOwnerV : owner.toValid? with
+        | none => rw [hSrvV, hOwnerV] at h; simp only [] at h; cases h
+        | some ownerV =>
+          rw [hSrvV, hOwnerV] at h; simp only [] at h
+          have hSrvEq : srvV.val = recordedServer :=
+            SeLe4n.ThreadId.toValid?_some_val_eq recordedServer srvV hSrvV
+          have hOwnerEq : ownerV.val = owner :=
+            SeLe4n.ThreadId.toValid?_some_val_eq owner ownerV hOwnerV
+          cases hRet : returnDonatedSchedContext st recordedServer oldScId owner with
+          | error e =>
+              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV
+                    = returnDonatedSchedContext st recordedServer oldScId owner by
+                  simp only [returnDonatedSchedContextValid, hSrvEq, hOwnerEq], hRet] at h
+              simp only [] at h
+              cases h
+          | ok st1' =>
+              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV
+                    = returnDonatedSchedContext st recordedServer oldScId owner by
+                  simp only [returnDonatedSchedContextValid, hSrvEq, hOwnerEq], hRet] at h
+              simp only [] at h
+              -- Stage 1: the return plus its RR2.20 migration.
+              have hCons1 : replenishQueueAffinityConsistent_smp
+                  (migrateSchedContextReplenishment st1' oldScId
+                    (determineTargetCore st recordedServer) (determineTargetCore st owner)) :=
+                returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp
+                  st st1' recordedServer oldScId owner _ _ hObjInv hCons rfl rfl hRet
+              have hInv1 : (migrateSchedContextReplenishment st1' oldScId
+                  (determineTargetCore st recordedServer)
+                  (determineTargetCore st owner)).objects.invExt := by
+                rw [migrateSchedContextReplenishment_objects]
+                exact returnDonatedSchedContext_preserves_objects_invExt st st1' recordedServer
+                  oldScId owner hObjInv hRet
+              -- Stages 2-4 run on the migrated state; name it once.
+              generalize hM : migrateSchedContextReplenishment st1' oldScId
+                (determineTargetCore st recordedServer) (determineTargetCore st owner) = st1 at *
+              cases hNext : lookupTcb st1 nextThread with
+              | none =>
+                  rw [hNext] at h; simp only [] at h; cases h
+                  exact hPip _ (hDeschedInv _ hInv1) (hDesched _ hCons1)
+              | some nextTcb =>
+                rw [hNext] at h; simp only [] at h
+                cases hIpc : nextTcb.ipcState with
+                | blockedOnReply _ _ =>
+                    rw [hIpc] at h; simp only [] at h
+                    cases hNextV : nextThread.toValid? with
+                    | none => rw [hNextV] at h; simp only [] at h; cases h
+                    | some nextV =>
+                      cases hTidV : tid.toValid? with
+                      | none => rw [hNextV, hTidV] at h; simp only [] at h; cases h
+                      | some tidV =>
+                        rw [hNextV, hTidV] at h; simp only [] at h
+                        have hNVEq : nextV.val = nextThread :=
+                          SeLe4n.ThreadId.toValid?_some_val_eq nextThread nextV hNextV
+                        have hTVEq : tidV.val = tid :=
+                          SeLe4n.ThreadId.toValid?_some_val_eq tid tidV hTidV
+                        cases hDon : applyCallDonationOnCore st1 nextV tidV
+                            (determineTargetCore st1 nextThread) (determineTargetCore st1 tid) with
+                        | error e => rw [hDon] at h; simp only [] at h; cases h
+                        | ok st2 =>
+                            rw [hDon] at h; simp only [] at h; cases h
+                            refine hPip _ ?_ ?_
+                            · exact applyCallDonationOnCore_preserves_objects_invExt st1 st2
+                                nextV tidV _ _ hInv1 hDon
+                            · exact
+                                applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
+                                  st1 st2 nextV tidV _ _ hInv1 hCons1 (by rw [hNVEq]) (by rw [hTVEq])
+                                  hDon
+                | _ =>
+                    rw [hIpc] at h; simp only [] at h; cases h
+                    exact hPip _ (hDeschedInv _ hInv1) (hDesched _ hCons1)
+/-- **WS-RR RR2 (closure audit): the `.replyRecv` donation resolution preserves
+the whole IPC invariant bundle.**
+
+The operation is four stages — the recorded server's donation return, its RR2.20
+replenishment migration, then either the next caller's re-donation to the
+receiver (a `Call` rendezvous) or the now-passive server's deschedule, and the
+priority-inheritance chain walk closing every arm.  Each stage's bundle lives in
+`DonationPreservation.lean`; this theorem composes them along the operation's
+own branch structure, so the third live donation path carries the same
+whole-bundle guarantee as the `.call` and `.reply` chains.
+
+Both preconditions are pre-state facts:
+
+* `hServerIdleAllowed` — the recorded server's `ipcState` admits passivity.  The
+  return strips its binding to `.unbound`, so `passiveServerIdle` acquires an
+  obligation for it; on the live path the server has just *replied*, which
+  leaves it `.ready` or `.blockedOnReceive`, both admitted.
+* `hReceiverNotOwner` — nothing already owns a donation on the receiver `tid`.
+  It is transported across the return by the binding trichotomy: the return
+  writes only `.unbound` (the server) and `.bound` (the original owner), neither
+  of which is a donation.  The re-donation's *other* precondition — the next
+  caller is `.blockedOnReply` — is the branch condition itself and is derived,
+  never assumed. -/
+theorem replyRecvReturnDonation_preserves_ipcInvariantFull
+    (tid recordedServer nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
+    (st st' : SystemState) (u : Unit)
+    (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st)
+    (hServerIdleAllowed : ∀ tcb, st.getTcb? recordedServer = some tcb →
+        passiveServerIdleAllowed tcb.ipcState)
+    (hReceiverNotOwner : ∀ (tid' : SeLe4n.ThreadId) (tcb : TCB)
+        (scId : SeLe4n.SchedContextId),
+        st.getTcb? tid' = some tcb → tcb.schedContextBinding ≠ .donated scId tid)
+    (h : replyRecvReturnDonation tid recordedServer nextThread serverCore st = .ok (u, st')) :
+    ipcInvariantFull st' := by
+  simp only [replyRecvReturnDonation] at h
+  cases hSrv : lookupTcb st recordedServer with
+  | none => rw [hSrv] at h; cases h
+  | some srvTcb =>
+    rw [hSrv] at h; simp only [] at h
+    have hSrvGet : st.getTcb? recordedServer = some srvTcb :=
+      (SystemState.getTcb?_eq_some_iff st recordedServer srvTcb).mpr
+        (lookupTcb_some_objects st recordedServer srvTcb hSrv)
+    cases hBind : srvTcb.schedContextBinding with
+    | unbound =>
+        rw [hBind] at h; simp only [] at h; cases h
+        exact propagatePipChainCrossCore_preserves_ipcInvariantFull st recordedServer
+          serverCore _ hObjInv hInv
+    | bound _ =>
+        rw [hBind] at h; simp only [] at h; cases h
+        exact propagatePipChainCrossCore_preserves_ipcInvariantFull st recordedServer
+          serverCore _ hObjInv hInv
+    | donated oldScId owner =>
+      rw [hBind] at h; simp only [] at h
+      cases hSrvV : recordedServer.toValid? with
+      | none => rw [hSrvV] at h; simp only [] at h; cases h
+      | some srvV =>
+        cases hOwnerV : owner.toValid? with
+        | none => rw [hSrvV, hOwnerV] at h; simp only [] at h; cases h
+        | some ownerV =>
+          rw [hSrvV, hOwnerV] at h; simp only [] at h
+          have hSrvEq : srvV.val = recordedServer :=
+            SeLe4n.ThreadId.toValid?_some_val_eq recordedServer srvV hSrvV
+          have hOwnerEq : ownerV.val = owner :=
+            SeLe4n.ThreadId.toValid?_some_val_eq owner ownerV hOwnerV
+          cases hRet : returnDonatedSchedContext st recordedServer oldScId owner with
+          | error e =>
+              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV
+                    = returnDonatedSchedContext st recordedServer oldScId owner by
+                  simp only [returnDonatedSchedContextValid, hSrvEq, hOwnerEq], hRet] at h
+              simp only [] at h
+              cases h
+          | ok st1' =>
+              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV
+                    = returnDonatedSchedContext st recordedServer oldScId owner by
+                  simp only [returnDonatedSchedContextValid, hSrvEq, hOwnerEq], hRet] at h
+              simp only [] at h
+              -- The witnessed return, and what it did to every binding.
+              have hRetW : replyDonationReturn? st recordedServer = some (oldScId, owner) := by
+                simp [replyDonationReturn?, hSrv, hBind]
+              obtain ⟨pTcb, hPPre, hPB, oTcb, hOPre, hNe⟩ :=
+                replyDonationReturn?_some_char st recordedServer oldScId owner
+                  hInv.donationOwnerValid hRetW
+              obtain ⟨⟨oTcb0, hOPre0, hOPost⟩, ⟨pTcb0, hPPre0, hPPost⟩, hOther⟩ :=
+                returnDonatedSchedContext_getTcb?_char st st1' recordedServer oldScId owner
+                  hObjInv hNe hRet
+              have hRetV : returnDonatedSchedContext st srvV.val oldScId owner = .ok st1' := by
+                rw [hSrvEq]; exact hRet
+              have hRetWV : replyDonationReturn? st srvV.val = some (oldScId, owner) := by
+                rw [hSrvEq]; exact hRetW
+              -- Stage 1: the return preserves the bundle and the store invariant.
+              have hInv1' : ipcInvariantFull st1' :=
+                returnDonatedSchedContext_preserves_ipcInvariantFull st st1' srvV oldScId owner
+                  hObjInv hInv hRetWV
+                  (by intro tcb hTcb; rw [hSrvEq] at hTcb; exact hServerIdleAllowed tcb hTcb)
+                  hRetV
+              have hObjInv1' : st1'.objects.invExt :=
+                returnDonatedSchedContext_preserves_objects_invExt st st1' recordedServer
+                  oldScId owner hObjInv hRet
+              -- Stage 2: the migration is invisible to every bundle reading.
+              have hObjsM : (migrateSchedContextReplenishment st1' oldScId
+                  (determineTargetCore st recordedServer)
+                  (determineTargetCore st owner)).objects = st1'.objects :=
+                migrateSchedContextReplenishment_objects st1' oldScId _ _
+              have hRqM := migrateSchedContextReplenishment_runQueue_current_eq st1' oldScId
+                (determineTargetCore st recordedServer) (determineTargetCore st owner)
+                Concurrency.bootCoreId
+              have hInvM : ipcInvariantFull (migrateSchedContextReplenishment st1' oldScId
+                  (determineTargetCore st recordedServer) (determineTargetCore st owner)) :=
+                ipcInvariantFull_of_descheduleFrame st1' _ hInv1' hObjsM
+                  (passiveServerIdleFrame.of_objects_scheduler_eq hObjsM hRqM.1 hRqM.2)
+              have hObjInvM : (migrateSchedContextReplenishment st1' oldScId
+                  (determineTargetCore st recordedServer)
+                  (determineTargetCore st owner)).objects.invExt := by
+                rw [hObjsM]; exact hObjInv1'
+              have hGetM : ∀ x, (migrateSchedContextReplenishment st1' oldScId
+                  (determineTargetCore st recordedServer)
+                  (determineTargetCore st owner)).getTcb? x = st1'.getTcb? x := by
+                intro x; unfold SystemState.getTcb?; rw [hObjsM]
+              -- The recorded server's post-return reading: unbound, ipcState untouched.
+              have hSrvEq0 : pTcb0 = srvTcb := Option.some.inj (hPPre0.symm.trans hSrvGet)
+              -- Every arm ends on the chain walk; name the deschedule fact once.
+              have hDesched : ipcInvariantFull
+                  (removeRunnableOnCore (migrateSchedContextReplenishment st1' oldScId
+                    (determineTargetCore st recordedServer) (determineTargetCore st owner))
+                    recordedServer serverCore) := by
+                refine ipcInvariantFull_of_descheduleFrame _ _ hInvM
+                  (removeRunnableOnCore_preserves_objects _ _ _)
+                  (removeRunnableOnCore_passiveServerIdleFrame _ recordedServer serverCore ?_)
+                intro tcb hTcb
+                right
+                have hTcbGet : (migrateSchedContextReplenishment st1' oldScId
+                    (determineTargetCore st recordedServer)
+                    (determineTargetCore st owner)).getTcb? recordedServer = some tcb :=
+                  (SystemState.getTcb?_eq_some_iff _ recordedServer tcb).mpr hTcb
+                rw [hGetM, hPPost] at hTcbGet
+                have hEq : { pTcb0 with schedContextBinding := .unbound } = tcb :=
+                  Option.some.inj hTcbGet
+                have hIpcEq : tcb.ipcState = srvTcb.ipcState := by
+                  rw [← hEq, hSrvEq0]
+                rw [hIpcEq]
+                exact hServerIdleAllowed srvTcb hSrvGet
+              have hDeschedInvExt : (removeRunnableOnCore
+                  (migrateSchedContextReplenishment st1' oldScId
+                    (determineTargetCore st recordedServer) (determineTargetCore st owner))
+                  recordedServer serverCore).objects.invExt := by
+                rw [removeRunnableOnCore_preserves_objects]; exact hObjInvM
+              cases hNext : lookupTcb (migrateSchedContextReplenishment st1' oldScId
+                  (determineTargetCore st recordedServer) (determineTargetCore st owner))
+                  nextThread with
+              | none =>
+                  rw [hNext] at h; simp only [] at h; cases h
+                  exact propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
+                    serverCore _ hDeschedInvExt hDesched
+              | some nextTcb =>
+                rw [hNext] at h; simp only [] at h
+                cases hIpc : nextTcb.ipcState with
+                | blockedOnReply ep rt =>
+                    rw [hIpc] at h; simp only [] at h
+                    cases hNextV : nextThread.toValid? with
+                    | none => rw [hNextV] at h; simp only [] at h; cases h
+                    | some nextV =>
+                      cases hTidV : tid.toValid? with
+                      | none => rw [hNextV, hTidV] at h; simp only [] at h; cases h
+                      | some tidV =>
+                        rw [hNextV, hTidV] at h; simp only [] at h
+                        have hNVEq : nextV.val = nextThread :=
+                          SeLe4n.ThreadId.toValid?_some_val_eq nextThread nextV hNextV
+                        have hTVEq : tidV.val = tid :=
+                          SeLe4n.ThreadId.toValid?_some_val_eq tid tidV hTidV
+                        cases hDon : applyCallDonationOnCore
+                            (migrateSchedContextReplenishment st1' oldScId
+                              (determineTargetCore st recordedServer)
+                              (determineTargetCore st owner)) nextV tidV
+                            (determineTargetCore (migrateSchedContextReplenishment st1' oldScId
+                              (determineTargetCore st recordedServer)
+                              (determineTargetCore st owner)) nextThread)
+                            (determineTargetCore (migrateSchedContextReplenishment st1' oldScId
+                              (determineTargetCore st recordedServer)
+                              (determineTargetCore st owner)) tid) with
+                        | error e => rw [hDon] at h; simp only [] at h; cases h
+                        | ok st2 =>
+                            rw [hDon] at h; simp only [] at h; cases h
+                            -- Stage 3a: the re-donation, its two preconditions derived
+                            -- from the branch and transported across the return.
+                            have hNextGet : (migrateSchedContextReplenishment st1' oldScId
+                                (determineTargetCore st recordedServer)
+                                (determineTargetCore st owner)).getTcb? nextThread
+                                = some nextTcb :=
+                              (SystemState.getTcb?_eq_some_iff _ nextThread nextTcb).mpr
+                                (lookupTcb_some_objects _ nextThread nextTcb hNext)
+                            have hInv2 : ipcInvariantFull st2 := by
+                              refine applyCallDonationOnCore_preserves_ipcInvariantFull _ st2
+                                nextV tidV _ _ hObjInvM hInvM ?_ ?_ hDon
+                              · intro tcb hTcb
+                                rw [hNVEq, hNextGet] at hTcb
+                                exact ⟨ep, rt, by rw [← Option.some.inj hTcb]; exact hIpc⟩
+                              · intro tid' tcb scId' hTcb
+                                rw [hGetM] at hTcb
+                                rw [hTVEq]
+                                rcases returnDonatedSchedContext_binding_trichotomy st st1'
+                                    recordedServer owner oldScId pTcb0 oTcb0 hOPost hPPost
+                                    hOther tid' tcb hTcb with
+                                  ⟨_, hBnd⟩ | ⟨_, hBnd⟩ | ⟨_, _, hPre⟩
+                                · rw [hBnd]; intro hAbs; cases hAbs
+                                · rw [hBnd]; intro hAbs; cases hAbs
+                                · exact hReceiverNotOwner tid' tcb scId' hPre
+                            have hObjInv2 : st2.objects.invExt :=
+                              applyCallDonationOnCore_preserves_objects_invExt _ st2 nextV tidV
+                                _ _ hObjInvM hDon
+                            exact propagatePipChainCrossCore_preserves_ipcInvariantFull st2
+                              recordedServer serverCore _ hObjInv2 hInv2
+                | ready =>
+                    rw [hIpc] at h; simp only [] at h; cases h
+                    exact propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
+                      serverCore _ hDeschedInvExt hDesched
+                | blockedOnSend epId =>
+                    rw [hIpc] at h; simp only [] at h; cases h
+                    exact propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
+                      serverCore _ hDeschedInvExt hDesched
+                | blockedOnReceive epId =>
+                    rw [hIpc] at h; simp only [] at h; cases h
+                    exact propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
+                      serverCore _ hDeschedInvExt hDesched
+                | blockedOnCall epId =>
+                    rw [hIpc] at h; simp only [] at h; cases h
+                    exact propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
+                      serverCore _ hDeschedInvExt hDesched
+                | blockedOnNotification nId =>
+                    rw [hIpc] at h; simp only [] at h; cases h
+                    exact propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
+                      serverCore _ hDeschedInvExt hDesched
 
 /-- WS-SM SM6.D (faithful seL4-MCS `ReplyRecv`): the *unchecked* reply-and-receive
 body, shared by both dispatch arms (so the checked arm = a flow-gated wrapper over

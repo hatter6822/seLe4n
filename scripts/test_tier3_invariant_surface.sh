@@ -5001,7 +5001,10 @@ run_check "INVARIANT" rg -n '^theorem currentScan_boot_of_single_core' SeLe4n/Ke
 run_check "INVARIANT" rg -n '^def cancelSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # Audit closure (v0.32.66): running-core footprint triple, EDF deadline rules,
 # current-uniqueness invariant slice, donation-side observer capstone.
-run_check "INVARIANT" rg -n '^def sortedSchedCoreTriple' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# WS-RR RR2.10 (v0.34.42): the triple moved to `Scheduler/Operations/PerCoreChooseThread.lean`
+# so the reply path's widened lock-set can order its three cores with the same
+# helper the cancellation path uses — one comparator, not a second copy.
+run_check "INVARIANT" rg -n '^def sortedSchedCoreTriple' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
 run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 

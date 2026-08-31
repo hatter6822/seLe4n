@@ -1,13 +1,15 @@
 # WS-RR — SMP Release Readiness (pre-SM10 remediation)
 
 > **Status**: IN FLIGHT — **RR0 LANDED at v0.34.26** (all eleven sub-tasks);
-> **RR1 LANDED at v0.34.41** (all eleven sub-tasks); RR2..RR8 not started.
+> **RR1 LANDED at v0.34.41** (all eleven sub-tasks); **RR2 LANDED at v0.34.42**
+> (all nineteen sub-tasks; RR2.18 partial — see its acceptance note); RR3..RR8
+> not started.
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Source register**: [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) (171 confirmed findings)
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 156 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 157 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -145,7 +147,7 @@ Nothing else may overlap without re-reading the dependency list above.
 |-------|------------------|------|-----|
 | RR0 | Registration and plan correction — nothing further is lost.  **LANDED v0.34.26** | 11 | S–M |
 | RR1 | aarch64 compile coverage, plus the Rust HAL gate no other phase owns.  **LANDED v0.34.41** (RR1.12 hardened the gates through six review rounds in the same cut) | 12 | M |
-| RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live | 19 | M–L |
+| RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live | 20 | M–L |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 | L–XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
 | RR5 | Boot-path fail-open closure | 14 | M–L |
@@ -277,11 +279,103 @@ payoff theorems.
 | RR2.17 | Extend the cancellation `ipcInvariant` closure to the operation that actually runs on `.tcbSuspend` — today's claim excludes it | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | L |
 | RR2.18 | Discharge the `hTeardownProj` hypothesis whose closure form returns its own premise | `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` | L |
 | RR2.19 | Tests: donation-migration and dispatch-arm coverage; extend the cross-core IPC suite | `tests/SmpIpcSuite.lean` | M |
+| RR2.20 | Migrate the replenish queue on the **third** live donation path — `.replyRecv`'s return-and-re-donate pair, which the audit's blocker 2 did not name — prove it preserves the SM5.H invariant, and carry its own suite coverage | `SeLe4n/Kernel/API.lean`, `tests/SmpIpcSuite.lean` | M |
 
 **Acceptance**: every arm reachable from `SeLe4n/Kernel/API.lean`'s SMP
 dispatch carries a `_preserves_ipcInvariantFull` theorem; the donation paths
 migrate the replenish queue; no cancellation theorem rests on an
 unproven teardown hypothesis.
+
+> **RR2.20 is out of numeric execution order and says so.**  It was found during
+> RR2's own closure review, after RR2.13–RR2.19 had landed and their IDs were
+> already in commit messages, so renumbering would have cost more than it bought
+> (see the plan-authoring rule in `CLAUDE.md`).  It introduces no backward
+> dependency: it consumes RR2.1's `applyCallDonationOnCore` and RR2.9's shared
+> return-plus-migration lemma, both lower-numbered, and it carries its own suite
+> coverage rather than depending on RR2.19's.
+
+**Met at v0.34.42**, with one clause partial and named as such:
+
+* **Bundles on the live transitions** — every *unchecked transition* the SMP
+  dispatch arms call now carries `_preserves_ipcInvariantFull`:
+  `endpointSendDualWithCapsOnCore` (RR2.14/RR2.15) and
+  `endpointReceiveDualWithCapsOnCore` (closure audit — the audit had counted
+  the receive arm covered on the strength of the *bare* per-core form, i.e.
+  measured the wrong function), `clearWokenReceiverStash` (RR2.16),
+  `endpointCallCrossCoreDispatch` and `endpointReplyCrossCoreDispatch`
+  (RR2.6/RR2.11), `replyRecvReturnDonation` and
+  `notificationWaitCrossCoreDispatch` (closure audit), over the donation
+  primitives' new surface (`IPC/Invariant/DonationPreservation.lean`, RR2.5)
+  and the priority-inheritance chain walk's new bundle, which nothing had
+  before.  The call donation's two preconditions are *derived* from the
+  rendezvous the chain performs, not assumed.  Not covered at transition
+  level, by measurement: `notificationSignalBoundOnCore` (its bound-delivery
+  invariant surface is SM6.D's registered debt in
+  `SMP_CROSS_CORE_IPC_PLAN.md`); and the *composition* layer above the
+  transitions — the flow-`Checked` wrappers, the `replyRecvBody` three-stage
+  composite, and the `Architecture.stage*` return-frame writes — which is
+  RR3.15's charter, not a transition.
+* **Replenish-queue migration** — all **three** live donation paths carry the
+  SchedContext's pending CBS replenishments across cores
+  (`applyCallDonationOnCore`, `applyReplyDonationOnCore`, and
+  `replyRecvReturnDonation` at RR2.20), and
+  `replenishQueueAffinityConsistent_smp` is re-established on every core after
+  each.  Three, not the two the audit named: `.replyRecv` performs a *pair* of
+  hand-offs from the API layer, which the audit's primitive-by-primitive
+  enumeration did not reach.  Executable coverage in `tests/SmpIpcSuite.lean`
+  §3.9b, two-armed so the round trip cannot hide a missing migration.
+* **Cancellation** — the `ipcInvariant` closure now covers
+  `suspendThreadOnCore`, the operation the live `.tcbSuspend` arm actually
+  calls (RR2.17), rather than stopping at the teardown composite.
+* **The partial clause** — "no cancellation theorem rests on an unproven
+  teardown hypothesis" holds for the two arms whose teardown is confined to the
+  victim and its Reply object (`.ready`, and `.blockedOnReply` at RR2.18).  The
+  three *queue* arms still take `hTeardownProj`, because discharging them needs
+  an endpoint/notification queue label-uniformity invariant — a low endpoint
+  holding a high waiter would make the cancellation genuinely visible — plus
+  that invariant's establishment on every enqueue path.  That is a workstream,
+  not a sub-task; it is registered in
+  [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) §4 finding 2 with closure
+  target **RR3**, and RR2 is recorded as landing with it open rather than as
+  closing a clause it did not close.
+
+**What RR2 hands RR3**, stated so the next phase is not surprised by its own
+inputs:
+
+* **RR3.11's site count is RR3.1's to measure, not this plan's to assert.**
+  RR2.15 retyped `ipcUnwrapCaps_preserves_ipcInvariantFull` to take the
+  receiver's CNode and the capability list and discharge
+  `dualQueueSystemInvariant` / `badgeWellFormed` from lemmas already in the
+  tree — two sites closed.  A binder-name census at the RR2 closure puts nine
+  theorem signatures still binding each of the two (across
+  `PerCoreBundlePreservation`, `DualQueueMembership`, `CapTransferBundle` and
+  the capability-preservation suite), but binder names are exactly what the
+  standing constraint says not to measure by; RR3.1's code-view gate sets the
+  baseline.
+* **RR3.3/RR3.4/RR3.8 gain sites.**  The new send, receive and dispatch
+  bundles *inherit* the post-state hypotheses their single-core predecessors
+  already carried — `blockedThreadsPendingMessageConsistent` everywhere,
+  `replyCallerLinkageReciprocal` on the send/receive side, `donationOwnerValid`
+  on the reply chain (from `endpointReplyOnCore`'s own surface).  No new
+  unproven content, but more bindings for the RR3.1 gate to count, so RR3.1's
+  baseline must be measured after RR2 — which the numbering already guarantees.
+  Fully de-threaded new bundles, for contrast: `clearWokenReceiverStash`,
+  `applyReplyDonationOnCore`, `replyRecvReturnDonation`, the donation
+  primitives, and the PIP walk — each takes only pre-state facts.
+* **RR3.15 has its transition-level inputs; one is staged, and the
+  composition layer is its own.**  After the closure-audit split, only the
+  `.call` chain's bundle (`DispatchInvariant.lean`) is staged — it composes
+  the staged `EndpointCallInvariant` surface — so
+  `dispatchWithCap_preserves_ipcInvariantFull` still cannot state in
+  `SeLe4n/Kernel/API.lean` over that arm until the call surface moves to
+  production; RR3's author must either state the payoff in the staged layer or
+  schedule the relocation first.  Beyond that, RR3.15 owns the glue no
+  transition bundle covers: the flow-`Checked` wrappers (each has its
+  `_flow_denied` / equivalence lemmas ready), the `replyRecvBody` composite
+  over its three covered stages, and the `Architecture.stage*` return-frame
+  writes (over `writeRegisterState_preserves_ipcInvariantFull`).
+  `notificationSignalBoundOnCore` stays gated on SM6.D's bound-delivery debt
+  and is that debt's, not RR3.15's, to clear.
 
 
 ### RR3 — `ipcInvariantFull` de-threading closure (D1, D6, D8)

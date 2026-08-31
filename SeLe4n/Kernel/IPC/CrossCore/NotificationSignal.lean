@@ -694,22 +694,10 @@ theorem notificationSignalOnCore_remaining_waiters
 -- §10  SM6.B.2 (strengthening) — SGI target is the *pre-state* home core
 -- ============================================================================
 
-/-- `determineTargetCore` depends on the thread only through its TCB's
-`cpuAffinity`: two states whose `getTcb?` agree up to `cpuAffinity` route the
-thread to the same core.  The congruence that lets the SGI target be read at the
-pre-state rather than at the post-store wake site. -/
-theorem determineTargetCore_congr (st st' : SystemState) (tid : SeLe4n.ThreadId)
-    (h : (st'.getTcb? tid).map (·.cpuAffinity) = (st.getTcb? tid).map (·.cpuAffinity)) :
-    determineTargetCore st' tid = determineTargetCore st tid := by
-  cases hT' : st'.getTcb? tid with
-  | none => cases hT : st.getTcb? tid with
-    | none => simp [determineTargetCore, hT', hT]
-    | some t => rw [hT', hT] at h; simp at h
-  | some t' => cases hT : st.getTcb? tid with
-    | none => rw [hT', hT] at h; simp at h
-    | some t =>
-      have hAff : t'.cpuAffinity = t.cpuAffinity := by rw [hT', hT] at h; simpa using h
-      simp [determineTargetCore, hT', hT, hAff]
+-- WS-RR RR2.3: `determineTargetCore_congr` moved to
+-- `Scheduler/Operations/Selection.lean`, beside `determineTargetCore` itself, so
+-- the cross-core donation arms (which cannot see this module) can consume it.
+-- Same name, same `SeLe4n.Kernel` namespace — every use below is unchanged.
 
 /-- `storeTcbIpcStateAndMessage` preserves every thread's `cpuAffinity` (it writes
 only `ipcState` / `pendingMessage`), hence preserves `determineTargetCore`. -/

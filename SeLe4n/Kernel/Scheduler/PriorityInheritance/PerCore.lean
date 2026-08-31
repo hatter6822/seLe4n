@@ -75,41 +75,6 @@ is preserved verbatim. -/
 theorem updatePipBoost_eq_updatePipBoostOnCore_bootCore (st : SystemState) (tid : ThreadId) :
     updatePipBoost st tid = updatePipBoostOnCore st bootCoreId tid := rfl
 
-/-- WS-SM SM5.F.2: `updatePipBoostOnCore` preserves the object-store invariant —
-the only object write is the holder's `pipBoost` `insert` (the per-core bucket
-migration touches only the scheduler). -/
-theorem updatePipBoostOnCore_preserves_objects_invExt (st : SystemState) (c : CoreId)
-    (tid : ThreadId) (hInv : st.objects.invExt) :
-    (updatePipBoostOnCore st c tid).objects.invExt := by
-  simp only [updatePipBoostOnCore]
-  split
-  · rename_i tcb _
-    split
-    · exact hInv
-    · split
-      · split
-        · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
-        · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
-      · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
-  · exact hInv
-
-/-- WS-SM SM5.F.2: `updatePipBoostOnCore` does not change `objects[oid]?` for any
-`oid ≠ tid.toObjId`. -/
-theorem updatePipBoostOnCore_objects_ne (st : SystemState) (c : CoreId) (tid : ThreadId)
-    (oid : ObjId) (hNe : ¬(tid.toObjId == oid) = true) (hInv : st.objects.invExt) :
-    (updatePipBoostOnCore st c tid).objects[oid]? = st.objects[oid]? := by
-  simp only [updatePipBoostOnCore]
-  split
-  · split
-    · rfl
-    · split
-      · split
-        · show (st.objects.insert tid.toObjId _)[oid]? = _
-          exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
-        · exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
-      · exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
-  · rfl
-
 /-- WS-SM SM5.F.2: `updatePipBoostOnCore` preserves `objectIndex` — neither the
 `objects.insert` nor the scheduler bucket migration touches it. -/
 theorem updatePipBoostOnCore_preserves_objectIndex (st : SystemState) (c : CoreId)
@@ -185,21 +150,6 @@ theorem updatePipBoostOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId
       · rfl
   · rfl
 
-/-- WS-SM SM5.F.2: `updatePipBoostOnCore` never writes any core's `current` slot. -/
-theorem updatePipBoostOnCore_currentOnCore (st : SystemState) (c c' : CoreId)
-    (tid : ThreadId) :
-    (updatePipBoostOnCore st c tid).scheduler.currentOnCore c'
-      = st.scheduler.currentOnCore c' := by
-  simp only [updatePipBoostOnCore]
-  split
-  · rename_i tcb _
-    split
-    · rfl
-    · split
-      · split <;> rfl
-      · rfl
-  · rfl
-
 /-- WS-SM SM5.F.2: the holder's post-boost `pipBoost` is the GLOBAL
 `computeMaxWaiterPriority st tid` — whether the update fired (`pipBoost := newBoost`)
 or was a no-op (the pre-state `pipBoost` already equalled `newBoost`).  This is the
@@ -268,11 +218,6 @@ theorem pipBoost_perCore_consistent (st : SystemState) (c : CoreId) (tid : Threa
 -- ============================================================================
 -- §3  SM5.F.2 — pipBoostWithWake (cross-core PIP wake)
 -- ============================================================================
-
-/-- WS-SM SM5.F.2: `pipBoostWithWake`'s state component is the per-core boost on the
-holder's home core. -/
-@[simp] theorem pipBoostWithWake_state (st : SystemState) (tid : ThreadId) (ec : CoreId) :
-    (pipBoostWithWake st tid ec).1 = updatePipBoostOnCore st (determineTargetCore st tid) tid := rfl
 
 /-- WS-SM SM5.F.2: a LOCAL PIP boost (home = executing core) emits no SGI — the
 executing core picks up the re-bucketed holder on its next scheduling decision. -/
@@ -370,13 +315,6 @@ theorem pipBoostWithWake_emits_at_most_one_sgi (st : SystemState) (tid : ThreadI
   | none => exact Or.inl rfl
   | some p => exact Or.inr ⟨p, rfl⟩
 
-/-- WS-SM SM5.F.2: `pipBoostWithWake` preserves the object-store invariant. -/
-theorem pipBoostWithWake_preserves_objects_invExt (st : SystemState) (tid : ThreadId)
-    (ec : CoreId) (hInv : st.objects.invExt) :
-    (pipBoostWithWake st tid ec).1.objects.invExt := by
-  rw [pipBoostWithWake_state]
-  exact updatePipBoostOnCore_preserves_objects_invExt st _ tid hInv
-
 /-- WS-SM SM5.F.2: `pipBoostWithWake` preserves blocking-graph acyclicity. -/
 theorem pipBoostWithWake_preserves_blockingAcyclic (st : SystemState) (tid : ThreadId)
     (ec : CoreId) (hInv : st.objects.invExt) (hAcyclic : blockingAcyclic st) :
@@ -421,22 +359,6 @@ theorem propagatePipChainCrossCoreState_step (st : SystemState) (tid : ThreadId)
   unfold propagatePipChainCrossCoreState
   rw [propagatePipChainCrossCore_step]
   cases blockingServer st tid <;> rfl
-
-/-- WS-SM SM5.F.4: the cross-core donation chain walk preserves the object-store
-invariant — each link is a `pipBoostWithWake` boost (an `invExt`-preserving TCB
-`insert`), folded along the chain. -/
-theorem propagatePipChainCrossCore_preserves_objects_invExt (st : SystemState)
-    (tid : ThreadId) (ec : CoreId) (fuel : Nat) (hInv : st.objects.invExt) :
-    (propagatePipChainCrossCore st tid ec fuel).1.objects.invExt := by
-  show (propagatePipChainCrossCoreState st tid ec fuel).objects.invExt
-  induction fuel generalizing st tid with
-  | zero => simpa using hInv
-  | succ n ih =>
-    rw [propagatePipChainCrossCoreState_step]
-    have hst' := pipBoostWithWake_preserves_objects_invExt st tid ec hInv
-    cases blockingServer st tid with
-    | none => exact hst'
-    | some nextServer => exact ih _ nextServer hst'
 
 /-- WS-SM SM5.F.4: the cross-core donation chain walk preserves blocking-graph
 acyclicity — each `pipBoostWithWake` boost preserves the blocking graph + fuel. -/
@@ -801,17 +723,6 @@ theorem updatePipBoostOnCore_getTcb?_cpuAffinity (st : SystemState) (c : CoreId)
     by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore c)
     · simp only [hRQ, ite_true]; split <;> exact hSelf
     · simp only [hRQ, ite_false]; exact hSelf
-
-/-- WS-SM SM5.F.2: a PIP boost of a thread with no TCB is the identity — the def's
-fallthrough arm returns `st`. -/
-theorem updatePipBoostOnCore_eq_self_of_getTcb?_none (st : SystemState) (c : CoreId)
-    (tid : ThreadId) (hNone : st.getTcb? tid = none) :
-    updatePipBoostOnCore st c tid = st := by
-  unfold updatePipBoostOnCore
-  unfold SystemState.getTcb? at hNone
-  split
-  · rename_i tcb hMatch; rw [hMatch] at hNone; simp at hNone
-  · rfl
 
 /-- WS-SM SM5.F.4 (cpuAffinity-stability / home-core stability): a PIP boost
 preserves *every* thread's home core (`determineTargetCore`).  `determineTargetCore`

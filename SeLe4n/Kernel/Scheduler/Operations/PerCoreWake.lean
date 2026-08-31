@@ -771,6 +771,24 @@ theorem handleRescheduleSgiOnCore_preserves_objects_invExt (st : SystemState)
     · exact switchToThreadOnCore_preserves_objects_invExt st c _ st' hInv h
     · rw [Except.ok.injEq] at h; subst h; exact hInv
 
+/-- WS-RR RR2.17: the SGI handler's only object write is the preempted thread's
+register-context save, so every notification the post-state holds was already
+there.  The idle and keep-current branches are the identity; the dispatch branch
+is a `switchToThreadOnCore`. -/
+theorem handleRescheduleSgiOnCore_notification_backward (st : SystemState) (c : CoreId)
+    (st' : SystemState) (hInv : st.objects.invExt)
+    (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hStep : handleRescheduleSgiOnCore st c = .ok st')
+    (h : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
+  unfold handleRescheduleSgiOnCore at hStep
+  split at hStep
+  · exact absurd hStep (by simp)
+  · rw [Except.ok.injEq] at hStep; subst hStep; exact h
+  · split at hStep
+    · exact switchToThreadOnCore_notification_backward st c _ st' hInv oid ntfn hStep h
+    · rw [Except.ok.injEq] at hStep; subst hStep; exact h
+
 /-- WS-SM SM5.F.6 (PR #811 P2-5 support): the SGI handler frames out **any** thread
 that is not core `c`'s current thread.  The idle / keep-current branches are the
 identity; the dispatch branch is a `switchToThreadOnCore` whose only TCB write is the
@@ -860,6 +878,39 @@ theorem handleRescheduleSgiOnCore_machine_timer (st : SystemState) (c : CoreId)
   · rw [Except.ok.injEq] at h; subst h; rfl
   · split at h
     · exact switchToThreadOnCore_machine_timer st c _ st' h
+    · rw [Except.ok.injEq] at h; subst h; rfl
+
+/-- WS-RR (bind/unbind affinity closure): the SGI handler preserves every
+thread's home core — its one object write is `switchToThreadOnCore`'s
+register-context save, which never touches `cpuAffinity`.  The home-core half
+of the frame that carries the replenish-queue affinity invariant through the
+unbind wrapper's local reschedule arm. -/
+theorem handleRescheduleSgiOnCore_determineTargetCore (st : SystemState) (c : CoreId)
+    (st' : SystemState) (hInv : st.objects.invExt)
+    (h : handleRescheduleSgiOnCore st c = .ok st') (t : SeLe4n.ThreadId) :
+    determineTargetCore st' t = determineTargetCore st t := by
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; rfl
+  · split at h
+    · exact switchToThreadOnCore_determineTargetCore st c _ st' hInv h t
+    · rw [Except.ok.injEq] at h; subst h; rfl
+
+/-- WS-RR (bind/unbind affinity closure): the SGI handler preserves every
+SchedContext's `boundThread` projection — same register-save footprint.  The
+binding half of the same frame. -/
+theorem handleRescheduleSgiOnCore_boundThread (st : SystemState) (c : CoreId)
+    (st' : SystemState) (hInv : st.objects.invExt)
+    (h : handleRescheduleSgiOnCore st c = .ok st') (scId : SeLe4n.SchedContextId) :
+    (st'.getSchedContext? scId).map (·.boundThread)
+      = (st.getSchedContext? scId).map (·.boundThread) := by
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; rfl
+  · split at h
+    · exact switchToThreadOnCore_boundThread st c _ st' hInv h scId
     · rw [Except.ok.injEq] at h; subst h; rfl
 
 

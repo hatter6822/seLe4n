@@ -13,6 +13,7 @@
 
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNiPerCore
+import SeLe4n.Kernel.InformationFlow.Invariant.Composition
 
 /-!
 # WS-SM SM6.E — Cross-core cancellation non-interference
@@ -176,7 +177,14 @@ theorem descheduleThread_cancellation_NI_smp
 victim is invisible, given the single-core teardown's projection preservation
 (the obligation the production closure form
 `suspendThread_preserves_projection` G3 documents; the cross-core deschedule
-leg is discharged substantively). -/
+leg is discharged substantively).
+
+WS-RR RR2.18: `hTeardownProj` is **discharged** for the two arms whose teardown
+touches only the victim and its Reply object —
+`cancelIpcBlockingOnCore_ready_cancellation_NI` (`.ready`) and
+`cancelIpcBlockingOnCore_reply_cancellation_NI` (`.blockedOnReply`, §5).  It
+remains a hypothesis on the queue arms for a stated reason, given at the second
+of those. -/
 theorem cancelIpcBlockingOnCore_cancellation_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
@@ -192,7 +200,10 @@ theorem cancelIpcBlockingOnCore_cancellation_NI
   exact hTeardownProj
 
 /-- WS-SM SM6.E (∀-core form): the cross-core cancellation of a high victim
-is invisible on *every* core, given the per-core teardown projection. -/
+is invisible on *every* core, given the per-core teardown projection.
+
+WS-RR RR2.18: see the boot-core form above for which arms now discharge that
+hypothesis outright. -/
 theorem cancelIpcBlockingOnCore_cancellation_NI_smp
     (ctx : LabelingContext) (observer : IfObserver)
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
@@ -296,5 +307,155 @@ theorem cancelDonatedDonationOnCore_cancellation_NI_smp
       rw [migrateSchedContextReplenishment_preserves_projectionOnCore]
       exact hReturnProj _ (by assumption) c
   · cases h
+
+
+-- ============================================================================
+-- §5  WS-RR RR2.18 — discharging the teardown projection on the reply arm
+-- ============================================================================
+-- `hTeardownProj` above is the cancellation's *own* projection equality, taken
+-- as a hypothesis: a closure form that gives back what it is handed.  Below it
+-- is **discharged** for the `.blockedOnReply` teardown — the arm the live
+-- `.tcbSuspend` of a caller awaiting a reply takes — from the three writes that
+-- arm actually makes, each invisible for its own reason:
+--
+--   * the victim's `ipcState` / queue-link reset (`restoreToReady`) and its
+--     `replyObject` clear (`clearTcbReplyObject`) land on the victim's own TCB,
+--     which `LabelingContextValid` makes unobservable when the victim is;
+--   * the Reply's `caller` back-link clear (`clearReplyObjectCaller`) is
+--     invisible **unconditionally** — `projectKernelObject` strips `caller`,
+--     so it does not even need the Reply object to be high.
+
+/-- WS-RR RR2.18: `restoreToReady` writes one TCB, so it preserves the
+object-store invariant. -/
+theorem restoreToReady_preserves_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    (Lifecycle.Suspend.restoreToReady st tid).objects.invExt := by
+  unfold Lifecycle.Suspend.restoreToReady
+  split
+  · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
+  · exact hInv
+
+/-- WS-RR RR2.18: `restoreToReady` at a high thread is invisible. -/
+theorem restoreToReady_preserves_projection_high
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Lifecycle.Suspend.restoreToReady st tid)
+      = projectState ctx observer st := by
+  unfold Lifecycle.Suspend.restoreToReady
+  split
+  · exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
+      hTidObjHigh hObjInv
+  · rfl
+
+/-- WS-RR RR2.18: clearing a high thread's `replyObject` is invisible. -/
+theorem clearTcbReplyObject_preserves_projection_high
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Lifecycle.Suspend.clearTcbReplyObject st tid)
+      = projectState ctx observer st := by
+  unfold Lifecycle.Suspend.clearTcbReplyObject
+  split
+  · exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
+      hTidObjHigh hObjInv
+  · rfl
+
+/-- WS-RR RR2.18: clearing a Reply object's `caller` back-link is invisible
+**unconditionally** — the projection strips `caller`, so no high-object
+hypothesis on the Reply is needed. -/
+theorem clearReplyObjectCaller_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Lifecycle.Suspend.clearReplyObjectCaller st rid)
+      = projectState ctx observer st := by
+  unfold Lifecycle.Suspend.clearReplyObjectCaller
+  split
+  · next r hR =>
+    refine objects_insert_preserves_projection_of_proj_eq ctx observer st rid.toObjId _ hObjInv ?_
+    rw [(SystemState.getReply?_eq_some_iff st rid r).mp hR]
+    exact congrArg some (projectKernelObject_reply_caller_invariant ctx observer r none).symm
+  · rfl
+
+/-- WS-RR RR2.18: the whole reply-link consume is invisible for a high victim. -/
+theorem consumeReplyLink_preserves_projection_high
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Lifecycle.Suspend.consumeReplyLink st tid tcb)
+      = projectState ctx observer st := by
+  unfold Lifecycle.Suspend.consumeReplyLink
+  cases tcb.replyObject with
+  | none => rfl
+  | some rid =>
+      simp only []
+      rw [clearReplyObjectCaller_preserves_projection ctx observer _ rid
+        (clearTcbReplyObject_preserves_objects_invExt st tid hObjInv)]
+      exact clearTcbReplyObject_preserves_projection_high ctx observer st tid hTidObjHigh hObjInv
+
+/-- **WS-RR RR2.18: the teardown projection, discharged on the reply arm.**
+
+For a victim blocked awaiting a reply, `cancelIpcBlocking`'s three writes are
+the victim's own TCB (twice) and the Reply's `caller` back-link — the first two
+invisible because the victim is high, the third invisible outright.  This is the
+`hTeardownProj` obligation the cross-core theorems above take as a hypothesis,
+proved rather than assumed. -/
+theorem cancelIpcBlocking_blockedOnReply_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (ep : SeLe4n.ObjId)
+    (rt : Option SeLe4n.ThreadId)
+    (hBlocked : tcb.ipcState = .blockedOnReply ep rt)
+    (hValid : LabelingContextValid ctx)
+    (hVictimHigh : threadObservable ctx observer victim = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Lifecycle.Suspend.cancelIpcBlocking st victim tcb)
+      = projectState ctx observer st := by
+  have hObjHigh : objectObservable ctx observer victim.toObjId = false :=
+    hValid.coherenceImpliesObjectHigh observer victim hVictimHigh
+  unfold Lifecycle.Suspend.cancelIpcBlocking
+  rw [hBlocked]
+  simp only []
+  have h1 : projectState ctx observer
+      (Lifecycle.Suspend.consumeReplyLink (Lifecycle.Suspend.restoreToReady st victim) victim tcb)
+      = projectState ctx observer (Lifecycle.Suspend.restoreToReady st victim) :=
+    consumeReplyLink_preserves_projection_high ctx observer _ victim tcb hObjHigh
+      (restoreToReady_preserves_objects_invExt st victim hObjInv)
+  exact h1.trans (restoreToReady_preserves_projection_high ctx observer st victim hObjHigh hObjInv)
+
+
+/-- **WS-RR RR2.18 (boot-core form, fully substantive)**: cancelling a
+`.blockedOnReply` high victim across cores is invisible — no teardown-projection
+hypothesis.
+
+Together with `cancelIpcBlockingOnCore_ready_cancellation_NI` (the `.ready`
+victim) this covers the two arms whose write set is confined to the victim's own
+TCB and its Reply object.  The three *queue* arms
+(`.blockedOnSend` / `.blockedOnReceive` / `.blockedOnCall`, and
+`.blockedOnNotification`) still take `hTeardownProj`, and cannot be discharged
+without a labelling invariant this tree does not yet carry: their teardown
+rewrites the endpoint or notification object the victim was queued on and splices
+its queue neighbours' TCBs, and *nothing states that those are high when the
+victim is*.  That is a real gap, not a proof-engineering one — a low endpoint
+holding a high waiter would make the cancellation visible — and closing it means
+introducing an endpoint/notification queue label-uniformity invariant and
+**establishing** it on every enqueue path.  Registered as WS-RR RR3 debt rather
+than papered over here. -/
+theorem cancelIpcBlockingOnCore_reply_cancellation_NI
+    (ctx : LabelingContext) (observer : IfObserver)
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
+    (st : SystemState) (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
+    (hBlocked : tcb.ipcState = .blockedOnReply ep rt)
+    (hValid : LabelingContextValid ctx)
+    (hVictimHigh : threadObservable ctx observer victim = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer
+        (cancelIpcBlockingOnCore victim tcb executingCore st).1
+      = projectState ctx observer st :=
+  cancelIpcBlockingOnCore_cancellation_NI ctx observer victim tcb executingCore st hVictimHigh
+    (cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st victim tcb ep rt
+      hBlocked hValid hVictimHigh hObjInv)
 
 end SeLe4n.Kernel

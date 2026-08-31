@@ -16,7 +16,7 @@
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 import SeLe4n.Kernel.IPC.DualQueue.WithCaps
-import SeLe4n.Kernel.IPC.Operations.Donation.Primitives
+import SeLe4n.Kernel.IPC.Operations.Donation
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers
 
@@ -114,11 +114,22 @@ def endpointCallWithCapsOnCore
 
 /-- WS-SM SM6.A.5 (operation): the full cross-core `Call` syscall semantics.
 The cross-core WithCaps call, then — if a receiver rendezvoused — the
-SchedContext **donation** to a passive server (`applyCallDonation` rebinds the
-caller's bound SchedContext to the receiver, an object-store-only update that is
-cross-core-safe) and priority-inheritance propagation.  The cross-core
-`.reschedule` SGI is surfaced for the runtime to fire after the commit.
-Mirrors the live single-core `.call` dispatch arm (`API.dispatchWithCap`). -/
+SchedContext **donation** to a passive server and priority-inheritance
+propagation.  The cross-core `.reschedule` SGI is surfaced for the runtime to
+fire after the commit.  Mirrors the live single-core `.call` dispatch arm
+(`API.dispatchWithCap`).
+
+**WS-RR RR2.7**: the donation is `applyCallDonationOnCore`, not the boot-pinned
+`applyCallDonation`.  The rebinding of the caller's SchedContext to the receiver
+is an object-store-only update and is cross-core-safe on its own, but the
+SchedContext's pending CBS replenishments are **not** in the object store — they
+live on a per-core replenish queue, the donor's, and the SM5.H affinity
+invariant `replenishQueueAffinityConsistentOnCore` says they must live on the
+*bound thread's* home core.  The per-core form carries them across with
+`migrateSchedContextReplenishment`, exactly as the cancellation arm
+`cancelDonatedDonationOnCore` has since SM6.E, and
+`applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp` proves
+the invariant holds on every core afterwards. -/
 def endpointCallCrossCoreDispatch
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
@@ -136,7 +147,22 @@ def endpointCallCrossCoreDispatch
       | some receiverTid =>
         match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
         | some callerV, some receiverV =>
-          match applyCallDonation st' callerV receiverV with
+          -- WS-RR RR2.7: the live `.call` arm routes through the **migrating**
+          -- donation.  A SchedContext donated to a server homed on another core
+          -- must drag its pending CBS replenishments with it, or the SM5.H
+          -- affinity invariant `replenishQueueAffinityConsistentOnCore` breaks on
+          -- a reachable path and the donee's budget is refilled by a core that no
+          -- longer runs it.  Both endpoints are resolved from the **pre**-state
+          -- `st`, which is what the `withLockSet` bracket sees when it acquires
+          -- the two `SchedLockId.replenishQueue` write locks
+          -- (`endpointCallCrossCoreDispatchSchedLockSet`); the intervening
+          -- rendezvous writes `ipcState` / queue links / scheduler slots and the
+          -- receiver's CSpace, never a `cpuAffinity`, so the pre-state reading is
+          -- the reading at the donation site.  Donor and donee on one core makes
+          -- the migration a definitional no-op, which is every single-core
+          -- configuration.
+          match applyCallDonationOnCore st' callerV receiverV
+              (determineTargetCore st caller) (determineTargetCore st receiverTid) with
           | .error e => (st', .error e)
           | .ok st'' =>
               -- WS-SM SM6.A: propagate the donated-priority boost with the

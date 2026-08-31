@@ -1,3 +1,368 @@
+## v0.34.42 — WS-RR RR2: the live paths carry their own correctness
+
+**One PR, one version.**  The work is RR2.1–RR2.19, closing the pre-SM10
+audit's blockers **2** and **3**.  Acceptance, as the plan states it: every arm
+reachable from `SeLe4n/Kernel/API.lean`'s SMP dispatch carries a
+`_preserves_ipcInvariantFull` theorem; the donation paths migrate the replenish
+queue; no cancellation theorem rests on an unproven teardown hypothesis.  The
+first two are met in full.  The third is met for the two arms that do not need
+an invariant the tree does not have, and RR2 lands with the residual open and
+registered rather than with the clause quietly reworded — see the last section.
+
+### RR2.1–RR2.4, RR2.8–RR2.10, RR2.20 — the donation paths migrate the replenish queue
+
+`SMP_CROSS_CORE_IPC_PLAN.md` §4.3 has said since SM6 that "if the receiver
+inherits the SC and is on a different core, the SC's CBS replenish queue
+migrates per SM5.H.4."  **No donation path did this.**  A cross-core `.call`
+rebound the SchedContext's `boundThread` and left its replenishment entries
+parked on the donor's core; the SM5.H affinity invariant
+`replenishQueueAffinityConsistentOnCore` — which requires
+`determineTargetCore st tid = c` for every SC in core `c`'s replenish queue —
+was false from the instant the donation committed.  The one live call site of
+`migrateSchedContextReplenishment` in the whole tree was the *cancellation*
+path, which is the tree's own evidence that the migration is required.
+
+All three donation paths now perform it — three, not the two the audit named:
+
+* `applyCallDonationOnCore` (`IPC/Operations/Donation.lean`) threads donor and
+  donee home cores and migrates donor → donee.
+* `applyReplyDonationOnCore` (`IPC/CrossCore/EndpointReplyDispatch.lean`) does
+  the mirror hop, replier home → original-owner home.
+* `replyRecvReturnDonation` (`Kernel/API.lean`, RR2.20) — the third path, found
+  during RR2's own closure review.  A `.replyRecv` performs **two** hand-offs:
+  the recorded server returns its donated context to the client it was serving,
+  and, when the receive rendezvoused with a queued `Call`, the next caller's
+  context is immediately donated to the receiver.  Neither migrated.  On a
+  delegated reply cap the receiver need not be the recorded server, so a single
+  `.replyRecv` could leave one SchedContext's replenishments two cores from the
+  thread now bound to it.
+
+Each carries a `replenishQueueAffinityConsistent_smp` preservation theorem, so
+the invariant is **restored by** the transition rather than assumed of its
+post-state, plus the frame lemmas (`_objects_eq`, `_machine_eq`,
+`_runQueue_current_eq`) that show the migration is the only scheduler-visible
+effect.  A same-core donation is a no-op by
+`migrateSchedContextReplenishment_noop`, so the common case costs nothing.
+
+RR2.20's proof needed two pieces that did not exist.  The return-plus-migration
+half was **factored out** of RR2.9's theorem
+(`returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp`)
+rather than copied, since both paths perform exactly that pair and only the
+reply path follows it with a deschedule.  And the priority-inheritance chain
+walk that closes every `.replyRecv` arm needed a frame it had never been given:
+`propagatePipChainCrossCore_replenish_readings` shows the walk leaves all three
+readings the invariant makes — the replenish queue, `getSchedContext?` and
+`determineTargetCore` — untouched.  That in turn wanted a congruence form of the
+affinity frame (`replenishQueueAffinityConsistentOnCore_congr`), because the old
+frame demanded whole-`objects` equality and so excluded precisely the
+transitions that most need it: a PIP boost rewrites one TCB's `pipBoost`.
+
+SM8.B's `replyRecvReturnDonationWriteSet` mirrors the transition's control flow,
+so it was updated in the same cut to branch on the migrated states.  Neither
+migration adds a core to the set — `onCore_perCore_independence` puts the
+replenish queue outside the observer's read set — but a write set that mirrors a
+transition has to read the states the transition reads.
+
+The two donation lock-sets were widened to the two `SchedLockId.replenishQueue`
+writes the migration performs (`..._covers_migration`), and both remain
+`pairwise_le` under the cross-domain order (`object < runQueue <
+replenishQueue`) and inside `maxLockSetSize`.  The two dispatch-level lock-sets
+that contain them carry `_covers_donation`, so the widening cannot be dropped
+from the enclosing set without failing a proof.
+
+### RR2.14–RR2.16 — the live `.send` arm carries a bundle
+
+`EndpointSend.lean` contained **zero** `preserves_ipcInvariantFull` theorems
+while its call-side sibling had seven, and the plan text that claimed otherwise
+cited a theorem about `endpointSendDual` — the *single-core, boot-pinned*
+function that stopped being the live arm when `.send` was re-routed at
+v0.33.5.  `endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull` and
+`_perCore` now sit over `endpointSendDualOnCore_preserves_ipcInvariantFull{,_perCore}`,
+which the same cut built for the inner transition nothing covered either.  The
+per-core case is proved from the transition's read agreement rather than by
+reduction to the boot core, so the theorem says something about core 3 as well
+as core 0.  `clearWokenReceiverStash` — the fifth live arm — got its own bundle
+in `Kernel/API.lean`.
+
+The composition also **removed** two threaded hypotheses rather than adding
+any.  `ipcUnwrapCaps_preserves_ipcInvariantFull` used to take its dual-queue
+and badge conjuncts as *post-state* hypotheses; it now takes the receiver's
+CNode and the capability list and discharges both from lemmas already in the
+tree.  That is two of the eight sites RR3.11 is scheduled to close, closed
+early because the send bundle could not honestly compose over an assumption.
+
+In the other direction, and stated so RR3 is not surprised by it: the new
+send, receive and dispatch bundles **inherit** the post-state hypotheses their
+single-core predecessors already carried — `blockedThreadsPendingMessageConsistent`
+everywhere, `replyCallerLinkageReciprocal` on the send/receive side, and
+`donationOwnerValid` on the reply chain, from `endpointReplyOnCore`'s own
+surface.  No new unproven content is introduced — each form threads exactly
+what the surface it composes already threads — but they are more sites for the
+RR3.1 gate to count, and that gate's measurement, not any figure in this entry,
+is the honest baseline of RR3's remaining work.
+
+### RR2.5 — the donation primitives get an invariant surface
+
+`applyCallDonation` and `applyReplyDonation` had **no** `ipcInvariantFull`
+theorems at all, which is why neither dispatch chain could carry one.
+`IPC/Invariant/DonationPreservation.lean` (new, production) builds the surface
+around `donationReadAgreement`: the eight TCB fields a donation leaves alone in
+both directions, plus non-`.tcb`/non-`.schedContext` kind agreement and
+SchedContext survival.  A rebinding store satisfies it, and
+`ipcInvariantFull_of_donationReadAgreement` transports the whole bundle across.
+
+That needed the shared 15-conjunct driver in `DualQueueMembership.lean` split:
+`ipcInvariantCore_of_nonBindingAgreements` is the binding-free core, and the
+existing `storeObject_tcb_ipcInvariantCore_of_agreements` is re-derived from
+it.  A donation *changes* `schedContextBinding`, so the old driver — which
+required agreement on exactly that field — could never have served it.
+
+`applyCallDonation_preserves_ipcInvariantFull` takes two preconditions, and
+RR2.6 **derives** rather than assumes them (below).
+
+### RR2.6, RR2.11 — the two live dispatch chains carry a bundle
+
+`endpointCallCrossCoreDispatch` and `endpointReplyCrossCoreDispatch` are what
+the live `.call` and `.reply` arms route through.  Each is a three-stage chain
+and only its first stage had a bundle: the donation stage had none (RR2.5 built
+it) and the PIP stage had none
+(`propagatePipChainCrossCore_preserves_ipcInvariantFull`, new here).  Both
+chains now carry `_preserves_ipcInvariantFull` in
+`IPC/CrossCore/DispatchInvariant.lean`.
+
+The call chain's donation preconditions are **derived from the rendezvous**:
+`endpointCallOnCore_ok_rendezvous_decompose` and
+`endpointCallOnCore_rendezvous_post_ipcState` are new forward decompositions
+showing the caller is blocked on reply and the receiver is not the donated
+context's owner, so the caller of the bundle discharges nothing by inspection.
+That in turn needed `endpointQueuePopHead_popped_eq_head`, which the dual-queue
+module had never stated.
+
+`DispatchInvariant.lean` shipped **staged** with both chains; the closure
+audit below then measured its rationale half-false (`EndpointReplyInvariant`
+is production) and split it — see the audit section at the end of this entry.
+After the split only the `.call` chain's bundle is staged (on the genuinely
+staged `EndpointCallInvariant`), anchored from `Platform/Staged.lean` and
+allowlisted so CI builds it on every PR; the `.reply` chain's bundle, the
+PIP walk's, and the two primitive surfaces (`DonationPreservation`,
+`CapTransferBundle`) are production, imported from `SeLe4n.lean` directly.
+
+### RR2.17 — the operation `.tcbSuspend` actually runs preserves `ipcInvariant`
+
+SM6.E declared the conjunct closed "across the entire cancellation surface" and
+enumerated five composites — none of which is `suspendThreadOnCore`, the
+function `dispatchCapabilityOnly`'s `.tcbSuspend` arm and the
+`suspend_thread_cross_core` seam call, and the one the module header explicitly
+warns the others must not be substituted for.  It had no preservation theorem.
+
+It now has two, `_preserves_objects_invExt` and `_preserves_ipcInvariant`, via
+a small piece of new machinery.  The operation is eight stages preserving
+`ipcInvariant` for different reasons — some leave `objects` untouched, the rest
+write only `.tcb` objects and so transport the invariant *backwards* through
+their readings — and each stage needs its predecessor's `objects.invExt` to
+state its own preservation, so neither fact can be threaded alone.
+`IpcInvariantStage` is a reflexive, transitive relation bundling the two, with
+`of_objects_eq` and `of_notification_backward` constructors and one instance
+per stage; the composite is eight `trans` steps and both public forms project
+out of the same chain.
+
+### RR2.18 — the teardown hypothesis, discharged where it can be
+
+`cancelIpcBlockingOnCore_cancellation_NI` took
+`hTeardownProj : projectState ctx observer (cancelIpcBlocking st victim tcb) =
+projectState ctx observer st` and closed with `exact hTeardownProj`; the
+production closure form it cited, `suspendThread_preserves_projection`, has
+body `hProjEq st' hStep` — it returns its own premise.
+
+`cancelIpcBlocking` branches on the victim's `ipcState`, and only three of five
+arms splice a queue.  The `.blockedOnReply` arm is now discharged
+**substantively**: `cancelIpcBlocking_blockedOnReply_preserves_projection` is
+composed from four new frames (`restoreToReady_preserves_projection_high`,
+`clearTcbReplyObject_preserves_projection_high`,
+`clearReplyObjectCaller_preserves_projection`,
+`consumeReplyLink_preserves_projection_high`) and feeds
+`cancelIpcBlockingOnCore_reply_cancellation_NI`, which takes **no**
+`hTeardownProj`.  That arm reaches no queue — it walks the Reply object's
+caller link — which is exactly why it does not need the missing invariant.
+
+The three queue arms still take it, and the obstruction is real:
+`spliceOutMidQueueNode` rewrites the neighbour TCBs' `queueNext`/`queuePrev`,
+those fields survive `projectState`, and making the rewrite invisible needs an
+endpoint/notification queue label-uniformity invariant — a low endpoint holding
+a high waiter would make the cancellation genuinely observable.  Stating that
+invariant is a lemma; **establishing** it at every enqueue site and preserving
+it across every queue-touching transition is a workstream, wider than RR2's
+live-path remit.  Closure target **RR3**, registered in
+`UNFINISHED_SMP_WORK.md` §4 finding 2 and in the RR2 acceptance block of
+`SMP_RELEASE_READINESS_PLAN.md`.  The clause was not reworded to fit what
+landed.
+
+### RR2.19 — executable coverage
+
+`tests/SmpIpcSuite.lean` gains two check groups on 4-core fixtures: §3.9b drives
+cross-core donations and asserts the replenishment entries leave the donor's
+queue and appear on the donee's, with the same-core case moving nothing; §3.13b covers the suspend arm — local and remote victims, the SGI the
+remote case raises, and the `illegalState` rejection of an already-inactive
+victim.
+
+RR2.20's `.replyRecv` coverage extends §3.9b and is deliberately two-armed: the
+round-trip arm alone cannot tell "both migrations ran" from "neither did",
+because returning a context to its owner and re-donating it to the same server
+lands the entries back where they started.  So the rendezvous check uses a
+*delegated* reply cap whose receiver is homed on a **third** core, making the
+two hops (core 1 → core 0, then core 0 → core 2) land in distinguishable
+places, and the return-only arm is exercised separately.
+
+### The RR2 closure audit — measure the landing against a derivation, not the audit's enumeration
+
+A full re-audit of the RR2 cut, done before merge, applied the project's own
+rule — derive the set, keep the enumeration as a pin — to RR2's *own*
+acceptance, and found the audit's "five live arms" was an enumeration too.
+Deriving the arms from `dispatchWithCap`'s code found four more
+state-committing operations, and measuring bundle coverage per operation
+found three defects in the landing:
+
+* **The `.receive` arm was counted covered on the strength of the wrong
+  function.**  The pre-SM10 audit's "only `endpointReceiveDualOnCore` has a
+  bundle" measured the *bare* per-core receive; the live arm runs
+  `endpointReceiveDualWithCapsOnCore` — the same measured-a-retired-function
+  shape as blocker 3 itself.  Fixed:
+  `endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull{,_perCore}`
+  (production, `EndpointReplyInvariant.lean` §10), composed exactly as the
+  send side — the bare bundle, then `ipcUnwrapCaps`' with its two *input*
+  conditions, plus the definition-walk `_preserves_objects_invExt` and the
+  per-core `passiveServerIdle` frame.
+* **The staging rationale was half-false.**  `DispatchInvariant.lean` claimed
+  to compose "the staged `EndpointCallInvariant` / `EndpointReplyInvariant`
+  surfaces"; the reply surface is production (the live API imports it through
+  `EndpointSendInvariant`).  Fixed by splitting the module: the `.reply`
+  chain's bundle now lives in the production
+  `EndpointReplyDispatchInvariant.lean`, the priority-inheritance walk's
+  beside its driver in `DonationPreservation.lean` §8 (its proof re-based off
+  the staged `propagatePipChainCrossCoreState` alias onto the production step
+  lemma), and `removeRunnableOnCore_passiveServerIdleFrame` moved to
+  `PerCoreBundlePreservation.lean` beside its OnCore sibling.  Only the
+  `.call` chain's bundle remains staged, on the surface that is genuinely
+  staged.
+* **The third donation path had operational coverage but no bundle.**  Fixed:
+  `replyRecvReturnDonation_preserves_ipcInvariantFull` (production,
+  `Kernel/API.lean`) — return, migration, re-donation-or-deschedule, PIP walk,
+  with the re-donation's `.blockedOnReply` precondition *derived from the
+  branch itself* and the not-an-owner condition transported across the return
+  by its binding trichotomy.  Fully de-threaded: every hypothesis is a
+  pre-state fact.  `notificationWaitCrossCoreDispatch` — a thin wrapper the
+  arm derivation surfaced — got its bundle as a one-step reduction.
+
+What the audit deliberately did **not** build, each with its named owner: the
+flow-`Checked` dispatch wrappers, the `replyRecvBody` three-stage composite
+and the `Architecture.stage*` return-frame writes are RR3.15's composition
+layer (its inputs are now all in place, and all production except the `.call`
+chain's); `notificationSignalBoundOnCore`'s bundle is SM6.D's registered
+bound-delivery debt.  The audit's derivation sweep over every `boundThread`
+writer also surfaced that `schedContextBind`/`schedContextUnbind` carry no
+affinity-preservation theorems — sound today only by an unproven operational
+discipline (an unbound SchedContext holds no replenish entries).  That gap was
+first registered in the debt register's table C, then closed in this same PR —
+the section below.
+
+### The bind/unbind affinity closure — the discipline becomes an invariant
+
+The registered gap: `replenishQueueAffinityConsistent_smp` (SM5.H) obliges
+every replenish-queue entry whose SchedContext is *bound* to sit on the bound
+thread's home core, and is deliberately vacuous for unbound SchedContexts — so
+`schedContextBind`, flipping unbound to bound, is the one transition that can
+falsify it **without touching a queue**, unless no entry for the freshly-bound
+SchedContext exists.  The tree maintained that fact operationally and stated
+it nowhere.
+
+`SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (production, anchored from
+`SeLe4n.lean`) now states it as the **orphan-freedom invariant**
+`replenishQueueEntriesBound_smp` — every entry in every core's replenish queue
+names a SchedContext that exists and is bound — established at boot, preserved
+by the queue primitives (both purges unconditionally, the migration
+unconditionally, `replenishOnCore` given the scheduled SchedContext is bound:
+the same obligation its affinity theorem already carries), and preserved
+through the whole binding lifecycle.  On that footing the registered theorems
+exist, with the affinity ↔ orphan-freedom mutual dependence as the proofs'
+load-bearing shape:
+
+* `schedContextBind_preserves_replenishQueueAffinityConsistent_smp` — needs
+  pre-state orphan-freedom: the bind guard read the SchedContext unbound, so
+  orphan-freedom forbids any queue entry naming it, which is exactly the entry
+  class whose obligation the bind creates.
+* `schedContextUnbind_preserves_replenishQueueEntriesBound_smp` — needs
+  pre-state *affinity*: the purge targets the bound thread's home core, and
+  affinity is what proves the SchedContext's entries all sat there (the
+  dead-TCB sweep arm needs nothing — it purges every core).
+* `schedContextUnbind_preserves_replenishQueueAffinityConsistent_smp` — needs
+  neither: entries for the unbound SchedContext become vacuous wherever they
+  survive, and every other entry's readings are framed.
+* `schedContextBind_preserves_replenishQueueEntriesBound_smp`, the two
+  `schedContextUnbindOnCore_preserves_*` theorems covering the live
+  `.schedContextUnbind` dispatch arm (the wrapper's scheduling point reduces
+  by the new `priorityRescheduleOnCore_state_cases` to "state unchanged" or
+  "the `.reschedule` receiver ran", and the receiver's new
+  `handleRescheduleSgiOnCore_determineTargetCore` / `_boundThread` frames —
+  composed from the register-save insert atoms, moved from the staged
+  `PerCoreTickCbsAffinity.lean` to the production
+  `PerCoreSwitchToThread.lean` — carry both invariants across it), and both
+  `_preserves_objects_invExt` carriers.
+
+Both transitions are consumed through private characterisations
+(`schedContextBind_ok_char` / `schedContextUnbind_ok_char`) that erase the
+scheduler writes the invariants never read, so the preservation proofs see
+exactly the double object insert and the per-core queue reading.
+`ReplenishAffinity.lean` gains the `.map (·.boundThread)`-form
+`replenishQueueAffinityConsistentOnCore_transfer` beside its `_congr`/`_frame`
+siblings — the projection form is what a register-context save satisfies.
+`tests/SmpCbsSuite.lean` §4 anchors the surface, applies every headline
+theorem at elaboration time, and drives the lifecycle live: bind → replenish →
+unbind on a populated queue (the other SchedContext's entry survives, the
+bound one's is purged), the wrapper's no-running-core arm, and the dead-TCB
+sweep arm purging a deliberately mis-homed entry on a second core — 15
+runtime assertions.  The table-C row is retired; with the three donation
+paths (RR2.20) this closes the `boundThread`-writer family the audit's sweep
+derived.
+
+### Review round 1 — a presence check standing in for a relation, again
+
+An automated review of the cut raised two findings.  Both were verified against
+the tree before acting, and one of the two claims in the first did not survive
+that check.
+
+* **The `.call` chain's two bundles took the post-rendezvous bundle as a
+  hypothesis, not the pre-state one.**  `endpointCallWithCapsOnCore_preserves_
+  ipcInvariantFull` and `endpointCallCrossCoreDispatch_preserves_ipcInvariantFull`
+  asked their caller for `hBare : ipcInvariantFull (endpointCallOnCore … st).1`,
+  so each said only "*if* the bundle survives the rendezvous, the transfer keeps
+  it".  That is true and `hBare` was dischargeable from the existing
+  `endpointCallOnCore_preserves_ipcInvariantFull`, so this was not the false
+  closure the review reported — but the name still did not mean what a reader
+  counting `_preserves_ipcInvariantFull` theorems would take it to mean, which
+  is `CLAUDE.md`'s *a presence check is not a relation check* applied to a
+  theorem statement rather than to a gate.  Measuring the whole RR2 surface
+  rather than the reported site found these two were the **only** bundles in it
+  that did not take a pre-state `ipcInvariantFull st` — asymmetric with their
+  own `.send` sibling, which composes exactly this way.  Both now thread the
+  rendezvous' own obligations and discharge `hBare` internally.  The review's
+  second claim, that the same shape affects
+  `notificationWaitCrossCoreDispatch_preserves_ipcInvariantFull` and
+  `endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull`, is **false**:
+  both already take the pre-state bundle.  `hWtpmn'` / `hRCLRecip'` stay
+  threaded everywhere — that is the registered WS-DT debt (closure target RR3),
+  inherited, not added to.
+* **The `.replyRecv` rendezvous check could not distinguish its own branch
+  condition.**  It passed the replied-to thread as `nextThread`, and that thread
+  is already `.blockedOnReply` from its own outgoing call — so the re-donation
+  branch fired for a reason the live ordering would not produce, and one
+  SchedContext carried both hops.  `tests/SmpIpcSuite.lean` §3.9b gains a
+  distinct queued caller (`donCaller2` / `scCaller2`, homed on core 3): the
+  returned context and the re-donated one are now different SchedContexts on
+  different cores, so each hop is pinned independently, and the delegate is
+  asserted to end up holding `.donated scCaller2 donCaller2` — the queued
+  caller's context, which is the fact the old fixture could not establish.
+  Driving `replyRecvBody` itself remains RR3.15's composition layer.
+
 ## v0.34.41 — WS-RR RR1: the first aarch64 compile, and the gates that keep it
 
 **One PR, one version.**  The sections below record the six review rounds this

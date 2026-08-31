@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.IPC.CrossCore.NotificationSignal
 import SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation
+import SeLe4n.Kernel.SchedContext.ReplenishAffinity
 
 /-!
 # WS-SM SM6.E — Cancellation across cores
@@ -383,59 +384,17 @@ single-core `cancelBoundDonation` — the SM5.A backward-compatibility bridge. -
 -- no-op, so the single-core semantics is recovered exactly
 -- (`cancelDonatedDonationOnCore_eq_of_sharedHome`).
 
-/-- Local frame (production twin of the staged SM5.H lemma): the replenishment
-migration writes only replenish-queue slots — `objects` is untouched. -/
-theorem migrateSchedContextReplenishment_objects_eq (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).objects
-      = st.objects := by
-  unfold migrateSchedContextReplenishment
-  split <;> rfl
+-- WS-RR RR2.3: the five hand-written production twins of the SM5.H migration
+-- frames that used to sit here (`…_objects_eq`, `…_self_eq`,
+-- `…_runQueue_current_eq`, `…_replenishQueue_other_eq`, `…_from_eq`) are gone.
+-- They existed because the canonical forms lived in the staged
+-- `Scheduler/Operations/PerCoreCbs.lean`, which production may not import; the
+-- canonical forms now live in the production
+-- `SeLe4n.Kernel.SchedContext.ReplenishAffinity` (imported above), so this arm
+-- consumes `migrateSchedContextReplenishment_{noop,objects,machine,
+-- runQueue_current_eq,replenishQueueOnCore_{to,from,other}}` directly and the
+-- migration's frame is stated once for the whole tree.
 
-/-- Local frame: the migration is the identity on the self-pair. -/
-theorem migrateSchedContextReplenishment_self_eq (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (c : CoreId) :
-    migrateSchedContextReplenishment st scId c c = st := by
-  unfold migrateSchedContextReplenishment
-  rw [if_pos rfl]
-
-/-- Local frame: the migration never disturbs any core's run queue or current
-slot (it writes only replenish-queue slots). -/
-theorem migrateSchedContextReplenishment_runQueue_current_eq (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (fromCore toCore c : CoreId) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.runQueueOnCore c
-        = st.scheduler.runQueueOnCore c
-    ∧ (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.currentOnCore c
-        = st.scheduler.currentOnCore c := by
-  unfold migrateSchedContextReplenishment
-  split
-  · exact ⟨rfl, rfl⟩
-  · constructor <;> simp
-
-/-- Local frame: a core that is neither endpoint of the migration keeps its
-replenish queue. -/
-theorem migrateSchedContextReplenishment_replenishQueue_other_eq (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (fromCore toCore c : CoreId)
-    (hFrom : fromCore ≠ c) (hTo : toCore ≠ c) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.replenishQueueOnCore c
-      = st.scheduler.replenishQueueOnCore c := by
-  unfold migrateSchedContextReplenishment
-  split
-  · rfl
-  · simp [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hTo,
-      SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hFrom]
-
-/-- Local (production twin of the staged SM5.H purge lemma): on a genuine
-cross-core migration the source core's queue is purged of the SC. -/
-theorem migrateSchedContextReplenishment_from_eq (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId)
-    (hne : fromCore ≠ toCore) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.replenishQueueOnCore fromCore
-      = ReplenishQueue.remove (st.scheduler.replenishQueueOnCore fromCore) scId := by
-  unfold migrateSchedContextReplenishment
-  rw [if_neg hne]
-  simp [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _
-    (fun h => hne h.symm)]
 
 /-- WS-SM SM6.E.3 (donated arm across cores): cancel a donated SchedContext
 binding **and migrate its pending replenishments home**.
@@ -449,7 +408,7 @@ SM5.H affinity invariant names as the entries' required residence.  The
 victim's home is pre-resolved from the pre-state (the return never touches
 `cpuAffinity`); the owner's home is read post-return.  Self-migration —
 shared home core, and in particular every single-core configuration — is a
-definitional no-op (`migrateSchedContextReplenishment_self_eq`), recovering
+definitional no-op (`migrateSchedContextReplenishment_noop`), recovering
 the single-core arm exactly (`cancelDonatedDonationOnCore_eq_of_sharedHome`).
 
 Returns `.error .illegalState` on a non-`.donated` binding, exactly like the
@@ -482,7 +441,7 @@ theorem cancelDonatedDonationOnCore_eq_of_sharedHome (st : SystemState)
   | error e => rfl
   | ok st' =>
       simp only []
-      rw [hHome st' hC, migrateSchedContextReplenishment_self_eq]
+      rw [hHome st' hC, migrateSchedContextReplenishment_noop]
 
 /-- WS-SM SM6.E.3: the per-core donated arm preserves `objects.invExt` — the
 return preserves it and the migration never touches `objects`. -/
@@ -498,7 +457,7 @@ theorem cancelDonatedDonationOnCore_preserves_objects_invExt
     · cases h
     · injection h with h
       subst h
-      rw [migrateSchedContextReplenishment_objects_eq]
+      rw [migrateSchedContextReplenishment_objects]
       exact cleanupDonatedSchedContext_preserves_objects_invExt _ _ _ hInv (by assumption)
   · cases h
 
@@ -1405,7 +1364,7 @@ theorem cancelDonatedDonationOnCore_preserves_ipcInvariant
     · injection h with h
       subst h
       exact ipcInvariant_of_objects_eq
-        (migrateSchedContextReplenishment_objects_eq _ _ _ _)
+        (migrateSchedContextReplenishment_objects _ _ _ _)
         (cleanupDonatedSchedContext_preserves_ipcInvariant _ _ _ hInv hIpc
           (by assumption))
   · cases h
@@ -1859,138 +1818,19 @@ def cancelDonationOnCoreSchedLockSet (victimHome ownerHome : CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
   cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome
 
-/-- WS-SM SM6.E (PR #831 review 3): a `CoreId`-ascending sorted pair of
-same-kind scheduler locks — the shared shape of the suspend footprint's
-run-queue and replenish-queue segments (one entry when the cores coincide,
-two in `CoreId`-ascending order otherwise). -/
-def sortedSchedCorePair (f : CoreId → SchedLockId) (a b : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  if a = b then [ (f a, .write) ]
-  else if a ≤ b then [ (f a, .write), (f b, .write) ]
-  else [ (f b, .write), (f a, .write) ]
+-- WS-RR RR2.4: `sortedSchedCorePair` and its two lemmas moved to
+-- `Scheduler/Operations/PerCoreChooseThread.lean`, beside the `SchedLockId`
+-- order they are about, so the cross-core `.call` and `.reply` dispatch
+-- footprints (which live below this module and cannot import it) share the one
+-- definition rather than growing a third copy of a sorted two-element list.
+-- Same names, same `SeLe4n.Kernel` namespace; every use below is unchanged.
 
-/-- Every key of a sorted pair is one of the two endpoints. -/
-theorem sortedSchedCorePair_map_fst_mem {f : CoreId → SchedLockId}
-    {a b : CoreId} {x : SchedLockId}
-    (hx : x ∈ (sortedSchedCorePair f a b).map (·.1)) : x = f a ∨ x = f b := by
-  unfold sortedSchedCorePair at hx
-  split at hx
-  · simp only [List.map_cons, List.map_nil, List.mem_singleton] at hx
-    exact Or.inl hx
-  · split at hx
-    · simp only [List.map_cons, List.map_nil, List.mem_cons,
-        List.not_mem_nil, or_false] at hx
-      exact hx
-    · simp only [List.map_cons, List.map_nil, List.mem_cons,
-        List.not_mem_nil, or_false] at hx
-      exact hx.symm
-
-/-- A sorted pair's keys ascend under any `CoreId`-monotone lock constructor. -/
-theorem sortedSchedCorePair_pairwise_le (f : CoreId → SchedLockId) (a b : CoreId)
-    (hMono : ∀ c d : CoreId, c ≤ d → f c ≤ f d) :
-    ((sortedSchedCorePair f a b).map (·.1)).Pairwise (· ≤ ·) := by
-  unfold sortedSchedCorePair
-  split
-  · simp
-  · split
-    · rename_i hne hle
-      simp only [List.map_cons, List.map_nil]
-      exact List.Pairwise.cons
-        (fun x hx => by rcases List.mem_singleton.mp hx with rfl; exact hMono _ _ hle)
-        (List.Pairwise.cons (fun x hx => by simp at hx) List.Pairwise.nil)
-    · rename_i hne hnle
-      have hge : b ≤ a := (Nat.le_total a.val b.val).resolve_left hnle
-      simp only [List.map_cons, List.map_nil]
-      exact List.Pairwise.cons
-        (fun x hx => by rcases List.mem_singleton.mp hx with rfl; exact hMono _ _ hge)
-        (List.Pairwise.cons (fun x hx => by simp at hx) List.Pairwise.nil)
-
-/-- Bool-comparator transitivity for the `CoreId` value order (the
-`List.pairwise_mergeSort` obligation, mirroring `leLockId_bool_trans`). -/
-private theorem leCore_bool_trans : ∀ (x y z : CoreId),
-    (fun x y : CoreId => decide (x.val ≤ y.val)) x y = true →
-    (fun x y : CoreId => decide (x.val ≤ y.val)) y z = true →
-    (fun x y : CoreId => decide (x.val ≤ y.val)) x z = true := by
-  intro x y z hxy hyz
-  exact decide_eq_true (Nat.le_trans (of_decide_eq_true hxy) (of_decide_eq_true hyz))
-
-/-- Bool-comparator totality for the `CoreId` value order. -/
-private theorem leCore_bool_total : ∀ (x y : CoreId),
-    ((fun x y : CoreId => decide (x.val ≤ y.val)) x y
-      || (fun x y : CoreId => decide (x.val ≤ y.val)) y x) = true := by
-  intro x y
-  rcases Nat.le_total x.val y.val with h | h
-  · simp [decide_eq_true h]
-  · simp [decide_eq_true h]
-
-/-- WS-SM SM6.E (audit closure): a `CoreId`-ascending, duplicate-free sorted
-TRIPLE of same-kind scheduler locks — the run-queue segment of the suspend
-footprint over {victim home, executing core, victim RUNNING core}: the
-review-4 G4b deschedule writes the running core's queue/current slot, which
-can be a **third** core distinct from both (an unbound victim running
-off-home).  Built on the SM3.B canonical-sort machinery (`List.mergeSort`
-over the deduped core list), so ascending order and endpoint membership are
-`pairwise_mergeSort` / `mem_mergeSort` corollaries. -/
-def sortedSchedCoreTriple (f : CoreId → SchedLockId) (a b c : CoreId)
-    : List (SchedLockId × Concurrency.AccessMode) :=
-  (((if c = a ∨ c = b then (if a = b then [a] else [a, b])
-     else if a = b then [a, c]
-     else [a, b, c]) : List CoreId).mergeSort
-    (fun x y => decide (x.val ≤ y.val))).map (fun x => (f x, .write))
-
-/-- Every key of a sorted triple is one of the three endpoints. -/
-theorem sortedSchedCoreTriple_map_fst_mem {f : CoreId → SchedLockId}
-    {a b c : CoreId} {x : SchedLockId}
-    (hx : x ∈ (sortedSchedCoreTriple f a b c).map (·.1)) :
-    x = f a ∨ x = f b ∨ x = f c := by
-  unfold sortedSchedCoreTriple at hx
-  rw [List.map_map] at hx
-  rcases List.mem_map.mp hx with ⟨y, hy, rfl⟩
-  have hMem := List.mem_mergeSort.mp hy
-  by_cases h1 : c = a ∨ c = b
-  · rw [if_pos h1] at hMem
-    by_cases h2 : a = b
-    · rw [if_pos h2] at hMem
-      rcases List.mem_singleton.mp hMem with rfl
-      exact Or.inl rfl
-    · rw [if_neg h2] at hMem
-      rcases List.mem_cons.mp hMem with rfl | hMem
-      · exact Or.inl rfl
-      · rcases List.mem_singleton.mp hMem with rfl
-        exact Or.inr (Or.inl rfl)
-  · rw [if_neg h1] at hMem
-    by_cases h2 : a = b
-    · rw [if_pos h2] at hMem
-      rcases List.mem_cons.mp hMem with rfl | hMem
-      · exact Or.inl rfl
-      · rcases List.mem_singleton.mp hMem with rfl
-        exact Or.inr (Or.inr rfl)
-    · rw [if_neg h2] at hMem
-      rcases List.mem_cons.mp hMem with rfl | hMem
-      · exact Or.inl rfl
-      rcases List.mem_cons.mp hMem with rfl | hMem
-      · exact Or.inr (Or.inl rfl)
-      · rcases List.mem_singleton.mp hMem with rfl
-        exact Or.inr (Or.inr rfl)
-
-/-- A sorted triple's keys ascend under any `CoreId`-monotone lock
-constructor. -/
-theorem sortedSchedCoreTriple_pairwise_le (f : CoreId → SchedLockId)
-    (a b c : CoreId)
-    (hMono : ∀ x y : CoreId, x ≤ y → f x ≤ f y) :
-    ((sortedSchedCoreTriple f a b c).map (·.1)).Pairwise (· ≤ ·) := by
-  unfold sortedSchedCoreTriple
-  rw [List.map_map]
-  have hSorted : List.Pairwise (fun x y : CoreId => x.val ≤ y.val)
-      (((if c = a ∨ c = b then (if a = b then [a] else [a, b])
-         else if a = b then [a, c]
-         else [a, b, c]) : List CoreId).mergeSort
-        (fun x y => decide (x.val ≤ y.val))) :=
-    (List.pairwise_mergeSort
-      (le := fun x y : CoreId => decide (x.val ≤ y.val))
-      leCore_bool_trans leCore_bool_total _).imp
-      (fun h => of_decide_eq_true h)
-  exact List.Pairwise.map _ (fun x y h => hMono x y h) hSorted
+-- WS-RR RR2.10: the two Bool-comparator helpers and `sortedSchedCoreTriple`
+-- moved with `sortedSchedCorePair` to
+-- `Scheduler/Operations/PerCoreChooseThread.lean`; the cross-core `.reply`
+-- dispatch footprint needs the triple for the same reason this one does (a
+-- woken caller's home, a descheduled server's core and the executing core can
+-- be three distinct cores), and it sits below this module.
 
 /-- WS-SM SM6.E: the scheduler-domain footprint of the cross-core suspend
 pipeline (`suspendThreadOnCore`, the G2..G7 composite): the object-store
@@ -2276,6 +2116,120 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       suspendRescheduleOnCore st (runningCore?.getD home) executingCore
         runningCore?.isSome (currentDeboostedFrom st executingCore execCurPre)
   | none => .error .invalidArgument
+
+-- ============================================================================
+-- §14  WS-RR RR2.17 — the `.tcbSuspend` operation preserves `ipcInvariant`
+-- ============================================================================
+-- SM6.E closed `ipcInvariant` over the *cancellation composite*
+-- (`cancelIpcBlockingOnCore`, `cancelDonationOnCore`).  The operation the live
+-- `.tcbSuspend` arm actually runs is `suspendThreadOnCore`, which is that
+-- composite plus five more stages: the cross-core priority-inheritance revert,
+-- two home/running-core deschedules, the pending-state clear, the
+-- `threadState := .Inactive` store, and the local scheduling point.  Each of
+-- those writes TCBs or scheduler slots and nothing else, which is exactly what
+-- `ipcInvariant` — a statement about notification objects — needs.
+
+/-- WS-RR RR2.17: storing a `.tcb` cannot create a notification, so a
+notification the post-state holds was already in the pre-state. -/
+theorem tcbInsert_notification_backward (st : SystemState) (tid : SeLe4n.ThreadId)
+    (t : TCB) (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (h : ({ st with objects := st.objects.insert tid.toObjId (.tcb t) } :
+      SystemState).objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
+  simp only [RHTable_getElem?_eq_get?] at h ⊢
+  by_cases hEq : (tid.toObjId == oid) = true
+  · exfalso
+    obtain rfl : tid.toObjId = oid := eq_of_beq hEq
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv] at h
+    cases h
+  · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _
+      hEq hInv] at h
+    exact h
+
+/-- WS-RR RR2.17: `clearPendingState` writes one TCB, so it preserves the
+object-store invariant. -/
+theorem clearPendingState_preserves_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    (Lifecycle.Suspend.clearPendingState st tid).objects.invExt := by
+  unfold Lifecycle.Suspend.clearPendingState
+  split
+  · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
+  · exact hInv
+
+/-- WS-RR RR2.17: `clearPendingState` frames every notification. -/
+theorem clearPendingState_notification_backward (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (h : (Lifecycle.Suspend.clearPendingState st tid).objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
+  revert h
+  unfold Lifecycle.Suspend.clearPendingState
+  split
+  · exact fun h => tcbInsert_notification_backward st tid _ hInv oid ntfn h
+  · exact id
+
+/-- WS-RR RR2.17: a successful suspend-reschedule either left the state alone or
+ran exactly one `handleRescheduleSgiOnCore`.  Its four arms differ only in which
+SGI they surface, which is why every state-level consequence factors through this
+dichotomy instead of repeating the case split. -/
+theorem suspendRescheduleOnCore_state_dichotomy (st st' : SystemState)
+    (home ec : CoreId) (wc ld : Bool) (sgi? : Option (CoreId × SgiKind))
+    (hStep : suspendRescheduleOnCore st home ec wc ld = .ok (st', sgi?)) :
+    st' = st ∨ handleRescheduleSgiOnCore st ec = .ok st' := by
+  revert hStep
+  unfold suspendRescheduleOnCore
+  split
+  · split
+    · cases hH : handleRescheduleSgiOnCore st ec with
+      | error e => intro hStep; cases hStep
+      | ok stH =>
+        intro hStep
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact Or.inr (hStep.1 ▸ rfl)
+    · split
+      · cases hH : handleRescheduleSgiOnCore st ec with
+        | error e => intro hStep; cases hStep
+        | ok stH =>
+          intro hStep
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          exact Or.inr (hStep.1 ▸ rfl)
+      · intro hStep
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact Or.inl hStep.1.symm
+  · split
+    · cases hH : handleRescheduleSgiOnCore st ec with
+      | error e => intro hStep; cases hStep
+      | ok stH =>
+        intro hStep
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact Or.inr (hStep.1 ▸ rfl)
+    · intro hStep
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      exact Or.inl hStep.1.symm
+
+/-- WS-RR RR2.17: the suspend's local scheduling point frames every
+notification — its only object write is the preempted thread's context save. -/
+theorem suspendRescheduleOnCore_notification_backward (st st' : SystemState)
+    (home ec : CoreId) (wc ld : Bool) (sgi? : Option (CoreId × SgiKind))
+    (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hStep : suspendRescheduleOnCore st home ec wc ld = .ok (st', sgi?))
+    (h : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
+  rcases suspendRescheduleOnCore_state_dichotomy st st' home ec wc ld sgi? hStep with
+    hEq | hH
+  · exact hEq ▸ h
+  · exact handleRescheduleSgiOnCore_notification_backward st ec st' hInv oid ntfn hH h
+
+/-- WS-RR RR2.17: the suspend's local scheduling point preserves the object-store
+invariant. -/
+theorem suspendRescheduleOnCore_preserves_objects_invExt (st st' : SystemState)
+    (home ec : CoreId) (wc ld : Bool) (sgi? : Option (CoreId × SgiKind))
+    (hInv : st.objects.invExt)
+    (hStep : suspendRescheduleOnCore st home ec wc ld = .ok (st', sgi?)) :
+    st'.objects.invExt := by
+  rcases suspendRescheduleOnCore_state_dichotomy st st' home ec wc ld sgi? hStep with
+    hEq | hH
+  · exact hEq ▸ hInv
+  · exact handleRescheduleSgiOnCore_preserves_objects_invExt st ec st' hInv hH
 
 /-- WS-SM SM6.E: a target that does not resolve to a TCB is rejected with
 `invalidArgument`, exactly as `suspendThread`. -/
@@ -2729,5 +2683,266 @@ theorem cancelDonationOnCore_bootHome_error
       cancelDonatedDonationOnCore_eq_of_sharedHome st tid tcb scId owner hB
         (hOwnerHome scId owner hB)]
     simp only [hErr]
+
+
+
+
+/-- WS-RR RR2.17: one stage of a composite, as far as `ipcInvariant` is
+concerned — it carries the object-store invariant its successor needs, and it
+carries `ipcInvariant` itself.
+
+Bundling the two is what makes an eight-stage composite eight one-line
+compositions rather than eight interleaved inductions: each stage needs its
+predecessor's `invExt` to state its own preservation, so neither fact can be
+threaded alone. -/
+structure IpcInvariantStage (st st' : SystemState) : Prop where
+  /-- the object-store invariant survives the stage -/
+  invExt : st.objects.invExt → st'.objects.invExt
+  /-- and so does `ipcInvariant` -/
+  ipc : st.objects.invExt → ipcInvariant st → ipcInvariant st'
+
+namespace IpcInvariantStage
+
+theorem refl (st : SystemState) : IpcInvariantStage st st := ⟨id, fun _ h => h⟩
+
+theorem trans {st st' st'' : SystemState}
+    (h1 : IpcInvariantStage st st') (h2 : IpcInvariantStage st' st'') :
+    IpcInvariantStage st st'' :=
+  ⟨h2.invExt ∘ h1.invExt,
+   fun hInv hIpc => h2.ipc (h1.invExt hInv) (h1.ipc hInv hIpc)⟩
+
+/-- A stage that leaves the object store alone. -/
+theorem of_objects_eq {st st' : SystemState} (hObjs : st'.objects = st.objects) :
+    IpcInvariantStage st st' :=
+  ⟨fun h => by rw [hObjs]; exact h,
+   fun _ h => ipcInvariant_of_objects_eq hObjs h⟩
+
+/-- A stage whose every object write stores a `.tcb`: it cannot invent a
+notification, so `ipcInvariant` transports backwards through its readings. -/
+theorem of_notification_backward {st st' : SystemState}
+    (hInvExt : st.objects.invExt → st'.objects.invExt)
+    (hBack : ∀ (oid : SeLe4n.ObjId) (ntfn : Notification),
+      st.objects.invExt →
+      st'.objects[oid]? = some (.notification ntfn) →
+      st.objects[oid]? = some (.notification ntfn)) :
+    IpcInvariantStage st st' :=
+  ⟨hInvExt, fun hInv hIpc oid ntfn hObj => hIpc oid ntfn (hBack oid ntfn hInv hObj)⟩
+
+end IpcInvariantStage
+
+
+/-- WS-RR RR2.17: the IPC teardown is a stage — SM6.E proved both halves. -/
+theorem cancelIpcBlocking_ipcInvariantStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) : IpcInvariantStage st (cancelIpcBlocking st tid tcb) :=
+  ⟨fun h => cancelIpcBlocking_preserves_objects_invExt st tid tcb h,
+   fun hInv hIpc => cancelIpcBlocking_preserves_ipcInvariant st tid tcb hInv hIpc⟩
+
+/-- WS-RR RR2.17: the cross-core priority-inheritance revert is a stage — it
+writes `pipBoost` and run-queue buckets, never a notification. -/
+theorem propagatePipChainCrossCore_ipcInvariantStage (st : SystemState)
+    (serverId : SeLe4n.ThreadId) (ec : CoreId) (fuel : Nat) :
+    IpcInvariantStage st (PriorityInheritance.propagatePipChainCrossCore st serverId ec fuel).1 :=
+  IpcInvariantStage.of_notification_backward
+    (fun h => PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st
+      serverId ec fuel h)
+    (fun oid ntfn hInv hObj =>
+      PriorityInheritance.propagatePipChainCrossCore_notification_backward st serverId ec fuel
+        hInv oid ntfn hObj)
+
+/-- WS-RR RR2.17: the donation-cancellation dispatcher is a stage on the arm that
+succeeds; on an error arm the composite never reaches the next stage. -/
+theorem cancelSuspendDonation_ipcInvariantStage (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (home : CoreId)
+    (hStep : (match tcb.schedContextBinding with
+              | .unbound => (Except.ok st : Except KernelError SystemState)
+              | .bound _ => cancelBoundDonationOnCore st tid tcb home
+              | .donated _ _ => cancelDonatedDonationOnCore st tid tcb) = .ok st') :
+    IpcInvariantStage st st' := by
+  revert hStep
+  cases hB : tcb.schedContextBinding with
+  | unbound =>
+      intro hStep
+      simp only [Except.ok.injEq] at hStep
+      exact hStep ▸ IpcInvariantStage.refl st
+  | bound scId =>
+      cases hE : cancelBoundDonationOnCore st tid tcb home with
+      | error e => intro hStep; cases hStep
+      | ok stB =>
+        intro hStep
+        simp only [Except.ok.injEq] at hStep
+        exact hStep ▸ ⟨fun h => cancelBoundDonationOnCore_preserves_objects_invExt st stB tid
+            tcb home h hE,
+          fun hInv hIpc => cancelBoundDonationOnCore_preserves_ipcInvariant st stB tid tcb home
+            hInv hIpc hE⟩
+  | donated scId owner =>
+      cases hE : cancelDonatedDonationOnCore st tid tcb with
+      | error e => intro hStep; cases hStep
+      | ok stD =>
+        intro hStep
+        simp only [Except.ok.injEq] at hStep
+        exact hStep ▸ ⟨fun h => cancelDonatedDonationOnCore_preserves_objects_invExt st stD tid
+            tcb h hE,
+          fun hInv hIpc => cancelDonatedDonationOnCore_preserves_ipcInvariant st stD tid tcb
+            hInv hIpc hE⟩
+
+/-- WS-RR RR2.17: the per-core deschedule is a stage — it writes no object. -/
+theorem removeRunnableOnCore_ipcInvariantStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) : IpcInvariantStage st (removeRunnableOnCore st tid c) :=
+  IpcInvariantStage.of_objects_eq (removeRunnableOnCore_preserves_objects st tid c)
+
+/-- WS-RR RR2.17: the pending-state clear is a stage — it writes one TCB. -/
+theorem clearPendingState_ipcInvariantStage (st : SystemState) (tid : SeLe4n.ThreadId) :
+    IpcInvariantStage st (Lifecycle.Suspend.clearPendingState st tid) :=
+  IpcInvariantStage.of_notification_backward
+    (fun h => clearPendingState_preserves_objects_invExt st tid h)
+    (fun oid ntfn hInv hObj => clearPendingState_notification_backward st tid hInv oid ntfn hObj)
+
+/-- WS-RR RR2.17: a single-TCB record store is a stage — the shape the suspend's
+`threadState := .Inactive` write takes. -/
+theorem tcbStore_ipcInvariantStage (st st' : SystemState) (tid : SeLe4n.ThreadId) (t : TCB)
+    (hEq : st' = { st with objects := st.objects.insert tid.toObjId (.tcb t) }) :
+    IpcInvariantStage st st' := by
+  subst hEq
+  exact IpcInvariantStage.of_notification_backward
+    (fun h => RHTable_insert_preserves_invExt st.objects tid.toObjId _ h)
+    (fun oid ntfn hInv hObj => tcbInsert_notification_backward st tid t hInv oid ntfn hObj)
+
+/-- WS-RR RR2.17: the suspend's local scheduling point is a stage. -/
+theorem suspendRescheduleOnCore_ipcInvariantStage (st st' : SystemState)
+    (home ec : CoreId) (wc ld : Bool) (sgi? : Option (CoreId × SgiKind))
+    (hStep : suspendRescheduleOnCore st home ec wc ld = .ok (st', sgi?)) :
+    IpcInvariantStage st st' :=
+  IpcInvariantStage.of_notification_backward
+    (fun h => suspendRescheduleOnCore_preserves_objects_invExt st st' home ec wc ld sgi? h hStep)
+    (fun oid ntfn hInv hObj =>
+      suspendRescheduleOnCore_notification_backward st st' home ec wc ld sgi? hInv oid ntfn
+        hStep hObj)
+
+
+
+
+
+/-- WS-RR RR2.17: the running-core deschedule is a stage on either arm — it is
+either skipped (the running core is the home core, already descheduled) or
+another `removeRunnableOnCore`. -/
+theorem removeRunnableOnCoreOpt_ipcInvariantStage (s s' : SystemState)
+    (tid : SeLe4n.ThreadId) (home : CoreId) (rc? : Option CoreId)
+    (hEq : s' = (match rc? with
+                 | some c => if c == home then s else removeRunnableOnCore s tid c
+                 | none => s)) :
+    IpcInvariantStage s s' := by
+  rw [hEq]
+  cases rc? with
+  | none => exact IpcInvariantStage.refl s
+  | some c =>
+      simp only []
+      split
+      · exact IpcInvariantStage.refl s
+      · exact removeRunnableOnCore_ipcInvariantStage s tid c
+
+/-- WS-RR RR2.17: a stage that is either the identity or a single TCB store.
+The suspend's running-core deschedule, pending-state clear and `.Inactive` store
+all take this shape, and stating it once keeps the composite's assembly free of
+their internal case splits. -/
+theorem tcbStoreOrIdentity_ipcInvariantStage (s s' : SystemState) (tid : SeLe4n.ThreadId)
+    (hShape : s' = s ∨ ∃ t : TCB, s' = { s with objects := s.objects.insert tid.toObjId (.tcb t) }) :
+    IpcInvariantStage s s' := by
+  rcases hShape with hEq | ⟨t, hEq⟩
+  · rw [hEq]; exact IpcInvariantStage.refl s
+  · exact tcbStore_ipcInvariantStage s s' tid t hEq
+
+
+/-- **WS-RR RR2.17: the operation the live `.tcbSuspend` arm runs is one
+`IpcInvariantStage` end to end.**
+
+SM6.E closed `ipcInvariant` over the *cancellation composite*
+(`cancelIpcBlockingOnCore`, `cancelDonationOnCore`).  What the dispatch entry
+actually calls is `suspendThreadOnCore`, which is that composite plus seven more
+stages: the cross-core priority-inheritance revert, the donated-context return,
+the home- and running-core deschedules, the pending-state clear, the
+`threadState := .Inactive` store, and the local scheduling point.  None of them
+writes a notification object, which is the whole of what `ipcInvariant` says —
+so the claim extends, and now says so about the reachable transition rather than
+about a prefix of one.
+
+The stage relation carries the object-store invariant alongside `ipcInvariant`,
+because every stage needs its predecessor's to state its own preservation; that
+is also why this is the shared root of both public forms below rather than each
+of them re-running the chain. -/
+theorem suspendThreadOnCore_ipcInvariantStage
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
+    (sgi? : Option (CoreId × SgiKind))
+    (hStep : suspendThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
+    IpcInvariantStage st st' := by
+  have hChain : IpcInvariantStage st st' := by
+    simp only [suspendThreadOnCore] at hStep
+    split at hStep
+    case h_2 => cases hStep
+    case h_1 tcb hTcb =>
+      split at hStep
+      case isTrue => cases hStep
+      case isFalse =>
+        -- Stages 1-2: the IPC teardown, then the cross-core PIP revert.
+        refine IpcInvariantStage.trans (st' := ?_) ?_ ?_
+        · exact (match PriorityInheritance.blockingServer st vtid.val with
+                 | some serverId => (PriorityInheritance.propagatePipChainCrossCore
+                     (cancelIpcBlockingValid st vtid tcb) serverId executingCore).1
+                 | none => cancelIpcBlockingValid st vtid tcb)
+        · cases PriorityInheritance.blockingServer st vtid.val with
+          | none => exact cancelIpcBlocking_ipcInvariantStage st vtid.val tcb
+          | some serverId =>
+              exact IpcInvariantStage.trans (cancelIpcBlocking_ipcInvariantStage st vtid.val tcb)
+                (propagatePipChainCrossCore_ipcInvariantStage _ serverId executingCore _)
+        · -- Stage 3 onwards, on the post-revert state.
+          revert hStep
+          split
+          · intro hStep; cases hStep
+          · next s3 hDon =>
+            intro hStep
+            refine IpcInvariantStage.trans
+              (cancelSuspendDonation_ipcInvariantStage _ s3 vtid.val _
+                (determineTargetCore st vtid.val) hDon) ?_
+            refine IpcInvariantStage.trans ?_
+              (suspendRescheduleOnCore_ipcInvariantStage _ st' _ executingCore _ _ sgi? hStep)
+            refine IpcInvariantStage.trans
+              (removeRunnableOnCore_ipcInvariantStage s3 vtid.val
+                (determineTargetCore st vtid.val)) ?_
+            refine IpcInvariantStage.trans
+              (removeRunnableOnCoreOpt_ipcInvariantStage _ _ vtid.val
+                (determineTargetCore st vtid.val) (runningCoreOf? st vtid.val) rfl) ?_
+            refine IpcInvariantStage.trans (clearPendingState_ipcInvariantStage _ vtid.val) ?_
+            repeat' split
+            all_goals first
+              | exact tcbStoreOrIdentity_ipcInvariantStage _ _ vtid.val (Or.inr ⟨_, rfl⟩)
+              | exact IpcInvariantStage.refl _
+  exact hChain
+
+/-- **WS-RR RR2.17: the live `.tcbSuspend` arm preserves the object-store
+invariant.**  The extended-object invariant is the half of the stage relation
+every later stage consumes to state its own preservation; exposing it is what
+lets a caller compose `suspendThreadOnCore` with anything that needs
+`invExt` of the post-state. -/
+theorem suspendThreadOnCore_preserves_objects_invExt
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
+    (sgi? : Option (CoreId × SgiKind))
+    (hObjInv : st.objects.invExt)
+    (hStep : suspendThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
+    st'.objects.invExt :=
+  (suspendThreadOnCore_ipcInvariantStage st st' vtid executingCore sgi? hStep).invExt hObjInv
+
+/-- **WS-RR RR2.17: the operation the live `.tcbSuspend` arm runs preserves
+`ipcInvariant`.**  This is the theorem the pre-SM10 audit found missing: SM6.E's
+five `*_preserves_ipcInvariant` composites are all about functions the module
+header warns must not be wired live as-is, while `suspendThreadOnCore` — the one
+`API.dispatchCapabilityOnly`'s `.tcbSuspend` arm and the
+`suspend_thread_cross_core` seam actually call — carried no preservation theorem
+at all. -/
+theorem suspendThreadOnCore_preserves_ipcInvariant
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
+    (sgi? : Option (CoreId × SgiKind))
+    (hObjInv : st.objects.invExt) (hIpc : ipcInvariant st)
+    (hStep : suspendThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
+    ipcInvariant st' :=
+  (suspendThreadOnCore_ipcInvariantStage st st' vtid executingCore sgi? hStep).ipc hObjInv hIpc
 
 end SeLe4n.Kernel

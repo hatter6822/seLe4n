@@ -8,12 +8,20 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 It is aligned to the **current project state**:
 
 - **active workstream:** **WS-RR (SMP Release Readiness) IN FLIGHT — the
-  pre-SM10 remediation, 155 sub-tasks across RR0..RR8; **RR0 landed at
-  v0.34.26** (registration and plan correction).  SM10 is BLOCKED on it
-  and must not open until RR8 closes**; the pre-SM10 completeness audit found
-  three findings that block starting SM10, a false scope statement in its own
-  plan, and fail-open latents that become reachable when the boot path goes
-  live.  Plan:
+  pre-SM10 remediation, 157 sub-tasks across RR0..RR8; **RR0 landed at
+  v0.34.26** (registration and plan correction), **RR1 at v0.34.41** (the first
+  aarch64 compile and the gates that keep it), **RR2 at v0.34.42** (live-path
+  correctness: all three cross-core donation paths migrate the CBS replenish
+  queue, every unchecked transition behind the SMP dispatch arms carries an
+  `ipcInvariantFull` bundle — the flow-checked wrappers and `replyRecvBody`
+  composition are RR3.15's layer, and `notificationSignalBoundOnCore` is
+  SM6.D's registered debt — and the `.tcbSuspend` operation the dispatch
+  actually calls carries an `ipcInvariant` preservation theorem — closing
+  audit blockers 2 and 3).  SM10 is
+  BLOCKED on it and must not open until RR8 closes**; the pre-SM10 completeness
+  audit found three findings that block starting SM10, a false scope statement in
+  its own plan, and fail-open latents that become reachable when the boot path
+  goes live.  Plan:
   [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md);
   register: [`docs/planning/UNFINISHED_SMP_WORK.md`](planning/UNFINISHED_SMP_WORK.md).
 - **parent workstream:** **WS-SM (SMP multi-core completion) IN FLIGHT**

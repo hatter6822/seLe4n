@@ -766,6 +766,21 @@ def returnDonatedSchedContext
   -- Step 1: Look up and update SchedContext to point back to original owner
   match st.objects[scId.toObjId]? with
   | some (.schedContext sc) =>
+    -- WS-RR RR2.8 (symmetry with `donateSchedContext`'s AUD-3b guard): verify the
+    -- SchedContext is actually bound to the **server** before handing it back.
+    -- The donation path checks its own direction (`sc.boundThread != some
+    -- clientTid`); the return path did not, so a `.donated scId owner` binding
+    -- that had drifted from the SchedContext's own `boundThread` would rebind the
+    -- SchedContext to `originalOwner` while leaving whichever thread the
+    -- SchedContext really belonged to still `.bound scId` — two threads bound to
+    -- one SchedContext, i.e. a `donationBudgetTransfer` violation, silently
+    -- created by a successful reply.  `donationOwnerValid` rules that drift out,
+    -- so this is defence in depth on a live path and never fires in a
+    -- well-formed state; it also makes the SM5.H replenishment migration's source
+    -- core derivable from success rather than assumed
+    -- (`returnDonatedSchedContext_ok_implies_sc_bound`).
+    if sc.boundThread != some serverTid then .error .invalidArgument
+    else
     let sc' := { sc with boundThread := some originalOwner }
     match storeObject scId.toObjId (.schedContext sc') st with
     | .error e => .error e
@@ -997,31 +1012,34 @@ theorem returnDonatedSchedContext_scheduler_eq
     cases obj with
     | schedContext sc =>
       simp only []
-      cases hS1 : storeObject scId.toObjId _ st with
-      | error _ => intro h; cases h
-      | ok p1 =>
-        simp only []
-        cases hL1 : lookupTcb p1.2 originalOwner with
-        | none => intro h; cases h
-        | some _ =>
+      -- WS-RR RR2.8: the new `sc.boundThread = some serverTid` guard.
+      split
+      · intro h; cases h
+      · cases hS1 : storeObject scId.toObjId _ st with
+        | error _ => intro h; cases h
+        | ok p1 =>
           simp only []
-          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
-          | error _ => intro h; cases h
-          | ok p2 =>
+          cases hL1 : lookupTcb p1.2 originalOwner with
+          | none => intro h; cases h
+          | some _ =>
             simp only []
-            cases hL2 : lookupTcb p2.2 serverTid with
-            | none => intro h; cases h
-            | some _ =>
+            cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+            | error _ => intro h; cases h
+            | ok p2 =>
               simp only []
-              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
-              | error _ => intro h; cases h
-              | ok p3 =>
-                simp only [Except.ok.injEq]
-                intro hEq; subst hEq
-                have h1 := storeObject_scheduler_eq_z7 st _ _ _ hS1
-                have h2 := storeObject_scheduler_eq_z7 p1.2 _ _ _ hS2
-                have h3 := storeObject_scheduler_eq_z7 p2.2 _ _ _ hS3
-                exact h3.trans (h2.trans h1)
+              cases hL2 : lookupTcb p2.2 serverTid with
+              | none => intro h; cases h
+              | some _ =>
+                simp only []
+                cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+                | error _ => intro h; cases h
+                | ok p3 =>
+                  simp only [Except.ok.injEq]
+                  intro hEq; subst hEq
+                  have h1 := storeObject_scheduler_eq_z7 st _ _ _ hS1
+                  have h2 := storeObject_scheduler_eq_z7 p1.2 _ _ _ hS2
+                  have h3 := storeObject_scheduler_eq_z7 p2.2 _ _ _ hS3
+                  exact h3.trans (h2.trans h1)
     | _ => simp only []; intro h; cases h
 
 /-- WS-SM SM7.B: `returnDonatedSchedContext` only modifies `objects` and
@@ -1044,31 +1062,34 @@ theorem returnDonatedSchedContext_tlbShootdown_eq
     cases obj with
     | schedContext sc =>
       simp only []
-      cases hS1 : storeObject scId.toObjId _ st with
-      | error _ => intro h; cases h
-      | ok p1 =>
-        simp only []
-        cases hL1 : lookupTcb p1.2 originalOwner with
-        | none => intro h; cases h
-        | some _ =>
+      -- WS-RR RR2.8: the new `sc.boundThread = some serverTid` guard.
+      split
+      · intro h; cases h
+      · cases hS1 : storeObject scId.toObjId _ st with
+        | error _ => intro h; cases h
+        | ok p1 =>
           simp only []
-          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
-          | error _ => intro h; cases h
-          | ok p2 =>
+          cases hL1 : lookupTcb p1.2 originalOwner with
+          | none => intro h; cases h
+          | some _ =>
             simp only []
-            cases hL2 : lookupTcb p2.2 serverTid with
-            | none => intro h; cases h
-            | some _ =>
+            cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+            | error _ => intro h; cases h
+            | ok p2 =>
               simp only []
-              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
-              | error _ => intro h; cases h
-              | ok p3 =>
-                simp only [Except.ok.injEq]
-                intro hEq; subst hEq
-                have h1 := SeLe4n.Model.storeObject_tlbShootdown_eq st _ _ _ hS1
-                have h2 := SeLe4n.Model.storeObject_tlbShootdown_eq p1.2 _ _ _ hS2
-                have h3 := SeLe4n.Model.storeObject_tlbShootdown_eq p2.2 _ _ _ hS3
-                exact h3.trans (h2.trans h1)
+              cases hL2 : lookupTcb p2.2 serverTid with
+              | none => intro h; cases h
+              | some _ =>
+                simp only []
+                cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+                | error _ => intro h; cases h
+                | ok p3 =>
+                  simp only [Except.ok.injEq]
+                  intro hEq; subst hEq
+                  have h1 := SeLe4n.Model.storeObject_tlbShootdown_eq st _ _ _ hS1
+                  have h2 := SeLe4n.Model.storeObject_tlbShootdown_eq p1.2 _ _ _ hS2
+                  have h3 := SeLe4n.Model.storeObject_tlbShootdown_eq p2.2 _ _ _ hS3
+                  exact h3.trans (h2.trans h1)
     | _ => simp only []; intro h; cases h
 
 /-- Signal a notification: wake one waiter or mark one pending badge.

@@ -387,6 +387,195 @@ theorem runQueue_lt_replenishQueue (q : RunQueueLockId) (r : ReplenishQueueLockI
 
 end SchedLockId
 
+-- ============================================================================
+-- WS-SM SM6.E / WS-RR RR2.4 — sorted same-kind scheduler-lock segments
+-- ============================================================================
+--
+-- A cross-domain footprint that touches two cores' slots of the *same* kind
+-- (two replenish queues, two run queues) must emit them in `CoreId`-ascending
+-- order, so the declared list is itself the SM3.D acquisition sequence.  The
+-- shape is shared by the `.tcbSuspend` cancellation footprint (SM6.E) and by
+-- the `.call` / `.reply` donation footprints (RR2.4 / RR2.10), so it lives
+-- here, with the `SchedLockId` order it is about, rather than in any one of
+-- them.
+
+/-- WS-SM SM6.E (PR #831 review 3): a `CoreId`-ascending sorted pair of
+same-kind scheduler locks — the shared shape of the suspend footprint's
+run-queue and replenish-queue segments (one entry when the cores coincide,
+two in `CoreId`-ascending order otherwise). -/
+def sortedSchedCorePair (f : CoreId → SchedLockId) (a b : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  if a = b then [ (f a, .write) ]
+  else if a ≤ b then [ (f a, .write), (f b, .write) ]
+  else [ (f b, .write), (f a, .write) ]
+
+/-- Every key of a sorted pair is one of the two endpoints. -/
+theorem sortedSchedCorePair_map_fst_mem {f : CoreId → SchedLockId}
+    {a b : CoreId} {x : SchedLockId}
+    (hx : x ∈ (sortedSchedCorePair f a b).map (·.1)) : x = f a ∨ x = f b := by
+  unfold sortedSchedCorePair at hx
+  split at hx
+  · simp only [List.map_cons, List.map_nil, List.mem_singleton] at hx
+    exact Or.inl hx
+  · split at hx
+    · simp only [List.map_cons, List.map_nil, List.mem_cons,
+        List.not_mem_nil, or_false] at hx
+      exact hx
+    · simp only [List.map_cons, List.map_nil, List.mem_cons,
+        List.not_mem_nil, or_false] at hx
+      exact hx.symm
+
+/-- A sorted pair's keys ascend under any `CoreId`-monotone lock constructor. -/
+theorem sortedSchedCorePair_pairwise_le (f : CoreId → SchedLockId) (a b : CoreId)
+    (hMono : ∀ c d : CoreId, c ≤ d → f c ≤ f d) :
+    ((sortedSchedCorePair f a b).map (·.1)).Pairwise (· ≤ ·) := by
+  unfold sortedSchedCorePair
+  split
+  · simp
+  · split
+    · rename_i hne hle
+      simp only [List.map_cons, List.map_nil]
+      exact List.Pairwise.cons
+        (fun x hx => by rcases List.mem_singleton.mp hx with rfl; exact hMono _ _ hle)
+        (List.Pairwise.cons (fun x hx => by simp at hx) List.Pairwise.nil)
+    · rename_i hne hnle
+      have hge : b ≤ a := (Nat.le_total a.val b.val).resolve_left hnle
+      simp only [List.map_cons, List.map_nil]
+      exact List.Pairwise.cons
+        (fun x hx => by rcases List.mem_singleton.mp hx with rfl; exact hMono _ _ hge)
+        (List.Pairwise.cons (fun x hx => by simp at hx) List.Pairwise.nil)
+
+
+/-- Bool-comparator transitivity for the `CoreId` value order (the
+`List.pairwise_mergeSort` obligation, mirroring `leLockId_bool_trans`). -/
+private theorem leCore_bool_trans : ∀ (x y z : CoreId),
+    (fun x y : CoreId => decide (x.val ≤ y.val)) x y = true →
+    (fun x y : CoreId => decide (x.val ≤ y.val)) y z = true →
+    (fun x y : CoreId => decide (x.val ≤ y.val)) x z = true := by
+  intro x y z hxy hyz
+  exact decide_eq_true (Nat.le_trans (of_decide_eq_true hxy) (of_decide_eq_true hyz))
+
+/-- Bool-comparator totality for the `CoreId` value order. -/
+private theorem leCore_bool_total : ∀ (x y : CoreId),
+    ((fun x y : CoreId => decide (x.val ≤ y.val)) x y
+      || (fun x y : CoreId => decide (x.val ≤ y.val)) y x) = true := by
+  intro x y
+  rcases Nat.le_total x.val y.val with h | h
+  · simp [decide_eq_true h]
+  · simp [decide_eq_true h]
+
+/-- WS-SM SM6.E (audit closure): a `CoreId`-ascending, duplicate-free sorted
+TRIPLE of same-kind scheduler locks — the run-queue segment of the suspend
+footprint over {victim home, executing core, victim RUNNING core}: the
+review-4 G4b deschedule writes the running core's queue/current slot, which
+can be a **third** core distinct from both (an unbound victim running
+off-home).  Built on the SM3.B canonical-sort machinery (`List.mergeSort`
+over the deduped core list), so ascending order and endpoint membership are
+`pairwise_mergeSort` / `mem_mergeSort` corollaries. -/
+def sortedSchedCoreTriple (f : CoreId → SchedLockId) (a b c : CoreId)
+    : List (SchedLockId × Concurrency.AccessMode) :=
+  (((if c = a ∨ c = b then (if a = b then [a] else [a, b])
+     else if a = b then [a, c]
+     else [a, b, c]) : List CoreId).mergeSort
+    (fun x y => decide (x.val ≤ y.val))).map (fun x => (f x, .write))
+
+/-- Every key of a sorted triple is one of the three endpoints. -/
+theorem sortedSchedCoreTriple_map_fst_mem {f : CoreId → SchedLockId}
+    {a b c : CoreId} {x : SchedLockId}
+    (hx : x ∈ (sortedSchedCoreTriple f a b c).map (·.1)) :
+    x = f a ∨ x = f b ∨ x = f c := by
+  unfold sortedSchedCoreTriple at hx
+  rw [List.map_map] at hx
+  rcases List.mem_map.mp hx with ⟨y, hy, rfl⟩
+  have hMem := List.mem_mergeSort.mp hy
+  by_cases h1 : c = a ∨ c = b
+  · rw [if_pos h1] at hMem
+    by_cases h2 : a = b
+    · rw [if_pos h2] at hMem
+      rcases List.mem_singleton.mp hMem with rfl
+      exact Or.inl rfl
+    · rw [if_neg h2] at hMem
+      rcases List.mem_cons.mp hMem with rfl | hMem
+      · exact Or.inl rfl
+      · rcases List.mem_singleton.mp hMem with rfl
+        exact Or.inr (Or.inl rfl)
+  · rw [if_neg h1] at hMem
+    by_cases h2 : a = b
+    · rw [if_pos h2] at hMem
+      rcases List.mem_cons.mp hMem with rfl | hMem
+      · exact Or.inl rfl
+      · rcases List.mem_singleton.mp hMem with rfl
+        exact Or.inr (Or.inr rfl)
+    · rw [if_neg h2] at hMem
+      rcases List.mem_cons.mp hMem with rfl | hMem
+      · exact Or.inl rfl
+      rcases List.mem_cons.mp hMem with rfl | hMem
+      · exact Or.inr (Or.inl rfl)
+      · rcases List.mem_singleton.mp hMem with rfl
+        exact Or.inr (Or.inr rfl)
+
+/-- A sorted triple's keys ascend under any `CoreId`-monotone lock
+constructor. -/
+theorem sortedSchedCoreTriple_pairwise_le (f : CoreId → SchedLockId)
+    (a b c : CoreId)
+    (hMono : ∀ x y : CoreId, x ≤ y → f x ≤ f y) :
+    ((sortedSchedCoreTriple f a b c).map (·.1)).Pairwise (· ≤ ·) := by
+  unfold sortedSchedCoreTriple
+  rw [List.map_map]
+  have hSorted : List.Pairwise (fun x y : CoreId => x.val ≤ y.val)
+      (((if c = a ∨ c = b then (if a = b then [a] else [a, b])
+         else if a = b then [a, c]
+         else [a, b, c]) : List CoreId).mergeSort
+        (fun x y => decide (x.val ≤ y.val))) :=
+    (List.pairwise_mergeSort
+      (le := fun x y : CoreId => decide (x.val ≤ y.val))
+      leCore_bool_trans leCore_bool_total _).imp
+      (fun h => of_decide_eq_true h)
+  exact List.Pairwise.map _ (fun x y h => hMono x y h) hSorted
+
+/-- WS-SM SM5.H.4 (lock-set): `migrateSchedContextReplenishment fromCore toCore`
+writes both cores' replenish-queue slots. -/
+def migrateSchedContextReplenishmentLockSet (fromCore toCore : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  [ (SchedLockId.replenishQueue ⟨fromCore⟩, .write)
+  , (SchedLockId.replenishQueue ⟨toCore⟩, .write) ]
+
+/-- SM5.H.4: the migration footprint is the two replenish-queue write locks. -/
+@[simp] theorem migrateSchedContextReplenishmentLockSet_length (fromCore toCore : CoreId) :
+    (migrateSchedContextReplenishmentLockSet fromCore toCore).length = 2 := rfl
+
+/-- SM5.H.4: the migration footprint is write-only. -/
+theorem migrateSchedContextReplenishmentLockSet_write_only (fromCore toCore : CoreId) :
+    ∀ p ∈ migrateSchedContextReplenishmentLockSet fromCore toCore, p.2 = Concurrency.AccessMode.write := by
+  intro p hp
+  simp only [migrateSchedContextReplenishmentLockSet, List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with h | h <;> subst h <;> rfl
+
+/-- SM5.H.4: for distinct cores the migration footprint's keys are duplicate-free. -/
+theorem migrateSchedContextReplenishmentLockSet_keys_nodup (fromCore toCore : CoreId)
+    (h : fromCore ≠ toCore) :
+    ((migrateSchedContextReplenishmentLockSet fromCore toCore).map (·.1)).Nodup := by
+  simp only [migrateSchedContextReplenishmentLockSet, List.map_cons, List.map_nil]
+  refine List.Pairwise.cons (fun a ha => ?_) (List.pairwise_singleton _ _)
+  rw [List.mem_singleton] at ha; subst ha
+  intro hEq
+  exact h (congrArg ReplenishQueueLockId.core (SchedLockId.replenishQueue.inj hEq))
+
+/-- SM5.H.4 (plan §4.4 / SM3.D ladder): under the canonical core order
+`fromCore.val ≤ toCore.val`, the migration footprint's keys are ascending — a valid
+`withLockSet` acquisition sequence. -/
+theorem migrateSchedContextReplenishmentLockSet_pairwise_le_of_core_le (fromCore toCore : CoreId)
+    (h : fromCore.val ≤ toCore.val) :
+    ((migrateSchedContextReplenishmentLockSet fromCore toCore).map (·.1)).Pairwise (· ≤ ·) := by
+  simp only [migrateSchedContextReplenishmentLockSet, List.map_cons, List.map_nil]
+  refine List.Pairwise.cons (fun a ha => ?_) (List.pairwise_singleton _ _)
+  rw [List.mem_singleton] at ha; subst ha; exact h
+
+/-- SM5.H.4: the migration footprint is within the `maxLockSetSize` cap. -/
+theorem migrateSchedContextReplenishmentLockSet_size_le_maxLockSetSize (fromCore toCore : CoreId) :
+    (migrateSchedContextReplenishmentLockSet fromCore toCore).length ≤ 8 := by
+  rw [migrateSchedContextReplenishmentLockSet_length]; decide
+
 /-- WS-SM SM5.A.2 (cross-domain unification): the **complete** lock-set
 footprint of `chooseThreadOnCore c`.
 
