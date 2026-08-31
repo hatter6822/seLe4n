@@ -149,6 +149,37 @@ theorem replenishQueueAffinityConsistentOnCore_frame {st st' : SystemState} {c :
     (fun scId => by unfold SystemState.getSchedContext?; rw [hObj])
     (fun tid => by unfold determineTargetCore SystemState.getTcb?; rw [hObj])
 
+/-- WS-RR (bind/unbind affinity closure) — transfer form: affinity-consistency
+on core `c` reads the queue's entries, each SchedContext's `boundThread`
+*projection*, and each thread's home core — so it transfers backwards along an
+entry-subset, a `boundThread`-projection agreement, and a home-core agreement.
+
+Strictly weaker premises than `_congr`: the `.map (·.boundThread)` form matters
+because the reschedule receiver's object write is a register-context TCB save —
+it frames the projection (and every home core) while the whole `objects` store
+differs, which is exactly the shape `_frame` excludes and `_congr`'s full
+`getSchedContext?` equality does not need but its consumers would have to
+re-derive per SchedContext field. -/
+theorem replenishQueueAffinityConsistentOnCore_transfer (st base : SystemState) (c : CoreId)
+    (hSub : ∀ e, e ∈ (base.scheduler.replenishQueueOnCore c).entries →
+                 e ∈ (st.scheduler.replenishQueueOnCore c).entries)
+    (hBound : ∀ scId, (base.getSchedContext? scId).map (·.boundThread)
+                    = (st.getSchedContext? scId).map (·.boundThread))
+    (hTgt : ∀ tid, determineTargetCore base tid = determineTargetCore st tid)
+    (hCons : replenishQueueAffinityConsistentOnCore st c) :
+    replenishQueueAffinityConsistentOnCore base c := by
+  intro scId t hMem sc hSc tid hTid
+  have hMapEq := hBound scId
+  rw [hSc] at hMapEq
+  cases hB : st.getSchedContext? scId with
+  | none => rw [hB] at hMapEq; simp at hMapEq
+  | some scS =>
+    rw [hB] at hMapEq
+    simp only [Option.map_some] at hMapEq
+    rw [hTgt tid]
+    exact hCons scId t (hSub _ hMem) scS hB tid
+      (by rw [← Option.some.inj hMapEq]; exact hTid)
+
 -- ============================================================================
 -- §2  Membership decomposition for `ReplenishQueue.insertSorted` / `.remove`
 -- ============================================================================

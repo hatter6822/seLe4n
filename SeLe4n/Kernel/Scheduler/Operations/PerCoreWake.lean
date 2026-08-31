@@ -880,6 +880,39 @@ theorem handleRescheduleSgiOnCore_machine_timer (st : SystemState) (c : CoreId)
     · exact switchToThreadOnCore_machine_timer st c _ st' h
     · rw [Except.ok.injEq] at h; subst h; rfl
 
+/-- WS-RR (bind/unbind affinity closure): the SGI handler preserves every
+thread's home core — its one object write is `switchToThreadOnCore`'s
+register-context save, which never touches `cpuAffinity`.  The home-core half
+of the frame that carries the replenish-queue affinity invariant through the
+unbind wrapper's local reschedule arm. -/
+theorem handleRescheduleSgiOnCore_determineTargetCore (st : SystemState) (c : CoreId)
+    (st' : SystemState) (hInv : st.objects.invExt)
+    (h : handleRescheduleSgiOnCore st c = .ok st') (t : SeLe4n.ThreadId) :
+    determineTargetCore st' t = determineTargetCore st t := by
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; rfl
+  · split at h
+    · exact switchToThreadOnCore_determineTargetCore st c _ st' hInv h t
+    · rw [Except.ok.injEq] at h; subst h; rfl
+
+/-- WS-RR (bind/unbind affinity closure): the SGI handler preserves every
+SchedContext's `boundThread` projection — same register-save footprint.  The
+binding half of the same frame. -/
+theorem handleRescheduleSgiOnCore_boundThread (st : SystemState) (c : CoreId)
+    (st' : SystemState) (hInv : st.objects.invExt)
+    (h : handleRescheduleSgiOnCore st c = .ok st') (scId : SeLe4n.SchedContextId) :
+    (st'.getSchedContext? scId).map (·.boundThread)
+      = (st.getSchedContext? scId).map (·.boundThread) := by
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; rfl
+  · split at h
+    · exact switchToThreadOnCore_boundThread st c _ st' hInv h scId
+    · rw [Except.ok.injEq] at h; subst h; rfl
+
 
 /-- WS-SM (PR #880 round 7): the SGI handler preserves per-core current-thread
 validity — the dispatch arm *establishes* it (the switch requires its target to

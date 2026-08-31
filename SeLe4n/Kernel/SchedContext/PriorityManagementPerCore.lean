@@ -177,6 +177,39 @@ theorem priorityRescheduleOnCore_no_preempt (st : SystemState)
     priorityRescheduleOnCore st running? ec false = .ok (st, none) := by
   simp [priorityRescheduleOnCore]
 
+/-- WS-RR (bind/unbind affinity closure): the preemption seam's **state**
+outcomes — the post-state is the input state (the no-preempt, no-target and
+remote arms all pass it through) or the executing core's reschedule receiver
+ran on it (the local arm).  The decomposition the unbind wrapper's
+invariant-preservation theorems case on: everything the seam can do to the
+state is one of these two, so a frame for `handleRescheduleSgiOnCore` is a
+frame for the whole seam. -/
+theorem priorityRescheduleOnCore_state_cases (st st' : SystemState)
+    (running? : Option CoreId) (ec : CoreId) (sp : Bool)
+    (sgi? : Option (CoreId × SgiKind))
+    (h : priorityRescheduleOnCore st running? ec sp = .ok (st', sgi?)) :
+    st' = st ∨ handleRescheduleSgiOnCore st ec = .ok st' := by
+  unfold priorityRescheduleOnCore at h
+  split at h
+  · split at h
+    · next rc _ =>
+      split at h
+      · -- local arm: the receiver ran inline
+        split at h
+        · next stH hH =>
+          rw [Except.ok.injEq, Prod.mk.injEq] at h
+          exact Or.inr (by rw [hH, h.1])
+        · exact absurd h (by simp)
+      · -- remote arm: state passed through, SGI surfaced
+        rw [Except.ok.injEq, Prod.mk.injEq] at h
+        exact Or.inl h.1.symm
+    · -- running nowhere: state passed through
+      rw [Except.ok.injEq, Prod.mk.injEq] at h
+      exact Or.inl h.1.symm
+  · -- no preempt requested: state passed through
+    rw [Except.ok.injEq, Prod.mk.injEq] at h
+    exact Or.inl h.1.symm
+
 /-- WS-SM SM8.B: the priority ops' **shared state effect** — write the new value
 to whichever field owns the thread's priority, re-bucket it on its home core, and
 run the preemption seam on the core actually running it.

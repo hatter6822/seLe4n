@@ -116,3 +116,10 @@ import SeLe4n.Kernel.Architecture.TlbiForSharing
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
 import SeLe4n.Kernel.IPC.Invariant.CapTransferBundle
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
+-- WS-RR (bind/unbind affinity closure): the replenish-queue invariant surface
+-- for the two live arms that create and destroy a SchedContext's binding —
+-- the orphan-freedom invariant (`replenishQueueEntriesBound_smp`), the
+-- `schedContextBind` / `schedContextUnbind{,OnCore}` preservation theorems for
+-- it and for `replenishQueueAffinityConsistent_smp`, and their object-store
+-- invariant carriers.  Production-clean.
+import SeLe4n.Kernel.SchedContext.BindingAffinity

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr2-live-path-correctness-xfjr7b",
-      "commit_sha": "b40d81c89be15e809d02e8b4d16059510041e301",
-      "tree_sha": "dcfdbfbe77a4f952ed4c13aa8a253bd01c725721",
-      "committed_at_utc": "2026-08-31T06:03:16+00:00"
+      "commit_sha": "b949c76a972963063d8716eac93bd322ebcecf40",
+      "tree_sha": "8ad9a42528578959e553bd75adad68ae4622c96e",
+      "committed_at_utc": "2026-08-31T16:29:56+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "774a104f8350d8a1234daca5175a1a9000ebd3c323f4bff41a5ff7de6663a4e6"
+    "source_digest": "1157cc8cbbf3563d69c158f477aea4c43ba47a0dad96073c39f5ded19707816e"
   },
   "summary": {
-    "module_count": 363,
-    "declaration_count": 17286
+    "module_count": 364,
+    "declaration_count": 17339
   },
   "readme_sync": {
     "version": "0.34.42",
     "lean_toolchain": "v4.28.0",
-    "production_files": 294,
-    "production_loc": 296982,
+    "production_files": 295,
+    "production_loc": 297915,
     "test_files": 69,
-    "test_loc": 64751,
-    "proved_theorem_lemma_decls": 9859,
+    "test_loc": 64986,
+    "proved_theorem_lemma_decls": 9888,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -139446,6 +139446,533 @@
       "declarations": []
     },
     {
+      "module": "SeLe4n.Kernel.SchedContext.BindingAffinity",
+      "path": "SeLe4n/Kernel/SchedContext/BindingAffinity.lean",
+      "declaration_count": 27,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 64,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "replenishQueueEntriesBoundOnCore",
+          "line": 86,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "getSchedContext",
+            "replenishQueueOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "replenishQueueEntriesBound_smp",
+          "line": 92,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "replenishQueueEntriesBoundOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_replenishQueueEntriesBound_smp",
+          "line": 97,
+          "called": [
+            "SystemState",
+            "default",
+            "default_state_perCoreInitialized",
+            "empty",
+            "replenishQueueEntriesBound_smp",
+            "replenishQueueOnCore",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishQueueEntriesBoundOnCore_transfer",
+          "line": 109,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "getSchedContext",
+            "none",
+            "replenishQueueEntriesBoundOnCore",
+            "replenishQueueOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "purgeReplenishmentOnCore_preserves_replenishQueueEntriesBoundOnCore",
+          "line": 133,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "getSchedContext",
+            "mem_remove_entries",
+            "purgeReplenishmentOnCore",
+            "remove",
+            "replenishQueueEntriesBoundOnCore",
+            "replenishQueueOnCore",
+            "scId",
+            "setReplenishQueueOnCore_replenishQueueOnCore_ne",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_preserves_replenishQueueEntriesBoundOnCore",
+          "line": 161,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "getSchedContext",
+            "insert",
+            "mem_insertSorted_iff",
+            "replenishOnCore",
+            "replenishQueueEntriesBoundOnCore",
+            "replenishQueueOnCore",
+            "scId",
+            "setReplenishQueueOnCore_replenishQueueOnCore_ne",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_preserves_replenishQueueEntriesBound_smp",
+          "line": 193,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "getSchedContext",
+            "mem_foldl_insert_provenance",
+            "mem_remove_entries",
+            "migrateSchedContextReplenishment",
+            "migrateSchedContextReplenishment_noop",
+            "migrateSchedContextReplenishment_objects",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_from",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_to",
+            "replenishQueueEntriesBound_smp",
+            "replenishQueueOnCore",
+            "scId",
+            "setReplenishQueueOnCore_replenishQueueOnCore_ne",
+            "st",
+            "symm",
+            "toCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_purge_replenishQueueOnCore",
+          "line": 247,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "cons",
+            "purgeReplenishmentOnCore",
+            "remove",
+            "replenishQueueOnCore",
+            "scId",
+            "setReplenishQueueOnCore_replenishQueueOnCore_ne",
+            "st",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "purgeReplenishmentFromAllCores_replenishQueueOnCore",
+          "line": 279,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "allCores",
+            "allCores_nodup",
+            "foldl_purge_replenishQueueOnCore",
+            "mem_allCores",
+            "purgeReplenishmentFromAllCores",
+            "remove",
+            "replenishQueueOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "purgeReplenishmentFromAllCores_objects",
+          "line": 290,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "allCores",
+            "cons",
+            "cores",
+            "purgeReplenishmentFromAllCores",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "purgeReplenishmentFromAllCores_preserves_replenishQueueEntriesBound_smp",
+          "line": 301,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "getSchedContext",
+            "mem_remove_entries",
+            "purgeReplenishmentFromAllCores",
+            "purgeReplenishmentFromAllCores_objects",
+            "purgeReplenishmentFromAllCores_replenishQueueOnCore",
+            "replenishQueueEntriesBound_smp",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextUnbind_ok_char",
+          "line": 322,
+          "called": [
+            "SystemState",
+            "ValidObjId",
+            "determineTargetCore",
+            "getSchedContext",
+            "getTcb",
+            "insert",
+            "none",
+            "ofObjId",
+            "purgeReplenishmentFromAllCores_objects",
+            "purgeReplenishmentFromAllCores_replenishQueueOnCore",
+            "purgeReplenishmentOnCore",
+            "remove",
+            "replenishQueueOnCore",
+            "runningCoreOf",
+            "schedContextUnbind",
+            "setReplenishQueueOnCore_replenishQueueOnCore_ne",
+            "st",
+            "toNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "getSchedContext",
+          "line": 395,
+          "called": [
+            "RHTable_getElem",
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "insert",
+            "invExt",
+            "scId",
+            "scId0",
+            "st",
+            "symm",
+            "toObjId",
+            "toObjId_injective"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "getSchedContext",
+          "line": 411,
+          "called": [
+            "RHTable_getElem",
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "insert",
+            "invExt",
+            "scId0",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "double_insert_read_frame",
+          "line": 428,
+          "called": [
+            "RHTable_getElem",
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "determineTargetCore",
+            "determineTargetCore_congr",
+            "determineTargetCore_insert_tcb",
+            "get",
+            "getSchedContext",
+            "getTcb",
+            "insert",
+            "insert_preserves_invExt",
+            "invExt",
+            "sc0",
+            "scId",
+            "scId0",
+            "st",
+            "tid0",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sc_insert_read_frame",
+          "line": 466,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "determineTargetCore",
+            "determineTargetCore_congr",
+            "get",
+            "getSchedContext",
+            "getTcb",
+            "insert",
+            "invExt",
+            "sc0",
+            "scId",
+            "scId0",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextBind_ok_char",
+          "line": 487,
+          "called": [
+            "SystemState",
+            "ValidObjId",
+            "ValidThreadId",
+            "getSchedContext",
+            "getTcb",
+            "insert",
+            "none",
+            "ofObjId",
+            "replenishQueueOnCore",
+            "schedContextBind",
+            "st",
+            "tid0",
+            "toNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextBind_read_frame",
+          "line": 543,
+          "called": [
+            "SystemState",
+            "ValidObjId",
+            "ValidThreadId",
+            "determineTargetCore",
+            "double_insert_read_frame",
+            "get",
+            "getSchedContext",
+            "getTcb",
+            "insert",
+            "invExt",
+            "none",
+            "ofObjId",
+            "replenishQueueOnCore",
+            "scId",
+            "schedContextBind",
+            "schedContextBind_ok_char",
+            "st",
+            "toNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextBind_preserves_replenishQueueAffinityConsistent_smp",
+          "line": 575,
+          "called": [
+            "SystemState",
+            "ValidObjId",
+            "ValidThreadId",
+            "invExt",
+            "ofObjId",
+            "replenishQueueAffinityConsistent_smp",
+            "replenishQueueEntriesBound_smp",
+            "scId",
+            "schedContextBind",
+            "schedContextBind_read_frame",
+            "st",
+            "tidP"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextBind_preserves_replenishQueueEntriesBound_smp",
+          "line": 601,
+          "called": [
+            "SystemState",
+            "ValidObjId",
+            "ValidThreadId",
+            "invExt",
+            "ofObjId",
+            "replenishQueueEntriesBound_smp",
+            "scId",
+            "schedContextBind",
+            "schedContextBind_read_frame",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextBind_preserves_objects_invExt",
+          "line": 622,
+          "called": [
+            "SystemState",
+            "ValidObjId",
+            "ValidThreadId",
+            "insert",
+            "insert_preserves_invExt",
+            "invExt",
+            "schedContextBind",
+            "schedContextBind_ok_char",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextUnbind_preserves_objects_invExt",
+          "line": 635,
+          "called": [
+            "SystemState",
+            "ValidObjId",
+            "insert",
+            "insert_preserves_invExt",
+            "invExt",
+            "schedContextUnbind",
+            "schedContextUnbind_ok_char",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextUnbind_preserves_replenishQueueAffinityConsistent_smp",
+          "line": 651,
+          "called": [
+            "SystemState",
+            "ValidObjId",
+            "determineTargetCore",
+            "double_insert_read_frame",
+            "get",
+            "getSchedContext",
+            "getTcb",
+            "insert",
+            "invExt",
+            "mem_remove_entries",
+            "none",
+            "ofObjId",
+            "replenishQueueAffinityConsistent_smp",
+            "replenishQueueOnCore",
+            "scId",
+            "sc_insert_read_frame",
+            "schedContextUnbind",
+            "schedContextUnbind_ok_char",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextUnbind_preserves_replenishQueueEntriesBound_smp",
+          "line": 700,
+          "called": [
+            "SystemState",
+            "ValidObjId",
+            "determineTargetCore",
+            "double_insert_read_frame",
+            "get",
+            "getSchedContext",
+            "getTcb",
+            "insert",
+            "invExt",
+            "mem_remove_entries",
+            "none",
+            "ofObjId",
+            "replenishQueueAffinityConsistent_smp",
+            "replenishQueueEntriesBound_smp",
+            "scId",
+            "sc_insert_read_frame",
+            "schedContextUnbind",
+            "schedContextUnbind_ok_char",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextUnbindOnCore_preserves_replenishQueueAffinityConsistent_smp",
+          "line": 754,
+          "called": [
+            "CoreId",
+            "SgiKind",
+            "SystemState",
+            "ValidObjId",
+            "handleRescheduleSgiOnCore_boundThread",
+            "handleRescheduleSgiOnCore_determineTargetCore",
+            "handleRescheduleSgiOnCore_replenishQueueOnCore",
+            "invExt",
+            "priorityRescheduleOnCore_state_cases",
+            "replenishQueueAffinityConsistentOnCore_transfer",
+            "replenishQueueAffinityConsistent_smp",
+            "scId",
+            "schedContextRunningCore",
+            "schedContextUnbindOnCore",
+            "schedContextUnbind_preserves_objects_invExt",
+            "schedContextUnbind_preserves_replenishQueueAffinityConsistent_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextUnbindOnCore_preserves_replenishQueueEntriesBound_smp",
+          "line": 786,
+          "called": [
+            "CoreId",
+            "Kernel",
+            "SgiKind",
+            "SystemState",
+            "ValidObjId",
+            "handleRescheduleSgiOnCore_boundThread",
+            "handleRescheduleSgiOnCore_replenishQueueOnCore",
+            "invExt",
+            "priorityRescheduleOnCore_state_cases",
+            "replenishQueueAffinityConsistent_smp",
+            "replenishQueueEntriesBoundOnCore_transfer",
+            "replenishQueueEntriesBound_smp",
+            "scId",
+            "schedContextRunningCore",
+            "schedContextUnbindOnCore",
+            "schedContextUnbind_preserves_objects_invExt",
+            "schedContextUnbind_preserves_replenishQueueEntriesBound_smp",
+            "st"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.SchedContext.Budget",
       "path": "SeLe4n/Kernel/SchedContext/Budget.lean",
       "declaration_count": 20,
@@ -141282,7 +141809,7 @@
     {
       "module": "SeLe4n.Kernel.SchedContext.PriorityManagementPerCore",
       "path": "SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean",
-      "declaration_count": 18,
+      "declaration_count": 19,
       "declarations": [
         {
           "kind": "namespace",
@@ -141407,9 +141934,23 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "priorityRescheduleOnCore_state_cases",
+          "line": 187,
+          "called": [
+            "CoreId",
+            "SgiKind",
+            "SystemState",
+            "handleRescheduleSgiOnCore",
+            "priorityRescheduleOnCore",
+            "st",
+            "symm"
+          ]
+        },
+        {
           "kind": "def",
           "name": "applyPriorityChangeOnCore",
-          "line": 189,
+          "line": 222,
           "called": [
             "CoreId",
             "KernelError",
@@ -141429,7 +141970,7 @@
         {
           "kind": "theorem",
           "name": "applyPriorityChangeOnCore_no_preempt",
-          "line": 199,
+          "line": 232,
           "called": [
             "CoreId",
             "Priority",
@@ -141450,7 +141991,7 @@
         {
           "kind": "def",
           "name": "setPriorityOnCore",
-          "line": 221,
+          "line": 254,
           "called": [
             "CoreId",
             "KernelError",
@@ -141469,7 +142010,7 @@
         {
           "kind": "def",
           "name": "setMCPriorityOnCore",
-          "line": 241,
+          "line": 274,
           "called": [
             "CoreId",
             "KernelError",
@@ -141490,7 +142031,7 @@
         {
           "kind": "theorem",
           "name": "setPriorityOnCore_authority_rejected",
-          "line": 264,
+          "line": 297,
           "called": [
             "CoreId",
             "KernelError",
@@ -141507,7 +142048,7 @@
         {
           "kind": "theorem",
           "name": "setMCPriorityOnCore_authority_rejected",
-          "line": 272,
+          "line": 305,
           "called": [
             "CoreId",
             "KernelError",
@@ -141524,7 +142065,7 @@
         {
           "kind": "theorem",
           "name": "setPriorityOnCore_no_caller",
-          "line": 281,
+          "line": 314,
           "called": [
             "CoreId",
             "Priority",
@@ -141539,7 +142080,7 @@
         {
           "kind": "theorem",
           "name": "setPriorityOnCore_raise_no_sgi",
-          "line": 291,
+          "line": 324,
           "called": [
             "CoreId",
             "Priority",
@@ -141562,7 +142103,7 @@
     {
       "module": "SeLe4n.Kernel.SchedContext.ReplenishAffinity",
       "path": "SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean",
-      "declaration_count": 27,
+      "declaration_count": 28,
       "declarations": [
         {
           "kind": "namespace",
@@ -141668,8 +142209,24 @@
         },
         {
           "kind": "theorem",
+          "name": "replenishQueueAffinityConsistentOnCore_transfer",
+          "line": 163,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "determineTargetCore",
+            "getSchedContext",
+            "none",
+            "replenishQueueAffinityConsistentOnCore",
+            "replenishQueueOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "mem_insertSorted_iff",
-          "line": 159,
+          "line": 190,
           "called": [
             "SchedContextId",
             "cons",
@@ -141681,7 +142238,7 @@
         {
           "kind": "theorem",
           "name": "mem_remove_entries",
-          "line": 186,
+          "line": 217,
           "called": [
             "ReplenishQueue",
             "SchedContextId",
@@ -141692,7 +142249,7 @@
         {
           "kind": "theorem",
           "name": "mem_foldl_insert_provenance",
-          "line": 200,
+          "line": 231,
           "called": [
             "ReplenishQueue",
             "SchedContextId",
@@ -141706,7 +142263,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_noop",
-          "line": 229,
+          "line": 260,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -141719,7 +142276,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_objects",
-          "line": 235,
+          "line": 266,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -141733,7 +142290,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_machine",
-          "line": 241,
+          "line": 272,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -141747,7 +142304,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_getSchedContext",
-          "line": 247,
+          "line": 278,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -141763,7 +142320,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_determineTargetCore",
-          "line": 254,
+          "line": 285,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -141781,7 +142338,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_getTcb",
-          "line": 261,
+          "line": 292,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -141798,7 +142355,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_runQueue_current_eq",
-          "line": 269,
+          "line": 300,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -141814,7 +142371,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_replenishQueueOnCore_to",
-          "line": 282,
+          "line": 313,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -141832,7 +142389,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_replenishQueueOnCore_from",
-          "line": 292,
+          "line": 323,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -141851,7 +142408,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_replenishQueueOnCore_other",
-          "line": 302,
+          "line": 333,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -141867,7 +142424,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_fromCore_excludes_scId",
-          "line": 320,
+          "line": 351,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -141884,7 +142441,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_mem_toCore",
-          "line": 331,
+          "line": 362,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -141902,7 +142459,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_to",
-          "line": 355,
+          "line": 386,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -141922,7 +142479,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_from",
-          "line": 375,
+          "line": 406,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -141944,7 +142501,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_other",
-          "line": 392,
+          "line": 423,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -141962,7 +142519,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_preserves_affinityConsistent_smp",
-          "line": 408,
+          "line": 439,
           "called": [
             "CoreId",
             "Kernel",
@@ -161133,7 +161690,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean",
-      "declaration_count": 55,
+      "declaration_count": 63,
       "declarations": [
         {
           "kind": "namespace",
@@ -162057,7 +162614,6 @@
           "line": 1231,
           "called": [
             "CoreId",
-            "Kernel",
             "SystemState",
             "ThreadId",
             "affinityAdmitsCore",
@@ -162067,13 +162623,176 @@
             "st",
             "switchToThreadOnCore"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "determineTargetCore_insert_tcb",
+          "line": 1260,
+          "called": [
+            "RHTable_getElem",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "determineTargetCore",
+            "get",
+            "getTcb",
+            "insert",
+            "invExt",
+            "st",
+            "symm",
+            "tid0",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "getSchedContext",
+          "line": 1281,
+          "called": [
+            "RHTable_getElem",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "get",
+            "insert",
+            "invExt",
+            "scId",
+            "st",
+            "symm",
+            "tid0",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "getTcb",
+          "line": 1301,
+          "called": [
+            "RHTable_getElem",
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "get",
+            "insert",
+            "invExt",
+            "sc0",
+            "scId0",
+            "st",
+            "symm",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "getSchedContext",
+          "line": 1321,
+          "called": [
+            "RHTable_getElem",
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "get",
+            "insert",
+            "invExt",
+            "sc0",
+            "scId",
+            "scId0",
+            "st",
+            "symm",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "preemptCurrentOnCore_determineTargetCore",
+          "line": 1347,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "determineTargetCore",
+            "determineTargetCore_insert_tcb",
+            "getTcb",
+            "insert",
+            "invExt",
+            "none",
+            "preemptCurrentOnCore",
+            "prevTid",
+            "regsOnCore",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "preemptCurrentOnCore_boundThread",
+          "line": 1372,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "getSchedContext",
+            "getTcb",
+            "insert",
+            "invExt",
+            "none",
+            "preemptCurrentOnCore",
+            "prevTid",
+            "regsOnCore",
+            "scId",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchToThreadOnCore_determineTargetCore",
+          "line": 1398,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "determineTargetCore",
+            "getTcb",
+            "invExt",
+            "preemptCurrentOnCore",
+            "preemptCurrentOnCore_determineTargetCore",
+            "st",
+            "switchToThreadOnCore",
+            "switchToThreadOnCore_objects_eq_preempt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchToThreadOnCore_boundThread",
+          "line": 1412,
+          "called": [
+            "CoreId",
+            "Kernel",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "getSchedContext",
+            "invExt",
+            "preemptCurrentOnCore",
+            "preemptCurrentOnCore_boundThread",
+            "scId",
+            "st",
+            "switchToThreadOnCore",
+            "switchToThreadOnCore_objects_eq_preempt"
+          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsAffinity.lean",
-      "declaration_count": 31,
+      "declaration_count": 23,
       "declarations": [
         {
           "kind": "namespace",
@@ -162100,88 +162819,8 @@
         },
         {
           "kind": "theorem",
-          "name": "determineTargetCore_insert_tcb",
-          "line": 107,
-          "called": [
-            "RHTable_getElem",
-            "SystemState",
-            "TCB",
-            "ThreadId",
-            "determineTargetCore",
-            "get",
-            "getTcb",
-            "insert",
-            "invExt",
-            "st",
-            "symm",
-            "tid0",
-            "toObjId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "getSchedContext",
-          "line": 128,
-          "called": [
-            "RHTable_getElem",
-            "SchedContextId",
-            "SystemState",
-            "TCB",
-            "ThreadId",
-            "get",
-            "insert",
-            "invExt",
-            "scId",
-            "st",
-            "symm",
-            "tid0",
-            "toObjId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "getTcb",
-          "line": 148,
-          "called": [
-            "RHTable_getElem",
-            "SchedContext",
-            "SchedContextId",
-            "SystemState",
-            "ThreadId",
-            "get",
-            "insert",
-            "invExt",
-            "sc0",
-            "scId0",
-            "st",
-            "symm",
-            "toObjId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "getSchedContext",
-          "line": 168,
-          "called": [
-            "RHTable_getElem",
-            "SchedContext",
-            "SchedContextId",
-            "SystemState",
-            "get",
-            "insert",
-            "invExt",
-            "sc0",
-            "scId",
-            "scId0",
-            "st",
-            "symm",
-            "toObjId"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "enqueueRunnableOnCore_determineTargetCore",
-          "line": 192,
+          "line": 115,
           "called": [
             "CoreId",
             "SystemState",
@@ -162200,7 +162839,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_boundThread",
-          "line": 208,
+          "line": 131,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -162220,7 +162859,7 @@
         {
           "kind": "theorem",
           "name": "refillSchedContext_determineTargetCore",
-          "line": 225,
+          "line": 148,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -162237,7 +162876,7 @@
         {
           "kind": "theorem",
           "name": "refillSchedContext_boundThread",
-          "line": 238,
+          "line": 161,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -162255,7 +162894,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContextOnCore_determineTargetCore",
-          "line": 254,
+          "line": 177,
           "called": [
             "CoreId",
             "SystemState",
@@ -162276,7 +162915,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContextOnCore_boundThread",
-          "line": 273,
+          "line": 196,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -162297,7 +162936,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_determineTargetCore",
-          "line": 293,
+          "line": 216,
           "called": [
             "CoreId",
             "SystemState",
@@ -162316,7 +162955,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_boundThread",
-          "line": 305,
+          "line": 228,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -162334,7 +162973,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_determineTargetCore",
-          "line": 322,
+          "line": 245,
           "called": [
             "CoreId",
             "RHTable_insert_preserves_invExt",
@@ -162355,7 +162994,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_boundThread",
-          "line": 342,
+          "line": 265,
           "called": [
             "CoreId",
             "RHTable_insert_preserves_invExt",
@@ -162376,7 +163015,7 @@
         {
           "kind": "theorem",
           "name": "foldl_processOne_determineTargetCore",
-          "line": 362,
+          "line": 285,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -162396,7 +163035,7 @@
         {
           "kind": "theorem",
           "name": "foldl_processOne_boundThread",
-          "line": 377,
+          "line": 300,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -162415,7 +163054,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_determineTargetCore",
-          "line": 393,
+          "line": 316,
           "called": [
             "CoreId",
             "SystemState",
@@ -162430,7 +163069,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_boundThread",
-          "line": 402,
+          "line": 325,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -162446,7 +163085,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_preserves_replenishQueueAffinityConsistentOnCore",
-          "line": 416,
+          "line": 339,
           "called": [
             "CoreId",
             "SystemState",
@@ -162466,7 +163105,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_preserves_replenishQueueAffinityConsistentOnCore",
-          "line": 433,
+          "line": 356,
           "called": [
             "CoreId",
             "SystemState",
@@ -162481,7 +163120,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_preserves_replenishQueueAffinityConsistentOnCore",
-          "line": 445,
+          "line": 368,
           "called": [
             "CoreId",
             "SystemState",
@@ -162499,7 +163138,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_preserves_objects_invExt",
-          "line": 459,
+          "line": 382,
           "called": [
             "CoreId",
             "SystemState",
@@ -162511,91 +163150,8 @@
         },
         {
           "kind": "theorem",
-          "name": "preemptCurrentOnCore_determineTargetCore",
-          "line": 470,
-          "called": [
-            "CoreId",
-            "SystemState",
-            "ThreadId",
-            "currentOnCore",
-            "determineTargetCore",
-            "determineTargetCore_insert_tcb",
-            "getTcb",
-            "insert",
-            "invExt",
-            "none",
-            "preemptCurrentOnCore",
-            "prevTid",
-            "regsOnCore",
-            "st",
-            "toObjId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "preemptCurrentOnCore_boundThread",
-          "line": 495,
-          "called": [
-            "CoreId",
-            "SchedContextId",
-            "SystemState",
-            "ThreadId",
-            "currentOnCore",
-            "getSchedContext",
-            "getTcb",
-            "insert",
-            "invExt",
-            "none",
-            "preemptCurrentOnCore",
-            "prevTid",
-            "regsOnCore",
-            "scId",
-            "st",
-            "toObjId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "switchToThreadOnCore_determineTargetCore",
-          "line": 521,
-          "called": [
-            "CoreId",
-            "SystemState",
-            "ThreadId",
-            "determineTargetCore",
-            "determineTargetCore_congr_getTcb",
-            "getTcb",
-            "invExt",
-            "preemptCurrentOnCore",
-            "preemptCurrentOnCore_determineTargetCore",
-            "st",
-            "switchToThreadOnCore",
-            "switchToThreadOnCore_objects_eq_preempt"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "switchToThreadOnCore_boundThread",
-          "line": 533,
-          "called": [
-            "CoreId",
-            "SchedContextId",
-            "SystemState",
-            "ThreadId",
-            "getSchedContext",
-            "invExt",
-            "preemptCurrentOnCore",
-            "preemptCurrentOnCore_boundThread",
-            "scId",
-            "st",
-            "switchToThreadOnCore",
-            "switchToThreadOnCore_objects_eq_preempt"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "handleRescheduleSgiOnCore_preserves_replenishQueueAffinityConsistentOnCore",
-          "line": 549,
+          "line": 392,
           "called": [
             "CoreId",
             "SystemState",
@@ -162613,7 +163169,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore",
-          "line": 582,
+          "line": 425,
           "called": [
             "CoreId",
             "SgiKind",
@@ -162638,7 +163194,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_perCoreCbsInvariant_discharged",
-          "line": 650,
+          "line": 493,
           "called": [
             "CoreId",
             "Kernel",
@@ -165965,7 +166521,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreWake",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean",
-      "declaration_count": 111,
+      "declaration_count": 113,
       "declarations": [
         {
           "kind": "namespace",
@@ -166808,8 +167364,39 @@
         },
         {
           "kind": "theorem",
+          "name": "handleRescheduleSgiOnCore_determineTargetCore",
+          "line": 888,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "determineTargetCore",
+            "handleRescheduleSgiOnCore",
+            "invExt",
+            "st",
+            "switchToThreadOnCore_determineTargetCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleRescheduleSgiOnCore_boundThread",
+          "line": 903,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "getSchedContext",
+            "handleRescheduleSgiOnCore",
+            "invExt",
+            "scId",
+            "st",
+            "switchToThreadOnCore_boundThread"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "handleRescheduleSgiOnCore_preserves_currentThreadValidOnCore",
-          "line": 887,
+          "line": 920,
           "called": [
             "CoreId",
             "SystemState",
@@ -166823,7 +167410,7 @@
         {
           "kind": "theorem",
           "name": "handleRescheduleSgiOnCore_preserves_queueCurrentConsistentOnCore",
-          "line": 902,
+          "line": 935,
           "called": [
             "CoreId",
             "SystemState",
@@ -166836,7 +167423,7 @@
         {
           "kind": "theorem",
           "name": "handleRescheduleSgiOnCore_preserves_contextMatchesCurrentOnCore",
-          "line": 919,
+          "line": 952,
           "called": [
             "CoreId",
             "SystemState",
@@ -166850,7 +167437,7 @@
         {
           "kind": "theorem",
           "name": "handleRescheduleSgiOnCore_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 935,
+          "line": 968,
           "called": [
             "CoreId",
             "SystemState",
@@ -166865,7 +167452,7 @@
         {
           "kind": "theorem",
           "name": "handleRescheduleSgiOnCore_preserves_runQueueOnCore_nodup",
-          "line": 951,
+          "line": 984,
           "called": [
             "CoreId",
             "SystemState",
@@ -166878,7 +167465,7 @@
         {
           "kind": "theorem",
           "name": "handleRescheduleSgiOnCore_preserves_currentThreadInActiveDomainOnCore",
-          "line": 969,
+          "line": 1002,
           "called": [
             "CoreId",
             "SystemState",
@@ -166899,7 +167486,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_then_handle_dispatches_current",
-          "line": 1029,
+          "line": 1062,
           "called": [
             "CoreId",
             "SchedReachable",
@@ -166922,7 +167509,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_roundtrip_reachable_current",
-          "line": 1061,
+          "line": 1094,
           "called": [
             "CoreId",
             "SchedReachable",
@@ -166944,7 +167531,7 @@
         {
           "kind": "def",
           "name": "wakeSgiCount",
-          "line": 1087,
+          "line": 1120,
           "called": [
             "CoreId",
             "SgiKind",
@@ -166954,7 +167541,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_emits_at_most_one_sgi",
-          "line": 1095,
+          "line": 1128,
           "called": [
             "CoreId",
             "SystemState",
@@ -166967,13 +167554,13 @@
         {
           "kind": "theorem",
           "name": "rescheduleSgi_intid_eq_zero",
-          "line": 1102,
+          "line": 1135,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "rescheduleSgi_lowest_intid",
-          "line": 1109,
+          "line": 1142,
           "called": [
             "SgiKind"
           ]
@@ -166981,7 +167568,7 @@
         {
           "kind": "def",
           "name": "sgiDeliveryLatencyBound",
-          "line": 1121,
+          "line": 1154,
           "called": [
             "filter",
             "length"
@@ -166990,7 +167577,7 @@
         {
           "kind": "theorem",
           "name": "sgiDeliveryLatencyBound_eq_zero",
-          "line": 1126,
+          "line": 1159,
           "called": [
             "sgiDeliveryLatencyBound"
           ]
@@ -166998,7 +167585,7 @@
         {
           "kind": "theorem",
           "name": "sgiDeliveryLatencyBound_counts_higher_priority_kernel_sgis",
-          "line": 1147,
+          "line": 1180,
           "called": [
             "filter",
             "length",
@@ -167008,7 +167595,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_ok_of_tcb",
-          "line": 1159,
+          "line": 1192,
           "called": [
             "CoreId",
             "SystemState",
@@ -167022,7 +167609,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_error_of_no_tcb",
-          "line": 1167,
+          "line": 1200,
           "called": [
             "CoreId",
             "SystemState",
@@ -167036,7 +167623,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_sets_affinity",
-          "line": 1175,
+          "line": 1208,
           "called": [
             "CoreId",
             "RHTable_get",
@@ -167054,7 +167641,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_preserves_objects_invExt",
-          "line": 1188,
+          "line": 1221,
           "called": [
             "CoreId",
             "RHTable_insert_preserves_invExt",
@@ -167070,7 +167657,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_preserves_scheduler",
-          "line": 1204,
+          "line": 1237,
           "called": [
             "CoreId",
             "SystemState",
@@ -167084,7 +167671,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_getTcb",
-          "line": 1219,
+          "line": 1252,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -167104,7 +167691,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_affects_determineTargetCore",
-          "line": 1241,
+          "line": 1274,
           "called": [
             "CoreId",
             "SystemState",
@@ -167122,7 +167709,7 @@
         {
           "kind": "def",
           "name": "handleRescheduleSgiOnCoreSucceeds",
-          "line": 1258,
+          "line": 1291,
           "called": [
             "CoreId",
             "SystemState",
@@ -167132,8 +167719,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1261>",
-          "line": 1261,
+          "name": "<anonymous:instance:1294>",
+          "line": 1294,
           "called": [
             "CoreId",
             "SystemState",
@@ -167145,7 +167732,7 @@
         {
           "kind": "def",
           "name": "setThreadCpuAffinitySucceeds",
-          "line": 1269,
+          "line": 1302,
           "called": [
             "CoreId",
             "SystemState",
@@ -167156,8 +167743,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1273>",
-          "line": 1273,
+          "name": "<anonymous:instance:1306>",
+          "line": 1306,
           "called": [
             "CoreId",
             "SystemState",
@@ -167170,7 +167757,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_getTcb",
-          "line": 1306,
+          "line": 1339,
           "called": [
             "CoreId",
             "SystemState",
@@ -167188,7 +167775,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_currentThreadValidOnCore",
-          "line": 1330,
+          "line": 1363,
           "called": [
             "CoreId",
             "SystemState",
@@ -167206,7 +167793,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_ne",
-          "line": 1347,
+          "line": 1380,
           "called": [
             "CoreId",
             "SystemState",
@@ -167223,7 +167810,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self",
-          "line": 1372,
+          "line": 1405,
           "called": [
             "CoreId",
             "SystemState",
@@ -167246,7 +167833,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_runnableThreadIpcReady",
-          "line": 1444,
+          "line": 1477,
           "called": [
             "CoreId",
             "SystemState",
@@ -167272,7 +167859,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_blockedNotRunnable_aux",
-          "line": 1493,
+          "line": 1526,
           "called": [
             "CoreId",
             "SystemState",
@@ -167298,7 +167885,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_blockedOnSendNotRunnable",
-          "line": 1536,
+          "line": 1569,
           "called": [
             "CoreId",
             "SystemState",
@@ -167313,7 +167900,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_blockedOnReceiveNotRunnable",
-          "line": 1548,
+          "line": 1581,
           "called": [
             "CoreId",
             "SystemState",
@@ -167328,7 +167915,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_blockedOnCallNotRunnable",
-          "line": 1560,
+          "line": 1593,
           "called": [
             "CoreId",
             "SystemState",
@@ -167343,7 +167930,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_blockedOnReplyNotRunnable",
-          "line": 1573,
+          "line": 1606,
           "called": [
             "CoreId",
             "SystemState",
@@ -167358,7 +167945,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_blockedOnNotificationNotRunnable",
-          "line": 1585,
+          "line": 1618,
           "called": [
             "CoreId",
             "SystemState",
@@ -167373,7 +167960,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_ipcSchedulerContract",
-          "line": 1604,
+          "line": 1637,
           "called": [
             "CoreId",
             "SystemState",
@@ -167393,7 +167980,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_preserves_currentThreadValidOnCore",
-          "line": 1627,
+          "line": 1660,
           "called": [
             "CoreId",
             "SystemState",
@@ -167410,7 +167997,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_preserves_ipcSchedulerContract",
-          "line": 1639,
+          "line": 1672,
           "called": [
             "CoreId",
             "SystemState",
@@ -167427,7 +168014,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_preserves_queueCurrentConsistentOnCore",
-          "line": 1657,
+          "line": 1690,
           "called": [
             "CoreId",
             "SystemState",
@@ -167445,7 +168032,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_runQueueUniqueOnCore",
-          "line": 1673,
+          "line": 1706,
           "called": [
             "CoreId",
             "SystemState",
@@ -167466,7 +168053,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_preserves_runQueueUniqueOnCore",
-          "line": 1691,
+          "line": 1724,
           "called": [
             "CoreId",
             "SystemState",
@@ -167482,7 +168069,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore_anyCore",
-          "line": 1703,
+          "line": 1736,
           "called": [
             "CoreId",
             "SystemState",
@@ -167507,7 +168094,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 1730,
+          "line": 1763,
           "called": [
             "CoreId",
             "SystemState",
@@ -167524,13 +168111,13 @@
         {
           "kind": "namespace",
           "name": "Concurrency",
-          "line": 1767,
+          "line": 1800,
           "called": []
         },
         {
           "kind": "def",
           "name": "wakeReleaseEvent",
-          "line": 1774,
+          "line": 1807,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -167540,7 +168127,7 @@
         {
           "kind": "def",
           "name": "wakeAcquireEvent",
-          "line": 1783,
+          "line": 1816,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -167550,7 +168137,7 @@
         {
           "kind": "def",
           "name": "wakeOrderingTrace",
-          "line": 1789,
+          "line": 1822,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -167563,7 +168150,7 @@
         {
           "kind": "theorem",
           "name": "wakeReleaseEvent_ne_acquireEvent",
-          "line": 1797,
+          "line": 1830,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -167574,7 +168161,7 @@
         {
           "kind": "theorem",
           "name": "wakeOrderingTrace_wellFormed",
-          "line": 1809,
+          "line": 1842,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -167592,7 +168179,7 @@
         {
           "kind": "theorem",
           "name": "wakeOrdering_synchronizesWith",
-          "line": 1836,
+          "line": 1869,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -167610,7 +168197,7 @@
         {
           "kind": "theorem",
           "name": "wakeOrdering_happensBefore",
-          "line": 1867,
+          "line": 1900,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -204398,6 +204985,7 @@
             "rootSlot",
             "runQueueOnCore",
             "siblingSlot",
+            "stLifecycle",
             "testLabelingContext"
           ]
         },
@@ -217543,6 +218131,7 @@
             "ofNat",
             "ofObjId",
             "replyId",
+            "stDangling",
             "withObject"
           ]
         },
@@ -230004,12 +230593,12 @@
     {
       "module": "tests.SmpCbsSuite",
       "path": "tests/SmpCbsSuite.lean",
-      "declaration_count": 37,
+      "declaration_count": 59,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SmpCbs",
-          "line": 38,
+          "line": 46,
           "called": [
             "applyRefill_preserves_le_budget",
             "consumeBudget_preserves_le_budget",
@@ -230090,8 +230679,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:152>",
-          "line": 152,
+          "name": "<anonymous:example:160>",
+          "line": 160,
           "called": [
             "CoreId",
             "affinityMigrationOrdering_happensBefore",
@@ -230125,8 +230714,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:200>",
-          "line": 200,
+          "name": "<anonymous:example:208>",
+          "line": 208,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -230140,8 +230729,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:206>",
-          "line": 206,
+          "name": "<anonymous:example:214>",
+          "line": 214,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -230155,8 +230744,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:212>",
-          "line": 212,
+          "name": "<anonymous:example:220>",
+          "line": 220,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -230172,8 +230761,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:220>",
-          "line": 220,
+          "name": "<anonymous:example:228>",
+          "line": 228,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -230188,8 +230777,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:226>",
-          "line": 226,
+          "name": "<anonymous:example:234>",
+          "line": 234,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -230204,8 +230793,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:233>",
-          "line": 233,
+          "name": "<anonymous:example:241>",
+          "line": 241,
           "called": [
             "CoreId",
             "SchedContext",
@@ -230227,8 +230816,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:250>",
-          "line": 250,
+          "name": "<anonymous:example:258>",
+          "line": 258,
           "called": [
             "CoreId",
             "SchedContext",
@@ -230251,8 +230840,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:265>",
-          "line": 265,
+          "name": "<anonymous:example:273>",
+          "line": 273,
           "called": [
             "CoreId",
             "SchedContext",
@@ -230274,8 +230863,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:280>",
-          "line": 280,
+          "name": "<anonymous:example:288>",
+          "line": 288,
           "called": [
             "CoreId",
             "SystemState",
@@ -230289,8 +230878,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:286>",
-          "line": 286,
+          "name": "<anonymous:example:294>",
+          "line": 294,
           "called": [
             "CoreId",
             "SystemState",
@@ -230304,8 +230893,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:294>",
-          "line": 294,
+          "name": "<anonymous:example:302>",
+          "line": 302,
           "called": [
             "CoreId",
             "SgiKind",
@@ -230320,8 +230909,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:302>",
-          "line": 302,
+          "name": "<anonymous:example:310>",
+          "line": 310,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -230337,8 +230926,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:310>",
-          "line": 310,
+          "name": "<anonymous:example:318>",
+          "line": 318,
           "called": [
             "SchedContext",
             "applyRefill",
@@ -230348,7 +230937,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 318,
+          "line": 326,
           "called": [
             "CoreId"
           ]
@@ -230356,7 +230945,7 @@
         {
           "kind": "def",
           "name": "scId0",
-          "line": 319,
+          "line": 327,
           "called": [
             "SchedContextId",
             "ofNat"
@@ -230365,7 +230954,7 @@
         {
           "kind": "def",
           "name": "tid0",
-          "line": 320,
+          "line": 328,
           "called": [
             "ThreadId",
             "ofNat"
@@ -230374,7 +230963,7 @@
         {
           "kind": "def",
           "name": "sc0",
-          "line": 323,
+          "line": 331,
           "called": [
             "SchedContext",
             "scId",
@@ -230385,7 +230974,7 @@
         {
           "kind": "def",
           "name": "tcb0",
-          "line": 329,
+          "line": 337,
           "called": [
             "TCB",
             "core1",
@@ -230397,7 +230986,7 @@
         {
           "kind": "def",
           "name": "stCbs",
-          "line": 337,
+          "line": 345,
           "called": [
             "SystemState",
             "build",
@@ -230414,7 +231003,7 @@
         {
           "kind": "def",
           "name": "sizeConsistentB",
-          "line": 344,
+          "line": 352,
           "called": [
             "ReplenishQueue",
             "length",
@@ -230424,7 +231013,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 346,
+          "line": 354,
           "called": [
             "throw"
           ]
@@ -230432,7 +231021,7 @@
         {
           "kind": "def",
           "name": "runReplenishScenarios",
-          "line": 354,
+          "line": 362,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -230450,7 +231039,7 @@
         {
           "kind": "def",
           "name": "runMigrationScenarios",
-          "line": 371,
+          "line": 379,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -230468,7 +231057,7 @@
         {
           "kind": "def",
           "name": "runCompositeScenarios",
-          "line": 396,
+          "line": 404,
           "called": [
             "SystemState",
             "affinityUnbindMarker",
@@ -230499,7 +231088,7 @@
         {
           "kind": "def",
           "name": "runBudgetScenarios",
-          "line": 458,
+          "line": 466,
           "called": [
             "applyRefill",
             "assertBool",
@@ -230513,7 +231102,7 @@
         {
           "kind": "def",
           "name": "runAffinityScenarios",
-          "line": 476,
+          "line": 484,
           "called": [
             "SystemState",
             "all",
@@ -230532,7 +231121,7 @@
         {
           "kind": "def",
           "name": "runRunQueueMigrationScenarios",
-          "line": 489,
+          "line": 497,
           "called": [
             "SystemState",
             "assertBool",
@@ -230556,7 +231145,7 @@
         {
           "kind": "def",
           "name": "runLiveTickScenarios",
-          "line": 539,
+          "line": 547,
           "called": [
             "SchedContext",
             "SystemState",
@@ -230579,7 +231168,7 @@
         {
           "kind": "def",
           "name": "runInventoryChecks",
-          "line": 570,
+          "line": 578,
           "called": [
             "assertBool",
             "filter",
@@ -230589,7 +231178,7 @@
         {
           "kind": "def",
           "name": "runSm5hCompletionScenarios",
-          "line": 600,
+          "line": 608,
           "called": [
             "SystemState",
             "assertBool",
@@ -230610,7 +231199,7 @@
         {
           "kind": "section",
           "name": "Sm5iAffinityAnchors",
-          "line": 631,
+          "line": 639,
           "called": [
             "affinityConsistent_transfer",
             "determineTargetCore_insert_tcb",
@@ -230625,8 +231214,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:644>",
-          "line": 644,
+          "name": "<anonymous:example:652>",
+          "line": 652,
           "called": [
             "CoreId",
             "SystemState",
@@ -230638,25 +231227,335 @@
         {
           "kind": "def",
           "name": "runSm5iTickCbsChecks",
-          "line": 654,
+          "line": 662,
           "called": [
             "all",
             "assertBool",
             "bootCoreId",
             "build",
+            "default_replenishQueueEntriesBound_smp",
+            "handleRescheduleSgiOnCore_boundThread",
+            "handleRescheduleSgiOnCore_determineTargetCore",
             "length",
+            "migrateSchedContextReplenishment_preserves_replenishQueueEntriesBound_smp",
+            "priorityRescheduleOnCore_state_cases",
+            "purgeReplenishmentFromAllCores_objects",
+            "purgeReplenishmentFromAllCores_preserves_replenishQueueEntriesBound_smp",
+            "purgeReplenishmentFromAllCores_replenishQueueOnCore",
+            "purgeReplenishmentOnCore_preserves_replenishQueueEntriesBoundOnCore",
+            "replenishOnCore_preserves_replenishQueueEntriesBoundOnCore",
+            "replenishQueueAffinityConsistentOnCore_transfer",
+            "replenishQueueEntriesBoundOnCore",
+            "replenishQueueEntriesBoundOnCore_transfer",
+            "replenishQueueEntriesBound_smp",
             "replenishQueueOnCore",
+            "schedContextBind_preserves_objects_invExt",
+            "schedContextBind_preserves_replenishQueueAffinityConsistent_smp",
+            "schedContextBind_preserves_replenishQueueEntriesBound_smp",
+            "schedContextUnbindOnCore_preserves_replenishQueueAffinityConsistent_smp",
+            "schedContextUnbindOnCore_preserves_replenishQueueEntriesBound_smp",
+            "schedContextUnbind_preserves_objects_invExt",
+            "schedContextUnbind_preserves_replenishQueueAffinityConsistent_smp",
+            "schedContextUnbind_preserves_replenishQueueEntriesBound_smp",
             "size",
             "st",
             "timerTickOnCore"
           ]
         },
         {
+          "kind": "example",
+          "name": "<anonymous:example:710>",
+          "line": 710,
+          "called": [
+            "SystemState",
+            "ValidObjId",
+            "ValidThreadId",
+            "invExt",
+            "replenishQueueAffinityConsistent_smp",
+            "replenishQueueEntriesBound_smp",
+            "schedContextBind",
+            "schedContextBind_preserves_replenishQueueAffinityConsistent_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:719>",
+          "line": 719,
+          "called": [
+            "SystemState",
+            "ValidObjId",
+            "ValidThreadId",
+            "invExt",
+            "replenishQueueEntriesBound_smp",
+            "schedContextBind",
+            "schedContextBind_preserves_replenishQueueEntriesBound_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:727>",
+          "line": 727,
+          "called": [
+            "SystemState",
+            "ValidObjId",
+            "invExt",
+            "replenishQueueAffinityConsistent_smp",
+            "schedContextUnbind",
+            "schedContextUnbind_preserves_replenishQueueAffinityConsistent_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:734>",
+          "line": 734,
+          "called": [
+            "SystemState",
+            "ValidObjId",
+            "invExt",
+            "replenishQueueAffinityConsistent_smp",
+            "replenishQueueEntriesBound_smp",
+            "schedContextUnbind",
+            "schedContextUnbind_preserves_replenishQueueEntriesBound_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:743>",
+          "line": 743,
+          "called": [
+            "CoreId",
+            "SgiKind",
+            "SystemState",
+            "ValidObjId",
+            "invExt",
+            "replenishQueueAffinityConsistent_smp",
+            "schedContextUnbindOnCore",
+            "schedContextUnbindOnCore_preserves_replenishQueueAffinityConsistent_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:752>",
+          "line": 752,
+          "called": [
+            "CoreId",
+            "SgiKind",
+            "SystemState",
+            "ValidObjId",
+            "invExt",
+            "replenishQueueAffinityConsistent_smp",
+            "replenishQueueEntriesBound_smp",
+            "schedContextUnbindOnCore",
+            "schedContextUnbindOnCore_preserves_replenishQueueEntriesBound_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:764>",
+          "line": 764,
+          "called": [
+            "SystemState",
+            "default",
+            "default_replenishQueueEntriesBound_smp",
+            "replenishQueueEntriesBound_smp"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "scIdLifecycle",
+          "line": 772,
+          "called": [
+            "SchedContextId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tidLifecycle",
+          "line": 773,
+          "called": [
+            "ThreadId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "scLifecycle",
+          "line": 777,
+          "called": [
+            "SchedContext",
+            "none",
+            "scId",
+            "scIdLifecycle"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tcbLifecycle",
+          "line": 783,
+          "called": [
+            "TCB",
+            "core1",
+            "ofNat",
+            "tidLifecycle"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stLifecycle",
+          "line": 790,
+          "called": [
+            "SystemState",
+            "build",
+            "core1",
+            "insert",
+            "sc0",
+            "scId0",
+            "scLifecycle",
+            "setReplenishQueueOnCore",
+            "tcb0",
+            "tcbLifecycle",
+            "toObjId",
+            "withObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "scIdLifecycleValid",
+          "line": 798,
+          "called": [
+            "ValidObjId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tidLifecycleValid",
+          "line": 799,
+          "called": [
+            "ValidThreadId",
+            "tidLifecycle"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "scId0Valid",
+          "line": 800,
+          "called": [
+            "ValidObjId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "core2",
+          "line": 802,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tidDangling",
+          "line": 811,
+          "called": [
+            "ThreadId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "scIdDangling",
+          "line": 812,
+          "called": [
+            "SchedContextId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "scDangling",
+          "line": 813,
+          "called": [
+            "SchedContext",
+            "scId",
+            "scIdDangling",
+            "tidDangling"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stDangling",
+          "line": 817,
+          "called": [
+            "SystemState",
+            "build",
+            "core1",
+            "core2",
+            "insert",
+            "scDangling",
+            "scIdDangling",
+            "setReplenishQueueOnCore",
+            "toObjId",
+            "withObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "scIdDanglingValid",
+          "line": 824,
+          "called": [
+            "ValidObjId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runBindingLifecycleScenarios",
+          "line": 832,
+          "called": [
+            "ThreadId",
+            "all",
+            "assertBool",
+            "bootCoreId",
+            "contains",
+            "core1",
+            "core2",
+            "getSchedContext",
+            "getTcb",
+            "isEmpty",
+            "none",
+            "replenishOnCore",
+            "replenishQueueOnCore",
+            "scId0",
+            "scId0Valid",
+            "scIdDangling",
+            "scIdDanglingValid",
+            "scIdLifecycle",
+            "scIdLifecycleValid",
+            "schedContextBind",
+            "schedContextUnbind",
+            "schedContextUnbindOnCore",
+            "stCbs",
+            "stDangling",
+            "stLifecycle",
+            "tidLifecycle",
+            "tidLifecycleValid"
+          ]
+        },
+        {
           "kind": "def",
           "name": "main",
-          "line": 668,
+          "line": 902,
           "called": [
             "runAffinityScenarios",
+            "runBindingLifecycleScenarios",
             "runBudgetScenarios",
             "runCompositeScenarios",
             "runInventoryChecks",
@@ -230671,7 +231570,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 684,
+          "line": 919,
           "called": []
         }
       ]

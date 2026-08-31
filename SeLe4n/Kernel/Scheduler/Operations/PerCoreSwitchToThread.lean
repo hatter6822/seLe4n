@@ -1243,4 +1243,181 @@ theorem switchToThreadOnCore_machine_timer (st : SystemState) (c : CoreId)
       simp [preemptCurrentOnCore_machine]
     · rw [if_neg hAff] at h; simp at h
 
+-- ============================================================================
+-- WS-RR (bind/unbind affinity closure) — home-core / boundThread frames
+-- ============================================================================
+--
+-- Moved here from the staged `PerCoreTickCbsAffinity.lean`: the four
+-- object-insert atoms and the `preemptCurrentOnCore` / `switchToThreadOnCore`
+-- `determineTargetCore` / `boundThread` congruences.  Nothing in them reads a
+-- staged surface, and the production `SchedContext/BindingAffinity.lean`
+-- theorems (the live `.schedContextBind` / `.schedContextUnbind` arms'
+-- affinity preservation) compose the SGI-handler arm out of exactly these.
+
+/-- WS-SM SM5.I (atom): inserting a `.tcb t'` at a slot already holding a `.tcb t0`
+with the same `cpuAffinity` preserves every thread's home core
+(`determineTargetCore` reads only `cpuAffinity`). -/
+theorem determineTargetCore_insert_tcb (st result : SystemState) (tid0 : SeLe4n.ThreadId)
+    (t0 t' : TCB) (hInv : st.objects.invExt)
+    (hOld : st.objects.get? tid0.toObjId = some (.tcb t0))
+    (hAff : t'.cpuAffinity = t0.cpuAffinity)
+    (hObj : result.objects = st.objects.insert tid0.toObjId (.tcb t')) (tid : SeLe4n.ThreadId) :
+    determineTargetCore result tid = determineTargetCore st tid := by
+  unfold determineTargetCore SystemState.getTcb?
+  rw [hObj]
+  simp only [RHTable_getElem?_eq_get?]
+  rw [RHTable_getElem?_insert st.objects tid0.toObjId (.tcb t') hInv tid.toObjId]
+  by_cases hk : tid0.toObjId == tid.toObjId
+  · simp only [hk, if_pos]
+    have hkey : st.objects.get? tid.toObjId = some (.tcb t0) := by
+      have : tid.toObjId = tid0.toObjId := (eq_of_beq hk).symm
+      rw [this]; exact hOld
+    rw [hkey, hAff]
+  · simp only [hk, if_neg, Bool.not_eq_true]
+
+/-- WS-SM SM5.I (atom): inserting a `.tcb t'` at a slot already holding a `.tcb t0`
+leaves every `getSchedContext?` lookup unchanged (a TCB slot is never a SchedContext
+slot — the on-key case is `none = none`). -/
+theorem getSchedContext?_insert_tcb_eq (st result : SystemState) (tid0 : SeLe4n.ThreadId)
+    (t0 t' : TCB) (hInv : st.objects.invExt)
+    (hOld : st.objects.get? tid0.toObjId = some (.tcb t0))
+    (hObj : result.objects = st.objects.insert tid0.toObjId (.tcb t')) (scId : SeLe4n.SchedContextId) :
+    result.getSchedContext? scId = st.getSchedContext? scId := by
+  unfold SystemState.getSchedContext?
+  rw [hObj]
+  simp only [RHTable_getElem?_eq_get?]
+  rw [RHTable_getElem?_insert st.objects tid0.toObjId (.tcb t') hInv scId.toObjId]
+  by_cases hk : tid0.toObjId == scId.toObjId
+  · simp only [hk, if_pos]
+    have hkey : st.objects.get? scId.toObjId = some (.tcb t0) := by
+      have : scId.toObjId = tid0.toObjId := (eq_of_beq hk).symm
+      rw [this]; exact hOld
+    rw [hkey]
+  · simp only [hk, if_neg, Bool.not_eq_true]
+
+/-- WS-SM SM5.I (atom): inserting a `.schedContext sc'` at a slot already holding a
+`.schedContext sc0` leaves every `getTcb?` lookup unchanged (a SchedContext slot is
+never a TCB slot — the on-key case is `none = none`). -/
+theorem getTcb?_insert_schedContext_eq (st result : SystemState) (scId0 : SeLe4n.SchedContextId)
+    (sc0 sc' : SchedContext) (hInv : st.objects.invExt)
+    (hOld : st.objects.get? scId0.toObjId = some (.schedContext sc0))
+    (hObj : result.objects = st.objects.insert scId0.toObjId (.schedContext sc')) (tid : SeLe4n.ThreadId) :
+    result.getTcb? tid = st.getTcb? tid := by
+  unfold SystemState.getTcb?
+  rw [hObj]
+  simp only [RHTable_getElem?_eq_get?]
+  rw [RHTable_getElem?_insert st.objects scId0.toObjId (.schedContext sc') hInv tid.toObjId]
+  by_cases hk : scId0.toObjId == tid.toObjId
+  · simp only [hk, if_pos]
+    have hkey : st.objects.get? tid.toObjId = some (.schedContext sc0) := by
+      have : tid.toObjId = scId0.toObjId := (eq_of_beq hk).symm
+      rw [this]; exact hOld
+    rw [hkey]
+  · simp only [hk, if_neg, Bool.not_eq_true]
+
+/-- WS-SM SM5.I (atom): inserting a `.schedContext sc'` (with `boundThread` equal to
+the displaced `sc0.boundThread`) at a slot already holding a `.schedContext sc0`
+preserves every SchedContext's `boundThread` projection. -/
+theorem getSchedContext?_boundThread_insert_schedContext (st result : SystemState)
+    (scId0 : SeLe4n.SchedContextId) (sc0 sc' : SchedContext) (hInv : st.objects.invExt)
+    (hOld : st.objects.get? scId0.toObjId = some (.schedContext sc0))
+    (hBT : sc'.boundThread = sc0.boundThread)
+    (hObj : result.objects = st.objects.insert scId0.toObjId (.schedContext sc'))
+    (scId : SeLe4n.SchedContextId) :
+    (result.getSchedContext? scId).map (·.boundThread)
+      = (st.getSchedContext? scId).map (·.boundThread) := by
+  unfold SystemState.getSchedContext?
+  rw [hObj]
+  simp only [RHTable_getElem?_eq_get?]
+  rw [RHTable_getElem?_insert st.objects scId0.toObjId (.schedContext sc') hInv scId.toObjId]
+  by_cases hk : scId0.toObjId == scId.toObjId
+  · simp only [hk, if_pos]
+    have hkey : st.objects.get? scId.toObjId = some (.schedContext sc0) := by
+      have : scId.toObjId = scId0.toObjId := (eq_of_beq hk).symm
+      rw [this]; exact hOld
+    rw [hkey]; simp only [Option.map_some]; rw [hBT]
+  · simp only [hk, if_neg, Bool.not_eq_true]
+
+-- ── PR #880 round 7: the local replenish-wake reschedule arm's affinity frames
+--    (`preemptCurrentOnCore` writes the same register-context TCB shape as
+--    `saveOutgoingContextOnCore`, so the same insert helpers discharge them) ──
+
+/-- WS-SM (PR #880 round 7): `preemptCurrentOnCore` (a register-context TCB
+write) preserves every thread's home core. -/
+theorem preemptCurrentOnCore_determineTargetCore (st : SystemState) (c : CoreId)
+    (incoming : SeLe4n.ThreadId) (hInv : st.objects.invExt) (t : SeLe4n.ThreadId) :
+    determineTargetCore (preemptCurrentOnCore st c incoming) t = determineTargetCore st t := by
+  cases hCur : st.scheduler.currentOnCore c with
+  | none => rw [show preemptCurrentOnCore st c incoming = st from by
+      simp only [preemptCurrentOnCore, hCur]]
+  | some prevTid =>
+    cases hEqb : prevTid == incoming with
+    | true => rw [show preemptCurrentOnCore st c incoming = st from by
+        simp only [preemptCurrentOnCore, hCur, hEqb, if_true]]
+    | false =>
+      cases hPrev : st.getTcb? prevTid with
+      | none => rw [show preemptCurrentOnCore st c incoming = st from by
+          simp only [preemptCurrentOnCore, hCur, hEqb, hPrev, Bool.false_eq_true, if_false]]
+      | some prevTcb =>
+        have hRaw := (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrev
+        have hObj : (preemptCurrentOnCore st c incoming).objects
+            = st.objects.insert prevTid.toObjId
+                (.tcb { prevTcb with registerContext := st.machine.regsOnCore c }) := by
+          simp only [preemptCurrentOnCore, hCur, hEqb, hPrev, Bool.false_eq_true, if_false]
+        exact determineTargetCore_insert_tcb st _ prevTid prevTcb
+          { prevTcb with registerContext := st.machine.regsOnCore c } hInv hRaw rfl hObj t
+
+/-- WS-SM (PR #880 round 7): `preemptCurrentOnCore` preserves every
+SchedContext's `boundThread` projection. -/
+theorem preemptCurrentOnCore_boundThread (st : SystemState) (c : CoreId)
+    (incoming : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
+    ((preemptCurrentOnCore st c incoming).getSchedContext? scId).map (·.boundThread)
+      = (st.getSchedContext? scId).map (·.boundThread) := by
+  cases hCur : st.scheduler.currentOnCore c with
+  | none => rw [show preemptCurrentOnCore st c incoming = st from by
+      simp only [preemptCurrentOnCore, hCur]]
+  | some prevTid =>
+    cases hEqb : prevTid == incoming with
+    | true => rw [show preemptCurrentOnCore st c incoming = st from by
+        simp only [preemptCurrentOnCore, hCur, hEqb, if_true]]
+    | false =>
+      cases hPrev : st.getTcb? prevTid with
+      | none => rw [show preemptCurrentOnCore st c incoming = st from by
+          simp only [preemptCurrentOnCore, hCur, hEqb, hPrev, Bool.false_eq_true, if_false]]
+      | some prevTcb =>
+        have hRaw := (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrev
+        have hObj : (preemptCurrentOnCore st c incoming).objects
+            = st.objects.insert prevTid.toObjId
+                (.tcb { prevTcb with registerContext := st.machine.regsOnCore c }) := by
+          simp only [preemptCurrentOnCore, hCur, hEqb, hPrev, Bool.false_eq_true, if_false]
+        rw [getSchedContext?_insert_tcb_eq st _ prevTid prevTcb
+          { prevTcb with registerContext := st.machine.regsOnCore c } hInv hRaw hObj scId]
+
+/-- WS-SM (PR #880 round 7): a successful switch preserves every thread's home
+core (its entire object footprint is the preempt's). -/
+theorem switchToThreadOnCore_determineTargetCore (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : switchToThreadOnCore st c tid = .ok st') (t : SeLe4n.ThreadId) :
+    determineTargetCore st' t = determineTargetCore st t := by
+  have hobj := switchToThreadOnCore_objects_eq_preempt st c tid st' hStep
+  have hgt : st'.getTcb? t = (preemptCurrentOnCore st c tid).getTcb? t := by
+    unfold SystemState.getTcb?; rw [hobj]
+  rw [show determineTargetCore st' t
+        = determineTargetCore (preemptCurrentOnCore st c tid) t from by
+      unfold determineTargetCore; rw [hgt]]
+  exact preemptCurrentOnCore_determineTargetCore st c tid hInv t
+
+/-- WS-SM (PR #880 round 7): a successful switch preserves every SchedContext's
+`boundThread` projection. -/
+theorem switchToThreadOnCore_boundThread (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : switchToThreadOnCore st c tid = .ok st') (scId : SeLe4n.SchedContextId) :
+    (st'.getSchedContext? scId).map (·.boundThread)
+      = (st.getSchedContext? scId).map (·.boundThread) := by
+  have hobj := switchToThreadOnCore_objects_eq_preempt st c tid st' hStep
+  have hgs : st'.getSchedContext? scId = (preemptCurrentOnCore st c tid).getSchedContext? scId := by
+    unfold SystemState.getSchedContext?; rw [hobj]
+  rw [hgs]
+  exact preemptCurrentOnCore_boundThread st c tid hInv scId
+
 end SeLe4n.Kernel

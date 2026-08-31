@@ -261,8 +261,68 @@ chain's); `notificationSignalBoundOnCore`'s bundle is SM6.D's registered
 bound-delivery debt.  The audit's derivation sweep over every `boundThread`
 writer also surfaced that `schedContextBind`/`schedContextUnbind` carry no
 affinity-preservation theorems — sound today only by an unproven operational
-discipline (an unbound SchedContext holds no replenish entries) — registered
-in the debt register's table C rather than left as tribal knowledge.
+discipline (an unbound SchedContext holds no replenish entries).  That gap was
+first registered in the debt register's table C, then closed in this same PR —
+the section below.
+
+### The bind/unbind affinity closure — the discipline becomes an invariant
+
+The registered gap: `replenishQueueAffinityConsistent_smp` (SM5.H) obliges
+every replenish-queue entry whose SchedContext is *bound* to sit on the bound
+thread's home core, and is deliberately vacuous for unbound SchedContexts — so
+`schedContextBind`, flipping unbound to bound, is the one transition that can
+falsify it **without touching a queue**, unless no entry for the freshly-bound
+SchedContext exists.  The tree maintained that fact operationally and stated
+it nowhere.
+
+`SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (production, anchored from
+`SeLe4n.lean`) now states it as the **orphan-freedom invariant**
+`replenishQueueEntriesBound_smp` — every entry in every core's replenish queue
+names a SchedContext that exists and is bound — established at boot, preserved
+by the queue primitives (both purges unconditionally, the migration
+unconditionally, `replenishOnCore` given the scheduled SchedContext is bound:
+the same obligation its affinity theorem already carries), and preserved
+through the whole binding lifecycle.  On that footing the registered theorems
+exist, with the affinity ↔ orphan-freedom mutual dependence as the proofs'
+load-bearing shape:
+
+* `schedContextBind_preserves_replenishQueueAffinityConsistent_smp` — needs
+  pre-state orphan-freedom: the bind guard read the SchedContext unbound, so
+  orphan-freedom forbids any queue entry naming it, which is exactly the entry
+  class whose obligation the bind creates.
+* `schedContextUnbind_preserves_replenishQueueEntriesBound_smp` — needs
+  pre-state *affinity*: the purge targets the bound thread's home core, and
+  affinity is what proves the SchedContext's entries all sat there (the
+  dead-TCB sweep arm needs nothing — it purges every core).
+* `schedContextUnbind_preserves_replenishQueueAffinityConsistent_smp` — needs
+  neither: entries for the unbound SchedContext become vacuous wherever they
+  survive, and every other entry's readings are framed.
+* `schedContextBind_preserves_replenishQueueEntriesBound_smp`, the two
+  `schedContextUnbindOnCore_preserves_*` theorems covering the live
+  `.schedContextUnbind` dispatch arm (the wrapper's scheduling point reduces
+  by the new `priorityRescheduleOnCore_state_cases` to "state unchanged" or
+  "the `.reschedule` receiver ran", and the receiver's new
+  `handleRescheduleSgiOnCore_determineTargetCore` / `_boundThread` frames —
+  composed from the register-save insert atoms, moved from the staged
+  `PerCoreTickCbsAffinity.lean` to the production
+  `PerCoreSwitchToThread.lean` — carry both invariants across it), and both
+  `_preserves_objects_invExt` carriers.
+
+Both transitions are consumed through private characterisations
+(`schedContextBind_ok_char` / `schedContextUnbind_ok_char`) that erase the
+scheduler writes the invariants never read, so the preservation proofs see
+exactly the double object insert and the per-core queue reading.
+`ReplenishAffinity.lean` gains the `.map (·.boundThread)`-form
+`replenishQueueAffinityConsistentOnCore_transfer` beside its `_congr`/`_frame`
+siblings — the projection form is what a register-context save satisfies.
+`tests/SmpCbsSuite.lean` §4 anchors the surface, applies every headline
+theorem at elaboration time, and drives the lifecycle live: bind → replenish →
+unbind on a populated queue (the other SchedContext's entry survives, the
+bound one's is purged), the wrapper's no-running-core arm, and the dead-TCB
+sweep arm purging a deliberately mis-homed entry on a second core — 15
+runtime assertions.  The table-C row is retired; with the three donation
+paths (RR2.20) this closes the `boundThread`-writer family the audit's sweep
+derived.
 
 ## v0.34.41 — WS-RR RR1: the first aarch64 compile, and the gates that keep it
 

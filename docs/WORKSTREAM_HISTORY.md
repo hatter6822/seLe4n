@@ -7229,7 +7229,6 @@ constrains what v1.0.0 may claim, and RR8.4's hand-off check reads this table.
 | Idle TCBs carry `ObjId.sentinel` cspace/vspace roots | The idle thread never faults a user mapping; it becomes live work when RR5.10 installs idle threads on the production path, and RR5.10 must not close over it | RR5.10 must either give idle TCBs real roots or re-register this row |
 | SM9.D.11 — taint propagation at capability transfer shipped as a scope reduction, leaving `capabilityBadgeChannel_out_of_scope`: a registered false-negative channel in the causal detector | A false *negative* in a detector, not a policy bypass | post-v1.0.0; RR0.11 routes the plan-side row |
 | The SM8 class-C follow-on: the CC-1 capacity figure is stated in two places rather than single-sourced | Cosmetic duplication of a bound both sites agree on | post-v1.0.0 |
-| `schedContextBind` / `schedContextUnbind` carry no `replenishQueueAffinityConsistent` preservation theorems (the SM5.H family covers tick, schedule, replenish and — since RR2 — all three donation paths).  Found by the RR2 closure audit's derivation sweep over every `boundThread` writer | Soundness rests on an operational discipline the tree maintains but does not state as an invariant: an *unbound* SchedContext holds no replenish-queue entries (unbind purges on the bound thread's home core and sweeps when the TCB is gone; nothing enqueues for an unbound SC), and the affinity invariant is vacuous for unbound SCs — so bind-from-unbound cannot mis-home an entry unless an orphan already exists.  Proving it needs a "no orphan replenishments" auxiliary invariant established at every enqueue site — the same establish-everywhere shape as RR3's queue label-uniformity work, but owned by neither RR3 nor any live phase | post-v1.0.0 hardening; SM10's v1.0.0 claims over SM5.H must state the preservation family's measured coverage, not "all transitions" |
 | ARM CCA + MPAM hardware partition isolation | Targets a successor SoC; not RPi5 | [`docs/planning/HARDWARE_PARTITION_ISOLATION_PLAN.md`](planning/HARDWARE_PARTITION_ISOLATION_PLAN.md), unscheduled |
 | **R-ABI-L6** — cross-crate duplication of `MAX_METHOD_COUNT`, `MAX_PRIORITY`, `MAX_DOMAIN` and `MAX_SERVICE_MESSAGE_SIZE` between `sele4n-abi` (limits) and `sele4n-types` (identifiers + error enums) | Duplication, not divergence — the values agree and the ABI conformance tests compare them; the risk is that a future edit changes one copy | post-v1.0.0 hardening.  Recorded in [`docs/AUDIT_NOTES.md`](AUDIT_NOTES.md) §R-ABI-L6, which declared itself untracked and is the one v0.29.0 R-ABI item still open — L3, L4, L5, L7 and L8 record settled decisions, not deferrals.  Found during the RR0 review round (v0.34.31), not by the pre-SM10 audit |
 | The 32 in-source post-1.0 hardening candidates enumerated below | Each is a strengthening of a surface that is already correct; none is a soundness gap | post-v1.0.0 hardening, listed individually so none ages out with its comment |
@@ -7433,8 +7432,28 @@ priority-inheritance walk's are production now
 (`EndpointReplyDispatchInvariant.lean`, `DonationPreservation.lean` §8), and
 only the `.call` chain's remains staged on the genuinely staged
 `EndpointCallInvariant`.  The derivation sweep over every `boundThread` writer
-also surfaced the `schedContextBind`/`Unbind` affinity-proof gap, registered in
-table C of the debt register below.
+also surfaced the `schedContextBind`/`Unbind` affinity-proof gap — first
+registered in table C of the debt register below, then **closed in the same
+PR**: `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (production, anchored
+from `SeLe4n.lean`) states the load-bearing operational discipline as the
+orphan-freedom invariant `replenishQueueEntriesBound_smp` (every replenish
+entry names a live, *bound* SchedContext — boot-established, preserved by both
+purges, the migration and `replenishOnCore`), and proves the four registered
+preservation theorems plus the live dispatch arm's:
+`schedContextBind_preserves_replenishQueueAffinityConsistent_smp` (consuming
+orphan-freedom exactly where the discipline was load-bearing: the bind guard
+plus orphan-freedom forbid any entry for the SchedContext being bound),
+`schedContextUnbind_preserves_replenishQueueEntriesBound_smp` (consuming
+*affinity*: it is what homes every entry on the purged core — the mutual
+dependence is the proofs' shape), the orphan/affinity mirrors of each, both
+`schedContextUnbindOnCore_preserves_*` wrapper forms (via the new
+`priorityRescheduleOnCore_state_cases` seam decomposition and the
+`.reschedule` receiver's `handleRescheduleSgiOnCore_determineTargetCore` /
+`_boundThread` frames), and the `_preserves_objects_invExt` carriers.  With
+RR2.20's donation paths this closes the `boundThread`-writer family the sweep
+derived; the table-C row is retired.  `tests/SmpCbsSuite.lean` §4 carries the
+anchors, the elaboration-time applications and 15 runtime lifecycle
+assertions.
 
 *What RR2 did not close.* RR2.18's acceptance clause — "no cancellation theorem
 rests on an unproven teardown hypothesis" — is met on the two arms whose
