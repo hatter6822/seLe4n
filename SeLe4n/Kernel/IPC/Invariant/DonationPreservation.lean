@@ -810,6 +810,57 @@ theorem donationReadAgreement_of_schedContextStore
     · exact ⟨scNew, by rw [hEq, hAt]⟩
     · exact ⟨sc, by rw [hNe oid hEq]; exact h⟩
 
+/-- WS-RR RR2.5: the general TCB-field-update constructor — a state that rewrites
+one TCB, leaving every field the fifteen binding-free conjuncts read intact and
+every other object alone, agrees.
+
+Stated over the post-state *readings* rather than over `storeObject`, so a
+transition that writes through `RHTable.insert` directly (the PIP boost) or that
+frames by construction can instantiate it too. -/
+theorem donationReadAgreement_of_tcbFieldUpdate
+    (st st' : SystemState) (key : SeLe4n.ObjId) (oldTcb newTcb : TCB)
+    (hPre : st.objects[key]? = some (.tcb oldTcb))
+    (hAt : st'.objects[key]? = some (.tcb newTcb))
+    (hFrame : ∀ (oid : SeLe4n.ObjId), oid ≠ key → st'.objects[oid]? = st.objects[oid]?)
+    (hIpc : newTcb.ipcState = oldTcb.ipcState)
+    (hMsg : newTcb.pendingMessage = oldTcb.pendingMessage)
+    (hNext : newTcb.queueNext = oldTcb.queueNext)
+    (hPrev : newTcb.queuePrev = oldTcb.queuePrev)
+    (hPPrev : newTcb.queuePPrev = oldTcb.queuePPrev)
+    (hBudget : newTcb.timeoutBudget = oldTcb.timeoutBudget)
+    (hReply : newTcb.replyObject = oldTcb.replyObject)
+    (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply) :
+    donationReadAgreement st st' := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro oid tx hx
+    by_cases hEq : oid = key
+    · rw [hEq, hAt] at hx
+      obtain rfl : newTcb = tx := by
+        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hx
+      exact ⟨oldTcb, by rw [hEq]; exact hPre, hIpc, hMsg, hNext, hPrev, hPPrev, hBudget,
+        hReply, hStash⟩
+    · rw [hFrame oid hEq] at hx; exact ⟨tx, hx, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · intro oid ty hy
+    by_cases hEq : oid = key
+    · rw [hEq, hPre] at hy
+      obtain rfl : oldTcb = ty := by
+        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hy
+      exact ⟨newTcb, by rw [hEq]; exact hAt, hIpc, hMsg, hNext, hPrev, hPPrev, hBudget,
+        hReply, hStash⟩
+    · exact ⟨ty, by rw [hFrame oid hEq]; exact hy, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · intro oid k hk _
+    by_cases hEq : oid = key
+    · subst hEq
+      rw [hAt, hPre]
+      constructor
+      · intro h; exact absurd (Option.some.inj h).symm (hk newTcb)
+      · intro h; exact absurd (Option.some.inj h).symm (hk oldTcb)
+    · rw [hFrame oid hEq]
+  · intro oid sc h
+    by_cases hEq : oid = key
+    · rw [hEq, hPre] at h; cases h
+    · exact ⟨sc, by rw [hFrame oid hEq]; exact h⟩
+
 /-- WS-RR RR2.5: a `storeObject` replacing one TCB with another that differs
 **only** in `schedContextBinding` establishes the read agreement. -/
 theorem donationReadAgreement_of_tcbBindingStore
@@ -819,38 +870,11 @@ theorem donationReadAgreement_of_tcbBindingStore
     (hObjInv : st.objects.invExt)
     (hStore : storeObject tcbKey (.tcb { oldTcb with schedContextBinding := b }) st
       = .ok ((), st')) :
-    donationReadAgreement st st' := by
-  have hAt := storeObject_objects_eq st st' tcbKey _ hObjInv hStore
-  have hNe : ∀ (oid : SeLe4n.ObjId), oid ≠ tcbKey → st'.objects[oid]? = st.objects[oid]? :=
-    fun oid h => storeObject_objects_ne st st' tcbKey oid _ h hObjInv hStore
-  refine ⟨?_, ?_, ?_, ?_⟩
-  · intro oid tx hx
-    by_cases hEq : oid = tcbKey
-    · rw [hEq, hAt] at hx
-      obtain rfl : { oldTcb with schedContextBinding := b } = tx := by
-        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hx
-      exact ⟨oldTcb, by rw [hEq]; exact hPre, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-    · rw [hNe oid hEq] at hx; exact ⟨tx, hx, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-  · intro oid ty hy
-    by_cases hEq : oid = tcbKey
-    · rw [hEq, hPre] at hy
-      obtain rfl : oldTcb = ty := by
-        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hy
-      exact ⟨{ oldTcb with schedContextBinding := b }, by rw [hEq]; exact hAt,
-        rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-    · exact ⟨ty, by rw [hNe oid hEq]; exact hy, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-  · intro oid k hk _
-    by_cases hEq : oid = tcbKey
-    · subst hEq
-      rw [hAt, hPre]
-      constructor
-      · intro h; exact absurd (Option.some.inj h).symm (hk _)
-      · intro h; exact absurd (Option.some.inj h).symm (hk oldTcb)
-    · rw [hNe oid hEq]
-  · intro oid sc h
-    by_cases hEq : oid = tcbKey
-    · rw [hEq, hPre] at h; cases h
-    · exact ⟨sc, by rw [hNe oid hEq]; exact h⟩
+    donationReadAgreement st st' :=
+  donationReadAgreement_of_tcbFieldUpdate st st' tcbKey oldTcb _ hPre
+    (storeObject_objects_eq st st' tcbKey _ hObjInv hStore)
+    (fun oid h => storeObject_objects_ne st st' tcbKey oid _ h hObjInv hStore)
+    rfl rfl rfl rfl rfl rfl rfl rfl
 
 
 /-- WS-RR RR2.5: a state that shares an object store with one that agrees, agrees.
@@ -1009,6 +1033,123 @@ theorem ipcInvariantFull_of_donationReadAgreement
     · exact Or.inl (hISB ▸ h'')
     · exact Or.inr (hISB ▸ h'')
 
+
+/-- WS-RR RR2.6: a transition that rewrites **one** TCB, leaving every field any
+conjunct reads intact — the binding included — and leaving every other object
+alone, preserves the whole bundle, given a `passiveServerIdle` frame for whatever
+it does to the scheduler.
+
+This is the binding-*preserving* companion of
+`ipcInvariantFull_of_donationReadAgreement`: because the binding survives, the
+five donation conjuncts come for free rather than being supplied.  The PIP boost
+(`updatePipBoostOnCore`, which writes `pipBoost` and re-keys a run-queue bucket)
+is exactly this shape, and it is the middle of both live dispatch chains. -/
+theorem ipcInvariantFull_of_tcbFieldUpdate
+    (st st' : SystemState) (key : SeLe4n.ObjId) (oldTcb newTcb : TCB)
+    (hInv : ipcInvariantFull st)
+    (hPre : st.objects[key]? = some (.tcb oldTcb))
+    (hAt : st'.objects[key]? = some (.tcb newTcb))
+    (hFrame : ∀ (oid : SeLe4n.ObjId), oid ≠ key → st'.objects[oid]? = st.objects[oid]?)
+    (hIpc : newTcb.ipcState = oldTcb.ipcState)
+    (hMsg : newTcb.pendingMessage = oldTcb.pendingMessage)
+    (hNext : newTcb.queueNext = oldTcb.queueNext)
+    (hPrev : newTcb.queuePrev = oldTcb.queuePrev)
+    (hPPrev : newTcb.queuePPrev = oldTcb.queuePPrev)
+    (hBudget : newTcb.timeoutBudget = oldTcb.timeoutBudget)
+    (hReply : newTcb.replyObject = oldTcb.replyObject)
+    (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply)
+    (hBind : newTcb.schedContextBinding = oldTcb.schedContextBinding)
+    (hPassive : passiveServerIdleFrame st st') :
+    ipcInvariantFull st' := by
+  have hAgree := donationReadAgreement_of_tcbFieldUpdate st st' key oldTcb newTcb hPre hAt
+    hFrame hIpc hMsg hNext hPrev hPPrev hBudget hReply hStash
+  -- Backward transport of a post-state TCB, *with* its binding.
+  have hBwd : ∀ (oid : SeLe4n.ObjId) (tx : TCB), st'.objects[oid]? = some (.tcb tx) →
+      ∃ ty, st.objects[oid]? = some (.tcb ty) ∧ tx.ipcState = ty.ipcState ∧
+        tx.schedContextBinding = ty.schedContextBinding := by
+    intro oid tx hx
+    by_cases hEq : oid = key
+    · rw [hEq, hAt] at hx
+      obtain rfl : newTcb = tx := by
+        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hx
+      exact ⟨oldTcb, by rw [hEq]; exact hPre, hIpc, hBind⟩
+    · rw [hFrame oid hEq] at hx; exact ⟨tx, hx, rfl, rfl⟩
+  have hFwd : ∀ (oid : SeLe4n.ObjId) (ty : TCB), st.objects[oid]? = some (.tcb ty) →
+      ∃ tx, st'.objects[oid]? = some (.tcb tx) ∧ tx.ipcState = ty.ipcState ∧
+        tx.schedContextBinding = ty.schedContextBinding := by
+    intro oid ty hy
+    by_cases hEq : oid = key
+    · rw [hEq, hPre] at hy
+      obtain rfl : oldTcb = ty := by
+        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hy
+      exact ⟨newTcb, by rw [hEq]; exact hAt, hIpc, hBind⟩
+    · exact ⟨ty, by rw [hFrame oid hEq]; exact hy, rfl, rfl⟩
+  -- A SchedContext key is never the written TCB key, so SchedContexts are exact.
+  have hSc : ∀ (oid : SeLe4n.ObjId) (sc : SchedContext),
+      st'.objects[oid]? = some (.schedContext sc) ↔ st.objects[oid]? = some (.schedContext sc) := by
+    intro oid sc
+    by_cases hEq : oid = key
+    · rw [hEq, hAt, hPre]
+      exact ⟨fun h => absurd h (by exact fun h => KernelObject.noConfusion (Option.some.inj h)),
+        fun h => absurd h (by exact fun h => KernelObject.noConfusion (Option.some.inj h))⟩
+    · rw [hFrame oid hEq]
+  refine ipcInvariantFull_of_donationReadAgreement st st' hInv hAgree ?_ ?_ ?_ ?_ ?_
+  · intro t1 t2 tcb1 tcb2 s1 s2 h1 h2 hB1 hB2
+    obtain ⟨y1, hy1, _, e1⟩ := hBwd t1.toObjId tcb1 h1
+    obtain ⟨y2, hy2, _, e2⟩ := hBwd t2.toObjId tcb2 h2
+    exact hInv.donationChainAcyclic t1 t2 y1 y2 s1 s2 hy1 hy2 (e1 ▸ hB1) (e2 ▸ hB2)
+  · intro t tcb' s owner hTcb' hBind'
+    obtain ⟨ty, hTy, hIpcEq, hBindEq⟩ := hBwd t.toObjId tcb' hTcb'
+    obtain ⟨⟨sc, hScAt, hBound⟩, ownerTcb, hOwner, hOwnerUnbound, hOwnerBlk⟩ :=
+      hInv.donationOwnerValid t ty s owner hTy (hBindEq ▸ hBind')
+    obtain ⟨ownerTx, hOwnerAt, hOwnerIpc, hOwnerBind⟩ := hFwd owner.toObjId ownerTcb hOwner
+    exact ⟨⟨sc, (hSc s.toObjId sc).mpr hScAt, hBound⟩,
+      ownerTx, hOwnerAt, hOwnerBind.trans hOwnerUnbound,
+      by rw [hOwnerIpc]; exact hOwnerBlk⟩
+  · exact passiveServerIdle_of_frame hPassive hInv.passiveServerIdle
+  · intro t1 t2 tcb1 tcb2 s h1 h2 hNe hS1 hS2
+    obtain ⟨y1, hy1, _, e1⟩ := hBwd t1.toObjId tcb1 h1
+    obtain ⟨y2, hy2, _, e2⟩ := hBwd t2.toObjId tcb2 h2
+    exact hInv.donationBudgetTransfer t1 t2 y1 y2 s hy1 hy2 hNe (e1 ▸ hS1) (e2 ▸ hS2)
+  · intro t1 t2 tcb1 tcb2 s1 s2 owner h1 h2 hB1 hB2
+    obtain ⟨y1, hy1, _, e1⟩ := hBwd t1.toObjId tcb1 h1
+    obtain ⟨y2, hy2, _, e2⟩ := hBwd t2.toObjId tcb2 h2
+    exact hInv.donationOwnerUnique t1 t2 y1 y2 s1 s2 owner hy1 hy2 (e1 ▸ hB1) (e2 ▸ hB2)
+
+/-- WS-RR RR2.6: `donateSchedContext` preserves the object store's extended
+invariant — its three stores are `storeObject`s, which do.  The mirror
+`returnDonatedSchedContext_preserves_objects_invExt` was already in the tree; the
+donation side had none, so a consumer that runs a further store after the
+donation (the live `.call` chain runs the priority-inheritance walk) had no way
+to keep the invariant alive. -/
+theorem donateSchedContext_preserves_objects_invExt
+    (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
+    (clientScId : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt)
+    (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
+    st'.objects.invExt := by
+  obtain ⟨_, _, _, s1, s2, s3, _, _, hS1, _, hS2, _, hS3, hObjEq, _⟩ :=
+    donateSchedContext_walk st st' clientTid serverTid clientScId h
+  have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 : s2.objects.invExt := storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
+  have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  rw [show st'.objects = s3.objects from hObjEq]
+  exact hInv3
+
+/-- WS-RR RR2.6: `applyCallDonation` preserves the object store's extended
+invariant — the no-op arm trivially, the donating arm through
+`donateSchedContext`. -/
+theorem applyCallDonation_preserves_objects_invExt
+    (st st' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : applyCallDonation st callerVtid receiverVtid = .ok st') :
+    st'.objects.invExt := by
+  cases hSc : callDonationSchedContext? st callerVtid.val receiverVtid.val with
+  | none =>
+      rw [applyCallDonation_characterisation, hSc] at h; cases h; exact hObjInv
+  | some scId =>
+      rw [applyCallDonation_characterisation, hSc] at h
+      exact donateSchedContext_preserves_objects_invExt st st' callerVtid.val receiverVtid.val
+        scId hObjInv h
 
 -- ============================================================================
 -- §6  RR2.5 — the whole bundle, on the call path
@@ -1420,5 +1561,22 @@ theorem applyReplyDonation_preserves_ipcInvariantFull
     have hEqT : { pTcb with schedContextBinding := .unbound } = tcb :=
       Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb).mpr hTcb))
     exact Or.inr (by rw [← hEqT]; exact hReplierIdleAllowed pTcb hPPre)
+
+
+/-- WS-RR RR2.6: `applyReplyDonation` preserves the object store's extended
+invariant — the return through `returnDonatedSchedContext`, the deschedule
+through `removeRunnable`, which writes no object. -/
+theorem applyReplyDonation_preserves_objects_invExt
+    (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : applyReplyDonation st replierVtid = .ok st'') :
+    st''.objects.invExt := by
+  rcases applyReplyDonation_ok_decompose st st'' replierVtid h with
+    ⟨_, hEq⟩ | ⟨scId, owner, st', _, hR, hEq⟩
+  · rw [hEq]; exact hObjInv
+  · rw [hEq, show (removeRunnable st' replierVtid.val).objects = st'.objects from
+      removeRunnable_preserves_objects st' replierVtid.val]
+    exact returnDonatedSchedContext_preserves_objects_invExt st st' replierVtid.val scId owner
+      hObjInv hR
 
 end SeLe4n.Kernel

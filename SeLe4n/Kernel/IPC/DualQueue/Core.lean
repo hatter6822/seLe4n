@@ -437,6 +437,40 @@ def endpointQueuePopHead
   | some _ => .error .invalidCapability
   | none => .error .objectNotFound
 
+/-- WS-RR RR2.6: the thread a successful `endpointQueuePopHead` returns **is**
+the queue head it read.  The definition matches on `q.head` and carries that
+binding through every later step, but no consumer could say so: the operation's
+result type re-exposes the id, and the callers that need to tie it back to the
+endpoint they inspected had to assume the identity. -/
+theorem endpointQueuePopHead_popped_eq_head
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st st' : SystemState)
+    (ep : Endpoint) (popped head : SeLe4n.ThreadId) (poppedTcb : TCB)
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some head)
+    (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (popped, poppedTcb, st')) :
+    popped = head := by
+  revert hPop
+  unfold endpointQueuePopHead
+  rw [hEp]
+  simp only []
+  rw [hHead]
+  simp only []
+  cases hTcb : lookupTcb st head with
+  | none => intro hPop; cases hPop
+  | some headTcb =>
+    simp only []
+    split
+    · intro hPop; cases hPop
+    · split
+      · intro hPop; cases hPop
+      · split
+        · intro hPop; cases hPop
+        · split
+          · intro hPop; cases hPop
+          · intro hPop
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hPop
+            exact hPop.1.symm
+
 def endpointQueueEnqueue
     (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool)

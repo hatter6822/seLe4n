@@ -369,6 +369,60 @@ theorem ipcUnwrapCapsLoop_preserves_objects_ne
         | grantDenied => rw [ih _ _ _ _ hObjInvNext hStep, hObj]
         | sourceRevoked => rw [ih _ _ _ _ hObjInvNext hStep, hObj]
 
+/-- WS-RR RR2.6: the transfer loop preserves the object store's extended
+invariant — every write it makes is an `ipcTransferSingleCap`, which does. -/
+theorem ipcUnwrapCapsLoop_preserves_objects_invExt
+    (caps : Array TransferCap) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
+    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase accResults fuel st
+             = .ok (summary, st')) :
+    st'.objects.invExt := by
+  induction fuel generalizing idx nextBase accResults st with
+  | zero =>
+    simp [ipcUnwrapCapsLoop] at hStep
+    obtain ⟨_, rfl⟩ := hStep; exact hObjInv
+  | succ n ih =>
+    simp only [ipcUnwrapCapsLoop] at hStep
+    cases hCap : caps[idx]? with
+    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hObjInv
+    | some tc =>
+      simp [hCap] at hStep
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+          receiverRoot nextBase maxExtraCaps st with
+      | error e =>
+        simp [hTransfer] at hStep
+        obtain ⟨_, rfl⟩ := hStep; exact hObjInv
+      | ok pair =>
+        rcases pair with ⟨result, stNext⟩
+        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot
+          nextBase maxExtraCaps st stNext result hObjInv hTransfer
+        simp [hTransfer] at hStep
+        cases result with
+        | installed c s => exact ih _ _ _ _ hObjInvNext hStep
+        | noSlot => exact ih _ _ _ _ hObjInvNext hStep
+        | grantDenied => exact ih _ _ _ _ hObjInvNext hStep
+        | sourceRevoked => exact ih _ _ _ _ hObjInvNext hStep
+
+/-- WS-RR RR2.6: the capability transfer preserves the object store's extended
+invariant.  Needed by every consumer that runs a *further* object-store
+operation after it — the live cross-core `.call` dispatch runs two (the
+SchedContext donation and the priority-inheritance chain walk), and neither has
+an unconditional form. -/
+theorem ipcUnwrapCaps_preserves_objects_invExt
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st')) :
+    st'.objects.invExt := by
+  unfold ipcUnwrapCaps at hStep
+  split at hStep
+  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hObjInv
+  · exact ipcUnwrapCapsLoop_preserves_objects_invExt _ _ _ _ _ _ _ _ _ _ hObjInv hStep
+
 /-- ipcUnwrapCaps preserves objects at keys other than the receiver root CNode. -/
 theorem ipcUnwrapCaps_preserves_objects_ne
     (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)

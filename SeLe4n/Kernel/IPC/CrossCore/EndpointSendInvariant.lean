@@ -416,9 +416,12 @@ message `{ msg with capsGranted := endpointRights.mem .grant }`, because that is
 what the wrapper transmits (PR #873 round 13) — saying otherwise would be saying
 something false about the state the send parks.
 
-`hDualQueue'` / `hBadge'` are the two conjuncts the capability transfer needs a
-caller-held side condition for, threaded exactly as every other `*WithCaps*`
-bundle threads them and owned by RR3.11. -/
+`hRecvRootCNode` / `hCapBadges` are the capability transfer's two *input*
+conditions — a CNode at the destination CSpace root, and valid badges on the
+capabilities the message carries.  Neither is a post-state conjunct: they
+constrain what the caller hands the transfer, so the transition cannot satisfy
+them itself, and `ipcUnwrapCaps_preserves_ipcInvariantFull` turns them into the
+`dualQueueSystemInvariant` and `badgeWellFormed` an earlier cut threaded. -/
 theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
     (endpointRights : AccessRightSet) (senderCspaceRoot : SeLe4n.ObjId)
@@ -432,12 +435,22 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
     (hRCLRecip' : replyCallerLinkageReciprocal
       (endpointSendDualOnCore endpointId sender
         { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
-    (hDualQueue' : dualQueueSystemInvariant
-      (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
-        receiverSlotBase executingCore st).1)
-    (hBadge' : badgeWellFormed
-      (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
-        receiverSlotBase executingCore st).1)
+    -- WS-RR RR2.6: the two conditions `ipcUnwrapCaps_preserves_ipcInvariantFull`
+    -- needs, both on the transfer's *inputs*: the destination CSpace root holds a
+    -- CNode (a structural property of the state, and part of what the capability
+    -- invariant bundle says), and every badge the message carries is valid (a
+    -- property of the syscall argument, which no state invariant constrains).
+    -- These replace the post-state `dualQueueSystemInvariant` / `badgeWellFormed`
+    -- an earlier cut threaded here.
+    (hRecvRootCNode : ∀ (t : SeLe4n.ThreadId) (r : SeLe4n.ObjId),
+      lookupCspaceRoot (endpointSendDualOnCore endpointId sender
+        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1 t
+        = some r →
+      ∃ cn, (endpointSendDualOnCore endpointId sender
+        { msg with capsGranted := endpointRights.mem AccessRight.grant }
+        executingCore st).1.objects[r]? = some (.cnode cn))
+    (hCapBadges : ∀ (i : Nat) (c : TransferCap), msg.caps[i]? = some c →
+      ∀ b, c.cap.badge = some b → b.valid)
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
@@ -466,41 +479,41 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
     hSenderNotReply hSenderNotUnbound
   have hBareInv := endpointSendDualOnCore_preserves_objects_invExt endpointId sender
     { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st hObjInv
-  revert hDualQueue' hBadge'
   unfold endpointSendDualWithCapsOnCore
   cases hSend : endpointSendDualOnCore endpointId sender
       { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
   | mk stSend res =>
-    rw [hSend] at hBare hBareInv
+    rw [hSend] at hBare hBareInv hRecvRootCNode
     cases res with
-    | error e => intro _ _; exact hBare
+    | error e => exact hBare
     | ok sgi =>
       simp only
       cases hEp : st.getEndpoint? endpointId with
-      | none => simp only; split <;> (intro _ _; exact hBare)
+      | none => simp only; split <;> exact hBare
       | some ep =>
         simp only
         cases hHead : ep.receiveQ.head with
-        | none => simp only; split <;> (intro _ _; exact hBare)
+        | none => simp only; split <;> exact hBare
         | some receiverId =>
           simp only
           split
-          · intro _ _; exact hBare
+          · exact hBare
           · cases hRoot : lookupCspaceRoot stSend receiverId with
-            | none => intro _ _; exact hBare
+            | none => exact hBare
             | some recvRoot =>
               simp only
               cases hUnwrap : ipcUnwrapCaps
                   { msg with capsGranted := endpointRights.mem AccessRight.grant }
                   senderCspaceRoot recvRoot receiverSlotBase
                   (endpointRights.mem AccessRight.grant) stSend with
-              | error e => intro _ _; exact hBare
+              | error e => exact hBare
               | ok pair =>
                 obtain ⟨summary, stFinal⟩ := pair
                 simp only
-                intro hDQ hBW
+                obtain ⟨cn, hCn⟩ := hRecvRootCNode receiverId recvRoot hRoot
                 exact ipcUnwrapCaps_preserves_ipcInvariantFull _ senderCspaceRoot recvRoot
-                  receiverSlotBase _ stSend stFinal summary hBare hBareInv hDQ hBW hUnwrap
+                  receiverSlotBase _ stSend stFinal summary cn hBare hBareInv hCn
+                  hCapBadges hUnwrap
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR2.14: the capability-carrying cross-core send frames every core's
@@ -574,12 +587,22 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
     (hRCLRecip' : replyCallerLinkageReciprocal
       (endpointSendDualOnCore endpointId sender
         { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1)
-    (hDualQueue' : dualQueueSystemInvariant
-      (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
-        receiverSlotBase executingCore st).1)
-    (hBadge' : badgeWellFormed
-      (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
-        receiverSlotBase executingCore st).1)
+    -- WS-RR RR2.6: the two conditions `ipcUnwrapCaps_preserves_ipcInvariantFull`
+    -- needs, both on the transfer's *inputs*: the destination CSpace root holds a
+    -- CNode (a structural property of the state, and part of what the capability
+    -- invariant bundle says), and every badge the message carries is valid (a
+    -- property of the syscall argument, which no state invariant constrains).
+    -- These replace the post-state `dualQueueSystemInvariant` / `badgeWellFormed`
+    -- an earlier cut threaded here.
+    (hRecvRootCNode : ∀ (t : SeLe4n.ThreadId) (r : SeLe4n.ObjId),
+      lookupCspaceRoot (endpointSendDualOnCore endpointId sender
+        { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1 t
+        = some r →
+      ∃ cn, (endpointSendDualOnCore endpointId sender
+        { msg with capsGranted := endpointRights.mem AccessRight.grant }
+        executingCore st).1.objects[r]? = some (.cnode cn))
+    (hCapBadges : ∀ (i : Nat) (c : TransferCap), msg.caps[i]? = some c →
+      ∀ b, c.cap.badge = some b → b.valid)
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
@@ -606,8 +629,8 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
   ipcInvariantFull_perCore_of_full
     (endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull endpointId sender msg
       endpointRights senderCspaceRoot receiverSlotBase executingCore st
-      (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hAllBudgetsNone hRCLRecip' hDualQueue'
-      hBadge' hFreshSender hSendTailFresh hSenderNotRecv hSenderNotReply hSenderNotUnbound)
+      (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hAllBudgetsNone hRCLRecip' hRecvRootCNode
+      hCapBadges hFreshSender hSendTailFresh hSenderNotRecv hSenderNotReply hSenderNotUnbound)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointSendDualWithCapsOnCore_passiveServerIdleFrameOnCore endpointId sender msg
         endpointRights senderCspaceRoot receiverSlotBase executingCore st c hObjInv

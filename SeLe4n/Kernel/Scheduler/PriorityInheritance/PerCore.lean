@@ -185,6 +185,64 @@ theorem updatePipBoostOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId
       · rfl
   · rfl
 
+/-- WS-RR RR2.6: `updatePipBoostOnCore` rewrites the boosted thread's TCB in
+`pipBoost` **and nothing else** — including on the no-op arm, where the boost it
+would write is the one already there.
+
+Stated as "some `pipBoost`" rather than naming `computeMaxWaiterPriority` because
+that is what the *readers* need: every conjunct of the IPC bundle reads fields
+this update leaves alone, so the boost's value is irrelevant to them and naming
+it would force each reader to case-split on the no-op arm. -/
+theorem updatePipBoostOnCore_objects_at (st : SystemState) (c : CoreId) (tid : ThreadId)
+    (tcb : TCB) (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hInv : st.objects.invExt) :
+    ∃ p, (updatePipBoostOnCore st c tid).objects[tid.toObjId]?
+      = some (.tcb { tcb with pipBoost := p }) := by
+  have hIns : ∀ t : KernelObject,
+      (st.objects.insert tid.toObjId t).get? tid.toObjId = some t := fun t =>
+    SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId t hInv
+  simp only [updatePipBoostOnCore, hTcb]
+  split
+  · exact ⟨tcb.pipBoost, hTcb⟩
+  · split
+    · split
+      · exact ⟨computeMaxWaiterPriority st tid, hIns _⟩
+      · exact ⟨computeMaxWaiterPriority st tid, hIns _⟩
+    · exact ⟨computeMaxWaiterPriority st tid, hIns _⟩
+
+/-- WS-RR RR2.6: `updatePipBoostOnCore` leaves every thread's run-queue
+*membership* unchanged on every core.  Its bucket migration removes the boosted
+thread and re-inserts it at the new effective priority — a re-keying, not a
+deschedule — and fires only under the guard that the thread is already in that
+queue. -/
+theorem updatePipBoostOnCore_mem_runQueueOnCore (st : SystemState) (c c' : CoreId)
+    (tid x : ThreadId) :
+    x ∈ (updatePipBoostOnCore st c tid).scheduler.runQueueOnCore c'
+      ↔ x ∈ st.scheduler.runQueueOnCore c' := by
+  simp only [updatePipBoostOnCore]
+  split
+  · split
+    · exact Iff.rfl
+    · split
+      · rename_i hIn
+        split
+        · by_cases hcc : c = c'
+          · subst hcc
+            rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+            rw [RunQueue.mem_insert, RunQueue.mem_remove]
+            constructor
+            · rintro (⟨hx, _⟩ | hxt)
+              · exact hx
+              · exact hxt ▸ hIn
+            · intro hx
+              by_cases hEq : x = tid
+              · exact Or.inr hEq
+              · exact Or.inl ⟨hx, hEq⟩
+          · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc]
+        · exact Iff.rfl
+      · exact Iff.rfl
+  · exact Iff.rfl
+
 /-- WS-SM SM5.F.2: `updatePipBoostOnCore` never writes any core's `current` slot. -/
 theorem updatePipBoostOnCore_currentOnCore (st : SystemState) (c c' : CoreId)
     (tid : ThreadId) :

@@ -29,24 +29,25 @@ Stating it once is what makes the cross-core `.send` and `.call` bundles
 (RR2.14, RR2.6) a two-line composition instead of a second copy of an
 eighteen-conjunct proof.
 
-## What is threaded, and why
+## Nothing is threaded
 
-Two conjuncts arrive as post-state hypotheses: `dualQueueSystemInvariant` and
-`badgeWellFormed`.  Both have real preservation lemmas for this step
+All twenty conjuncts are **established** from the pre-state — including
+`blockedThreadsPendingMessageConsistent` and both halves of `replyCallerLinkage`,
+which the single-core WithCaps bundles thread, because the transfer touches no
+TCB and no Reply object at all.
+
+`dualQueueSystemInvariant` and `badgeWellFormed` are established too, from the
+preservation lemmas the tree already had
 (`ipcUnwrapCaps_preserves_dualQueueSystemInvariant`,
-`…_preserves_badgeWellFormed`), but each needs a side condition the *caller*
-holds — a CNode at the receiver's root, and badge validity of the transferred
-capabilities — and the single-core WithCaps bundles this composes with thread
-them for exactly that reason.  Discharging them is `IPC_INVARIANT_DETHREADING`
-slice D-11, owned by **WS-RR RR3.11** ("de-thread `dualQueueSystemInvariant` /
-`badgeWellFormed` at the eight remaining sites"); adding a ninth site here that
-threads them keeps this composition honest and does not enlarge that list, since
-the sites it serves already threaded them.
+`…_preserves_badgeWellFormed`).  Each needs a side condition, and both are
+conditions on the operation's *inputs* rather than on its result: a CNode at the
+receiver's CSpace root, and badge validity of the capabilities carried in the
+message.  Neither can be satisfied by the transition they constrain, which is the
+distinction that makes them preconditions rather than threading.
 
-Everything else — including `blockedThreadsPendingMessageConsistent` and both
-halves of `replyCallerLinkage`, which the single-core WithCaps bundles thread —
-is **established** here from the pre-state, because the transfer touches no TCB
-and no Reply object at all.
+So this module removes two of the eight sites **WS-RR RR3.11** ("de-thread
+`dualQueueSystemInvariant` / `badgeWellFormed` at the eight remaining sites")
+inherits, rather than adding a ninth.
 -/
 
 namespace SeLe4n.Kernel
@@ -140,11 +141,25 @@ theorem ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal
     exact ⟨tcb, ipcUnwrapCaps_preserves_tcb_objects msg senderRoot receiverRoot slotBase
       grantRight st st' summary tid.toObjId tcb hTcb hObjInv hStep, hRO, hBlk⟩
 
-/-- **WS-RR RR2.14: the capability transfer preserves `ipcInvariantFull`.**
+/-- **WS-RR RR2.14 / RR2.6: the capability transfer preserves `ipcInvariantFull`.**
 
-Eighteen of the twenty conjuncts are established from the pre-state; the two
-that are not (`dualQueueSystemInvariant`, `badgeWellFormed`) are threaded for
-the reason the module docstring gives, and are RR3.11's to discharge.
+All twenty conjuncts are established from the pre-state.  The two that a first
+cut threaded — `dualQueueSystemInvariant` and `badgeWellFormed` — already had
+their own preservation theorems in the tree
+(`ipcUnwrapCaps_preserves_dualQueueSystemInvariant`,
+`ipcUnwrapCaps_preserves_badgeWellFormed`); what they need is not a post-state
+hypothesis but two *pre*-state side conditions, so they are taken as such:
+
+* `hCn` — the receiver's CSpace root holds a CNode.  The transfer's own loop
+  short-circuits (rather than failing) when it does not, so success alone does
+  not witness it; the caller resolves the root and knows.
+* `hCaps` — every badge carried in the message is valid.  This is a property of
+  the syscall's *argument*, not of the state: `badgeWellFormed` constrains
+  badges in CNodes and notifications, and says nothing about an `IpcMessage`.
+
+Both are ordinary preconditions on the operation's inputs, categorically unlike
+a threaded post-state conjunct: neither can be satisfied by the transition it is
+supposed to constrain.
 
 The donation quartet falls out of the two donation frames: the transfer writes no
 TCB, so `sameSchedContextBindings` holds outright, and `donationOwnerFrame`
@@ -153,13 +168,21 @@ theorem ipcUnwrapCaps_preserves_ipcInvariantFull
     (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
+    (cn : CNode)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hBadge' : badgeWellFormed st')
+    (hCn : st.objects[receiverRoot]? = some (.cnode cn))
+    (hCaps : ∀ (i : Nat) (c : TransferCap), msg.caps[i]? = some c →
+      ∀ b, c.cap.badge = some b → b.valid)
     (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     ipcInvariantFull st' := by
+  have hDualQueue' : dualQueueSystemInvariant st' :=
+    ipcUnwrapCaps_preserves_dualQueueSystemInvariant msg senderRoot receiverRoot slotBase
+      grantRight st st' summary cn hCn hInv.dualQueueSystemInvariant hObjInv hStep
+  have hBadge' : badgeWellFormed st' :=
+    ipcUnwrapCaps_preserves_badgeWellFormed msg senderRoot receiverRoot slotBase grantRight
+      st st' summary hInv.badgeWellFormed hObjInv hCaps hStep
   have hSame := ipcUnwrapCaps_sameSchedContextBindings msg senderRoot receiverRoot slotBase
     grantRight st st' summary hObjInv hStep
   have hDOV' := donationOwnerValid_of_frames hSame

@@ -6527,20 +6527,41 @@ theorem removeRunnable_passiveServerIdleFrame
       apply hNotCurrent'
       rw [removeRunnable_scheduler_current, hCur, if_neg (fun h => hEq (Option.some.inj h))]
 
+/-- WS-RR RR2.6: a transition that preserves every TCB's `ipcState` and
+`schedContextBinding` **backward** and never *removes* a thread from the boot run
+queue or repoints the boot `current` slot frames `passiveServerIdle`.
+
+The scheduler condition is membership-monotone rather than equality because the
+priority-inheritance boost re-keys a run-queue bucket: the queue value changes
+while every thread's membership is preserved, and membership is all
+`passiveServerIdle` reads. -/
+theorem passiveServerIdleFrame_of_backward_monotone {st st' : SystemState}
+    (hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB), st'.objects[tid.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding)
+    (hQueue : ∀ y : SeLe4n.ThreadId, y ∈ st.scheduler.runQueueOnCore Concurrency.bootCoreId →
+      y ∈ st'.scheduler.runQueueOnCore Concurrency.bootCoreId)
+    (hCurrent : st'.scheduler.currentOnCore Concurrency.bootCoreId
+      = st.scheduler.currentOnCore Concurrency.bootCoreId) :
+    passiveServerIdleFrame st st' :=
+  ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' _ => by
+    obtain ⟨tcb, hTcb, hIpcEq, hBindEq⟩ := hBack tid tcb' hTcb'
+    exact ⟨tcb, hTcb, hBindEq.trans hUnbound', fun hIn => hNotInQ' (hQueue tid hIn),
+      by rw [hCurrent] at hNotCurrent'; exact hNotCurrent', hIpcEq⟩⟩
+
 /-- D6: a transition that preserves every TCB's `ipcState` and `schedContextBinding` **backward**
 and leaves the boot scheduler untouched frames `passiveServerIdle` — every post-state thread pulls
 back to a same-`ipcState`, same-binding pre-state thread (queue-link rewrites: `endpointQueue*`,
-`storeTcbQueueLinks`). -/
+`storeTcbQueueLinks`).  The scheduler-equality specialisation of
+`passiveServerIdleFrame_of_backward_monotone`. -/
 theorem passiveServerIdleFrame_of_backward {st st' : SystemState}
     (hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB), st'.objects[tid.toObjId]? = some (.tcb tcb') →
       ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
         tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding)
     (hSched : st'.scheduler = st.scheduler) :
     passiveServerIdleFrame st st' :=
-  ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' _ => by
-    obtain ⟨tcb, hTcb, hIpcEq, hBindEq⟩ := hBack tid tcb' hTcb'
-    exact ⟨tcb, hTcb, hBindEq.trans hUnbound', by rw [hSched] at hNotInQ'; exact hNotInQ',
-      by rw [hSched] at hNotCurrent'; exact hNotCurrent', hIpcEq⟩⟩
+  passiveServerIdleFrame_of_backward_monotone hBack
+    (fun _ hy => by rw [hSched]; exact hy) (by rw [hSched])
 
 open SeLe4n.Model.SystemState in
 /-- D6: `storeTcbReceiveComplete` frames `passiveServerIdle` (sets the rewritten thread `.ready`,
