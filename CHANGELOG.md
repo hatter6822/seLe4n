@@ -134,6 +134,20 @@ local-emitter inventory, so a `flush_entry` written as `asm!(concat!("tlbi ",
 "vae1"))` inside `tlb.rs` was never derived — the sixth instance of a
 resolver wired into one of its call sites.
 
+**Six further instances were then found by self-audit rather than review**,
+by taking the three recurring shapes and looking for each deliberately.
+Five were the `mutual` shape — a hand-written exception routing a case
+around a fail-closed default: `example`, `macro_rules` and `run_cmd` open
+indented bodies and were listed as non-declarations, so references inside
+them inherited the preceding definition's allowlist entry; `local` and
+`scoped` are *modifiers* misfiled as non-declarations, so `local instance`
+and `scoped def` were never registered as boundaries at all.  The sixth was
+`--lib` listed among cargo's value-taking options although it takes none, so
+`cargo test --all --bins --lib <name>` swallowed a test-name filter and the
+host lane certified a run executing none of the oracle's tests.  Both lists
+now carry their membership *rule* rather than only their members, since the
+entries were got wrong by ad-hoc judgement six times over.
+
 And **one functional defect**: `select_cross_assembler` counted
 `CROSS_COMPILE` among "the variables `cc` itself consults" and returned early
 on it.  `cc` does not consult it, so the conventional

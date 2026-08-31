@@ -498,11 +498,18 @@ def cargo_invocations(script: str, subcommand: str) -> list[list[str]]:
 # Cargo options that consume the following token as their value.  Needed to
 # tell a value (`--features std,host_tools`) from a positional argument
 # (`cargo test some_name`), which is a test-name filter.
+# Every entry must ACTUALLY consume its next token.  An option wrongly
+# listed here swallows a real argument, which is the fail-OPEN direction:
+# `--lib` was listed and takes no value, so `cargo test --all --bins --lib
+# <name>` hid the test-name filter and `selects_oracle` returned True over
+# a run executing none of the oracle's tests.  An option MISSING from the
+# list has its value read as a positional and the check fails closed, so
+# when in doubt, leave it out.  (Found by auditing this list rather than by
+# review.)
 VALUE_TAKING_OPTIONS = (
     "--features", "-F", "--package", "-p", "--target", "--bin", "--test",
     "--example", "--bench", "--profile", "--manifest-path", "--target-dir",
     "--jobs", "-j", "--color", "--message-format", "--config", "--exclude",
-    "--lib",
 )
 
 
@@ -2182,6 +2189,24 @@ def self_test() -> int:
             escaped_quote,
             True,
             check="gate_script",
+            mutation="preserving",
+        )
+    )
+
+    # A test-name filter hidden behind a valueless option.  `--lib` takes
+    # no value, so a list that says it does swallows the filter.
+    swallowed_filter = baseline()
+    swallowed_filter[HOST_LANE] = GOOD_HOST_LANE.replace(
+        "cargo test --all --features std,host_tools",
+        "cargo test --all --bins --lib definitely_no_oracle_test "
+        "--features std,host_tools",
+    )
+    cases.append(
+        Case(
+            "a valueless option does not swallow a test-name filter",
+            swallowed_filter,
+            True,
+            check="host_lane",
             mutation="preserving",
         )
     )

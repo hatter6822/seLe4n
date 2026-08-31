@@ -337,15 +337,37 @@ LEAN_NAMED_DECL_KEYWORDS = (
 # to the unknown-form branch ends the previous declaration and reports
 # `<file scope>` inside the block -- the conservative attribution the review
 # asked for, and the one no allowlist entry can match.
+# The membership RULE, because the entries were got wrong five times over
+# by ad-hoc judgement (PR #883 review round 10 found `mutual`; a self-audit
+# of this cut found `example`, `macro_rules`, `elab_rules`, `run_cmd`,
+# `local` and `scoped`).  A keyword belongs here only if BOTH hold:
+#
+#   * it opens no body -- nothing indented under it can hold a reference;
+#   * it does not end the previous declaration's scope.
+#
+# A keyword that opens an indented body must NOT be listed, whether or not
+# it names anything: leaving it out makes it fall through to the unknown-
+# form branch, which ends the previous declaration and reports
+# `<file scope>` inside it -- the fail-closed answer.  Deliberately absent
+# for that reason: `mutual`, `example`, `macro_rules`, `elab_rules`,
+# `run_cmd`.  An entry that looks missing here is missing on purpose.
+#
+# `namespace`, `section` and `end` stay listed although they open blocks,
+# because the declarations inside them sit at column 0 and the scan sees
+# them directly.
 LEAN_NON_DECL_KEYWORDS = (
     "import", "open", "namespace", "end", "section", "variable", "variables",
-    "set_option", "attribute", "export", "universe", "local", "scoped",
-    "deriving", "where", "in", "run_cmd", "example",
-    "macro_rules", "elab_rules", "declare_syntax_cat", "binder_predicate",
+    "set_option", "attribute", "export", "universe",
+    "deriving", "where", "in", "declare_syntax_cat", "binder_predicate",
 )
+# Prefixes that precede a declaration keyword rather than replacing it.
+# `local` and `scoped` were misfiled as non-declarations, which skipped the
+# whole line -- so `local instance foo` and `scoped def bar` were never
+# registered as boundaries and their bodies inherited the previous
+# declaration's allowlist entry.
 LEAN_MODIFIERS = (
     "private", "protected", "partial", "noncomputable", "unsafe", "nonrec",
-    "@",
+    "local", "scoped", "@",
 )
 _LEAN_TOP_LEVEL_RE = re.compile(r"^(\S.*)$", re.MULTILINE)
 _LEAN_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_'.!?]*")
@@ -1478,6 +1500,66 @@ def self_test() -> int:
             mutation="preserving",
         )
     )
+
+    # Block-opening forms that are not declarations: their indented bodies
+    # inherited the preceding definition's allowlist entry.  Found by
+    # auditing the `mutual` fix's neighbours rather than by review.
+    for label, block in (
+        (
+            "example",
+            "\nexample : True := by\n"
+            "  let _ := SeLe4n.Platform.FFI.ffiTlbiAll\n  trivial\n",
+        ),
+        (
+            "macro_rules",
+            "\nmacro_rules\n  | `(x) => do\n"
+            "    let _ := SeLe4n.Platform.FFI.ffiTlbiAll\n    pure ()\n",
+        ),
+        (
+            "run_cmd",
+            "\nrun_cmd do\n"
+            "  let _ := SeLe4n.Platform.FFI.ffiTlbiAll\n  pure ()\n",
+        ),
+    ):
+        block_form = fixture()
+        block_form["SeLe4n/Kernel/Concurrency/Runtime.lean"] = BASE_LEAN + block
+        cases.append(
+            Case(
+                f"a reference inside `{label}` does not inherit the previous entry",
+                block_form,
+                True,
+                check="lean_allowlist",
+                mutation="preserving",
+            )
+        )
+
+    # ... and the modifier forms, which must be ATTRIBUTED rather than
+    # skipped: `local`/`scoped` prefix a real declaration, so listing them
+    # as non-declarations skipped the whole line and the declaration they
+    # modify was never registered as a boundary.
+    for label, block in (
+        (
+            "local instance",
+            "\nlocal instance hiddenLocal : Inhabited Unit :=\n"
+            "  \u27e8SeLe4n.Platform.FFI.ffiTlbiAll\u27e9\n",
+        ),
+        (
+            "scoped def",
+            "\nscoped def hiddenScoped : BaseIO Unit :=\n"
+            "  SeLe4n.Platform.FFI.ffiTlbiAll\n",
+        ),
+    ):
+        modifier_form = fixture()
+        modifier_form["SeLe4n/Kernel/Concurrency/Runtime.lean"] = BASE_LEAN + block
+        cases.append(
+            Case(
+                f"a `{label}` declaration is registered as its own boundary",
+                modifier_form,
+                True,
+                check="lean_allowlist",
+                mutation="preserving",
+            )
+        )
 
     stale = fixture()
     stale[ALLOWLIST] = BASE_ALLOWLIST + "rust/sele4n-hal/src/gone.rs::gone\n"
