@@ -7189,8 +7189,8 @@ is archived.
 | SM7's ASID completeness gap — `asidAllocateWithShootdown` is complete and proven with no callers, and the ASIDControl/ASIDPool object family does not exist.  Registered against SM8; **SM8 closed without absorbing it** | `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` | RR7.14 |
 | SM7.D's four SM10.1-owned deferred cache-maintenance items appear in no SM10 sub-task | [`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`](planning/SMP_TLB_SHOOTDOWN_PLAN.md) | RR7.14 |
 | SM6's tracked debt carries no explicit closure target, and its `schedContextConfigure` entry went stale after the debt closed | [`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md`](planning/SMP_CROSS_CORE_IPC_PLAN.md) | RR7.16 |
-| The Tier-0 grep gate banning non-IS TLBI, which the Rust HAL plan §4.4 claims exists, does not exist | `scripts/test_tier0_hygiene.sh` | RR1.9 |
-| No aarch64 target is compiled anywhere: 67 cfg-gated blocks, 60 `asm!` sites and all three `.S` files have zero compile coverage | `rust/`, `.github/workflows/` | RR1.1–RR1.8 |
+| ~~The Tier-0 grep gate banning non-IS TLBI, which the Rust HAL plan §4.4 claims exists, does not exist~~ — **CLOSED v0.34.41** as `scripts/check_tlbi_broadcast_discipline.py`, which also confines the `tlbi` mnemonic to `tlb.rs` and demotes the four local wrappers to `pub(crate)`, making §4.4's "private helpers" true structurally | `scripts/test_tier0_hygiene.sh` | RR1.9 |
+| ~~No aarch64 target is compiled anywhere: 67 cfg-gated blocks, 57 `asm!` sites and all three `.S` files have zero compile coverage~~ — **CLOSED v0.34.41**; the `aarch64 Cross Build` CI job builds both profiles, verifies the `.S` sources assembled and lints the cross target.  (The 60 this row carried was a transcription of the register's 59, which counted two docstring mentions of the token; 57 is the measured figure) | `rust/`, `.github/workflows/` | RR1.1–RR1.8 |
 | `numCores` is a literal `4` rather than `PlatformBinding.coreCount`, so the Sim binding's `coreCount := 1` can never shape kernel state | `SeLe4n/Kernel/Concurrency/Types.lean` | RR7.24 |
 
 ### B — owned by SM10
@@ -7283,11 +7283,15 @@ correct — a tautological witness replaced by a substantive proof, a fuel bound
 made structural, a tuple given a name, a validated-elsewhere precondition
 internalised.  That is why they may wait; it is not why they may be forgotten.
 
-## WS-RR — SMP Release Readiness (pre-SM10 remediation, **IN FLIGHT — OPEN**, opened v0.34.13; RR0 landed v0.34.26)
+## WS-RR — SMP Release Readiness (pre-SM10 remediation, **IN FLIGHT — OPEN**, opened v0.34.13; RR0 landed v0.34.26, RR1 v0.34.41)
 
 **Status**: IN FLIGHT — **RR0 LANDED at v0.34.26** (all eleven sub-tasks:
 registration, the debt register, the generated theorem manifest, and the SM10
-plan corrections); RR1..RR8 not started. **Closes**: before SM10 opens.
+plan corrections); **RR1 LANDED at v0.34.41** (all eleven sub-tasks: the
+aarch64 cross build in CI, the six defects and three lints its first compile
+found, two Tier 0 gates, and SM10's evidence-derived estimate), with **RR1.12
+added in the same cut** to harden those gates after review; RR2..RR8 not
+started. **Closes**: before SM10 opens.
 **Plan**: [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
 **Source register**: [`docs/planning/UNFINISHED_SMP_WORK.md`](planning/UNFINISHED_SMP_WORK.md)
 (171 confirmed findings, audited at `v0.34.3`).
@@ -7304,7 +7308,7 @@ RR8 closes.
 | Phase | Scope | Subs |
 |-------|-------|------|
 | RR0 | Registration and plan correction — **LANDED v0.34.26** | 11 |
-| RR1 | aarch64 compile coverage | 11 |
+| RR1 | aarch64 compile coverage — **LANDED v0.34.41** (incl. RR1.12 gate hardening) | 12 |
 | RR2 | Live-path correctness: dispatch-arm bundles, donation queue migration | 19 |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 |
@@ -7318,6 +7322,41 @@ durable index (RR0.1–RR0.3, closed by RR3); cross-core SchedContext donation
 never migrates the CBS replenish queue, breaking the SM5.H affinity invariant
 on a live path (RR2); and the live `.send` arm carries no `ipcInvariantFull`
 preservation while SM6.D claims coverage (RR2).
+
+**What RR1 closed** (register findings 6 and 12). `sele4n-hal` now builds
+for `aarch64-unknown-none` in CI, in both profiles, with the three `.S`
+sources verified to have assembled and clippy denied on the same target —
+the lane where every `#[cfg(target_arch = "aarch64")]` block lives, and
+which the host-only lint pass had excluded from the project's zero-warning
+claim.  The first compile found six defects: two `boot.S` sites using `and
+sp, sp, #~0xF`, which does not encode because `AND (immediate)` cannot take
+SP as its source; and four `TLBI *OS` sites that are FEAT_TLBIOS
+(ARMv8.4-A) and therefore neither assemble for the baseline target nor
+execute on Cortex-A76, the ARMv8.2-A core in the RPi5's BCM2712.  All four
+`*OS` wrappers now fail closed on a PE without the feature rather than
+silently degrading to the inner-shareable broadcast.  RR1.9 also built the
+non-IS TLBI gate `SMP_RUST_HAL_PLAN.md` §4.4 had claimed since SM1.  The
+measured surface and the full inventory are in the register's §5.1; SM10's
+calendar estimate is derived from it in
+[`SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md) §1.1.
+
+**What RR1.12 added** (v0.34.41, from six rounds of review on the RR1 cut).
+The two Tier-0 gates RR1.8 and RR1.9 built, and `build.rs`'s own scanners,
+each answered a question about a *program* — does this command carry that
+flag, does this branch diverge, is this reference inside that function, does
+this string reach the assembler — with an ad-hoc slice of text.  Seventeen
+places where the two came apart were found across the three rounds, eight of
+them in round 3 and two of those inside the fixes for the other six; patching
+instances was not converging, because the ways text can diverge from structure
+are unbounded.  RR1.12 replaces the slices with shared structural views:
+`scripts/rust_code_view.py` (a quote-aware Rust view, byte-aligned, with
+string contents kept or blanked as the question requires, and brace-matched
+`fn` bodies) for the Python-side gates, `rust_code_views` in
+`rust/sele4n-hal/build.rs` for the build script, and a shell command/argv
+layer so a flag is read on the command that receives it.  The self-test
+harnesses now *enforce* what `CLAUDE.md` had only asserted: every check must
+carry a negative case that keeps its token and breaks only its relation, and
+the harness fails when one does not.
 
 This entry is written at **opening**, not at closure: a workstream that is
 active but absent from this file is the precise defect the audit filed as its

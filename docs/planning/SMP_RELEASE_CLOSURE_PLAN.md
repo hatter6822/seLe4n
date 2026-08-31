@@ -13,16 +13,18 @@
 > **Blocked on**: **WS-RR** ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)) —
 > SM10 must not open until RR8 closes
 > **Target releases**: v0.98.0 → **v1.0.0**
-> **Calendar estimate**: the original 4–6 weeks covered documentation only and
-> is superseded; the replacement is derived from the measured aarch64 surface
-> by **RR1.11** and lands here in the same cut
+> **Calendar estimate**: **14–24 weeks**, superseding the original 4–6 weeks,
+> which covered documentation only.  Derived in §1.1 from a sized breakdown of
+> the SM10.1 runtime port, with the HAL's aarch64 half now *measured* rather
+> than assumed (WS-RR RR1.11, `v0.34.41`)
 > **Sub-task count**: 44 enumerated rows across ~10-15 PRs (phase map in §3),
-> **plus the SM10.1 runtime port**, which RR1.11 decomposes into rows this
-> line cannot pre-count.  41 is therefore a floor on the work and an exact
-> count of the schedule as written — which is the thing a gate can hold, and
-> `scripts/check_workstream_plan.py` now does: the number, the phase map and
-> the rows must agree, so decomposing the runtime port means updating all
-> three in the same cut
+> **plus the SM10.1 runtime port**, whose twelve work items RR1.11 sizes and
+> sequences in §1.1 but does not yet number — see §1.1's closing note for why
+> the numbering waits for SM10's opening cut.  44 is therefore a floor on the
+> work and an exact count of the schedule as written — which is the thing a
+> gate can hold, and `scripts/check_workstream_plan.py` now does: the number,
+> the phase map and the rows must agree, so numbering the runtime port means
+> updating all three in the same cut
 
 ## 1. Phase goal
 
@@ -51,7 +53,7 @@ not exist in any form (register §2.2):
 | `libsele4n.a` for aarch64 | Nothing in the tree produces it, though `rust/sele4n-hal/src/boot.rs` asserts it is linked |
 | Bare-metal Lean runtime hosting | Zero hits for `lean_initialize_runtime_module` / `lean_io_mark_end_initialization` anywhere |
 | `@[export] lean_kernel_main` | **Absent.**  `boot.rs` declares it `extern "C"`; the only exported kernel entry is `lean_secondary_kernel_main`, and that module is *staged*, outside the production closure |
-| aarch64 compile coverage | **None** in tree or CI: 67 cfg-gated blocks, 60 `asm!` sites and all three `.S` files are never compiled |
+| aarch64 compile coverage | **None** in tree or CI: 67 cfg-gated blocks, 57 `asm!` sites and all three `.S` files are never compiled — **closed at `v0.34.41` by WS-RR RR1** (the 60 this row carried, and the 59 the register's finding 12 carried, both counted docstring mentions of the token; 57 is the measured figure over the comment-free code view) |
 
 So SM10 is **not** a ribbon-cutting over finished work.  It is the phase that
 makes the kernel boot, and then cuts the release.  Judging it on the release
@@ -89,6 +91,78 @@ between that surface and a running image, plus the remediation WS-RR owns.
 11. **CHANGELOG closure** (SM10.6.1).
 12. **Archive WS-RC + WS-SM artefacts** (SM10.6.2, SM10.6.3).
 13. **Tag v1.0.0** (SM10.6.4).
+
+### 1.1 Where the 14–24 week estimate comes from (WS-RR RR1.11, `v0.34.41`)
+
+The 4–6 week figure was a guess over a phase goal that turned out to be
+wrong: it priced SM10.2–SM10.6, the release cut, and priced SM10.1 at
+nothing because §1 said the substantive work was already done.  Replacing a
+guess with another guess would not be an improvement, so this figure is
+built from a work breakdown, and one line of that breakdown is now
+**measured**.
+
+**What RR1 measured, and what it licenses.**  RR1 compiled `sele4n-hal` for
+`aarch64-unknown-none` for the first time — 67 `#[cfg(target_arch =
+"aarch64")]` blocks, 57 `asm!` invocations (97 after `read_sysreg!` /
+`write_sysreg!` expansion) and all three `.S` sources, none of which any
+gate had ever reached.  The audit's stated risk was that SM10.1 would open
+onto "a wall of first-compile errors".  It did not: the whole surface came
+up on **six defects and three lints**, all fixed in one cut
+([`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) §5.1).
+
+That result is load-bearing in one direction only, and it matters to say
+which.  It licenses the claim that **the HAL does not need rewriting** —
+the hardware half of the boot path is sound, and the four `TLBI *OS`
+defects were a feature-availability mistake, not a design one.  It licenses
+**nothing** about the work above the HAL: Lean cross-compilation and
+bare-metal runtime hosting are new capability, not code waiting for a
+compiler to check it, and a compile measurement cannot size them.  So the
+estimate below is one measured item and twelve sized ones, and it is larger
+than the original figure rather than smaller.
+
+**The SM10.1 runtime port, sized.**  Sequenced per
+[`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) findings 40–42
+(bin target → Lean runtime hosting → boot seam + ordering → validation).
+Each row's basis is a verified fact from the register or from RR1, not an
+impression:
+
+| # | Work item | Basis | Est |
+|---|-----------|-------|----:|
+| 1 | aarch64 compile coverage for the HAL | **LANDED** at `v0.34.41` (WS-RR RR1) | *done* |
+| 2 | Bootable `[[bin]]` target: `no_std` / `no_main`, `link.ld`, `_start` from `boot.S` | The objects now compile and assemble; RR1.6 verified `_start`, `secondary_entry` and `__exception_vectors` are present in the archive. This is the first step that *links* them | 3–5 d |
+| 3 | Lake target emitting the production closure's Lean C output | `lakefile.toml` declares one host `[[lean_lib]]`, 70 host `[[lean_exe]]`s, no `precompileModules`, no cross rule | 3–5 d |
+| 4 | Cross-compile that C to `aarch64-unknown-none`; archive as `libsele4n.a` | Nothing produces it, though `boot.rs` asserts it is linked. No libc on the target | 1–2 w |
+| 5 | Bare-metal Lean runtime hosting: heap/allocator, `lean_initialize_runtime_module`, `lean_io_mark_end_initialization`, the libc shims the runtime needs | Zero hits for either symbol anywhere in the tree (register finding 40). **The largest single unknown in the phase** | 2–4 w |
+| 6 | `@[export] lean_kernel_main` wrapping `bootAndInitialiseFromPlatform`, plus the RPi5 `PlatformConfig` and root task it consumes | `bootAndInitialiseFromPlatform` exists with no `@[export]` and no callers (register finding 41) | 1–2 w |
+| 7 | Install-ordering resolution for that entry | Already specified below, with two named options; the work is choosing and proving one | 2–4 d |
+| 8 | Per-core `lean_ready` marking, so the five dormant seams go live | Every seam is wired; **no core is marked ready anywhere in the tree** (CLAUDE.md standing constraint) | 3–5 d |
+| 9 | Context-restore seam delivering the staged return frame | WS-RA obligation (1) in §2. Staging landed at `v0.33.38`; delivery is SM10.1's | 1–2 w |
+| 10 | Cancellation/timeout error-frame staging before `contextRestoreSeamLive` flips | WS-RA obligation (2), §9 registered debt. Without it a cancelled waiter resumes reading stale arguments as a return value | 3–5 d |
+| 11 | TTBR0 binding and a real context switch | `ffi_switch_to_thread` stores a `u64` into an atomic (register §9 `bootpath`) | 1–2 w |
+| 12 | Image packaging — `kernel8.img` + `config.txt` (**this is `SM10.1.1`**) | Mechanical once 2–11 land | 2–3 d |
+| 13 | First boot and bring-up debugging, QEMU then RPi5 | All 16 QEMU scripts are unconditional SKIPs and have never run once | 1–3 w |
+
+Summing the ranges gives **9–20 weeks** for SM10.1.  SM10.2–SM10.6 — the
+43 remaining enumerated rows, which are the release cut the original
+estimate actually priced — keep their **4–6 weeks**, less the overlap that
+documentation and test work can take alongside the port.  The phase figure
+is therefore **14–24 weeks**, and the width is honest: items 5 and 13
+dominate it, and neither has a precedent in this tree to calibrate against.
+
+**Why the runtime port is sized here but not yet numbered.**  Numbering
+rows 2–13 as sub-tasks of SM10.1 would move the image build off
+`SM10.1.1`, and `SM10.1.1` is bound to "the image build" by three
+`CHANGELOG.md` entries — the citations this plan's own re-sequencing note
+says must never be silently repurposed, and which CLAUDE.md treats as
+frozen once they appear.  The two rules collide: *numbering is execution
+order* wants the port first, *IDs in CHANGELOG entries are frozen* wants
+`SM10.1.1` unchanged.  The register's own remediation for finding 42
+resolves it — "split SM10.1 out of the release-closure plan into its own
+phase with a proper PR sequence" — which is a restructuring of SM10, with
+its own prefix and no repurposed ID.  **That split is SM10's opening act**,
+and doing it inside a remediation phase's early row would renumber a phase
+that has not opened on the authority of a sub-task sized S.  The sizing is
+what RR1.11 owed the estimate; the numbering has an owner and a place.
 
 ## 2. Dependencies
 

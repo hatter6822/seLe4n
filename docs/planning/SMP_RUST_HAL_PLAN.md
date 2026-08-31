@@ -195,11 +195,30 @@ as private helpers (used only by single-core unit tests and the
 single-cluster path that bypasses SMP entirely — see also
 SharingDomain `.inner` parameterization).
 
+"Private helpers" was a description rather than a fact until
+`v0.34.41`: `tlbi_vmalle1`, `tlbi_vae1`, `tlbi_aside1` and `tlbi_vale1`
+were `pub`, so the discipline held only by convention.  They are now
+`pub(crate)`, and the crate's public local surface is `tlbi_local` plus
+the three `ffi_tlbi_*` exports (WS-RR RR1.9).
+
 This is enforced by SM1.E.5: every kernel-side caller of TLB
 invalidation routes through `tlbi_for_sharing(d, op, args)`, which
 dispatches to IS or OS based on `PlatformBinding.sharingDomain`.
-A `grep` test in tier-0 ensures no production caller emits
-`tlbi vae1` (non-IS).
+
+**The tier-0 gate this section claimed exists now does**, as
+`scripts/check_tlbi_broadcast_discipline.py` (WS-RR RR1.9, `v0.34.41`).
+It is not the `grep` the SM1.E.5 sketch below described — that scanned
+only the Lean tree, matched one of the four local variants, read raw text
+so its own explanatory sentence tripped it, and had no notion of the call
+sites that are legitimately local.  The gate instead holds three
+invariants: a `tlbi` mnemonic may be emitted only from `tlb.rs`; the local
+wrappers may be called only from sites registered in
+`scripts/tlbi_local_allowlist.txt` with the reason the calling PE is the
+only one that needs the entry gone; and the Lean bindings of the local FFI
+exports may be referenced only from registered production modules.  The
+allowlist is checked in both directions, so it cannot outlive its call
+sites.  Three call shapes are registered: boot-time MMU init (pre-SMP),
+the shootdown protocol's receive side, and the FFI exports of those two.
 
 ### 4.5 Why TPIDR_EL1 is the per-CPU base
 
@@ -2106,6 +2125,19 @@ Same pattern with `tlbi vae1os`, `tlbi aside1os`, etc. RPi5 uses
 the IS variants; OSH variants are pre-positioned for multi-cluster
 ports.
 
+> **Corrected at `v0.34.41` (WS-RR RR1.4).**  "Same pattern" was not
+> quite true, and nothing could tell until an aarch64 target was
+> compiled.  The four `*OS` instructions are **FEAT_TLBIOS**
+> (ARMv8.4-A): they do not encode for the ARMv8.0-A baseline that
+> `aarch64-unknown-none` assembles against, and they are not implemented
+> by **Cortex-A76** — the core in the RPi5's BCM2712, which is
+> ARMv8.2-A.  Pre-positioning them for a multi-cluster port is still
+> right; executing them on this one would raise an UNDEFINED
+> instruction.  Each wrapper therefore probes `ID_AA64ISAR0_EL1.TLB` and
+> takes `cpu::fatal_halt()` when the feature is absent — deliberately
+> not falling back to the IS variant, which would service only the
+> inner-shareable domain while the caller asked for the outer one.
+
 **Size**: M (~150 LoC).
 
 ---
@@ -2171,6 +2203,15 @@ if grep -rn "tlbi_vae1[^i]" SeLe4n/ | grep -v test; then
     exit 1
 fi
 ```
+
+> **Superseded at `v0.34.41` (WS-RR RR1.9).**  The sketch above is kept
+> as the record of what SM1.E.5 intended; it is not what was built, and
+> it would not have worked: it scans only `SeLe4n/`, matches one of the
+> four local wrappers, reads raw text (so the sentence above it is a
+> hit), and treats every local call as a violation — including the
+> shootdown protocol's receive side, where a local TLBI is the correct
+> instruction.  The gate that exists is
+> `scripts/check_tlbi_broadcast_discipline.py`; see §4.4.
 
 **Acceptance**:
 - Hygiene check passes.
@@ -2936,9 +2977,10 @@ cargo test -p sele4n-hal --lib gic
 ./scripts/test_qemu_smp_bringup.sh
 ./scripts/test_qemu_smp_minimal.sh
 
-# Tier-0 hygiene (no non-IS TLBI in kernel code):
-grep -rn "tlbi_vae1[^i]" SeLe4n/ | grep -v test && \
-  echo "FAIL: non-IS TLBI in kernel" || echo "OK"
+# Tier-0 hygiene (no non-IS TLBI in kernel code) — the real gate,
+# which also self-tests that it still bites:
+python3 scripts/check_tlbi_broadcast_discipline.py --self-test
+python3 scripts/check_tlbi_broadcast_discipline.py
 ```
 
 ## Appendix B — Sub-task dependency graph

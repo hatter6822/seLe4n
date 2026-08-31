@@ -46,8 +46,14 @@ echo "tier5: building Lean oracle..."
 lake build rw_lock_oracle 2>&1 | tail -3
 
 echo "tier5: building Rust oracle..."
+# `--features host_tools` is required, not decorative: WS-RR RR1.3 gave
+# the oracle a `required-features` gate so the bare-metal aarch64 build
+# does not try to compile a `std` binary for `aarch64-unknown-none`.
+# Without the flag cargo reports "target `rw_lock_oracle` … requires the
+# features: `host_tools`" and builds nothing.
 cargo build -p sele4n-hal --bin rw_lock_oracle \
     --manifest-path rust/sele4n-hal/Cargo.toml \
+    --features host_tools \
     --release 2>&1 | tail -3
 
 LEAN_ORACLE="$REPO_ROOT/.lake/build/bin/rw_lock_oracle"

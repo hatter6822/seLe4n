@@ -215,6 +215,19 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/test_identifier_naming_gate.py"
 # byte, which is what keeps `rg -n` line numbers pointing at real lines.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/lean_code_view.py" --self-test
 
+# WS-RR RR1.12 (PR #883 review round 3): the Rust counterpart.  Three gates
+# read Rust source — the TLBI broadcast discipline, the cross-target
+# configuration gate, and `rust/sele4n-hal/build.rs`'s own scanners — and
+# each carried a private `line[:line.find("//")]` stripper.  That proxy is
+# wrong in both directions: it deletes an `asm!` template line whose sibling
+# carries an assembler comment (so an emitted `tlbi` vanishes from the view),
+# and it keeps an identifier inside a string literal (so `let _note =
+# "require_feat_tlbios()";` stood in for the call that keeps an UNDEFINED
+# instruction off a Cortex-A76).  One quote-aware view now serves them all,
+# and it is pinned here because a stripper that stops stripping fails
+# silently — every gate reading it keeps reporting a clean tree.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/rust_code_view.py" --self-test
+
 # ... and the wiring, which fails differently: a `test_lib.sh` refactor that
 # dropped the routing would leave every anchor green while 1500 of them went
 # back to reading prose.  This drives `run_check` itself over a fixture whose
@@ -301,5 +314,29 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_bcm2712_freshness.sh"
 # `lockPrimitives.length` and Rust `LOCK_THEOREM_COUNT`.  A drift
 # on either side without updating the other fails the gate.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_lock_ffi_symmetry.sh"
+
+# WS-RR RR1.8: the aarch64 cross-compile coverage must stay configured.
+# Until RR1 no aarch64 target was compiled anywhere in the tree or in CI, so
+# 67 cfg-gated blocks, 57 `asm!` sites and all three `.S` files had zero
+# compile coverage -- and every way of losing that coverage again is silent:
+# dropping the `targets` key still builds on a machine that already has the
+# target, dropping `--features hw_target` still passes while compiling none
+# of the hardware paths, and downgrading `build` to `check` still passes
+# while never reaching the assembler.  The gate reads config, not Lean, so
+# it carries its own comment stripping; self-test first, because a scanner
+# that under-reaches reports PASS.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_aarch64_cross_target.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_aarch64_cross_target.py"
+
+# WS-RR RR1.9: the TLBI broadcast discipline `SMP_RUST_HAL_PLAN.md` §4.4
+# said tier 0 enforced.  It did not, and the sketch in §5.6 would not have
+# been it: one variant of four, the Lean tree only, and a raw-text grep that
+# its own explanatory sentence trips.  A non-broadcast `tlbi vae1` leaves a
+# secondary walking a translation the primary believes it removed -- the
+# stale-mapping hazard SM7 exists to close -- so the instruction is confined
+# to `tlb.rs` and every local call site is registered with the reason the
+# calling PE is the only one that needs the entry gone.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_tlbi_broadcast_discipline.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_tlbi_broadcast_discipline.py"
 
 finalize_report

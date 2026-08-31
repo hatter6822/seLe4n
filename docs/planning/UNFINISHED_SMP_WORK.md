@@ -408,6 +408,24 @@ Each blocks *starting* SM10, as distinct from work SM10 is itself supposed to do
 
 **Remediation.** Implement the gate the plan claims exists rather than softening §4.4. Add a Tier-0 `run_negative_check` (which routes through `scripts/lean_code_view.py --overlay` automatically, so a docstring mentioning the forbidden symbol cannot trip it) that forbids `ffiTlbiAll`, `ffiTlbiByAsid` and `ffiTlbiByVaddr` call sites anywhere under `SeLe4n/` outside a one-line allowlist naming `Concurrency.Runtime.tlbiLocalFullFlush`, with a witness test in the style of `scripts/test_identifier_naming_gate.py`. On the Rust side, make §4.4 true structurally: demote `tlbi_vmalle1`/`tlbi_vae1`/`tlbi_aside1`/`tlbi_vale1` to `pub(crate)` and let `tlbi_local` plus the three FFI exports be the only public surface.
 
+**CLOSED at `v0.34.41` (WS-RR RR1.9).**  Both halves landed.  The gate is
+`scripts/check_tlbi_broadcast_discipline.py`, wired into Tier 0 with a
+12-case self-test that asserts each defect is caught *and* that a comment
+naming a forbidden symbol is not.  It is a Python check rather than a
+`run_negative_check` because the Lean half is only one of three invariants:
+it also confines the `tlbi` mnemonic itself to `tlb.rs` (nothing else in
+the crate or the three `.S` sources may emit one, so no call site can
+bypass the wrappers' mandatory `DSB`/`ISB` bracket), and it holds the Rust
+call sites to the same allowlist.  The allowlist —
+`scripts/tlbi_local_allowlist.txt` — is longer than the sketched one line
+because three call shapes are legitimately local, not one: boot-time MMU
+init (pre-SMP), the shootdown protocol's receive side (`retire_round_ops_in`
+and `self_service_round_in`, where each PE retires its **own** entries and a
+hardware broadcast from the receiver would turn one round into N), and the
+FFI exports of those two.  It is checked in both directions, so an entry
+cannot outlive its call site.  The four local wrappers are now
+`pub(crate)`, making §4.4's "private helpers" true structurally as well.
+
 #### 7. D-6's Tier-5 "Rust oracle" is a transliteration of the Lean spec, not the Rust RwLock — the exact STUB hazard §5.6 claims to close
 
 - **Severity**: high · **Kind**: `false-completeness-claim` · **Blocks SM10 start**: no
@@ -485,6 +503,102 @@ Each blocks *starting* SM10, as distinct from work SM10 is itself supposed to do
 **Independent verification.** CONFIRMED, and the tree is worse than the auditor claimed. I tried hard to refute this and instead found a hard build defect. ## The structural claims all check out, exactly - `rust/sele4n-hal/src`: `#[cfg(target_arch = "aarch64")]` attributes = **67** (12 barriers.rs, 12 tlb.rs, 9 cache.rs, 9 cpu.rs, 7 psci.rs…), `asm!` sites = **59**, three `.S` files (boot.S, vectors.S, trap.S). 27 `cfg(not(target_arch = "aarch64"))` host stubs are the arms that actually compile on x86_64 — cfg-false arms are parsed but never type/borrow-checked. - `rust/sele4n-hal/build.rs (main)` gates all three `.S` on `CARGO_CFG_TARGET_ARCH == "aarch64"` and returns early otherwise; `cc::Build` at 157-161. - `.github/workflows/*.yml`: the only `aarch64` token anywhere is `qemu-system-aarch64 --version` at `nightly_determinism.yml`. No `rustup target add`, no `--target`. `lean_action_ci.yml` (`test-rust` job) runs only `./scripts/test_rust.sh` on ubuntu-latest/x86_64. - No tier script (`test_fast/s…
 
 **Remediation.** Add an aarch64-unknown-none `cargo build` (plus `cargo clippy`) job to lean_action_ci.yml as SM10's first cut. It is cheap, needs no image target and no QEMU, and it is the prerequisite that makes every later SM10.1 step debuggable rather than a wall of first-compile errors.
+
+**CLOSED at `v0.34.41` (WS-RR RR1).** The remediation landed as written and
+then some: `scripts/test_aarch64_cross_build.sh` runs a debug *and* release
+`cargo build --target aarch64-unknown-none -p sele4n-hal --features
+hw_target`, verifies the three `.S` sources really assembled, and runs
+`cargo clippy -D warnings` on the same target; the `aarch64 Cross Build` job
+in `lean_action_ci.yml` invokes it on every PR; and
+`scripts/check_aarch64_cross_target.py` (Tier 0) keeps the configuration
+from being dropped or weakened.  §5.1 records what the first compile found.
+
+### 5.1 The measured aarch64 surface (WS-RR RR1.10, `v0.34.41`)
+
+Finding 12 above sized the uncovered surface from a raw-text grep.  RR1
+compiled it, so the surface is now measured rather than estimated.  Two of
+finding 12's three figures are confirmed exactly — 67 cfg-gated blocks and
+three `.S` sources — and the third, the `asm!` count, moves.  Everything
+below is reproducible; the commands are given so a later reader can
+re-measure rather than trust a number.
+
+**The surface, at `v0.34.40` (the state finding 12 describes) and after RR1:**
+
+| Measure | `v0.34.40` | post-RR1 | Note |
+|---------|-----------:|---------:|------|
+| `.rs` sources under `rust/sele4n-hal/src` | 30 | 30 | includes the one host tool in `src/bin/` |
+| `.S` sources | 3 | 3 | `boot.S` (310 lines), `vectors.S` (123), `trap.S` (209) |
+| `#[cfg(target_arch = "aarch64")]` | **67** | 68 | finding 12's figure, confirmed exactly |
+| `#[cfg(not(target_arch = "aarch64"))]` | 26 | 28 | the host stubs — the arms the host lane compiles |
+| compound `cfg` naming `aarch64` | 3 | 3 | `all(...)` / `any(...)` forms |
+| `#[cfg(feature = "hw_target")]` | 7 | 7 | `boot.rs` 1, `smp.rs` 2, `timer.rs` 2, `trap.rs` 2 |
+| `asm!` invocations | **57** | 57 | finding 12 says 59 — see below |
+| `read_sysreg!` / `write_sysreg!` call sites | 39 | 40 | each expands to one further `asm!` |
+| `asm!` instances after macro expansion | 96 | 97 | what the assembler actually sees |
+
+**The `asm!` figure was 59 because the count read prose.**  `rust/sele4n-hal/src`
+holds 59 occurrences of the token `asm!` and **57 invocations**: the other
+two are docstring mentions, in `cpu.rs` ("via inline `asm!` blocks") and
+`psci.rs` ("is just `asm!` + this decoder").
+[`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)'s RR1
+section then compounded it to 60, a third value matching neither.  The
+measured figure is
+**57**, and the discrepancy is the project's own "gates read code, prose
+reads prose" rule appearing in the audit that was written to enforce it.
+
+Reproduce (from the repository root):
+
+```bash
+# Strip `//` comments, then count.  Reading raw text is what produced 59.
+python3 - <<'EOF'
+import os, re
+def code(t): return "\n".join((l if (i:=l.find("//"))<0 else l[:i]) for l in t.splitlines())
+root, cfg, asm = "rust/sele4n-hal/src", 0, 0
+for d, _, fs in os.walk(root):
+    for f in sorted(fs):
+        if not f.endswith(".rs"): continue
+        c = code(open(os.path.join(d, f), encoding="utf-8").read())
+        cfg += len(re.findall(r'#\[cfg\(target_arch\s*=\s*"aarch64"\)\]', c))
+        asm += len(re.findall(r'\basm!\s*\(', c))
+print("cfg-gated blocks:", cfg, " asm! invocations:", asm)
+EOF
+```
+
+**What the first compile found.** Six defects, in three classes.  None was
+reachable by any gate that existed before RR1, and three of the six are
+invisible to `cargo check` because it stops before code generation:
+
+| # | Site | Class | Defect |
+|---|------|-------|--------|
+| 1 | `boot.S` (`_start`, step 4) | assembly | `and sp, sp, #~0xF` — `AND (immediate)` accepts SP as destination but **not** as source (ARM ARM C6.2.13), so the primary's stack-alignment step does not assemble |
+| 2 | `boot.S` (`secondary_entry`, step 2) | assembly | the same instruction on the secondary bring-up path |
+| 3–6 | `tlb.rs` (`tlbi_vmalle1os`, `tlbi_vae1os`, `tlbi_aside1os`, `tlbi_vale1os`) | codegen | `TLBI VMALLE1OS / VAE1OS / ASIDE1OS / VALE1OS` are **FEAT_TLBIOS** (ARMv8.4-A) and do not encode for the baseline target — nor execute on **Cortex-A76**, the ARMv8.2-A core in the RPi5's BCM2712 |
+| — | `profiling.rs` (the `core::sync::atomic` import) | lint | `unused_imports`: `AtomicU64` and `Ordering` are used only by the `not(aarch64)` stub counter |
+| — | `boot.rs` (`install_exception_vectors`) | lint | `unused_unsafe`: `&raw const` on an extern static forms an address without accessing it |
+| — | `gic.rs` (`read_self_check_target`) | lint | `clippy::needless_return` in a block the host lane removes before clippy sees it |
+
+Defects 3–6 were the substantive find.  The four `*OS` wrappers now probe
+`ID_AA64ISAR0_EL1.TLB` and take `cpu::fatal_halt()` on a PE that does not
+implement the feature — deliberately *not* falling back to the IS variant,
+which would service only the inner-shareable domain while the caller asked
+for the outer one.  The mnemonics assemble under a scoped
+`.arch_extension tlb-rmi` / `notlb-rmi` bracket rather than by raising the
+whole crate's target features to v8.4, which would let the compiler emit
+v8.4 instructions anywhere on a target that cannot run them.  A `build.rs`
+scanner pins both properties, since a dropped restore fails *open*.
+
+**Two lanes now cover the crate between them.**  The host lane compiles the
+26 `not(aarch64)` stubs; the cross lane compiles the 67 aarch64 blocks, all
+57 `asm!` sites (97 after expansion) and all three `.S` files.  Before RR1
+the second set had no lane at all — and, because `scripts/test_rust.sh`
+lints only the host target, the project's zero-clippy-warning claim excluded
+the entire hardware surface.
+
+**A seventh finding, outside the count.**  `src/bin/rw_lock_oracle.rs` — the
+Tier-5 correspondence oracle, a `std` host tool — was being compiled for the
+bare-metal target and failed with 35 errors, which is what made the crate
+look uncross-compilable at all.  It now carries a `required-features =
+["host_tools"]` gate.
 
 ## 6. Medium-severity findings
 

@@ -258,3 +258,65 @@ jobs:
       # conformance suite.
       - name: Run Rust tests, conformance, format and lint gates
         run: ./scripts/test_rust.sh
+
+  test-aarch64-cross:
+    name: aarch64 Cross Build
+    runs-on: ubuntu-latest
+
+    # WS-RR RR1.7: the kernel HAL's real deployment target is
+    # `aarch64-unknown-none`, and until this job existed nothing in the
+    # tree or in CI ever compiled it.  67 cfg-gated blocks, 57 `asm!`
+    # sites and all three `.S` files had zero compile coverage; SM10.1
+    # would have been the first thing to compile them while also being
+    # the first thing to link and boot them.
+    #
+    # Separate job rather than a step inside `test-rust`: it needs a
+    # different target installed and its own cache key, and a failure
+    # here should read as "the hardware target does not build" rather
+    # than as a host test failure.
+    #
+    # The `.S` files need an assembler that can target AArch64.
+    # `scripts/test_aarch64_cross_build.sh` probes for one (bare-metal
+    # and Linux cross prefixes, then `clang`) and fails with an
+    # actionable message if none is present.  On `ubuntu-latest` it
+    # finds `clang`, which the runner image ships; if a future image
+    # drops it, add an `apt-get install -y gcc-aarch64-linux-gnu` step
+    # — the probe prefers that toolchain when both are available.
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Same SHA-pinned action and toolchain version as `test-rust`; see
+      # the comment there.  `targets:` mirrors the `targets` key in
+      # `rust/rust-toolchain.toml` so the cross target is present even
+      # though this action does not read that file.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: 1.94.1
+          # `clippy` is not optional here: step [4/4] of the gate lints
+          # the cross target with `-D warnings`, which is the only lane
+          # that sees inside `#[cfg(target_arch = "aarch64")]` blocks.
+          components: clippy
+          targets: aarch64-unknown-none
+
+      - name: Cache Cargo registry and build artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          # Distinct prefix from the host job: the two share `rust/target`
+          # but populate different target subdirectories, and a shared key
+          # would have each evict the other's artifacts on every run.
+          key: ${{ runner.os }}-cargo-aarch64-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-aarch64-
+
+      # Invoke the gate script rather than a bare `cargo build`, so CI
+      # runs exactly what a developer runs locally — including the
+      # release build, the check that all three `.S` files really
+      # assembled, and the cross-target clippy pass.
+      - name: Build sele4n-hal for aarch64-unknown-none
+        run: ./scripts/test_aarch64_cross_build.sh

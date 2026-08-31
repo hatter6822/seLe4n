@@ -1,13 +1,13 @@
 # WS-RR — SMP Release Readiness (pre-SM10 remediation)
 
 > **Status**: IN FLIGHT — **RR0 LANDED at v0.34.26** (all eleven sub-tasks);
-> RR1..RR8 not started.
+> **RR1 LANDED at v0.34.41** (all eleven sub-tasks); RR2..RR8 not started.
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Source register**: [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) (171 confirmed findings)
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 155 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 156 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -27,8 +27,11 @@ real — so this phase is remediation and completion, not new architecture.
 1. **RR0** — every open workstream carries a durable registry entry with a
    closure target, so no phase can close over work nobody is tracking.
 2. **RR1** — aarch64 code is compiled somewhere, so the 67 cfg-gated blocks
-   and 60 `asm!` sites SM10.1 depends on are not first exercised at
-   image-build time; the result also sizes SM10's estimate.
+   and 57 `asm!` sites SM10.1 depends on are not first exercised at
+   image-build time; the result also sizes SM10's estimate.  (This bullet
+   read "60 `asm!` sites" until RR1.10 measured it: 60 was a transcription
+   of the register's 59, which counted two docstring mentions of the token.
+   57 is the figure over the comment-free code view.)
 3. **RR2** — the four live SMP dispatch arms carry `ipcInvariantFull`
    bundles, and cross-core SchedContext donation migrates the CBS replenish
    queue.
@@ -141,7 +144,7 @@ Nothing else may overlap without re-reading the dependency list above.
 | Phase | Scope (one line) | Subs | Est |
 |-------|------------------|------|-----|
 | RR0 | Registration and plan correction — nothing further is lost.  **LANDED v0.34.26** | 11 | S–M |
-| RR1 | aarch64 compile coverage, plus the Rust HAL gate no other phase owns | 11 | M |
+| RR1 | aarch64 compile coverage, plus the Rust HAL gate no other phase owns.  **LANDED v0.34.41** (RR1.12 hardened the gates through six review rounds in the same cut) | 12 | M |
 | RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live | 19 | M–L |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 | L–XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
@@ -194,11 +197,13 @@ the *Registered debt index* gives every deferred item a home.
 
 ### RR1 — aarch64 compile coverage
 
-Cheap, early, and it de-risks every later Rust change. No aarch64 target is
-compiled anywhere in the tree or CI today, so 67 cfg-gated blocks, 60 `asm!`
-sites and all three `.S` files have **zero** compile coverage. SM10.1 would
-otherwise be the first thing that ever compiles them, while also being the
-first thing that links and boots them.
+Cheap, early, and it de-risks every later Rust change. At the audited cut no
+aarch64 target was compiled anywhere in the tree or CI, so 67 cfg-gated
+blocks, 57 `asm!` sites and all three `.S` files had **zero** compile
+coverage. SM10.1 would otherwise have been the first thing that ever compiled
+them, while also being the first thing that linked and booted them. (Present
+tense throughout the rows below is the plan as written; what landed is in
+*Met at `v0.34.41`* after the acceptance.)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
@@ -213,12 +218,36 @@ first thing that links and boots them.
 | RR1.9 | Implement the Tier-0 grep gate banning non-IS TLBI that `SMP_RUST_HAL_PLAN.md` §4.4 claims exists — a high finding that no other phase owns, and Rust HAL hygiene like the rest of this phase | `scripts/test_tier0_hygiene.sh` | M |
 | RR1.10 | Record the measured aarch64 surface in the register — the input the next sub-task consumes | `docs/planning/UNFINISHED_SMP_WORK.md` | S |
 | RR1.11 | Revise SM10's calendar estimate from that measurement, replacing the plan's 4–6 week guess with a figure derived from the real aarch64 surface | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` | S |
+| RR1.12 | Give the Rust-scanning gates a shared structural view, so a check about a program stops being answered by a slice of text.  Consumes RR1.8 and RR1.9, whose scanners it re-points: one quote-aware Rust code view (`scripts/rust_code_view.py`, and `rust_code_views` in `build.rs` for the build script, which cannot import it), plus a shell command/argv layer so a flag is read on the command that receives it.  The self-test harnesses additionally require every check to carry a token-preserving negative case, since stating that rule in `CLAUDE.md` did not stop the following round from shipping eight more presence-for-relation substitutions | `scripts/rust_code_view.py`, `scripts/check_aarch64_cross_target.py`, `scripts/check_tlbi_broadcast_discipline.py`, `rust/sele4n-hal/build.rs` | M |
 
 **Acceptance**: `cargo build --target aarch64-unknown-none -p sele4n-hal
 --features hw_target` passes in CI — a real code
-generation over all 60 `asm!` sites, not a type-check that stops before the
+generation over all 57 `asm!` sites, not a type-check that stops before the
 backend; the `.S` files assemble; SM10.1's estimate is derived from a real
 compile rather than a guess.
+
+**Met at `v0.34.41`.**  `scripts/test_aarch64_cross_build.sh` builds the
+crate for `aarch64-unknown-none` in **both** profiles, verifies all three
+`.S` sources reached the archive rather than assuming the assembly step
+ran, and lints the cross target with `-D warnings` — the lane where every
+`#[cfg(target_arch = "aarch64")]` block lives, and which the host-only
+clippy pass had excluded from the project's zero-warning claim.  CI runs it
+as the `aarch64 Cross Build` job on every PR;
+`scripts/check_aarch64_cross_target.py` (Tier 0, with a 14-case self-test)
+keeps the target, the feature flag and the `build`-not-`check` choice from
+being dropped or weakened; and `scripts/check_tlbi_broadcast_discipline.py`
+(Tier 0, 12-case self-test) implements the §4.4 TLBI gate RR1.9 owed.
+
+**The first compile found six defects and three lints.**  Two `boot.S`
+sites used `and sp, sp, #~0xF`, which does not assemble — `AND (immediate)`
+accepts SP as its destination but not as its source — so neither the
+primary's nor the secondary's stack-alignment step was valid.  Four `TLBI
+*OS` sites are **FEAT_TLBIOS** (ARMv8.4-A) instructions that neither encode
+for the baseline target nor execute on **Cortex-A76**, the ARMv8.2-A core in
+the RPi5's BCM2712; they now probe `ID_AA64ISAR0_EL1.TLB` and fail closed.
+`cargo check` reported all four of those as clean, which is why RR1.5
+insisted the gate be a build.  The register records the full inventory
+([`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) §5.1).
 
 
 ### RR2 — Live-path correctness
@@ -538,8 +567,10 @@ them to a documentation sweep.
 
 ### 6.1 What each phase proves
 
-- **RR1** — every aarch64 code path compiles, so no cfg-gated block or `asm!`
-  site reaches SM10.1 unexercised.
+- **RR1** — every aarch64 code path compiles *and generates code*, so no
+  cfg-gated block or `asm!` site reaches SM10.1 unexercised. **Proved at
+  `v0.34.41`**: six defects and three lints, none reachable by any
+  pre-existing gate and four of them invisible to `cargo check`.
 - **RR2** — every live SMP dispatch arm carries a `_preserves_ipcInvariantFull`
   theorem; both donation paths preserve the SM5.H affinity invariant.
 - **RR3** — `ipcInvariantFull` holds end to end: the top-level dispatch
@@ -630,10 +661,15 @@ lake build SeLe4n.Kernel.IPC.Invariant.FaultProgress     # RR4
 lake build SeLe4n.Kernel.IPC.Invariant.Reachability      # RR3
 lake exe fault_handling_suite                            # RR4
 ./scripts/test_tier5_cross_language.sh                   # RR6
-# RR1 — run from rust/: rustup's directory override selects the pinned
-# toolchain there, and --manifest-path does not change that selection.
-# `build`, not `check`: check stops before code generation, so it never
-# reaches the backend where an inline-asm error surfaces.
+# RR1 — the gate script is the single place the flags live, and it also
+# verifies the three .S sources really assembled and lints the cross target.
+# It `cd`s into rust/ itself: rustup's directory override selects the pinned
+# toolchain (and the cross target) only there, and --manifest-path does not
+# change that selection.
+./scripts/test_aarch64_cross_build.sh                    # RR1
+# The build alone, if you want just that.  `build`, not `check`: check stops
+# before code generation, so it never reaches the backend where an inline-asm
+# or instruction-encoding error surfaces.
 (cd rust && cargo build --target aarch64-unknown-none -p sele4n-hal --features hw_target)
 
 # Gate honesty — a skipped acceptance gate must fail here

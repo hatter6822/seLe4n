@@ -16,7 +16,7 @@
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.34.40";
+const KERNEL_VERSION: &str = "0.34.41";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -401,9 +401,17 @@ pub fn install_exception_vectors() {
         extern "C" {
             static __exception_vectors: u8;
         }
-        // SAFETY: __exception_vectors is a linker-provided symbol defined in
-        // vectors.S with .balign 2048. We're reading its address, not its value.
-        let vbar = unsafe { &raw const __exception_vectors as u64 };
+        // `&raw const` on an extern static forms an address without
+        // performing an access, which is a safe operation — the `unsafe`
+        // that used to wrap this expression was rejected as unnecessary
+        // the first time the aarch64 target was compiled (WS-RR RR1.3).
+        // The obligation it documented still holds and is discharged
+        // structurally: `__exception_vectors` is a linker-provided symbol
+        // defined in `vectors.S` under `.balign 2048`, and only its
+        // address is taken here — the value is never read.  The
+        // `debug_assert_eq!` below re-checks the alignment that
+        // `write_vbar_el1` depends on.
+        let vbar = &raw const __exception_vectors as u64;
         // AN8-E (R-HAL-L9): runtime alignment check before VBAR_EL1 write.
         // ARM ARM D17.2.135: VBAR_EL1 bits [10:0] are RES0 — a misaligned
         // address produces an UNDEFINED instruction on the next exception
@@ -523,7 +531,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.34.40");
+        assert_eq!(KERNEL_VERSION, "0.34.41");
     }
 
     #[test]

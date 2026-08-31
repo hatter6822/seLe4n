@@ -148,14 +148,36 @@ fn main() {
     // closed.
     scan_queued_rw_lock_protocol_intact();
 
+    // WS-RR RR1.4 (closes the FEAT_TLBIOS contract): verify every
+    // outer-shareable TLBI wrapper in `tlb.rs` still fails closed on a
+    // PE that does not implement FEAT_TLBIOS, and that each `*OS`
+    // mnemonic is still bracketed by a balanced `.arch_extension`
+    // pair.  Both properties are invisible to the host build — the
+    // `asm!` blocks are `#[cfg(target_arch = "aarch64")]` — and a
+    // dropped guard would turn a mis-declared `SharingDomain::Outer`
+    // into an undefined-instruction trap on Cortex-A76 instead of a
+    // diagnosed halt.  Runs on every target so the check fires in host
+    // builds too.
+    // The views come first: every scanner below reads them, so a
+    // stripper defect would otherwise be reported as a clean tree.
+    verify_rust_code_views();
+    scan_tlb_rs_outer_shareable_guards_intact();
+
     // Only build assembly for aarch64 targets
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     if target_arch != "aarch64" {
         return;
     }
 
-    cc::Build::new()
-        .file("src/boot.S")
+    let mut asm = cc::Build::new();
+    // WS-RR RR1.6: pick an assembler that can actually target aarch64.
+    // Left to its defaults, `cc` falls back to the host `cc` for
+    // `aarch64-unknown-none` and hands three ARM64 sources to an x86
+    // assembler — 54 "no such instruction" errors from `boot.S` alone,
+    // before the build even reaches `vectors.S`, all of them describing
+    // the toolchain rather than the code.
+    select_cross_assembler(&mut asm);
+    asm.file("src/boot.S")
         .file("src/vectors.S")
         .file("src/trap.S")
         .compile("sele4n_hal_asm");
@@ -191,17 +213,9 @@ fn scan_boot_s_for_legacy_mpidr_literal() {
     // instructions. Block comments `/* ... */` are not used in `boot.S`
     // and are therefore not stripped here; if the codebase ever adopts
     // them for assembly, extend this stripper.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Assembly grammar: `//` AND `/* */`, since the `.S` sources go
+    // through the C preprocessor. See `asm_code_view`.
+    let stripped = asm_code_view(&contents);
 
     // Normalise whitespace: collapse ASCII whitespace to single spaces and
     // lowercase. This makes the match resilient to formatting changes.
@@ -289,17 +303,9 @@ fn scan_boot_s_for_per_cpu_data_setup() {
 
     // Strip `//` line comments before scanning so docstring mentions of
     // the symbol names do not satisfy the check spuriously.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Assembly grammar: `//` AND `/* */`, since the `.S` sources go
+    // through the C preprocessor. See `asm_code_view`.
+    let stripped = asm_code_view(&contents);
 
     // Whitespace-tolerant lowercase substring match.  We do NOT collapse
     // adjacent spaces here (unlike the MPIDR scanner) because the
@@ -364,17 +370,9 @@ fn scan_boot_rs_uses_install_exception_vectors() {
 
     // Strip `//` line comments before scanning so docstring mentions of
     // the helper / register don't satisfy the check spuriously.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
     let normalised = stripped.to_ascii_lowercase();
 
     // We require the helper call to exist in boot.rs (in non-comment
@@ -421,17 +419,9 @@ fn scan_smp_rs_uses_install_exception_vectors() {
         Err(e) => panic!("WS-SM SM1.C.2 scanner: failed to read {path}: {e}"),
     };
 
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
     let normalised = stripped.to_ascii_lowercase();
 
     let has_helper_call = normalised.contains("install_exception_vectors(");
@@ -470,17 +460,9 @@ fn scan_smp_rs_invokes_secondary_init_helpers() {
         Err(e) => panic!("WS-SM SM1.C.5 scanner: failed to read {path}: {e}"),
     };
 
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
     let normalised = stripped.to_ascii_lowercase();
 
     // Required per-core init helpers.  Each entry is a (call site,
@@ -565,17 +547,9 @@ fn scan_boot_s_for_secondary_entry_context_id_validation() {
         }
     };
 
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Assembly grammar: `//` AND `/* */`, since the `.S` sources go
+    // through the C preprocessor. See `asm_code_view`.
+    let stripped = asm_code_view(&contents);
 
     let normalised = stripped.to_ascii_lowercase();
 
@@ -635,17 +609,9 @@ fn scan_boot_rs_calls_cmdline_smp_startup() {
         Err(e) => panic!("WS-SM SM1.D scanner: failed to read {path}: {e}"),
     };
 
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
     let normalised = stripped.to_ascii_lowercase();
 
     // Required Phase-5 call sites.  Each entry is (call site, step name).
@@ -714,17 +680,9 @@ fn scan_gic_rs_send_sgi_emits_dsb_ish() {
 
     // Strip `//` line comments so docstring mentions of "dsb_ish"
     // don't satisfy the check spuriously.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
 
     // Locate each public function body and verify the ordering
     // contract.  We require:
@@ -827,17 +785,9 @@ fn scan_trap_rs_handle_irq_per_core_intact() {
 
     // Strip `//` line comments so docstring mentions of these symbols
     // don't satisfy the check spuriously.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
 
     // Check 1: the function signature is present.
     let fn_sig = "pub extern \"C\" fn handle_irq_per_core(";
@@ -936,17 +886,9 @@ fn scan_trap_s_irq_vector_redirect() {
 
     // Strip `//` line comments so prose mentions don't satisfy (or
     // trip) the checks.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Assembly grammar: `//` AND `/* */`, since the `.S` sources go
+    // through the C preprocessor. See `asm_code_view`.
+    let stripped = asm_code_view(&contents);
 
     let per_core_branches = stripped.matches("bl      handle_irq_per_core").count()
         + stripped.matches("bl handle_irq_per_core").count();
@@ -1208,17 +1150,9 @@ fn scan_lock_bridge_rs_intact() {
     };
 
     // Strip line comments so docstring mentions don't satisfy checks.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
 
     // The 16 required public helpers in `lock_bridge.rs` that the
     // SM2.D FFI exports forward to.  Plus the build anchor constant.
@@ -1291,17 +1225,9 @@ fn scan_ffi_rs_exposes_lock_ffi_exports() {
     };
 
     // Strip line comments.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
 
     // Every SM2.D FFI export.  Lean's `@[extern "<symbol>"]` declarations
     // in `SeLe4n/Platform/FFI.lean` resolve against these exports at the
@@ -1354,17 +1280,9 @@ fn scan_ffi_rs_exposes_switch_to_thread_exports() {
     };
 
     // Strip line comments so the needles match only real declarations.
-    let stripped: String = contents
-        .lines()
-        .map(|line| {
-            if let Some(idx) = line.find("//") {
-                &line[..idx]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Identifier questions read the STRING-BLANKED view: a name inside
+    // a literal is a mention, not a call. See `rust_code_views`.
+    let (_, stripped) = rust_code_views(&contents);
 
     let required_ffi_symbols = [
         "pub extern \"C\" fn ffi_switch_to_thread(",
@@ -1582,4 +1500,985 @@ fn scan_queued_rw_lock_protocol_intact() {
              `WRITER_BIT | non-zero-reader-bits`."
         );
     }
+}
+
+/// **WS-RR RR1.4** regression guard: verify the outer-shareable TLBI
+/// wrappers in `tlb.rs` keep their fail-closed FEAT_TLBIOS guard and
+/// their balanced `.arch_extension` bracket.
+///
+/// `TLBI VMALLE1OS / VAE1OS / ASIDE1OS / VALE1OS` are FEAT_TLBIOS
+/// (ARMv8.4-A).  Cortex-A76 — the core in the RPi5's BCM2712 — is
+/// ARMv8.2-A and does not implement them, so on the project's first
+/// hardware target the encodings are UNDEFINED.  Two properties keep
+/// that from becoming a runtime trap, and neither is visible to any
+/// compiler on the host:
+///
+///  1. Each wrapper calls `require_feat_tlbios()` before its `asm!`,
+///     diverging into `cpu::fatal_halt()` when the PE cannot execute
+///     the instruction.  Dropping the call would substitute an
+///     undefined-instruction exception for a diagnosed halt.
+///  2. Each `*OS` mnemonic sits inside a `.arch_extension tlb-rmi` …
+///     `.arch_extension notlb-rmi` pair.  Dropping the *enable* breaks
+///     the aarch64 build (loudly); dropping the *restore* leaves the
+///     extension enabled for every later inline-asm block in the same
+///     object, so a v8.4-only instruction elsewhere would silently
+///     assemble.  That one fails open, which is why the balance is
+///     pinned here rather than left to the aarch64 build to notice.
+///
+/// The scan runs over the comment-stripped source, so a docstring
+/// mentioning `require_feat_tlbios` cannot satisfy it.  Both properties are
+/// checked as ORDER, not presence: a guard below the `asm!` and a reversed
+/// `.arch_extension` pair each leave every token in place while breaking
+/// what the check means.  See CLAUDE.md's "A presence check is not a
+/// relation check".
+fn scan_tlb_rs_outer_shareable_guards_intact() {
+    let path = "src/tlb.rs";
+    println!("cargo:rerun-if-changed={path}");
+
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            panic!("WS-RR RR1.4 scanner: failed to read {path}: {e}");
+        }
+    };
+
+    // TWO views, byte-aligned with each other and with the file (see
+    // `rust_code_views`).  `templates` keeps string contents, because the
+    // assembly this scanner checks -- the `tlbi` mnemonics and the
+    // `.arch_extension` bracket -- lives inside `asm!` template strings.
+    // `code` blanks them, because an identifier inside a string is a
+    // mention and must not satisfy a check that the wrapper CALLS its
+    // guard: with one view for both, `let _note = "require_feat_tlbios()";`
+    // stood in for the call and the scanner passed (PR #883 review round 3).
+    let (templates, code) = rust_code_views(&contents);
+    let stripped = &code;
+
+    // The fail-closed helper itself must exist and must diverge.
+    if !stripped.contains("fn require_feat_tlbios()") {
+        panic!(
+            "WS-RR RR1.4 regression: `{path}` no longer defines \
+             `require_feat_tlbios()`.  It is the fail-closed guard that \
+             keeps a `SharingDomain::Outer` binding from executing an \
+             UNDEFINED instruction on a PE without FEAT_TLBIOS \
+             (Cortex-A76 / RPi5).  See the `tlb.rs` module docstring, \
+             section \"FEAT_TLBIOS is not baseline\"."
+        );
+    }
+    // The guard must DIVERGE on the negative branch, and that is checked
+    // inside the helper's own body rather than as a file-wide token.
+    // `stripped.contains("fatal_halt()")` was satisfied by any occurrence
+    // anywhere in `tlb.rs`, so neutering the helper to `return;` while a
+    // `fatal_halt()` remained elsewhere in the file passed cleanly -- the
+    // per-wrapper ordering checks then proved only that an ineffective
+    // helper was called before the `asm!` (PR #883 review, round 2).
+    let guard_body = enclosing_fn_body(stripped, "fn require_feat_tlbios()").unwrap_or_else(|| {
+        panic!(
+            "WS-RR RR1.4 scanner: could not delimit the body of \
+                 `{path}::require_feat_tlbios`.  If the helper was \
+                 restructured, update this scanner so the fail-closed \
+                 contract stays pinned."
+        )
+    });
+    let negative_branch =
+        braced_block_after(guard_body, "if !has_feat_tlbios()").unwrap_or_else(|| {
+            panic!(
+                "WS-RR RR1.4 regression: `{path}::require_feat_tlbios` no \
+                 longer branches on `if !has_feat_tlbios()`.  The guard's \
+                 whole purpose is to act when the probe says the feature \
+                 is ABSENT; a differently-shaped condition is not \
+                 something this scanner can verify, so it must be \
+                 re-pinned deliberately."
+            )
+        });
+    // The call must be UNCONDITIONAL within that branch, which means it has
+    // to sit at the branch's own statement level.  `contains` cannot see
+    // that: it is satisfied by a `fatal_halt()` nested inside any construct,
+    // including one whose condition is the negation of the branch's own --
+    //
+    //     if !has_feat_tlbios() { if has_feat_tlbios() { fatal_halt(); } }
+    //
+    // -- which keeps every token the check searched for and diverges on
+    // exactly the PEs that do not need it (PR #883 review round 3).  So
+    // nested blocks are removed and the remaining top-level statements are
+    // what must reach the call.
+    let top_level = statements_at_block_level(negative_branch);
+    let halt_at = top_level.find("fatal_halt()");
+    let escapes_first = halt_at.is_some_and(|at| top_level[..at].contains("return"));
+    if halt_at.is_none() || escapes_first {
+        panic!(
+            "WS-RR RR1.4 regression: the `if !has_feat_tlbios()` branch of \
+             `{path}::require_feat_tlbios` does not unconditionally diverge \
+             into `cpu::fatal_halt()`.\n\
+             Branch body: {negative_branch:?}\n\
+             At the branch's own statement level (nested blocks removed): \
+             {top_level:?}\n\
+             The guard must DIVERGE when FEAT_TLBIOS is absent.  Returning \
+             normally leaves the caller to execute the UNDEFINED `TLBI \
+             *OS` encoding, and falling back to the inner-shareable \
+             variant would service only the inner domain while the caller \
+             asked for the outer one -- leaving live stale translations on \
+             the PEs outside it.\n\
+             A `fatal_halt()` reached only from inside a nested `if`, \
+             `match` or loop is not something this scanner can prove \
+             executes, so it is rejected rather than accepted: the guard \
+             must be re-pinned deliberately if it is ever restructured."
+        );
+    }
+
+    // Every `*OS` wrapper must call the guard before its `asm!`.
+    //
+    // The list below is a FLOOR, not the source of truth: the wrappers that
+    // actually need the guard are derived from the mnemonics `tlb.rs`
+    // emits, so a fifth `*OS` wrapper added later is guarded from the day
+    // it is written.  A hand-written list cannot see a wrapper that does
+    // not exist yet -- the hole the TLBI gate had for its own local-wrapper
+    // enumeration (PR #883 review round 4).
+    let derived_os_wrappers = outer_shareable_emitters(&templates, &code);
+    for name in &derived_os_wrappers {
+        if !OS_WRAPPERS.contains(&name.as_str()) {
+            panic!(
+                "WS-RR RR1.4 regression: `{path}::{name}` emits a `TLBI \
+                 *OS` mnemonic but is not in this scanner's OS_WRAPPERS \
+                 list, so its FEAT_TLBIOS guard is never checked.\n\
+                 Every outer-shareable wrapper must call \
+                 `require_feat_tlbios()` before its `asm!`; add the name \
+                 here so the ordering and `.arch_extension` bracket are \
+                 pinned for it too."
+            );
+        }
+    }
+
+    const OS_WRAPPERS: [&str; 4] = [
+        "tlbi_vmalle1os",
+        "tlbi_vae1os",
+        "tlbi_aside1os",
+        "tlbi_vale1os",
+    ];
+    for name in OS_WRAPPERS {
+        let signature = format!("pub fn {name}(");
+        let Some(start) = stripped.find(&signature) else {
+            panic!(
+                "WS-RR RR1.4 regression: `{path}` no longer defines \
+                 `pub fn {name}`.  The four outer-shareable wrappers are \
+                 the only production route to the FEAT_TLBIOS \
+                 instructions; if one was renamed, rename it in this \
+                 scanner too so the guard stays pinned."
+            );
+        };
+        // Top-level function bodies in this file end at a `}` in column
+        // zero, so the next such line bounds the body.
+        let body_start = start + signature.len();
+        let body_end = stripped[body_start..]
+            .find("\n}\n")
+            .map(|i| body_start + i)
+            .unwrap_or(stripped.len());
+        let body = &stripped[body_start..body_end];
+
+        let upper = name.trim_start_matches("tlbi_").to_ascii_uppercase();
+
+        // POSITION, not mere presence.  A refactor that moved the guard
+        // below the `asm!` would leave the call in the body and satisfy a
+        // `contains` check, while the PE executed the UNDEFINED encoding
+        // before ever reaching the fail-closed halt (PR #883 review).
+        let guard_at = body.find("require_feat_tlbios()");
+        let asm_at = body.find("asm!");
+        match (guard_at, asm_at) {
+            (None, _) => panic!(
+                "WS-RR RR1.4 regression: `{path}::{name}` no longer calls \
+                 `require_feat_tlbios()` before its `asm!`.\n\
+                 `TLBI {upper}` is FEAT_TLBIOS (ARMv8.4-A) and is NOT \
+                 implemented by Cortex-A76, the core in the RPi5's \
+                 BCM2712.  Without the guard, a platform binding whose \
+                 `sharingDomain` is `.outer` executes an UNDEFINED \
+                 encoding instead of halting with a diagnosis."
+            ),
+            (Some(_), None) => panic!(
+                "WS-RR RR1.4 scanner: `{path}::{name}` no longer contains \
+                 an `asm!` block.  If the wrapper was rewritten, update \
+                 this scanner so the FEAT_TLBIOS contract stays pinned."
+            ),
+            (Some(guard), Some(asm)) if guard > asm => panic!(
+                "WS-RR RR1.4 regression: `{path}::{name}` calls \
+                 `require_feat_tlbios()` AFTER its `asm!`, so the \
+                 fail-closed guard runs only once the UNDEFINED `TLBI \
+                 {upper}` has already executed.  The guard must precede \
+                 the instruction it protects."
+            ),
+            _ => {}
+        }
+
+        // The `.arch_extension` bracket is checked PER WRAPPER and in
+        // order.  File-wide counts cannot see a pair that is mismatched
+        // across two wrappers, or a restore that precedes its own enable.
+        // Read from the STRING-KEEPING view at the same byte offsets: the
+        // assembler directives and the mnemonic are template contents, and
+        // the identifier view has blanked them.
+        let template_body = &templates[body_start..body_end];
+        let enable_at = template_body.find(".arch_extension tlb-rmi");
+        let restore_at = template_body.find(".arch_extension notlb-rmi");
+        let mnemonic = format!("tlbi {}", upper.to_ascii_lowercase());
+        let mnemonic_at = template_body.find(&mnemonic);
+        match (enable_at, mnemonic_at, restore_at) {
+            (Some(enable), Some(instr), Some(restore)) if enable < instr && instr < restore => {}
+            (enable, instr, restore) => panic!(
+                "WS-RR RR1.4 regression: `{path}::{name}` no longer wraps \
+                 `{mnemonic}` in an ordered `.arch_extension tlb-rmi` … \
+                 `notlb-rmi` pair (enable: {enable:?}, mnemonic: \
+                 {instr:?}, restore: {restore:?}, as byte offsets in the \
+                 function body).\n\
+                 Without the enable the aarch64 build fails loudly; \
+                 without the restore the extension stays live for every \
+                 later inline-asm block in the same object, so a v8.4-only \
+                 instruction added elsewhere would assemble silently and \
+                 trap on the ARMv8.2-A target.  That direction fails OPEN, \
+                 which is why the order is pinned rather than the count."
+            ),
+        }
+    }
+
+    // File-wide totals as well, so a stray enable outside any wrapper --
+    // which the per-wrapper checks above cannot see -- is still caught.
+    // Counted over the template view: the directives are string contents.
+    let enables = templates.matches(".arch_extension tlb-rmi").count();
+    let restores = templates.matches(".arch_extension notlb-rmi").count();
+    if enables != OS_WRAPPERS.len() || restores != OS_WRAPPERS.len() {
+        panic!(
+            "WS-RR RR1.4 regression: `{path}` has {enables} \
+             `.arch_extension tlb-rmi` enable(s) and {restores} \
+             `notlb-rmi` restore(s); expected {expected} of each — one \
+             pair per outer-shareable wrapper.\n\
+             A pair outside the four wrappers leaves FEAT_TLBIOS \
+             mnemonics assemblable for inline asm this scanner does not \
+             inspect.",
+            expected = OS_WRAPPERS.len(),
+        );
+    }
+}
+
+/// **WS-RR RR1.6**: choose an assembler that can build the three `.S`
+/// sources for the *target* architecture, not the host's.
+///
+/// `cc`'s default search finds no cross compiler for
+/// `aarch64-unknown-none` on a typical x86 host and falls back to the
+/// bare `cc` on `PATH`.  That silently hands `boot.S`, `vectors.S` and
+/// `trap.S` to an x86 assembler, which reports every ARM64 mnemonic as
+/// "no such instruction" — 54 errors from `boot.S` alone, all of which
+/// look like broken assembly and are entirely an artefact of the
+/// toolchain choice.  Diagnosing that once is cheap; diagnosing it on
+/// every fresh clone is not, so the choice is made here.
+///
+/// ## Order of precedence
+///
+/// 1. **An explicit compiler wins.**  If the environment already names a
+///    compiler for this target in a variable `cc` itself consults
+///    (`CC_<target>`, `TARGET_CC`, `CC`), this function does nothing and
+///    leaves `cc` to honour it.  A developer who has pointed the build at
+///    a specific toolchain must not have it silently replaced.
+/// 2. **`CROSS_COMPILE` is applied, not merely detected.**  It is the
+///    conventional toolchain *prefix* and `cc` does **not** read it, so
+///    returning early on it left `cc` to fall back to the host compiler
+///    -- the failure this function exists to prevent.  The prefix is
+///    expanded (`<prefix>gcc`, then `cc`, then `clang`), probed, and
+///    installed via `build.compiler`.  A prefix that cannot assemble for
+///    the target warns and falls through rather than being honoured
+///    blindly or ignored.
+/// 3. **Otherwise, probe candidates in order** and take the first that
+///    actually assembles a trivial aarch64 translation unit:
+///    the bare `cc` (only when the host is already aarch64, where it is
+///    the native compiler), then the conventional bare-metal and
+///    Linux cross prefixes, then `clang`, which is multi-target by
+///    construction and needs only the `--target` flag `cc` already
+///    passes it.
+///
+/// The probe compiles rather than merely checking for the binary on
+/// `PATH`: a name being present says nothing about whether that build
+/// of it has an AArch64 backend, and an assembler chosen on presence
+/// alone reproduces exactly the failure this function exists to avoid.
+///
+/// If no candidate works, the panic names the target and lists what to
+/// install, because "error occurred in cc-rs" with a wall of x86
+/// assembler diagnostics is not an actionable message.
+fn select_cross_assembler(build: &mut cc::Build) {
+    let target = std::env::var("TARGET").unwrap_or_default();
+    let host = std::env::var("HOST").unwrap_or_default();
+
+    // 1a. Respect an explicit override.  These are the variables `cc`
+    // ITSELF consults, so if any is set it has already decided and this
+    // function must not second-guess it.
+    let target_underscores = target.replace('-', "_");
+    let cc_consulted = [
+        format!("CC_{target}"),
+        format!("CC_{target_underscores}"),
+        "TARGET_CC".to_string(),
+        "CC".to_string(),
+    ];
+    let mut overridden = false;
+    for var in &cc_consulted {
+        println!("cargo:rerun-if-env-changed={var}");
+        if std::env::var_os(var).is_some() {
+            overridden = true;
+        }
+    }
+    if overridden {
+        println!(
+            "sele4n-hal: assembler selection deferred to the environment \
+             (one of {cc_consulted:?} is set)"
+        );
+        return;
+    }
+
+    // 1b. `CROSS_COMPILE` is the conventional toolchain PREFIX, and `cc`
+    // does NOT consult it.  Treating it as an override -- returning and
+    // leaving `cc` to honour it -- was wrong in the one direction that
+    // matters: `cc` resumed its default lookup, which on an x86 host is
+    // the bare `cc`, which is exactly the host-assembler fallback this
+    // whole function exists to prevent.  A developer who sets
+    // `CROSS_COMPILE=aarch64-linux-gnu-` got the host assembler and 54
+    // errors that look like broken ARM64 assembly (PR #883 review round
+    // 5).
+    //
+    // So the prefix is APPLIED rather than merely detected: expanded to a
+    // concrete compiler and probed like any other candidate.  If it does
+    // not assemble for the target the probe falls through with a warning
+    // rather than silently using it -- the developer named a toolchain,
+    // and being told it cannot build this target is more useful than
+    // either honouring it blindly or ignoring them.
+    println!("cargo:rerun-if-env-changed=CROSS_COMPILE");
+    if let Some(prefix) = std::env::var_os("CROSS_COMPILE") {
+        let prefix = prefix.to_string_lossy().into_owned();
+        for suffix in ["gcc", "cc", "clang"] {
+            let candidate = format!("{prefix}{suffix}");
+            if probe_assembles_aarch64(&candidate, &target) {
+                println!(
+                    "sele4n-hal: assembling .S sources for {target} with \
+                     `{candidate}` (from CROSS_COMPILE={prefix})"
+                );
+                build.compiler(&candidate);
+                return;
+            }
+        }
+        println!(
+            "cargo:warning=sele4n-hal: CROSS_COMPILE={prefix} names a \
+             toolchain whose gcc/cc/clang cannot assemble for {target}; \
+             falling through to the standard probe."
+        );
+    }
+
+    // 2. Probe candidates.  `cc` is only a candidate when the host is
+    // itself aarch64 — there it is the native compiler and the right
+    // first choice; on an x86 host it is precisely the wrong answer.
+    let host_is_aarch64 = host.starts_with("aarch64");
+    let mut candidates: Vec<&str> = Vec::new();
+    if host_is_aarch64 {
+        candidates.push("cc");
+    }
+    candidates.extend([
+        // Bare-metal (newlib / no-OS) cross toolchains.
+        "aarch64-none-elf-gcc",
+        "aarch64-elf-gcc",
+        // Linux cross toolchains: their assembler is the same GNU as,
+        // and these sources never link against a libc.
+        "aarch64-linux-gnu-gcc",
+        "aarch64-none-linux-gnu-gcc",
+        // Multi-target by construction; `cc` passes it `--target`.
+        "clang",
+    ]);
+
+    for candidate in &candidates {
+        if probe_assembles_aarch64(candidate, &target) {
+            println!("sele4n-hal: assembling .S sources for {target} with `{candidate}`");
+            build.compiler(candidate);
+            return;
+        }
+    }
+
+    panic!(
+        "WS-RR RR1.6: no assembler on PATH can build the AArch64 sources \
+         for target `{target}`.\n\
+         Tried, in order: {candidates:?}.\n\
+         \n\
+         Install one of:\n\
+         - `clang` (any recent build; it is multi-target and needs no \
+         extra packages)\n\
+         - the `gcc-aarch64-linux-gnu` package (Debian/Ubuntu)\n\
+         - a bare-metal `aarch64-none-elf` toolchain\n\
+         \n\
+         Or point the build at a specific one by exporting \
+         `CC_{target_underscores}=<compiler>`.\n\
+         \n\
+         Without this, `cc` would fall back to the host `cc` and hand \
+         ARM64 assembly to an x86 assembler."
+    );
+}
+
+/// **WS-RR RR1.6**: can `candidate` assemble an AArch64 translation unit
+/// for `target`?
+///
+/// Compiles a one-instruction `.S` file rather than checking `PATH` or
+/// parsing `--version`: the question is whether this build of the tool
+/// has an AArch64 backend, and only asking it to produce an object file
+/// answers that.  A missing binary surfaces as a spawn error and is
+/// reported as "cannot assemble", which is the correct answer for the
+/// caller.
+///
+/// The probe writes into `OUT_DIR`, so it leaves nothing behind in the
+/// source tree and is discarded with the rest of the build directory.
+fn probe_assembles_aarch64(candidate: &str, target: &str) -> bool {
+    use std::path::PathBuf;
+
+    let Ok(out_dir) = std::env::var("OUT_DIR") else {
+        // No OUT_DIR means we are not running under cargo; refuse to
+        // guess rather than probing into the source tree.
+        return false;
+    };
+    let out_dir = PathBuf::from(out_dir);
+
+    let src = out_dir.join("rr1_assembler_probe.S");
+    // `nop` is valid AArch64 and invalid on x86-family assemblers only
+    // in combination with the `.arch` directive, so pin the ISA
+    // explicitly: `.arch armv8-a` is rejected outright by an assembler
+    // without an AArch64 backend, which is exactly the discrimination
+    // this probe needs.  `msr daifset` additionally requires the A64
+    // system-register parser, so a probe that passes really can handle
+    // the sources.
+    let probe_source = ".arch armv8-a\n.text\n.globl rr1_assembler_probe\nrr1_assembler_probe:\n    msr daifset, #0xf\n    nop\n    ret\n";
+    if std::fs::write(&src, probe_source).is_err() {
+        return false;
+    }
+
+    let obj = out_dir.join(format!(
+        "rr1_assembler_probe_{}.o",
+        candidate.replace(['/', '\\', '.'], "_")
+    ));
+
+    let mut cmd = std::process::Command::new(candidate);
+    // `cc` passes clang an explicit `--target`; mirror that here so the
+    // probe exercises the same configuration the real build will use.
+    // GCC cross compilers encode their target in the binary name and
+    // reject the flag, so it is added only for clang-like names.
+    if candidate.contains("clang") && !target.is_empty() {
+        cmd.arg(format!("--target={target}"));
+    }
+    cmd.arg("-c")
+        .arg(&src)
+        .arg("-o")
+        .arg(&obj)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    let ok = matches!(cmd.status(), Ok(status) if status.success());
+    let _ = std::fs::remove_file(&obj);
+    ok
+}
+
+/// **WS-RR RR1.4**: the body of a top-level `fn` in a scanned source.
+///
+/// Returns the text between the signature and the closing `}` that sits in
+/// column zero.  Scanners in this file need to ask questions *about a
+/// function* -- "does this branch diverge", "does the guard precede the
+/// `asm!`" -- and a file-wide `contains` cannot answer either: it is
+/// satisfied by any occurrence anywhere, including one in a different
+/// function entirely.  See CLAUDE.md's "A presence check is not a relation
+/// check".
+fn enclosing_fn_body<'a>(source: &'a str, signature: &str) -> Option<&'a str> {
+    let start = source.find(signature)? + signature.len();
+    let end = source[start..].find("\n}\n").map(|i| start + i)?;
+    Some(&source[start..end])
+}
+
+/// **WS-RR RR1.12**: functions in `tlb.rs` that emit a `TLBI *OS` mnemonic.
+///
+/// Derived from the template view (the mnemonic is `asm!` template
+/// content) and attributed through the identifier view's brace-matched
+/// function bodies, which are byte-aligned with it.  A wrapper emitting an
+/// outer-shareable invalidation from outside any function cannot be
+/// attributed, so it panics rather than passing unchecked.
+fn outer_shareable_emitters(templates: &str, code: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    let bytes = templates.as_bytes();
+    let mut at = 0usize;
+    while let Some(hit) = templates[at..].find("tlbi ") {
+        let start = at + hit;
+        // Must begin an assembly statement, not sit inside an identifier.
+        let preceded_ok =
+            start == 0 || matches!(bytes[start - 1], b' ' | b'\t' | b'\n' | b';' | b'"');
+        at = start + 5;
+        if !preceded_ok {
+            continue;
+        }
+        let operation: String = templates[at..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect();
+        if !operation.to_ascii_lowercase().ends_with("os") {
+            continue;
+        }
+        let name = enclosing_fn_name(code, start);
+        match name {
+            Some(owner) => {
+                if !found.contains(&owner) {
+                    found.push(owner);
+                }
+            }
+            None => panic!(
+                "WS-RR RR1.4 scanner: `src/tlb.rs` emits `tlbi {operation}` \
+                 outside any function, so the FEAT_TLBIOS guard cannot be \
+                 attributed to a wrapper. Move the emission into a named \
+                 wrapper."
+            ),
+        }
+    }
+    found
+}
+
+/// **WS-RR RR1.12**: the innermost `fn` whose brace-matched body contains
+/// `offset`, or `None` at module scope.
+fn enclosing_fn_name(code: &str, offset: usize) -> Option<String> {
+    let bytes = code.as_bytes();
+    let mut best: Option<(String, usize)> = None;
+    let mut search = 0usize;
+    while let Some(hit) = code[search..].find("fn ") {
+        let at = search + hit;
+        search = at + 3;
+        if at > 0 && (bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_') {
+            continue;
+        }
+        let name: String = code[at + 3..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if name.is_empty() {
+            continue;
+        }
+        let Some(open) = code[at..].find('{').map(|i| at + i) else {
+            continue;
+        };
+        // A `;` before the brace means a bodyless declaration.
+        if code[at..open].contains(';') {
+            continue;
+        }
+        let mut depth = 0usize;
+        let mut end = open;
+        for (index, ch) in code[open..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = open + index;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if open < offset && offset < end && best.as_ref().is_none_or(|(_, s)| open > *s) {
+            best = Some((name, open));
+        }
+    }
+    best.map(|(name, _)| name)
+}
+
+/// **WS-RR RR1.12**: the assembly code view for the `.S` sources.
+///
+/// The `.S` files are preprocessed by a C compiler, so BOTH `//` and
+/// `/* */` open comments there.  Thirteen scanners in this file carried a
+/// line-based `//`-only stripper; a `/* */` splitting a token left it
+/// invisible to them, exactly as it did to the TLBI containment gate.
+/// Byte-aligned by blanking to spaces, which also splices a token that a
+/// comment interrupts back together, as `cpp` does for the assembler.
+///
+/// C block comments do not nest, unlike Rust's.
+fn asm_code_view(contents: &str) -> String {
+    let bytes = contents.as_bytes();
+    let mut out = bytes.to_vec();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        let end = if bytes[index..].starts_with(b"//") {
+            bytes[index..]
+                .iter()
+                .position(|&b| b == b'\n')
+                .map_or(bytes.len(), |p| index + p)
+        } else if bytes[index..].starts_with(b"/*") {
+            match contents[index + 2..].find("*/") {
+                Some(offset) => index + 2 + offset + 2,
+                None => bytes.len(),
+            }
+        } else {
+            index += 1;
+            continue;
+        };
+        for byte in out.iter_mut().take(end).skip(index) {
+            if *byte != b'\n' {
+                *byte = b' ';
+            }
+        }
+        index = end;
+    }
+    String::from_utf8(out).expect("blanking preserves UTF-8")
+}
+
+/// **WS-RR RR1.12**: pin `rust_code_views`, because a stripper that stops
+/// stripping fails SILENTLY -- every scanner reading it keeps reporting a
+/// clean tree.
+///
+/// Each witness KEEPS the token it is about and changes only the relation:
+/// the `//` moves inside a string, the identifier moves inside a string,
+/// the brace moves inside a literal.  A witness that deletes the token is
+/// passed by the line-based stripper this replaced, and so certifies
+/// nothing (CLAUDE.md, "Test a gate by breaking the relation, not by
+/// deleting the token").
+fn verify_rust_code_views() {
+    let case = |label: &str, source: &str, in_templates: &[&str], not_in_code: &[&str]| {
+        let (templates, code) = rust_code_views(source);
+        assert_eq!(
+            templates.len(),
+            source.len(),
+            "WS-RR RR1.12: `{label}` -- template view is not byte-aligned"
+        );
+        assert_eq!(
+            code.len(),
+            source.len(),
+            "WS-RR RR1.12: `{label}` -- code view is not byte-aligned"
+        );
+        for needle in in_templates {
+            assert!(
+                templates.contains(needle),
+                "WS-RR RR1.12: `{label}` -- template view lost {needle:?}\n\
+                 view: {templates:?}"
+            );
+        }
+        for needle in not_in_code {
+            assert!(
+                !code.contains(needle),
+                "WS-RR RR1.12: `{label}` -- code view kept {needle:?}, which \
+                 is inside a string literal and is a mention, not a call\n\
+                 view: {code:?}"
+            );
+        }
+    };
+
+    // An assembler comment and an instruction as sibling template lines on
+    // ONE source line: the shape a line-based stripper deletes.
+    case(
+        "asm template comment does not hide the next template line",
+        "asm!(\"// note\", \"tlbi vae1os, {0}\");\n",
+        &["tlbi vae1os"],
+        &["tlbi vae1os"],
+    );
+    // An identifier inside a string is a mention: it must not satisfy a
+    // check that the code CALLS it.
+    case(
+        "an identifier in a string is not a call",
+        "let _note = \"require_feat_tlbios()\";\nfoo();\n",
+        &["require_feat_tlbios()"],
+        &["require_feat_tlbios()"],
+    );
+    // An `extern "C"` ABI string is syntax and must survive the blanked
+    // view, or every scanner asserting that an export still exists breaks.
+    let (_, code) = rust_code_views("pub extern \"C\" fn handle_irq() { let s = \"data\"; }\n");
+    assert!(
+        code.contains("extern \"C\" fn handle_irq"),
+        "WS-RR RR1.12: an `extern` ABI string was blanked: {code:?}"
+    );
+    assert!(
+        !code.contains("data"),
+        "WS-RR RR1.12: an ordinary string survived the blanked view: {code:?}"
+    );
+
+    // A real comment is blanked in BOTH views.
+    let (templates, code) = rust_code_views("let a = 1; // secret\n");
+    assert!(
+        !templates.contains("secret") && !code.contains("secret"),
+        "WS-RR RR1.12: a real `//` comment survived the views"
+    );
+    // Raw strings, escapes and nested block comments.
+    let (templates, _) = rust_code_views("let s = r#\"a \" b // c\"#;\n");
+    assert!(
+        templates.contains("a \" b // c"),
+        "WS-RR RR1.12: raw string body did not survive the template view"
+    );
+    let (_, code) = rust_code_views("let s = \"a\\\" // still string\"; let t = 1;\n");
+    assert!(
+        code.contains("let t = 1;"),
+        "WS-RR RR1.12: an escaped quote ended the string early"
+    );
+    let (_, code) = rust_code_views("/* outer /* inner */ still */ let a = 1;\n");
+    assert!(
+        code.contains("let a = 1;") && !code.contains("still"),
+        "WS-RR RR1.12: nested block comment mishandled"
+    );
+    // A lifetime is code, not a char literal; mistaking it swallows the
+    // rest of the file.
+    let (_, code) = rust_code_views("fn f<'a>(x: &'a str) -> &'a str { x }\n");
+    assert!(
+        code.contains("-> &'a str { x }"),
+        "WS-RR RR1.12: a lifetime was lexed as a char literal: {code:?}"
+    );
+    // A brace inside a literal must not desynchronise block nesting.
+    let (_, code) = rust_code_views("fn a() { let s = \"}\"; done(); }\n");
+    assert_eq!(
+        statements_at_block_level(&code).trim(),
+        "fn a()",
+        "WS-RR RR1.12: a brace inside a string literal closed the block"
+    );
+}
+
+/// **WS-RR RR1.12**: the two Rust code views this build script scans.
+///
+/// Returns `(strings_kept, strings_blanked)`.  Both blank every comment;
+/// they differ in whether a string literal's contents survive.  Both are
+/// BYTE-ALIGNED with `contents` -- comment and string bytes are replaced by
+/// spaces rather than removed, newlines preserved -- so an offset found in
+/// one view names the same position in the other and in the original file,
+/// and the two can be compared directly.
+///
+/// The distinction is load-bearing in both directions, and the line-based
+/// stripper this replaces got both wrong:
+///
+///   * an `asm!` template is DATA the assembler consumes, so `tlbi vae1os`
+///     and `.arch_extension tlb-rmi` must survive.  Truncating a line at
+///     its first `//` deletes them whenever a sibling template line carries
+///     an assembler comment.
+///   * an identifier inside a string is a MENTION, not a call, so
+///     `let _note = "require_feat_tlbios()";` must not satisfy the check
+///     that the wrapper calls its guard.  It did: the scanner accepted a
+///     `tlbi_vae1os` whose guard call had been replaced by that string,
+///     which is the fail-open direction on the check that keeps an
+///     UNDEFINED instruction off a Cortex-A76.
+///
+/// This mirrors `scripts/rust_code_view.py`, which serves the Python-side
+/// gates; the two exist separately only because a build script cannot
+/// import Python.  `verify_rust_code_views()` pins the semantics here.
+fn rust_code_views(contents: &str) -> (String, String) {
+    let src = contents.as_bytes();
+    let mut kept = src.to_vec();
+    let mut blanked = src.to_vec();
+    let blank = |buffer: &mut [u8], from: usize, to: usize| {
+        for byte in buffer.iter_mut().take(to).skip(from) {
+            if *byte != b'\n' {
+                *byte = b' ';
+            }
+        }
+    };
+
+    let mut i = 0usize;
+    while i < src.len() {
+        // Line comment.
+        if src[i] == b'/' && i + 1 < src.len() && src[i + 1] == b'/' {
+            let end = src[i..]
+                .iter()
+                .position(|&b| b == b'\n')
+                .map_or(src.len(), |p| i + p);
+            blank(&mut kept, i, end);
+            blank(&mut blanked, i, end);
+            i = end;
+            continue;
+        }
+        // Block comment, nested.
+        if src[i] == b'/' && i + 1 < src.len() && src[i + 1] == b'*' {
+            let start = i;
+            let mut depth = 0usize;
+            while i < src.len() {
+                if src[i..].starts_with(b"/*") {
+                    depth += 1;
+                    i += 2;
+                } else if src[i..].starts_with(b"*/") {
+                    depth -= 1;
+                    i += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                } else {
+                    i += 1;
+                }
+            }
+            blank(&mut kept, start, i);
+            blank(&mut blanked, start, i);
+            continue;
+        }
+        // Raw string: r"…", r#"…"#, br#"…"#, cr#"…"#.
+        if let Some((body_start, body_end, end)) = raw_string_at(src, i) {
+            blank(&mut blanked, body_start, body_end);
+            i = end;
+            continue;
+        }
+        // Ordinary, byte and C strings.
+        if let Some((body_start, body_end, end)) = quoted_string_at(src, i) {
+            // An `extern "C"` ABI string is SYNTAX, not data. Blanking it
+            // turns `pub extern "C" fn f` into `pub extern " " fn f`, and
+            // a scanner asserting that a required export still exists then
+            // reports it missing -- or, worse, a differently-shaped check
+            // reports it present when it is gone. ABI strings stay in both
+            // views.
+            if !preceded_by_keyword(src, i, b"extern") {
+                blank(&mut blanked, body_start, body_end);
+            }
+            i = end;
+            continue;
+        }
+        // Char literal (a lifetime such as `'a` is code and is left alone).
+        if src[i] == b'\'' {
+            if let Some(end) = char_literal_end(src, i) {
+                blank(&mut blanked, i + 1, end - 1);
+                i = end;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    (
+        String::from_utf8(kept).expect("blanking preserves UTF-8"),
+        String::from_utf8(blanked).expect("blanking preserves UTF-8"),
+    )
+}
+
+/// Is the token immediately before `at` exactly `keyword`?
+fn preceded_by_keyword(src: &[u8], at: usize, keyword: &[u8]) -> bool {
+    let mut end = at;
+    while end > 0 && src[end - 1].is_ascii_whitespace() {
+        end -= 1;
+    }
+    if end < keyword.len() || &src[end - keyword.len()..end] != keyword {
+        return false;
+    }
+    let before = end - keyword.len();
+    before == 0 || !(src[before - 1].is_ascii_alphanumeric() || src[before - 1] == b'_')
+}
+
+/// Start of body, end of body, and end of literal for a raw string at `at`.
+fn raw_string_at(src: &[u8], at: usize) -> Option<(usize, usize, usize)> {
+    let mut cursor = at;
+    if matches!(src.get(cursor), Some(b'b' | b'c')) {
+        cursor += 1;
+    }
+    if src.get(cursor) != Some(&b'r') {
+        return None;
+    }
+    // A preceding identifier byte means this is part of a longer name.
+    if at > 0 && (src[at - 1].is_ascii_alphanumeric() || src[at - 1] == b'_') {
+        return None;
+    }
+    cursor += 1;
+    let hash_start = cursor;
+    while src.get(cursor) == Some(&b'#') {
+        cursor += 1;
+    }
+    if src.get(cursor) != Some(&b'"') {
+        return None;
+    }
+    let hashes = cursor - hash_start;
+    let body_start = cursor + 1;
+    let mut scan = body_start;
+    while scan < src.len() {
+        // The length bound is part of the terminator test, not an
+        // afterthought: `take(hashes)` over a short tail yields fewer
+        // elements and `all` is vacuously true, so without it a `"` near
+        // end-of-file would close a raw string whose hashes are not there.
+        if src[scan] == b'"'
+            && scan + 1 + hashes <= src.len()
+            && src[scan + 1..scan + 1 + hashes].iter().all(|&b| b == b'#')
+        {
+            return Some((body_start, scan, scan + 1 + hashes));
+        }
+        scan += 1;
+    }
+    panic!("WS-RR RR1.12: unterminated raw string at byte {at}");
+}
+
+/// Start of body, end of body, and end of literal for a `"`-string at `at`.
+fn quoted_string_at(src: &[u8], at: usize) -> Option<(usize, usize, usize)> {
+    let quote = if src[at] == b'"' {
+        at
+    } else if matches!(src[at], b'b' | b'c')
+        && src.get(at + 1) == Some(&b'"')
+        && !(at > 0 && (src[at - 1].is_ascii_alphanumeric() || src[at - 1] == b'_'))
+    {
+        at + 1
+    } else {
+        return None;
+    };
+    let body_start = quote + 1;
+    let mut scan = body_start;
+    while scan < src.len() {
+        match src[scan] {
+            b'\\' => scan += 2,
+            b'"' => return Some((body_start, scan, scan + 1)),
+            _ => scan += 1,
+        }
+    }
+    panic!("WS-RR RR1.12: unterminated string at byte {at}");
+}
+
+/// End offset of the char literal at `at`, or `None` for a lifetime.
+///
+/// `'a'` closes after one character or one escape; `'a` in `&'a str` or
+/// `'outer: loop` never does.
+fn char_literal_end(src: &[u8], at: usize) -> Option<usize> {
+    let mut scan = at + 1;
+    if src.get(scan) == Some(&b'\\') {
+        scan += 2;
+        while scan < src.len() && src[scan] != b'\'' {
+            scan += 1;
+        }
+        return (src.get(scan) == Some(&b'\'')).then_some(scan + 1);
+    }
+    // Step over one whole UTF-8 scalar.
+    scan += 1;
+    while scan < src.len() && (src[scan] & 0xC0) == 0x80 {
+        scan += 1;
+    }
+    (src.get(scan) == Some(&b'\'')).then_some(scan + 1)
+}
+
+/// **WS-RR RR1.4**: `block` with every nested `{...}` removed.
+///
+/// What remains is the block's OWN statement level -- the statements that
+/// run unconditionally when the block is entered.  The distinction is the
+/// whole content of a divergence check: a `fatal_halt()` anywhere inside
+/// the block satisfies `contains`, but only one at this level is reached
+/// on every path through it.
+///
+/// Removal, not extraction: an unbalanced block (which cannot occur in
+/// source the compiler has already accepted, since this scanner runs on
+/// `tlb.rs` at build time) leaves the tail dropped, which makes the result
+/// *shorter* and so fails the caller's check rather than passing it.
+fn statements_at_block_level(block: &str) -> String {
+    let mut depth = 0usize;
+    let mut out = String::with_capacity(block.len());
+    for ch in block.chars() {
+        match ch {
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => out.push(ch),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// **WS-RR RR1.4**: the brace-delimited block introduced by `header`.
+///
+/// Brace-matched rather than delimited by the next `}`, so a nested block
+/// inside the branch does not truncate it.  String and char literals are
+/// not tracked: the scanned bodies are guard clauses, not parsers, and a
+/// stray brace in a literal would make the block *shorter*, which fails
+/// the caller's check rather than passing it -- the safe direction.
+fn braced_block_after<'a>(source: &'a str, header: &str) -> Option<&'a str> {
+    let header_at = source.find(header)?;
+    let open = header_at + source[header_at..].find('{')?;
+    let mut depth = 0usize;
+    for (offset, ch) in source[open..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&source[open + 1..open + offset]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }

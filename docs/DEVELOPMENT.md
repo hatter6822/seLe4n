@@ -1099,6 +1099,33 @@ Recommended command loop:
 ./scripts/test_full.sh
 ```
 
+After any change under `rust/`, also run the two Rust lanes:
+
+```bash
+./scripts/test_rust.sh                 # host: build, tests, fmt, clippy
+./scripts/test_aarch64_cross_build.sh  # the kernel's real target
+```
+
+**Both, not either.** The tier scripts and `test_rust.sh` compile the *host*
+target, where every `#[cfg(target_arch = "aarch64")]` block is removed before
+rustc or clippy sees it — so the hardware half of the HAL, which is most of
+it, is invisible to them, and the project's zero-clippy-warning claim
+excluded it entirely until WS-RR RR1 (`v0.34.41`).  The cross gate builds
+`sele4n-hal` for `aarch64-unknown-none` in both profiles, verifies that
+`boot.S`, `vectors.S` and `trap.S` really assembled rather than assuming the
+build script's `CARGO_CFG_TARGET_ARCH` gate ran, and lints the cross target
+with `-D warnings`.  CI runs it as the `aarch64 Cross Build` job on every PR.
+
+A `cargo check` is **not** a substitute for the build: `check` stops before
+code generation, so it never hands an `asm!` template to an assembler.  The
+four `TLBI *OS` encoding defects RR1 found — FEAT_TLBIOS instructions on a
+target whose CPU does not implement them — were all `check`-clean.
+
+The gate needs an assembler that can target AArch64.  `build.rs` probes for
+one (bare-metal and Linux cross prefixes, then `clang`, which is multi-target
+and needs no extra packages) and fails with a message naming what to install;
+an explicit `CC_aarch64_unknown_none=<compiler>` overrides the probe.
+
 Optional nightly/staged checks:
 
 ```bash

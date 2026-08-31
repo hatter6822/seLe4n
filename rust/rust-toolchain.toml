@@ -33,4 +33,18 @@
 [toolchain]
 channel = "1.94.1"
 components = ["clippy", "rustfmt"]
+# WS-RR RR1.1: the bare-metal cross target the kernel HAL is actually
+# built for.  Listing it here means `rustup` installs `rust-std` for it
+# on first use from `rust/`, so `cargo build --target
+# aarch64-unknown-none -p sele4n-hal --features hw_target` works on a
+# fresh clone without a separate `rustup target add` step.
+#
+# The directory override is what makes this load-bearing: `rustup` reads
+# this file only for commands run from `rust/` or a descendant.  A
+# `cargo --manifest-path rust/.../Cargo.toml` invoked from the repository
+# root silently selects the *default* toolchain, which has neither this
+# pin nor this target — the aarch64 build then fails with "can't find
+# crate for `core`" that looks like a source problem rather than a
+# working-directory one.  Always `cd rust/` first.
+targets = ["aarch64-unknown-none"]
 profile = "minimal"

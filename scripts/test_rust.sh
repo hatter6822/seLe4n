@@ -114,12 +114,22 @@ run_cargo_step() {
     fi
 }
 
+# `--features host_tools` is load-bearing in both steps below.  WS-RR
+# RR1.3 gave `src/bin/rw_lock_oracle.rs` — the Tier-5 correspondence
+# oracle, a `std` host tool — a `required-features` gate, so that the
+# bare-metal `aarch64-unknown-none` build does not try to compile it.
+# A `required-features` target is not merely skipped from the build:
+# `cargo test` does not run its `#[cfg(test)]` module either, so
+# without the flag here the oracle's 14 tests silently stop running and
+# the step still reports a clean pass over one fewer binary.  That is
+# the same shape as a skipped test, which this script already rejects,
+# and `scripts/check_aarch64_cross_target.py` pins the flag.
 echo "[1/5] Building all crates (host target)..."
-run_cargo_step "Build succeeded" cargo build --all
+run_cargo_step "Build succeeded" cargo build --all --features host_tools
 echo ""
 
 echo "[2/5] Running unit tests..."
-run_cargo_step "Unit tests passed" cargo test --all --features std
+run_cargo_step "Unit tests passed" cargo test --all --features std,host_tools
 echo ""
 
 echo "[3/5] Running conformance tests (RUST-XVAL-001..014)..."

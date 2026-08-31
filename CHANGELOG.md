@@ -1,3 +1,179 @@
+## v0.34.41 — WS-RR RR1: the first aarch64 compile, and the gates that keep it
+
+**One PR, one version.**  The sections below record the six review rounds this
+cut went through; they are not six releases.  The work is RR1.1–RR1.12.
+
+### RR1.1–RR1.11 — the aarch64 surface, compiled for the first time
+
+Before this cut no aarch64 target was built anywhere in the tree or in CI, so
+**67 `#[cfg(target_arch = "aarch64")]` blocks, 57 `asm!` sites and all three
+`.S` files had zero compile coverage**.  The first real cross build found
+**six genuine defects and three lints**, none of which any existing check
+could see:
+
+* **`and sp, sp, #~0xF` does not assemble.**  `AND (immediate)` (ARM ARM
+  C6.2.13) allows SP as the *destination* and not as a source.  Two sites,
+  both establishing a stack pointer — the primary's in `boot.S` and the
+  per-core one in `secondary_entry`.  Masking now happens in a general
+  register before the `mov sp`.
+* **Four `TLBI *OS` encodings are not implementable on the first hardware
+  target.**  They are FEAT_TLBIOS (ARMv8.4-A); Cortex-A76, the core in the
+  RPi5's BCM2712, is ARMv8.2-A.  `cargo check` reported all four clean
+  because it stops before code generation and never hands a template to the
+  assembler.  Each wrapper now probes `ID_AA64ISAR0_EL1.TLB` and takes
+  `cpu::fatal_halt()` when the feature is absent — deliberately **not**
+  falling back to the inner-shareable variant, which would service only the
+  inner domain while the caller asked for the outer one.
+* **The Tier-5 oracle was compiled for bare metal** (35 errors), now gated
+  behind `required-features = ["host_tools"]`.
+* **`cc` fell back to the host x86 assembler** for the `.S` sources, which is
+  what 54 "no such instruction" errors from `boot.S` actually were.
+  `select_cross_assembler` now probes candidates by *assembling* an AArch64
+  translation unit rather than by looking for a binary on `PATH`.
+* Three lints invisible to the host lane, where every `cfg`-gated block is
+  removed before clippy sees it.
+
+Delivered as `scripts/test_aarch64_cross_build.sh` (both profiles, `.S`
+assembly verified in the archive, clippy `-D warnings` on the cross target)
+and the `aarch64 Cross Build` CI job, plus two Tier-0 gates —
+`check_aarch64_cross_target.py` and `check_tlbi_broadcast_discipline.py`, the
+latter implementing the §4.4 TLBI discipline `SMP_RUST_HAL_PLAN.md` had
+claimed since SM1.
+
+The measured surface (**57** `asm!` sites, not the 59/60 the audit carried —
+those counted two docstring mentions) revised SM10's estimate from a **4–6
+week guess to 14–24 weeks** derived from evidence.
+
+### RR1.12 — six review rounds on the gates themselves
+
+Every finding below was **reproduced against the real tree** before being
+fixed, and each is pinned by a self-test case that keeps its token and breaks
+only its relation.
+
+**Rounds 1–3 — a presence check is not a relation check.**  Seventeen places
+where a question about a *program* was answered by a slice of *text*: a step
+*name* satisfying a target-installed check; a stale archive satisfying "the
+sources assembled"; `body.contains(guard)` passing with the guard moved
+*below* the instruction it protects; a `//` inside an `asm!` template deleting
+the emitted instruction from the view; a string literal
+`"require_feat_tlbios()"` standing in for the call that keeps an UNDEFINED
+instruction off a Cortex-A76.  Patching instances stopped converging — two of
+them were *inside* the fixes for the others — so the slices were replaced by
+shared structural views: **`scripts/rust_code_view.py`** (a quote-aware,
+byte-aligned Rust lexer with string contents kept or blanked as the question
+requires, and brace-matched `fn` bodies), its `build.rs` counterpart
+`rust_code_views`, and a `shell_commands` / `argv_of` / `option_values` layer
+so a flag is read on a **command** rather than on a line.
+
+**Round 4 — sweep the concept, not the reported call site.**  The resolvers
+were right and each was wired into exactly the call site the review named:
+`job_runs_gate` required a command position while `cargo_invocations` one
+function below still scanned tokens anywhere; `enclosing_fn` got real
+boundaries while `enclosing_lean_decl` four lines down stayed
+last-declaration-wins.  Also **four enumerations standing in for
+derivations** — `LOCAL_WRAPPERS`, `LEAN_LOCAL_BINDINGS`, `ASM_SOURCES`,
+`OS_WRAPPERS` — each of which was blind exactly when something new was added.
+All four are now derived from what the code does, with the list kept as a pin
+that fails on divergence.
+
+**Round 7, and the sweep it prompted.**  `check_aarch64_cross_target.py`
+kept its own line-based `//` slicer after the shared view was built and the
+TLBI gate moved onto it, so `/* asm.file("src/trap.S"); */` still counted as
+handed to the assembler.  Sweeping for that shape found **thirteen more** in
+`build.rs` — every other scanner there was still line-based.  All are now on
+structural views: the four `.S` scanners on an `asm_code_view` implementing
+the C preprocessor's grammar, the nine Rust ones on the string-blanked view,
+since each asks an identifier question and a name inside a literal is a
+mention.  That conversion exposed one more: `extern "C"` is an ABI string
+that is **syntax, not data**, so blanking it made `pub extern "C" fn
+handle_irq_per_core` unfindable and a required-export check report a live
+function missing.  Both views now keep ABI strings, pinned by a witness in
+each.
+
+**Rounds 5–6 — no-op forms, and one real build defect.**  `bash -n` ("read
+commands but do not execute them"), `cargo test --no-run` ("compile, but
+don't run tests"), a `.file()` on a `cc::Build` that is never compiled, a
+wrapper that `echo`es `"$@"` instead of executing it, an optimised
+`--profile production` counting as the `-O0` build, a deleted cross-clippy
+lane, a removed `set -euo pipefail`, an `asm!(concat!("tlbi ", "vmalle1"))`
+the mnemonic regex could not see, a positional `cargo test … <TESTNAME>`
+filter that selects the oracle binary and runs none of its tests, a quoted
+`{` in a shell function body that merged a logging wrapper with the next
+function and inherited its `"$@"`, a `concat!("tlbi ", stringify!(vmalle1))`
+whose *operand* comes from a macro, and an FFI export reaching a local
+wrapper through a helper in **another module** — the last of which corrected
+a claim made in an earlier round, that the module boundary was covered by
+the Rust allowlist. It is not: the allowlist governs the helper's reference,
+which is a different obligation from an export re-exposing it to Lean.
+Reachability is now crate-wide, over-approximating on duplicate function
+names because that direction fails closed.  A ninth round found four more of
+the same shape: `-- --list` (libtest prints names and runs nothing, so the
+harness tail is now read on its own terms rather than discarded);
+`--workspace --exclude sele4n-hal` (an exclusion beats any selection);
+`set +o errexit` and a later `set +e` (the effective option state is now
+derived in command order — `-` enables and `+` disables, which is inverted
+from the usual convention, so reading names alone was backwards rather than
+merely imprecise); and the whole `.compile` chain moved into an uncalled
+helper, which proved only that a builder *would* assemble the sources if
+anything invoked it.  Plus one in the reachability code itself: same-named
+functions in different modules were resolved by keeping "the longer body",
+which the comment called an over-approximation and which is in fact an
+arbitrary choice — a longer unrelated `decoy::local_flush` displaced the
+short `helpers::local_flush` that actually reached a wrapper.  Duplicate
+bodies are now unioned, which is the over-approximation that was claimed.
+
+A tenth round found four more: an escaped `\"` read as *opening* a quoted
+region, so `echo \" # fake "` — a literal quote followed by a real bash
+comment — kept its tail in the view and a line running nothing looked live;
+`asm!(stringify!(tlbi vmalle1))`, which composes a template with no string
+literal in the source at all; a `mutual` block, whose indented declarations
+the column-0 scan cannot see and which was classified as a non-declaration,
+so they inherited the preceding definition's allowlist entry; and the
+template resolver applied in the containment check but **not** in the
+local-emitter inventory, so a `flush_entry` written as `asm!(concat!("tlbi ",
+"vae1"))` inside `tlb.rs` was never derived — the sixth instance of a
+resolver wired into one of its call sites.
+
+**Six further instances were then found by self-audit rather than review**,
+by taking the three recurring shapes and looking for each deliberately.
+Five were the `mutual` shape — a hand-written exception routing a case
+around a fail-closed default: `example`, `macro_rules` and `run_cmd` open
+indented bodies and were listed as non-declarations, so references inside
+them inherited the preceding definition's allowlist entry; `local` and
+`scoped` are *modifiers* misfiled as non-declarations, so `local instance`
+and `scoped def` were never registered as boundaries at all.  The sixth was
+`--lib` listed among cargo's value-taking options although it takes none, so
+`cargo test --all --bins --lib <name>` swallowed a test-name filter and the
+host lane certified a run executing none of the oracle's tests.  Both lists
+now carry their membership *rule* rather than only their members, since the
+entries were got wrong by ad-hoc judgement six times over.
+
+And **one functional defect**: `select_cross_assembler` counted
+`CROSS_COMPILE` among "the variables `cc` itself consults" and returned early
+on it.  `cc` does not consult it, so the conventional
+`CROSS_COMPILE=aarch64-linux-gnu-` left `cc` to its default lookup — the host
+assembler, the very failure the function exists to prevent.  Detecting an
+override without applying it is worse than not looking, because it *disables*
+the probe that would have found a working toolchain.  The prefix is now
+expanded, probed and installed, warning and falling through when it cannot
+assemble for the target.
+
+**The self-test rule is enforced, not asserted.**  Every case declares the
+check it exercises and whether its mutation preserves or deletes the token,
+and the harness fails when any check has no token-preserving case.  Coverage:
+45 cases across 5 checks in the cross-target gate, 29 across 6 in the TLBI
+gate, plus token-preserving witnesses in `build.rs` and
+`rust_code_view.py`.  Several cases assert the *accepting* direction — a
+broadcast emitter, `--profile dev`, `bash -ex`, a harness argument after `--`
+— because a check that only ever tightens starts rejecting correct code.
+
+### Validation
+
+`test_full.sh` green: 18 build, 38 hygiene, 2848 invariant, 155 trace, 0
+failures.  `test_rust.sh` 1149 tests across 10 binaries plus 108 conformance,
+fmt and clippy clean.  `test_aarch64_cross_build.sh` clean in both profiles
+with all three `.S` sources assembled and clippy clean on the cross target.
+
 ## v0.34.40 — A third index/worktree split, and three plan defects the numbering gate could finally see
 
 Five findings from the fourteenth review round. Two are the same class of

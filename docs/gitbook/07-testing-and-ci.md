@@ -21,6 +21,8 @@ Prior stage: **WS-AK Phase AK10 COMPLETE — PORTFOLIO CLOSED (v0.30.6). Testing
   - theorem-body semantic depth check (L-08: Python analyzer flags `sorry` and trivial/single-tactic `preserves` proofs, with regex fallback),
   - SHA-pinning regression guard (F-14: all GitHub Actions must be SHA-pinned),
   - CodeQL workflow policy (`check_codeql_workflow_policy.py` + its `--self-test`): the three configurations that each leave the code-scanning merge requirement waiting forever — a missing `init`/`analyze` step, `github/codeql-action/*` references pinning different commits, and an analyze step masked by `continue-on-error` at step or job level — see [`docs/CI_POLICY.md`](../CI_POLICY.md) §8 and §9.1,
+  - aarch64 cross-target configuration (`check_aarch64_cross_target.py` + its `--self-test`): the `targets` key in `rust/rust-toolchain.toml`, the `--features hw_target` flag, and the `cargo build`-not-`check` choice in the cross gate — each load-bearing in a way that is silent if lost, since a gate weakened in any of those directions stays green over nothing (WS-RR RR1.8),
+  - TLBI broadcast discipline (`check_tlbi_broadcast_discipline.py` + its `--self-test`): the `tlbi` mnemonic may be emitted only from `tlb.rs`; the local, non-broadcast wrappers may be called only from sites registered in `scripts/tlbi_local_allowlist.txt`; and the Lean bindings of the local FFI exports only from registered production modules.  A non-broadcast `tlbi vae1` invalidates just the calling PE, so under SMP another core keeps walking a translation the caller believes it removed (WS-RR RR1.9),
   - optional shell-quality checks.
 - **Tier 1 (build/proof compile)**
   - full `lake build` to verify definitions, theorem scripts, and module integration.
@@ -55,6 +57,35 @@ Prior stage: **WS-AK Phase AK10 COMPLETE — PORTFOLIO CLOSED (v0.30.6). Testing
   - includes seeded `trace_sequence_probe` sequence-diversity checks in experimental mode,
   - default remains explicit extension-point behavior unless `NIGHTLY_ENABLE_EXPERIMENTAL=1` is set.
 - **Tier 5 (cross-language correspondence)** — `scripts/test_tier5_cross_language.sh` (WS-SM SM2.C-defer D-6): Lean-oracle vs Rust lock-primitive correspondence, run from `test_nightly.sh` under `NIGHTLY_ENABLE_EXPERIMENTAL=1`.
+
+### The two Rust lanes
+
+The tier model above compiles Lean.  Rust has two lanes of its own, and they
+cover disjoint halves of the same crate:
+
+- `scripts/test_rust.sh` — the **host** lane: build, 1 149 unit tests across
+  10 binaries (at `v0.34.41`), the conformance suite, `cargo fmt --check`,
+  and `cargo clippy --all-targets --all-features -D warnings`.  CI job
+  *Rust ABI Tests*.
+- `scripts/test_aarch64_cross_build.sh` — the **cross** lane (WS-RR RR1,
+  `v0.34.41`): `cargo build` for `aarch64-unknown-none` in both profiles,
+  a check that `boot.S`, `vectors.S` and `trap.S` really assembled, and
+  `cargo clippy -D warnings` on the same target.  CI job *aarch64 Cross
+  Build*.
+
+**Neither lane subsumes the other.**  On the host, every
+`#[cfg(target_arch = "aarch64")]` block is removed before rustc or clippy
+sees it — cfg-false arms are parsed but never type-checked, borrow-checked or
+linted — so the host lane cannot see 67 cfg-gated blocks, 57 `asm!`
+invocations or any of the three `.S` sources, which is most of the HAL.  The
+cross lane, conversely, does not compile the 26 `not(aarch64)` host stubs and
+runs no tests: `no_std` bare metal has no test harness.
+
+**The cross lane is a build, not a `cargo check`.**  `check` stops before
+code generation, so it never hands an `asm!` template to an assembler.  RR1's
+first compile found four `TLBI *OS` sites that `check` reported clean and
+that do not encode for the target at all — they are FEAT_TLBIOS (ARMv8.4-A)
+instructions, and Cortex-A76 (the RPi5's core) is ARMv8.2-A.
 
 ## Entrypoints and intent
 

@@ -25,11 +25,51 @@
 //!   broadcast across the outer-shareable domain.  Pre-positioned for
 //!   future multi-cluster ports (BCM2712 is single-cluster, so
 //!   functionally identical to IS variants on RPi5).  Followed by
-//!   `dsb osh` + `isb` (matching the broader scope).
+//!   `dsb osh` + `isb` (matching the broader scope).  These four
+//!   instructions are **FEAT_TLBIOS** (ARMv8.4-A) and are therefore
+//!   *not* implemented by Cortex-A76 — see "FEAT_TLBIOS is not
+//!   baseline" below.
 //! - **WS-SM SM1.E.3**: `tlbi_for_sharing` dispatcher routes to either
 //!   the IS or OS variant based on a `SharingDomain` enum, allowing
 //!   generic kernel code to emit the correct broadcast without per-call
 //!   platform branches.
+//!
+//! ## FEAT_TLBIOS is not baseline (WS-RR RR1.4)
+//!
+//! `TLBI VMALLE1OS / VAE1OS / ASIDE1OS / VALE1OS` are introduced by
+//! **FEAT_TLBIOS**, mandatory from ARMv8.4-A (ARM ARM D8.13.2).  They
+//! are *not* part of the ARMv8.0-A baseline that `aarch64-unknown-none`
+//! assembles against, and — more consequentially — they are not
+//! implemented by **Cortex-A76**, the ARMv8.2-A core in the RPi5's
+//! BCM2712.  On such a PE the encoding is UNDEFINED and executing it
+//! raises a synchronous exception rather than performing any
+//! maintenance.
+//!
+//! Two things follow, and both are enforced here rather than described:
+//!
+//! 1. **Assembly.** The mnemonics are bracketed by
+//!    `.arch_extension tlb-rmi` / `.arch_extension notlb-rmi` so LLVM's
+//!    integrated assembler accepts exactly those four instructions and
+//!    the extension does not leak into later inline asm in the same
+//!    object.  The alternative — raising the whole crate's target
+//!    features to v8.4 — would let the *compiler* emit v8.4
+//!    instructions anywhere, on a target that cannot run them.
+//! 2. **Execution.** Every OS wrapper first probes
+//!    [`has_feat_tlbios`] and takes [`crate::cpu::fatal_halt`] when the
+//!    PE does not implement the feature.  It deliberately does **not**
+//!    fall back to the IS variant: a platform binding that asked for an
+//!    outer-shareable broadcast did so because it has PEs outside the
+//!    inner-shareable domain, and silently servicing only the inner
+//!    domain would leave live stale translations on the others — a
+//!    stale-mapping hazard, which is the failure this whole module
+//!    exists to prevent.  A configuration that cannot be honoured is
+//!    reported, not approximated.
+//!
+//! This gap was invisible until WS-RR RR1 compiled the crate for
+//! `aarch64-unknown-none` for the first time: `cargo check` stops
+//! before the backend, so the four `asm!` templates were never handed
+//! to an assembler, and the host build compiles none of them
+//! (`#[cfg(target_arch = "aarch64")]`).
 //!
 //! ## Why IS, not local
 //!
@@ -51,6 +91,16 @@
 //! secondaries are still parked in `boot.S::.L_secondary_spin` and
 //! their TLBs are empty — issuing an IS broadcast at that point would
 //! still be correct, just wasteful).
+//!
+//! **That reservation is enforced, not merely stated** (WS-RR RR1.9).
+//! `SMP_RUST_HAL_PLAN.md` §4.4 described the four local variants as
+//! "private helpers"; they were `pub`, and the discipline held only by
+//! convention.  They are now `pub(crate)`, so the crate's public local
+//! surface is [`tlbi_local`] and the three `ffi_tlbi_*` exports — and
+//! `scripts/check_tlbi_broadcast_discipline.py` (Tier 0) holds every
+//! in-crate call site to `scripts/tlbi_local_allowlist.txt`, which
+//! records for each one why the calling PE is the only one whose TLB
+//! needs the entry gone.
 //!
 //! ## Operand encoding
 //!
@@ -149,7 +199,7 @@ const fn encode_asid_only_operand(asid: u16) -> u64 {
 ///
 /// ARM ARM C6.2.316: TLBI VMALLE1
 #[inline(always)]
-pub fn tlbi_vmalle1() {
+pub(crate) fn tlbi_vmalle1() {
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: TLBI VMALLE1 is a TLB maintenance instruction that
@@ -172,7 +222,7 @@ pub fn tlbi_vmalle1() {
 ///
 /// ARM ARM C6.2.311: TLBI VAE1, Xt
 #[inline(always)]
-pub fn tlbi_vae1(asid: u16, vaddr: u64) {
+pub(crate) fn tlbi_vae1(asid: u16, vaddr: u64) {
     let _operand = encode_va_asid_operand(asid, vaddr);
     #[cfg(target_arch = "aarch64")]
     {
@@ -193,7 +243,7 @@ pub fn tlbi_vae1(asid: u16, vaddr: u64) {
 ///
 /// ARM ARM C6.2.312: TLBI ASIDE1, Xt
 #[inline(always)]
-pub fn tlbi_aside1(asid: u16) {
+pub(crate) fn tlbi_aside1(asid: u16) {
     let _operand = encode_asid_only_operand(asid);
     #[cfg(target_arch = "aarch64")]
     {
@@ -215,7 +265,7 @@ pub fn tlbi_aside1(asid: u16) {
 ///
 /// ARM ARM C6.2.313: TLBI VALE1, Xt
 #[inline(always)]
-pub fn tlbi_vale1(asid: u16, vaddr: u64) {
+pub(crate) fn tlbi_vale1(asid: u16, vaddr: u64) {
     let _operand = encode_va_asid_operand(asid, vaddr);
     #[cfg(target_arch = "aarch64")]
     {
@@ -350,6 +400,87 @@ pub fn tlbi_vale1is(asid: u16, vaddr: u64) {
 // waits for the broadcast to complete across the wider domain.
 // ============================================================================
 
+/// **WS-RR RR1.4**: decode the `ID_AA64ISAR0_EL1.TLB` field, which
+/// reports whether this PE implements the outer-shareable (and range)
+/// TLB maintenance instructions.
+///
+/// ARM ARM D19.2.61 (`ID_AA64ISAR0_EL1`), bits **[59:56]**:
+///
+/// | Value    | Meaning                                              |
+/// |----------|------------------------------------------------------|
+/// | `0b0000` | Outer-shareable TLB maintenance not implemented      |
+/// | `0b0001` | FEAT_TLBIOS — outer-shareable variants implemented   |
+/// | `0b0010` | FEAT_TLBIRANGE — the above plus the range variants   |
+///
+/// Only the `!= 0` distinction matters to this module: every value at
+/// or above `0b0001` implements all four `*OS` instructions used here.
+///
+/// Split out as a `const fn` over the raw register value so the field
+/// position is pinned by a host unit test.  A probe that reads the real
+/// register can only be exercised on hardware; a shift-and-mask over a
+/// synthetic value can be exercised anywhere, and the shift is the part
+/// that would silently decode the wrong field if it drifted.
+///
+/// The parameter is named for what the register *is* — AArch64
+/// Instruction Set Attribute Register 0 — rather than spelled
+/// `id_aa64isar0_el1`, because `check_identifier_naming.py` reads
+/// `aa64…` as workstream family `AA` followed by a code.  The
+/// architectural spelling belongs in this docstring, where prose is
+/// exempt, and in the `read_sysreg!` template below, where it is a
+/// string.
+#[inline(always)]
+pub const fn tlbios_implemented(instruction_set_attributes: u64) -> bool {
+    ((instruction_set_attributes >> 56) & 0xF) != 0
+}
+
+/// **WS-RR RR1.4**: does this PE implement FEAT_TLBIOS (the
+/// outer-shareable TLB maintenance instructions)?
+///
+/// Returns `false` on a PE whose `ID_AA64ISAR0_EL1.TLB` field is zero —
+/// which includes **Cortex-A76**, and therefore the RPi5.  See the
+/// module docstring's "FEAT_TLBIOS is not baseline" section for what
+/// the `*OS` wrappers do about it.
+///
+/// On non-AArch64 hosts this returns `true`, matching
+/// [`crate::barriers::has_feat_csv2`]: the host build compiles no TLBI
+/// instruction at all (every `asm!` here is
+/// `#[cfg(target_arch = "aarch64")]`), so there is nothing for the
+/// guard to protect and a `false` would only turn the unit tests into
+/// halts.
+#[inline(always)]
+pub fn has_feat_tlbios() -> bool {
+    #[cfg(target_arch = "aarch64")]
+    {
+        tlbios_implemented(crate::read_sysreg!("id_aa64isar0_el1"))
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        true
+    }
+}
+
+/// **WS-RR RR1.4**: fail-closed guard in front of every `*OS` wrapper.
+///
+/// Diverges via [`crate::cpu::fatal_halt`] when the PE cannot execute
+/// the outer-shareable TLB maintenance instructions.  Reaching it means
+/// the platform binding's `PlatformBinding.sharingDomain` says `.outer`
+/// on a PE that implements only inner-shareable broadcast — a
+/// configuration error, not a runtime condition, and one that cannot be
+/// papered over by issuing the IS variant instead (see the module
+/// docstring).
+///
+/// The probe is one `MRS` of an always-readable ID register, next to a
+/// broadcast TLBI and a `DSB` that cost orders of magnitude more, so it
+/// is not cached: a cache would need an initialisation order that the
+/// secondary bring-up path does not yet guarantee, and getting that
+/// wrong fails *open*.
+#[inline(always)]
+fn require_feat_tlbios() {
+    if !has_feat_tlbios() {
+        crate::cpu::fatal_halt();
+    }
+}
+
 /// **WS-SM SM1.E.2**: TLBI VMALLE1OS — flush all TLB entries,
 /// outer-shareable broadcast.
 ///
@@ -363,12 +494,22 @@ pub fn tlbi_vale1is(asid: u16, vaddr: u64) {
 /// ARM ARM C6.2.316: TLBI VMALLE1OS
 #[inline(always)]
 pub fn tlbi_vmalle1os() {
+    require_feat_tlbios();
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: TLBI VMALLE1OS broadcasts a TLB invalidation across
-        // the outer-shareable domain. (ARM ARM C6.2.316)
+        // the outer-shareable domain. (ARM ARM C6.2.316)  The
+        // `.arch_extension` bracket admits the FEAT_TLBIOS mnemonic for
+        // this instruction only and restores the baseline immediately
+        // after; `require_feat_tlbios` above has already established
+        // that this PE implements it.
         unsafe {
-            core::arch::asm!("tlbi vmalle1os", options(nostack, preserves_flags));
+            core::arch::asm!(
+                ".arch_extension tlb-rmi",
+                "tlbi vmalle1os",
+                ".arch_extension notlb-rmi",
+                options(nostack, preserves_flags)
+            );
         }
     }
     barriers::dsb_osh();
@@ -384,13 +525,21 @@ pub fn tlbi_vmalle1os() {
 /// ARM ARM C6.2.311: TLBI VAE1OS, Xt
 #[inline(always)]
 pub fn tlbi_vae1os(asid: u16, vaddr: u64) {
+    require_feat_tlbios();
     let _operand = encode_va_asid_operand(asid, vaddr);
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: TLBI VAE1OS broadcasts a VA+ASID invalidation across
-        // the outer-shareable domain. (ARM ARM C6.2.311)
+        // the outer-shareable domain. (ARM ARM C6.2.311)  See
+        // `tlbi_vmalle1os` for the `.arch_extension` bracket.
         unsafe {
-            core::arch::asm!("tlbi vae1os, {0}", in(reg) _operand, options(nostack, preserves_flags));
+            core::arch::asm!(
+                ".arch_extension tlb-rmi",
+                "tlbi vae1os, {0}",
+                ".arch_extension notlb-rmi",
+                in(reg) _operand,
+                options(nostack, preserves_flags)
+            );
         }
     }
     barriers::dsb_osh();
@@ -406,13 +555,21 @@ pub fn tlbi_vae1os(asid: u16, vaddr: u64) {
 /// ARM ARM C6.2.312: TLBI ASIDE1OS, Xt
 #[inline(always)]
 pub fn tlbi_aside1os(asid: u16) {
+    require_feat_tlbios();
     let _operand = encode_asid_only_operand(asid);
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: TLBI ASIDE1OS broadcasts an ASID invalidation across
-        // the outer-shareable domain. (ARM ARM C6.2.312)
+        // the outer-shareable domain. (ARM ARM C6.2.312)  See
+        // `tlbi_vmalle1os` for the `.arch_extension` bracket.
         unsafe {
-            core::arch::asm!("tlbi aside1os, {0}", in(reg) _operand, options(nostack, preserves_flags));
+            core::arch::asm!(
+                ".arch_extension tlb-rmi",
+                "tlbi aside1os, {0}",
+                ".arch_extension notlb-rmi",
+                in(reg) _operand,
+                options(nostack, preserves_flags)
+            );
         }
     }
     barriers::dsb_osh();
@@ -427,13 +584,22 @@ pub fn tlbi_aside1os(asid: u16) {
 /// ARM ARM C6.2.313: TLBI VALE1OS, Xt
 #[inline(always)]
 pub fn tlbi_vale1os(asid: u16, vaddr: u64) {
+    require_feat_tlbios();
     let _operand = encode_va_asid_operand(asid, vaddr);
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: TLBI VALE1OS broadcasts a last-level VA+ASID
-        // invalidation across the outer-shareable domain. (ARM ARM C6.2.313)
+        // invalidation across the outer-shareable domain. (ARM ARM
+        // C6.2.313)  See `tlbi_vmalle1os` for the `.arch_extension`
+        // bracket.
         unsafe {
-            core::arch::asm!("tlbi vale1os, {0}", in(reg) _operand, options(nostack, preserves_flags));
+            core::arch::asm!(
+                ".arch_extension tlb-rmi",
+                "tlbi vale1os, {0}",
+                ".arch_extension notlb-rmi",
+                in(reg) _operand,
+                options(nostack, preserves_flags)
+            );
         }
     }
     barriers::dsb_osh();
@@ -1050,5 +1216,106 @@ mod tests {
                 vaddr
             );
         }
+    }
+
+    // ========================================================================
+    // WS-RR RR1.4 — FEAT_TLBIOS probe
+    // ========================================================================
+
+    #[test]
+    fn tlbios_implemented_reads_the_tlb_maintenance_field() {
+        // ARM ARM D19.2.61: ID_AA64ISAR0_EL1.TLB occupies bits [59:56].
+        // 0b0000 = outer-shareable TLB maintenance NOT implemented.
+        assert!(
+            !tlbios_implemented(0),
+            "an all-zero ID register must decode as FEAT_TLBIOS absent"
+        );
+        // 0x00FF_FFFF_FFFF_FFFF is bits [55:0] — every bit below the
+        // TLB field.  A decode that read one bit too low would answer
+        // `true` here.
+        assert!(
+            !tlbios_implemented(0x00FF_FFFF_FFFF_FFFF),
+            "every bit BELOW [56] set must still decode as absent"
+        );
+        // 0b0001 = FEAT_TLBIOS, 0b0010 = FEAT_TLBIRANGE (superset).
+        assert!(
+            tlbios_implemented(1u64 << 56),
+            "TLB == 0b0001 (FEAT_TLBIOS) must decode as present"
+        );
+        assert!(
+            tlbios_implemented(2u64 << 56),
+            "TLB == 0b0010 (FEAT_TLBIRANGE) must decode as present"
+        );
+        // Every non-zero value of the 4-bit field means "implemented".
+        for v in 1u64..16 {
+            assert!(
+                tlbios_implemented(v << 56),
+                "TLB == {v:#x} must decode as present"
+            );
+        }
+    }
+
+    #[test]
+    fn tlbios_implemented_ignores_neighbouring_fields() {
+        // Bits [63:60] are ID_AA64ISAR0_EL1.RNDR, bits [55:52] are TS.
+        // Neither may leak into the decode: a shift that drifted by four
+        // would read one of them and silently answer for the wrong
+        // feature.
+        assert!(
+            !tlbios_implemented(0xFu64 << 60),
+            "RNDR ([63:60]) must not be mistaken for TLB"
+        );
+        assert!(
+            !tlbios_implemented(0xFu64 << 52),
+            "TS ([55:52]) must not be mistaken for TLB"
+        );
+        assert!(
+            tlbios_implemented((0xFu64 << 60) | (1u64 << 56) | (0xFu64 << 52)),
+            "TLB must still be read correctly with both neighbours set"
+        );
+    }
+
+    #[test]
+    fn cortex_a76_id_register_decodes_as_tlbios_absent() {
+        // Cortex-A76 is ARMv8.2-A; FEAT_TLBIOS is ARMv8.4-A, so the TRM
+        // documents ID_AA64ISAR0_EL1.TLB as 0b0000.  This is the value
+        // the RPi5's BCM2712 presents, and the reason `tlbi_*os` must
+        // never execute there.  The rest of the A76 register value is
+        // included so the assertion is about the TLB field specifically
+        // and not about a conveniently empty register.
+        //
+        // Cortex-A76 TRM (100798_0400_00_en) §4.5.19.  Only the fields
+        // the A76 implements are OR-ed in; every other field, TLB among
+        // them, reads as zero, and writing those zero terms explicitly
+        // would be `clippy::identity_op`.  The zero is asserted instead,
+        // which is stronger than writing it: it checks the value rather
+        // than restating the intent.
+        let a76: u64 = (0x1 << 44)   // DP
+            | (0x1 << 28)            // RDM
+            | (0x2 << 20)            // ATOMIC
+            | (0x1 << 16)            // CRC32
+            | (0x1 << 12)            // SHA2
+            | (0x1 << 8)             // SHA1
+            | (0x2 << 4); // AES
+        assert_eq!(
+            (a76 >> 56) & 0xF,
+            0,
+            "the A76 implements no field at [59:56]; RNDR, TS, FHM, SM4, \
+             SM3 and SHA3 are likewise absent"
+        );
+        assert!(
+            !tlbios_implemented(a76),
+            "Cortex-A76 (RPi5) must decode as FEAT_TLBIOS absent"
+        );
+    }
+
+    #[test]
+    fn has_feat_tlbios_is_true_on_host_builds() {
+        // The host stub compiles no TLBI instruction at all — every
+        // `asm!` in this module is `#[cfg(target_arch = "aarch64")]` —
+        // so the guard has nothing to protect and must not divert the
+        // unit tests into `fatal_halt`.  Matches
+        // `barriers::has_feat_csv2`'s host convention.
+        assert!(has_feat_tlbios());
     }
 }

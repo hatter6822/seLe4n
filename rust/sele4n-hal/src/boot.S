@@ -107,10 +107,17 @@ _start:
     // =====================================================================
     adrp    x0, __stack_top
     add     x0, x0, :lo12:__stack_top
-    mov     sp, x0                  // SP = top of kernel stack
 
     // Ensure 16-byte alignment (AArch64 SP must be 16-byte aligned)
-    and     sp, sp, #~0xF
+    // BEFORE the value reaches SP.  `AND (immediate)` accepts SP as its
+    // destination but NOT as its source operand (ARM ARM C6.2.13:
+    // `AND <Xd|SP>, <Xn>, #imm`), so `and sp, sp, #~0xF` does not
+    // assemble.  Masking in the general register also means SP is never
+    // transiently misaligned: with SCTLR_EL1.SA set, the first
+    // SP-relative access after a misaligned `mov sp, xN` would raise an
+    // SP alignment fault before the mask could run.
+    and     x0, x0, #~0xF
+    mov     sp, x0                  // SP = top of kernel stack
 
     // =====================================================================
     // Step 5: Branch to Rust boot entry point
@@ -223,8 +230,13 @@ secondary_entry:
     lsl     x1, x1, #16              // x1 = index * 0x10000 (64 KiB)
     adrp    x2, __smp_secondary_stack_top
     add     x2, x2, :lo12:__smp_secondary_stack_top
-    sub     sp, x2, x1               // sp = stack_top - offset
-    and     sp, sp, #~0xF            // ensure 16-byte alignment
+    sub     x2, x2, x1               // x2 = stack_top - offset
+    // Align in the general register before the value reaches SP: `AND
+    // (immediate)` cannot take SP as its source operand, and an
+    // intermediate misaligned SP would fault on the first SP-relative
+    // access.  See the primary path above.
+    and     x2, x2, #~0xF            // ensure 16-byte alignment
+    mov     sp, x2                   // sp = aligned per-core stack top
 
     // =====================================================================
     // WS-SM SM0.N / SM1.B (closes SMP-M4): set TPIDR_EL1 to per-CPU data base.
