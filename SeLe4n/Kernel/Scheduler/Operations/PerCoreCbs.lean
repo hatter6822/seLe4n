@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Scheduler.Operations.Core
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreChooseThread
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
+import SeLe4n.Kernel.SchedContext.ReplenishAffinity
 
 /-!
 # WS-SM SM5.H — Per-core CBS (Constant Bandwidth Server)
@@ -88,122 +89,20 @@ open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId SgiKind)
 -- ============================================================================
 -- §1  SM5.H.1 / SM5.H.5 — the per-core CBS replenish-queue predicates
 -- ============================================================================
-
-/-- WS-SM SM5.H.5 (plan §3.8, Theorem 3.8.1): per-core CBS replenish-queue
-affinity consistency.  Every SchedContext with a pending replenishment in core
-`c`'s replenish queue has its bound thread **homed on core `c`** — i.e. the
-thread's wake target (`determineTargetCore`, the SM5.C.9 home-core rule) is `c`.
-
-This is the per-core CBS analogue of the SM4.C
-`schedContextRunQueueConsistent_perCore` (run queue ↔ budget): it connects the
-per-core *replenish* queue to per-thread CPU placement, so a thread's
-budget-refill schedule lives on the core the thread will wake onto.  It is the
-invariant the SM5.H.4 affinity migration restores (a thread whose home core
-changes drags its SchedContext's replenishments to the new core).
-
-The literal `cpuAffinity = some c` of the §3.8 pseudocode is generalised to
-`determineTargetCore st tid = c`: for a thread bound to `some c` it is exactly
-`cpuAffinity = some c`, while for a SchedContext-bound but affinity-unbound thread
-(`cpuAffinity = none`) it correctly maps to `bootCoreId` (the boot core homes
-unbound threads, SM5.C.9) — the literal form would wrongly forbid such threads
-from holding a SchedContext at all. -/
-def replenishQueueAffinityConsistentOnCore (st : SystemState) (c : CoreId) : Prop :=
-  ∀ (scId : SchedContextId) (t : Nat),
-    (scId, t) ∈ (st.scheduler.replenishQueueOnCore c).entries →
-    ∀ sc, st.getSchedContext? scId = some sc →
-      ∀ tid, sc.boundThread = some tid →
-        determineTargetCore st tid = c
-
-/-- WS-SM SM5.H.5: the SMP-wide affinity-consistency invariant — every core's
-replenish queue is affinity-consistent. -/
-def replenishQueueAffinityConsistent_smp (st : SystemState) : Prop :=
-  ∀ c : CoreId, replenishQueueAffinityConsistentOnCore st c
-
-/-- WS-SM SM5.H.5: the SMP form extracts the per-core form at any core. -/
-theorem replenishQueueAffinityConsistent_smp_at (st : SystemState)
-    (h : replenishQueueAffinityConsistent_smp st) (c : CoreId) :
-    replenishQueueAffinityConsistentOnCore st c := h c
-
-/-- WS-SM SM5.H.5: the freshly-booted system is affinity-consistent on every core
-(vacuous — the default replenish queue is empty). -/
-theorem default_replenishQueueAffinityConsistentOnCore (c : CoreId) :
-    replenishQueueAffinityConsistentOnCore (default : SystemState) c := by
-  intro scId t hMem _ _ _ _
-  have hRepl : (default : SystemState).scheduler.replenishQueueOnCore c
-      = SeLe4n.Kernel.ReplenishQueue.empty := (default_state_perCoreInitialized c).2.2.1
-  rw [hRepl] at hMem
-  simp [SeLe4n.Kernel.ReplenishQueue.empty] at hMem
-
-/-- WS-SM SM5.H.5: the freshly-booted system is SMP-affinity-consistent. -/
-theorem default_replenishQueueAffinityConsistent_smp :
-    replenishQueueAffinityConsistent_smp (default : SystemState) :=
-  fun c => default_replenishQueueAffinityConsistentOnCore c
-
-/-- WS-SM SM5.H.5 (frame): the affinity-consistency invariant on core `c` reads
-only core `c`'s replenish queue plus the object store (via `getSchedContext?` and
-`determineTargetCore`, both pure object-store reads).  A state agreeing on those
-agrees on the predicate. -/
-theorem replenishQueueAffinityConsistentOnCore_frame {st st' : SystemState} {c : CoreId}
-    (hRepl : st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c)
-    (hObj : st'.objects = st.objects) :
-    replenishQueueAffinityConsistentOnCore st' c ↔
-    replenishQueueAffinityConsistentOnCore st c := by
-  have hSc : ∀ scId, st'.getSchedContext? scId = st.getSchedContext? scId := by
-    intro scId; unfold SystemState.getSchedContext?; rw [hObj]
-  have hTgt : ∀ tid, determineTargetCore st' tid = determineTargetCore st tid := by
-    intro tid; unfold determineTargetCore SystemState.getTcb?; rw [hObj]
-  unfold replenishQueueAffinityConsistentOnCore
-  simp only [hRepl, hSc, hTgt]
-
--- ============================================================================
--- §1b  Structural lemmas for `ReplenishQueue.insertSorted` / `.remove`
--- ============================================================================
 --
--- The membership-decomposition lemmas the SM5.H preservation proofs rest on:
--- a member of `insertSorted` is the new entry or an old entry; a member of
--- `remove` (a filter) is an old entry whose key differs.  Kept local to the
--- staged module (about `ReplenishQueue.insertSorted`, in scope via the import)
--- to avoid a production rebuild of the whole kernel for a pure list lemma.
+-- WS-RR RR2.3: the SM5.H.5 affinity-consistency predicate
+-- (`replenishQueueAffinityConsistentOnCore` / `_smp`, its boot-state discharge
+-- and its frame) now lives in the PRODUCTION module
+-- `SeLe4n.Kernel.SchedContext.ReplenishAffinity`, imported above, together with
+-- the `ReplenishQueue` membership-decomposition lemmas (§1b) and the SM5.H.4
+-- migration frames and affinity-establishment theorems (§6a/§6b/§6c) that used
+-- to sit here.  The live cross-core `.call` / `.reply` donation arms migrate the
+-- replenish queue and must be held to this invariant, and production may not
+-- import a staged module — so a production theorem needed a production
+-- predicate.  Every name is unchanged and in the same `SeLe4n.Kernel`
+-- namespace, so this module's remaining proofs, and the SM5.H theorem
+-- inventory, resolve exactly as before.
 
-/-- WS-SM SM5.H: a member of `insertSorted entries scId t` is either the freshly
-inserted entry `(scId, t)` or an original entry of `entries`.  The reverse of the
-existing `ReplenishQueue.mem_insertSorted` / `subset_insertSorted`. -/
-private theorem mem_insertSorted_iff (entries : List (SchedContextId × Nat))
-    (scId : SchedContextId) (t : Nat) (e : SchedContextId × Nat) :
-    e ∈ ReplenishQueue.insertSorted entries scId t ↔ (e = (scId, t) ∨ e ∈ entries) := by
-  induction entries with
-  | nil => simp [ReplenishQueue.insertSorted]
-  | cons hd tail ih =>
-    obtain ⟨hId, hTime⟩ := hd
-    unfold ReplenishQueue.insertSorted
-    split
-    · -- `t < hTime`: result is `(scId, t) :: (hId, hTime) :: tail`; both sides
-      -- normalise to the same 3-way disjunction.
-      simp only [List.mem_cons]
-    · -- `¬ t < hTime`: result is `(hId, hTime) :: insertSorted tail …`; close the
-      -- or-reassociation explicitly (`tauto` is unavailable in the core toolchain).
-      simp only [List.mem_cons, ih]
-      refine ⟨fun h => ?_, fun h => ?_⟩
-      · rcases h with h | h | h
-        · exact Or.inr (Or.inl h)
-        · exact Or.inl h
-        · exact Or.inr (Or.inr h)
-      · rcases h with h | h | h
-        · exact Or.inr (Or.inl h)
-        · exact Or.inl h
-        · exact Or.inr (Or.inr h)
-
-/-- WS-SM SM5.H: a member of `rq.remove scId`'s entries is an original member of
-`rq.entries` whose key is *not* `scId` (the filtered-out key). -/
-private theorem mem_remove_entries {rq : ReplenishQueue} {scId : SchedContextId}
-    {e : SchedContextId × Nat} (h : e ∈ (rq.remove scId).entries) :
-    e ∈ rq.entries ∧ e.1 ≠ scId := by
-  simp only [ReplenishQueue.remove] at h
-  have h' := List.mem_filter.mp h
-  refine ⟨h'.1, ?_⟩
-  intro hEq
-  have hbeq : (e.1 == scId) = true := by rw [hEq]; exact beq_self_eq_true _
-  simp [hbeq] at h'
 
 -- ============================================================================
 -- §2  SM5.H.2 — `replenishOnCore`: per-core CBS replenishment scheduling
@@ -416,26 +315,6 @@ theorem replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore (st : S
 --      SchedContext's pending replenishments by re-inserting each into the
 --      destination queue).
 
-/-- WS-SM SM5.H.4: a member of a fold-of-inserts (all keyed by `scId`) is either
-an original member of the seed queue `toQ`, or one of the inserted entries
-`(scId, x.2)` for some `x` in the moved list.  The provenance lemma the migration
-preservation proofs decompose membership with. -/
-private theorem mem_foldl_insert_provenance (moved : List (SchedContextId × Nat))
-    (scId : SchedContextId) (e : SchedContextId × Nat) :
-    ∀ (toQ : ReplenishQueue),
-      e ∈ (moved.foldl (fun q x => q.insert scId x.2) toQ).entries →
-      e ∈ toQ.entries ∨ ∃ x ∈ moved, e = (scId, x.2) := by
-  induction moved with
-  | nil => intro toQ h; exact Or.inl h
-  | cons hd tail ih =>
-    intro toQ h
-    rw [List.foldl_cons] at h
-    rcases ih (toQ.insert scId hd.2) h with h' | ⟨x, hxMem, hxEq⟩
-    · rcases (mem_insertSorted_iff _ scId hd.2 e).mp h' with hEq | hMem
-      · exact Or.inr ⟨hd, List.mem_cons_self .., hEq⟩
-      · exact Or.inl hMem
-    · exact Or.inr ⟨x, List.mem_cons_of_mem _ hxMem, hxEq⟩
-
 /-- WS-SM SM5.H.4: a fold-of-inserts preserves sorted-by-eligibility order. -/
 private theorem foldl_insert_preserves_sorted (moved : List (SchedContextId × Nat))
     (scId : SchedContextId) :
@@ -460,111 +339,15 @@ private theorem foldl_insert_preserves_sizeConsistent (moved : List (SchedContex
     rw [List.foldl_cons]
     exact ih (toQ.insert scId hd.2) (insert_sizeConsistent h)
 
-/- WS-SM SM5.H.4 (plan §3.8): `migrateSchedContextReplenishment st scId fromCore
-toCore` migrates SchedContext `scId`'s pending replenishments from core `fromCore`'s
-replenish queue to core `toCore`'s — removes every `(scId, _)` entry from
-`fromCore` and re-inserts each at its original eligibility time into `toCore` (a
-fold of `ReplenishQueue.insert`s).  A no-op when `fromCore = toCore`.  Writes only
-the two replenish-queue slots; the object store, every run queue, and every other
-per-core slot are untouched — so `getSchedContext?` / `determineTargetCore` are
-unchanged by the migration itself.  Production def in
-`Scheduler/Operations/Core.lean`; the affinity-change composite composes it with
-the run-queue migration to follow the thread to its new home core. -/
-
-/-- WS-SM SM5.H.4: a self-migration (`fromCore = toCore`) is the identity. -/
-@[simp] theorem migrateSchedContextReplenishment_noop (st : SystemState)
-    (scId : SchedContextId) (c : CoreId) :
-    migrateSchedContextReplenishment st scId c c = st := by
-  unfold migrateSchedContextReplenishment; rw [if_pos rfl]
-
-/-- WS-SM SM5.H.4: the migration never touches the object store. -/
-@[simp] theorem migrateSchedContextReplenishment_objects (st : SystemState)
-    (scId : SchedContextId) (fromCore toCore : CoreId) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).objects = st.objects := by
-  unfold migrateSchedContextReplenishment; split <;> rfl
-
-/-- WS-SM SM5.H.4: the migration never advances the machine timer. -/
-@[simp] theorem migrateSchedContextReplenishment_machine (st : SystemState)
-    (scId : SchedContextId) (fromCore toCore : CoreId) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).machine = st.machine := by
-  unfold migrateSchedContextReplenishment; split <;> rfl
-
-/-- WS-SM SM5.H.4: the migration frames every SchedContext resolution. -/
-theorem migrateSchedContextReplenishment_getSchedContext? (st : SystemState)
-    (scId : SchedContextId) (fromCore toCore : CoreId) (scId' : SchedContextId) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).getSchedContext? scId'
-      = st.getSchedContext? scId' := by
-  unfold SystemState.getSchedContext?; rw [migrateSchedContextReplenishment_objects]
-
-/-- WS-SM SM5.H.4: the migration frames every thread's home core. -/
-theorem migrateSchedContextReplenishment_determineTargetCore (st : SystemState)
-    (scId : SchedContextId) (fromCore toCore : CoreId) (tid : SeLe4n.ThreadId) :
-    determineTargetCore (migrateSchedContextReplenishment st scId fromCore toCore) tid
-      = determineTargetCore st tid := by
-  unfold determineTargetCore SystemState.getTcb?; rw [migrateSchedContextReplenishment_objects]
-
-/-- WS-SM SM5.H.4: core `toCore`'s post-migration replenish queue is the fold of
-`scId`-inserts onto its pre-state queue (when `fromCore ≠ toCore`). -/
-theorem migrateSchedContextReplenishment_replenishQueueOnCore_to (st : SystemState)
-    (scId : SchedContextId) (fromCore toCore : CoreId) (h : fromCore ≠ toCore) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.replenishQueueOnCore toCore
-      = ((st.scheduler.replenishQueueOnCore fromCore).entries.filter (fun e => e.1 == scId)).foldl
-          (fun q e => q.insert scId e.2) (st.scheduler.replenishQueueOnCore toCore) := by
-  unfold migrateSchedContextReplenishment; rw [if_neg h]
-  exact SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self _ _ _
-
-/-- WS-SM SM5.H.4: core `fromCore`'s post-migration replenish queue is its
-pre-state queue with all `scId` entries removed (when `fromCore ≠ toCore`). -/
-theorem migrateSchedContextReplenishment_replenishQueueOnCore_from (st : SystemState)
-    (scId : SchedContextId) (fromCore toCore : CoreId) (h : fromCore ≠ toCore) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.replenishQueueOnCore fromCore
-      = (st.scheduler.replenishQueueOnCore fromCore).remove scId := by
-  unfold migrateSchedContextReplenishment; rw [if_neg h]
-  rw [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ (Ne.symm h)]
-  exact SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self _ _ _
-
-/-- WS-SM SM5.H.4: a core `c'` other than `fromCore` / `toCore` has its replenish
-queue untouched by the migration. -/
-theorem migrateSchedContextReplenishment_replenishQueueOnCore_other (st : SystemState)
-    (scId : SchedContextId) (fromCore toCore c' : CoreId)
-    (hFrom : fromCore ≠ c') (hTo : toCore ≠ c') :
-    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.replenishQueueOnCore c'
-      = st.scheduler.replenishQueueOnCore c' := by
-  unfold migrateSchedContextReplenishment
-  by_cases h : fromCore = toCore
-  · rw [if_pos h]
-  · rw [if_neg h]
-    rw [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hTo,
-        SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hFrom]
-
--- §6b  Structural facts: the migration genuinely *moves* `scId`'s entries.
-
-/-- WS-SM SM5.H.4: after a migration (`fromCore ≠ toCore`), **no** `scId`
-replenishment remains in `fromCore`'s queue — they were all removed. -/
-theorem migrateSchedContextReplenishment_fromCore_excludes_scId (st : SystemState)
-    (scId : SchedContextId) (fromCore toCore : CoreId) (h : fromCore ≠ toCore) (t : Nat) :
-    (scId, t) ∉ ((migrateSchedContextReplenishment st scId fromCore toCore).scheduler.replenishQueueOnCore fromCore).entries := by
-  rw [migrateSchedContextReplenishment_replenishQueueOnCore_from st scId fromCore toCore h]
-  intro hMem
-  exact (mem_remove_entries hMem).2 rfl
-
-/-- WS-SM SM5.H.4: every entry in `toCore`'s post-migration queue either was
-already there, or is one of `scId`'s migrated entries (a `(scId, _)` pair drawn
-from `fromCore`'s pre-state queue).  The membership decomposition the affinity /
-pipeline preservation proofs use. -/
-theorem migrateSchedContextReplenishment_mem_toCore (st : SystemState)
-    (scId : SchedContextId) (fromCore toCore : CoreId) (h : fromCore ≠ toCore)
-    (e : SchedContextId × Nat)
-    (hMem : e ∈ ((migrateSchedContextReplenishment st scId fromCore toCore).scheduler.replenishQueueOnCore toCore).entries) :
-    e ∈ (st.scheduler.replenishQueueOnCore toCore).entries ∨
-      (e.1 = scId ∧ e ∈ (st.scheduler.replenishQueueOnCore fromCore).entries) := by
-  rw [migrateSchedContextReplenishment_replenishQueueOnCore_to st scId fromCore toCore h] at hMem
-  rcases mem_foldl_insert_provenance _ scId e _ hMem with hOld | ⟨x, hxMem, hxEq⟩
-  · exact Or.inl hOld
-  · have hxFilt := List.mem_filter.mp hxMem
-    have hxKey : x.1 = scId := eq_of_beq hxFilt.2
-    have hex : e = x := by rw [hxEq, ← hxKey]
-    exact Or.inr ⟨by rw [hxEq], hex ▸ hxFilt.1⟩
+-- WS-RR RR2.3: the SM5.H.4 migration's frames (`…_noop`, `…_objects`,
+-- `…_machine`, `…_getSchedContext?`, `…_determineTargetCore`, the three
+-- `…_replenishQueueOnCore_{to,from,other}` slot readings) and the two
+-- "it genuinely moves the entries" facts (`…_fromCore_excludes_scId`,
+-- `…_mem_toCore`) moved to the production module
+-- `SeLe4n.Kernel.SchedContext.ReplenishAffinity` (imported above) along with
+-- the affinity predicate they serve, so the live donation arms can consume
+-- them.  Names and namespace are unchanged; the validity / pipeline-order
+-- preservation proofs below use them exactly as before.
 
 -- §6b  SM5.H.3 — the migration preserves replenish-queue validity.
 
@@ -683,59 +466,11 @@ theorem setThreadCpuAffinity_getSchedContext? (st : SystemState)
     simp only [RHTable_getElem?_eq_get?]
     rw [hframe]
 
--- §6c  Migration-level affinity behaviour (on a consistent input state).
-
-/-- WS-SM SM5.H.4 / SM5.H.5: the migration *establishes* affinity consistency on
-the destination core `toCore`, given `toCore`'s pre-existing entries are
-consistent (`hConsTo`) and the migrated SchedContext is itself homed on `toCore`
-(`hHome` — its bound thread's `determineTargetCore` is `toCore`).  The migrated
-entries are precisely `scId`'s, covered by `hHome`; the rest are covered by
-`hConsTo`. -/
-theorem migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_to
-    (st : SystemState) (scId : SchedContextId) (fromCore toCore : CoreId) (h : fromCore ≠ toCore)
-    (hConsTo : replenishQueueAffinityConsistentOnCore st toCore)
-    (hHome : ∀ sc, st.getSchedContext? scId = some sc →
-      ∀ tid, sc.boundThread = some tid → determineTargetCore st tid = toCore) :
-    replenishQueueAffinityConsistentOnCore (migrateSchedContextReplenishment st scId fromCore toCore) toCore := by
-  intro scId₀ t hMem sc₀ hSc tid hBound
-  rw [migrateSchedContextReplenishment_getSchedContext?] at hSc
-  rw [migrateSchedContextReplenishment_determineTargetCore]
-  rcases migrateSchedContextReplenishment_mem_toCore st scId fromCore toCore h _ hMem with hOld | ⟨hKey, _⟩
-  · exact hConsTo scId₀ t hOld sc₀ hSc tid hBound
-  · subst hKey
-    exact hHome sc₀ hSc tid hBound
-
-/-- WS-SM SM5.H.4 / SM5.H.5: the migration *preserves* affinity consistency on the
-source core `fromCore`, given its entries **other than** `scId`'s are consistent
-(`hConsNonScId`).  The post-migration `fromCore` queue is the pre-state queue with
-all `scId` entries removed — exactly the non-`scId` entries `hConsNonScId` covers
-(the `scId` entries — the only ones the affinity change could have invalidated on
-`fromCore` — are gone). -/
-theorem migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_from
-    (st : SystemState) (scId : SchedContextId) (fromCore toCore : CoreId) (h : fromCore ≠ toCore)
-    (hConsNonScId : ∀ (scId₀ : SchedContextId) (t : Nat),
-      (scId₀, t) ∈ (st.scheduler.replenishQueueOnCore fromCore).entries → scId₀ ≠ scId →
-        ∀ sc₀, st.getSchedContext? scId₀ = some sc₀ →
-          ∀ tid, sc₀.boundThread = some tid → determineTargetCore st tid = fromCore) :
-    replenishQueueAffinityConsistentOnCore (migrateSchedContextReplenishment st scId fromCore toCore) fromCore := by
-  intro scId₀ t hMem sc₀ hSc tid hBound
-  rw [migrateSchedContextReplenishment_getSchedContext?] at hSc
-  rw [migrateSchedContextReplenishment_determineTargetCore]
-  rw [migrateSchedContextReplenishment_replenishQueueOnCore_from st scId fromCore toCore h] at hMem
-  have hRem := mem_remove_entries hMem
-  exact hConsNonScId scId₀ t hRem.1 hRem.2 sc₀ hSc tid hBound
-
-/-- WS-SM SM5.H.4 / SM5.H.5: the migration *preserves* affinity consistency on any
-core `c'` other than `fromCore` / `toCore` — its replenish queue and the object
-store are untouched. -/
-theorem migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_other
-    (st : SystemState) (scId : SchedContextId) (fromCore toCore c' : CoreId)
-    (hFrom : fromCore ≠ c') (hTo : toCore ≠ c')
-    (hCons : replenishQueueAffinityConsistentOnCore st c') :
-    replenishQueueAffinityConsistentOnCore (migrateSchedContextReplenishment st scId fromCore toCore) c' :=
-  (replenishQueueAffinityConsistentOnCore_frame
-    (migrateSchedContextReplenishment_replenishQueueOnCore_other st scId fromCore toCore c' hFrom hTo)
-    (migrateSchedContextReplenishment_objects st scId fromCore toCore)).mpr hCons
+-- §6c  Migration-level affinity behaviour (on a consistent input state) — the
+--      three establishment/preservation theorems moved with the predicate to
+--      `SeLe4n.Kernel.SchedContext.ReplenishAffinity` (WS-RR RR2.3), which also
+--      adds the ∀-core composite `…_preserves_affinityConsistent_smp` the live
+--      donation arms discharge.
 
 -- §6c  Run-queue migration frame lemmas (the full-migration's run-queue step
 --       frames the object store + every replenish queue, so the replenish-queue
@@ -1207,48 +942,12 @@ theorem replenishOnCoreLockSet_contains_replenishQueue_write (c : CoreId) :
 theorem replenishOnCoreLockSet_size_le_maxLockSetSize (c : CoreId) :
     (replenishOnCoreLockSet c).length ≤ 8 := by rw [replenishOnCoreLockSet_length]; decide
 
-/-- WS-SM SM5.H.4 (lock-set): `migrateSchedContextReplenishment fromCore toCore`
-writes both cores' replenish-queue slots. -/
-def migrateSchedContextReplenishmentLockSet (fromCore toCore : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  [ (SchedLockId.replenishQueue ⟨fromCore⟩, .write)
-  , (SchedLockId.replenishQueue ⟨toCore⟩, .write) ]
-
-/-- SM5.H.4: the migration footprint is the two replenish-queue write locks. -/
-@[simp] theorem migrateSchedContextReplenishmentLockSet_length (fromCore toCore : CoreId) :
-    (migrateSchedContextReplenishmentLockSet fromCore toCore).length = 2 := rfl
-
-/-- SM5.H.4: the migration footprint is write-only. -/
-theorem migrateSchedContextReplenishmentLockSet_write_only (fromCore toCore : CoreId) :
-    ∀ p ∈ migrateSchedContextReplenishmentLockSet fromCore toCore, p.2 = Concurrency.AccessMode.write := by
-  intro p hp
-  simp only [migrateSchedContextReplenishmentLockSet, List.mem_cons, List.not_mem_nil, or_false] at hp
-  rcases hp with h | h <;> subst h <;> rfl
-
-/-- SM5.H.4: for distinct cores the migration footprint's keys are duplicate-free. -/
-theorem migrateSchedContextReplenishmentLockSet_keys_nodup (fromCore toCore : CoreId)
-    (h : fromCore ≠ toCore) :
-    ((migrateSchedContextReplenishmentLockSet fromCore toCore).map (·.1)).Nodup := by
-  simp only [migrateSchedContextReplenishmentLockSet, List.map_cons, List.map_nil]
-  refine List.Pairwise.cons (fun a ha => ?_) (List.pairwise_singleton _ _)
-  rw [List.mem_singleton] at ha; subst ha
-  intro hEq
-  exact h (congrArg ReplenishQueueLockId.core (SchedLockId.replenishQueue.inj hEq))
-
-/-- SM5.H.4 (plan §4.4 / SM3.D ladder): under the canonical core order
-`fromCore.val ≤ toCore.val`, the migration footprint's keys are ascending — a valid
-`withLockSet` acquisition sequence. -/
-theorem migrateSchedContextReplenishmentLockSet_pairwise_le_of_core_le (fromCore toCore : CoreId)
-    (h : fromCore.val ≤ toCore.val) :
-    ((migrateSchedContextReplenishmentLockSet fromCore toCore).map (·.1)).Pairwise (· ≤ ·) := by
-  simp only [migrateSchedContextReplenishmentLockSet, List.map_cons, List.map_nil]
-  refine List.Pairwise.cons (fun a ha => ?_) (List.pairwise_singleton _ _)
-  rw [List.mem_singleton] at ha; subst ha; exact h
-
-/-- SM5.H.4: the migration footprint is within the `maxLockSetSize` cap. -/
-theorem migrateSchedContextReplenishmentLockSet_size_le_maxLockSetSize (fromCore toCore : CoreId) :
-    (migrateSchedContextReplenishmentLockSet fromCore toCore).length ≤ 8 := by
-  rw [migrateSchedContextReplenishmentLockSet_length]; decide
+-- WS-RR RR2.4: `migrateSchedContextReplenishmentLockSet` and its five lemmas
+-- moved to the production `Scheduler/Operations/PerCoreChooseThread.lean`,
+-- beside the `SchedLockId` order they are stated in.  The migration is a live
+-- operation on three reachable paths since RR2 (`.call` and `.reply` donation,
+-- `.tcbSuspend` cancellation), so the footprint their `withLockSet` brackets
+-- must cover cannot live in a staged module.  Same names, same namespace.
 
 /-- WS-SM SM5.H.4 (lock-set): `migrateRunQueueOnAffinityChange fromCore toCore`
 writes both cores' run-queue slots. -/

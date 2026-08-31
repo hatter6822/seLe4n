@@ -1233,6 +1233,31 @@ def determineTargetCore (st : SystemState) (tid : SeLe4n.ThreadId) : CoreId :=
       | some c' => c'
       | none    => bootCoreId
   | none => bootCoreId
+/-- WS-SM SM5.C.2 / WS-RR RR2.3: `determineTargetCore` depends on the thread only
+through its TCB's `cpuAffinity` — two states whose `getTcb?` agree up to
+`cpuAffinity` route the thread to the same core.  The congruence that lets a
+wake's SGI target be read at the pre-state rather than at the post-store wake
+site, and that lets the cross-core donation arms resolve the replenishment
+migration's endpoints before the rebinding runs.
+
+Lives here, beside the definition, since RR2.3: it used to sit in
+`IPC/CrossCore/NotificationSignal.lean`, which the donation operations cannot
+see, and a second copy of a four-line congruence is exactly the duplication this
+project treats as debt. -/
+theorem determineTargetCore_congr (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (h : (st'.getTcb? tid).map (·.cpuAffinity) = (st.getTcb? tid).map (·.cpuAffinity)) :
+    determineTargetCore st' tid = determineTargetCore st tid := by
+  cases hT' : st'.getTcb? tid with
+  | none => cases hT : st.getTcb? tid with
+    | none => simp [determineTargetCore, hT', hT]
+    | some t => rw [hT', hT] at h; simp at h
+  | some t' => cases hT : st.getTcb? tid with
+    | none => rw [hT', hT] at h; simp at h
+    | some t =>
+      have hAff : t'.cpuAffinity = t.cpuAffinity := by rw [hT', hT] at h; simpa using h
+      simp [determineTargetCore, hT', hT, hAff]
+
+
 
 /-- WS-SM SM5.C.2 (plan §3.3, Theorem 3.3.1): cross-core wake.
 

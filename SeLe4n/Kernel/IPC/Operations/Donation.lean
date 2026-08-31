@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.IPC.DualQueue.Transport
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Kernel.IPC.Operations.Donation.Primitives
+import SeLe4n.Kernel.SchedContext.ReplenishAffinity
 
 /-! # Z7: Donation Transport-Dependent Wrappers
 
@@ -62,6 +63,7 @@ When a client's SchedContext is donated to a server and the budget expires:
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (CoreId)
 
 -- ============================================================================
 -- Z7: Donation-aware IPC operation wrappers (transport-dependent subset)
@@ -217,5 +219,343 @@ theorem endpointReplyRecvWithDonation_unfold
            .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)
        | none => .error .invalidArgument) := by
   rfl
+
+-- ============================================================================
+-- WS-RR RR2.1 / RR2.2 — the cross-core call donation
+-- ============================================================================
+--
+-- `applyCallDonation` rebinds the caller's SchedContext to the receiver with
+-- **object writes only**.  On one core that is the whole story; across cores it
+-- is not.  Under the SM5.H affinity discipline
+-- (`replenishQueueAffinityConsistentOnCore`) a SchedContext's pending CBS
+-- replenishments live on its **bound thread's home core's** queue — that is the
+-- only core whose timer tick drains them — so a donation to a server homed on
+-- another core leaves the budget-refill schedule stranded on the donor's core,
+-- where nothing will ever act on it for a SchedContext that is now the donee's.
+--
+-- `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §4.3 already said the migration
+-- happens ("if the receiver inherits the SC and is on a different core, the
+-- SC's CBS replenish queue migrates per SM5.H.4"); until WS-RR RR2 no donation
+-- path did it.  `applyCallDonationOnCore` is that path, built exactly like the
+-- cancellation arm that already migrates
+-- (`cancelDonatedDonationOnCore`, `IPC/CrossCore/Cancellation.lean`): the
+-- unchanged single-core donation, then `migrateSchedContextReplenishment` from
+-- the donor's home core to the donee's.
+
+/-- WS-RR RR2.1: the SchedContext a `.call` donation would actually transfer —
+`some scId` exactly when `applyCallDonation` takes its donating arm (the
+receiver is passive and the caller holds a bound SchedContext), `none` on every
+no-op arm.
+
+Single-sourced here because three consumers need the same answer and a second
+copy would drift: `applyCallDonationOnCore` names the SchedContext whose
+replenishments migrate, the cross-core `.call` dispatch pre-resolves the
+`lockSet_endpointCall` donation footprint from it, and the affinity proof below
+case-splits on it.  Reading the same function is what keeps the declared lock
+footprint and the executed write the same set. -/
+def callDonationSchedContext? (st : SystemState) (caller receiver : SeLe4n.ThreadId) :
+    Option SeLe4n.SchedContextId :=
+  match lookupTcb st receiver with
+  | some receiverTcb =>
+      match receiverTcb.schedContextBinding with
+      | .unbound =>
+          match lookupTcb st caller with
+          | some callerTcb =>
+              match callerTcb.schedContextBinding with
+              | .bound scId => some scId
+              | _ => none
+          | none => none
+      | _ => none
+  | none => none
+
+/-- WS-RR RR2.1 (characterisation): the single-core call donation *is* the
+`callDonationSchedContext?` case split — `donateSchedContext` on the resolved
+SchedContext when there is one, the identity otherwise.  Everything the
+cross-core form needs about the single-core one factors through this. -/
+theorem applyCallDonation_characterisation
+    (st : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId) :
+    applyCallDonation st callerVtid receiverVtid
+      = (match callDonationSchedContext? st callerVtid.val receiverVtid.val with
+         | some scId => donateSchedContext st callerVtid.val receiverVtid.val scId
+         | none      => .ok st) := by
+  simp only [applyCallDonation, callDonationSchedContext?]
+  cases lookupTcb st receiverVtid.val with
+  | none => rfl
+  | some receiverTcb =>
+    simp only []
+    cases receiverTcb.schedContextBinding with
+    | bound _ => rfl
+    | donated _ _ => rfl
+    | unbound =>
+      simp only []
+      cases lookupTcb st callerVtid.val with
+      | none => rfl
+      | some callerTcb =>
+        simp only []
+        cases callerTcb.schedContextBinding with
+        | unbound => rfl
+        | donated _ _ => rfl
+        | bound scId =>
+          simp only [donateSchedContextValid]
+          cases donateSchedContext st callerVtid.val receiverVtid.val scId <;> rfl
+
+/-- WS-RR RR2.1: on every arm where no SchedContext changes hands, the
+single-core donation is the identity. -/
+theorem applyCallDonation_eq_ok_self_of_no_donation
+    (st : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (h : callDonationSchedContext? st callerVtid.val receiverVtid.val = none) :
+    applyCallDonation st callerVtid receiverVtid = .ok st := by
+  rw [applyCallDonation_characterisation, h]
+
+/-- WS-RR RR2.1: on the donating arm, the single-core donation is exactly
+`donateSchedContext` for the resolved SchedContext. -/
+theorem applyCallDonation_eq_donate_of_donation
+    (st : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (scId : SeLe4n.SchedContextId)
+    (h : callDonationSchedContext? st callerVtid.val receiverVtid.val = some scId) :
+    applyCallDonation st callerVtid receiverVtid
+      = donateSchedContext st callerVtid.val receiverVtid.val scId := by
+  rw [applyCallDonation_characterisation, h]
+
+/-- WS-RR RR2.1 / RR2.2 (operation): the cross-core `.call` SchedContext
+donation — the single-core `applyCallDonation` **plus** the SM5.H.4
+replenishment migration from the donor's home core to the donee's.
+
+`donorHome` / `doneeHome` are the migration's endpoints, resolved by the caller
+from the **pre**-state (`determineTargetCore st caller` /
+`determineTargetCore st receiver`).  Resolving them outside is what lets the
+`withLockSet` bracket declare and acquire the two `SchedLockId.replenishQueue`
+write locks *before* the transition runs — the SM3.B discipline the cross-core
+lock-set follows for every donation-carrying syscall — and the rebinding itself
+never touches a `cpuAffinity`, so a pre-state reading is the same reading the
+post-state would give (`donateSchedContext_getTcb?_cpuAffinity_eq`).
+
+Self-migration — a shared home core, and in particular every single-core
+configuration — is a definitional no-op
+(`migrateSchedContextReplenishment_noop`), so this is exactly the single-core
+donation there (`applyCallDonationOnCore_eq_of_sharedHome`). -/
+def applyCallDonationOnCore
+    (st : SystemState)
+    (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId) : Except KernelError SystemState :=
+  match applyCallDonation st callerVtid receiverVtid with
+  | .error e => .error e
+  | .ok st' =>
+      match callDonationSchedContext? st callerVtid.val receiverVtid.val with
+      | some scId => .ok (migrateSchedContextReplenishment st' scId donorHome doneeHome)
+      | none      => .ok st'
+
+/-- WS-RR RR2.13 (bridge): when donor and donee share a home core — in
+particular in every single-core configuration — the cross-core call donation is
+**exactly** the single-core `applyCallDonation`. -/
+theorem applyCallDonationOnCore_eq_of_sharedHome
+    (st : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId) (c : CoreId) :
+    applyCallDonationOnCore st callerVtid receiverVtid c c
+      = applyCallDonation st callerVtid receiverVtid := by
+  unfold applyCallDonationOnCore
+  cases hDon : applyCallDonation st callerVtid receiverVtid with
+  | error e => rfl
+  | ok st' =>
+    cases hSc : callDonationSchedContext? st callerVtid.val receiverVtid.val with
+    | none => rfl
+    | some scId => simp only [migrateSchedContextReplenishment_noop]
+
+/-- WS-RR RR2.1 (decomposition): a successful cross-core call donation is the
+successful single-core donation, optionally followed by the migration. -/
+theorem applyCallDonationOnCore_ok_decompose
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId)
+    (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
+    ∃ st', applyCallDonation st callerVtid receiverVtid = .ok st' ∧
+      ((callDonationSchedContext? st callerVtid.val receiverVtid.val = none ∧ st'' = st')
+        ∨ ∃ scId, callDonationSchedContext? st callerVtid.val receiverVtid.val = some scId ∧
+            st'' = migrateSchedContextReplenishment st' scId donorHome doneeHome) := by
+  unfold applyCallDonationOnCore at h
+  cases hDon : applyCallDonation st callerVtid receiverVtid with
+  | error e => rw [hDon] at h; cases h
+  | ok st' =>
+    rw [hDon] at h
+    simp only [] at h
+    cases hSc : callDonationSchedContext? st callerVtid.val receiverVtid.val with
+    | none =>
+      rw [hSc] at h
+      exact ⟨st', rfl, Or.inl ⟨rfl, (Except.ok.inj h).symm⟩⟩
+    | some scId =>
+      rw [hSc] at h
+      exact ⟨st', rfl, Or.inr ⟨scId, rfl, (Except.ok.inj h).symm⟩⟩
+
+/-- WS-RR RR2.1 (frame): the cross-core call donation never advances the machine
+timer — the rebinding writes objects and the migration writes replenish-queue
+slots. -/
+theorem applyCallDonationOnCore_machine_eq
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId)
+    (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
+    st''.machine = st.machine := by
+  obtain ⟨st', hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid
+    donorHome doneeHome h
+  have hM := applyCallDonation_machine_eq st callerVtid receiverVtid st' hDon
+  rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> subst hEq
+  · exact hM
+  · rw [migrateSchedContextReplenishment_machine]; exact hM
+
+/-- WS-RR RR2.1 (frame): the cross-core call donation never disturbs any core's
+run queue or current slot.  The rebinding preserves the whole scheduler
+(`applyCallDonation_scheduler_eq`) and the migration writes only replenish-queue
+slots, so nothing schedulable moves — a donation is a budget transfer, not a
+scheduling decision. -/
+theorem applyCallDonationOnCore_runQueue_current_eq
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId) (c : CoreId)
+    (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
+    st''.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
+    ∧ st''.scheduler.currentOnCore c = st.scheduler.currentOnCore c := by
+  obtain ⟨st', hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid
+    donorHome doneeHome h
+  have hS := applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon
+  rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> subst hEq
+  · exact ⟨by rw [hS], by rw [hS]⟩
+  · obtain ⟨hRQ, hCur⟩ :=
+      migrateSchedContextReplenishment_runQueue_current_eq st' scId donorHome doneeHome c
+    exact ⟨by rw [hRQ, hS], by rw [hCur, hS]⟩
+
+/-- WS-RR RR2.1 (frame): the cross-core call donation commits exactly the
+single-core donation's object store — the migration writes no object. -/
+theorem applyCallDonationOnCore_objects_eq
+    (st st' st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId)
+    (hDon : applyCallDonation st callerVtid receiverVtid = .ok st')
+    (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
+    st''.objects = st'.objects := by
+  obtain ⟨st1, hDon1, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid
+    donorHome doneeHome h
+  have hSame : st1 = st' := Except.ok.inj (hDon1.symm.trans hDon)
+  subst hSame
+  rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> subst hEq
+  · rfl
+  · exact migrateSchedContextReplenishment_objects _ _ _ _
+
+-- ============================================================================
+-- WS-RR RR2.3 — the call path preserves the SM5.H affinity invariant
+-- ============================================================================
+
+/-- WS-RR RR2.3: **the cross-core call donation restores replenish-queue
+affinity consistency on every core.**
+
+This is the theorem the migration exists for.  The donation rebinds exactly one
+SchedContext — from the caller to the receiver — so exactly that SchedContext's
+replenish entries become mis-homed, and they are exactly the entries the
+migration moves.  The four obligations of
+`migrateSchedContextReplenishment_preserves_affinityConsistent_smp` land as
+follows:
+
+* **the destination** carries the migrated entries, whose SchedContext is now
+  bound to the receiver, homed on `doneeHome` by hypothesis;
+* **the source** keeps only its other SchedContexts' entries, which the
+  pre-state invariant already places there;
+* **every other core** holds no entry for the donated SchedContext at all —
+  under the pre-state invariant such an entry would force the *donor's* home to
+  be that core, and the donor's home is `donorHome`.  This is where
+  `donateSchedContext`'s own `sc.boundThread = some clientTid` guard pays for
+  itself: success witnesses the pre-state binding
+  (`donateSchedContext_ok_implies_sc_bound`), so the confinement is derived, not
+  assumed;
+* and the rebinding moves no thread's `cpuAffinity` and no other SchedContext,
+  so every reading the invariant makes is the pre-state's
+  (`donateSchedContext_getTcb?_cpuAffinity_eq`,
+  `donateSchedContext_getSchedContext?_ne`).
+
+The two home-core hypotheses are discharged by `rfl` at the live call site,
+which resolves both from the pre-state. -/
+theorem applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st)
+    (hDonorHome : determineTargetCore st callerVtid.val = donorHome)
+    (hDoneeHome : determineTargetCore st receiverVtid.val = doneeHome)
+    (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
+    replenishQueueAffinityConsistent_smp st'' := by
+  obtain ⟨st1, hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid
+    donorHome doneeHome h
+  rcases harm with ⟨hNone, hEq⟩ | ⟨scId, hSome, hEq⟩ <;> rw [hEq]
+  · -- No SchedContext changed hands: the donation is the identity.
+    have hSelf : applyCallDonation st callerVtid receiverVtid = .ok st :=
+      applyCallDonation_eq_ok_self_of_no_donation st callerVtid receiverVtid hNone
+    have hIdent : st1 = st := Except.ok.inj (hDon.symm.trans hSelf)
+    rw [hIdent]; exact hCons
+  · -- The donating arm: `st1` is `donateSchedContext`'s post-state.
+    have hDonate : donateSchedContext st callerVtid.val receiverVtid.val scId = .ok st1 :=
+      (applyCallDonation_eq_donate_of_donation st callerVtid receiverVtid scId hSome).symm.trans hDon
+    -- The rebinding's readings.
+    have hSched : st1.scheduler = st.scheduler :=
+      applyCallDonation_scheduler_eq st callerVtid receiverVtid st1 hDon
+    have hHomeEq : ∀ tid, determineTargetCore st1 tid = determineTargetCore st tid := fun tid =>
+      determineTargetCore_congr st st1 tid
+        (donateSchedContext_getTcb?_cpuAffinity_eq st st1 callerVtid.val receiverVtid.val scId
+          hObjInv hDonate tid)
+    have hScNe : ∀ scId', scId' ≠ scId → st1.getSchedContext? scId' = st.getSchedContext? scId' :=
+      fun scId' hne => donateSchedContext_getSchedContext?_ne st st1 callerVtid.val receiverVtid.val
+        scId scId' hne hObjInv hDonate
+    obtain ⟨scPost, hScPost, hScPostBound⟩ :=
+      donateSchedContext_post_boundThread st st1 callerVtid.val receiverVtid.val scId hObjInv hDonate
+    obtain ⟨scPre, hScPreRaw, hScPreBound⟩ :=
+      donateSchedContext_ok_implies_sc_bound st st1 callerVtid.val receiverVtid.val scId hDonate
+    have hScPre : st.getSchedContext? scId = some scPre := by
+      unfold SystemState.getSchedContext?; rw [hScPreRaw]
+    -- Reading an entry of `st1`'s queue is reading the same entry of `st`'s.
+    have hQueue : ∀ c, st1.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c :=
+      fun c => by rw [hSched]
+    -- A `scId` entry anywhere in the pre-state forces that core to be `donorHome`.
+    have hConfined : ∀ c t, (scId, t) ∈ (st.scheduler.replenishQueueOnCore c).entries →
+        c = donorHome := by
+      intro c t hMem
+      rw [← hDonorHome]
+      exact (hCons c scId t hMem scPre hScPre callerVtid.val hScPreBound).symm
+    -- Post-donation consistency of `st1`, core by core.
+    have hCons1 : ∀ c, c ≠ donorHome →
+        replenishQueueAffinityConsistentOnCore st1 c := by
+      intro c hcNe scId₀ t hMem sc₀ hSc₀ tid hBound
+      rw [hQueue c] at hMem
+      rw [hHomeEq tid]
+      by_cases hk : scId₀ = scId
+      · subst hk; exact absurd (hConfined c t hMem) hcNe
+      · rw [hScNe scId₀ hk] at hSc₀
+        exact hCons c scId₀ t hMem sc₀ hSc₀ tid hBound
+    -- The destination core: pre-existing entries are consistent because a `scId`
+    -- entry there would force `doneeHome = donorHome`, and the rest carry over.
+    have hConsTo : replenishQueueAffinityConsistentOnCore st1 doneeHome := by
+      intro scId₀ t hMem sc₀ hSc₀ tid hBound
+      rw [hQueue doneeHome] at hMem
+      rw [hHomeEq tid]
+      by_cases hk : scId₀ = scId
+      · subst hk
+        rw [hScPost] at hSc₀
+        cases hSc₀
+        rw [hScPostBound] at hBound
+        cases hBound
+        exact hDoneeHome
+      · rw [hScNe scId₀ hk] at hSc₀
+        exact hCons doneeHome scId₀ t hMem sc₀ hSc₀ tid hBound
+    have hConsFrom : ∀ (scId₀ : SeLe4n.SchedContextId) (t : Nat),
+        (scId₀, t) ∈ (st1.scheduler.replenishQueueOnCore donorHome).entries → scId₀ ≠ scId →
+          ∀ sc₀, st1.getSchedContext? scId₀ = some sc₀ →
+            ∀ tid, sc₀.boundThread = some tid → determineTargetCore st1 tid = donorHome := by
+      intro scId₀ t hMem hk sc₀ hSc₀ tid hBound
+      rw [hQueue donorHome] at hMem
+      rw [hHomeEq tid, hScNe scId₀ hk] at *
+      exact hCons donorHome scId₀ t hMem sc₀ hSc₀ tid hBound
+    have hHome : ∀ sc, st1.getSchedContext? scId = some sc →
+        ∀ tid, sc.boundThread = some tid → determineTargetCore st1 tid = doneeHome := by
+      intro sc hSc tid hBound
+      rw [hScPost] at hSc
+      cases hSc
+      rw [hScPostBound] at hBound
+      cases hBound
+      rw [hHomeEq]; exact hDoneeHome
+    exact migrateSchedContextReplenishment_preserves_affinityConsistent_smp st1 scId
+      donorHome doneeHome
+      (fun c' hFrom _ => hCons1 c' (fun hEq => hFrom hEq.symm))
+      hConsTo hConsFrom hHome
 
 end SeLe4n.Kernel

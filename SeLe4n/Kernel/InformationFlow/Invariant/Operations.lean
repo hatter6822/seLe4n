@@ -1756,107 +1756,110 @@ private theorem returnDonatedSchedContext_preserves_projection
   | some obj => cases obj with
     | schedContext sc =>
       simp only []
-      cases hS1 : storeObject scId.toObjId _ st with
-      | error _ => intro h; cases h
-      | ok p1 =>
-        simp only []
-        cases hL1 : lookupTcb p1.2 originalOwner with
-        | none => intro h; cases h
-        | some clientTcb =>
+      -- WS-RR RR2.8: the new `sc.boundThread = some serverTid` guard.
+      split
+      · intro h; cases h
+      · cases hS1 : storeObject scId.toObjId _ st with
+        | error _ => intro h; cases h
+        | ok p1 =>
           simp only []
-          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
-          | error _ => intro h; cases h
-          | ok p2 =>
+          cases hL1 : lookupTcb p1.2 originalOwner with
+          | none => intro h; cases h
+          | some clientTcb =>
             simp only []
-            cases hL2 : lookupTcb p2.2 serverTid with
-            | none => intro h; cases h
-            | some serverTcb =>
+            cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+            | error _ => intro h; cases h
+            | ok p2 =>
               simp only []
-              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
-              | error _ => intro h; cases h
-              | ok p3 =>
-                simp only [Except.ok.injEq]
-                intro hEq; subst hEq
-                have hInv1 := storeObject_preserves_objects_invExt st p1.2
-                    scId.toObjId _ hObjInv hS1
-                have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2
-                    originalOwner.toObjId _ hInv1 hS2
-                rw [projectState_scThreadIndex_eq,
-                    storeObject_preserves_projection ctx observer p2.2 p3.2
-                    serverTid.toObjId _ hReceiverObjHigh hInv2 hS3]
-                have hScInSet := hIdxComplete scId.toObjId
-                    (by rw [hObj]; exact fun h => nomatch h)
-                have hOwnerInSt : st.objects[originalOwner.toObjId]? ≠ none := by
-                  by_cases hEqIds : originalOwner.toObjId = scId.toObjId
-                  · rw [hEqIds, hObj]; exact fun h => nomatch h
-                  · rw [← storeObject_objects_ne st p1.2 scId.toObjId originalOwner.toObjId _
-                        hEqIds hObjInv hS1,
-                      lookupTcb_some_objects p1.2 originalOwner clientTcb hL1]
-                    exact fun h => nomatch h
-                have hOwnerInSetP1 :
-                    (st.objectIndexSet.insert scId.toObjId).contains originalOwner.toObjId = true := by
-                  by_cases hEqIds : originalOwner.toObjId = scId.toObjId
-                  · rw [hEqIds]
-                    exact SeLe4n.Kernel.RobinHood.RHSet.contains_insert_self
-                      st.objectIndexSet scId.toObjId hObjSetInv
-                  · rw [SeLe4n.Kernel.RobinHood.RHSet.contains_insert_ne
-                      st.objectIndexSet scId.toObjId originalOwner.toObjId
-                      (fun heq => hEqIds (eq_of_beq heq).symm) hObjSetInv]
-                    exact hIdxComplete originalOwner.toObjId hOwnerInSt
-                simp only [projectState]; congr 1
-                · funext o; by_cases hObs : objectObservable ctx observer o
-                  · simp only [projectObjects, hObs, ite_true]
-                    by_cases hEqOwner : o = originalOwner.toObjId
-                    · subst hEqOwner
-                      rw [storeObject_objects_eq p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2]
-                      have hCO := lookupTcb_some_objects p1.2 originalOwner clientTcb hL1
-                      by_cases hEqSc : originalOwner.toObjId = scId.toObjId
-                      · rw [hEqSc] at hCO
-                        rw [storeObject_objects_eq st p1.2 scId.toObjId _ hObjInv hS1] at hCO
-                        cases hCO
-                      · rw [storeObject_objects_ne st p1.2 scId.toObjId originalOwner.toObjId _
-                            hEqSc hObjInv hS1] at hCO
-                        rw [hCO]; simp only [Option.map, projectKernelObject]
-                    · by_cases hEqSc : o = scId.toObjId
-                      · subst hEqSc
-                        rw [storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId scId.toObjId _
-                            hEqOwner hInv1 hS2,
-                            storeObject_objects_eq st p1.2 scId.toObjId _ hObjInv hS1, hObj]
-                        simp only [Option.map, projectKernelObject]
-                      · rw [storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId o _
-                                hEqOwner hInv1 hS2,
-                            storeObject_objects_ne st p1.2 scId.toObjId o _
-                                hEqSc hObjInv hS1]
-                  · simp [projectObjects, hObs]
-                · simp [projectRunnable, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
-                      storeObject_scheduler_eq st p1.2 _ _ hS1]
-                · simp [projectCurrent, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
-                      storeObject_scheduler_eq st p1.2 _ _ hS1]
-                · unfold storeObject at hS2; cases hS2
-                  unfold storeObject at hS1; cases hS1; funext sid; rfl
-                · simp [projectActiveDomain, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
-                      storeObject_scheduler_eq st p1.2 _ _ hS1]
-                · funext irq; simp only [projectIrqHandlers,
-                      storeObject_irqHandlers_eq p1.2 p2.2 _ _ hS2,
-                      storeObject_irqHandlers_eq st p1.2 _ _ hS1]
-                · simp only [projectObjectIndex]
-                  unfold storeObject at hS1; cases hS1
-                  unfold storeObject at hS2; cases hS2
-                  simp only [hOwnerInSetP1, ite_true, hScInSet, ite_true]
-                · simp [projectDomainTimeRemaining, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
-                      storeObject_scheduler_eq st p1.2 _ _ hS1]
-                · simp [projectDomainSchedule, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
-                      storeObject_scheduler_eq st p1.2 _ _ hS1]
-                · simp [projectDomainScheduleIndex, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
-                      storeObject_scheduler_eq st p1.2 _ _ hS1]
-                · simp [projectMachineRegs, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
-                      storeObject_scheduler_eq st p1.2 _ _ hS1,
-                      storeObject_machine_eq p1.2 p2.2 _ _ hS2,
-                      storeObject_machine_eq st p1.2 _ _ hS1]
-                · rw [storeObject_preserves_projectMemory ctx observer p1.2 p2.2 _ _ hS2,
-                      storeObject_preserves_projectMemory ctx observer st p1.2 _ _ hS1]
-                · rw [storeObject_preserves_projectServiceRegistry ctx observer p1.2 p2.2 _ _ hS2,
-                      storeObject_preserves_projectServiceRegistry ctx observer st p1.2 _ _ hS1]
+              cases hL2 : lookupTcb p2.2 serverTid with
+              | none => intro h; cases h
+              | some serverTcb =>
+                simp only []
+                cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+                | error _ => intro h; cases h
+                | ok p3 =>
+                  simp only [Except.ok.injEq]
+                  intro hEq; subst hEq
+                  have hInv1 := storeObject_preserves_objects_invExt st p1.2
+                      scId.toObjId _ hObjInv hS1
+                  have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2
+                      originalOwner.toObjId _ hInv1 hS2
+                  rw [projectState_scThreadIndex_eq,
+                      storeObject_preserves_projection ctx observer p2.2 p3.2
+                      serverTid.toObjId _ hReceiverObjHigh hInv2 hS3]
+                  have hScInSet := hIdxComplete scId.toObjId
+                      (by rw [hObj]; exact fun h => nomatch h)
+                  have hOwnerInSt : st.objects[originalOwner.toObjId]? ≠ none := by
+                    by_cases hEqIds : originalOwner.toObjId = scId.toObjId
+                    · rw [hEqIds, hObj]; exact fun h => nomatch h
+                    · rw [← storeObject_objects_ne st p1.2 scId.toObjId originalOwner.toObjId _
+                          hEqIds hObjInv hS1,
+                        lookupTcb_some_objects p1.2 originalOwner clientTcb hL1]
+                      exact fun h => nomatch h
+                  have hOwnerInSetP1 :
+                      (st.objectIndexSet.insert scId.toObjId).contains originalOwner.toObjId = true := by
+                    by_cases hEqIds : originalOwner.toObjId = scId.toObjId
+                    · rw [hEqIds]
+                      exact SeLe4n.Kernel.RobinHood.RHSet.contains_insert_self
+                        st.objectIndexSet scId.toObjId hObjSetInv
+                    · rw [SeLe4n.Kernel.RobinHood.RHSet.contains_insert_ne
+                        st.objectIndexSet scId.toObjId originalOwner.toObjId
+                        (fun heq => hEqIds (eq_of_beq heq).symm) hObjSetInv]
+                      exact hIdxComplete originalOwner.toObjId hOwnerInSt
+                  simp only [projectState]; congr 1
+                  · funext o; by_cases hObs : objectObservable ctx observer o
+                    · simp only [projectObjects, hObs, ite_true]
+                      by_cases hEqOwner : o = originalOwner.toObjId
+                      · subst hEqOwner
+                        rw [storeObject_objects_eq p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2]
+                        have hCO := lookupTcb_some_objects p1.2 originalOwner clientTcb hL1
+                        by_cases hEqSc : originalOwner.toObjId = scId.toObjId
+                        · rw [hEqSc] at hCO
+                          rw [storeObject_objects_eq st p1.2 scId.toObjId _ hObjInv hS1] at hCO
+                          cases hCO
+                        · rw [storeObject_objects_ne st p1.2 scId.toObjId originalOwner.toObjId _
+                              hEqSc hObjInv hS1] at hCO
+                          rw [hCO]; simp only [Option.map, projectKernelObject]
+                      · by_cases hEqSc : o = scId.toObjId
+                        · subst hEqSc
+                          rw [storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId scId.toObjId _
+                              hEqOwner hInv1 hS2,
+                              storeObject_objects_eq st p1.2 scId.toObjId _ hObjInv hS1, hObj]
+                          simp only [Option.map, projectKernelObject]
+                        · rw [storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId o _
+                                  hEqOwner hInv1 hS2,
+                              storeObject_objects_ne st p1.2 scId.toObjId o _
+                                  hEqSc hObjInv hS1]
+                    · simp [projectObjects, hObs]
+                  · simp [projectRunnable, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
+                        storeObject_scheduler_eq st p1.2 _ _ hS1]
+                  · simp [projectCurrent, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
+                        storeObject_scheduler_eq st p1.2 _ _ hS1]
+                  · unfold storeObject at hS2; cases hS2
+                    unfold storeObject at hS1; cases hS1; funext sid; rfl
+                  · simp [projectActiveDomain, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
+                        storeObject_scheduler_eq st p1.2 _ _ hS1]
+                  · funext irq; simp only [projectIrqHandlers,
+                        storeObject_irqHandlers_eq p1.2 p2.2 _ _ hS2,
+                        storeObject_irqHandlers_eq st p1.2 _ _ hS1]
+                  · simp only [projectObjectIndex]
+                    unfold storeObject at hS1; cases hS1
+                    unfold storeObject at hS2; cases hS2
+                    simp only [hOwnerInSetP1, ite_true, hScInSet, ite_true]
+                  · simp [projectDomainTimeRemaining, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
+                        storeObject_scheduler_eq st p1.2 _ _ hS1]
+                  · simp [projectDomainSchedule, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
+                        storeObject_scheduler_eq st p1.2 _ _ hS1]
+                  · simp [projectDomainScheduleIndex, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
+                        storeObject_scheduler_eq st p1.2 _ _ hS1]
+                  · simp [projectMachineRegs, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
+                        storeObject_scheduler_eq st p1.2 _ _ hS1,
+                        storeObject_machine_eq p1.2 p2.2 _ _ hS2,
+                        storeObject_machine_eq st p1.2 _ _ hS1]
+                  · rw [storeObject_preserves_projectMemory ctx observer p1.2 p2.2 _ _ hS2,
+                        storeObject_preserves_projectMemory ctx observer st p1.2 _ _ hS1]
+                  · rw [storeObject_preserves_projectServiceRegistry ctx observer p1.2 p2.2 _ _ hS2,
+                        storeObject_preserves_projectServiceRegistry ctx observer st p1.2 _ _ hS1]
     | _ => simp only []; intro h; cases h
 
 -- ============================================================================

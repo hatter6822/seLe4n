@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.IPC.CrossCore.NotificationSignal
 import SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation
+import SeLe4n.Kernel.SchedContext.ReplenishAffinity
 
 /-!
 # WS-SM SM6.E — Cancellation across cores
@@ -383,59 +384,17 @@ single-core `cancelBoundDonation` — the SM5.A backward-compatibility bridge. -
 -- no-op, so the single-core semantics is recovered exactly
 -- (`cancelDonatedDonationOnCore_eq_of_sharedHome`).
 
-/-- Local frame (production twin of the staged SM5.H lemma): the replenishment
-migration writes only replenish-queue slots — `objects` is untouched. -/
-theorem migrateSchedContextReplenishment_objects_eq (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).objects
-      = st.objects := by
-  unfold migrateSchedContextReplenishment
-  split <;> rfl
+-- WS-RR RR2.3: the five hand-written production twins of the SM5.H migration
+-- frames that used to sit here (`…_objects_eq`, `…_self_eq`,
+-- `…_runQueue_current_eq`, `…_replenishQueue_other_eq`, `…_from_eq`) are gone.
+-- They existed because the canonical forms lived in the staged
+-- `Scheduler/Operations/PerCoreCbs.lean`, which production may not import; the
+-- canonical forms now live in the production
+-- `SeLe4n.Kernel.SchedContext.ReplenishAffinity` (imported above), so this arm
+-- consumes `migrateSchedContextReplenishment_{noop,objects,machine,
+-- runQueue_current_eq,replenishQueueOnCore_{to,from,other}}` directly and the
+-- migration's frame is stated once for the whole tree.
 
-/-- Local frame: the migration is the identity on the self-pair. -/
-theorem migrateSchedContextReplenishment_self_eq (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (c : CoreId) :
-    migrateSchedContextReplenishment st scId c c = st := by
-  unfold migrateSchedContextReplenishment
-  rw [if_pos rfl]
-
-/-- Local frame: the migration never disturbs any core's run queue or current
-slot (it writes only replenish-queue slots). -/
-theorem migrateSchedContextReplenishment_runQueue_current_eq (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (fromCore toCore c : CoreId) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.runQueueOnCore c
-        = st.scheduler.runQueueOnCore c
-    ∧ (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.currentOnCore c
-        = st.scheduler.currentOnCore c := by
-  unfold migrateSchedContextReplenishment
-  split
-  · exact ⟨rfl, rfl⟩
-  · constructor <;> simp
-
-/-- Local frame: a core that is neither endpoint of the migration keeps its
-replenish queue. -/
-theorem migrateSchedContextReplenishment_replenishQueue_other_eq (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (fromCore toCore c : CoreId)
-    (hFrom : fromCore ≠ c) (hTo : toCore ≠ c) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.replenishQueueOnCore c
-      = st.scheduler.replenishQueueOnCore c := by
-  unfold migrateSchedContextReplenishment
-  split
-  · rfl
-  · simp [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hTo,
-      SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hFrom]
-
-/-- Local (production twin of the staged SM5.H purge lemma): on a genuine
-cross-core migration the source core's queue is purged of the SC. -/
-theorem migrateSchedContextReplenishment_from_eq (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId)
-    (hne : fromCore ≠ toCore) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.replenishQueueOnCore fromCore
-      = ReplenishQueue.remove (st.scheduler.replenishQueueOnCore fromCore) scId := by
-  unfold migrateSchedContextReplenishment
-  rw [if_neg hne]
-  simp [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _
-    (fun h => hne h.symm)]
 
 /-- WS-SM SM6.E.3 (donated arm across cores): cancel a donated SchedContext
 binding **and migrate its pending replenishments home**.
@@ -449,7 +408,7 @@ SM5.H affinity invariant names as the entries' required residence.  The
 victim's home is pre-resolved from the pre-state (the return never touches
 `cpuAffinity`); the owner's home is read post-return.  Self-migration —
 shared home core, and in particular every single-core configuration — is a
-definitional no-op (`migrateSchedContextReplenishment_self_eq`), recovering
+definitional no-op (`migrateSchedContextReplenishment_noop`), recovering
 the single-core arm exactly (`cancelDonatedDonationOnCore_eq_of_sharedHome`).
 
 Returns `.error .illegalState` on a non-`.donated` binding, exactly like the
@@ -482,7 +441,7 @@ theorem cancelDonatedDonationOnCore_eq_of_sharedHome (st : SystemState)
   | error e => rfl
   | ok st' =>
       simp only []
-      rw [hHome st' hC, migrateSchedContextReplenishment_self_eq]
+      rw [hHome st' hC, migrateSchedContextReplenishment_noop]
 
 /-- WS-SM SM6.E.3: the per-core donated arm preserves `objects.invExt` — the
 return preserves it and the migration never touches `objects`. -/
@@ -498,7 +457,7 @@ theorem cancelDonatedDonationOnCore_preserves_objects_invExt
     · cases h
     · injection h with h
       subst h
-      rw [migrateSchedContextReplenishment_objects_eq]
+      rw [migrateSchedContextReplenishment_objects]
       exact cleanupDonatedSchedContext_preserves_objects_invExt _ _ _ hInv (by assumption)
   · cases h
 
@@ -1405,7 +1364,7 @@ theorem cancelDonatedDonationOnCore_preserves_ipcInvariant
     · injection h with h
       subst h
       exact ipcInvariant_of_objects_eq
-        (migrateSchedContextReplenishment_objects_eq _ _ _ _)
+        (migrateSchedContextReplenishment_objects _ _ _ _)
         (cleanupDonatedSchedContext_preserves_ipcInvariant _ _ _ hInv hIpc
           (by assumption))
   · cases h
@@ -1859,138 +1818,19 @@ def cancelDonationOnCoreSchedLockSet (victimHome ownerHome : CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
   cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome
 
-/-- WS-SM SM6.E (PR #831 review 3): a `CoreId`-ascending sorted pair of
-same-kind scheduler locks — the shared shape of the suspend footprint's
-run-queue and replenish-queue segments (one entry when the cores coincide,
-two in `CoreId`-ascending order otherwise). -/
-def sortedSchedCorePair (f : CoreId → SchedLockId) (a b : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  if a = b then [ (f a, .write) ]
-  else if a ≤ b then [ (f a, .write), (f b, .write) ]
-  else [ (f b, .write), (f a, .write) ]
+-- WS-RR RR2.4: `sortedSchedCorePair` and its two lemmas moved to
+-- `Scheduler/Operations/PerCoreChooseThread.lean`, beside the `SchedLockId`
+-- order they are about, so the cross-core `.call` and `.reply` dispatch
+-- footprints (which live below this module and cannot import it) share the one
+-- definition rather than growing a third copy of a sorted two-element list.
+-- Same names, same `SeLe4n.Kernel` namespace; every use below is unchanged.
 
-/-- Every key of a sorted pair is one of the two endpoints. -/
-theorem sortedSchedCorePair_map_fst_mem {f : CoreId → SchedLockId}
-    {a b : CoreId} {x : SchedLockId}
-    (hx : x ∈ (sortedSchedCorePair f a b).map (·.1)) : x = f a ∨ x = f b := by
-  unfold sortedSchedCorePair at hx
-  split at hx
-  · simp only [List.map_cons, List.map_nil, List.mem_singleton] at hx
-    exact Or.inl hx
-  · split at hx
-    · simp only [List.map_cons, List.map_nil, List.mem_cons,
-        List.not_mem_nil, or_false] at hx
-      exact hx
-    · simp only [List.map_cons, List.map_nil, List.mem_cons,
-        List.not_mem_nil, or_false] at hx
-      exact hx.symm
-
-/-- A sorted pair's keys ascend under any `CoreId`-monotone lock constructor. -/
-theorem sortedSchedCorePair_pairwise_le (f : CoreId → SchedLockId) (a b : CoreId)
-    (hMono : ∀ c d : CoreId, c ≤ d → f c ≤ f d) :
-    ((sortedSchedCorePair f a b).map (·.1)).Pairwise (· ≤ ·) := by
-  unfold sortedSchedCorePair
-  split
-  · simp
-  · split
-    · rename_i hne hle
-      simp only [List.map_cons, List.map_nil]
-      exact List.Pairwise.cons
-        (fun x hx => by rcases List.mem_singleton.mp hx with rfl; exact hMono _ _ hle)
-        (List.Pairwise.cons (fun x hx => by simp at hx) List.Pairwise.nil)
-    · rename_i hne hnle
-      have hge : b ≤ a := (Nat.le_total a.val b.val).resolve_left hnle
-      simp only [List.map_cons, List.map_nil]
-      exact List.Pairwise.cons
-        (fun x hx => by rcases List.mem_singleton.mp hx with rfl; exact hMono _ _ hge)
-        (List.Pairwise.cons (fun x hx => by simp at hx) List.Pairwise.nil)
-
-/-- Bool-comparator transitivity for the `CoreId` value order (the
-`List.pairwise_mergeSort` obligation, mirroring `leLockId_bool_trans`). -/
-private theorem leCore_bool_trans : ∀ (x y z : CoreId),
-    (fun x y : CoreId => decide (x.val ≤ y.val)) x y = true →
-    (fun x y : CoreId => decide (x.val ≤ y.val)) y z = true →
-    (fun x y : CoreId => decide (x.val ≤ y.val)) x z = true := by
-  intro x y z hxy hyz
-  exact decide_eq_true (Nat.le_trans (of_decide_eq_true hxy) (of_decide_eq_true hyz))
-
-/-- Bool-comparator totality for the `CoreId` value order. -/
-private theorem leCore_bool_total : ∀ (x y : CoreId),
-    ((fun x y : CoreId => decide (x.val ≤ y.val)) x y
-      || (fun x y : CoreId => decide (x.val ≤ y.val)) y x) = true := by
-  intro x y
-  rcases Nat.le_total x.val y.val with h | h
-  · simp [decide_eq_true h]
-  · simp [decide_eq_true h]
-
-/-- WS-SM SM6.E (audit closure): a `CoreId`-ascending, duplicate-free sorted
-TRIPLE of same-kind scheduler locks — the run-queue segment of the suspend
-footprint over {victim home, executing core, victim RUNNING core}: the
-review-4 G4b deschedule writes the running core's queue/current slot, which
-can be a **third** core distinct from both (an unbound victim running
-off-home).  Built on the SM3.B canonical-sort machinery (`List.mergeSort`
-over the deduped core list), so ascending order and endpoint membership are
-`pairwise_mergeSort` / `mem_mergeSort` corollaries. -/
-def sortedSchedCoreTriple (f : CoreId → SchedLockId) (a b c : CoreId)
-    : List (SchedLockId × Concurrency.AccessMode) :=
-  (((if c = a ∨ c = b then (if a = b then [a] else [a, b])
-     else if a = b then [a, c]
-     else [a, b, c]) : List CoreId).mergeSort
-    (fun x y => decide (x.val ≤ y.val))).map (fun x => (f x, .write))
-
-/-- Every key of a sorted triple is one of the three endpoints. -/
-theorem sortedSchedCoreTriple_map_fst_mem {f : CoreId → SchedLockId}
-    {a b c : CoreId} {x : SchedLockId}
-    (hx : x ∈ (sortedSchedCoreTriple f a b c).map (·.1)) :
-    x = f a ∨ x = f b ∨ x = f c := by
-  unfold sortedSchedCoreTriple at hx
-  rw [List.map_map] at hx
-  rcases List.mem_map.mp hx with ⟨y, hy, rfl⟩
-  have hMem := List.mem_mergeSort.mp hy
-  by_cases h1 : c = a ∨ c = b
-  · rw [if_pos h1] at hMem
-    by_cases h2 : a = b
-    · rw [if_pos h2] at hMem
-      rcases List.mem_singleton.mp hMem with rfl
-      exact Or.inl rfl
-    · rw [if_neg h2] at hMem
-      rcases List.mem_cons.mp hMem with rfl | hMem
-      · exact Or.inl rfl
-      · rcases List.mem_singleton.mp hMem with rfl
-        exact Or.inr (Or.inl rfl)
-  · rw [if_neg h1] at hMem
-    by_cases h2 : a = b
-    · rw [if_pos h2] at hMem
-      rcases List.mem_cons.mp hMem with rfl | hMem
-      · exact Or.inl rfl
-      · rcases List.mem_singleton.mp hMem with rfl
-        exact Or.inr (Or.inr rfl)
-    · rw [if_neg h2] at hMem
-      rcases List.mem_cons.mp hMem with rfl | hMem
-      · exact Or.inl rfl
-      rcases List.mem_cons.mp hMem with rfl | hMem
-      · exact Or.inr (Or.inl rfl)
-      · rcases List.mem_singleton.mp hMem with rfl
-        exact Or.inr (Or.inr rfl)
-
-/-- A sorted triple's keys ascend under any `CoreId`-monotone lock
-constructor. -/
-theorem sortedSchedCoreTriple_pairwise_le (f : CoreId → SchedLockId)
-    (a b c : CoreId)
-    (hMono : ∀ x y : CoreId, x ≤ y → f x ≤ f y) :
-    ((sortedSchedCoreTriple f a b c).map (·.1)).Pairwise (· ≤ ·) := by
-  unfold sortedSchedCoreTriple
-  rw [List.map_map]
-  have hSorted : List.Pairwise (fun x y : CoreId => x.val ≤ y.val)
-      (((if c = a ∨ c = b then (if a = b then [a] else [a, b])
-         else if a = b then [a, c]
-         else [a, b, c]) : List CoreId).mergeSort
-        (fun x y => decide (x.val ≤ y.val))) :=
-    (List.pairwise_mergeSort
-      (le := fun x y : CoreId => decide (x.val ≤ y.val))
-      leCore_bool_trans leCore_bool_total _).imp
-      (fun h => of_decide_eq_true h)
-  exact List.Pairwise.map _ (fun x y h => hMono x y h) hSorted
+-- WS-RR RR2.10: the two Bool-comparator helpers and `sortedSchedCoreTriple`
+-- moved with `sortedSchedCorePair` to
+-- `Scheduler/Operations/PerCoreChooseThread.lean`; the cross-core `.reply`
+-- dispatch footprint needs the triple for the same reason this one does (a
+-- woken caller's home, a descheduled server's core and the executing core can
+-- be three distinct cores), and it sits below this module.
 
 /-- WS-SM SM6.E: the scheduler-domain footprint of the cross-core suspend
 pipeline (`suspendThreadOnCore`, the G2..G7 composite): the object-store

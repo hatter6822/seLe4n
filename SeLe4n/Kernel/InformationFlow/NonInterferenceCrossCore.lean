@@ -1277,6 +1277,21 @@ theorem propagatePipChainCrossCore_confinedToCores (executingCore : CoreId) :
           (propagatePipChainCrossCore_confinedToCores executingCore fuel
             (pipBoostWithWake st startTid executingCore).1 nextServer)
 
+/-- SM8.B.2: a replenishment migration is per-core silent — it moves a
+SchedContext's replenishments between two cores' **replenishment** queues, and
+SM8.A's `onCore_perCore_independence` puts that queue outside the observer's
+read set entirely. -/
+theorem migrateSchedContextReplenishment_confinedToCores (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId) :
+    observableSlotsConfinedToCores st
+      (migrateSchedContextReplenishment st scId fromCore toCore) [] := by
+  refine ⟨fun c _ => (migrateSchedContextReplenishment_runQueue_current_eq st scId fromCore
+            toCore c).1,
+          fun c _ => (migrateSchedContextReplenishment_runQueue_current_eq st scId fromCore
+            toCore c).2, ?_, ?_, ?_, ?_⟩
+  all_goals intro c _
+  all_goals (unfold migrateSchedContextReplenishment; split <;> simp)
+
 /-- SM8.B.2: SchedContext donation is per-core silent — it rewrites bindings in
 the object store and, at most, the replenishment queue, which SM8.A's
 `onCore_perCore_independence` puts outside the observer's read set entirely. -/
@@ -1287,6 +1302,25 @@ theorem applyCallDonation_confinedToCores (st st' : SystemState)
   observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
     (applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hStep)
     (applyCallDonation_machine_eq st callerVtid receiverVtid st' hStep)
+
+/-- WS-RR RR2.7: the **migrating** call donation is per-core silent too.  The
+RR2.2 replenishment migration it adds writes two replenish-queue slots, and
+SM8.A's `onCore_perCore_independence` puts that queue outside the observer's
+read set entirely — the same reason the cancellation arm's migration is silent.
+So routing the live `.call` arm through the migrating form changes nothing an
+observer can see, and the dispatch write set below is unchanged by RR2.7. -/
+theorem applyCallDonationOnCore_confinedToCores (st st' : SystemState)
+    (callerVtid receiverVtid : SeLe4n.ValidThreadId) (donorHome doneeHome : CoreId)
+    (hStep : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st') :
+    observableSlotsConfinedToCores st st' [] := by
+  obtain ⟨st1, hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st' callerVtid receiverVtid
+    donorHome doneeHome hStep
+  have h1 := applyCallDonation_confinedToCores st st1 callerVtid receiverVtid hDon
+  rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩
+  · rw [hEq]; exact h1
+  · rw [hEq]
+    simpa using observableSlotsConfinedToCores_trans h1
+      (migrateSchedContextReplenishment_confinedToCores st1 scId donorHome doneeHome)
 
 /-- SM8.B.2: **the cores the live cross-core `.call` may write.**
 
@@ -1474,7 +1508,10 @@ def endpointCallDispatchChainWriteSet
       | some receiverTid =>
         match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
         | some callerV, some receiverV =>
-          match applyCallDonation st' callerV receiverV with
+          -- WS-RR RR2.7: mirrors the dispatch's own migrating donation, so the
+          -- chain state named here is the state the dispatch really walks from.
+          match applyCallDonationOnCore st' callerV receiverV
+              (determineTargetCore st caller) (determineTargetCore st receiverTid) with
           | .error _ => []
           | .ok st'' =>
               pipChainWriteSet st'' receiverTid executingCore st''.objectIndex.length
@@ -1551,13 +1588,15 @@ theorem endpointCallCrossCoreDispatch_confinedToCores (endpointId : SeLe4n.ObjId
             | none => simp only []; exact hWiden _ _ hCaps
             | some receiverV =>
               simp only []
-              cases hDon : applyCallDonation stWith callerV receiverV with
+              cases hDon : applyCallDonationOnCore stWith callerV receiverV
+                  (determineTargetCore st caller) (determineTargetCore st receiverTid) with
               | error e => simp only []; exact hWiden _ _ hCaps
               | ok stDon =>
                 simp only []
                 exact endpointCallLive_confinedToCores st stWith stDon endpointId
                   executingCore receiverTid hCaps
-                  (applyCallDonation_confinedToCores stWith stDon callerV receiverV hDon)
+                  (applyCallDonationOnCore_confinedToCores stWith stDon callerV receiverV
+                    (determineTargetCore st caller) (determineTargetCore st receiverTid) hDon)
 
 /-- SM8.B.2: on the rendezvous path the live write set **is** the §5a union,
 instantiated at the states the dispatch really produces.  Stated separately so
@@ -1577,7 +1616,8 @@ theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous (endpointId : SeLe4n.
       receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
-    (hDon : applyCallDonation stWith callerV receiverV = .ok stDon) :
+    (hDon : applyCallDonationOnCore stWith callerV receiverV
+      (determineTargetCore st caller) (determineTargetCore st receiverTid) = .ok stDon) :
     endpointCallDispatchWriteSet endpointId caller msg endpointRights callerCspaceRoot
         receiverSlotBase executingCore st
       = endpointCallLiveWriteSet st endpointId executingCore stDon receiverTid := by
@@ -1619,39 +1659,35 @@ theorem endpointCallCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingCo
 -- Legs two and three can each name a core the reply's own write set does not, so
 -- §4's theorem never bounded the live arm (PR #861 review round 4).
 
-/-- SM8.B.2: the cross-core donation **return** writes at most the core it is
-handed.  Unlike the call-side `applyCallDonation` this is *not* per-core silent:
-the now-passive server is descheduled on its own core, which is precisely why
-`endpointReplyCrossCoreDispatch` resolves `determineExecutingCore st expected`
-instead of reusing the (possibly delegated) replier's syscall core.
+/-- SM8.B.2 / WS-RR RR2.8: the cross-core donation **return** writes at most the
+core it is handed.  Unlike the call-side `applyCallDonationOnCore` this is *not*
+per-core silent: the now-passive server is descheduled on its own core, which is
+precisely why `endpointReplyCrossCoreDispatch` resolves `determineExecutingCore
+st expected` instead of reusing the (possibly delegated) replier's syscall core.
 
-The SchedContext rebinding itself is silent — `returnDonatedSchedContext` moves
-`boundThread` in the object store and leaves the scheduler and every register
-bank alone — so the whole leg collapses to the one `removeRunnableOnCore`. -/
+The other two legs are silent — `returnDonatedSchedContext` moves `boundThread`
+in the object store and leaves the scheduler and every register bank alone, and
+the RR2.8 replenishment migration writes a queue SM8.A's
+`onCore_perCore_independence` puts outside the observer's read set — so the
+whole leg still collapses to the one `removeRunnableOnCore`. -/
 theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
-    (replierVtid : SeLe4n.ValidThreadId) (serverCore : CoreId)
-    (hStep : applyReplyDonationOnCore st replierVtid serverCore = .ok st') :
+    (replierVtid : SeLe4n.ValidThreadId) (serverCore replierHome ownerHome : CoreId)
+    (hStep : applyReplyDonationOnCore st replierVtid serverCore replierHome ownerHome = .ok st') :
     observableSlotsConfinedToCores st st' [serverCore] := by
-  have hOkInj : ∀ {a b : SystemState},
-      (Except.ok a : Except KernelError SystemState) = .ok b → a = b := by
-    intro a b h; injection h
-  unfold applyReplyDonationOnCore at hStep
-  simp only [] at hStep
-  split at hStep
-  · exact observableSlotsConfinedToCores_of_eq _ (hOkInj hStep).symm
-  · split at hStep
-    · split at hStep
-      · split at hStep
-        · exact absurd hStep (by simp)
-        · next stRet hRet =>
-          rw [← hOkInj hStep]
-          exact observableSlotsConfinedToCores_widen_cons
-            (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-              (returnDonatedSchedContext_scheduler_eq st stRet _ _ _ hRet)
-              (returnDonatedSchedContext_machine_eq st stRet _ _ _ hRet))
-            (removeRunnableOnCore_confinedToCores stRet replierVtid.val serverCore)
-      · exact absurd hStep (by simp)
-    · exact observableSlotsConfinedToCores_of_eq _ (hOkInj hStep).symm
+  rcases applyReplyDonationOnCore_ok_decompose st st' replierVtid serverCore replierHome
+    ownerHome hStep with ⟨_, hEq⟩ | ⟨scId, owner, stRet, _, hRet, hEq⟩
+  · exact observableSlotsConfinedToCores_of_eq _ hEq
+  · rw [hEq]
+    exact observableSlotsConfinedToCores_widen_cons
+      (by
+        simpa using observableSlotsConfinedToCores_trans
+          (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+            (returnDonatedSchedContext_scheduler_eq st stRet _ _ _ hRet)
+            (returnDonatedSchedContext_machine_eq st stRet _ _ _ hRet))
+          (migrateSchedContextReplenishment_confinedToCores stRet scId replierHome ownerHome))
+      (removeRunnableOnCore_confinedToCores
+        (migrateSchedContextReplenishment stRet scId replierHome ownerHome)
+        replierVtid.val serverCore)
 
 /-- SM8.B.2: **the cores the live cross-core `.reply` may write**, recovered from
 the pre-state by mirroring `endpointReplyCrossCoreDispatch`'s own control flow —
@@ -1673,7 +1709,9 @@ def endpointReplyDispatchWriteSet (replier target : SeLe4n.ThreadId) (msg : IpcM
           match SeLe4n.ThreadId.toValid? expected with
           | some expectedV =>
               match applyReplyDonationOnCore st1 expectedV
-                  (determineExecutingCore st expected) with
+                  (determineExecutingCore st expected)
+                  (determineTargetCore st expected)
+                  (replyDonationOwnerHome st expected) with
               | .error _ => []
               | .ok st2 =>
                   (determineTargetCore st target
@@ -1716,14 +1754,18 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
         | some expectedV =>
           simp only []
           cases hDon : applyReplyDonationOnCore st1 expectedV
-              (determineExecutingCore st expected) with
+              (determineExecutingCore st expected)
+              (determineTargetCore st expected)
+              (replyDonationOwnerHome st expected) with
           | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
           | ok st2 =>
             simp only []
             exact observableSlotsConfinedToCores_trans
               (observableSlotsConfinedToCores_trans hReply
                 (applyReplyDonationOnCore_confinedToCores st1 st2 expectedV
-                  (determineExecutingCore st expected) hDon))
+                  (determineExecutingCore st expected)
+                  (determineTargetCore st expected)
+                  (replyDonationOwnerHome st expected) hDon))
               (propagatePipChainCrossCore_confinedToCores executingCore
                 st2.objectIndex.length st2 expected)
 
@@ -2406,20 +2448,8 @@ theorem cancelBoundDonationOnCore_confinedToCores (st st' : SystemState)
       | (rw [Except.ok.injEq] at h; subst h; simp)
       | exact absurd h (by simp))
 
-/-- SM8.B.2: a replenishment migration is per-core silent — it moves a
-SchedContext's replenishments between two cores' **replenishment** queues, and
-SM8.A's `onCore_perCore_independence` puts that queue outside the observer's
-read set entirely. -/
-theorem migrateSchedContextReplenishment_confinedToCores (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId) :
-    observableSlotsConfinedToCores st
-      (migrateSchedContextReplenishment st scId fromCore toCore) [] := by
-  refine ⟨fun c _ => (migrateSchedContextReplenishment_runQueue_current_eq st scId fromCore
-            toCore c).1,
-          fun c _ => (migrateSchedContextReplenishment_runQueue_current_eq st scId fromCore
-            toCore c).2, ?_, ?_, ?_, ?_⟩
-  all_goals intro c _
-  all_goals (unfold migrateSchedContextReplenishment; split <;> simp)
+-- WS-RR RR2.7: `migrateSchedContextReplenishment_confinedToCores` moved up to
+-- §5, beside the donation legs that now compose it.
 
 /-- SM8.B.2 (**the missing frame**): a run-queue migration writes the two cores
 it names and nothing else.

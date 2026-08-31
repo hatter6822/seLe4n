@@ -197,31 +197,34 @@ private theorem returnDonatedSchedContext_serviceRegistry_eq
     cases obj with
     | schedContext sc =>
       simp only []
-      cases hS1 : storeObject scId.toObjId _ st with
-      | error _ => intro h; cases h
-      | ok p1 =>
-        simp only []
-        cases hL1 : lookupTcb p1.2 originalOwner with
-        | none => intro h; cases h
-        | some _ =>
+      -- WS-RR RR2.8: the new `sc.boundThread = some serverTid` guard.
+      split
+      · intro h; cases h
+      · cases hS1 : storeObject scId.toObjId _ st with
+        | error _ => intro h; cases h
+        | ok p1 =>
           simp only []
-          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
-          | error _ => intro h; cases h
-          | ok p2 =>
+          cases hL1 : lookupTcb p1.2 originalOwner with
+          | none => intro h; cases h
+          | some _ =>
             simp only []
-            cases hL2 : lookupTcb p2.2 serverTid with
-            | none => intro h; cases h
-            | some _ =>
+            cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+            | error _ => intro h; cases h
+            | ok p2 =>
               simp only []
-              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
-              | error _ => intro h; cases h
-              | ok p3 =>
-                simp only [Except.ok.injEq]
-                intro hEq; subst hEq
-                have h1 := storeObject_serviceRegistry_eq st _ _ _ hS1
-                have h2 := storeObject_serviceRegistry_eq p1.2 _ _ _ hS2
-                have h3 := storeObject_serviceRegistry_eq p2.2 _ _ _ hS3
-                exact h3.trans (h2.trans h1)
+              cases hL2 : lookupTcb p2.2 serverTid with
+              | none => intro h; cases h
+              | some _ =>
+                simp only []
+                cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+                | error _ => intro h; cases h
+                | ok p3 =>
+                  simp only [Except.ok.injEq]
+                  intro hEq; subst hEq
+                  have h1 := storeObject_serviceRegistry_eq st _ _ _ hS1
+                  have h2 := storeObject_serviceRegistry_eq p1.2 _ _ _ hS2
+                  have h3 := storeObject_serviceRegistry_eq p2.2 _ _ _ hS3
+                  exact h3.trans (h2.trans h1)
     | _ => simp only []; intro h; cases h
 
 /-- Helper / AJ1-A (M-14): cleanupDonatedSchedContext preserves serviceRegistry
