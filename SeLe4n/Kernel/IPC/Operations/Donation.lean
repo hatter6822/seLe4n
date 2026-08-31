@@ -612,4 +612,32 @@ theorem applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
       (fun c' hFrom _ => hCons1 c' (fun hEq => hFrom hEq.symm))
       hConsTo hConsFrom hHome
 
+-- ============================================================================
+-- WS-RR RR2.20 — the PIP chain walk preserves the SM5.H affinity invariant
+-- ============================================================================
+
+/-- WS-RR RR2.20: **the cross-core priority-inheritance chain walk preserves
+replenish-queue affinity consistency.**
+
+Not because it re-establishes anything, but because it is a *frame*: the walk
+writes `pipBoost` on the chain's TCBs and re-keys their run-queue buckets, and
+the affinity invariant reads none of that — it reads core `c`'s replenish queue,
+`getSchedContext?` and `determineTargetCore`, all three of which
+`propagatePipChainCrossCore_replenish_readings` shows the walk leaves alone.
+
+This module is the composite's home because it is the only place in the tree
+that imports both `PriorityInheritance.Propagate` and
+`SchedContext.ReplenishAffinity`; adding either import to the other module
+closes a cycle through `IPC.Operations.Timeout`. -/
+theorem propagatePipChainCrossCore_preserves_replenishQueueAffinityConsistent_smp
+    (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) (fuel : Nat)
+    (hObjInv : st.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st) :
+    replenishQueueAffinityConsistent_smp
+      (PriorityInheritance.propagatePipChainCrossCore st tid ec fuel).1 := by
+  obtain ⟨hRepl, hSc, hTgt⟩ :=
+    PriorityInheritance.propagatePipChainCrossCore_replenish_readings st tid ec fuel hObjInv
+  intro c
+  exact (replenishQueueAffinityConsistentOnCore_congr (hRepl c) hSc hTgt).mpr (hCons c)
+
 end SeLe4n.Kernel

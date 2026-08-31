@@ -2852,26 +2852,28 @@ theorem tcbStoreOrIdentity_ipcInvariantStage (s s' : SystemState) (tid : SeLe4n.
   · exact tcbStore_ipcInvariantStage s s' tid t hEq
 
 
-/-- **WS-RR RR2.17: the operation the live `.tcbSuspend` arm runs preserves
-`ipcInvariant`.**
+/-- **WS-RR RR2.17: the operation the live `.tcbSuspend` arm runs is one
+`IpcInvariantStage` end to end.**
 
 SM6.E closed `ipcInvariant` over the *cancellation composite*
 (`cancelIpcBlockingOnCore`, `cancelDonationOnCore`).  What the dispatch entry
-actually calls is `suspendThreadOnCore`, which is that composite plus five more
-stages: the cross-core priority-inheritance revert, the home- and running-core
-deschedules, the pending-state clear, the `threadState := .Inactive` store, and
-the local scheduling point.  None of them writes a notification object, which is
-the whole of what `ipcInvariant` says — so the claim extends, and now says so
-about the reachable transition rather than about a prefix of one.
+actually calls is `suspendThreadOnCore`, which is that composite plus seven more
+stages: the cross-core priority-inheritance revert, the donated-context return,
+the home- and running-core deschedules, the pending-state clear, the
+`threadState := .Inactive` store, and the local scheduling point.  None of them
+writes a notification object, which is the whole of what `ipcInvariant` says —
+so the claim extends, and now says so about the reachable transition rather than
+about a prefix of one.
 
-`IpcInvariantStage` carries the object-store invariant alongside, because every
-stage needs its predecessor's to state its own preservation. -/
-theorem suspendThreadOnCore_preserves_ipcInvariant
+The stage relation carries the object-store invariant alongside `ipcInvariant`,
+because every stage needs its predecessor's to state its own preservation; that
+is also why this is the shared root of both public forms below rather than each
+of them re-running the chain. -/
+theorem suspendThreadOnCore_ipcInvariantStage
     (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
     (sgi? : Option (CoreId × SgiKind))
-    (hObjInv : st.objects.invExt) (hIpc : ipcInvariant st)
     (hStep : suspendThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
-    ipcInvariant st' := by
+    IpcInvariantStage st st' := by
   have hChain : IpcInvariantStage st st' := by
     simp only [suspendThreadOnCore] at hStep
     split at hStep
@@ -2913,6 +2915,34 @@ theorem suspendThreadOnCore_preserves_ipcInvariant
             all_goals first
               | exact tcbStoreOrIdentity_ipcInvariantStage _ _ vtid.val (Or.inr ⟨_, rfl⟩)
               | exact IpcInvariantStage.refl _
-  exact hChain.ipc hObjInv hIpc
+  exact hChain
+
+/-- **WS-RR RR2.17: the live `.tcbSuspend` arm preserves the object-store
+invariant.**  The extended-object invariant is the half of the stage relation
+every later stage consumes to state its own preservation; exposing it is what
+lets a caller compose `suspendThreadOnCore` with anything that needs
+`invExt` of the post-state. -/
+theorem suspendThreadOnCore_preserves_objects_invExt
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
+    (sgi? : Option (CoreId × SgiKind))
+    (hObjInv : st.objects.invExt)
+    (hStep : suspendThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
+    st'.objects.invExt :=
+  (suspendThreadOnCore_ipcInvariantStage st st' vtid executingCore sgi? hStep).invExt hObjInv
+
+/-- **WS-RR RR2.17: the operation the live `.tcbSuspend` arm runs preserves
+`ipcInvariant`.**  This is the theorem the pre-SM10 audit found missing: SM6.E's
+five `*_preserves_ipcInvariant` composites are all about functions the module
+header warns must not be wired live as-is, while `suspendThreadOnCore` — the one
+`API.dispatchCapabilityOnly`'s `.tcbSuspend` arm and the
+`suspend_thread_cross_core` seam actually call — carried no preservation theorem
+at all. -/
+theorem suspendThreadOnCore_preserves_ipcInvariant
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
+    (sgi? : Option (CoreId × SgiKind))
+    (hObjInv : st.objects.invExt) (hIpc : ipcInvariant st)
+    (hStep : suspendThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
+    ipcInvariant st' :=
+  (suspendThreadOnCore_ipcInvariantStage st st' vtid executingCore sgi? hStep).ipc hObjInv hIpc
 
 end SeLe4n.Kernel

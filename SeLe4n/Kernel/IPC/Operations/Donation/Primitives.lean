@@ -266,7 +266,7 @@ theorem donateSchedContext_server_binding
                     unfold storeObject at hS2; cases hS2
                     exact RHTable_insert_preserves_invExt _ _ _ hInvP1
                   have : p3.2.objects[serverTid.toObjId]? =
-                      some (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid }) := by
+                    some (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid }) := by
                     unfold storeObject at hS3; cases hS3
                     exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInvP2
                   exact ⟨_, this, rfl⟩
@@ -321,7 +321,7 @@ theorem returnDonatedSchedContext_server_unbound
                     unfold storeObject at hS2; cases hS2
                     exact RHTable_insert_preserves_invExt _ _ _ hInvP1
                   have : p3.2.objects[serverTid.toObjId]? =
-                      some (.tcb { serverTcb with schedContextBinding := .unbound }) := by
+                    some (.tcb { serverTcb with schedContextBinding := .unbound }) := by
                     unfold storeObject at hS3; cases hS3
                     exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInvP2
                   exact ⟨_, this, rfl⟩
@@ -660,6 +660,40 @@ theorem cleanupPreReceiveDonation_machine_eq
 --
 -- Stated here, with the sibling `donateSchedContext_*` frames, rather than at
 -- the consumer: the facts are about this operation's object writes.
+
+/-- WS-RR RR2.19 (typed store frame): a `storeObject` at a key other than a
+thread's leaves that thread's typed reading alone.
+
+The typed counterpart of `storeObject_objects_ne`, stated once so a multi-store
+walk reads its threads through `getTcb?` instead of indexing the object store at
+each step. -/
+theorem storeObject_getTcb?_ne (st st' : SystemState) (oid : SeLe4n.ObjId)
+    (obj : KernelObject) (tid : SeLe4n.ThreadId) (hNe : tid.toObjId ≠ oid)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid obj st = .ok ((), st')) :
+    st'.getTcb? tid = st.getTcb? tid := by
+  unfold SystemState.getTcb?
+  rw [storeObject_objects_ne st st' oid tid.toObjId obj hNe hObjInv hStore]
+
+/-- WS-RR RR2.19 (typed store frame): a `storeObject` of a TCB at a thread's own
+key is exactly what that thread then reads. -/
+theorem storeObject_getTcb?_self (st st' : SystemState) (tid : SeLe4n.ThreadId) (t : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject tid.toObjId (.tcb t) st = .ok ((), st')) :
+    st'.getTcb? tid = some t := by
+  unfold SystemState.getTcb?
+  rw [storeObject_objects_eq st st' tid.toObjId _ hObjInv hStore]
+
+/-- WS-RR RR2.19: a thread key and a SchedContext key that both resolve are
+distinct — the two typed readers cannot both succeed at one key. -/
+theorem getTcb?_getSchedContext?_key_ne (st : SystemState) (tid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (t : TCB) (sc : SchedContext)
+    (hT : st.getTcb? tid = some t) (hS : st.getSchedContext? scId = some sc) :
+    tid.toObjId ≠ scId.toObjId := by
+  intro hEq
+  rw [SystemState.getTcb?_eq_some_iff, hEq,
+    (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hS] at hT
+  cases hT
 
 /-- WS-RR RR2.3 (typed bridge): `lookupTcb`'s success is `getTcb?`'s.  The two
 differ only in `lookupTcb`'s extra sentinel guard, which a success has already

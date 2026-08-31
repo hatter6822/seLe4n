@@ -328,14 +328,13 @@ theorem endpointSendDualOnCore_preserves_ipcInvariantFull
           ep'.receiveQ.tail ≠ some tailTid))
     (hSenderNotRecv : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
-    (hSenderNotReply : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
+    (hSenderNotReply : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
-    (hSenderNotUnbound : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
+    (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         tcb.schedContextBinding ≠ .unbound) :
     ipcInvariantFull (endpointSendDualOnCore endpointId sender msg executingCore st).1 := by
   have hSenderNotUnboundT : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
-      tcb.schedContextBinding ≠ .unbound :=
-    fun tcb hTcb => hSenderNotUnbound tcb ((getTcb?_eq_some_iff st sender tcb).mp hTcb)
+      tcb.schedContextBinding ≠ .unbound := hSenderNotUnbound
   have hPsi' : passiveServerIdle
       (endpointSendDualOnCore endpointId sender msg executingCore st).1 :=
     (passiveServerIdle_perCore_bootCore_iff _).mp
@@ -353,7 +352,10 @@ theorem endpointSendDualOnCore_preserves_ipcInvariantFull
         hAllBudgetsNone
         (replyCallerLinkageReciprocal_of_getElem_eq
           (fun oid => (hAgree.objects oid).symm) hRCLRecip')
-        hFreshSender hSendTailFresh hSenderNotRecv hSenderNotReply hSenderNotUnbound hStep1)
+        hFreshSender hSendTailFresh hSenderNotRecv
+        (fun tcb hRaw => hSenderNotReply tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
+        (fun tcb hRaw => hSenderNotUnbound tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
+        hStep1)
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RR RR2.15**: the per-core form — the cross-core send preserves **every
@@ -383,9 +385,9 @@ theorem endpointSendDualOnCore_preserves_ipcInvariantFull_perCore
           ep'.receiveQ.tail ≠ some tailTid))
     (hSenderNotRecv : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
-    (hSenderNotReply : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
+    (hSenderNotReply : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
-    (hSenderNotUnbound : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
+    (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         tcb.schedContextBinding ≠ .unbound)
     (c : CoreId) :
     ipcInvariantFull_perCore
@@ -397,7 +399,7 @@ theorem endpointSendDualOnCore_preserves_ipcInvariantFull_perCore
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointSendDualOnCore_passiveServerIdleFrameOnCore endpointId sender msg executingCore
         st c hObjInv
-        (fun tcb hTcb => hSenderNotUnbound tcb ((getTcb?_eq_some_iff st sender tcb).mp hTcb)))
+        hSenderNotUnbound)
       (hInv c).passiveServerIdle)
 
 -- ============================================================================
@@ -466,9 +468,9 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
           ep'.receiveQ.tail ≠ some tailTid))
     (hSenderNotRecv : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
-    (hSenderNotReply : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
+    (hSenderNotReply : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
-    (hSenderNotUnbound : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
+    (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         tcb.schedContextBinding ≠ .unbound) :
     ipcInvariantFull
       (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
@@ -618,9 +620,9 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
           ep'.receiveQ.tail ≠ some tailTid))
     (hSenderNotRecv : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
-    (hSenderNotReply : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
+    (hSenderNotReply : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
-    (hSenderNotUnbound : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
+    (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         tcb.schedContextBinding ≠ .unbound)
     (c : CoreId) :
     ipcInvariantFull_perCore
@@ -634,7 +636,7 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointSendDualWithCapsOnCore_passiveServerIdleFrameOnCore endpointId sender msg
         endpointRights senderCspaceRoot receiverSlotBase executingCore st c hObjInv
-        (fun tcb hTcb => hSenderNotUnbound tcb ((getTcb?_eq_some_iff st sender tcb).mp hTcb)))
+        hSenderNotUnbound)
       (hInv c).passiveServerIdle)
 
 end SeLe4n.Kernel

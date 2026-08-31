@@ -62,7 +62,7 @@ theorem donateSchedContext_walk
     (clientScId : SeLe4n.SchedContextId)
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
     ∃ (sc : SchedContext) (clientTcb serverTcb : TCB) (s1 s2 s3 : SystemState),
-      st.objects[clientScId.toObjId]? = some (.schedContext sc) ∧
+      st.getSchedContext? clientScId = some sc ∧
       sc.boundThread = some clientTid ∧
       storeObject clientScId.toObjId
         (.schedContext { sc with boundThread := some serverTid }) st = .ok ((), s1) ∧
@@ -114,7 +114,8 @@ theorem donateSchedContext_walk
                   obtain ⟨u1, s1⟩ := p1; cases u1
                   obtain ⟨u2, s2⟩ := p2; cases u2
                   obtain ⟨u3, s3⟩ := p3; cases u3
-                  exact ⟨sc, clientTcb, serverTcb, s1, s2, s3, rfl,
+                  exact ⟨sc, clientTcb, serverTcb, s1, s2, s3,
+                    (SystemState.getSchedContext?_eq_some_iff st clientScId sc).mpr hObj,
                     by simpa using hBne, hS1, hLC, hS2, hL, hS3, rfl, rfl⟩
     | _ => simp only []; intro h; cases h
 
@@ -126,7 +127,7 @@ theorem returnDonatedSchedContext_walk
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
     (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
     ∃ (sc : SchedContext) (ownerTcb serverTcb : TCB) (s1 s2 s3 : SystemState),
-      st.objects[scId.toObjId]? = some (.schedContext sc) ∧
+      st.getSchedContext? scId = some sc ∧
       sc.boundThread = some serverTid ∧
       storeObject scId.toObjId
         (.schedContext { sc with boundThread := some originalOwner }) st = .ok ((), s1) ∧
@@ -176,7 +177,8 @@ theorem returnDonatedSchedContext_walk
                   obtain ⟨u1, s1⟩ := p1; cases u1
                   obtain ⟨u2, s2⟩ := p2; cases u2
                   obtain ⟨u3, s3⟩ := p3; cases u3
-                  exact ⟨sc, ownerTcb, serverTcb, s1, s2, s3, rfl,
+                  exact ⟨sc, ownerTcb, serverTcb, s1, s2, s3,
+                    (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hObj,
                     by simpa using hBne, hS1, hL1, hS2, hL2, hS3, rfl, rfl⟩
     | _ => simp only []; intro h; cases h
 
@@ -207,57 +209,47 @@ theorem donateSchedContext_getTcb?_char
     donateSchedContext_walk st st' clientTid serverTid clientScId h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
-  have hSc1 : s1.objects[clientScId.toObjId]? =
-      some (.schedContext { sc with boundThread := some serverTid }) :=
-    storeObject_objects_eq st s1 _ _ hObjInv hS1
-  have hClient1 : s1.objects[clientTid.toObjId]? = some (.tcb clientTcb) :=
-    lookupTcb_some_objects s1 clientTid clientTcb hLC
-  have hNeScClient : clientTid.toObjId ≠ clientScId.toObjId := by
-    intro he; rw [he, hSc1] at hClient1; cases hClient1
-  have hServer2 : s2.objects[serverTid.toObjId]? = some (.tcb serverTcb) :=
-    lookupTcb_some_objects s2 serverTid serverTcb hLS
-  have hNeCS : clientTid.toObjId ≠ serverTid.toObjId := by
-    intro he; exact hNe (SeLe4n.ThreadId.toObjId_injective _ _ he)
-  have hServer1 : s1.objects[serverTid.toObjId]? = some (.tcb serverTcb) := by
-    rw [← storeObject_objects_ne s1 s2 clientTid.toObjId serverTid.toObjId _
-      (Ne.symm hNeCS) hInv1 hS2]
+  have hFinal : ∀ t : SeLe4n.ThreadId, st'.getTcb? t = s3.getTcb? t := by
+    intro t; unfold SystemState.getTcb?; rw [hObjEq]
+  -- The SchedContext store's key, read typed, is what separates it from the two
+  -- thread keys the later stores write.
+  have hSc1 : s1.getSchedContext? clientScId =
+      some { sc with boundThread := some serverTid } := by
+    unfold SystemState.getSchedContext?
+    rw [storeObject_objects_eq st s1 _ _ hObjInv hS1]
+  have hClient1 : s1.getTcb? clientTid = some clientTcb :=
+    getTcb?_of_lookupTcb s1 clientTid clientTcb hLC
+  have hServer2 : s2.getTcb? serverTid = some serverTcb :=
+    getTcb?_of_lookupTcb s2 serverTid serverTcb hLS
+  have hNeCS : clientTid.toObjId ≠ serverTid.toObjId := fun he =>
+    hNe (SeLe4n.ThreadId.toObjId_injective _ _ he)
+  have hServer1 : s1.getTcb? serverTid = some serverTcb := by
+    rw [← storeObject_getTcb?_ne s1 s2 clientTid.toObjId _ serverTid (Ne.symm hNeCS) hInv1 hS2]
     exact hServer2
-  have hNeScServer : serverTid.toObjId ≠ clientScId.toObjId := by
-    intro he; rw [he, hSc1] at hServer1; cases hServer1
-  -- Pull both TCBs back past the SchedContext store.
-  have hClientPre : st.objects[clientTid.toObjId]? = some (.tcb clientTcb) := by
-    rw [← storeObject_objects_ne st s1 clientScId.toObjId clientTid.toObjId _
-      hNeScClient hObjInv hS1]
-    exact hClient1
-  have hServerPre : st.objects[serverTid.toObjId]? = some (.tcb serverTcb) := by
-    rw [← storeObject_objects_ne st s1 clientScId.toObjId serverTid.toObjId _
-      hNeScServer hObjInv hS1]
-    exact hServer1
-  -- Push the two written TCBs forward to the final state.
-  have hClient3 : s3.objects[clientTid.toObjId]? =
-      some (.tcb { clientTcb with schedContextBinding := .unbound }) := by
-    rw [storeObject_objects_ne s2 s3 serverTid.toObjId clientTid.toObjId _ hNeCS hInv2 hS3]
-    exact storeObject_objects_eq s1 s2 _ _ hInv1 hS2
-  have hServer3 : s3.objects[serverTid.toObjId]? =
-      some (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid }) :=
-    storeObject_objects_eq s2 s3 _ _ hInv2 hS3
+  have hNeScClient : clientTid.toObjId ≠ clientScId.toObjId :=
+    getTcb?_getSchedContext?_key_ne s1 clientTid clientScId _ _ hClient1 hSc1
+  have hNeScServer : serverTid.toObjId ≠ clientScId.toObjId :=
+    getTcb?_getSchedContext?_key_ne s1 serverTid clientScId _ _ hServer1 hSc1
   refine ⟨⟨clientTcb, ?_, ?_⟩, ⟨serverTcb, ?_, ?_⟩, ?_⟩
-  · unfold SystemState.getTcb?; rw [hClientPre]
-  · unfold SystemState.getTcb?; rw [hObjEq, hClient3]
-  · unfold SystemState.getTcb?; rw [hServerPre]
-  · unfold SystemState.getTcb?; rw [hObjEq, hServer3]
+  · rw [← storeObject_getTcb?_ne st s1 clientScId.toObjId _ clientTid hNeScClient hObjInv hS1]
+    exact hClient1
+  · rw [hFinal, storeObject_getTcb?_ne s2 s3 serverTid.toObjId _ clientTid hNeCS hInv2 hS3]
+    exact storeObject_getTcb?_self s1 s2 clientTid _ hInv1 hS2
+  · rw [← storeObject_getTcb?_ne st s1 clientScId.toObjId _ serverTid hNeScServer hObjInv hS1]
+    exact hServer1
+  · rw [hFinal]; exact storeObject_getTcb?_self s2 s3 serverTid _ hInv2 hS3
   · intro tid hNeC hNeS
     have h1 : tid.toObjId ≠ clientTid.toObjId := fun he =>
       hNeC (SeLe4n.ThreadId.toObjId_injective _ _ he)
     have h2 : tid.toObjId ≠ serverTid.toObjId := fun he =>
       hNeS (SeLe4n.ThreadId.toObjId_injective _ _ he)
-    unfold SystemState.getTcb?
-    rw [hObjEq,
-      storeObject_objects_ne s2 s3 serverTid.toObjId tid.toObjId _ h2 hInv2 hS3,
-      storeObject_objects_ne s1 s2 clientTid.toObjId tid.toObjId _ h1 hInv1 hS2]
+    rw [hFinal, storeObject_getTcb?_ne s2 s3 serverTid.toObjId _ tid h2 hInv2 hS3,
+      storeObject_getTcb?_ne s1 s2 clientTid.toObjId _ tid h1 hInv1 hS2]
     by_cases hScEq : tid.toObjId = clientScId.toObjId
-    · rw [hScEq, hSc1, hSc]
-    · rw [storeObject_objects_ne st s1 clientScId.toObjId tid.toObjId _ hScEq hObjInv hS1]
+    · unfold SystemState.getTcb?
+      rw [hScEq, storeObject_objects_eq st s1 _ _ hObjInv hS1,
+        (SystemState.getSchedContext?_eq_some_iff st _ sc).mp hSc]
+    · rw [storeObject_getTcb?_ne st s1 clientScId.toObjId _ tid hScEq hObjInv hS1]
 
 /-- WS-RR RR2.5: the mirror for `returnDonatedSchedContext` — the donee's binding
 is cleared, the original owner's becomes `.bound`, everything else reads
@@ -276,55 +268,46 @@ theorem returnDonatedSchedContext_getTcb?_char
     returnDonatedSchedContext_walk st st' serverTid scId originalOwner h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
-  have hSc1 : s1.objects[scId.toObjId]? =
-      some (.schedContext { sc with boundThread := some originalOwner }) :=
-    storeObject_objects_eq st s1 _ _ hObjInv hS1
-  have hOwner1 : s1.objects[originalOwner.toObjId]? = some (.tcb ownerTcb) :=
-    lookupTcb_some_objects s1 originalOwner ownerTcb hL1
-  have hNeScOwner : originalOwner.toObjId ≠ scId.toObjId := by
-    intro he; rw [he, hSc1] at hOwner1; cases hOwner1
-  have hServer2 : s2.objects[serverTid.toObjId]? = some (.tcb serverTcb) :=
-    lookupTcb_some_objects s2 serverTid serverTcb hL2
-  have hNeOS : originalOwner.toObjId ≠ serverTid.toObjId := by
-    intro he; exact hNe (SeLe4n.ThreadId.toObjId_injective _ _ he)
-  have hServer1 : s1.objects[serverTid.toObjId]? = some (.tcb serverTcb) := by
-    rw [← storeObject_objects_ne s1 s2 originalOwner.toObjId serverTid.toObjId _
-      (Ne.symm hNeOS) hInv1 hS2]
+  have hFinal : ∀ t : SeLe4n.ThreadId, st'.getTcb? t = s3.getTcb? t := by
+    intro t; unfold SystemState.getTcb?; rw [hObjEq]
+  have hSc1 : s1.getSchedContext? scId =
+      some { sc with boundThread := some originalOwner } := by
+    unfold SystemState.getSchedContext?
+    rw [storeObject_objects_eq st s1 _ _ hObjInv hS1]
+  have hOwner1 : s1.getTcb? originalOwner = some ownerTcb :=
+    getTcb?_of_lookupTcb s1 originalOwner ownerTcb hL1
+  have hServer2 : s2.getTcb? serverTid = some serverTcb :=
+    getTcb?_of_lookupTcb s2 serverTid serverTcb hL2
+  have hNeOS : originalOwner.toObjId ≠ serverTid.toObjId := fun he =>
+    hNe (SeLe4n.ThreadId.toObjId_injective _ _ he)
+  have hServer1 : s1.getTcb? serverTid = some serverTcb := by
+    rw [← storeObject_getTcb?_ne s1 s2 originalOwner.toObjId _ serverTid (Ne.symm hNeOS)
+      hInv1 hS2]
     exact hServer2
-  have hNeScServer : serverTid.toObjId ≠ scId.toObjId := by
-    intro he; rw [he, hSc1] at hServer1; cases hServer1
-  have hOwnerPre : st.objects[originalOwner.toObjId]? = some (.tcb ownerTcb) := by
-    rw [← storeObject_objects_ne st s1 scId.toObjId originalOwner.toObjId _
-      hNeScOwner hObjInv hS1]
-    exact hOwner1
-  have hServerPre : st.objects[serverTid.toObjId]? = some (.tcb serverTcb) := by
-    rw [← storeObject_objects_ne st s1 scId.toObjId serverTid.toObjId _
-      hNeScServer hObjInv hS1]
-    exact hServer1
-  have hOwner3 : s3.objects[originalOwner.toObjId]? =
-      some (.tcb { ownerTcb with schedContextBinding := .bound scId }) := by
-    rw [storeObject_objects_ne s2 s3 serverTid.toObjId originalOwner.toObjId _ hNeOS hInv2 hS3]
-    exact storeObject_objects_eq s1 s2 _ _ hInv1 hS2
-  have hServer3 : s3.objects[serverTid.toObjId]? =
-      some (.tcb { serverTcb with schedContextBinding := .unbound }) :=
-    storeObject_objects_eq s2 s3 _ _ hInv2 hS3
+  have hNeScOwner : originalOwner.toObjId ≠ scId.toObjId :=
+    getTcb?_getSchedContext?_key_ne s1 originalOwner scId _ _ hOwner1 hSc1
+  have hNeScServer : serverTid.toObjId ≠ scId.toObjId :=
+    getTcb?_getSchedContext?_key_ne s1 serverTid scId _ _ hServer1 hSc1
   refine ⟨⟨ownerTcb, ?_, ?_⟩, ⟨serverTcb, ?_, ?_⟩, ?_⟩
-  · unfold SystemState.getTcb?; rw [hOwnerPre]
-  · unfold SystemState.getTcb?; rw [hObjEq, hOwner3]
-  · unfold SystemState.getTcb?; rw [hServerPre]
-  · unfold SystemState.getTcb?; rw [hObjEq, hServer3]
+  · rw [← storeObject_getTcb?_ne st s1 scId.toObjId _ originalOwner hNeScOwner hObjInv hS1]
+    exact hOwner1
+  · rw [hFinal, storeObject_getTcb?_ne s2 s3 serverTid.toObjId _ originalOwner hNeOS hInv2 hS3]
+    exact storeObject_getTcb?_self s1 s2 originalOwner _ hInv1 hS2
+  · rw [← storeObject_getTcb?_ne st s1 scId.toObjId _ serverTid hNeScServer hObjInv hS1]
+    exact hServer1
+  · rw [hFinal]; exact storeObject_getTcb?_self s2 s3 serverTid _ hInv2 hS3
   · intro tid hNeO hNeS
     have h1 : tid.toObjId ≠ originalOwner.toObjId := fun he =>
       hNeO (SeLe4n.ThreadId.toObjId_injective _ _ he)
     have h2 : tid.toObjId ≠ serverTid.toObjId := fun he =>
       hNeS (SeLe4n.ThreadId.toObjId_injective _ _ he)
-    unfold SystemState.getTcb?
-    rw [hObjEq,
-      storeObject_objects_ne s2 s3 serverTid.toObjId tid.toObjId _ h2 hInv2 hS3,
-      storeObject_objects_ne s1 s2 originalOwner.toObjId tid.toObjId _ h1 hInv1 hS2]
+    rw [hFinal, storeObject_getTcb?_ne s2 s3 serverTid.toObjId _ tid h2 hInv2 hS3,
+      storeObject_getTcb?_ne s1 s2 originalOwner.toObjId _ tid h1 hInv1 hS2]
     by_cases hScEq : tid.toObjId = scId.toObjId
-    · rw [hScEq, hSc1, hSc]
-    · rw [storeObject_objects_ne st s1 scId.toObjId tid.toObjId _ hScEq hObjInv hS1]
+    · unfold SystemState.getTcb?
+      rw [hScEq, storeObject_objects_eq st s1 _ _ hObjInv hS1,
+        (SystemState.getSchedContext?_eq_some_iff st _ sc).mp hSc]
+    · rw [storeObject_getTcb?_ne st s1 scId.toObjId _ tid hScEq hObjInv hS1]
 
 -- ============================================================================
 -- §3  RR2.5 — `applyCallDonation` preserves the donation conjuncts
@@ -633,8 +616,7 @@ theorem applyCallDonation_preserves_donationBudgetTransfer
     obtain ⟨cTcb, _, _, hCPre, hCB, _⟩ :=
       applyCallDonation_donating_char st st' callerVtid receiverVtid scId hObjInv hSc h
     have hCScId : cTcb.schedContextBinding.scId? = some scId := by rw [hCB]; rfl
-    have hCObj : st.objects[callerVtid.val.toObjId]? = some (.tcb cTcb) :=
-      (getTcb?_eq_some_iff st callerVtid.val cTcb).mp hCPre
+    have hCObj := (getTcb?_eq_some_iff st callerVtid.val cTcb).mp hCPre
     intro tid1 tid2 tcb1 tcb2 s h1 h2 hNe hS1 hS2
     have hT1 : st'.getTcb? tid1 = some tcb1 := (getTcb?_eq_some_iff st' tid1 tcb1).mpr h1
     have hT2 : st'.getTcb? tid2 = some tcb2 := (getTcb?_eq_some_iff st' tid2 tcb2).mpr h2
@@ -905,7 +887,8 @@ theorem donateSchedContext_donationReadAgreement
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
   have a1 : donationReadAgreement st s1 :=
-    donationReadAgreement_of_schedContextStore st s1 clientScId.toObjId sc _ hSc hObjInv hS1
+    donationReadAgreement_of_schedContextStore st s1 clientScId.toObjId sc _
+      ((SystemState.getSchedContext?_eq_some_iff st clientScId sc).mp hSc) hObjInv hS1
   have a2 : donationReadAgreement s1 s2 :=
     donationReadAgreement_of_tcbBindingStore s1 s2 clientTid.toObjId clientTcb .unbound
       (lookupTcb_some_objects s1 clientTid clientTcb hLC) hInv1 hS2
@@ -929,7 +912,8 @@ theorem returnDonatedSchedContext_donationReadAgreement
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
   have a1 : donationReadAgreement st s1 :=
-    donationReadAgreement_of_schedContextStore st s1 scId.toObjId sc _ hSc hObjInv hS1
+    donationReadAgreement_of_schedContextStore st s1 scId.toObjId sc _
+      ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc) hObjInv hS1
   have a2 : donationReadAgreement s1 s2 :=
     donationReadAgreement_of_tcbBindingStore s1 s2 originalOwner.toObjId ownerTcb (.bound scId)
       (lookupTcb_some_objects s1 originalOwner ownerTcb hL1) hInv1 hS2
@@ -1154,6 +1138,23 @@ theorem applyCallDonation_preserves_objects_invExt
 -- ============================================================================
 -- §6  RR2.5 — the whole bundle, on the call path
 -- ============================================================================
+
+/-- WS-RR RR2.20: the cross-core call donation preserves the object-store
+invariant.  The migration writes replenish-queue slots only
+(`applyCallDonationOnCore_objects_eq`), so this is the single-core fact. -/
+theorem applyCallDonationOnCore_preserves_objects_invExt
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId)
+    (hObjInv : st.objects.invExt)
+    (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
+    st''.objects.invExt := by
+  obtain ⟨st1, hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid
+    donorHome doneeHome h
+  have hInv1 : st1.objects.invExt :=
+    applyCallDonation_preserves_objects_invExt st st1 callerVtid receiverVtid hObjInv hDon
+  rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> rw [hEq]
+  · exact hInv1
+  · rw [migrateSchedContextReplenishment_objects]; exact hInv1
 
 /-- WS-RR RR2.5: `applyCallDonation` establishes the read agreement — the no-op
 arm reflexively, the donating arm through `donateSchedContext`. -/
@@ -1466,8 +1467,7 @@ theorem returnDonatedSchedContext_preserves_ipcInvariantFull
       · rw [hBnd] at hHold; cases hHold
       · exact Or.inr rest
     have hPScId : pTcb.schedContextBinding.scId? = some scId := by rw [hPB]; rfl
-    have hPObj : st.objects[replierVtid.val.toObjId]? = some (.tcb pTcb) :=
-      (getTcb?_eq_some_iff st replierVtid.val pTcb).mp hPPre
+    have hPObj := (getTcb?_eq_some_iff st replierVtid.val pTcb).mp hPPre
     intro tid1 tid2 tcb1 tcb2 s h1 h2 hNeT hS1 hS2
     rcases hClassify tid1 tcb1 s ((getTcb?_eq_some_iff st' tid1 tcb1).mpr h1) hS1 with
       ⟨hO1, hSEq⟩ | ⟨hO1, hP1, hPre1⟩

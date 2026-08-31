@@ -118,6 +118,24 @@ theorem default_replenishQueueAffinityConsistent_smp :
     replenishQueueAffinityConsistent_smp (default : SystemState) :=
   fun c => default_replenishQueueAffinityConsistentOnCore c
 
+/-- WS-SM SM5.H.5 / WS-RR RR2.20 (frame, congruence form): the affinity-consistency
+invariant on core `c` makes exactly three readings — core `c`'s replenish queue,
+`getSchedContext?`, and `determineTargetCore` — so a state agreeing on those
+three agrees on the predicate, whatever else it changed.
+
+The `_frame` form below asks for whole-`objects` equality, which is strictly
+stronger and excludes precisely the transitions that most need the frame: a PIP
+boost rewrites one TCB's `pipBoost`, so `objects` differs while all three
+readings agree. -/
+theorem replenishQueueAffinityConsistentOnCore_congr {st st' : SystemState} {c : CoreId}
+    (hRepl : st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c)
+    (hSc : ∀ scId, st'.getSchedContext? scId = st.getSchedContext? scId)
+    (hTgt : ∀ tid, determineTargetCore st' tid = determineTargetCore st tid) :
+    replenishQueueAffinityConsistentOnCore st' c ↔
+    replenishQueueAffinityConsistentOnCore st c := by
+  unfold replenishQueueAffinityConsistentOnCore
+  simp only [hRepl, hSc, hTgt]
+
 /-- WS-SM SM5.H.5 (frame): the affinity-consistency invariant on core `c` reads
 only core `c`'s replenish queue plus the object store (via `getSchedContext?` and
 `determineTargetCore`, both pure object-store reads).  A state agreeing on those
@@ -126,13 +144,10 @@ theorem replenishQueueAffinityConsistentOnCore_frame {st st' : SystemState} {c :
     (hRepl : st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c)
     (hObj : st'.objects = st.objects) :
     replenishQueueAffinityConsistentOnCore st' c ↔
-    replenishQueueAffinityConsistentOnCore st c := by
-  have hSc : ∀ scId, st'.getSchedContext? scId = st.getSchedContext? scId := by
-    intro scId; unfold SystemState.getSchedContext?; rw [hObj]
-  have hTgt : ∀ tid, determineTargetCore st' tid = determineTargetCore st tid := by
-    intro tid; unfold determineTargetCore SystemState.getTcb?; rw [hObj]
-  unfold replenishQueueAffinityConsistentOnCore
-  simp only [hRepl, hSc, hTgt]
+    replenishQueueAffinityConsistentOnCore st c :=
+  replenishQueueAffinityConsistentOnCore_congr hRepl
+    (fun scId => by unfold SystemState.getSchedContext?; rw [hObj])
+    (fun tid => by unfold determineTargetCore SystemState.getTcb?; rw [hObj])
 
 -- ============================================================================
 -- §2  Membership decomposition for `ReplenishQueue.insertSorted` / `.remove`

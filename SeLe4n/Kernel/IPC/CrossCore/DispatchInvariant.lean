@@ -7,8 +7,13 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- WS-RR RR2.6 / RR2.11: PRODUCTION.  The IPC-bundle preservation surface of the
--- live cross-core `.call` and `.reply` dispatch chains.
+-- STATUS: staged for WS-RR RR2.6 / RR2.11 — the IPC-bundle preservation surface
+-- of the live cross-core `.call` and `.reply` dispatch chains.  Staged because
+-- it composes the staged cross-core call/reply invariant surfaces
+-- (`EndpointCallInvariant`, `EndpointReplyInvariant`), which are themselves
+-- staged pending the SM10.1 runtime seam; the two *primitive* surfaces it builds
+-- on (`IPC.Invariant.DonationPreservation`, `IPC.Invariant.CapTransferBundle`)
+-- are production and are imported from `SeLe4n.lean` directly.
 
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
 import SeLe4n.Kernel.IPC.Invariant.CapTransferBundle
@@ -61,28 +66,27 @@ theorem updatePipBoostOnCore_preserves_ipcInvariantFull (st : SystemState) (c : 
     intro hNone
     rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hNone]
     exact hInv
-  cases hAt : st.objects[tid.toObjId]? with
-  | none => exact hSelf (by unfold SystemState.getTcb?; rw [hAt])
-  | some obj =>
-    cases obj with
-    | tcb tcb =>
-        obtain ⟨p, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb hAt hObjInv
-        have hFrame : ∀ (oid : SeLe4n.ObjId), oid ≠ tid.toObjId →
-            (updatePipBoostOnCore st c tid).objects[oid]? = st.objects[oid]? := fun oid hNe =>
-          updatePipBoostOnCore_objects_ne st c tid oid
-            (by simpa using fun h => hNe h.symm) hObjInv
-        refine ipcInvariantFull_of_tcbFieldUpdate st _ tid.toObjId tcb _ hInv hAt hPost hFrame
-          rfl rfl rfl rfl rfl rfl rfl rfl rfl ?_
-        refine passiveServerIdleFrame_of_backward_monotone (fun x tcb' hTcb' => ?_)
-          (fun y hy => (updatePipBoostOnCore_mem_runQueueOnCore st c bootCoreId tid y).mpr hy)
-          (updatePipBoostOnCore_currentOnCore st c bootCoreId tid)
-        by_cases hEq : x.toObjId = tid.toObjId
-        · rw [hEq] at hTcb'
-          obtain rfl : { tcb with pipBoost := p } = tcb' := by
-            simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hPost.symm.trans hTcb'
-          exact ⟨tcb, by rw [hEq]; exact hAt, rfl, rfl⟩
-        · exact ⟨tcb', by rw [← hFrame x.toObjId hEq]; exact hTcb', rfl, rfl⟩
-    | _ => exact hSelf (by unfold SystemState.getTcb?; rw [hAt])
+  cases hAt : st.getTcb? tid with
+  | none => exact hSelf hAt
+  | some tcb =>
+      obtain ⟨p, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb hAt hObjInv
+      have hAtRaw := (getTcb?_eq_some_iff st tid tcb).mp hAt
+      have hPostRaw := (getTcb?_eq_some_iff (updatePipBoostOnCore st c tid) tid _).mp hPost
+      have hFrame : ∀ (oid : SeLe4n.ObjId), oid ≠ tid.toObjId →
+          (updatePipBoostOnCore st c tid).objects[oid]? = st.objects[oid]? := fun oid hNe =>
+        updatePipBoostOnCore_objects_ne st c tid oid
+          (by simpa using fun h => hNe h.symm) hObjInv
+      refine ipcInvariantFull_of_tcbFieldUpdate st _ tid.toObjId tcb _ hInv hAtRaw hPostRaw
+        hFrame rfl rfl rfl rfl rfl rfl rfl rfl rfl ?_
+      refine passiveServerIdleFrame_of_backward_monotone (fun x tcb' hTcb' => ?_)
+        (fun y hy => (updatePipBoostOnCore_mem_runQueueOnCore st c bootCoreId tid y).mpr hy)
+        (updatePipBoostOnCore_currentOnCore st c bootCoreId tid)
+      by_cases hEq : x.toObjId = tid.toObjId
+      · rw [hEq] at hTcb'
+        obtain rfl : { tcb with pipBoost := p } = tcb' := by
+          simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hPostRaw.symm.trans hTcb'
+        exact ⟨tcb, by rw [hEq]; exact hAtRaw, rfl, rfl⟩
+      · exact ⟨tcb', by rw [← hFrame x.toObjId hEq]; exact hTcb', rfl, rfl⟩
 
 /-- WS-RR RR2.6: the cross-core PIP boost with wake preserves the bundle — its
 state component is exactly `updatePipBoostOnCore` on the thread's home core; the

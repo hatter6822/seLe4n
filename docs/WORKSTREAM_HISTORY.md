@@ -23,7 +23,7 @@ The pre-SM10 completeness audit (`docs/planning/UNFINISHED_SMP_WORK.md`,
 audited at v0.34.3) found the project not ready to begin SM10: three findings
 block starting it, SM10's §1 scope statement is false against the tree, and a
 set of fail-open latents become reachable exactly when the boot path goes live.
-WS-RR closes that work first — 155 sub-tasks across RR0..RR8, planned in
+WS-RR closes that work first — 157 sub-tasks across RR0..RR8, planned in
 [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
 See the **WS-RR** section below for the phase table and the three blockers.
 
@@ -7283,14 +7283,15 @@ correct — a tautological witness replaced by a substantive proof, a fuel bound
 made structural, a tuple given a name, a validated-elsewhere precondition
 internalised.  That is why they may wait; it is not why they may be forgotten.
 
-## WS-RR — SMP Release Readiness (pre-SM10 remediation, **IN FLIGHT — OPEN**, opened v0.34.13; RR0 landed v0.34.26, RR1 v0.34.41)
+## WS-RR — SMP Release Readiness (pre-SM10 remediation, **IN FLIGHT — OPEN**, opened v0.34.13; RR0 landed v0.34.26, RR1 v0.34.41, RR2 v0.34.42)
 
 **Status**: IN FLIGHT — **RR0 LANDED at v0.34.26** (all eleven sub-tasks:
 registration, the debt register, the generated theorem manifest, and the SM10
 plan corrections); **RR1 LANDED at v0.34.41** (all eleven sub-tasks: the
 aarch64 cross build in CI, the six defects and three lints its first compile
 found, two Tier 0 gates, and SM10's evidence-derived estimate), with **RR1.12
-added in the same cut** to harden those gates after review; RR2..RR8 not
+added in the same cut** to harden those gates after review; **RR2 LANDED at
+v0.34.42** (all nineteen sub-tasks; RR2.18 partial — see below); RR3..RR8 not
 started. **Closes**: before SM10 opens.
 **Plan**: [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
 **Source register**: [`docs/planning/UNFINISHED_SMP_WORK.md`](planning/UNFINISHED_SMP_WORK.md)
@@ -7303,13 +7304,13 @@ path goes live. WS-RR closes that work first, so SM10 can be the release-closure
 phase it was scoped as. **SM10 is BLOCKED on WS-RR** and must not open until
 RR8 closes.
 
-155 sub-tasks across nine phases, numbered in execution order:
+157 sub-tasks across nine phases, numbered in execution order:
 
 | Phase | Scope | Subs |
 |-------|-------|------|
 | RR0 | Registration and plan correction — **LANDED v0.34.26** | 11 |
 | RR1 | aarch64 compile coverage — **LANDED v0.34.41** (incl. RR1.12 gate hardening) | 12 |
-| RR2 | Live-path correctness: dispatch-arm bundles, donation queue migration | 19 |
+| RR2 | Live-path correctness: dispatch-arm bundles, donation queue migration — **LANDED v0.34.42** | 20 |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 |
 | RR5 | Boot-path fail-open closure | 14 |
@@ -7320,8 +7321,9 @@ RR8 closes.
 **The three blockers**: the IPC de-threading workstream is registered in no
 durable index (RR0.1–RR0.3, closed by RR3); cross-core SchedContext donation
 never migrates the CBS replenish queue, breaking the SM5.H affinity invariant
-on a live path (RR2); and the live `.send` arm carries no `ipcInvariantFull`
-preservation while SM6.D claims coverage (RR2).
+on a live path (**closed by RR2 at v0.34.42**); and the live `.send` arm
+carries no `ipcInvariantFull` preservation while SM6.D claims coverage
+(**closed by RR2 at v0.34.42**).
 
 **What RR1 closed** (register findings 6 and 12). `sele4n-hal` now builds
 for `aarch64-unknown-none` in CI, in both profiles, with the three `.S`
@@ -7357,6 +7359,74 @@ layer so a flag is read on the command that receives it.  The self-test
 harnesses now *enforce* what `CLAUDE.md` had only asserted: every check must
 carry a negative case that keeps its token and breaks only its relation, and
 the harness fails when one does not.
+
+**What RR2 closed** (v0.34.42, register blockers 2 and 3, plus the SM6.E
+cancellation-closure finding).
+
+*Blocker 2 — the donation never migrated the replenish queue.* A SchedContext's
+pending CBS replenishments live on a per-core queue, the bound thread's; a
+cross-core donation moved the binding and left the entries behind, on a core
+that no longer runs the thread they refill.  All live paths now carry them:
+`applyCallDonationOnCore` (donor home → donee home) and
+`applyReplyDonationOnCore` (replier home → original-owner home), each with
+`replenishQueueAffinityConsistent_smp` re-established on every core afterwards,
+each inside a `withLockSet` footprint extended to cover the two replenish-queue
+write locks, and both wired into the live `.call` and `.reply` dispatch arms
+rather than modelled beside them.
+
+There turned out to be **three** such paths, not the two the register named.
+`.replyRecv` performs a *pair* of hand-offs — the recorded server returns its
+donated context to the client it was serving, and, when the receive rendezvoused
+with a queued `Call`, the next caller's context is immediately donated to the
+receiver — and neither migrated.  The audit did not see it because it enumerated
+the donation *primitives*, and `replyRecvReturnDonation` composes them from
+`Kernel/API.lean`; on a delegated reply cap the receiver need not be the recorded
+server, so one `.replyRecv` could leave a SchedContext's replenishments two cores
+from the thread now bound to it.  RR2.20 closed it in the same cut, with the
+return-plus-migration half factored out of RR2.9's theorem rather than copied,
+and with a frame the priority-inheritance chain walk had never been given —
+`propagatePipChainCrossCore_replenish_readings`, showing the walk leaves all three
+readings the affinity invariant makes untouched.  That is the
+enumeration-versus-derivation shape `CLAUDE.md`'s key-conventions section warns
+about, appearing in an audit finding rather than in a gate.
+
+*Blocker 3 — the live `.send` arm carried no bundle.* It does now, via the
+post-state agreement dichotomy rather than a transcription of the call side's
+2805-line invariant module.
+
+*And the donation primitives themselves, which carried nothing.*
+`applyCallDonation` / `applyReplyDonation` are the only kernel operations that
+write a TCB's `schedContextBinding` — the field five of the bundle's twenty
+conjuncts read — and had no preservation theorem at all, which was tolerable
+only while they sat behind boot-pinned wrappers.  RR2.5 built one, which
+required splitting the shared `ipcInvariantCore` driver: its read agreement
+demanded binding equality, so the eleven binding-free conjuncts were
+unreachable for the one operation that changes a binding.  The split is
+`ipcInvariantCore_of_nonBindingAgreements`, and the original all-15 driver is
+now that driver instantiated with the four conjuncts proved from the binding
+half — every existing call site unchanged.
+
+*The two dispatch chains.* `endpointCallCrossCoreDispatch` and
+`endpointReplyCrossCoreDispatch` now carry `_preserves_ipcInvariantFull`,
+composed from the delivery stage's bundle, the donation's new one, and the
+priority-inheritance chain walk's new one — which nothing had, and which turned
+out to be a clean instance of a shape the bundle already knew (one TCB's
+`pipBoost` written, one run-queue bucket re-keyed).  The donation's two
+preconditions are **derived** from the rendezvous the chain itself performs:
+the caller is `.blockedOnReply` because the call blocked it, and no thread owns
+a donation on the receiver because the call woke the receiver `.ready` while
+`donationOwnerValid` puts an owner `.blockedOnReply`.
+
+*What RR2 did not close.* RR2.18's acceptance clause — "no cancellation theorem
+rests on an unproven teardown hypothesis" — is met on the two arms whose
+teardown is confined to the victim and its Reply object, and **not** on the
+three queue arms.  Discharging those needs an endpoint/notification queue
+label-uniformity invariant plus its establishment on every enqueue path: a low
+endpoint holding a high waiter would make the cancellation genuinely visible,
+so this is a real gap rather than a proof-engineering one.  It stays in
+[`UNFINISHED_SMP_WORK.md`](planning/UNFINISHED_SMP_WORK.md) §5 with closure
+target **RR3**, and RR2 is recorded as landing with it open rather than as
+closing a clause it did not close.
 
 This entry is written at **opening**, not at closure: a workstream that is
 active but absent from this file is the precise defect the audit filed as its

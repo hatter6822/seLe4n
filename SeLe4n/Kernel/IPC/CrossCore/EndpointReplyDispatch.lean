@@ -262,24 +262,106 @@ theorem applyReplyDonationOnCore_objects_eq
 -- §1b  WS-RR RR2.9 — the reply path preserves the SM5.H affinity invariant
 -- ============================================================================
 
+/-- WS-RR RR2.9 / WS-RR RR2.20: **the donation return plus its replenishment
+migration restores replenish-queue affinity consistency on every core.**
+
+The substance of both reply-side donation arms, factored out because two live
+paths perform exactly this pair: `applyReplyDonationOnCore` (which follows it
+with a deschedule) and `replyRecvReturnDonation` (which does not, because the
+recorded server may immediately rendezvous with a queued `Call`).
+
+The return rebinds exactly one SchedContext — from the replier back to the
+original owner — so exactly that SchedContext's replenish entries become
+mis-homed, and they are exactly the entries the migration moves.  The
+confinement obligation (no *other* core holds a `scId` entry) is derived rather
+than assumed: `returnDonatedSchedContext`'s success witnesses the pre-state
+binding, and the pre-state invariant then forces any such entry's core to be the
+replier's home. -/
+theorem returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp
+    (st st' : SystemState) (replier : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (replierHome ownerHome : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st)
+    (hReplierHome : determineTargetCore st replier = replierHome)
+    (hOwner : determineTargetCore st owner = ownerHome)
+    (hRet : returnDonatedSchedContext st replier scId owner = .ok st') :
+    replenishQueueAffinityConsistent_smp
+      (migrateSchedContextReplenishment st' scId replierHome ownerHome) := by
+  -- The return's readings.
+  have hSched : st'.scheduler = st.scheduler :=
+    returnDonatedSchedContext_scheduler_eq st st' replier scId owner hRet
+  have hHomeEq : ∀ tid, determineTargetCore st' tid = determineTargetCore st tid := fun tid =>
+    determineTargetCore_congr st st' tid
+      (returnDonatedSchedContext_getTcb?_cpuAffinity_eq st st' replier scId owner
+        hObjInv hRet tid)
+  have hScNe : ∀ scId', scId' ≠ scId → st'.getSchedContext? scId' = st.getSchedContext? scId' :=
+    fun scId' hne => returnDonatedSchedContext_getSchedContext?_ne st st' replier
+      scId scId' owner hne hObjInv hRet
+  obtain ⟨scPost, hScPost, hScPostBound⟩ :=
+    returnDonatedSchedContext_post_boundThread st st' replier scId owner hObjInv hRet
+  obtain ⟨scPre, hScPre, hScPreBound⟩ :=
+    returnDonatedSchedContext_ok_implies_sc_bound st st' replier scId owner hRet
+  have hQueue : ∀ c, st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c :=
+    fun c => by rw [hSched]
+  -- A `scId` entry anywhere in the pre-state forces that core to be the
+  -- replier's home — the RR2.8 guard's payoff.
+  have hConfined : ∀ c t, (scId, t) ∈ (st.scheduler.replenishQueueOnCore c).entries →
+      c = replierHome := by
+    intro c t hMem
+    rw [← hReplierHome]
+    exact (hCons c scId t hMem scPre hScPre replier hScPreBound).symm
+  have hCons1 : ∀ c, c ≠ replierHome → replenishQueueAffinityConsistentOnCore st' c := by
+    intro c hcNe scId₀ t hMem sc₀ hSc₀ tid hBound
+    rw [hQueue c] at hMem
+    rw [hHomeEq tid]
+    by_cases hk : scId₀ = scId
+    · subst hk; exact absurd (hConfined c t hMem) hcNe
+    · rw [hScNe scId₀ hk] at hSc₀
+      exact hCons c scId₀ t hMem sc₀ hSc₀ tid hBound
+  have hConsTo : replenishQueueAffinityConsistentOnCore st' ownerHome := by
+    intro scId₀ t hMem sc₀ hSc₀ tid hBound
+    rw [hQueue ownerHome] at hMem
+    rw [hHomeEq tid]
+    by_cases hk : scId₀ = scId
+    · subst hk
+      rw [hScPost] at hSc₀; cases hSc₀
+      rw [hScPostBound] at hBound; cases hBound
+      exact hOwner
+    · rw [hScNe scId₀ hk] at hSc₀
+      exact hCons ownerHome scId₀ t hMem sc₀ hSc₀ tid hBound
+  have hConsFrom : ∀ (scId₀ : SeLe4n.SchedContextId) (t : Nat),
+      (scId₀, t) ∈ (st'.scheduler.replenishQueueOnCore replierHome).entries → scId₀ ≠ scId →
+        ∀ sc₀, st'.getSchedContext? scId₀ = some sc₀ →
+          ∀ tid, sc₀.boundThread = some tid → determineTargetCore st' tid = replierHome := by
+    intro scId₀ t hMem hk sc₀ hSc₀ tid hBound
+    rw [hQueue replierHome] at hMem
+    rw [hHomeEq tid, hScNe scId₀ hk] at *
+    exact hCons replierHome scId₀ t hMem sc₀ hSc₀ tid hBound
+  have hHome : ∀ sc, st'.getSchedContext? scId = some sc →
+      ∀ tid, sc.boundThread = some tid → determineTargetCore st' tid = ownerHome := by
+    intro sc hSc tid hBound
+    rw [hScPost] at hSc; cases hSc
+    rw [hScPostBound] at hBound; cases hBound
+    rw [hHomeEq]; exact hOwner
+  exact migrateSchedContextReplenishment_preserves_affinityConsistent_smp st' scId
+    replierHome ownerHome
+    (fun c' hFrom _ => hCons1 c' (fun hEq' => hFrom hEq'.symm))
+    hConsTo hConsFrom hHome
+
 /-- WS-RR RR2.9: **the cross-core donation return restores replenish-queue
 affinity consistency on every core** — the mirror of RR2.3's call-path theorem,
 and the reason the RR2.8 migration is there.
 
-The return rebinds exactly one SchedContext, from the server back to its
-original owner, so exactly that SchedContext's replenish entries become
-mis-homed and exactly those are the entries the migration moves.  The
-confinement step — no core *other* than the replier's home can hold an entry for
-that SchedContext — is derived rather than assumed, because RR2.8's new
+Two facts compose.  The substance is the shared return-plus-migration lemma
+above, whose confinement step is derived rather than assumed because RR2.8's
 `sc.boundThread = some serverTid` guard makes success witness the pre-state
-binding (`returnDonatedSchedContext_ok_implies_sc_bound`); that is the same role
+binding (`returnDonatedSchedContext_ok_implies_sc_bound`) — the same role
 `donateSchedContext`'s long-standing AUD-3b guard plays on the call side, and
-the reason the guards had to be symmetric before this theorem could be
-unconditional.
-
-The final deschedule is invisible to the invariant: `removeRunnableOnCore`
-writes a run queue and a current slot, never a replenish queue and never an
-object. -/
+the reason the guards had to be symmetric before either theorem could be
+unconditional.  The final deschedule is then invisible to the invariant:
+`removeRunnableOnCore` writes a run queue and a current slot, never a replenish
+queue and never an object. -/
 theorem applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
     (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
     (executingCore replierHome ownerHome : CoreId)
@@ -295,81 +377,13 @@ theorem applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
   · rw [hEq]; exact hCons
   · rw [hEq]
     -- The deschedule is a frame for the invariant; the substance is the migration.
-    have hDesched : ∀ c,
-        replenishQueueAffinityConsistentOnCore
-          (migrateSchedContextReplenishment st' scId replierHome ownerHome) c →
-        replenishQueueAffinityConsistentOnCore
-          (removeRunnableOnCore
-            (migrateSchedContextReplenishment st' scId replierHome ownerHome)
-            replierVtid.val executingCore) c := by
-      intro c hc
-      exact (replenishQueueAffinityConsistentOnCore_frame
-        (removeRunnableOnCore_replenishQueueOnCore _ _ _ _)
-        (removeRunnableOnCore_preserves_objects _ _ _)).mpr hc
     intro c
-    refine hDesched c ?_
-    revert c
-    -- The return's readings.
-    have hSched : st'.scheduler = st.scheduler :=
-      returnDonatedSchedContext_scheduler_eq st st' replierVtid.val scId owner hRet
-    have hHomeEq : ∀ tid, determineTargetCore st' tid = determineTargetCore st tid := fun tid =>
-      determineTargetCore_congr st st' tid
-        (returnDonatedSchedContext_getTcb?_cpuAffinity_eq st st' replierVtid.val scId owner
-          hObjInv hRet tid)
-    have hScNe : ∀ scId', scId' ≠ scId → st'.getSchedContext? scId' = st.getSchedContext? scId' :=
-      fun scId' hne => returnDonatedSchedContext_getSchedContext?_ne st st' replierVtid.val
-        scId scId' owner hne hObjInv hRet
-    obtain ⟨scPost, hScPost, hScPostBound⟩ :=
-      returnDonatedSchedContext_post_boundThread st st' replierVtid.val scId owner hObjInv hRet
-    obtain ⟨scPre, hScPre, hScPreBound⟩ :=
-      returnDonatedSchedContext_ok_implies_sc_bound st st' replierVtid.val scId owner hRet
-    have hOwner : determineTargetCore st owner = ownerHome := hOwnerHome scId owner hRes
-    have hQueue : ∀ c, st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c :=
-      fun c => by rw [hSched]
-    -- A `scId` entry anywhere in the pre-state forces that core to be the
-    -- replier's home — the RR2.8 guard's payoff.
-    have hConfined : ∀ c t, (scId, t) ∈ (st.scheduler.replenishQueueOnCore c).entries →
-        c = replierHome := by
-      intro c t hMem
-      rw [← hReplierHome]
-      exact (hCons c scId t hMem scPre hScPre replierVtid.val hScPreBound).symm
-    have hCons1 : ∀ c, c ≠ replierHome → replenishQueueAffinityConsistentOnCore st' c := by
-      intro c hcNe scId₀ t hMem sc₀ hSc₀ tid hBound
-      rw [hQueue c] at hMem
-      rw [hHomeEq tid]
-      by_cases hk : scId₀ = scId
-      · subst hk; exact absurd (hConfined c t hMem) hcNe
-      · rw [hScNe scId₀ hk] at hSc₀
-        exact hCons c scId₀ t hMem sc₀ hSc₀ tid hBound
-    have hConsTo : replenishQueueAffinityConsistentOnCore st' ownerHome := by
-      intro scId₀ t hMem sc₀ hSc₀ tid hBound
-      rw [hQueue ownerHome] at hMem
-      rw [hHomeEq tid]
-      by_cases hk : scId₀ = scId
-      · subst hk
-        rw [hScPost] at hSc₀; cases hSc₀
-        rw [hScPostBound] at hBound; cases hBound
-        exact hOwner
-      · rw [hScNe scId₀ hk] at hSc₀
-        exact hCons ownerHome scId₀ t hMem sc₀ hSc₀ tid hBound
-    have hConsFrom : ∀ (scId₀ : SeLe4n.SchedContextId) (t : Nat),
-        (scId₀, t) ∈ (st'.scheduler.replenishQueueOnCore replierHome).entries → scId₀ ≠ scId →
-          ∀ sc₀, st'.getSchedContext? scId₀ = some sc₀ →
-            ∀ tid, sc₀.boundThread = some tid → determineTargetCore st' tid = replierHome := by
-      intro scId₀ t hMem hk sc₀ hSc₀ tid hBound
-      rw [hQueue replierHome] at hMem
-      rw [hHomeEq tid, hScNe scId₀ hk] at *
-      exact hCons replierHome scId₀ t hMem sc₀ hSc₀ tid hBound
-    have hHome : ∀ sc, st'.getSchedContext? scId = some sc →
-        ∀ tid, sc.boundThread = some tid → determineTargetCore st' tid = ownerHome := by
-      intro sc hSc tid hBound
-      rw [hScPost] at hSc; cases hSc
-      rw [hScPostBound] at hBound; cases hBound
-      rw [hHomeEq]; exact hOwner
-    exact migrateSchedContextReplenishment_preserves_affinityConsistent_smp st' scId
-      replierHome ownerHome
-      (fun c' hFrom _ => hCons1 c' (fun hEq' => hFrom hEq'.symm))
-      hConsTo hConsFrom hHome
+    exact (replenishQueueAffinityConsistentOnCore_frame
+        (removeRunnableOnCore_replenishQueueOnCore _ _ _ _)
+        (removeRunnableOnCore_preserves_objects _ _ _)).mpr
+      (returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp
+        st st' replierVtid.val scId owner replierHome ownerHome hObjInv hCons hReplierHome
+        (hOwnerHome scId owner hRes) hRet c)
 
 -- ============================================================================
 -- §2  SM6.C.3 — Donation-chain lock-set extension

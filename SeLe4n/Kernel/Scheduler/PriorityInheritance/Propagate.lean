@@ -173,11 +173,8 @@ theorem updatePipBoost_ipcState_frame (st : SystemState) (tid : ThreadId)
     (t : ThreadId) (hNe : t ≠ tid) :
     (updatePipBoost st tid).objects[t.toObjId]? = st.objects[t.toObjId]? := by
   unfold updatePipBoost
-  cases hTid : st.objects[tid.toObjId]? with
-  | none => rfl
-  | some obj =>
-    cases obj with
-    | tcb tcb =>
+  split
+  case h_1 tcb _ =>
       simp only []
       split
       · rfl
@@ -196,7 +193,7 @@ theorem updatePipBoost_ipcState_frame (st : SystemState) (tid : ThreadId)
             exact RHTable_get?_insert_ne st.objects tid.toObjId t.toObjId _ hObjNe hObjInv
         · -- Not in run queue → same objects with insert
           exact RHTable_get?_insert_ne st.objects tid.toObjId t.toObjId _ hObjNe hObjInv
-    | _ => rfl
+  case h_2 => rfl
 
 /-- AE3-I/S-01: For the target thread itself, `updatePipBoost` only modifies
 `pipBoost`. The `ipcState` field is definitionally preserved by the
@@ -345,16 +342,17 @@ that is what the *readers* need: every conjunct of the IPC bundle reads fields
 this update leaves alone, so the boost's value is irrelevant to them and naming
 it would force each reader to case-split on the no-op arm. -/
 theorem updatePipBoostOnCore_objects_at (st : SystemState) (c : CoreId) (tid : ThreadId)
-    (tcb : TCB) (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
     (hInv : st.objects.invExt) :
-    ∃ p, (updatePipBoostOnCore st c tid).objects[tid.toObjId]?
-      = some (.tcb { tcb with pipBoost := p }) := by
+    ∃ p, (updatePipBoostOnCore st c tid).getTcb? tid
+      = some { tcb with pipBoost := p } := by
   have hIns : ∀ t : KernelObject,
       (st.objects.insert tid.toObjId t).get? tid.toObjId = some t := fun t =>
     SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId t hInv
-  simp only [updatePipBoostOnCore, hTcb]
+  simp only [SystemState.getTcb?_eq_some_iff]
+  simp only [updatePipBoostOnCore, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb]
   split
-  · exact ⟨tcb.pipBoost, hTcb⟩
+  · exact ⟨tcb.pipBoost, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb⟩
   · split
     · split
       · exact ⟨computeMaxWaiterPriority st tid, hIns _⟩
@@ -602,9 +600,11 @@ theorem updatePipBoostOnCore_notification_backward (st : SystemState) (c : CoreI
   | some obj =>
     cases obj with
     | tcb tcb =>
-        obtain ⟨p, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb hAt hInv
+        obtain ⟨p, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb
+          (by rw [SystemState.getTcb?_eq_some_iff]; exact hAt) hInv
+        have hPostRaw := (SystemState.getTcb?_eq_some_iff _ tid _).mp hPost
         by_cases hEq : oid = tid.toObjId
-        · rw [hEq, hPost] at h; cases h
+        · rw [hEq, hPostRaw] at h; cases h
         · rw [updatePipBoostOnCore_objects_ne st c tid oid
             (by simpa using fun e => hEq e.symm) hInv] at h
           exact h
@@ -640,5 +640,105 @@ theorem propagatePipChainCrossCore_notification_backward (st : SystemState) (tid
         intro h
         exact pipBoostWithWake_notification_backward st tid ec hInv oid ntfn
           (ih _ nextServer hNext h)
+
+-- ============================================================================
+-- WS-RR RR2.20 — the PIP chain walk is a frame for replenish-queue affinity
+-- ============================================================================
+
+/-- WS-RR RR2.20 (frame): a PIP boost never touches any core's **replenish**
+queue.  Its only scheduler write is the boosted holder's run-queue bucket
+migration, and `setRunQueueOnCore` leaves the replenish queue alone. -/
+theorem updatePipBoostOnCore_replenishQueueOnCore (st : SystemState) (c c' : CoreId)
+    (tid : ThreadId) :
+    (updatePipBoostOnCore st c tid).scheduler.replenishQueueOnCore c'
+      = st.scheduler.replenishQueueOnCore c' := by
+  simp only [updatePipBoostOnCore]
+  split
+  · split
+    · rfl
+    · split
+      · split
+        · exact SchedulerState.setRunQueueOnCore_replenishQueueOnCore _ _ _ _
+        · rfl
+      · rfl
+  · rfl
+
+/-- WS-RR RR2.20 (frame): a PIP boost never changes any SchedContext.  Its only
+object write stores a `.tcb` at the holder's slot — a slot that already held a
+`.tcb`, since the write is guarded on reading one there — so `getSchedContext?`
+answers `none` at that slot in both states and is untouched everywhere else. -/
+theorem updatePipBoostOnCore_getSchedContext? (st : SystemState) (c : CoreId)
+    (tid : ThreadId) (hInv : st.objects.invExt) (scId : SchedContextId) :
+    (updatePipBoostOnCore st c tid).getSchedContext? scId = st.getSchedContext? scId := by
+  by_cases hEq : (tid.toObjId == scId.toObjId) = true
+  · have hId : tid.toObjId = scId.toObjId := by simpa using hEq
+    cases hT : st.getTcb? tid with
+    | none => rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hT]
+    | some tcb =>
+      obtain ⟨p, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb hT hInv
+      rw [SystemState.getSchedContext?_none_of_tcb (updatePipBoostOnCore st c tid) scId _
+            (hId ▸ (SystemState.getTcb?_eq_some_iff (updatePipBoostOnCore st c tid) tid _).mp hPost),
+          SystemState.getSchedContext?_none_of_tcb st scId tcb
+            (hId ▸ (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)]
+  · unfold SystemState.getSchedContext?
+    rw [updatePipBoostOnCore_objects_ne st c tid scId.toObjId hEq hInv]
+
+/-- WS-RR RR2.20 (frame): a PIP boost never moves a thread's home core.  It
+rewrites exactly one TCB and only in `pipBoost`, and `determineTargetCore` reads
+only `cpuAffinity`. -/
+theorem updatePipBoostOnCore_determineTargetCore (st : SystemState) (c : CoreId)
+    (tid t : ThreadId) (hInv : st.objects.invExt) :
+    determineTargetCore (updatePipBoostOnCore st c tid) t = determineTargetCore st t := by
+  refine determineTargetCore_congr st (updatePipBoostOnCore st c tid) t ?_
+  by_cases hEq : (tid.toObjId == t.toObjId) = true
+  · have hId : tid.toObjId = t.toObjId := by simpa using hEq
+    obtain rfl : tid = t := SeLe4n.ThreadId.toObjId_injective _ _ hId
+    cases hT : st.getTcb? tid with
+    | none => rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hT, hT]
+    | some tcb =>
+      obtain ⟨p, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb hT hInv
+      rw [hPost]
+      rfl
+  · have hRaw := updatePipBoostOnCore_objects_ne st c tid t.toObjId hEq hInv
+    have hTcb : (updatePipBoostOnCore st c tid).getTcb? t = st.getTcb? t := by
+      unfold SystemState.getTcb?; rw [hRaw]
+    rw [hTcb]
+
+/-- WS-RR RR2.20: the whole cross-core chain walk is a frame for the three
+readings `replenishQueueAffinityConsistentOnCore` makes — the replenish queue,
+`getSchedContext?` and `determineTargetCore` — by induction on the fuel. -/
+theorem propagatePipChainCrossCore_replenish_readings (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (fuel : Nat) (hInv : st.objects.invExt) :
+    (∀ c, (propagatePipChainCrossCore st tid ec fuel).1.scheduler.replenishQueueOnCore c
+        = st.scheduler.replenishQueueOnCore c)
+    ∧ (∀ scId, (propagatePipChainCrossCore st tid ec fuel).1.getSchedContext? scId
+        = st.getSchedContext? scId)
+    ∧ (∀ t, determineTargetCore (propagatePipChainCrossCore st tid ec fuel).1 t
+        = determineTargetCore st t) := by
+  induction fuel generalizing st tid with
+  | zero => rw [propagatePipChainCrossCore_zero]; exact ⟨fun _ => rfl, fun _ => rfl, fun _ => rfl⟩
+  | succ n ih =>
+    rw [propagatePipChainCrossCore_step]
+    have hStep : (pipBoostWithWake st tid ec).1
+        = updatePipBoostOnCore st (determineTargetCore st tid) tid := rfl
+    have hNext : (pipBoostWithWake st tid ec).1.objects.invExt :=
+      pipBoostWithWake_preserves_objects_invExt st tid ec hInv
+    have hHere : (∀ c, (pipBoostWithWake st tid ec).1.scheduler.replenishQueueOnCore c
+          = st.scheduler.replenishQueueOnCore c)
+        ∧ (∀ scId, (pipBoostWithWake st tid ec).1.getSchedContext? scId
+          = st.getSchedContext? scId)
+        ∧ (∀ t, determineTargetCore (pipBoostWithWake st tid ec).1 t
+          = determineTargetCore st t) := by
+      rw [hStep]
+      exact ⟨fun c => updatePipBoostOnCore_replenishQueueOnCore st _ c tid,
+             fun scId => updatePipBoostOnCore_getSchedContext? st _ tid hInv scId,
+             fun t => updatePipBoostOnCore_determineTargetCore st _ tid t hInv⟩
+    cases hB : blockingServer st tid with
+    | none => exact hHere
+    | some nextServer =>
+        obtain ⟨hR, hS, hT⟩ := ih (pipBoostWithWake st tid ec).1 nextServer hNext
+        exact ⟨fun c => (hR c).trans (hHere.1 c),
+               fun scId => (hS scId).trans (hHere.2.1 scId),
+               fun t => (hT t).trans (hHere.2.2 t)⟩
 
 end SeLe4n.Kernel.PriorityInheritance

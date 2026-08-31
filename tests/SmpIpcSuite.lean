@@ -855,12 +855,17 @@ private def runDonationChecks : IO Unit := do
 -- ============================================================================
 -- §3.9b  WS-RR RR2.19 — the donation's replenish-queue migration
 -- ============================================================================
--- RR2.2 / RR2.8 made both live donation paths carry the SchedContext's pending
--- CBS replenishments across cores with it.  §3.9 above proves the *binding*
--- moves; these checks prove the **replenish queue entries** move with it, which
--- is the half the SM5.H affinity invariant reads and the half that was missing
--- on the live path.  Without the migration the entries sit on the donor's core,
--- where nothing drains them for a SchedContext the donee now runs on.
+-- RR2.2 / RR2.8 / RR2.20 made all three live donation paths carry the
+-- SchedContext's pending CBS replenishments across cores with it.  §3.9 above
+-- proves the *binding* moves; these checks prove the **replenish queue entries**
+-- move with it, which is the half the SM5.H affinity invariant reads and the
+-- half that was missing on the live path.  Without the migration the entries sit
+-- on the donor's core, where nothing drains them for a SchedContext the donee
+-- now runs on.
+--
+-- The three paths are the cross-core `.call` (RR2.2), the `.reply` return
+-- (RR2.8), and `.replyRecv`'s return-and-re-donate pair (RR2.20) — the last of
+-- which the pre-SM10 audit's blocker 2 did not name.
 
 /-- `stDonBase`'s threads with an explicit live `threadState`.  `mkTcb` leaves the
 field at its `.Inactive` default, which `suspendThreadOnCore` rejects outright
@@ -892,6 +897,14 @@ private def stDonWithReplenishments : SystemState :=
           (((ReplenishQueue.empty.insert scClient 100).insert scClient 200))).setReplenishQueueOnCore
         c1 (ReplenishQueue.empty.insert scBystander 300)) }
 
+/-- The delegated receiver of the RR2.20 `.replyRecv` rendezvous check: a passive
+thread homed on a **third** core, so the return hop (core 1 → core 0) and the
+re-donation hop (core 0 → core 2) land in distinguishable places. -/
+private def donDelegate : SeLe4n.ThreadId := ⟨846⟩
+
+private def donDelegateTcb : TCB :=
+  { mkTcb 846 30 (some c2) with threadState := ThreadState.Ready }
+
 private def replenishEntriesOn (st : SystemState) (c : CoreId) :
     List (SeLe4n.SchedContextId × Nat) :=
   (st.scheduler.replenishQueueOnCore c).entries
@@ -901,7 +914,7 @@ private def replenishCountFor (st : SystemState) (c : CoreId)
   ((replenishEntriesOn st c).filter (fun e => e.1 == scId)).length
 
 private def runDonationMigrationChecks : IO Unit := do
-  IO.println "--- §3.9b WS-RR RR2.19: the donation migrates the CBS replenish queue ---"
+  IO.println "--- §3.9b WS-RR RR2.19 / RR2.20: the donation migrates the CBS replenish queue ---"
   assertBool "pre: both of the client SC's replenishments sit on its home core 0"
     (decide (replenishCountFor stDonWithReplenishments c0 scClient = 2))
   assertBool "pre: the server's home core 1 holds only the bystander SC's entry"
@@ -944,6 +957,47 @@ private def runDonationMigrationChecks : IO Unit := do
         (decide (replenishCountFor stReply c1 scBystander = 1))
       assertBool "the round trip restores the original eligibility times"
         (decide (((replenishEntriesOn stReply c0).filter (fun e => e.1 == scClient)).map (·.2)
+          = [100, 200]))
+    -- RR2.20: the THIRD live donation path.  `.replyRecv` returns the recorded
+    -- server's donated context and, when the receive rendezvoused with a queued
+    -- `Call`, immediately re-donates the next caller's — two hand-offs, neither
+    -- of which migrated before RR2.20.  Both arms are exercised, because the
+    -- round-trip arm alone cannot tell "both migrations ran" from "neither did":
+    -- returning to the owner and re-donating to the same server lands the entries
+    -- back where they started.
+    match replyRecvReturnDonation donServer donServer donServer c1 stCall with
+    | .error _ => assertBool "the .replyRecv return-only arm succeeds" false
+    | .ok ((), stRet) =>
+      assertBool "the .replyRecv return-only arm succeeds" true
+      assertBool "the .replyRecv return drains the SC's replenishments off the server's core 1"
+        (decide (replenishCountFor stRet c1 scClient = 0))
+      assertBool "the .replyRecv return lands them on the original owner's home core 0"
+        (decide (replenishCountFor stRet c0 scClient = 2))
+      assertBool "the .replyRecv return leaves the bystander SchedContext alone"
+        (decide (replenishCountFor stRet c1 scBystander = 1))
+      assertBool "the .replyRecv return preserves each replenishment's eligibility time"
+        (decide (((replenishEntriesOn stRet c0).filter (fun e => e.1 == scClient)).map (·.2)
+          = [100, 200]))
+    -- The rendezvous arm: a *delegated* reply cap, so the next caller's context
+    -- is re-donated to a receiver on a third core.  Two migrations in one
+    -- transition — core 1 → core 0 on the return, core 0 → core 2 on the
+    -- re-donation — and the third core is what makes them distinguishable.
+    let stCallD : SystemState :=
+      { stCall with objects := stCall.objects.insert donDelegate.toObjId (.tcb donDelegateTcb) }
+    match replyRecvReturnDonation donDelegate donServer donClient c1 stCallD with
+    | .error _ => assertBool "the .replyRecv rendezvous arm succeeds" false
+    | .ok ((), stRr) =>
+      assertBool "the .replyRecv rendezvous arm succeeds" true
+      assertBool "the re-donated SC's replenishments leave the replier's core 1"
+        (decide (replenishCountFor stRr c1 scClient = 0))
+      assertBool "they do not stay parked on the original owner's core 0 either"
+        (decide (replenishCountFor stRr c0 scClient = 0))
+      assertBool "they land on the delegated receiver's home core 2"
+        (decide (replenishCountFor stRr c2 scClient = 2))
+      assertBool "the two-hop migration leaves the bystander SchedContext alone"
+        (decide (replenishCountFor stRr c1 scBystander = 1))
+      assertBool "the two-hop migration preserves each replenishment's eligibility time"
+        (decide (((replenishEntriesOn stRr c2).filter (fun e => e.1 == scClient)).map (·.2)
           = [100, 200]))
 
 -- ============================================================================

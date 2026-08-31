@@ -1822,12 +1822,18 @@ theorem replyRecvDescheduleAndWalk_confinedToCores (recordedServer : SeLe4n.Thre
       (removeRunnableOnCore st recordedServer serverCore).objectIndex.length
       (removeRunnableOnCore st recordedServer serverCore) recordedServer)
 
-/-- SM8.B.2: **the cores `replyRecvReturnDonation` may write**, mirroring its own
-control flow.  Four shapes: the non-donating arm walks the chain from the
-pre-state; the rendezvous arm donates (per-core silent) and walks from the
-post-donation state; the two non-rendezvous arms deschedule the recorded server
-on its own core first.  The fail-closed arms produce no post-state at all, so
-their entry is `[]` and the confinement theorem's hypothesis rules them out. -/
+/-- SM8.B.2 / WS-RR RR2.20: **the cores `replyRecvReturnDonation` may write**,
+mirroring its own control flow.  Four shapes: the non-donating arm walks the
+chain from the pre-state; the rendezvous arm donates (per-core silent) and walks
+from the post-donation state; the two non-rendezvous arms deschedule the recorded
+server on its own core first.  The fail-closed arms produce no post-state at all,
+so their entry is `[]` and the confinement theorem's hypothesis rules them out.
+
+RR2.20 added the replenishment migration to the return, and the re-donation now
+runs in its cross-core form.  Neither adds a core — SM8.A's
+`onCore_perCore_independence` puts the replenish queue outside the observer's
+read set — but the *states* the later arms branch on are the migrated ones, and a
+write set that mirrors a transition has to read the states the transition reads. -/
 def replyRecvReturnDonationWriteSet (tid recordedServer nextThread : SeLe4n.ThreadId)
     (serverCore : CoreId) (st : SystemState) : List CoreId :=
   match lookupTcb st recordedServer with
@@ -1839,14 +1845,23 @@ def replyRecvReturnDonationWriteSet (tid recordedServer nextThread : SeLe4n.Thre
       | some srvV, some ownerV =>
         match returnDonatedSchedContextValid st srvV oldScId ownerV with
         | .error _ => []
-        | .ok st1 =>
+        | .ok st1' =>
+          -- WS-RR RR2.20: mirrors the transition, whose return is followed by the
+          -- replenishment migration.  The migration is per-core silent
+          -- (`migrateSchedContextReplenishment_confinedToCores`), so it adds no
+          -- core to the set — but the states the *later* arms branch on are the
+          -- migrated ones, and the write set has to read the same states the
+          -- transition does.
+          let st1 := migrateSchedContextReplenishment st1' oldScId
+            (determineTargetCore st recordedServer) (determineTargetCore st owner)
           match lookupTcb st1 nextThread with
           | some nextTcb =>
             match nextTcb.ipcState with
             | .blockedOnReply _ _ =>
               match nextThread.toValid?, tid.toValid? with
               | some nextV, some tidV =>
-                match applyCallDonation st1 nextV tidV with
+                match applyCallDonationOnCore st1 nextV tidV
+                    (determineTargetCore st1 nextThread) (determineTargetCore st1 tid) with
                 | .error _ => []
                 | .ok st2 =>
                     pipChainWriteSet st2 recordedServer serverCore st2.objectIndex.length
@@ -1856,10 +1871,11 @@ def replyRecvReturnDonationWriteSet (tid recordedServer nextThread : SeLe4n.Thre
       | _, _ => []
     | _ => pipChainWriteSet st recordedServer serverCore st.objectIndex.length
 
-/-- SM8.B.2: `replyRecvReturnDonation`'s per-core writes stay inside its write
-set.  The SchedContext moves (`returnDonatedSchedContextValid`, `applyCallDonation`)
-are per-core silent; what is not silent is the recorded server's deschedule and
-the chain reversion, and both are named. -/
+/-- SM8.B.2 / WS-RR RR2.20: `replyRecvReturnDonation`'s per-core writes stay
+inside its write set.  All four SchedContext effects — the return, its RR2.20
+replenishment migration, the cross-core re-donation and *its* migration — are
+per-core silent; what is not silent is the recorded server's deschedule and the
+chain reversion, and both are named. -/
 theorem replyRecvReturnDonation_confinedToCores (tid recordedServer nextThread : SeLe4n.ThreadId)
     (serverCore : CoreId) (st st' : SystemState) (u : Unit)
     (hStep : replyRecvReturnDonation tid recordedServer nextThread serverCore st = .ok (u, st')) :
@@ -1884,12 +1900,20 @@ theorem replyRecvReturnDonation_confinedToCores (tid recordedServer nextThread :
         simp only [hSrvV, hOwnerV] at hStep
         split
         · next e hRet => simp only [hRet] at hStep; exact absurd hStep (by simp)
-        · next st1 hRet =>
+        · next st1' hRet =>
           simp only [hRet] at hStep
-          have hSilent : observableSlotsConfinedToCores st st1 [] :=
+          have hReturn : observableSlotsConfinedToCores st st1' [] :=
             observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-              (returnDonatedSchedContext_scheduler_eq st st1 _ _ _ hRet)
-              (returnDonatedSchedContext_machine_eq st st1 _ _ _ hRet)
+              (returnDonatedSchedContext_scheduler_eq st st1' _ _ _ hRet)
+              (returnDonatedSchedContext_machine_eq st st1' _ _ _ hRet)
+          -- WS-RR RR2.20: the migration is silent too, so the pair still is.
+          have hSilent : observableSlotsConfinedToCores st
+              (migrateSchedContextReplenishment st1' oldScId
+                (determineTargetCore st recordedServer) (determineTargetCore st owner)) [] := by
+            simpa using observableSlotsConfinedToCores_trans hReturn
+              (migrateSchedContextReplenishment_confinedToCores st1' oldScId _ _)
+          -- Zeta-reduce the write set's own `let` so its match tree is splittable.
+          simp only []
           split
           · next nextTcb hNext =>
             simp only [hNext] at hStep
@@ -1906,7 +1930,7 @@ theorem replyRecvReturnDonation_confinedToCores (tid recordedServer nextThread :
                   rw [← hOkInj hStep]
                   exact observableSlotsConfinedToCores_trans
                     (observableSlotsConfinedToCores_trans hSilent
-                      (applyCallDonation_confinedToCores st1 st2 _ _ hDon))
+                      (applyCallDonationOnCore_confinedToCores _ st2 _ _ _ _ hDon))
                     (propagatePipChainCrossCore_confinedToCores serverCore
                       st2.objectIndex.length st2 recordedServer)
               · next hNo =>
@@ -1922,12 +1946,12 @@ theorem replyRecvReturnDonation_confinedToCores (tid recordedServer nextThread :
               · next ep' rt' hEq => exact absurd hEq (by simpa using hIpc ep' rt')
               · rw [← hOkInj hStep]
                 exact observableSlotsConfinedToCores_trans hSilent
-                  (replyRecvDescheduleAndWalk_confinedToCores recordedServer serverCore st1)
+                  (replyRecvDescheduleAndWalk_confinedToCores recordedServer serverCore _)
           · next hNext =>
             simp only [hNext] at hStep
             rw [← hOkInj hStep]
             exact observableSlotsConfinedToCores_trans hSilent
-              (replyRecvDescheduleAndWalk_confinedToCores recordedServer serverCore st1)
+              (replyRecvDescheduleAndWalk_confinedToCores recordedServer serverCore _)
       · next hNo =>
         exfalso
         revert hStep

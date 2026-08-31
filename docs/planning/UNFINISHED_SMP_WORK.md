@@ -144,6 +144,15 @@ name surviving only in a docstring does not count as landed.
 
 Each blocks *starting* SM10, as distinct from work SM10 is itself supposed to do.
 
+**Status at `v0.34.42`: all three are closed**, each by the WS-RR phase that
+owns it — blocker 1 by RR0 at `v0.34.26` (the de-threading workstream is
+registered as **WS-DT** in `docs/WORKSTREAM_HISTORY.md`, in
+`SMP_RELEASE_CLOSURE_PLAN.md` §2 Dependencies, and in CLAUDE.md/AGENTS.md's
+standing-constraints block, with RR3 as its closure target), and blockers 2 and
+3 by RR2 at `v0.34.42`.  The closure narratives are appended to each finding
+below; the findings themselves are left as the audit wrote them, since this
+register is a record of what was found rather than a status board.
+
 #### 1. An open, materially incomplete workstream registered in no durable index — SM10 would close WS-SM with it silently dropped
 
 - **Severity**: critical · **Kind**: `unregistered-debt` · **Blocks SM10 start**: yes
@@ -170,6 +179,54 @@ Each blocks *starting* SM10, as distinct from work SM10 is itself supposed to do
 
 **Remediation.** Implement the migration the plan describes: add `applyCallDonationOnCore` threading donor and donee home cores and calling `migrateSchedContextReplenishment st scId donorHome doneeHome`, and add the mirror call inside `applyReplyDonationOnCore` (replier home to original-owner home), exactly as `cancelDonatedDonationOnCore` already does. Then prove `applyCallDonationOnCore`/`applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistentOnCore` and extend both donation lock-sets with the two `SchedLockId.replenishQueue` write locks (`migrateSchedContextReplenishmentLockSet`). Do not weaken section 4.3.
 
+**CLOSED at `v0.34.42` (WS-RR RR2), and wider than reported.**  There are
+**three** live donation paths, not two: `.replyRecv` performs a *pair* of
+hand-offs — the recorded server returns its donated context to the client it was
+serving, then, when the receive rendezvoused with a queued `Call`, the next
+caller's context is immediately donated to the receiver — and neither migrated.
+This finding did not name it (`replyRecvReturnDonation`,
+`SeLe4n/Kernel/API.lean`), and neither did the independent verification, because
+both enumerated the donation *primitives* and this path calls them from the API
+layer.  On a delegated reply cap the receiver need not be the recorded server, so
+one `.replyRecv` could leave a SchedContext's replenishments two cores from the
+thread now bound to it.  It was found during RR2's own closure review and closed
+in the same cut as RR2.20 — the enumeration-versus-derivation shape CLAUDE.md's
+key-conventions section warns about, on a finding rather than on a gate.
+
+All three now migrate, and the migration is proved rather than asserted.
+`applyCallDonationOnCore`
+(`SeLe4n/Kernel/IPC/Operations/Donation.lean`, RR2.1) threads the donor and
+donee home cores and calls `migrateSchedContextReplenishment`;
+`applyReplyDonationOnCore` (`SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean`,
+RR2.8) does the mirror hop, replier home to original-owner home.  Each carries
+`_preserves_replenishQueueAffinityConsistent_smp` (RR2.3, RR2.9), so the SM5.H
+invariant is *restored by* the transition rather than assumed of its post-state,
+and each carries the frame lemmas (`_objects_eq`, `_machine_eq`,
+`_runQueue_current_eq`) that let callers see the migration is the only
+scheduler-visible effect.  Both lock-sets were widened to the two
+`SchedLockId.replenishQueue` writes the migration performs
+(`applyCallDonationOnCoreSchedLockSet_covers_migration`,
+`applyReplyDonationOnCoreSchedLockSet_covers_migration`, RR2.4 and RR2.10) and
+both remain `pairwise_le` under the cross-domain order and inside
+`maxLockSetSize`; the two dispatch-level lock-sets that contain them
+(`endpointCallCrossCoreDispatchSchedLockSet`,
+`endpointReplyCrossCoreDispatchSchedLockSet`) carry `_covers_donation` so the
+widening cannot be silently dropped from the enclosing set.  A same-core
+donation is a no-op by `migrateSchedContextReplenishment_noop`, so the common
+case costs nothing.  Section 4.3 was not weakened.
+
+The third path carries the same guarantee
+(`replyRecvReturnDonation_preserves_replenishQueueAffinityConsistent_smp`), built
+from the shared return-plus-migration lemma RR2.9's theorem was factored into,
+RR2.3's call-path theorem, and a frame the priority-inheritance chain walk had
+never been given — `propagatePipChainCrossCore_replenish_readings`, which shows
+the walk leaves all three readings the invariant makes untouched.  SM8.B's
+write set for that path was updated to branch on the migrated states in the same
+cut; neither migration adds a core to it.  RR2.19 gives the property
+executable coverage: `tests/SmpIpcSuite.lean` §3.9b runs a 4-core fixture in
+which the entry leaves the donor's replenish queue and appears on the donee's,
+and asserts the same-core case moves nothing.
+
 #### 3. Live `.send` arm has no ipcInvariantFull preservation, and the closure target SM8 names does not carry it while SM6.D claims coverage
 
 - **Severity**: high · **Kind**: `false-completeness-claim` · **Blocks SM10 start**: yes
@@ -182,6 +239,28 @@ Each blocks *starting* SM10, as distinct from work SM10 is itself supposed to do
 **Independent verification.** CONFIRMED, and the blast radius is larger than the auditor reported. **1. The gap is real and has no alternative home.** `SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean` has 0 occurrences of `preserves_ipcInvariantFull`. I enumerated every `endpointSend*OnCore*` identifier in the tree (14 total): the only theorems are `_absent_endpoint`, `_bootCore_block_eq_single` ( (endpointSendDualOnCore_bootCore_block_eq_single)), `_bootCore_rendezvous_eq_single` ( (endpointSendDualOnCore_bootCore_rendezvous_eq_single)), `_tooLarge` ( (endpointSendDualOnCore_tooLarge)), `_tooManyCaps` ( (endpointSendDualOnCore_tooManyCaps)), `_no_caps` ( (endpointSendDualWithCapsOnCore_no_caps)), `_eq_single_on_bootCore`, plus five NI theorems in `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean (endpointSendDualOnCore_confinedToCores)`. No re-export hub, no submodule, no rename. I also checked for weaker coverage: a grep for any `endpointSendDual.*OnCore.*preserves` across all of `SeLe4n/` returns **empty** — not even the non-`Full` `preserves_ipcInvariant`. And there is no dispatch-level substitute: `endpointSendCrossCoreDispatchChecked` has only `_flow_denied`/`_flow_allowed` (SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean (endpointSendCrossCoreDispatchChecked_flow_denied),436) and two NI theorems. **2. The asymmetry is structur…
 
 **Remediation.** Implement the theorems, per the implement-the-improvement rule -- do not soften either plan. The cheap first slice is already staged: `endpointSendDualOnCore_bootCore_block_eq_single` (SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean (endpointSendDualOnCore_bootCore_block_eq_single)) and `endpointSendDualOnCore_bootCore_rendezvous_eq_single` ( (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore)) rewrite both success arms to the single-core transition, so the boot-core instance of `endpointSendDualOnCore_preserves_ipcInvariantFull{,_perCore}` reduces to the existing `endpointSendDual_preserves_ipcInvariantFull_perCore` (SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean (endpointSendDual_preserves_ipcInvariantFull_perCore)); the general per-core case follows the `endpointReceiveDualOnCore_post_agrees` LookupCongruence pattern, and the WithCaps form composes `ipcUnwrapCaps_passiveServerIdleFrameOnCore` as its siblings do. In the same PR, correct SM6.D's scope note to name `endpointSendDualWithCapsOnCore` rather than the retired single-core function, and add the item to SM6.D's t…
+
+**CLOSED at `v0.34.42` (WS-RR RR2).**  The live arm carries the bundle, and it
+is about the function the live arm actually calls.
+`endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull` and
+`_perCore` (`SeLe4n/Kernel/IPC/CrossCore/EndpointSendInvariant.lean`, RR2.14 and
+RR2.15) sit over `endpointSendDualOnCore_preserves_ipcInvariantFull{,_perCore}`,
+which the same cut built for the inner transition the verification pass had also
+missed.  The finding's "cheap first slice" turned out not to be the one taken:
+rather than reduce to the boot-core instance, the per-core case is proved
+directly from the transition's read agreement, so the theorem says something
+about core 3 as well as core 0.  `clearWokenReceiverStash` — the fifth live arm,
+which the finding's §5 sibling named — got its own bundle in the same cut
+(`SeLe4n/Kernel/API.lean`, RR2.16).  SM6.D's scope note was corrected to name
+`endpointSendDualWithCapsOnCore` rather than the retired single-core function.
+
+One thing the cut also removed rather than added: the WithCaps composition needs
+`ipcUnwrapCaps_preserves_ipcInvariantFull`, which previously took its dual-queue
+and badge conjuncts as *post-state* hypotheses.  RR2.15 retyped it to take the
+receiver's CNode and the capability list instead and discharged both from
+lemmas already in the tree, so the bundle establishes them rather than assuming
+them — two of the eight threaded sites RR3.11 is scheduled to close, closed
+early because the send bundle could not honestly compose over them.
 
 ## 4. Security and soundness findings
 
@@ -210,6 +289,41 @@ Each blocks *starting* SM10, as distinct from work SM10 is itself supposed to do
 **Independent verification.** Every factual cite in the finding checks out, but the severity/kind/blocker framing does not survive the tree. VERIFIED TRUE: - SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean (cancelIpcBlockingOnCore_cancellation_NI) and (capTargetObservable) take `hTeardownProj : projectState ctx observer (cancelIpcBlocking st victim tcb) = projectState ctx observer st` and close with `exact hTeardownProj` (bodies end at (projectServiceRegistry_consistent_with_presence) and (capTargetObservable)). Only the deschedule half is substantive (removeRunnableOnCore_preserves_projection{,OnCore}). - SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean (suspendThread_preserves_projection) `suspendThread_preserves_projection` has body `hProjEq st' hStep` (there) — it takes its own conclusion and returns it. - The obstruction is real, not rhetorical: `spliceOutMidQueueNode` (SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean (spliceOutMidQueueNode)) rewrites neighbour TCBs' queueNext/queuePrev, and `projectKernelObject` (SeLe4n/Kernel/InformationFlow/Projection.lean (projectKernelObject)) strips registerContext/schedContextBinding/pipBoost/pendingMessage/timedOut/cpuAffinity/replyObject/pendingReceiveReply/lock b…
 
 **Remediation.** Build the missing foundation rather than restating the claim: add the dual-queue endpoint-label invariant (threads queued on an endpoint share its label), prove `spliceOutMidQueueNode_preserves_projection{,OnCore}` under it, compose into a substantive `cancelIpcBlocking_preserves_projection`, and replace the closure form `suspendThread_preserves_projection` with the real theorem so hTeardownProj discharges. The same invariant also closes the bound-delivery NI debt below, making this the highest-leverage remaining SM6 item.
+
+**PARTIALLY CLOSED at `v0.34.42` (WS-RR RR2.18); residual carried to RR3.**  The
+remediation's shape is right but its scope is one invariant wider than the
+finding needs, and RR2 closed the part that does not need it.  `cancelIpcBlocking`
+branches on the victim's `ipcState`, and only three of its five arms splice a
+queue:
+
+- `.ready` — and every other non-blocking state — leaves `st` unchanged, so its
+  projection equality is `rfl`.  That arm was always in reach; RR2.18 states it
+  (`cancelIpcBlockingOnCore_ready_cancellation_NI{,_smp}`).
+- `.blockedOnReply` is now discharged **substantively**.
+  `cancelIpcBlocking_blockedOnReply_preserves_projection`
+  (`SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` §5) is composed from four
+  new frames — `restoreToReady_preserves_projection_high`,
+  `clearTcbReplyObject_preserves_projection_high`,
+  `clearReplyObjectCaller_preserves_projection` and
+  `consumeReplyLink_preserves_projection_high` — and feeds
+  `cancelIpcBlockingOnCore_reply_cancellation_NI`, which takes **no**
+  `hTeardownProj`.  This arm reaches no queue: it walks the Reply object's
+  caller link, which is precisely why it does not need the missing invariant.
+- the three queue arms (`.blockedOnSend`, `.blockedOnReceive`,
+  `.waitingOnNotification`) still take `hTeardownProj`.  The obstruction the
+  finding names is real and unmoved: `spliceOutMidQueueNode` rewrites the
+  neighbour TCBs' `queueNext`/`queuePrev`, those fields survive `projectState`,
+  and making the rewrite invisible needs the endpoint/notification queue
+  label-uniformity invariant — a low endpoint holding a high waiter would make
+  the cancellation genuinely observable, so the invariant is not a formality.
+
+Stating that invariant is a lemma; *establishing* it is a workstream.  It has to
+hold at every enqueue site and be preserved by every transition that touches a
+queue, which is a wider surface than RR2's live-path remit, so RR2 is recorded
+as landing with the clause open rather than as closing it.  Closure target
+**RR3**.  The production closure form `suspendThread_preserves_projection` is
+unchanged and still returns its own premise; replacing it belongs to the same
+RR3 slice, since it is the same obligation stated one level up.
 
 #### 3. Platform/FFI.lean asserts an unqualified boot identity-map that the boot page tables do not provide above 3 GiB
 
@@ -343,6 +457,45 @@ Each blocks *starting* SM10, as distinct from work SM10 is itself supposed to do
 
 **Remediation.** Build the four missing per-wrapper bundles (`endpointSendDualWithCapsOnCore`, `clearWokenReceiverStash`, `endpointCallCrossCoreDispatch`, `endpointReplyCrossCoreDispatch` `_preserves_ipcInvariantFull`) over the already-de-threaded per-transition establishers, then build the reachability bundle (a `SystemState` predicate carrying `allTimeoutBudgetsNone` + the running-syscall-thread readiness/freshness facts, with a boot establisher and per-transition preservation) and land `dispatchWithCap_preserves_ipcInvariantFull`. Do NOT close SM10 by narrowing the IPC verification claim in README/SPEC/CLAIM_EVIDENCE_INDEX to match the missing theorem; sequence the payoff as its own PR slice ahead of the v1.0.0 claim writing, or record it as explicit tracked debt with a named closure target.
 
+**PARTIALLY CLOSED at `v0.34.42` (WS-RR RR2).**  The four missing per-wrapper
+bundles now exist: `endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull`
+(`SeLe4n/Kernel/IPC/CrossCore/EndpointSendInvariant.lean`, RR2.14),
+`clearWokenReceiverStash_preserves_ipcInvariantFull` (`SeLe4n/Kernel/API.lean`,
+RR2.16) and `endpointCallCrossCoreDispatch_preserves_ipcInvariantFull` /
+`endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull`
+(`SeLe4n/Kernel/IPC/CrossCore/DispatchInvariant.lean`, RR2.6 and RR2.11).  With
+`endpointReceiveDualOnCore`'s pre-existing bundle that is five of five live
+arms, which is RR2's stated acceptance.  Building the two dispatch chains meant
+first building what they compose over: the donation primitives had **no**
+invariant surface at all (`SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`,
+RR2.5), and the PIP stage both chains end on had none either
+(`propagatePipChainCrossCore_preserves_ipcInvariantFull`).  The donation bundle
+also *derives* its two preconditions from the `.call` rendezvous rather than
+assuming them, which needed a new forward decomposition of
+`endpointCallOnCore` — the alternative was to hand the caller two hypotheses it
+would have had to discharge by inspection.
+
+Two things this does **not** close, both owned by RR3.
+
+1. **The payoff theorem is still absent.**  `dispatchWithCap_preserves_ipcInvariantFull`
+   needs the reachability bundle — a pre-state predicate carrying
+   `allTimeoutBudgetsNone` plus the running-thread readiness and freshness
+   facts, with a boot establisher and per-transition preservation — and that
+   predicate is RR3's, not RR2's.  Per-arm carriage is a prerequisite for it,
+   not a substitute; no verification claim in README/SPEC/CLAIM_EVIDENCE_INDEX
+   was widened on the strength of it.
+2. **Two of the five bundles are staged, not production.**
+   `DispatchInvariant.lean` composes the staged `EndpointCallInvariant` and
+   `EndpointReplyInvariant` surfaces, so it inherits their staging; it is
+   anchored from `SeLe4n/Platform/Staged.lean` and listed in
+   `scripts/staged_module_allowlist.txt`, so CI builds it on every PR, but it is
+   not reachable from a linked kernel image.  The two *primitive* surfaces it
+   builds on — `IPC.Invariant.DonationPreservation` and
+   `IPC.Invariant.CapTransferBundle` — are production and imported from
+   `SeLe4n.lean` directly, which is the half that could be moved across without
+   dragging the staged call/reply surfaces with it.  Finding 9 in this section
+   is the same shape at the kernel-entry level.
+
 #### 2. "ipcInvariant CLOSED across the entire cancellation surface" excludes the operation that actually runs on.tcbSuspend
 
 - **Severity**: high · **Kind**: `false-completeness-claim` · **Blocks SM10 start**: no
@@ -355,6 +508,27 @@ Each blocks *starting* SM10, as distinct from work SM10 is itself supposed to do
 **Independent verification.** CONFIRMED against the tree; I could not refute it. The claimed-closed set is real and exactly as enumerated: descheduleThread_preserves_ipcInvariant (SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean (descheduleThread_preserves_ipcInvariant)), cancelIpcBlockingOnCore_ ( (recordSyscallRefusal_records)), cancelBoundDonationOnCore_ ( (recordSyscallRefusal_records)), cancelDonatedDonationOnCore_ ( (refusalRecord_names_failed_hop)), cancelDonationOnCore_ ( (refusalRecord_names_failed_hop)). The live op is suspendThreadOnCore (SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean (suspendThreadOnCore), inside `namespace Lifecycle.Suspend` opened at (syscallDispatchFromAbi_error_stages_no_frame)), and it genuinely is the live.tcbSuspend target: SeLe4n/Kernel/API.lean (dispatchCapabilityOnly) calls `Lifecycle.Suspend.suspendThreadOnCore st vtid (determineExecutingCore st tid)`; SeLe4n/Kernel/SyscallDispatchEntry.lean (suspendThreadCrossCoreEntry) is the FFI seam; SeLe4n/Platform/FFI.lean (ffiSuspendThread) names it. NO preservation theorem exists for it anywhere in the tree. Whole-repo enumerations: `theorem *_preserves_ipcInvariant` yields 54 names, `*_preserves_objects_invExt` ~90 names, `*_preserves_ipcInvariantFull{,_perCore}` 40 names -- none contains suspendThreadOnCore_* or su…
 
 **Remediation.** Prove `suspendThreadOnCore_preserves_objects_invExt` and `suspendThreadOnCore_preserves_ipcInvariant` by composing ingredients that already exist (cancelIpcBlocking_preserves_ipcInvariant, the propagatePipChainCrossCore frames, both cancel*DonationOnCore_preserves_ipcInvariant, the removeRunnableOnCore/clearPendingState frames, the.Inactive store). The composition is mechanical and every piece is landed. Do not restate the claim more narrowly — state it about the live operation and prove it there.
+
+**CLOSED at `v0.34.42` (WS-RR RR2.17).**  Both theorems the remediation names
+now exist and are about the live operation:
+`suspendThreadOnCore_preserves_objects_invExt` and
+`suspendThreadOnCore_preserves_ipcInvariant`
+(`SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`).  The composition was slightly
+less mechanical than the finding expected.  `suspendThreadOnCore` is eight
+stages, and they preserve `ipcInvariant` for different reasons — some leave
+`objects` untouched, the rest write only `.tcb` objects and so transport the
+invariant *backwards* through their readings — while each stage needs its
+predecessor's `objects.invExt` to state its own preservation, so neither fact
+can be threaded alone.  RR2.17 therefore introduced `IpcInvariantStage`: a
+reflexive, transitive relation bundling the two, with `of_objects_eq` and
+`of_notification_backward` constructors and one instance per stage.  The
+composite is then eight `trans` steps, and both public forms project out of the
+same chain rather than each re-deriving it.  The module's warning against wiring
+the home-keyed composites live is unaffected — the new theorem is about
+`suspendThreadOnCore`, which does the running-core handling those composites
+lack.  `tests/SmpIpcSuite.lean` §3.13b (RR2.19) covers the arm executably:
+local and remote victims, the SGI the remote case raises, and the `illegalState`
+rejection of an already-inactive victim.
 
 #### 3. The default boot path installs no idle threads, and SM10's `lean_kernel_main` seam is not obliged to use the one that does
 
