@@ -199,7 +199,7 @@ what RR1.11 owed the estimate; the numbering has an owner and a place.
   capability claim) and SM10.2.6 (`CLAIM_EVIDENCE_INDEX.md` entries) are the
   sub-tasks that would otherwise write v1.0.0 verification claims over this
   surface.  **Closed by WS-RR phase RR3**, which absorbs all three slices and
-  retires the plan at RR3.17.
+  retires the plan at RR3.26.
 - Tier 0..5 tests green at HEAD.
 
 ## 3. Sub-tasks
@@ -466,7 +466,7 @@ it for live work.  The list is enumerated here rather than left to the mover:
 **Not moved by this sub-task**, and each for a stated reason — an archive list
 is only correct if the exclusions are as deliberate as the inclusions:
 
-- `IPC_INVARIANT_DETHREADING_PLAN.md` — already archived by **RR3.17**, which
+- `IPC_INVARIANT_DETHREADING_PLAN.md` — already archived by **RR3.26**, which
   retires it on closing WS-DT.  Moving it twice is not possible; finding it
   still in `docs/planning/` when SM10 opens means RR3 did not close.
 - `HARDWARE_PARTITION_ISOLATION_PLAN.md` — post-v1.0.0 and explicitly out of

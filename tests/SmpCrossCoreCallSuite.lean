@@ -15,6 +15,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNiPerCore
 import SeLe4n.Kernel.IPC.CrossCore.NotificationInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInvariant
+import SeLe4n.Kernel.IPC.Invariant.Reachability
 import SeLe4n.Kernel.SyscallDispatchEntry
 import SeLe4n.Testing.StateBuilder
 
@@ -474,6 +475,13 @@ private def runRendezvousChecks : IO Unit := do
 #check @applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
 #check @returnDonatedSchedContext_establishes_ipcInvariantFull_of_except
 #check @endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
+-- WS-RR RR3.13/RR3.14 — the pre-state side: the bundles' preconditions, derived:
+#check @ipcReachable
+#check @ipcReachable_default
+#check @readyThread_endpointQueueFresh
+#check @readyThread_ownsNoDonation
+#check @sendTailCrossQueueFresh
+#check @recvTailCrossQueueFresh
 -- SM6.D completion — the capability-carrying (WithCaps) trio:
 #check @ipcUnwrapCaps_passiveServerIdleFrameOnCore
 #check @endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
@@ -565,6 +573,42 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
       (endpointReplyOnCore replier target msg ec st).1 target :=
   endpointReplyOnCore_preserves_ipcInvariantFullExceptDonationOwner replier target msg ec st
     hInv hObjInv hAllBudgetsNone
+
+/-- WS-RR RR3.14: the reachability bundle is **inhabited** — the boot state
+satisfies it.  Without this the pre-state conditions the de-threaded bundles now
+carry could be an unsatisfiable conjunction, and every theorem taking them would
+be vacuous: the failure shape de-threading exists to remove, one level up. -/
+example : ipcReachable (default : SystemState) := ipcReachable_default
+
+/-- WS-RR RR3.13: the enqueueing bundles' freshness precondition is a
+**consequence**, not an assumption — a `.ready` thread cannot head or tail any
+endpoint queue, because every head and tail is blocked. -/
+example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : ipcInvariantFull st)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hReady : tcb.ipcState = .ready) :
+    ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some tid ∧ ep.sendQ.tail ≠ some tid ∧
+      ep.receiveQ.head ≠ some tid ∧ ep.receiveQ.tail ≠ some tid :=
+  readyThread_endpointQueueFresh st tid tcb hInv.queueHeadBlockedConsistent
+    hInv.endpointQueueTailBlockedConsistent hTcb hReady
+
+/-- WS-RR RR3.13: so is the cross-queue tail freshness the enqueue establishers
+carry — an endpoint's send-queue tail tails nothing else, from
+`ipcInvariantFull` alone. -/
+example (st : SystemState) (endpointId : SeLe4n.ObjId) (hInv : ipcInvariantFull st) :
+    ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.receiveQ.tail ≠ some tailTid) :=
+  sendTailCrossQueueFresh st endpointId hInv.dualQueueSystemInvariant
+    hInv.endpointQueueTailBlockedConsistent
 
 /-- WS-RR RR3.12 (payoff): the **live** cross-core `.reply` dispatch preserves the
 whole twenty-conjunct bundle on the *donating* path — the seL4-MCS path the previous

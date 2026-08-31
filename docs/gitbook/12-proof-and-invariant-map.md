@@ -502,11 +502,30 @@ Bundle level:
   (`DonationPreservation.lean` §8) and everything else are production.  Still
   uncovered: `notificationSignalBoundOnCore` (SM6.D's registered bound-delivery
   debt) and the composition layer — `Checked` wrappers, `replyRecvBody`,
-  `Architecture.stage*` frames — which RR3.15 owns.  RR2 also *reduced* the
+  `Architecture.stage*` frames — which RR3.22 owns.  RR2 also *reduced* the
   threading in one place (`ipcUnwrapCaps_preserves_ipcInvariantFull` now
   establishes `dualQueueSystemInvariant` and `badgeWellFormed` instead of
   assuming them) and *added* inherited threading sites with the new per-core
   bundles — no new unproven content; RR3.1's gate sets the measured baseline.
+- **WS-RR RR3.1–RR3.14 (v0.34.43) — the bundles are de-threaded; the payoff is
+  not.**  The RR3.1 gate reports **zero** conjuncts bound on a post-state across
+  all fifty-nine `*_preserves_ipcInvariantFull` statements.  The measured
+  baseline was 103 bindings over **six** conjuncts, not the audit's two: a
+  binder-name census could not see `donationOwnerValid`,
+  `dualQueueSystemInvariant` or `badgeWellFormed`.  Two closures were *vacuity*
+  defects rather than proof gaps — a receiver-root CNode side condition that,
+  quantified over the `*WithCaps` wrappers, reads "every ObjId is a CNode"; and
+  `donationOwnerValid`, which is **false** of a bare reply's post-state, since
+  the reply wakes the answered caller while the recorded server still holds the
+  donation.  The reply chain now states the truth in two halves —
+  `ipcInvariantFullExceptDonationOwner` for the bare reply, which the donation
+  return upgrades — so the live cross-core `.reply` dispatch covers the donating
+  path for the first time.  What is still missing is the top-level payoff:
+  `dispatchWithCap_preserves_ipcInvariantFull` and
+  `dispatchSyscall_preserves_ipcInvariantFull` do not exist, six of about thirty
+  dispatch arms carry a bundle at all, and both theorems are registered in
+  `docs/planning/ipc_dethreading_pending.txt` with closure targets the gate
+  checks in both directions.
 - `blockedThreadsPendingMessageConsistent` — **strengthened to both directions**
   (PR #873 round 11, v0.33.86), and renamed from `waitingThreadsPendingMessageNone`
   because the old name described only the half it stated.  It now ties

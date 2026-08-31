@@ -508,7 +508,7 @@ Two things this does **not** close, both owned by RR3.
    `.notificationWait` dispatch wrapper.  Still uncovered at transition level:
    `notificationSignalBoundOnCore` (SM6.D's registered bound-delivery debt) and
    the composition layer (`Checked` wrappers, `replyRecvBody`,
-   `Architecture.stage*` frames) that RR3.15 owns.  Finding 9 in this section
+   `Architecture.stage*` frames) that RR3.22 owns.  Finding 9 in this section
    is the same staging shape at the kernel-entry level.
 
 #### 2. "ipcInvariant CLOSED across the entire cancellation surface" excludes the operation that actually runs on.tcbSuspend
@@ -982,7 +982,7 @@ and they are prose only in the sense that the fix is a comment; SM10.2 must
 read the code beside each before editing it.
 
 **Why some rows are in destination 3 rather than 5.**  A row that corrects a
-plan an earlier phase *retires* is that phase's, not the sweep's: RR3.17 moves
+plan an earlier phase *retires* is that phase's, not the sweep's: RR3.26 moves
 the de-threading plan to `dev_history`, so rows 1–3 must be right before it
 moves rather than corrected after.  The same holds for RR6's plan corrections
 (RR6.17) and RR4's `trap.rs` rewrite.
@@ -1290,6 +1290,49 @@ The hard hygiene invariants hold: zero `sorry`/`axiom` and zero whole-word TODO/
 - **Verified**: **incomplete**
 
 This plan de-threads the ~20 post-state structural conjuncts of `ipcInvariantFull` from every IPC `*_preserves_ipcInvariantFull` bundle so the transitions *establish* the invariant rather than assume it. Its verified-landed portion is unusually solid: `ipcInvariantFull` really carries 20 conjuncts (Defs.lean) with a matching 20-field `IpcInvariantFull` structure, the three conjuncts this plan added (`donationOwnerUnique`, `endpointQueueTailBlockedConsistent`, `queueNextTargetBlocked`) exist, every one of ~30 sampled named lemmas exists in code (not just comments), ten separate "zero threading sites" claims (hQNBC'/hEQTB'/hQHBC'/hQNTB'/hPRR'/hDCA'/hBRT'/hDBT'/hPSI'/hBlockedTimeout') each verify to exactly 0 occurrences, and both Findings F-1 and F-3 were remediated with real code/model fixes in the implement-the-improvement direction rather than doc weakening. But the plan is NOT complete and does not claim to be: D1, D6 and D8 are open. Two of the twenty conjuncts are still assumed as post-state hypotheses on nearly every bundle — `blockedThreadsPendingMessageConsistent` on 33 of 35 bundles and `replyCallerLinkageReciprocal` (half of conjunct #16) on 31 of 35 — plus `dualQueueSystemInvariant`/`badgeWellFormed` on 8 sites and `donationOwnerValid` on 6. The headline payoff (`syscallDispatch_preserves_ipcInvariantFull` / `dispatchWithCap_preserves_ipcInvariantFull`) does not exist, the "reachability bundle" that is supposed to discharge every remaining pre-state precondition does not exist, and the donation primitives on the live `.call` path carry no invariant-preservation theorem at all. Most consequentially for the business question: this open workstream is referenced from no durable registry — not CLAUDE.md, not `docs/WORKSTREAM_HISTORY.md`, not the SMP master plan, not `SMP_RELEASE_CLOSURE_PLAN.md`, not `CLAIM_EVIDENCE_INDEX.md` — only from historical CHANGELOG `Refs:` lines, so SM10 would close WS-SM at v1.0.0 with it silently dropped.
+
+**Closure note (WS-RR RR3.1–RR3.14, `v0.34.43`).**  The de-threading half is
+done and the register's own figures were an undercount.  RR3.1's gate — which
+derives the conjunct set from `def ipcInvariantFull`, the bundle family from the
+declaration names, and each bundle's pre-state from its own hypothesis, over the
+comment-free code view — measured **103 post-state bindings over six
+conjuncts** at the baseline, where this entry names two plus "8 sites" and "6
+sites".  All six are now zero across all fifty-nine `*_preserves_ipcInvariantFull`
+statements.
+
+Two of the six were **vacuity** defects rather than proof gaps, and neither was
+visible to a binder-name census:
+
+* the `*WithCaps` `dualQueueSystemInvariant` theorems carried a receiver-root
+  CNode side condition which, quantified over the wrapper, reads "every ObjId is
+  a CNode" — false in any state holding the endpoint the step requires, so those
+  theorems and the `ipcInvariantFull` bundles above them asserted nothing on
+  their own success path; and
+* `donationOwnerValid` is **false** of a bare reply's post-state, because
+  `endpointReply` wakes the answered caller `.ready` while the recorded server
+  still holds `.donated _ caller` and the donation returns at the next stage.  So
+  the nine reply bundles threading it were vacuous on the ordinary seL4-MCS path.
+  Closed by `donationOwnerValidExcept` plus the donation return's upgrade;
+  the live cross-core `.reply` dispatch now covers the donating path.
+
+A third gap surfaced with them: `badgeWellFormed` constrains badges *at rest* in
+a CNode while the IPC transfer installs an in-flight capability verbatim, so an
+out-of-range in-flight badge became an out-of-range badge at rest.  Closed by the
+new pre-state `pendingMessageCapBadgesWellFormed`.
+
+The "reachability bundle" this entry names as missing now exists
+(`SeLe4n/Kernel/IPC/Invariant/Reachability.lean`), with the boot state proved to
+satisfy it, and the running-caller and queue-tail preconditions *derived* from
+`ipcInvariantFull` itself rather than assumed.
+
+**Still open, and re-scoped**: the headline payoff.  Its original two rows
+assumed per-arm bundles that do not exist — `dispatchWithCap` routes twenty-five
+syscalls across six subsystems and six of about thirty arms carry an
+`ipcInvariantFull` bundle at all — so RR3.15–RR3.23 build them and RR3.24/RR3.25
+compose them.  Both theorems are registered in
+[`ipc_dethreading_pending.txt`](ipc_dethreading_pending.txt), which the gate
+checks in both directions.  `syscallDispatch` also names nothing in the tree; the
+dispatcher is `dispatchSyscall`.
 
 **Tree evidence checked:**
 

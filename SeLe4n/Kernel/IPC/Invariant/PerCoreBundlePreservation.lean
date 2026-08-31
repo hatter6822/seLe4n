@@ -1120,9 +1120,10 @@ theorem endpointReply_passiveServerIdleFrameOnCore
 -- the existing single-core whole-bundle theorem through the SM6.D.1
 -- exact-decomposition bridges; the per-core `passiveServerIdle` slice
 -- rides the §3 per-core frame.  Hypotheses mirror the single-core
--- theorems' (freshness, readiness, binding side conditions, and the
--- threaded post-state facts `hWtpmn'`/`hRCLRecip'`/`hDOV'`), with TCB
--- lookups routed through the typed `getTcb?`.
+-- theorems' (freshness, readiness, binding side conditions, and -- since
+-- WS-RR RR3 -- the *pre*-state conditions that replaced the threaded
+-- post-state facts `hWtpmn'`/`hRCLRecip'`/`hDOV'`/`hDualQueue'`/`hBadge'`),
+-- with TCB lookups routed through the typed `getTcb?`.
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D.2 (signal): `notificationSignal` preserves every core's view of

@@ -6,7 +6,7 @@
 # Should-drop metrics: every subsequent commit must keep these <= baseline.
 # Should-grow metrics: every subsequent commit must keep these >= baseline.
 #
-# WS-RR RR3 re-anchored `raw_lookup_tid` 1287 -> 1380.  The metric counts
+# WS-RR RR3 re-anchored `raw_lookup_tid` 1287 -> 1383.  The metric counts
 # `.toObjId]?` at object-store boundaries, and cannot tell an operational
 # lookup from one inside a `Prop`.  The rise is entirely the latter: the
 # de-threading phase added invariant predicates, preservation frames and
@@ -30,7 +30,7 @@ raw_match_untyped        = 2
 raw_match_cnode          = 7
 raw_match_vspaceroot     = 15
 raw_match_total          = 130
-raw_lookup_tid           = 1380
+raw_lookup_tid           = 1383
 
 ## Typed-helper adoption (should-grow)
 
@@ -70,7 +70,7 @@ RAW_MATCH_UNTYPED=2
 RAW_MATCH_CNODE=7
 RAW_MATCH_VSPACEROOT=15
 RAW_MATCH_TOTAL=130
-RAW_LOOKUP_TID=1380
+RAW_LOOKUP_TID=1383
 GETTCB_ADOPTION=2048
 GETSCHEDCTX_ADOPTION=243
 GETENDPOINT_ADOPTION=127

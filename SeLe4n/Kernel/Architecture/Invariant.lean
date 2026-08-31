@@ -383,8 +383,12 @@ theorem contextSwitchState_preserves_currentThreadValid
     Extracted to eliminate 24+ identical `RHTable_get?_empty 16 (by omega)` calls
     across the default-state proof section. All default-state proofs for
     object-quantified predicates follow the same pattern: assume an object exists,
-    derive a contradiction from `default_objects_none`. -/
-private theorem default_objects_none (oid : SeLe4n.ObjId) :
+    derive a contradiction from `default_objects_none`.
+
+    WS-RR RR3.13 made it public, alongside `default_ipcInvariantFull` and for the
+    same reason: the reachability bundle's own conjuncts are discharged by it,
+    and an inhabitation witness is worth nothing if only this module can use it. -/
+theorem default_objects_none (oid : SeLe4n.ObjId) :
     (default : SystemState).objects[oid]? = none :=
   RHTable_get?_empty 16 (by omega)
 
@@ -557,7 +561,11 @@ private theorem default_pendingReceiveReplyWellFormed :
     rw [default_objects_none] at h₁
     simp at h₁
 
-private theorem default_ipcInvariantFull :
+/-- WS-RR RR3.13: the boot state satisfies the whole IPC bundle.  Public because
+it is the base case the reachability bundle
+(`SeLe4n.Kernel.ipcReachable_default`) is built from -- an inhabitation witness
+is worth nothing if only this module can use it. -/
+theorem default_ipcInvariantFull :
     ipcInvariantFull (default : SystemState) :=
   ⟨default_ipcInvariant, default_dualQueueSystemInvariant, default_allPendingMessagesBounded,
    default_badgeWellFormed, default_blockedThreadsPendingMessageConsistent,

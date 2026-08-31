@@ -1,3 +1,149 @@
+## v0.34.43 — WS-RR RR3.1–RR3.14: `ipcInvariantFull` is de-threaded
+
+**One PR, one version.**  The work is RR3.1–RR3.14.  The phase's acceptance has
+two halves; the first is **met and exceeded**, the second is **open, registered,
+and re-scoped** — see "What RR3 does not close" below.
+
+### The measurement came first, and it changed the problem
+
+RR3.1 built `scripts/check_ipc_invariant_dethreading.py` (Tier 0).  Everything it
+matches is derived, never enumerated: the conjunct set is read out of
+`def ipcInvariantFull` and closed under definitional unfolding; the bundle family
+is every declaration whose name contains `_preserves_ipcInvariantFull`, wherever
+it lives; and a bundle's **pre**-state is taken from its own
+`ipcInvariantFull`-family hypothesis, so *every other* state a conjunct is applied
+to is a finding.  Deriving the pre-state rather than the post-state is what makes
+it fail closed — an intermediate state, a `.1` projection, a second post-state
+binder under another name, none of them has to be anticipated.
+
+It measured **103 post-state bindings across six conjuncts**.  The pre-SM10
+audit's figure was two conjuncts (33 and 31 of 35 bundles), from a binder-name
+census; `donationOwnerValid`, `dualQueueSystemInvariant` and `badgeWellFormed`
+were threaded too and no name-based grep could see them.  All six are now zero,
+across all fifty-nine statements in the family.
+
+### Two of the six were vacuity, not incompleteness
+
+A threaded conjunct usually means "this is true but unproven here".  Two of these
+meant "this theorem asserts nothing".
+
+**The `*WithCaps` bundles held for no state that could run them.**  Their
+`dualQueueSystemInvariant` theorems took a receiver-root CNode hypothesis
+quantified over the wrapper — which reads *every* ObjId is a CNode, false in any
+state holding the endpoint the step requires.  The transfer's own frame now
+covers the non-CNode case (`ipcUnwrapCaps_state_eq_of_root_not_cnode`: it writes
+nothing there), so the hypothesis is gone, from `ipcUnwrapCaps_preserves_*` and
+from `ipcUnwrapCaps_preserves_ipcInvariantFull`'s `hCn`, whose three cross-core
+callers drop their now-unused `hRecvRootCNode` with it.
+
+**`donationOwnerValid` is false of a bare reply's post-state.**  `endpointReply`
+wakes the answered caller `.ready` while the recorded server still holds
+`.donated _ caller`; the donated SchedContext comes back at the *next* stage,
+because the server needs that budget while it replies (the AUD-3 ordering).  So
+the nine reply bundles that threaded it were vacuous on the ordinary seL4-MCS
+path — not conditional on something hard, conditional on something impossible.
+
+RR3.12 answers with two statements where there was one:
+
+* `donationOwnerValidExcept st woken` — every clause of `donationOwnerValid`
+  except that an owner equal to `woken` need not be `.blockedOnReply`.  Its
+  `.unbound` clause is kept, so `donationChainAcyclic` still follows.  With
+  `donationOwnerFrameExcept` and `ipcInvariantFullExceptDonationOwner` it gives
+  the bare reply an **unconditional** bundle theorem, true on the donating path.
+* `returnDonatedSchedContext_establishes_donationOwnerValid_of_except` — the
+  donation return upgrades the relaxed form back to the full one.  The existing
+  proof already derived `owner' ≠ originalOwner` from donation-owner uniqueness,
+  which is exactly what excludes the relaxed disjunct, so this is a hypothesis
+  weakening rather than a re-proof.
+
+Composing the halves, `endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull`
+— the **live** `.reply` arm — now covers the donating path for the first time,
+under one pre-state condition: *if* anything is donated by the answered caller,
+the recorded reply server's donation return is exactly that donation.  The
+composition needed the donation return generalised the same way, so
+`ipcInvariantCore_of_nonBindingAgreements` now names the eleven conjuncts it
+actually reads (`ipcInvariantCoreNonDonation`) instead of demanding a twelfth it
+never touches, and `ipcInvariantFull_of_donationReadAgreement`,
+`returnDonatedSchedContext_preserves_ipcInvariantFull` and
+`applyReplyDonation{,OnCore}_preserves_ipcInvariantFull` become instances of
+their relaxed forms.  Nothing is duplicated.
+
+### A third gap surfaced with them
+
+`badgeWellFormed` constrains badges **at rest** in a CNode, but the IPC transfer
+installs an in-flight capability verbatim (`ipcTransferSingleCap` stores
+`tc.cap`; it does not re-resolve it), so an out-of-range in-flight badge became
+an out-of-range badge at rest.  The new pre-state
+`pendingMessageCapBadgesWellFormed` closes it.  Send and call take the condition
+on the syscall's own message argument instead, since their caps never sit in a
+TCB.
+
+Supporting it, `pendingMessagesSatisfy P` generalises the in-flight message
+family over the property: no IPC step reads a parked message's content — it moves
+the message or leaves it alone — so one fold discharges every `P`.
+`allPendingMessagesBounded` becomes its boundedness instance and its eleven
+transports are re-derived rather than duplicated.
+
+### The replacements are dischargeable, and the boot state satisfies them
+
+De-threading is only an improvement if the pre-state hypotheses can actually be
+established.  `SeLe4n/Kernel/IPC/Invariant/Reachability.lean` (RR3.13) is where
+they are:
+
+* `ipcReachable` collects the state-shaped ones (`objects.invExt`,
+  `allTimeoutBudgetsNone`, `pendingMessageCapBadgesWellFormed`,
+  `notificationWaiterConsistent`, and `ipcInvariantFull` itself), and
+  `ipcReachable_default` (RR3.14) proves the boot state satisfies it — so the
+  bundle is inhabited rather than an unsatisfiable conjunction, which would have
+  reintroduced one level up the exact failure de-threading removes.
+* The running-caller and queue-tail ones are **derived, not assumed**.  A
+  `.ready` thread cannot head or tail any endpoint queue, because
+  `queueHeadBlockedConsistent` and `endpointQueueTailBlockedConsistent` say every
+  head and tail is blocked (`readyThread_endpointQueueFresh`); and an endpoint's
+  send-queue tail tails nothing else, because a tail is blocked on the queue it
+  tails and the two directions carry different constructors and different
+  endpoint ids (`sendTailCrossQueueFresh` / `recvTailCrossQueueFresh`).  These
+  were hypotheses on every enqueueing bundle; they are consequences of
+  `ipcInvariantFull`.
+
+### What RR3 does not close, and why it is registered rather than assumed
+
+Neither `dispatchWithCap_preserves_ipcInvariantFull` nor
+`dispatchSyscall_preserves_ipcInvariantFull` exists, so nothing yet carries the
+bundle across a syscall.  They are **not** a composition of theorems already in
+the tree: the `_preserves_ipcInvariantFull` family covers the IPC and donation
+transitions, while `dispatchWithCap` routes twenty-five syscalls across the
+capability, VSpace, service, sched-context, lifecycle and TCB subsystems — six of
+about thirty arms carry a bundle at all.  The plan's two rows assumed inputs that
+do not exist; they are re-scoped into RR3.15–RR3.23 (one per subsystem) plus
+RR3.24/RR3.25 (the two dispatch tiers), and RR3 now declares 26 sub-tasks.
+`syscallDispatch` also names nothing in the tree; the dispatcher is
+`dispatchSyscall`, and the theorem is named for it.
+
+Rather than weaken the gate or assume the arms, the payoff check gains a
+registered-residual file, `docs/planning/ipc_dethreading_pending.txt`, checked in
+**both** directions: a registration whose theorem has landed fails as stale, a
+registration outside the payoff set fails as dangling, and an absent unregistered
+payoff fails as before.  Three new self-test cases, two of them
+token-preserving.  The gate's success line names what is still pending instead of
+claiming end-to-end closure.
+
+### Housekeeping
+
+`raw_lookup_tid` re-anchored 1287 → 1383 with its reason in the baseline header:
+the metric counts `.toObjId]?` at object-store boundaries and cannot tell an
+operational lookup from one inside a `Prop`, and the whole rise is the second
+kind — new invariant predicates and frames that must mirror the raw form of the
+siblings they compose with.  No kernel operation gained a raw lookup, and the
+typed-helper adoption floors are untouched.
+
+Staged-only modules 63 → 64: `IPC/Invariant/Reachability.lean` has no production
+consumer until RR3.24's payoff theorem.
+
+**Trace fixture**: byte-identical.  **Zero** `sorry`/`axiom`.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR3 (RR3.1–RR3.14)
+
 ## v0.34.42 — WS-RR RR2: the live paths carry their own correctness
 
 **One PR, one version.**  The work is RR2.1–RR2.19, closing the pre-SM10

@@ -104,7 +104,13 @@ PAYOFF_THEOREMS = (
 # registration and its reason live where a reader looks for them, and checked in
 # BOTH directions (see `payoff_status`) so it cannot rot into a silent
 # exemption.
-PENDING_FILE = "scripts/ipc_dethreading_pending.txt"
+#
+# It lives under `docs/planning/` rather than beside this script because it is a
+# register of deferred work, which is prose: its closure targets are workstream
+# IDs, and `check_identifier_naming.py` reads a `.txt` outside `docs/` as code.
+# Putting it where the debt register lives keeps both gates honest instead of
+# baselining a new exemption into the naming one.
+PENDING_FILE = "docs/planning/ipc_dethreading_pending.txt"
 
 CHECKS = (
     "conjuncts_derived",
