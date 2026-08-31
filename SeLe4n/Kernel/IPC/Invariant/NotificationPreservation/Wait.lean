@@ -328,16 +328,16 @@ theorem notificationWait_preserves_badgeWellFormed
             | ok pair1 =>
               simp only []
               have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObjSrc hObjInv hStore1
-              simp only [storeTcbIpcState_fromTcb_eq hLk']
+              simp only [storeTcbIpcStateAndMessage_fromTcb_eq hLk']
               intro hStep; revert hStep
-              cases hStoreTcb : storeTcbIpcState pair1.2 waiter _ with
+              cases hStoreTcb : storeTcbIpcStateAndMessage pair1.2 waiter _ _ with
               | error e => simp
               | ok st2 =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
                 intro ⟨_, hEq⟩; subst hEq
                 apply removeRunnable_preserves_badgeWellFormed
                 have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair1 hObjInv hStore1
-                exact storeTcbIpcState_preserves_badgeWellFormed pair1.2 st2 waiter _
+                exact storeTcbIpcStateAndMessage_preserves_badgeWellFormed pair1.2 st2 waiter _ _
                   ⟨storeObject_notification_preserves_notificationBadgesWellFormed
                     st pair1.2 notificationId _ hNtfn hObjInv hStore1
                     (fun b hb => by simp at hb),
@@ -640,14 +640,22 @@ theorem notificationSignal_preserves_blockedThreadsPendingMessageConsistent
 
 /-- V3-G2 (M-PRF-5): `notificationWait` preserves `blockedThreadsPendingMessageConsistent`.
     Deliver path: `storeTcbIpcState` to `.ready` exits scope.
-    Block path: `storeTcbIpcState_fromTcb` to `.blockedOnNotification` + `removeRunnable`;
-    requires `hWaiterMsg` precondition that the waiter's `pendingMessage` is `none`. -/
+    Block path: `storeTcbIpcStateAndMessage_fromTcb` to `.blockedOnNotification`
+    with `pendingMessage := none` + `removeRunnable`.
+
+    **WS-RR RR3.5**: this used to take `hWaiterMsg`, a precondition that the
+    waiter holds no pending message, and nothing established it — a thread that
+    has just collected a message stays `.ready` holding it, so the hypothesis is
+    FALSE in reachable states and the `ipcInvariantFull` bundles threaded the
+    conjunct as a post-state hypothesis rather than discharging it.  The
+    transition now clears `pendingMessage` atomically with the block, exactly as
+    `endpointReceiveDual` already did, so the block path establishes the conjunct
+    outright and the precondition is gone. -/
 theorem notificationWait_preserves_blockedThreadsPendingMessageConsistent
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (badge : Option SeLe4n.Badge)
     (hObjInv : st.objects.invExt)
     (hInv : blockedThreadsPendingMessageConsistent st)
-    (hWaiterMsg : ∀ tcb, lookupTcb st waiter = some tcb → tcb.pendingMessage = none)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
     blockedThreadsPendingMessageConsistent st' := by
   simp only [notificationWait] at hStep
@@ -691,29 +699,27 @@ theorem notificationWait_preserves_blockedThreadsPendingMessageConsistent
               simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, rfl⟩ := hStep
               apply removeRunnable_preserves_blockedThreadsPendingMessageConsistent
-              -- Unfold storeTcbIpcState_fromTcb to extract underlying storeObject
-              simp only [storeTcbIpcState_fromTcb] at hSI
+              -- Unfold the atomic block store to extract the underlying storeObject
+              simp only [storeTcbIpcStateAndMessage_fromTcb] at hSI
               split at hSI
               next => contradiction -- storeObject error
               next pair hSO2 =>
                 simp only [Except.ok.injEq] at hSI
-                -- hSI : pair = st2, pair : SystemState
+                -- hSI : pair = st2, pair : Unit × SystemState
                 subst hSI
-                -- Goal is now about pair
+                -- Goal is now about pair.2
                 intro tid' tcb' hObj'
                 by_cases hTidEq : tid'.toObjId = waiter.toObjId
-                · -- Same thread: stored TCB has blockedOnNotification, pendingMessage unchanged
-                  have hSelf := storeObject_objects_eq st1 pair waiter.toObjId
-                    (.tcb { waiterTcb with ipcState := .blockedOnNotification notificationId })
-                    hObjInv1 hSO2
+                · -- Same thread: the stored TCB is `.blockedOnNotification` with
+                  -- `pendingMessage := none` — the conjunct's obligation for that
+                  -- state, discharged by the store itself (WS-RR RR3.5).
+                  have hSelf := storeObject_objects_eq st1 pair waiter.toObjId _ hObjInv1 hSO2
                   rw [hTidEq] at hObj'; rw [hSelf] at hObj'
                   simp only [Option.some.injEq, KernelObject.tcb.injEq] at hObj'; subst hObj'
                   dsimp only []
-                  exact hWaiterMsg waiterTcb hLookup
                 · -- Different thread: frame
                   have hFrame := storeObject_objects_ne st1 pair waiter.toObjId tid'.toObjId
-                    (.tcb { waiterTcb with ipcState := .blockedOnNotification notificationId })
-                    hTidEq hObjInv1 hSO2
+                    _ hTidEq hObjInv1 hSO2
                   rw [hFrame] at hObj'
                   exact hInv1 tid' tcb' hObj'
   · contradiction

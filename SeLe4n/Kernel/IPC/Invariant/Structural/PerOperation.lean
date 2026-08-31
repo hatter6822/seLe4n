@@ -15,7 +15,6 @@ import SeLe4n.Kernel.IPC.Invariant.QueueNextBlocking
 import SeLe4n.Kernel.IPC.Invariant.WaitingThreadHelpers
 import SeLe4n.Kernel.IPC.Invariant.Structural.QueueNextTransport
 import SeLe4n.Kernel.IPC.Invariant.Structural.StoreObjectFrame
-import SeLe4n.Kernel.IPC.Invariant.Structural.DualQueueMembership
 
 /-! # IPC Structural Preservation — Part 4 (PerOperation)
 

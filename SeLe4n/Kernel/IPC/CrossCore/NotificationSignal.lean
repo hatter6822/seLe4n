@@ -167,8 +167,13 @@ def notificationWaitOnCore (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.Thre
                     match storeObject notificationId (.notification ntfn') st with
                     | .error e => (st, .error e)
                     | .ok ((), st') =>
-                        match storeTcbIpcState_fromTcb st' waiter tcb
-                            (.blockedOnNotification notificationId) with
+                        -- WS-RR RR3.5: in lockstep with `notificationWait`, the
+                        -- block clears `pendingMessage` atomically so a consumed
+                        -- message body is not carried into
+                        -- `.blockedOnNotification` (the tie is
+                        -- `notificationWaitOnCore_post_agrees`).
+                        match storeTcbIpcStateAndMessage_fromTcb st' waiter tcb
+                            (.blockedOnNotification notificationId) none with
                         | .error e => (st, .error e)
                         | .ok st'' => (removeRunnableOnCore st'' waiter executingCore, .ok none)
   | none =>
@@ -835,7 +840,8 @@ theorem notificationWaitOnCore_block_eq
     (hCons : ntfn.waitingThreads.consWithGuard? waiter = some wt')
     (hStore : storeObject notificationId (.notification
         { state := .waiting, waitingThreads := wt', pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
-    (hTcb : storeTcbIpcState_fromTcb st' waiter tcb (.blockedOnNotification notificationId) = .ok st'') :
+    (hTcb : storeTcbIpcStateAndMessage_fromTcb st' waiter tcb
+        (.blockedOnNotification notificationId) none = .ok st'') :
     notificationWaitOnCore notificationId waiter executingCore st
       = (removeRunnableOnCore st'' waiter executingCore, .ok none) := by
   unfold notificationWaitOnCore
@@ -858,7 +864,8 @@ theorem notificationWaitOnCore_perCore_blocking
     (hCons : ntfn.waitingThreads.consWithGuard? waiter = some wt')
     (hStore : storeObject notificationId (.notification
         { state := .waiting, waitingThreads := wt', pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
-    (hTcb : storeTcbIpcState_fromTcb st' waiter tcb (.blockedOnNotification notificationId) = .ok st'') :
+    (hTcb : storeTcbIpcStateAndMessage_fromTcb st' waiter tcb
+        (.blockedOnNotification notificationId) none = .ok st'') :
     waiter ∉ (notificationWaitOnCore notificationId waiter executingCore st).1.scheduler.runQueueOnCore executingCore ∧
     (notificationWaitOnCore notificationId waiter executingCore st).1.scheduler.currentOnCore executingCore
       ≠ some waiter := by

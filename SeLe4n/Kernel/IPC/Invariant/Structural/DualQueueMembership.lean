@@ -15,6 +15,7 @@ import SeLe4n.Kernel.IPC.Invariant.QueueNextBlocking
 import SeLe4n.Kernel.IPC.Invariant.WaitingThreadHelpers
 import SeLe4n.Kernel.IPC.Invariant.Structural.QueueNextTransport
 import SeLe4n.Kernel.IPC.Invariant.Structural.StoreObjectFrame
+import SeLe4n.Kernel.IPC.Invariant.Structural.PerOperation
 
 /-! # IPC Structural Preservation — Part 3 (DualQueueMembership)
 
@@ -2908,21 +2909,13 @@ theorem endpointReceiveDual_preserves_ipcStateQueueConsistent
 -- built on the `Model/State.lean` consume transport drivers only.
 -- ============================================================================
 
-open SeLe4n.Model.SystemState in
-/-- PR #827 #3 fold: `consumeCallerReply` preserves
-`blockedThreadsPendingMessageConsistent` — `ipcState` and `pendingMessage` are both
-preserved TCB fields. -/
-theorem consumeCallerReply_preserves_blockedThreadsPendingMessageConsistent
-    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (hObjInv : st.objects.invExt) (hInv : blockedThreadsPendingMessageConsistent st)
-    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
-    blockedThreadsPendingMessageConsistent st' := by
-  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
-  intro tid tcb hObj
-  obtain ⟨ty, hSt, hIS, hPM, _⟩ := hFwd tid.toObjId tcb hObj
-  have hbase := hInv tid ty hSt
-  rw [hIS, hPM]
-  exact hbase
+-- WS-RR RR3.2: `consumeCallerReply_preserves_blockedThreadsPendingMessageConsistent`
+-- moved to `IPC/Invariant/WaitingThreadHelpers.lean`.  It was the single name
+-- this module supplied to `Structural/PerOperation.lean`, and that one edge is
+-- what forced `PerOperation` to sit *downstream* of the bundles that need its
+-- establishers.  With the theorem upstream of both, the edge reverses and the
+-- `ipcInvariantFull` bundles here can call the per-transition establishers
+-- directly instead of threading their conjuncts as post-state hypotheses.
 
 open SeLe4n.Model.SystemState in
 /-- PR #827 #3 fold: `consumeCallerReply` preserves `ipcStateQueueConsistent` —
@@ -3326,15 +3319,16 @@ theorem notificationWait_preserves_ipcStateQueueConsistent
                   rename_i hRes
                   unfold lookupTcb at hLookup; simp [hRes] at hLookup
                 · rw [hTcbObj']
-              rw [storeTcbIpcState_fromTcb_eq hLookup'] at hStep
-              cases hIpc : storeTcbIpcState pair1.2 waiter (.blockedOnNotification notificationId) with
+              rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup'] at hStep
+              cases hIpc : storeTcbIpcStateAndMessage pair1.2 waiter
+                  (.blockedOnNotification notificationId) none with
               | error e => simp [hIpc] at hStep
               | ok st2 =>
                 simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨rfl, rfl⟩ := hStep
                 have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair1 hObjInv hStore1
                 exact removeRunnable_preserves_ipcStateQueueConsistent _ _ <|
-                  storeTcbIpcState_preserves_ipcStateQueueConsistent _ _ _ _ hObjInv1 hIpc
+                  storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hObjInv1 hIpc
                     (storeObject_notification_preserves_ipcStateQueueConsistent st pair1.2 notificationId _
                       ⟨ntfn, hObj⟩ hObjInv hStore1 hInv) trivial
 
@@ -5452,6 +5446,33 @@ theorem storeTcbIpcState_fromTcb_nonBlocked_preserves_blockedOnReplyHasReplyObje
     exact absurd hb (hNotBlocked ep rt)
 
 open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.5: the `storeTcbIpcStateAndMessage_fromTcb` twin of the frame above.
+`notificationWait`'s block path now writes `ipcState` and `pendingMessage` in one
+store, and the third clause reads neither `pendingMessage` nor anything the extra
+field touches. -/
+theorem storeTcbIpcStateAndMessage_fromTcb_nonBlocked_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (ipc : ThreadIpcState)
+    (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hNotBlocked : ∀ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId), ipc ≠ .blockedOnReply ep rt)
+    (hStep : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipc msg = .ok st') :
+    blockedOnReplyHasReplyObject st' := by
+  unfold storeTcbIpcStateAndMessage_fromTcb at hStep
+  cases hSO : storeObject tid.toObjId
+      (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+  | error e => simp [hSO] at hStep
+  | ok p =>
+    obtain ⟨_, st''⟩ := p
+    simp only [hSO, Except.ok.injEq] at hStep
+    subst hStep
+    refine storeObject_preserves_blockedOnReplyHasReplyObject st st'' tid.toObjId _ hObjInv hInv
+      (fun t ep rt ho hb => ?_) hSO
+    simp only [KernelObject.tcb.injEq] at ho
+    subst ho
+    exact absurd hb (hNotBlocked ep rt)
+
+open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `notificationSignal` **preserves** the third clause — it never
 sets any TCB to `.blockedOnReply` (the woken waiter goes `.ready`) and the notification
 stores are non-TCB, so the clause is framed.  Mirrors
@@ -5542,8 +5563,9 @@ theorem notificationWait_preserves_blockedOnReplyHasReplyObject
                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
                 exact blockedOnReplyHasReplyObject_of_objects_eq (removeRunnable_preserves_objects st2 waiter)
-                  (storeTcbIpcState_fromTcb_nonBlocked_preserves_blockedOnReplyHasReplyObject
-                    st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) hObjInv1 hInv1 (by simp) hSI)
+                  (storeTcbIpcStateAndMessage_fromTcb_nonBlocked_preserves_blockedOnReplyHasReplyObject
+                    st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) none hObjInv1 hInv1
+                    (by simp) hSI)
   · contradiction
   · contradiction
 
@@ -5971,6 +5993,27 @@ theorem storeTcbIpcState_fromTcb_sameSchedContextBindings
       { tcb with ipcState := ipc } hOrig rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.5: the `storeTcbIpcStateAndMessage_fromTcb` twin of the frame above —
+`schedContextBinding` is untouched by either written field. -/
+theorem storeTcbIpcStateAndMessage_fromTcb_sameSchedContextBindings
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (ipc : ThreadIpcState)
+    (msg : Option IpcMessage)
+    (hOrig : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipc msg = .ok st') :
+    sameSchedContextBindings st st' := by
+  unfold storeTcbIpcStateAndMessage_fromTcb at hStep
+  cases hSO : storeObject tid.toObjId
+      (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+  | error e => simp [hSO] at hStep
+  | ok p =>
+    obtain ⟨_, st''⟩ := p
+    simp only [hSO, Except.ok.injEq] at hStep
+    subst hStep
+    exact storeObject_modifiedTcb_sameSchedContextBindings st st'' tid.toObjId tcb
+      { tcb with ipcState := ipc, pendingMessage := msg } hOrig rfl hObjInv hSO
+
+open SeLe4n.Model.SystemState in
 /-- D6: `storeTcbIpcStateAndMessage` preserves every TCB's binding. -/
 theorem storeTcbIpcStateAndMessage_sameSchedContextBindings
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState) (msg : Option IpcMessage)
@@ -6215,6 +6258,27 @@ theorem storeTcbIpcState_fromTcb_donationOwnerFrame
     subst hStep
     exact storeObject_modifiedTcb_donationOwnerFrame st st'' tid.toObjId tcb
       { tcb with ipcState := ipc } hOrig hPreNotReply hObjInv hSO
+
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.5: the `storeTcbIpcStateAndMessage_fromTcb` twin of the frame above. -/
+theorem storeTcbIpcStateAndMessage_fromTcb_donationOwnerFrame
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (ipc : ThreadIpcState)
+    (msg : Option IpcMessage)
+    (hOrig : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPreNotReply : ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipc msg = .ok st') :
+    donationOwnerFrame st st' := by
+  unfold storeTcbIpcStateAndMessage_fromTcb at hStep
+  cases hSO : storeObject tid.toObjId
+      (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+  | error e => simp [hSO] at hStep
+  | ok p =>
+    obtain ⟨_, st''⟩ := p
+    simp only [hSO, Except.ok.injEq] at hStep
+    subst hStep
+    exact storeObject_modifiedTcb_donationOwnerFrame st st'' tid.toObjId tcb
+      { tcb with ipcState := ipc, pendingMessage := msg } hOrig hPreNotReply hObjInv hSO
 
 open SeLe4n.Model.SystemState in
 /-- D6: `storeTcbIpcState` frames the owner side forward (pre-state not `.blockedOnReply`). -/
@@ -6630,6 +6694,26 @@ theorem storeTcbIpcState_fromTcb_timeoutBudgetFrame
       { tcb with ipcState := ipc } hOrig rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.5: the `storeTcbIpcStateAndMessage_fromTcb` twin of the frame above. -/
+theorem storeTcbIpcStateAndMessage_fromTcb_timeoutBudgetFrame
+    (st st' : SystemState) (tid0 : SeLe4n.ThreadId) (tcb : TCB) (ipc : ThreadIpcState)
+    (msg : Option IpcMessage)
+    (hOrig : st.objects[tid0.toObjId]? = some (.tcb tcb))
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage_fromTcb st tid0 tcb ipc msg = .ok st') :
+    timeoutBudgetFrame st st' := by
+  unfold storeTcbIpcStateAndMessage_fromTcb at hStep
+  cases hSO : storeObject tid0.toObjId
+      (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+  | error e => simp [hSO] at hStep
+  | ok p =>
+    obtain ⟨_, st''⟩ := p
+    simp only [hSO, Except.ok.injEq] at hStep
+    subst hStep
+    exact storeObject_modifiedTcb_timeoutBudgetFrame st st'' tid0.toObjId tcb
+      { tcb with ipcState := ipc, pendingMessage := msg } hOrig rfl hObjInv hSO
+
+open SeLe4n.Model.SystemState in
 /-- D5: `storeTcbIpcStateAndMessage` frames `timeoutBudgetFrame`. -/
 theorem storeTcbIpcStateAndMessage_timeoutBudgetFrame
     (st st' : SystemState) (tid0 : SeLe4n.ThreadId) (ipc : ThreadIpcState) (msg : Option IpcMessage)
@@ -6757,6 +6841,30 @@ theorem storeTcbIpcState_fromTcb_preserves_blockedOnReplyHasTarget
     blockedOnReplyHasTarget st' := by
   unfold storeTcbIpcState_fromTcb at hStep
   cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+  | error e => simp [hSO] at hStep
+  | ok p =>
+    obtain ⟨_, st''⟩ := p
+    simp only [hSO, Except.ok.injEq] at hStep
+    subst hStep
+    refine storeObject_preserves_blockedOnReplyHasTarget st st'' tid.toObjId _ hObjInv hInv
+      (fun t ep rt ho hb => ?_) hSO
+    simp only [KernelObject.tcb.injEq] at ho
+    subst ho
+    exact hTargetOk ep rt (by simpa using hb)
+
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.5: the `storeTcbIpcStateAndMessage_fromTcb` twin of the frame above. -/
+theorem storeTcbIpcStateAndMessage_fromTcb_preserves_blockedOnReplyHasTarget
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasTarget st)
+    (hTargetOk : ∀ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId), ipc = .blockedOnReply ep rt → rt.isSome)
+    (hStep : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipc msg = .ok st') :
+    blockedOnReplyHasTarget st' := by
+  unfold storeTcbIpcStateAndMessage_fromTcb at hStep
+  cases hSO : storeObject tid.toObjId
+      (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
   | error e => simp [hSO] at hStep
   | ok p =>
     obtain ⟨_, st''⟩ := p
@@ -10700,8 +10808,8 @@ theorem notificationWait_preserves_blockedOnReplyHasTarget
                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
                 exact blockedOnReplyHasTarget_of_objects_eq (removeRunnable_preserves_objects st2 waiter)
-                  (storeTcbIpcState_fromTcb_preserves_blockedOnReplyHasTarget
-                    st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) hObjInv1 hInv1 (by intro ep rt h; cases h) hSI)
+                  (storeTcbIpcStateAndMessage_fromTcb_preserves_blockedOnReplyHasTarget
+                    st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) none hObjInv1 hInv1 (by intro ep rt h; cases h) hSI)
   · contradiction
   · contradiction
 
@@ -10756,8 +10864,8 @@ theorem notificationWait_sameSchedContextBindings
               next st2 hSI =>
                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
-                exact (hS1.trans (storeTcbIpcState_fromTcb_sameSchedContextBindings
-                    st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) hOrig1 hObjInv1 hSI)).trans
+                exact (hS1.trans (storeTcbIpcStateAndMessage_fromTcb_sameSchedContextBindings
+                    st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) none hOrig1 hObjInv1 hSI)).trans
                   (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects st2 waiter))
   · contradiction
   · contradiction
@@ -10827,8 +10935,8 @@ theorem notificationWait_donationOwnerFrame
               next st2 hSI =>
                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
-                exact (hF1.trans (storeTcbIpcState_fromTcb_donationOwnerFrame
-                    st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) hOrig1
+                exact (hF1.trans (storeTcbIpcStateAndMessage_fromTcb_donationOwnerFrame
+                    st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) none hOrig1
                     (hWaiterNotReply waiterTcb hWaiterObj) hObjInv1 hSI)).trans
                   (donationOwnerFrame.of_objects_eq (removeRunnable_preserves_objects st2 waiter))
   · contradiction
@@ -11020,12 +11128,12 @@ theorem notificationWait_passiveServerIdleFrame
               next st2 hSI =>
                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
-                rw [storeTcbIpcState_fromTcb_eq hLk1] at hSI
-                refine (hF1.trans (storeTcbIpcState_passiveServerIdleFrame st1 st2 waiter
-                    (.blockedOnNotification notificationId)
+                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLk1] at hSI
+                refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrame st1 st2 waiter
+                    (.blockedOnNotification notificationId) none
                     (Or.inl (Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩))) hObjInv1 hSI)).trans
                   (removeRunnable_passiveServerIdleFrame st2 waiter (fun tcb hTcb => Or.inr ?_))
-                rw [storeTcbIpcState_ipcState_eq st1 st2 waiter _ hObjInv1 hSI tcb hTcb]
+                rw [storeTcbIpcStateAndMessage_ipcState_eq st1 st2 waiter _ _ hObjInv1 hSI tcb hTcb]
                 exact Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩)
   · contradiction
   · contradiction
@@ -11142,8 +11250,8 @@ theorem notificationWait_timeoutBudgetFrame
               next st2 hSI =>
                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
-                exact (hF1.trans (storeTcbIpcState_fromTcb_timeoutBudgetFrame st1 st2 waiter waiterTcb
-                  (.blockedOnNotification notificationId) hOrig1 hObjInv1 hSI)).trans
+                exact (hF1.trans (storeTcbIpcStateAndMessage_fromTcb_timeoutBudgetFrame st1 st2 waiter waiterTcb
+                  (.blockedOnNotification notificationId) none hOrig1 hObjInv1 hSI)).trans
                   (timeoutBudgetFrame.of_objects_eq (removeRunnable_preserves_objects st2 waiter))
   · contradiction
   · contradiction
@@ -13140,11 +13248,11 @@ theorem notificationWait_preserves_pendingReceiveReplyWellFormed
                 -- value `waiterTcb` is still the value in `st1`.
                 have hLookup1 : lookupTcb st1 waiter = some waiterTcb :=
                   lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hSO
-                rw [storeTcbIpcState_fromTcb_eq hLookup1] at hSI
+                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup1] at hSI
                 exact pendingReceiveReplyWellFormed_of_objects_eq
                   (removeRunnable_preserves_objects st2 waiter)
-                  (storeTcbIpcState_notReceiving_preserves_pendingReceiveReplyWellFormed
-                    st1 st2 waiter (.blockedOnNotification notificationId) hObjInv1 hInv1
+                  (storeTcbIpcStateAndMessage_notReceiving_preserves_pendingReceiveReplyWellFormed
+                    st1 st2 waiter (.blockedOnNotification notificationId) none hObjInv1 hInv1
                     (hFrameWaiter _ st1 hSO) hSI)
   · contradiction
   · contradiction
@@ -16125,11 +16233,11 @@ theorem notificationWait_preserves_queueNextBlockingConsistent
                 obtain ⟨_, rfl⟩ := hStep
                 have hLookup1 : lookupTcb st1 waiter = some waiterTcb :=
                   lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hSO
-                rw [storeTcbIpcState_fromTcb_eq hLookup1] at hSI
+                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup1] at hSI
                 exact queueNextBlockingConsistent_of_objects_eq st2 (removeRunnable st2 waiter)
                   (fun x => by rw [removeRunnable_preserves_objects])
-                  (storeTcbIpcState_blockedOnNotification_preserves_queueNextBlockingConsistent
-                    st1 st2 waiter notificationId hObjInv1 hInv1 hSI)
+                  (storeTcbIpcStateAndMessage_blockedOnNotification_preserves_queueNextBlockingConsistent
+                    st1 st2 waiter notificationId none hObjInv1 hInv1 hSI)
   · contradiction
   · contradiction
 
@@ -16205,7 +16313,7 @@ theorem notificationWait_preserves_queueNextTargetBlocked
                 obtain ⟨_, rfl⟩ := hStep
                 have hLookup1 : lookupTcb st1 waiter = some waiterTcb :=
                   lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hSO
-                rw [storeTcbIpcState_fromTcb_eq hLookup1] at hSI
+                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup1] at hSI
                 have hWMem1 : st1.objects[waiter.toObjId]? = some (.tcb waiterTcb) :=
                   lookupTcb_some_objects st1 waiter waiterTcb hLookup1
                 have hWReady1 : waiterTcb.ipcState = .ready :=
@@ -16217,8 +16325,8 @@ theorem notificationWait_preserves_queueNextTargetBlocked
                    fun ep => by rw [hWReady1]; simp⟩
                 exact queueNextTargetBlocked_of_objects_eq st2 (removeRunnable st2 waiter)
                   (fun x => by rw [removeRunnable_preserves_objects])
-                  (storeTcbIpcState_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked
-                    st1 st2 waiter (.blockedOnNotification notificationId) hInv1 hObjInv1
+                  (storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked
+                    st1 st2 waiter (.blockedOnNotification notificationId) none hInv1 hObjInv1
                     ⟨fun _ => by simp, fun _ => by simp, fun _ => by simp⟩
                     (queueNextTargetBlocked_no_incoming_of_notQueueBlocked st1 hInv1 waiter waiterTcb
                       hWMem1 hWNotBlocked1) hSI)
@@ -16507,7 +16615,7 @@ theorem notificationWait_preserves_endpointQueueTailBlockedConsistent
                 obtain ⟨_, rfl⟩ := hStep
                 have hLookup1 : lookupTcb st1 waiter = some waiterTcb :=
                   lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hSO
-                rw [storeTcbIpcState_fromTcb_eq hLookup1] at hSI
+                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup1] at hSI
                 have hWTcbSt := lookupTcb_some_objects st waiter waiterTcb hLookup
                 have hReady : waiterTcb.ipcState = .ready := hWaiterReady waiterTcb hWTcbSt
                 have hWTcb1 := lookupTcb_some_objects st1 waiter waiterTcb hLookup1
@@ -16519,8 +16627,8 @@ theorem notificationWait_preserves_endpointQueueTailBlockedConsistent
                   · have := (hInv1 epId ep waiter waiterTcb hEp hWTcb1).1 hTl; rw [hReady] at this; cases this
                   · rcases (hInv1 epId ep waiter waiterTcb hEp hWTcb1).2 hTl with h | h <;> rw [hReady] at h <;> cases h
                 exact removeRunnable_preserves_endpointQueueTailBlockedConsistent st2 waiter
-                  (storeTcbIpcState_preserves_endpointQueueTailBlockedConsistent
-                    st1 st2 waiter (.blockedOnNotification notificationId) hInv1 hObjInv1 hSI hNotTail)
+                  (storeTcbIpcStateAndMessage_preserves_endpointQueueTailBlockedConsistent
+                    st1 st2 waiter (.blockedOnNotification notificationId) none hInv1 hObjInv1 hSI hNotTail)
   · contradiction
   · contradiction
 
@@ -16598,7 +16706,7 @@ theorem notificationWait_preserves_queueHeadBlockedConsistent
                 obtain ⟨_, rfl⟩ := hStep
                 have hLookup1 : lookupTcb st1 waiter = some waiterTcb :=
                   lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hSO
-                rw [storeTcbIpcState_fromTcb_eq hLookup1] at hSI
+                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup1] at hSI
                 have hWTcbSt := lookupTcb_some_objects st waiter waiterTcb hLookup
                 have hReady : waiterTcb.ipcState = .ready := hWaiterReady waiterTcb hWTcbSt
                 have hWTcb1 := lookupTcb_some_objects st1 waiter waiterTcb hLookup1
@@ -16610,8 +16718,8 @@ theorem notificationWait_preserves_queueHeadBlockedConsistent
                   · have := (hInv1 epId ep waiter waiterTcb hEp hWTcb1).1 hHd; rw [hReady] at this; cases this
                   · rcases (hInv1 epId ep waiter waiterTcb hEp hWTcb1).2 hHd with h | h <;> rw [hReady] at h <;> cases h
                 exact removeRunnable_preserves_queueHeadBlockedConsistent st2 waiter
-                  (storeTcbIpcState_preserves_queueHeadBlockedConsistent
-                    st1 st2 waiter (.blockedOnNotification notificationId) hInv1 hObjInv1 hSI hNotHead)
+                  (storeTcbIpcStateAndMessage_preserves_queueHeadBlockedConsistent
+                    st1 st2 waiter (.blockedOnNotification notificationId) none hInv1 hObjInv1 hSI hNotHead)
   · contradiction
   · contradiction
 

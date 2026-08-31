@@ -855,6 +855,22 @@ theorem storeTcbIpcState_blockedOnNotification_preserves_queueNextBlockingConsis
     (fun _ _ tcbB _ _ _ => by unfold queueNextBlockingMatch; cases tcbB.ipcState <;> exact True.intro)
     (fun _ tcbA _ _ _ _ => by unfold queueNextBlockingMatch; cases tcbA.ipcState <;> exact True.intro)
 
+/-- WS-RR RR3.5: the `storeTcbIpcStateAndMessage` twin of the lemma above.
+`notificationWait`'s block path now clears `pendingMessage` atomically with the
+block, so its post-state comes from the two-field store.  `.blockedOnNotification`
+is not a queue-blocking state, so both link obligations hold vacuously exactly as
+in the `ipcState`-only form. -/
+theorem storeTcbIpcStateAndMessage_blockedOnNotification_preserves_queueNextBlockingConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (nid : SeLe4n.ObjId)
+    (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt) (hInv : queueNextBlockingConsistent st)
+    (hStep : storeTcbIpcStateAndMessage st tid (.blockedOnNotification nid) msg = .ok st') :
+    queueNextBlockingConsistent st' :=
+  storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent st st' tid
+    (.blockedOnNotification nid) msg hInv hObjInv hStep
+    (fun _ _ tcbB _ _ _ => by unfold queueNextBlockingMatch; cases tcbB.ipcState <;> exact True.intro)
+    (fun _ tcbA _ _ _ _ => by unfold queueNextBlockingMatch; cases tcbA.ipcState <;> exact True.intro)
+
 -- ============================================================================
 -- Section 10: queueHeadBlockedConsistent backward transfer + store frames
 -- ============================================================================

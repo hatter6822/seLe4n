@@ -1544,18 +1544,19 @@ theorem notificationWait_preserves_allPendingMessagesBounded
                 | ok pair =>
                     simp only []
                     have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObj hObjInv hStore
-                    simp only [storeTcbIpcState_fromTcb_eq hLk']
+                    simp only [storeTcbIpcStateAndMessage_fromTcb_eq hLk']
                     have hInv1 := storeObject_notification_preserves_allPendingMessagesBounded
                       st pair.2 notificationId _ hObjInv hStore hInv
                     have hObjInvPairN : pair.2.objects.invExt :=
                       storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
-                    cases hIpc : storeTcbIpcState pair.2 waiter (.blockedOnNotification notificationId) with
+                    cases hIpc : storeTcbIpcStateAndMessage pair.2 waiter
+                        (.blockedOnNotification notificationId) none with
                     | error e => simp
                     | ok st'' =>
                         simp only [Except.ok.injEq, Prod.mk.injEq]
                         intro ⟨_, hEq⟩; subst hEq
-                        have hInv2 := storeTcbIpcState_preserves_allPendingMessagesBounded
-                          pair.2 st'' waiter _ hObjInvPairN hIpc hInv1
+                        have hInv2 := storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
+                          pair.2 st'' waiter _ none (by simp) hObjInvPairN hIpc hInv1
                         exact removeRunnable_preserves_allPendingMessagesBounded st'' waiter hInv2
 
 open SeLe4n.Model.SystemState in
@@ -1760,14 +1761,15 @@ theorem notificationWait_preserves_dualQueueSystemInvariant
                 st pair.2 notificationId _ hObjInv hStore (.inl ⟨ntfn, hObj⟩) hInv
               have hObjInv1 := storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
               have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObj hObjInv hStore
-              simp only [storeTcbIpcState_fromTcb_eq hLk']
-              cases hTcb : storeTcbIpcState pair.2 waiter (.blockedOnNotification notificationId) with
+              simp only [storeTcbIpcStateAndMessage_fromTcb_eq hLk']
+              cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter
+                  (.blockedOnNotification notificationId) none with
               | error e => simp
               | ok st'' =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
                 exact removeRunnable_preserves_dualQueueSystemInvariant st'' waiter
-                  (storeTcbIpcState_preserves_dualQueueSystemInvariant
-                    pair.2 st'' waiter _ hObjInv1 hTcb hInv1)
+                  (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+                    pair.2 st'' waiter _ _ hObjInv1 hTcb hInv1)
 
 -- ============================================================================
 -- R3-B: Endpoint operation badgeWellFormed preservation

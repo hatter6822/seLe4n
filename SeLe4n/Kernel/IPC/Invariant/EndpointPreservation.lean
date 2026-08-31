@@ -230,15 +230,12 @@ theorem endpointReply_preserves_ipcInvariant
 -- Mirrors scheduler_unchanged_through_store_tcb but for storeTcbIpcStateAndMessage.
 -- ============================================================================
 
-/-- WS-F1: After storeObject + storeTcbIpcStateAndMessage, the scheduler is unchanged. -/
-private theorem scheduler_unchanged_through_store_tcb_msg
-    (st st1 st2 : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
-    (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState) (msg : Option IpcMessage)
-    (hStore : storeObject oid obj st = .ok ((), st1))
-    (hTcb : storeTcbIpcStateAndMessage st1 tid ipc msg = .ok st2) :
-    st2.scheduler = st.scheduler := by
-  rw [storeTcbIpcStateAndMessage_scheduler_eq st1 st2 tid ipc msg hTcb,
-      storeObject_scheduler_eq st st1 oid obj hStore]
+-- WS-RR RR3.5: `scheduler_unchanged_through_store_tcb_msg` moved to
+-- `IPC/Invariant/Defs.lean`, beside its `storeTcbIpcState` twin, and made
+-- public.  `notificationWait`'s block path now clears `pendingMessage`
+-- atomically with the block, so `NotificationPreservation/Signal.lean` needs
+-- the same helper; `private` in this module put it out of reach.  The two
+-- call sites here resolve it unchanged through the `Defs` import.
 
 -- ============================================================================
 -- WS-F1: Dual-queue endpoint invariant preservation (F-10 remediation)

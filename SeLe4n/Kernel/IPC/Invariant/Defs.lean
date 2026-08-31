@@ -636,6 +636,18 @@ theorem scheduler_unchanged_through_store_tcb
   rw [storeTcbIpcState_scheduler_eq st1 st2 tid ipc hTcb,
       storeObject_scheduler_eq st st1 oid obj hStore]
 
+/-- WS-F1: After storeObject + storeTcbIpcStateAndMessage, the scheduler is
+unchanged.  Mirrors `scheduler_unchanged_through_store_tcb` for the store that
+also writes `pendingMessage`. -/
+theorem scheduler_unchanged_through_store_tcb_msg
+    (st st1 st2 : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hStore : storeObject oid obj st = .ok ((), st1))
+    (hTcb : storeTcbIpcStateAndMessage st1 tid ipc msg = .ok st2) :
+    st2.scheduler = st.scheduler := by
+  rw [storeTcbIpcStateAndMessage_scheduler_eq st1 st2 tid ipc msg hTcb,
+      storeObject_scheduler_eq st st1 oid obj hStore]
+
 /-- Helper: TCB at tid.toObjId is preserved through storeObject (endpoint) if tid's TCB exists. -/
 private theorem tcb_preserved_through_endpoint_store
     (st st1 : SystemState) (endpointId : SeLe4n.ObjId) (obj : KernelObject) (tid : SeLe4n.ThreadId) (tcb : TCB)

@@ -642,12 +642,12 @@ theorem notificationWait_passiveServerIdleFrameOnCore
               next st2 hSI =>
                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
-                rw [storeTcbIpcState_fromTcb_eq hLk1] at hSI
-                refine (hF1.trans (storeTcbIpcState_passiveServerIdleFrameOnCore st1 st2 waiter
-                    (.blockedOnNotification notificationId)
+                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLk1] at hSI
+                refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st1 st2 waiter
+                    (.blockedOnNotification notificationId) none
                     (Or.inl (Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩))) hObjInv1 hSI)).trans
                   (removeRunnable_passiveServerIdleFrameOnCore st2 waiter (fun tcb hTcb => Or.inr ?_))
-                rw [storeTcbIpcState_ipcState_eq st1 st2 waiter _ hObjInv1 hSI tcb
+                rw [storeTcbIpcStateAndMessage_ipcState_eq st1 st2 waiter _ _ hObjInv1 hSI tcb
                   ((getTcb?_eq_some_iff st2 waiter tcb).mp hTcb)]
                 exact Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩)
   · contradiction

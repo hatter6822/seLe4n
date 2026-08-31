@@ -558,10 +558,10 @@ theorem notificationWait_recovers_pending_badge
                   | ok pair =>
                       simp only []
                       have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObj hObjInv hStore
-                      simp only [storeTcbIpcState_fromTcb_eq hLk']
+                      simp only [storeTcbIpcStateAndMessage_fromTcb_eq hLk']
                       intro hWait
                       revert hWait
-                      cases storeTcbIpcState pair.2 waiter _ with
+                      cases storeTcbIpcStateAndMessage pair.2 waiter _ none with
                       | error e => simp
                       | ok st2 =>
                           simp only [Except.ok.injEq, Prod.mk.injEq]
