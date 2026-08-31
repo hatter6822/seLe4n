@@ -7503,11 +7503,17 @@ theorem cannot be stated.
 
 **Per-slice state at v0.34.43.**  The RR3.1 gate
 (`scripts/check_ipc_invariant_dethreading.py`, Tier 0) reports **zero**
-conjuncts bound on a post-state across all fifty-nine
-`*_preserves_ipcInvariantFull` statements.  The measured baseline was **103
+conjuncts bound on a post-state across all sixty-five
+`*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
+statements.  The measured baseline was **103
 bindings over six conjuncts**, not the two the audit's binder-name census could
 see: `donationOwnerValid`, `dualQueueSystemInvariant` and `badgeWellFormed` were
-threaded too, and are closed by RR3.11 and RR3.12.
+threaded too, and are closed by RR3.11 and RR3.12.  The same cut's closure
+audit widened the gate's marker to the `*_establishes_*` composites, admitted
+`ipcInvariantFullExceptDonationOwner` as a pre-state form, and paired that
+admission with a `no_conclusion_state_hypothesis` check so a whole-bundle
+post-state hypothesis can never be laundered as a pre-state (19 self-test
+cases, every check with a token-preserving mutation).
 
 Two of those closures were vacuity defects rather than proof gaps.  A
 receiver-root CNode side condition, quantified over the `*WithCaps` wrappers,

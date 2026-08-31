@@ -33,13 +33,19 @@ so the gate would go quiet exactly when something new is added:
   (`replyCallerLinkageReciprocal`, `blockedOnReplyHasReplyObject`) are found
   by unfolding rather than by being listed;
 * the **bundle family** is every declaration whose name contains
-  `_preserves_ipcInvariantFull`, wherever it lives;
+  `_preserves_ipcInvariantFull` or `_establishes_ipcInvariantFull`, wherever it
+  lives -- both verbs conclude an `ipcInvariantFull`-family proposition of a
+  transition's result, so both are where a threaded conjunct would hide;
 * the **pre-state** of a bundle is the state its own `ipcInvariantFull`-family
   hypothesis is applied to, and *every other* state a conjunct is applied to is
   a finding.  Deriving the pre-state rather than the post-state is what makes
   the check fail **closed**: an intermediate state, a `.1` projection, a second
   post-state binder under a different name -- none of them has to be
-  anticipated to be reported.
+  anticipated to be reported.  The degenerate maximal case -- the *whole*
+  invariant hypothesised of the conclusion's own state, which makes every
+  per-conjunct comparison succeed while the theorem proves nothing -- is its
+  own check (`no_conclusion_state_hypothesis`), because the pre-state list
+  cannot both admit a form and police that form's application.
 
 A presence check is not a relation check.  The property here is a *relation*
 between a binder's argument and the theorem's own pre-state, so the argument is
@@ -74,15 +80,27 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lean_code_view  # noqa: E402  (path set up immediately above)
 
 DEFS_MODULE = "SeLe4n/Kernel/IPC/Invariant/Defs.lean"
-BUNDLE_MARKER = "_preserves_ipcInvariantFull"
+# Two verbs, one family: `_preserves_` theorems carry the invariant across a
+# transition, `_establishes_` theorems produce it where the pre-state carries
+# only the relaxed form (the composite reply chain).  Both conclude an
+# `ipcInvariantFull`-family proposition of a transition's result, so both are
+# exactly where a threaded conjunct would hide -- a marker that stopped at
+# `preserves` went quiet the day the first `establishes` theorem landed.
+BUNDLE_MARKERS = ("_preserves_ipcInvariantFull", "_establishes_ipcInvariantFull")
 ROOT_INVARIANT = "ipcInvariantFull"
 
 # The bundle's own hypothesis names the pre-state.  These are the forms a
 # bundle states it in: the global invariant, its SMP lift, the structural core
-# the reply mutators sequence through, and the per-core view.
+# the reply mutators sequence through, the per-core view, and -- for the
+# composite reply chain, whose pre-state is mid-reply -- the bundle relaxed at
+# the woken caller.  The `no_conclusion_state_hypothesis` check is what keeps
+# this list from becoming a loophole: a bundle hypothesising any of these forms
+# of its own conclusion's state fails outright, so listing a form here can
+# never launder a post-state assumption into a pre-state.
 PRE_STATE_PREDICATES = (
     "ipcInvariantFull_smp",
     "ipcInvariantFull_perCore",
+    "ipcInvariantFullExceptDonationOwner",
     "ipcInvariantFull",
     "ipcInvariantCore",
 )
@@ -116,6 +134,7 @@ CHECKS = (
     "conjuncts_derived",
     "family_nonempty",
     "no_post_state_binding",
+    "no_conclusion_state_hypothesis",
     "payoff_theorems",
 )
 
@@ -376,6 +395,41 @@ class Bundle:
                     states.add(_normalise(argument))
         return states
 
+    def conclusion_state(self) -> str | None:
+        """The state this bundle's conclusion applies its invariant form to.
+
+        `None` when no `ipcInvariantFull`-family predicate application is found
+        in the conclusion -- possible only for a declaration that carries the
+        family marker in its name without concluding a family proposition, which
+        the tree does not contain; the threaded-conjunct check still covers such
+        a declaration's binders in full.
+        """
+        for predicate in PRE_STATE_PREDICATES:
+            hit = re.search(
+                r"(?<![A-Za-z0-9_'.])" + re.escape(predicate) + r"(?![A-Za-z0-9_'])",
+                self.conclusion,
+            )
+            if hit:
+                argument = first_argument(self.conclusion, hit.end())
+                if argument:
+                    return _normalise(argument)
+        return None
+
+    def assumes_conclusion_state(self) -> str | None:
+        """The conclusion state, when a whole-bundle hypothesis binds it.
+
+        This is the degenerate maximal threading: a bundle that hypothesises
+        `ipcInvariantFull st'` of its own conclusion's `st'` is scored clean by
+        the per-conjunct check -- every conjunct binding on `st'` compares equal
+        to a "pre-state" -- while proving nothing at all.  The two checks close
+        each other's gap: the pre-state list stays usable because this one
+        rejects a member of it applied to the conclusion's state.
+        """
+        state = self.conclusion_state()
+        if state is not None and state in self.pre_states():
+            return state
+        return None
+
     def threaded(self, conjuncts: set[str]) -> list[tuple[str, str]]:
         """(conjunct, state) for every conjunct bound on a non-pre-state."""
         pre = self.pre_states()
@@ -395,13 +449,13 @@ class Bundle:
 
 
 def collect_bundles(root: str, sources: list[str]) -> list[Bundle]:
-    """Every declaration in the `_preserves_ipcInvariantFull` family."""
+    """Every declaration in the `ipcInvariantFull` bundle family."""
     bundles = []
     for relative in sources:
         source = code_view(root, relative)
         for match in _DECL_RE.finditer(source):
             name = match.group(1)
-            if BUNDLE_MARKER not in name:
+            if not any(marker in name for marker in BUNDLE_MARKERS):
                 continue
             end = signature_end(source, match.end())
             binders, conclusion = split_conclusion(source[match.end() : end])
@@ -497,13 +551,25 @@ def run_checks(root: str) -> list[str]:
 
     bundles = collect_bundles(root, sources)
     if not bundles:
+        markers = " / ".join(f"`*{marker}*`" for marker in BUNDLE_MARKERS)
         problems.append(
-            f"family_nonempty: no declaration matching `*{BUNDLE_MARKER}*` found; "
+            f"family_nonempty: no declaration matching {markers} found; "
             f"the de-threading check would be vacuous"
         )
         return problems
 
     for bundle in sorted(bundles, key=lambda b: (b.path, b.line)):
+        assumed = bundle.assumes_conclusion_state()
+        if assumed is not None:
+            # Reported instead of the per-conjunct findings, which would all be
+            # suppressed by exactly this hypothesis and so add nothing.
+            problems.append(
+                f"no_conclusion_state_hypothesis: {bundle.path}:{bundle.line}: "
+                f"`{bundle.name}` hypothesises an `ipcInvariantFull`-family "
+                f"predicate of `{assumed}`, its own conclusion's state -- the "
+                f"whole-bundle form of threading"
+            )
+            continue
         for conjunct, state in bundle.threaded(conjuncts):
             problems.append(
                 f"no_post_state_binding: {bundle.path}:{bundle.line}: "
@@ -512,7 +578,12 @@ def run_checks(root: str) -> list[str]:
             )
 
     names = declared_names(root, sources)
-    problems.extend(payoff_status(names, read_pending(root)))
+    try:
+        pending = read_pending(root)
+    except ValueError as err:
+        problems.append(f"payoff_theorems: {err}")
+    else:
+        problems.extend(payoff_status(names, pending))
 
     return problems
 
@@ -525,7 +596,8 @@ def report(root: str) -> int:
     print(f"conjuncts derived from `{ROOT_INVARIANT}`: {len(conjuncts)}")
     for conjunct in sorted(conjuncts):
         print(f"  - {conjunct}")
-    print(f"\n`*{BUNDLE_MARKER}*` statements: {len(bundles)}")
+    markers = " / ".join(f"`*{marker}*`" for marker in BUNDLE_MARKERS)
+    print(f"\n{markers} statements: {len(bundles)}")
     tally: dict[str, int] = {}
     threaded_bundles = 0
     for bundle in sorted(bundles, key=lambda b: (b.path, b.line)):
@@ -544,7 +616,11 @@ def report(root: str) -> int:
     for conjunct, count in sorted(tally.items(), key=lambda kv: (-kv[1], kv[0])):
         print(f"  {count:4d}  {conjunct}")
     names = declared_names(root, sources)
-    pending = read_pending(root)
+    try:
+        pending = read_pending(root)
+    except ValueError as err:
+        print(f"\n[FAIL] {err}")
+        return 1
     print("\npayoff theorems:")
     for payoff in PAYOFF_THEOREMS:
         if payoff in names:
@@ -811,6 +887,76 @@ def self_test() -> int:
         )
     )
 
+    # --- no_post_state_binding, establishes family -----------------------
+    # Token-PRESERVING: the threaded conjunct sits on a theorem whose verb is
+    # `establishes` rather than `preserves`.  A marker that stopped at
+    # `preserves` would score this tree clean while the composite reply-chain
+    # payoffs threaded freely.
+    establishes_threaded = _fixture()
+    establishes_threaded["SeLe4n/Kernel/IPC/CrossCore/ReplyChain.lean"] = (
+        "theorem replyChain_establishes_ipcInvariantFull\n"
+        "    (st st' : SystemState)\n"
+        "    (hInv : ipcInvariantFull st)\n"
+        "    (hRecip : replyCallerLinkageReciprocal st')\n"
+        "    (hStep : replyChain st = .ok ((), st')) :\n"
+        "    ipcInvariantFull st' := by\n"
+        "  exact sample st st' hInv hRecip hStep\n"
+    )
+    cases.append(
+        _Case(
+            "an establishes-form bundle threads a conjunct on its post-state",
+            establishes_threaded,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # --- no_conclusion_state_hypothesis ----------------------------------
+    # Token-PRESERVING: every token of a clean bundle survives, a genuine
+    # pre-state hypothesis included; what is added is the whole invariant
+    # hypothesised of the conclusion's own state.  The per-conjunct check is
+    # blind to it by construction -- `st'` becomes a "pre-state", so every
+    # conjunct bound on `st'` compares equal -- which is why this is its own
+    # check rather than a case of that one.
+    whole_bundle_threaded = _fixture()
+    whole_bundle_threaded["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hInv' : ipcInvariantFull st')\n",
+        ).replace("  exact sample st st' hInv hStep", "  exact hInv'")
+    )
+    cases.append(
+        _Case(
+            "the whole invariant is hypothesised of the conclusion's own state",
+            whole_bundle_threaded,
+            True,
+            check="no_conclusion_state_hypothesis",
+            mutation="preserving",
+        )
+    )
+
+    # The relaxed pre-state form is a pre-state, not a finding: the composite
+    # reply chain's establishers start from a mid-reply state that satisfies
+    # only `ipcInvariantFullExceptDonationOwner`.  Accepted, not caught.
+    except_pre_state = _fixture()
+    except_pre_state["SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean"] = (
+        "theorem applyReplyDonation_establishes_ipcInvariantFull_of_except\n"
+        "    (st st' : SystemState) (woken : SeLe4n.ThreadId)\n"
+        "    (hInv : ipcInvariantFullExceptDonationOwner st woken)\n"
+        "    (hStep : applyReplyDonation st = .ok ((), st')) :\n"
+        "    ipcInvariantFull st' := by\n"
+        "  exact sample st st' woken hInv hStep\n"
+    )
+    cases.append(
+        _Case(
+            "the relaxed pre-state form is accepted as a pre-state",
+            except_pre_state,
+            False,
+        )
+    )
+
     # --- payoff_theorems --------------------------------------------------
     # Token-PRESERVING: the payoff theorem's NAME survives, as a comment and as
     # a reference inside another proof, while the declaration is gone.
@@ -864,6 +1010,26 @@ def self_test() -> int:
         _Case(
             "a registration names something outside the payoff set",
             dangling_registration,
+            True,
+            check="payoff_theorems",
+            mutation="preserving",
+        )
+    )
+
+    # Token-PRESERVING: the registration's three fields are all present but the
+    # second delimiter is gone, so the reader cannot tell target from reason.  A
+    # parser that skipped what it cannot split would hold nobody to anything.
+    malformed_registration = _fixture()
+    malformed_registration["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.split(
+        "theorem dispatchSyscall_preserves_ipcInvariantFull"
+    )[0]
+    malformed_registration[PENDING_FILE] = (
+        "dispatchSyscall_preserves_ipcInvariantFull | WS-RR RR3.16 sized and deferred\n"
+    )
+    cases.append(
+        _Case(
+            "a malformed registration line is a hard error, not a skip",
+            malformed_registration,
             True,
             check="payoff_theorems",
             mutation="preserving",

@@ -381,9 +381,9 @@ inputs:
 ### RR3 — `ipcInvariantFull` de-threading closure (D1, D6, D8)
 
 > **Status**: RR3.1–RR3.14 **LANDED**.  The RR3.1 gate reports **zero**
-> post-state bindings of **any** conjunct across all fifty-nine
-> `_preserves_ipcInvariantFull` statements — not only the two the acceptance
-> names.  The two payoff theorems are **registered as pending** in
+> post-state bindings of **any** conjunct across all sixty-five
+> `_preserves_ipcInvariantFull` / `_establishes_ipcInvariantFull` statements —
+> not only the two the acceptance names.  The two payoff theorems are **registered as pending** in
 > `docs/planning/ipc_dethreading_pending.txt`, and RR3.15–RR3.26 are the work they
 > actually need.
 

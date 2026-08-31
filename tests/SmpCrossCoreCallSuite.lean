@@ -496,6 +496,14 @@ private def runRendezvousChecks : IO Unit := do
 #check @endpointReceiveDualWithCaps_preserves_badgeWellFormed
 #check @endpointCallWithCaps_preserves_badgeWellFormed
 #check @endpointCallWithCaps_preserves_dualQueueSystemInvariant
+-- WS-RR RR3.11 — instance/congruence surface of the in-flight family (kept
+-- complete alongside the boundedness instances even where no composite consumes
+-- them yet; the registered dispatch payoffs are the designated consumers):
+#check @allPendingMessagesBounded_iff_pendingMessagesSatisfy
+#check @pendingMessageCapBadgesWellFormed_of_getElem_eq
+#check @cleanupPreReceiveDonation_preserves_pendingMessageCapBadgesWellFormed
+-- WS-RR RR3.12 — the relaxed donation-owner family mirrors the unrelaxed one:
+#check @donationOwnerValidExcept_of_objects_eq
 
 /-- SM6.D.1 exact decomposition: the ∀-core bundle is equivalent to the global
 bundle plus the per-core passive-idle slices — nothing is weakened. -/

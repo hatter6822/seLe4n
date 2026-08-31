@@ -20,7 +20,10 @@ It measured **103 post-state bindings across six conjuncts**.  The pre-SM10
 audit's figure was two conjuncts (33 and 31 of 35 bundles), from a binder-name
 census; `donationOwnerValid`, `dualQueueSystemInvariant` and `badgeWellFormed`
 were threaded too and no name-based grep could see them.  All six are now zero,
-across all fifty-nine statements in the family.
+across all sixty-five statements in the family — the `*_preserves_*` bundles,
+their two relaxed `…ExceptDonationOwner` forms among them, plus the four
+`*_establishes_*` composites the widened marker measures (see the closure-audit
+hardening below).
 
 ### Two of the six were vacuity, not incompleteness
 
@@ -130,7 +133,7 @@ claiming end-to-end closure.
 
 ### Housekeeping
 
-`raw_lookup_tid` re-anchored 1287 → 1383 with its reason in the baseline header:
+`raw_lookup_tid` re-anchored 1287 → 1382 with its reason in the baseline header:
 the metric counts `.toObjId]?` at object-store boundaries and cannot tell an
 operational lookup from one inside a `Prop`, and the whole rise is the second
 kind — new invariant predicates and frames that must mirror the raw form of the
@@ -139,6 +142,40 @@ typed-helper adoption floors are untouched.
 
 Staged-only modules 63 → 64: `IPC/Invariant/Reachability.lean` has no production
 consumer until RR3.24's payoff theorem.
+
+### Closure audit (same cut)
+
+The pre-push audit of this cut hardened the RR3.1 gate against two ways the
+de-threading claim could rot while the gate stayed green, and corrected the
+figure this entry first carried:
+
+* **The establishes-family is now measured.**  The bundle marker is a tuple —
+  `_preserves_ipcInvariantFull` *and* `_establishes_ipcInvariantFull` — so the
+  four `*_establishes_*` composites RR3.12 added are inside the census instead
+  of adjacent to it, and `ipcInvariantFullExceptDonationOwner` is a recognized
+  pre-state form.  The family this entry first quoted as fifty-nine was stale
+  at commit (the gate then measured sixty-one); the widened family is
+  **sixty-five**, still at zero post-state bindings.
+* **A whole-bundle post-state hypothesis is its own finding.**  A statement
+  hypothesising `ipcInvariantFull st'` of its conclusion's own state is the
+  degenerate maximal threading — every conjunct at once — yet scored as a
+  *pre*-state before, because the binding does name the invariant.  The new
+  `no_conclusion_state_hypothesis` check fails it directly.
+* **A malformed pending-register line fails the gate cleanly** rather than
+  crashing it, and the self-test holds a token-preserving case for it (a
+  registration whose fields are present but undelimited).  Self-test: 19
+  cases, 5/5 checks with a token-preserving mutation.
+
+Two duplications the cut created are gone: `replyDonationReturn?_some_char`
+now consumes the split-out `replyDonationReturn?_some_lookup` instead of
+restating its unfolding, and `DualQueue/Transport.lean`'s private
+`lookupTcb_of_objects` is deleted in favour of the public
+`lookupTcb_of_objects_of_not_reserved` it duplicated.  The four family-symmetry
+lemmas with no consumer yet (`allPendingMessagesBounded_iff_pendingMessagesSatisfy`,
+`pendingMessageCapBadgesWellFormed_of_getElem_eq`,
+`cleanupPreReceiveDonation_preserves_pendingMessageCapBadgesWellFormed`,
+`donationOwnerValidExcept_of_objects_eq`) are pinned as suite anchors, with the
+registered dispatch payoffs as their designated consumers.
 
 **Trace fixture**: byte-identical.  **Zero** `sorry`/`axiom`.
 

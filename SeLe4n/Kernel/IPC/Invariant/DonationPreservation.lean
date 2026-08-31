@@ -1272,6 +1272,29 @@ theorem applyCallDonationOnCore_preserves_ipcInvariantFull
 -- §7  RR2.5 — the whole bundle, on the reply path
 -- ============================================================================
 
+/-- WS-RR RR3.12: a `some` donation return exhibits the replier's donated binding —
+the invariant-free half of `replyDonationReturn?_some_char` below, split out because the
+composite reply bundles need it at states whose `donationOwnerValid` is relaxed. -/
+theorem replyDonationReturn?_some_lookup
+    (st : SystemState) (replier : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (hRet : replyDonationReturn? st replier = some (scId, owner)) :
+    ∃ pTcb, lookupTcb st replier = some pTcb ∧
+      pTcb.schedContextBinding = .donated scId owner := by
+  unfold replyDonationReturn? at hRet
+  revert hRet
+  cases hL : lookupTcb st replier with
+  | none => intro hRet; cases hRet
+  | some pTcb =>
+    simp only []
+    cases hBind : pTcb.schedContextBinding with
+    | unbound => intro hRet; cases hRet
+    | bound _ => intro hRet; cases hRet
+    | donated s o =>
+      simp only [Option.some.injEq, Prod.mk.injEq]
+      intro hRet
+      exact ⟨pTcb, rfl, by rw [hBind, hRet.1, hRet.2]⟩
+
 /-- WS-RR RR2.5: what `replyDonationReturn? = some (scId, owner)` witnesses about
 the pre-state — the replier holds exactly that donation, the owner exists, and
 the two are distinct.
@@ -1290,21 +1313,7 @@ theorem replyDonationReturn?_some_char
     ∃ pTcb, st.getTcb? replier = some pTcb ∧
       pTcb.schedContextBinding = .donated scId owner ∧
       ∃ oTcb, st.getTcb? owner = some oTcb ∧ owner ≠ replier := by
-  obtain ⟨pTcb, hL, hB⟩ : ∃ pTcb, lookupTcb st replier = some pTcb ∧
-      pTcb.schedContextBinding = .donated scId owner := by
-    unfold replyDonationReturn? at hRet
-    revert hRet
-    cases hL : lookupTcb st replier with
-    | none => intro hRet; cases hRet
-    | some pTcb =>
-      simp only []
-      cases hBind : pTcb.schedContextBinding with
-      | unbound => intro hRet; cases hRet
-      | bound _ => intro hRet; cases hRet
-      | donated s o =>
-        simp only [Option.some.injEq, Prod.mk.injEq]
-        intro hRet
-        exact ⟨pTcb, rfl, by rw [hBind, hRet.1, hRet.2]⟩
+  obtain ⟨pTcb, hL, hB⟩ := replyDonationReturn?_some_lookup st replier scId owner hRet
   have hPPre : st.getTcb? replier = some pTcb := getTcb?_of_lookupTcb st _ pTcb hL
   obtain ⟨_, oTcb, hOwnerObj, hOwnerUnbound, _⟩ :=
     hDOV replier pTcb scId owner ((getTcb?_eq_some_iff st _ pTcb).mp hPPre) hB
@@ -1605,29 +1614,6 @@ theorem applyReplyDonation_preserves_ipcInvariantFull
       Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb).mpr hTcb))
     exact Or.inr (by rw [← hEqT]; exact hReplierIdleAllowed pTcb hPPre)
 
-
-/-- WS-RR RR3.12: a `some` donation return exhibits the replier's donated binding —
-the invariant-free half of `replyDonationReturn?_some_char`, split out because the
-composite reply bundles need it at states whose `donationOwnerValid` is relaxed. -/
-theorem replyDonationReturn?_some_lookup
-    (st : SystemState) (replier : SeLe4n.ThreadId)
-    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
-    (hRet : replyDonationReturn? st replier = some (scId, owner)) :
-    ∃ pTcb, lookupTcb st replier = some pTcb ∧
-      pTcb.schedContextBinding = .donated scId owner := by
-  unfold replyDonationReturn? at hRet
-  revert hRet
-  cases hL : lookupTcb st replier with
-  | none => intro hRet; cases hRet
-  | some pTcb =>
-    simp only []
-    cases hBind : pTcb.schedContextBinding with
-    | unbound => intro hRet; cases hRet
-    | bound _ => intro hRet; cases hRet
-    | donated s o =>
-      simp only [Option.some.injEq, Prod.mk.injEq]
-      intro hRet
-      exact ⟨pTcb, rfl, by rw [hBind, hRet.1, hRet.2]⟩
 
 /-- WS-RR RR3.12: `replyDonationReturn?` reads only the thread's
 `schedContextBinding`, so it agrees between two states whose TCB at that thread

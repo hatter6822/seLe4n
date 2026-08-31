@@ -4,8 +4,9 @@
 > not**.  WS-RR RR3.1–RR3.14 closed **D1** and **D6** and the de-threading
 > half of **D8**: the RR3.1 gate
 > (`scripts/check_ipc_invariant_dethreading.py`, Tier 0) reports **zero**
-> conjuncts bound on a post-state across all fifty-nine
-> `*_preserves_ipcInvariantFull` statements — six conjuncts and 103 bindings
+> conjuncts bound on a post-state across all sixty-five
+> `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
+> statements — six conjuncts and 103 bindings
 > measured at the baseline, not the two this plan's own census could see.
 > What remains of D8 is the **dispatch payoff**: neither
 > `dispatchWithCap_preserves_ipcInvariantFull` nor

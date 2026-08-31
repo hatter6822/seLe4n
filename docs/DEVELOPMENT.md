@@ -19,7 +19,8 @@ It is aligned to the **current project state**:
   actually calls carries an `ipcInvariant` preservation theorem — closing
   audit blockers 2 and 3), **RR3.1–RR3.14 at v0.34.43** (`ipcInvariantFull`
   de-threading: the RR3.1 gate reports zero conjuncts bound on a post-state
-  across all fifty-nine `*_preserves_ipcInvariantFull` statements, and the two
+  across all sixty-five `*_preserves_ipcInvariantFull*` /
+  `*_establishes_ipcInvariantFull*` statements, and the two
   dispatch payoff theorems are registered as pending with closure targets the
   gate checks in both directions — RR3.15–RR3.26 build the per-arm bundles they
   need).  SM10 is

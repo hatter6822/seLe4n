@@ -975,8 +975,9 @@ code may assume:
 - **`ipcInvariantFull` is de-threaded but has no dispatch payoff yet.**  Every
   transition-level bundle is now unconditional in the sense that matters: the
   RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0) reports
-  **zero** conjuncts bound on a post-state across all fifty-nine
-  `*_preserves_ipcInvariantFull` statements, measured over the comment-free code
+  **zero** conjuncts bound on a post-state across all sixty-five
+  `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
+  statements, measured over the comment-free code
   view with the conjunct set, the bundle family and each bundle's own pre-state
   all *derived* rather than listed.  The pre-SM10 audit's "two conjuncts, 33 and
   31 of 35 bundles" was a binder-name census and undercounted: the measured

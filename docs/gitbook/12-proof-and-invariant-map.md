@@ -509,7 +509,9 @@ Bundle level:
   bundles — no new unproven content; RR3.1's gate sets the measured baseline.
 - **WS-RR RR3.1–RR3.14 (v0.34.43) — the bundles are de-threaded; the payoff is
   not.**  The RR3.1 gate reports **zero** conjuncts bound on a post-state across
-  all fifty-nine `*_preserves_ipcInvariantFull` statements.  The measured
+  all sixty-five statements in the family — the `*_preserves_ipcInvariantFull*`
+  bundles, their two relaxed `…ExceptDonationOwner` forms among them, plus the
+  four `*_establishes_ipcInvariantFull*` composites.  The measured
   baseline was 103 bindings over **six** conjuncts, not the audit's two: a
   binder-name census could not see `donationOwnerValid`,
   `dualQueueSystemInvariant` or `badgeWellFormed`.  Two closures were *vacuity*

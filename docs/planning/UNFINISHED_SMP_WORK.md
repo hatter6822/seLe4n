@@ -1297,8 +1297,8 @@ derives the conjunct set from `def ipcInvariantFull`, the bundle family from the
 declaration names, and each bundle's pre-state from its own hypothesis, over the
 comment-free code view — measured **103 post-state bindings over six
 conjuncts** at the baseline, where this entry names two plus "8 sites" and "6
-sites".  All six are now zero across all fifty-nine `*_preserves_ipcInvariantFull`
-statements.
+sites".  All six are now zero across all sixty-five statements in the
+`*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*` family.
 
 Two of the six were **vacuity** defects rather than proof gaps, and neither was
 visible to a binder-name census:
