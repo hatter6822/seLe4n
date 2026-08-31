@@ -464,8 +464,12 @@ bundles now exist: `endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull`
 RR2.16) and `endpointCallCrossCoreDispatch_preserves_ipcInvariantFull` /
 `endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull`
 (`SeLe4n/Kernel/IPC/CrossCore/DispatchInvariant.lean`, RR2.6 and RR2.11).  With
-`endpointReceiveDualOnCore`'s pre-existing bundle that is five of five live
-arms, which is RR2's stated acceptance.  Building the two dispatch chains meant
+`endpointReceiveDualOnCore`'s pre-existing bundle that is five of five **as this
+finding enumerated the arms** — the closure audit then re-derived the arm set
+from the dispatch code, found the enumeration short (the live receive runs the
+WithCaps form, and `.replyRecv` / `.notificationWait` / `.notificationSignal`
+commit state too), and addendum 2 below records what was added and what remains
+registered.  Building the two dispatch chains meant
 first building what they compose over: the donation primitives had **no**
 invariant surface at all (`SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`,
 RR2.5), and the PIP stage both chains end on had none either
@@ -484,17 +488,28 @@ Two things this does **not** close, both owned by RR3.
    predicate is RR3's, not RR2's.  Per-arm carriage is a prerequisite for it,
    not a substitute; no verification claim in README/SPEC/CLAIM_EVIDENCE_INDEX
    was widened on the strength of it.
-2. **Two of the five bundles are staged, not production.**
-   `DispatchInvariant.lean` composes the staged `EndpointCallInvariant` and
-   `EndpointReplyInvariant` surfaces, so it inherits their staging; it is
-   anchored from `SeLe4n/Platform/Staged.lean` and listed in
-   `scripts/staged_module_allowlist.txt`, so CI builds it on every PR, but it is
-   not reachable from a linked kernel image.  The two *primitive* surfaces it
-   builds on — `IPC.Invariant.DonationPreservation` and
-   `IPC.Invariant.CapTransferBundle` — are production and imported from
-   `SeLe4n.lean` directly, which is the half that could be moved across without
-   dragging the staged call/reply surfaces with it.  Finding 9 in this section
-   is the same shape at the kernel-entry level.
+2. **One of the bundles is staged, not production — and the count used to be
+   two, for a wrong reason.**  The original RR2 landing staged *both* dispatch
+   chains' bundles in `DispatchInvariant.lean`, with a rationale naming
+   `EndpointCallInvariant` **and** `EndpointReplyInvariant` as the staged
+   surfaces it composes.  The closure audit measured the second half false:
+   `EndpointReplyInvariant` is production (imported by the live API through
+   `EndpointSendInvariant`), so the `.reply` chain's bundle was staged only by
+   cohabitation.  The audit split the module: the `.reply` chain's bundle now
+   lives in the production `EndpointReplyDispatchInvariant.lean`, the
+   priority-inheritance walk's bundle beside its driver in
+   `DonationPreservation.lean` §8, and only the `.call` chain's remains staged
+   on the genuinely staged `EndpointCallInvariant`.  The same audit found the
+   `.receive` arm had been counted covered on the strength of the *bare*
+   per-core bundle while the live arm runs the WithCaps form — the same
+   measured-the-wrong-function shape as blocker 3 — and built
+   `endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull{,_perCore}`
+   (production), plus bundles for `replyRecvReturnDonation` and the
+   `.notificationWait` dispatch wrapper.  Still uncovered at transition level:
+   `notificationSignalBoundOnCore` (SM6.D's registered bound-delivery debt) and
+   the composition layer (`Checked` wrappers, `replyRecvBody`,
+   `Architecture.stage*` frames) that RR3.15 owns.  Finding 9 in this section
+   is the same staging shape at the kernel-entry level.
 
 #### 2. "ipcInvariant CLOSED across the entire cancellation surface" excludes the operation that actually runs on.tcbSuspend
 

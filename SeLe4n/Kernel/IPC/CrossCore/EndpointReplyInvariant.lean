@@ -16,6 +16,7 @@ import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 import SeLe4n.Kernel.IPC.Invariant.PerCoreBundle
 import SeLe4n.Kernel.IPC.Invariant.PerCoreBundlePreservation
+import SeLe4n.Kernel.IPC.Invariant.CapTransferBundle
 
 /-!
 # WS-SM SM6.C — Cross-core reply IPC-invariant preservation
@@ -1332,6 +1333,341 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointReplyRecvOnCore_passiveServerIdleFrameOnCore endpointId receiver replyTarget
         msg replyId executingCore st c hReceiverReady hObjInv)
+      (hInv c).passiveServerIdle)
+
+-- ============================================================================
+-- §10  WS-RR RR2 closure audit — the capability-carrying live `.receive` arm
+-- ============================================================================
+--
+-- `endpointReceiveDualWithCapsOnCore` is the transition the live `.receive` arm
+-- (and `replyRecvBody`'s receive leg) actually runs; §9's bundle covers only the
+-- bare per-core receive inside it.  The pre-SM10 audit counted the receive arm
+-- as covered on the strength of the bare form — measuring the wrong function,
+-- the same shape as blocker 3's retired-single-core citation — so the closure
+-- audit builds the WithCaps composition here, mirroring the `.send` side's
+-- RR2.14 exactly: the bare bundle, then `ipcUnwrapCaps`' on the installing arm,
+-- with the transfer's two *input* conditions (a CNode at the destination root,
+-- valid badges on the parked message's capabilities) rather than any post-state
+-- conjunct.
+
+/-- WS-RR RR2 (closure audit): the bare per-core receive preserves the
+object-store invariant — the definition walk, mirroring
+`endpointSendDualOnCore_preserves_objects_invExt`. -/
+theorem endpointReceiveDualOnCore_preserves_objects_invExt
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.objects.invExt := by
+  unfold endpointReceiveDualOnCore
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact hObjInv
+  | some ep =>
+    simp only
+    cases hHead : ep.sendQ.head with
+    | some sender0 =>
+      simp only
+      cases hPop : endpointQueuePopHead endpointId false st with
+      | error e => simp only; exact hObjInv
+      | ok popRes =>
+        obtain ⟨sender, senderTcb, st'⟩ := popRes
+        simp only
+        have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId false
+          st st' sender senderTcb hObjInv hPop
+        split
+        · -- The dequeued sender was a `Call`: re-block it on reply, link, deliver.
+          cases hS1 : storeTcbIpcStateAndMessage st' sender
+              (.blockedOnReply endpointId (some receiver)) none with
+          | error e => simp only; exact hObjInv
+          | ok st'' =>
+            simp only
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
+              sender _ _ hObjInv1 hS1
+            cases replyId with
+            | none => exact hObjInv
+            | some rid =>
+              simp only
+              cases hLink : SystemState.linkCallerReply sender rid st'' with
+              | error e => simp only; exact hObjInv
+              | ok pLink =>
+                obtain ⟨⟨⟩, stLinked⟩ := pLink
+                simp only
+                have hObjInv3 := linkCallerReply_preserves_objects_invExt st'' stLinked
+                  sender rid hObjInv2 hLink
+                cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
+                    senderTcb.pendingMessage with
+                | ok st3 =>
+                    exact storeTcbIpcStateAndMessage_preserves_objects_invExt stLinked st3
+                      receiver _ _ hObjInv3 hS2
+                | error e => simp only; exact hObjInv
+        · -- A plain `Send`: complete the sender, wake it on its home core, deliver.
+          cases hS1 : storeTcbIpcStateAndMessage st' sender .ready none with
+          | error e => simp only; exact hObjInv
+          | ok st'' =>
+            simp only
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
+              sender _ _ hObjInv1 hS1
+            have hObjInvW := wakeThread_preserves_objects_invExt st'' sender executingCore hObjInv2
+            cases hS2 : storeTcbIpcStateAndMessage (wakeThread st'' sender executingCore).1
+                receiver .ready senderTcb.pendingMessage with
+            | ok st4 =>
+                exact storeTcbIpcStateAndMessage_preserves_objects_invExt _ st4 receiver _ _
+                  hObjInvW hS2
+            | error e => simp only; exact hObjInv
+    | none =>
+      simp only
+      cases hClean : cleanupPreReceiveDonationChecked st receiver with
+      | error e => simp only; exact hObjInv
+      | ok stClean =>
+        simp only
+        have hObjInvC : stClean.objects.invExt := by
+          unfold cleanupPreReceiveDonationChecked at hClean
+          cases hLk : lookupTcb st receiver with
+          | none => rw [hLk] at hClean; cases hClean; exact hObjInv
+          | some recvTcb =>
+            rw [hLk] at hClean; simp only [] at hClean
+            cases hB : recvTcb.schedContextBinding with
+            | donated scId originalOwner =>
+                rw [hB] at hClean
+                exact returnDonatedSchedContext_preserves_objects_invExt st stClean receiver
+                  scId originalOwner hObjInv hClean
+            | unbound => rw [hB] at hClean; cases hClean; exact hObjInv
+            | bound scId => rw [hB] at hClean; cases hClean; exact hObjInv
+        cases hEnq : endpointQueueEnqueue endpointId true receiver stClean with
+        | error e => simp only; exact hObjInv
+        | ok st1 =>
+          simp only
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver
+            stClean st1 hObjInvC hEnq
+          cases hS1 : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId)
+              none with
+          | error e => simp only; exact hObjInv
+          | ok st2 =>
+            simp only
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2
+              receiver _ _ hObjInv1 hS1
+            cases hGetR : st2.getTcb? receiver with
+            | none =>
+                show (removeRunnableOnCore st2 receiver executingCore).objects.invExt
+                rw [removeRunnableOnCore_preserves_objects]
+                exact hObjInv2
+            | some rTcb =>
+              simp only
+              split
+              · cases hStash : storeObject receiver.toObjId
+                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                | error e => simp only; exact hObjInv
+                | ok pStash =>
+                  obtain ⟨⟨⟩, stStashed⟩ := pStash
+                  show (removeRunnableOnCore stStashed receiver executingCore).objects.invExt
+                  rw [removeRunnableOnCore_preserves_objects]
+                  exact storeObject_preserves_objects_invExt st2 stStashed receiver.toObjId _
+                    hObjInv2 hStash
+              · exact hObjInv
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR2 (closure audit): the transition the live `.receive` arm really
+calls preserves the whole IPC invariant bundle.**
+
+The composition is §9's bare cross-core bundle, then
+`ipcUnwrapCaps_preserves_ipcInvariantFull` on the arm that installs the parked
+sender's capabilities.  `hRecvRootCNode` / `hCapBadges` are the transfer's two
+*input* conditions, exactly as on the `.send` side (RR2.14): a CNode at the
+destination CSpace root — here the arm's own `receiverCspaceRoot` parameter,
+so no lookup quantifier is needed — and valid badges on the capabilities the
+delivered message carries, stated against the post-receive state whose
+`pendingMessage` the wrapper reads.  Neither is a post-state conjunct. -/
+theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
+      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
+    (hRCLRecip' : replyCallerLinkageReciprocal
+      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+      ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver)
+    (hRecvTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.receiveQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.sendQ.tail ≠ some tailTid))
+    (hReplyIdValid : ∀ rid, replyId = some rid → replyIdEstablishFresh st rid)
+    (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
+        ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
+        tcb.ipcState = .ready)
+    (hRecvRootCNode : ∃ cn,
+      (endpointReceiveDualOnCore endpointId receiver replyId executingCore
+        st).1.objects[receiverCspaceRoot]? = some (.cnode cn))
+    (hCapBadges : ∀ (tcb : TCB),
+      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.getTcb? receiver
+        = some tcb →
+      ∀ m, tcb.pendingMessage = some m →
+      ∀ (i : Nat) (c : TransferCap), m.caps[i]? = some c →
+        ∀ b, c.cap.badge = some b → b.valid) :
+    ipcInvariantFull
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore st).1 := by
+  have hBare := endpointReceiveDualOnCore_preserves_ipcInvariantFull endpointId receiver replyId
+    executingCore st hInv hObjInv hWtpmn' hRCLRecip' hAllBudgetsNone hFreshReceiver
+    hRecvTailFresh hReplyIdValid hReceiverNotRecv hReceiverReady
+  have hBareInv := endpointReceiveDualOnCore_preserves_objects_invExt endpointId receiver replyId
+    executingCore st hObjInv
+  unfold endpointReceiveDualWithCapsOnCore
+  cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+  | mk stRecv res =>
+    rw [hRecv] at hBare hBareInv hRecvRootCNode hCapBadges
+    cases res with
+    | error e => exact hBare
+    | ok pr =>
+      obtain ⟨senderId, sgi⟩ := pr
+      simp only
+      split
+      · exact hBare
+      · cases hT : stRecv.getTcb? receiver with
+        | none => exact hBare
+        | some receiverTcb =>
+          simp only
+          cases hM : receiverTcb.pendingMessage with
+          | none => exact hBare
+          | some msg =>
+            simp only
+            split
+            · exact hBare
+            · cases hRoot : lookupCspaceRoot stRecv senderId with
+              | none => exact hBare
+              | some senderRoot =>
+                simp only
+                cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
+                    receiverSlotBase msg.capsGranted stRecv with
+                | error e => exact hBare
+                | ok pair =>
+                  obtain ⟨summary, stFinal⟩ := pair
+                  simp only
+                  obtain ⟨cn, hCn⟩ := hRecvRootCNode
+                  exact ipcUnwrapCaps_preserves_ipcInvariantFull msg senderRoot
+                    receiverCspaceRoot receiverSlotBase msg.capsGranted stRecv stFinal summary
+                    cn hBare hBareInv hCn (hCapBadges receiverTcb hT msg hM) hUnwrap
+
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR2 (closure audit): the capability-carrying cross-core receive frames
+every core's `passiveServerIdle` reading — §7's frame for the bare receive, then
+the capability transfer's own (`ipcUnwrapCaps_passiveServerIdleFrameOnCore`; the
+transfer writes no TCB at all). -/
+theorem endpointReceiveDualWithCapsOnCore_passiveServerIdleFrameOnCore
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
+        tcb.ipcState = .ready) :
+    passiveServerIdleFrameOnCore st
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore st).1 c := by
+  have hBare := endpointReceiveDualOnCore_passiveServerIdleFrameOnCore endpointId receiver
+    replyId executingCore st c hReceiverReady hObjInv
+  have hBareInv := endpointReceiveDualOnCore_preserves_objects_invExt endpointId receiver replyId
+    executingCore st hObjInv
+  unfold endpointReceiveDualWithCapsOnCore
+  cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+  | mk stRecv res =>
+    rw [hRecv] at hBare hBareInv
+    cases res with
+    | error e => exact hBare
+    | ok pr =>
+      obtain ⟨senderId, sgi⟩ := pr
+      simp only
+      split
+      · exact hBare
+      · cases hT : stRecv.getTcb? receiver with
+        | none => exact hBare
+        | some receiverTcb =>
+          simp only
+          cases hM : receiverTcb.pendingMessage with
+          | none => exact hBare
+          | some msg =>
+            simp only
+            split
+            · exact hBare
+            · cases hRoot : lookupCspaceRoot stRecv senderId with
+              | none => exact hBare
+              | some senderRoot =>
+                simp only
+                cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
+                    receiverSlotBase msg.capsGranted stRecv with
+                | error e => exact hBare
+                | ok pair =>
+                  obtain ⟨summary, stFinal⟩ := pair
+                  simp only
+                  exact hBare.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore msg senderRoot
+                    receiverCspaceRoot receiverSlotBase msg.capsGranted stRecv stFinal summary
+                    hBareInv hUnwrap)
+
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR2 (closure audit): the per-core bundle form for the live `.receive`
+arm, mirroring `endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull_perCore`. -/
+theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState)
+    (hInv : ipcInvariantFull_smp st)
+    (hObjInv : st.objects.invExt)
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
+      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
+    (hRCLRecip' : replyCallerLinkageReciprocal
+      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+      ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver)
+    (hRecvTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.receiveQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.sendQ.tail ≠ some tailTid))
+    (hReplyIdValid : ∀ rid, replyId = some rid → replyIdEstablishFresh st rid)
+    (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
+        ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
+        tcb.ipcState = .ready)
+    (hRecvRootCNode : ∃ cn,
+      (endpointReceiveDualOnCore endpointId receiver replyId executingCore
+        st).1.objects[receiverCspaceRoot]? = some (.cnode cn))
+    (hCapBadges : ∀ (tcb : TCB),
+      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.getTcb? receiver
+        = some tcb →
+      ∀ m, tcb.pendingMessage = some m →
+      ∀ (i : Nat) (c : TransferCap), m.caps[i]? = some c →
+        ∀ b, c.cap.badge = some b → b.valid)
+    (c : CoreId) :
+    ipcInvariantFull_perCore
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore st).1 c :=
+  ipcInvariantFull_perCore_of_full
+    (endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull endpointId receiver replyId
+      receiverCspaceRoot receiverSlotBase executingCore st (ipcInvariantFull_of_smp hInv)
+      hObjInv hWtpmn' hRCLRecip' hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid
+      hReceiverNotRecv hReceiverReady hRecvRootCNode hCapBadges)
+    (passiveServerIdle_perCore_of_frameOnCore
+      (endpointReceiveDualWithCapsOnCore_passiveServerIdleFrameOnCore endpointId receiver
+        replyId receiverCspaceRoot receiverSlotBase executingCore st c hObjInv hReceiverReady)
       (hInv c).passiveServerIdle)
 
 end SeLe4n.Kernel

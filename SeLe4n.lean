@@ -102,14 +102,17 @@ import SeLe4n.Kernel.Architecture.PerCoreCacheModel
 -- (`SyscallDispatchEntry.completeShootdownRounds` is the first runtime
 -- exerciser, closing the SM1.E "staged until SM7" note).
 import SeLe4n.Kernel.Architecture.TlbiForSharing
--- WS-RR RR2.5 / RR2.14: the two invariant surfaces the live IPC paths needed and
+-- WS-RR RR2.5 / RR2.14: the invariant surfaces the live IPC paths needed and
 -- did not have — the SchedContext donation primitives' own preservation
 -- theorems (`IPC.Invariant.DonationPreservation`: the store walk, the
--- `donationReadAgreement` it establishes, and the whole-bundle theorems for
--- `applyCallDonation{,OnCore}` / `applyReplyDonation`), and the capability
--- transfer's (`IPC.Invariant.CapTransferBundle`).  Both are production-clean;
--- the two *dispatch chains* that compose them (`IPC.CrossCore.DispatchInvariant`)
--- read the staged cross-core call surface and are staged with it, anchored from
--- `Platform.Staged`.
+-- `donationReadAgreement` it establishes, the whole-bundle theorems for
+-- `applyCallDonation{,OnCore}` / `applyReplyDonation`, and §8's
+-- priority-inheritance chain-walk bundle), the capability transfer's
+-- (`IPC.Invariant.CapTransferBundle`), and the live `.reply` dispatch chain's
+-- (`IPC.CrossCore.EndpointReplyDispatchInvariant`).  All three are
+-- production-clean.  Of the two dispatch chains only the `.call` chain's bundle
+-- (`IPC.CrossCore.DispatchInvariant`) reads the staged cross-core call surface
+-- and is staged with it, anchored from `Platform.Staged`.
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
 import SeLe4n.Kernel.IPC.Invariant.CapTransferBundle
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant

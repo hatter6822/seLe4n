@@ -7,40 +7,31 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-RR RR2.6 / RR2.11 — the IPC-bundle preservation surface
--- of the live cross-core `.call` and `.reply` dispatch chains.  Staged because
--- it composes the staged cross-core call/reply invariant surfaces
--- (`EndpointCallInvariant`, `EndpointReplyInvariant`), which are themselves
--- staged pending the SM10.1 runtime seam; the two *primitive* surfaces it builds
--- on (`IPC.Invariant.DonationPreservation`, `IPC.Invariant.CapTransferBundle`)
--- are production and are imported from `SeLe4n.lean` directly.
+-- STATUS: staged for WS-RR RR2.6 — the IPC-bundle preservation surface of the
+-- live cross-core `.call` dispatch chain.  Staged because it composes the staged
+-- `EndpointCallInvariant` surface (pending the SM10.1 runtime seam); everything
+-- else it builds on is production.  The `.reply` chain's bundle, which used to
+-- cohabit here, needs nothing staged and lives in the production
+-- `EndpointReplyDispatchInvariant.lean`; the priority-inheritance walk's bundle
+-- both chains end on lives beside its driver in
+-- `IPC/Invariant/DonationPreservation.lean` §8.
 
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
 import SeLe4n.Kernel.IPC.Invariant.CapTransferBundle
-import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatch
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
-import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 
 /-!
-# WS-RR RR2.6 / RR2.11 — the live dispatch chains preserve `ipcInvariantFull`
+# WS-RR RR2.6 — the live `.call` dispatch chain preserves `ipcInvariantFull`
 
-`endpointCallCrossCoreDispatch` and `endpointReplyCrossCoreDispatch` are the two
-operations the live SMP `.call` and `.reply` arms route through.  Each is a
-three-stage chain, and until RR2 only its *first* stage carried a bundle
-theorem: the donation stage had none at all (RR2.5 built it), and the
-priority-inheritance stage had frames for the object-store invariant and the
-blocking graph but nothing for the IPC bundle.
-
-This module supplies the missing middle and end, and composes the chains.
-
-## Structure
-
-* §1 — the PIP chain: `updatePipBoostOnCore` writes one TCB's `pipBoost` and
-  migrates its run-queue bucket, so it establishes a `donationReadAgreement`
-  and a `passiveServerIdleFrame`; the chain walk folds that over its fuel.
-* §2 — `applyReplyDonationOnCore`, the per-core donation return.
-* §3 — the `.call` chain (RR2.6).
-* §4 — the `.reply` chain (RR2.11).
+`endpointCallCrossCoreDispatch` is the operation the live SMP `.call` arm routes
+through: capability-carrying delivery → SchedContext donation (with the RR2.2
+replenishment migration) → priority-inheritance chain walk.  Until RR2 only the
+first stage carried a bundle theorem; this module derives what the rendezvous
+leaves behind (§1) and composes the chain (§2).  The donation stage's bundle is
+`IPC/Invariant/DonationPreservation.lean` §6, and the PIP walk's is §8 of the
+same file — both production; only the WithCaps delivery surface this module
+reads (`EndpointCallInvariant`) is staged.
 -/
 
 namespace SeLe4n.Kernel
@@ -51,133 +42,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId SgiKind)
 open SeLe4n.Kernel.PriorityInheritance
 
 -- ============================================================================
--- §1  The cross-core priority-inheritance chain walk
--- ============================================================================
-
-/-- WS-RR RR2.6: `updatePipBoostOnCore` preserves the whole IPC bundle.
-
-It writes one TCB's `pipBoost` — a field no conjunct reads — and re-keys that
-thread's run-queue bucket on its home core, which changes the queue *value* but
-no thread's membership.  Everything the bundle reads is therefore intact. -/
-theorem updatePipBoostOnCore_preserves_ipcInvariantFull (st : SystemState) (c : CoreId)
-    (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (updatePipBoostOnCore st c tid) := by
-  have hSelf : st.getTcb? tid = none → ipcInvariantFull (updatePipBoostOnCore st c tid) := by
-    intro hNone
-    rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hNone]
-    exact hInv
-  cases hAt : st.getTcb? tid with
-  | none => exact hSelf hAt
-  | some tcb =>
-      obtain ⟨p, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb hAt hObjInv
-      have hAtRaw := (getTcb?_eq_some_iff st tid tcb).mp hAt
-      have hPostRaw := (getTcb?_eq_some_iff (updatePipBoostOnCore st c tid) tid _).mp hPost
-      have hFrame : ∀ (oid : SeLe4n.ObjId), oid ≠ tid.toObjId →
-          (updatePipBoostOnCore st c tid).objects[oid]? = st.objects[oid]? := fun oid hNe =>
-        updatePipBoostOnCore_objects_ne st c tid oid
-          (by simpa using fun h => hNe h.symm) hObjInv
-      refine ipcInvariantFull_of_tcbFieldUpdate st _ tid.toObjId tcb _ hInv hAtRaw hPostRaw
-        hFrame rfl rfl rfl rfl rfl rfl rfl rfl rfl ?_
-      refine passiveServerIdleFrame_of_backward_monotone (fun x tcb' hTcb' => ?_)
-        (fun y hy => (updatePipBoostOnCore_mem_runQueueOnCore st c bootCoreId tid y).mpr hy)
-        (updatePipBoostOnCore_currentOnCore st c bootCoreId tid)
-      by_cases hEq : x.toObjId = tid.toObjId
-      · rw [hEq] at hTcb'
-        obtain rfl : { tcb with pipBoost := p } = tcb' := by
-          simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hPostRaw.symm.trans hTcb'
-        exact ⟨tcb, by rw [hEq]; exact hAtRaw, rfl, rfl⟩
-      · exact ⟨tcb', by rw [← hFrame x.toObjId hEq]; exact hTcb', rfl, rfl⟩
-
-/-- WS-RR RR2.6: the cross-core PIP boost with wake preserves the bundle — its
-state component is exactly `updatePipBoostOnCore` on the thread's home core; the
-SGI it returns is a notification for the runtime, not a state change. -/
-theorem pipBoostWithWake_preserves_ipcInvariantFull (st : SystemState)
-    (tid : SeLe4n.ThreadId) (ec : CoreId)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (pipBoostWithWake st tid ec).1 :=
-  updatePipBoostOnCore_preserves_ipcInvariantFull st (determineTargetCore st tid) tid
-    hObjInv hInv
-
-/-- **WS-RR RR2.6 / RR2.11**: the cross-core priority-inheritance chain walk
-preserves the whole IPC bundle.
-
-The walk is a fold of `pipBoostWithWake` boosts along the blocking chain, so the
-induction is on the fuel with the per-step theorem above.  This is the stage both
-live dispatch chains end on, and it had no bundle theorem before RR2 — only the
-object-store and blocking-graph frames. -/
-theorem propagatePipChainCrossCore_preserves_ipcInvariantFull (st : SystemState)
-    (tid : SeLe4n.ThreadId) (ec : CoreId) (fuel : Nat)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (propagatePipChainCrossCore st tid ec fuel).1 := by
-  show ipcInvariantFull (propagatePipChainCrossCoreState st tid ec fuel)
-  induction fuel generalizing st tid with
-  | zero => simpa using hInv
-  | succ n ih =>
-    rw [propagatePipChainCrossCoreState_step]
-    have hInv' := pipBoostWithWake_preserves_ipcInvariantFull st tid ec hObjInv hInv
-    have hObj' := pipBoostWithWake_preserves_objects_invExt st tid ec hObjInv
-    cases blockingServer st tid with
-    | none => exact hInv'
-    | some nextServer => exact ih _ nextServer hObj' hInv'
-
-
--- ============================================================================
--- §2  RR2.11 — the per-core donation return
--- ============================================================================
-
-/-- **WS-RR RR2.11**: `applyReplyDonationOnCore` preserves the whole IPC bundle.
-
-Three stages, and only the first touches an object: the SchedContext return
-(RR2.5's `returnDonatedSchedContext_preserves_ipcInvariantFull`), the RR2.8
-replenishment migration (a per-core replenish-queue write — no object, no run
-queue, no `current`), and the replier's deschedule on its own core.
-
-`hReplierIdleAllowed` is the same single precondition the single-core form
-carries, and for the same reason: the deschedule hands `passiveServerIdle` an
-obligation for a thread it previously had none for. -/
-theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
-    (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (executingCore replierHome ownerHome : CoreId)
-    (hObjInv : st.objects.invExt)
-    (hInv : ipcInvariantFull st)
-    (hReplierIdleAllowed : ∀ tcb, st.getTcb? replierVtid.val = some tcb →
-        passiveServerIdleAllowed tcb.ipcState)
-    (h : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome = .ok st'') :
-    ipcInvariantFull st'' := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid executingCore replierHome
-    ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, st', hRet, hR, hEq⟩
-  · rw [hEq]; exact hInv
-  · have hFull' : ipcInvariantFull st' :=
-      returnDonatedSchedContext_preserves_ipcInvariantFull st st' replierVtid scId owner
-        hObjInv hInv hRet hReplierIdleAllowed hR
-    obtain ⟨pTcb, hPPre, _, _, _, hNe⟩ :=
-      replyDonationReturn?_some_char st replierVtid.val scId owner hInv.donationOwnerValid hRet
-    obtain ⟨_, ⟨pTcb0, hPPre0, hPPost⟩, _⟩ :=
-      returnDonatedSchedContext_getTcb?_char st st' replierVtid.val scId owner hObjInv hNe hR
-    have hPEq : pTcb0 = pTcb := Option.some.inj (hPPre0.symm.trans hPPre)
-    rw [hPEq] at hPPost
-    -- The migration writes only per-core replenish queues.
-    let stM : SystemState := migrateSchedContextReplenishment st' scId replierHome ownerHome
-    have hMObjs : stM.objects = st'.objects := migrateSchedContextReplenishment_objects _ _ _ _
-    have hMRq := migrateSchedContextReplenishment_runQueue_current_eq st' scId replierHome
-      ownerHome bootCoreId
-    have hFullM : ipcInvariantFull stM :=
-      ipcInvariantFull_of_descheduleFrame st' stM hFull' hMObjs
-        (passiveServerIdleFrame.of_objects_scheduler_eq hMObjs hMRq.1 hMRq.2)
-    -- The deschedule writes only the executing core's queue and `current` slot.
-    rw [hEq]
-    refine ipcInvariantFull_of_descheduleFrame stM _ hFullM
-      (removeRunnableOnCore_preserves_objects stM replierVtid.val executingCore)
-      (removeRunnableOnCore_passiveServerIdleFrame stM replierVtid.val executingCore
-        (fun tcb hTcb => ?_))
-    rw [hMObjs] at hTcb
-    have hEqT : { pTcb with schedContextBinding := .unbound } = tcb :=
-      Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb).mpr hTcb))
-    exact Or.inr (by rw [← hEqT]; exact hReplierIdleAllowed pTcb hPPre)
-
-
--- ============================================================================
--- §3  RR2.6 — what the `.call` rendezvous leaves behind
+-- §1  RR2.6 — what the `.call` rendezvous leaves behind
 -- ============================================================================
 
 /-- WS-RR RR2.6: a successful `endpointCallOnCore` on an endpoint with a waiting
@@ -320,7 +185,7 @@ theorem endpointCallOnCore_rendezvous_post_ipcState
 
 
 -- ============================================================================
--- §4  RR2.6 — the cross-core `.call` chain
+-- §2  RR2.6 — the cross-core `.call` chain
 -- ============================================================================
 
 /-- WS-RR RR2.6: `endpointCallWithCapsOnCore` preserves the bundle — the
@@ -642,101 +507,5 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
                 exact propagatePipChainCrossCore_preserves_ipcInvariantFull stDon receiverTid
                   executingCore _ hDonInv hDonFull
 
-
--- ============================================================================
--- §5  RR2.11 — the cross-core `.reply` chain
--- ============================================================================
-
-/-- WS-RR RR2.11: `applyReplyDonationOnCore` preserves the object store's
-extended invariant — the return through `returnDonatedSchedContext`, the
-migration and the deschedule through their object frames. -/
-theorem applyReplyDonationOnCore_preserves_objects_invExt
-    (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (executingCore replierHome ownerHome : CoreId)
-    (hObjInv : st.objects.invExt)
-    (h : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome = .ok st'') :
-    st''.objects.invExt := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid executingCore replierHome
-    ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, st', _, hR, hEq⟩
-  · rw [hEq]; exact hObjInv
-  · have hInv' := returnDonatedSchedContext_preserves_objects_invExt st st' replierVtid.val scId
-      owner hObjInv hR
-    rw [hEq, removeRunnableOnCore_preserves_objects, migrateSchedContextReplenishment_objects]
-    exact hInv'
-
-/-- **WS-RR RR2.11: the live cross-core `.reply` dispatch preserves
-`ipcInvariantFull`.**
-
-The chain is reply delivery → SchedContext donation return → priority-inheritance
-reversion, and as on the `.call` side only the first stage carried a bundle
-theorem before RR2.
-
-`hServerIdleAllowed` is stated on the **pre**-state and transported through the
-reply by `endpointReplyOnCore_tcb_backward`, whose dichotomy is exactly what
-makes that sound: the reply either leaves a thread's `ipcState` alone or sets it
-`.ready`, and `.ready` is itself a `passiveServerIdleAllowed` state.  What it
-rules out is a recorded server parked in `.blockedOnSend` / `.blockedOnCall`,
-which the donation return would strand `.unbound` off the run queue in a state
-`passiveServerIdle` forbids. -/
-theorem endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull
-    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
-    (st : SystemState)
-    (hInv : ipcInvariantFull st)
-    (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReplyOnCore replier target msg executingCore st).1)
-    (hDOV' : donationOwnerValid
-      (endpointReplyOnCore replier target msg executingCore st).1)
-    (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hServerIdleAllowed : ∀ (expected : SeLe4n.ThreadId), recordedReplyServer? st target
-        = some expected →
-      ∀ tcb, st.getTcb? expected = some tcb → passiveServerIdleAllowed tcb.ipcState) :
-    ipcInvariantFull (endpointReplyCrossCoreDispatch replier target msg executingCore st).1 := by
-  have hReply : ipcInvariantFull (endpointReplyOnCore replier target msg executingCore st).1 :=
-    endpointReplyOnCore_preserves_ipcInvariantFull replier target msg executingCore st hInv
-      hObjInv hWtpmn' hDOV' hAllBudgetsNone
-  have hReplyInv : (endpointReplyOnCore replier target msg executingCore st).1.objects.invExt :=
-    endpointReplyOnCore_preserves_objects_invExt replier target msg executingCore st hObjInv
-  have hBack := endpointReplyOnCore_tcb_backward replier target msg executingCore st hObjInv
-  unfold endpointReplyCrossCoreDispatch
-  cases hRep : endpointReplyOnCore replier target msg executingCore st with
-  | mk st1 res =>
-    rw [hRep] at hReply hReplyInv hBack
-    cases res with
-    | error e => exact hInv
-    | ok replySgi =>
-      simp only
-      cases hRec : recordedReplyServer? st target with
-      | none => simp only; exact hInv
-      | some expected =>
-        simp only
-        cases hEV : SeLe4n.ThreadId.toValid? expected with
-        | none => simp only; exact hInv
-        | some expectedV =>
-          simp only
-          have hExpV : expectedV.val = expected :=
-            SeLe4n.ThreadId.toValid?_some_val_eq expected expectedV hEV
-          -- Transport the allowed-state condition across the reply.
-          have hAllowed : ∀ tcb, st1.getTcb? expectedV.val = some tcb →
-              passiveServerIdleAllowed tcb.ipcState := by
-            intro tcb hTcb
-            rw [hExpV] at hTcb
-            obtain ⟨tcb0, hTcb0, _, _, hDich⟩ := hBack expected tcb hTcb
-            rcases hDich with hReady | ⟨hSame, _⟩
-            · exact Or.inl hReady
-            · rw [hSame]; exact hServerIdleAllowed expected hRec tcb0 hTcb0
-          cases hDon : applyReplyDonationOnCore st1 expectedV (determineExecutingCore st expected)
-              (determineTargetCore st expected) (replyDonationOwnerHome st expected) with
-          | error e => simp only; exact hInv
-          | ok st2 =>
-            simp only
-            have hDonFull : ipcInvariantFull st2 :=
-              applyReplyDonationOnCore_preserves_ipcInvariantFull st1 st2 expectedV _ _ _
-                hReplyInv hReply hAllowed hDon
-            have hDonInv : st2.objects.invExt :=
-              applyReplyDonationOnCore_preserves_objects_invExt st1 st2 expectedV _ _ _
-                hReplyInv hDon
-            exact propagatePipChainCrossCore_preserves_ipcInvariantFull st2 expected executingCore
-              _ hDonInv hDonFull
 
 end SeLe4n.Kernel

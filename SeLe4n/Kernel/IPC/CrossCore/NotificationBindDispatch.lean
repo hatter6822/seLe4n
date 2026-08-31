@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.CrossCore.NotificationBind
+import SeLe4n.Kernel.IPC.CrossCore.NotificationInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 
 /-!
@@ -189,5 +190,32 @@ theorem notificationWaitCrossCoreDispatch_preserves_ipcInvariant
     ipcInvariant (notificationWaitCrossCoreDispatch notificationId waiter st).1 :=
   notificationWaitOnCore_preserves_ipcInvariant notificationId waiter
     (determineExecutingCore st waiter) st hInv hObjInv
+
+/-- WS-RR RR2 (closure audit): the live `.notificationWait` dispatch wrapper
+preserves the **whole** IPC invariant bundle — the wrapper is
+`notificationWaitOnCore` at the resolved executing core and nothing else, so
+this is that bundle instantiated.  (The bound-signal wrapper has no such
+corollary yet: `notificationSignalBoundOnCore`'s own bundle is the SM6.D
+bound-delivery debt, registered in `SMP_CROSS_CORE_IPC_PLAN.md`'s SM6.D
+tracked-debt list.) -/
+theorem notificationWaitCrossCoreDispatch_preserves_ipcInvariantFull
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (st : SystemState)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hWtpmn' : blockedThreadsPendingMessageConsistent
+      (notificationWaitCrossCoreDispatch notificationId waiter st).1)
+    (hRCLRecip' : replyCallerLinkageReciprocal
+      (notificationWaitCrossCoreDispatch notificationId waiter st).1)
+    (hWaiterNotRecv : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
+        ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    (hWaiterNotReply : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hWaiterReady : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
+        tcb.ipcState = .ready) :
+    ipcInvariantFull (notificationWaitCrossCoreDispatch notificationId waiter st).1 :=
+  notificationWaitOnCore_preserves_ipcInvariantFull notificationId waiter
+    (determineExecutingCore st waiter) st hInv hObjInv hWtpmn' hRCLRecip' hWaiterNotRecv
+    hWaiterNotReply hAllBudgetsNone hWaiterReady
 
 end SeLe4n.Kernel

@@ -296,14 +296,25 @@ unproven teardown hypothesis.
 
 **Met at v0.34.42**, with one clause partial and named as such:
 
-* **Bundles on every live arm** — `endpointCallCrossCoreDispatch` and
-  `endpointReplyCrossCoreDispatch` carry
-  `_preserves_ipcInvariantFull` (`IPC/CrossCore/DispatchInvariant.lean`),
-  composed from the delivery stage's existing bundle, the donation primitives'
-  new one (`IPC/Invariant/DonationPreservation.lean`, RR2.5) and the
-  priority-inheritance chain walk's new one, which nothing had before.  The
-  `.send` arm's was RR2.14/RR2.15.  The donation's two preconditions are
-  *derived* from the rendezvous the chain itself performs, not assumed.
+* **Bundles on the live transitions** — every *unchecked transition* the SMP
+  dispatch arms call now carries `_preserves_ipcInvariantFull`:
+  `endpointSendDualWithCapsOnCore` (RR2.14/RR2.15) and
+  `endpointReceiveDualWithCapsOnCore` (closure audit — the audit had counted
+  the receive arm covered on the strength of the *bare* per-core form, i.e.
+  measured the wrong function), `clearWokenReceiverStash` (RR2.16),
+  `endpointCallCrossCoreDispatch` and `endpointReplyCrossCoreDispatch`
+  (RR2.6/RR2.11), `replyRecvReturnDonation` and
+  `notificationWaitCrossCoreDispatch` (closure audit), over the donation
+  primitives' new surface (`IPC/Invariant/DonationPreservation.lean`, RR2.5)
+  and the priority-inheritance chain walk's new bundle, which nothing had
+  before.  The call donation's two preconditions are *derived* from the
+  rendezvous the chain performs, not assumed.  Not covered at transition
+  level, by measurement: `notificationSignalBoundOnCore` (its bound-delivery
+  invariant surface is SM6.D's registered debt in
+  `SMP_CROSS_CORE_IPC_PLAN.md`); and the *composition* layer above the
+  transitions — the flow-`Checked` wrappers, the `replyRecvBody` three-stage
+  composite, and the `Architecture.stage*` return-frame writes — which is
+  RR3.15's charter, not a transition.
 * **Replenish-queue migration** — all **three** live donation paths carry the
   SchedContext's pending CBS replenishments across cores
   (`applyCallDonationOnCore`, `applyReplyDonationOnCore`, and
@@ -331,24 +342,40 @@ unproven teardown hypothesis.
 **What RR2 hands RR3**, stated so the next phase is not surprised by its own
 inputs:
 
-* **RR3.11 starts at six sites, not eight.**  The send bundle could not
-  honestly compose over an assumption, so RR2.15 retyped
-  `ipcUnwrapCaps_preserves_ipcInvariantFull` to take the receiver's CNode and
-  the capability list and discharge `dualQueueSystemInvariant` /
-  `badgeWellFormed` from lemmas already in the tree.
-* **RR3.3/RR3.4/RR3.8 gain five sites.**  The new send and dispatch bundles
-  *inherit* the two post-state hypotheses their single-core predecessors
-  already carried; no new unproven content, but five more bindings for the
-  RR3.1 gate to count.  RR3.1's baseline must therefore be measured after RR2,
-  not before it — which the numbering already guarantees.
-* **RR3.15 has its inputs, but two of them are staged.**
-  `DispatchInvariant.lean` inherits the staging of the
-  `EndpointCallInvariant`/`EndpointReplyInvariant` surfaces it composes, so
-  `dispatchWithCap_preserves_ipcInvariantFull` cannot live in
-  `SeLe4n/Kernel/API.lean` until those move to production.  Either RR3.15
-  states the theorem in the staged layer and RR3.16 relocates the pair, or RR3
-  adds a row for the relocation ahead of RR3.15; the plan does not currently
-  say which, and RR3's author must choose before starting.
+* **RR3.11's site count is RR3.1's to measure, not this plan's to assert.**
+  RR2.15 retyped `ipcUnwrapCaps_preserves_ipcInvariantFull` to take the
+  receiver's CNode and the capability list and discharge
+  `dualQueueSystemInvariant` / `badgeWellFormed` from lemmas already in the
+  tree — two sites closed.  A binder-name census at the RR2 closure puts nine
+  theorem signatures still binding each of the two (across
+  `PerCoreBundlePreservation`, `DualQueueMembership`, `CapTransferBundle` and
+  the capability-preservation suite), but binder names are exactly what the
+  standing constraint says not to measure by; RR3.1's code-view gate sets the
+  baseline.
+* **RR3.3/RR3.4/RR3.8 gain sites.**  The new send, receive and dispatch
+  bundles *inherit* the post-state hypotheses their single-core predecessors
+  already carried — `blockedThreadsPendingMessageConsistent` everywhere,
+  `replyCallerLinkageReciprocal` on the send/receive side, `donationOwnerValid`
+  on the reply chain (from `endpointReplyOnCore`'s own surface).  No new
+  unproven content, but more bindings for the RR3.1 gate to count, so RR3.1's
+  baseline must be measured after RR2 — which the numbering already guarantees.
+  Fully de-threaded new bundles, for contrast: `clearWokenReceiverStash`,
+  `applyReplyDonationOnCore`, `replyRecvReturnDonation`, the donation
+  primitives, and the PIP walk — each takes only pre-state facts.
+* **RR3.15 has its transition-level inputs; one is staged, and the
+  composition layer is its own.**  After the closure-audit split, only the
+  `.call` chain's bundle (`DispatchInvariant.lean`) is staged — it composes
+  the staged `EndpointCallInvariant` surface — so
+  `dispatchWithCap_preserves_ipcInvariantFull` still cannot state in
+  `SeLe4n/Kernel/API.lean` over that arm until the call surface moves to
+  production; RR3's author must either state the payoff in the staged layer or
+  schedule the relocation first.  Beyond that, RR3.15 owns the glue no
+  transition bundle covers: the flow-`Checked` wrappers (each has its
+  `_flow_denied` / equivalence lemmas ready), the `replyRecvBody` composite
+  over its three covered stages, and the `Architecture.stage*` return-frame
+  writes (over `writeRegisterState_preserves_ipcInvariantFull`).
+  `notificationSignalBoundOnCore` stays gated on SM6.D's bound-delivery debt
+  and is that debt's, not RR3.15's, to clear.
 
 
 ### RR3 — `ipcInvariantFull` de-threading closure (D1, D6, D8)

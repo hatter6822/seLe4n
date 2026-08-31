@@ -487,21 +487,26 @@ Bundle level:
   **WS-DT** in [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md),
   closure target WS-RR phase RR3.  Canonical statement of the constraint:
   `CLAUDE.md` / `AGENTS.md`, "Standing constraints and registered debt".
-  **What RR2 changed (v0.34.42)**: every arm reachable from
-  `Kernel/API.lean`'s SMP dispatch now carries a per-arm
-  `_preserves_ipcInvariantFull` theorem — `endpointSendDualWithCapsOnCore`,
-  `clearWokenReceiverStash`, `endpointCallCrossCoreDispatch`,
-  `endpointReplyCrossCoreDispatch`, alongside `endpointReceiveDualOnCore`'s
-  pre-existing one — which is the prerequisite for RR3's payoff, not the payoff.
-  The two dispatch-chain bundles live in the **staged**
-  `IPC/CrossCore/DispatchInvariant.lean`, which composes the staged cross-core
-  call/reply invariant surfaces; the donation and capability-transfer bundles
-  beneath them are production.  RR2 also *reduced* the threading in one place
-  (`ipcUnwrapCaps_preserves_ipcInvariantFull` now establishes
-  `dualQueueSystemInvariant` and `badgeWellFormed` instead of assuming them) and
-  *added* five inherited threading sites with the new per-core send and dispatch
-  bundles — no new unproven content, but five more bindings for RR3.1's gate to
-  count.
+  **What RR2 changed (v0.34.42)**: every *unchecked transition* behind
+  `Kernel/API.lean`'s SMP dispatch arms now carries a
+  `_preserves_ipcInvariantFull` theorem — `endpointSendDualWithCapsOnCore` and
+  `endpointReceiveDualWithCapsOnCore` (the live WithCaps forms, the second
+  added by the closure audit after finding the bare form had been measured in
+  its place), `clearWokenReceiverStash`, `endpointCallCrossCoreDispatch`,
+  `endpointReplyCrossCoreDispatch`, `replyRecvReturnDonation` and
+  `notificationWaitCrossCoreDispatch` — the prerequisite for RR3's payoff, not
+  the payoff.  Only the `.call` chain's bundle is **staged**
+  (`IPC/CrossCore/DispatchInvariant.lean`, on the staged
+  `EndpointCallInvariant` surface); the `.reply` chain's
+  (`EndpointReplyDispatchInvariant.lean`), the priority-inheritance walk's
+  (`DonationPreservation.lean` §8) and everything else are production.  Still
+  uncovered: `notificationSignalBoundOnCore` (SM6.D's registered bound-delivery
+  debt) and the composition layer — `Checked` wrappers, `replyRecvBody`,
+  `Architecture.stage*` frames — which RR3.15 owns.  RR2 also *reduced* the
+  threading in one place (`ipcUnwrapCaps_preserves_ipcInvariantFull` now
+  establishes `dualQueueSystemInvariant` and `badgeWellFormed` instead of
+  assuming them) and *added* inherited threading sites with the new per-core
+  bundles — no new unproven content; RR3.1's gate sets the measured baseline.
 - `blockedThreadsPendingMessageConsistent` — **strengthened to both directions**
   (PR #873 round 11, v0.33.86), and renamed from `waitingThreadsPendingMessageNone`
   because the old name described only the half it stated.  It now ties

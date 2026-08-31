@@ -7167,9 +7167,9 @@ is archived.
 | Debt | Where it lives | Closure target |
 |------|----------------|----------------|
 | WS-DT slices D1, D6, D8 — two `ipcInvariantFull` conjuncts still threaded as post-state hypotheses; no dispatch payoff theorem | `SeLe4n/Kernel/IPC/Invariant/`, `SeLe4n/Kernel/API.lean` | RR3.1–RR3.17 |
-| Cross-core SchedContext donation never migrates the CBS replenish queue, breaking the SM5.H affinity invariant on a live path | `SeLe4n/Kernel/IPC/Operations/Donation.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | RR2.1–RR2.12 |
-| The live `.send` arm carries no `ipcInvariantFull` preservation while SM6.D claims coverage | `SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean` | RR2.14, RR2.15 |
-| Cancellation NI rests on a `hTeardownProj` hypothesis whose closure form returns its own premise | `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` | RR2.18 |
+| Cross-core SchedContext donation never migrates the CBS replenish queue, breaking the SM5.H affinity invariant on a live path — **closed v0.34.42** (all three live paths, RR2.20 included) | `SeLe4n/Kernel/IPC/Operations/Donation.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | RR2.1–RR2.12, RR2.20 |
+| The live `.send` arm carries no `ipcInvariantFull` preservation while SM6.D claims coverage — **closed v0.34.42** (and the `.receive` arm's WithCaps form, which the audit had mismeasured as covered, in the same cut) | `SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean` | RR2.14, RR2.15 |
+| Cancellation NI rests on a `hTeardownProj` hypothesis whose closure form returns its own premise — **partially closed v0.34.42** (`.ready` and `.blockedOnReply` arms discharged; the three queue arms wait on the label-uniformity invariant, RR3) | `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` | RR2.18, then RR3 |
 | VM faults are unhandled: a data or instruction abort returns to the faulting instruction, wedging the core.  Unreachable only because nothing boots | `SeLe4n/Kernel/Architecture/ExceptionModel.lean`, `rust/sele4n-hal/src/trap.rs` | RR4.1–RR4.27 |
 | `TCB.faultHandler : Option CPtr` has no consumer | `SeLe4n/Model/Object/Structures.lean` | RR4.7 |
 | No production `LabelingContext`: the hardware boot path leaves `testLabelingContext`, which maps every non-zero id to `publicLabel`, installed | `SeLe4n/Kernel/InformationFlow/Policy.lean`, `SeLe4n/Platform/FFI.lean` | RR5.1–RR5.5 |
@@ -7229,6 +7229,7 @@ constrains what v1.0.0 may claim, and RR8.4's hand-off check reads this table.
 | Idle TCBs carry `ObjId.sentinel` cspace/vspace roots | The idle thread never faults a user mapping; it becomes live work when RR5.10 installs idle threads on the production path, and RR5.10 must not close over it | RR5.10 must either give idle TCBs real roots or re-register this row |
 | SM9.D.11 — taint propagation at capability transfer shipped as a scope reduction, leaving `capabilityBadgeChannel_out_of_scope`: a registered false-negative channel in the causal detector | A false *negative* in a detector, not a policy bypass | post-v1.0.0; RR0.11 routes the plan-side row |
 | The SM8 class-C follow-on: the CC-1 capacity figure is stated in two places rather than single-sourced | Cosmetic duplication of a bound both sites agree on | post-v1.0.0 |
+| `schedContextBind` / `schedContextUnbind` carry no `replenishQueueAffinityConsistent` preservation theorems (the SM5.H family covers tick, schedule, replenish and — since RR2 — all three donation paths).  Found by the RR2 closure audit's derivation sweep over every `boundThread` writer | Soundness rests on an operational discipline the tree maintains but does not state as an invariant: an *unbound* SchedContext holds no replenish-queue entries (unbind purges on the bound thread's home core and sweeps when the TCB is gone; nothing enqueues for an unbound SC), and the affinity invariant is vacuous for unbound SCs — so bind-from-unbound cannot mis-home an entry unless an orphan already exists.  Proving it needs a "no orphan replenishments" auxiliary invariant established at every enqueue site — the same establish-everywhere shape as RR3's queue label-uniformity work, but owned by neither RR3 nor any live phase | post-v1.0.0 hardening; SM10's v1.0.0 claims over SM5.H must state the preservation family's measured coverage, not "all transitions" |
 | ARM CCA + MPAM hardware partition isolation | Targets a successor SoC; not RPi5 | [`docs/planning/HARDWARE_PARTITION_ISOLATION_PLAN.md`](planning/HARDWARE_PARTITION_ISOLATION_PLAN.md), unscheduled |
 | **R-ABI-L6** — cross-crate duplication of `MAX_METHOD_COUNT`, `MAX_PRIORITY`, `MAX_DOMAIN` and `MAX_SERVICE_MESSAGE_SIZE` between `sele4n-abi` (limits) and `sele4n-types` (identifiers + error enums) | Duplication, not divergence — the values agree and the ABI conformance tests compare them; the risk is that a future edit changes one copy | post-v1.0.0 hardening.  Recorded in [`docs/AUDIT_NOTES.md`](AUDIT_NOTES.md) §R-ABI-L6, which declared itself untracked and is the one v0.29.0 R-ABI item still open — L3, L4, L5, L7 and L8 record settled decisions, not deferrals.  Found during the RR0 review round (v0.34.31), not by the pre-SM10 audit |
 | The 32 in-source post-1.0 hardening candidates enumerated below | Each is a strengthening of a surface that is already correct; none is a soundness gap | post-v1.0.0 hardening, listed individually so none ages out with its comment |
@@ -7416,6 +7417,24 @@ preconditions are **derived** from the rendezvous the chain itself performs:
 the caller is `.blockedOnReply` because the call blocked it, and no thread owns
 a donation on the receiver because the call woke the receiver `.ready` while
 `donationOwnerValid` puts an owner `.blockedOnReply`.
+
+*And what the closure audit then found and fixed, in the same cut.*  Auditing
+the landing against a derivation of the dispatch arms (rather than the audit's
+own enumeration) found: the `.receive` arm had been counted covered on the
+strength of the **bare** per-core bundle while the live arm runs the WithCaps
+form — the same measured-the-wrong-function shape as blocker 3 — so
+`endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull{,_perCore}`
+landed, production, mirroring the send side; `replyRecvReturnDonation` (the
+RR2.20 path) and the `.notificationWait` dispatch wrapper got whole-bundle
+theorems too, both fully de-threaded.  The staging rationale for
+`DispatchInvariant.lean` named `EndpointReplyInvariant` as staged when it is
+production, so the module was split: the `.reply` chain's bundle and the
+priority-inheritance walk's are production now
+(`EndpointReplyDispatchInvariant.lean`, `DonationPreservation.lean` §8), and
+only the `.call` chain's remains staged on the genuinely staged
+`EndpointCallInvariant`.  The derivation sweep over every `boundThread` writer
+also surfaced the `schedContextBind`/`Unbind` affinity-proof gap, registered in
+table C of the debt register below.
 
 *What RR2 did not close.* RR2.18's acceptance clause — "no cancellation theorem
 rests on an unproven teardown hypothesis" — is met on the two arms whose

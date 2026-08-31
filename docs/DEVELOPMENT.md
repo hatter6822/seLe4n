@@ -12,9 +12,12 @@ It is aligned to the **current project state**:
   v0.34.26** (registration and plan correction), **RR1 at v0.34.41** (the first
   aarch64 compile and the gates that keep it), **RR2 at v0.34.42** (live-path
   correctness: all three cross-core donation paths migrate the CBS replenish
-  queue, every live SMP dispatch arm carries an `ipcInvariantFull` bundle, and
-  the `.tcbSuspend` operation the dispatch actually calls carries an
-  `ipcInvariant` preservation theorem — closing audit blockers 2 and 3).  SM10 is
+  queue, every unchecked transition behind the SMP dispatch arms carries an
+  `ipcInvariantFull` bundle — the flow-checked wrappers and `replyRecvBody`
+  composition are RR3.15's layer, and `notificationSignalBoundOnCore` is
+  SM6.D's registered debt — and the `.tcbSuspend` operation the dispatch
+  actually calls carries an `ipcInvariant` preservation theorem — closing
+  audit blockers 2 and 3).  SM10 is
   BLOCKED on it and must not open until RR8 closes**; the pre-SM10 completeness
   audit found three findings that block starting SM10, a false scope statement in
   its own plan, and fail-open latents that become reachable when the boot path

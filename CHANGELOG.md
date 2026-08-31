@@ -91,13 +91,15 @@ CNode and the capability list and discharges both from lemmas already in the
 tree.  That is two of the eight sites RR3.11 is scheduled to close, closed
 early because the send bundle could not honestly compose over an assumption.
 
-In the other direction, and stated so RR3 is not surprised by it: the five new
-send and dispatch bundles **inherit** the two post-state hypotheses their
-single-core predecessors already carried (`blockedThreadsPendingMessageConsistent`
-and `replyCallerLinkageReciprocal`).  No new unproven content is introduced —
-the per-core forms thread exactly what `endpointSendDual_preserves_ipcInvariantFull_perCore`
-threads — but they are five more sites for the RR3.1 gate to count, and the
-count is the honest measure of that phase's remaining work.
+In the other direction, and stated so RR3 is not surprised by it: the new
+send, receive and dispatch bundles **inherit** the post-state hypotheses their
+single-core predecessors already carried — `blockedThreadsPendingMessageConsistent`
+everywhere, `replyCallerLinkageReciprocal` on the send/receive side, and
+`donationOwnerValid` on the reply chain, from `endpointReplyOnCore`'s own
+surface.  No new unproven content is introduced — each form threads exactly
+what the surface it composes already threads — but they are more sites for the
+RR3.1 gate to count, and that gate's measurement, not any figure in this entry,
+is the honest baseline of RR3's remaining work.
 
 ### RR2.5 — the donation primitives get an invariant surface
 
@@ -136,12 +138,14 @@ context's owner, so the caller of the bundle discharges nothing by inspection.
 That in turn needed `endpointQueuePopHead_popped_eq_head`, which the dual-queue
 module had never stated.
 
-`DispatchInvariant.lean` is **staged**: it composes the staged
-`EndpointCallInvariant`/`EndpointReplyInvariant` surfaces and inherits their
-staging.  It is anchored from `Platform/Staged.lean` and allowlisted, so CI
-builds it on every PR.  The two *primitive* surfaces it rests on —
-`DonationPreservation` and `CapTransferBundle` — are production and imported
-from `SeLe4n.lean` directly.
+`DispatchInvariant.lean` shipped **staged** with both chains; the closure
+audit below then measured its rationale half-false (`EndpointReplyInvariant`
+is production) and split it — see the audit section at the end of this entry.
+After the split only the `.call` chain's bundle is staged (on the genuinely
+staged `EndpointCallInvariant`), anchored from `Platform/Staged.lean` and
+allowlisted so CI builds it on every PR; the `.reply` chain's bundle, the
+PIP walk's, and the two primitive surfaces (`DonationPreservation`,
+`CapTransferBundle`) are production, imported from `SeLe4n.lean` directly.
 
 ### RR2.17 — the operation `.tcbSuspend` actually runs preserves `ipcInvariant`
 
@@ -197,8 +201,7 @@ landed.
 
 `tests/SmpIpcSuite.lean` gains two check groups on 4-core fixtures: §3.9b drives
 cross-core donations and asserts the replenishment entries leave the donor's
-queue and appear on the donee's, with the same-core case moving nothing; §3.13b
-(10 assertions) covers the suspend arm — local and remote victims, the SGI the
+queue and appear on the donee's, with the same-core case moving nothing; §3.13b covers the suspend arm — local and remote victims, the SGI the
 remote case raises, and the `illegalState` rejection of an already-inactive
 victim.
 
@@ -209,6 +212,57 @@ lands the entries back where they started.  So the rendezvous check uses a
 *delegated* reply cap whose receiver is homed on a **third** core, making the
 two hops (core 1 → core 0, then core 0 → core 2) land in distinguishable
 places, and the return-only arm is exercised separately.
+
+### The RR2 closure audit — measure the landing against a derivation, not the audit's enumeration
+
+A full re-audit of the RR2 cut, done before merge, applied the project's own
+rule — derive the set, keep the enumeration as a pin — to RR2's *own*
+acceptance, and found the audit's "five live arms" was an enumeration too.
+Deriving the arms from `dispatchWithCap`'s code found four more
+state-committing operations, and measuring bundle coverage per operation
+found three defects in the landing:
+
+* **The `.receive` arm was counted covered on the strength of the wrong
+  function.**  The pre-SM10 audit's "only `endpointReceiveDualOnCore` has a
+  bundle" measured the *bare* per-core receive; the live arm runs
+  `endpointReceiveDualWithCapsOnCore` — the same measured-a-retired-function
+  shape as blocker 3 itself.  Fixed:
+  `endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull{,_perCore}`
+  (production, `EndpointReplyInvariant.lean` §10), composed exactly as the
+  send side — the bare bundle, then `ipcUnwrapCaps`' with its two *input*
+  conditions, plus the definition-walk `_preserves_objects_invExt` and the
+  per-core `passiveServerIdle` frame.
+* **The staging rationale was half-false.**  `DispatchInvariant.lean` claimed
+  to compose "the staged `EndpointCallInvariant` / `EndpointReplyInvariant`
+  surfaces"; the reply surface is production (the live API imports it through
+  `EndpointSendInvariant`).  Fixed by splitting the module: the `.reply`
+  chain's bundle now lives in the production
+  `EndpointReplyDispatchInvariant.lean`, the priority-inheritance walk's
+  beside its driver in `DonationPreservation.lean` §8 (its proof re-based off
+  the staged `propagatePipChainCrossCoreState` alias onto the production step
+  lemma), and `removeRunnableOnCore_passiveServerIdleFrame` moved to
+  `PerCoreBundlePreservation.lean` beside its OnCore sibling.  Only the
+  `.call` chain's bundle remains staged, on the surface that is genuinely
+  staged.
+* **The third donation path had operational coverage but no bundle.**  Fixed:
+  `replyRecvReturnDonation_preserves_ipcInvariantFull` (production,
+  `Kernel/API.lean`) — return, migration, re-donation-or-deschedule, PIP walk,
+  with the re-donation's `.blockedOnReply` precondition *derived from the
+  branch itself* and the not-an-owner condition transported across the return
+  by its binding trichotomy.  Fully de-threaded: every hypothesis is a
+  pre-state fact.  `notificationWaitCrossCoreDispatch` — a thin wrapper the
+  arm derivation surfaced — got its bundle as a one-step reduction.
+
+What the audit deliberately did **not** build, each with its named owner: the
+flow-`Checked` dispatch wrappers, the `replyRecvBody` three-stage composite
+and the `Architecture.stage*` return-frame writes are RR3.15's composition
+layer (its inputs are now all in place, and all production except the `.call`
+chain's); `notificationSignalBoundOnCore`'s bundle is SM6.D's registered
+bound-delivery debt.  The audit's derivation sweep over every `boundThread`
+writer also surfaced that `schedContextBind`/`schedContextUnbind` carry no
+affinity-preservation theorems — sound today only by an unproven operational
+discipline (an unbound SchedContext holds no replenish entries) — registered
+in the debt register's table C rather than left as tribal knowledge.
 
 ## v0.34.41 — WS-RR RR1: the first aarch64 compile, and the gates that keep it
 

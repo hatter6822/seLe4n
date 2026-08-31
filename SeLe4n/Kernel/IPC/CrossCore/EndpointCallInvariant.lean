@@ -425,37 +425,10 @@ theorem wakeThread_passiveServerIdleFrame_of_ready
   · rwa [show (wakeThread st wtid ec).1 = enqueueRunnableOnCore st (determineTargetCore st wtid) wtid from rfl,
       enqueueRunnableOnCore_currentOnCore st (determineTargetCore st wtid) wtid bootCoreId] at hNotCurrent'
 
-open SeLe4n.Model.SystemState in
-/-- D6 (per-core): `removeRunnableOnCore` on core `c` frames `passiveServerIdle` given the removed
-thread is **bound or already in an allowed state** (`hRemoved`).  The object map is untouched; the
-only thread whose descheduled-status changes is the removed one (on core `c` — which may or may not
-be the boot core), and the pullback filter excludes it. -/
-theorem removeRunnableOnCore_passiveServerIdleFrame
-    (st : SystemState) (removed : SeLe4n.ThreadId) (c : CoreId)
-    (hRemoved : ∀ tcb, st.objects[removed.toObjId]? = some (.tcb tcb) →
-      tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
-    passiveServerIdleFrame st (removeRunnableOnCore st removed c) := by
-  refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
-  rw [removeRunnableOnCore_preserves_objects st removed c] at hTcb'
-  by_cases hEq : tid = removed
-  · subst hEq
-    rcases hRemoved tcb' hTcb' with hB | hA
-    · exact absurd hUnbound' hB
-    · exact absurd hA hNA
-  · refine ⟨tcb', hTcb', hUnbound', ?_, ?_, rfl⟩
-    · intro hIn
-      apply hNotInQ'
-      by_cases hcb : c = bootCoreId
-      · subst hcb
-        rw [removeRunnableOnCore_runQueueOnCore_self]
-        exact (RunQueue.mem_remove _ _ _).mpr ⟨hIn, hEq⟩
-      · rw [removeRunnableOnCore_runQueueOnCore_ne st removed c bootCoreId hcb]; exact hIn
-    · intro hCur
-      apply hNotCurrent'
-      by_cases hcb : c = bootCoreId
-      · subst hcb
-        rw [removeRunnableOnCore_currentOnCore_self, hCur, if_neg (fun h => hEq (Option.some.inj h))]
-      · rw [removeRunnableOnCore_currentOnCore_ne st removed c bootCoreId hcb]; exact hCur
+-- (WS-RR RR2 closure audit: `removeRunnableOnCore_passiveServerIdleFrame` moved to
+-- the production `IPC/Invariant/PerCoreBundlePreservation.lean`, beside its OnCore
+-- sibling — the production `.reply`-chain bundle consumes it, and nothing in it
+-- reads a staged surface.)
 
 open SeLe4n.Model.SystemState in
 /-- D6 (per-core): `endpointCallOnCore` preserves every TCB's `schedContextBinding` (the cross-core

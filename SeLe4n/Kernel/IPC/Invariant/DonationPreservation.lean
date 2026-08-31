@@ -46,6 +46,7 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Model.SystemState
 open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
+open SeLe4n.Kernel.PriorityInheritance
 
 -- ============================================================================
 -- §1  The object-store walk
@@ -1578,5 +1579,84 @@ theorem applyReplyDonation_preserves_objects_invExt
       removeRunnable_preserves_objects st' replierVtid.val]
     exact returnDonatedSchedContext_preserves_objects_invExt st st' replierVtid.val scId owner
       hObjInv hR
+
+
+-- ============================================================================
+-- §8  WS-RR RR2.6 — the cross-core priority-inheritance chain walk
+-- ============================================================================
+--
+-- Moved here from the staged `IPC/CrossCore/DispatchInvariant.lean` during the
+-- RR2 closure audit: nothing in these three theorems reads a staged surface —
+-- the boost is `Scheduler/PriorityInheritance/Propagate.lean` and the driver is
+-- §2's `ipcInvariantFull_of_tcbFieldUpdate` — so staging them was pinning
+-- production-provable facts behind an import they never used.  Both dispatch
+-- chains (`.call`, staged; `.reply`, production) end on this walk.
+
+/-- WS-RR RR2.6: `updatePipBoostOnCore` preserves the whole IPC bundle.
+
+It writes one TCB's `pipBoost` — a field no conjunct reads — and re-keys that
+thread's run-queue bucket on its home core, which changes the queue *value* but
+no thread's membership.  Everything the bundle reads is therefore intact. -/
+theorem updatePipBoostOnCore_preserves_ipcInvariantFull (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (updatePipBoostOnCore st c tid) := by
+  have hSelf : st.getTcb? tid = none → ipcInvariantFull (updatePipBoostOnCore st c tid) := by
+    intro hNone
+    rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hNone]
+    exact hInv
+  cases hAt : st.getTcb? tid with
+  | none => exact hSelf hAt
+  | some tcb =>
+      obtain ⟨p, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb hAt hObjInv
+      have hAtRaw := (getTcb?_eq_some_iff st tid tcb).mp hAt
+      have hPostRaw := (getTcb?_eq_some_iff (updatePipBoostOnCore st c tid) tid _).mp hPost
+      have hFrame : ∀ (oid : SeLe4n.ObjId), oid ≠ tid.toObjId →
+          (updatePipBoostOnCore st c tid).objects[oid]? = st.objects[oid]? := fun oid hNe =>
+        updatePipBoostOnCore_objects_ne st c tid oid
+          (by simpa using fun h => hNe h.symm) hObjInv
+      refine ipcInvariantFull_of_tcbFieldUpdate st _ tid.toObjId tcb _ hInv hAtRaw hPostRaw
+        hFrame rfl rfl rfl rfl rfl rfl rfl rfl rfl ?_
+      refine passiveServerIdleFrame_of_backward_monotone (fun x tcb' hTcb' => ?_)
+        (fun y hy => (updatePipBoostOnCore_mem_runQueueOnCore st c bootCoreId tid y).mpr hy)
+        (updatePipBoostOnCore_currentOnCore st c bootCoreId tid)
+      by_cases hEq : x.toObjId = tid.toObjId
+      · rw [hEq] at hTcb'
+        obtain rfl : { tcb with pipBoost := p } = tcb' := by
+          simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hPostRaw.symm.trans hTcb'
+        exact ⟨tcb, by rw [hEq]; exact hAtRaw, rfl, rfl⟩
+      · exact ⟨tcb', by rw [← hFrame x.toObjId hEq]; exact hTcb', rfl, rfl⟩
+
+/-- WS-RR RR2.6: the cross-core PIP boost with wake preserves the bundle — its
+state component is exactly `updatePipBoostOnCore` on the thread's home core; the
+SGI it returns is a notification for the runtime, not a state change. -/
+theorem pipBoostWithWake_preserves_ipcInvariantFull (st : SystemState)
+    (tid : SeLe4n.ThreadId) (ec : CoreId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (pipBoostWithWake st tid ec).1 :=
+  updatePipBoostOnCore_preserves_ipcInvariantFull st (determineTargetCore st tid) tid
+    hObjInv hInv
+
+/-- **WS-RR RR2.6 / RR2.11**: the cross-core priority-inheritance chain walk
+preserves the whole IPC bundle.
+
+The walk is a fold of `pipBoostWithWake` boosts along the blocking chain, so the
+induction is on the fuel with the per-step theorem above.  This is the stage both
+live dispatch chains end on, and it had no bundle theorem before RR2 — only the
+object-store and blocking-graph frames. -/
+theorem propagatePipChainCrossCore_preserves_ipcInvariantFull (st : SystemState)
+    (tid : SeLe4n.ThreadId) (ec : CoreId) (fuel : Nat)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (propagatePipChainCrossCore st tid ec fuel).1 := by
+  induction fuel generalizing st tid with
+  | zero => rw [propagatePipChainCrossCore_zero]; exact hInv
+  | succ n ih =>
+    rw [propagatePipChainCrossCore_step]
+    have hInv' := pipBoostWithWake_preserves_ipcInvariantFull st tid ec hObjInv hInv
+    have hObj' := pipBoostWithWake_preserves_objects_invExt st tid ec hObjInv
+    cases hB : blockingServer st tid with
+    | none => exact hInv'
+    | some nextServer => exact ih _ nextServer hObj' hInv'
+
+
 
 end SeLe4n.Kernel
