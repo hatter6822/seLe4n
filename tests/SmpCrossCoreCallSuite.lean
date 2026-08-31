@@ -470,6 +470,10 @@ private def runRendezvousChecks : IO Unit := do
 #check @returnDonatedSchedContext_establishes_donationOwnerValid_of_except
 #check @donationOwnerValid_of_except_of_no_donation_owned_by
 #check @donationOwnerValidExcept_implies_donationChainAcyclic
+#check @applyReplyDonation_establishes_ipcInvariantFull_of_except
+#check @applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
+#check @returnDonatedSchedContext_establishes_ipcInvariantFull_of_except
+#check @endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
 -- SM6.D completion — the capability-carrying (WithCaps) trio:
 #check @ipcUnwrapCaps_passiveServerIdleFrameOnCore
 #check @endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
@@ -561,6 +565,28 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
       (endpointReplyOnCore replier target msg ec st).1 target :=
   endpointReplyOnCore_preserves_ipcInvariantFullExceptDonationOwner replier target msg ec st
     hInv hObjInv hAllBudgetsNone
+
+/-- WS-RR RR3.12 (payoff): the **live** cross-core `.reply` dispatch preserves the
+whole twenty-conjunct bundle on the *donating* path — the seL4-MCS path the previous
+statement was vacuous on.  Nothing about the result is assumed: `hDonationReturned`
+says only that whatever the answered caller donated is what the recorded reply server
+returns, a fact about the pre-state and the operation's arguments. -/
+example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
+    (st : SystemState)
+    (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (hDonationReturned : ∀ (expected : SeLe4n.ThreadId),
+      recordedReplyServer? st target = some expected →
+      ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
+        st.objects[s.toObjId]? = some (.tcb sTcb) →
+        sTcb.schedContextBinding = .donated sc target →
+        replyDonationReturn? st expected = some (sc, target))
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hServerIdleAllowed : ∀ (expected : SeLe4n.ThreadId), recordedReplyServer? st target
+        = some expected →
+      ∀ tcb, st.getTcb? expected = some tcb → passiveServerIdleAllowed tcb.ipcState) :
+    ipcInvariantFull (endpointReplyCrossCoreDispatch replier target msg ec st).1 :=
+  endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier target msg ec st hInv
+    hObjInv hDonationReturned hAllBudgetsNone hServerIdleAllowed
 
 /-- WS-RR RR3.12: the donation return **upgrades** the relaxed invariant back to the
 full one — the other half of the reply chain's honest statement, and the reason the

@@ -520,6 +520,27 @@ def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
     | some (.tcb tcb) => some tcb
     | _ => none
 
+/-- WS-RR RR3.12: a successful `lookupTcb` witnesses that the tid is not reserved —
+the half of `lookupTcb`'s guard that lets a lookup be *re-established* in another
+state at the same tid. -/
+theorem lookupTcb_some_not_reserved
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (h : lookupTcb st tid = some tcb) : ¬ tid.isReserved := by
+  unfold lookupTcb at h
+  intro hRes
+  rw [if_pos hRes] at h
+  cases h
+
+/-- WS-RR RR3.12: the converse of `lookupTcb_some_objects` — a TCB in the object
+store at a non-reserved tid resolves through `lookupTcb`. -/
+theorem lookupTcb_of_objects_of_not_reserved
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hObj : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hNotReserved : ¬ tid.isReserved) :
+    lookupTcb st tid = some tcb := by
+  unfold lookupTcb
+  rw [if_neg hNotReserved, hObj]
+
 /-- If lookupTcb succeeds, the underlying objects map has a TCB at tid.toObjId. -/
 theorem lookupTcb_some_objects
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)

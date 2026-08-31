@@ -2443,6 +2443,14 @@ theorem of_objects_eq {st st' : SystemState} {woken : SeLe4n.ThreadId}
   ⟨fun _ _ h => by rw [hEq]; exact h,
    fun _ tcb h => ⟨tcb, by rw [hEq]; exact h, rfl, Or.inr rfl⟩⟩
 
+/-- The pointwise form: object lookups that agree everywhere frame trivially.  This
+is the shape a cross-core transition's `OffSchedulerAgrees` supplies. -/
+theorem of_getElem_eq {st st' : SystemState} {woken : SeLe4n.ThreadId}
+    (hEq : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]?) :
+    donationOwnerFrameExcept st st' woken :=
+  ⟨fun _ _ h => by rw [hEq]; exact h,
+   fun _ tcb h => ⟨tcb, by rw [hEq]; exact h, rfl, Or.inr rfl⟩⟩
+
 /-- Every plain donation-owner frame whose TCB side is a pointwise forward map is
 also a relaxed frame — the shape a transition that touches no `ipcState` supplies
 (`consumeCallerReply`, the queue-link stores). -/
@@ -2617,6 +2625,63 @@ theorem ipcInvariantFullExceptDonationOwner.donationOwnerUnique
     (h : ipcInvariantFullExceptDonationOwner st woken) :
     _root_.SeLe4n.Kernel.donationOwnerUnique st :=
   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- WS-RR RR3.12: the relaxed bundle's remaining named projections — the same
+surface `ipcInvariantFull` exposes, minus the one conjunct that is relaxed. -/
+theorem ipcInvariantFullExceptDonationOwner.ipcInvariant {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.ipcInvariant st := h.1
+theorem ipcInvariantFullExceptDonationOwner.dualQueueSystemInvariant {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.dualQueueSystemInvariant st := h.2.1
+theorem ipcInvariantFullExceptDonationOwner.allPendingMessagesBounded {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.allPendingMessagesBounded st := h.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.badgeWellFormed {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.badgeWellFormed st := h.2.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.blockedThreadsPendingMessageConsistent {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.blockedThreadsPendingMessageConsistent st := h.2.2.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.endpointQueueNoDup {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.endpointQueueNoDup st := h.2.2.2.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.ipcStateQueueMembershipConsistent {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.ipcStateQueueMembershipConsistent st := h.2.2.2.2.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.queueNextBlockingConsistent {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.queueNextBlockingConsistent st := h.2.2.2.2.2.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.queueHeadBlockedConsistent {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.queueHeadBlockedConsistent st := h.2.2.2.2.2.2.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.blockedThreadTimeoutConsistent {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.blockedThreadTimeoutConsistent st := h.2.2.2.2.2.2.2.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.donationChainAcyclic {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.donationChainAcyclic st := h.2.2.2.2.2.2.2.2.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.passiveServerIdle {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.passiveServerIdle st := h.2.2.2.2.2.2.2.2.2.2.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.donationBudgetTransfer {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.donationBudgetTransfer st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.blockedOnReplyHasTarget {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.blockedOnReplyHasTarget st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.replyCallerLinkage {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.replyCallerLinkage st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.pendingReceiveReplyWellFormed {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.pendingReceiveReplyWellFormed st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.endpointQueueTailBlockedConsistent {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.endpointQueueTailBlockedConsistent st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.queueNextTargetBlocked {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.queueNextTargetBlocked st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- WS-SM SM6.D (PR #822 review): the structural core is exactly the first 15
 conjuncts of `ipcInvariantFull`. -/
@@ -2852,6 +2917,71 @@ theorem blockedOnReplyHasTarget {st : SystemState} (h : ipcInvariantCore st) :
     _root_.SeLe4n.Kernel.blockedOnReplyHasTarget st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 end ipcInvariantCore
+
+/-- WS-RR RR3.12: `ipcInvariantCore` **minus the four donation conjuncts** —
+exactly what `ipcInvariantCore_of_nonBindingAgreements` reads of its pre-state.
+
+That transport carries the eleven binding-free conjuncts across a
+donation-read agreement and takes the four donation ones (`donationChainAcyclic`,
+`donationOwnerValid`, `passiveServerIdle`, `donationBudgetTransfer`) at the
+**post**-state, so it never touches their pre-state versions.  Naming the eleven
+it does read lets the donation return run from a pre-state whose
+`donationOwnerValid` is relaxed — which is the state a reply leaves behind, and
+therefore the state the reply chain's composite bundles have to start from. -/
+def ipcInvariantCoreNonDonation (st : SystemState) : Prop :=
+  ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
+  badgeWellFormed st ∧ blockedThreadsPendingMessageConsistent st ∧
+  endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st ∧
+  queueNextBlockingConsistent st ∧ queueHeadBlockedConsistent st ∧
+  blockedThreadTimeoutConsistent st ∧
+  blockedOnReplyHasTarget st
+
+namespace ipcInvariantCoreNonDonation
+
+theorem ipcInvariant {st : SystemState} (h : ipcInvariantCoreNonDonation st) :
+    _root_.SeLe4n.Kernel.ipcInvariant st := h.1
+theorem dualQueueSystemInvariant {st : SystemState} (h : ipcInvariantCoreNonDonation st) :
+    _root_.SeLe4n.Kernel.dualQueueSystemInvariant st := h.2.1
+theorem allPendingMessagesBounded {st : SystemState} (h : ipcInvariantCoreNonDonation st) :
+    _root_.SeLe4n.Kernel.allPendingMessagesBounded st := h.2.2.1
+theorem badgeWellFormed {st : SystemState} (h : ipcInvariantCoreNonDonation st) :
+    _root_.SeLe4n.Kernel.badgeWellFormed st := h.2.2.2.1
+theorem blockedThreadsPendingMessageConsistent {st : SystemState}
+    (h : ipcInvariantCoreNonDonation st) :
+    _root_.SeLe4n.Kernel.blockedThreadsPendingMessageConsistent st := h.2.2.2.2.1
+theorem endpointQueueNoDup {st : SystemState} (h : ipcInvariantCoreNonDonation st) :
+    _root_.SeLe4n.Kernel.endpointQueueNoDup st := h.2.2.2.2.2.1
+theorem ipcStateQueueMembershipConsistent {st : SystemState}
+    (h : ipcInvariantCoreNonDonation st) :
+    _root_.SeLe4n.Kernel.ipcStateQueueMembershipConsistent st := h.2.2.2.2.2.2.1
+theorem queueNextBlockingConsistent {st : SystemState} (h : ipcInvariantCoreNonDonation st) :
+    _root_.SeLe4n.Kernel.queueNextBlockingConsistent st := h.2.2.2.2.2.2.2.1
+theorem queueHeadBlockedConsistent {st : SystemState} (h : ipcInvariantCoreNonDonation st) :
+    _root_.SeLe4n.Kernel.queueHeadBlockedConsistent st := h.2.2.2.2.2.2.2.2.1
+theorem blockedThreadTimeoutConsistent {st : SystemState} (h : ipcInvariantCoreNonDonation st) :
+    _root_.SeLe4n.Kernel.blockedThreadTimeoutConsistent st := h.2.2.2.2.2.2.2.2.2.1
+theorem blockedOnReplyHasTarget {st : SystemState} (h : ipcInvariantCoreNonDonation st) :
+    _root_.SeLe4n.Kernel.blockedOnReplyHasTarget st := h.2.2.2.2.2.2.2.2.2.2
+
+end ipcInvariantCoreNonDonation
+
+/-- WS-RR RR3.12: the structural core drops its donation conjuncts. -/
+theorem ipcInvariantCoreNonDonation_of_core {st : SystemState} (h : ipcInvariantCore st) :
+    ipcInvariantCoreNonDonation st :=
+  ⟨h.ipcInvariant, h.dualQueueSystemInvariant, h.allPendingMessagesBounded,
+   h.badgeWellFormed, h.blockedThreadsPendingMessageConsistent, h.endpointQueueNoDup,
+   h.ipcStateQueueMembershipConsistent, h.queueNextBlockingConsistent,
+   h.queueHeadBlockedConsistent, h.blockedThreadTimeoutConsistent,
+   h.blockedOnReplyHasTarget⟩
+
+/-- WS-RR RR3.12: the relaxed bundle contains the eleven binding-free conjuncts
+outright — the relaxation touches only `donationOwnerValid`. -/
+theorem ipcInvariantCoreNonDonation_of_exceptDonationOwner {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    ipcInvariantCoreNonDonation st :=
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
 
 /-- AN3-B.1 bridge: `ipcInvariantFull` (tuple form) and `IpcInvariantFull`
 (named-field form) are logically equivalent.  Proven by constructor-then-

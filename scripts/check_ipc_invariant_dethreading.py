@@ -89,11 +89,22 @@ PRE_STATE_PREDICATES = (
 
 # The D8 payoff theorems.  Named here because their *absence* is the finding:
 # a de-threaded bundle family with no top-level consumer proves nothing about
-# the live kernel, which is the gap RR3.16 closes.
+# the live kernel, which is the gap RR3.15/RR3.16 close.
+#
+# `dispatchSyscall` is the tree's name for the top-level dispatcher; the plan
+# originally wrote `syscallDispatch`, which names nothing.  The theorem is named
+# for the function it is about.
 PAYOFF_THEOREMS = (
     "dispatchWithCap_preserves_ipcInvariantFull",
-    "syscallDispatch_preserves_ipcInvariantFull",
+    "dispatchSyscall_preserves_ipcInvariantFull",
 )
+
+# Registered residuals: payoff theorems the project has sized and deferred with
+# an explicit closure target.  Read from the file rather than hard-coded so the
+# registration and its reason live where a reader looks for them, and checked in
+# BOTH directions (see `payoff_status`) so it cannot rot into a silent
+# exemption.
+PENDING_FILE = "scripts/ipc_dethreading_pending.txt"
 
 CHECKS = (
     "conjuncts_derived",
@@ -402,6 +413,64 @@ def declared_names(root: str, sources: list[str]) -> set[str]:
     return names
 
 
+def read_pending(root: str) -> dict[str, tuple[str, str]]:
+    """The registered residuals: name -> (closure target, reason).
+
+    A malformed line is a hard error rather than a skipped one: a registration
+    the reader cannot parse is a registration nobody is holding to a target.
+    """
+    path = os.path.join(root, PENDING_FILE)
+    pending: dict[str, tuple[str, str]] = {}
+    if not os.path.isfile(path):
+        return pending
+    with open(path, encoding="utf-8") as handle:
+        for lineno, raw in enumerate(handle, start=1):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = [piece.strip() for piece in line.split("|", 2)]
+            if len(parts) != 3 or not all(parts):
+                raise ValueError(
+                    f"{PENDING_FILE}:{lineno}: expected "
+                    f"`<theorem> | <closure target> | <reason>`"
+                )
+            pending[parts[0]] = (parts[1], parts[2])
+    return pending
+
+
+def payoff_status(names: set[str], pending: dict[str, tuple[str, str]]) -> list[str]:
+    """Violations from the payoff check, registration included.
+
+    Four cases, and three of them are failures.  A registered name whose theorem
+    has since landed is *stale* and fails, because a registration that outlives
+    its residual is how an exemption list stops describing the tree.  A
+    registration for something outside the payoff set is *dangling* and fails,
+    for the same reason in the other direction.
+    """
+    problems: list[str] = []
+    for payoff in PAYOFF_THEOREMS:
+        registered = payoff in pending
+        present = payoff in names
+        if present and registered:
+            problems.append(
+                f"payoff_theorems: `{payoff}` is declared but still registered as "
+                f"pending in {PENDING_FILE}; delete the registration"
+            )
+        elif not present and not registered:
+            problems.append(
+                f"payoff_theorems: `{payoff}` is not declared anywhere in the "
+                f"tree and is not registered as pending in {PENDING_FILE}; the "
+                f"de-threaded bundles have no top-level consumer"
+            )
+    for name in sorted(pending):
+        if name not in PAYOFF_THEOREMS:
+            problems.append(
+                f"payoff_theorems: {PENDING_FILE} registers `{name}`, which is "
+                f"not one of this gate's payoff theorems"
+            )
+    return problems
+
+
 def run_checks(root: str) -> list[str]:
     """Every violation, as a human-readable line.  Empty means clean."""
     problems: list[str] = []
@@ -437,12 +506,7 @@ def run_checks(root: str) -> list[str]:
             )
 
     names = declared_names(root, sources)
-    for payoff in PAYOFF_THEOREMS:
-        if payoff not in names:
-            problems.append(
-                f"payoff_theorems: `{payoff}` is not declared anywhere in the "
-                f"tree; the de-threaded bundles have no top-level consumer"
-            )
+    problems.extend(payoff_status(names, read_pending(root)))
 
     return problems
 
@@ -474,9 +538,17 @@ def report(root: str) -> int:
     for conjunct, count in sorted(tally.items(), key=lambda kv: (-kv[1], kv[0])):
         print(f"  {count:4d}  {conjunct}")
     names = declared_names(root, sources)
+    pending = read_pending(root)
     print("\npayoff theorems:")
     for payoff in PAYOFF_THEOREMS:
-        print(f"  {'present' if payoff in names else 'MISSING'}  {payoff}")
+        if payoff in names:
+            print(f"  present    {payoff}")
+        elif payoff in pending:
+            target, reason = pending[payoff]
+            print(f"  PENDING    {payoff}  (closure target: {target})")
+            print(f"             {reason}")
+        else:
+            print(f"  MISSING    {payoff}")
     return 0
 
 
@@ -519,7 +591,7 @@ CLEAN_PAYOFF = '''theorem dispatchWithCap_preserves_ipcInvariantFull
     ipcInvariantFull st' := by
   exact sample st st' hInv
 
-theorem syscallDispatch_preserves_ipcInvariantFull
+theorem dispatchSyscall_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st) :
     ipcInvariantFull st' := by
   exact sample st st' hInv
@@ -738,10 +810,10 @@ def self_test() -> int:
     # a reference inside another proof, while the declaration is gone.
     payoff_mentioned = _fixture()
     payoff_mentioned["SeLe4n/Kernel/API.lean"] = (
-        "/-- See `syscallDispatch_preserves_ipcInvariantFull` for the payoff. -/\n"
-        + CLEAN_PAYOFF.split("theorem syscallDispatch_preserves_ipcInvariantFull")[0]
+        "/-- See `dispatchSyscall_preserves_ipcInvariantFull` for the payoff. -/\n"
+        + CLEAN_PAYOFF.split("theorem dispatchSyscall_preserves_ipcInvariantFull")[0]
         + "theorem otherName (st : SystemState) : True := by\n"
-        "  exact syscallDispatch_preserves_ipcInvariantFull st\n"
+        "  exact dispatchSyscall_preserves_ipcInvariantFull st\n"
     )
     cases.append(
         _Case(
@@ -751,6 +823,58 @@ def self_test() -> int:
             check="payoff_theorems",
             mutation="preserving",
         )
+    )
+
+    # Token-PRESERVING: the payoff theorem IS declared, and the registration
+    # naming it is still there.  Nothing is deleted; what breaks is the relation
+    # between the register and the tree, and a registration that outlives its
+    # residual is how an exemption list stops describing the tree.
+    stale_registration = _fixture()
+    stale_registration[PENDING_FILE] = (
+        "dispatchWithCap_preserves_ipcInvariantFull | WS-RR RR3.15 | sized and deferred\n"
+    )
+    cases.append(
+        _Case(
+            "a registration outlives the theorem it defers",
+            stale_registration,
+            True,
+            check="payoff_theorems",
+            mutation="preserving",
+        )
+    )
+
+    # Token-PRESERVING: a registration whose name is a real, plausible theorem
+    # name -- but not one of this gate's payoff theorems, so it defers nothing
+    # and would sit in the file unread.
+    dangling_registration = _fixture()
+    dangling_registration["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.split(
+        "theorem dispatchSyscall_preserves_ipcInvariantFull"
+    )[0]
+    dangling_registration[PENDING_FILE] = (
+        "dispatchSyscall_preserves_ipcInvariantFull | WS-RR RR3.16 | blocked\n"
+        "endpointSendDual_preserves_ipcInvariantFull | WS-RR RR3.16 | not a payoff\n"
+    )
+    cases.append(
+        _Case(
+            "a registration names something outside the payoff set",
+            dangling_registration,
+            True,
+            check="payoff_theorems",
+            mutation="preserving",
+        )
+    )
+
+    # The registration does its job: the theorem is absent and registered, so
+    # the gate reports rather than fails.  Accepted, not caught.
+    honest_registration = _fixture()
+    honest_registration["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.split(
+        "theorem dispatchSyscall_preserves_ipcInvariantFull"
+    )[0]
+    honest_registration[PENDING_FILE] = (
+        "dispatchSyscall_preserves_ipcInvariantFull | WS-RR RR3.16 | sized and deferred\n"
+    )
+    cases.append(
+        _Case("a registered residual is reported, not failed", honest_registration, False)
     )
 
     clean = _fixture()
@@ -819,7 +943,22 @@ def main(argv: list[str]) -> int:
         for problem in problems:
             print(f"  - {problem}")
         return 1
-    print("[PASS] ipcInvariantFull is de-threaded end to end")
+    sources = lean_sources(root)
+    names = declared_names(root, sources)
+    pending = {
+        name: entry
+        for name, entry in read_pending(root).items()
+        if name not in names
+    }
+    if pending:
+        print(
+            "[PASS] no `ipcInvariantFull` conjunct is bound on a post-state; "
+            f"{len(pending)} payoff theorem(s) registered as pending:"
+        )
+        for name, (target, _reason) in sorted(pending.items()):
+            print(f"  - {name} (closure target: {target})")
+    else:
+        print("[PASS] ipcInvariantFull is de-threaded end to end")
     return 0
 
 

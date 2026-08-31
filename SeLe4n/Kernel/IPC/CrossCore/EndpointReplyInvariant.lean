@@ -283,6 +283,38 @@ theorem endpointReplyOnCore_post_agrees
 -- ============================================================================
 
 open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.12: the cross-core reply frames the donation-owner side relaxed at the
+answered caller — the `post_agrees` lift of `endpointReply_donationOwnerFrameExcept`.
+The cross-core substitutions differ from the single-core spine only in scheduler
+placement, which this frame does not read. -/
+theorem endpointReplyOnCore_donationOwnerFrameExcept
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    donationOwnerFrameExcept st
+      (endpointReplyOnCore replier target msg executingCore st).1 target := by
+  rcases endpointReplyOnCore_post_agrees replier target msg executingCore st hObjInv with
+    hPre | ⟨expected, r1, hStep1, hAgree⟩
+  · rw [hPre]; exact donationOwnerFrameExcept.refl st target
+  · exact (endpointReply_donationOwnerFrameExcept st r1 expected target msg hObjInv
+      hStep1).trans (donationOwnerFrameExcept.of_getElem_eq hAgree.objects)
+
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.12: the cross-core reply writes no `schedContextBinding` — the
+`post_agrees` lift of `endpointReply_sameSchedContextBindings`. -/
+theorem endpointReplyOnCore_sameSchedContextBindings
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    sameSchedContextBindings st
+      (endpointReplyOnCore replier target msg executingCore st).1 := by
+  rcases endpointReplyOnCore_post_agrees replier target msg executingCore st hObjInv with
+    hPre | ⟨expected, r1, hStep1, hAgree⟩
+  · rw [hPre]; exact sameSchedContextBindings.refl st
+  · refine (endpointReply_sameSchedContextBindings st r1 expected target msg hObjInv
+      hStep1).trans ?_
+    intro tid tcb' hTcb'
+    exact ⟨tcb', by rw [← hAgree.objects]; exact hTcb', rfl⟩
+
+open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.12: the cross-core reply establishes the bundle **relaxed at the
 answered caller** — the honest unconditional statement about a bare reply, and the
 one the composite cross-core dispatch consumes before the donation return upgrades

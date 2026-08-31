@@ -3935,7 +3935,12 @@ Before RR2.5 the binding sat inside the agreement, so the donation primitives
 had no route to the eleven and no bundle theorem at all. -/
 theorem ipcInvariantCore_of_nonBindingAgreements
     (st st' : SystemState)
-    (hInv : ipcInvariantCore st)
+    -- WS-RR RR3.12: the pre-state hypothesis names the eleven conjuncts this
+    -- transport actually reads.  The four donation ones are taken at the
+    -- **post**-state, so demanding them of the pre-state as well (the former
+    -- `ipcInvariantCore st`) blocked every caller whose pre-state is mid-reply,
+    -- where `donationOwnerValid` is false.
+    (hInv : ipcInvariantCoreNonDonation st)
     (hNT : ∀ (s : SeLe4n.ObjId) (k : KernelObject), (∀ tt, k ≠ .tcb tt) →
       (∀ sc, k ≠ .schedContext sc) →
       (st'.objects[s]? = some k ↔ st.objects[s]? = some k))
@@ -4138,7 +4143,8 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
     intro s ty h
     obtain ⟨tx, h1, e1, e2, e3, e4, e5, _, e7⟩ := hBwd s ty h
     exact ⟨tx, h1, e1, e2, e3, e4, e5, e7⟩
-  refine ipcInvariantCore_of_nonBindingAgreements st st' hInv
+  refine ipcInvariantCore_of_nonBindingAgreements st st'
+    (ipcInvariantCoreNonDonation_of_core hInv)
     (fun s k hk _ => hNT s k hk)
     (fun s sc h => ⟨sc, (hNT s (.schedContext sc)
       (fun tt => by exact KernelObject.noConfusion)).mpr h⟩)

@@ -1059,7 +1059,8 @@ theorem replyRecvReturnDonation_preserves_ipcInvariantFull
                 simp [replyDonationReturn?, hSrv, hBind]
               obtain ⟨pTcb, hPPre, hPB, oTcb, hOPre, hNe⟩ :=
                 replyDonationReturn?_some_char st recordedServer oldScId owner
-                  hInv.donationOwnerValid hRetW
+                  (donationOwnerValidExcept_of_donationOwnerValid owner hInv.donationOwnerValid)
+                  hRetW
               obtain ⟨⟨oTcb0, hOPre0, hOPost⟩, ⟨pTcb0, hPPre0, hPPost⟩, hOther⟩ :=
                 returnDonatedSchedContext_getTcb?_char st st1' recordedServer oldScId owner
                   hObjInv hNe hRet
