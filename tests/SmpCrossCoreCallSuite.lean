@@ -461,11 +461,29 @@ private def runRendezvousChecks : IO Unit := do
 #check @endpointReplyOnCore_reuse_freshens
 #check @endpointReplyRecvOnCore_preserves_ipcInvariantFull
 #check @endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
+-- WS-RR RR3.12 — the reply chain's relaxed-invariant surface:
+#check @donationOwnerValidExcept
+#check @donationOwnerFrameExcept
+#check @ipcInvariantFullExceptDonationOwner
+#check @endpointReply_preserves_ipcInvariantFullExceptDonationOwner
+#check @endpointReplyOnCore_preserves_ipcInvariantFullExceptDonationOwner
+#check @returnDonatedSchedContext_establishes_donationOwnerValid_of_except
+#check @donationOwnerValid_of_except_of_no_donation_owned_by
+#check @donationOwnerValidExcept_implies_donationChainAcyclic
 -- SM6.D completion — the capability-carrying (WithCaps) trio:
 #check @ipcUnwrapCaps_passiveServerIdleFrameOnCore
 #check @endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
 #check @endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
 #check @endpointCallWithCaps_preserves_ipcInvariantFull_perCore
+-- WS-RR RR3.11 — the in-flight badge surface the WithCaps bundles now establish from:
+#check @messageCapBadgesValid
+#check @pendingMessageCapBadgesWellFormed
+#check @pendingMessagesSatisfy
+#check @endpointReceiveDual_preserves_pendingMessageCapBadgesWellFormed
+#check @endpointSendDualWithCaps_preserves_badgeWellFormed
+#check @endpointReceiveDualWithCaps_preserves_badgeWellFormed
+#check @endpointCallWithCaps_preserves_badgeWellFormed
+#check @endpointCallWithCaps_preserves_dualQueueSystemInvariant
 
 /-- SM6.D.1 exact decomposition: the ∀-core bundle is equivalent to the global
 bundle plus the per-core passive-idle slices — nothing is weakened. -/
@@ -520,11 +538,44 @@ off-scheduler agreement dichotomy). -/
 example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
     (st : SystemState)
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
-    (hDOV' : donationOwnerValid (endpointReplyOnCore replier target msg ec st).1)
+    -- WS-RR RR3.12: a **pre**-state condition, where the retired `hDOV'` was a
+    -- post-state one no donating reply satisfies.
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId target)
     (hAllBudgetsNone : allTimeoutBudgetsNone st) :
     ipcInvariantFull (endpointReplyOnCore replier target msg ec st).1 :=
   endpointReplyOnCore_preserves_ipcInvariantFull replier target msg ec st hInv hObjInv
-    hDOV' hAllBudgetsNone
+    hNoDonationOwnedBy hAllBudgetsNone
+
+/-- WS-RR RR3.12: the cross-core reply's **unconditional** bundle statement — the
+one that holds on the donating path too, with `donationOwnerValid` relaxed at the
+answered caller.  No hypothesis about the result at all; the relaxation is exactly
+the transient the donation return closes. -/
+example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
+    (st : SystemState)
+    (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st) :
+    ipcInvariantFullExceptDonationOwner
+      (endpointReplyOnCore replier target msg ec st).1 target :=
+  endpointReplyOnCore_preserves_ipcInvariantFullExceptDonationOwner replier target msg ec st
+    hInv hObjInv hAllBudgetsNone
+
+/-- WS-RR RR3.12: the donation return **upgrades** the relaxed invariant back to the
+full one — the other half of the reply chain's honest statement, and the reason the
+relaxation is a transient rather than a weakening. -/
+example (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (stcb : TCB)
+    (hServerObj : st.objects[serverTid.toObjId]? = some (.tcb stcb))
+    (hServerBind : stcb.schedContextBinding = .donated scId originalOwner)
+    (hUnique : donationOwnerUnique st)
+    (hInv : donationOwnerValidExcept st originalOwner)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    donationOwnerValid st' :=
+  returnDonatedSchedContext_establishes_donationOwnerValid_of_except st st' serverTid scId
+    originalOwner hObjInv stcb hServerObj hServerBind hUnique hInv h
 
 /-- SM6.D completion (seL4-MCS one-object reuse): the composed cross-core
 `replyRecv` accepts a reply object that is *in use by the answered caller* —
@@ -533,7 +584,10 @@ The disjunctive `hReplyIdValid` premise's reuse arm is exercised here. -/
 example (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
     (msg : IpcMessage) (rid : SeLe4n.ReplyId) (ec c : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
-    (hDOVMid : donationOwnerValid (endpointReplyOnCore receiver replyTarget msg ec st).1)
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId replyTarget)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -559,7 +613,7 @@ example (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
     ipcInvariantFull_perCore
       (endpointReplyRecvOnCore endpointId receiver replyTarget msg (some rid) ec st).1 c :=
   endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore endpointId receiver replyTarget
-    msg (some rid) ec st hInv hObjInv hDOVMid hAllBudgetsNone
+    msg (some rid) ec st hInv hObjInv hNoDonationOwnedBy hAllBudgetsNone
     hFreshReceiver hRecvTailFresh
     (fun rid' hRid' => Or.inr (by
       obtain rfl : rid = rid' := Option.some.inj hRid'
@@ -574,7 +628,10 @@ example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st') (hBadge' : badgeWellFormed st')
+    -- WS-RR RR3.11: one condition on the syscall's own message argument, where the
+    -- retired `hDualQueue'` / `hBadge'` were post-state conjuncts the bundle now
+    -- establishes.
+    (hMsgCaps : messageCapBadgesValid msg)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -599,7 +656,7 @@ example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     ipcInvariantFull_perCore st' c :=
   endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore endpointId sender msg
     endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv hObjInv
-    hDualQueue' hBadge' hAllBudgetsNone hFreshSender hSendTailFresh
+    hMsgCaps hAllBudgetsNone hFreshSender hSendTailFresh
     hSenderNotRecv hSenderNotReply hSenderNotUnbound hStep c
 
 /-- SM6.D runtime: `threadHomeCore` and `determineTargetCore` agree on the

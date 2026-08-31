@@ -133,8 +133,17 @@ theorem endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hDOV' : donationOwnerValid
-      (endpointReplyOnCore replier target msg executingCore st).1)
+    -- WS-RR RR3.12: replaces the threaded mid-state `hDOV'`, which was stated at the
+    -- post-reply state -- where, whenever the answered call donated, the conjunct is
+    -- **false** (the reply wakes the caller `.ready` while the recorded server still
+    -- holds `.donated _ caller`; the return runs after, by the AUD-3 ordering).  The
+    -- theorem therefore asserted nothing on the ordinary seL4-MCS path.  This is a
+    -- pre-state condition, hence dischargeable, and carves out exactly the replies
+    -- the full bundle is true of end to end.
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId target)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hServerIdleAllowed : ∀ (expected : SeLe4n.ThreadId), recordedReplyServer? st target
         = some expected →
@@ -142,7 +151,7 @@ theorem endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull
     ipcInvariantFull (endpointReplyCrossCoreDispatch replier target msg executingCore st).1 := by
   have hReply : ipcInvariantFull (endpointReplyOnCore replier target msg executingCore st).1 :=
     endpointReplyOnCore_preserves_ipcInvariantFull replier target msg executingCore st hInv
-      hObjInv hDOV' hAllBudgetsNone
+      hObjInv hNoDonationOwnedBy hAllBudgetsNone
   have hReplyInv : (endpointReplyOnCore replier target msg executingCore st).1.objects.invExt :=
     endpointReplyOnCore_preserves_objects_invExt replier target msg executingCore st hObjInv
   have hBack := endpointReplyOnCore_tcb_backward replier target msg executingCore st hObjInv

@@ -12504,6 +12504,157 @@ theorem endpointReply_preserves_passiveServerIdle
     (endpointReply_passiveServerIdleFrame st st' replier target msg hObjInv hStep) hInv
 
 open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.12: a `storeObject` that rewrites a single TCB, keeping its
+`schedContextBinding`, frames the donation-owner side **relaxed at that thread**.
+
+This is the store `storeObject_modifiedTcb_donationOwnerFrame` cannot cover: that
+one needs the rewritten thread not to be `.blockedOnReply` in the pre-state, which
+is exactly false for the thread a reply answers.  Relaxing at the rewritten thread
+is what removes the side condition. -/
+theorem storeObject_wokenTcb_donationOwnerFrameExcept
+    (st st' : SystemState) (woken : SeLe4n.ThreadId) (origTcb newTcb : TCB)
+    (hOrig : st.objects[woken.toObjId]? = some (.tcb origTcb))
+    (hBindEq : newTcb.schedContextBinding = origTcb.schedContextBinding)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject woken.toObjId (.tcb newTcb) st = .ok ((), st')) :
+    donationOwnerFrameExcept st st' woken := by
+  constructor
+  · intro scId sc hSc
+    by_cases h : scId.toObjId = woken.toObjId
+    · rw [h, hOrig] at hSc; simp at hSc
+    · rw [storeObject_objects_ne st st' woken.toObjId scId.toObjId _ h hObjInv hStore]; exact hSc
+  · intro t tcb hTcb
+    by_cases h : t.toObjId = woken.toObjId
+    · rw [h, hOrig] at hTcb
+      obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcb)
+      refine ⟨newTcb, ?_, hBindEq, Or.inl (SeLe4n.ThreadId.toObjId_injective t woken h)⟩
+      rw [h, storeObject_objects_eq st st' woken.toObjId _ hObjInv hStore]
+    · exact ⟨tcb,
+        by rw [storeObject_objects_ne st st' woken.toObjId t.toObjId _ h hObjInv hStore]; exact hTcb,
+        rfl, Or.inr rfl⟩
+
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.12: `storeTcbIpcStateAndMessage` frames the donation-owner side relaxed
+at the thread it rewrites — the `ipcState`/message write keeps `schedContextBinding`. -/
+theorem storeTcbIpcStateAndMessage_donationOwnerFrameExcept
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    donationOwnerFrameExcept st st' tid := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId
+        (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_wokenTcb_donationOwnerFrameExcept st st'' tid tcb
+        { tcb with ipcState := ipc, pendingMessage := msg }
+        (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
+
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.12: `consumeCallerReply` frames the donation-owner side relaxed at any
+thread — it preserves both `schedContextBinding` and `ipcState` on every TCB, so the
+relaxation is never used. -/
+theorem consumeCallerReply_donationOwnerFrameExcept
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (woken : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
+    donationOwnerFrameExcept st st' woken := by
+  have hNT := consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  have hBwd := consumeCallerReply_tcb_backward st st' caller rid hObjInv hStep
+  refine donationOwnerFrameExcept.of_tcbForward ?_ ?_
+  · intro scId sc hSc
+    exact (hNT scId.toObjId (.schedContext sc)
+      (fun _ => by exact KernelObject.noConfusion)
+      (fun _ => by exact KernelObject.noConfusion)).mpr hSc
+  · intro t tcb hTcb
+    obtain ⟨tx, hTx, hIS, _, _, _, _, hSCB, _⟩ := hBwd t.toObjId tcb hTcb
+    exact ⟨tx, hTx, hSCB, hIS⟩
+
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.12: `endpointReply` frames the donation-owner side **relaxed at the
+answered caller** — the one thread whose `ipcState` it rewrites (`.blockedOnReply` →
+`.ready`).  No `schedContextBinding` is written anywhere, so the relaxed frame holds
+unconditionally, where the unrelaxed `donationOwnerFrame` cannot: the woken caller
+*is* a donation owner on the seL4-MCS path. -/
+theorem endpointReply_donationOwnerFrameExcept
+    (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    donationOwnerFrameExcept st st' target := by
+  unfold endpointReply at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st target with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | ready => simp [hIpc] at hStep
+    | blockedOnSend _ => simp [hIpc] at hStep
+    | blockedOnReceive _ => simp [hIpc] at hStep
+    | blockedOnNotification _ => simp [hIpc] at hStep
+    | blockedOnCall _ => simp [hIpc] at hStep
+    | blockedOnReply epId replyTarget =>
+      simp only [hIpc] at hStep
+      cases replyTarget with
+      | none => simp at hStep
+      | some expected =>
+        simp only at hStep
+        split at hStep
+        · cases hMsg : storeTcbIpcStateAndMessage st target .ready (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st'' =>
+            simp only [hMsg] at hStep
+            have hMid : donationOwnerFrameExcept st (ensureRunnable st'' target) target :=
+              (storeTcbIpcStateAndMessage_donationOwnerFrameExcept st st'' target .ready
+                (some msg) hObjInv hMsg).trans
+                (donationOwnerFrameExcept.of_objects_eq
+                  (ensureRunnable_preserves_objects st'' target))
+            have hObjInvMid : (ensureRunnable st'' target).objects.invExt := by
+              rw [ensureRunnable_preserves_objects]
+              exact storeTcbIpcStateAndMessage_preserves_objects_invExt st st'' target .ready
+                (some msg) hObjInv hMsg
+            -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+            cases hRO : tcb.replyObject with
+            | none =>
+              simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+              rw [← hStep]; exact hMid
+            | some rid =>
+              simp only [hRO] at hStep
+              exact hMid.trans (consumeCallerReply_donationOwnerFrameExcept _ _ target rid
+                target hObjInvMid hStep)
+        · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.12: `endpointReply` **establishes** `donationOwnerValid` relaxed at the
+answered caller, from the pre-state's unrelaxed invariant.  This replaces the
+post-state `hDOV'` the reply bundles used to thread: it is derived, not assumed, and
+it is true on the donating path, where `donationOwnerValid` of the same state is
+not. -/
+theorem endpointReply_establishes_donationOwnerValidExcept
+    (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hInv : donationOwnerValid st)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    donationOwnerValidExcept st' target :=
+  donationOwnerValidExcept_of_frames
+    (endpointReply_sameSchedContextBindings st st' replier target msg hObjInv hStep)
+    (endpointReply_donationOwnerFrameExcept st st' replier target msg hObjInv hStep)
+    hInv
+
+open SeLe4n.Model.SystemState in
 /-- D5: `endpointReply` frames `timeoutBudgetFrame` — it unblocks the reply target `.ready` (an
 ipcState/message write) + reschedule, neither touching any `timeoutBudget`. -/
 theorem endpointReply_timeoutBudgetFrame
@@ -21055,17 +21206,14 @@ PR #827 review #3 (reply-fold payoff): `replyCallerLinkageReciprocal` is likewis
 **established internally** (`hRCLRecip'` de-threaded) — the folded single-use consume
 tears down exactly the answered caller↔Reply edge, so a direct reply preserves
 reciprocity with no post-state hypothesis. -/
-theorem endpointReply_preserves_ipcInvariantFull
+theorem endpointReply_preserves_ipcInvariantFullExceptDonationOwner
     (st st' : SystemState)
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    -- IPC de-threading D1: `blockedThreadsPendingMessageConsistent` remains threaded — establisher
-    -- downstream in `PerOperation`; de-threaded at the D8 layer.
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hDOV' : donationOwnerValid st')
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
-    ipcInvariantFull st' :=
+    ipcInvariantFullExceptDonationOwner st' target :=
   ⟨endpointReply_preserves_ipcInvariant st st' replier target msg hInv.1 hObjInv hStep,
    endpointReply_preserves_dualQueueSystemInvariant replier target msg st st' hObjInv hStep hInv.2.1,
    endpointReply_preserves_allPendingMessagesBounded st st' replier target msg hInv.2.2.1 hObjInv hStep,
@@ -21082,9 +21230,15 @@ theorem endpointReply_preserves_ipcInvariantFull
    endpointReply_preserves_queueHeadBlockedConsistent st st' replier target msg hObjInv hInv.queueHeadBlockedConsistent hStep,
    -- IPC de-threading D5: `blockedThreadTimeoutConsistent` **established** from `allTimeoutBudgetsNone`.
    endpointReply_preserves_blockedThreadTimeoutConsistent st st' replier target msg hObjInv hAllBudgetsNone hStep,
-   -- IPC de-threading D7: `donationChainAcyclic` is **derived** from the (still-threaded)
-   -- post-state `donationOwnerValid` via the subsumption lemma — no separate `hDCA'`.
-   donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV',
+   -- WS-RR RR3.12: `donationOwnerValid`, relaxed at the answered caller, is
+   -- **established** from the pre-state (was the threaded post-state `hDOV'`), and
+   -- `donationChainAcyclic` is derived from it — the relaxation drops only the owner's
+   -- `.blockedOnReply` clause, and acyclicity reads its `.unbound` one.
+   donationOwnerValidExcept_implies_donationChainAcyclic st' target
+     (endpointReply_establishes_donationOwnerValidExcept st st' replier target msg hObjInv
+       hInv.donationOwnerValid hStep),
+   endpointReply_establishes_donationOwnerValidExcept st st' replier target msg hObjInv
+     hInv.donationOwnerValid hStep,
    endpointReply_preserves_passiveServerIdle st st' replier target msg hObjInv hInv.passiveServerIdle hStep,
    donationBudgetTransfer_of_sameSchedContextBindings
      (endpointReply_sameSchedContextBindings st st' replier target msg hObjInv hStep)
@@ -21109,6 +21263,119 @@ theorem endpointReply_preserves_ipcInvariantFull
    endpointReply_preserves_queueNextTargetBlocked st st' replier target msg hObjInv
      hInv.queueNextTargetBlocked hStep⟩
 
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.12: `endpointReply` **establishes** the full `donationOwnerValid` on a
+reply that answers a caller which donated nothing.  `hNoDonationOwnedBy` is a
+condition on the *pre*-state, so it is dischargeable before the step, unlike the
+post-state `hDOV'` it replaces; the reply preserves every `schedContextBinding`, so
+it carries forward and closes the relaxation. -/
+theorem endpointReply_establishes_donationOwnerValid_of_no_donation_owned_by
+    (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hInv : donationOwnerValid st)
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId target)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    donationOwnerValid st' :=
+  donationOwnerValid_of_except_of_no_donation_owned_by
+    (endpointReply_establishes_donationOwnerValidExcept st st' replier target msg hObjInv
+      hInv hStep)
+    (fun tid tcb scId hTcb hBind => by
+      obtain ⟨tcbPre, hPre, hEq⟩ :=
+        endpointReply_sameSchedContextBindings st st' replier target msg hObjInv hStep tid tcb hTcb
+      exact hNoDonationOwnedBy tid tcbPre scId hPre (hEq.trans hBind))
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D2 / WS-RR RR3.12 (de-threaded): `endpointReply` preserves
+`ipcInvariantFull` on a reply whose answered caller donated nothing.
+
+The threaded post-state `hDOV'` this replaces was worse than an assumption: on the
+*donating* path — the ordinary seL4-MCS one — `donationOwnerValid` of this
+transition's own post-state is **false** (the reply wakes the caller `.ready` while
+the server still holds `.donated _ caller`), so the bundle asserted nothing exactly
+there.  `hNoDonationOwnedBy` is a pre-state condition, hence dischargeable, and
+carves out precisely the path on which the full bundle is true of a bare reply.
+
+The donating path is covered by
+`endpointReply_preserves_ipcInvariantFullExceptDonationOwner` above, whose
+conclusion the donation return upgrades
+(`returnDonatedSchedContext_establishes_donationOwnerValid_of_except`) — which is
+what the composite reply transitions use. -/
+theorem endpointReply_preserves_ipcInvariantFull
+    (st st' : SystemState)
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId target)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    ipcInvariantFull st' :=
+  ipcInvariantFull_of_exceptDonationOwner
+    (endpointReply_preserves_ipcInvariantFullExceptDonationOwner st st' replier target msg
+      hInv hObjInv hAllBudgetsNone hStep)
+    (endpointReply_establishes_donationOwnerValid_of_no_donation_owned_by st st' replier
+      target msg hObjInv hInv.donationOwnerValid hNoDonationOwnedBy hStep)
+
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.12: `endpointReplyRecv` **establishes** `donationOwnerValid` on a
+composite whose answered caller donated nothing.
+
+The reply leg establishes it from `hNoDonationOwnedBy`
+(`endpointReply_establishes_donationOwnerValid_of_no_donation_owned_by`); the
+receive leg then preserves it outright — the thread it wakes is the send-queue
+head, which is `.blockedOnSend`/`.blockedOnCall` and so never a donation owner. -/
+theorem endpointReplyRecv_establishes_donationOwnerValid_of_no_donation_owned_by
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st)
+    (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId replyTarget)
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
+    donationOwnerValid st' := by
+  have hNeq : receiver.toObjId ≠ replyTarget.toObjId :=
+    endpointReplyRecv_ok_receiver_ne_replyTarget st st' endpointId receiver replyTarget msg
+      replyId hReceiverReady hStep
+  rw [endpointReplyRecv_eq_reply_then_receive] at hStep
+  cases hReply : endpointReply receiver replyTarget msg st with
+  | error e => simp [hReply] at hStep
+  | ok pR =>
+    obtain ⟨⟨⟩, st3⟩ := pR
+    simp only [hReply] at hStep
+    have hObjInv3 := endpointReply_preserves_objects_invExt st st3 receiver replyTarget msg
+      hObjInv hReply
+    have hDOV3 := endpointReply_establishes_donationOwnerValid_of_no_donation_owned_by st st3
+      receiver replyTarget msg hObjInv hInv.donationOwnerValid hNoDonationOwnedBy hReply
+    have hUniq3 := donationOwnerUnique_of_sameSchedContextBindings
+      (endpointReply_sameSchedContextBindings st st3 receiver replyTarget msg hObjInv hReply)
+      hInv.donationOwnerUnique
+    have hQHBC3 := endpointReply_preserves_queueHeadBlockedConsistent st st3 receiver replyTarget
+      msg hObjInv hInv.queueHeadBlockedConsistent hReply
+    have hReady3 : ∀ (tcbR : TCB),
+        st3.objects[receiver.toObjId]? = some (.tcb tcbR) → tcbR.ipcState = .ready := by
+      intro tcbR hTcbR
+      obtain ⟨tPre, hPre, hIS⟩ := endpointReply_ipcState_backward_off_target st st3 receiver
+        replyTarget msg hObjInv hReply receiver hNeq tcbR hTcbR
+      rw [hIS]; exact hReceiverReady tPre hPre
+    cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+    | error e => simp [hRecv] at hStep
+    | ok pRecv =>
+      obtain ⟨sid, st4⟩ := pRecv
+      simp only [hRecv, Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨_, rfl⟩ := hStep
+      exact endpointReceiveDual_preserves_donationOwnerValid st3 st4 endpointId receiver sid
+        replyId hDOV3 hUniq3 hQHBC3 hReady3 hObjInv3 hRecv
+
 /-- IPC de-threading D2 (de-threaded): `endpointReplyRecv` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (the unblock frames it, the receive leg
 establishes it) rather than threading it.  `allPendingMessagesBounded` / `badgeWellFormed`
@@ -21122,7 +21389,15 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
     -- IPC de-threading D1: `blockedThreadsPendingMessageConsistent` remains threaded — establisher
     -- downstream in `PerOperation`; de-threaded at the D8 layer.
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hDOV' : donationOwnerValid st')
+    -- WS-RR RR3.12: replaces the threaded post-state `hDOV'`, which no state on the
+    -- donating path satisfies (the reply leg wakes the answered caller `.ready` while
+    -- the server still holds its donation).  A pre-state condition, hence
+    -- dischargeable; the donating path is covered by the composite reply transitions,
+    -- whose donation return upgrades the relaxed form back to the full one.
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId replyTarget)
     -- IPC de-threading D4 Slice 2b: receive-leg enqueue freshness (the running receiver is `.ready`,
     -- hence not a queue member, and the old receiveQ tail is not a cross-queue tail) — dischargeable,
     -- replacing the threaded `hQNBC'`, now **established** via
@@ -21181,7 +21456,13 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
    endpointReplyRecv_preserves_queueHeadBlockedConsistent endpointId receiver replyTarget msg replyId
      st st' hInv hObjInv hReceiverReady hFreshReceiver hStep,
    endpointReplyRecv_preserves_blockedThreadTimeoutConsistent st st' endpointId receiver replyTarget msg replyId hObjInv hAllBudgetsNone hStep,
-   donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV',
+   -- WS-RR RR3.12: `donationOwnerValid` **established** from the pre-state (reply leg
+   -- under `hNoDonationOwnedBy`, then the receive leg's own preservation).
+   donationOwnerValid_implies_donationChainAcyclic st'
+     (endpointReplyRecv_establishes_donationOwnerValid_of_no_donation_owned_by st st' endpointId
+       receiver replyTarget msg replyId hObjInv hInv hReceiverReady hNoDonationOwnedBy hStep),
+   endpointReplyRecv_establishes_donationOwnerValid_of_no_donation_owned_by st st' endpointId
+     receiver replyTarget msg replyId hObjInv hInv hReceiverReady hNoDonationOwnedBy hStep,
    endpointReplyRecv_preserves_passiveServerIdle st st' endpointId receiver replyTarget msg replyId hReceiverReady hObjInv hInv.passiveServerIdle hStep,
    endpointReplyRecv_preserves_donationBudgetTransfer st st' endpointId receiver replyTarget msg replyId hObjInv hInv.donationBudgetTransfer hStep,
    endpointReplyRecv_preserves_blockedOnReplyHasTarget st st' endpointId receiver replyTarget msg replyId hObjInv hInv.blockedOnReplyHasTarget hStep,

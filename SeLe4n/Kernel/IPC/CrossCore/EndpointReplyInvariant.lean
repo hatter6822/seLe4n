@@ -283,17 +283,49 @@ theorem endpointReplyOnCore_post_agrees
 -- ============================================================================
 
 open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D (SM6.C closure): the cross-core reply preserves the **whole
-twenty-conjunct bundle**, unconditionally over success/failure.  Hypotheses
-mirror `endpointReply_preserves_ipcInvariantFull` (the threaded post-state
-facts `hWtpmn'`/`hDOV'` stated at the cross-core post-state). -/
+/-- WS-RR RR3.12: the cross-core reply establishes the bundle **relaxed at the
+answered caller** — the honest unconditional statement about a bare reply, and the
+one the composite cross-core dispatch consumes before the donation return upgrades
+it.  Reduces to the single-core establisher through the `post_agrees` lever, exactly
+as the full-bundle theorem below does. -/
+theorem endpointReplyOnCore_preserves_ipcInvariantFullExceptDonationOwner
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st) :
+    ipcInvariantFullExceptDonationOwner
+      (endpointReplyOnCore replier target msg executingCore st).1 target := by
+  have hPsi' : passiveServerIdle (endpointReplyOnCore replier target msg executingCore st).1 :=
+    (passiveServerIdle_perCore_bootCore_iff _).mp
+      (passiveServerIdle_perCore_of_frameOnCore
+        (endpointReplyOnCore_passiveServerIdleFrameOnCore replier target msg executingCore
+          st bootCoreId hObjInv)
+        ((passiveServerIdle_perCore_bootCore_iff st).mpr hInv.passiveServerIdle))
+  rcases endpointReplyOnCore_post_agrees replier target msg executingCore st hObjInv with
+    hPre | ⟨expected, r1, hStep1, hAgree⟩
+  · rw [hPre]; exact ipcInvariantFullExceptDonationOwner_of_full target hInv
+  · exact ipcInvariantFullExceptDonationOwner_of_getElem_eq hAgree.objects hPsi'
+      (endpointReply_preserves_ipcInvariantFullExceptDonationOwner st r1 expected target msg
+        hInv hObjInv hAllBudgetsNone hStep1)
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (SM6.C closure) / WS-RR RR3.12: the cross-core reply preserves the
+**whole twenty-conjunct bundle**, unconditionally over success/failure, on a reply
+whose answered caller donated nothing.  Hypotheses mirror
+`endpointReply_preserves_ipcInvariantFull`, `hNoDonationOwnedBy` included: the
+threaded post-state `hDOV'` it replaces is false of this transition's own result
+whenever the answered call donated, so the theorem asserted nothing there.  The
+donating path goes through the relaxed statement above plus the donation return. -/
 theorem endpointReplyOnCore_preserves_ipcInvariantFull
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hDOV' : donationOwnerValid
-      (endpointReplyOnCore replier target msg executingCore st).1)
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId target)
     (hAllBudgetsNone : allTimeoutBudgetsNone st) :
     ipcInvariantFull (endpointReplyOnCore replier target msg executingCore st).1 := by
   have hPsi' : passiveServerIdle (endpointReplyOnCore replier target msg executingCore st).1 :=
@@ -307,9 +339,7 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull
   · rw [hPre]; exact hInv
   · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
       (endpointReply_preserves_ipcInvariantFull st r1 expected target msg hInv hObjInv
-        hAllBudgetsNone
-        (donationOwnerValid_of_getElem_eq (fun oid => (hAgree.objects oid).symm) hDOV')
-        hStep1)
+        hAllBudgetsNone hNoDonationOwnedBy hStep1)
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D flagship (cross-core reply): `endpointReplyOnCore` preserves
@@ -319,14 +349,18 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hDOV' : donationOwnerValid
-      (endpointReplyOnCore replier target msg executingCore st).1)
+    -- WS-RR RR3.12: replaces the threaded post-state `hDOV'` with the pre-state
+    -- condition that makes it derivable.
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId target)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (c : CoreId) :
     ipcInvariantFull_perCore (endpointReplyOnCore replier target msg executingCore st).1 c :=
   ipcInvariantFull_perCore_of_full
     (endpointReplyOnCore_preserves_ipcInvariantFull replier target msg executingCore st
-      (ipcInvariantFull_of_smp hInv) hObjInv hDOV' hAllBudgetsNone)
+      (ipcInvariantFull_of_smp hInv) hObjInv hNoDonationOwnedBy hAllBudgetsNone)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointReplyOnCore_passiveServerIdleFrameOnCore replier target msg executingCore
         st c hObjInv)
@@ -1134,8 +1168,14 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hDOVMid : donationOwnerValid
-      (endpointReplyOnCore receiver replyTarget msg executingCore st).1)
+    -- WS-RR RR3.12: replaces the threaded mid-state `hDOVMid` (the post-reply
+    -- state), which no state on the donating path satisfies -- the reply leg wakes
+    -- the answered caller `.ready` while the recorded server still holds its
+    -- donation.  A pre-state condition, hence dischargeable.
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId replyTarget)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1181,7 +1221,6 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
       have hEpBwd := endpointReplyOnCore_endpoint_backward receiver replyTarget msg
         executingCore st hObjInv
       rw [hStEq] at hEpBwd
-      have hDOVMid1 : donationOwnerValid st1 := by rw [← hStEq]; exact hDOVMid
       have hWtpmnMid : blockedThreadsPendingMessageConsistent st1 := by
         intro tid tcb hRaw
         obtain ⟨ty, hty, _, _, hDisj⟩ :=
@@ -1195,8 +1234,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
       have hInv1 : ipcInvariantFull st1 := by
         rw [← hStEq]
         exact endpointReplyOnCore_preserves_ipcInvariantFull receiver replyTarget msg
-          executingCore st hInv hObjInv
-          (by rw [hStEq]; exact hDOVMid1) hAllBudgetsNone
+          executingCore st hInv hObjInv hNoDonationOwnedBy hAllBudgetsNone
       have hBudgets1 : allTimeoutBudgetsNone st1 := by
         intro tid tcb hRaw
         obtain ⟨ty, hty, _, hBudget, _⟩ :=
@@ -1269,8 +1307,14 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hDOVMid : donationOwnerValid
-      (endpointReplyOnCore receiver replyTarget msg executingCore st).1)
+    -- WS-RR RR3.12: replaces the threaded mid-state `hDOVMid` (the post-reply
+    -- state), which no state on the donating path satisfies -- the reply leg wakes
+    -- the answered caller `.ready` while the recorded server still holds its
+    -- donation.  A pre-state condition, hence dischargeable.
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId replyTarget)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1301,8 +1345,9 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
       c :=
   ipcInvariantFull_perCore_of_full
     (endpointReplyRecvOnCore_preserves_ipcInvariantFull endpointId receiver replyTarget msg
-      replyId executingCore st (ipcInvariantFull_of_smp hInv) hObjInv 
-      hDOVMid hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
+      replyId executingCore st (ipcInvariantFull_of_smp hInv) hObjInv
+      hNoDonationOwnedBy hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid
+      hReceiverNotRecv
       hReceiverReady)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointReplyRecvOnCore_passiveServerIdleFrameOnCore endpointId receiver replyTarget

@@ -421,6 +421,50 @@ theorem ipcInvariantFull_of_getElem_eq {s1 s2 : SystemState}
    endpointQueueTailBlockedConsistent_of_getElem_eq hEq h.endpointQueueTailBlockedConsistent,
    queueNextTargetBlocked_of_getElem_eq hEq h.queueNextTargetBlocked⟩
 
+/-- WS-RR RR3.12: the relaxed donation-owner invariant is a pure object-store
+property, so it transports across pointwise lookup agreement. -/
+theorem donationOwnerValidExcept_of_getElem_eq {s1 s2 : SystemState}
+    {woken : SeLe4n.ThreadId}
+    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
+    (h : donationOwnerValidExcept s1 woken) : donationOwnerValidExcept s2 woken := by
+  intro tid tcb scId owner hTcb hBind
+  rw [hEq] at hTcb
+  obtain ⟨⟨sc, hSc, hBound⟩, ⟨ownerTcb, hOwner, hUnbound, hCase⟩⟩ :=
+    h tid tcb scId owner hTcb hBind
+  exact ⟨⟨sc, by rw [hEq]; exact hSc, hBound⟩,
+    ⟨ownerTcb, by rw [hEq]; exact hOwner, hUnbound, hCase⟩⟩
+
+/-- WS-RR RR3.12: the relaxed bundle transports across pointwise lookup agreement,
+exactly as `ipcInvariantFull_of_getElem_eq` does for the full one — `passiveServerIdle`
+is the single scheduler-reading conjunct and is supplied for the target state. -/
+theorem ipcInvariantFullExceptDonationOwner_of_getElem_eq {s1 s2 : SystemState}
+    {woken : SeLe4n.ThreadId}
+    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
+    (hPsi2 : passiveServerIdle s2)
+    (h : ipcInvariantFullExceptDonationOwner s1 woken) :
+    ipcInvariantFullExceptDonationOwner s2 woken :=
+  ⟨ipcInvariant_of_getElem_eq hEq h.1,
+   dualQueueSystemInvariant_of_getElem_eq hEq h.2.1,
+   allPendingMessagesBounded_of_getElem_eq hEq h.2.2.1,
+   badgeWellFormed_of_getElem_eq hEq h.2.2.2.1,
+   blockedThreadsPendingMessageConsistent_of_getElem_eq hEq h.2.2.2.2.1,
+   endpointQueueNoDup_of_getElem_eq hEq h.2.2.2.2.2.1,
+   ipcStateQueueMembershipConsistent_of_getElem_eq hEq h.2.2.2.2.2.2.1,
+   queueNextBlockingConsistent_of_getElem_eq hEq h.2.2.2.2.2.2.2.1,
+   queueHeadBlockedConsistent_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.1,
+   blockedThreadTimeoutConsistent_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.2.1,
+   donationChainAcyclic_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.2.2.1,
+   donationOwnerValidExcept_of_getElem_eq hEq h.donationOwnerValidExcept,
+   hPsi2,
+   donationBudgetTransfer_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   blockedOnReplyHasTarget_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   replyCallerLinkage_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   pendingReceiveReplyWellFormed_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   donationOwnerUnique_of_getElem_eq hEq h.donationOwnerUnique,
+   endpointQueueTailBlockedConsistent_of_getElem_eq hEq
+     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   queueNextTargetBlocked_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+
 -- ============================================================================
 -- §2  The off-scheduler agreement relation
 -- ============================================================================

@@ -1312,13 +1312,18 @@ theorem endpointReply_preserves_ipcInvariantFull_perCore
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hDOV' : donationOwnerValid st')
+    -- WS-RR RR3.12: replaces the threaded post-state `hDOV'`, which no state on the
+    -- donating path satisfies.  A pre-state condition, hence dischargeable.
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId target)
     (hStep : endpointReply replier target msg st = .ok ((), st'))
     (c : CoreId) :
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointReply_preserves_ipcInvariantFull st st' replier target msg
-      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone hDOV' hStep)
+      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone hNoDonationOwnedBy hStep)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointReply_passiveServerIdleFrameOnCore st st' replier target msg c hObjInv hStep)
       (hInv c).passiveServerIdle)
@@ -1333,7 +1338,12 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull_perCore
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hDOV' : donationOwnerValid st')
+    -- WS-RR RR3.12: replaces the threaded post-state `hDOV'`, which no state on the
+    -- donating path satisfies.  A pre-state condition, hence dischargeable.
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId replyTarget)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
@@ -1357,7 +1367,7 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointReplyRecv_preserves_ipcInvariantFull st st' endpointId receiver replyTarget msg replyId
-      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone hDOV' 
+      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone hNoDonationOwnedBy
       hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
       hStep)

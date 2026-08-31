@@ -2306,6 +2306,184 @@ theorem donationOwnerValid_of_frames
     hFrame.ownerForward owner ownerTcb hOwnerSt hUnbound ⟨ep, rt, hReply⟩⟩
 
 -- ============================================================================
+-- WS-RR RR3.12: `donationOwnerValid`, relaxed at the thread a reply has woken
+-- ============================================================================
+
+/-- WS-RR RR3.12: `donationOwnerValid`, **relaxed at one thread**.
+
+`donationOwnerValid` requires every donation owner to be `.blockedOnReply`, which
+is the state a donor sits in from its `Call` until the answer arrives.  The
+kernel's reply is deliberately *not* atomic in that respect: `endpointReply` wakes
+the answered caller `.ready` and the donated SchedContext is handed back
+afterwards, by `applyReplyDonation` (`endpointReplyWithDonation`) or
+`applyReplyDonationOnCore` (`endpointReplyCrossCoreDispatch`) — the AUD-3 ordering,
+because the server needs the donated budget *while* it replies.  Between those two
+steps `donationOwnerValid` is **false** of the state whenever the answered call
+donated, which is the ordinary seL4-MCS path.
+
+`donationOwnerValidExcept st woken` is what is true there: every clause of
+`donationOwnerValid` except that an owner equal to `woken` need not be
+`.blockedOnReply` (it is the thread the reply just woke).  Its `.unbound` clause is
+kept, so `donationChainAcyclic` still follows — see
+`donationOwnerValidExcept_implies_donationChainAcyclic`.
+
+The pair `(donationOwnerValidExcept, donationOwnerValid)` is what lets the reply
+chain state honest bundles: the bare reply **establishes** the relaxed form, and the
+donation return **upgrades** it back to the full one
+(`returnDonatedSchedContext_establishes_donationOwnerValid_of_except`).  Before
+RR3.12 the reply bundles instead threaded `donationOwnerValid` on their own
+post-state — a hypothesis no state on the donating path satisfies, so those bundles
+asserted nothing exactly where the donation machinery runs. -/
+def donationOwnerValidExcept (st : SystemState) (woken : SeLe4n.ThreadId) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    tcb.schedContextBinding = .donated scId owner →
+    (∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc) ∧
+      sc.boundThread = some tid) ∧
+    (∃ ownerTcb, st.objects[owner.toObjId]? = some (.tcb ownerTcb) ∧
+      ownerTcb.schedContextBinding = .unbound ∧
+      (owner = woken ∨
+        ∃ epId replyTarget, ownerTcb.ipcState = .blockedOnReply epId replyTarget))
+
+/-- WS-RR RR3.12: the full invariant is the relaxed one at every `woken`. -/
+theorem donationOwnerValidExcept_of_donationOwnerValid
+    {st : SystemState} (woken : SeLe4n.ThreadId) (h : donationOwnerValid st) :
+    donationOwnerValidExcept st woken := by
+  intro tid tcb scId owner hTcb hBind
+  obtain ⟨hSc, ownerTcb, hOwner, hUnbound, hReply⟩ := h tid tcb scId owner hTcb hBind
+  exact ⟨hSc, ownerTcb, hOwner, hUnbound, Or.inr hReply⟩
+
+/-- WS-RR RR3.12: the relaxed form is the full one once nothing is donated **by**
+the relaxed thread — the state the donation return leaves behind, and the state a
+reply that carried no donation was in all along. -/
+theorem donationOwnerValid_of_except_of_no_donation_owned_by
+    {st : SystemState} {woken : SeLe4n.ThreadId}
+    (h : donationOwnerValidExcept st woken)
+    (hNone : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId woken) :
+    donationOwnerValid st := by
+  intro tid tcb scId owner hTcb hBind
+  obtain ⟨hSc, ownerTcb, hOwner, hUnbound, hCase⟩ := h tid tcb scId owner hTcb hBind
+  refine ⟨hSc, ownerTcb, hOwner, hUnbound, ?_⟩
+  cases hCase with
+  | inl hEq => exact absurd hBind (hEq ▸ hNone tid tcb scId hTcb)
+  | inr hReply => exact hReply
+
+/-- WS-RR RR3.12: acyclicity survives the relaxation.  The argument reads only the
+owner's `.unbound` binding — `.unbound` and `.donated` are distinct constructors —
+and the relaxed form keeps that clause; only the `.blockedOnReply` clause is
+dropped. -/
+theorem donationOwnerValidExcept_implies_donationChainAcyclic
+    (st : SystemState) (woken : SeLe4n.ThreadId)
+    (hDOV : donationOwnerValidExcept st woken) :
+    donationChainAcyclic st := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 hTcb1 hTcb2 hDon1 hDon2
+  obtain ⟨_, ownerTcb, hOwnerTcb, hBound, _⟩ := hDOV tid1 tcb1 scId1 tid2 hTcb1 hDon1
+  rw [hTcb2] at hOwnerTcb
+  cases hOwnerTcb
+  rw [hDon2] at hBound; cases hBound
+
+/-- WS-RR RR3.12: the relaxed invariant depends only on the object store. -/
+theorem donationOwnerValidExcept_of_objects_eq {st st' : SystemState}
+    {woken : SeLe4n.ThreadId} (hObjs : st'.objects = st.objects)
+    (h : donationOwnerValidExcept st woken) : donationOwnerValidExcept st' woken := by
+  intro tid tcb scId owner hTcb hBind
+  rw [hObjs] at hTcb ⊢
+  exact h tid tcb scId owner hTcb hBind
+
+/-- WS-RR RR3.12: the **forward** half of the relaxed preservation frame — the
+counterpart of `donationOwnerFrame` for a transition that wakes one thread.
+
+Both clauses `donationOwnerValidExcept` reads on the owner/SchedContext side are
+carried forward: every donated SchedContext survives, and every TCB survives with
+its `schedContextBinding` intact and — everywhere but at `woken` — its `ipcState`
+too.  Stating `tcbForward` over *every* TCB rather than only over owners is what
+makes it compose: the reply is three stores, and the thread that is an owner after
+one of them need not have been one before it. -/
+structure donationOwnerFrameExcept (st st' : SystemState) (woken : SeLe4n.ThreadId) :
+    Prop where
+  scForward : ∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
+    st.objects[scId.toObjId]? = some (.schedContext sc) →
+    st'.objects[scId.toObjId]? = some (.schedContext sc)
+  tcbForward : ∀ (t : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[t.toObjId]? = some (.tcb tcb) →
+    ∃ tcb', st'.objects[t.toObjId]? = some (.tcb tcb') ∧
+      tcb'.schedContextBinding = tcb.schedContextBinding ∧
+      (t = woken ∨ tcb'.ipcState = tcb.ipcState)
+
+namespace donationOwnerFrameExcept
+
+/-- Reflexivity: a state frames onto itself. -/
+theorem refl (st : SystemState) (woken : SeLe4n.ThreadId) :
+    donationOwnerFrameExcept st st woken :=
+  ⟨fun _ _ h => h, fun _ tcb h => ⟨tcb, h, rfl, Or.inr rfl⟩⟩
+
+/-- Transitivity: chain two relaxed frames sharing the same relaxed thread. -/
+theorem trans {st st' st'' : SystemState} {woken : SeLe4n.ThreadId}
+    (h1 : donationOwnerFrameExcept st st' woken)
+    (h2 : donationOwnerFrameExcept st' st'' woken) :
+    donationOwnerFrameExcept st st'' woken :=
+  ⟨fun scId sc h => h2.scForward scId sc (h1.scForward scId sc h),
+   fun t tcb h => by
+     obtain ⟨tcb1, h1', hB1, hI1⟩ := h1.tcbForward t tcb h
+     obtain ⟨tcb2, h2', hB2, hI2⟩ := h2.tcbForward t tcb1 h1'
+     refine ⟨tcb2, h2', hB2.trans hB1, ?_⟩
+     cases hI1 with
+     | inl hw => exact Or.inl hw
+     | inr hi1 => cases hI2 with
+       | inl hw => exact Or.inl hw
+       | inr hi2 => exact Or.inr (hi2.trans hi1)⟩
+
+/-- A step that leaves the object map untouched frames trivially (scheduler-only
+ops: `removeRunnable`, `ensureRunnable`, `removeRunnableOnCore`, …). -/
+theorem of_objects_eq {st st' : SystemState} {woken : SeLe4n.ThreadId}
+    (hEq : st'.objects = st.objects) : donationOwnerFrameExcept st st' woken :=
+  ⟨fun _ _ h => by rw [hEq]; exact h,
+   fun _ tcb h => ⟨tcb, by rw [hEq]; exact h, rfl, Or.inr rfl⟩⟩
+
+/-- Every plain donation-owner frame whose TCB side is a pointwise forward map is
+also a relaxed frame — the shape a transition that touches no `ipcState` supplies
+(`consumeCallerReply`, the queue-link stores). -/
+theorem of_tcbForward {st st' : SystemState} {woken : SeLe4n.ThreadId}
+    (hSc : ∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
+      st.objects[scId.toObjId]? = some (.schedContext sc) →
+      st'.objects[scId.toObjId]? = some (.schedContext sc))
+    (hTcb : ∀ (t : SeLe4n.ThreadId) (tcb : TCB),
+      st.objects[t.toObjId]? = some (.tcb tcb) →
+      ∃ tcb', st'.objects[t.toObjId]? = some (.tcb tcb') ∧
+        tcb'.schedContextBinding = tcb.schedContextBinding ∧
+        tcb'.ipcState = tcb.ipcState) :
+    donationOwnerFrameExcept st st' woken :=
+  ⟨hSc, fun t tcb h => by
+    obtain ⟨tcb', h', hB, hI⟩ := hTcb t tcb h
+    exact ⟨tcb', h', hB, Or.inr hI⟩⟩
+
+end donationOwnerFrameExcept
+
+/-- WS-RR RR3.12: the relaxed counterpart of `donationOwnerValid_of_frames` — the
+`tid`-side binding is pulled **backward** by `sameSchedContextBindings`, the
+SchedContext/owner side carried **forward** by the relaxed frame. -/
+theorem donationOwnerValidExcept_of_frames
+    {st st' : SystemState} {woken : SeLe4n.ThreadId}
+    (hBind : sameSchedContextBindings st st')
+    (hFrame : donationOwnerFrameExcept st st' woken)
+    (hInv : donationOwnerValid st) :
+    donationOwnerValidExcept st' woken := by
+  intro tid tcb scId owner hTcb hBinding
+  obtain ⟨tcbSt, hTcbSt, hBindEq⟩ := hBind tid tcb hTcb
+  rw [hBinding] at hBindEq
+  obtain ⟨⟨sc, hScSt, hBound⟩, ⟨ownerTcb, hOwnerSt, hUnbound, ep, rt, hReply⟩⟩ :=
+    hInv tid tcbSt scId owner hTcbSt hBindEq
+  obtain ⟨ownerTcb', hOwner', hBind', hCase⟩ := hFrame.tcbForward owner ownerTcb hOwnerSt
+  refine ⟨⟨sc, hFrame.scForward scId sc hScSt, hBound⟩,
+    ⟨ownerTcb', hOwner', hBind'.trans hUnbound, ?_⟩⟩
+  cases hCase with
+  | inl hw => exact Or.inl hw
+  | inr hi => exact Or.inr ⟨ep, rt, hi.trans hReply⟩
+
+-- ============================================================================
 -- Full IPC invariant bundle (16 conjuncts)
 -- ============================================================================
 
@@ -2361,6 +2539,84 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
   endpointQueueTailBlockedConsistent st ∧
   queueNextTargetBlocked st
+
+/-- WS-RR RR3.12: `ipcInvariantFull` with `donationOwnerValid` relaxed at one
+thread — the honest post-state of a **bare** reply delivery.
+
+The reply wakes the answered caller before the donated SchedContext is handed
+back (see `donationOwnerValidExcept` for why that ordering is deliberate), so on
+the donating path no state between the two steps satisfies `ipcInvariantFull`.
+This is what such a state does satisfy: nineteen conjuncts unchanged, and
+`donationOwnerValid` relaxed exactly at the woken caller.
+
+`donationChainAcyclic` is kept at full strength — it follows from the relaxed form
+too (`donationOwnerValidExcept_implies_donationChainAcyclic`), because the
+relaxation drops only the owner's `.blockedOnReply` clause and acyclicity reads its
+`.unbound` one.
+
+Use `ipcInvariantFull_of_exceptDonationOwner` to recover the full bundle once the
+donation return has run, or once it is known that nothing was donated by the woken
+thread. -/
+def ipcInvariantFullExceptDonationOwner (st : SystemState) (woken : SeLe4n.ThreadId) :
+    Prop :=
+  ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
+  badgeWellFormed st ∧ blockedThreadsPendingMessageConsistent st ∧
+  endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st ∧
+  queueNextBlockingConsistent st ∧ queueHeadBlockedConsistent st ∧
+  blockedThreadTimeoutConsistent st ∧
+  donationChainAcyclic st ∧ donationOwnerValidExcept st woken ∧
+  passiveServerIdle st ∧ donationBudgetTransfer st ∧
+  blockedOnReplyHasTarget st ∧ replyCallerLinkage st ∧
+  pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
+  endpointQueueTailBlockedConsistent st ∧
+  queueNextTargetBlocked st
+
+/-- WS-RR RR3.12: the full bundle relaxes at every thread. -/
+theorem ipcInvariantFullExceptDonationOwner_of_full {st : SystemState}
+    (woken : SeLe4n.ThreadId) (h : ipcInvariantFull st) :
+    ipcInvariantFullExceptDonationOwner st woken :=
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
+   donationOwnerValidExcept_of_donationOwnerValid woken h.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+
+/-- WS-RR RR3.12: the relaxed bundle plus the full `donationOwnerValid` is the full
+bundle.  The donation return supplies the second argument
+(`returnDonatedSchedContext_establishes_donationOwnerValid_of_except`); so does
+`donationOwnerValid_of_except_of_no_donation_owned_by` on a reply that carried no
+donation. -/
+theorem ipcInvariantFull_of_exceptDonationOwner {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken)
+    (hDOV : donationOwnerValid st) :
+    ipcInvariantFull st :=
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1, hDOV,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+
+/-- WS-RR RR3.12: the relaxed bundle's own `donationOwnerValidExcept` projection. -/
+theorem ipcInvariantFullExceptDonationOwner.donationOwnerValidExcept
+    {st : SystemState} {woken : SeLe4n.ThreadId}
+    (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.donationOwnerValidExcept st woken :=
+  h.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- WS-RR RR3.12: the relaxed bundle's `donationOwnerUnique` projection — the
+companion the donation return needs alongside the relaxed validity. -/
+theorem ipcInvariantFullExceptDonationOwner.donationOwnerUnique
+    {st : SystemState} {woken : SeLe4n.ThreadId}
+    (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.donationOwnerUnique st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- WS-SM SM6.D (PR #822 review): the structural core is exactly the first 15
 conjuncts of `ipcInvariantFull`. -/
@@ -3756,16 +4012,23 @@ theorem cleanupPreReceiveDonation_preserves_donationBudgetTransfer
           originalOwner hObjInv recvTcb (lookupTcb_some_objects st receiver recvTcb hL)
           (by rw [hBind]; rfl) hInv hRet
 
-/-- IPC de-threading D6: `returnDonatedSchedContext` preserves `donationOwnerValid`.  The return
-hands `scId` back to `originalOwner` (server `.donated scId originalOwner` → server `.unbound`,
-owner `.unbound` → `.bound scId`, `sc.boundThread := originalOwner`).  For every *remaining*
-donation `tid ↦ .donated scId' owner'` (`tid` is neither the server — now `.unbound` — nor the
-owner — now `.bound`): its SchedContext clause survives because `scId' ≠ scId` (else `tid` and the
-server would both bind `scId`, forcing `tid = serverTid`); and its owner clause survives because
-`owner' ≠ originalOwner` — **the one place donation-owner uniqueness is needed**: were `owner'`
-the just-rebound `originalOwner`, both `tid` and the server would name it, forcing `tid = serverTid`
-again. -/
-theorem returnDonatedSchedContext_preserves_donationOwnerValid
+/-- IPC de-threading D6 / WS-RR RR3.12: `returnDonatedSchedContext` **establishes**
+`donationOwnerValid` from the form relaxed at the owner it is handing the SchedContext back to.
+The return hands `scId` back to `originalOwner` (server `.donated scId originalOwner` → server
+`.unbound`, owner `.unbound` → `.bound scId`, `sc.boundThread := originalOwner`).  For every
+*remaining* donation `tid ↦ .donated scId' owner'` (`tid` is neither the server — now `.unbound`
+— nor the owner — now `.bound`): its SchedContext clause survives because `scId' ≠ scId` (else
+`tid` and the server would both bind `scId`, forcing `tid = serverTid`); and its owner clause
+survives because `owner' ≠ originalOwner` — **the one place donation-owner uniqueness is
+needed**: were `owner'` the just-rebound `originalOwner`, both `tid` and the server would name
+it, forcing `tid = serverTid` again.
+
+That last step is also what makes the *relaxed* hypothesis enough, and hence what closes the
+reply chain: the relaxation is exactly at `originalOwner`, and the remaining donations provably
+do not name it.  The pre-state here is the one `endpointReply` leaves behind — the answered
+caller already woken `.ready` while the server still holds the donation — where the unrelaxed
+`donationOwnerValid` is false. -/
+theorem returnDonatedSchedContext_establishes_donationOwnerValid_of_except
     (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
@@ -3773,7 +4036,7 @@ theorem returnDonatedSchedContext_preserves_donationOwnerValid
     (hServerObj : st.objects[serverTid.toObjId]? = some (.tcb stcb))
     (hServerBind : stcb.schedContextBinding = .donated scId originalOwner)
     (hUnique : donationOwnerUnique st)
-    (hInv : donationOwnerValid st)
+    (hInv : donationOwnerValidExcept st originalOwner)
     (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
     donationOwnerValid st' := by
   intro tid tcb scId' owner' hTcb hBinding
@@ -3786,9 +4049,9 @@ theorem returnDonatedSchedContext_preserves_donationOwnerValid
   obtain ⟨tcb0, hTcb0, hBind0⟩ := hBack.2.2 hTidNS hTidNO
   have hBind0' : tcb0.schedContextBinding = .donated scId' owner' := hBind0.trans hBinding
   -- Pre-state witnesses for `tid`'s donation and for the server's donation.
-  obtain ⟨⟨sc', hSc', hBound'⟩, ⟨ownerTcb, hOwner0, hUnbound0, ep, rt, hReply0⟩⟩ :=
+  obtain ⟨⟨sc', hSc', hBound'⟩, ⟨ownerTcb, hOwner0, hUnbound0, hCase0⟩⟩ :=
     hInv tid tcb0 scId' owner' hTcb0 hBind0'
-  obtain ⟨⟨scS, hScS, hBoundS⟩, ⟨oOwnerTcb, hOOwner, _⟩⟩ :=
+  obtain ⟨⟨scS, hScS, hBoundS⟩, ⟨oOwnerTcb, hOOwner, _, _⟩⟩ :=
     hInv serverTid stcb scId originalOwner hServerObj hServerBind
   -- `scId' ≠ scId`: else `sc' = scS` ⇒ `boundThread` is both `tid` and `serverTid`.
   have hScIdNe : scId'.toObjId ≠ scId.toObjId := by
@@ -3815,11 +4078,35 @@ theorem returnDonatedSchedContext_preserves_donationOwnerValid
     exact hTidNS (by rw [this])
   have hOwnerNSc : owner'.toObjId ≠ scId.toObjId := by
     intro hEq; rw [hEq, hScS] at hOwner0; cases hOwner0
+  -- WS-RR RR3.12: the relaxed disjunct is `owner' = originalOwner`, which `hOwnerNO`
+  -- has just excluded -- so the relaxed hypothesis yields the full `.blockedOnReply`
+  -- clause for every donation that survives the return.
+  obtain ⟨ep, rt, hReply0⟩ : ∃ epId replyTarget,
+      ownerTcb.ipcState = .blockedOnReply epId replyTarget :=
+    hCase0.resolve_left (fun hEq => hOwnerNO (by rw [hEq]))
   refine ⟨⟨sc', ?_, hBound'⟩, ⟨ownerTcb, ?_, hUnbound0, ep, rt, hReply0⟩⟩
   · rw [returnDonatedSchedContext_objects_ne st st' serverTid scId originalOwner hObjInv h
       scId'.toObjId hScIdNe hScNeO hScNeS]; exact hSc'
   · rw [returnDonatedSchedContext_objects_ne st st' serverTid scId originalOwner hObjInv h
       owner'.toObjId hOwnerNSc hOwnerNO hOwnerNS]; exact hOwner0
+
+/-- IPC de-threading D6: `returnDonatedSchedContext` preserves `donationOwnerValid` — the
+unrelaxed instance of the establisher above (the full invariant implies the relaxed one at
+every thread). -/
+theorem returnDonatedSchedContext_preserves_donationOwnerValid
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (stcb : TCB)
+    (hServerObj : st.objects[serverTid.toObjId]? = some (.tcb stcb))
+    (hServerBind : stcb.schedContextBinding = .donated scId originalOwner)
+    (hUnique : donationOwnerUnique st)
+    (hInv : donationOwnerValid st)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    donationOwnerValid st' :=
+  returnDonatedSchedContext_establishes_donationOwnerValid_of_except st st' serverTid scId
+    originalOwner hObjInv stcb hServerObj hServerBind hUnique
+    (donationOwnerValidExcept_of_donationOwnerValid originalOwner hInv) h
 
 /-- IPC de-threading D6: `cleanupPreReceiveDonation` preserves `donationOwnerValid` — a no-op
 unless the receiver holds a donated SchedContext, in which case the single
