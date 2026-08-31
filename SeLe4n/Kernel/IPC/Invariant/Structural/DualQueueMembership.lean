@@ -3844,14 +3844,13 @@ private theorem tcb_replyObject_store_tcb_backward
 pre-state.  Each constructor carries a `.tcb` lookup and a `queueNext` edge;
 the forward field-agreement helper supplies a pre-state `.tcb` with the same
 `queueNext`. -/
-private theorem tcb_replyObject_store_QueueNextPath_backward
+private theorem queueNextPath_backward_of_readAgreement
     {st st' : SystemState}
     (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
       ∃ ty, st.objects[s]? = some (.tcb ty) ∧
         tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
-        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
-        tx.timeoutBudget = ty.timeoutBudget)
+        tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     {a b : SeLe4n.ThreadId} (hPath : QueueNextPath st' a b) :
     QueueNextPath st a b := by
   induction hPath with
@@ -3866,14 +3865,13 @@ private theorem tcb_replyObject_store_QueueNextPath_backward
 forward across the `replyObject` store.  The head/tail boundary clauses witness
 `.tcb` objects whose `queuePrev`/`queueNext` are preserved; the emptiness
 clause references only `q` itself, which is unchanged. -/
-private theorem tcb_replyObject_store_intrusiveQueueWellFormed_forward
+private theorem intrusiveQueueWellFormed_forward_of_readAgreement
     {st st' : SystemState}
     (hBwd : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
       ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
         tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
-        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
-        tx.timeoutBudget = ty.timeoutBudget)
+        tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     {q : IntrusiveQueue} (hWF : intrusiveQueueWellFormed q st) :
     intrusiveQueueWellFormed q st' := by
   obtain ⟨hEmpty, hHead, hTail⟩ := hWF
@@ -3890,20 +3888,18 @@ private theorem tcb_replyObject_store_intrusiveQueueWellFormed_forward
 /-- WS-SM SM6.D: `tcbQueueLinkIntegrity` transports forward across the
 `replyObject` store.  Every lookup it touches is a `.tcb`, and the relevant
 links (`queueNext`/`queuePrev`) are preserved fields. -/
-private theorem tcb_replyObject_store_tcbQueueLinkIntegrity_forward
+private theorem tcbQueueLinkIntegrity_forward_of_readAgreement
     {st st' : SystemState}
     (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
       ∃ ty, st.objects[s]? = some (.tcb ty) ∧
         tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
-        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
-        tx.timeoutBudget = ty.timeoutBudget)
+        tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     (hBwd : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
       ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
         tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
-        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
-        tx.timeoutBudget = ty.timeoutBudget)
+        tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     (hLI : tcbQueueLinkIntegrity st) :
     tcbQueueLinkIntegrity st' := by
   obtain ⟨hFwdLI, hRevLI⟩ := hLI
@@ -3920,54 +3916,73 @@ private theorem tcb_replyObject_store_tcbQueueLinkIntegrity_forward
     exact ⟨txA, hStA, hQNA.trans hANext⟩
 
 open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D (#7.0): the reusable `ipcInvariantCore` driver behind every TCB
-field-store whose changed field is read by *no* structural core conjunct.  Given
-the non-`.tcb` kind agreement (`hNT`), the forward/backward read-field agreement
-(`hFwd`/`hBwd` over ipcState, pendingMessage, queueNext/Prev/PPrev,
-schedContextBinding, timeoutBudget) and the scheduler frame (`hSched`), the store
-preserves all 15 structural conjuncts.  Both the `replyObject` store and the
-`pendingReceiveReply` store (the server-first stash the #7 fold writes inside
-`endpointReceiveDual`) instantiate it via the field-specific agreement helpers,
-so the 15-conjunct discharge is proven exactly once. -/
-theorem storeObject_tcb_ipcInvariantCore_of_agreements
+/-- WS-SM SM6.D (#7.0), generalised at WS-RR RR2.5: the reusable `ipcInvariantCore`
+driver.  Given the neither-`.tcb`-nor-`.schedContext` kind agreement (`hNT`), the
+SchedContext *survival* clause (`hSC` — the key still holds a SchedContext, whose
+value may differ), the forward/backward read-field agreement (`hFwd`/`hBwd` over
+ipcState, pendingMessage, queueNext/Prev/PPrev, timeoutBudget), the eleven
+conjuncts that read **no** `schedContextBinding` transport across the agreement; the four that do (`donationChainAcyclic`,
+`donationOwnerValid`, `passiveServerIdle`, `donationBudgetTransfer`) are supplied
+on the post-state.
+
+`hSC` is weaker than kind agreement on purpose: the only binding-free conjunct
+that touches a SchedContext is `blockedThreadTimeoutConsistent`, and it asks only
+that the referenced object still *be* a SchedContext.  A donation rebinds
+`SchedContext.boundThread`, so it can satisfy survival but never value equality.
+
+The binding is deliberately *absent* from the agreement.  A transition that
+frames it recovers the original all-15 discharge through
+`storeObject_tcb_ipcInvariantCore_of_agreements` below, which is this driver
+instantiated with the four conjuncts proved from the binding agreement.  A
+transition that **writes** a binding — donation is the only one — cannot state
+that agreement at all, and takes this driver directly, proving the quartet from
+its own post-state characterisation (`Kernel/IPC/Invariant/DonationPreservation.lean`).
+Before RR2.5 the binding sat inside the agreement, so the donation primitives
+had no route to the eleven and no bundle theorem at all. -/
+theorem ipcInvariantCore_of_nonBindingAgreements
     (st st' : SystemState)
     (hInv : ipcInvariantCore st)
     (hNT : ∀ (s : SeLe4n.ObjId) (k : KernelObject), (∀ tt, k ≠ .tcb tt) →
+      (∀ sc, k ≠ .schedContext sc) →
       (st'.objects[s]? = some k ↔ st.objects[s]? = some k))
+    (hSC : ∀ (s : SeLe4n.ObjId) (sc : SchedContext),
+      st.objects[s]? = some (.schedContext sc) →
+      ∃ sc', st'.objects[s]? = some (.schedContext sc'))
     (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
       ∃ ty, st.objects[s]? = some (.tcb ty) ∧
         tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
-        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
-        tx.timeoutBudget = ty.timeoutBudget)
+        tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     (hBwd : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
       ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
         tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
-        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
-        tx.timeoutBudget = ty.timeoutBudget)
-    (hSched : st'.scheduler = st.scheduler) :
+        tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
+    (hAcyclic : donationChainAcyclic st') (hOwnerValid : donationOwnerValid st')
+    (hPassiveIdle : passiveServerIdle st') (hBudgetTransfer : donationBudgetTransfer st') :
     ipcInvariantCore st' := by
   refine ⟨?c1, ?c2, ?c3, ?c4, ?c5, ?c6, ?c7, ?c8, ?c9, ?c10, ?c11, ?c12, ?c13,
     ?c14, ?c15⟩
   -- 1. ipcInvariant: reads `.notification` only → (a).
   · intro oid ntfn hObj
     exact hInv.ipcInvariant oid ntfn ((hNT oid (.notification ntfn)
-      (fun tt => by exact KernelObject.noConfusion)).mp hObj)
+      (fun tt => by exact KernelObject.noConfusion)
+        (fun sc => by exact KernelObject.noConfusion)).mp hObj)
   -- 2. dualQueueSystemInvariant: endpoints via (a), TCB links via (b).
   · obtain ⟨hEpWF, hLI, hAcyc⟩ := hInv.dualQueueSystemInvariant
-    refine ⟨?_, tcb_replyObject_store_tcbQueueLinkIntegrity_forward hFwd hBwd hLI, ?_⟩
+    refine ⟨?_, tcbQueueLinkIntegrity_forward_of_readAgreement hFwd hBwd hLI, ?_⟩
     · intro epId ep hEp
       have hEp' := (hNT epId (.endpoint ep)
-        (fun tt => by exact KernelObject.noConfusion)).mp hEp
+        (fun tt => by exact KernelObject.noConfusion)
+        (fun sc => by exact KernelObject.noConfusion)).mp hEp
       have := hEpWF epId ep hEp'
       unfold dualQueueEndpointWellFormed at this ⊢
       rw [hEp'] at this; rw [hEp]
       obtain ⟨hSend, hRecv⟩ := this
-      exact ⟨tcb_replyObject_store_intrusiveQueueWellFormed_forward hBwd hSend,
-             tcb_replyObject_store_intrusiveQueueWellFormed_forward hBwd hRecv⟩
+      exact ⟨intrusiveQueueWellFormed_forward_of_readAgreement hBwd hSend,
+             intrusiveQueueWellFormed_forward_of_readAgreement hBwd hRecv⟩
     · intro tid hPath
-      exact hAcyc tid (tcb_replyObject_store_QueueNextPath_backward hFwd hPath)
+      exact hAcyc tid (queueNextPath_backward_of_readAgreement hFwd hPath)
   -- 3. allPendingMessagesBounded: reads `tcb.pendingMessage` → (b) forward.
   · intro tid tcb msg hObj hMsg
     obtain ⟨ty, hStObj, _, hPM, _⟩ := hFwd tid.toObjId tcb hObj
@@ -3977,10 +3992,12 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
     refine ⟨?_, ?_⟩
     · intro oid ntfn badge hObj hBadge
       exact hNB oid ntfn badge ((hNT oid (.notification ntfn)
-        (fun tt => by exact KernelObject.noConfusion)).mp hObj) hBadge
+        (fun tt => by exact KernelObject.noConfusion)
+        (fun sc => by exact KernelObject.noConfusion)).mp hObj) hBadge
     · intro oid cn slot cap badge hObj hLook hBadge
       exact hCB oid cn slot cap badge ((hNT oid (.cnode cn)
-        (fun tt => by exact KernelObject.noConfusion)).mp hObj) hLook hBadge
+        (fun tt => by exact KernelObject.noConfusion)
+        (fun sc => by exact KernelObject.noConfusion)).mp hObj) hLook hBadge
   -- 5. blockedThreadsPendingMessageConsistent: reads `tcb.ipcState`+`pendingMessage` → (b).
   · intro tid tcb hObj
     obtain ⟨ty, hStObj, hIS, hPM, _⟩ := hFwd tid.toObjId tcb hObj
@@ -3989,7 +4006,8 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
   -- 6. endpointQueueNoDup: `.endpoint` hyp via (a); `.tcb` self-loop body via (b).
   · intro oid ep hObj
     have hEp' := (hNT oid (.endpoint ep)
-      (fun tt => by exact KernelObject.noConfusion)).mp hObj
+      (fun tt => by exact KernelObject.noConfusion)
+        (fun sc => by exact KernelObject.noConfusion)).mp hObj
     obtain ⟨hSelf, hDisj⟩ := hInv.endpointQueueNoDup oid ep hEp'
     refine ⟨?_, hDisj⟩
     intro tid tcb hTcb
@@ -4010,7 +4028,8 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
         rw [hq] at hbase
         obtain ⟨ep, hEpSt, hcond⟩ := hbase
         refine ⟨ep, (hNT epId (.endpoint ep)
-          (fun tt => by exact KernelObject.noConfusion)).mpr hEpSt, ?_⟩
+          (fun tt => by exact KernelObject.noConfusion)
+        (fun sc => by exact KernelObject.noConfusion)).mpr hEpSt, ?_⟩
         cases hcond with
         | inl h => exact Or.inl h
         | inr h =>
@@ -4021,7 +4040,8 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
         rw [hq] at hbase
         obtain ⟨ep, hEpSt, hcond⟩ := hbase
         refine ⟨ep, (hNT epId (.endpoint ep)
-          (fun tt => by exact KernelObject.noConfusion)).mpr hEpSt, ?_⟩
+          (fun tt => by exact KernelObject.noConfusion)
+        (fun sc => by exact KernelObject.noConfusion)).mpr hEpSt, ?_⟩
         cases hcond with
         | inl h => exact Or.inl h
         | inr h =>
@@ -4032,7 +4052,8 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
         rw [hq] at hbase
         obtain ⟨ep, hEpSt, hcond⟩ := hbase
         refine ⟨ep, (hNT epId (.endpoint ep)
-          (fun tt => by exact KernelObject.noConfusion)).mpr hEpSt, ?_⟩
+          (fun tt => by exact KernelObject.noConfusion)
+        (fun sc => by exact KernelObject.noConfusion)).mpr hEpSt, ?_⟩
         cases hcond with
         | inl h => exact Or.inl h
         | inr h =>
@@ -4048,18 +4069,86 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
   -- 9. queueHeadBlockedConsistent: `.endpoint` via (a) + `.tcb` via (b).
   · intro epId ep hd tcb hEp hHd
     have hEp' := (hNT epId (.endpoint ep)
-      (fun tt => by exact KernelObject.noConfusion)).mp hEp
+      (fun tt => by exact KernelObject.noConfusion)
+        (fun sc => by exact KernelObject.noConfusion)).mp hEp
     obtain ⟨ty, hStObj, hIS, _⟩ := hFwd hd.toObjId tcb hHd
     have := hInv.queueHeadBlockedConsistent epId ep hd ty hEp' hStObj
     rw [hIS]; exact this
   -- 10. blockedThreadTimeoutConsistent: hyp `.tcb` via (b); `.schedContext` witness via (a).
   · intro tid tcb scId hObj hBudget
-    obtain ⟨ty, hStObj, hIS, _, _, _, _, _, hTB⟩ := hFwd tid.toObjId tcb hObj
+    obtain ⟨ty, hStObj, hIS, _, _, _, _, hTB⟩ := hFwd tid.toObjId tcb hObj
     obtain ⟨⟨sc, hSc⟩, hState⟩ := hInv.blockedThreadTimeoutConsistent tid ty scId
       hStObj (hTB ▸ hBudget)
-    refine ⟨⟨sc, (hNT scId.toObjId (.schedContext sc)
-      (fun tt => by exact KernelObject.noConfusion)).mpr hSc⟩, ?_⟩
+    refine ⟨hSC scId.toObjId sc hSc, ?_⟩
     rw [hIS]; exact hState
+  -- 11-14. The four `schedContextBinding`-reading conjuncts are supplied on the
+  --     post-state: the read agreement deliberately says nothing about bindings,
+  --     which is what lets a *donation* (the only kernel write to that field)
+  --     instantiate this driver.
+  · exact hAcyclic
+  · exact hOwnerValid
+  · exact hPassiveIdle
+  · exact hBudgetTransfer
+  -- 15. blockedOnReplyHasTarget: reads `tcb.ipcState` → (b).
+  · intro tid tcb endpointId replyTarget hObj hIpc
+    obtain ⟨ty, hStObj, hIS, _⟩ := hFwd tid.toObjId tcb hObj
+    exact hInv.blockedOnReplyHasTarget tid ty endpointId replyTarget hStObj (hIS ▸ hIpc)
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.0): the all-15 `ipcInvariantCore` driver behind every TCB
+field-store whose changed field is read by *no* structural core conjunct.  Given
+the non-`.tcb` kind agreement (`hNT`), the forward/backward read-field agreement
+(`hFwd`/`hBwd` over ipcState, pendingMessage, queueNext/Prev/PPrev,
+schedContextBinding, timeoutBudget) and the scheduler frame (`hSched`, which only
+`passiveServerIdle` reads), the store preserves all 15 structural conjuncts.  Both the `replyObject` store and the
+`pendingReceiveReply` store (the server-first stash the #7 fold writes inside
+`endpointReceiveDual`) instantiate it via the field-specific agreement helpers,
+so the 15-conjunct discharge is proven exactly once.
+
+Since WS-RR RR2.5 this is the *binding-framing* specialisation of
+`ipcInvariantCore_of_nonBindingAgreements`: the eleven binding-free conjuncts come
+from that driver, and the four binding-reading ones are discharged here from the
+`schedContextBinding` half of the agreement. -/
+theorem storeObject_tcb_ipcInvariantCore_of_agreements
+    (st st' : SystemState)
+    (hInv : ipcInvariantCore st)
+    (hNT : ∀ (s : SeLe4n.ObjId) (k : KernelObject), (∀ tt, k ≠ .tcb tt) →
+      (st'.objects[s]? = some k ↔ st.objects[s]? = some k))
+    (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
+      ∃ ty, st.objects[s]? = some (.tcb ty) ∧
+        tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
+        tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
+        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
+        tx.timeoutBudget = ty.timeoutBudget)
+    (hBwd : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
+      ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
+        tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
+        tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
+        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
+        tx.timeoutBudget = ty.timeoutBudget)
+    (hSched : st'.scheduler = st.scheduler) :
+    ipcInvariantCore st' := by
+  have hFwd' : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
+      ∃ ty, st.objects[s]? = some (.tcb ty) ∧
+        tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
+        tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
+        tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget := by
+    intro s tx h
+    obtain ⟨ty, h1, e1, e2, e3, e4, e5, _, e7⟩ := hFwd s tx h
+    exact ⟨ty, h1, e1, e2, e3, e4, e5, e7⟩
+  have hBwd' : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
+      ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
+        tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
+        tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
+        tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget := by
+    intro s ty h
+    obtain ⟨tx, h1, e1, e2, e3, e4, e5, _, e7⟩ := hBwd s ty h
+    exact ⟨tx, h1, e1, e2, e3, e4, e5, e7⟩
+  refine ipcInvariantCore_of_nonBindingAgreements st st' hInv
+    (fun s k hk _ => hNT s k hk)
+    (fun s sc h => ⟨sc, (hNT s (.schedContext sc)
+      (fun tt => by exact KernelObject.noConfusion)).mpr h⟩)
+    hFwd' hBwd' ?_ ?_ ?_ ?_
   -- 11. donationChainAcyclic: two `.tcb` hyps + `schedContextBinding` → (b).
   · intro tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
     obtain ⟨ty1, hSt1, _, _, _, _, _, hSCB1, _⟩ := hFwd tid1.toObjId tcb1 h1
@@ -4091,10 +4180,6 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
     obtain ⟨ty2, hSt2, _, _, _, _, _, hSCB2, _⟩ := hFwd tid2.toObjId tcb2 hObj2
     exact hInv.donationBudgetTransfer tid1 tid2 ty1 ty2 scId hSt1 hSt2 hNe
       (hSCB1 ▸ hSc1) (hSCB2 ▸ hSc2)
-  -- 15. blockedOnReplyHasTarget: reads `tcb.ipcState` → (b).
-  · intro tid tcb endpointId replyTarget hObj hIpc
-    obtain ⟨ty, hStObj, hIS, _⟩ := hFwd tid.toObjId tcb hObj
-    exact hInv.blockedOnReplyHasTarget tid ty endpointId replyTarget hStObj (hIS ▸ hIpc)
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D: storing a `.tcb` that differs from the stored slot's previous TCB

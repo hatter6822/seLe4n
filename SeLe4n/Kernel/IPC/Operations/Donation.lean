@@ -317,6 +317,60 @@ theorem applyCallDonation_eq_donate_of_donation
       = donateSchedContext st callerVtid.val receiverVtid.val scId := by
   rw [applyCallDonation_characterisation, h]
 
+/-- WS-RR RR2.8: the SchedContext a `.reply` donation return would actually hand
+back, with its original owner — `some (scId, owner)` exactly when
+`applyReplyDonation{,OnCore}` takes its returning arm, `none` on every no-op
+arm.
+
+Single-sourced here, beside `callDonationSchedContext?`, for the same reason:
+the transition names the SchedContext whose replenishments migrate,
+the cross-core `.reply` lock-set pre-resolves `lockSet_endpointReply`'s
+`(donatedScId, donatedOriginalOwnerTid)` pair from it, and the affinity proof
+case-splits on it.  One function, so the declared footprint and the executed
+write cannot disagree. -/
+def replyDonationReturn? (st : SystemState) (replier : SeLe4n.ThreadId) :
+    Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  match lookupTcb st replier with
+  | some replierTcb =>
+      match replierTcb.schedContextBinding with
+      | .donated scId owner => some (scId, owner)
+      | _ => none
+  | none => none
+
+/-- WS-RR RR2.5 (characterisation): the single-core donation return *is* the
+`replyDonationReturn?` case split — the mirror of
+`applyCallDonation_characterisation`, and the shape every reply-side invariant
+proof runs on.  Without it each such proof re-derives the same four-deep match
+by hand, and each derivation is a place the operation and its model can drift
+apart. -/
+theorem applyReplyDonation_characterisation
+    (st : SystemState) (replierVtid : SeLe4n.ValidThreadId) :
+    applyReplyDonation st replierVtid
+      = (match replyDonationReturn? st replierVtid.val with
+         | some (scId, owner) =>
+             (match SeLe4n.ThreadId.toValid? owner with
+              | some ownerVtid =>
+                  (match returnDonatedSchedContextValid st replierVtid scId ownerVtid with
+                   | .error e => .error e
+                   | .ok st' => .ok (removeRunnable st' replierVtid.val))
+              | none => .error .invalidArgument)
+         | none => .ok st) := by
+  simp only [applyReplyDonation, replyDonationReturn?]
+  cases lookupTcb st replierVtid.val with
+  | none => rfl
+  | some replierTcb =>
+    simp only []
+    cases replierTcb.schedContextBinding with
+    | unbound => rfl
+    | bound _ => rfl
+    | donated _ _ =>
+        simp only []
+        cases SeLe4n.ThreadId.toValid? _ with
+        | none => rfl
+        | some ownerVtid =>
+            simp only []
+            cases returnDonatedSchedContextValid st replierVtid _ ownerVtid <;> rfl
+
 /-- WS-RR RR2.1 / RR2.2 (operation): the cross-core `.call` SchedContext
 donation — the single-core `applyCallDonation` **plus** the SM5.H.4
 replenishment migration from the donor's home core to the donee's.

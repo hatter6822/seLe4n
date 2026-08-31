@@ -116,26 +116,6 @@ def applyReplyDonationOnCore (st : SystemState) (replierVtid : SeLe4n.ValidThrea
       | none => .error .invalidArgument
     | _ => .ok st
 
-/-- WS-RR RR2.8: the SchedContext a `.reply` donation return would actually hand
-back, with its original owner — `some (scId, owner)` exactly when
-`applyReplyDonation{,OnCore}` takes its returning arm, `none` on every no-op
-arm.
-
-Single-sourced here for the same reason `callDonationSchedContext?` is on the
-call side: the transition names the SchedContext whose replenishments migrate,
-the cross-core `.reply` lock-set pre-resolves `lockSet_endpointReply`'s
-`(donatedScId, donatedOriginalOwnerTid)` pair from it, and the affinity proof
-case-splits on it.  One function, so the declared footprint and the executed
-write cannot disagree. -/
-def replyDonationReturn? (st : SystemState) (replier : SeLe4n.ThreadId) :
-    Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
-  match lookupTcb st replier with
-  | some replierTcb =>
-      match replierTcb.schedContextBinding with
-      | .donated scId owner => some (scId, owner)
-      | _ => none
-  | none => none
-
 /-- WS-RR RR2.8: the **destination** core of the reply path's replenishment
 migration — the home core of the SchedContext's original owner, or the replier's
 own home when there is nothing to return (making the migration a definitional

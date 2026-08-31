@@ -1672,6 +1672,28 @@ theorem donationOwnerUnique_of_objects_eq {st st' : SystemState}
   rw [hObjs] at h1 h2
   exact h tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
 
+/-- WS-RR RR2.5: an object-store-preserving step frames `donationOwnerValid` — it
+reads the store and nothing else.  The `_of_objects_eq` family already carried
+`donationOwnerUnique` and `endpointQueueTailBlockedConsistent`; the two remaining
+donation conjuncts that read only the store were missing from it, so every
+scheduler-only transition had to re-derive them. -/
+theorem donationOwnerValid_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : donationOwnerValid st) :
+    donationOwnerValid st' := by
+  intro tid tcb scId owner hTcb hBind
+  rw [hObjs] at hTcb
+  obtain ⟨⟨sc, hSc, hBound⟩, ownerTcb, hOwner, hUnbound, hBlk⟩ := h tid tcb scId owner hTcb hBind
+  exact ⟨⟨sc, by rw [hObjs]; exact hSc, hBound⟩,
+    ownerTcb, by rw [hObjs]; exact hOwner, hUnbound, hBlk⟩
+
+/-- WS-RR RR2.5: an object-store-preserving step frames `donationChainAcyclic`. -/
+theorem donationChainAcyclic_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : donationChainAcyclic st) :
+    donationChainAcyclic st' := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
+  rw [hObjs] at h1 h2
+  exact h tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
+
 /-- IPC de-threading D4 (Finding F-2): an object-preserving step frames
 `endpointQueueTailBlockedConsistent`. -/
 theorem endpointQueueTailBlockedConsistent_of_objects_eq {st st' : SystemState}
@@ -1805,6 +1827,14 @@ def donationBudgetTransfer (st : SystemState) : Prop :=
     tcb1.schedContextBinding.scId? = some scId →
     tcb2.schedContextBinding.scId? = some scId →
     False
+
+/-- WS-RR RR2.5: an object-store-preserving step frames `donationBudgetTransfer`. -/
+theorem donationBudgetTransfer_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : donationBudgetTransfer st) :
+    donationBudgetTransfer st' := by
+  intro tid1 tid2 tcb1 tcb2 scId h1 h2 hNe hS1 hS2
+  rw [hObjs] at h1 h2
+  exact h tid1 tid2 tcb1 tcb2 scId h1 h2 hNe hS1 hS2
 
 -- ============================================================================
 -- Z7: Default state proofs for donation invariants
