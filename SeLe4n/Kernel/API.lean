@@ -14,6 +14,7 @@ import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointSend
+import SeLe4n.Kernel.IPC.CrossCore.EndpointSendInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatch
 import SeLe4n.Kernel.IPC.CrossCore.NotificationBindDispatch
 -- WS-SM SM6.E: the live per-core suspend (`suspendThreadOnCore`) behind the
@@ -540,6 +541,170 @@ theorem clearWokenReceiverStash_machine_eq
         rw [hStash] at hStep
         exact storeObject_machine_eq st pair.2 _ _ (by
           obtain ⟨u, st2⟩ := pair; cases u; exact hStep)
+
+-- ============================================================================
+-- WS-RR RR2.16 — `clearWokenReceiverStash` preserves the IPC invariant bundle
+-- ============================================================================
+
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR2.16 (helper): a TCB store that leaves `replyObject` and `ipcState`
+alone preserves the bidirectional reply linkage.  Neither clause can move: the
+forward clause reads the stored thread's `replyObject` (unchanged) and the Reply
+object (a different key, so untouched), and the backward clause reads the Reply
+and then the thread's `replyObject` and `ipcState` (both unchanged).
+
+The reply-linkage counterpart of
+`storeObject_tcb_preserveIpc_preserves_endpointQueueTailBlockedConsistent`; it
+did not exist because until RR2.16 no bundle needed a *stash-only* TCB store to
+carry the linkage. -/
+theorem storeObject_tcb_preserveReplyLinkFields_preserves_replyCallerLinkage
+    (st st' : SystemState) (tid₀ : SeLe4n.ThreadId) (oldTcb newTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hOld : st.objects[tid₀.toObjId]? = some (.tcb oldTcb))
+    (hSameReply : newTcb.replyObject = oldTcb.replyObject)
+    (hSameIpc : newTcb.ipcState = oldTcb.ipcState)
+    (hInv : replyCallerLinkage st)
+    (hStore : storeObject tid₀.toObjId (.tcb newTcb) st = .ok ((), st')) :
+    replyCallerLinkage st' := by
+  have hEqAt := storeObject_objects_eq st st' tid₀.toObjId (.tcb newTcb) hObjInv hStore
+  have hFrame : ∀ x, x ≠ tid₀.toObjId → st'.objects[x]? = st.objects[x]? :=
+    fun x hNe => storeObject_objects_ne st st' tid₀.toObjId x (.tcb newTcb) hNe hObjInv hStore
+  -- Every post-state TCB has a pre-state twin agreeing on `replyObject` / `ipcState`.
+  have hBack : ∀ (t : SeLe4n.ThreadId) (tcbT : TCB),
+      st'.objects[t.toObjId]? = some (.tcb tcbT) →
+      ∃ tcbT', st.objects[t.toObjId]? = some (.tcb tcbT') ∧
+        tcbT'.replyObject = tcbT.replyObject ∧ tcbT'.ipcState = tcbT.ipcState := by
+    intro t tcbT hT
+    by_cases hEq : t.toObjId = tid₀.toObjId
+    · rw [hEq, hEqAt] at hT
+      obtain rfl : newTcb = tcbT := by
+        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hT
+      exact ⟨oldTcb, by rw [hEq]; exact hOld, hSameReply.symm, hSameIpc.symm⟩
+    · rw [hFrame t.toObjId hEq] at hT
+      exact ⟨tcbT, hT, rfl, rfl⟩
+  -- And every pre-state TCB has a post-state twin agreeing on the same two fields.
+  have hFwd : ∀ (t : SeLe4n.ThreadId) (tcbT : TCB),
+      st.objects[t.toObjId]? = some (.tcb tcbT) →
+      ∃ tcbT', st'.objects[t.toObjId]? = some (.tcb tcbT') ∧
+        tcbT'.replyObject = tcbT.replyObject ∧ tcbT'.ipcState = tcbT.ipcState := by
+    intro t tcbT hT
+    by_cases hEq : t.toObjId = tid₀.toObjId
+    · rw [hEq] at hT
+      obtain rfl : oldTcb = tcbT := by
+        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hOld.symm.trans hT
+      exact ⟨newTcb, by rw [hEq]; exact hEqAt, hSameReply, hSameIpc⟩
+    · exact ⟨tcbT, by rw [hFrame t.toObjId hEq]; exact hT, rfl, rfl⟩
+  -- Reply objects live at a different key from the stored TCB, so they read through.
+  have hReplyFrame : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      st'.objects[rid.toObjId]? = some (.reply r) ↔ st.objects[rid.toObjId]? = some (.reply r) := by
+    intro rid r
+    by_cases hEq : rid.toObjId = tid₀.toObjId
+    · rw [hEq, hEqAt, hOld]
+      constructor <;> (intro h; cases h)
+    · rw [hFrame rid.toObjId hEq]
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · intro tid tcb rid hTcb' hRO
+    obtain ⟨tcb0, hTcb0, hRO0, _⟩ := hBack tid tcb hTcb'
+    obtain ⟨r, hr, hrc⟩ := hInv.1.1 tid tcb0 rid hTcb0 (hRO0.trans hRO)
+    exact ⟨r, (hReplyFrame rid r).mpr hr, hrc⟩
+  · intro rid r tid hr' hrc
+    obtain ⟨tcb0, hTcb0, hRO0, hBlk0⟩ := hInv.1.2 rid r tid ((hReplyFrame rid r).mp hr') hrc
+    obtain ⟨tcb', hTcb', hROeq, hIpcEq⟩ := hFwd tid tcb0 hTcb0
+    obtain ⟨ep, rt, hIpc⟩ := hBlk0
+    exact ⟨tcb', hTcb', hROeq.trans hRO0, ⟨ep, rt, hIpcEq.trans hIpc⟩⟩
+  · intro tid tcb ep rt hTcb' hBlk
+    obtain ⟨tcb0, hTcb0, hRO0, hIpc0⟩ := hBack tid tcb hTcb'
+    obtain ⟨rid, hRid⟩ := hInv.2 tid tcb0 ep rt hTcb0 (hIpc0.trans hBlk)
+    exact ⟨rid, hRO0 ▸ hRid⟩
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR2.16**: `clearWokenReceiverStash` — the dispatch-level
+post-processing step the live `.send`, `.signal` and `.declassifySignal` arms run
+after their transition — preserves the whole IPC invariant bundle.
+
+Every arm but one returns the state untouched.  The one that stores writes a
+single TCB differing only in `pendingReceiveReply := none`, and:
+
+* the fifteen structural conjuncts read no `pendingReceiveReply`
+  (`storeObject_tcb_pendingReceiveReply_preserves_ipcInvariantCore`);
+* the reply linkage reads `replyObject` and `ipcState`, both unchanged;
+* `pendingReceiveReplyWellFormed` — the one conjunct that *does* read the field —
+  is preserved because the write **clears** it: both of its obligations on the
+  stored thread are about a `some rid` stash, and the new stash is `none`, so
+  they are vacuous.  Clearing a stash can only discharge obligations, never
+  create one, which is precisely why the clear was introduced (a woken server
+  leaving `.blockedOnReceive` with a live stash violates the conjunct);
+* the donation quartet's binding half is framed, and the tail/queue-target
+  conjuncts are framed by the unchanged `ipcState` / `queueNext`.
+
+Unconditional in the post-state: nothing here is threaded. -/
+theorem clearWokenReceiverStash_preserves_ipcInvariantFull
+    (receiver? : Option SeLe4n.ThreadId) (st : SystemState) (pair : Unit × SystemState)
+    (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st)
+    (hStep : clearWokenReceiverStash receiver? st = .ok pair) :
+    ipcInvariantFull pair.2 := by
+  unfold clearWokenReceiverStash at hStep
+  cases receiver? with
+  | none => cases hStep; exact hInv
+  | some receiver =>
+    simp only at hStep
+    cases hTcb : st.getTcb? receiver with
+    | none => rw [hTcb] at hStep; cases hStep; exact hInv
+    | some rTcb =>
+      rw [hTcb] at hStep
+      simp only at hStep
+      cases hStash : rTcb.pendingReceiveReply with
+      | none => rw [hStash] at hStep; cases hStep; exact hInv
+      | some rid =>
+        rw [hStash] at hStep
+        obtain ⟨u, st'⟩ := pair
+        cases u
+        have hRaw : st.objects[receiver.toObjId]? = some (.tcb rTcb) :=
+          (getTcb?_eq_some_iff st receiver rTcb).mp hTcb
+        exact ipcInvariantFull_of_core_replyCallerLinkage
+          (storeObject_tcb_pendingReceiveReply_preserves_ipcInvariantCore st st'
+            receiver.toObjId rTcb none hInv.toCore hObjInv hRaw hStep)
+          (storeObject_tcb_preserveReplyLinkFields_preserves_replyCallerLinkage st st'
+            receiver rTcb { rTcb with pendingReceiveReply := none } hObjInv hRaw rfl rfl
+            hInv.replyCallerLinkage hStep)
+          (storeObject_tcb_preserves_pendingReceiveReplyWellFormed st st' receiver rTcb
+            { rTcb with pendingReceiveReply := none } hObjInv hTcb
+            hInv.pendingReceiveReplyWellFormed
+            (fun rid' h => by cases h) (fun rid' h => by cases h) hStep)
+          (donationOwnerUnique_of_sameSchedContextBindings
+            (storeObject_modifiedTcb_sameSchedContextBindings st st' receiver.toObjId rTcb
+              { rTcb with pendingReceiveReply := none } hRaw rfl hObjInv hStep)
+            hInv.donationOwnerUnique)
+          (storeObject_tcb_preserveIpc_preserves_endpointQueueTailBlockedConsistent st st'
+            receiver rTcb { rTcb with pendingReceiveReply := none } hObjInv hRaw rfl
+            hInv.endpointQueueTailBlockedConsistent hStep)
+          (storeObject_tcb_preserveIpcAndQueueNext_preserves_queueNextTargetBlocked st st'
+            receiver rTcb { rTcb with pendingReceiveReply := none } hObjInv hRaw rfl rfl
+            hInv.queueNextTargetBlocked hStep)
+
+/-- WS-RR RR2.16: `clearWokenReceiverStash` preserves the Robin Hood object-store
+invariant — every arm is the identity or a single `storeObject`. -/
+theorem clearWokenReceiverStash_preserves_objects_invExt
+    (receiver? : Option SeLe4n.ThreadId) (st : SystemState) (pair : Unit × SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : clearWokenReceiverStash receiver? st = .ok pair) :
+    pair.2.objects.invExt := by
+  unfold clearWokenReceiverStash at hStep
+  cases receiver? with
+  | none => cases hStep; exact hObjInv
+  | some receiver =>
+    simp only at hStep
+    cases hTcb : st.getTcb? receiver with
+    | none => rw [hTcb] at hStep; cases hStep; exact hObjInv
+    | some rTcb =>
+      rw [hTcb] at hStep
+      simp only at hStep
+      cases hStash : rTcb.pendingReceiveReply with
+      | none => rw [hStash] at hStep; cases hStep; exact hObjInv
+      | some rid =>
+        rw [hStash] at hStep
+        exact storeObject_preserves_objects_invExt' st _ _ pair hObjInv hStep
 
 /-- WS-SM SM6.D (faithful seL4-MCS `ReplyRecv`): resolve the server-supplied reply
 capability named in `ReplyRecvArgs.replyCPtr` to the `(ReplyId, prevCaller)` pair
