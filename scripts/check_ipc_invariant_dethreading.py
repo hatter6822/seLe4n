@@ -177,10 +177,14 @@ _DECL_RE = re.compile(
     # while giving downstream modules nothing they can name, so
     # `declared_names` must see it.  The name accepts a guillemet-quoted
     # identifier as one unit, matching the scope scanner.
+    # `def` and `abbrev` too (PR #886 review): a proof introduced as
+    # `def X_preserves_… : ipcInvariantFull st' := …` is a valid Lean
+    # spelling of the same declaration, and a census that stopped at
+    # `theorem|lemma` let a def-spelled threaded bundle bypass every check.
     r"^\s*(?:@\[[^\]]*\]\s*)*"
     r"(?P<mods>(?:private\s+|protected\s+|partial\s+|noncomputable\s+|unsafe\s+"
     r"|local\s+|scoped\s+)*)"
-    r"(?:theorem|lemma)\s+(?P<name>«[^»\n]*»|[^\W\d][\w'.!?]*)",
+    r"(?:theorem|lemma|def|abbrev)\s+(?P<name>«[^»\n]*»|[^\W\d][\w'.!?]*)",
     re.MULTILINE,
 )
 
@@ -229,10 +233,12 @@ def _qualified(name: str) -> str:
     longer a case heuristic but the *binder names of the statement itself* --
     callers skip a hit whose chain's first segment is one of their own
     binders (see `Bundle._binder_names`), which is a derivation where the
-    case rule was an enumeration.
+    case rule was an enumeration.  A chain segment may be guillemet-quoted
+    (PR #886 review: `«foo».conjunct st'` is valid Lean the plain-identifier
+    grammar could not reach, so the qualified hypothesis went unscanned).
     """
     return (
-        r"(?<![\w'.])((?:[^\W\d][\w']*\.)*)"
+        r"(?<![\w'.])((?:(?:«[^»\n]*»|[^\W\d][\w']*)\.)*)"
         + re.escape(name)
         + r"(?![\w'])"
     )
@@ -274,20 +280,42 @@ def _connectivity_tokens(text: str, excluded: frozenset[str]) -> set[str]:
     return tokens
 
 
-def _informative_equation(group: str) -> bool:
-    """False when the binder group's type is a syntactic tautology `X = X`.
+def _has_depth0_connective(text: str) -> bool:
+    """True when `text` carries a depth-0 connective weaker than `∧`.
 
-    A reflexive equation is a valid hypothesis carrying no information about
-    the transition, and treating it as an anchor group lets it launder every
-    state it mentions: `hAnchor : pair st' stMid = pair st' stMid` shares the
-    genuinely-anchored `st'` and so bridged `stMid` into the pre-state set
-    (PR #886 review, after the predicate-symbol filter closed the
-    symbol-sharing variant).  The sides of the group's first plain depth-0
-    `=` (not `:=`, `==`, or `=>`) are normalised and compared; textual
-    equality means the equation relates nothing, so the group contributes no
-    anchors.  A group with no plain equation (a `fun … => …` type, say) is
-    left as it was -- this helper only rejects tautologies, it does not
-    decide what counts as a step equation.
+    `∨`, `↔`, `→` and their ASCII spellings (`\\/`, `->`): a proposition
+    under any of them is not entailed by the hypothesis that contains it,
+    so both the step-equation validation and the equation-anchor harvest
+    refuse to read through one (PR #886 review: `dispatchSyscall st = .ok
+    ((), st') ∨ True` validated as a step after the connective cut kept
+    only the arm).  `∧` is deliberately absent: conjunction entails its
+    parts, and callers split on it first.
+    """
+    depth = 0
+    for offset, char in enumerate(text):
+        if char in _OPEN:
+            depth += 1
+        elif char in _CLOSE:
+            depth -= 1
+        elif depth == 0 and (
+            char in "∨↔→"
+            or (char == "-" and text[offset + 1 : offset + 2] == ">")
+            or (char == "\\" and text[offset + 1 : offset + 2] == "/")
+        ):
+            return True
+    return False
+
+
+def _equation_groups(group: str) -> list[list[str]]:
+    """Each *entailed* plain equality in a binder group's type, as its sides.
+
+    The group's type (after its first depth-0 colon) is split on depth-0
+    `∧` -- conjuncts are entailed -- and each part carrying a plain depth-0
+    `=` (not `:=`, `==`, `=>`) with no weaker depth-0 connective yields one
+    equation, returned as the list of texts flanking its `=` signs (a
+    chained `a = b = c` yields three sides).  A part under `∨`/`↔`/`→` is
+    not established by the hypothesis and contributes nothing -- `stMid =
+    st' ∨ True` must not anchor `stMid` (PR #886 review).
     """
     colon = None
     depth = 0
@@ -304,20 +332,34 @@ def _informative_equation(group: str) -> bool:
             colon = offset
             break
     body = group[colon + 1 :] if colon is not None else group
-    depth = 0
-    for offset, char in enumerate(body):
-        if char in _OPEN:
-            depth += 1
-        elif char in _CLOSE:
-            depth -= 1
-        elif (
-            char == "="
-            and depth == 0
-            and body[offset + 1 : offset + 2] not in ("=", ">")
-            and (offset == 0 or body[offset - 1] not in ":=!<>")
-        ):
-            return _normalise(body[:offset]) != _normalise(body[offset + 1 :])
-    return True
+    equations: list[list[str]] = []
+    for part in split_conjunction(body):
+        if _has_depth0_connective(part):
+            continue
+        cuts = []
+        depth = 0
+        for offset, char in enumerate(part):
+            if char in _OPEN:
+                depth += 1
+            elif char in _CLOSE:
+                depth -= 1
+            elif (
+                char == "="
+                and depth == 0
+                and part[offset + 1 : offset + 2] not in ("=", ">")
+                and (offset == 0 or part[offset - 1] not in ":=!<>")
+            ):
+                cuts.append(offset)
+        if not cuts:
+            continue
+        sides = []
+        start = 0
+        for cut in cuts:
+            sides.append(part[start:cut])
+            start = cut + 1
+        sides.append(part[start:])
+        equations.append(sides)
+    return equations
 
 
 def _application_spans(part: str, start: int) -> bool:
@@ -396,17 +438,21 @@ def _returns_state(rhs: str, state: str) -> bool:
 def _steps_function(binders: str, function: str, state: str) -> bool:
     """True when some binder group's type steps `function` into `state`.
 
-    The group's type begins after its first depth-0 colon; the head is its
-    first identifier token.  Requiring the head (rather than any mention)
-    and a following top-level `=` is what rejects a dummy hypothesis that
-    name-drops the dispatcher beside a step equation for something else.
-    The equation's right-hand side -- cut at the first depth-0 logical
-    connective, so a conjunct smuggled in after the result cannot satisfy
-    this -- must *return* `state`, the payoff's conclusion state, parsed
-    structurally by `_returns_state`: an equation whose result is some
-    unrelated mid-state proves nothing about the state the conclusion
-    speaks of, and neither does one that merely mentions that state inside
-    its payload (PR #886 review, two successive rounds).
+    The group's type begins after its first depth-0 colon.  The type is
+    split on depth-0 `∧` -- conjuncts are entailed -- and a part counts
+    only when the hypothesis actually *establishes* its equation: the part
+    carries no weaker depth-0 connective (`∨`/`↔`/`→` and their ASCII
+    spellings -- `dispatchSyscall st = .ok ((), st') ∨ True` is provable by
+    its right arm and establishes no equality, yet the old connective cut
+    validated the arm; PR #886 review), its head identifier is `function`
+    (rejecting a dummy hypothesis that name-drops the dispatcher beside a
+    step equation for something else), and the right-hand side of its
+    top-level `=` -- now running to the part's end -- must *return*
+    `state`, the payoff's conclusion state, parsed structurally by
+    `_returns_state`: an equation whose result is some unrelated mid-state
+    proves nothing about the state the conclusion speaks of, and neither
+    does one that merely mentions that state inside its payload (PR #886
+    review, two successive rounds).
     """
     index = 0
     while index < len(binders):
@@ -426,33 +472,20 @@ def _steps_function(binders: str, function: str, state: str) -> bool:
                     colon = offset
                     break
             if colon is not None:
-                group_type = group[colon + 1 :]
-                head = re.match(r"\s*([^\W\d][\w'!?]*)", group_type)
-                if head and head.group(1) == function:
+                for part in split_conjunction(group[colon + 1 :]):
+                    if _has_depth0_connective(part):
+                        continue
+                    head = re.match(r"\s*([^\W\d][\w'!?]*)", part)
+                    if not head or head.group(1) != function:
+                        continue
                     depth = 0
-                    for offset, char in enumerate(group_type):
+                    for offset, char in enumerate(part):
                         if char in _OPEN:
                             depth += 1
                         elif char in _CLOSE:
                             depth -= 1
                         elif depth == 0 and char == "=":
-                            rhs = group_type[offset + 1 :]
-                            cut_depth = 0
-                            for rhs_offset, rhs_char in enumerate(rhs):
-                                if rhs_char in _OPEN:
-                                    cut_depth += 1
-                                elif rhs_char in _CLOSE:
-                                    cut_depth -= 1
-                                elif cut_depth == 0 and (
-                                    rhs_char in "∧∨→↔"
-                                    or (
-                                        rhs_char == "-"
-                                        and rhs[rhs_offset + 1 : rhs_offset + 2] == ">"
-                                    )
-                                ):
-                                    rhs = rhs[:rhs_offset]
-                                    break
-                            if _returns_state(rhs, state):
+                            if _returns_state(part[offset + 1 :], state):
                                 return True
                             break
             index = end
@@ -548,10 +581,48 @@ def _blank_strings(source: str) -> str:
     return "".join(out)
 
 
+def _blank_syntax_quotations(source: str) -> str:
+    """Blank the interiors of backtick syntax quotations, offsets kept.
+
+    A macro template is data about future syntax, not a declaration: an
+    uninvoked `macro_rules` quotation whose template spells `theorem
+    …_preserves_ipcInvariantFull …` satisfied the declaration census while
+    declaring nothing (PR #886 review).  Every `` `( `` opens a quotation;
+    its interior is blanked to the matching close paren -- newlines and the
+    bracketing parens kept, nesting respected -- so template text can
+    neither satisfy nor trip a scan.  Blanking is the fail-closed
+    direction: a quotation never *contains* a real declaration, so the
+    census can only lose imposters.
+    """
+    out = list(source)
+    index = 0
+    while index < len(source) - 1:
+        if source[index] == "`" and source[index + 1] == "(":
+            depth = 0
+            scan = index + 1
+            while scan < len(source):
+                char = source[scan]
+                if char == "(":
+                    depth += 1
+                elif char == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                elif depth > 0 and char != "\n":
+                    out[scan] = " "
+                scan += 1
+            index = scan + 1
+        else:
+            index += 1
+    return "".join(out)
+
+
 def code_view(root: str, relative: str) -> str:
-    """The comment-free, string-blanked view of one Lean source."""
+    """The comment-free, string- and quotation-blanked view of one source."""
     with open(os.path.join(root, relative), encoding="utf-8") as handle:
-        return _blank_strings(lean_code_view.strip(handle.read()))
+        return _blank_syntax_quotations(
+            _blank_strings(lean_code_view.strip(handle.read()))
+        )
 
 
 def balanced_span(text: str, start: int) -> int | None:
@@ -852,9 +923,11 @@ def state_predicate_bodies(
 # binder-name fix reached the scans and not this, its sibling -- a
 # lowercase-namespace conjunct spelling dropped from the derived set).
 # A definition body has no hypothesis binders, so no projection filter
-# is needed here; `_root_.` is covered by the general class.
+# is needed here; `_root_.` is covered by the general class, and a
+# guillemet-quoted qualifier segment is accepted exactly as `_qualified`
+# accepts it (PR #886 review: the quoted-namespace sweep's sibling site).
 _APPLIED_RE = re.compile(
-    r"^\s*(?:[^\W\d][\w']*\.)*"
+    r"^\s*(?:(?:«[^»\n]*»|[^\W\d][\w']*)\.)*"
     r"([^\W\d][\w'!?]*)\s+(?:\(\s*(?:[^\W\d][\w']*\s*:=\s*)?st\s*\)|st)\s*$"
 )
 
@@ -1048,9 +1121,23 @@ class Bundle:
         equality groups -- anchoring suppresses findings, and a section
         hypothesis Lean may not even include must not do that (see the
         class docstring's asymmetry).
+
+        Anchoring is *directional* (PR #886 review, the round after the
+        token filters): an equation admits its tokens only when one of its
+        sides is nonempty and already fully anchored, the way a definition
+        flows from the determined side to the determining one.  Shared-token
+        co-occurrence was not enough: `pair st' stMid = pair st' stMid` and
+        its definitionally-reflexive sibling `pair st' stMid = id (pair st'
+        stMid)` both share the genuinely-anchored `st'`, yet neither has a
+        side the transition determines, so under the directional rule
+        neither admits `stMid` -- while a real chain (`stageTwo stMid = .ok
+        ((), st')` then `stageOne st = .ok stMid`) unlocks side by side
+        from the conclusion outward.  A side whose tokens all filter away
+        (`.ok ()`, `True`) can never unlock its equation: an equality with
+        a contentless side determines nothing.
         """
         tokens = _connectivity_tokens(self.conclusion, self.excluded)
-        groups: list[set[str]] = []
+        groups: list[list[set[str]]] = []
         index = 0
         while index < len(self.binders):
             char = self.binders[index]
@@ -1059,32 +1146,28 @@ class Bundle:
                 if end is None:
                     break
                 region = self.binders[index:end]
-                if "=" in region and _informative_equation(
-                    self.binders[index + 1 : end - 1]
-                ):
-                    groups.append(_connectivity_tokens(region, self.excluded))
+                if "=" in region:
+                    for sides in _equation_groups(
+                        self.binders[index + 1 : end - 1]
+                    ):
+                        groups.append(
+                            [
+                                _connectivity_tokens(side, self.excluded)
+                                for side in sides
+                            ]
+                        )
                 index = end
             else:
                 index += 1
-        # An equality group anchors its tokens only when it is *connected* to
-        # the conclusion through shared tokens -- the fixpoint below grows the
-        # anchor set through the equation graph (PR #886 review: a reflexive
-        # `hAnchor : stMid = stMid` is a valid hypothesis harvesting nothing
-        # about the transition, and wholesale harvesting let it launder
-        # `stMid` into the pre-state set).  What remains accepted is an
-        # equation chain genuinely reaching the conclusion's tokens, which is
-        # the relation this set exists to capture.  A *tautological* equation
-        # never joins the graph at all (`_informative_equation`; PR #886
-        # review, a later round): `pair st' stMid = pair st' stMid` shares
-        # the genuinely-anchored `st'`, and connectivity alone would let a
-        # no-information hypothesis launder `stMid` through it.
         changed = True
         while changed:
             changed = False
             for group in groups:
-                if group & tokens and not group <= tokens:
-                    tokens |= group
-                    changed = True
+                if any(side and side <= tokens for side in group):
+                    union = set().union(*group)
+                    if not union <= tokens:
+                        tokens |= union
+                        changed = True
         return tokens
 
     def pre_states(self) -> set[str]:
@@ -1205,6 +1288,18 @@ class Bundle:
         contained (PR #886 review, the section-variable round).  The
         premises and the ambient text are scanned alike; the ambient scan is
         the finding-direction half of the class docstring's asymmetry.
+
+        And it may hide behind a *transformation* (PR #886 review, a later
+        round): `hInv : ipcInvariantFull (id st')` is definitionally the
+        post-state assumption -- Lean reduces `id` -- while comparing
+        expressions for equality sees two different texts.  A scanner
+        cannot normalise definitional equality, so it fails closed on the
+        token relation instead: a family application whose argument
+        *carries* every token of the conclusion state (and is not that
+        state's own anchored pre-state expression, which the equality tier
+        already vets) is treated as a hypothesis about the conclusion
+        state.  A transition's genuine pre-state never contains its
+        post-state, so the superset test costs nothing on honest bundles.
         """
         state = self.conclusion_state()
         if state is None:
@@ -1212,14 +1307,21 @@ class Bundle:
         if state in self.pre_states():
             return state
         binder_names = self._binder_names()
+        state_tokens = set(re.findall(r"[^\W\d][\w'!?]*", state))
         segments = split_implication(_normalise(self.conclusion))
-        for premise in list(segments[:-1]) + [self.ambient]:
+        for region in [self.binders, self.ambient] + list(segments[:-1]):
             for predicate in PRE_STATE_PREDICATES:
-                for hit in re.finditer(_qualified(predicate), premise):
+                for hit in re.finditer(_qualified(predicate), region):
                     if _projection_hit(hit.group(1), binder_names):
                         continue
-                    argument = first_argument(premise, hit.end())
-                    if argument is not None and _normalise(argument) == state:
+                    argument = first_argument(region, hit.end())
+                    if argument is None:
+                        continue
+                    argument = _normalise(argument)
+                    if argument == state:
+                        return state
+                    tokens = set(re.findall(r"[^\W\d][\w'!?]*", argument))
+                    if state_tokens and state_tokens <= tokens:
                         return state
         return None
 
@@ -3620,6 +3722,137 @@ end «shadow»""",
             opaque_root,
             True,
             check="conjuncts_derived",
+            mutation="preserving",
+        )
+    )
+
+    # A def-spelled proof: `def X_preserves_… : ipcInvariantFull st' := …`
+    # is a valid Lean declaration of the same theorem, and a census that
+    # stopped at `theorem|lemma` let it bypass every check.
+    def_bundle = _fixture()
+    def_bundle["SeLe4n/Kernel/IPC/Invariant/Structural/DefBundles.lean"] = (
+        "def endpointHiddenDual_preserves_ipcInvariantFull\n"
+        "    (st st' : SystemState)\n"
+        "    (hInv : ipcInvariantFull st)\n"
+        "    (hStep : endpointHiddenDual st = .ok ((), st'))\n"
+        "    (hT : blockedThreadsPendingMessageConsistent st') :\n"
+        "    ipcInvariantFull st' :=\n"
+        "  sample st st' hInv hStep\n"
+    )
+    cases.append(
+        _Case(
+            "a def-spelled threaded bundle is measured like a theorem",
+            def_bundle,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A quoted qualifier segment: `«foo».conjunct st'` is valid Lean the
+    # plain-identifier chain grammar could not reach.
+    quoted_qualifier = _fixture()
+    quoted_qualifier["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hQ : «foo».blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a conjunct behind a quoted qualifier segment is still scanned",
+            quoted_qualifier,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A disjunctive step hypothesis: `dispatchSyscall st = .ok ((), st') ∨
+    # True` establishes no equality, yet the old connective cut validated
+    # the arm it kept.
+    disjunctive_step = _fixture()
+    disjunctive_step["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        "    (hStep : dispatchSyscall st = .ok ((), st')) :",
+        "    (hStep : dispatchSyscall st = .ok ((), st') ∨ True) :",
+    )
+    cases.append(
+        _Case(
+            "a step equation under a disjunction does not validate a payoff",
+            disjunctive_step,
+            True,
+            check="payoff_statement",
+            mutation="preserving",
+        )
+    )
+
+    # A transformed whole-invariant hypothesis: `ipcInvariantFull (id st')`
+    # is definitionally the post-state assumption, textually unequal to it.
+    transformed_invariant = _fixture()
+    transformed_invariant["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hInv' : ipcInvariantFull (id st'))\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a whole-invariant hypothesis carrying the conclusion state is caught",
+            transformed_invariant,
+            True,
+            check="no_conclusion_state_hypothesis",
+            mutation="preserving",
+        )
+    )
+
+    # A definitionally reflexive anchor: `pair st' stMid = id (pair st'
+    # stMid)` is provable by `rfl` with textually different sides -- only
+    # the directional rule (a side must be fully anchored to unlock the
+    # equation) keeps it from laundering `stMid` through the shared `st'`.
+    definitional_anchor = _fixture()
+    definitional_anchor["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (st st' : SystemState)\n",
+            "    (st stMid st' : SystemState)\n",
+        ).replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hAnchor : pair st' stMid = id (pair st' stMid))\n"
+            "    (hMid : ipcInvariantCore stMid)\n"
+            "    (hT : blockedThreadsPendingMessageConsistent stMid)\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a definitionally reflexive equation does not anchor its states",
+            definitional_anchor,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # An uninvoked macro template: the quotation's text spells a theorem
+    # that declares nothing, and the census must not count syntax data.
+    quotation_census = _fixture()
+    quotation_census["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        'macro "declareSendBundle" : command => `(\n'
+        "theorem endpointSendDual_preserves_ipcInvariantFull\n"
+        "    (st st' : SystemState)\n"
+        "    (hInv : ipcInvariantFull st)\n"
+        "    (hStep : endpointSendDual st = .ok ((), st')) :\n"
+        "    ipcInvariantFull st' := by\n"
+        "  exact sample st st' hInv hStep\n"
+        ")\n"
+    )
+    cases.append(
+        _Case(
+            "an uninvoked macro template is not a family declaration",
+            quotation_census,
+            True,
+            check="family_nonempty",
             mutation="preserving",
         )
     )

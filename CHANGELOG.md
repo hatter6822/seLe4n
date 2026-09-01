@@ -478,6 +478,29 @@ identifiers (`«a"b»`) lex as code rather than opening a string; and a
 module-local theorem is not a top-level consumer anyone downstream can
 name.  Nine token-preserving fixtures; self-test 76 cases; census
 unchanged a twelfth time.
+A seventeenth pass hardened what a hypothesis *establishes* and what a
+census *is*.  Entailment now governs both sides of a step: a binder
+whose type reads `dispatchSyscall st = .ok ((), st') ∨ True` establishes
+no equality, so the step validation ∧-splits the type and refuses any
+part under a weaker connective — the same rule the conclusion parse got
+a round earlier, applied to the hypothesis side.  Equation anchoring
+became *directional*: an equation admits its tokens only when one of its
+sides is nonempty and already fully anchored — the way a definition
+flows from determined to determining — which retires the tautology
+special-case and closes its definitionally-reflexive sibling
+(`pair st' stMid = id (pair st' stMid)`, provable by `rfl` with
+textually different sides) in the same stroke.  The whole-invariant
+check now catches a transformed post-state assumption
+(`ipcInvariantFull (id st')`) by token carriage: a family argument
+containing every token of the conclusion state is a hypothesis about
+it, since a genuine pre-state never contains its post-state.  And the
+census widened to what Lean actually accepts: `def`- and
+`abbrev`-spelled proofs join the declaration scan, guillemet-quoted
+qualifier segments (`«foo».conjunct st'`) match in the hypothesis and
+derivation grammars alike, and backtick syntax quotations are blanked
+from the code view so an uninvoked macro template can neither satisfy
+nor trip a check.  Six token-preserving fixtures; self-test 82 cases;
+census unchanged a thirteenth time.
 
 ### Housekeeping
 
