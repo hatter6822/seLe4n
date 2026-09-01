@@ -218,8 +218,45 @@ def _qualified(name: str) -> str:
     )
 
 
+def _returns_state(rhs: str, state: str) -> bool:
+    """True when an equation right-hand side's *returned state* is `state`.
+
+    The result must BE the state, not merely mention it (PR #886 review, the
+    round after the mention-in-RHS rule landed: `.ok ((f st'), unrelated)`
+    mentions the conclusion state inside the payload while returning
+    `unrelated`).  Accepted shapes, matching the dispatchers' `Except (α ×
+    SystemState)` results: the state itself, `.ok <state>`, and an `.ok`
+    payload tuple whose *last* depth-0 component is the state.  Any other
+    shape fails closed.
+    """
+    rhs = _normalise(rhs)
+    if rhs == state:
+        return True
+    ok = re.match(r"^(?:Except\.ok|\.ok)\s+(.+)$", rhs)
+    if not ok:
+        return False
+    payload = _normalise(ok.group(1))
+    if payload == state:
+        return True
+    parts: list[str] = []
+    current: list[str] = []
+    depth = 0
+    for char in payload:
+        if char in _OPEN:
+            depth += 1
+        elif char in _CLOSE:
+            depth -= 1
+        if char == "," and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    parts.append("".join(current))
+    return len(parts) > 1 and _normalise(parts[-1]) == state
+
+
 def _steps_function(binders: str, function: str, state: str) -> bool:
-    """True when some binder group's type equates `function`'s result to `state`.
+    """True when some binder group's type steps `function` into `state`.
 
     The group's type begins after its first depth-0 colon; the head is its
     first identifier token.  Requiring the head (rather than any mention)
@@ -227,15 +264,12 @@ def _steps_function(binders: str, function: str, state: str) -> bool:
     name-drops the dispatcher beside a step equation for something else.
     The equation's right-hand side -- cut at the first depth-0 logical
     connective, so a conjunct smuggled in after the result cannot satisfy
-    this -- must mention `state`, the payoff's conclusion state: an equation
-    whose result is some unrelated mid-state proves nothing about the state
-    the conclusion speaks of (PR #886 review, the round after the head
-    requirement landed -- head-plus-`=` was itself still a presence check
-    on the result side).
+    this -- must *return* `state`, the payoff's conclusion state, parsed
+    structurally by `_returns_state`: an equation whose result is some
+    unrelated mid-state proves nothing about the state the conclusion
+    speaks of, and neither does one that merely mentions that state inside
+    its payload (PR #886 review, two successive rounds).
     """
-    state_token = re.compile(
-        r"(?<![A-Za-z0-9_'])" + re.escape(state) + r"(?![A-Za-z0-9_'])"
-    )
     index = 0
     while index < len(binders):
         if binders[index] in _OPEN:
@@ -274,7 +308,7 @@ def _steps_function(binders: str, function: str, state: str) -> bool:
                                 elif cut_depth == 0 and rhs_char in "∧∨→↔":
                                     rhs = rhs[:rhs_offset]
                                     break
-                            if state_token.search(rhs):
+                            if _returns_state(rhs, state):
                                 return True
                             break
             index = end
@@ -480,8 +514,13 @@ def state_predicate_bodies(root: str, sources: list[str]) -> dict[str, list[str]
     # letter-or-underscore then word characters, Unicode-aware -- and the
     # substitution boundaries below match, or a Greek binder would collect
     # and then fail to substitute.
+    # Leading modifiers on the *collected* declaration too (PR #886 review:
+    # the modifier fix reached the stop pattern below and not this, its
+    # sibling site four lines up -- a `private def` conjunct vanished from
+    # the map while a `private theorem` correctly bounded its neighbour).
     pattern = re.compile(
-        r"^(?:def|abbrev)\s+([A-Za-z_][A-Za-z0-9_'!?]*)"
+        r"^(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped)\s+)*"
+        r"(?:def|abbrev)\s+([A-Za-z_][A-Za-z0-9_'!?]*)"
         r"\s*\(\s*([^\W\d][\w']*)\s*:\s*SystemState\s*\)"
         r"\s*:\s*Prop\s*:=",
         re.MULTILINE,
@@ -617,7 +656,7 @@ class Bundle:
         stMid` must not launder `stMid` into the pre-state set, or a conjunct
         threaded on an intermediate state passes as clean).
         """
-        tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_'!?]*", self.conclusion))
+        tokens = set(re.findall(r"[^\W\d][\w'!?]*", self.conclusion))
         index = 0
         while index < len(self.binders):
             char = self.binders[index]
@@ -627,7 +666,7 @@ class Bundle:
                     break
                 region = self.binders[index:end]
                 if "=" in region:
-                    tokens.update(re.findall(r"[A-Za-z_][A-Za-z0-9_'!?]*", region))
+                    tokens.update(re.findall(r"[^\W\d][\w'!?]*", region))
                 index = end
             else:
                 index += 1
@@ -637,12 +676,17 @@ class Bundle:
         """The states this bundle's own invariant hypotheses are applied to.
 
         An atomic state qualifies only when it is anchored to the transition
-        (see `_anchor_tokens`).  A compound state expression is accepted as
-        bound -- it is built from anchored inputs in every bundle this tree
-        contains, and rejecting the whole class would misreport the
-        `…ExceptDonationOwner` composites; that acceptance is the one place
-        this check under-approximates, and it is confined to non-atomic
-        expressions."""
+        (see `_anchor_tokens`).  A compound state expression qualifies only
+        when *every identifier token in it* is anchored (PR #886 review:
+        wholesale acceptance let `ipcInvariantCore (someOperation st).2`
+        launder an intermediate state with no step equation naming
+        `someOperation`) -- the `…ExceptDonationOwner` composites pass, since
+        their constituents all appear in the step equations or conclusion.
+        What remains accepted, and is the residual under-approximation, is a
+        compound built *only* from anchored tokens that nevertheless is not
+        the transition's input; a scanner cannot evaluate the expression, so
+        it errs toward accepting expressions whose every part the statement
+        itself ties to the step."""
         anchors = self._anchor_tokens()
         states = set()
         for predicate in PRE_STATE_PREDICATES:
@@ -650,8 +694,12 @@ class Bundle:
                 argument = first_argument(self.binders, hit.end())
                 if argument:
                     state = _normalise(argument)
-                    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_'!?]*", state):
+                    if re.fullmatch(r"[^\W\d][\w'!?]*", state):
                         if state not in anchors:
+                            continue
+                    else:
+                        tokens = set(re.findall(r"[^\W\d][\w'!?]*", state))
+                        if not tokens <= anchors:
                             continue
                     states.add(state)
         return states
@@ -1708,6 +1756,82 @@ end Shadow""",
             named_argument,
             True,
             check="no_conclusion_state_hypothesis",
+            mutation="preserving",
+        )
+    )
+
+    # `private def` conjunct: the modifier fix must reach the collected
+    # declaration itself, not only the stop pattern -- a `private def`
+    # nested conjunct vanished from the body map with every token present.
+    private_def = _fixture()
+    private_def[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def replyCallerLinkage (st : SystemState) : Prop :=",
+        "private def replyCallerLinkage (st : SystemState) : Prop :=",
+    )
+    private_def["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (h : replyCallerLinkageReciprocal st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "clause of a `private def` conjunct still derives and flags",
+            private_def,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Result mentioned but not returned: the step equation carries the
+    # conclusion state *inside* its ok-payload while returning an unrelated
+    # state -- the mention-in-RHS rule accepted this; the structural parse
+    # of the returned component does not.
+    mentioned_result = _fixture()
+    mentioned_result["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep""",
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st stMid st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((someMessageAbout st'), stMid))
+    (hRelay : someOtherOperation stMid = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st stMid st' hInv hStep hRelay""",
+    )
+    cases.append(
+        _Case(
+            "payoff step mentions the conclusion state without returning it",
+            mentioned_result,
+            True,
+            check="payoff_statement",
+            mutation="preserving",
+        )
+    )
+
+    # Compound intermediate state: an invariant-family hypothesis on
+    # `(someOperation st).2` must not launder that expression into the
+    # pre-state set when no step equation names `someOperation` -- the
+    # wholesale compound acceptance did exactly that.
+    compound_mid = _fixture()
+    compound_mid["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hMid : ipcInvariantFull (someOperation st).2)\n"
+            "    (hT : blockedThreadsPendingMessageConsistent (someOperation st).2)\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "conjunct on an unanchored compound state is not laundered as pre",
+            compound_mid,
+            True,
+            check="no_post_state_binding",
             mutation="preserving",
         )
     )

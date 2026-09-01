@@ -325,6 +325,26 @@ named-argument spelling to its value, so `ipcInvariantFull (st := st')`
 compares equal to the conclusion's `st'` everywhere states are compared
 instead of hiding as an opaque compound.  Three token-preserving
 fixtures; self-test 43 cases; census unchanged a fourth time.
+A ninth pass closed one mirror gap and three more gate residues.  The
+mirror: the frozen notification rebuilds dropped `boundTCB` — all four
+of them, where the report named one — so a bound notification's binding
+silently reset to `none` on the frozen side of the signal-wake,
+signal-store, wait-consume and wait-block branches while every live
+rebuild carries it; the four literals now preserve the field, and two
+bound-notification differential scenarios (FO-039 park, FO-040 consume)
+join the registry — FO-039 verified to fail on the pre-fix code — for
+33 scenarios total.  The gate: the payoff step's returned state is
+parsed structurally (`.ok` payload's last component; a step that merely
+*mentions* the conclusion state inside its payload while returning an
+unrelated one no longer passes); the body collector accepts leading
+declaration modifiers on the collected definition itself, the sibling
+site of the stop-pattern fix (`private def` conjuncts collect); and
+compound pre-states are anchored token-wise — `ipcInvariantCore
+(someOperation st).2` with no step equation naming `someOperation` no
+longer launders the intermediate state, with the residual acceptance
+(compounds built only from anchored tokens) documented in place of the
+old wholesale one.  Three more token-preserving fixtures; self-test 46
+cases; census unchanged a fifth time.
 
 ### Housekeeping
 
