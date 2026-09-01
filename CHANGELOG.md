@@ -620,6 +620,64 @@ spelling (toolchain-verified, as were `meta def` and the `include … in`
 composite).  Six token-preserving fixtures; self-test 104 cases, 8/8
 checks covered; census unchanged a nineteenth time.
 
+The twenty-fourth review pass named the tripwire's own two residuals,
+and both close structurally rather than per instance.  First: Lean
+parses commands at *any* indentation while `grammar_coverage` reads
+column 0, so an indented user-defined command minting a threaded family
+theorem was invisible to census and tripwire alike (toolchain-verified:
+an indented invocation expands, and `set_option hygiene false` lets it
+mint a stable name).  Position cannot close that class — an indented
+invocation is textually a term continuation — so the mechanism does:
+with no external `require` in the lakefile, an unknown command can
+exist only through declaration-minting machinery, and the new
+`minting_machinery` check holds every such token (`macro`, `syntax`,
+`elab`, `run_cmd`, `initialize`, and kin — position-free over the code
+view) to a reviewed `(file, keyword) → count` pin, bidirectionally: new
+machinery fails, and a stale pin fails while its file lives, so no
+entry rots into an exemption.  Its complement `family_references`
+resolves every spelled family-shaped token against the census, so a DSL
+invocation naming the theorem it mints — or a `(name := …)` escape —
+fails loudly wherever it sits.  The residual (pinned machinery minting
+names it never spells) is exactly the registered elaborator-census
+debt, now confined to eighteen reviewed files instead of open anywhere.
+Second: inside a syntax quotation, the paren balancer read a quoted
+identifier's `)` (`«x)»`, toolchain-verified valid template text) as
+the quotation terminator, exposing inert template text to the census.
+Fixed one layer down, where the class lives: `_blank_strings` now
+neutralises delimiter characters inside guillemet identifiers — word
+characters survive, so a guillemet-quoted family *name* keeps its
+marker and census seat — making every downstream bracket-walker
+guillemet-safe at once instead of teaching each its own skip; the
+shared `lean_code_view` stripper gained the sibling fix (`--` or `/-`
+inside `«…»` is identifier text, not a comment opener) with its own
+witness cases.  Third: a nested conjunct with an ordinary parameter
+before its state — `replyCallerLinkage (enabled : Bool)
+(st : SystemState)`, toolchain-verified — escaped the body collector
+(which demanded the state group immediately after the name) and the
+unary application parse, so its clause predicates left the derived set
+and threading them scored clean.  The collector now walks the whole
+binder telescope, finds the state group wherever it sits, and records
+its explicit-argument position; the measure accepts the state at any
+argument position (its widening direction), while the carrier
+derivation keeps the strict unary parse and gains a
+single-state-group guard (its suppressing direction), and a new
+unanimity-derived index map (`_state_indices`) gives `threaded` and
+the def-carrier slots the real state position — so
+`replyCallerLinkage true st'` is found at its slot and the clean
+`replyCallerLinkage true st` is not flagged on its leading `Bool`.
+The two added tree walks are absorbed by memoising `code_view` (pure
+per file; fixture writes clear the cache), returning the gate to its
+prior runtime.  Nine new fixtures — the indented command, the stale
+pin, the unresolved ghost reference, the reviewer's exact `«x)»`
+scenario, two accepted guillemet trees pinning the fix's fail-closed
+edges, and the non-leading-state trio (clause reached through the
+closure, post-state at the real slot, pre-state twin accepted); one
+reshaped (the arity mutation the telescope walk now rightly collects
+became a curried `→ Prop` return type the collector still refuses);
+self-test 113 cases, 10/10 checks covered; census unchanged a
+twentieth time: 26 conjuncts / 146 statements / 0 post-state
+bindings.
+
 ### Housekeeping
 
 `raw_lookup_tid` re-anchored twice, with the reason in the baseline header:

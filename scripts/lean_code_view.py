@@ -136,6 +136,20 @@ def strip(src: str) -> str:
                 i += 3
                 continue
 
+        # A guillemet-quoted identifier is a single token: `--` or `/-`
+        # inside `«a--b»` is identifier text, not a comment opener, and a
+        # stripper blind to the quoting truncates the line (or raises on a
+        # quoted `/-` with no close) while Lean compiles it happily
+        # (PR #886 review).  Bounded to one line — Lean's quoted
+        # identifiers cannot span lines — so a stray unpaired `«` changes
+        # nothing.
+        if c == "«":
+            close = src.find("»", i + 1)
+            newline = src.find("\n", i + 1)
+            if close != -1 and (newline == -1 or close < newline):
+                i = close + 1
+                continue
+
         if c == "-" and nxt == "-":
             in_line = True
             blank(i), blank(i + 1)
@@ -186,6 +200,8 @@ _CASES: list[tuple[str, str, str]] = [
      "def f' := 1 -- sorry\n", "def f' := 1"),
     ("char literal containing a quote keeps string state sane",
      "def q := '\"'\ndef g := 1 -- sorry\n", "def q := '\"' def g := 1"),
+    ("comment lookalike inside a guillemet identifier stays code",
+     "def «a--b» := 1 -- sorry\n", "def «a--b» := 1"),
 ]
 
 # Code that must survive *verbatim*, because a stripper that ate it would make
@@ -197,6 +213,8 @@ _PRESERVED: list[tuple[str, str]] = [
      'def f := "a \\" -- still string"\n'),
     ("a raw object-store match is code",
      "match st.objects[oid]? with\n"),
+    ("a guillemet identifier quoting a block-comment opener is code",
+     "def «x/-y» := 1\n"),
 ]
 
 

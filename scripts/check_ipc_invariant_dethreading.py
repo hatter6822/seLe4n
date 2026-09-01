@@ -74,6 +74,7 @@ Exits 0 when clean, 1 on any violation or self-test failure.
 
 from __future__ import annotations
 
+import functools
 import os
 import re
 import subprocess
@@ -165,6 +166,8 @@ PENDING_FILE = "docs/planning/ipc_dethreading_pending.txt"
 
 CHECKS = (
     "grammar_coverage",
+    "minting_machinery",
+    "family_references",
     "conjuncts_derived",
     "family_nonempty",
     "family_conclusion",
@@ -173,6 +176,88 @@ CHECKS = (
     "payoff_theorems",
     "payoff_statement",
 )
+
+# Declaration-minting machinery: the keywords through which Lean code can
+# bring a declaration into existence *without* spelling a declaration the
+# census's grammars read.  `macro`/`macro_rules`/`syntax` targeting the
+# command category expand to whole commands; `elab`/`elab_rules`,
+# `run_cmd`/`run_elab`, `#eval` of a monadic action and
+# `initialize`/`builtin_initialize` execute arbitrary elaborator code that
+# can call `addDecl`; `declare_syntax_cat` opens a category for any of
+# them.  A command *invocation* can then sit at any indentation -- the
+# `grammar_coverage` tripwire reads column 0 only, and an indented unknown
+# command is indistinguishable in text from a term continuation (PR #886
+# review) -- so the gate polices the *mechanism* instead of the position:
+# with no external `require` in `lakefile.toml`, an unknown command can
+# only exist through machinery declared in this tree, and every machinery
+# token is held to the pin below.  `notation`/`infix`-family sugar is
+# deliberately outside the set: it expands to term-category rewriting,
+# which cannot mint a declaration, and the `(name := …)` parser
+# declaration it can mint is a `ParserDescr` whose spelled name the
+# `family_references` check resolves like any other token.
+_MACHINERY = (
+    "macro_rules",
+    "macro",
+    "elab_rules",
+    "elab",
+    "syntax",
+    "builtin_initialize",
+    "initialize",
+    "run_cmd",
+    "run_elab",
+    "declare_syntax_cat",
+)
+
+# Every machinery occurrence in the tree, reviewed once and pinned as
+# (file, keyword) -> exact count.  The scan is derived (every token in the
+# code view); the pin is the reviewed set -- the enumeration-as-pin shape
+# CLAUDE.md prescribes.  New machinery anywhere, or a second occurrence in
+# a pinned file, fails loudly and gets reviewed; a pinned file whose count
+# *fell* fails too, so an entry cannot rot into a standing exemption while
+# the file lives.  A pinned file absent from the tree is inert: deletion
+# removes the minting surface, and file existence is other gates' concern.
+# The reviewed occupants: thirteen theorem-inventory DSLs (a term-category
+# `syntax` + `macro_rules` pair each), the manifest's two `census_entry`
+# term macros and its two `run_cmd` propositionality censuses, one local
+# tactic macro, one per-core NI name macro pair, and three `initialize`
+# blocks (a tag attribute and two FFI state refs).  Term-category macros
+# cannot mint declarations; the `run_cmd`/`initialize` sites can, which is
+# exactly why their files are pinned by count.
+MACHINERY_PINS = {
+    ("SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean", "macro"): 1,
+    ("SeLe4n/Kernel/Concurrency/Locks/DeadlockInventory.lean", "macro_rules"): 1,
+    ("SeLe4n/Kernel/Concurrency/Locks/DeadlockInventory.lean", "syntax"): 1,
+    ("SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean", "macro_rules"): 1,
+    ("SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean", "syntax"): 1,
+    ("SeLe4n/Kernel/Concurrency/Locks/SerializabilityInventory.lean", "macro_rules"): 1,
+    ("SeLe4n/Kernel/Concurrency/Locks/SerializabilityInventory.lean", "syntax"): 1,
+    ("SeLe4n/Kernel/Concurrency/Locks/WithLockSetInventory.lean", "macro_rules"): 1,
+    ("SeLe4n/Kernel/Concurrency/Locks/WithLockSetInventory.lean", "syntax"): 1,
+    ("SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean", "macro"): 2,
+    ("SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean", "run_cmd"): 2,
+    ("SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean", "macro_rules"): 1,
+    ("SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean", "syntax"): 1,
+    ("SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuiteInventory.lean", "macro_rules"): 1,
+    ("SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuiteInventory.lean", "syntax"): 1,
+    ("SeLe4n/Kernel/Scheduler/Operations/CrossCoreWakeInventory.lean", "macro_rules"): 1,
+    ("SeLe4n/Kernel/Scheduler/Operations/CrossCoreWakeInventory.lean", "syntax"): 1,
+    ("SeLe4n/Kernel/Scheduler/Operations/PerCoreCbsInventory.lean", "macro_rules"): 1,
+    ("SeLe4n/Kernel/Scheduler/Operations/PerCoreCbsInventory.lean", "syntax"): 1,
+    ("SeLe4n/Kernel/Scheduler/Operations/PerCoreDomainInventory.lean", "macro_rules"): 1,
+    ("SeLe4n/Kernel/Scheduler/Operations/PerCoreDomainInventory.lean", "syntax"): 1,
+    ("SeLe4n/Kernel/Scheduler/Operations/PerCoreIdleInventory.lean", "macro_rules"): 1,
+    ("SeLe4n/Kernel/Scheduler/Operations/PerCoreIdleInventory.lean", "syntax"): 1,
+    ("SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerInventory.lean", "macro_rules"): 1,
+    ("SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerInventory.lean", "syntax"): 1,
+    ("SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrtInventory.lean", "macro_rules"): 1,
+    ("SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrtInventory.lean", "syntax"): 1,
+    ("SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCoreInventory.lean", "macro_rules"): 1,
+    ("SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCoreInventory.lean", "syntax"): 1,
+    ("SeLe4n/Model/Object/PerObjectLockInventory.lean", "macro_rules"): 1,
+    ("SeLe4n/Model/Object/PerObjectLockInventory.lean", "syntax"): 1,
+    ("SeLe4n/Platform/FFI.lean", "initialize"): 2,
+    ("SeLe4n/Prelude.lean", "initialize"): 1,
+}
 
 # The declaration modifiers and top-level commands this gate's grammars
 # know.  SINGLE SOURCE (PR #886 review, the churn diagnosis): eight
@@ -760,13 +845,28 @@ def _blank_strings(source: str) -> str:
             else:
                 out.append(" ")
         elif in_quoted:
-            # A guillemet-quoted identifier (`«a"b»`) is code, not data: its
-            # characters survive, and a double quote inside it must not open
-            # a string, or the rest of the file is blanked and every later
-            # declaration leaves the census (PR #886 review).
-            out.append(char)
-            if char == "»":
+            # A guillemet-quoted identifier (`«a"b»`) is code, not data --
+            # and it is *one atomic token*, so its word characters survive
+            # while every delimiter-significant character inside is
+            # neutralised to `_` (PR #886 review, two rounds: a `"` inside
+            # flipped the string state and blanked the rest of the file; a
+            # `)` inside a quotation terminated `_blank_syntax_quotations`'
+            # paren balance early, exposing inert template text to the
+            # census).  Neutralising here, at the one layer that already
+            # walks the span, is what keeps every downstream
+            # bracket-walker -- `balanced_span`, the binder splitter, the
+            # quotation balancer -- guillemet-safe without each carrying
+            # its own skip.  Word characters survive so a guillemet-quoted
+            # *family name* keeps its marker and stays censused; a newline
+            # ends the state, since Lean's quoted identifiers cannot span
+            # lines, so a stray `«` cannot restyle the rest of the file.
+            if char == "»" or char == "\n":
+                out.append(char)
                 in_quoted = False
+            elif char.isalnum() or char in "_'!?":
+                out.append(char)
+            else:
+                out.append("_")
         else:
             out.append(char)
             if char == "«":
@@ -807,7 +907,13 @@ def _blank_syntax_quotations(source: str) -> str:
             # paren inside it (`«harmless\`(unclosed»`) is identifier text,
             # and treating it as a quotation opener blanked to end of file
             # (PR #886 review) -- the same quote-awareness `_blank_strings`
-            # has, at this pass's own trigger.
+            # has, at this pass's own trigger.  Since that pass now also
+            # *neutralises* delimiter characters inside guillemet spans and
+            # runs first (the `code_view` order contract), the balancer
+            # below can no longer meet a quoted `)` either -- `«x)»` before
+            # a template terminated the paren balance early and exposed the
+            # template to the census (PR #886 review, the next round).
+            # This skip stays as the local statement of the same fact.
             close = source.find("»", index + 1)
             index = len(source) if close == -1 else close + 1
         elif char == "`" and source[index + 1] == "(":
@@ -830,8 +936,22 @@ def _blank_syntax_quotations(source: str) -> str:
     return "".join(out)
 
 
+@functools.lru_cache(maxsize=None)
 def code_view(root: str, relative: str) -> str:
-    """The comment-free, string- and quotation-blanked view of one source."""
+    """The comment-free, string- and quotation-blanked view of one source.
+
+    The order is a contract, not a convenience: `_blank_strings` neutralises
+    delimiter characters inside guillemet identifiers, so every later pass
+    and every bracket-walker downstream may treat `(`/`)` as structure --
+    `_blank_syntax_quotations`' balancer in particular relies on it
+    (PR #886 review: `«x)»` inside a quotation ended the balance early).
+
+    Memoised: one `run_checks` pass lexes every source seven times (each
+    check walks the tree), and the views are pure functions of the file --
+    within one process no caller mutates a source between reads, and the
+    self-test's fixture trees never share a `(root, relative)` key because
+    each case writes into a fresh temporary directory.
+    """
     with open(os.path.join(root, relative), encoding="utf-8") as handle:
         return _blank_syntax_quotations(
             _blank_strings(lean_code_view.strip(handle.read()))
@@ -1017,9 +1137,59 @@ _COMMAND_STOP = re.compile(
 )
 
 
+def _state_telescope(
+    source: str, start: int
+) -> tuple[list[str], int, bool, int] | None:
+    """Walk the binder telescope at `start`: (state binder names, the first
+    state group's explicit-argument position, exactly-one-state-group?,
+    body offset just past `:=`), or None when no group is typed
+    `SystemState` or the telescope is not followed by `(: Prop)? :=`.
+
+    Only `(…)` groups advance the explicit position -- implicit and
+    instance binders never occupy positional application slots (the
+    structure-head parser's discipline, applied to definitions).  A group
+    binding several names to `SystemState` collects them all for the
+    substitution; more than one state *group* clears the single flag,
+    which the carrier and index derivations require -- an ambiguous state
+    position must widen the measure without minting positions.
+    """
+    index = start
+    explicit_seen = 0
+    binders: list[str] = []
+    state_index: int | None = None
+    state_groups = 0
+    while True:
+        probe = index
+        while probe < len(source) and source[probe] in " \t\n":
+            probe += 1
+        if probe >= len(source) or source[probe] not in "({[":
+            break
+        end = balanced_span(source, probe)
+        if end is None:
+            break
+        group = re.fullmatch(
+            r"\s*([^\W\d][\w']*(?:\s+[^\W\d][\w']*)*)\s*:\s*SystemState\s*",
+            source[probe + 1 : end - 1],
+        )
+        if group:
+            state_groups += 1
+            binders.extend(group.group(1).split())
+            if state_index is None:
+                state_index = explicit_seen
+        if source[probe] == "(":
+            explicit_seen += 1
+        index = end
+    if state_index is None:
+        return None
+    tail = re.match(r"\s*(?::\s*Prop\s*)?:=", source[index:])
+    if tail is None:
+        return None
+    return binders, state_index, state_groups == 1, index + tail.end()
+
+
 def state_predicate_bodies(
     root: str, sources: list[str]
-) -> dict[str, list[tuple[str, str]]]:
+) -> dict[str, list[tuple[str, str, int, bool]]]:
     """Every `def NAME (st : SystemState) : Prop := ...` body in the tree.
 
     Collected tree-wide rather than from the definition module alone: a clause
@@ -1036,7 +1206,7 @@ def state_predicate_bodies(
     definition can add scanned conjuncts, never remove the real ones, so the
     ambiguity a scanner cannot resolve fails closed.
     """
-    bodies: dict[str, list[tuple[str, str]]] = {}
+    bodies: dict[str, list[tuple[str, str, int, bool]]] = {}
     # `abbrev` too (PR #886 review): a transparently refactored conjunct
     # (`def` -> `abbrev`) kept its meaning but vanished from this map, so its
     # clause predicates silently left the derived set.  The state binder is
@@ -1062,18 +1232,24 @@ def state_predicate_bodies(
     # set.  Omitting it admits state-valued helpers into the bodies map,
     # which is the fail-closed direction: their bodies parse to no exact
     # predicate applications, and one that does parse IS a Prop.
-    pattern = re.compile(
+    # The state binder may be implicit (PR #886 review, toolchain-
+    # verified): `{st : SystemState}` declares the same predicate, and
+    # the root applies it with a named argument the derivation already
+    # normalises.  The binder may also sit *anywhere in the telescope*
+    # (PR #886 review, the round after -- toolchain-verified):
+    # `def replyCallerLinkage (enabled : Bool) (st : SystemState)` is the
+    # same predicate with an ordinary parameter in front, and a collector
+    # demanding the state group immediately after the name dropped the
+    # definition -- with its clause predicates -- from the derived set.
+    # So the header is matched and the telescope *walked*: every binder
+    # group in turn, the state group found wherever it is, and its
+    # explicit-argument position recorded for the application scans
+    # (`_state_indices`).  The bracket class stays deliberately loose --
+    # a group Lean would reject only widens the measured set.
+    header_pattern = re.compile(
         r"^[ \t]*" + _COMPOSITE_PREFIX + r"(?:@\[[^\]]*\]\s*)*"
                 + _MODIFIER_RUN +
-        # The state binder may be implicit (PR #886 review, toolchain-
-        # verified): `{st : SystemState}` declares the same predicate, and
-        # the root applies it with a named argument the derivation already
-        # normalises.  The bracket class is deliberately loose -- a
-        # mismatched pair collects a definition that Lean would reject,
-        # which only widens the measured set.
-        r"(?:def|abbrev)\s+([^\W\d][\w'!?]*)"
-        r"\s*[({]\s*([^\W\d][\w']*)\s*:\s*SystemState\s*[)}]"
-        r"\s*(?::\s*Prop\s*)?:=",
+        r"(?:def|abbrev)\s+([^\W\d][\w'!?]*)",
         re.MULTILINE,
     )
     # The arrow-form spelling `def NAME : SystemState → Prop := fun b => …`
@@ -1092,8 +1268,21 @@ def state_predicate_bodies(
     for relative in sources:
         source = code_view(root, relative)
         breakpoints = namespace_breakpoints(source)
-        for match in [m for p in (pattern, arrow_pattern) for m in p.finditer(source)]:
-            tail = source[match.end() :]
+        collected: list[tuple[str, list[str], int, bool, int, int]] = []
+        for match in header_pattern.finditer(source):
+            walked = _state_telescope(source, match.end())
+            if walked is None:
+                continue
+            binders, state_index, single, body_start = walked
+            collected.append(
+                (match.group(1), binders, state_index, single, match.start(), body_start)
+            )
+        for match in arrow_pattern.finditer(source):
+            collected.append(
+                (match.group(1), [match.group(2)], 0, True, match.start(), match.end())
+            )
+        for name, binders, state_index, single, decl_start, body_start in collected:
+            tail = source[body_start:]
             cut = _COMMAND_STOP.search(tail)
             # Identifier-boundary substitution (PR #886 review): a plain
             # `.replace` on a one-letter binder like `s` rewrites every `s`
@@ -1101,15 +1290,12 @@ def state_predicate_bodies(
             # `...HastReplyObject`), silently dropping real nested conjuncts
             # from the derived set.
             body = tail[: cut.start()] if cut else tail
-            bodies.setdefault(match.group(1), []).append(
-                (
-                    prefix_at(breakpoints, match.start()),
-                    re.sub(
-                        r"(?<![\w'])" + re.escape(match.group(2)) + r"(?![\w'])",
-                        "st",
-                        body,
-                    ),
+            for binder in binders:
+                body = re.sub(
+                    r"(?<![\w'])" + re.escape(binder) + r"(?![\w'])", "st", body
                 )
+            bodies.setdefault(name, []).append(
+                (prefix_at(breakpoints, decl_start), body, state_index, single)
             )
     return bodies
 
@@ -1153,8 +1339,13 @@ _APPLIED_RE = re.compile(
 )
 
 
-def _body_predicates(body: str) -> set[str]:
+def _body_predicates(body: str, any_position: bool = False) -> set[str]:
     """The predicates one definition body applies conjunctively to its state.
+
+    `any_position` admits multi-parameter applications whose state sits at
+    any argument position (`replyCallerLinkage true st`) -- the measure's
+    widening direction, used by `_sub_predicates`; the carrier derivation
+    must keep the default strict form, since its set suppresses findings.
 
     Each part is normalised (redundant enclosing parentheses stripped)
     and a part that then still splits is re-split, so a harmlessly
@@ -1217,6 +1408,30 @@ def _body_predicates(body: str) -> set[str]:
         hit = _APPLIED_RE.match(part)
         if hit:
             found.add(hit.group(1))
+            continue
+        if not any_position:
+            continue
+        # The any-position reading (PR #886 review): a multi-parameter
+        # predicate is applied `replyCallerLinkage true st`, and the exact
+        # unary form above cannot see it.  Accepting the head whenever
+        # `st` is one of the application's argument units *widens the
+        # measured set*, which is the conjunct and alias derivations'
+        # fail-closed direction -- and exactly why `_carrier_defs`, whose
+        # derived set suppresses findings, keeps the strict parse.
+        head = re.match(
+            r"@?(?:(?:«[^»\n]*»|[^\W\d][\w']*)\.)*([^\W\d][\w'!?]*)", part
+        )
+        if head is None or not _application_spans(part, head.end()):
+            continue
+        position = head.end()
+        while True:
+            step = _next_unit(part, position)
+            if step is None:
+                break
+            unit, position = step
+            if _normalise(unit) == "st":
+                found.add(head.group(1))
+                break
     return found
 
 
@@ -1229,8 +1444,8 @@ def _sub_predicates(bodies: dict[str, list[tuple[str, str]]], name: str) -> set[
     suppress findings, so there the verdict is per-body and unanimous.
     """
     found = set()
-    for _prefix, body in bodies.get(name, []):
-        found |= _body_predicates(body)
+    for entry in bodies.get(name, []):
+        found |= _body_predicates(entry[1], any_position=True)
     return found
 
 
@@ -1239,9 +1454,10 @@ def derive_conjuncts(bodies: dict[str, list[tuple[str, str]]]) -> set[str]:
 
     Read out of the definition rather than listed, so a twenty-first conjunct
     is measured the day it is added.  The body is split on `∧` at bracket
-    depth zero and a part counts only when it is exactly one predicate applied
-    to the definition's own state binder -- so the expansion is the definition,
-    not a token scrape of it.  Every body a name has contributes (see
+    depth zero and a part counts only when it is exactly one predicate
+    application with the definition's own state binder among its arguments
+    (any position -- see `_body_predicates`; PR #886 review, the telescope
+    round) -- so the expansion is the definition, not a token scrape of it.  Every body a name has contributes (see
     `state_predicate_bodies`): the derived set is the union over same-named
     definitions, so a namespaced shadow of the root or of a conjunct widens
     the scan rather than replacing it.
@@ -1319,9 +1535,16 @@ def _carrier_defs(bodies: dict[str, list[tuple[str, str]]]) -> set[str]:
     qualifies only when every collected body of it reaches a family form.
     """
     family = set(PRE_STATE_PREDICATES)
+    # Strict per-body parse, deliberately NOT the any-position reading the
+    # measure uses (PR #886 review, the telescope round): the family forms
+    # a carrier must entail are unary, and a loose reading here would let
+    # an over-applied family spelling Lean rejects mint suppression.  The
+    # single-state-group flag guards the same direction: a definition with
+    # an ambiguous state position must not carry.
     per_body = {
-        name: [_body_predicates(body) for _prefix, body in entries]
+        name: [_body_predicates(entry[1]) for entry in entries]
         for name, entries in bodies.items()
+        if all(entry[3] for entry in entries)
     }
     carriers: set[str] = set()
     changed = True
@@ -1336,6 +1559,31 @@ def _carrier_defs(bodies: dict[str, list[tuple[str, str]]]) -> set[str]:
                 carriers.add(name)
                 changed = True
     return carriers
+
+
+def _state_indices(
+    bodies: dict[str, list[tuple[str, str, int, bool]]]
+) -> dict[str, int]:
+    """Name -> its state binder's explicit-argument position, where every
+    collected body agrees and each declares exactly one state group.
+
+    The unanimity is the carrier discipline extended to positions (PR #886
+    review, the telescope round): a text scanner cannot resolve which
+    same-named definition an application elaborates to, and a position is
+    consumed by both finding scans (`threaded`'s state extraction) and
+    suppression (a def-carrier's slot in the carrier map), so only an
+    unambiguous position is recorded.  Absent names default to 0 at every
+    consumer -- the unary legacy, which is today's whole live tree.
+    """
+    indices: dict[str, int] = {}
+    for name, entries in bodies.items():
+        if (
+            entries
+            and all(entry[3] for entry in entries)
+            and len({entry[2] for entry in entries}) == 1
+        ):
+            indices[name] = entries[0][2]
+    return indices
 
 
 def _carries_state_application(
@@ -1831,8 +2079,19 @@ class Bundle:
                         return state
         return None
 
-    def threaded(self, conjuncts: set[str]) -> list[tuple[str, str]]:
+    def threaded(
+        self,
+        conjuncts: set[str],
+        indices: dict[str, int] | None = None,
+    ) -> list[tuple[str, str]]:
         """(conjunct, state) for every conjunct bound on a non-pre-state.
+
+        `indices` maps a measured predicate to its state argument's
+        explicit position (PR #886 review, the telescope round): a
+        multi-parameter conjunct is bound `replyCallerLinkage true st'`,
+        and reading the *first* argument both missed the post-state and
+        would flag the clean `replyCallerLinkage true st` on its leading
+        `Bool`.  Absent names read position 0 -- the unary legacy.
 
         The conclusion's *premises* are scanned as well as the named
         binders: an unnamed implication premise after the declaration's
@@ -1852,6 +2111,7 @@ class Bundle:
         premises = split_implication(_normalise(self.conclusion))[:-1]
         findings = []
         for conjunct in sorted(conjuncts):
+            slot = (indices or {}).get(conjunct, 0)
             for region in [self.ambient, self.binders] + premises:
                 for hit in re.finditer(_qualified(conjunct), region):
                     chain = hit.group(1)
@@ -1867,15 +2127,19 @@ class Bundle:
                         # dot notation already supplies the predicate's one
                         # state, so a genuine application has nothing left
                         # to apply.
+                        # Position-0 names only: dot notation supplies the
+                        # first explicit argument, so for a predicate whose
+                        # state sits later the chain stays a projection.
                         if (
-                            chain.count(".") == 1
+                            slot == 0
+                            and chain.count(".") == 1
                             and first_argument(region, hit.end()) is None
                         ):
                             state = chain.split(".", 1)[0]
                             if state not in pre:
                                 findings.append((conjunct, state))
                         continue
-                    argument = first_argument(region, hit.end())
+                    argument = _argument_at(region, hit.end(), slot)
                     if argument is None:
                         continue
                     state = _normalise(argument)
@@ -2168,9 +2432,20 @@ def grammar_coverage(root: str, sources: list[str]) -> list[str]:
     two unknown commands already in the tree (`register_option`,
     `prelude`) -- the class was live, not hypothetical.
 
-    The residual this cannot close -- and the reason the shared command
+    Column 0 is a *convention*, not Lean's grammar: commands parse at any
+    indentation, and an indented unknown command is textually
+    indistinguishable from a term continuation, so this scan alone fails
+    open exactly there (PR #886 review).  What closes the indented channel
+    is the pair of token scans beside this one -- position-free by
+    construction: `minting_machinery` pins the mechanisms through which an
+    unknown command can exist at all (no external `require`, so the
+    vocabulary is core plus in-tree machinery), and `family_references`
+    resolves every spelled family-shaped token against the census.
+
+    The residual after all three -- and the reason the shared command
     set is an approximation at all -- is that the gate re-implements a
-    fragment of Lean's grammar in text.  The structural endpoint is an
+    fragment of Lean's grammar in text: pinned machinery can mint family
+    names it never spells.  The structural endpoint is an
     elaborator-backed census (declarations and telescopes read from Lean's
     own environment), registered as tracked debt in
     `docs/WORKSTREAM_HISTORY.md` (WS-DT residuals).
@@ -2205,6 +2480,130 @@ def grammar_coverage(root: str, sources: list[str]) -> list[str]:
             f"under an unknown command are invisible to every census and "
             f"scan -- teach `_COMMANDS`/`_MODIFIERS` (one shared source), "
             f"never work around the failure"
+        )
+    return problems
+
+
+_MACHINERY_RE = re.compile(
+    r"(?<![\w'!?.«#])(?:"
+    + "|".join(sorted(_MACHINERY, key=len, reverse=True))
+    + r")(?![\w'!?])"
+    r"|(?<![\w'!?])#eval(?![\w'!?])"
+)
+
+
+def minting_machinery(root: str, sources: list[str]) -> list[str]:
+    """Violations for declaration-minting machinery outside the pin.
+
+    The indentation-insensitive half of the unknown-command tripwire
+    (PR #886 review): `grammar_coverage` reads column 0, and an *indented*
+    invocation of a user-defined command -- one that expands to a family
+    theorem the census never sees -- is textually indistinguishable from a
+    term continuation, so position cannot close the class.  Mechanism can:
+    a user-defined command exists only through the machinery keywords in
+    `_MACHINERY` (there is no external `require` in `lakefile.toml`, so
+    the vocabulary is Lean core plus this tree), and those are *token*
+    occurrences the code view exposes at any indentation.  Every
+    occurrence is held to `MACHINERY_PINS` -- over-pinned deliberately: a
+    term-category macro cannot mint a declaration, but classifying
+    categories through blanked quotations is guesswork, so the whole
+    mechanism set is reviewed by count instead (fail closed).
+
+    The residual is a *pinned* file minting family-shaped names it never
+    spells (constructed via `Name` surgery) -- that is the
+    elaborator-backed-census debt registered in
+    `docs/WORKSTREAM_HISTORY.md` (WS-DT residuals), now confined to the
+    pinned files below rather than open anywhere in the tree; spelled
+    names are `family_references`' half.
+    """
+    counts: dict[tuple[str, str], int] = {}
+    first: dict[tuple[str, str], int] = {}
+    for relative in sources:
+        view = code_view(root, relative)
+        for match in _MACHINERY_RE.finditer(view):
+            key = (relative, match.group(0))
+            counts[key] = counts.get(key, 0) + 1
+            first.setdefault(key, view.count("\n", 0, match.start()) + 1)
+    problems: list[str] = []
+    present = set(sources)
+    for key in sorted(counts):
+        count = counts[key]
+        pinned = MACHINERY_PINS.get(key, 0)
+        if count > pinned:
+            relative, keyword = key
+            problems.append(
+                f"minting_machinery: {relative}:{first[key]}: `{keyword}` "
+                f"occurs {count}x (pinned: {pinned}) -- declaration-minting "
+                f"machinery can define commands whose declarations no text "
+                f"census sees, at any indentation; review the use and pin "
+                f"it in MACHINERY_PINS"
+            )
+    for key, pinned in sorted(MACHINERY_PINS.items()):
+        relative, keyword = key
+        if relative in present and counts.get(key, 0) < pinned:
+            problems.append(
+                f"minting_machinery: {relative}: pin expects {pinned}x "
+                f"`{keyword}` but the file carries {counts.get(key, 0)} -- a "
+                f"stale pin is a standing exemption; update MACHINERY_PINS "
+                f"to match the file"
+            )
+    return problems
+
+
+_FAMILY_TOKEN_RE = re.compile(
+    r"[\w'!?]*(?:"
+    + "|".join(re.escape(marker) for marker in BUNDLE_MARKERS)
+    + r")[\w'!?]*"
+)
+
+
+def family_references(root: str, sources: list[str]) -> list[str]:
+    """Violations for family-shaped tokens no declaration accounts for.
+
+    The other indentation-insensitive half (PR #886 review): whatever
+    position or command shape carries it, a token spelling
+    `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
+    into the code view must resolve to a censused declaration's name --
+    the declaration site itself, a proof citing it, an `attribute` or
+    `open` listing it.  A DSL invocation naming the theorem it mints, a
+    `syntax (name := …_preserves_ipcInvariantFull)` escape, or a citation
+    of a declaration whose spelling the census failed to read all surface
+    here as an unresolved token, loudly, wherever they sit.  Resolution is
+    by marker-bearing segment, so `Foo.bar_preserves_ipcInvariantFull`
+    resolves through `bar_…`'s declaration wherever the namespace prefix
+    was opened.  The check only ever *adds* findings -- there is no
+    suppression side -- so its approximations fail closed.
+    """
+    names = declared_names(root, sources)
+    resolved: set[str] = set()
+    for name in names:
+        resolved.update(_FAMILY_TOKEN_RE.findall(name))
+    seen: dict[str, tuple[str, int, int]] = {}
+    for relative in sources:
+        view = code_view(root, relative)
+        for match in _FAMILY_TOKEN_RE.finditer(view):
+            token = match.group(0)
+            if token in resolved:
+                continue
+            if token in seen:
+                file0, line0, count = seen[token]
+                seen[token] = (file0, line0, count + 1)
+            else:
+                seen[token] = (
+                    relative,
+                    view.count("\n", 0, match.start()) + 1,
+                    1,
+                )
+    problems: list[str] = []
+    for token in sorted(seen):
+        file0, line0, count = seen[token]
+        extra = "" if count == 1 else f" ({count} occurrences)"
+        problems.append(
+            f"family_references: {file0}:{line0}: `{token}` carries a "
+            f"family marker but resolves to no censused declaration"
+            f"{extra} -- either a declaration the census cannot read or a "
+            f"name minted outside it; make the declaration one the gate's "
+            f"grammars parse"
         )
     return problems
 
@@ -2340,8 +2739,13 @@ def run_checks(root: str) -> list[str]:
 
     # First, because everything else assumes it: an unknown command means
     # unknown blind spots in every check below, so its findings lead.  The
+    # machinery and reference scans belong beside it -- they are the
+    # indentation-insensitive halves of the same tripwire, and they must
+    # run before any early return below can cut the pass short.  The
     # other checks still run -- more information, not less.
     problems.extend(grammar_coverage(root, sources))
+    problems.extend(minting_machinery(root, sources))
+    problems.extend(family_references(root, sources))
 
     defs_path = os.path.join(root, DEFS_MODULE)
     if not os.path.isfile(defs_path):
@@ -2351,7 +2755,7 @@ def run_checks(root: str) -> list[str]:
     # while the canonical root's own body is among them (PR #886 review), so
     # its presence under the canonical namespace is required outright.
     if not any(
-        prefix == ROOT_NAMESPACE for prefix, _body in bodies.get(ROOT_INVARIANT, [])
+        entry[0] == ROOT_NAMESPACE for entry in bodies.get(ROOT_INVARIANT, [])
     ):
         problems.append(
             f"conjuncts_derived: no `def {ROOT_INVARIANT}` body collected under "
@@ -2396,8 +2800,14 @@ def run_checks(root: str) -> list[str]:
     # structure whose expansion entails a family form covers its state with
     # the invariant, so the packs the payoffs consume mint pre-states.
     def_carriers = _carrier_defs(bodies)
+    # A def-carrier's state slot is its telescope-derived position (PR #886
+    # review, the telescope round): a blanket 0 would resolve a
+    # multi-parameter carrier's pre-state from its leading non-state
+    # argument.  Names without a unanimous position read 0, the unary
+    # legacy.
+    indices = _state_indices(bodies)
     carrier_map = {name: 0 for name in PRE_STATE_PREDICATES}
-    carrier_map.update({name: 0 for name in def_carriers})
+    carrier_map.update({name: indices.get(name, 0) for name in def_carriers})
     carrier_map.update(carrier_structures(root, sources, def_carriers))
     bundles = collect_bundles(
         root,
@@ -2458,7 +2868,7 @@ def run_checks(root: str) -> list[str]:
                 f"whole-bundle form of threading"
             )
             continue
-        for conjunct, state in bundle.threaded(measured):
+        for conjunct, state in bundle.threaded(measured, indices):
             problems.append(
                 f"no_post_state_binding: {bundle.path}:{bundle.line}: "
                 f"`{bundle.name}` binds `{conjunct}` on `{state}`, which is not "
@@ -2553,8 +2963,9 @@ def report(root: str) -> int:
     conjuncts = derive_conjuncts(bodies)
     measured = conjuncts | threading_aliases(bodies, conjuncts)
     def_carriers = _carrier_defs(bodies)
+    indices = _state_indices(bodies)
     carrier_map = {name: 0 for name in PRE_STATE_PREDICATES}
-    carrier_map.update({name: 0 for name in def_carriers})
+    carrier_map.update({name: indices.get(name, 0) for name in def_carriers})
     carrier_map.update(carrier_structures(root, sources, def_carriers))
     bundles = collect_bundles(
         root,
@@ -2572,7 +2983,7 @@ def report(root: str) -> int:
     tally: dict[str, int] = {}
     threaded_bundles = 0
     for bundle in sorted(bundles, key=lambda b: (b.path, b.line)):
-        findings = bundle.threaded(measured)
+        findings = bundle.threaded(measured, indices)
         if not findings:
             continue
         threaded_bundles += 1
@@ -2690,6 +3101,10 @@ def _fixture() -> dict[str, str]:
 
 
 def _write_tree(root: str, files: dict[str, str]) -> None:
+    # Writing a tree invalidates the memoised views: temporary directory
+    # names are unique among *existing* directories, not across a process's
+    # lifetime, so a recycled path must never serve a previous case's view.
+    code_view.cache_clear()
     for relative, content in files.items():
         path = os.path.join(root, relative)
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -3925,12 +4340,17 @@ end σ""",
 
     # --- conjuncts_derived ------------------------------------------------
     # Token-PRESERVING: `ipcInvariantFull` is still defined and still names its
-    # conjuncts -- but as a different arity, so the derivation finds nothing.
-    # A gate that trusted an empty derivation would report PASS.
+    # conjuncts -- but behind a curried `→ Prop` return type the collector
+    # deliberately does not read, so the derivation finds nothing.  A gate
+    # that trusted an empty derivation would report PASS.  (The original
+    # mutation here appended a second binder group; the telescope walk now
+    # *collects* that spelling -- the round-24 fix -- so the reshape moved
+    # to a form that must still fail loudly rather than silently measure
+    # nothing.)
     renamed_state = _fixture()
     renamed_state[DEFS_MODULE] = CLEAN_DEFS.replace(
         "def ipcInvariantFull (st : SystemState) : Prop :=",
-        "def ipcInvariantFull (st : SystemState) (c : CoreId) : Prop :=",
+        "def ipcInvariantFull (st : SystemState) : CoreId → Prop :=",
     )
     cases.append(
         _Case(
@@ -5221,6 +5641,217 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
             True,
             check="family_nonempty",
             mutation="preserving",
+        )
+    )
+
+    # An *indented* user-defined command (PR #886 review): `grammar_coverage`
+    # reads column 0 only, and inside the namespace the invocation
+    # `  registerHidden` is textually a term continuation, so the theorem it
+    # would mint -- threaded hypothesis and all -- is invisible to every
+    # census.  Position cannot close the class; mechanism can: the `macro`
+    # declaring the command is a token at any indentation, and it is not
+    # pinned.
+    indented_dsl = _fixture()
+    indented_dsl["SeLe4n/Kernel/IPC/Invariant/Structural/HiddenDsl.lean"] = (
+        'macro "registerHidden" : command => `(\n'
+        "theorem hidden_preserves_ipcInvariantFull\n"
+        "    (st st' : SystemState)\n"
+        "    (hInv : ipcInvariantFull st)\n"
+        "    (hT : blockedThreadsPendingMessageConsistent st') :\n"
+        "    ipcInvariantFull st' := by\n"
+        "  exact sample st st' hInv hT\n"
+        ")\n"
+        "namespace Hidden\n"
+        "  registerHidden\n"
+        "end Hidden\n"
+    )
+    cases.append(
+        _Case(
+            "an indented command's minting machinery is caught by token, not position",
+            indented_dsl,
+            True,
+            check="minting_machinery",
+            mutation="preserving",
+        )
+    )
+
+    # The stale-pin direction: the pinned manifest file exists but carries
+    # none of its pinned machinery -- the pin token survives in the gate
+    # while the file relation is broken, and a pin that tolerated the drift
+    # would rot into a standing exemption for whatever machinery returns
+    # under that path.
+    stale_pin = _fixture()
+    stale_pin["SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean"] = (
+        "def phaseManifestPlaceholder : Prop := True\n"
+    )
+    cases.append(
+        _Case(
+            "a pinned file that lost its machinery is a stale pin, not an exemption",
+            stale_pin,
+            True,
+            check="minting_machinery",
+            mutation="preserving",
+        )
+    )
+
+    # A family-shaped token nothing declares: the marker is present and the
+    # relation (resolution to a censused declaration) is broken -- the shape
+    # a DSL invocation naming its minted theorem takes, wherever it sits.
+    ghost_reference = _fixture()
+    ghost_reference["SeLe4n/Kernel/IPC/Invariant/Structural/GhostUser.lean"] = (
+        "theorem ghostConsumer (st st' : SystemState) : True := by\n"
+        "  exact ghost_preserves_ipcInvariantFull st st'\n"
+    )
+    cases.append(
+        _Case(
+            "a family-shaped token with no censused declaration fails to resolve",
+            ghost_reference,
+            True,
+            check="family_references",
+            mutation="preserving",
+        )
+    )
+
+    # A quoted identifier's `)` inside a quotation (PR #886 review): the
+    # balancer read `«x)»`'s paren as the quotation terminator and exposed
+    # the inert template to the census, so syntax data satisfied
+    # `family_nonempty`.  With guillemet interiors neutralised at the
+    # string layer, the template blanks fully and the sole "bundle"
+    # vanishes -- the family census goes honestly empty.
+    quoted_attribute = _fixture()
+    quoted_attribute["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        'macro "declareSendBundle" : command => `(\n'
+        "@[«x)»] theorem endpointSendDual_preserves_ipcInvariantFull\n"
+        "    (st st' : SystemState)\n"
+        "    (hInv : ipcInvariantFull st)\n"
+        "    (hStep : endpointSendDual st = .ok ((), st')) :\n"
+        "    ipcInvariantFull st' := by\n"
+        "  exact sample st st' hInv hStep\n"
+        ")\n"
+    )
+    cases.append(
+        _Case(
+            "a quoted identifier's paren does not terminate a quotation's balance",
+            quoted_attribute,
+            True,
+            check="family_nonempty",
+            mutation="preserving",
+        )
+    )
+
+    # The two accepted guillemet trees, pinning the fix's own fail-closed
+    # edges: a delimiter inside a quoted *binder* must not desynchronise
+    # the binder walkers, and a guillemet-quoted *family name* must keep
+    # its marker (word characters survive neutralisation) or the census
+    # would lose a real declaration.
+    guillemet_binder = _fixture()
+    guillemet_binder["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (st st' : SystemState)\n",
+            "    (st st' : SystemState) («h)note» : True)\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a guillemet identifier with a delimiter inside stays one atomic token",
+            guillemet_binder,
+            False,
+            mutation="none",
+        )
+    )
+
+    guillemet_name = _fixture()
+    guillemet_name["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "theorem endpointSendDual_preserves_ipcInvariantFull\n",
+            "theorem «endpointSendDual_preserves_ipcInvariantFull»\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a guillemet-quoted family name keeps its marker and census seat",
+            guillemet_name,
+            False,
+            mutation="none",
+        )
+    )
+
+    # A non-leading state parameter (PR #886 review, toolchain-verified):
+    # `replyCallerLinkage (enabled : Bool) (st : SystemState)` is the same
+    # nested conjunct with an ordinary parameter in front, and the root
+    # applies it `replyCallerLinkage true st`.  The old collector demanded
+    # the state group immediately after the name and the old application
+    # parse was unary, so the definition -- and through the closure its
+    # clause predicates -- left the derived set: threading
+    # `replyCallerLinkageReciprocal st'` scored clean.
+    nonleading_defs = CLEAN_DEFS.replace(
+        "def replyCallerLinkage (st : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st",
+        "def replyCallerLinkage (enabled : Bool) (st : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st",
+    ).replace(
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st",
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage true st",
+    )
+    nonleading_clause = _fixture()
+    nonleading_clause[DEFS_MODULE] = nonleading_defs
+    nonleading_clause["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hR : replyCallerLinkageReciprocal st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a clause of a non-leading-state parent is still a measured conjunct",
+            nonleading_clause,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # The multi-parameter conjunct itself, bound with the post-state in its
+    # *state* slot: the state is the second explicit argument, so a scan
+    # reading the first would miss `st'` behind the leading `true`.
+    nonleading_slot = _fixture()
+    nonleading_slot[DEFS_MODULE] = nonleading_defs
+    nonleading_slot["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hQ : replyCallerLinkage true st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a non-leading state slot's post-state binding is found at its position",
+            nonleading_slot,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # And the accepted twin: the same hypothesis on the *pre*-state must
+    # stay clean -- a scan that read the first argument would flag the
+    # leading `true` as a bound non-pre-state on perfectly clean code.
+    nonleading_clean = _fixture()
+    nonleading_clean[DEFS_MODULE] = nonleading_defs
+    nonleading_clean["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hOk : replyCallerLinkage true st)\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a non-leading state slot bound on the pre-state stays clean",
+            nonleading_clean,
+            False,
+            mutation="none",
         )
     )
 
