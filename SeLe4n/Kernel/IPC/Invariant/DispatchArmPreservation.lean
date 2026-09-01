@@ -4762,4 +4762,96 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
                       exact hTail stD hObjInvD hInvD hShapeD _ hObjInv2 hInv2 hShape2
                         _ ec _ _ st' sgi hStep
 
+-- ============================================================================
+-- §16  Return-frame staging composites (`Architecture.stage*`)
+-- ============================================================================
+
+/-- Delivery staging is `writeReturnFrameToTcb` or the identity. -/
+theorem stageDeliveredMessage_preserves_ipcInvariantFull
+    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (Architecture.stageDeliveredMessage st tid installedCaps) := by
+  unfold Architecture.stageDeliveredMessage
+  cases st.getTcb? tid with
+  | none => exact hInv
+  | some tcb =>
+      dsimp only []
+      split
+      · cases tcb.pendingMessage with
+        | none => exact hInv
+        | some msg =>
+            exact writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _ hObjInv hInv
+      · exact hInv
+
+/-- Woken-delivery staging: `stageDeliveredMessage` on the woken thread. -/
+theorem stageWokenDelivery_preserves_ipcInvariantFull
+    (st : SystemState) (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (Architecture.stageWokenDelivery st woken? installedCaps) := by
+  cases woken? with
+  | none => exact hInv
+  | some tid =>
+      rw [Architecture.stageWokenDelivery_some]
+      exact stageDeliveredMessage_preserves_ipcInvariantFull st tid installedCaps hObjInv hInv
+
+/-- Send-completion staging: the unit success frame or the identity. -/
+theorem stageWokenSendCompletion_preserves_ipcInvariantFull
+    (st : SystemState) (woken? : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (Architecture.stageWokenSendCompletion st woken?) := by
+  unfold Architecture.stageWokenSendCompletion
+  cases woken? with
+  | none => exact hInv
+  | some tid =>
+      dsimp only []
+      cases st.getTcb? tid with
+      | none => exact hInv
+      | some tcb =>
+          dsimp only []
+          split
+          · exact writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _ hObjInv hInv
+          · exact hInv
+
+/-- Staging never disturbs the object-store invariant: every arm is one TCB
+insert or the identity. -/
+theorem stageDeliveredMessage_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat)
+    (hObjInv : st.objects.invExt) :
+    (Architecture.stageDeliveredMessage st tid installedCaps).objects.invExt := by
+  unfold Architecture.stageDeliveredMessage
+  cases hLk : st.getTcb? tid with
+  | none => exact hObjInv
+  | some tcb =>
+      dsimp only []
+      split
+      · cases tcb.pendingMessage with
+        | none => exact hObjInv
+        | some msg =>
+            unfold Architecture.writeReturnFrameToTcb
+            cases hLk2 : st.getTcb? tid with
+            | none => exact hObjInv
+            | some tcb2 =>
+                exact RHTable_insert_preserves_invExt _ _ _ hObjInv
+      · exact hObjInv
+
+theorem stageWokenSendCompletion_objects_invExt
+    (st : SystemState) (woken? : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) :
+    (Architecture.stageWokenSendCompletion st woken?).objects.invExt := by
+  unfold Architecture.stageWokenSendCompletion
+  cases woken? with
+  | none => exact hObjInv
+  | some tid =>
+      dsimp only []
+      cases st.getTcb? tid with
+      | none => exact hObjInv
+      | some tcb =>
+          dsimp only []
+          split
+          · unfold Architecture.writeReturnFrameToTcb
+            cases st.getTcb? tid with
+            | none => exact hObjInv
+            | some tcb2 => exact RHTable_insert_preserves_invExt _ _ _ hObjInv
+          · exact hObjInv
+
 end SeLe4n.Kernel

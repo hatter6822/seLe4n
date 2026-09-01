@@ -58,6 +58,8 @@ import SeLe4n.Kernel.SchedContext.PriorityManagement
 import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
 import SeLe4n.Kernel.SchedContext.OperationsPerCore
 import SeLe4n.Kernel.IPC.Operations.Donation
+import SeLe4n.Kernel.IPC.Invariant.DispatchArmPreservation
+import SeLe4n.Kernel.SchedContext.BindingAffinity
 
 import SeLe4n.Kernel.Architecture.Adapter
 import SeLe4n.Kernel.Architecture.Invariant
@@ -2310,6 +2312,399 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                 | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   | _ => none
+
+/-- WS-RR RR3.23: the pre-state quiescence facts `dispatchCapabilityOnly`'s
+arms consume, keyed to the decode and capability shapes each arm actually
+resolves.  Every field is a pre-state fact — dischargeable before the step —
+so the payoff theorem below carries no post-state obligation. -/
+private structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
+    (cap : Capability) (st : SystemState) : Prop where
+  bindingBidirectional : schedContextBindingBidirectional st
+  queuedThreadsIdle : unboundQueuedThreadsIdleAllowed st
+  retypeDetached : ∀ args, decodeLifecycleRetypeArgs decoded = .ok args →
+    retypeTargetDetached st args.targetObj
+  boundThreadNotDonationOwner : ∀ args,
+    decodeSchedContextBindArgs decoded = .ok args →
+    ∀ vThreadId, validateThreadIdArg (ThreadId.ofNat args.threadId) = .ok vThreadId →
+    ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
+      st.objects[s.toObjId]? = some (.tcb sTcb) →
+      sTcb.schedContextBinding ≠ .donated sc0 vThreadId.val
+  unbindBoundThreadPassive : ∀ (scObj : SeLe4n.ObjId), cap.target = .object scObj →
+    ∀ vScId, validateObjIdArg scObj = .ok vScId →
+    ∀ (scX : SeLe4n.Kernel.SchedContext) (t : SeLe4n.ThreadId) (tcbX : TCB),
+      st.objects[(SchedContextId.ofObjId vScId.val).toObjId]? = some (.schedContext scX) →
+      scX.boundThread = some t →
+      st.objects[t.toObjId]? = some (.tcb tcbX) →
+      passiveServerIdleAllowed tcbX.ipcState
+  targetThreadQuiescent : ∀ (objId : SeLe4n.ObjId), cap.target = .object objId →
+    ∀ vtid, validateThreadIdArg (ThreadId.ofNat objId.toNat) = .ok vtid →
+    threadIpcFieldsQuiescent st vtid.val
+
+/-- WS-RR RR3.23 (**the capability-only dispatch payoff**): every syscall
+`dispatchCapabilityOnly` routes preserves `ipcInvariantFull`, over the
+RR3.15–RR3.21 per-arm bundles.  The hypotheses are the object-store invariant,
+the bundle itself, and the pre-state quiescence pack — nothing is bound on the
+post-state. -/
+theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
+    (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
+    (k : Kernel Unit) (st st' : SystemState)
+    (hArm : dispatchCapabilityOnly decoded cap tid = some k)
+    (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st)
+    (hPack : capabilityDispatchQuiescence decoded cap st)
+    (hStep : k st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold dispatchCapabilityOnly at hArm
+  cases hSy : decoded.syscallId <;> simp only [hSy] at hArm <;> try cases hArm
+  case cspaceDelete =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object cnodeId =>
+      try dsimp only [] at hStep
+      cases hDec : decodeCSpaceDeleteArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          exact cspaceDeleteSlot_preserves_ipcInvariantFull st st' _ hObjInv hInv hStep
+    all_goals try cases hStep
+  case mintReplyCap =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object cnodeId =>
+      try dsimp only [] at hStep
+      cases hDec : decodeCSpaceCopyArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          exact mintReplyCapWithCdt_preserves_ipcInvariantFull st st' _ _ hObjInv hInv hStep
+    all_goals try cases hStep
+  case lifecycleRetype =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object oid =>
+      try dsimp only [] at hStep
+      cases hDec : decodeLifecycleRetypeArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          exact lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_ipcInvariantFull
+            st st' _ cap args.targetObj _ hObjInv
+            (objectOfKernelType_replacementFresh args.newType args.size)
+            (hPack.retypeDetached args hDec) hInv hStep
+    all_goals try cases hStep
+  case vspaceMap =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object oid =>
+      try dsimp only [] at hStep
+      cases hDec : decodeVSpaceMapArgsChecked decoded st.machine.maxASID
+          (2^st.machine.physicalAddressWidth) with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          split at hStep
+          · cases hStep
+          · cases hPerm : validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
+            | error e => simp only [hPerm] at hStep; cases hStep
+            | ok validatedArgs =>
+                simp only [hPerm] at hStep
+                exact vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_ipcInvariantFull
+                  st st' _ _ _ _ _ hObjInv hInv hStep
+    all_goals try cases hStep
+  case vspaceUnmap =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object oid =>
+      try dsimp only [] at hStep
+      cases hDec : decodeVSpaceUnmapArgs decoded st.machine.maxASID with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          split at hStep
+          · cases hStep
+          · exact vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_ipcInvariantFull
+              st st' _ _ _ hObjInv hInv hStep
+    all_goals try cases hStep
+  case vspaceUnifyInstruction =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object oid =>
+      try dsimp only [] at hStep
+      cases hDec : decodeVSpaceUnifyInstructionArgs decoded st.machine.maxASID with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          split at hStep
+          · cases hStep
+          · exact vspaceUnifyInstructionPage_preserves_ipcInvariantFull hInv hStep
+    all_goals try cases hStep
+  case serviceRevoke =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object oid =>
+      try dsimp only [] at hStep
+      cases hDec : decodeServiceRevokeArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          exact revokeService_preserves_ipcInvariantFull st st' _ hInv hStep
+    all_goals try cases hStep
+  case serviceQuery =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object epId =>
+      try dsimp only [] at hStep
+      cases hLkS : lookupServiceByCap epId st with
+      | error e => simp only [hLkS] at hStep; cases hStep
+      | ok pair =>
+          obtain ⟨reg, st1⟩ := pair
+          simp only [hLkS] at hStep
+          have hStEq : st1 = st := lookupServiceByCap_preserves_state epId st reg st1 hLkS
+          subst hStEq
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+          subst hStep
+          exact writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _ hObjInv hInv
+    all_goals try cases hStep
+  case schedContextConfigure =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object scId =>
+      try dsimp only [] at hStep
+      cases hDec : decodeSchedContextConfigureArgsChecked decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          cases hVal : validateObjIdArg scId with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vScId =>
+              simp only [hVal] at hStep
+              exact schedContextConfigure_preserves_ipcInvariantFull st st' vScId _ _ _ _ _
+                hObjInv hInv hStep
+    all_goals try cases hStep
+  case schedContextBind =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object scId =>
+      try dsimp only [] at hStep
+      cases hDec : decodeSchedContextBindArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          cases hVal : validateObjIdArg scId with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vScId =>
+              simp only [hVal] at hStep
+              cases hValT : validateThreadIdArg (ThreadId.ofNat args.threadId) with
+              | error e => simp only [hValT] at hStep; cases hStep
+              | ok vThreadId =>
+                  simp only [hValT] at hStep
+                  exact schedContextBind_preserves_ipcInvariantFull st st' vScId vThreadId
+                    hObjInv hInv hPack.bindingBidirectional
+                    (hPack.boundThreadNotDonationOwner args hDec vThreadId hValT) hStep
+    all_goals try cases hStep
+  case schedContextUnbind =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object scId =>
+      try dsimp only [] at hStep
+      cases hDec : decodeSchedContextUnbindArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          cases hVal : validateObjIdArg scId with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vScId =>
+              simp only [hVal] at hStep
+              cases hUn : SchedContextOps.schedContextUnbindOnCore vScId
+                  (determineExecutingCore st tid) st with
+              | error e => simp only [hUn] at hStep; cases hStep
+              | ok pair =>
+                  obtain ⟨stU, sgiU⟩ := pair
+                  simp only [hUn] at hStep
+                  cases hStep
+                  exact schedContextUnbindOnCore_preserves_ipcInvariantFull st st' vScId _
+                    sgiU hObjInv hInv
+                    (hPack.unbindBoundThreadPassive scId hTgt vScId hVal)
+                    (fun stMid h => schedContextUnbind_preserves_objects_invExt vScId st
+                      stMid hObjInv h)
+                    hUn
+    all_goals try cases hStep
+  case tcbBindNotification =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object tcbObjId =>
+      try dsimp only [] at hStep
+      cases hDec : decodeTcbBindNotificationArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          cases hCaller : st.getTcb? tid with
+          | none => simp only [hCaller] at hStep; cases hStep
+          | some callerTcb =>
+              simp only [hCaller] at hStep
+              cases hRoot : st.getCNode? callerTcb.cspaceRoot with
+              | none => simp only [hRoot] at hStep; cases hStep
+              | some rootCn =>
+                  simp only [hRoot] at hStep
+                  try dsimp only [] at hStep
+                  cases hCap2 : syscallLookupCap { callerId := tid, cspaceRoot := callerTcb.cspaceRoot, capAddr := SeLe4n.CPtr.ofNat args.notificationCPtr, capDepth := rootCn.depth, requiredRight := .write } st with
+                  | error e => simp only [hCap2] at hStep; cases hStep
+                  | ok pair =>
+                      obtain ⟨ntfnCap, stL⟩ := pair
+                      simp only [hCap2] at hStep
+                      cases hNT : ntfnCap.target with
+                      | object notifId =>
+                          simp only [hNT] at hStep
+                          exact bindNotification_preserves_ipcInvariantFull st st' notifId _
+                            hObjInv hInv hStep
+                      | _ => simp only [hNT] at hStep; cases hStep
+    all_goals try cases hStep
+  case tcbUnbindNotification =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object tcbObjId =>
+      try dsimp only [] at hStep
+      cases hUn : unbindNotification (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st with
+      | error e => simp only [hUn] at hStep; cases hStep
+      | ok pair =>
+          obtain ⟨u, stU⟩ := pair; cases u
+          simp only [hUn] at hStep
+          cases hStep
+          exact unbindNotification_preserves_ipcInvariantFull st st' _ hObjInv hInv hUn
+    all_goals try cases hStep
+  case tcbSuspend =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object objId =>
+      try dsimp only [] at hStep
+      cases hDec : decodeSuspendArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          cases hVal : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vtid =>
+              simp only [hVal] at hStep
+              cases hSus : Lifecycle.Suspend.suspendThreadOnCore st vtid
+                  (determineExecutingCore st tid) with
+              | error e => simp only [hSus] at hStep; cases hStep
+              | ok pair =>
+                  obtain ⟨stU, sgiU⟩ := pair
+                  simp only [hSus] at hStep
+                  cases hStep
+                  exact suspendThreadOnCore_preserves_ipcInvariantFull st st' vtid _ sgiU
+                    hObjInv (hPack.targetThreadQuiescent objId hTgt vtid hVal)
+                    hPack.bindingBidirectional hInv hSus
+    all_goals try cases hStep
+  case tcbResume =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object objId =>
+      try dsimp only [] at hStep
+      cases hDec : decodeResumeArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          cases hVal : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+      | error e => simp only [hVal] at hStep; cases hStep
+      | ok vtid =>
+          simp only [hVal] at hStep
+          cases hRes : Lifecycle.Suspend.resumeThreadOnCoreLive st vtid
+              (determineExecutingCore st tid) with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok pair =>
+              obtain ⟨stU, sgiU⟩ := pair
+              simp only [hRes] at hStep
+              cases hStep
+              exact resumeThreadOnCoreLive_preserves_ipcInvariantFull st st' vtid _ sgiU
+                hObjInv (hPack.targetThreadQuiescent objId hTgt vtid hVal) hInv hRes
+    all_goals try cases hStep
+  case tcbSetPriority =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object objId =>
+      try dsimp only [] at hStep
+      cases hDec : decodeSetPriorityArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          cases hValC : validateThreadIdArg tid with
+          | error e => simp only [hValC] at hStep; cases hStep
+          | ok vCallerTid =>
+              simp only [hValC] at hStep
+              cases hValT : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+              | error e => simp only [hValT] at hStep; cases hStep
+              | ok vTargetTid =>
+                  simp only [hValT] at hStep
+                  cases hSet : SchedContext.PriorityManagement.setPriorityOnCore st
+                      vCallerTid vTargetTid (Priority.ofNat args.newPriority)
+                      (determineExecutingCore st tid) with
+                  | error e => simp only [hSet] at hStep; cases hStep
+                  | ok pair =>
+                      obtain ⟨stU, sgiU⟩ := pair
+                      simp only [hSet] at hStep
+                      cases hStep
+                      exact setPriorityOnCore_preserves_ipcInvariantFull st st' vCallerTid
+                        vTargetTid _ _ sgiU hObjInv hInv hSet
+    all_goals try cases hStep
+  case tcbSetMCPriority =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object objId =>
+      try dsimp only [] at hStep
+      cases hDec : decodeSetMCPriorityArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          cases hValC : validateThreadIdArg tid with
+          | error e => simp only [hValC] at hStep; cases hStep
+          | ok vCallerTid =>
+              simp only [hValC] at hStep
+              cases hValT : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+              | error e => simp only [hValT] at hStep; cases hStep
+              | ok vTargetTid =>
+                  simp only [hValT] at hStep
+                  cases hSet : SchedContext.PriorityManagement.setMCPriorityOnCore st
+                      vCallerTid vTargetTid (Priority.ofNat args.newMCP)
+                      (determineExecutingCore st tid) with
+                  | error e => simp only [hSet] at hStep; cases hStep
+                  | ok pair =>
+                      obtain ⟨stU, sgiU⟩ := pair
+                      simp only [hSet] at hStep
+                      cases hStep
+                      exact setMCPriorityOnCore_preserves_ipcInvariantFull st st' vCallerTid
+                        vTargetTid _ _ sgiU hObjInv hInv hSet
+    all_goals try cases hStep
+  case tcbSetIPCBuffer =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object objId =>
+      try dsimp only [] at hStep
+      cases hDec : decodeSetIPCBufferArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          cases hVal : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vtid =>
+              simp only [hVal] at hStep
+              cases hSet : Architecture.IpcBufferValidation.setIPCBufferOp st vtid
+                  args.bufferAddr with
+              | error e => simp only [hSet] at hStep; cases hStep
+              | ok stU =>
+                  simp only [hSet] at hStep
+                  cases hStep
+                  exact setIPCBufferOp_preserves_ipcInvariantFull st st' vtid _
+                    hObjInv hInv hSet
+    all_goals try cases hStep
+  case tcbSetAffinity =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object objId =>
+      try dsimp only [] at hStep
+      cases hDec : Architecture.SyscallArgDecode.decodeSetAffinityArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          cases hVal : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vtid =>
+              simp only [hVal] at hStep
+              cases hAff : decodeAffinity args.affinityRaw with
+              | error e => simp only [hAff] at hStep; cases hStep
+              | ok affinity =>
+                  simp only [hAff] at hStep
+                  cases hSet : setThreadCpuAffinityOnCore st vtid affinity
+                      (determineExecutingCore st tid) with
+                  | error e => simp only [hSet] at hStep; cases hStep
+                  | ok pair =>
+                      obtain ⟨stU, sgiU⟩ := pair
+                      simp only [hSet] at hStep
+                      cases hStep
+                      exact setThreadCpuAffinityOnCore_preserves_ipcInvariantFull st st'
+                        vtid affinity _ sgiU hObjInv hInv hPack.queuedThreadsIdle hSet
+    all_goals try cases hStep
 
 /-- WS-J1-C/K-C/K-D: Dispatch a decoded syscall to the appropriate internal
 kernel operation using the resolved capability's target. Called after cap
