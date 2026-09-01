@@ -315,7 +315,7 @@ inventory was written:
 
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (production) — `resolveFaultHandler`
   (the `TCB.faultHandler` CPtr resolved through the thread's own CSpace, gated
-  on **both** `.write` and `.grant`, seL4's send + grant/grantReply gate),
+  on seL4's `sendFaultIPC` predicate — send, and grant **or** grant-reply),
   `faultMessage`, the `FaultDisposition` pair, and the state writes
   `recordPendingFault` / `faultSuspend` / `faultAbandon` / `applyFaultRestart`.
 - `SeLe4n/Kernel/IPC/CrossCore/Fault.lean` (production) — `faultDeliverOnCore`

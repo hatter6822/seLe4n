@@ -80,6 +80,9 @@ open SeLe4n.Testing
 -- RR4.7–RR4.11: resolution, rights, message, dispositions, delivery.
 #check @faultHandlerRights
 #check @faultHandlerCapAuthorized
+#check @faultHandlerCapAuthorized_iff
+#check @faultHandlerCapAuthorized_false_of_no_send
+#check @faultHandlerCapAuthorized_false_of_no_grant
 #check @resolveFaultHandler
 #check @resolveFaultHandler_authorized
 #check @resolveFaultHandler_names_endpoint
@@ -122,6 +125,14 @@ open SeLe4n.Testing
 #check @faultEntryStep
 #check @faultEntry
 #check @faultEntryStep_not_dispatchable
+-- Audit round: the trap-frame window the entry spills, and the ABI v3 label range.
+#check @SeLe4n.Model.FaultRegisterWindow
+#check @SeLe4n.Model.FaultRegisterWindow.spill
+#check @SeLe4n.Model.FaultRegisterWindow.ofRegisterFile_spill
+#check @writeFaultRegistersToTcb
+#check @faultContextOfThread_writeFaultRegistersToTcb
+#check @errorLabelBase
+#check @faultLabel_lt_errorLabelBase
 
 -- ============================================================================
 -- §2  Elaboration-time witnesses (headline theorems applied to typed inputs)
@@ -152,13 +163,25 @@ example (lctx : LabelingContext) (st : SystemState) (tid : SeLe4n.ThreadId)
       ≠ some tid :=
   faultDeliverOnCoreChecked_denied_not_runnable lctx st tid f fctx bootCoreId tgt hRes hDeny
 
-/-- RR4.8: a resolved handler capability carries send **and** grant — the
-second is what lets the handler reply, and without it the faulting thread
-would block on a message it could never have answered. -/
+/-- RR4.8: a resolved handler capability carries send **and** one of the two
+grant rights — seL4's `sendFaultIPC` predicate, over the result. -/
 example (st : SystemState) (tid : SeLe4n.ThreadId) (tgt : FaultHandlerTarget)
     (hOk : resolveFaultHandler st tid = .ok tgt) :
-    tgt.cap.hasRight .write = true ∧ tgt.cap.hasRight .grant = true :=
+    tgt.cap.hasRight .write = true ∧
+      (tgt.cap.hasRight .grant = true ∨ tgt.cap.hasRight .grantReply = true) :=
   resolveFaultHandler_authorized st tid tgt hOk
+
+/-- Audit round (ABI v3): a fault message's label is a delivery label, never a
+kernel-status one — a handler's decoder reads a successful receive. -/
+example (f : Fault) : faultLabel f < errorLabelBase :=
+  faultLabel_lt_errorLabelBase f
+
+/-- Audit round: the context the fault entry delivers is the trap frame's
+window, not the register mirror's stale contents. -/
+example (st : SystemState) (tid : SeLe4n.ThreadId) (w : FaultRegisterWindow) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) (hObjInv : st.objects.invExt) (ip spsr : UInt64) :
+    (faultContextOfThread (writeFaultRegistersToTcb st tid w) tid ip spsr).sp = w.sp :=
+  by rw [faultContextOfThread_writeFaultRegistersToTcb st tid w tcb hTcb hObjInv ip spsr]
 
 /-- RR4.21: a data abort no longer *returns* a VM fault to the thread that
 took it — it delivers one, and the thread is not dispatchable afterwards. -/
@@ -195,15 +218,23 @@ private def faulter : SeLe4n.ThreadId := ⟨1121⟩
 private def handler : SeLe4n.ThreadId := ⟨1122⟩
 private def orphan : SeLe4n.ThreadId := ⟨1123⟩
 private def weak : SeLe4n.ThreadId := ⟨1124⟩
+/-- A second client on core 0 whose handler capability carries send and
+**grant-reply** (no full grant) — the idiomatic seL4 fault-handler shape. -/
+private def grantReplyFaulter : SeLe4n.ThreadId := ⟨1125⟩
 private def replyH : SeLe4n.ReplyId := ⟨1131⟩
 
 /-- Slot 0 of the root CNode: the fault-handler capability, carrying send
-(`.write`) and grant — the two rights `faultHandlerRights` demands. -/
+(`.write`) and grant — one satisfying shape of `faultHandlerCapAuthorized`. -/
 private def handlerCPtr : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 0
 /-- Slot 1: the **same endpoint**, read-only.  A thread pointed here has a
 resolvable handler that is refused on rights alone, which is the negative that
 distinguishes "no handler" from "an unusable one". -/
 private def weakCPtr : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 1
+/-- Slot 2: the same endpoint with send and **grant-reply** only —
+`seL4_CapRights_new(0, 1, 0, 1)`, the shape seL4 documents for a fault
+handler, which withholds full grant.  seL4's `sendFaultIPC` admits it; a
+send-and-grant reading refused it. -/
+private def grantReplyCPtr : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 2
 
 private def rootCnode : CNode :=
   { depth := 2
@@ -218,7 +249,11 @@ private def rootCnode : CNode :=
       (SeLe4n.Slot.ofNat 1,
         { target := .object epHandler
           rights := AccessRightSet.ofList [.read]
-          badge := none })
+          badge := none }),
+      (SeLe4n.Slot.ofNat 2,
+        { target := .object epHandler
+          rights := AccessRightSet.ofList [.write, .grantReply]
+          badge := some (SeLe4n.Badge.ofNat 9) })
     ] }
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId)
@@ -240,10 +275,13 @@ private def stFault : SystemState :=
       |>.withObject handler.toObjId (.tcb (mkTcb 1122 50 (some c1) none))
       |>.withObject orphan.toObjId (.tcb (mkTcb 1123 40 (some c2) none))
       |>.withObject weak.toObjId (.tcb (mkTcb 1124 40 (some c3) (some weakCPtr)))
+      |>.withObject grantReplyFaulter.toObjId
+          (.tcb (mkTcb 1125 30 none (some grantReplyCPtr)))
       |>.withObject replyH.toObjId (.reply { replyId := replyH })
       |>.build)
   { base with scheduler :=
-      ((((base.scheduler.setRunQueueOnCore c0 (RunQueue.ofList [(faulter, ⟨40⟩)])).setRunQueueOnCore
+      ((((base.scheduler.setRunQueueOnCore c0
+            (RunQueue.ofList [(faulter, ⟨40⟩), (grantReplyFaulter, ⟨30⟩)])).setRunQueueOnCore
         c1 (RunQueue.ofList [(handler, ⟨50⟩)])).setRunQueueOnCore
         c2 (RunQueue.ofList [(orphan, ⟨40⟩)])).setRunQueueOnCore
         c3 (RunQueue.ofList [(weak, ⟨40⟩)])) }
@@ -411,6 +449,43 @@ private def runResolutionChecks : IO Unit := do
     (resolveErr stRunning weak == some .illegalAuthority)
   assertBool "a thread that is not a TCB does not resolve"
     (resolveErr stRunning ⟨1199⟩ == some .objectNotFound)
+  -- Audit round (RR4.8): the gate is seL4's `sendFaultIPC` predicate — send,
+  -- and grant OR grant-reply.  The idiomatic handler capability withholds full
+  -- grant and carries grant-reply; a send-and-grant reading refused it.
+  let capWith (rs : List AccessRight) : Capability :=
+    { target := .object epHandler, rights := AccessRightSet.ofList rs }
+  assertBool "send + grant-reply is an authorised fault-handler capability"
+    (faultHandlerCapAuthorized (capWith [.write, .grantReply]))
+  assertBool "send + grant is authorised too"
+    (faultHandlerCapAuthorized (capWith [.write, .grant]))
+  assertBool "send alone is refused — the handler could not be handed reply authority"
+    (!faultHandlerCapAuthorized (capWith [.write]))
+  assertBool "grant + grant-reply without send is refused — nothing could be delivered"
+    (!faultHandlerCapAuthorized (capWith [.grant, .grantReply]))
+  assertBool "read alone is refused" (!faultHandlerCapAuthorized (capWith [.read]))
+  match resolveFaultHandler stRunning grantReplyFaulter with
+  | .ok tgt =>
+      assertBool "a send + grant-reply handler capability resolves through the CSpace"
+        (tgt.endpoint == epHandler && tgt.cap.badge == some (SeLe4n.Badge.ofNat 9))
+      assertBool "…and it is the grant-reply right, not grant, that admitted it"
+        (tgt.cap.hasRight .grantReply && !tgt.cap.hasRight .grant)
+  | .error e =>
+      assertBool s!"the grant-reply handler must resolve (got {repr e})" false
+  -- …and the delivery through such a capability works end to end: the Call
+  -- chain links the reply structurally, so withholding full grant costs the
+  -- handler nothing it needs.
+  match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+  | (stRecv, .ok _) =>
+      let fctxG := faultContextOfThread stRecv grantReplyFaulter 0x4_0100 0x3C0
+      let (stG, resG) := faultDeliverOnCore stRecv grantReplyFaulter theFault fctxG c0
+      assertBool "a fault delivered through a send + grant-reply capability reaches the handler"
+        (resG.disposition == .delivered epHandler)
+      assertBool "…and the reply object links the faulting thread as its caller"
+        ((stG.getReply? replyH).bind (·.caller) == some grantReplyFaulter)
+      assertBool "…carrying that capability's own badge"
+        ((deliveredMessageOf stG handler).bind (·.badge) == some (SeLe4n.Badge.ofNat 9))
+  | (_, .error e) =>
+      assertBool s!"handler recv must succeed (got {repr e})" false
 
 -- ============================================================================
 -- §6  Delivery across cores (RR4.11 / RR4.12) and the fail-closed path (RR4.9)
@@ -567,6 +642,13 @@ private def overrideDenyingCtx : LabelingContext :=
       { endpointPolicy := fun oid =>
           if oid == epHandler then some { canFlow := fun _ _ => false } else none } }
 
+/-- The fault window the trap frame carries into the entry — values chosen to
+differ from every register the fixture's TCB mirror holds (`gpr r = r * 100`,
+`x30 = 0xF00D`, `sp = 0x7000`), so a context built from the mirror instead of
+the window is distinguishable at every word. -/
+private def trapWindow : FaultRegisterWindow :=
+  { gprs := #[0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18], sp := 0x7770, lr := 0xBEEF }
+
 private def runFlowGateChecks : IO Unit := do
   IO.println "--- §6c the flow gate on the live delivery (RR4.20) ---"
   let fctx := faultContextOfThread stRunning faulter 0x4_0000 0x3C0
@@ -624,7 +706,7 @@ private def runFlowGateChecks : IO Unit := do
   assertBool "pre-state: the faulting thread is current on core 0 and not yet .Inactive"
     (stRunning.scheduler.currentOnCore c0 == some faulter &&
      threadStateOf stRunning faulter != some .Inactive)
-  let (sgisD, stD) := faultEntryStep latticeDenyingCtx stRunning dataAbortCtx 0
+  let (sgisD, stD) := faultEntryStep latticeDenyingCtx stRunning dataAbortCtx trapWindow 0
   assertBool "the live fault entry applies the flow gate: a denied fault fires no SGI"
     (sgisD.isEmpty)
   assertBool "the live fault entry's denied arm suspends the faulting thread"
@@ -636,7 +718,7 @@ private def runFlowGateChecks : IO Unit := do
   -- …and the gate is not a no-op: the same syndrome under a permitting context
   -- takes the delivery arm, which parks the faulter awaiting the handler rather
   -- than deactivating it.
-  let (_, stA) := faultEntryStep permissiveCtx stRunning dataAbortCtx 0
+  let (_, stA) := faultEntryStep permissiveCtx stRunning dataAbortCtx trapWindow 0
   assertBool "under a permitting context the same entry delivers instead of suspending"
     (threadStateOf stA faulter != some .Inactive &&
      (ipcStateOf stA faulter).isSome && ipcStateOf stA faulter != ipcStateOf stRunning faulter)
@@ -645,10 +727,7 @@ private def runFlowGateChecks : IO Unit := do
   assertBool "but both arms honour RR4.19: the faulting thread is undispatchable either way"
     (!dispatchableOn stA faulter c0 && !dispatchableOn stD faulter c0)
 
--- ============================================================================
--- §7  Reply-based resume and restart (RR4.14 / RR4.15 / RR4.16)
--- ============================================================================
-
+-- The reply shapes §6d-§7c share.
 /-- A payload-free, label-`0` reply: the ordinary VM-fault answer, "I mapped
 the page, retry". -/
 private def resumeInfo : MessageInfo := { length := 0, extraCaps := 0, label := 0 }
@@ -663,6 +742,157 @@ private def restartRegs : Array SeLe4n.RegValue :=
     else SeLe4n.RegValue.ofNat (0xA0 + i))               -- x0..x7 and the syscall word
 /-- A **nonzero**-label reply: the handler's "do not continue". -/
 private def abandonInfo : MessageInfo := { length := 13, extraCaps := 0, label := 1 }
+
+-- ============================================================================
+-- §6d  The other ordering: the fault arrives before the handler receives
+-- ============================================================================
+
+/-- The queued-fault pipeline: the faulter takes its abort on core 0 while the
+handler is still *running* on core 1 (no receiver waiting), so the fault Call
+parks on the endpoint's send queue; the handler then receives it, and answers.
+The delivered pipeline (§6) covers only the receiver-waiting rendezvous; a
+handler loop that is busy when its client faults is the common case, and the
+message — its `seL4_Fault_tag` label above all — has to survive the queue. -/
+private structure QueuedDelivery where
+  afterFault : SystemState
+  result : FaultDeliveryResult
+  afterRecv : SystemState
+  afterReply : SystemState
+  outcome : FaultReplyOutcome
+
+private def queuedDeliveryE : Except String QueuedDelivery := do
+  let fctx := faultContextOfThread stRunning faulter dataAbortCtx.elr dataAbortCtx.spsr
+  let (afterFault, result) := faultDeliverOnCore stRunning faulter theFault fctx c0
+  let (afterRecv, _) ← stepPair "step2: handler recv on core 1 (dequeues the fault)"
+    (endpointReceiveDualOnCore epHandler handler (some replyH) c1 afterFault)
+  let (afterReply, outcome) ←
+    match faultReplyOnCore handler faulter resumeInfo #[] c1 afterRecv with
+    | (st, .ok (o, _)) => .ok (st, o)
+    | (_, .error e) => .error s!"step3: handler reply: {repr e}"
+  pure { afterFault := afterFault, result := result, afterRecv := afterRecv,
+         afterReply := afterReply, outcome := outcome }
+
+private def queuedDelivery? : Option QueuedDelivery := queuedDeliveryE.toOption
+
+private def runQueuedDeliveryChecks : IO Unit := do
+  IO.println "--- §6d fault queued ahead of the handler's receive ---"
+  match queuedDeliveryE with
+  | .error e => assertBool s!"queued pipeline: {e}" false
+  | .ok q =>
+      assertBool "pre: no receiver is waiting when the fault is taken"
+        (ipcStateOf stRunning handler == some .ready)
+      assertBool "the fault is still 'delivered' — it is queued on the handler endpoint"
+        (q.result.disposition == .delivered epHandler)
+      assertBool "no receiver was woken, so the delivery surfaces no SGI"
+        (q.result.sgi == none)
+      assertBool "the queued faulter is blocked on the endpoint as a Call sender"
+        (ipcStateOf q.afterFault faulter == some (.blockedOnCall epHandler))
+      assertBool "the queued faulter carries its fault while it waits"
+        ((pendingFaultOf q.afterFault faulter).isSome)
+      assertBool "the queued faulter is not dispatchable on the core it faulted on"
+        (!dispatchableOn q.afterFault faulter c0)
+      assertBool "the handler is untouched until it asks"
+        (deliveredMessageOf q.afterFault handler == none)
+      -- The receive dequeues the fault: the message the handler gets is the
+      -- one the kernel built, label included.
+      assertBool "the handler's receive dequeues the fault message"
+        ((deliveredMessageOf q.afterRecv handler).isSome)
+      assertBool "the dequeued message's label is the fault's seL4_Fault_tag"
+        ((deliveredMessageOf q.afterRecv handler).map (·.label) == some (faultLabel theFault))
+      assertBool "the dequeued message's registers are the encoded fault"
+        ((deliveredMessageOf q.afterRecv handler).map (·.registers) ==
+          some (faultMessage theFault
+            (faultContextOfThread stRunning faulter dataAbortCtx.elr dataAbortCtx.spsr)
+            (some (SeLe4n.Badge.ofNat 7))).registers)
+      assertBool "the dequeued faulter now awaits the handler's reply"
+        (ipcStateOf q.afterRecv faulter == some (.blockedOnReply epHandler (some handler)))
+      assertBool "the reply object links the dequeued faulter as its caller"
+        ((q.afterRecv.getReply? replyH).bind (·.caller) == some faulter)
+      -- …and the reply resumes it exactly as in the rendezvous ordering.
+      assertBool "the handler's reply resumes the queued faulter at the faulting instruction"
+        (q.outcome.restartPC? == some dataAbortCtx.elr &&
+          savedPcOf q.afterReply faulter == some dataAbortCtx.elr.toNat)
+      assertBool "the resumed faulter is ready and its fault retired"
+        (ipcStateOf q.afterReply faulter == some .ready &&
+          pendingFaultOf q.afterReply faulter == none)
+
+-- ============================================================================
+-- §6e  The entry delivers the trap frame's window and every cross-core poke
+-- ============================================================================
+
+/-- A PC-alignment fault: EC 0x22, a `userException` whose message reports
+`SP_EL0` at MR1 — the word that distinguishes a context built from the trap
+frame from one built off the stale mirror. -/
+private def pcAlignCtx : ExceptionContext :=
+  { esr := UInt64.ofNat (0x22 <<< 26), elr := 0x4_0004, spsr := 0x3C0, far := 0 }
+
+private def runEntryWindowChecks : IO Unit := do
+  IO.println "--- §6e the live entry spills the trap frame's window (audit round) ---"
+  match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+  | (_, .error e) => assertBool s!"handler recv must succeed (got {repr e})" false
+  | (stRecv, .ok _) =>
+      -- The control: what the mirror holds is NOT what the trap frame carries,
+      -- so a context read off the mirror is distinguishable at every word.
+      let stale := faultContextOfThread stRecv faulter pcAlignCtx.elr pcAlignCtx.spsr
+      assertBool "control: the register mirror's sp/lr/x0..x7 differ from the trap window"
+        (stale.sp != trapWindow.sp && stale.lr != trapWindow.lr &&
+          (List.range 8).all (fun i => stale.gprAt i != trapWindow.gprAt i))
+      let (sgis, stE) := faultEntryStep permissiveCtx stRecv pcAlignCtx trapWindow 0
+      assertBool "the entry delivers the alignment fault"
+        (ipcStateOf stE faulter == some (.blockedOnReply epHandler (some handler)))
+      -- The recorded context is the window, word for word.
+      let expectedCtx : FaultContext :=
+        { faultIP := pcAlignCtx.elr, sp := trapWindow.sp, lr := trapWindow.lr,
+          spsr := pcAlignCtx.spsr, gprs := trapWindow.gprs }
+      assertBool "the recorded fault context is the trap frame's window, not the mirror's"
+        ((pendingFaultOf stE faulter).map (·.context) == some expectedCtx)
+      assertBool "the delivered message's MR1 (SP_EL0) is the trap frame's stack pointer"
+        ((deliveredMessageOf stE handler).map (fun m => wordAt m.registers 1) ==
+          some trapWindow.sp)
+      assertBool "the delivered message's MR0 is the restart PC from ELR_EL1"
+        ((deliveredMessageOf stE handler).map (fun m => wordAt m.registers 0) ==
+          some pcAlignCtx.elr)
+      -- The spill also fixes the mirror, so the SVC seam's partial spill is
+      -- overwritten with the fault-time values.
+      assertBool "the faulter's saved x0..x7, sp and lr are now the trap frame's"
+        ((List.range 8).all (fun i =>
+            (stE.getTcb? faulter).map (·.registerContext.gpr ⟨i⟩ |>.val) ==
+              some (trapWindow.gprAt i).toNat) &&
+          (stE.getTcb? faulter).map (·.registerContext.sp.val) == some trapWindow.sp.toNat &&
+          (stE.getTcb? faulter).map (·.registerContext.gpr ⟨30⟩ |>.val) ==
+            some trapWindow.lr.toNat)
+      assertBool "…while the mirror's other registers are untouched"
+        ((stE.getTcb? faulter).map (·.registerContext.gpr ⟨9⟩ |>.val) == some 900)
+      -- The pokes come from the state diff, exactly as the syscall seam
+      -- derives them: the handler woken on core 1 is a `.reschedule` to core 1.
+      assertBool "the entry fires the .reschedule poke the handler's wake requires"
+        (sgis == [(c1, SgiKind.reschedule)])
+      assertBool "…and it is the same list the syscall seam's diff would derive"
+        (sgis == PriorityInheritance.computeCrossCoreSgis stRecv stE c0)
+      -- A resume reply reinstalls the window the thread actually had, not the
+      -- last syscall's arguments: the defect the spill closes.
+      match faultReplyOnCore handler faulter resumeInfo #[] c1 stE with
+      | (stR, .ok (outcome, _)) =>
+          assertBool "the resume restarts at the aligned-fault PC"
+            (outcome.restartPC? == some pcAlignCtx.elr)
+          assertBool "the resume reinstalls the trap frame's x0..x7 — not the stale mirror"
+            ((List.range 8).all (fun i =>
+              (stR.getTcb? faulter).map (·.registerContext.gpr ⟨i⟩ |>.val) ==
+                some (trapWindow.gprAt i).toNat))
+          assertBool "the resume reinstalls the trap frame's sp and lr"
+            ((stR.getTcb? faulter).map (·.registerContext.sp.val) == some trapWindow.sp.toNat &&
+              (stR.getTcb? faulter).map (·.registerContext.gpr ⟨30⟩ |>.val) ==
+                some trapWindow.lr.toNat)
+      | (_, .error e) =>
+          assertBool s!"the resume reply must succeed (got {repr e})" false
+      -- The entry's progress guarantee holds on the spilled state too.
+      assertBool "the entry leaves the faulter undispatchable on core 0"
+        (!dispatchableOn stE faulter c0)
+
+-- ============================================================================
+-- §7  Reply-based resume and restart (RR4.14 / RR4.15 / RR4.16)
+-- ============================================================================
+
 
 private def runResumeChecks : IO Unit := do
   IO.println "--- §7 reply-based resume (RR4.14) ---"
@@ -890,7 +1120,30 @@ private def faultTraceLines : List String :=
       ] ++ resume ++
       [ traceLine s!"faulter resumes with saved pc {repr (savedPcOf resumeState faulter)}"
       , traceLine s!"faulter outstanding fault after reply = {repr (pendingFaultOf resumeState faulter |>.isSome)}"
-      ]
+      ] ++ queuedLines ++ windowLines
+where
+  /-- The queued ordering (§6d): the fault parks on the endpoint until the
+  handler asks, and the label survives the queue. -/
+  queuedLines : List String :=
+    match queuedDelivery? with
+    | none => [traceLine "QUEUED PIPELINE FAILED"]
+    | some q =>
+        [ traceLine s!"queued: faulter aborts while handler runs, disposition = {repr q.result.disposition} SGI {repr q.result.sgi}"
+        , traceLine s!"queued: faulter waits as {repr (ipcStateOf q.afterFault faulter)}"
+        , traceLine s!"queued: handler recv dequeues label {repr ((deliveredMessageOf q.afterRecv handler).map (·.label))}"
+        , traceLine s!"queued: faulter after reply pc = {repr (savedPcOf q.afterReply faulter)} state = {repr (ipcStateOf q.afterReply faulter)}"
+        ]
+  /-- The entry with the trap frame's window (§6e): the context and the pokes
+  the live seam commits. -/
+  windowLines : List String :=
+    match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+    | (_, .error _) => [traceLine "WINDOW PIPELINE FAILED"]
+    | (stRecv, .ok _) =>
+        let (sgis, stE) := faultEntryStep permissiveCtx stRecv pcAlignCtx trapWindow 0
+        [ traceLine s!"entry: PC-alignment fault with window sp={repr trapWindow.sp} fires SGIs {repr sgis}"
+        , traceLine s!"entry: recorded context sp={repr ((pendingFaultOf stE faulter).map (·.context.sp))} lr={repr ((pendingFaultOf stE faulter).map (·.context.lr))}"
+        , traceLine s!"entry: delivered MR1 = {repr ((deliveredMessageOf stE handler).map (fun m => wordAt m.registers 1))}"
+        ]
 
 private def fixturePath : String := "tests/fixtures/fault_handling_4core.expected"
 
@@ -929,6 +1182,8 @@ def runFaultHandlingChecks : IO Unit := do
   runDeliveryChecks
   runNoHandlerChecks
   runFlowGateChecks
+  runQueuedDeliveryChecks
+  runEntryWindowChecks
   runResumeChecks
   runRestartChecks
   runReplySeamChecks

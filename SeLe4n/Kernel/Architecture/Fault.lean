@@ -260,9 +260,16 @@ def vmFault : Nat := 6
 
 end FaultLabel
 
-/-- WS-RR RR4.4: the message-register count each fault kind occupies, at seL4
-parity (`seL4_VMFault_Length` = 4, `seL4_CapFault` = 3 words in this model,
-`seL4_UnknownSyscall_Length` = 13, `seL4_UserException_Length` = 5). -/
+/-- WS-RR RR4.4: the message-register count each fault kind occupies.
+
+Three of the four are seL4's lengths verbatim (`seL4_VMFault_Length` = 4,
+`seL4_UnknownSyscall_Length` = 13, `seL4_UserException_Length` = 5).  The
+capability fault is **4** words here — IP, address, receive-phase flag, and
+the lookup-failure reason — where seL4's `setMRs_lookup_failure` appends one
+or two further words (`BitsLeft`, `BitsFound` / `GuardFound`) for the
+depth-mismatch and guard-mismatch failure kinds; this model's reason word is a
+`KernelError` discriminant with no such sub-fields, so the message has no
+extra words to carry. -/
 def faultMessageLength : Fault → Nat
   | .vmFault _ _ _        => 4
   | .capFault _ _ _       => 4
@@ -275,6 +282,17 @@ def faultLabel : Fault → Nat
   | .capFault _ _ _       => FaultLabel.capFault
   | .unknownSyscall _     => FaultLabel.unknownSyscall
   | .userException _ _    => FaultLabel.userException
+
+/-- WS-RR RR4 (audit round, ABI v3): **every fault tag is a delivery label**
+— far below `errorLabelBase`, the first kernel-status label — so a handler's
+`seL4_Recv` returns the tag in `x1` and its decoder reads a successful
+receive, never a kernel error.  Under the v2 offset carriage a `vmFault`'s
+tag `6` decoded as discriminant `5` and a `capFault`'s tag `1` as
+`.invalidCapability`; this is the theorem that closed that. -/
+theorem faultLabel_lt_errorLabelBase (f : Fault) : faultLabel f < errorLabelBase := by
+  rw [errorLabelBase_eq]
+  cases f <;> simp [faultLabel, FaultLabel.vmFault, FaultLabel.capFault,
+    FaultLabel.unknownSyscall, FaultLabel.userException]
 
 /-- WS-RR RR4.4: a fault's label is never the success/null label, so a fault
 message can never be mistaken for a `seL4_Fault_NullFault` marker — nor, on
@@ -337,7 +355,19 @@ Word for word this is seL4's `setMRs_fault` on AArch64:
 `extraCaps` is `0` for every fault: a fault message carries diagnostic words,
 never authority.  That is not a simplification of seL4 — seL4's fault messages
 carry no extra caps either — and it is what makes the RR4.20
-non-interference argument about a *data* flow only. -/
+non-interference argument about a *data* flow only.
+
+**What reaches hardware registers.**  The full message is delivered in the
+model — a handler's `pendingMessage` holds every word, and
+`decodeFault_encodeFault` recovers the fault from it — but the WS-RA return
+frame carries only `MR0`-`MR3` in `x2`-`x5`, and no receive path yet writes
+`MR4` onward into the receiver's IPC buffer (seL4's `setMRs_fault` does; the
+buffer-side write is a registered WS-RA residual with no consumer until this
+phase).  So on hardware a `vmFault` or `capFault` handler sees its whole
+message in registers, while an `unknownSyscall` (13 words) or `userException`
+(5 words) handler sees the first four and must not read `seL4_GetMR(4)`
+onward until the buffer write lands.  Tracked debt, not a silent truncation:
+`docs/WORKSTREAM_HISTORY.md` carries the row and its closure target. -/
 def encodeFault (f : Fault) (ctx : FaultContext) :
     MessageInfo × Array SeLe4n.RegValue :=
   ({ length := faultMessageLength f, extraCaps := 0, label := faultLabel f },

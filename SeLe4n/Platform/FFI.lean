@@ -892,7 +892,7 @@ theorem KernelError.toUInt32_eq_toDiscriminant (e : KernelError) :
 -- `encodeError` / `encodeOk` and their theorems (`encodeError_high_bit_set`,
 -- `encodeOk_high_bit_clear`) are deleted with the WS-RA flip.  Bit 63 was a
 -- workaround for multiplexing status into the value register: with the
--- channels separated — `x0` the full-width value, the offset error label on
+-- channels separated — `x0` the full-width value, the status label (ABI v3) on
 -- `x1` (`Architecture.errorFrame`) — there is nothing to multiplex, and a
 -- badge may use all 64 bits.  The hazard the protocol carried is retained as
 -- the negative `Architecture.bit63Encoding_not_injective_on_badges`
@@ -1643,7 +1643,7 @@ Pipeline:
   5. Hand back a `SyscallOutcome` (WS-RA, plan §3.1/§3.5): on success
      `syscallReturnOutcome` decides `blocks` from the caller's post-state
      or composes the shape-driven return frame; on failure a **computed**
-     error frame carries the offset label on `x1`
+     error frame carries the status label on `x1`
      (`Architecture.errorFrame`), staged into no TCB
      (`syscallDispatchFromAbi_error_stages_no_frame`).
   6. WS-SM SM9.B.9: on failure, additionally record the attributed refusal
@@ -2009,7 +2009,7 @@ theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
 /-- WS-RC R2.B.5 (restated at the WS-RA type, and again at SM9.B.9): when
     `syscallEntryChecked` rejects on the register-spilled state,
     `syscallDispatchFromAbi` propagates the error as a **computed** error
-    frame — the offset label on `x1` — over the post-spill `SystemState`
+    frame — the status label on `x1` — over the post-spill `SystemState`
     **with the SM9.B refusal record applied**.
 
 WS-RA RA.B.4's content survives the ledger: an error still stages nothing into

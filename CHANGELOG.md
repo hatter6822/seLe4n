@@ -281,6 +281,87 @@ fault rather than `eret`ing back onto the faulting instruction.  The halt is
 unreachable at `v0.34.44` (no core sets `lean_ready`) and SM10.1 replaces it
 with the successor install — it is the seam's occupant, not its contract.
 
+### Audit round (same version)
+
+A deep audit of the cut above, before merge, found four defects and two
+registration gaps.  All are closed in this version; none survives as a
+documentation note in place of a fix.
+
+* **The fault context was built from a stale register mirror** (high).
+  `faultEntryStep` read `x0`-`x7`, `SP_EL0` and `x30` off `TCB.registerContext`,
+  which is a *partial* mirror of the hardware file: the SVC seam spills
+  `x0`-`x5` and `x7` at syscall entry and the return frame is written back, so
+  between syscalls the mirror holds the last syscall's arguments.  A data abort
+  taken later therefore reported a stale argument window in the
+  `unknownSyscall` message and — the real defect — a payload-free resume
+  reinstalled that stale window over the thread's live `x0`-`x7`, `sp` and
+  `lr`, because `applyFaultRestart` writes them from the recorded context.
+  `lean_handle_fault` now takes fifteen words: the syndrome and the trap
+  frame's fault window, which the entry spills into the mirror before it
+  builds the context (`writeFaultRegistersToTcb`;
+  `FaultRegisterWindow.spill` / `ofRegisterFile_spill` in `Model/Fault.lean`;
+  `faultContextOfThread_writeFaultRegistersToTcb` says the delivered context
+  *is* the window).  `trap.rs` passes `frame.gprs[0..8]`, `frame.sp_el0` and
+  `frame.gprs[30]`.  §6e of the suite pins it at every word against a fixture
+  whose mirror differs from the window everywhere, through delivery and back
+  through the resume.
+* **The entry fired only the SGI the Call chain surfaced** (medium).  The
+  delivery can change more than one core's view — the priority-inheritance
+  walk re-buckets a handler already queued elsewhere — and the syscall seam
+  recovers every such change from the pre/post diff.  The fault entry now
+  does the same (`PriorityInheritance.computeCrossCoreSgis`) and runs the
+  executing core's successor through `scheduleLocalSuccessorLive`, inert
+  until SM10.1, in the same atomic step.  Tier-3 anchors forbid the surfaced
+  `.sgi.toList` read from returning.
+* **Fault labels collided with the v2 error labels — ABI version 3** (high,
+  ABI).  A fault message is delivered under its `seL4_Fault_tag`, and a
+  handler's `seL4_Recv` returns that label in `x1`; under the v2 `d + 1`
+  carriage `vmFault` (6) decoded in userspace as `KernelError` discriminant 5
+  and `capFault` (1) as `.invalidCapability`, so every fault a handler
+  received read as a failed receive.  Kernel status now rides in the **top**
+  of the 20-bit label range (`errorLabelBase = 0xFFF00`, `errorLabel e =
+  errorLabelBase + toDiscriminant e`) and every delivered label stays below
+  it (`returnMessageInfo` clamps; `faultLabel_lt_errorLabelBase`,
+  `ofErrorLabel?_none_of_lt_base`, `returnMessageInfo_label_lt_errorLabelBase`).
+  The blocked-resume sentinel `0xFFFFF` is the last status label, naming
+  discriminant 255 — `UnknownKernelError` for the stated reason.
+  `SYSCALL_ABI_VERSION = 3` in Lean, `sele4n-types` and the HAL;
+  `ERROR_LABEL_BASE` is pinned as a fourth literal on all three sides;
+  `decode_response` decides by range and returns a delivery's label on the
+  `Ok` response, so a fault handler can read its tag.  The ABI fixture, the
+  dispatch suite and the Rust conformance suite all moved with it, and each
+  gained the case v2 lacked: a fault-tag label decodes as a delivery.
+* **`faultHandlerRights` demanded send *and* grant** on a rationale that was
+  false of this model — "grant is what lets the handler receive a reply
+  capability" — when the reply link is structural and depends on no right.
+  seL4's `sendFaultIPC` admits send with grant **or** grant-reply, and the
+  idiomatic `seL4_CapRights_new(0, 1, 0, 1)` handler capability withholds full
+  grant, so the old gate would have suspended every client of an idiomatic
+  handler.  `faultHandlerCapAuthorized` is now seL4's predicate verbatim, with
+  the negatives (send alone, either grant right alone) as theorems and a
+  fixture thread whose handler capability is send + grant-reply delivered end
+  to end.
+* **Docstrings that described gates the code does not have** were corrected
+  rather than the code weakened to match them: `faultReplyOnCore` claimed a
+  confused-deputy check on the replier that `endpointReplyOnCore` deliberately
+  does not perform (authority is the reply *capability*, and delegated reply
+  capabilities are legitimate), and `faultMessageLength` described the
+  capability fault as three words when it encodes four.
+* **Two residuals registered as debt with closure targets** rather than left
+  implicit: only `MR0`-`MR3` of a fault message reach hardware registers,
+  because no receive path writes `MR4` onward into the IPC buffer (the WS-RA
+  four-register residual, which RR4 gave its first consumer — an
+  `unknownSyscall` handler on hardware sees four of its thirteen words until
+  that write lands); and the RR4.18 row's scheduler and capability bundle
+  preservation, which the cross-core Call and reply chains do not carry for
+  the fault path to compose.  Both are RR7 rows in
+  `docs/WORKSTREAM_HISTORY.md`.
+* **Coverage the suite lacked**: the fault-before-receive ordering (§6d — the
+  fault parks on the endpoint while the handler runs, the receive dequeues it
+  with its label intact, the reply resumes it), the entry's positive SGI and
+  the spilled window (§6e), and the rights predicate on all four shapes.  The
+  golden fixture grew seven lines.
+
 Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR4
 
 ## v0.34.43 — WS-RR RR3: `ipcInvariantFull` de-threaded, dispatch payoff landed

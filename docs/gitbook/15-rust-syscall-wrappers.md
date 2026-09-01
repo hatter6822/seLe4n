@@ -109,16 +109,23 @@ frame on syscall exit:
 
 ```
 x0  ← badge / primary result (full 64-bit width)
-x1  ← MessageInfo; label 0 = success, label = KernelError discriminant + 1
+x1  ← MessageInfo; label 0 = success,
+      label ≥ ERROR_LABEL_BASE (0xFFF00) = KernelError discriminant (label − base),
+      label < ERROR_LABEL_BASE = the delivered message's own label (a fault tag, say)
 x2–x5 ← Message registers [0..3] of a delivered message
 ```
 
 `decode_response` decodes the label fail-closed (a malformed `x1` is
-`InvalidMessageInfo`; an unknown nonzero label is `UnknownKernelError`),
-`badge()` reads `x0`, and the retired bit-63 status protocol no longer
-exists — `SYSCALL_ABI_VERSION = 2` is pinned on both sides of the boundary
-(and as a Lean `decide` theorem), so a half-migrated tree fails its own
-build rather than reinterpreting registers silently.
+`InvalidMessageInfo`; a status-range label naming an unknown discriminant is
+`UnknownKernelError`), `badge()` reads `x0`, and the retired bit-63 status
+protocol no longer exists — `SYSCALL_ABI_VERSION = 3` is pinned on both
+sides of the boundary (and as a Lean `decide` theorem), so a half-migrated
+tree fails its own build rather than reinterpreting registers silently.
+Version 2 carried the status as label `d + 1`; it was retired at v0.34.44
+(WS-RR RR4 audit round) because a fault handler's `seL4_Recv` returns the
+fault's `seL4_Fault_tag` in the label, and under the offset scheme every
+such delivery decoded as a kernel error.  A fault handler written against
+`sele4n-abi` reads the tag from `SyscallResponse::msg_info().label()`.
 
 Syscalls requiring more than 4 message registers (e.g., `service_register`,
 `sched_context_configure`) write the 5th+ values to the IPC buffer overflow

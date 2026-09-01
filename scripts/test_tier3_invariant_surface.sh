@@ -862,8 +862,28 @@ run_check "INVARIANT" rg -n 'replyTransferOnCoreChecked ctx tid callerTid' SeLe4
 # it passes on the ungated arm as well — the exact defect this replaced.  The
 # positive pins the gated call; the negative forbids the bare one anywhere in
 # the entry module, which is where the regression would land.
-run_check "INVARIANT" rg -n 'faultDeliverOnCoreChecked lctx st tid f fctx c' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n 'faultDeliverOnCoreChecked lctx stRegs tid f fctx c' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore [a-z]' SeLe4n/Kernel/FaultEntry.lean
+# Fault-entry audit round, relation not presence: the delivery runs on the state the
+# trap frame's fault window was spilled into (`stRegs`), never on the entry's
+# raw pre-state — a delivery on `st` would build the fault context from the
+# register mirror's stale last-syscall contents and reinstall them on resume.
+# The spill must precede the context build, so both are pinned by the names
+# the body threads rather than by the helper's mere existence.
+run_check "INVARIANT" rg -n 'let stRegs := writeFaultRegistersToTcb st tid w' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n 'faultContextOfThread stRegs tid ectx\.elr ectx\.spsr' SeLe4n/Kernel/FaultEntry.lean
+run_negative_check "INVARIANT" rg -n 'faultContextOfThread st tid' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem faultContextOfThread_writeFaultRegistersToTcb' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem ofRegisterFile_spill' SeLe4n/Model/Fault.lean
+# …and the cross-core pokes are derived from the state diff, as the syscall
+# seam derives them, not read off the single SGI the Call chain surfaces.
+run_check "INVARIANT" rg -n 'PriorityInheritance\.computeCrossCoreSgis st st.. c' SeLe4n/Kernel/FaultEntry.lean
+run_negative_check "INVARIANT" rg -n '\.sgi\.toList' SeLe4n/Kernel/FaultEntry.lean
+# The Rust seam passes the fifteen words (syndrome + the fault window), and the
+# window is read from the saved trap frame — `frame.gprs` / `frame.sp_el0` —
+# so the extern's arity and its argument source are both pinned.
+run_check "INVARIANT" rg -n 'sp_el0, g\[30\],' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'let g = frame\.gprs;' rust/sele4n-hal/src/trap.rs
 # …and the labeling-context read that makes the gate meaningful: without it the
 # entry could call the checked arm with a context it invented.
 run_check "INVARIANT" rg -n 'Platform\.FFI\.getKernelLabelingContext' SeLe4n/Kernel/FaultEntry.lean
@@ -4956,7 +4976,18 @@ run_check "INVARIANT" rg -n '^theorem errorLabel_never_zero' SeLe4n/Kernel/Archi
 run_check "INVARIANT" rg -n '^theorem errorLabel_roundtrip' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem kernelErrorFitsLabel' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem bit63Encoding_not_injective_on_badges' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^def syscallAbiVersion : Nat := 2' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def syscallAbiVersion : Nat := 3' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+# ABI v3 (fault-handling audit round): kernel status rides in the top of the label range, so a
+# delivered fault message's `seL4_Fault_tag` is never read as a kernel error.
+# The base is pinned as a literal on all three sides; the two negatives keep
+# the v2 offset encoding from returning on either side of the boundary.
+run_check "INVARIANT" rg -n '^theorem errorLabelBase_eq : errorLabelBase = 0xFFF00' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem ofErrorLabel\?_none_of_lt_base' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem returnMessageInfo_label_lt_errorLabelBase' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem faultLabel_lt_errorLabelBase' SeLe4n/Kernel/Architecture/Fault.lean
+run_negative_check "INVARIANT" rg -n 'e\.toDiscriminant \+ 1' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n 'pub const ERROR_LABEL_BASE: u64 = \(1 << 20\) - 256' rust/sele4n-types/src/lib.rs
+run_negative_check "INVARIANT" rg -n 'kernel_error_discriminant as u64\) \+ 1\) << 9' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n '^def writeReturnFrameToTcb' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^def readReturnFrame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem readReturnFrame_writeReturnFrame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
@@ -4983,7 +5014,7 @@ run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_preserves_projection
 run_check "INVARIANT" rg -n '^theorem stageDeliveredMessage_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_stages_no_frame' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n 'ffi_syscall_return_frame' rust/sele4n-hal/src/ffi.rs
-run_check "INVARIANT" rg -n 'pub const SYSCALL_ABI_VERSION: u64 = 2' rust/sele4n-types/src/lib.rs
+run_check "INVARIANT" rg -n 'pub const SYSCALL_ABI_VERSION: u64 = 3' rust/sele4n-types/src/lib.rs
 # PR #866 review: the Blocked trap arm must poison the frame with the
 # fail-closed blocked-resume sentinel until the context-restore seam
 # installs a successor — a silent revert to the no-op arm re-opens the

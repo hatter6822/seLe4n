@@ -9,3 +9,10 @@
 [fault-4core] faulter restart PC = some 262144
 [fault-4core] faulter resumes with saved pc some 262144
 [fault-4core] faulter outstanding fault after reply = false
+[fault-4core] queued: faulter aborts while handler runs, disposition = SeLe4n.Kernel.FaultDisposition.delivered { val := 1110 } SGI none
+[fault-4core] queued: faulter waits as some (SeLe4n.Model.ThreadIpcState.blockedOnCall { val := 1110 })
+[fault-4core] queued: handler recv dequeues label some 6
+[fault-4core] queued: faulter after reply pc = some 262144 state = some (SeLe4n.Model.ThreadIpcState.ready)
+[fault-4core] entry: PC-alignment fault with window sp=30576 fires SGIs [(1, SeLe4n.Kernel.Concurrency.SgiKind.reschedule)]
+[fault-4core] entry: recorded context sp=some 30576 lr=some 48879
+[fault-4core] entry: delivered MR1 = some 30576

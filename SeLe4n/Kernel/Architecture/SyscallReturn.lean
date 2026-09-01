@@ -352,6 +352,40 @@ end SyscallReturnFrame
 -- §4  Message-frame synthesis (RA.A.3) — the single IpcMessage → frame place
 -- ============================================================================
 
+/-- **WS-RR RR4 (audit round) — ABI version 3: kernel status rides in the top
+of the label range.**
+
+Version 2 carried a `KernelError` discriminant `d` as label `d + 1`, with `0`
+success.  That was sound while every delivered message had label `0`, which
+was true of the whole tree until RR4: a fault message is delivered under its
+`seL4_Fault_tag` (`1`, `2`, `3`, `6` — `Architecture.faultLabel`), and a
+handler's `seL4_Recv` returns that label in `x1`.  Under the offset scheme a
+`vmFault` (tag 6) decoded in userspace as `KernelError` discriminant 5, and
+`capFault` (tag 1) as `.invalidCapability` — every fault a handler received
+read as a failed receive, so no fault handler could be written against
+`sele4n-abi`.
+
+The fix keeps one syscall-agnostic decoder and separates the two by
+**range**: the top `errorLabelRangeSize` labels of the 20-bit field are
+kernel status, everything below is a delivered message's own label.  Success
+is still `0`; error `d` is `errorLabelBase + d`; and a delivered label is
+always below `errorLabelBase` (`returnMessageInfo` clamps there, and every
+kernel-emitted label — the fault tags — sits far below it,
+`faultLabel_lt_errorLabelBase`).  The blocked-resume sentinel `0xFFFFF` is
+the top of the range, naming discriminant `255`, which no `KernelError` has
+— so it still decodes as `UnknownKernelError`, and now for the *stated*
+reason rather than by happening to exceed the enumeration. -/
+def errorLabelRangeSize : Nat := 256
+
+/-- The first kernel-status label: `0xFFF00`.  Labels at or above it are
+kernel status; labels below it are a delivered message's own. -/
+def errorLabelBase : Nat := MessageInfo.maxLabel + 1 - errorLabelRangeSize
+
+/-- The base, as a literal — pinned so a change to `maxLabel` or the range
+size cannot move it silently past the Rust mirror
+(`sele4n_types::ERROR_LABEL_BASE`). -/
+theorem errorLabelBase_eq : errorLabelBase = 0xFFF00 := by decide
+
 /-- The `MessageInfo` a delivered message returns in `x1`.  `IpcMessage`
 carries no `MessageInfo` (it is discarded at decode time), so the return
 word is synthesized — here, once, for every delivery site: `length` is the
@@ -375,7 +409,7 @@ nothing. -/
 def returnMessageInfo (msg : IpcMessage) (installedCaps : Nat) : MessageInfo :=
   { length    := min msg.registers.size 4
     extraCaps := min installedCaps Model.maxExtraCaps
-    label     := min msg.label MessageInfo.maxLabel }
+    label     := min msg.label (errorLabelBase - 1) }
 
 /-- The §3.7 window bound, stated: the returned length never exceeds the
 four inline message registers. -/
@@ -389,18 +423,27 @@ theorem returnMessageInfo_wellFormed (msg : IpcMessage) (installedCaps : Nat) :
     (returnMessageInfo msg installedCaps).wellFormed := by
   refine ⟨Nat.le_trans (Nat.min_le_right _ _) (by decide), ?_, ?_⟩
   · exact Nat.min_le_right _ _
-  · exact Nat.min_le_right _ _
+  · exact Nat.le_trans (Nat.min_le_right _ _) (by rw [errorLabelBase_eq]; decide)
+
+/-- **A delivered message never carries a status label** (ABI v3): the
+synthesized label is below `errorLabelBase`, so a receiver's decoder cannot
+read a delivery as a kernel error whatever the message's label was. -/
+theorem returnMessageInfo_label_lt_errorLabelBase (msg : IpcMessage) (installedCaps : Nat) :
+    (returnMessageInfo msg installedCaps).label < errorLabelBase := by
+  unfold returnMessageInfo
+  have : errorLabelBase - 1 < errorLabelBase := by rw [errorLabelBase_eq]; decide
+  exact Nat.lt_of_le_of_lt (Nat.min_le_right _ _) this
 
 /-- WS-RR RR4.4: the delivered label is the message's own whenever it is
-in range — the clamp above is the fail-closed guard for an out-of-range
-label, never a rewrite of a real one.  Every kernel-emitted label satisfies
-the hypothesis (`Architecture.encodeFault_messageInfo_wellFormed` for a fault
-message; `MessageInfo.decode_wellFormed` for a user send), so on every live
-path this reads as the identity. -/
-@[simp] theorem returnMessageInfo_label_of_le (msg : IpcMessage) (installedCaps : Nat)
-    (h : msg.label ≤ MessageInfo.maxLabel) :
+below the status range — the clamp above is the fail-closed guard for an
+out-of-range label, never a rewrite of a real one.  Every kernel-emitted label
+satisfies the hypothesis (`Architecture.faultLabel_lt_errorLabelBase` for a
+fault message; a user send carries label `0`), so on every live path this
+reads as the identity. -/
+@[simp] theorem returnMessageInfo_label_of_lt (msg : IpcMessage) (installedCaps : Nat)
+    (h : msg.label < errorLabelBase) :
     (returnMessageInfo msg installedCaps).label = msg.label :=
-  Nat.min_eq_left h
+  Nat.min_eq_left (Nat.le_sub_one_of_lt h)
 
 /-- WS-RR RR4.4: a message carrying no label (the default, and every message
 built before RR4) delivers the `0` label the pre-RR4 synthesis hard-coded —
@@ -957,50 +1000,90 @@ theorem blockedUnitReturn_staged_in_sender_frame
 -- §5  Error carriage on the x1 label (RA.A.5, RA.A.6)
 -- ============================================================================
 
-/-- The offset error label (plan §3.1): discriminant `d` rides as label
-`d + 1`, and label `0` means success.  The offset is load-bearing —
-discriminant `0` is `.invalidCapability`, and a label carrying it directly
-would alias the first error with success. -/
+/-- The status label of an error: discriminant `d` rides as
+`errorLabelBase + d`.  Never `0` (the base is positive) and never below the
+base, so no error can be read as a delivered message. -/
 def errorLabel (e : KernelError) : Nat :=
-  e.toDiscriminant + 1
+  errorLabelBase + e.toDiscriminant
 
-/-- Decode a label back to its error: `0` is success (`none`), `n + 1` is
-discriminant `n`, unknown discriminants fail closed. -/
-def ofErrorLabel? : Nat → Option KernelError
-  | 0     => none
-  | n + 1 => KernelError.ofDiscriminant? n
+/-- Decode a label back to its error: below the base is not an error
+(`none` — success, or a delivered message's label), at or above it is
+discriminant `label - errorLabelBase`, unknown discriminants failing closed. -/
+def ofErrorLabel? (label : Nat) : Option KernelError :=
+  if errorLabelBase ≤ label then KernelError.ofDiscriminant? (label - errorLabelBase)
+  else none
 
 /-- §3.1's non-aliasing: no error's label is the success label. -/
-theorem errorLabel_never_zero (e : KernelError) : errorLabel e ≠ 0 :=
-  Nat.succ_ne_zero _
+theorem errorLabel_never_zero (e : KernelError) : errorLabel e ≠ 0 := by
+  unfold errorLabel; rw [errorLabelBase_eq]; omega
+
+/-- Every error's label is in the status range. -/
+theorem errorLabelBase_le_errorLabel (e : KernelError) : errorLabelBase ≤ errorLabel e :=
+  Nat.le_add_right _ _
 
 /-- The success label decodes as success. -/
-theorem ofErrorLabel?_zero : ofErrorLabel? 0 = none := rfl
+theorem ofErrorLabel?_zero : ofErrorLabel? 0 = none := by
+  unfold ofErrorLabel?; rw [errorLabelBase_eq]; decide
+
+/-- **A delivered message's label is never read as an error** — the property
+the fault handler's receive needs, and the one the offset scheme lacked.
+Every label below the base, the four fault tags included, decodes as
+"no kernel error". -/
+theorem ofErrorLabel?_none_of_lt_base (label : Nat) (h : label < errorLabelBase) :
+    ofErrorLabel? label = none := by
+  unfold ofErrorLabel?
+  rw [if_neg (Nat.not_le.mpr h)]
 
 /-- RA.A.5 — every error survives the label round trip. -/
 theorem errorLabel_roundtrip (e : KernelError) :
-    ofErrorLabel? (errorLabel e) = some e :=
-  KernelError.ofDiscriminant?_toDiscriminant e
+    ofErrorLabel? (errorLabel e) = some e := by
+  unfold ofErrorLabel? errorLabel
+  rw [if_pos (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
+  exact KernelError.ofDiscriminant?_toDiscriminant e
 
-/-- The decode side over the whole in-range domain: label `0` is success,
-labels `1..57` hit their errors and re-encode to themselves, label `58`
-(the first out-of-range value) is rejected — so label `0` decodes as
-success and *only* label `0` does, on the entire inhabited label space. -/
+/-- The decode side over the whole status range: the base plus `0..56` hits
+the errors and re-encodes to itself, the base plus `57` (the first
+discriminant no error has) is rejected, and the label just *below* the base
+is not an error at all — so the range boundary is pinned from both sides on
+the inhabited label space. -/
 theorem errorLabel_zero_iff_success :
     ofErrorLabel? 0 = none ∧
       (∀ n, n < 57 →
-        ((ofErrorLabel? (n + 1)).map errorLabel) = some (n + 1)) ∧
-      ofErrorLabel? 58 = none := by
-  refine ⟨rfl, ?_, rfl⟩
-  decide
+        ((ofErrorLabel? (errorLabelBase + n)).map errorLabel) = some (errorLabelBase + n)) ∧
+      ofErrorLabel? (errorLabelBase + 57) = none ∧
+      ofErrorLabel? (errorLabelBase - 1) = none := by
+  refine ⟨ofErrorLabel?_zero, ?_, ?_, ?_⟩
+  · intro n hn
+    have hRt := KernelError.toDiscriminant_ofDiscriminant?.1 n hn
+    unfold ofErrorLabel? errorLabel
+    rw [if_pos (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
+    cases hE : KernelError.ofDiscriminant? n with
+    | none => rw [hE] at hRt; exact absurd hRt (by simp)
+    | some e =>
+        rw [hE] at hRt
+        simp only [Option.map_some, Option.some.injEq] at hRt ⊢
+        rw [hRt]
+  · unfold ofErrorLabel?
+    rw [if_pos (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
+    exact KernelError.toDiscriminant_ofDiscriminant?.2
+  · apply ofErrorLabel?_none_of_lt_base
+    rw [errorLabelBase_eq]; decide
 
-/-- RA.A.6 — all 57 offset labels (1..57) fit the 20-bit `MessageInfo`
-label field, so the error carriage never needs a wider register. -/
+/-- RA.A.6 — every status label fits the 20-bit `MessageInfo` label field:
+the range is sized so `errorLabelBase + 255 = maxLabel`, and every
+discriminant is below `57`. -/
 theorem kernelErrorFitsLabel (e : KernelError) :
     errorLabel e ≤ MessageInfo.maxLabel := by
   have h := KernelError.toDiscriminant_lt e
-  unfold errorLabel MessageInfo.maxLabel
+  unfold errorLabel
+  rw [errorLabelBase_eq, show MessageInfo.maxLabel = 0xFFFFF by decide]
   omega
+
+/-- The status range is exactly the top of the field: the sentinel
+`maxLabel` is its last member. -/
+theorem errorLabelBase_add_range_eq_maxLabel :
+    errorLabelBase + errorLabelRangeSize = MessageInfo.maxLabel + 1 := by
+  rw [errorLabelBase_eq]; decide
 
 /-- The load-bearing negative for RA.A.6: an over-wide `x1` word is not
 silently truncated — `MessageInfo.decode` fail-closes on any word whose
@@ -1011,7 +1094,7 @@ theorem overWideLabel_rejected :
   decide
 
 /-- The error frame the boundary returns on a failed syscall: `x0 = 0`,
-the offset label in `x1`, no message registers.  Computed at the boundary,
+the status label in `x1`, no message registers.  Computed at the boundary,
 **never staged into the TCB** — which is what keeps the error path
 state-preserving (RA.B.4). -/
 def errorFrame (e : KernelError) : SyscallReturnFrame :=
@@ -1353,18 +1436,24 @@ theorem bit63Encoding_not_injective_on_badges :
 
 * Version **1** — the retired bit-63 protocol: one status word in `x0`,
   bit 63 the error flag, values masked to 63 bits.
-* Version **2** — the seL4 frame convention this module models: `x0` the
-  full-width value, `x1` a `MessageInfo` whose offset label carries the
-  error, `x2`-`x5` message registers.
+* Version **2** — the seL4 frame convention: `x0` the full-width value,
+  `x1` a `MessageInfo` whose label carried the error **offset by one**
+  (`d + 1`), `x2`-`x5` message registers.  Retired at WS-RR RR4 because a
+  delivered fault message's `seL4_Fault_tag` label decoded as a kernel error.
+* Version **3** — the same frame, with kernel status in the **top** of the
+  20-bit label range (`errorLabelBase + d`, see `errorLabel`) and every
+  delivered message's label below it.  A v2 decoder reads a v3 error frame as
+  `UnknownKernelError` and a v3 fault delivery as a spurious error, which is
+  why this is a version bump and not a patch.
 
-Mirrored as `SYSCALL_ABI_VERSION` in `rust/sele4n-types` at the flip, with
+Mirrored as `SYSCALL_ABI_VERSION` in `rust/sele4n-types` at each flip, with
 each side's conformance suite pinning its own constant to the same literal —
 so a half-bumped tree fails its own suite rather than mis-decoding at
 runtime (plan §3.6). -/
-def syscallAbiVersion : Nat := 2
+def syscallAbiVersion : Nat := 3
 
 /-- The Lean half of the version pin (RA.A.7).  The Rust conformance test
 asserts the identical literal; a bump that forgets one side fails there. -/
-theorem syscallAbiVersion_pinned : syscallAbiVersion = 2 := rfl
+theorem syscallAbiVersion_pinned : syscallAbiVersion = 3 := rfl
 
 end SeLe4n.Kernel.Architecture

@@ -101,10 +101,13 @@ register file.  Mirrors the WS-RA `decode_response` exactly:
 
 * `x1` must decode as a well-formed `MessageInfo` (fail-closed
   `InvalidMessageInfo` otherwise — the RA.C.7 width guard);
-* label `0` → success: `x0` is the full-width value, `regs[2..5]` the
-  message registers;
-* label `n + 1` → `KernelError` discriminant `n`, unknown discriminants
-  collapsing to an error either way. -/
+* a label below `errorLabelBase` → a delivery: `x0` is the full-width
+  value, `regs[2..5]` the message registers, and the label is the delivered
+  message's own (`0` on every kernel path but a fault delivery — ABI v3,
+  WS-RR RR4);
+* a label at or above `errorLabelBase` → `KernelError` discriminant
+  `label - errorLabelBase`, unknown discriminants collapsing to an error
+  either way. -/
 inductive RustDecoded where
   | err (disc : Nat)
   | errUndecodableX1
@@ -115,9 +118,9 @@ private def rustDecodeResponse (regs : Array UInt64) : RustDecoded :=
   match MessageInfo.decode regs[1]!.toNat with
   | none => .errUndecodableX1
   | some mi =>
-      match mi.label with
-      | 0 => .ok regs[0]! #[regs[2]!, regs[3]!, regs[4]!, regs[5]!]
-      | n + 1 => .err n
+      if Kernel.Architecture.errorLabelBase ≤ mi.label then
+        .err (mi.label - Kernel.Architecture.errorLabelBase)
+      else .ok regs[0]! #[regs[2]!, regs[3]!, regs[4]!, regs[5]!]
 
 /-- The post-trap register file after the WS-RA writeback: the trap layer
 restores the full six-register frame for a `returns` outcome (`trap.rs`'s

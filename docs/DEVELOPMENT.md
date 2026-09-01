@@ -51,9 +51,23 @@ It is aligned to the **current project state**:
   thread's `faultHandler` endpoint through the **live cross-core `.call`
   chain** (`endpointCallCrossCoreDispatch`), so a *passive* fault handler
   receives the faulting thread's SchedContext donation and can run.  The
-  handler capability must carry both `.write` and `.grant` — seL4's send +
-  grant/grantReply gate — and a thread whose handler cannot be resolved is
-  suspended with its fault recorded, seL4's `handleDoubleFault` outcome.  The
+  handler capability must satisfy seL4's `sendFaultIPC` predicate — send, and
+  grant **or** grant-reply (`faultHandlerCapAuthorized`; the audit round
+  replaced a send-and-grant reading that refused the idiomatic
+  `seL4_CapRights_new(0, 1, 0, 1)` handler capability) — and a thread whose
+  handler cannot be resolved is suspended with its fault recorded, seL4's
+  `handleDoubleFault` outcome.  The live entry **spills the trap frame's
+  fault window** (`x0`-`x7`, `SP_EL0`, `x30`) into the thread's register
+  mirror before it builds the context (`writeFaultRegistersToTcb`,
+  `faultContextOfThread_writeFaultRegistersToTcb`), so the message reports and
+  a resume reinstalls what the thread held at the trap rather than its last
+  syscall's arguments, and derives its cross-core pokes from the state diff
+  (`computeCrossCoreSgis`) as the syscall seam does.  Because a delivered
+  fault message carries a nonzero `seL4_Fault_tag` label, the syscall return
+  ABI moved to **version 3** in the same cut: kernel status rides in the top
+  of the 20-bit label range (`errorLabelBase = 0xFFF00`) and every delivered
+  label stays below it, so a handler's decoder never reads a fault as a kernel
+  error.  The
   reply is decoded arm-for-arm with seL4's `handleFaultReply`, yielding
   either a `FaultRestartFrame` staged through the *same*
   `RegisterFile.stageReturnFrame` WS-RA uses, or `.abandon`; `SPSR_EL1` is
@@ -115,8 +129,10 @@ It is aligned to the **current project state**:
   Interleaved: **WS-RA (Syscall Return ABI) core LANDED
   (v0.33.37)** — the kernel returns the full seL4 ARM64 frame end to end (`x0`
   = badge/primary result at full 64-bit width; `x1` = `MessageInfo` whose
-  label carries the error at `discriminant + 1`, so label 0 = success and no
-  error aliases it; `x2`–`x5` = message registers), the bit-63
+  label carries the kernel status in the top of the label range —
+  `errorLabelBase + discriminant`, base `0xFFF00`, so label 0 = success, no
+  error aliases it, and a delivered message's label stays below the base;
+  `x2`–`x5` = message registers), the bit-63
   `encodeOk`/`encodeError` protocol and the vestigial `syscall_dispatch_inner`
   export are deleted with Tier-3 negative anchors, `syscallReturnShape` is a
   **total** function (a new syscall cannot omit its return shape), the five
@@ -124,8 +140,9 @@ It is aligned to the **current project state**:
   (`.notificationWait` the signalled badge, `.receive`/`.replyRecv` the
   delivered message, `.serviceQuery` the resolved service id it previously
   discarded), the frame crosses the FFI as a per-core mailbox + outcome tag
-  with `trap.rs` restoring all six registers, and `SYSCALL_ABI_VERSION = 2` is
-  pinned on all three sides; completed at v0.33.38 with RA.B.5b (the blocked
+  with `trap.rs` restoring all six registers, and `SYSCALL_ABI_VERSION = 3` is
+  pinned on all three sides (v2's `d + 1` offset label was retired at v0.34.44,
+  when RR4's fault deliveries made a nonzero delivered label reachable); completed at v0.33.38 with RA.B.5b (the blocked
   orderings staged end to end by the unblocking arms — eleven staging sites,
   `blockedReturn_staged_in_waiter_frame`, five two-core suite scenarios) and
   RA.B.8 (the per-arm shape-coherence family); SM10.1 owes only frame delivery

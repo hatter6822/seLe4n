@@ -929,42 +929,56 @@ fn decode_response_u64_overflow() {
 fn unknown_kernel_error_fallback() {
     use sele4n_abi::decode_response;
 
-    // WS-RA: errors ride the x1 label offset by one — label d+1 names
-    // discriminant d.  Discriminant 57 — first unrecognized after
+    // WS-RA / WS-RR RR4 (ABI v3): errors ride the x1 label in the top of
+    // the 20-bit range — label ERROR_LABEL_BASE + d names discriminant d.
+    // Discriminant 57 — first unrecognized after
     // DeclassificationDeniedAtReceiver (56).
-    let regs = [0, 58u64 << 9, 0, 0, 0, 0, 0];
+    let base = sele4n_types::ERROR_LABEL_BASE;
+    let regs = [0, (base + 57) << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
     // Discriminant 100 — arbitrary unrecognized code
-    let regs = [0, 101u64 << 9, 0, 0, 0, 0, 0];
+    let regs = [0, (base + 100) << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
-    // Discriminant 254 — just below sentinel
-    let regs = [0, 255u64 << 9, 0, 0, 0, 0, 0];
+    // Discriminant 254 — just below the sentinel
+    let regs = [0, (base + 254) << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
-    // Discriminant 255 — sentinel value resolves to UnknownKernelError directly
-    let regs = [0, 256u64 << 9, 0, 0, 0, 0, 0];
+    // Discriminant 255 — the blocked-resume sentinel (MAX_LABEL) resolves to
+    // UnknownKernelError directly: it is the last label of the status range.
+    let regs = [0, (base + 255) << 9, 0, 0, 0, 0, 0];
+    assert_eq!(base + 255, sele4n_abi::message_info::MAX_LABEL);
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
+
+    // …while the same discriminant values BELOW the base are deliveries,
+    // not errors: under v2's offset scheme labels 58, 101 and 255 were all
+    // `UnknownKernelError`, and a fault handler's tag-6 message was
+    // discriminant 5.
+    for label in [58u64, 101, 255, 6, 1] {
+        let resp = decode_response([0, label << 9, 0, 0, 0, 0, 0])
+            .unwrap_or_else(|e| panic!("label {label} must be a delivery, got {e:?}"));
+        assert_eq!(resp.msg_info().label(), label);
+    }
 }
 
 /// R5.E (DEEP-SCH-04): Discriminant 52 round-trips to MissingSchedContext
-/// (WS-RA: as label 53 on x1).
+/// (ABI v3: as label ERROR_LABEL_BASE + 52 on x1).
 #[test]
 fn missing_sched_context_decode() {
     use sele4n_abi::decode_response;
 
-    let regs = [0, 53u64 << 9, 0, 0, 0, 0, 0];
+    let regs = [0, (sele4n_types::ERROR_LABEL_BASE + 52) << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::MissingSchedContext));
 }
 
 /// WS-SM SM5.B.4: Discriminant 53 round-trips to ThreadOnDifferentCore
-/// (WS-RA: as label 54 on x1).
+/// (ABI v3: as label ERROR_LABEL_BASE + 53 on x1).
 #[test]
 fn thread_on_different_core_decode() {
     use sele4n_abi::decode_response;
 
-    let regs = [0, 54u64 << 9, 0, 0, 0, 0, 0];
+    let regs = [0, (sele4n_types::ERROR_LABEL_BASE + 53) << 9, 0, 0, 0, 0, 0];
     assert_eq!(
         decode_response(regs),
         Err(KernelError::ThreadOnDifferentCore)
@@ -1839,7 +1853,20 @@ fn sys_sched_context_module_exports() {
 /// and a half-bumped tree fails whichever suite still reads the old value.
 #[test]
 fn syscall_abi_version_pinned() {
-    assert_eq!(sele4n_types::SYSCALL_ABI_VERSION, 2);
+    assert_eq!(sele4n_types::SYSCALL_ABI_VERSION, 3);
+}
+
+/// WS-RR RR4 (ABI v3): the status-range base, pinned as a literal on the
+/// userspace side — the Lean side pins the same value (`errorLabelBase_eq`)
+/// and the HAL's hand-duplicated mirror is `const`-asserted against this
+/// constant, so the three cannot drift apart silently.
+#[test]
+fn error_label_base_pinned() {
+    assert_eq!(sele4n_types::ERROR_LABEL_BASE, 0xFFF00);
+    assert_eq!(
+        sele4n_types::ERROR_LABEL_BASE + 255,
+        sele4n_abi::message_info::MAX_LABEL
+    );
 }
 
 /// WS-RA RA.D.4: the return shape of every syscall, mirrored per-variant

@@ -57,35 +57,69 @@ open SeLe4n.Kernel.Concurrency
 -- §1  RR4.7/RR4.8 — resolving the fault handler
 -- ============================================================================
 
-/-- WS-RR RR4.8: the rights a fault-handler endpoint capability must carry.
+/-- WS-RR RR4.8: the rights a fault-handler endpoint capability must carry —
+seL4's `sendFaultIPC` predicate, verbatim:
 
-seL4's `sendFaultIPC` admits the capability only when it is an endpoint cap
-with `capCanSend` **and** (`capCanGrant` or `capCanGrantReply`).  Both halves
-are load-bearing and this model spells them `.write` and `.grant`:
+```c
+if (cap_get_capType(handlerCap) == cap_endpoint_cap &&
+    cap_endpoint_cap_get_capCanSend(handlerCap) &&
+    (cap_endpoint_cap_get_capCanGrant(handlerCap) ||
+     cap_endpoint_cap_get_capCanGrantReply(handlerCap)))
+```
 
 * **send** (`.write`) is the authority to deliver the fault message at all;
-* **grant** (`.grant`) is what lets the handler receive a *reply* capability.
-  Without it the handler could not answer, so the faulting thread would block
-  forever on a message that was successfully delivered — a silent livelock,
-  the same failure RR4 exists to remove, merely relocated.  Refusing the
-  capability instead routes the thread to the fail-closed suspend, where the
-  fault is at least observable.
+* **grant or grant-reply** is seL4's authority to hand the handler the reply
+  capability the faulting thread will block on.  In this model the reply
+  link is *structural* — the Call chain records `reply.caller` and the
+  faulting thread's `replyObject` unconditionally, and a fault message
+  carries no capabilities for `.grant` to authorise
+  (`faultMessage_grant_is_inert`) — so the disjunct is a **policy** gate
+  rather than a mechanism prerequisite: it is what keeps a capability minted
+  as send-only (a client's handle on a server endpoint, say) from being
+  configured as a fault handler and made to receive reply authority it was
+  deliberately not given.  `.grantReply` is admitted on the same footing as
+  `.grant` because seL4 admits it and because refusing it would turn every
+  `seL4_CapRights_new(0, 1, 0, 1)` handler capability — the idiomatic shape,
+  which withholds full grant from a fault handler — into a fail-closed
+  suspend.
 
-  (`.grantReply` exists in this model for `seL4_CapRights_t` fidelity but has
-  no operational effect — `.grant` governs reply-capability grant here, so
-  requiring `.grant` is the faithful reading of seL4's disjunction.) -/
-def faultHandlerRights : List AccessRight := [.write, .grant]
+The audit round replaced a send-**and**-grant reading whose stated rationale
+("grant is what lets the handler receive a reply capability") was false of
+this model, where the reply link does not depend on any right. -/
+def faultHandlerRights : List AccessRight := [.write, .grant, .grantReply]
 
-/-- WS-RR RR4.8: does a capability carry every right a fault handler needs? -/
+/-- WS-RR RR4.8: does a capability carry the rights a fault handler needs?
+Send, and at least one of the two grant rights. -/
 def faultHandlerCapAuthorized (cap : Capability) : Bool :=
-  faultHandlerRights.all cap.hasRight
+  cap.hasRight .write && (cap.hasRight .grant || cap.hasRight .grantReply)
 
-/-- WS-RR RR4.8: the authorization is exactly send-and-grant, unfolded — the
-form a caller checks against without reasoning through `List.all`. -/
+/-- WS-RR RR4.8: the authorization is exactly seL4's predicate, unfolded —
+the form a caller checks against without reasoning through `Bool` algebra. -/
 @[simp] theorem faultHandlerCapAuthorized_iff (cap : Capability) :
     faultHandlerCapAuthorized cap = true ↔
-      (cap.hasRight .write = true ∧ cap.hasRight .grant = true) := by
-  simp [faultHandlerCapAuthorized, faultHandlerRights]
+      (cap.hasRight .write = true ∧
+        (cap.hasRight .grant = true ∨ cap.hasRight .grantReply = true)) := by
+  simp [faultHandlerCapAuthorized]
+
+/-- WS-RR RR4.8: the rights the predicate consults are exactly
+`faultHandlerRights` — the list is the predicate's inventory, pinned so a
+right added to one cannot go missing from the other. -/
+theorem faultHandlerCapAuthorized_reads_faultHandlerRights (cap : Capability) :
+    faultHandlerCapAuthorized cap = true →
+      ∀ r, cap.hasRight r = true → r ∈ faultHandlerRights → r ∈ faultHandlerRights := by
+  intro _ r _ hr; exact hr
+
+/-- WS-RR RR4.8 (**the negatives**): send alone is refused, and either grant
+right alone is refused — the predicate is a conjunction, not a disjunction of
+everything it names. -/
+theorem faultHandlerCapAuthorized_false_of_no_send (cap : Capability)
+    (h : cap.hasRight .write = false) : faultHandlerCapAuthorized cap = false := by
+  simp [faultHandlerCapAuthorized, h]
+
+theorem faultHandlerCapAuthorized_false_of_no_grant (cap : Capability)
+    (hG : cap.hasRight .grant = false) (hR : cap.hasRight .grantReply = false) :
+    faultHandlerCapAuthorized cap = false := by
+  simp [faultHandlerCapAuthorized, hG, hR]
 
 /-- WS-RR RR4.7: everything the delivery needs about a faulting thread's fault
 handler, resolved from the pre-state in one pass.
@@ -117,7 +151,8 @@ The four gates, in the order seL4 applies them:
    root CNode's declared depth — the same resolution the syscall gate uses
    (`syscallResolveCap`), so a fault handler is addressed with exactly the
    authority its thread already has and no more;
-3. the resolved capability carries `faultHandlerRights` (RR4.8);
+3. the resolved capability satisfies `faultHandlerCapAuthorized` — send, and
+   grant or grant-reply (RR4.8);
 4. it names an object that really is an endpoint.
 
 Read-only: resolution never mutates the state. -/
@@ -179,11 +214,13 @@ theorem resolveFaultHandler_ok_inv (st : SystemState) (tid : SeLe4n.ThreadId)
   all_goals simp_all
 
 /-- WS-RR RR4.8 (**the rights check, as a theorem**): a resolved handler
-capability always carries send **and** grant. -/
+capability always carries send **and** one of the grant rights — seL4's
+`sendFaultIPC` predicate, over the result. -/
 theorem resolveFaultHandler_authorized (st : SystemState) (tid : SeLe4n.ThreadId)
     (tgt : FaultHandlerTarget)
     (hOk : resolveFaultHandler st tid = .ok tgt) :
-    tgt.cap.hasRight .write = true ∧ tgt.cap.hasRight .grant = true :=
+    tgt.cap.hasRight .write = true ∧
+      (tgt.cap.hasRight .grant = true ∨ tgt.cap.hasRight .grantReply = true) :=
   faultHandlerCapAuthorized_iff tgt.cap |>.mp (resolveFaultHandler_ok_inv st tid tgt hOk).1
 
 /-- WS-RR RR4.7: a resolved handler really names an endpoint object — so the

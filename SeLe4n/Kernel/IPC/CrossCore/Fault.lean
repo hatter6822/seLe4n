@@ -303,17 +303,28 @@ Three stages, in seL4's order (`doReplyTransfer`'s fault branch):
    fault is being answered;
 2. **unblock** through the live `.reply` chain
    (`endpointReplyCrossCoreDispatch`), which brings three things with it: the
-   confused-deputy check (the reply is admitted only from the `replyTarget`
-   the Call recorded, so a third thread cannot restart someone else's faulted
-   client — this is **RR4.13**'s reply capability, enforced by the same
-   machinery the `.reply` syscall uses), the **return of the donated
-   SchedContext** the delivery lent a passive handler, and the reversion of
-   the priority-inheritance boost;
+   replay barrier (only a thread still in `.blockedOnReply` with a recorded
+   target is delivered, so a consumed reply cannot be answered twice), the
+   **return of the donated SchedContext** the delivery lent a passive
+   handler, and the reversion of the priority-inheritance boost;
 3. **apply** the outcome: install the restart frame, or leave the thread
    inactive.
 
 The delivered message is `IpcMessage.empty` — a fault reply's payload is
 *registers*, not message registers, and the register writeback is stage 3.
+
+**Where the authority is.**  This transition, like `endpointReplyOnCore`
+beneath it, does **not** gate on the replier's identity: `replier` is carried
+for the donation return and the audit record, not checked against the server
+the Call recorded.  The authority to answer a fault is the **reply
+capability** the fault Call linked (RR4.13): the live `.reply` dispatch arm
+resolves the invoked reply object to its recorded `caller` and reaches this
+transition only for that thread, so a thread that does not hold a capability
+to the faulted thread's reply object cannot name it here.  A delegated reply
+capability (copied or minted to another server) is legitimate authority, as it
+is for every seL4-MCS reply — which is why the gate is the capability and not
+the thread.  A direct below-API caller therefore has to bring its own
+authorisation; the dispatch arm is the one that has it.
 
 Fails `.illegalState` for a thread carrying no fault: that is the *ordinary*
 reply's business, and answering it here would let a handler rewrite a

@@ -107,8 +107,9 @@ impl TrapFrame {
     }
 
     /// Set x1 (the returned `MessageInfo` word — its label carries the
-    /// error status: `0` = success, `d + 1` = `KernelError` discriminant
-    /// `d`).
+    /// kernel status in the top of the label range: `0` = success,
+    /// `ERROR_LABEL_BASE + d` = `KernelError` discriminant `d`, anything
+    /// below the base a delivered message's own label).
     #[inline(always)]
     pub fn set_x1(&mut self, val: u64) {
         self.gprs[1] = val;
@@ -347,9 +348,11 @@ fn classify_synchronous_exception(esr: u64) -> u32 {
 /// — publish a fail-closed error frame.
 ///
 /// The delivery half is `lean_handle_fault`
-/// (`@[export]` on `SeLe4n.Kernel.faultEntry`), which classifies, builds the
-/// fault message from the faulting thread's saved registers, and runs the
-/// verified `faultDeliverOnCore`: the thread blocks on its handler's endpoint
+/// (`@[export]` on `SeLe4n.Kernel.faultEntry`), which spills the trap frame's
+/// fault window (`x0`-`x7`, `SP_EL0`, `x30`) into the faulting thread's saved
+/// register context, classifies, builds the fault message from those
+/// registers, and runs the verified, flow-checked `faultDeliverOnCoreChecked`:
+/// the thread blocks on its handler's endpoint
 /// awaiting a reply, or — with no usable handler — is descheduled and marked
 /// `.Inactive`.  Either way it comes out **not runnable on this core**
 /// (`faultEntryStep_not_dispatchable`), which is what makes the pre-RR4
@@ -374,8 +377,9 @@ fn classify_synchronous_exception(esr: u64) -> u32 {
 /// # The not-ready path (WS-RR RR4.22)
 ///
 /// A core whose Lean runtime is not up cannot deliver, so it publishes a full
-/// **v2 offset-label** frame: `x0 = 0`, `x1` a `MessageInfo` whose label is
-/// `discriminant + 1`, and `x2`-`x5` cleared.  This retires the
+/// **status-label** frame (ABI v3): `x0 = 0`, `x1` a `MessageInfo` whose
+/// label is `ERROR_LABEL_BASE + discriminant`, and `x2`-`x5` cleared.  This
+/// retires the
 /// raw-discriminant-in-`x0` convention the four exception arms used, which
 /// left `x1` **untouched** — so a resumed thread whose `x1` happened to carry
 /// a label below 512 decoded a fault as a *successful syscall* carrying a
@@ -388,22 +392,55 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
         let core_id = crate::per_cpu::current_core_id_from_tpidr();
         if crate::lean_ready::lean_ready(core_id as usize) {
             extern "C" {
-                fn lean_handle_fault(core_id: u64, esr: u64, elr: u64, spsr: u64, far: u64);
+                // The fifteen words the Lean seam consumes: the syndrome, and
+                // the fault window the trap frame saved (`x0`-`x7`, `SP_EL0`,
+                // `x30`) — the registers seL4's `setMRs_fault` reads and
+                // `handleFaultReply` writes.  The window is spilled into the
+                // thread's saved register context on the Lean side before the
+                // fault context is built (`writeFaultRegistersToTcb`): the
+                // Lean mirror of the register file is partial and, between
+                // syscalls, holds the *last syscall's* arguments, so building
+                // the context from the mirror alone would report a stale
+                // argument window and, on resume, reinstall it over the
+                // thread's live registers.
+                #[allow(clippy::too_many_arguments)]
+                fn lean_handle_fault(
+                    core_id: u64,
+                    esr: u64,
+                    elr: u64,
+                    spsr: u64,
+                    far: u64,
+                    x0: u64,
+                    x1: u64,
+                    x2: u64,
+                    x3: u64,
+                    x4: u64,
+                    x5: u64,
+                    x6: u64,
+                    x7: u64,
+                    sp_el0: u64,
+                    lr: u64,
+                );
             }
             let (esr, elr, spsr, far) =
                 (frame.esr_el1, frame.elr_el1, frame.spsr_el1, frame.far_el1);
+            let g = frame.gprs;
+            let sp_el0 = frame.sp_el0;
             // SAFETY: `lean_handle_fault` is the C-callable wrapper the Lean
             // compiler emits for `Kernel.faultEntry`
-            // (`@[export lean_handle_fault]`).  It takes five `u64`s and
+            // (`@[export lean_handle_fault]`).  It takes fifteen `u64`s and
             // returns no value; calling it is sound from EL1 exception context
             // once this core's Lean runtime is initialized (the gate just
             // checked) and inside the kernel-entry lock (taken below), which is
             // what serialises its `IO.Ref` commit.
             crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
-                lean_handle_fault(core_id, esr, elr, spsr, far);
+                lean_handle_fault(
+                    core_id, esr, elr, spsr, far, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
+                    sp_el0, g[30],
+                );
             });
             crate::kprintln!(
-                "[core {}] fault delivered; halting pending the SM10.1 context restore                  (ESR=0x{:016x} ELR=0x{:016x})",
+                "[core {}] fault delivered; halting pending the SM10.1 context restore (ESR=0x{:016x} ELR=0x{:016x})",
                 core_id,
                 esr,
                 elr
@@ -903,15 +940,18 @@ mod tests {
         // SVC ESR into the frame and verify the SVC-arm is taken.
         //
         // WS-RA: the stub kernel publishes the label-encoded
-        // `NotImplemented` (discriminant 17 → label 18) error frame, and
-        // the SVC arm's writeback is the full six-register restore —
-        // `x0 = 0`, the offset label on `x1`, `x2`-`x5` zero.  Under the
-        // retired bit-63 convention this test asserted `x0 == 17`.
+        // `NotImplemented` (discriminant 17 → label ERROR_LABEL_BASE + 17)
+        // error frame, and the SVC arm's writeback is the full six-register
+        // restore — `x0 = 0`, the status label on `x1`, `x2`-`x5` zero.
+        // Under the retired bit-63 convention this test asserted `x0 == 17`.
         let mut frame = zero_frame();
         frame.esr_el1 = (ec::SVC_AARCH64 << 26) | 0x42; // lower bits ignored
         handle_synchronous_exception(&mut frame);
         assert_eq!(frame.x0(), 0);
-        assert_eq!(frame.x1(), u64::from(error_code::NOT_IMPLEMENTED + 1) << 9);
+        assert_eq!(
+            frame.x1(),
+            (crate::svc_dispatch::ERROR_LABEL_BASE + u64::from(error_code::NOT_IMPLEMENTED)) << 9
+        );
         assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
     }
 
@@ -920,19 +960,23 @@ mod tests {
         // AK5-F.3: DABT from lower EL is classified from frame ESR, not
         // from live register — proves the handler is not reading live mrs.
         //
-        // WS-RR RR4.22: the abort arm now publishes a full **v2 offset-label**
-        // frame instead of the retired raw discriminant in `x0`.  On the host
-        // lane no core is Lean-ready, so `deliver_fault` takes its fail-closed
-        // half: `x0 = 0`, `x1` a `MessageInfo` whose label is
-        // `VM_FAULT + 1`, and `x2`-`x5` cleared.  Under the retired
-        // convention this asserted `x0 == 44` and left `x1` untouched — the
-        // fail-open shape a resumed thread could decode as a success.
+        // WS-RR RR4.22: the abort arm now publishes a full **status-label**
+        // frame (ABI v3) instead of the retired raw discriminant in `x0`.
+        // On the host lane no core is Lean-ready, so `deliver_fault` takes
+        // its fail-closed half: `x0 = 0`, `x1` a `MessageInfo` whose label
+        // is `ERROR_LABEL_BASE + VM_FAULT`, and `x2`-`x5` cleared.  Under
+        // the retired convention this asserted `x0 == 44` and left `x1`
+        // untouched — the fail-open shape a resumed thread could decode as a
+        // success.
         let mut frame = zero_frame();
         frame.esr_el1 = ec::DABT_LOWER << 26;
         frame.far_el1 = 0xFFFF_0000_DEAD_0000;
         handle_synchronous_exception(&mut frame);
         assert_eq!(frame.x0(), 0);
-        assert_eq!(frame.x1(), u64::from(error_code::VM_FAULT + 1) << 9);
+        assert_eq!(
+            frame.x1(),
+            (crate::svc_dispatch::ERROR_LABEL_BASE + u64::from(error_code::VM_FAULT)) << 9
+        );
         assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
         // FAR is preserved in the frame (not mutated by the handler).
         assert_eq!(frame.far_el1, 0xFFFF_0000_DEAD_0000);
@@ -1068,9 +1112,9 @@ mod tests {
     }
 
     /// **WS-RR RR4.22**: every exception arm that is not `SVC` publishes a
-    /// **v2 offset-label** frame — `x0 = 0`, the error on `x1`'s label,
-    /// `x2`-`x5` cleared — and never the retired raw discriminant in `x0`
-    /// with `x1` left as the faulting thread found it.
+    /// **status-label** frame (ABI v3) — `x0 = 0`, the error in the top of
+    /// `x1`'s label range, `x2`-`x5` cleared — and never the retired raw
+    /// discriminant in `x0` with `x1` left as the faulting thread found it.
     ///
     /// The `x1` assertion is the load-bearing half: the pre-RR4 arms wrote
     /// only `x0`, so a resumed thread whose `x1` carried a label below 512
@@ -1102,8 +1146,8 @@ mod tests {
             );
             assert_eq!(
                 frame.x1(),
-                u64::from(disc + 1) << 9,
-                "EC 0x{raw_ec:02x}: x1 must carry the offset error label"
+                (crate::svc_dispatch::ERROR_LABEL_BASE + u64::from(disc)) << 9,
+                "EC 0x{raw_ec:02x}: x1 must carry the status label"
             );
             assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
         }

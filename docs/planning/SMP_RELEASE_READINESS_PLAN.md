@@ -603,6 +603,36 @@ the sender-side `MessageInfo` label pass-through, which is deliberately **not**
 restored here because it would let a thread holding a send capability to a
 fault endpoint mint a message bearing a `seL4_Fault_tag`.
 
+**Audit round (same version).**  A deep audit of the landed cut found four
+defects and two registration gaps, all closed in place:
+
+* the fault entry built its context from the TCB's register mirror, which
+  between syscalls holds the *last syscall's* `x0`-`x5`/`x7` — so the
+  unknown-syscall message reported a stale argument window and a payload-free
+  resume reinstalled it over the thread's live registers.  `lean_handle_fault`
+  now carries the trap frame's `x0`-`x7`, `SP_EL0` and `x30`, spilled into the
+  mirror before the context is built (`writeFaultRegistersToTcb`,
+  `FaultRegisterWindow.ofRegisterFile_spill`,
+  `faultContextOfThread_writeFaultRegistersToTcb`);
+* the entry fired only the single SGI the Call chain surfaced; it now derives
+  its pokes from the pre/post diff (`computeCrossCoreSgis`) and runs the
+  executing core's successor through `scheduleLocalSuccessorLive`, as the
+  syscall seam does;
+* a delivered fault message's `seL4_Fault_tag` label collided with the v2
+  offset error label — `vmFault` (6) decoded in userspace as discriminant 5,
+  `capFault` (1) as `.invalidCapability` — so the return ABI is **version 3**:
+  kernel status in the top of the label range (`errorLabelBase = 0xFFF00`),
+  every delivered label below it;
+* `faultHandlerRights` demanded send **and** grant on a rationale that was
+  false of this model (the reply link does not depend on any right); it is now
+  seL4's `sendFaultIPC` predicate, send and grant **or** grant-reply, so the
+  idiomatic `seL4_CapRights_new(0, 1, 0, 1)` handler capability is admitted;
+* two residuals registered as debt with closure targets: only `MR0`-`MR3` of
+  a fault message reach hardware registers (no receive-side IPC-buffer write
+  exists yet), and RR4.18's scheduler/capability bundle preservation, which
+  the cross-core Call and reply chains do not carry for the fault path to
+  compose.
+
 The finding, as the audit stated it:
 
 The largest phase, and the one that closes the audit's most serious security
@@ -648,7 +678,7 @@ Rust wiring that makes the Lean path the live one.
 | RR4.19 | **Progress theorem**: a faulted thread cannot re-execute the faulting instruction without an intervening handler action — the theorem that makes the livelock unrepresentable | `SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean` (new) | L |
 | RR4.20 | Non-interference: fault delivery respects the information-flow policy, and a fault message carries no data across a label boundary | `SeLe4n/Kernel/InformationFlow/` | L |
 | RR4.21 | Wire `dispatchSynchronousException`'s `.dataAbort` / `.instrAbort` arms to the delivery transition, retiring the bare `.error .vmFault`. Deliberately **after** the preservation, progress and non-interference proofs above: this is the sub-task that makes the transition reachable, and a live kernel transition must not land ahead of its own invariant surface | `SeLe4n/Kernel/Architecture/ExceptionModel.lean` | M |
-| RR4.22 | `trap.rs`'s four `set_x0`-only exception arms write a full v2 offset-label frame via `error_frame_regs`, retiring the raw-discriminant-in-`x0` convention that leaves `x1` untouched. **Before** the wiring below, not after: once aborts deliver, a resumed thread whose `x1` carries a label under 512 decodes a fault as a successful syscall. The defective arms are in `trap.rs` — `svc_dispatch.rs` already holds the correct helper | `rust/sele4n-hal/src/trap.rs` | S |
+| RR4.22 | `trap.rs`'s four `set_x0`-only exception arms write a full status-label frame (ABI v3 since the audit round — the top-range status label, `error_frame_regs`) via `error_frame_regs`, retiring the raw-discriminant-in-`x0` convention that leaves `x1` untouched. **Before** the wiring below, not after: once aborts deliver, a resumed thread whose `x1` carries a label under 512 decodes a fault as a successful syscall. The defective arms are in `trap.rs` — `svc_dispatch.rs` already holds the correct helper | `rust/sele4n-hal/src/trap.rs` | S |
 | RR4.23 | Rust: `trap.rs` abort arms call the Lean fault entry through a new `@[export]`, inside `with_kernel_entry` | `rust/sele4n-hal/src/trap.rs`, `SeLe4n/Platform/FFI.lean` | M |
 | RR4.24 | Rust: `ELR_EL1` writeback on resume vs restart — the trap frame gains the mutator it currently lacks | `rust/sele4n-hal/src/trap.rs` | M |
 | RR4.25 | Retire the duplicate classification path: `trap.rs` classifies via the Lean model rather than its own `esr_ec` match, so the two cannot diverge | `rust/sele4n-hal/src/trap.rs` | M |

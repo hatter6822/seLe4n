@@ -519,7 +519,7 @@ shootdown round(s) the commit posted (`completeShootdownRounds`, recovered from
 the `tlbShootdown` diff; inert for every non-shootdown syscall).
 
 **WS-RA (the return convention)**: the committed outcome's return frame
-(`x0`-`x5`, errors as the offset label on `x1`) is published into this core's
+(`x0`-`x5`, errors as the status label on `x1`) is published into this core's
 return-frame mailbox (`ffiSyscallReturnFrame` — the `ShootdownOpMailbox`
 pattern, since a scalar export return cannot carry six words), and the export's
 scalar return is the **outcome tag**: `0` = the mailbox frame is the caller's

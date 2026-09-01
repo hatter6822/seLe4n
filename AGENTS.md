@@ -196,9 +196,9 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~49390 lines)
+- `CHANGELOG.md` (~49491 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~12897 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~12902 lines)
 - `tests/SmpInformationFlowSuite.lean` (~11756 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~7902 lines)
 - `SeLe4n/Kernel/API.lean` (~6726 lines)
@@ -206,11 +206,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5186 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5099 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~4856 lines)
+- `docs/gitbook/12-proof-and-invariant-map.md` (~4754 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
-- `docs/gitbook/12-proof-and-invariant-map.md` (~4744 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4503 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4417 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4450 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4112 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
@@ -295,11 +295,12 @@ To find files that need pagination today, run:
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1668 lines)
 - `tests/SmpIpcSuite.lean` (~1660 lines)
-- `docs/DEVELOPMENT.md` (~1513 lines)
+- `docs/DEVELOPMENT.md` (~1532 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1508 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1491 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1488 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
+- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1459 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1424 lines)
@@ -310,7 +311,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1393 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `tests/LockSetSuite.lean` (~1375 lines)
-- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1370 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md` (~1349 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
@@ -328,6 +328,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~1235 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1233 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
+- `tests/FaultHandlingSuite.lean` (~1203 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~1199 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1195 lines)
@@ -348,22 +349,21 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1076 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
-- `tests/SyscallReturnAbiSuite.lean` (~1055 lines)
-- `tests/SyscallDispatchSuite.lean` (~1051 lines)
+- `tests/SyscallDispatchSuite.lean` (~1066 lines)
+- `tests/SyscallReturnAbiSuite.lean` (~1058 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1046 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
+- `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~1039 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1030 lines)
-- `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~1022 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1007 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~998 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~995 lines)
 - `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` (~989 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~985 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `tests/SmpFoundationsSuite.lean` (~965 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~950 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~950 lines)
-- `tests/FaultHandlingSuite.lean` (~948 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~943 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~942 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~941 lines)
@@ -874,11 +874,16 @@ of summary is a sign the narrative belongs in those files instead.
 ### WS-RA Syscall Return ABI — COMPLETE (v0.33.37; RA.B.5b + RA.B.8 at v0.33.38)
 
 The kernel returns seL4's ARM64 frame exactly: `x0` = badge / primary result at
-full 64-bit width, `x1` = `MessageInfo` whose **offset** label carries the error
-(`0` = success, `d + 1` = discriminant `d` — offset because discriminant 0,
-`.invalidCapability`, is a real error and direct carriage would alias it with
-success), `x2`-`x5` = message registers.  `SYSCALL_ABI_VERSION = 2`, pinned in
-Lean, `sele4n-types` and the HAL.
+full 64-bit width, `x1` = `MessageInfo` whose label carries the kernel status in
+the **top** of the 20-bit label range (`0` = success, `errorLabelBase + d` =
+discriminant `d` with `errorLabelBase = 0xFFF00`; every label below the base is
+a delivered message's own — a fault handler's `seL4_Fault_tag`, for one),
+`x2`-`x5` = message registers.  `SYSCALL_ABI_VERSION = 3`, pinned in Lean,
+`sele4n-types` and the HAL.  Version 2 carried the status as label `d + 1`
+and was retired at v0.34.44 (WS-RR RR4 audit round): a delivered fault
+message's tag decoded in userspace as a kernel error, so no fault handler could
+be written against `sele4n-abi`.  New code must not treat a nonzero `x1`
+label as an error; `ofErrorLabel?` / `decode_response` decide by range.
 
 What remains is owed to SM10.1: return-frame *delivery* at the context restore,
 and the cancellation/timeout error-frame staging.  Until that seam flips, a
@@ -1175,7 +1180,29 @@ code may assume:
   a user send leaves it at `0` — because carrying a user's label would let a
   thread holding a send capability to a fault endpoint mint a message bearing a
   `seL4_Fault_tag`.  Restoring seL4's sender-side label pass-through needs its
-  own authority story and is registered debt.
+  own authority story and is registered debt.  (5) The handler capability is
+  gated by seL4's `sendFaultIPC` predicate — send, and grant **or**
+  grant-reply (`faultHandlerCapAuthorized`) — not send-and-grant: the reply
+  link is structural in this model, so the disjunct is a policy gate, and the
+  idiomatic `seL4_CapRights_new(0, 1, 0, 1)` handler capability must be
+  admitted.  (6) The fault entry **spills the trap frame's fault window**
+  (`x0`-`x7`, `SP_EL0`, `x30`) into the faulting thread's `registerContext`
+  before it builds the fault context (`writeFaultRegistersToTcb`,
+  `faultContextOfThread_writeFaultRegistersToTcb`): the mirror is partial and
+  between syscalls holds the *last syscall's* arguments, so a context built
+  from it alone would report a stale argument window and, on a payload-free
+  resume, reinstall it over the thread's live registers.  `lean_handle_fault`
+  therefore takes fifteen words, and new code must not build a fault context
+  off the mirror without spilling first.  (7) The entry derives its cross-core
+  pokes from the pre/post **diff** (`computeCrossCoreSgis`), as the syscall
+  seam does, never from the single SGI the Call chain surfaces; and it runs
+  the executing core's successor through `scheduleLocalSuccessorLive`, inert
+  until SM10.1.  (8) On hardware only `MR0`-`MR3` of a fault message reach
+  the handler's registers: no receive path writes `MR4` onward into the IPC
+  buffer yet (a WS-RA residual with its first consumer here), so an
+  `unknownSyscall` (13 words) or `userException` (5 words) handler sees its
+  first four words until that write lands — registered debt with a closure
+  target, not a silent truncation.
 - **A core that delivers a fault halts, until SM10.1.**  The model deschedules
   the faulting thread, and the hardware cannot honour that until the context
   restore installs a successor — `trap.S` would otherwise `eret` through the

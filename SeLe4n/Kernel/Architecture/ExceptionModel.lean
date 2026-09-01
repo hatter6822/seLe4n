@@ -277,6 +277,14 @@ deployment context from `Platform.FFI.getKernelLabelingContext`.  New code must
 not read this module's arms as evidence that a fault is delivered without a flow
 check.
 
+**Nor as evidence of where the fault context comes from.**  The fault arms
+here build the context off the thread's saved `registerContext` as the model
+state holds it; the live entry first **spills the trap frame's fault window**
+into that mirror (`Kernel.writeFaultRegistersToTcb`), because on hardware the
+mirror holds only the last syscall's arguments between syscalls.  This wrapper
+takes no window because it models a state in which the mirror is already the
+truth; the seam that faces hardware cannot assume that.
+
 **Unattributable faults.**  A core with no current thread has no user thread to
 deliver to, so the fault is reported to the trap layer as an error rather than
 delivered — and the error is the *fault's own kind*

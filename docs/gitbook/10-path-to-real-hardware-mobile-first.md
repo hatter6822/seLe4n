@@ -58,9 +58,14 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   alignment arms no longer write an error frame back into the
   faulting thread's registers and `eret` onto the instruction that
   faulted.  `deliver_fault` calls `@[export lean_handle_fault]`
-  (`Kernel/FaultEntry.lean`) inside `with_kernel_entry`, which
-  records the fault on the TCB and delivers it to the thread's
-  `faultHandler` endpoint through the live cross-core `.call` chain.
+  (`Kernel/FaultEntry.lean`) inside `with_kernel_entry` with fifteen
+  words — the syndrome and the trap frame's fault window (`x0`-`x7`,
+  `SP_EL0`, `x30`), which the entry spills into the thread's register
+  mirror before building the fault context, since the mirror holds only
+  the last syscall's arguments between syscalls — and the entry records
+  the fault on the TCB and delivers it to the thread's `faultHandler`
+  endpoint through the live cross-core `.call` chain, deriving its
+  cross-core pokes from the state diff as the syscall seam does.
   Classification is exported too — `@[export
   lean_classify_synchronous_exception]` — and `trap.rs` calls it on
   the hardware target instead of running its own `esr_ec` match, so
@@ -73,7 +78,9 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   faulting thread and cannot install a successor, so `deliver_fault`
   halts rather than resuming.  Unreachable at v0.34.44 — no core
   sets `lean_ready` anywhere in the tree, so the trap handler still
-  takes the pre-RR4 error-frame branch on hardware.
+  takes the fail-closed branch on hardware: a full ABI v3 status-label
+  frame (`error_frame_regs`), never the pre-RR4 raw discriminant in
+  `x0` with `x1` left as the thread found it.
 - **Bounded WFE** (AN9-G / DEF-R-HAL-L17): `wfe_bounded` with
   10 ms default at 54 MHz.
 - **SMP scaffolding** (AN9-J / DEF-R-HAL-L20): PSCI `cpu_on` +

@@ -218,6 +218,100 @@ zero fallback is never reached inside it. -/
 end FaultContext
 
 -- ============================================================================
+-- §2b  The trap-frame window the fault entry spills
+-- ============================================================================
+
+/-- WS-RR RR4 (audit round): the registers the trap layer hands the fault
+entry — the faulting thread's `x0`-`x7`, `SP_EL0` and `x30` **as saved at the
+trap**.
+
+Why this exists: `TCB.registerContext` is a *partial* mirror of the hardware
+register file.  The SVC seam spills `x0`-`x5` and `x7` at syscall entry and
+the return path writes the result frame back, so between two syscalls the
+mirror holds whatever the *last syscall* left there — never the values the
+thread had when it took a data abort.  A fault context read off the mirror
+alone would carry a stale argument window into the unknown-syscall message
+and, worse, *install* it on resume: `applyFaultRestart` writes `x0`-`x7`,
+`lr` and `sp` from the context, so a payload-free reply would clobber the
+thread's live registers with its last syscall's arguments.  The entry
+therefore spills this window into the mirror first
+(`Kernel.writeFaultRegistersToTcb`), so the context the delivery builds is the
+hardware's (`FaultRegisterWindow.ofRegisterFile_spill`), and a resume
+reinstalls exactly what the thread had.
+
+The window is seL4's `n_syscallMessage` register set — the registers a fault
+message reads and a fault reply writes — and no more: `x8`-`x29` are neither
+reported nor restorable through the fault IPC, so they stay in the trap frame
+the SM10.1 context restore merges the staged registers into. -/
+structure FaultRegisterWindow where
+  /-- `x0`-`x7`, in order; a shorter array reads as zero through `gprAt`. -/
+  gprs : Array UInt64 := #[]
+  /-- `SP_EL0`. -/
+  sp : UInt64 := 0
+  /-- `x30`, the link register. -/
+  lr : UInt64 := 0
+  deriving Repr, DecidableEq, Inhabited
+
+namespace FaultRegisterWindow
+
+/-- Total read of the `x0`-`x7` window, zero beyond what was supplied. -/
+def gprAt (w : FaultRegisterWindow) (i : Nat) : UInt64 := w.gprs[i]?.getD 0
+
+/-- Spill the window into a saved register file: `x0`-`x7` and `x30` into the
+GPR map, `SP_EL0` into `sp`.  Every other register — `pc` included, which the
+exception entry carries separately as `ELR_EL1` — is left as it was. -/
+def spill (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile) : SeLe4n.RegisterFile :=
+  { rf with
+    sp  := ⟨w.sp.toNat⟩
+    gpr := fun r =>
+      if r.val < FaultContext.gprWindow then ⟨(w.gprAt r.val).toNat⟩
+      else if r.val = 30 then ⟨w.lr.toNat⟩
+      else rf.gpr r }
+
+/-- The spill leaves the saved `pc` alone — the restart address is the
+syndrome's `ELR_EL1`, threaded separately, never a register-file read. -/
+@[simp] theorem spill_pc (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile) :
+    (w.spill rf).pc = rf.pc := rfl
+
+/-- A register outside the window and the link register reads through to the
+file underneath — the spill overwrites exactly what the trap frame carries. -/
+theorem spill_gpr_outside (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile)
+    (r : SeLe4n.RegName) (hLo : ¬ r.val < FaultContext.gprWindow) (hLr : r.val ≠ 30) :
+    (w.spill rf).gpr r = rf.gpr r := by
+  simp [spill, hLo, hLr]
+
+/-- **The context a delivery builds from a spilled file is the window** — the
+words the hardware saved, not whatever the mirror held before.  This is the
+statement that closes the stale-mirror defect: every contextual word of the
+fault message, and every register a resume reinstalls, is a function of the
+trap frame and the syndrome alone. -/
+theorem ofRegisterFile_spill (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile)
+    (faultIP spsr : UInt64) :
+    FaultContext.ofRegisterFile (w.spill rf) faultIP spsr =
+      { faultIP := faultIP, sp := w.sp, lr := w.lr, spsr := spsr,
+        gprs := (Array.range FaultContext.gprWindow).map w.gprAt } := by
+  unfold FaultContext.ofRegisterFile
+  refine FaultContext.mk.injEq _ _ _ _ _ _ _ _ _ _ |>.mpr ⟨rfl, ?_, ?_, rfl, ?_⟩
+  · simp [spill]
+  · simp [spill, FaultContext.gprWindow]
+  · apply Array.ext'
+    simp only [Array.toList_map, Array.toList_range]
+    apply List.map_congr_left
+    intro i hi
+    rw [List.mem_range] at hi
+    simp [spill, hi]
+
+/-- The pointwise form of `ofRegisterFile_spill`, in the shape the message
+encoder reads (`FaultContext.gprAt`). -/
+theorem ofRegisterFile_spill_gprAt (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile)
+    (faultIP spsr : UInt64) (i : Nat) (hi : i < FaultContext.gprWindow) :
+    (FaultContext.ofRegisterFile (w.spill rf) faultIP spsr).gprAt i = w.gprAt i := by
+  rw [FaultContext.ofRegisterFile_gprAt _ _ _ i hi]
+  simp [spill, hi]
+
+end FaultRegisterWindow
+
+-- ============================================================================
 -- §3  What a faulting thread carries
 -- ============================================================================
 

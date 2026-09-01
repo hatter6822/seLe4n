@@ -569,7 +569,14 @@ Bundle level:
   deschedule could have been undone downstream by the boost propagation.
   Also production: `Kernel/IPC/CrossCore/Fault.lean` (the delivery and the
   reply), `Kernel/Architecture/Fault.lean` (the `seL4_Fault_tag` wire format,
-  `decodeFault_encodeFault`), `Kernel/FaultEntry.lean` (the two exports).
+  `decodeFault_encodeFault`, and `faultLabel_lt_errorLabelBase` — every fault
+  tag is below the ABI v3 status range, so a handler's decoder never reads a
+  delivery as a kernel error), `Kernel/FaultEntry.lean` (the two exports, plus
+  `faultContextOfThread_writeFaultRegistersToTcb`: the context the entry
+  delivers is the trap frame's spilled window, word for word, never the
+  register mirror's stale last-syscall contents —
+  `Model/Fault.lean`'s `FaultRegisterWindow.ofRegisterFile_spill` is the
+  register-level half).
   Also production, and load-bearing for the live path: `replyTransferOnCore`
   (`IPC/CrossCore/Fault.lean` §4) — seL4's `doReplyTransfer` branch on the
   answered thread's `pendingFault`, which the `.reply` and checked-`.reply`
@@ -606,9 +613,9 @@ Bundle level:
   `Kernel/InformationFlow/FaultFlow.lean` — the non-interference half:
   `faultMessage_transfers_no_authority` and
   `faultMessage_grant_is_inert` are the two negatives that make the delivery's
-  `.grant` right safe — the fault message carries no capabilities, so the
-  grant bit the handler capability must hold (seL4's send + grant/grantReply
-  gate) authorises nothing on the message it gates.
+  grant rights safe — the fault message carries no capabilities, so a grant
+  bit the handler capability may hold (seL4's send + grant/grantReply gate,
+  `faultHandlerCapAuthorized`) authorises nothing on the message it gates.
 - `blockedThreadsPendingMessageConsistent` — **strengthened to both directions**
   (PR #873 round 11, v0.33.86), and renamed from `waitingThreadsPendingMessageNone`
   because the old name described only the half it stated.  It now ties
