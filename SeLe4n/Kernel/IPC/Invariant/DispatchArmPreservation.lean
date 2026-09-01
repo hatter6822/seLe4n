@@ -15,6 +15,7 @@ import SeLe4n.Kernel.Architecture.IpcBufferValidation
 import SeLe4n.Kernel.IPC.Operations.NotificationBind
 import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
+import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.Service.Registry
 
 /-!
@@ -807,5 +808,380 @@ theorem setThreadCpuAffinityOnCore_preserves_ipcInvariantFull
               hQueuedSet hInvSet
       · contradiction
   · contradiction
+
+-- ============================================================================
+-- §9  Capability arms (`.cspaceDelete`, `.cspaceMint`, `.cspaceCopy`,
+--     `.cspaceMove`, `.mintReplyCap`)
+-- ============================================================================
+
+/-- The CDT node-allocation step touches only the CDT maps. -/
+theorem ensureCdtNodeForSlot_scheduler_eq (st : SystemState) (ref : SlotRef) :
+    (SystemState.ensureCdtNodeForSlot st ref).snd.scheduler = st.scheduler := by
+  unfold SystemState.ensureCdtNodeForSlot
+  split <;> rfl
+
+/-- The CDT attach step touches only the CDT maps. -/
+theorem attachSlotToCdtNode_scheduler_eq (st : SystemState) (ref : SlotRef)
+    (node : CdtNodeId) :
+    (SystemState.attachSlotToCdtNode st ref node).scheduler = st.scheduler := rfl
+
+/-- The CDT detach step touches only the CDT maps. -/
+theorem detachSlotFromCdt_scheduler_eq (st : SystemState) (ref : SlotRef) :
+    (SystemState.detachSlotFromCdt st ref).scheduler = st.scheduler := by
+  unfold SystemState.detachSlotFromCdt
+  split <;> rfl
+
+/-- Success shape of `cspaceInsertSlot`: the target CNode existed, and the
+post-state holds it with the capability inserted. -/
+private theorem cspaceInsertSlot_cnode_shape
+    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
+    (hObjInv : st.objects.invExt)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    ∃ cn : CNode, st.objects[addr.cnode]? = some (.cnode cn) ∧
+      st'.objects[addr.cnode]? = some (.cnode (cn.insert addr.slot cap)) := by
+  unfold cspaceInsertSlot at hStep
+  cases hObj : st.objects[addr.cnode]? with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | cnode cn =>
+      simp only [hObj] at hStep
+      cases hLk : cn.lookup addr.slot with
+      | some c => simp [hLk] at hStep
+      | none =>
+        simp only [hLk] at hStep
+        split at hStep
+        · contradiction
+        · rename_i st1 hStore
+          have h1 := storeObject_objects_eq st st1 addr.cnode
+            (.cnode (cn.insert addr.slot cap)) hObjInv hStore
+          unfold storeCapabilityRef at hStep
+          cases hStep
+          exact ⟨cn, rfl, h1⟩
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+    | schedContext _ | reply _ => simp [hObj] at hStep
+
+/-- `cspaceInsertSlot` preserves the whole bundle: its one object write is a
+CNode, and the inserted capability's badge is valid. -/
+theorem cspaceInsertSlot_preserves_ipcInvariantFull
+    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hCapValid : ∀ b, cap.badge = some b → b.valid)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨cn, hPre, hAt⟩ := cspaceInsertSlot_cnode_shape st st' addr cap hObjInv hStep
+  have hNe : ∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode →
+      st'.objects[oid]? = st.objects[oid]? :=
+    fun oid h => cspaceInsertSlot_preserves_objects_ne st st' addr cap oid h hObjInv hStep
+  have hSched := cspaceInsertSlot_preserves_scheduler st st' addr cap hStep
+  have hView := ipcReadViewAgreement.of_single_inert_write hNe
+    (by rw [hPre]; trivial) (by rw [hAt]; trivial)
+  have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[tid.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding := by
+    intro tid tcb' h
+    by_cases hK : tid.toObjId = addr.cnode
+    · rw [hK, hAt] at h
+      exact absurd (Option.some.inj h) (fun hx => KernelObject.noConfusion hx)
+    · rw [hNe _ hK] at h
+      exact ⟨tcb', h, rfl, rfl⟩
+  have hBadge := cspaceInsertSlot_preserves_badgeWellFormed st st' addr cap
+    hInv.badgeWellFormed hObjInv hCapValid hStep
+  exact ipcInvariantFull_of_readViewAgreement hView
+    (passiveServerIdle_of_frame (passiveServerIdleFrame_of_backward hBack hSched)
+      hInv.passiveServerIdle)
+    hBadge.2 hInv
+
+/-- Success shape of `cspaceDeleteSlotCore`: the target CNode existed, the
+post-state holds it with the slot removed, off-key objects and the scheduler
+are untouched. -/
+private theorem cspaceDeleteSlotCore_shape
+    (st st' : SystemState) (addr : CSpaceAddr)
+    (hObjInv : st.objects.invExt)
+    (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
+    ∃ cn : CNode, st.objects[addr.cnode]? = some (.cnode cn) ∧
+      st'.objects[addr.cnode]? = some (.cnode (cn.remove addr.slot)) ∧
+      (∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]?) ∧
+      st'.scheduler = st.scheduler := by
+  unfold cspaceDeleteSlotCore at hStep
+  cases hObj : st.objects[addr.cnode]? with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | cnode cn =>
+      simp only [hObj] at hStep
+      split at hStep
+      · contradiction
+      · rename_i st1 hStore
+        unfold storeCapabilityRef at hStep
+        dsimp only [] at hStep
+        cases hStep
+        refine ⟨cn, rfl, ?_, ?_, ?_⟩
+        · rw [SystemState.detachSlotFromCdt_objects_eq]
+          exact storeObject_objects_eq st st1 addr.cnode
+            (.cnode (cn.remove addr.slot)) hObjInv hStore
+        · intro oid hNe
+          rw [SystemState.detachSlotFromCdt_objects_eq]
+          exact storeObject_objects_ne st st1 addr.cnode oid
+            (.cnode (cn.remove addr.slot)) hNe hObjInv hStore
+        · rw [detachSlotFromCdt_scheduler_eq]
+          exact storeObject_scheduler_eq st st1 addr.cnode
+            (.cnode (cn.remove addr.slot)) hStore
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+    | schedContext _ | reply _ => simp [hObj] at hStep
+
+/-- `cspaceDeleteSlotCore` preserves the whole bundle: removal shrinks the
+CNode's lookups, so the badge clause carries from the pre-state. -/
+theorem cspaceDeleteSlotCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (addr : CSpaceAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨cn, hPre, hAt, hNe, hSched⟩ := cspaceDeleteSlotCore_shape st st' addr hObjInv hStep
+  have hView := ipcReadViewAgreement.of_single_inert_write hNe
+    (by rw [hPre]; trivial) (by rw [hAt]; trivial)
+  have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[tid.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding := by
+    intro tid tcb' h
+    by_cases hK : tid.toObjId = addr.cnode
+    · rw [hK, hAt] at h
+      exact absurd (Option.some.inj h) (fun hx => KernelObject.noConfusion hx)
+    · rw [hNe _ hK] at h
+      exact ⟨tcb', h, rfl, rfl⟩
+  have hCap : capabilityBadgesWellFormed st' := by
+    intro oid cn' slot cap badge hCn hLk hB
+    by_cases hK : oid = addr.cnode
+    · rw [hK, hAt] at hCn
+      obtain rfl : cn.remove addr.slot = cn' := by
+        simpa only [Option.some.injEq, KernelObject.cnode.injEq] using hCn
+      by_cases hSlot : addr.slot = slot
+      · rw [← hSlot, CNode.lookup_remove_eq_none cn addr.slot
+          (CNode.slotsUnique_holds cn)] at hLk
+        cases hLk
+      · rw [CNode.lookup_remove_ne cn addr.slot slot hSlot
+          (CNode.slotsUnique_holds cn)] at hLk
+        exact hInv.badgeWellFormed.2 addr.cnode cn slot cap badge (hK ▸ hPre) hLk hB
+    · rw [hNe _ hK] at hCn
+      exact hInv.badgeWellFormed.2 oid cn' slot cap badge hCn hLk hB
+  exact ipcInvariantFull_of_readViewAgreement hView
+    (passiveServerIdle_of_frame (passiveServerIdleFrame_of_backward hBack hSched)
+      hInv.passiveServerIdle)
+    hCap hInv
+
+/-- `.cspaceDelete`: the guard adds no state change on top of the core. -/
+theorem cspaceDeleteSlot_preserves_ipcInvariantFull
+    (st st' : SystemState) (addr : CSpaceAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold cspaceDeleteSlot at hStep
+  split at hStep
+  · contradiction
+  · exact cspaceDeleteSlotCore_preserves_ipcInvariantFull st st' addr hObjInv hInv hStep
+
+/-- A capability read out of a CNode slot carries a valid badge, by the badge
+clause of the pre-state. -/
+private theorem lookupSlotCap_badge_valid (st : SystemState) (addr : CSpaceAddr)
+    (cap : Capability) (hCapWf : capabilityBadgesWellFormed st)
+    (hLk : SystemState.lookupSlotCap st addr = some cap) :
+    ∀ b, cap.badge = some b → b.valid := by
+  intro b hB
+  unfold SystemState.lookupSlotCap at hLk
+  cases hCn : SystemState.lookupCNode st addr.cnode with
+  | none => rw [hCn] at hLk; cases hLk
+  | some cn =>
+      rw [hCn] at hLk
+      have hObj : st.objects[addr.cnode]? = some (.cnode cn) := by
+        unfold SystemState.lookupCNode at hCn
+        cases hO : st.objects[addr.cnode]? with
+        | none => rw [hO] at hCn; cases hCn
+        | some obj =>
+          cases obj <;> rw [hO] at hCn <;> cases hCn
+          rfl
+      exact hCapWf addr.cnode cn addr.slot cap b hObj hLk hB
+
+/-- Inversion of a successful `toNonNull?`: the promoted value is the input. -/
+private theorem toNonNull?_val_eq {cap : Capability} {capNN : NonNullCap}
+    (hNN : cap.toNonNull? = some capNN) : capNN.val = cap := by
+  unfold Capability.toNonNull? at hNN
+  split at hNN
+  · cases hNN; rfl
+  · cases hNN
+
+/-- `.cspaceMint` (core): lookup, attenuate, insert — the minted badge is the
+argument badge, so the insert's badge obligation is the decode-level fact. -/
+theorem cspaceMint_preserves_ipcInvariantFull
+    (st st' : SystemState) (src dst : CSpaceAddr) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hBadgeValid : ∀ b, badge = some b → b.valid)
+    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold cspaceMint at hStep
+  split at hStep
+  · contradiction
+  · rename_i parent stMid hLk
+    have hMid : stMid = st := cspaceLookupSlot_state_eq st stMid src parent hLk
+    split at hStep
+    · contradiction
+    · rename_i parentNN hNN
+      split at hStep
+      · contradiction
+      · rename_i child hMint
+        have hChildBadge : child.badge = badge := by
+          unfold mintDerivedCap at hMint
+          split at hMint
+          · split at hMint
+            · contradiction
+            · cases hMint; rfl
+          · contradiction
+        exact cspaceInsertSlot_preserves_ipcInvariantFull stMid st' dst child
+          (hMid.symm ▸ hObjInv) (hMid.symm ▸ hInv)
+          (fun b hb => hBadgeValid b (hChildBadge ▸ hb)) hStep
+
+/-- The CDT-recording tail every `WithCdt` form ends in touches neither
+objects nor the scheduler. -/
+private theorem cdtRecord_bundle_frame (stM : SystemState) (src dst : CSpaceAddr)
+    (kind : DerivationOp)
+    (hInvM : ipcInvariantFull stM) :
+    ipcInvariantFull
+      (let p1 := SystemState.ensureCdtNodeForSlot stM src
+       let p2 := SystemState.ensureCdtNodeForSlot p1.snd dst
+       { p2.snd with cdt := p2.snd.cdt.addEdge p1.fst p2.fst kind }) := by
+  refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInvM
+  · show (SystemState.ensureCdtNodeForSlot
+        (SystemState.ensureCdtNodeForSlot stM src).snd dst).snd.objects = stM.objects
+    rw [SystemState.ensureCdtNodeForSlot_objects_eq, SystemState.ensureCdtNodeForSlot_objects_eq]
+  · show (SystemState.ensureCdtNodeForSlot
+        (SystemState.ensureCdtNodeForSlot stM src).snd dst).snd.scheduler = stM.scheduler
+    rw [ensureCdtNodeForSlot_scheduler_eq, ensureCdtNodeForSlot_scheduler_eq]
+
+/-- `.cspaceMint`: the CDT-tracked form the dispatch routes through. -/
+theorem cspaceMintWithCdt_preserves_ipcInvariantFull
+    (st st' : SystemState) (src dst : CSpaceAddr) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hBadgeValid : ∀ b, badge = some b → b.valid)
+    (hStep : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold cspaceMintWithCdt at hStep
+  split at hStep
+  · contradiction
+  · rename_i stM hMint
+    dsimp only [] at hStep
+    cases hStep
+    exact cdtRecord_bundle_frame stM src dst DerivationOp.mint
+      (cspaceMint_preserves_ipcInvariantFull st stM src dst rights badge
+        hObjInv hInv hBadgeValid hMint)
+
+/-- `.cspaceCopy`: the copied capability's badge is valid because it was
+already at rest in the source slot of a state satisfying the badge clause. -/
+theorem cspaceCopy_preserves_ipcInvariantFull
+    (st st' : SystemState) (src dst : CSpaceAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : cspaceCopy src dst st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold cspaceCopy at hStep
+  split at hStep
+  · contradiction
+  · rename_i cap stMid hLk
+    have hMid : stMid = st := cspaceLookupSlot_state_eq st stMid src cap hLk
+    split at hStep
+    · contradiction
+    · rename_i capNN hNN
+      split at hStep
+      · contradiction
+      · rename_i st2 hIns
+        dsimp only [] at hStep
+        cases hStep
+        have hBadgeSrc := lookupSlotCap_badge_valid st src cap hInv.badgeWellFormed.2
+          ((cspaceLookupSlot_ok_iff_lookupSlotCap st src cap).mp (hMid ▸ hLk))
+        exact cdtRecord_bundle_frame st2 src dst DerivationOp.copy
+          (cspaceInsertSlot_preserves_ipcInvariantFull stMid st2 dst capNN.val
+            (hMid.symm ▸ hObjInv) (hMid.symm ▸ hInv)
+            (fun b hb => hBadgeSrc b (toNonNull?_val_eq hNN ▸ hb)) hIns)
+
+/-- `.cspaceMove`: insert at the destination, delete at the source, repoint
+the CDT — every object write is a CNode. -/
+theorem cspaceMove_preserves_ipcInvariantFull
+    (st st' : SystemState) (src dst : CSpaceAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : cspaceMove src dst st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold cspaceMove at hStep
+  split at hStep
+  · contradiction
+  · split at hStep
+    · contradiction
+    · rename_i cap stMid hLk
+      have hMid : stMid = st := cspaceLookupSlot_state_eq st stMid src cap hLk
+      split at hStep
+      · contradiction
+      · rename_i capNN hNN
+        split at hStep
+        · contradiction
+        · rename_i st2 hIns
+          have hBadgeSrc := lookupSlotCap_badge_valid st src cap hInv.badgeWellFormed.2
+            ((cspaceLookupSlot_ok_iff_lookupSlotCap st src cap).mp (hMid ▸ hLk))
+          have hInv2 := cspaceInsertSlot_preserves_ipcInvariantFull stMid st2 dst capNN.val
+            (hMid.symm ▸ hObjInv) (hMid.symm ▸ hInv)
+            (fun b hb => hBadgeSrc b (toNonNull?_val_eq hNN ▸ hb)) hIns
+          have hObjInv2 := cspaceInsertSlot_preserves_objects_invExt stMid st2 dst capNN.val
+            (hMid.symm ▸ hObjInv) hIns
+          dsimp only [] at hStep
+          split at hStep
+          · contradiction
+          · rename_i st3 hDel
+            have hInv3 := cspaceDeleteSlotCore_preserves_ipcInvariantFull st2 st3 src
+              hObjInv2 hInv2 hDel
+            split at hStep
+            · cases hStep
+              exact hInv3
+            · rename_i srcNode hNode
+              cases hStep
+              exact ipcInvariantFull_of_objects_scheduler_eq
+                (SystemState.attachSlotToCdtNode_objects_eq st3 dst srcNode)
+                (attachSlotToCdtNode_scheduler_eq st3 dst srcNode)
+                hInv3
+
+/-- `.mintReplyCap` (core): the derived reply capability carries no badge, so
+the insert's badge obligation is vacuous. -/
+theorem mintReplyCap_preserves_ipcInvariantFull
+    (st st' : SystemState) (src dst : CSpaceAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : mintReplyCap src dst st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold mintReplyCap at hStep
+  split at hStep
+  · contradiction
+  · rename_i parent stMid hLk
+    have hMid : stMid = st := cspaceLookupSlot_state_eq st stMid src parent hLk
+    split at hStep
+    · rename_i target
+      dsimp only [] at hStep
+      split at hStep
+      · exact cspaceInsertSlot_preserves_ipcInvariantFull stMid st' dst _
+          (hMid.symm ▸ hObjInv) (hMid.symm ▸ hInv)
+          (fun b hb => by simp at hb) hStep
+      · contradiction
+    · contradiction
+
+/-- `.mintReplyCap`: the CDT-tracked form the dispatch routes through. -/
+theorem mintReplyCapWithCdt_preserves_ipcInvariantFull
+    (st st' : SystemState) (src dst : CSpaceAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : mintReplyCapWithCdt src dst st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold mintReplyCapWithCdt at hStep
+  split at hStep
+  · contradiction
+  · rename_i stM hMint
+    dsimp only [] at hStep
+    cases hStep
+    exact cdtRecord_bundle_frame stM src dst DerivationOp.mint
+      (mintReplyCap_preserves_ipcInvariantFull st stM src dst hObjInv hInv hMint)
 
 end SeLe4n.Kernel
