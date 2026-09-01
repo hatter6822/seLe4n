@@ -189,9 +189,12 @@ _DECL_RE = re.compile(
     # missed it.  Either may omit `:=`, in which case `signature_end` runs
     # to the next declaration's `:=` -- over-capture, which can only add
     # scanned text, never remove the following declaration's own entry.
+    # `nonrec` joins the modifier run everywhere the run appears (PR #886
+    # review: `nonrec theorem` is a routine spelling, and a grammar without
+    # the modifier dropped the whole declaration from the census).
     r"^\s*(?:@\[[^\]]*\]\s*)*"
     r"(?P<mods>(?:private\s+|protected\s+|partial\s+|noncomputable\s+|unsafe\s+"
-    r"|local\s+|scoped\s+)*)"
+    r"|local\s+|scoped\s+|nonrec\s+)*)"
     r"(?:theorem|lemma|def|abbrev|opaque|axiom)\s+"
     r"(?P<name>«[^»\n]*»|[^\W\d][\w'.!?]*)",
     re.MULTILINE,
@@ -455,13 +458,21 @@ def _steps_function(binders: str, function: str, state: str) -> bool:
     its right arm and establishes no equality, yet the old connective cut
     validated the arm; PR #886 review), its head identifier is `function`
     (rejecting a dummy hypothesis that name-drops the dispatcher beside a
-    step equation for something else), and the right-hand side of its
-    top-level `=` -- now running to the part's end -- must *return*
-    `state`, the payoff's conclusion state, parsed structurally by
-    `_returns_state`: an equation whose result is some unrelated mid-state
-    proves nothing about the state the conclusion speaks of, and neither
-    does one that merely mentions that state inside its payload (PR #886
-    review, two successive rounds).
+    step equation for something else, `@`-prefixed or bare), and the
+    right-hand side of its top-level `=` -- running to the part's end --
+    must *return* `state`, the payoff's conclusion state, parsed
+    structurally by `_returns_state`: an equation whose result is some
+    unrelated mid-state proves nothing about the state the conclusion
+    speaks of, and neither does one that merely mentions that state inside
+    its payload (PR #886 review, two successive rounds).
+
+    What this deliberately does not parse is the *input* side of the call:
+    the live payoffs carry their invariant through a quiescence pack, so
+    the state the invariant covers is not textually visible as a family
+    application, and naming the packs would be an enumeration.  The bypass
+    that makes an unrelated-input step exploitable -- a transport equality
+    handing the conclusion state over from another state -- is refused
+    separately (`_transport_hypothesis`; PR #886 review).
     """
     index = 0
     while index < len(binders):
@@ -484,7 +495,7 @@ def _steps_function(binders: str, function: str, state: str) -> bool:
                 for part in split_conjunction(group[colon + 1 :]):
                     if _has_depth0_connective(part):
                         continue
-                    head = re.match(r"\s*([^\W\d][\w'!?]*)", part)
+                    head = re.match(r"\s*@?([^\W\d][\w'!?]*)", part)
                     if not head or head.group(1) != function:
                         continue
                     depth = 0
@@ -500,6 +511,48 @@ def _steps_function(binders: str, function: str, state: str) -> bool:
             index = end
         else:
             index += 1
+    return False
+
+
+def _transport_hypothesis(binders: str, conclusion: str, state: str) -> bool:
+    """True when some entailed equality hands `state` over from another
+    bare state.
+
+    A payoff's step equation *defines* its conclusion state; a separate
+    bare state-to-state equality on that state (`hEq : st' = st`, either
+    orientation, in a binder or an unnamed premise) makes the theorem
+    closable by transporting the invariant hypothesis around the step, so
+    the step it advertises is dead weight (PR #886 review: `dispatchSyscall
+    stOther = .ok ((), st')` beside `hInv : ipcInvariantFull st` and `hEq :
+    st' = st` proves the conclusion from `hInv` alone).  Only *bare* sides
+    count: a step-shaped equation (`f st = st'`) has an application side
+    and stays a step; the residual is a transport wrapped in an expression
+    (`(st', 0).1 = st`), which the Lean-side pack-inhabitation witnesses
+    cover semantically.  Every binder group and every unnamed premise is
+    parsed by `_equation_groups`, so only entailed equalities (∧-parts,
+    never `∨`/`→` arms) are read.
+    """
+    regions: list[str] = []
+    index = 0
+    while index < len(binders):
+        if binders[index] in _OPEN:
+            end = balanced_span(binders, index)
+            if end is None:
+                break
+            regions.append(binders[index + 1 : end - 1])
+            index = end
+        else:
+            index += 1
+    regions.extend(split_implication(_normalise(conclusion))[:-1])
+    bare = re.compile(r"[^\W\d][\w'!?]*")
+    for region in regions:
+        for sides in _equation_groups(region):
+            normalised = [_normalise(side) for side in sides]
+            if state not in normalised:
+                continue
+            for side in normalised:
+                if side != state and bare.fullmatch(side):
+                    return True
     return False
 
 
@@ -808,7 +861,8 @@ def split_conjunction(body: str) -> list[str]:
 # (`open … in` inside a definition body): none exists in the tree, and losing
 # one truncates the derived set, which the census pin surfaces.
 _COMMAND_STOP = re.compile(
-    r"^[ \t]*(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped)\s+)*"
+    r"^[ \t]*(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped"
+    r"|nonrec)\s+)*"
     r"(?:@\[|/-|#"
     r"|(?:def|theorem|lemma|abbrev|structure|inductive|instance|class"
     r"|end|namespace|open|opaque|axiom|example|attribute|universe"
@@ -859,12 +913,19 @@ def state_predicate_bodies(
     # Attribute blocks before the modifiers likewise (`@[simp] def ...`),
     # and the name capture is the Unicode identifier class, both matching
     # `_DECL_RE` (PR #886 review, next round).
+    # The `: Prop` result annotation is optional (PR #886 review): Lean
+    # infers it, and a collector requiring the literal spelling dropped a
+    # refactored conjunct -- with its clause predicates -- from the derived
+    # set.  Omitting it admits state-valued helpers into the bodies map,
+    # which is the fail-closed direction: their bodies parse to no exact
+    # predicate applications, and one that does parse IS a Prop.
     pattern = re.compile(
         r"^[ \t]*(?:@\[[^\]]*\]\s*)*"
-        r"(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped)\s+)*"
+        r"(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped"
+        r"|nonrec)\s+)*"
         r"(?:def|abbrev)\s+([^\W\d][\w'!?]*)"
         r"\s*\(\s*([^\W\d][\w']*)\s*:\s*SystemState\s*\)"
-        r"\s*:\s*Prop\s*:=",
+        r"\s*(?::\s*Prop\s*)?:=",
         re.MULTILINE,
     )
     # The arrow-form spelling `def NAME : SystemState → Prop := fun b => …`
@@ -874,7 +935,8 @@ def state_predicate_bodies(
     # nonempty.
     arrow_pattern = re.compile(
         r"^[ \t]*(?:@\[[^\]]*\]\s*)*"
-        r"(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped)\s+)*"
+        r"(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped"
+        r"|nonrec)\s+)*"
         r"(?:def|abbrev)\s+([^\W\d][\w'!?]*)"
         r"\s*:\s*SystemState\s*(?:→|->)\s*Prop\s*:=\s*"
         r"fun\s+([^\W\d][\w']*)\s*(?:=>|↦)",
@@ -935,8 +997,11 @@ def state_predicate_bodies(
 # is needed here; `_root_.` is covered by the general class, and a
 # guillemet-quoted qualifier segment is accepted exactly as `_qualified`
 # accepts it (PR #886 review: the quoted-namespace sweep's sibling site).
+# The explicit-application prefix `@` is accepted too (PR #886 review):
+# `@replyCallerLinkageReciprocal st` is the same application with
+# implicits spelled out, and rejecting it dropped the conjunct.
 _APPLIED_RE = re.compile(
-    r"^\s*(?:(?:«[^»\n]*»|[^\W\d][\w']*)\.)*"
+    r"^\s*@?(?:(?:«[^»\n]*»|[^\W\d][\w']*)\.)*"
     r"([^\W\d][\w'!?]*)\s+(?:\(\s*(?:[^\W\d][\w']*\s*:=\s*)?st\s*\)|st)\s*$"
 )
 
@@ -1068,6 +1133,7 @@ class Bundle:
         prefix: str = "",
         ambient: str = "",
         excluded: frozenset[str] = frozenset(),
+        visibility: str = "",
     ):
         self.path = path
         self.line = line
@@ -1077,6 +1143,7 @@ class Bundle:
         self.prefix = prefix
         self.ambient = ambient
         self.excluded = excluded
+        self.visibility = visibility
 
     def _binder_names(self) -> set[str]:
         """The statement's own binder names: each group's identifiers before
@@ -1269,7 +1336,9 @@ class Bundle:
             flat.append(part)
         for part in flat:
             for predicate in PRE_STATE_PREDICATES:
-                hit = re.match(_qualified(predicate), part)
+                # `@?`: the explicit-application spelling of the same
+                # conclusion (PR #886 review sweep with `_APPLIED_RE`).
+                hit = re.match(r"@?" + _qualified(predicate), part)
                 if hit is None or _projection_hit(hit.group(1), binder_names):
                     continue
                 if not _application_spans(part, hit.end()):
@@ -1498,6 +1567,7 @@ def collect_bundles(
                     prefix_at(breakpoints, match.start()),
                     ambient_at(intervals, match.start()),
                     excluded,
+                    "private" if "private" in match.group("mods") else "",
                 )
             )
     return bundles
@@ -1612,6 +1682,87 @@ def payoff_status(
                 f"not one of this gate's payoff theorems"
             )
     return problems
+
+
+def _reachable_modules(
+    root: str, sources: list[str]
+) -> tuple[set[str] | None, list[str]]:
+    """(modules a build root reaches over the import graph, hard problems).
+
+    A payoff module nothing builds is an orphan (PR #886 review): the
+    partition gate polices only *production* reachability, so dropping a
+    staged payoff module's import from `Platform.Staged` would leave every
+    text scan satisfied while CI stopped compiling the theorems.  The
+    build roots are *derived*, never listed: every executable `root = "…"`
+    in `lakefile.toml`, the library's own root module, and every module a
+    CI script builds by name (`lake build <Module>` in `scripts/*.sh`) --
+    the union of what the build system and the tier scripts actually
+    compile.  `(None, [])` when there is no `lakefile.toml`: the
+    self-test's fixture trees carry no build configuration, and
+    reachability is a question about a buildable tree.  A lakefile whose
+    roots resolve to no tracked module is a hard violation, because a
+    reachability check with no roots would silently pass everything.
+    """
+    lakefile = os.path.join(root, "lakefile.toml")
+    if not os.path.isfile(lakefile):
+        return None, []
+    candidates: set[str] = set()
+    section = ""
+    with open(lakefile, encoding="utf-8") as handle:
+        for raw in handle:
+            line = raw.strip()
+            if line.startswith("[["):
+                section = line
+                continue
+            hit = re.fullmatch(r'root\s*=\s*"([^"]+)"', line)
+            if hit:
+                candidates.add(hit.group(1))
+                continue
+            hit = re.fullmatch(r'name\s*=\s*"([^"]+)"', line)
+            if hit and section == "[[lean_lib]]":
+                candidates.add(hit.group(1))
+    scripts_dir = os.path.join(root, "scripts")
+    if os.path.isdir(scripts_dir):
+        for name in sorted(os.listdir(scripts_dir)):
+            if not name.endswith(".sh"):
+                continue
+            with open(
+                os.path.join(scripts_dir, name), encoding="utf-8"
+            ) as handle:
+                candidates.update(
+                    re.findall(
+                        r"lake build\s+([A-Za-z_][\w.']*)", handle.read()
+                    )
+                )
+    modules = {
+        relative[: -len(".lean")].replace("/", "."): relative
+        for relative in sources
+    }
+    resolved = {name for name in candidates if name in modules}
+    if not resolved:
+        return None, [
+            "payoff_theorems: lakefile.toml is present but no build root "
+            "resolves to a tracked module; the reachability check has "
+            "nothing to walk from"
+        ]
+    imports: dict[str, list[str]] = {}
+    for module, relative in modules.items():
+        imports[module] = re.findall(
+            r"^\s*import\s+([\w.'«»]+)",
+            code_view(root, relative),
+            re.MULTILINE,
+        )
+    reachable: set[str] = set()
+    frontier = list(resolved)
+    while frontier:
+        module = frontier.pop()
+        if module in reachable:
+            continue
+        reachable.add(module)
+        frontier.extend(
+            target for target in imports.get(module, []) if target in modules
+        )
+    return reachable, []
 
 
 def run_checks(root: str) -> list[str]:
@@ -1743,17 +1894,32 @@ def run_checks(root: str) -> list[str]:
     # Each declared payoff must conclude an `ipcInvariantFull`-family
     # predicate of some state and hypothesise a step equation that carries
     # the dispatch function it is named for into that same state.
-    # Canonical-prefix bundles only (PR #886 review): a `namespace Shadow`
-    # twin must not be the declaration whose statement gets validated.
+    # Canonical-prefix *public* bundles only (PR #886 review, two rounds):
+    # a `namespace Shadow` twin must not be the declaration whose statement
+    # gets validated, and neither may a `private` twin -- last-wins over a
+    # visibility-blind dictionary let a later-sorted private theorem stand
+    # validation in place of a vacuous public one.
     by_name = {
         bundle.name: bundle
         for bundle in bundles
-        if bundle.prefix == PAYOFF_NAMESPACE
+        if bundle.prefix == PAYOFF_NAMESPACE and bundle.visibility != "private"
     }
+    reachable, reach_problems = _reachable_modules(root, sources)
+    problems.extend(reach_problems)
     for payoff in PAYOFF_THEOREMS:
         bundle = by_name.get(payoff)
         if bundle is None:
             continue  # absence is payoff_theorems' finding, not this one's
+        if reachable is not None:
+            module = bundle.path[: -len(".lean")].replace("/", ".")
+            if module not in reachable:
+                problems.append(
+                    f"payoff_theorems: `{payoff}` is declared in "
+                    f"{bundle.path}, which no build root reaches -- an "
+                    f"unbuilt payoff proves nothing; import its module from "
+                    f"a build root (the lakefile's roots, the library root, "
+                    f"or a module a CI script builds)"
+                )
         function = payoff[: -len("_preserves_ipcInvariantFull")]
         state = bundle.conclusion_state()
         if state is None:
@@ -1767,11 +1933,10 @@ def run_checks(root: str) -> list[str]:
         # the binders: a dummy hypothesis mentioning the name beside a step
         # for another function satisfied the mention-only form, and a step
         # equation into an unrelated mid-state satisfied the head-only form
-        # (PR #886 review, two successive rounds).  A binder group's type
-        # starts after its first depth-0 colon; the group steps `function`
-        # into `state` when that type's head identifier is `function`, a
-        # top-level `=` follows, and the equation's right-hand side mentions
-        # the conclusion state.
+        # (PR #886 review, two successive rounds).  And the step must be the
+        # only route to that state: a bare transport equality on the
+        # conclusion state closes the theorem around the step entirely
+        # (PR #886 review, the round after -- see `_transport_hypothesis`).
         elif not _steps_function(bundle.binders, function, state):
             problems.append(
                 f"payoff_statement: {bundle.path}:{bundle.line}: `{payoff}` "
@@ -1779,6 +1944,14 @@ def run_checks(root: str) -> list[str]:
                 f"with `{state}`, its conclusion's state, in the result; a "
                 f"payoff that does not step the dispatcher it is named for "
                 f"into the state it concludes about consumes nothing"
+            )
+        elif _transport_hypothesis(bundle.binders, bundle.conclusion, state):
+            problems.append(
+                f"payoff_statement: {bundle.path}:{bundle.line}: `{payoff}` "
+                f"carries a bare transport equality on `{state}`, its "
+                f"conclusion's state -- the theorem is closable by handing "
+                f"the invariant over from another state, so the step it "
+                f"advertises is dead weight"
             )
 
     return problems
@@ -3775,6 +3948,169 @@ end «shadow»""",
         _Case(
             "an opaque-spelled threaded bundle is measured like a theorem",
             opaque_bundle,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # An inferred-`Prop` conjunct definition: Lean infers the result type,
+    # and a collector requiring the literal `: Prop` dropped the definition
+    # -- and its clause predicates -- from the derived set.
+    inferred_prop = _fixture()
+    inferred_prop[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def replyCallerLinkage (st : SystemState) : Prop :=",
+        "def replyCallerLinkage (st : SystemState) :=",
+    )
+    inferred_prop["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hR : replyCallerLinkageReciprocal st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "an inferred-Prop conjunct definition still derives",
+            inferred_prop,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # An explicit application in a definition body: `@pred st` is the same
+    # application with implicits spelled out, and the exact-application
+    # parser rejected it.
+    explicit_application = _fixture()
+    explicit_application[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st",
+        "  @replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st",
+    )
+    explicit_application["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hR : replyCallerLinkageReciprocal st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "an explicit-application conjunct spelling still derives",
+            explicit_application,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A step equation from an unrelated state: the theorem closes through
+    # `hInv` and a side equality, never establishing preservation for the
+    # dispatched input -- the dispatcher must step an invariant-bearing
+    # pre-state.
+    unrelated_step = _fixture()
+    unrelated_step["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep""",
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st stOther st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall stOther = .ok ((), st'))
+    (hEq : st' = st) :
+    ipcInvariantFull st' := by
+  exact hEq ▸ hInv""",
+    )
+    cases.append(
+        _Case(
+            "a step equation from an unrelated state does not validate a payoff",
+            unrelated_step,
+            True,
+            check="payoff_statement",
+            mutation="preserving",
+        )
+    )
+
+    # A private twin standing validation for a vacuous public payoff: the
+    # visibility-blind last-wins dictionary validated the private theorem
+    # while presence saw the public one.
+    private_shadow = _fixture()
+    private_shadow["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep""",
+        """theorem dispatchSyscall_preserves_ipcInvariantFull :
+    True := trivial""",
+    )
+    private_shadow["SeLe4n/Kernel/ZzPrivateTwin.lean"] = (
+        "namespace SeLe4n.Kernel\n"
+        "\n"
+        "private theorem dispatchSyscall_preserves_ipcInvariantFull\n"
+        "    (st st' : SystemState) (hInv : ipcInvariantFull st)\n"
+        "    (hStep : dispatchSyscall st = .ok ((), st')) :\n"
+        "    ipcInvariantFull st' := by\n"
+        "  exact sample st st' hInv hStep\n"
+        "\n"
+        "end SeLe4n.Kernel\n"
+    )
+    cases.append(
+        _Case(
+            "a private twin cannot stand validation for a vacuous public payoff",
+            private_shadow,
+            True,
+            check="payoff_statement",
+            mutation="preserving",
+        )
+    )
+
+    # An orphaned payoff module: every declaration intact, but no build
+    # root reaches its file, so CI compiles none of the theorems.
+    orphan_payoff = _fixture()
+    orphan_payoff["lakefile.toml"] = (
+        'name = "fixturekernel"\n'
+        'defaultTargets = ["fixturekernel"]\n'
+        "\n"
+        "[[lean_exe]]\n"
+        'name = "fixturekernel"\n'
+        'root = "Main"\n'
+    )
+    orphan_payoff["Main.lean"] = (
+        "import SeLe4n.Kernel.IPC.Invariant.Defs\n"
+        "import SeLe4n.Kernel.IPC.Invariant.Structural.Bundles\n"
+        "\n"
+        "def main : IO Unit := pure ()\n"
+    )
+    cases.append(
+        _Case(
+            "a payoff module no build root reaches is an orphan, not a consumer",
+            orphan_payoff,
+            True,
+            check="payoff_theorems",
+            mutation="preserving",
+        )
+    )
+
+    # A nonrec-spelled bundle: the modifier is routine, and a grammar
+    # without it dropped the declaration -- and its threaded hypothesis --
+    # from the census.
+    nonrec_bundle = _fixture()
+    nonrec_bundle["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "theorem endpointSendDual_preserves_ipcInvariantFull",
+            "nonrec theorem endpointSendDual_preserves_ipcInvariantFull",
+        ).replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hT : blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a nonrec-spelled threaded bundle is measured like a theorem",
+            nonrec_bundle,
             True,
             check="no_post_state_binding",
             mutation="preserving",

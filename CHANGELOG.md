@@ -507,6 +507,28 @@ and was invisible) and, by the sweep, `axiom` — which cannot survive the
 no-axiom gate, but a marker-named axiom is a family *statement* and this
 census must not be the scanner that missed it.  One token-preserving
 fixture; self-test 83 cases; census unchanged a fourteenth time.
+A nineteenth pass tied the payoff to the build and closed the
+step-bypass.  A payoff carrying a *bare transport equality* on its
+conclusion state (`hEq : st' = st`, either orientation, binder or
+unnamed premise) is now a violation: the theorem closes by handing the
+invariant over from another state, so the step it advertises — from an
+unrelated input, say — is dead weight.  The input side of the call
+stays deliberately unparsed: the live payoffs carry their invariant
+through a quiescence pack, invisible to a text scanner, and naming the
+packs would be an enumeration; the Lean-side pack-inhabitation
+witnesses carry that semantic burden.  Payoff declarations must be
+*build-reachable*: an import-graph walk from derived roots (the
+lakefile's executable roots, the library root, and every module a CI
+script builds by name) confirms some root still compiles the payoff
+module, closing the orphan case the staging-partition gate cannot see.
+Statement validation now selects the canonical *public* declaration, so
+a later-sorted private twin cannot stand validation for a vacuous public
+payoff.  And the collection grammars widened again to what Lean
+accepts: an inferred-`Prop` predicate definition (no `: Prop`
+annotation) still derives, `@`-explicit applications parse in the
+derivation, conclusion, and step grammars, and `nonrec` joins the
+modifier run at all four sites.  Six token-preserving fixtures;
+self-test 89 cases; census unchanged a fifteenth time.
 
 ### Housekeeping
 
