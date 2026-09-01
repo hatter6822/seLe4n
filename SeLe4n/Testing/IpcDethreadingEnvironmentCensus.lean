@@ -51,9 +51,14 @@ private def familyMarkers : List String :=
   ["_preserves_ipcInvariantFull", "_establishes_ipcInvariantFull"]
 
 /-- The family marker lives in the final component: auxiliaries
-    (`….proof_1`) and parents of dotted names never match. -/
+    (`….proof_1`) and parents of dotted names never match.  Macro scopes
+    are erased first (PR #886 review): a pinned command macro minting
+    `theorem hidden_preserves_ipcInvariantFull …` records a hygienic
+    name whose raw final components are scope markers, and a classifier
+    reading them raw skipped exactly the generated statements this
+    census exists to catch. -/
 private def carriesFamilyMarker (n : Name) : Bool :=
-  match n with
+  match n.eraseMacroScopes with
   | .str _ s => familyMarkers.any fun m => (s.splitOn m).length > 1
   | _ => false
 
@@ -77,21 +82,30 @@ private partial def andLeafHeads (e : Expr) (acc : NameSet) : NameSet :=
     | .const n _ => acc.insert n
     | _ => acc
 
-/-- The measured conjunct set: the canonical root's `∧`-tree, closed over
-    definitional unfolding — `derive_conjuncts`, on expressions. -/
+/-- The measured conjunct set: every accepted family form's `∧`-tree,
+    closed over definitional unfolding — `derive_conjuncts`, on
+    expressions.  Every form seeds, not the root alone (PR #886 review):
+    `ipcInvariantFullExceptDonationOwner` carries the variant-specific
+    `donationOwnerValidExcept` the canonical root does not, and a
+    root-only seed left a theorem free to assume precisely its variant's
+    post-state conjunct unmeasured. -/
 private def measuredConjuncts : MetaM NameSet := do
   let env ← getEnv
   let root := `SeLe4n.Kernel.ipcInvariantFull
-  let some (.defnInfo info) := env.find? root
+  let some (.defnInfo _) := env.find? root
     | throwError "de-threading census: `{root}` is not a definition"
-  let seed ← lambdaTelescope info.value fun _ body =>
-    pure (andLeafHeads body {})
+  let mut frontier : List Name := []
+  for (n, info) in env.constants.toList do
+    if isFamilyForm n then
+      if let .defnInfo d := info then
+        let heads ← lambdaTelescope d.value fun _ body =>
+          pure (andLeafHeads body {})
+        frontier := heads.toList ++ frontier
   let mut conjuncts : NameSet := {}
-  let mut frontier := seed.toList
   while frontier ≠ [] do
     let name :: rest := frontier | break
     frontier := rest
-    if conjuncts.contains name || name == root then
+    if conjuncts.contains name || isFamilyForm name then
       continue
     conjuncts := conjuncts.insert name
     if let some (.defnInfo nested) := env.find? name then
@@ -118,6 +132,20 @@ private partial def entailsOn (targets : NameSet) (s' : Expr) :
       if ← entailsOn targets s' fuel (e.getArg! 0) then
         return true
       entailsOn targets s' fuel (e.getArg! 1)
+    else if e.isAppOfArity ``Or 2 then
+      -- A disjunction provides what *every* arm provides (PR #886
+      -- review): `P st' ∨ P st'` yields the conjunct by cases, while
+      -- `P st' ∨ True` still yields nothing.
+      if ← entailsOn targets s' fuel (e.getArg! 0) then
+        entailsOn targets s' fuel (e.getArg! 1)
+      else
+        return false
+    else if e.isAppOfArity ``Exists 2 then
+      -- Elimination hands over the body whatever the witness (PR #886
+      -- review), so the body entailing for an *arbitrary* binder is
+      -- sound — and required: `∃ _ : Unit, P st'` is `P st'`.
+      lambdaTelescope (e.getArg! 1) fun _ body =>
+        entailsOn targets s' fuel body
     else
       let fn := e.getAppFn
       let .const name us := fn | return false
@@ -233,6 +261,33 @@ private theorem censusWitnessChained (st st' : SeLe4n.Model.SystemState)
     (hStep : st = st') :
     SeLe4n.Kernel.ipcInvariantFull st' := hStep ▸ hInv
 
+/-- Deliberately threaded through a both-arms disjunction: cases
+    elimination provides the conjunct on the conclusion state. -/
+private theorem censusWitnessOrCarried (st st' : SeLe4n.Model.SystemState)
+    (hInv : SeLe4n.Kernel.ipcInvariantFull st)
+    (_hThreaded : SeLe4n.Kernel.blockedThreadsPendingMessageConsistent st' ∨
+      SeLe4n.Kernel.blockedThreadsPendingMessageConsistent st')
+    (hStep : st = st') :
+    SeLe4n.Kernel.ipcInvariantFull st' := hStep ▸ hInv
+
+/-- Deliberately threaded through an existential: elimination hands the
+    body over whatever the witness. -/
+private theorem censusWitnessExistsCarried (st st' : SeLe4n.Model.SystemState)
+    (hInv : SeLe4n.Kernel.ipcInvariantFull st)
+    (_hThreaded : ∃ _u : Unit,
+      SeLe4n.Kernel.blockedThreadsPendingMessageConsistent st')
+    (hStep : st = st') :
+    SeLe4n.Kernel.ipcInvariantFull st' := hStep ▸ hInv
+
+/-- The `∨ True` twin stays clean: its right arm suffices, so nothing is
+    provided — the reported false positive, pinned at this layer too. -/
+private theorem censusWitnessOrTrue (st st' : SeLe4n.Model.SystemState)
+    (hInv : SeLe4n.Kernel.ipcInvariantFull st)
+    (_hIrrelevant : SeLe4n.Kernel.blockedThreadsPendingMessageConsistent st' ∨
+      True)
+    (hStep : st = st') :
+    SeLe4n.Kernel.ipcInvariantFull st' := hStep ▸ hInv
+
 /-- The clean twin: every hypothesis on the pre-state. -/
 private theorem censusWitnessClean (st st' : SeLe4n.Model.SystemState)
     (hInv : SeLe4n.Kernel.ipcInvariantFull st)
@@ -253,7 +308,23 @@ private def checkWitness (name : Name) (expectThreaded : Bool) : MetaM Unit := d
 run_cmd Command.liftTermElabM do
   checkWitness ``censusWitnessThreaded true
   checkWitness ``censusWitnessChained true
+  checkWitness ``censusWitnessOrCarried true
+  checkWitness ``censusWitnessExistsCarried true
+  checkWitness ``censusWitnessOrTrue false
   checkWitness ``censusWitnessClean false
+  -- The classifier must see through hygiene (PR #886 review): a macro-
+  -- minted family theorem records scope markers after its user-facing
+  -- name, and a raw read skipped it.
+  -- The synthetic name is *constructed*, not spelled: it deliberately
+  -- names no declaration, and the text gate's `family_references`
+  -- backstop rightly fires on any spelled family-shaped token that
+  -- resolves to nothing -- which is also how generated names actually
+  -- arise in minting machinery.
+  let hygienic ← MonadQuotation.addMacroScope
+    ((`fake).appendAfter "_preserves_ipcInvariantFull")
+  unless hygienic.hasMacroScopes && carriesFamilyMarker hygienic do
+    throwError "census witness: the classifier does not see a \
+      hygiene-scoped family name -- generated statements would escape"
   censusMain
 
 end CheckerWitnesses

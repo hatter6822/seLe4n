@@ -175,6 +175,7 @@ CHECKS = (
     "no_conclusion_state_hypothesis",
     "payoff_theorems",
     "payoff_statement",
+    "census_reachability",
 )
 
 # Declaration-minting and surface-rewriting machinery: the keywords
@@ -1220,6 +1221,26 @@ def split_conjunction(body: str) -> list[str]:
     return parts
 
 
+def split_disjunction(body: str) -> list[str]:
+    """Split a `Prop` body on `∨` at bracket depth zero."""
+    parts, current, depth = [], [], 0
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if char in _OPEN:
+            depth += 1
+        elif char in _CLOSE:
+            depth -= 1
+        if char == "∨" and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+        index += 1
+    parts.append("".join(current))
+    return parts
+
+
 # Where a captured slice of source ends: at the next command that can open a
 # line.  Leading declaration modifiers stop a body too (PR #886 review): a
 # `private theorem …` after a definition is a new declaration exactly as
@@ -1628,7 +1649,14 @@ def derive_conjuncts(bodies: dict[str, list[tuple[str, str]]]) -> set[str]:
     if ROOT_INVARIANT not in bodies:
         return set()
 
-    conjuncts = _sub_predicates(bodies, ROOT_INVARIANT)
+    # Every accepted full-family form seeds the closure (PR #886 review,
+    # the census round): `ipcInvariantFullExceptDonationOwner` carries the
+    # variant-specific `donationOwnerValidExcept` the canonical root does
+    # not, and a root-only seed left a theorem free to assume precisely
+    # its variant's post-state conjunct unmeasured.
+    conjuncts: set[str] = set()
+    for form in _CONCLUSION_FORMS:
+        conjuncts |= _sub_predicates(bodies, form)
     frontier = set(conjuncts)
     while frontier:
         name = frontier.pop()
@@ -1636,6 +1664,8 @@ def derive_conjuncts(bodies: dict[str, list[tuple[str, str]]]) -> set[str]:
             if nested not in conjuncts:
                 conjuncts.add(nested)
                 frontier.add(nested)
+    for form in _CONCLUSION_FORMS:
+        conjuncts.discard(form)
     conjuncts.discard(ROOT_INVARIANT)
     return conjuncts
 
@@ -2052,6 +2082,56 @@ def structure_aliases(
     return aliases
 
 
+def _positive_parts(expr: str) -> list[str]:
+    """The positively-provided conjunction parts of one proposition.
+
+    Strict-positivity descent (PR #886 review, two rounds): a hypothesis
+    `∀ x, A → C` *provides* C -- under conditions the consumer discharges
+    -- so ∀- and ∃-bodies and an implication's final segment are scanned
+    while its premises are consumed, not provided, and stay out.  This is
+    what lets the syscall payoff's lookup-guarded pack keep covering its
+    pre-state, and an existential's body is sound the same way: whatever
+    the witness, elimination hands over the body (a binder-dependent
+    state then dies on the anchor filter, never mints).  A disjunction
+    provides only what *every* arm provides -- `P st' ∨ P st'` yields
+    `P st'` by cases while `P st' ∨ True` yields nothing (the reported
+    false positive stays fixed) -- so its parts are the intersection of
+    its arms', by normalised text.  Implication splits before
+    disjunction, which splits before conjunction, matching Lean's
+    precedence; a `False →`-guarded launder is no cleaner for being
+    guarded, and the conclusion-state check fires on it before any
+    pre-state it minted could suppress (the two-check closure).
+    """
+    expr = _normalise(expr)
+    if expr.startswith("∀") or expr.startswith("∃") or expr.startswith("Π"):
+        depth = 0
+        for offset, char in enumerate(expr):
+            if char in _OPEN:
+                depth += 1
+            elif char in _CLOSE:
+                depth -= 1
+            elif char == "," and depth == 0:
+                return _positive_parts(expr[offset + 1 :])
+        return [expr]
+    segments = split_implication(expr)
+    if len(segments) > 1:
+        return _positive_parts(segments[-1])
+    arms = split_disjunction(expr)
+    if len(arms) > 1:
+        shared: set[str] | None = None
+        for arm in arms:
+            arm_parts = set(_positive_parts(arm))
+            shared = arm_parts if shared is None else shared & arm_parts
+        return sorted(shared or set())
+    split = split_conjunction(expr)
+    if len(split) > 1:
+        parts: list[str] = []
+        for part in split:
+            parts.extend(_positive_parts(part))
+        return parts
+    return [expr]
+
+
 class Bundle:
     """One `*_preserves_ipcInvariantFull` statement, parsed from the code view.
 
@@ -2251,42 +2331,8 @@ class Bundle:
         if premises:
             texts.extend(split_implication(_normalise(self.conclusion))[:-1])
         parts: list[str] = []
-        stack = texts
-        while stack:
-            expr = _normalise(stack.pop())
-            # Strict-positivity descent (PR #886 review, the entailment
-            # round's live-payoff counterpart): a hypothesis `∀ x, A → C`
-            # *provides* C -- under conditions the consumer discharges --
-            # so the ∀-body and an implication's final segment are scanned
-            # while its premises are consumed, not provided, and stay out.
-            # This is what lets the syscall payoff's lookup-guarded pack
-            # keep covering its pre-state; the `False → pack st'` launder
-            # is no cleaner for being guarded, and the conclusion-state
-            # check fires on it before any pre-state it minted could
-            # suppress (the two-check closure).
-            if expr.startswith("∀") or expr.startswith("Π"):
-                depth = 0
-                body = None
-                for offset, char in enumerate(expr):
-                    if char in _OPEN:
-                        depth += 1
-                    elif char in _CLOSE:
-                        depth -= 1
-                    elif char == "," and depth == 0:
-                        body = expr[offset + 1 :]
-                        break
-                if body is not None:
-                    stack.append(body)
-                    continue
-            segments = split_implication(expr)
-            if len(segments) > 1:
-                stack.append(segments[-1])
-                continue
-            split = split_conjunction(expr)
-            if len(split) > 1:
-                stack.extend(split)
-            else:
-                parts.append(split[0])
+        for expr in texts:
+            parts.extend(_positive_parts(expr))
         return parts
 
     def pre_states(self) -> set[str]:
@@ -3334,6 +3380,25 @@ def run_checks(root: str) -> list[str]:
     }
     reachable, reach_problems = _reachable_modules(root, sources)
     problems.extend(reach_problems)
+    # Every family statement must sit in the import closure some build
+    # root reaches (PR #886 review, the census round): the elaborator
+    # census scans exactly what CI elaborates, so a bundle module dropping
+    # out of every root's closure would silently shrink the semantic
+    # layer's population while the text census still counted it.  The
+    # payoff-only reachability rule below predates this and stays for its
+    # sharper message.
+    if reachable is not None:
+        for bundle in sorted(bundles, key=lambda b: (b.path, b.line)):
+            module = bundle.path[: -len(".lean")].replace("/", ".")
+            if module not in reachable:
+                problems.append(
+                    f"census_reachability: {bundle.path}:{bundle.line}: "
+                    f"`{bundle.name}` is declared in a module no build root "
+                    f"reaches -- the elaborator census scans only the import "
+                    f"closure CI builds, so an unreachable family statement "
+                    f"is invisible to the semantic layer; import its module "
+                    f"from a build root"
+                )
     for payoff in PAYOFF_THEOREMS:
         bundle = by_name.get(payoff)
         if bundle is None:
@@ -6511,6 +6576,112 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
             and_carried,
             True,
             check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A variant-family conjunct (PR #886 review, the census round): the
+    # Except form's own relaxed half is a conjunct of *that* family form
+    # and of no other, and a root-only seed left it unmeasured.
+    variant_defs = CLEAN_DEFS.replace(
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st",
+        "def relaxedOwnerHalf (st : SystemState) : Prop :=\n"
+        "  True\n"
+        "\n"
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st\n"
+        "\n"
+        "def ipcInvariantFullExceptDonationOwner (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st ∧ relaxedOwnerHalf st",
+    )
+    variant_conjunct = _fixture()
+    variant_conjunct[DEFS_MODULE] = variant_defs
+    variant_conjunct["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hV : relaxedOwnerHalf st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a variant family form's own conjunct is measured",
+            variant_conjunct,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # An existential body is provided whatever the witness (PR #886
+    # review, the census round): `∃ _ : Unit, conjunct st'` hands the
+    # conjunct over by elimination, and refusing every `∃` missed it.
+    exists_carried = _fixture()
+    exists_carried["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hEx : ∃ u : Unit, blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "an existential-carried threading body still fires",
+            exists_carried,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A disjunction provides what every arm provides: `P st' ∨ P st'`
+    # yields the conjunct by cases, while the `∨ True` twin above stays
+    # accepted -- intersection, not union.
+    or_intersection = _fixture()
+    or_intersection["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hOr : blockedThreadsPendingMessageConsistent st'"
+            " ∨ blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a both-arms disjunction threading still fires",
+            or_intersection,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # An unreachable bundle module (PR #886 review, the census round): the
+    # statement exists and is censused by text, but no build root's import
+    # closure carries it, so the elaborator census would never elaborate
+    # it -- the population must not shrink silently.
+    unreachable_bundle = _fixture()
+    unreachable_bundle["lakefile.toml"] = (
+        'name = "fixturekernel"\n'
+        'defaultTargets = ["fixturekernel"]\n'
+        "\n"
+        "[[lean_exe]]\n"
+        'name = "fixturekernel"\n'
+        'root = "Main"\n'
+    )
+    unreachable_bundle["Main.lean"] = (
+        "import SeLe4n.Kernel.IPC.Invariant.Defs\n"
+        "import SeLe4n.Kernel.API\n"
+        "\n"
+        "def main : IO Unit := pure ()\n"
+    )
+    cases.append(
+        _Case(
+            "a bundle outside every build root's closure is reported",
+            unreachable_bundle,
+            True,
+            check="census_reachability",
             mutation="preserving",
         )
     )

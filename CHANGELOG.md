@@ -721,6 +721,36 @@ suppress.  Nine further fixtures with accepted twins; self-test 122
 cases, 10/10 checks covered; census unchanged a twenty-first time,
 now measured twice — text and elaborator — at 26 / 146 / 0.
 
+The twenty-sixth review pass reviewed the census layer itself — the
+right artifact, and all four findings landed in both layers where they
+applied.  Every accepted family form now seeds the conjunct closure,
+not the root alone: `ipcInvariantFullExceptDonationOwner` carries the
+variant-specific `donationOwnerValidExcept` the root does not, and a
+root-only seed left a theorem free to assume precisely its variant's
+post-state conjunct — the measured set widened honestly, 26 → **27**
+conjuncts, in the text derivation and the census's environment
+closure alike, with 146 / 0 holding under the wider measure.  The
+census gained a completeness pin from the side that can see it: a new
+`census_reachability` check in the text gate holds every family
+statement's module to the derived build-root import closure, so a
+bundle module dropping out of what CI elaborates is a loud text-gate
+failure rather than a silently smaller semantic population.
+Entailment learned the two sound shapes refusal was eating: an
+existential's body is provided whatever the witness (`∃ _ : Unit,
+P st'` is `P st'`), and a disjunction provides the *intersection* of
+its arms (`P st' ∨ P st'` fires; `P st' ∨ True` stays the fixed false
+positive) — in the census's expression walk and the text gate's
+positive-parts split both, each with threaded witnesses and the
+`∨ True` twin pinned clean.  And the census classifier now erases
+macro scopes before the marker test: a pinned macro minting a family
+theorem records a hygienic name, and the raw read skipped exactly the
+generated statements the census exists to catch — the classifier's
+own witness constructs a scoped family name (constructed, not
+spelled: the text gate's `family_references` rightly fires on a
+spelled family token that names nothing, which it proved by catching
+this cut's first draft).  Self-test 126 cases, 11/11 checks covered;
+census 27 / 146 / 0, measured twice.
+
 ### Housekeeping
 
 `raw_lookup_tid` re-anchored twice, with the reason in the baseline header:
