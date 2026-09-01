@@ -177,24 +177,30 @@ CHECKS = (
     "payoff_statement",
 )
 
-# Declaration-minting machinery: the keywords through which Lean code can
-# bring a declaration into existence *without* spelling a declaration the
-# census's grammars read.  `macro`/`macro_rules`/`syntax` targeting the
-# command category expand to whole commands; `elab`/`elab_rules`,
-# `run_cmd`/`run_elab`, `#eval` of a monadic action and
-# `initialize`/`builtin_initialize` execute arbitrary elaborator code that
-# can call `addDecl`; `declare_syntax_cat` opens a category for any of
-# them.  A command *invocation* can then sit at any indentation -- the
-# `grammar_coverage` tripwire reads column 0 only, and an indented unknown
-# command is indistinguishable in text from a term continuation (PR #886
-# review) -- so the gate polices the *mechanism* instead of the position:
-# with no external `require` in `lakefile.toml`, an unknown command can
-# only exist through machinery declared in this tree, and every machinery
-# token is held to the pin below.  `notation`/`infix`-family sugar is
-# deliberately outside the set: it expands to term-category rewriting,
-# which cannot mint a declaration, and the `(name := …)` parser
-# declaration it can mint is a `ParserDescr` whose spelled name the
-# `family_references` check resolves like any other token.
+# Declaration-minting and surface-rewriting machinery: the keywords
+# through which Lean code can either bring a declaration into existence
+# *without* spelling a declaration the census's grammars read, or respell
+# a proposition so the signature scans cannot see it.  `macro`/
+# `macro_rules`/`syntax` targeting the command category expand to whole
+# commands; `elab`/`elab_rules`, `run_cmd`/`run_elab`, `#eval` of a
+# monadic action and `initialize`/`builtin_initialize` execute arbitrary
+# elaborator code that can call `addDecl`; `declare_syntax_cat` opens a
+# category for any of them.  A command *invocation* can then sit at any
+# indentation -- the `grammar_coverage` tripwire reads column 0 only, and
+# an indented unknown command is indistinguishable in text from a term
+# continuation (PR #886 review) -- so the gate polices the *mechanism*
+# instead of the position: with no external `require` in `lakefile.toml`,
+# an unknown command can only exist through machinery declared in this
+# tree, and every machinery token is held to the pin below.
+#
+# The `notation`/`infix`-family is in the set for the *other* channel
+# (PR #886 review, the round after): term sugar cannot mint a
+# declaration, but `notation "threaded![" s "]" => conjunct s` respells a
+# threaded hypothesis as `threaded![st']` -- censused declaration, hidden
+# premise -- and no text scan sees through a rewrite that Lean applies
+# before elaboration.  Every term-rewriting declaration is therefore
+# pinned exactly like the minting ones; the elaborator-backed census is
+# the layer that reads the expanded form.
 _MACHINERY = (
     "macro_rules",
     "macro",
@@ -206,6 +212,12 @@ _MACHINERY = (
     "run_cmd",
     "run_elab",
     "declare_syntax_cat",
+    "notation",
+    "infixl",
+    "infixr",
+    "infix",
+    "postfix",
+    "prefix",
 )
 
 # Every machinery occurrence in the tree, reviewed once and pinned as
@@ -257,6 +269,11 @@ MACHINERY_PINS = {
     ("SeLe4n/Model/Object/PerObjectLockInventory.lean", "syntax"): 1,
     ("SeLe4n/Platform/FFI.lean", "initialize"): 2,
     ("SeLe4n/Prelude.lean", "initialize"): 1,
+    # The elaborator-backed de-threading census itself: one `run_cmd`
+    # running the witnesses and the environment walk.  The census is this
+    # pin's own payoff -- the machinery it rides is reviewed here like any
+    # other.
+    ("SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean", "run_cmd"): 1,
 }
 
 # The declaration modifiers and top-level commands this gate's grammars
@@ -592,6 +609,101 @@ def _argument_at(text: str, start: int, index: int) -> str | None:
             return None
         argument, position = step
     return argument
+
+
+class _ArgSpec:
+    """How to find a predicate's state argument(s) at an application site.
+
+    `index` is the first state slot among explicit positions and `span` how
+    many consecutive slots the state group binds (a grouped
+    `(old new : SystemState)` binds two -- PR #886 review: counting groups
+    instead of names read the pre-state out of slot 0 and missed the
+    post-state beside it).  `explicit_names` is the ordered tuple of every
+    explicit binder name when the telescope was parsed, `state_names` the
+    subset typed `SystemState` -- both feed the named-argument resolution
+    (PR #886 review, same round: Lean's named arguments commute, and
+    reading textual order let `(new := st') (old := st)` present the
+    pre-state at the derived position).  `AMBIGUOUS` marks a name whose
+    declarations disagree or whose positions cannot be trusted (defaulted
+    binders, several state groups): finding-direction callers then scan
+    every argument unit, suppression callers refuse to mint.
+    """
+
+    __slots__ = ("index", "span", "explicit_names", "state_names")
+
+    def __init__(
+        self,
+        index: int,
+        span: int = 1,
+        explicit_names: tuple[str, ...] | None = None,
+        state_names: frozenset[str] = frozenset(),
+    ):
+        self.index = index
+        self.span = span
+        self.explicit_names = explicit_names
+        self.state_names = state_names
+
+
+_AMBIGUOUS_SPEC = _ArgSpec(-1, 0)
+_UNARY_SPEC = _ArgSpec(0)
+
+_NAMED_UNIT_RE = re.compile(r"\(\s*([^\W\d][\w']*)\s*:=")
+
+
+def _state_arguments(
+    text: str, start: int, spec: _ArgSpec
+) -> tuple[list[str], bool]:
+    """(candidate state-argument values, over-approximated?) for the
+    application at `start` under `spec`.
+
+    Positional applications read the state slots directly.  Named
+    arguments are resolved *by label* against the telescope's binder names
+    when they are known -- Lean lets them commute, so textual order is not
+    slot order (PR #886 review) -- with one compatibility form kept: a
+    single named unit against a unary spec is that predicate's one
+    argument whatever its label spells (`pack (σ := st)`).  Anything the
+    labels cannot faithfully place returns every unit with the
+    over-approximation flag set: callers that *find* violations scan them
+    all (more findings, the closed direction there), callers that
+    *suppress* must refuse the application entirely.
+    """
+    units: list[tuple[str | None, str]] = []
+    position = start
+    while True:
+        step = _next_unit(text, position)
+        if step is None:
+            break
+        unit, position = step
+        label = _NAMED_UNIT_RE.match(unit)
+        units.append((label.group(1) if label else None, unit))
+    values_all = [_normalise(unit) for _label, unit in units]
+    if spec.index < 0:
+        return values_all, True
+    named = {label: unit for label, unit in units if label is not None}
+    positional = [unit for label, unit in units if label is None]
+    if not named:
+        window = positional[spec.index : spec.index + max(spec.span, 1)]
+        return [_normalise(unit) for unit in window], False
+    if len(units) == 1 and spec.index == 0 and spec.span == 1:
+        return [values_all[0]], False
+    if spec.explicit_names is None or any(
+        label not in spec.explicit_names for label in named
+    ):
+        return values_all, True
+    assigned = dict(named)
+    cursor = iter(positional)
+    for name in spec.explicit_names:
+        if name in assigned:
+            continue
+        try:
+            assigned[name] = next(cursor)
+        except StopIteration:
+            break
+    return [
+        _normalise(assigned[name])
+        for name in spec.explicit_names
+        if name in spec.state_names and name in assigned
+    ], False
 
 
 def _application_spans(part: str, start: int) -> bool:
@@ -1139,25 +1251,30 @@ _COMMAND_STOP = re.compile(
 
 def _state_telescope(
     source: str, start: int
-) -> tuple[list[str], int, bool, int] | None:
-    """Walk the binder telescope at `start`: (state binder names, the first
-    state group's explicit-argument position, exactly-one-state-group?,
-    body offset just past `:=`), or None when no group is typed
-    `SystemState` or the telescope is not followed by `(: Prop)? :=`.
+) -> tuple[list[str], _ArgSpec, bool, int] | None:
+    """Walk the binder telescope at `start`: (state binder names, the state
+    argument spec, trustworthy-positions?, body offset just past `:=`), or
+    None when no group is typed `SystemState` or the telescope is not
+    followed by `(: Prop)? :=`.
 
-    Only `(…)` groups advance the explicit position -- implicit and
-    instance binders never occupy positional application slots (the
-    structure-head parser's discipline, applied to definitions).  A group
-    binding several names to `SystemState` collects them all for the
-    substitution; more than one state *group* clears the single flag,
-    which the carrier and index derivations require -- an ambiguous state
-    position must widen the measure without minting positions.
+    Only `(…)` groups advance the explicit position, and they advance it
+    by *how many names they bind* -- Lean's `(old new : SystemState)` is
+    two explicit arguments, and counting groups instead of names shifted
+    every later slot (PR #886 review).  A state group's names all count as
+    state slots (`span`), and every explicit name is retained in order so
+    named arguments can be resolved by label.  Positions stop being
+    trustworthy -- the single flag clears, no spec is minted for carriers
+    -- when a second state *group* appears or any explicit group carries a
+    `:=` default (a defaulted binder may be omitted at application sites,
+    so no later textual position is reliable).
     """
     index = start
-    explicit_seen = 0
+    explicit_names: list[str] = []
     binders: list[str] = []
     state_index: int | None = None
+    state_span = 0
     state_groups = 0
+    defaulted = False
     while True:
         probe = index
         while probe < len(source) and source[probe] in " \t\n":
@@ -1167,24 +1284,55 @@ def _state_telescope(
         end = balanced_span(source, probe)
         if end is None:
             break
-        group = re.fullmatch(
-            r"\s*([^\W\d][\w']*(?:\s+[^\W\d][\w']*)*)\s*:\s*SystemState\s*",
-            source[probe + 1 : end - 1],
+        interior = source[probe + 1 : end - 1]
+        colon = None
+        depth = 0
+        for offset, inner in enumerate(interior):
+            if inner in _OPEN:
+                depth += 1
+            elif inner in _CLOSE:
+                depth -= 1
+            elif inner == ":" and depth == 0:
+                if interior[offset + 1 : offset + 2] == "=":
+                    defaulted = defaulted or source[probe] == "("
+                else:
+                    colon = offset
+                break
+        names = (
+            re.findall(r"[^\W\d][\w'!?]*", interior[:colon])
+            if colon is not None
+            else []
         )
-        if group:
+        if colon is not None and re.fullmatch(
+            r"\s*SystemState\s*(?::=.*)?", interior[colon + 1 :], re.DOTALL
+        ):
             state_groups += 1
-            binders.extend(group.group(1).split())
+            binders.extend(names)
             if state_index is None:
-                state_index = explicit_seen
+                state_index = len(explicit_names)
+                state_span = len(names)
         if source[probe] == "(":
-            explicit_seen += 1
+            explicit_names.extend(names)
+            if colon is not None and ":=" in interior[colon + 1 :]:
+                defaulted = True
         index = end
     if state_index is None:
         return None
     tail = re.match(r"\s*(?::\s*Prop\s*)?:=", source[index:])
     if tail is None:
         return None
-    return binders, state_index, state_groups == 1, index + tail.end()
+    # Trustworthy positions need one state *group* and no defaults; a
+    # grouped state binder (span > 1) keeps a faithful spec -- the resolver
+    # windows every slot -- while the carrier derivation separately demands
+    # span 1 (suppression stays unary).
+    single = state_groups == 1 and not defaulted
+    spec = _ArgSpec(
+        state_index,
+        max(state_span, 1),
+        tuple(explicit_names),
+        frozenset(binders),
+    )
+    return binders, spec, single, index + tail.end()
 
 
 def state_predicate_bodies(
@@ -1268,20 +1416,28 @@ def state_predicate_bodies(
     for relative in sources:
         source = code_view(root, relative)
         breakpoints = namespace_breakpoints(source)
-        collected: list[tuple[str, list[str], int, bool, int, int]] = []
+        collected: list[tuple[str, list[str], _ArgSpec, bool, int, int]] = []
         for match in header_pattern.finditer(source):
             walked = _state_telescope(source, match.end())
             if walked is None:
                 continue
-            binders, state_index, single, body_start = walked
+            binders, spec, single, body_start = walked
             collected.append(
-                (match.group(1), binders, state_index, single, match.start(), body_start)
+                (match.group(1), binders, spec, single, match.start(), body_start)
             )
         for match in arrow_pattern.finditer(source):
+            binder = match.group(2)
             collected.append(
-                (match.group(1), [match.group(2)], 0, True, match.start(), match.end())
+                (
+                    match.group(1),
+                    [binder],
+                    _ArgSpec(0, 1, (binder,), frozenset({binder})),
+                    True,
+                    match.start(),
+                    match.end(),
+                )
             )
-        for name, binders, state_index, single, decl_start, body_start in collected:
+        for name, binders, spec, single, decl_start, body_start in collected:
             tail = source[body_start:]
             cut = _COMMAND_STOP.search(tail)
             # Identifier-boundary substitution (PR #886 review): a plain
@@ -1295,7 +1451,7 @@ def state_predicate_bodies(
                     r"(?<![\w'])" + re.escape(binder) + r"(?![\w'])", "st", body
                 )
             bodies.setdefault(name, []).append(
-                (prefix_at(breakpoints, decl_start), body, state_index, single)
+                (prefix_at(breakpoints, decl_start), body, spec, single)
             )
     return bodies
 
@@ -1539,12 +1695,13 @@ def _carrier_defs(bodies: dict[str, list[tuple[str, str]]]) -> set[str]:
     # measure uses (PR #886 review, the telescope round): the family forms
     # a carrier must entail are unary, and a loose reading here would let
     # an over-applied family spelling Lean rejects mint suppression.  The
-    # single-state-group flag guards the same direction: a definition with
-    # an ambiguous state position must not carry.
+    # position-trust flag and the span-1 demand guard the same direction:
+    # a definition with an ambiguous or grouped state position must not
+    # carry.
     per_body = {
         name: [_body_predicates(entry[1]) for entry in entries]
         for name, entries in bodies.items()
-        if all(entry[3] for entry in entries)
+        if all(entry[3] and entry[2].span == 1 for entry in entries)
     }
     carriers: set[str] = set()
     changed = True
@@ -1561,48 +1718,65 @@ def _carrier_defs(bodies: dict[str, list[tuple[str, str]]]) -> set[str]:
     return carriers
 
 
-def _state_indices(
-    bodies: dict[str, list[tuple[str, str, int, bool]]]
-) -> dict[str, int]:
-    """Name -> its state binder's explicit-argument position, where every
-    collected body agrees and each declares exactly one state group.
+def _state_specs(
+    bodies: dict[str, list[tuple[str, str, _ArgSpec, bool]]]
+) -> dict[str, _ArgSpec]:
+    """Name -> its state argument spec, or `_AMBIGUOUS_SPEC`.
 
     The unanimity is the carrier discipline extended to positions (PR #886
     review, the telescope round): a text scanner cannot resolve which
-    same-named definition an application elaborates to, and a position is
+    same-named definition an application elaborates to, and a spec is
     consumed by both finding scans (`threaded`'s state extraction) and
-    suppression (a def-carrier's slot in the carrier map), so only an
-    unambiguous position is recorded.  Absent names default to 0 at every
-    consumer -- the unary legacy, which is today's whole live tree.
+    suppression (a def-carrier's slot in the carrier map), so a faithful
+    spec is recorded only when every collected body is position-trustworthy
+    and they all agree.  A name that was *collected* but is ambiguous --
+    disagreeing declarations, several state groups, grouped state binders,
+    defaulted binders -- maps to `_AMBIGUOUS_SPEC`, which the finding
+    scans read as "every argument unit is a candidate" (over-approximation,
+    their closed direction) and the suppression scans as "mint nothing".
+    Names never collected stay absent and read as the unary legacy at
+    every consumer.
     """
-    indices: dict[str, int] = {}
+    specs: dict[str, _ArgSpec] = {}
     for name, entries in bodies.items():
-        if (
-            entries
-            and all(entry[3] for entry in entries)
-            and len({entry[2] for entry in entries}) == 1
-        ):
-            indices[name] = entries[0][2]
-    return indices
+        if not entries:
+            continue
+        keys = {
+            (
+                entry[2].index,
+                entry[2].span,
+                entry[2].explicit_names,
+                entry[2].state_names,
+            )
+            for entry in entries
+        }
+        if all(entry[3] for entry in entries) and len(keys) == 1:
+            specs[name] = entries[0][2]
+        else:
+            specs[name] = _AMBIGUOUS_SPEC
+    return specs
 
 
 def _carries_state_application(
-    part: str, carrier_index: dict[str, int]
+    part: str, carrier_index: dict[str, _ArgSpec]
 ) -> bool:
     """True when `part` is exactly one carrier applied with `st` in its
-    state position -- the whole part, arguments walked, nothing trailing."""
+    state position -- the whole part, arguments walked, nothing trailing.
+    Resolution is label-aware and refuses the over-approximated fallback:
+    this qualifies suppression, so what cannot be read faithfully does not
+    carry (PR #886 review, the named-argument round)."""
     part = _normalise(part)
     head = re.match(
         r"@?(?:(?:«[^»\n]*»|[^\W\d][\w']*)\.)*([^\W\d][\w'!?]*)", part
     )
     if head is None or head.group(1) not in carrier_index:
         return False
-    argument = _argument_at(part, head.end(), carrier_index[head.group(1)])
-    return (
-        argument is not None
-        and _normalise(argument) == "st"
-        and _application_spans(part, head.end())
+    if not _application_spans(part, head.end()):
+        return False
+    values, over = _state_arguments(
+        part, head.end(), carrier_index[head.group(1)]
     )
+    return not over and bool(values) and all(value == "st" for value in values)
 
 
 _STRUCTURE_RE = re.compile(
@@ -1613,35 +1787,23 @@ _STRUCTURE_RE = re.compile(
 )
 
 
-def carrier_structures(
-    root: str, sources: list[str], def_carriers: set[str]
-) -> dict[str, int]:
-    """Prop structures carrying a family fact for their state binder ->
-    the explicit-argument index of that binder.
+def _structure_heads(
+    root: str, sources: list[str]
+) -> dict[str, list[tuple[_ArgSpec, str] | None]]:
+    """Every structure declaration's parsed head and field text.
 
-    The quiescence packs are structures whose `reachable`-style field is an
-    exact carrier application on the pack's own `(st : SystemState)`
-    binder, so "this hypothesis covers `st` with the invariant" is
-    derivable from the structure text -- naming the packs would be an
-    enumeration (PR #886 review).  A structure qualifies when some field's
-    type, ∧-split with weaker connectives refused, is exactly one known
-    carrier (a family form, a carrier definition, or another carrier
-    structure -- the fixpoint finds `base :`-nested packs) applied with the
-    state binder in its state position.  Only explicit `(…)` binders count
-    toward the argument index, because implicit ones never appear at
-    application sites; a structure whose state binder is implicit, appears
-    twice, or whose head does not parse contributes nothing -- fewer
-    carriers only lose pre-states, which fails closed.
-
-    Like `_carrier_defs`, the verdict is **unanimous across same-named
-    declarations** (PR #886 review): a scanner cannot resolve which
-    namespace's structure a bare application elaborates to, and carriers
-    suppress findings, so a name declared twice qualifies only when every
-    declaration parses, carries, and agrees on the state index -- a shadow
-    that carries must not make an unrelated same-named pack mint
-    pre-states.
+    name -> one entry per declaration: (state argument spec, fields with
+    the state binder substituted to `st`), or None when the head does not
+    parse -- no `where`, no state binder, a grouped or repeated state
+    binder.  Shared by the carrier derivation (unanimous, suppressing) and
+    the structure-alias derivation (union, finding) so the two directions
+    read one parse (PR #886 review, the structure-alias round: the alias
+    side did not exist, and a Prop structure carrying a measured conjunct
+    for its binder let a bundle assume the conjunct on its post-state
+    without naming it).  Explicit binder names are retained in order so
+    application sites resolve named arguments by label.
     """
-    heads: dict[str, list[tuple[int, str] | None]] = {}
+    heads: dict[str, list[tuple[_ArgSpec, str] | None]] = {}
     for relative in sources:
         source = code_view(root, relative)
         for match in _STRUCTURE_RE.finditer(source):
@@ -1669,7 +1831,7 @@ def carrier_structures(
             binder_text = tail[:where]
             state_name = None
             state_index = None
-            position = 0
+            explicit_names: list[str] = []
             index = 0
             ambiguous = False
             while index < len(binder_text):
@@ -1699,8 +1861,8 @@ def carrier_structures(
                                     ambiguous = True
                                 else:
                                     state_name = names[0]
-                                    state_index = position
-                            position += len(names)
+                                    state_index = len(explicit_names)
+                            explicit_names.extend(names)
                     index = end
                 else:
                     index += 1
@@ -1715,11 +1877,49 @@ def carrier_structures(
                 "st",
                 fields,
             )
-            entries.append((state_index, fields))
-    base_index = {name: 0 for name in PRE_STATE_PREDICATES}
-    base_index.update({name: 0 for name in def_carriers})
+            spec = _ArgSpec(
+                state_index,
+                1,
+                tuple(explicit_names),
+                frozenset({state_name}),
+            )
+            entries.append((spec, fields))
+    return heads
 
-    def entry_carries(fields: str, known: dict[str, int]) -> bool:
+
+def carrier_structures(
+    root: str, sources: list[str], def_carriers: dict[str, _ArgSpec]
+) -> dict[str, _ArgSpec]:
+    """Prop structures carrying a family fact for their state binder ->
+    that binder's argument spec.
+
+    The quiescence packs are structures whose `reachable`-style field is an
+    exact carrier application on the pack's own `(st : SystemState)`
+    binder, so "this hypothesis covers `st` with the invariant" is
+    derivable from the structure text -- naming the packs would be an
+    enumeration (PR #886 review).  A structure qualifies when some field's
+    type, ∧-split with weaker connectives refused, is exactly one known
+    carrier (a family form, a carrier definition, or another carrier
+    structure -- the fixpoint finds `base :`-nested packs) applied with the
+    state binder in its state position.  Only explicit `(…)` binders count
+    toward the argument index, because implicit ones never appear at
+    application sites; a structure whose state binder is implicit, appears
+    twice, or whose head does not parse contributes nothing -- fewer
+    carriers only lose pre-states, which fails closed.
+
+    Like `_carrier_defs`, the verdict is **unanimous across same-named
+    declarations** (PR #886 review): a scanner cannot resolve which
+    namespace's structure a bare application elaborates to, and carriers
+    suppress findings, so a name declared twice qualifies only when every
+    declaration parses, carries, and agrees on the state index -- a shadow
+    that carries must not make an unrelated same-named pack mint
+    pre-states.
+    """
+    heads = _structure_heads(root, sources)
+    base_index = {name: _UNARY_SPEC for name in PRE_STATE_PREDICATES}
+    base_index.update(def_carriers)
+
+    def entry_carries(fields: str, known: dict[str, _ArgSpec]) -> bool:
         starts = list(
             re.finditer(r"^([ \t]+)[^\W\d][\w'!?]*\s*:", fields, re.MULTILINE)
         )
@@ -1739,7 +1939,7 @@ def carrier_structures(
                     return True
         return False
 
-    carriers: dict[str, int] = {}
+    carriers: dict[str, _ArgSpec] = {}
     changed = True
     while changed:
         changed = False
@@ -1748,16 +1948,108 @@ def carrier_structures(
                 continue
             if any(entry is None for entry in entries):
                 continue
-            if len({state_index for state_index, _fields in entries}) != 1:
+            keys = {
+                (
+                    spec.index,
+                    spec.span,
+                    spec.explicit_names,
+                    spec.state_names,
+                )
+                for spec, _fields in entries
+            }
+            if len(keys) != 1:
                 continue
             known = dict(base_index)
             known.update(carriers)
             if all(
-                entry_carries(fields, known) for _state_index, fields in entries
+                entry_carries(fields, known) for _spec, fields in entries
             ):
                 carriers[name] = entries[0][0]
                 changed = True
     return carriers
+
+
+def structure_aliases(
+    heads: dict[str, list[tuple[_ArgSpec, str] | None]],
+    measured_specs: dict[str, _ArgSpec],
+) -> dict[str, _ArgSpec]:
+    """Prop structures whose fields entail a measured conjunct -> spec.
+
+    The finding-direction twin of `carrier_structures` (PR #886 review):
+    `structure ThreadedPack (st : SystemState) : Prop where threaded :
+    blockedThreadsPendingMessageConsistent st` bound as `hPack :
+    ThreadedPack st'` assumes the conjunct on the post-state without
+    naming it, and the alias derivation read only `def`/`abbrev` bodies.
+    Because this set *widens* the measure, the discipline inverts from the
+    carrier side's: the union over same-named declarations qualifies (a
+    shadow can only add measured names), any single parsing declaration
+    suffices, and declarations that disagree on the parse or the spec
+    still qualify -- under `_AMBIGUOUS_SPEC`, so the finding scans check
+    every argument unit while suppression refuses.  The fixpoint reaches
+    structures nested through other threading structures.
+
+    `measured_specs` must cover exactly the measured names: a field that
+    entails a *family* form makes its structure a carrier, not a
+    threading alias -- the pack shape the payoffs bind on their pre-state
+    -- and `assumes_conclusion_state` already polices carriers bound on
+    the conclusion's state.
+    """
+    aliases: dict[str, _ArgSpec] = {}
+    changed = True
+    while changed:
+        changed = False
+        for name, entries in heads.items():
+            if name in aliases or name in measured_specs:
+                continue
+            targets = dict(measured_specs)
+            targets.update(aliases)
+            hit = False
+            for entry in entries:
+                if entry is None:
+                    continue
+                spec, fields = entry
+                starts = list(
+                    re.finditer(
+                        r"^([ \t]+)[^\W\d][\w'!?]*\s*:", fields, re.MULTILINE
+                    )
+                )
+                if not starts:
+                    continue
+                indent = min(len(match.group(1)) for match in starts)
+                field_starts = [
+                    match.start()
+                    for match in starts
+                    if len(match.group(1)) == indent
+                ]
+                for begin, end in zip(
+                    field_starts, field_starts[1:] + [len(fields)]
+                ):
+                    field = fields[begin:end]
+                    colon = field.find(":")
+                    for piece in split_conjunction(field[colon + 1 :]):
+                        if _has_depth0_connective(piece):
+                            continue
+                        if _carries_state_application(piece, targets):
+                            hit = True
+                            break
+                    if hit:
+                        break
+                if hit:
+                    break
+            if not hit:
+                continue
+            parsed = [entry[0] for entry in entries if entry is not None]
+            keys = {
+                (s.index, s.span, s.explicit_names, s.state_names)
+                for s in parsed
+            }
+            aliases[name] = (
+                parsed[0]
+                if len(keys) == 1 and len(parsed) == len(entries)
+                else _AMBIGUOUS_SPEC
+            )
+            changed = True
+    return aliases
 
 
 class Bundle:
@@ -1789,7 +2081,7 @@ class Bundle:
         ambient: str = "",
         excluded: frozenset[str] = frozenset(),
         visibility: str = "",
-        carriers: dict[str, int] | None = None,
+        carriers: dict[str, _ArgSpec] | None = None,
     ):
         self.path = path
         self.line = line
@@ -1806,7 +2098,7 @@ class Bundle:
         self.carriers = (
             carriers
             if carriers is not None
-            else {name: 0 for name in PRE_STATE_PREDICATES}
+            else {name: _UNARY_SPEC for name in PRE_STATE_PREDICATES}
         )
 
     def _binder_names(self) -> set[str]:
@@ -1910,6 +2202,93 @@ class Bundle:
                         changed = True
         return tokens
 
+    def _entailed_parts(self, ambient: bool, premises: bool) -> list[str]:
+        """The depth-0-conjunction parts of every hypothesis proposition.
+
+        Each binder group's *type* (the text after its depth-0 colon; a
+        colon-less instance binder is all type) and, when asked, each
+        ambient `variable` group and each premise of the conclusion's
+        implication chain -- ∧-split recursively, exactly as the
+        conclusion validator splits its final segment.  A proposition
+        under any weaker connective stays one whole part and then fails
+        the anchored head match every consumer applies, so a mention
+        inside `∨` / `→` / `¬` neither fires a finding nor mints a
+        pre-state (PR #886 review: `conjunct st' ∨ True` entails nothing,
+        and the flat regional scan flagged it; the flat pre-state scan
+        would equally have minted from it, the same defect in the
+        suppressing direction).  The residual under-approximation --
+        an entailment only the elaborator sees, `Id`-wrapped or
+        quantifier-carried -- is the elaborator census's layer.
+        """
+        texts: list[str] = []
+        sources = ([self.ambient] if ambient else []) + [self.binders]
+        for text in sources:
+            index = 0
+            while index < len(text):
+                if text[index] in _OPEN:
+                    end = balanced_span(text, index)
+                    if end is None:
+                        break
+                    group = text[index + 1 : end - 1]
+                    colon = None
+                    depth = 0
+                    for offset, char in enumerate(group):
+                        if char in _OPEN:
+                            depth += 1
+                        elif char in _CLOSE:
+                            depth -= 1
+                        elif (
+                            char == ":"
+                            and depth == 0
+                            and group[offset + 1 : offset + 2] != "="
+                        ):
+                            colon = offset
+                            break
+                    texts.append(group if colon is None else group[colon + 1 :])
+                    index = end
+                else:
+                    index += 1
+        if premises:
+            texts.extend(split_implication(_normalise(self.conclusion))[:-1])
+        parts: list[str] = []
+        stack = texts
+        while stack:
+            expr = _normalise(stack.pop())
+            # Strict-positivity descent (PR #886 review, the entailment
+            # round's live-payoff counterpart): a hypothesis `∀ x, A → C`
+            # *provides* C -- under conditions the consumer discharges --
+            # so the ∀-body and an implication's final segment are scanned
+            # while its premises are consumed, not provided, and stay out.
+            # This is what lets the syscall payoff's lookup-guarded pack
+            # keep covering its pre-state; the `False → pack st'` launder
+            # is no cleaner for being guarded, and the conclusion-state
+            # check fires on it before any pre-state it minted could
+            # suppress (the two-check closure).
+            if expr.startswith("∀") or expr.startswith("Π"):
+                depth = 0
+                body = None
+                for offset, char in enumerate(expr):
+                    if char in _OPEN:
+                        depth += 1
+                    elif char in _CLOSE:
+                        depth -= 1
+                    elif char == "," and depth == 0:
+                        body = expr[offset + 1 :]
+                        break
+                if body is not None:
+                    stack.append(body)
+                    continue
+            segments = split_implication(expr)
+            if len(segments) > 1:
+                stack.append(segments[-1])
+                continue
+            split = split_conjunction(expr)
+            if len(split) > 1:
+                stack.extend(split)
+            else:
+                parts.append(split[0])
+        return parts
+
     def pre_states(self) -> set[str]:
         """The states this bundle's own invariant hypotheses are applied to.
 
@@ -1937,13 +2316,28 @@ class Bundle:
         anchors = self._anchor_tokens()
         binder_names = self._binder_names()
         states = set()
-        for predicate, arg_index in self.carriers.items():
-            for hit in re.finditer(_qualified(predicate), self.binders):
-                if _projection_hit(hit.group(1), binder_names):
+        # Anchored per-part scan (PR #886 review, the entailment round):
+        # a carrier application mints only when it *occupies* an entailed
+        # conjunction part of a binder's type -- a mention under `∨` or
+        # inside another application's argument entails nothing and must
+        # not suppress.  Own binders only: ambient text never mints (the
+        # class asymmetry), and premises stay out because widening a
+        # suppression source needs a justification, not a refactor.
+        for part in self._entailed_parts(ambient=False, premises=False):
+            for predicate, spec in self.carriers.items():
+                hit = re.match(r"@?" + _qualified(predicate), part)
+                if hit is None or _projection_hit(hit.group(1), binder_names):
                     continue
-                argument = _argument_at(self.binders, hit.end(), arg_index)
-                if argument:
-                    state = _normalise(argument)
+                if not _application_spans(part, hit.end()):
+                    continue
+                values, over = _state_arguments(part, hit.end(), spec)
+                if over:
+                    # The resolver could not place the arguments faithfully
+                    # (unknown labels, ambiguous positions): suppression
+                    # refuses what it cannot read (PR #886 review, the
+                    # named-argument round).
+                    continue
+                for state in values:
                     if re.fullmatch(r"[^\W\d][\w'!?]*", state):
                         if state not in anchors:
                             continue
@@ -2050,28 +2444,35 @@ class Bundle:
             return state
         binder_names = self._binder_names()
         state_tokens = set(re.findall(r"[^\W\d][\w'!?]*", state))
-        segments = split_implication(_normalise(self.conclusion))
-        for region in [self.binders, self.ambient] + list(segments[:-1]):
-            for predicate, arg_index in self.carriers.items():
-                for hit in re.finditer(_qualified(predicate), region):
-                    chain = hit.group(1)
-                    if _projection_hit(chain, binder_names):
-                        # Dot notation is application (see `threaded`): a
-                        # single-segment binder chain with no trailing
-                        # argument is the state argument -- the finding
-                        # direction of the same asymmetry, so `pre_states`
-                        # still skips projections entirely.
-                        if (
-                            chain.count(".") != 1
-                            or first_argument(region, hit.end()) is not None
-                        ):
-                            continue
-                        argument = chain.split(".", 1)[0]
-                    else:
-                        argument = _argument_at(region, hit.end(), arg_index)
-                    if argument is None:
+        # Anchored per-part scan, like `threaded` (PR #886 review, the
+        # entailment round): a family or carrier form under `∨` proves
+        # nothing about the conclusion state, and the flat regional scan
+        # flagged the mention.  Candidates come from the label-aware
+        # resolver; its over-approximated fallback is welcome here -- this
+        # is a finding scan, and a misplaced-looking `st'` should fire.
+        for part in self._entailed_parts(ambient=True, premises=True):
+            for predicate, spec in self.carriers.items():
+                hit = re.match(r"@?" + _qualified(predicate), part)
+                if hit is None:
+                    continue
+                chain = hit.group(1)
+                if _projection_hit(chain, binder_names):
+                    # Dot notation is application (see `threaded`): a
+                    # single-segment binder chain with no trailing
+                    # argument is the state argument -- the finding
+                    # direction of the same asymmetry, so `pre_states`
+                    # still skips projections entirely.
+                    if (
+                        chain.count(".") != 1
+                        or first_argument(part, hit.end()) is not None
+                    ):
                         continue
-                    argument = _normalise(argument)
+                    candidates = [chain.split(".", 1)[0]]
+                else:
+                    if not _application_spans(part, hit.end()):
+                        continue
+                    candidates, _over = _state_arguments(part, hit.end(), spec)
+                for argument in candidates:
                     if argument == state:
                         return state
                     tokens = set(re.findall(r"[^\W\d][\w'!?]*", argument))
@@ -2082,16 +2483,18 @@ class Bundle:
     def threaded(
         self,
         conjuncts: set[str],
-        indices: dict[str, int] | None = None,
+        specs: dict[str, _ArgSpec] | None = None,
     ) -> list[tuple[str, str]]:
         """(conjunct, state) for every conjunct bound on a non-pre-state.
 
-        `indices` maps a measured predicate to its state argument's
-        explicit position (PR #886 review, the telescope round): a
-        multi-parameter conjunct is bound `replyCallerLinkage true st'`,
-        and reading the *first* argument both missed the post-state and
-        would flag the clean `replyCallerLinkage true st` on its leading
-        `Bool`.  Absent names read position 0 -- the unary legacy.
+        `specs` maps a measured predicate to its state argument spec
+        (PR #886 review, the telescope round): a multi-parameter conjunct
+        is bound `replyCallerLinkage true st'`, and reading the *first*
+        argument both missed the post-state and would flag the clean
+        `replyCallerLinkage true st` on its leading `Bool`.  The resolver
+        also reads named arguments by label, since Lean lets them commute
+        (PR #886 review, the round after).  Absent names read as the
+        unary legacy.
 
         The conclusion's *premises* are scanned as well as the named
         binders: an unnamed implication premise after the declaration's
@@ -2108,41 +2511,50 @@ class Bundle:
         """
         pre = self.pre_states()
         binder_names = self._binder_names()
-        premises = split_implication(_normalise(self.conclusion))[:-1]
         findings = []
+        # Anchored per-part scan (PR #886 review, the entailment round): a
+        # conjunct fires only where it *occupies* an entailed conjunction
+        # part of some hypothesis -- `conjunct st' ∨ True` entails nothing,
+        # and the flat regional scan flagged the mention inside it.  The
+        # matching under-approximation (an entailment only the elaborator
+        # sees) is the elaborator census's layer.
+        parts = self._entailed_parts(ambient=True, premises=True)
         for conjunct in sorted(conjuncts):
-            slot = (indices or {}).get(conjunct, 0)
-            for region in [self.ambient, self.binders] + premises:
-                for hit in re.finditer(_qualified(conjunct), region):
-                    chain = hit.group(1)
-                    if _projection_hit(chain, binder_names):
-                        # Dot notation is application (PR #886 review --
-                        # verified against the toolchain): `st'.conjunct`
-                        # applies a `SystemState`-namespaced predicate to
-                        # `st'`, so a single-segment chain heading at a
-                        # binder, with *no trailing argument*, is that
-                        # binder as the state argument.  A trailing
-                        # argument (`hInv.conjunct st'`) or a multi-segment
-                        # chain (`hPack.reachable.…`) stays a projection --
-                        # dot notation already supplies the predicate's one
-                        # state, so a genuine application has nothing left
-                        # to apply.
-                        # Position-0 names only: dot notation supplies the
-                        # first explicit argument, so for a predicate whose
-                        # state sits later the chain stays a projection.
-                        if (
-                            slot == 0
-                            and chain.count(".") == 1
-                            and first_argument(region, hit.end()) is None
-                        ):
-                            state = chain.split(".", 1)[0]
-                            if state not in pre:
-                                findings.append((conjunct, state))
-                        continue
-                    argument = _argument_at(region, hit.end(), slot)
-                    if argument is None:
-                        continue
-                    state = _normalise(argument)
+            spec = (specs or {}).get(conjunct, _UNARY_SPEC)
+            for part in parts:
+                hit = re.match(r"@?" + _qualified(conjunct), part)
+                if hit is None:
+                    continue
+                chain = hit.group(1)
+                if _projection_hit(chain, binder_names):
+                    # Dot notation is application (PR #886 review --
+                    # verified against the toolchain): `st'.conjunct`
+                    # applies a `SystemState`-namespaced predicate to
+                    # `st'`, so a single-segment chain heading at a
+                    # binder, with *no trailing argument*, is that
+                    # binder as the state argument.  A trailing
+                    # argument (`hInv.conjunct st'`) or a multi-segment
+                    # chain (`hPack.reachable.…`) stays a projection --
+                    # dot notation already supplies the predicate's one
+                    # state, so a genuine application has nothing left
+                    # to apply.
+                    # Unary specs only: dot notation supplies the first
+                    # explicit argument, so for a predicate whose state
+                    # sits later the chain stays a projection.
+                    if (
+                        spec.index == 0
+                        and spec.span == 1
+                        and chain.count(".") == 1
+                        and first_argument(part, hit.end()) is None
+                    ):
+                        state = chain.split(".", 1)[0]
+                        if state not in pre:
+                            findings.append((conjunct, state))
+                    continue
+                if not _application_spans(part, hit.end()):
+                    continue
+                values, _over = _state_arguments(part, hit.end(), spec)
+                for state in values:
                     if state not in pre:
                         findings.append((conjunct, state))
         return findings
@@ -2795,19 +3207,40 @@ def run_checks(root: str) -> list[str]:
     # Aliases are measured exactly as conjuncts are (PR #886 review): a
     # predicate that definitionally entails a conjunct is that conjunct for
     # threading purposes, and it is a Prop-former for connectivity purposes.
+    # Structures join the alias fixpoint (PR #886 review, the
+    # structure-alias round): a Prop structure whose field carries a
+    # measured conjunct for its binder is that conjunct in pack clothing,
+    # and the def-only derivation let `hPack : ThreadedPack st'` assume the
+    # conjunct unseen.  The loop alternates the two derivations until
+    # neither widens.
+    specs = _state_specs(bodies)
+    struct_heads = _structure_heads(root, sources)
     measured = conjuncts | threading_aliases(bodies, conjuncts)
+    struct_alias_map: dict[str, _ArgSpec] = {}
+    while True:
+        struct_alias_map = structure_aliases(
+            struct_heads,
+            {name: specs.get(name, _UNARY_SPEC) for name in measured},
+        )
+        widened = measured | set(struct_alias_map)
+        widened |= threading_aliases(bodies, widened)
+        if widened == measured:
+            break
+        measured = widened
+    spec_map = {name: specs.get(name, _UNARY_SPEC) for name in measured}
+    spec_map.update(struct_alias_map)
     # Carriers are pre-state vocabulary (PR #886 review): a definition or
     # structure whose expansion entails a family form covers its state with
     # the invariant, so the packs the payoffs consume mint pre-states.
-    def_carriers = _carrier_defs(bodies)
-    # A def-carrier's state slot is its telescope-derived position (PR #886
+    # A def-carrier's state slot is its telescope-derived spec (PR #886
     # review, the telescope round): a blanket 0 would resolve a
     # multi-parameter carrier's pre-state from its leading non-state
-    # argument.  Names without a unanimous position read 0, the unary
-    # legacy.
-    indices = _state_indices(bodies)
-    carrier_map = {name: 0 for name in PRE_STATE_PREDICATES}
-    carrier_map.update({name: indices.get(name, 0) for name in def_carriers})
+    # argument.
+    def_carriers = {
+        name: specs.get(name, _UNARY_SPEC) for name in _carrier_defs(bodies)
+    }
+    carrier_map = {name: _UNARY_SPEC for name in PRE_STATE_PREDICATES}
+    carrier_map.update(def_carriers)
     carrier_map.update(carrier_structures(root, sources, def_carriers))
     bundles = collect_bundles(
         root,
@@ -2868,7 +3301,7 @@ def run_checks(root: str) -> list[str]:
                 f"whole-bundle form of threading"
             )
             continue
-        for conjunct, state in bundle.threaded(measured, indices):
+        for conjunct, state in bundle.threaded(measured, spec_map):
             problems.append(
                 f"no_post_state_binding: {bundle.path}:{bundle.line}: "
                 f"`{bundle.name}` binds `{conjunct}` on `{state}`, which is not "
@@ -2961,11 +3394,27 @@ def report(root: str) -> int:
     sources = lean_sources(root)
     bodies = state_predicate_bodies(root, sources)
     conjuncts = derive_conjuncts(bodies)
+    specs = _state_specs(bodies)
+    struct_heads = _structure_heads(root, sources)
     measured = conjuncts | threading_aliases(bodies, conjuncts)
-    def_carriers = _carrier_defs(bodies)
-    indices = _state_indices(bodies)
-    carrier_map = {name: 0 for name in PRE_STATE_PREDICATES}
-    carrier_map.update({name: indices.get(name, 0) for name in def_carriers})
+    struct_alias_map: dict[str, _ArgSpec] = {}
+    while True:
+        struct_alias_map = structure_aliases(
+            struct_heads,
+            {name: specs.get(name, _UNARY_SPEC) for name in measured},
+        )
+        widened = measured | set(struct_alias_map)
+        widened |= threading_aliases(bodies, widened)
+        if widened == measured:
+            break
+        measured = widened
+    spec_map = {name: specs.get(name, _UNARY_SPEC) for name in measured}
+    spec_map.update(struct_alias_map)
+    def_carriers = {
+        name: specs.get(name, _UNARY_SPEC) for name in _carrier_defs(bodies)
+    }
+    carrier_map = {name: _UNARY_SPEC for name in PRE_STATE_PREDICATES}
+    carrier_map.update(def_carriers)
     carrier_map.update(carrier_structures(root, sources, def_carriers))
     bundles = collect_bundles(
         root,
@@ -2983,7 +3432,7 @@ def report(root: str) -> int:
     tally: dict[str, int] = {}
     threaded_bundles = 0
     for bundle in sorted(bundles, key=lambda b: (b.path, b.line)):
-        findings = bundle.threaded(measured, indices)
+        findings = bundle.threaded(measured, spec_map)
         if not findings:
             continue
         threaded_bundles += 1
@@ -5852,6 +6301,217 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
             nonleading_clean,
             False,
             mutation="none",
+        )
+    )
+
+    # A grouped state binder (PR #886 review, toolchain-verified):
+    # `(old new : SystemState)` is two explicit arguments, and counting
+    # groups instead of names read only slot 0 -- the pre-state -- while
+    # the post-state sat beside it.
+    paired_defs = CLEAN_DEFS.replace(
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st",
+        "def pairedConjunct (old new : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent new\n"
+        "\n"
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st"
+        " ∧ pairedConjunct st st",
+    )
+    grouped_state = _fixture()
+    grouped_state[DEFS_MODULE] = paired_defs
+    grouped_state["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hP : pairedConjunct st st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a grouped state binder's second slot is scanned",
+            grouped_state,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    grouped_state_clean = _fixture()
+    grouped_state_clean[DEFS_MODULE] = paired_defs
+    grouped_state_clean["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hP : pairedConjunct st st)\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a grouped state binder bound on pre-states stays clean",
+            grouped_state_clean,
+            False,
+            mutation="none",
+        )
+    )
+
+    # Named arguments commute (PR #886 review, toolchain-verified):
+    # `(new := st') (old := true)` binds the post-state whatever the
+    # textual order, and reading slots by source order presented the
+    # pre-state at the derived position.
+    reordered_defs = CLEAN_DEFS.replace(
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st",
+        "def reorderedConjunct (old : Bool) (new : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent new\n"
+        "\n"
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st"
+        " ∧ reorderedConjunct true st",
+    )
+    named_reorder = _fixture()
+    named_reorder[DEFS_MODULE] = reordered_defs
+    named_reorder["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hR : reorderedConjunct (new := st') (old := true))\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a reordered named argument is resolved by label, not source order",
+            named_reorder,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    named_reorder_clean = _fixture()
+    named_reorder_clean[DEFS_MODULE] = reordered_defs
+    named_reorder_clean["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hR : reorderedConjunct (new := st) (old := true))\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a reordered named argument on the pre-state stays clean",
+            named_reorder_clean,
+            False,
+            mutation="none",
+        )
+    )
+
+    # A term-rewriting notation (PR #886 review, toolchain-verified):
+    # `threaded![st']` respells a conjunct application no signature scan
+    # can see -- the machinery pin is what fails, wherever the notation
+    # and its uses sit.
+    notation_hidden = _fixture()
+    notation_hidden["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        'notation "threaded![" s "]" => blockedThreadsPendingMessageConsistent s\n'
+        + CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hBad : threaded![st'])\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a premise-respelling notation is pinned machinery",
+            notation_hidden,
+            True,
+            check="minting_machinery",
+            mutation="preserving",
+        )
+    )
+
+    # A conjunct-carrying structure (PR #886 review, toolchain-verified):
+    # binding `ThreadedPack st'` assumes the conjunct on the post-state
+    # without naming it, and the def-only alias derivation never saw
+    # structures.
+    threaded_pack_defs = (
+        "structure ThreadedPack (st : SystemState) : Prop where\n"
+        "  threaded : blockedThreadsPendingMessageConsistent st\n"
+        "\n"
+    )
+    struct_alias = _fixture()
+    struct_alias["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        threaded_pack_defs
+        + CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hPack : ThreadedPack st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a conjunct-carrying structure is a threading alias",
+            struct_alias,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    struct_alias_clean = _fixture()
+    struct_alias_clean["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        threaded_pack_defs
+        + CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hPack : ThreadedPack st)\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a conjunct-carrying structure bound on the pre-state stays clean",
+            struct_alias_clean,
+            False,
+            mutation="none",
+        )
+    )
+
+    # The entailment false positive (PR #886 review, toolchain-verified):
+    # a conjunct under `∨ True` entails nothing -- its arm is not an
+    # assumption -- and the flat regional scan flagged the mention.
+    or_wrapped = _fixture()
+    or_wrapped["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hIrrelevant : blockedThreadsPendingMessageConsistent st' ∨ True)\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a conjunct under a weaker connective is not a threaded hypothesis",
+            or_wrapped,
+            False,
+            mutation="none",
+        )
+    )
+
+    # And the relation the split must keep: a conjunction *does* entail
+    # its conjuncts, so a threading half inside `∧` still fires.
+    and_carried = _fixture()
+    and_carried["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hBoth : True ∧ blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a conjunction-entailed threading half still fires",
+            and_carried,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
         )
     )
 

@@ -678,6 +678,49 @@ self-test 113 cases, 10/10 checks covered; census unchanged a
 twentieth time: 26 conjuncts / 146 statements / 0 post-state
 bindings.
 
+The twenty-fifth review pass (five findings, all toolchain-verified)
+reclassified the churn and ended it at the second root.  The
+round-23 diagnosis closed the *spelling* class — no unknown-spelling
+finding since — but rounds 24–25 produced eight findings of a
+different class: each was one more fragment of Lean's **elaborator
+semantics** re-implemented in text — grouped binders count as one slot,
+named arguments read in source order, `notation` respelling a premise,
+conjunct-carrying structures outside the alias derivation, a mention
+under `∨ True` flagged as threading — and that class, unlike the
+keyword list, is not finite in text.  So the registered structural
+endpoint was pulled forward instead of deferred:
+`SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean` is the
+elaborator-backed census — a `run_cmd` walking every family-marked
+proposition in the elaborated environment, where binders arrive
+resolved, notation is long gone and structures have fields, checking
+that no hypothesis *entails* (descending `∧`, structure fields and
+definitional unfoldings; refusing `∨`/`∃`/`¬`/arrows) a measured
+conjunct of the conclusion's state, with the conjunct set derived by
+unfolding the canonical root and the state argument found by *type*.
+It carries its own enforced witnesses (a directly-threaded and a
+def→structure-chained statement must be flagged, the clean twin must
+not), agrees with the text census exactly — 146 statements, 0
+threaded — and runs in CI as its own build root in
+`test_tier1_build.sh`; the WS-DT debt row is closed.  The five
+findings also landed in the text gate, each in its direction: the
+telescope walker counts names per group and refuses defaults (a
+grouped `(old new : SystemState)` scans both slots); applications
+resolve named arguments by label against the retained telescope, with
+faithful-only reads on the suppression side and scan-everything on the
+finding side; the `notation`/`infix` family joined the machinery pin
+(it cannot mint, but it can respell a premise no signature scan sees);
+`structure_aliases` derives conjunct-carrying structures into the
+measure under union discipline off the same head parse the carriers
+use; and every conjunct/carrier scan is now anchored to
+entailment-split parts under strict positivity — `∀`-bodies and
+implication conclusions are provided positions (the syscall payoff's
+lookup-guarded pack keeps covering its pre-state), `∨`-arms are not
+(the reported false positive), and a `False →`-guarded launder still
+dies on the conclusion-state check that runs before pre-states can
+suppress.  Nine further fixtures with accepted twins; self-test 122
+cases, 10/10 checks covered; census unchanged a twenty-first time,
+now measured twice — text and elaborator — at 26 / 146 / 0.
+
 ### Housekeeping
 
 `raw_lookup_tid` re-anchored twice, with the reason in the baseline header:

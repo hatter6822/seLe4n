@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr3-ipcinvariantfull-dethreading-fp5gvu",
-      "commit_sha": "de0a21329701be553d9f0c9de7778d2a7994941d",
-      "tree_sha": "f428bef8a88fd89ab626a049e717ff27a54f9c44",
-      "committed_at_utc": "2026-09-01T09:50:29+00:00"
+      "commit_sha": "a9cd1956cd9dcf4ffe81a9d7cf9f0f689860d7df",
+      "tree_sha": "5f72cd575be44de5df78add148c3151103c9c0d2",
+      "committed_at_utc": "2026-09-01T16:16:15+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c52a43f351179cd4cb32d746ca383bc82e8995fbfcd80a98cc2b69446a712ba0"
+    "source_digest": "9f1e2089f08fb69a0bf8d6babbeef5297303b0c5aa54c304c421deb02614fdff"
   },
   "summary": {
-    "module_count": 367,
-    "declaration_count": 17826
+    "module_count": 368,
+    "declaration_count": 17844
   },
   "readme_sync": {
     "version": "0.34.43",
     "lean_toolchain": "v4.28.0",
-    "production_files": 298,
-    "production_loc": 310795,
+    "production_files": 299,
+    "production_loc": 311056,
     "test_files": 69,
     "test_loc": 65318,
-    "proved_theorem_lemma_decls": 10294,
+    "proved_theorem_lemma_decls": 10297,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -213136,6 +213136,189 @@
             "length",
             "none",
             "st"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Testing.IpcDethreadingEnvironmentCensus",
+      "path": "SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean",
+      "declaration_count": 18,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.IpcDethreadingEnvironmentCensus",
+          "line": 46,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "familyMarkers",
+          "line": 50,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "carriesFamilyMarker",
+          "line": 55,
+          "called": [
+            "any",
+            "length"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "isFamilyForm",
+          "line": 64,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "systemStateName",
+          "line": 69,
+          "called": [
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "andLeafHeads",
+          "line": 72,
+          "called": [
+            "insert"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "measuredConjuncts",
+          "line": 82,
+          "called": [
+            "andLeafHeads",
+            "contains",
+            "insert",
+            "ipcInvariantFull",
+            "pure",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "entailsOn",
+          "line": 113,
+          "called": [
+            "contains",
+            "none",
+            "pure",
+            "systemStateName"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "conclusionStates",
+          "line": 153,
+          "called": [
+            "isFamilyForm",
+            "systemStateName"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "checkStatement",
+          "line": 172,
+          "called": [
+            "conclusionStates",
+            "entailsOn",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusMain",
+          "line": 188,
+          "called": [
+            "carriesFamilyMarker",
+            "checkStatement",
+            "fold",
+            "insert",
+            "ipcInvariantFull",
+            "isEmpty",
+            "isFamilyForm",
+            "length",
+            "measuredConjuncts",
+            "toList"
+          ]
+        },
+        {
+          "kind": "section",
+          "name": "CheckerWitnesses",
+          "line": 208,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "censusWitnessPack",
+          "line": 213,
+          "called": [
+            "SystemState",
+            "blockedThreadsPendingMessageConsistent",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessCarrier",
+          "line": 217,
+          "called": [
+            "SystemState",
+            "censusWitnessPack",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "censusWitnessThreaded",
+          "line": 223,
+          "called": [
+            "SystemState",
+            "ipcInvariantFull"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "censusWitnessChained",
+          "line": 230,
+          "called": [
+            "SystemState",
+            "censusWitnessCarrier",
+            "ipcInvariantFull",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "censusWitnessClean",
+          "line": 237,
+          "called": [
+            "SystemState",
+            "ipcInvariantFull",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "checkWitness",
+          "line": 245,
+          "called": [
+            "censusMain",
+            "censusWitnessChained",
+            "censusWitnessClean",
+            "censusWitnessThreaded",
+            "checkStatement",
+            "insert",
+            "ipcInvariantFull",
+            "measuredConjuncts",
+            "none",
+            "pure"
           ]
         }
       ]

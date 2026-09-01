@@ -24,6 +24,15 @@ run_check "BUILD" lake build
 # for the module list.
 run_check "BUILD" lake build SeLe4n.Platform.Staged
 
+# WS-RR review round 25: the elaborator-backed de-threading census.  The
+# module's `run_cmd` walks the elaborated environment — telescopes, named
+# arguments, notation and structures already resolved — and fails its own
+# elaboration if any `*_preserves/establishes_ipcInvariantFull*` statement
+# hypothesises a measured conjunct of its conclusion's state.  It imports
+# `Platform.Staged` (the payoff tier is staged), so it must be built as
+# its own root; the text gate remains the fast pre-commit approximation.
+run_check "BUILD" lake build SeLe4n.Testing.IpcDethreadingEnvironmentCensus
+
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per
 # round — `.tcbResume`, `.send`, `.tcbSetPriority`/`.tcbSetMCPriority` — each
