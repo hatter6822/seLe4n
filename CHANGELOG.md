@@ -1,8 +1,10 @@
-## v0.34.43 — WS-RR RR3.1–RR3.14: `ipcInvariantFull` is de-threaded
+## v0.34.43 — WS-RR RR3: `ipcInvariantFull` de-threaded, dispatch payoff landed
 
-**One PR, one version.**  The work is RR3.1–RR3.14.  The phase's acceptance has
-two halves; the first is **met and exceeded**, the second is **open, registered,
-and re-scoped** — see "What RR3 does not close" below.
+**One PR, one version.**  The work is RR3.1–RR3.26 — the whole phase.  The
+phase's acceptance has two halves; both are **met**: the family is de-threaded
+end to end, and the dispatch payoff theorems exist and are cited from
+`docs/CLAIM_EVIDENCE_INDEX.md` — see "The payoff, landed in the same PR"
+below.
 
 ### The measurement came first, and it changed the problem
 
@@ -109,39 +111,88 @@ they are:
   were hypotheses on every enqueueing bundle; they are consequences of
   `ipcInvariantFull`.
 
-### What RR3 does not close, and why it is registered rather than assumed
+### The payoff, landed in the same PR (RR3.15–RR3.26)
 
-Neither `dispatchWithCap_preserves_ipcInvariantFull` nor
-`dispatchSyscall_preserves_ipcInvariantFull` exists, so nothing yet carries the
-bundle across a syscall.  They are **not** a composition of theorems already in
-the tree: the `_preserves_ipcInvariantFull` family covers the IPC and donation
-transitions, while `dispatchWithCap` routes twenty-five syscalls across the
-capability, VSpace, service, sched-context, lifecycle and TCB subsystems — six of
-about thirty arms carry a bundle at all.  The plan's two rows assumed inputs that
-do not exist; they are re-scoped into RR3.15–RR3.23 (one per subsystem) plus
-RR3.24/RR3.25 (the two dispatch tiers), and RR3 now declares 26 sub-tasks.
-`syscallDispatch` also names nothing in the tree; the dispatcher is
-`dispatchSyscall`, and the theorem is named for it.
+Mid-cut, neither `dispatchWithCap_preserves_ipcInvariantFull` nor
+`dispatchSyscall_preserves_ipcInvariantFull` existed, and they were **not** a
+composition of theorems already in the tree: the family covered the IPC and
+donation transitions, while `dispatchWithCap` routes twenty-five syscalls
+across the capability, VSpace, service, sched-context, lifecycle and TCB
+subsystems — six of about thirty arms carried a bundle at all.  The plan's two
+payoff rows had assumed inputs that did not exist; they were re-scoped into
+RR3.15–RR3.23 (per-arm bundles, one row per subsystem) plus RR3.24/RR3.25
+(the two dispatch tiers), the residual was parked in
+`docs/planning/ipc_dethreading_pending.txt` — a register the gate checks in
+both directions, stale and dangling registrations both failing — and then the
+same PR worked the rows and emptied the register.  (`syscallDispatch` also
+named nothing in the tree; the dispatcher is `dispatchSyscall`, and the
+theorem is named for it.)
 
-Rather than weaken the gate or assume the arms, the payoff check gains a
-registered-residual file, `docs/planning/ipc_dethreading_pending.txt`, checked in
-**both** directions: a registration whose theorem has landed fails as stale, a
-registration outside the payoff set fails as dangling, and an absent unregistered
-payoff fails as before.  Three new self-test cases, two of them
-token-preserving.  The gate's success line names what is still pending instead of
-claiming end-to-end closure.
+The per-arm layer is **production**:
+`SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`, imported by
+`API.lean`, carries per-operation `ipcInvariantFull` bundles for the
+capability ops, retype, VSpace map/unmap with the shootdown and
+icache-broadcast variants, service registration/revocation/query,
+sched-context configure/bind/unbind, TCB field writes, suspend/resume, and
+the return-frame staging writes.  Two disciplines got names because the
+bundles need them as pre-state facts: `retypeTargetDetached` (eighteen
+fields — revoke-and-suspend-before-retype; retyping an object a thread still
+references would fabricate IPC state out of the replacement object) and
+`threadIpcFieldsQuiescent` (seven fields — suspending or resuming a victim
+whose IPC fields are live needs the cancellation surface composed in front).
+
+The payoff tier sits on top.
+`dispatchCapabilityOnly_preserves_ipcInvariantFull` (`API.lean`,
+**production**) covers every capability-gated arm under the pre-state pack
+`capabilityDispatchQuiescence`; `dispatchWithCap_preserves_ipcInvariantFull`
+extends it over the IPC fall-through arms and
+`dispatchSyscall_preserves_ipcInvariantFull` adds the capability-lookup and
+taint prologue, both under `syscallDispatchQuiescence`
+(`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`).  Every pack field is a
+**pre-state** fact — the gate's zero-binding rule holds over the payoff tier
+too, and the family it measures is now **144** statements at zero post-state
+bindings; its success line reads `[PASS] ipcInvariantFull is de-threaded end
+to end`, which until this cut it refused to print.
+
+The two top theorems are **staged, deliberately**: the `.call` arm composes
+the staged `EndpointCallInvariant` surface (the RR2 closure audit's
+partition), so `DispatchPayoff.lean` is allow-listed and CI builds it through
+`Platform.Staged` while a linked kernel image does not; the payoffs relocate
+to production when that surface promotes.  The confinements are stated, not
+silent: `.notificationSignal` is covered on the unbound-delivery path only
+(SM6.D's registered bound-delivery debt); the `.replyRecv` composite excludes
+a live donation edge naming the woken caller (the AUD-3 window between a bare
+reply and its donation return); retype and suspend demand their quiescence
+packs.  Five follow-ups are registered as WS-DT debt in
+`docs/WORKSTREAM_HISTORY.md`: `schedContextBind` / `schedContextUnbind`
+operation hardening (refuse the bind/unbind whose absence the pack fields
+`boundThreadNotDonationOwner` and `unbindBoundThreadPassive` assert, making
+both dischargeable from operation success), the cancel-then-suspend
+composite, the staged→production payoff relocation, and the flow-`Checked`
+dispatch tier (the payoffs cover the unchecked internal tier the `Checked`
+wrappers wrap).  WS-DT itself is
+**CLOSED**; the de-threading plan is retired to `docs/dev_history/planning/`,
+and `docs/CLAIM_EVIDENCE_INDEX.md` carries the payoff row citing all three
+theorems.
 
 ### Housekeeping
 
-`raw_lookup_tid` re-anchored 1287 → 1382 with its reason in the baseline header:
-the metric counts `.toObjId]?` at object-store boundaries and cannot tell an
-operational lookup from one inside a `Prop`, and the whole rise is the second
-kind — new invariant predicates and frames that must mirror the raw form of the
-siblings they compose with.  No kernel operation gained a raw lookup, and the
-typed-helper adoption floors are untouched.
+`raw_lookup_tid` re-anchored twice, with the reason in the baseline header:
+1287 → 1382 at the de-threading cut and 1382 → 1467 at the payoff cut.  The
+metric counts `.toObjId]?` at object-store boundaries and cannot tell an
+operational lookup from one inside a `Prop`, and both rises are entirely the
+second kind — invariant predicates, frames, disciplines and quiescence packs
+that must mirror the raw form of the siblings they compose with.  No kernel
+operation gained a raw lookup in either cut (the payoff cut's +85 is
+`API.lean` +3, the quiescence pack's Prop fields, plus the two new
+invariant-surface modules, every definition in which is Prop-valued); the
+typed-helper adoption floors are untouched, and the payoff re-anchor also
+raised the should-grow floors to the current adoption counts.
 
-Staged-only modules 63 → 64: `IPC/Invariant/Reachability.lean` has no production
-consumer until RR3.24's payoff theorem.
+Staged-only modules 63 → 65: `IPC/Invariant/Reachability.lean` and
+`IPC/Invariant/DispatchPayoff.lean` — the payoff composes the staged `.call`
+surface, and the reachability bundle's consumer is the payoff, so both ride
+with `EndpointCallInvariant`'s promotion.
 
 ### Closure audit (same cut)
 
@@ -154,8 +205,9 @@ figure this entry first carried:
   four `*_establishes_*` composites RR3.12 added are inside the census instead
   of adjacent to it, and `ipcInvariantFullExceptDonationOwner` is a recognized
   pre-state form.  The family this entry first quoted as fifty-nine was stale
-  at commit (the gate then measured sixty-one); the widened family is
-  **sixty-five**, still at zero post-state bindings.
+  at commit (the gate then measured sixty-one); the widened family was
+  **sixty-five**, still at zero post-state bindings — and the payoff tier
+  later in this same PR grows it to **144**, at zero throughout.
 * **A whole-bundle post-state hypothesis is its own finding.**  A statement
   hypothesising `ipcInvariantFull st'` of its conclusion's own state is the
   degenerate maximal threading — every conjunct at once — yet scored as a
@@ -179,7 +231,7 @@ registered dispatch payoffs as their designated consumers.
 
 **Trace fixture**: byte-identical.  **Zero** `sorry`/`axiom`.
 
-Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR3 (RR3.1–RR3.14)
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR3 (RR3.1–RR3.26)
 
 ## v0.34.42 — WS-RR RR2: the live paths carry their own correctness
 

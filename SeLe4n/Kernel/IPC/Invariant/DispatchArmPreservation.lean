@@ -14,7 +14,7 @@ import SeLe4n.Kernel.Architecture.PerCoreCacheModel
 import SeLe4n.Kernel.Architecture.IpcBufferValidation
 import SeLe4n.Kernel.IPC.Operations.NotificationBind
 import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
-import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
+
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.SchedContext.OperationsPerCore
 import SeLe4n.Kernel.Service.Registry
@@ -2297,7 +2297,6 @@ theorem schedContextUnbindOnCore_preserves_ipcInvariantFull
       (schedContextUnbind_preserves_ipcInvariantFull st stMid vScId hObjInv hInv
         hBoundAllowed hUnbind)
       hStep
-
 
 -- ============================================================================
 -- §13  VSpace page-table arms (`.vspaceMap`, `.vspaceUnmap`)

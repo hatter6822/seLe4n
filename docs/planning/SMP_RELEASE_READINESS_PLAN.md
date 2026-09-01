@@ -380,14 +380,40 @@ inputs:
 
 ### RR3 — `ipcInvariantFull` de-threading closure (D1, D6, D8)
 
-> **Status**: RR3.1–RR3.14 **LANDED**.  The RR3.1 gate reports **zero**
-> post-state bindings of **any** conjunct across all sixty-five
-> `_preserves_ipcInvariantFull` / `_establishes_ipcInvariantFull` statements —
-> not only the two the acceptance names.  The two payoff theorems are **registered as pending** in
-> `docs/planning/ipc_dethreading_pending.txt`, and RR3.15–RR3.26 are the work they
-> actually need.
+> **Status**: RR3.1–RR3.26 **LANDED** — the phase is closed.  The RR3.1 gate
+> reports **zero** post-state bindings of **any** conjunct across the whole
+> `_preserves_ipcInvariantFull` / `_establishes_ipcInvariantFull` family, and
+> both payoff theorems now exist: `dispatchCapabilityOnly_preserves_ipcInvariantFull`
+> (production, `SeLe4n/Kernel/API.lean`), and
+> `dispatchWithCap_preserves_ipcInvariantFull` /
+> `dispatchSyscall_preserves_ipcInvariantFull`
+> (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, staged with the `.call`
+> chain's bundle per RR3.24's own escape clause).  The pending register is
+> empty and the gate's success line reads end-to-end closure.
+>
+> **Deviations from the rows as written**, recorded rather than absorbed:
+> the per-arm bundles of RR3.15–RR3.21 landed in one host module
+> (`SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`, wired into
+> production through `API.lean`) rather than scattered across the file
+> columns below — the arms share one read-view lever surface, and one module
+> keeps the levers next to their consumers.  The payoffs carry **pre-state
+> quiescence packs** (`capabilityDispatchQuiescence`,
+> `syscallDispatchQuiescence`) — every field dischargeable before the step,
+> nothing bound on a post-state — and four residuals are confinements inside
+> those packs rather than gaps in the theorems: the retype target must be
+> detached (the seL4 revoke-and-suspend-before-retype contract), a
+> suspended/resumed victim must be IPC-quiescent (the queue-unlink
+> cancellation composite is SM6.E-surface follow-up work), `.notificationSignal`
+> covers the unbound-delivery path (bound delivery is SM6.D's registered
+> debt), and `.replyRecv`'s composite excludes a live donation edge naming
+> the woken caller (the donated-server reply path has its own composite in
+> `EndpointReplyDispatchInvariant.lean`).  Two operation-hardening follow-ups
+> are registered in `docs/WORKSTREAM_HISTORY.md`: `schedContextBind` can
+> target a recorded donation owner and `schedContextUnbind` can strand an
+> IPC-blocked bound thread; each bundle takes the corresponding pre-state
+> hypothesis until the operation refuses the case itself.
 
-Closes [`IPC_INVARIANT_DETHREADING_PLAN.md`](IPC_INVARIANT_DETHREADING_PLAN.md),
+Closes [`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md),
 whose D1, D6 and D8 slices are open. Two of the twenty conjuncts are still
 assumed as post-state hypotheses on nearly every bundle —
 `blockedThreadsPendingMessageConsistent` on 33 of 35 and
@@ -465,15 +491,12 @@ must carry bundles first.
 across the `_preserves_ipcInvariantFull` family; both payoff theorems exist
 and are cited from `docs/CLAIM_EVIDENCE_INDEX.md`.
 
-The first half is **met, and exceeded**: no conjunct at all is bound on a
-post-state.  The second is **open**, and deliberately visible rather than
-weakened: `docs/planning/ipc_dethreading_pending.txt` registers each missing payoff
-theorem with its closure target and reason, and the gate checks that register in
-both directions — a registration whose theorem has landed fails as stale, a
-registration outside the payoff set fails as dangling, and an absent unregistered
-payoff fails as before.  The gate's success line names what is still pending
-instead of claiming end-to-end closure, so the phase cannot be read as closed
-while RR3.15–RR3.26 are open.
+Both halves are **met**: no conjunct at all is bound on a post-state, both
+payoff theorems exist and are cited from `docs/CLAIM_EVIDENCE_INDEX.md`, and
+the pending register is empty — the gate still checks it in both directions
+(a registration whose theorem has landed fails as stale, a registration
+outside the payoff set fails as dangling, an absent unregistered payoff fails
+as before), so the emptiness is a checked fact rather than a deleted file.
 
 **A note on measuring this.** The ten conjuncts de-threaded by earlier slices
 each had a canonical primed binder (`hQNBC'`, `hPRR'`, …), so "de-threaded"
@@ -792,7 +815,7 @@ PASS — the contract landed at `v0.34.2` and pinned by
 - **Source register**: [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md)
 - **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10)
 - **Overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
-- **Absorbed by RR3**: [`IPC_INVARIANT_DETHREADING_PLAN.md`](IPC_INVARIANT_DETHREADING_PLAN.md)
+- **Absorbed by RR3**: [`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md)
 - **Absorbed by RR6**: [`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md), [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 - **Canonical status**: [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md)
 - **Out of scope**: [`HARDWARE_PARTITION_ISOLATION_PLAN.md`](HARDWARE_PARTITION_ISOLATION_PLAN.md)

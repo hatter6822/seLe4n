@@ -474,8 +474,10 @@ Bundle level:
 
 - `ipcInvariantFull` (WS-RC R4.C.7 close-out: 15-conjunct — `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed ∧ blockedThreadsPendingMessageConsistent ∧ endpointQueueNoDup ∧ ipcStateQueueMembershipConsistent ∧ queueNextBlockingConsistent ∧ queueHeadBlockedConsistent ∧ blockedThreadTimeoutConsistent ∧ donationChainAcyclic ∧ donationOwnerValid ∧ passiveServerIdle ∧ donationBudgetTransfer ∧ blockedOnReplyHasTarget`. The legacy 15th-slot `uniqueWaiters` conjunct was retired when `Notification.waitingThreads` was promoted to `SeLe4n.NoDupList ThreadId`, carrying the `List.Nodup` witness structurally via `NoDupList.hNodup`. WS-H12c + WS-H12d + WS-F5 + V3-G6 + V3-K + V3-J + V3-J-cross + Z6-J + Z7-F/G/H/I + AG1-C + AJ1-B + WS-RC R4.C.7)
 - `ipcInvariantFull` — **grown to twenty conjuncts** since the WS-RC R4.C.7 close-out described above: the WS-SM SM6.D reply-object hardening (v0.31.115→v0.32.57) appended `replyCallerLinkage` (16th), `pendingReceiveReplyWellFormed` (17th), `donationOwnerUnique` (18th), `endpointQueueTailBlockedConsistent` (19th), and `queueNextTargetBlocked` (20th).  Canonical definition: `SeLe4n/Kernel/IPC/Invariant/Defs.lean`.
-  **`ipcInvariantFull` is not yet an end-to-end machine-checked property of
-  the live kernel** (WS-RR RR0.3, v0.34.26): two of the twenty conjuncts —
+  **`ipcInvariantFull` was not, until v0.34.43, an end-to-end machine-checked
+  property of the live kernel** (constraint registered by WS-RR RR0.3 at
+  v0.34.26; closed by RR3 — see the payoff bullet below).  At registration,
+  two of the twenty conjuncts —
   `blockedThreadsPendingMessageConsistent` and
   `replyCallerLinkageReciprocal` — are still assumed as **post-state
   hypotheses** on nearly every `*_preserves_ipcInvariantFull` bundle, so
@@ -483,9 +485,9 @@ Bundle level:
   conjunct, the transition is fine", not that the transition establishes
   it; and neither top-level dispatch payoff theorem
   (`dispatchWithCap_preserves_ipcInvariantFull`,
-  `syscallDispatch_preserves_ipcInvariantFull`) exists.  The workstream is
+  `syscallDispatch_preserves_ipcInvariantFull`) existed.  The workstream is
   **WS-DT** in [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md),
-  closure target WS-RR phase RR3.  Canonical statement of the constraint:
+  closed by WS-RR phase RR3 at v0.34.43.  Canonical statement of the constraint:
   `CLAUDE.md` / `AGENTS.md`, "Standing constraints and registered debt".
   **What RR2 changed (v0.34.42)**: every *unchecked transition* behind
   `Kernel/API.lean`'s SMP dispatch arms now carries a
@@ -500,15 +502,17 @@ Bundle level:
   `EndpointCallInvariant` surface); the `.reply` chain's
   (`EndpointReplyDispatchInvariant.lean`), the priority-inheritance walk's
   (`DonationPreservation.lean` §8) and everything else are production.  Still
-  uncovered: `notificationSignalBoundOnCore` (SM6.D's registered bound-delivery
-  debt) and the composition layer — `Checked` wrappers, `replyRecvBody`,
-  `Architecture.stage*` frames — which RR3.22 owns.  RR2 also *reduced* the
+  uncovered then: `notificationSignalBoundOnCore` (SM6.D's registered
+  bound-delivery debt) and the composition layer — `Checked` wrappers,
+  `replyRecvBody`, `Architecture.stage*` frames — which RR3.22 owned and has
+  since closed for `replyRecvBody` and the `Architecture.stage*` frames; the
+  `Checked` wrappers and the bound-delivery path remain registered (a WS-DT
+  debt row and SM6.D's debt row respectively).  RR2 also *reduced* the
   threading in one place (`ipcUnwrapCaps_preserves_ipcInvariantFull` now
   establishes `dualQueueSystemInvariant` and `badgeWellFormed` instead of
   assuming them) and *added* inherited threading sites with the new per-core
   bundles — no new unproven content; RR3.1's gate sets the measured baseline.
-- **WS-RR RR3.1–RR3.14 (v0.34.43) — the bundles are de-threaded; the payoff is
-  not.**  The RR3.1 gate reports **zero** conjuncts bound on a post-state across
+- **WS-RR RR3.1–RR3.14 (v0.34.43) — the bundles are de-threaded.**  The RR3.1 gate reports **zero** conjuncts bound on a post-state across
   all sixty-five statements in the family — the `*_preserves_ipcInvariantFull*`
   bundles, their two relaxed `…ExceptDonationOwner` forms among them, plus the
   four `*_establishes_ipcInvariantFull*` composites.  The measured
@@ -522,12 +526,34 @@ Bundle level:
   donation.  The reply chain now states the truth in two halves —
   `ipcInvariantFullExceptDonationOwner` for the bare reply, which the donation
   return upgrades — so the live cross-core `.reply` dispatch covers the donating
-  path for the first time.  What is still missing is the top-level payoff:
-  `dispatchWithCap_preserves_ipcInvariantFull` and
-  `dispatchSyscall_preserves_ipcInvariantFull` do not exist, six of about thirty
-  dispatch arms carry a bundle at all, and both theorems are registered in
+  path for the first time.  At this point the top-level payoff was still
+  missing — `dispatchWithCap_preserves_ipcInvariantFull` and
+  `dispatchSyscall_preserves_ipcInvariantFull` did not exist, and six of about
+  thirty dispatch arms carried a bundle at all — parked in
   `docs/planning/ipc_dethreading_pending.txt` with closure targets the gate
-  checks in both directions.
+  checks in both directions; the next bullet records it landing.
+- **WS-RR RR3.15–RR3.26 (v0.34.43) — the dispatch payoff, landed.**  Three
+  theorems carry the bundle across dispatch:
+  `dispatchCapabilityOnly_preserves_ipcInvariantFull` (`Kernel/API.lean`,
+  production) over the per-arm bundle layer
+  `Kernel/IPC/Invariant/DispatchArmPreservation.lean` (capability ops, retype
+  behind the `retypeTargetDetached` discipline, VSpace with the shootdown and
+  icache-broadcast variants, service, sched-context, TCB fields,
+  suspend/resume behind `threadIpcFieldsQuiescent`, and the return-frame
+  staging writes); `dispatchWithCap_preserves_ipcInvariantFull` and
+  `dispatchSyscall_preserves_ipcInvariantFull`
+  (`Kernel/IPC/Invariant/DispatchPayoff.lean`, staged with the `.call`
+  surface they compose) over the IPC fall-through arms and the lookup/taint
+  prologue.  Every hypothesis is a pre-state fact collected in two packs
+  (`capabilityDispatchQuiescence`, `syscallDispatchQuiescence`); the gate now
+  measures **144** statements at zero post-state bindings and prints
+  `[PASS] ipcInvariantFull is de-threaded end to end`.  Confinements and
+  follow-ups (`schedContextBind`/`schedContextUnbind` op hardening,
+  cancel-then-suspend, staged→production relocation, the flow-`Checked` tier)
+  are registered as WS-DT debt in
+  [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md);
+  `docs/planning/ipc_dethreading_pending.txt` carries zero registrations,
+  gate-held in both directions.
 - `blockedThreadsPendingMessageConsistent` — **strengthened to both directions**
   (PR #873 round 11, v0.33.86), and renamed from `waitingThreadsPendingMessageNone`
   because the old name described only the half it stated.  It now ties

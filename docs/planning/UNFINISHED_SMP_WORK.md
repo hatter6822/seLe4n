@@ -149,7 +149,9 @@ owns it — blocker 1 by RR0 at `v0.34.26` (the de-threading workstream is
 registered as **WS-DT** in `docs/WORKSTREAM_HISTORY.md`, in
 `SMP_RELEASE_CLOSURE_PLAN.md` §2 Dependencies, and in CLAUDE.md/AGENTS.md's
 standing-constraints block, with RR3 as its closure target), and blockers 2 and
-3 by RR2 at `v0.34.42`.  The closure narratives are appended to each finding
+3 by RR2 at `v0.34.42`.  RR3 then closed **WS-DT itself** at `v0.34.43` —
+de-threading and dispatch payoff both — so blocker 1's underlying debt is
+done, not merely registered.  The closure narratives are appended to each finding
 below; the findings themselves are left as the audit wrote them, since this
 register is a record of what was found rather than a status board.
 
@@ -510,6 +512,27 @@ Two things this does **not** close, both owned by RR3.
    the composition layer (`Checked` wrappers, `replyRecvBody`,
    `Architecture.stage*` frames) that RR3.22 owns.  Finding 9 in this section
    is the same staging shape at the kernel-entry level.
+
+**CLOSED at `v0.34.43` (WS-RR RR3.15–RR3.26).**  Both items above are done.
+The reachability bundle exists
+(`SeLe4n/Kernel/IPC/Invariant/Reachability.lean`: `ipcReachable`,
+boot-inhabited by `ipcReachable_default`, with the running-caller and
+queue-tail facts *derived* from `ipcInvariantFull` rather than assumed), and
+the payoff landed as three theorems:
+`dispatchCapabilityOnly_preserves_ipcInvariantFull` (`SeLe4n/Kernel/API.lean`,
+production, over the per-arm layer
+`SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`) and
+`dispatchWithCap_preserves_ipcInvariantFull` /
+`dispatchSyscall_preserves_ipcInvariantFull`
+(`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, staged with the `.call`
+surface they compose; they relocate when it promotes).  RR3.22 built the
+composition layer this addendum said it owns — `replyRecvBody`'s three-stage
+composite and the `Architecture.stage*` return-frame bundles — leaving the
+flow-`Checked` wrappers and `notificationSignalBoundOnCore` as registered
+residue (a WS-DT debt row and SM6.D's debt row respectively).  No
+verification claim was widened past the packs: the payoff holds under
+`capabilityDispatchQuiescence` / `syscallDispatchQuiescence`, every field a
+pre-state fact.
 
 #### 2. "ipcInvariant CLOSED across the entire cancellation surface" excludes the operation that actually runs on.tcbSuspend
 
@@ -1325,14 +1348,26 @@ The "reachability bundle" this entry names as missing now exists
 satisfy it, and the running-caller and queue-tail preconditions *derived* from
 `ipcInvariantFull` itself rather than assumed.
 
-**Still open, and re-scoped**: the headline payoff.  Its original two rows
-assumed per-arm bundles that do not exist — `dispatchWithCap` routes twenty-five
-syscalls across six subsystems and six of about thirty arms carry an
-`ipcInvariantFull` bundle at all — so RR3.15–RR3.23 build them and RR3.24/RR3.25
-compose them.  Both theorems are registered in
-[`ipc_dethreading_pending.txt`](ipc_dethreading_pending.txt), which the gate
-checks in both directions.  `syscallDispatch` also names nothing in the tree; the
-dispatcher is `dispatchSyscall`.
+**Re-scoped, then closed (WS-RR RR3.15–RR3.26, `v0.34.43`)**: the headline
+payoff.  Its original two rows assumed per-arm bundles that did not exist —
+`dispatchWithCap` routes twenty-five syscalls across six subsystems and six of
+about thirty arms carried an `ipcInvariantFull` bundle at all — so
+RR3.15–RR3.23 built them
+(`SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`, production) and
+RR3.24/RR3.25 composed them: `dispatchCapabilityOnly_preserves_ipcInvariantFull`
+(`SeLe4n/Kernel/API.lean`, production) plus
+`dispatchWithCap_preserves_ipcInvariantFull` and
+`dispatchSyscall_preserves_ipcInvariantFull`
+(`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, staged with the `.call`
+surface they compose), all under pre-state quiescence packs.  The pending
+register [`ipc_dethreading_pending.txt`](ipc_dethreading_pending.txt) is empty
+and the gate, which checks it in both directions, now measures 144 statements
+at zero post-state bindings and prints its end-to-end PASS line.  The family
+grew from sixty-five to 144 with the per-arm tier.  (`syscallDispatch` named
+nothing in the tree; the dispatcher is `dispatchSyscall`, and the theorem is
+named for it.)  The plan itself is retired to `docs/dev_history/planning/`
+(RR3.26); WS-DT is **CLOSED** with five registered follow-up debt rows in
+`docs/WORKSTREAM_HISTORY.md`.
 
 **Tree evidence checked:**
 
@@ -1623,7 +1658,7 @@ steps 4–5 close the fail-open latents that become live exactly when the
 boot seam flips.
 
 1. **Register the orphaned workstream.** Add
- [`IPC_INVARIANT_DETHREADING_PLAN.md`](IPC_INVARIANT_DETHREADING_PLAN.md)
+ [`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md)
  to `docs/WORKSTREAM_HISTORY.md` — the project's declared single
  canonical source for workstream status — with its real state
  (D0/D2/D2′/D3/D4/D5/D7 closed; D1, D6, D8 open), and to

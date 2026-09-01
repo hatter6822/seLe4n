@@ -946,18 +946,18 @@ theorem of_schedContext_content_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
 
 /-- Read-view agreement composes. -/
 theorem trans {s1 s2 s3 : SystemState}
-    (h12 : ipcReadViewAgreement s1 s2) (h23 : ipcReadViewAgreement s2 s3) :
+    (hFore : ipcReadViewAgreement s1 s2) (hAft : ipcReadViewAgreement s2 s3) :
     ipcReadViewAgreement s1 s3 :=
-  ⟨fun oid t => (h23.tcb oid t).trans (h12.tcb oid t),
-   fun oid ep => (h23.endpoint oid ep).trans (h12.endpoint oid ep),
+  ⟨fun oid t => (hAft.tcb oid t).trans (hFore.tcb oid t),
+   fun oid ep => (hAft.endpoint oid ep).trans (hFore.endpoint oid ep),
    fun oid n h3 => by
-     obtain ⟨n2, h2, hS2, hW2, hB2⟩ := h23.notification oid n h3
-     obtain ⟨n1, h1, hS1, hW1, hB1⟩ := h12.notification oid n2 h2
+     obtain ⟨n2, h2, hS2, hW2, hB2⟩ := hAft.notification oid n h3
+     obtain ⟨n1, h1, hS1, hW1, hB1⟩ := hFore.notification oid n2 h2
      exact ⟨n1, h1, hS1.trans hS2, hW1.trans hW2, hB1.trans hB2⟩,
-   fun oid r => (h23.reply oid r).trans (h12.reply oid r),
+   fun oid r => (hAft.reply oid r).trans (hFore.reply oid r),
    fun oid sc h1 => by
-     obtain ⟨sc2, h2, hB2⟩ := h12.schedContext oid sc h1
-     obtain ⟨sc3, h3, hB3⟩ := h23.schedContext oid sc2 h2
+     obtain ⟨sc2, h2, hB2⟩ := hFore.schedContext oid sc h1
+     obtain ⟨sc3, h3, hB3⟩ := hAft.schedContext oid sc2 h2
      exact ⟨sc3, h3, hB3.trans hB2⟩⟩
 
 /-- The typed-getter form of the TCB clause. -/

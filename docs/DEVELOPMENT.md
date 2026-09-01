@@ -17,13 +17,16 @@ It is aligned to the **current project state**:
   composition are RR3.22's layer, and `notificationSignalBoundOnCore` is
   SM6.D's registered debt — and the `.tcbSuspend` operation the dispatch
   actually calls carries an `ipcInvariant` preservation theorem — closing
-  audit blockers 2 and 3), **RR3.1–RR3.14 at v0.34.43** (`ipcInvariantFull`
-  de-threading: the RR3.1 gate reports zero conjuncts bound on a post-state
-  across all sixty-five `*_preserves_ipcInvariantFull*` /
-  `*_establishes_ipcInvariantFull*` statements, and the two
-  dispatch payoff theorems are registered as pending with closure targets the
-  gate checks in both directions — RR3.15–RR3.26 build the per-arm bundles they
-  need).  SM10 is
+  audit blockers 2 and 3), **RR3.1–RR3.26 at v0.34.43** (`ipcInvariantFull`
+  de-threading **and** its dispatch payoff: the RR3.1 gate reports zero
+  conjuncts bound on a post-state across all 144
+  `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
+  statements and prints its end-to-end PASS line; the three payoff theorems —
+  `dispatchCapabilityOnly_preserves_ipcInvariantFull` in production,
+  `dispatchWithCap_preserves_ipcInvariantFull` and
+  `dispatchSyscall_preserves_ipcInvariantFull` staged with the `.call`
+  surface — carry the bundle across dispatch under pre-state quiescence
+  packs, over the per-arm layer `DispatchArmPreservation.lean`).  SM10 is
   BLOCKED on it and must not open until RR8 closes**; the pre-SM10 completeness
   audit found three findings that block starting SM10, a false scope statement in
   its own plan, and fail-open latents that become reachable when the boot path

@@ -274,6 +274,18 @@ theorem mem_foldl_insert_provenance (moved : List (SchedContextId × Nat))
     (migrateSchedContextReplenishment st scId fromCore toCore).machine = st.machine := by
   unfold migrateSchedContextReplenishment; split <;> rfl
 
+/-- WS-SM SM5.H.4 (frame): the replenishment migration leaves **every** run-queue
+slot untouched (it writes only replenish-queue slots) — so it preserves
+run-queue well-formedness on every core trivially. -/
+@[simp] theorem migrateSchedContextReplenishment_runQueueOnCore (st : SystemState)
+    (scId : SchedContextId) (fromCore toCore c' : CoreId) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.runQueueOnCore c'
+      = st.scheduler.runQueueOnCore c' := by
+  unfold migrateSchedContextReplenishment
+  split
+  · rfl
+  · simp
+
 /-- WS-SM SM5.H.4: the migration frames every SchedContext resolution. -/
 theorem migrateSchedContextReplenishment_getSchedContext? (st : SystemState)
     (scId : SchedContextId) (fromCore toCore : CoreId) (scId' : SchedContextId) :

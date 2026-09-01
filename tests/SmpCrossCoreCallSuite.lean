@@ -16,6 +16,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNiPerCore
 import SeLe4n.Kernel.IPC.CrossCore.NotificationInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInvariant
 import SeLe4n.Kernel.IPC.Invariant.Reachability
+import SeLe4n.Kernel.IPC.Invariant.DispatchPayoff
 import SeLe4n.Kernel.SyscallDispatchEntry
 import SeLe4n.Testing.StateBuilder
 
@@ -498,12 +499,49 @@ private def runRendezvousChecks : IO Unit := do
 #check @endpointCallWithCaps_preserves_dualQueueSystemInvariant
 -- WS-RR RR3.11 — instance/congruence surface of the in-flight family (kept
 -- complete alongside the boundedness instances even where no composite consumes
--- them yet; the registered dispatch payoffs are the designated consumers):
+-- them yet; the dispatch payoffs below are the designated consumers):
 #check @allPendingMessagesBounded_iff_pendingMessagesSatisfy
 #check @pendingMessageCapBadgesWellFormed_of_getElem_eq
 #check @cleanupPreReceiveDonation_preserves_pendingMessageCapBadgesWellFormed
 -- WS-RR RR3.12 — the relaxed donation-owner family mirrors the unrelaxed one:
 #check @donationOwnerValidExcept_of_objects_eq
+-- WS-RR RR3.15–RR3.21 — the per-arm dispatch bundle layer (production,
+-- `IPC/Invariant/DispatchArmPreservation.lean`), anchored at its
+-- dispatch-facing terminals plus the two named disciplines the packs quantify:
+#check @retypeTargetDetached
+#check @retypeReplacementFresh
+#check @threadIpcFieldsQuiescent
+#check @cspaceDeleteSlot_preserves_ipcInvariantFull
+#check @cspaceMintWithCdt_preserves_ipcInvariantFull
+#check @mintReplyCapWithCdt_preserves_ipcInvariantFull
+#check @lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_ipcInvariantFull
+#check @vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_ipcInvariantFull
+#check @vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_ipcInvariantFull
+#check @vspaceUnifyInstructionPage_preserves_ipcInvariantFull
+#check @registerService_preserves_ipcInvariantFull
+#check @revokeService_preserves_ipcInvariantFull
+#check @schedContextConfigure_preserves_ipcInvariantFull
+#check @schedContextBind_preserves_ipcInvariantFull
+#check @schedContextUnbindOnCore_preserves_ipcInvariantFull
+#check @setPriorityOnCore_preserves_ipcInvariantFull
+#check @setIPCBufferOp_preserves_ipcInvariantFull
+#check @writeReturnFrameToTcb_preserves_ipcInvariantFull
+#check @suspendThreadOnCore_preserves_ipcInvariantFull
+#check @resumeThreadOnCoreLive_preserves_ipcInvariantFull
+-- WS-RR RR3.22 — the composition layer: the return-frame staging writes and
+-- the replyRecv three-stage composite:
+#check @stageDeliveredMessage_preserves_ipcInvariantFull
+#check @stageWokenDelivery_preserves_ipcInvariantFull
+#check @stageWokenSendCompletion_preserves_ipcInvariantFull
+#check @replyRecvBody_preserves_ipcInvariantFull
+-- WS-RR RR3.23–RR3.25 — the dispatch payoffs and their pre-state packs
+-- (the capability tier production in `API.lean`; the two dispatch tiers
+-- staged in `IPC/Invariant/DispatchPayoff.lean` with the call-chain surface):
+#check @capabilityDispatchQuiescence
+#check @dispatchCapabilityOnly_preserves_ipcInvariantFull
+#check @syscallDispatchQuiescence
+#check @dispatchWithCap_preserves_ipcInvariantFull
+#check @dispatchSyscall_preserves_ipcInvariantFull
 
 /-- SM6.D.1 exact decomposition: the ∀-core bundle is equivalent to the global
 bundle plus the per-core passive-idle slices — nothing is weakened. -/

@@ -120,10 +120,10 @@ private theorem ipcInvariantFull_of_exceptDonationOwner_of_no_edge
       st.objects[s.toObjId]? = some (.tcb sTcb) →
       sTcb.schedContextBinding ≠ .donated sc0 woken) :
     ipcInvariantFull st := by
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, hDOVexc, h13, h14, h15, h16,
-    h17, h18, h19, h20⟩ := hExc
-  refine ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, ?_, h13, h14, h15, h16,
-    h17, h18, h19, h20⟩
+  obtain ⟨hIpc, hDual, hBnd, hBadge, hBTPM, hNoDup, hQMC, hQNBC, hQHBC, hBTT,
+    hDCA, hDOVexc, hPSI, hDBT, hBRT, hRCL, hPRR, hDOU, hEQTB, hQNTB⟩ := hExc
+  refine ⟨hIpc, hDual, hBnd, hBadge, hBTPM, hNoDup, hQMC, hQNBC, hQHBC, hBTT,
+    hDCA, ?_, hPSI, hDBT, hBRT, hRCL, hPRR, hDOU, hEQTB, hQNTB⟩
   intro tid tcb scId owner hT hB
   obtain ⟨hSC, ownerTcb, hOT, hOU, hDisj⟩ := hDOVexc tid tcb scId owner hT hB
   refine ⟨hSC, ownerTcb, hOT, hOU, ?_⟩
