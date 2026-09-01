@@ -83,6 +83,11 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lean_code_view  # noqa: E402  (path set up immediately above)
 
+# The repository's one quote-aware shell resolver (see CLAUDE.md, "A
+# presence check is not a relation check"): commands are read as commands,
+# never as line text, so an `echo lake build …` can not mint a build root.
+import check_aarch64_cross_target as shell_view  # noqa: E402
+
 DEFS_MODULE = "SeLe4n/Kernel/IPC/Invariant/Defs.lean"
 # Two verbs, one family: `_preserves_` theorems carry the invariant across a
 # transition, `_establishes_` theorems produce it where the pre-state carries
@@ -159,6 +164,7 @@ ROOT_NAMESPACE = "SeLe4n.Kernel"
 PENDING_FILE = "docs/planning/ipc_dethreading_pending.txt"
 
 CHECKS = (
+    "grammar_coverage",
     "conjuncts_derived",
     "family_nonempty",
     "family_conclusion",
@@ -166,6 +172,93 @@ CHECKS = (
     "no_conclusion_state_hypothesis",
     "payoff_theorems",
     "payoff_statement",
+)
+
+# The declaration modifiers and top-level commands this gate's grammars
+# know.  SINGLE SOURCE (PR #886 review, the churn diagnosis): eight
+# consecutive review rounds each taught one more spelling of Lean's
+# surface grammar to one more regex, and the class does not converge while
+# each site carries its own alternation -- so `_COMMAND_STOP`, the five
+# modifier runs, and the `grammar_coverage` tripwire are all built from
+# these two tuples, and a keyword learned once is learned everywhere.  The
+# tripwire is what ends the *silent* half of the class: a column-0 token
+# outside these tuples is a command whose declarations every census and
+# scan would miss, and it now fails the gate loudly instead of waiting for
+# the next review round to find it.  Longest-first join keeps prefixed
+# pairs (`macro_rules`/`macro`, `builtin_initialize`/`initialize`)
+# unambiguous without relying on backtracking.
+_MODIFIERS = (
+    "public",
+    "private",
+    "protected",
+    "partial",
+    "noncomputable",
+    "unsafe",
+    "local",
+    "scoped",
+    "nonrec",
+    "meta",
+)
+_COMMANDS = (
+    "def",
+    "theorem",
+    "lemma",
+    "abbrev",
+    "structure",
+    "inductive",
+    "instance",
+    "class",
+    "end",
+    "namespace",
+    "open",
+    "opaque",
+    "axiom",
+    "example",
+    "attribute",
+    "universe",
+    "variable",
+    "include",
+    "omit",
+    "macro_rules",
+    "macro",
+    "syntax",
+    "elab_rules",
+    "elab",
+    "deriving",
+    "mutual",
+    "section",
+    "set_option",
+    "export",
+    "import",
+    "initialize",
+    "builtin_initialize",
+    "run_cmd",
+    "notation",
+    "infixl",
+    "infixr",
+    "infix",
+    "postfix",
+    "prefix",
+    "register_option",
+    "prelude",
+    "where",
+)
+_MODIFIER_ALT = "|".join(sorted(_MODIFIERS, key=len, reverse=True))
+_COMMAND_ALT = "|".join(sorted(_COMMANDS, key=len, reverse=True))
+_MODIFIER_RUN = r"(?:(?:" + _MODIFIER_ALT + r")\s+)*"
+# `open … in <decl>`, `set_option … in <decl>`, `include … in <decl>` and
+# `omit … in <decl>` wrap a declaration on one line (PR #886 review sweep,
+# toolchain-verified): a census blind to the composite prefix missed the
+# declaration behind it.
+_COMPOSITE_PREFIX = r"(?:(?:open|set_option|include|omit)[^\n]*?\s+in\s+)*"
+
+# The forms a *family conclusion* may take: every full-invariant view, and
+# deliberately not `ipcInvariantCore` (PR #886 review): a marker-named
+# theorem concluding only the structural core downgrades the name's claim
+# while keeping its census seat -- the core stays pre-state vocabulary
+# (`PRE_STATE_PREDICATES`), never a conclusion the family accepts.
+_CONCLUSION_FORMS = tuple(
+    name for name in PRE_STATE_PREDICATES if name != "ipcInvariantCore"
 )
 
 _DECL_RE = re.compile(
@@ -199,9 +292,8 @@ _DECL_RE = re.compile(
     # skipped, and an *anonymous* instance has no name for the marker to
     # live in, so the name capture correctly refuses it.  `public` joins
     # the modifier run for the module system's spellings.
-    r"^\s*(?:@\[[^\]]*\]\s*)*"
-    r"(?P<mods>(?:public\s+|private\s+|protected\s+|partial\s+"
-    r"|noncomputable\s+|unsafe\s+|local\s+|scoped\s+|nonrec\s+)*)"
+    r"^\s*" + _COMPOSITE_PREFIX + r"(?:@\[[^\]]*\]\s*)*"
+    r"(?P<mods>" + _MODIFIER_RUN + r")"
     r"(?:theorem|lemma|def|abbrev|opaque|axiom"
     r"|instance(?:\s*\(\s*priority\s*:=[^)]*\))?)\s+"
     r"(?P<name>«[^»\n]*»|[^\W\d][\w'.!?]*)",
@@ -920,15 +1012,7 @@ def split_conjunction(body: str) -> list[str]:
 # (`open … in` inside a definition body): none exists in the tree, and losing
 # one truncates the derived set, which the census pin surfaces.
 _COMMAND_STOP = re.compile(
-    r"^[ \t]*(?:(?:public|private|protected|partial|noncomputable|unsafe|local|scoped"
-    r"|nonrec)\s+)*"
-    r"(?:@\[|/-|#"
-    r"|(?:def|theorem|lemma|abbrev|structure|inductive|instance|class"
-    r"|end|namespace|open|opaque|axiom|example|attribute|universe"
-    r"|variable|include|omit|macro_rules|macro|syntax|elab_rules|elab"
-    r"|deriving|mutual|section|set_option|export|import|initialize"
-    r"|builtin_initialize|run_cmd|notation"
-    r"|infixl|infixr|infix|postfix|prefix)\b)",
+    r"^[ \t]*" + _MODIFIER_RUN + r"(?:@\[|/-|#|(?:" + _COMMAND_ALT + r")\b)",
     re.MULTILINE,
 )
 
@@ -979,11 +1063,16 @@ def state_predicate_bodies(
     # which is the fail-closed direction: their bodies parse to no exact
     # predicate applications, and one that does parse IS a Prop.
     pattern = re.compile(
-        r"^[ \t]*(?:@\[[^\]]*\]\s*)*"
-        r"(?:(?:public|private|protected|partial|noncomputable|unsafe|local|scoped"
-        r"|nonrec)\s+)*"
+        r"^[ \t]*" + _COMPOSITE_PREFIX + r"(?:@\[[^\]]*\]\s*)*"
+                + _MODIFIER_RUN +
+        # The state binder may be implicit (PR #886 review, toolchain-
+        # verified): `{st : SystemState}` declares the same predicate, and
+        # the root applies it with a named argument the derivation already
+        # normalises.  The bracket class is deliberately loose -- a
+        # mismatched pair collects a definition that Lean would reject,
+        # which only widens the measured set.
         r"(?:def|abbrev)\s+([^\W\d][\w'!?]*)"
-        r"\s*\(\s*([^\W\d][\w']*)\s*:\s*SystemState\s*\)"
+        r"\s*[({]\s*([^\W\d][\w']*)\s*:\s*SystemState\s*[)}]"
         r"\s*(?::\s*Prop\s*)?:=",
         re.MULTILINE,
     )
@@ -993,9 +1082,8 @@ def state_predicate_bodies(
     # on a routine refactor while a namespaced shadow kept the union
     # nonempty.
     arrow_pattern = re.compile(
-        r"^[ \t]*(?:@\[[^\]]*\]\s*)*"
-        r"(?:(?:public|private|protected|partial|noncomputable|unsafe|local|scoped"
-        r"|nonrec)\s+)*"
+        r"^[ \t]*" + _COMPOSITE_PREFIX + r"(?:@\[[^\]]*\]\s*)*"
+                + _MODIFIER_RUN +
         r"(?:def|abbrev)\s+([^\W\d][\w'!?]*)"
         r"\s*:\s*SystemState\s*(?:→|->)\s*Prop\s*:=\s*"
         r"fun\s+([^\W\d][\w']*)\s*(?:=>|↦)",
@@ -1270,9 +1358,8 @@ def _carries_state_application(
 
 
 _STRUCTURE_RE = re.compile(
-    r"^[ \t]*(?:@\[[^\]]*\]\s*)*"
-    r"(?:(?:public|private|protected|partial|noncomputable|unsafe|local|scoped"
-    r"|nonrec)\s+)*"
+    r"^[ \t]*" + _COMPOSITE_PREFIX + r"(?:@\[[^\]]*\]\s*)*"
+        + _MODIFIER_RUN +
     r"structure\s+([^\W\d][\w'!?]*)",
     re.MULTILINE,
 )
@@ -1664,7 +1751,7 @@ class Bundle:
                 continue
             flat.append(part)
         for part in flat:
-            for predicate in PRE_STATE_PREDICATES:
+            for predicate in _CONCLUSION_FORMS:
                 # `@?`: the explicit-application spelling of the same
                 # conclusion (PR #886 review sweep with `_APPLIED_RE`).
                 hit = re.match(r"@?" + _qualified(predicate), part)
@@ -2056,6 +2143,72 @@ def payoff_status(
     return problems
 
 
+def grammar_coverage(root: str, sources: list[str]) -> list[str]:
+    """Violations for column-0 tokens outside the gate's known grammar.
+
+    This is the tripwire that ends the surface-spelling class (PR #886
+    review, the churn diagnosis): eight consecutive review rounds each
+    found one more valid Lean command the text grammars did not know --
+    `class`, `def`, `opaque`, `instance`, `nonrec`, `public section`, and
+    so on -- and every unknown spelling was a *silent* miss until a
+    reviewer found it, because a declaration under an unknown command is
+    invisible to the census and every scan built on it.  The tripwire
+    inverts the failure mode: a column-0 identifier token that is neither
+    a known modifier nor a known command fails the gate loudly, so the
+    next new spelling -- in the tree today, or written next year -- is the
+    gate's own finding, never a review round's.
+
+    Column 0 only, over the code view: body lines are indented, comment
+    and string and quotation text is blanked, and a column-0 line opening
+    with a non-identifier character (a continuation bracket, an operator)
+    is part of a declaration some anchored grammar already captured via
+    `signature_end`.  `@[` attributes and `#`-commands are the two known
+    non-identifier openers.  Each unknown token is reported once with its
+    first location and a count.  The census that designed this set found
+    two unknown commands already in the tree (`register_option`,
+    `prelude`) -- the class was live, not hypothetical.
+
+    The residual this cannot close -- and the reason the shared command
+    set is an approximation at all -- is that the gate re-implements a
+    fragment of Lean's grammar in text.  The structural endpoint is an
+    elaborator-backed census (declarations and telescopes read from Lean's
+    own environment), registered as tracked debt in
+    `docs/WORKSTREAM_HISTORY.md` (WS-DT residuals).
+    """
+    known = set(_MODIFIERS) | set(_COMMANDS)
+    seen: dict[str, tuple[str, int, int]] = {}
+    for relative in sources:
+        view = code_view(root, relative)
+        for line_number, line in enumerate(view.split("\n"), start=1):
+            if not line or line[0] in " \t":
+                continue
+            if line.startswith("@[") or line[0] == "#":
+                continue
+            token = re.match(r"[^\W\d][\w'!?]*", line)
+            if token is None:
+                continue
+            word = token.group(0)
+            if word in known:
+                continue
+            if word in seen:
+                file0, line0, count = seen[word]
+                seen[word] = (file0, line0, count + 1)
+            else:
+                seen[word] = (relative, line_number, 1)
+    problems: list[str] = []
+    for word in sorted(seen):
+        file0, line0, count = seen[word]
+        extra = "" if count == 1 else f" ({count} occurrences)"
+        problems.append(
+            f"grammar_coverage: {file0}:{line0}: leading token `{word}` is "
+            f"not a command this gate's grammars know{extra}; declarations "
+            f"under an unknown command are invisible to every census and "
+            f"scan -- teach `_COMMANDS`/`_MODIFIERS` (one shared source), "
+            f"never work around the failure"
+        )
+    return problems
+
+
 def _reachable_modules(
     root: str, sources: list[str]
 ) -> tuple[set[str] | None, list[str]]:
@@ -2093,18 +2246,61 @@ def _reachable_modules(
             hit = re.fullmatch(r'name\s*=\s*"([^"]+)"', line)
             if hit and section == "[[lean_lib]]":
                 candidates.add(hit.group(1))
+    # `lake build <Module>` counts as a root only in *command position*
+    # (PR #886 review: the raw-text scan let `echo lake build …` -- a
+    # comment, a log line -- mint a root, and roots suppress findings, so
+    # this is a place the scan must under-approximate).  Scripts are
+    # comment-stripped and split into commands by the repository's shared
+    # quote-aware resolver; `lake` qualifies at argv position 0, or behind
+    # a *derived* wrapper: a shell function the scripts themselves define
+    # whose own body executes its arguments (`"$@"`) -- `run_check` and
+    # its relatives -- with the `lake build` pair located inside the
+    # wrapper's argument list.  `echo` defines no such function.
     scripts_dir = os.path.join(root, "scripts")
     if os.path.isdir(scripts_dir):
+        script_texts: list[str] = []
         for name in sorted(os.listdir(scripts_dir)):
-            if not name.endswith(".sh"):
-                continue
-            with open(
-                os.path.join(scripts_dir, name), encoding="utf-8"
-            ) as handle:
+            if name.endswith(".sh"):
+                with open(
+                    os.path.join(scripts_dir, name), encoding="utf-8"
+                ) as handle:
+                    script_texts.append(handle.read())
+        wrappers: set[str] = set()
+        for text in script_texts:
+            for match in re.finditer(
+                r"^([A-Za-z_][\w]*)\s*\(\)\s*\{", text, re.MULTILINE
+            ):
+                brace = text.index("{", match.start())
+                close = text.find("\n}", brace)
+                body = text[brace : close if close != -1 else len(text)]
+                if '"$@"' in body:
+                    wrappers.add(match.group(1))
+        for text in script_texts:
+            stripped = "\n".join(
+                shell_view.split_comment(line) for line in text.split("\n")
+            )
+            for command in shell_view.shell_commands(stripped):
+                argv = shell_view.argv_of(command)
+                if not argv:
+                    continue
+                start = None
+                if argv[0] == "lake":
+                    start = 0
+                elif argv[0] in wrappers:
+                    for index in range(1, len(argv) - 1):
+                        if argv[index] == "lake" and argv[index + 1] == "build":
+                            start = index
+                            break
+                if (
+                    start is None
+                    or len(argv) < start + 2
+                    or argv[start + 1] != "build"
+                ):
+                    continue
                 candidates.update(
-                    re.findall(
-                        r"lake build\s+([A-Za-z_][\w.']*)", handle.read()
-                    )
+                    token
+                    for token in argv[start + 2 :]
+                    if re.fullmatch(r"[A-Za-z_][\w.']*", token)
                 )
     modules = {
         relative[: -len(".lean")].replace("/", "."): relative
@@ -2141,6 +2337,11 @@ def run_checks(root: str) -> list[str]:
     """Every violation, as a human-readable line.  Empty means clean."""
     problems: list[str] = []
     sources = lean_sources(root)
+
+    # First, because everything else assumes it: an unknown command means
+    # unknown blind spots in every check below, so its findings lead.  The
+    # other checks still run -- more information, not less.
+    problems.extend(grammar_coverage(root, sources))
 
     defs_path = os.path.join(root, DEFS_MODULE)
     if not os.path.isfile(defs_path):
@@ -4756,6 +4957,161 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
             shadow_pack,
             True,
             check="payoff_statement",
+            mutation="preserving",
+        )
+    )
+
+    # An unknown command carrying a threaded declaration: the whole
+    # surface-spelling class in one fixture.  Before the tripwire, a
+    # declaration under a command the grammars did not know was silently
+    # invisible to every census and scan -- the shape eight review rounds
+    # found one spelling at a time.  Now the unknown token itself is the
+    # finding.
+    unknown_command = _fixture()
+    unknown_command[
+        "SeLe4n/Kernel/IPC/Invariant/Structural/DslBundles.lean"
+    ] = (
+        "register_theorem endpointDslDual_preserves_ipcInvariantFull\n"
+        "    (st st' : SystemState)\n"
+        "    (hInv : ipcInvariantFull st)\n"
+        "    (hStep : endpointDslDual st = .ok ((), st'))\n"
+        "    (hT : blockedThreadsPendingMessageConsistent st') :\n"
+        "    ipcInvariantFull st' :=\n"
+        "  sample st st' hInv hStep\n"
+    )
+    cases.append(
+        _Case(
+            "an unknown command is the gate's finding, not a silent blind spot",
+            unknown_command,
+            True,
+            check="grammar_coverage",
+            mutation="preserving",
+        )
+    )
+
+    # A one-line composite command: `open … in theorem …` wraps the
+    # declaration on the `open`'s own line, and a line-anchored census
+    # blind to the prefix missed it entirely.
+    inline_composite = _fixture()
+    inline_composite["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "theorem endpointSendDual_preserves_ipcInvariantFull",
+            "open Nat in theorem endpointSendDual_preserves_ipcInvariantFull",
+        ).replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hT : blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a declaration behind a one-line open-in prefix is censused",
+            inline_composite,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A meta-spelled proof: `meta def X_preserves_… : … := …` elaborates
+    # (toolchain-verified), and with the single-source refactor the
+    # modifier is learned once for every grammar at once.
+    meta_bundle = _fixture()
+    meta_bundle["SeLe4n/Kernel/IPC/Invariant/Structural/MetaBundles.lean"] = (
+        "meta def endpointMetaDual_preserves_ipcInvariantFull\n"
+        "    (st st' : SystemState)\n"
+        "    (hInv : ipcInvariantFull st)\n"
+        "    (hStep : endpointMetaDual st = .ok ((), st'))\n"
+        "    (hT : blockedThreadsPendingMessageConsistent st') :\n"
+        "    ipcInvariantFull st' :=\n"
+        "  sample st st' hInv hStep\n"
+    )
+    cases.append(
+        _Case(
+            "a meta-spelled threaded bundle is measured like a theorem",
+            meta_bundle,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # `echo lake build …` is a log line, not a build: roots suppress
+    # findings, so a root minted from non-command text is the fail-open
+    # direction, and the quote-aware command resolver refuses it.
+    echo_root = _fixture()
+    echo_root["lakefile.toml"] = (
+        'name = "fixturekernel"\n'
+        'defaultTargets = ["fixturekernel"]\n'
+        "\n"
+        "[[lean_exe]]\n"
+        'name = "fixturekernel"\n'
+        'root = "Main"\n'
+    )
+    echo_root["Main.lean"] = (
+        "import SeLe4n.Kernel.IPC.Invariant.Defs\n"
+        "import SeLe4n.Kernel.IPC.Invariant.Structural.Bundles\n"
+        "\n"
+        "def main : IO Unit := pure ()\n"
+    )
+    echo_root["scripts/fixture_note.sh"] = (
+        "#!/bin/sh\n"
+        'echo lake build SeLe4n.Kernel.API\n'
+    )
+    cases.append(
+        _Case(
+            "an echoed lake-build line does not mint a build root",
+            echo_root,
+            True,
+            check="payoff_theorems",
+            mutation="preserving",
+        )
+    )
+
+    # A marker-named theorem concluding only the structural core: the name
+    # claims the full invariant, and the census must not seat a downgraded
+    # conclusion -- `ipcInvariantCore` stays pre-state vocabulary.
+    core_conclusion = _fixture()
+    core_conclusion["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    ipcInvariantFull st' := by",
+            "    ipcInvariantCore st' := by",
+        )
+    )
+    cases.append(
+        _Case(
+            "a core-only conclusion does not satisfy the family's name",
+            core_conclusion,
+            True,
+            check="family_conclusion",
+            mutation="preserving",
+        )
+    )
+
+    # An implicit state binder: `{st : SystemState}` declares the same
+    # predicate (toolchain-verified), applied by the root with the named
+    # argument the derivation already normalises.
+    implicit_binder = _fixture()
+    implicit_binder[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def replyCallerLinkage (st : SystemState) : Prop :=",
+        "def replyCallerLinkage {st : SystemState} : Prop :=",
+    ).replace(
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st",
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage (st := st)",
+    )
+    implicit_binder["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hR : replyCallerLinkageReciprocal st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "an implicit-binder conjunct definition still derives",
+            implicit_binder,
+            True,
+            check="no_post_state_binding",
             mutation="preserving",
         )
     )

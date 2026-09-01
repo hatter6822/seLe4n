@@ -577,6 +577,48 @@ unanimous, so a same-named shadow that carries can no longer make the
 canonical non-carrying pack mint pre-states.  Three caught and one
 accepted fixture; self-test 98 cases; census unchanged an eighteenth
 time.
+A churn-diagnosis pass then treated the dominant finding class as the
+defect, not its instances.  Eight consecutive review rounds each taught
+the gate's grammars one more valid Lean spelling — `class`, `def`,
+`opaque`, `instance`, `nonrec`, `public section`, dot notation,
+`show … from` — and each unknown spelling was a *silent* census miss
+until a reviewer found it, because every regex carried its own keyword
+alternation.  Three structural changes end the class rather than its
+next instance.  The modifiers and top-level commands the gate knows are
+now a **single source** (`_MODIFIERS`/`_COMMANDS`), from which
+`_COMMAND_STOP`, all five modifier runs, and the new check are built —
+a keyword learned once is learned everywhere.  A **`grammar_coverage`
+tripwire** (eighth check) scans every column-0 token of every code view
+and fails loudly on any identifier outside that source, inverting the
+failure mode: the next unknown spelling — written next year, or in the
+tree today — is the gate's own finding, never a review round's.  The
+column-0 census that designed it immediately proved the class live,
+turning up two commands already in the tree the grammars did not know
+(`register_option`, `prelude` — both now known, both previously able
+to corrupt a preceding body's trailing conjunct).  One-line composite
+commands (`open … in theorem`, `set_option … in theorem`,
+toolchain-verified) parse in the census and both collectors.  And the
+structural endpoint the text gate cannot reach — an elaborator-backed
+census reading declarations and telescopes from Lean's own environment
+— is registered as tracked debt in `docs/WORKSTREAM_HISTORY.md`
+(WS-DT residuals, post-v1.0.0), so the approximation is pinned, not
+pretended away.  The twenty-third review pass landed while this cut was
+in flight and proved both halves of its thesis in one round: its
+`set_option … in theorem` finding was already fixed here (the composite
+prefix, with the reviewer's exact scenario as this cut's own fixture),
+and its `meta def` finding — one more spelling — became a one-word
+addition to the single source that every grammar and the tripwire learn
+at once.  The pass's three structural findings joined the cut: build
+roots are read in *command position* through the repository's shared
+quote-aware shell resolver, with wrappers *derived* (a script-defined
+function whose body executes `"$@"`), so an echoed `lake build` line
+can no longer mint a root; a family conclusion must be a full-invariant
+form — `ipcInvariantCore` stays pre-state vocabulary, so a marker-named
+theorem cannot keep its census seat while downgrading its claim; and an
+implicit `{st : SystemState}` binder collects like the explicit
+spelling (toolchain-verified, as were `meta def` and the `include … in`
+composite).  Six token-preserving fixtures; self-test 104 cases, 8/8
+checks covered; census unchanged a nineteenth time.
 
 ### Housekeeping
 
