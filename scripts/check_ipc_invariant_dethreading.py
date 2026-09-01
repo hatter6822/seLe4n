@@ -193,14 +193,24 @@ def _qualified(name: str) -> str:
     )
 
 
-def _steps_function(binders: str, function: str) -> bool:
-    """True when some binder group's type is an equation headed by `function`.
+def _steps_function(binders: str, function: str, state: str) -> bool:
+    """True when some binder group's type equates `function`'s result to `state`.
 
     The group's type begins after its first depth-0 colon; the head is its
     first identifier token.  Requiring the head (rather than any mention)
     and a following top-level `=` is what rejects a dummy hypothesis that
     name-drops the dispatcher beside a step equation for something else.
+    The equation's right-hand side -- cut at the first depth-0 logical
+    connective, so a conjunct smuggled in after the result cannot satisfy
+    this -- must mention `state`, the payoff's conclusion state: an equation
+    whose result is some unrelated mid-state proves nothing about the state
+    the conclusion speaks of (PR #886 review, the round after the head
+    requirement landed -- head-plus-`=` was itself still a presence check
+    on the result side).
     """
+    state_token = re.compile(
+        r"(?<![A-Za-z0-9_'])" + re.escape(state) + r"(?![A-Za-z0-9_'])"
+    )
     index = 0
     while index < len(binders):
         if binders[index] in _OPEN:
@@ -223,13 +233,25 @@ def _steps_function(binders: str, function: str) -> bool:
                 head = re.match(r"\s*([A-Za-z_][A-Za-z0-9_'!?]*)", group_type)
                 if head and head.group(1) == function:
                     depth = 0
-                    for char in group_type:
+                    for offset, char in enumerate(group_type):
                         if char in _OPEN:
                             depth += 1
                         elif char in _CLOSE:
                             depth -= 1
-                        elif char == "=" and depth == 0:
-                            return True
+                        elif depth == 0 and char == "=":
+                            rhs = group_type[offset + 1 :]
+                            cut_depth = 0
+                            for rhs_offset, rhs_char in enumerate(rhs):
+                                if rhs_char in _OPEN:
+                                    cut_depth += 1
+                                elif rhs_char in _CLOSE:
+                                    cut_depth -= 1
+                                elif cut_depth == 0 and rhs_char in "∧∨→↔":
+                                    rhs = rhs[:rhs_offset]
+                                    break
+                            if state_token.search(rhs):
+                                return True
+                            break
             index = end
         else:
             index += 1
@@ -379,15 +401,24 @@ def split_conjunction(body: str) -> list[str]:
     return parts
 
 
-def state_predicate_bodies(root: str, sources: list[str]) -> dict[str, str]:
+def state_predicate_bodies(root: str, sources: list[str]) -> dict[str, list[str]]:
     """Every `def NAME (st : SystemState) : Prop := ...` body in the tree.
 
     Collected tree-wide rather than from the definition module alone: a clause
     predicate that a bundle threads is a conjunct's half wherever it is
     defined, and a body map restricted to one file would silently stop
     expanding the day one moved.
+
+    Keyed by the *unqualified* name, holding **every** body that name has: a
+    text scanner cannot resolve which namespace's definition a reference
+    elaborates to, and keeping only one body -- the last in file order --
+    let a later-sorted `namespace Shadow; def ipcInvariantFull ...` eclipse
+    the real root, collapsing the derived conjunct set to the shadow's
+    (PR #886 review).  The union over-approximates instead: a shadowing
+    definition can add scanned conjuncts, never remove the real ones, so the
+    ambiguity a scanner cannot resolve fails closed.
     """
-    bodies: dict[str, str] = {}
+    bodies: dict[str, list[str]] = {}
     # `abbrev` too (PR #886 review): a transparently refactored conjunct
     # (`def` -> `abbrev`) kept its meaning but vanished from this map, so its
     # clause predicates silently left the derived set.
@@ -411,22 +442,29 @@ def state_predicate_bodies(root: str, sources: list[str]) -> dict[str, str]:
             # `...HastReplyObject`), silently dropping real nested conjuncts
             # from the derived set.
             body = tail[: cut.start()] if cut else tail
-            bodies[match.group(1)] = re.sub(
-                r"(?<![A-Za-z0-9_'])" + re.escape(match.group(2)) + r"(?![A-Za-z0-9_'])",
-                "st",
-                body,
+            bodies.setdefault(match.group(1), []).append(
+                re.sub(
+                    r"(?<![A-Za-z0-9_'])"
+                    + re.escape(match.group(2))
+                    + r"(?![A-Za-z0-9_'])",
+                    "st",
+                    body,
+                )
             )
     return bodies
 
 
-def derive_conjuncts(bodies: dict[str, str]) -> set[str]:
+def derive_conjuncts(bodies: dict[str, list[str]]) -> set[str]:
     """The conjuncts of `ipcInvariantFull`, closed under definitional unfolding.
 
     Read out of the definition rather than listed, so a twenty-first conjunct
     is measured the day it is added.  The body is split on `∧` at bracket
     depth zero and a part counts only when it is exactly one predicate applied
     to the definition's own state binder -- so the expansion is the definition,
-    not a token scrape of it.
+    not a token scrape of it.  Every body a name has contributes (see
+    `state_predicate_bodies`): the derived set is the union over same-named
+    definitions, so a namespaced shadow of the root or of a conjunct widens
+    the scan rather than replacing it.
 
     The closure step is what finds `replyCallerLinkage`'s two clause
     predicates: the bundles thread `replyCallerLinkageReciprocal`, which is not
@@ -451,21 +489,20 @@ def derive_conjuncts(bodies: dict[str, str]) -> set[str]:
         r"^\s*(?:[A-Z][A-Za-z0-9_']*\.)*([A-Za-z_][A-Za-z0-9_'!?]*)\s+\(?\s*st\s*\)?\s*$"
     )
 
-    def sub_predicates(body: str) -> set[str]:
+    def sub_predicates(name: str) -> set[str]:
         found = set()
-        for part in split_conjunction(body):
-            hit = applied.match(part)
-            if hit:
-                found.add(hit.group(1))
+        for body in bodies.get(name, []):
+            for part in split_conjunction(body):
+                hit = applied.match(part)
+                if hit:
+                    found.add(hit.group(1))
         return found
 
-    conjuncts = sub_predicates(bodies[ROOT_INVARIANT])
+    conjuncts = sub_predicates(ROOT_INVARIANT)
     frontier = set(conjuncts)
     while frontier:
         name = frontier.pop()
-        if name not in bodies:
-            continue
-        for nested in sub_predicates(bodies[name]):
+        for nested in sub_predicates(name):
             if nested not in conjuncts:
                 conjuncts.add(nested)
                 frontier.add(nested)
@@ -734,32 +771,38 @@ def run_checks(root: str) -> list[str]:
     # dispatchSyscall_preserves_ipcInvariantFull : True` would satisfy the
     # presence check while providing no top-level consumer (PR #886 review).
     # Each declared payoff must conclude an `ipcInvariantFull`-family
-    # predicate and mention the dispatch function it is named for in its
-    # hypotheses -- the step equation.
+    # predicate of some state and hypothesise a step equation that carries
+    # the dispatch function it is named for into that same state.
     by_name = {bundle.name: bundle for bundle in bundles}
     for payoff in PAYOFF_THEOREMS:
         bundle = by_name.get(payoff)
         if bundle is None:
             continue  # absence is payoff_theorems' finding, not this one's
         function = payoff[: -len("_preserves_ipcInvariantFull")]
-        if bundle.conclusion_state() is None:
+        state = bundle.conclusion_state()
+        if state is None:
             problems.append(
                 f"payoff_statement: {bundle.path}:{bundle.line}: `{payoff}` "
                 f"does not conclude an `ipcInvariantFull`-family predicate "
                 f"applied to a state"
             )
-        # The dispatcher must be the *head of a step equation*, not merely a
-        # token somewhere in the binders: a dummy hypothesis mentioning the
-        # name beside a step for another function satisfied the mention-only
-        # form (PR #886 review).  A binder group's type starts after its
-        # first depth-0 colon; the group steps `function` when that type's
-        # head identifier is `function` and a top-level `=` follows.
-        if not _steps_function(bundle.binders, function):
+        # The dispatcher must be the *head of a step equation whose result
+        # carries the conclusion's state*, not merely a token somewhere in
+        # the binders: a dummy hypothesis mentioning the name beside a step
+        # for another function satisfied the mention-only form, and a step
+        # equation into an unrelated mid-state satisfied the head-only form
+        # (PR #886 review, two successive rounds).  A binder group's type
+        # starts after its first depth-0 colon; the group steps `function`
+        # into `state` when that type's head identifier is `function`, a
+        # top-level `=` follows, and the equation's right-hand side mentions
+        # the conclusion state.
+        elif not _steps_function(bundle.binders, function, state):
             problems.append(
                 f"payoff_statement: {bundle.path}:{bundle.line}: `{payoff}` "
-                f"has no hypothesis whose step equation applies `{function}`; "
-                f"a payoff that does not step the dispatcher it is named for "
-                f"consumes nothing"
+                f"has no hypothesis whose step equation applies `{function}` "
+                f"with `{state}`, its conclusion's state, in the result; a "
+                f"payoff that does not step the dispatcher it is named for "
+                f"into the state it concludes about consumes nothing"
             )
 
     return problems
@@ -1168,6 +1211,35 @@ def self_test() -> int:
         )
     )
 
+    # Detached step result: the dispatcher heads a genuine step equation --
+    # head, `=`, everything the namedrop fix requires -- but into a mid-state,
+    # while a second function's step produces the conclusion's state.  The
+    # head-plus-`=` form accepted this; the conclusion says nothing about the
+    # dispatcher's result.
+    detached_step = _fixture()
+    detached_step["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep""",
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st stMid st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), stMid))
+    (hRelay : someOtherOperation stMid = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st stMid st' hInv hStep hRelay""",
+    )
+    cases.append(
+        _Case(
+            "payoff steps its dispatcher into a state other than its conclusion's",
+            detached_step,
+            True,
+            check="payoff_statement",
+            mutation="preserving",
+        )
+    )
+
     # Transparent abbreviation: a conjunct refactored `def` -> `abbrev` must
     # keep its clause predicates in the derived set.
     abbreviated = _fixture()
@@ -1186,6 +1258,41 @@ def self_test() -> int:
         _Case(
             "clause of an `abbrev`-refactored conjunct threaded on the post-state",
             abbreviated,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Namespaced shadow of the root: a later-sorted file legally defines its
+    # own `ipcInvariantFull` inside a namespace.  Keyed last-writer-wins, the
+    # shadow's body replaced the real one and the derived conjunct set
+    # collapsed to the shadow's -- so a bundle threading a *real* conjunct
+    # scored clean.  The union keying keeps every same-named body, so the
+    # real conjuncts stay derived and the threading is still caught.
+    shadowed_root = _fixture()
+    shadowed_root["SeLe4n/Kernel/IPC/Invariant/Structural/ShadowDefs.lean"] = (
+        "namespace Shadow\n"
+        "\n"
+        "def harmlessObservation (st : SystemState) : Prop :=\n"
+        "  True\n"
+        "\n"
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  harmlessObservation st\n"
+        "\n"
+        "end Shadow\n"
+    )
+    shadowed_root["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hT : blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a namespaced shadow of the root cannot eclipse the real conjuncts",
+            shadowed_root,
             True,
             check="no_post_state_binding",
             mutation="preserving",

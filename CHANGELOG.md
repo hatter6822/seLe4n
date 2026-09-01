@@ -270,7 +270,19 @@ than a mention (a dummy hypothesis name-dropping the dispatcher beside
 another function's step no longer satisfies `payoff_statement`), and the
 conjunct body collector accepts `abbrev` alongside `def`, so a transparent
 refactor cannot silently drop a conjunct's clauses from the derived set.
-Self-test: 32 cases.
+A fifth pass found the fourth's fixes were themselves presence checks one
+level down: the step-equation requirement checked head-plus-`=` but never
+the *result*, so a dispatcher stepped into an unrelated mid-state beside a
+second function producing the conclusion's state still passed — the
+equation's right-hand side (cut at any depth-0 connective) must now carry
+the conclusion state; and the body collector keyed bodies last-writer-wins
+by unqualified name, so a later-sorted `namespace Shadow; def
+ipcInvariantFull …` legally eclipsed the real root and collapsed the
+derived set to the shadow's — the map now keeps *every* body a name has
+and derives the union, the over-approximation that fails closed where a
+text scanner cannot resolve namespaces.  Both landed with token-preserving
+fixtures; the live derivation is unchanged (26 conjuncts, 146 statements,
+zero bindings, before and after).  Self-test: 34 cases.
 
 ### Housekeeping
 
