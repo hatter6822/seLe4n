@@ -709,18 +709,27 @@ def _blank_syntax_quotations(source: str) -> str:
     out = list(source)
     index = 0
     while index < len(source) - 1:
-        if source[index] == "`" and source[index + 1] == "(":
+        char = source[index]
+        if char == "«":
+            # A guillemet-quoted identifier is one token: a backtick or
+            # paren inside it (`«harmless\`(unclosed»`) is identifier text,
+            # and treating it as a quotation opener blanked to end of file
+            # (PR #886 review) -- the same quote-awareness `_blank_strings`
+            # has, at this pass's own trigger.
+            close = source.find("»", index + 1)
+            index = len(source) if close == -1 else close + 1
+        elif char == "`" and source[index + 1] == "(":
             depth = 0
             scan = index + 1
             while scan < len(source):
-                char = source[scan]
-                if char == "(":
+                inner = source[scan]
+                if inner == "(":
                     depth += 1
-                elif char == ")":
+                elif inner == ")":
                     depth -= 1
                     if depth == 0:
                         break
-                elif depth > 0 and char != "\n":
+                elif depth > 0 and inner != "\n":
                     out[scan] = " "
                 scan += 1
             index = scan + 1
@@ -1056,34 +1065,84 @@ _APPLIED_RE = re.compile(
 )
 
 
-def _sub_predicates(bodies: dict[str, list[tuple[str, str]]], name: str) -> set[str]:
-    """The predicates a name's bodies apply conjunctively to their state.
+def _body_predicates(body: str) -> set[str]:
+    """The predicates one definition body applies conjunctively to its state.
 
     Each part is normalised (redundant enclosing parentheses stripped)
     and a part that then still splits is re-split, so a harmlessly
     regrouped body -- `(A st ∧ B st)`, opaque to one depth-0 pass --
     yields its conjuncts instead of silently dropping them
-    (PR #886 review).  A `by exact e` wrapper unwraps to its payload
-    (PR #886 review, a later round): the tactic spelling elaborates to
-    the same proposition, and a parser blind to it derived nothing from
-    a body every reader sees as a conjunction.
+    (PR #886 review).  Routine proposition wrappers normalise away at
+    every recursion depth (PR #886 review, two rounds): `by exact e`
+    unwraps to its payload, `show T from e` to `e`, and a trailing
+    depth-0 type ascription (`B st : Prop`) is cut -- each spelling
+    elaborates to the same proposition, and a parser blind to any of
+    them dropped conjuncts a reader plainly sees.
+    """
+    found = set()
+    stack = [body]
+    while stack:
+        expr = _normalise(stack.pop())
+        wrapped = re.match(r"by\s+exact\s+(.+)$", expr, re.DOTALL)
+        if wrapped:
+            stack.append(wrapped.group(1))
+            continue
+        if re.match(r"show(?![\w'!?])", expr):
+            depth = 0
+            unwrapped = False
+            for offset in range(len(expr)):
+                char = expr[offset]
+                if char in _OPEN:
+                    depth += 1
+                elif char in _CLOSE:
+                    depth -= 1
+                elif (
+                    depth == 0
+                    and expr.startswith("from", offset)
+                    and offset > 0
+                    and not re.match(r"[\w']", expr[offset - 1])
+                    and not re.match(r"[\w'!?]", expr[offset + 4 : offset + 5])
+                ):
+                    stack.append(expr[offset + 4 :])
+                    unwrapped = True
+                    break
+            if unwrapped:
+                continue
+        parts = split_conjunction(expr)
+        if len(parts) > 1:
+            stack.extend(parts)
+            continue
+        part = parts[0]
+        depth = 0
+        for offset, char in enumerate(part):
+            if char in _OPEN:
+                depth += 1
+            elif char in _CLOSE:
+                depth -= 1
+            elif (
+                char == ":"
+                and depth == 0
+                and part[offset + 1 : offset + 2] != "="
+            ):
+                part = part[:offset]
+                break
+        hit = _APPLIED_RE.match(part)
+        if hit:
+            found.add(hit.group(1))
+    return found
+
+
+def _sub_predicates(bodies: dict[str, list[tuple[str, str]]], name: str) -> set[str]:
+    """The union of `_body_predicates` over every body a name has.
+
+    The union is the *widening* direction -- right for the conjunct and
+    alias derivations, where a shadow can only add measured predicates.
+    The carrier derivation must NOT use it (see `_carrier_defs`): carriers
+    suppress findings, so there the verdict is per-body and unanimous.
     """
     found = set()
     for _prefix, body in bodies.get(name, []):
-        stack = [body]
-        while stack:
-            expr = _normalise(stack.pop())
-            wrapped = re.match(r"by\s+exact\s+(.+)$", expr, re.DOTALL)
-            if wrapped:
-                stack.append(wrapped.group(1))
-                continue
-            parts = split_conjunction(expr)
-            if len(parts) > 1:
-                stack.extend(parts)
-                continue
-            hit = _APPLIED_RE.match(parts[0])
-            if hit:
-                found.add(hit.group(1))
+        found |= _body_predicates(body)
     return found
 
 
@@ -1164,17 +1223,28 @@ def _carrier_defs(bodies: dict[str, list[tuple[str, str]]]) -> set[str]:
     (PR #886 review: the payoffs carry their invariant through such
     carriers, and a pre-state scan blind to them could not tie the dispatch
     step to the state the invariant covers).
+
+    Carriers *suppress* findings, so this is the one derived set that must
+    under-approximate: the verdict is per-body and **unanimous** (PR #886
+    review, a later round -- a same-named shadow definition that carries
+    must not make the canonical non-carrying one mint pre-states).  A name
+    qualifies only when every collected body of it reaches a family form.
     """
     family = set(PRE_STATE_PREDICATES)
-    expansions = {name: _sub_predicates(bodies, name) for name in bodies}
+    per_body = {
+        name: [_body_predicates(body) for _prefix, body in entries]
+        for name, entries in bodies.items()
+    }
     carriers: set[str] = set()
     changed = True
     while changed:
         changed = False
-        for name, expansion in expansions.items():
+        for name, expansions in per_body.items():
             if name in carriers or name in family:
                 continue
-            if expansion & (family | carriers):
+            if expansions and all(
+                expansion & (family | carriers) for expansion in expansions
+            ):
                 carriers.add(name)
                 changed = True
     return carriers
@@ -1227,11 +1297,20 @@ def carrier_structures(
     application sites; a structure whose state binder is implicit, appears
     twice, or whose head does not parse contributes nothing -- fewer
     carriers only lose pre-states, which fails closed.
+
+    Like `_carrier_defs`, the verdict is **unanimous across same-named
+    declarations** (PR #886 review): a scanner cannot resolve which
+    namespace's structure a bare application elaborates to, and carriers
+    suppress findings, so a name declared twice qualifies only when every
+    declaration parses, carries, and agrees on the state index -- a shadow
+    that carries must not make an unrelated same-named pack mint
+    pre-states.
     """
-    heads: dict[str, tuple[int, str]] = {}
+    heads: dict[str, list[tuple[int, str] | None]] = {}
     for relative in sources:
         source = code_view(root, relative)
         for match in _STRUCTURE_RE.finditer(source):
+            entries = heads.setdefault(match.group(1), [])
             tail = source[match.end() :]
             depth = 0
             where = None
@@ -1250,6 +1329,7 @@ def carrier_structures(
                     where = offset
                     break
             if where is None:
+                entries.append(None)
                 continue
             binder_text = tail[:where]
             state_name = None
@@ -1290,6 +1370,7 @@ def carrier_structures(
                 else:
                     index += 1
             if ambiguous or state_name is None:
+                entries.append(None)
                 continue
             fields_tail = tail[where + 5 :]
             cut = _COMMAND_STOP.search(fields_tail)
@@ -1299,46 +1380,48 @@ def carrier_structures(
                 "st",
                 fields,
             )
-            heads[match.group(1)] = (state_index, fields)
+            entries.append((state_index, fields))
     base_index = {name: 0 for name in PRE_STATE_PREDICATES}
     base_index.update({name: 0 for name in def_carriers})
+
+    def entry_carries(fields: str, known: dict[str, int]) -> bool:
+        starts = list(
+            re.finditer(r"^([ \t]+)[^\W\d][\w'!?]*\s*:", fields, re.MULTILINE)
+        )
+        if not starts:
+            return False
+        indent = min(len(match.group(1)) for match in starts)
+        field_starts = [
+            match.start() for match in starts if len(match.group(1)) == indent
+        ]
+        for begin, end in zip(field_starts, field_starts[1:] + [len(fields)]):
+            field = fields[begin:end]
+            colon = field.find(":")
+            for piece in split_conjunction(field[colon + 1 :]):
+                if _has_depth0_connective(piece):
+                    continue
+                if _carries_state_application(piece, known):
+                    return True
+        return False
+
     carriers: dict[str, int] = {}
     changed = True
     while changed:
         changed = False
-        for name, (state_index, fields) in heads.items():
+        for name, entries in heads.items():
             if name in carriers:
+                continue
+            if any(entry is None for entry in entries):
+                continue
+            if len({state_index for state_index, _fields in entries}) != 1:
                 continue
             known = dict(base_index)
             known.update(carriers)
-            starts = [
-                match
-                for match in re.finditer(
-                    r"^([ \t]+)[^\W\d][\w'!?]*\s*:", fields, re.MULTILINE
-                )
-            ]
-            if not starts:
-                continue
-            indent = min(len(match.group(1)) for match in starts)
-            field_starts = [
-                match.start()
-                for match in starts
-                if len(match.group(1)) == indent
-            ]
-            for begin, end in zip(
-                field_starts, field_starts[1:] + [len(fields)]
+            if all(
+                entry_carries(fields, known) for _state_index, fields in entries
             ):
-                field = fields[begin:end]
-                colon = field.find(":")
-                for piece in split_conjunction(field[colon + 1 :]):
-                    if _has_depth0_connective(piece):
-                        continue
-                    if _carries_state_application(piece, known):
-                        carriers[name] = state_index
-                        changed = True
-                        break
-                if name in carriers:
-                    break
+                carriers[name] = entries[0][0]
+                changed = True
     return carriers
 
 
@@ -1664,22 +1747,25 @@ class Bundle:
     def threaded(self, conjuncts: set[str]) -> list[tuple[str, str]]:
         """(conjunct, state) for every conjunct bound on a non-pre-state.
 
-        The conclusion is scanned as well as the named binders: an unnamed
-        implication premise after the declaration's colon (`conjunct st' →
-        ipcInvariantFull st'`) is the same threading in telescope clothing
-        (PR #886 review).  No bundle legitimately *concludes* a conjunct --
-        the family concludes family predicates -- so a conjunct application
-        anywhere in the signature is a hypothesis.  In-scope `variable`
-        binders are scanned too (PR #886 review, the section-variable
-        round): an `include`d section hypothesis is telescope, and one Lean
-        would not include can only add findings here, never suppress them
-        (the class docstring's asymmetry).
+        The conclusion's *premises* are scanned as well as the named
+        binders: an unnamed implication premise after the declaration's
+        colon (`conjunct st' → ipcInvariantFull st'`) is the same threading
+        in telescope clothing (PR #886 review).  The conclusion's *final
+        segment* is not (PR #886 review, a later round): its conjuncts are
+        guarantees the theorem establishes -- `ipcInvariantFull st' ∧
+        conjunct st'` is a strengthened result, not an assumption -- and
+        scanning them flagged theorems for proving more.  In-scope
+        `variable` binders are scanned too (PR #886 review, the
+        section-variable round): an `include`d section hypothesis is
+        telescope, and one Lean would not include can only add findings
+        here, never suppress them (the class docstring's asymmetry).
         """
         pre = self.pre_states()
         binder_names = self._binder_names()
+        premises = split_implication(_normalise(self.conclusion))[:-1]
         findings = []
         for conjunct in sorted(conjuncts):
-            for region in (self.ambient, self.binders, self.conclusion):
+            for region in [self.ambient, self.binders] + premises:
                 for hit in re.finditer(_qualified(conjunct), region):
                     chain = hit.group(1)
                     if _projection_hit(chain, binder_names):
@@ -4560,6 +4646,116 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
             dot_notation,
             True,
             check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A backtick-paren inside a guillemet identifier is identifier text: a
+    # quotation blanker blind to «…» scope blanked from there to end of
+    # file, and the threaded bundle after it left the census.
+    guillemet_backtick = _fixture()
+    guillemet_backtick[
+        "SeLe4n/Kernel/IPC/Invariant/Structural/GuillemetBundles.lean"
+    ] = (
+        "def «harmless`(unclosed» : Nat := 0\n"
+        "\n"
+        + CLEAN_BUNDLE.replace(
+            "theorem endpointSendDual_preserves_ipcInvariantFull",
+            "theorem endpointGuillemetDual_preserves_ipcInvariantFull",
+        ).replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hT : blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a threaded bundle after a backtick-bearing quoted identifier is seen",
+            guillemet_backtick,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A `show Prop from` wrapper inside a nested conjunct body: the
+    # spelling elaborates identically, and a walker that stopped at
+    # `by exact` left the leading conjunct unmatched.
+    show_from = _fixture()
+    show_from[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def replyCallerLinkage (st : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st",
+        "def replyCallerLinkage (st : SystemState) : Prop :=\n"
+        "  by exact show Prop from replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st",
+    )
+    show_from["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hR : replyCallerLinkageReciprocal st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a show-from wrapped conjunct body still derives",
+            show_from,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A strengthened conclusion, accepted: conjuncts in the final segment
+    # are guarantees the theorem establishes, not assumptions -- flagging
+    # them punished proving more.
+    strengthened = _fixture()
+    strengthened["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    ipcInvariantFull st' := by",
+            "    ipcInvariantFull st' ∧ blockedThreadsPendingMessageConsistent st' := by",
+        )
+    )
+    cases.append(
+        _Case(
+            "a strengthened conclusion's own conjuncts are not threading",
+            strengthened,
+            False,
+        )
+    )
+
+    # A same-named shadow pack that carries must not make the canonical
+    # non-carrying pack mint pre-states: carriers suppress findings, so
+    # the verdict is unanimous across declarations.
+    shadow_pack = _fixture()
+    shadow_pack["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep""",
+        """structure fixtureQuiescencePack (st : SystemState) : Prop where
+  trivialFact : True
+
+namespace ShadowView
+
+structure fixtureQuiescencePack (st : SystemState) : Prop where
+  reachable : ipcInvariantFull st
+
+end ShadowView
+
+theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState)
+    (hPack : fixtureQuiescencePack st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hPack.trivialFact hStep""",
+    )
+    cases.append(
+        _Case(
+            "a carrying shadow pack cannot cover a non-carrying canonical pack",
+            shadow_pack,
+            True,
+            check="payoff_statement",
             mutation="preserving",
         )
     )

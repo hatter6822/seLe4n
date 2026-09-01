@@ -561,6 +561,22 @@ argument in the finding-direction scans, while a trailing argument or
 multi-segment chain (`hInv.conjunct st'`, `hPack.reachable.…`) stays a
 projection.  Three token-preserving fixtures; self-test 94 cases;
 census unchanged a seventeenth time.
+A twenty-second pass fixed the gate in both directions at once.  Two
+false-negative closures: the quotation blanker skips guillemet spans
+(a backtick-paren inside `«…»` is identifier text, and blanking from
+it ran to end of file), and the body walker normalises `show T from e`
+and trailing type ascriptions at every recursion depth alongside
+`by exact`.  One false-positive closure: `threaded` scans the
+conclusion's *premises* only — conjuncts in the final segment are
+guarantees the theorem establishes, and scanning them flagged theorems
+for proving more.  And one fail-open closure in the round-20 carrier
+machinery, on the reviewer's correct observation that carriers
+*suppress* findings and so must under-approximate: the carrier verdict
+— for definitions and structures alike — is now per-declaration and
+unanimous, so a same-named shadow that carries can no longer make the
+canonical non-carrying pack mint pre-states.  Three caught and one
+accepted fixture; self-test 98 cases; census unchanged an eighteenth
+time.
 
 ### Housekeeping
 
