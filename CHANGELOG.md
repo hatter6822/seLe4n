@@ -315,6 +315,16 @@ regrouped bodies, so `(A st ∧ B st)` — opaque to one depth-0 split —
 yields its clauses instead of silently dropping both.  Three
 token-preserving fixtures; self-test 40 cases; census unchanged a third
 time.
+An eighth pass closed three parser generalities: the body collector's
+stop pattern accepts leading declaration modifiers (`private theorem …`
+after a definition no longer gets absorbed into the preceding body,
+corrupting its trailing conjunct out of the derived set); the state
+binder class is Unicode-aware (`(σ : SystemState)` collects, with the
+substitution boundaries widened to match); and `_normalise` reduces a
+named-argument spelling to its value, so `ipcInvariantFull (st := st')`
+compares equal to the conclusion's `st'` everywhere states are compared
+instead of hiding as an opaque compound.  Three token-preserving
+fixtures; self-test 43 cases; census unchanged a fourth time.
 
 ### Housekeeping
 

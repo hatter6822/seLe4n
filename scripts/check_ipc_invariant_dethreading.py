@@ -175,14 +175,27 @@ def _normalise(text: str) -> str:
     """Whitespace-normalise an expression, and strip redundant enclosing
     parentheses, so `st'`, `st '` and `(st')` cannot differ (PR #886 review:
     `hInv' : ipcInvariantFull (st')` must compare equal to a conclusion on
-    `st'`, or the whole-bundle post-state check misses it)."""
+    `st'`, or the whole-bundle post-state check misses it).
+
+    A named-argument spelling reduces to its value (PR #886 review, a later
+    round): `ipcInvariantFull (st := st')` applies the invariant to `st'`,
+    and keeping the `st := st'` group as an opaque "compound state" let the
+    named form slip past every state comparison.  Only a bare
+    `IDENT := value` group reduces -- a `let`-expression or an application
+    carrying an inner named argument does not match the anchored pattern.
+    """
     text = re.sub(r"\s+", " ", text).strip()
-    while text.startswith("(") and text.endswith(")"):
-        end = balanced_span(text, 0)
-        if end != len(text):
-            break
-        text = text[1:-1].strip()
-    return text
+    while True:
+        if text.startswith("(") and text.endswith(")"):
+            end = balanced_span(text, 0)
+            if end == len(text):
+                text = text[1:-1].strip()
+                continue
+        named = re.fullmatch(r"[^\W\d][\w']*\s*:=\s*(.+)", text)
+        if named:
+            text = named.group(1).strip()
+            continue
+        return text
 
 
 def _qualified(name: str) -> str:
@@ -461,15 +474,27 @@ def state_predicate_bodies(root: str, sources: list[str]) -> dict[str, list[str]
     # any identifier, not an enumerated `st|s` (PR #886 review, next round):
     # renaming a binder to `state` is a semantics-preserving refactor, and an
     # enumeration silently dropped the renamed definition's clauses from the
-    # derived set -- the enumeration-versus-derivation shape again.
+    # derived set -- the enumeration-versus-derivation shape again.  "Any
+    # identifier" includes Lean's Unicode ones (PR #886 review, the round
+    # after): `(σ : SystemState)` is a routine binder, so the class is
+    # letter-or-underscore then word characters, Unicode-aware -- and the
+    # substitution boundaries below match, or a Greek binder would collect
+    # and then fail to substitute.
     pattern = re.compile(
         r"^(?:def|abbrev)\s+([A-Za-z_][A-Za-z0-9_'!?]*)"
-        r"\s*\(\s*([A-Za-z_][A-Za-z0-9_']*)\s*:\s*SystemState\s*\)"
+        r"\s*\(\s*([^\W\d][\w']*)\s*:\s*SystemState\s*\)"
         r"\s*:\s*Prop\s*:=",
         re.MULTILINE,
     )
+    # Leading declaration modifiers stop a body too (PR #886 review): a
+    # `private theorem …` after a definition is a new declaration exactly as
+    # `theorem …` is, and a stop pattern blind to the modifier appended the
+    # helper's text to the preceding body, corrupting its trailing conjunct
+    # out of the derived set.  Same modifier set as `_DECL_RE`.
     stop = re.compile(
-        r"^(?:@\[|/-|def|theorem|lemma|abbrev|structure|inductive|instance|end|namespace|open)\b",
+        r"^(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped)\s+)*"
+        r"(?:@\[|/-|def|theorem|lemma|abbrev|structure|inductive|instance"
+        r"|end|namespace|open)\b",
         re.MULTILINE,
     )
     for relative in sources:
@@ -485,9 +510,7 @@ def state_predicate_bodies(root: str, sources: list[str]) -> dict[str, list[str]
             body = tail[: cut.start()] if cut else tail
             bodies.setdefault(match.group(1), []).append(
                 re.sub(
-                    r"(?<![A-Za-z0-9_'])"
-                    + re.escape(match.group(2))
-                    + r"(?![A-Za-z0-9_'])",
+                    r"(?<![\w'])" + re.escape(match.group(2)) + r"(?![\w'])",
                     "st",
                     body,
                 )
@@ -1604,6 +1627,87 @@ end Shadow""",
             regrouped,
             True,
             check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Modifier-prefixed declaration after a definition: `private theorem …`
+    # is a new declaration exactly as `theorem …` is, and a stop pattern
+    # blind to the modifier appended the helper's text to the preceding
+    # body -- its trailing conjunct then no longer matched and left the
+    # derived set.
+    modifier_stop = _fixture()
+    modifier_stop[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def replyCallerLinkage (st : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st",
+        "def replyCallerLinkage (st : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st\n"
+        "\n"
+        "private theorem replyCallerLinkageTrivial (st : SystemState) : True :=\n"
+        "  trivial",
+    )
+    modifier_stop["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (h : blockedOnReplyHasReplyObject st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a `private theorem` after a definition still bounds its body",
+            modifier_stop,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Unicode state binder: `(σ : SystemState)` is a routine Lean binder,
+    # and an ASCII-only binder class dropped the refactored body from the
+    # map -- its clauses left the derived set with every token present.
+    unicode_binder = _fixture()
+    unicode_binder[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def replyCallerLinkage (st : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st",
+        "def replyCallerLinkage (σ : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal σ ∧ blockedOnReplyHasReplyObject σ",
+    )
+    unicode_binder["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (h : replyCallerLinkageReciprocal st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "clause of a conjunct with a Unicode binder still derives and flags",
+            unicode_binder,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Named-argument spelling: `ipcInvariantFull (st := st')` applies the
+    # invariant to `st'`, and treating the `st := st'` group as an opaque
+    # compound state let the whole-bundle post-state hypothesis compare
+    # unequal to the conclusion's `st'` and pass.
+    named_argument = _fixture()
+    named_argument["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hInv' : ipcInvariantFull (st := st'))\n",
+        ).replace("  exact sample st st' hInv hStep", "  exact hInv'")
+    )
+    cases.append(
+        _Case(
+            "whole invariant hypothesised of the conclusion state by named argument",
+            named_argument,
+            True,
+            check="no_conclusion_state_hypothesis",
             mutation="preserving",
         )
     )
