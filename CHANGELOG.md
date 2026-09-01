@@ -258,7 +258,13 @@ the conjunct derivation accepts a parenthesised binder application
 the declaration colon (`conjunct st' → ipcInvariantFull st'`), and
 `--report` — cited as an evidence command — now derives its exit status
 from the same checks as the default mode instead of printing violations and
-exiting 0.  Self-test: 28 cases.
+exiting 0.  A third pass then found the sweep itself incomplete in exactly
+the way the key conventions predict: the qualifier fix had been applied to
+the bundle scan and not to its sibling site, the conjunct *derivation*
+(where a qualified spelling silently dropped the conjunct from coverage),
+and the declaration regex accepted one attribute block where Lean permits
+several (`@[simp] @[grind] theorem …` vanished from the census).  Both
+closed with token-preserving fixtures.  Self-test: 30 cases.
 
 ### Housekeeping
 

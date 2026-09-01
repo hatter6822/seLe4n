@@ -147,7 +147,10 @@ CHECKS = (
 )
 
 _DECL_RE = re.compile(
-    r"^\s*(?:@\[[^\]]*\]\s*)?"
+    # `*`, not `?`: `@[simp] @[grind] theorem …` is valid Lean, and a
+    # single-block pattern made the second routine attribute delete the
+    # declaration from the census (PR #886 review).
+    r"^\s*(?:@\[[^\]]*\]\s*)*"
     r"(?:private\s+|protected\s+|partial\s+|noncomputable\s+|unsafe\s+"
     r"|local\s+|scoped\s+)*"
     r"(?:theorem|lemma)\s+([A-Za-z_][A-Za-z0-9_'.!?]*)",
@@ -393,7 +396,14 @@ def derive_conjuncts(bodies: dict[str, str]) -> set[str]:
     # is the same application as `newQueueConsistent st`, and rejecting the
     # grouped spelling would silently drop a new conjunct from the derived
     # set (PR #886 review).
-    applied = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_'!?]*)\s+\(?\s*st\s*\)?\s*$")
+    # A qualifier on the *definition* side is stripped rather than stored:
+    # the derived set holds unqualified names, and the bundle scan matches
+    # them behind any uppercase-led qualifier -- deriving `Foo.pred` verbatim
+    # would silently stop matching the bare spelling (PR #886 review: the
+    # qualifier fix applied to the scan and not to this, its sibling site).
+    applied = re.compile(
+        r"^\s*(?:[A-Z][A-Za-z0-9_']*\.)*([A-Za-z_][A-Za-z0-9_'!?]*)\s+\(?\s*st\s*\)?\s*$"
+    )
 
     def sub_predicates(body: str) -> set[str]:
         found = set()
@@ -1027,6 +1037,54 @@ def self_test() -> int:
         _Case(
             "conjunct threaded as an unnamed implication premise in the conclusion",
             telescoped,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Qualified conjunct in the *definition*: the derivation must strip the
+    # qualifier and keep the conjunct, or threading it goes unmeasured.
+    qualified_def = _fixture()
+    qualified_def[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st",
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  Foo.blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st",
+    )
+    qualified_def["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hT : blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "conjunct spelled with a namespace qualifier in the definition",
+            qualified_def,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Two attribute blocks: the declaration must stay in the census.
+    attributed = _fixture()
+    attributed["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "theorem endpointSendDual_preserves_ipcInvariantFull",
+            "@[simp] @[grind] theorem endpointSendDual_preserves_ipcInvariantFull",
+        ).replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hT : blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "threaded bundle behind two attribute blocks stays in the census",
+            attributed,
             True,
             check="no_post_state_binding",
             mutation="preserving",
