@@ -432,6 +432,29 @@ joined the body-boundary set, and the implication splitter recognises
 Lean's ASCII `->` alongside `→` — in the telescope split and in the
 step-equation's connective cut both.  Two token-preserving fixtures;
 self-test 63 cases; census unchanged a tenth time.
+A fifteenth pass closed four resolution gaps at once.  The conclusion
+parse now demands *entailment*: a family application counts only as the
+final segment itself or a depth-0 conjunct of it — `ipcInvariantFull st'
+∨ True` is provable by its right arm — and a marker-named declaration
+entailing nothing is a new `family_conclusion` violation instead of a
+silent census drop.  The derivation's named-argument label is any
+identifier rather than the literal `st`, since the label names the
+*called* predicate's binder (`replyCallerLinkage (σ := st)`).  In-scope
+`variable` binders are collected as each bundle's ambient telescope,
+scope-tracked through `section`/`namespace`/`end`, and fed only to the
+scans that *find* threading (`threaded`, the whole-bundle hypothesis
+check, projection receivers) and never to the machinery that suppresses
+findings (pre-states, anchors) — the over-approximation a scanner needs
+when `include` is an elaboration fact it cannot resolve, pointed in the
+direction that cannot mask; `include`/`omit`/`run_cmd`/
+`builtin_initialize` joined the shared command-stop set by the same
+sweep.  And equality-anchor connectivity now runs through state-bearing
+tokens only — predicate names, uppercase constructors and
+projection-position fields are dropped from the graph — so `hAnchor :
+ipcInvariantFull stMid = ipcInvariantFull stMid` no longer anchors
+`stMid` through its predicate symbol.  Four token-preserving fixtures;
+self-test 67 cases, 7/7 checks covered; census unchanged an eleventh
+time.
 
 ### Housekeeping
 

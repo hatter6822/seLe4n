@@ -35,7 +35,11 @@ so the gate would go quiet exactly when something new is added:
 * the **bundle family** is every declaration whose name contains
   `_preserves_ipcInvariantFull` or `_establishes_ipcInvariantFull`, wherever it
   lives -- both verbs conclude an `ipcInvariantFull`-family proposition of a
-  transition's result, so both are where a threaded conjunct would hide;
+  transition's result, so both are where a threaded conjunct would hide; and
+  the name's claim about the conclusion is *checked*, not trusted: a member
+  whose final proposition does not entail a family application (the
+  application itself, or a depth-0 conjunct of it) is a `family_conclusion`
+  violation rather than a silent census drop;
 * the **pre-state** of a bundle is the state its own `ipcInvariantFull`-family
   hypothesis is applied to, and *every other* state a conjunct is applied to is
   a finding.  Deriving the pre-state rather than the post-state is what makes
@@ -157,6 +161,7 @@ PENDING_FILE = "docs/planning/ipc_dethreading_pending.txt"
 CHECKS = (
     "conjuncts_derived",
     "family_nonempty",
+    "family_conclusion",
     "no_post_state_binding",
     "no_conclusion_state_hypothesis",
     "payoff_theorems",
@@ -231,6 +236,37 @@ def _qualified(name: str) -> str:
 def _projection_hit(chain: str, binder_names: set[str]) -> bool:
     """True when a matched qualifier chain is a projection of a local binder."""
     return bool(chain) and chain.split(".", 1)[0] in binder_names
+
+
+def _connectivity_tokens(text: str, excluded: frozenset[str]) -> set[str]:
+    """Identifier tokens that can carry transition connectivity.
+
+    The equality-anchor graph exists to relate *state terms* to the
+    conclusion, so tokens that cannot be state-bearing are dropped before
+    connectivity is computed (PR #886 review: `hAnchor : ipcInvariantFull
+    stMid = ipcInvariantFull stMid` shares only its predicate symbol with
+    the conclusion, and that symbol must not anchor `stMid`):
+
+    * the family predicates and every derived conjunct (`excluded`) --
+      Prop-formers, never terms;
+    * uppercase-initial identifiers -- types and constructors (`Except`,
+      `Prod`, `True`) that unrelated propositions routinely share;
+    * projection-position identifiers (the `fst` of `.fst`, the `ok` of
+      `.ok`) -- field names, not terms, and shared by every equation that
+      destructures the same result shape.
+
+    What remains -- binder names, transition-function names, state
+    variables -- is the honest residual a text scanner can tie to the
+    transition.  Dropping a token can only shrink the anchor set and so
+    only add findings: the filter fails closed.
+    """
+    tokens: set[str] = set()
+    for match in re.finditer(r"(?<![\w'.])[^\W\d][\w'!?]*", text):
+        token = match.group(0)
+        if token[0].isupper() or token in excluded:
+            continue
+        tokens.add(token)
+    return tokens
 
 
 def _returns_state(rhs: str, state: str) -> bool:
@@ -570,6 +606,35 @@ def split_conjunction(body: str) -> list[str]:
     return parts
 
 
+# Where a captured slice of source ends: at the next command that can open a
+# line.  Leading declaration modifiers stop a body too (PR #886 review): a
+# `private theorem …` after a definition is a new declaration exactly as
+# `theorem …` is, and a stop pattern blind to the modifier appended the
+# helper's text to the preceding body, corrupting its trailing conjunct out
+# of the derived set.  Same modifier set as `_DECL_RE`.  `opaque` and its
+# sibling column-0 commands too (PR #886 review): every Lean command that can
+# open at column 0 bounds the preceding body, and a body line is always
+# indented, so widening this set can only stop earlier -- never truncate a
+# real body.  `include` / `omit` / `run_cmd` / `builtin_initialize` joined by
+# the sweep of the same question (PR #886 review, the section-variable round):
+# an `include hT` line after a definition's final conjunct was swallowed into
+# the body, and the trailing tokens broke that conjunct's exact-application
+# parse -- the same corruption `class` caused a round earlier.  Shared by the
+# body collector and the `variable`-command capture, so the two slices cannot
+# drift.
+_COMMAND_STOP = re.compile(
+    r"^(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped)\s+)*"
+    r"(?:@\[|/-|#"
+    r"|(?:def|theorem|lemma|abbrev|structure|inductive|instance|class"
+    r"|end|namespace|open|opaque|axiom|example|attribute|universe"
+    r"|variable|include|omit|macro_rules|macro|syntax|elab_rules|elab"
+    r"|deriving|mutual|section|set_option|export|import|initialize"
+    r"|builtin_initialize|run_cmd|notation"
+    r"|infixl|infixr|infix|postfix|prefix)\b)",
+    re.MULTILINE,
+)
+
+
 def state_predicate_bodies(
     root: str, sources: list[str]
 ) -> dict[str, list[tuple[str, str]]]:
@@ -617,25 +682,6 @@ def state_predicate_bodies(
         r"\s*:\s*Prop\s*:=",
         re.MULTILINE,
     )
-    # Leading declaration modifiers stop a body too (PR #886 review): a
-    # `private theorem …` after a definition is a new declaration exactly as
-    # `theorem …` is, and a stop pattern blind to the modifier appended the
-    # helper's text to the preceding body, corrupting its trailing conjunct
-    # out of the derived set.  Same modifier set as `_DECL_RE`.
-    # `opaque` and its sibling column-0 commands too (PR #886 review):
-    # every Lean command that can open at column 0 bounds the preceding
-    # body, and a body line is always indented, so widening this set can
-    # only stop earlier -- never truncate a real body.
-    stop = re.compile(
-        r"^(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped)\s+)*"
-        r"(?:@\[|/-|#"
-        r"|(?:def|theorem|lemma|abbrev|structure|inductive|instance|class"
-        r"|end|namespace|open|opaque|axiom|example|attribute|universe"
-        r"|variable|macro_rules|macro|syntax|elab_rules|elab|deriving|mutual"
-        r"|section|set_option|export|import|initialize|notation"
-        r"|infixl|infixr|infix|postfix|prefix)\b)",
-        re.MULTILINE,
-    )
     # The arrow-form spelling `def NAME : SystemState → Prop := fun b => …`
     # is the same definition with the binder moved right of the colon
     # (PR #886 review): a collector blind to it dropped the canonical root
@@ -654,7 +700,7 @@ def state_predicate_bodies(
         breakpoints = namespace_breakpoints(source)
         for match in [m for p in (pattern, arrow_pattern) for m in p.finditer(source)]:
             tail = source[match.end() :]
-            cut = stop.search(tail)
+            cut = _COMMAND_STOP.search(tail)
             # Identifier-boundary substitution (PR #886 review): a plain
             # `.replace` on a one-letter binder like `s` rewrites every `s`
             # inside predicate *names* (`blockedOnReplyHasReplyObject` ->
@@ -709,7 +755,14 @@ def derive_conjuncts(bodies: dict[str, list[tuple[str, str]]]) -> set[str]:
     # the same round's sweep of the same question's sibling sites.
     # The argument may also be spelled as a named argument (PR #886 review:
     # the bundle comparisons normalise `(st := st')` while this, the
-    # definition side, accepted only the positional form).
+    # definition side, accepted only the positional form).  The label is
+    # *any* identifier, not the literal `st` (PR #886 review, a later
+    # round): the label names the **called** predicate's own binder --
+    # `replyCallerLinkage (σ := st)` is the routine spelling against a
+    # `(σ : SystemState)` definition -- while the substitution above has
+    # already renamed only *this* definition's binder to `st`, so pinning
+    # the label to `st` dropped every such application from the derived
+    # set.
     # Case-free qualifier chain, like the bundle scans (PR #886 review: the
     # binder-name fix reached the scans and not this, its sibling -- a
     # lowercase-namespace conjunct spelling dropped from the derived set).
@@ -717,7 +770,7 @@ def derive_conjuncts(bodies: dict[str, list[tuple[str, str]]]) -> set[str]:
     # is needed here; `_root_.` is covered by the general class.
     applied = re.compile(
         r"^\s*(?:[^\W\d][\w']*\.)*"
-        r"([^\W\d][\w'!?]*)\s+(?:\(\s*(?:st\s*:=\s*)?st\s*\)|st)\s*$"
+        r"([^\W\d][\w'!?]*)\s+(?:\(\s*(?:[^\W\d][\w']*\s*:=\s*)?st\s*\)|st)\s*$"
     )
 
     def sub_predicates(name: str) -> set[str]:
@@ -753,7 +806,22 @@ def derive_conjuncts(bodies: dict[str, list[tuple[str, str]]]) -> set[str]:
 
 
 class Bundle:
-    """One `*_preserves_ipcInvariantFull` statement, parsed from the code view."""
+    """One `*_preserves_ipcInvariantFull` statement, parsed from the code view.
+
+    `ambient` is the binder text of every `variable` command in scope at the
+    declaration (PR #886 review): Lean elaborates an in-scope
+    `variable (hT : …)` marked `include hT` -- or simply mentioned -- into
+    the theorem's parameter list, so a post-state hypothesis can be real
+    while absent from the declaration slice.  The scanner cannot see which
+    variables Lean actually includes, so it over-approximates **in the
+    violation direction only**: ambient binders feed the scans that *find*
+    threading (`threaded`, `assumes_conclusion_state`, and the projection
+    receivers of `_binder_names`) and never the machinery that *suppresses*
+    findings (`pre_states`, `_anchor_tokens`) -- a phantom hypothesis can
+    then only add findings, never launder a pre-state or anchor into
+    existence.  `excluded` is the predicate-name set (family plus derived
+    conjuncts) that `_connectivity_tokens` drops from the anchor graph.
+    """
 
     def __init__(
         self,
@@ -763,6 +831,8 @@ class Bundle:
         binders: str,
         conclusion: str,
         prefix: str = "",
+        ambient: str = "",
+        excluded: frozenset[str] = frozenset(),
     ):
         self.path = path
         self.line = line
@@ -770,50 +840,63 @@ class Bundle:
         self.binders = binders
         self.conclusion = _normalise(conclusion)
         self.prefix = prefix
+        self.ambient = ambient
+        self.excluded = excluded
 
     def _binder_names(self) -> set[str]:
         """The statement's own binder names: each group's identifiers before
         its first depth-0 colon.  These are the receivers a hypothesis
         projection can have, and the qualifier scans use them to tell
         `hInv.conjunct` (a projection) from `foo.conjunct` (a namespace
-        application) without a case heuristic."""
+        application) without a case heuristic.  In-scope `variable` binders
+        are receivers too (PR #886 review): a projection off an included
+        section hypothesis is still a projection."""
         names: set[str] = set()
-        index = 0
-        while index < len(self.binders):
-            char = self.binders[index]
-            if char in _OPEN:
-                end = balanced_span(self.binders, index)
-                if end is None:
-                    break
-                group = self.binders[index + 1 : end - 1]
-                colon = None
-                depth = 0
-                for offset, ch in enumerate(group):
-                    if ch in _OPEN:
-                        depth += 1
-                    elif ch in _CLOSE:
-                        depth -= 1
-                    elif ch == ":" and depth == 0:
-                        colon = offset
+        for text in (self.ambient, self.binders):
+            index = 0
+            while index < len(text):
+                char = text[index]
+                if char in _OPEN:
+                    end = balanced_span(text, index)
+                    if end is None:
                         break
-                head = group if colon is None else group[:colon]
-                names.update(re.findall(r"[^\W\d][\w'!?]*", head))
-                index = end
-            else:
-                index += 1
+                    group = text[index + 1 : end - 1]
+                    colon = None
+                    depth = 0
+                    for offset, ch in enumerate(group):
+                        if ch in _OPEN:
+                            depth += 1
+                        elif ch in _CLOSE:
+                            depth -= 1
+                        elif ch == ":" and depth == 0:
+                            colon = offset
+                            break
+                    head = group if colon is None else group[:colon]
+                    names.update(re.findall(r"[^\W\d][\w'!?]*", head))
+                    index = end
+                else:
+                    index += 1
         return names
 
     def _anchor_tokens(self) -> set[str]:
         """Identifier tokens tied to the transition itself.
 
-        The anchors are every token of the conclusion plus every token of a
-        binder region that carries an `=` -- the step equation and its
-        relatives.  A state that appears in neither has no connection to the
-        operation being stepped (PR #886 review: `hMid : ipcInvariantCore
-        stMid` must not launder `stMid` into the pre-state set, or a conjunct
-        threaded on an intermediate state passes as clean).
+        The anchors are the *connectivity* tokens of the conclusion plus
+        those of every binder region that carries an `=` -- the step
+        equation and its relatives.  A state that appears in neither has no
+        connection to the operation being stepped (PR #886 review: `hMid :
+        ipcInvariantCore stMid` must not launder `stMid` into the pre-state
+        set, or a conjunct threaded on an intermediate state passes as
+        clean).  Connectivity runs through state-bearing tokens only (see
+        `_connectivity_tokens`; PR #886 review, a later round): a predicate
+        symbol or a shared constructor is not a term, so an equation whose
+        only overlap with the conclusion is `ipcInvariantFull` itself must
+        not anchor its states.  Ambient `variable` binders contribute no
+        equality groups -- anchoring suppresses findings, and a section
+        hypothesis Lean may not even include must not do that (see the
+        class docstring's asymmetry).
         """
-        tokens = set(re.findall(r"[^\W\d][\w'!?]*", self.conclusion))
+        tokens = _connectivity_tokens(self.conclusion, self.excluded)
         groups: list[set[str]] = []
         index = 0
         while index < len(self.binders):
@@ -824,7 +907,7 @@ class Bundle:
                     break
                 region = self.binders[index:end]
                 if "=" in region:
-                    groups.append(set(re.findall(r"[^\W\d][\w'!?]*", region)))
+                    groups.append(_connectivity_tokens(region, self.excluded))
                 index = end
             else:
                 index += 1
@@ -859,7 +942,16 @@ class Bundle:
         compound built *only* from anchored tokens that nevertheless is not
         the transition's input; a scanner cannot evaluate the expression, so
         it errs toward accepting expressions whose every part the statement
-        itself ties to the step."""
+        itself ties to the step.
+
+        Scanned over the declaration's own binders only, never the ambient
+        `variable` text: a pre-state suppresses findings, and a section
+        hypothesis Lean may not even include must not mint one (see the
+        class docstring's asymmetry).  Compound containment runs on
+        connectivity tokens, matching the anchor set's vocabulary -- and a
+        compound with *no* connectivity token has nothing tying it to the
+        transition at all, so it is rejected rather than vacuously
+        contained."""
         anchors = self._anchor_tokens()
         binder_names = self._binder_names()
         states = set()
@@ -874,8 +966,8 @@ class Bundle:
                         if state not in anchors:
                             continue
                     else:
-                        tokens = set(re.findall(r"[^\W\d][\w'!?]*", state))
-                        if not tokens <= anchors:
+                        tokens = _connectivity_tokens(state, self.excluded)
+                        if not tokens or not tokens <= anchors:
                             continue
                     states.add(state)
         return states
@@ -888,19 +980,60 @@ class Bundle:
         the first family application in the whole conclusion would read the
         state out of a premise instead (PR #886 review).
 
-        `None` when no `ipcInvariantFull`-family predicate application is found
-        there -- possible only for a declaration that carries the family marker
-        in its name without concluding a family proposition, which the tree
-        does not contain; the threaded-conjunct check still covers such a
+        The final segment must *entail* the family application, not merely
+        contain it (PR #886 review, a later round): `ipcInvariantFull st' ∨
+        True` is provable by its right arm and carries no invariant, yet a
+        find-anywhere scan read `st'` out of it.  A conclusion entails the
+        application exactly when the application is the whole segment or a
+        depth-0 conjunct of it -- a conjunction proves each conjunct, while
+        no other connective proves its arms -- so the segment is split on
+        depth-0 `∧` recursively and each part counts only when it is a
+        *bare* family application: family head at the part's start (behind
+        an optional qualifier chain that is not a binder projection) and no
+        depth-0 disjunction or iff in the part.  The residual
+        under-approximation is a conclusion that entails the invariant only
+        semantically (an ASCII `/\`-spelled right conjunct, a
+        quantifier-wrapped application); those read as `None`, which fails
+        closed via `family_conclusion`.
+
+        `None` for a declaration that carries the family marker in its name
+        without concluding a family proposition -- since the vacuous-shape
+        round that is a reported `family_conclusion` violation, never a
+        silent census drop; the threaded-conjunct check still covers such a
         declaration's binders in full.
         """
         final = split_implication(_normalise(self.conclusion))[-1]
         binder_names = self._binder_names()
-        for predicate in PRE_STATE_PREDICATES:
-            for hit in re.finditer(_qualified(predicate), final):
-                if _projection_hit(hit.group(1), binder_names):
+        parts: list[str] = [final]
+        flat: list[str] = []
+        while parts:
+            part = _normalise(parts.pop(0))
+            split = split_conjunction(part)
+            if len(split) > 1:
+                parts = split + parts
+                continue
+            flat.append(part)
+        for part in flat:
+            depth = 0
+            entailed = True
+            for offset, char in enumerate(part):
+                if char in _OPEN:
+                    depth += 1
+                elif char in _CLOSE:
+                    depth -= 1
+                elif depth == 0 and (
+                    char in "∨↔"
+                    or (char == "\\" and part[offset + 1 : offset + 2] == "/")
+                ):
+                    entailed = False
+                    break
+            if not entailed:
+                continue
+            for predicate in PRE_STATE_PREDICATES:
+                hit = re.match(_qualified(predicate), part)
+                if hit is None or _projection_hit(hit.group(1), binder_names):
                     continue
-                argument = first_argument(final, hit.end())
+                argument = first_argument(part, hit.end())
                 if argument:
                     return _normalise(argument)
         return None
@@ -915,11 +1048,14 @@ class Bundle:
         each other's gap: the pre-state list stays usable because this one
         rejects a member of it applied to the conclusion's state.
 
-        The hypothesis may hide in either place: a named binder, or an unnamed
-        implication premise after the declaration colon (`ipcInvariantFull st'
-        → ipcInvariantFull st'`), which the binder-reading pre-state scan never
-        sees (PR #886 review) -- so the conclusion's leading premises are
-        scanned for family applications of the final conclusion state too.
+        The hypothesis may hide in any of three places: a named binder, an
+        unnamed implication premise after the declaration colon
+        (`ipcInvariantFull st' → ipcInvariantFull st'`), which the
+        binder-reading pre-state scan never sees (PR #886 review) -- or an
+        in-scope `variable` binder the collector's declaration slice never
+        contained (PR #886 review, the section-variable round).  The
+        premises and the ambient text are scanned alike; the ambient scan is
+        the finding-direction half of the class docstring's asymmetry.
         """
         state = self.conclusion_state()
         if state is None:
@@ -928,7 +1064,7 @@ class Bundle:
             return state
         binder_names = self._binder_names()
         segments = split_implication(_normalise(self.conclusion))
-        for premise in segments[:-1]:
+        for premise in list(segments[:-1]) + [self.ambient]:
             for predicate in PRE_STATE_PREDICATES:
                 for hit in re.finditer(_qualified(predicate), premise):
                     if _projection_hit(hit.group(1), binder_names):
@@ -946,13 +1082,17 @@ class Bundle:
         ipcInvariantFull st'`) is the same threading in telescope clothing
         (PR #886 review).  No bundle legitimately *concludes* a conjunct --
         the family concludes family predicates -- so a conjunct application
-        anywhere in the signature is a hypothesis.
+        anywhere in the signature is a hypothesis.  In-scope `variable`
+        binders are scanned too (PR #886 review, the section-variable
+        round): an `include`d section hypothesis is telescope, and one Lean
+        would not include can only add findings here, never suppress them
+        (the class docstring's asymmetry).
         """
         pre = self.pre_states()
         binder_names = self._binder_names()
         findings = []
         for conjunct in sorted(conjuncts):
-            for region in (self.binders, self.conclusion):
+            for region in (self.ambient, self.binders, self.conclusion):
                 for hit in re.finditer(_qualified(conjunct), region):
                     if _projection_hit(hit.group(1), binder_names):
                         continue
@@ -1009,12 +1149,73 @@ def prefix_at(breakpoints: list[tuple[int, str]], offset: int) -> str:
     return prefix
 
 
-def collect_bundles(root: str, sources: list[str]) -> list[Bundle]:
-    """Every declaration in the `ipcInvariantFull` bundle family."""
+_VARIABLE_RE = re.compile(r"^\s*variable(?![\w'!?])", re.MULTILINE)
+
+
+def variable_intervals(source: str) -> list[tuple[int, int, str]]:
+    """(activation offset, deactivation offset, binder text) for every
+    line-anchored `variable` command, scope-tracked.
+
+    Lean elaborates in-scope `variable` binders into a theorem's parameter
+    list when they are mentioned or `include`d, so a hypothesis can be real
+    while absent from the declaration slice the collector reads (PR #886
+    review).  A command's binder text runs from the keyword to the next
+    line-anchored command (`_COMMAND_STOP`, shared with the body collector),
+    and it is active from there until the `end` that closes the section,
+    namespace or mutual block it was declared in -- file scope lives to end
+    of source.  `include` and `omit` are deliberately *not* interpreted:
+    which binders Lean actually includes is an elaboration fact a text
+    scanner cannot resolve, so every active binder is treated as telescope,
+    which over-approximates in the finding direction only (see `Bundle`'s
+    docstring for the asymmetry that keeps the over-approximation from
+    suppressing anything).
+    """
+    events = sorted(
+        [(match.start(), "scope", match) for match in _SCOPE_RE.finditer(source)]
+        + [(match.start(), "var", match) for match in _VARIABLE_RE.finditer(source)],
+        key=lambda event: event[0],
+    )
+    intervals: list[tuple[int, int, str]] = []
+    frames: list[list[tuple[int, str]]] = [[]]
+    for _offset, kind, match in events:
+        if kind == "var":
+            tail = source[match.end() :]
+            cut = _COMMAND_STOP.search(tail)
+            text = tail[: cut.start()] if cut else tail
+            frames[-1].append((match.end(), text))
+        elif match.group("end") is not None:
+            if len(frames) > 1:
+                for start, text in frames.pop():
+                    intervals.append((start, match.start(), text))
+        else:
+            frames.append([])
+    for frame in frames:
+        for start, text in frame:
+            intervals.append((start, len(source), text))
+    return intervals
+
+
+def ambient_at(intervals: list[tuple[int, int, str]], offset: int) -> str:
+    """The concatenated `variable` binder text in scope at `offset`."""
+    return " ".join(
+        text for start, end, text in intervals if start <= offset < end
+    )
+
+
+def collect_bundles(
+    root: str, sources: list[str], excluded: frozenset[str] = frozenset()
+) -> list[Bundle]:
+    """Every declaration in the `ipcInvariantFull` bundle family.
+
+    `excluded` is the predicate-name set (family plus derived conjuncts)
+    each bundle's `_connectivity_tokens` filter drops from its anchor
+    graph; the caller derives it before collecting.
+    """
     bundles = []
     for relative in sources:
         source = code_view(root, relative)
         breakpoints = namespace_breakpoints(source)
+        intervals = variable_intervals(source)
         for match in _DECL_RE.finditer(source):
             name = match.group(1)
             if not any(marker in name for marker in BUNDLE_MARKERS):
@@ -1030,6 +1231,8 @@ def collect_bundles(root: str, sources: list[str]) -> list[Bundle]:
                     binders,
                     conclusion,
                     prefix_at(breakpoints, match.start()),
+                    ambient_at(intervals, match.start()),
+                    excluded,
                 )
             )
     return bundles
@@ -1158,7 +1361,27 @@ def run_checks(root: str) -> list[str]:
         )
         return problems
 
-    bundles = collect_bundles(root, sources)
+    bundles = collect_bundles(
+        root, sources, frozenset(conjuncts) | frozenset(PRE_STATE_PREDICATES)
+    )
+    # A family-marker name is a claim about the conclusion, and the claim is
+    # checked rather than trusted (PR #886 review): a conclusion that merely
+    # *contains* the family application -- `ipcInvariantFull st' ∨ True` is
+    # provable by its right arm -- reads as `None` under the entailment
+    # parse, and silently dropping such a declaration from the census would
+    # let a vacuous rewrite retire a bundle unnoticed.  The payoff names are
+    # exempt here only because `payoff_statement` reports the same defect
+    # with the payoff-specific message.
+    for bundle in sorted(bundles, key=lambda b: (b.path, b.line)):
+        if bundle.name in PAYOFF_THEOREMS or bundle.conclusion_state() is not None:
+            continue
+        problems.append(
+            f"family_conclusion: {bundle.path}:{bundle.line}: `{bundle.name}` "
+            f"carries the family marker but its final proposition does not "
+            f"entail an `ipcInvariantFull`-family application -- the family "
+            f"predicate must be the conclusion itself or a depth-0 conjunct "
+            f"of it, not an arm of some weaker connective"
+        )
     # A bundle counts toward the family only when it *concludes* a family
     # proposition (PR #886 review): the marker lives in the name, and a
     # `dummy_preserves_ipcInvariantFullish : True` would otherwise keep the
@@ -1258,7 +1481,9 @@ def report(root: str) -> int:
     """Print the census: bundles, conjuncts, and every post-state binding."""
     sources = lean_sources(root)
     conjuncts = derive_conjuncts(state_predicate_bodies(root, sources))
-    bundles = collect_bundles(root, sources)
+    bundles = collect_bundles(
+        root, sources, frozenset(conjuncts) | frozenset(PRE_STATE_PREDICATES)
+    )
     print(f"conjuncts derived from `{ROOT_INVARIANT}`: {len(conjuncts)}")
     for conjunct in sorted(conjuncts):
         print(f"  - {conjunct}")
@@ -2856,6 +3081,112 @@ end σ""",
     )
     cases.append(
         _Case("a registered residual is reported, not failed", honest_registration, False)
+    )
+
+    # A family application under a disjunction: `ipcInvariantFull st' ∨ True`
+    # is provable by its right arm, so a find-anywhere conclusion scan read a
+    # family conclusion out of a theorem that carries no invariant.  The
+    # entailment parse reads `None`, and a marker-named `None` is a reported
+    # violation, never a silent census drop.
+    disjunctive = _fixture()
+    disjunctive["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    ipcInvariantFull st' := by",
+            "    ipcInvariantFull st' ∨ True := by",
+        )
+    )
+    cases.append(
+        _Case(
+            "a family application under a disjunction is not a family conclusion",
+            disjunctive,
+            True,
+            check="family_conclusion",
+            mutation="preserving",
+        )
+    )
+
+    # A named-argument label naming the *called* predicate's binder: the
+    # derivation pinned the label to the literal `st`, so
+    # `replyCallerLinkage (σ := st)` dropped the predicate -- and its clause
+    # conjuncts -- from the derived set, and a bundle threading the clause
+    # scored clean.
+    named_label = _fixture()
+    named_label[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def replyCallerLinkage (st : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st",
+        "def replyCallerLinkage (σ : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal σ ∧ blockedOnReplyHasReplyObject σ",
+    ).replace(
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st",
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage (σ := st)",
+    )
+    named_label["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hR : replyCallerLinkageReciprocal st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a conjunct applied through a non-`st` named-argument label still derives",
+            named_label,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # An `include`d section-variable hypothesis: Lean elaborates it into the
+    # theorem's parameter list, but it is absent from the declaration slice,
+    # so a post-state conjunct hypothesis was real while invisible.
+    ambient_variable = _fixture()
+    ambient_variable["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        "variable {st' : SystemState}\n"
+        "variable (hAmbient : blockedThreadsPendingMessageConsistent st')\n"
+        "include hAmbient\n"
+        "\n"
+        + CLEAN_BUNDLE.replace(
+            "    (st st' : SystemState)\n",
+            "    (st : SystemState)\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "an included section-variable hypothesis is part of the telescope",
+            ambient_variable,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A predicate symbol as the only overlap between an equality group and
+    # the conclusion: `hAnchor : ipcInvariantFull stMid = ipcInvariantFull
+    # stMid` shares `ipcInvariantFull` with the conclusion's tokens, and
+    # unfiltered connectivity anchored `stMid` through it -- a Prop-former
+    # bridging components it has no term-level business connecting.
+    bridged_anchor = _fixture()
+    bridged_anchor["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (st st' : SystemState)\n",
+            "    (st stMid st' : SystemState)\n",
+        ).replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hAnchor : ipcInvariantFull stMid = ipcInvariantFull stMid)\n"
+            "    (hMid : ipcInvariantCore stMid)\n"
+            "    (hT : blockedThreadsPendingMessageConsistent stMid)\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a predicate symbol shared with the conclusion does not anchor a state",
+            bridged_anchor,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
     )
 
     clean = _fixture()
