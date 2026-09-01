@@ -306,6 +306,15 @@ direction the detector must never err in.  The stale `Platform/Staged.lean`
 marker saying `Reachability` awaits its RR3.15 consumer was refreshed: the
 staged payoff tier has consumed it since RR3.23–25; nothing production
 imports it still.
+A seventh pass closed the two qualifier residues of its predecessors:
+`_root_.` — Lean's root-namespace escape, underscore-led and so rejected
+by the uppercase-qualifier rule — is accepted in `_qualified` and in the
+derivation's `applied` pattern (the same question's two sibling sites,
+swept together); and the conjunct derivation normalises and re-splits
+regrouped bodies, so `(A st ∧ B st)` — opaque to one depth-0 split —
+yields its clauses instead of silently dropping both.  Three
+token-preserving fixtures; self-test 40 cases; census unchanged a third
+time.
 
 ### Housekeeping
 

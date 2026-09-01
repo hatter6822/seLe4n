@@ -186,16 +186,20 @@ def _normalise(text: str) -> str:
 
 
 def _qualified(name: str) -> str:
-    """Match `name` bare or behind uppercase-led namespace qualifiers.
+    """Match `name` bare or behind namespace qualifiers.
 
     The old lookbehind rejected every preceding `.`, so a namespace-qualified
     application (`Foo.blockedThreadsPendingMessageConsistent st'`) escaped the
     scan entirely (PR #886 review).  A qualifier segment must start with an
     uppercase letter, which keeps hypothesis projections (`hInv.conjunct`)
-    out: their receivers are lowercase binders.
+    out: their receivers are lowercase binders.  The one lowercase-led
+    qualifier Lean itself supplies -- `_root_.`, the explicit root-namespace
+    escape -- is accepted as an optional leading segment (PR #886 review,
+    the round after the uppercase rule landed): it is a reserved token, never
+    a binder, so admitting it re-opens nothing the uppercase rule closed.
     """
     return (
-        r"(?<![A-Za-z0-9_'.])(?:[A-Z][A-Za-z0-9_']*\.)*"
+        r"(?<![A-Za-z0-9_'.])(?:_root_\.)?(?:[A-Z][A-Za-z0-9_']*\.)*"
         + re.escape(name)
         + r"(?![A-Za-z0-9_'])"
     )
@@ -522,15 +526,29 @@ def derive_conjuncts(bodies: dict[str, list[str]]) -> set[str]:
     # them behind any uppercase-led qualifier -- deriving `Foo.pred` verbatim
     # would silently stop matching the bare spelling (PR #886 review: the
     # qualifier fix applied to the scan and not to this, its sibling site).
+    # `_root_.` is accepted here for the same reason it is in `_qualified` --
+    # the same round's sweep of the same question's sibling sites.
     applied = re.compile(
-        r"^\s*(?:[A-Z][A-Za-z0-9_']*\.)*([A-Za-z_][A-Za-z0-9_'!?]*)\s+\(?\s*st\s*\)?\s*$"
+        r"^\s*(?:_root_\.)?(?:[A-Z][A-Za-z0-9_']*\.)*"
+        r"([A-Za-z_][A-Za-z0-9_'!?]*)\s+\(?\s*st\s*\)?\s*$"
     )
 
     def sub_predicates(name: str) -> set[str]:
+        # Each part is normalised (redundant enclosing parentheses stripped)
+        # and a part that then still splits is re-split, so a harmlessly
+        # regrouped body -- `(A st ∧ B st)`, opaque to one depth-0 pass --
+        # yields its conjuncts instead of silently dropping them
+        # (PR #886 review).
         found = set()
         for body in bodies.get(name, []):
-            for part in split_conjunction(body):
-                hit = applied.match(part)
+            stack = [body]
+            while stack:
+                expr = _normalise(stack.pop())
+                parts = split_conjunction(expr)
+                if len(parts) > 1:
+                    stack.extend(parts)
+                    continue
+                hit = applied.match(parts[0])
                 if hit:
                     found.add(hit.group(1))
         return found
@@ -1508,6 +1526,82 @@ end Shadow""",
         _Case(
             "clause of a conjunct whose binder was renamed still derives and flags",
             renamed_binder,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # `_root_.`-qualified threading: Lean's root-namespace escape starts with
+    # an underscore, which the uppercase-led qualifier rule rejected -- the
+    # conjunct, its post-state, and the qualifier chain are all present, and
+    # the scan saw none of it.
+    root_qualified = _fixture()
+    root_qualified["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hT : _root_.blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "conjunct threaded behind the `_root_.` qualifier",
+            root_qualified,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # `_root_.` in the *definition*: the sibling site of the same question --
+    # a root-qualified conjunct spelling must still derive, or threading its
+    # bare spelling goes unmeasured.
+    root_qualified_def = _fixture()
+    root_qualified_def[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st",
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  _root_.blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st",
+    )
+    root_qualified_def["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hT : blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "conjunct spelled with `_root_.` in the definition still derives",
+            root_qualified_def,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Regrouped conjunction: a nested body harmlessly wrapped in parentheses
+    # is opaque to one depth-0 split, and both of its clause predicates left
+    # the derived set while every token survived.
+    regrouped = _fixture()
+    regrouped[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def replyCallerLinkage (st : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st",
+        "def replyCallerLinkage (st : SystemState) : Prop :=\n"
+        "  (replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st)",
+    )
+    regrouped["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (h : replyCallerLinkageReciprocal st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "clause of a parenthesised conjunction body still derives and flags",
+            regrouped,
             True,
             check="no_post_state_binding",
             mutation="preserving",
