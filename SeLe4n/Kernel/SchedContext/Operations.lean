@@ -243,6 +243,42 @@ def checkAdmission (st : SystemState) (candidate : SchedContext)
 -- Z5-F3: schedContextConfigure
 -- ============================================================================
 
+/-- The bound-thread propagation tail of `schedContextConfigure`, factored so
+the invariant surface can speak about it by name: rewrite the bound TCB's
+priority (when it moved), re-bucket the thread on its home core (when
+queued), then align its domain (when it moved).  The body is the verbatim
+propagation tower `schedContextConfigure` carried inline. -/
+def schedContextConfigureBoundPropagate (stStored : SystemState)
+    (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
+    (priority domain : Nat) : SystemState :=
+  let stProp : SystemState :=
+    if boundTcb.priority.val = priority then
+      stStored
+    else
+      let newPri : SeLe4n.Priority := ⟨priority⟩
+      let boundTcb2 : TCB := { boundTcb with priority := newPri }
+      let stWithTcb : SystemState := { stStored with
+        objects := stStored.objects.insert boundTid.toObjId (KernelObject.tcb boundTcb2) }
+      let effectivePri : SeLe4n.Priority := match boundTcb.pipBoost with
+        | none => newPri
+        | some boostPri => ⟨Nat.max priority boostPri.val⟩
+      let boundHome := determineTargetCore stWithTcb boundTid
+      if boundTid ∈ (stWithTcb.scheduler.runQueueOnCore boundHome) then
+        let rqRemoved := (stWithTcb.scheduler.runQueueOnCore boundHome).remove boundTid
+        let rqInserted := rqRemoved.insert boundTid effectivePri
+        { stWithTcb with scheduler :=
+          stWithTcb.scheduler.setRunQueueOnCore boundHome rqInserted }
+      else stWithTcb
+  match stProp.getTcb? boundTid with
+  | some currentTcb =>
+    if currentTcb.domain.val = domain then stProp
+    else
+      let newDom : SeLe4n.DomainId := ⟨domain⟩
+      let currentTcb2 : TCB := { currentTcb with domain := newDom }
+      { stProp with objects :=
+        stProp.objects.insert boundTid.toObjId (KernelObject.tcb currentTcb2) }
+  | none => stProp
+
 /-- Z5-F3: Configure a SchedContext's scheduling parameters.
 1. Validates parameters (period > 0, budget ≤ period, etc.)
 2. Checks admission control (total bandwidth ≤ 100%)
@@ -323,62 +359,8 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
               -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
               match stStored.getTcb? boundTid with
               | some boundTcb =>
-                let stProp : SystemState :=
-                  if boundTcb.priority.val = priority then
-                    stStored  -- priority already consistent: no priority propagation needed
-                  else
-                    let newPri : SeLe4n.Priority := ⟨priority⟩
-                    let boundTcb2 : TCB := { boundTcb with priority := newPri }
-                    let stWithTcb : SystemState := { stStored with
-                      objects := stStored.objects.insert boundTid.toObjId (KernelObject.tcb boundTcb2) }
-                    -- AK2-B follow-up: re-bucket in RunQueue to match new priority.
-                    let effectivePri : SeLe4n.Priority := match boundTcb.pipBoost with
-                      | none => newPri
-                      | some boostPri => ⟨Nat.max priority boostPri.val⟩
-                    -- WS-SM SM8.B (PR #861 review round 13, found by
-                    -- `scripts/check_live_arm_per_core_routing.py`): re-bucket on the
-                    -- bound thread's HOME core.  Keyed on `bootCoreId` this was a
-                    -- silent no-op for a thread queued anywhere else, so the priority
-                    -- moved while the run queue kept the old band — the same defect
-                    -- rounds 10 and 12 found in `migrateRunQueueBucket`.
-                    let boundHome := determineTargetCore stWithTcb boundTid
-                    if boundTid ∈ (stWithTcb.scheduler.runQueueOnCore boundHome) then
-                      let rqRemoved := (stWithTcb.scheduler.runQueueOnCore boundHome).remove boundTid
-                      let rqInserted := rqRemoved.insert boundTid effectivePri
-                      { stWithTcb with scheduler :=
-                        stWithTcb.scheduler.setRunQueueOnCore boundHome rqInserted }
-                    else stWithTcb
-                -- R5.G (DEEP-SCH-06): Domain propagation. The
-                -- `boundThreadDomainConsistent` invariant in
-                -- `Scheduler/Invariant.lean:847` requires that a bound
-                -- thread's `tcb.domain` equal its SchedContext's
-                -- `sc.domain`. `schedContextConfigure` rewrites
-                -- `sc.domain := ⟨domain⟩`, so without propagating that
-                -- write into the bound TCB's `domain` field the
-                -- invariant would drift on every reconfigure that
-                -- changes the domain.  Pre-R5 this propagation was
-                -- missing — the invariant was implicitly maintained
-                -- only by the AE3-A bind-time check, leaving
-                -- `schedContextConfigure` as a silent invariant-
-                -- violation path.
-                --
-                -- The post-state `stProp` may already have written
-                -- `boundTcb2 := { boundTcb with priority := newPri }`
-                -- into the objects table (when `priority` differs);
-                -- in that case we read the latest TCB and update
-                -- `domain` on it; otherwise we update the original
-                -- `boundTcb`.
-                let stFinal : SystemState :=
-                  match stProp.getTcb? boundTid with
-                  | some currentTcb =>
-                    if currentTcb.domain.val = domain then stProp
-                    else
-                      let newDom : SeLe4n.DomainId := ⟨domain⟩
-                      let currentTcb2 : TCB := { currentTcb with domain := newDom }
-                      { stProp with objects :=
-                        stProp.objects.insert boundTid.toObjId (KernelObject.tcb currentTcb2) }
-                  | none => stProp  -- bound TCB vanished mid-op: leave as-is (consistent with priority block)
-                .ok ((), stFinal)
+                .ok ((), schedContextConfigureBoundPropagate stStored boundTid boundTcb
+                  priority domain)
               | none => .ok ((), stStored)  -- bound thread's TCB missing: leave as-is
         else
           .error .resourceExhausted
