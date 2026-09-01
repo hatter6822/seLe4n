@@ -373,6 +373,26 @@ checked tier's declassifying confinement computed like the signal
 arm's.  The two rendezvous-reachable interiors (`replyStage`'s caller
 premise, `replyRecvStage`'s resolver premise) are registered WS-DT
 debt with an SM10 closure target rather than absorbed.
+An eleventh pass replaced two heuristics with derivations and closed
+four residues.  The derivations: projection exclusion is now by the
+statement's *own binder names* rather than by qualifier case — the
+scans accept any identifier-led qualifier chain and skip a hit whose
+chain heads at a local binder, so lowercase namespaces
+(`foo.conjunct st'`) are visible while `hInv.conjunct` stays excluded;
+and equality anchoring is a *connected component* — an `=`-group
+anchors its tokens only when the equation graph reaches the
+conclusion's tokens, so a reflexive `stMid = stMid` no longer launders
+an intermediate state.  The residues: the collector recognises the
+arrow-form root spelling (`: SystemState → Prop := fun s => …`) and
+records each body's namespace, with the canonical-`SeLe4n.Kernel` root
+body required outright before the shadow-tolerant union derives
+anything; `opaque` and its sibling column-0 commands bound bodies; the
+definition side accepts named-argument conjunct spellings; and
+`family_nonempty` counts only bundles that conclude a family
+proposition, so a marker-substring imposter (`…ipcInvariantFullish :
+True`) cannot stand in for a vanished family.  Seven token-preserving
+fixtures plus a projection accept-case; self-test 57 cases; census
+unchanged a seventh time.
 
 ### Housekeeping
 
