@@ -196,9 +196,9 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~48555 lines)
+- `CHANGELOG.md` (~48720 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~12882 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~12884 lines)
 - `tests/SmpInformationFlowSuite.lean` (~11756 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~7902 lines)
 - `SeLe4n/Kernel/API.lean` (~6704 lines)
@@ -242,11 +242,12 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2542 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2493 lines)
 - `tests/ModelIntegritySuite.lean` (~2477 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
+- `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2381 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~2373 lines)
-- `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2365 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2325 lines)
@@ -290,7 +291,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1737 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~1723 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~1722 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1709 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1668 lines)
@@ -302,8 +302,8 @@ To find files that need pagination today, run:
 - `docs/DEVELOPMENT.md` (~1460 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1424 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1423 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1415 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1394 lines)
@@ -314,12 +314,12 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md` (~1349 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1326 lines)
+- `tests/FrozenOpsSuite.lean` (~1324 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1321 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1288 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
-- `tests/FrozenOpsSuite.lean` (~1252 lines)
 - `tests/SmpCancellationSuite.lean` (~1246 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1241 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
@@ -378,12 +378,12 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~870 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `tests/SmpTimerSuite.lean` (~840 lines)
+- `tests/SmpCrossCoreCallSuite.lean` (~830 lines)
 - `tests/DecodingSuite.lean` (~827 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~826 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~816 lines)
-- `tests/SmpCrossCoreCallSuite.lean` (~816 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~815 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
 - `tests/WithLockSetSuite.lean` (~809 lines)
@@ -1006,9 +1006,16 @@ code may assume:
   live SM9 arms from their transitions' frames, under
   `checkedSyscallDispatchQuiescence` (the base pack plus the declassifying
   signal's unbound-delivery confinement).  Both packs carry inhabitation
-  witnesses (`syscallDispatchQuiescence_inhabited`,
-  `checkedSyscallDispatchQuiescence_inhabited`) whose state is built through
-  the retype and binding levers, so an unsatisfiable pack field cannot hide.  What new
+  witnesses built through the retype and binding levers — the base pair
+  (`syscallDispatchQuiescence_inhabited`,
+  `checkedSyscallDispatchQuiescence_inhabited`) for the state-shaped fields,
+  plus a per-arm family (`…_inhabited_signal` / `…_retype` / `…_send` /
+  `…_receive` / `…_call` / `…_mint` / `…_reply` /
+  `checked…_inhabited_declassifySignal`, `DispatchPayoff` §7b) that fires
+  each *indexed* field's premises — so an unsatisfiable pack field cannot
+  hide; the two interiors beyond the levers' reach (a caller-carrying
+  reply, a CSpace-resolved `replyRecv` capability — both created only by
+  the call rendezvous) are registered WS-DT debt.  What new
   code must respect: (1) the payoff holds *under the packs* — every field is
   a pre-state fact, dischargeable before the step, with the state-shaped ones
   collected in `SeLe4n/Kernel/IPC/Invariant/Reachability.lean`

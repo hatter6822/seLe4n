@@ -1685,8 +1685,10 @@ private theorem witnessCapOnly :
 the per-arm bundles themselves — two `retypeWrite_preserves_ipcInvariantFull`
 steps (a fresh ready TCB, then a fresh SchedContext) and one
 `ipcInvariantFull_of_schedBindingRewrite` step (the bind) — so the packs'
-first inhabitant is also those levers' first end-to-end consumer, and an
-unsatisfiable conjunction anywhere in the pack would fail here. -/
+first inhabitant is also those levers' first end-to-end consumer.  This
+instance exercises the state-shaped fields; its `.send`-shaped decode and
+`.replyCap` target leave the *indexed* fields vacuous, which is what the
+per-arm instances in §7b below exist to close (PR #886 review). -/
 theorem syscallDispatchQuiescence_inhabited :
     syscallDispatchQuiescence witnessDecoded witnessTid witnessGate witnessCap
       witnessSt3 := by
@@ -1718,5 +1720,774 @@ theorem checkedSyscallDispatchQuiescence_inhabited :
   ⟨syscallDispatchQuiescence_inhabited, by
     intro notifId hSy
     simp [witnessDecoded] at hSy⟩
+
+-- ============================================================================
+-- §7b  Per-arm exercise of the indexed pack fields (PR #886 review)
+-- ============================================================================
+
+/-! The base witness above inhabits both packs, but its `.send`-shaped decode
+and `.replyCap`-shaped capability discharge every *indexed* field vacuously --
+an unsatisfiable arm obligation would not have failed it.  The instances below
+re-inhabit the packs once per indexed field with that field's premises firing,
+so the family as a whole exercises every obligation the packs carry rather
+than only the state-shaped ones.
+
+Coverage, and the one boundary:
+
+* `…_inhabited_signal` -- `signalNoBoundTarget` computes
+  `boundDeliveryTarget? = none` on a present object, and the capability-only
+  pack's `unbindBoundThreadPassive` / `targetThreadQuiescent` fire against
+  the stored thread (the latter proven of the *present* witness thread);
+* `…_inhabited_retype` -- `retypeDetached` proven of the decoded target, and
+  `boundThreadNotDonationOwner` firing through the bind decoder's read of
+  the same registers;
+* `…_inhabited_send` / `…_inhabited_receive` / `…_inhabited_call` -- each
+  stage transition *evaluated* on the witness state (the refusal path), so
+  the `objects.invExt` conclusions are discharged by computation; the
+  receive resolver computes `.ok none`, and the call rendezvous field fires
+  on the computed absent-endpoint lookup;
+* `…_inhabited_mint` -- the mint decoder computes and its badge's validity
+  is proven of the decoded value;
+* `…_inhabited_reply` -- the `.reply` decode, the reply-capability target
+  and the object lookup all fire against a stored reply (`witnessSt4`, the
+  retype lever's fourth application).  **The lever boundary**: the
+  remaining `caller = some _` premise cannot fire, because
+  `retypeReplacementFresh` fixes a fresh reply's caller to `none` and only
+  the call rendezvous creates a caller-carrying reply.  That interior --
+  and `replyRecvStage`'s resolver premise, which needs a CSpace-resolved
+  reply capability the same rendezvous supplies -- is the registered
+  residual (WS-DT, `docs/WORKSTREAM_HISTORY.md`);
+* `checked…_inhabited_declassifySignal` -- the checked tier's confinement
+  computed on a present object, as the signal arm's is. -/
+
+/-- A `.notificationSignal` decode: no registers, so every register-reading
+decoder refuses and only the signal confinement fires. -/
+private def witnessDecodedSignal : SyscallDecodeResult :=
+  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default,
+    syscallId := .notificationSignal }
+
+private def witnessGateSignal : SyscallGate :=
+  { callerId := witnessTid, cspaceRoot := SeLe4n.ObjId.ofNat 0,
+    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 0,
+    requiredRight := syscallRequiredRight .notificationSignal }
+
+/-- An object capability naming the witness thread's own slot: present in the
+store, so the object-target fields are exercised against a real object rather
+than by absent-lookup vacuity. -/
+private def witnessCapTcbObject : Capability :=
+  { target := .object witnessTid.toObjId, rights := default }
+
+private theorem witnessSt3_getNotification_tcbSlot :
+    witnessSt3.getNotification? witnessTid.toObjId = none := by
+  unfold SystemState.getNotification?
+  rw [witnessSt3_lookup]
+  simp [show (witnessScId.toObjId == witnessTid.toObjId) = false from by decide]
+
+/-- The witness thread's IPC fields are quiescent -- proven of the *present*
+thread, every field read off the stored TCB. -/
+private theorem witnessThreadQuiescent :
+    threadIpcFieldsQuiescent witnessSt3 witnessTid := by
+  constructor
+  all_goals intro tcb hLk
+  all_goals rw [witnessSt3_getTcb] at hLk
+  all_goals cases hLk
+  all_goals simp [witnessTcbBound, witnessTcbFresh]
+
+/-- The capability-only pack against the signal decode and the TCB-object
+capability: the register decoders refuse (no registers), the SchedContext
+target holds a TCB (a real shape contradiction, not an absent lookup), and
+the thread-quiescence field is discharged by `witnessThreadQuiescent`. -/
+private theorem witnessCapOnlySignal :
+    capabilityDispatchQuiescence witnessDecodedSignal witnessCapTcbObject
+      witnessSt3 := by
+  refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
+    ?_, ?_, ?_, ?_⟩
+  · intro args hDec
+    simp only [decodeLifecycleRetypeArgs, witnessDecodedSignal, requireMsgReg,
+      bind, Except.bind] at hDec
+    cases hDec
+  · intro args hDec
+    simp only [decodeSchedContextBindArgs, witnessDecodedSignal, requireMsgReg,
+      bind, Except.bind] at hDec
+    cases hDec
+  · intro scObj hTgt vScId hVal scX t tcbX hScLk
+    injection hTgt with hObj
+    subst hObj
+    simp only [validateObjIdArg, SeLe4n.ObjId.toValid?] at hVal
+    rw [dif_neg (by decide)] at hVal
+    cases hVal
+    rw [show (SchedContextId.ofObjId witnessTid.toObjId).toObjId
+        = witnessTid.toObjId from rfl, witnessSt3_lookup] at hScLk
+    simp [show (witnessScId.toObjId == witnessTid.toObjId) = false from by decide]
+      at hScLk
+  · intro objId hTgt vtid hVal
+    injection hTgt with hObj
+    subst hObj
+    simp only [validateThreadIdArg, SeLe4n.ThreadId.toValid?] at hVal
+    rw [dif_neg (by decide)] at hVal
+    cases hVal
+    exact witnessThreadQuiescent
+
+/-- **The signal arm's confinement is exercised**: the decode is
+`.notificationSignal`, the target premise fires, and
+`boundDeliveryTarget? = none` is computed on the present (non-notification)
+object rather than assumed. -/
+theorem syscallDispatchQuiescence_inhabited_signal :
+    syscallDispatchQuiescence witnessDecodedSignal witnessTid witnessGateSignal
+      witnessCapTcbObject witnessSt3 := by
+  refine ⟨witnessReachable3, witnessCapOnlySignal,
+    ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro args hSy hDec
+    simp [witnessDecodedSignal] at hSy
+  · intro epId hSy
+    simp [witnessDecodedSignal] at hSy
+  · intro epId hSy
+    simp [witnessDecodedSignal] at hSy
+  · intro epId hSy
+    simp [witnessDecodedSignal] at hSy
+  · intro epId replyIdOpt hSy
+    simp [witnessDecodedSignal] at hSy
+  · intro rid r callerTid hSy
+    simp [witnessDecodedSignal] at hSy
+  · intro notifId hSy hTgt
+    injection hTgt with hObj
+    subst hObj
+    unfold boundDeliveryTarget?
+    rw [witnessSt3_getNotification_tcbSlot]
+  · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecodedSignal] at hSy
+
+/-- A `.lifecycleRetype` decode whose registers decode: target `⟨9⟩`
+(referenced by nothing), type tag 5 (`.untyped`), size 0.  The bind decoder
+reads the same register file, so `boundThreadNotDonationOwner` fires through
+it in the same instance. -/
+private def witnessDecodedRetype : SyscallDecodeResult :=
+  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default,
+    syscallId := .lifecycleRetype, msgRegs := #[⟨9⟩, ⟨5⟩, ⟨0⟩] }
+
+private def witnessGateRetype : SyscallGate :=
+  { callerId := witnessTid, cspaceRoot := SeLe4n.ObjId.ofNat 0,
+    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 0,
+    requiredRight := syscallRequiredRight .lifecycleRetype }
+
+/-- Every stored TCB is the witness thread's: the store's one TCB slot,
+characterised for the detachedness fields that quantify over the store. -/
+private theorem witnessSt3_tcb_lookup (oid : SeLe4n.ObjId) (t : TCB)
+    (hLk : witnessSt3.objects[oid]? = some (.tcb t)) :
+    oid = witnessTid.toObjId ∧ t = witnessTcbBound := by
+  rw [witnessSt3_lookup] at hLk
+  split at hLk
+  · cases hLk
+  · split at hLk
+    · next hKey => cases hLk; exact ⟨(eq_of_beq hKey).symm, rfl⟩
+    · cases hLk
+
+private theorem witnessSt3_no_endpoint (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hLk : witnessSt3.objects[oid]? = some (.endpoint ep)) : False := by
+  rw [witnessSt3_lookup] at hLk
+  split at hLk
+  · simp at hLk
+  · split at hLk
+    · simp at hLk
+    · cases hLk
+
+private theorem witnessSt3_no_notification (oid : SeLe4n.ObjId) (n : Notification)
+    (hLk : witnessSt3.objects[oid]? = some (.notification n)) : False := by
+  rw [witnessSt3_lookup] at hLk
+  split at hLk
+  · simp at hLk
+  · split at hLk
+    · simp at hLk
+    · cases hLk
+
+private theorem witnessSt3_lookup_none (oid : SeLe4n.ObjId)
+    (hSc : (witnessScId.toObjId == oid) = false)
+    (hTid : (witnessTid.toObjId == oid) = false) :
+    witnessSt3.objects[oid]? = none := by
+  rw [witnessSt3_lookup]
+  simp [hSc, hTid]
+
+/-- Nothing in the witness state references an empty slot: detachedness of
+any target outside the two stored ids, proven once and instantiated per
+consumer.  The target-lookup fields discharge on the empty slot; the
+store-quantified fields read the one stored TCB's quiescent shape through
+`witnessSt3_tcb_lookup`. -/
+private theorem witnessSt3_detached_of (target : SeLe4n.ObjId)
+    (hSc : (witnessScId.toObjId == target) = false)
+    (hTid : (witnessTid.toObjId == target) = false) :
+    retypeTargetDetached witnessSt3 target := by
+  have hTargetEmpty := witnessSt3_lookup_none target hSc hTid
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro sc; rw [hTargetEmpty]; simp
+  · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
+  · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
+  · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
+  · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
+  · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
+  · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
+  · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
+  · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
+  · intro tid tcb hLk
+    obtain ⟨-, rfl⟩ := witnessSt3_tcb_lookup _ _ hLk
+    refine ⟨?_, ?_, ?_⟩ <;> simp [witnessTcbBound, witnessTcbFresh]
+  · intro a tcbA b hLk hNext
+    obtain ⟨-, rfl⟩ := witnessSt3_tcb_lookup _ _ hLk
+    simp [witnessTcbBound, witnessTcbFresh] at hNext
+  · intro b tcbB a hLk hPrev
+    obtain ⟨-, rfl⟩ := witnessSt3_tcb_lookup _ _ hLk
+    simp [witnessTcbBound, witnessTcbFresh] at hPrev
+  · intro epId ep hd hLk
+    exact absurd hLk (fun h => witnessSt3_no_endpoint _ _ h)
+  · intro epId ep tl hLk
+    exact absurd hLk (fun h => witnessSt3_no_endpoint _ _ h)
+  · intro tid tcb hLk
+    obtain ⟨-, rfl⟩ := witnessSt3_tcb_lookup _ _ hLk
+    simp [witnessTcbBound, witnessTcbFresh]
+  · intro tid tcb rid hLk hReply
+    obtain ⟨-, rfl⟩ := witnessSt3_tcb_lookup _ _ hLk
+    simp [witnessTcbBound, witnessTcbFresh] at hReply
+  · intro tid tcb rid hLk hStash
+    obtain ⟨-, rfl⟩ := witnessSt3_tcb_lookup _ _ hLk
+    simp [witnessTcbBound, witnessTcbFresh] at hStash
+
+/-- The capability-only pack against the retype decode: `retypeDetached` is
+proven of the decoded target rather than discharged by a failing decoder,
+and the bind-decoder field fires (same registers) with its donation
+conclusion read off the stored binding. -/
+private theorem witnessCapOnlyRetype :
+    capabilityDispatchQuiescence witnessDecodedRetype witnessCap witnessSt3 := by
+  refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
+    ?_, ?_, ?_, ?_⟩
+  · intro args hDec
+    simp only [decodeLifecycleRetypeArgs, witnessDecodedRetype, requireMsgReg,
+      bind, Except.bind, pure, Except.pure, KernelObjectType.ofNat?] at hDec
+    cases hDec
+    exact witnessSt3_detached_of _ (by decide) (by decide)
+  · intro args hDec vThreadId hVal s sTcb sc0 hLk
+    rw [witnessSt3_lookup] at hLk
+    split at hLk
+    · cases hLk
+    · split at hLk
+      · cases hLk
+        simp [witnessTcbBound, witnessTcbFresh]
+      · cases hLk
+  · intro scObj hTgt
+    simp [witnessCap] at hTgt
+  · intro objId hTgt
+    simp [witnessCap] at hTgt
+
+/-- **The retype detachment is exercised**: the registers decode, the target
+is named, and detachedness is proven of the witness state -- with the bind
+decoder's donation field firing through the same register file. -/
+theorem syscallDispatchQuiescence_inhabited_retype :
+    syscallDispatchQuiescence witnessDecodedRetype witnessTid witnessGateRetype
+      witnessCap witnessSt3 := by
+  refine ⟨witnessReachable3, witnessCapOnlyRetype,
+    ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro args hSy hDec
+    simp [witnessDecodedRetype] at hSy
+  · intro epId hSy
+    simp [witnessDecodedRetype] at hSy
+  · intro epId hSy
+    simp [witnessDecodedRetype] at hSy
+  · intro epId hSy
+    simp [witnessDecodedRetype] at hSy
+  · intro epId replyIdOpt hSy
+    simp [witnessDecodedRetype] at hSy
+  · intro rid r callerTid hSy
+    simp [witnessDecodedRetype] at hSy
+  · intro notifId hSy
+    simp [witnessDecodedRetype] at hSy
+  · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecodedRetype] at hSy
+
+/-- An object capability naming slot `⟨7⟩` -- no endpoint lives there, so the
+stage transitions evaluate down their refusal paths and their `invExt`
+conclusions are discharged by computation on the witness state. -/
+private def witnessCapEndpoint : Capability :=
+  { target := .object (SeLe4n.ObjId.ofNat 7), rights := default }
+
+private theorem witnessSt3_lookup_seven :
+    witnessSt3.objects[(SeLe4n.ObjId.ofNat 7 : SeLe4n.ObjId)]? = none := by
+  rw [witnessSt3_lookup]
+  simp [show (witnessScId.toObjId == SeLe4n.ObjId.ofNat 7) = false from by decide,
+    show (witnessTid.toObjId == SeLe4n.ObjId.ofNat 7) = false from by decide]
+
+private theorem witnessSt3_getTcb_seven :
+    witnessSt3.getTcb?
+      (SeLe4n.ThreadId.ofNat (SeLe4n.ObjId.ofNat 7).toNat) = none := by
+  unfold SystemState.getTcb?
+  rw [show (SeLe4n.ThreadId.ofNat
+      (SeLe4n.ObjId.ofNat 7).toNat).toObjId = SeLe4n.ObjId.ofNat 7 from rfl,
+    witnessSt3_lookup_seven]
+
+/-- The capability-only pack against any register-free decode and the absent
+endpoint capability: the decoders refuse on the empty register file, and the
+object-target fields discharge on the empty slot. -/
+private theorem witnessCapOnlyEndpointOf (decoded : SyscallDecodeResult)
+    (hRegs : decoded.msgRegs = #[]) :
+    capabilityDispatchQuiescence decoded witnessCapEndpoint witnessSt3 := by
+  refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
+    ?_, ?_, ?_, ?_⟩
+  · intro args hDec
+    simp only [decodeLifecycleRetypeArgs, hRegs, requireMsgReg, bind,
+      Except.bind] at hDec
+    cases hDec
+  · intro args hDec
+    simp only [decodeSchedContextBindArgs, hRegs, requireMsgReg, bind,
+      Except.bind] at hDec
+    cases hDec
+  · intro scObj hTgt vScId hVal scX t tcbX hScLk
+    injection hTgt with hObj
+    subst hObj
+    simp only [validateObjIdArg, SeLe4n.ObjId.toValid?] at hVal
+    rw [dif_neg (by decide)] at hVal
+    cases hVal
+    rw [show (SchedContextId.ofObjId (SeLe4n.ObjId.ofNat 7)).toObjId
+        = SeLe4n.ObjId.ofNat 7 from rfl, witnessSt3_lookup_seven] at hScLk
+    cases hScLk
+  · intro objId hTgt vtid hVal
+    injection hTgt with hObj
+    subst hObj
+    simp only [validateThreadIdArg, SeLe4n.ThreadId.toValid?] at hVal
+    rw [dif_neg (by decide)] at hVal
+    cases hVal
+    constructor
+    all_goals intro tcb hLk
+    all_goals rw [witnessSt3_getTcb_seven] at hLk
+    all_goals cases hLk
+
+/-- **The send stage is exercised**: the `.send` decode and the object target
+both fire, and the staged transition's `invExt` conclusion is discharged by
+evaluating the transition on the witness state -- the refusal path returns
+the state whose invariant is already proven. -/
+theorem syscallDispatchQuiescence_inhabited_send :
+    syscallDispatchQuiescence witnessDecoded witnessTid witnessGate
+      witnessCapEndpoint witnessSt3 := by
+  refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecoded rfl,
+    ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro args hSy hDec
+    simp [witnessDecoded] at hSy
+  · intro epId hSy hTgt
+    injection hTgt with hObj
+    subst hObj
+    intro st1 res hStep
+    obtain rfl : st1 = _ := (congrArg Prod.fst hStep).symm
+    exact witnessObjInv3
+  · intro epId hSy
+    simp [witnessDecoded] at hSy
+  · intro epId hSy
+    simp [witnessDecoded] at hSy
+  · intro epId replyIdOpt hSy
+    simp [witnessDecoded] at hSy
+  · intro rid r callerTid hSy
+    simp [witnessDecoded] at hSy
+  · intro notifId hSy
+    simp [witnessDecoded] at hSy
+  · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecoded] at hSy
+
+/-- A `.receive` decode with an explicit zero-length message info: the reply
+resolver's length gate reduces syntactically, so the premise fires with
+`replyIdOpt = none`. -/
+private def witnessDecodedRecv : SyscallDecodeResult :=
+  { capAddr := SeLe4n.CPtr.ofNat 0,
+    msgInfo := { length := 0, extraCaps := 0, label := 0 },
+    syscallId := .receive }
+
+private def witnessGateRecv : SyscallGate :=
+  { callerId := witnessTid, cspaceRoot := SeLe4n.ObjId.ofNat 0,
+    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 0,
+    requiredRight := syscallRequiredRight .receive }
+
+/-- **The receive stage is exercised**: the resolver computes `.ok none`, the
+delivered-caps conjunct reads the stored TCB (no pending message), and the
+transition's `invExt` conclusion is discharged by evaluation on the witness
+state. -/
+theorem syscallDispatchQuiescence_inhabited_receive :
+    syscallDispatchQuiescence witnessDecodedRecv witnessTid witnessGateRecv
+      witnessCapEndpoint witnessSt3 := by
+  refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecodedRecv rfl,
+    ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro args hSy hDec
+    simp [witnessDecodedRecv] at hSy
+  · intro epId hSy
+    simp [witnessDecodedRecv] at hSy
+  · intro epId hSy
+    simp [witnessDecodedRecv] at hSy
+  · intro epId hSy
+    simp [witnessDecodedRecv] at hSy
+  · intro epId replyIdOpt hSy hTgt hRes
+    injection hTgt with hObj
+    subst hObj
+    simp only [resolveRecvReplyId, witnessDecodedRecv] at hRes
+    injection hRes with hOpt
+    subst hOpt
+    refine ⟨?_, ?_, ?_⟩
+    · intro rid h; cases h
+    · intro tcb hTcb m hMsg
+      cases Option.some.inj (witnessSt3_getTcb.symm.trans hTcb)
+      simp [witnessTcbBound, witnessTcbFresh] at hMsg
+    · intro st1 res hStep
+      obtain rfl : st1 = _ := (congrArg Prod.fst hStep).symm
+      exact witnessObjInv3
+  · intro rid r callerTid hSy
+    simp [witnessDecodedRecv] at hSy
+  · intro notifId hSy
+    simp [witnessDecodedRecv] at hSy
+  · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecodedRecv] at hSy
+
+/-- A `.call` decode: no registers, absent endpoint target. -/
+private def witnessDecodedCall : SyscallDecodeResult :=
+  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default, syscallId := .call }
+
+private def witnessGateCall : SyscallGate :=
+  { callerId := witnessTid, cspaceRoot := SeLe4n.ObjId.ofNat 0,
+    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 0,
+    requiredRight := syscallRequiredRight .call }
+
+private theorem witnessSt3_getEndpoint_seven :
+    witnessSt3.getEndpoint? (SeLe4n.ObjId.ofNat 7) = none := by
+  unfold SystemState.getEndpoint?
+  rw [witnessSt3_lookup_seven]
+
+/-- **The call stage is exercised**: both call fields fire on the endpoint
+target -- the cross-core dispatch's `invExt` conclusion by evaluation, and
+the rendezvous field on the computed absent-endpoint lookup. -/
+theorem syscallDispatchQuiescence_inhabited_call :
+    syscallDispatchQuiescence witnessDecodedCall witnessTid witnessGateCall
+      witnessCapEndpoint witnessSt3 := by
+  refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecodedCall rfl,
+    ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro args hSy hDec
+    simp [witnessDecodedCall] at hSy
+  · intro epId hSy
+    simp [witnessDecodedCall] at hSy
+  · intro epId hSy hTgt
+    injection hTgt with hObj
+    subst hObj
+    intro st1 res hStep
+    obtain rfl : st1 = _ := (congrArg Prod.fst hStep).symm
+    exact witnessObjInv3
+  · intro epId hSy hTgt
+    injection hTgt with hObj
+    subst hObj
+    intro ep receiverTid hEp
+    rw [witnessSt3_getEndpoint_seven] at hEp
+    cases hEp
+  · intro epId replyIdOpt hSy
+    simp [witnessDecodedCall] at hSy
+  · intro rid r callerTid hSy
+    simp [witnessDecodedCall] at hSy
+  · intro notifId hSy
+    simp [witnessDecodedCall] at hSy
+  · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecodedCall] at hSy
+
+/-- A `.cspaceMint` decode whose registers decode: srcSlot 0 (also the bind
+decoder's thread id -- the sentinel, so that field refuses at validation),
+dstSlot 999 (also the retype decoder's type tag -- invalid, so that decoder
+refuses), rights word 3, badge word 5. -/
+private def witnessDecodedMint : SyscallDecodeResult :=
+  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default,
+    syscallId := .cspaceMint, msgRegs := #[⟨0⟩, ⟨999⟩, ⟨3⟩, ⟨5⟩] }
+
+private def witnessGateMint : SyscallGate :=
+  { callerId := witnessTid, cspaceRoot := SeLe4n.ObjId.ofNat 0,
+    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 0,
+    requiredRight := syscallRequiredRight .cspaceMint }
+
+private theorem witnessCapOnlyMint :
+    capabilityDispatchQuiescence witnessDecodedMint witnessCap witnessSt3 := by
+  refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
+    ?_, ?_, ?_, ?_⟩
+  · intro args hDec
+    simp only [decodeLifecycleRetypeArgs, witnessDecodedMint, requireMsgReg,
+      bind, Except.bind, pure, Except.pure, KernelObjectType.ofNat?] at hDec
+    cases hDec
+  · intro args hDec vThreadId hVal
+    simp only [decodeSchedContextBindArgs, witnessDecodedMint, requireMsgReg,
+      bind, Except.bind, pure, Except.pure] at hDec
+    cases hDec
+    simp only [validateThreadIdArg, SeLe4n.ThreadId.toValid?] at hVal
+    rw [dif_pos (by decide)] at hVal
+    cases hVal
+  · intro scObj hTgt
+    simp [witnessCap] at hTgt
+  · intro objId hTgt
+    simp [witnessCap] at hTgt
+
+/-- **The mint badge validity is exercised**: the registers decode and the
+decoded badge's validity is computed. -/
+theorem syscallDispatchQuiescence_inhabited_mint :
+    syscallDispatchQuiescence witnessDecodedMint witnessTid witnessGateMint
+      witnessCap witnessSt3 := by
+  refine ⟨witnessReachable3, witnessCapOnlyMint,
+    ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro args hSy hDec
+    simp only [Architecture.SyscallArgDecode.decodeCSpaceMintArgs,
+      witnessDecodedMint, requireMsgReg, bind, Except.bind, pure,
+      Except.pure] at hDec
+    split at hDec
+    · cases hDec
+    · injection hDec with hArgs
+      subst hArgs
+      exact SeLe4n.Badge.ofNatMasked_valid _
+  · intro epId hSy
+    simp [witnessDecodedMint] at hSy
+  · intro epId hSy
+    simp [witnessDecodedMint] at hSy
+  · intro epId hSy
+    simp [witnessDecodedMint] at hSy
+  · intro epId replyIdOpt hSy
+    simp [witnessDecodedMint] at hSy
+  · intro rid r callerTid hSy
+    simp [witnessDecodedMint] at hSy
+  · intro notifId hSy
+    simp [witnessDecodedMint] at hSy
+  · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecodedMint] at hSy
+
+/-- A `.declassifySignal` decode: the checked tier's confinement fires. -/
+private def witnessDecodedDeclassifySignal : SyscallDecodeResult :=
+  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default,
+    syscallId := .declassifySignal }
+
+private def witnessGateDeclassifySignal : SyscallGate :=
+  { callerId := witnessTid, cspaceRoot := SeLe4n.ObjId.ofNat 0,
+    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 0,
+    requiredRight := syscallRequiredRight .declassifySignal }
+
+private theorem witnessCapOnlyDeclassifySignal :
+    capabilityDispatchQuiescence witnessDecodedDeclassifySignal
+      witnessCapTcbObject witnessSt3 := by
+  refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
+    ?_, ?_, ?_, ?_⟩
+  · intro args hDec
+    simp only [decodeLifecycleRetypeArgs, witnessDecodedDeclassifySignal,
+      requireMsgReg, bind, Except.bind] at hDec
+    cases hDec
+  · intro args hDec
+    simp only [decodeSchedContextBindArgs, witnessDecodedDeclassifySignal,
+      requireMsgReg, bind, Except.bind] at hDec
+    cases hDec
+  · intro scObj hTgt vScId hVal scX t tcbX hScLk
+    injection hTgt with hObj
+    subst hObj
+    simp only [validateObjIdArg, SeLe4n.ObjId.toValid?] at hVal
+    rw [dif_neg (by decide)] at hVal
+    cases hVal
+    rw [show (SchedContextId.ofObjId witnessTid.toObjId).toObjId
+        = witnessTid.toObjId from rfl, witnessSt3_lookup] at hScLk
+    simp [show (witnessScId.toObjId == witnessTid.toObjId) = false from by decide]
+      at hScLk
+  · intro objId hTgt vtid hVal
+    injection hTgt with hObj
+    subst hObj
+    simp only [validateThreadIdArg, SeLe4n.ThreadId.toValid?] at hVal
+    rw [dif_neg (by decide)] at hVal
+    cases hVal
+    exact witnessThreadQuiescent
+
+private theorem syscallDispatchQuiescence_inhabited_declassifySignal :
+    syscallDispatchQuiescence witnessDecodedDeclassifySignal witnessTid
+      witnessGateDeclassifySignal witnessCapTcbObject witnessSt3 := by
+  refine ⟨witnessReachable3, witnessCapOnlyDeclassifySignal,
+    ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro args hSy hDec
+    simp [witnessDecodedDeclassifySignal] at hSy
+  · intro epId hSy
+    simp [witnessDecodedDeclassifySignal] at hSy
+  · intro epId hSy
+    simp [witnessDecodedDeclassifySignal] at hSy
+  · intro epId hSy
+    simp [witnessDecodedDeclassifySignal] at hSy
+  · intro epId replyIdOpt hSy
+    simp [witnessDecodedDeclassifySignal] at hSy
+  · intro rid r callerTid hSy
+    simp [witnessDecodedDeclassifySignal] at hSy
+  · intro notifId hSy
+    simp [witnessDecodedDeclassifySignal] at hSy
+  · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecodedDeclassifySignal] at hSy
+
+/-- **The checked confinement is exercised**: the `.declassifySignal` decode
+and the object target both fire, and `boundDeliveryTarget? = none` is
+computed on the present object. -/
+theorem checkedSyscallDispatchQuiescence_inhabited_declassifySignal :
+    checkedSyscallDispatchQuiescence witnessDecodedDeclassifySignal witnessTid
+      witnessGateDeclassifySignal witnessCapTcbObject witnessSt3 :=
+  ⟨syscallDispatchQuiescence_inhabited_declassifySignal, by
+    intro notifId hSy hTgt
+    injection hTgt with hObj
+    subst hObj
+    unfold boundDeliveryTarget?
+    rw [witnessSt3_getNotification_tcbSlot]⟩
+
+/-- A fresh reply object at slot `⟨3⟩`: the reply arm's object-lookup premise
+fires against a real stored reply.  Its `caller` is `none` -- the retype
+lever's freshness constraint (`retypeReplacementFresh`) forbids minting a
+caller-carrying reply, because in the live kernel only the call rendezvous
+creates one; the reply field is therefore exercised exactly to the lever
+boundary, and the caller-carrying interior is registered debt (see the
+section docstring). -/
+private def witnessReplyId : SeLe4n.ReplyId :=
+  SeLe4n.ReplyId.ofObjId (SeLe4n.ObjId.ofNat 3)
+
+private def witnessReplyFresh : Reply := { replyId := witnessReplyId }
+
+private def witnessSt4 : SystemState :=
+  { witnessSt3 with
+    objects := witnessSt3.objects.insert (SeLe4n.ObjId.ofNat 3)
+      (.reply witnessReplyFresh) }
+
+private theorem witnessObjInv4 : witnessSt4.objects.invExt :=
+  RHTable_insert_preserves_invExt _ _ _ witnessObjInv3
+
+private theorem witnessSt4_lookup (oid : SeLe4n.ObjId) :
+    witnessSt4.objects[oid]?
+      = if (SeLe4n.ObjId.ofNat 3 : SeLe4n.ObjId) == oid
+        then some (.reply witnessReplyFresh)
+        else witnessSt3.objects[oid]? := by
+  show (witnessSt3.objects.insert (SeLe4n.ObjId.ofNat 3)
+      (.reply witnessReplyFresh))[oid]? = _
+  rw [RHTable_getElem?_eq_get?,
+    RHTable_getElem?_insert _ _ _ witnessObjInv3]
+  split
+  · rfl
+  · rw [← RHTable_getElem?_eq_get?]
+
+private theorem witnessInv4 : ipcInvariantFull witnessSt4 := by
+  refine retypeWrite_preserves_ipcInvariantFull (st := witnessSt3)
+    (target := SeLe4n.ObjId.ofNat 3) (newObj := .reply witnessReplyFresh)
+    ?_ ?_ rfl rfl (witnessSt3_detached_of _ (by decide) (by decide)) witnessInv3
+  · rw [witnessSt4_lookup]; simp
+  · intro oid hne
+    rw [witnessSt4_lookup]
+    simp [Ne.symm hne]
+
+set_option maxHeartbeats 1000000 in
+private theorem witnessReachable4 : ipcReachable witnessSt4 := by
+  refine ⟨witnessInv4, witnessObjInv4, ?_, ?_, ?_⟩
+  · intro tid tcb hLk
+    rw [witnessSt4_lookup] at hLk
+    split at hLk
+    · cases hLk
+    · exact witnessReachable3.allTimeoutBudgetsNone _ _ hLk
+  · intro tid tcb msg hLk hMsg
+    rw [witnessSt4_lookup] at hLk
+    split at hLk
+    · cases hLk
+    · exact witnessReachable3.pendingMessageCapBadgesWellFormed _ _ _ hLk hMsg
+  · intro oid ntfn tid hLk hMem
+    rw [witnessSt4_lookup] at hLk
+    split at hLk
+    · cases hLk
+    · exact absurd hLk (fun h => witnessSt3_no_notification _ _ h)
+
+private theorem witnessSt4_getTcb :
+    witnessSt4.getTcb? witnessTid = some witnessTcbBound := by
+  unfold SystemState.getTcb?
+  rw [witnessSt4_lookup, witnessSt3_lookup]
+  simp [show ((SeLe4n.ObjId.ofNat 3 : SeLe4n.ObjId) == witnessTid.toObjId)
+      = false from by decide,
+    show (witnessScId.toObjId == witnessTid.toObjId) = false from by decide]
+
+private theorem witnessSt4_getReply :
+    witnessSt4.getReply? witnessReplyId = some witnessReplyFresh := by
+  unfold SystemState.getReply?
+  rw [show witnessReplyId.toObjId = SeLe4n.ObjId.ofNat 3 from rfl,
+    witnessSt4_lookup]
+  simp
+
+/-- A `.reply` decode and the reply capability naming the stored object. -/
+private def witnessDecodedReply : SyscallDecodeResult :=
+  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default, syscallId := .reply }
+
+private def witnessGateReply : SyscallGate :=
+  { callerId := witnessTid, cspaceRoot := SeLe4n.ObjId.ofNat 0,
+    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 0,
+    requiredRight := syscallRequiredRight .reply }
+
+private def witnessCapReply : Capability :=
+  { target := .replyCap witnessReplyId, rights := default }
+
+private theorem witnessCapOnlyReply :
+    capabilityDispatchQuiescence witnessDecodedReply witnessCapReply
+      witnessSt4 := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro t tcb scId hLk hScId
+    rw [witnessSt4_lookup] at hLk
+    split at hLk
+    · cases hLk
+    · have := witnessCapOnly.bindingBidirectional t tcb scId hLk hScId
+      obtain ⟨scObj, hScLk, hBack⟩ := this
+      refine ⟨scObj, ?_, hBack⟩
+      rw [witnessSt4_lookup, if_neg ?_]
+      · exact hScLk
+      · intro hEq
+        rw [witnessSt3_lookup] at hScLk
+        rw [show scId.toObjId = SeLe4n.ObjId.ofNat 3 from (eq_of_beq hEq).symm]
+          at hScLk
+        simp [show (witnessScId.toObjId == SeLe4n.ObjId.ofNat 3) = false from
+          by decide,
+          show (witnessTid.toObjId == SeLe4n.ObjId.ofNat 3) = false from
+          by decide] at hScLk
+  · intro c t tcb hLk hUnbound hCur
+    rw [witnessSt4_lookup] at hLk
+    split at hLk
+    · cases hLk
+    · exact witnessCapOnly.queuedThreadsIdle c t tcb hLk hUnbound hCur
+  · intro args hDec
+    simp only [decodeLifecycleRetypeArgs, witnessDecodedReply, requireMsgReg,
+      bind, Except.bind] at hDec
+    cases hDec
+  · intro args hDec
+    simp only [decodeSchedContextBindArgs, witnessDecodedReply, requireMsgReg,
+      bind, Except.bind] at hDec
+    cases hDec
+  · intro scObj hTgt
+    simp [witnessCapReply] at hTgt
+  · intro objId hTgt
+    simp [witnessCapReply] at hTgt
+
+/-- **The reply arm is exercised to the lever boundary**: the `.reply`
+decode, the reply-capability target and the object lookup all fire against
+the stored reply; the remaining `caller = some _` premise is where the
+retype lever's freshness constraint stops (only the call rendezvous creates
+a caller-carrying reply). -/
+theorem syscallDispatchQuiescence_inhabited_reply :
+    syscallDispatchQuiescence witnessDecodedReply witnessTid witnessGateReply
+      witnessCapReply witnessSt4 := by
+  refine ⟨witnessReachable4, witnessCapOnlyReply,
+    ⟨witnessTcbBound, witnessSt4_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro args hSy hDec
+    simp [witnessDecodedReply] at hSy
+  · intro epId hSy
+    simp [witnessDecodedReply] at hSy
+  · intro epId hSy
+    simp [witnessDecodedReply] at hSy
+  · intro epId hSy
+    simp [witnessDecodedReply] at hSy
+  · intro epId replyIdOpt hSy
+    simp [witnessDecodedReply] at hSy
+  · intro rid r callerTid hSy hTgt hReply hCaller
+    injection hTgt with hRid
+    subst hRid
+    cases Option.some.inj (witnessSt4_getReply.symm.trans hReply)
+    simp [witnessReplyFresh] at hCaller
+  · intro notifId hSy
+    simp [witnessDecodedReply] at hSy
+  · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecodedReply] at hSy
 
 end SeLe4n.Kernel

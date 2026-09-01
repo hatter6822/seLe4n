@@ -354,6 +354,25 @@ well as numeric ones (`ctx.input` and `ctx.output` no longer truncate
 to the same `ctx`, so a conjunct on one cannot hide behind a pre-state
 on the other).  Three token-preserving fixtures; self-test 49 cases;
 census unchanged a sixth time.
+The tenth pass's fourth finding was about the witnesses themselves: the
+base inhabitation pair fixes a `.send` decode against a `.replyCap`
+target, so every *indexed* pack field discharged vacuously — an
+unsatisfiable arm obligation would not have failed it, contrary to the
+witnesses' stated purpose.  §7b of `DispatchPayoff` now carries a
+per-arm witness family that fires each indexed field's premises: the
+signal confinement and thread quiescence computed on present objects;
+retype detachedness proven of the decoded target (with the bind
+decoder's donation field firing through the same registers);
+send/receive/call stages discharged by *evaluating* the transitions on
+the witness state; the mint badge computed through its decoder; the
+reply arm exercised against a stored reply — `witnessSt4`, the retype
+lever's fourth application — up to the lever boundary
+(`retypeReplacementFresh` pins a fresh reply's caller to `none`, and
+only the call rendezvous creates a caller-carrying one); and the
+checked tier's declassifying confinement computed like the signal
+arm's.  The two rendezvous-reachable interiors (`replyStage`'s caller
+premise, `replyRecvStage`'s resolver premise) are registered WS-DT
+debt with an SM10 closure target rather than absorbed.
 
 ### Housekeeping
 

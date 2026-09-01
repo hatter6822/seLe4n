@@ -551,6 +551,20 @@ private def runRendezvousChecks : IO Unit := do
 #check @dispatchSyscallChecked_preserves_ipcInvariantFull
 #check @syscallDispatchQuiescence_inhabited
 #check @checkedSyscallDispatchQuiescence_inhabited
+-- The per-arm witness family (PR #886 review): each indexed pack field is
+-- exercised with its premises firing — the signal confinement and thread
+-- quiescence on present objects, retype detachedness of the decoded target,
+-- the send/receive/call stages by evaluating the transitions, the mint badge
+-- by computing the decoder, the reply arm to the lever boundary against a
+-- stored reply, and the checked tier's declassifying confinement:
+#check @syscallDispatchQuiescence_inhabited_signal
+#check @syscallDispatchQuiescence_inhabited_retype
+#check @syscallDispatchQuiescence_inhabited_send
+#check @syscallDispatchQuiescence_inhabited_receive
+#check @syscallDispatchQuiescence_inhabited_call
+#check @syscallDispatchQuiescence_inhabited_mint
+#check @syscallDispatchQuiescence_inhabited_reply
+#check @checkedSyscallDispatchQuiescence_inhabited_declassifySignal
 
 /-- SM6.D.1 exact decomposition: the ∀-core bundle is equivalent to the global
 bundle plus the per-core passive-idle slices — nothing is weakened. -/
