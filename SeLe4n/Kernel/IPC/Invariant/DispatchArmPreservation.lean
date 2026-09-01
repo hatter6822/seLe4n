@@ -2297,4 +2297,281 @@ theorem schedContextUnbindOnCore_preserves_ipcInvariantFull
         hBoundAllowed hUnbind)
       hStep
 
+
+-- ============================================================================
+-- §13  VSpace page-table arms (`.vspaceMap`, `.vspaceUnmap`)
+-- ============================================================================
+
+/-- A single object rewrite at a slot holding a `.vspaceRoot` on both sides —
+the page-table write shape shared by `.vspaceMap` and `.vspaceUnmap` — moves
+nothing any conjunct reads: the store view agrees on every IPC-read kind,
+CNodes are untouched, and the scheduler is framed. -/
+private theorem vspaceRootWrite_preserves_ipcInvariantFull
+    {st st' : SystemState} {key : SeLe4n.ObjId} {root root' : VSpaceRoot}
+    (hInv : ipcInvariantFull st)
+    (hPre : st.objects[key]? = some (.vspaceRoot root))
+    (hAt : st'.objects[key]? = some (.vspaceRoot root'))
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ key → st'.objects[oid]? = st.objects[oid]?)
+    (hSched : st'.scheduler = st.scheduler) :
+    ipcInvariantFull st' := by
+  have hView := ipcReadViewAgreement.of_single_inert_write hNe
+    (by rw [hPre]; trivial) (by rw [hAt]; trivial)
+  have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[tid.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding := by
+    intro tid tcb' h
+    by_cases hK : tid.toObjId = key
+    · rw [hK, hAt] at h
+      exact absurd (Option.some.inj h) (fun hx => KernelObject.noConfusion hx)
+    · rw [hNe _ hK] at h
+      exact ⟨tcb', h, rfl, rfl⟩
+  have hCap : capabilityBadgesWellFormed st' := by
+    intro oid cn slot cap badge hCn hLk hB
+    by_cases hK : oid = key
+    · rw [hK, hAt] at hCn
+      exact absurd (Option.some.inj hCn) (fun hx => KernelObject.noConfusion hx)
+    · rw [hNe _ hK] at hCn
+      exact hInv.badgeWellFormed.2 oid cn slot cap badge hCn hLk hB
+  exact ipcInvariantFull_of_readViewAgreement hView
+    (passiveServerIdle_of_frame (passiveServerIdleFrame_of_backward hBack hSched)
+      hInv.passiveServerIdle)
+    hCap hInv
+
+/-- `.vspaceMap` base transition: the one object write replaces a
+`.vspaceRoot` with the same root plus one mapping — inert to every conjunct. -/
+theorem vspaceMapPage_preserves_ipcInvariantFull
+    (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : Architecture.vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold Architecture.vspaceMapPage at hStep
+  cases hRes : Architecture.resolveAsidRoot st asid with
+  | none => simp [hRes] at hStep
+  | some pair =>
+      obtain ⟨rootId, root⟩ := pair
+      simp only [hRes] at hStep
+      obtain ⟨-, hPre, -⟩ :=
+        Architecture.resolveAsidRoot_some_implies_obj st asid rootId root hRes
+      split at hStep
+      · contradiction
+      · split at hStep
+        · contradiction
+        · cases hMp : root.mapPage vaddr paddr perms with
+          | none => simp [hMp] at hStep
+          | some root' =>
+              simp only [hMp] at hStep
+              exact vspaceRootWrite_preserves_ipcInvariantFull hInv hPre
+                (storeObject_objects_eq st st' rootId (.vspaceRoot root') hObjInv hStep)
+                (fun oid hNe =>
+                  storeObject_objects_ne st st' rootId oid (.vspaceRoot root') hNe hObjInv hStep)
+                (storeObject_scheduler_eq st st' rootId (.vspaceRoot root') hStep)
+
+/-- `.vspaceUnmap` base transition: same single-`.vspaceRoot`-write shape. -/
+theorem vspaceUnmapPage_preserves_ipcInvariantFull
+    (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : Architecture.vspaceUnmapPage asid vaddr st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold Architecture.vspaceUnmapPage at hStep
+  cases hRes : Architecture.resolveAsidRoot st asid with
+  | none => simp [hRes] at hStep
+  | some pair =>
+      obtain ⟨rootId, root⟩ := pair
+      simp only [hRes] at hStep
+      obtain ⟨-, hPre, -⟩ :=
+        Architecture.resolveAsidRoot_some_implies_obj st asid rootId root hRes
+      cases hMp : root.unmapPage vaddr with
+      | none => simp [hMp] at hStep
+      | some root' =>
+          simp only [hMp] at hStep
+          exact vspaceRootWrite_preserves_ipcInvariantFull hInv hPre
+            (storeObject_objects_eq st st' rootId (.vspaceRoot root') hObjInv hStep)
+            (fun oid hNe =>
+              storeObject_objects_ne st st' rootId oid (.vspaceRoot root') hNe hObjInv hStep)
+            (storeObject_scheduler_eq st st' rootId (.vspaceRoot root') hStep)
+
+/-- The local-flush wrapper adds a `tlb`-only rewrite over the base map. -/
+theorem vspaceMapPageWithFlush_preserves_ipcInvariantFull
+    (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : Architecture.vspaceMapPageWithFlush asid vaddr paddr perms st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold Architecture.vspaceMapPageWithFlush at hStep
+  cases hBase : Architecture.vspaceMapPage asid vaddr paddr perms st with
+  | error e => simp [hBase] at hStep
+  | ok pair =>
+      obtain ⟨u, stB⟩ := pair; cases u
+      simp only [hBase] at hStep
+      have hB := vspaceMapPage_preserves_ipcInvariantFull st stB asid vaddr paddr perms
+        hObjInv hInv hBase
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      subst hStep
+      refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hB
+      · rfl
+      · rfl
+
+/-- The state-aware checked wrapper adds pure guards over the flush map. -/
+theorem vspaceMapPageCheckedWithFlushFromState_preserves_ipcInvariantFull
+    (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : Architecture.vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st
+      = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold Architecture.vspaceMapPageCheckedWithFlushFromState at hStep
+  split at hStep
+  · contradiction
+  · split at hStep
+    · contradiction
+    · split at hStep
+      · contradiction
+      · exact vspaceMapPageWithFlush_preserves_ipcInvariantFull st st' asid vaddr paddr perms
+          hObjInv hInv hStep
+
+/-- The shootdown wrapper adds a `tlbShootdown`-only posting on the remap
+direction and is inert on the fresh direction. -/
+theorem vspaceMapPageCheckedWithShootdownFromState_preserves_ipcInvariantFull
+    (st st' : SystemState) (ec : CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : Architecture.vspaceMapPageCheckedWithShootdownFromState ec asid vaddr paddr perms st
+      = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold Architecture.vspaceMapPageCheckedWithShootdownFromState at hStep
+  dsimp only [] at hStep
+  cases hBase : Architecture.vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st with
+  | error e => simp [hBase] at hStep
+  | ok pair =>
+      obtain ⟨u, stB⟩ := pair; cases u
+      simp only [hBase] at hStep
+      have hB := vspaceMapPageCheckedWithFlushFromState_preserves_ipcInvariantFull
+        st stB asid vaddr paddr perms hObjInv hInv hBase
+      split at hStep
+      · rw [Architecture.withShootdownRound_total] at hStep
+        simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+        subst hStep
+        exact ipcInvariantFull_of_objects_scheduler_eq
+          (Architecture.tlbShootdownBroadcastCoalescing_frame stB ec _ _).1
+          (Architecture.tlbShootdownBroadcastCoalescing_frame stB ec _ _).2.1 hB
+      · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+        subst hStep
+        exact hB
+
+/-- The per-core TLB drain and fill are `perCoreTlb`-only. -/
+private theorem tlbFillOnCore_objects_scheduler (st : SystemState) (c : CoreId)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) :
+    (Architecture.tlbFillOnCore st c asid vaddr).objects = st.objects ∧
+    (Architecture.tlbFillOnCore st c asid vaddr).scheduler = st.scheduler := by
+  unfold Architecture.tlbFillOnCore
+  split <;> exact ⟨rfl, rfl⟩
+
+/-- `.vspaceMap` (dispatch arm): the full initiator-atomic per-core wrapper —
+guards, page-table write, local flush, remap shootdown, initiator drain and
+fill — preserves the whole bundle. -/
+theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (ec : CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore ec asid vaddr paddr
+      perms st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore at hStep
+  cases hBase : Architecture.vspaceMapPageCheckedWithShootdownFromState ec asid vaddr paddr
+      perms st with
+  | error e => simp [hBase] at hStep
+  | ok pair =>
+      obtain ⟨u, stM⟩ := pair; cases u
+      simp only [hBase] at hStep
+      have hB := vspaceMapPageCheckedWithShootdownFromState_preserves_ipcInvariantFull
+        st stM ec asid vaddr paddr perms hObjInv hInv hBase
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      subst hStep
+      refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hB
+      · exact (tlbFillOnCore_objects_scheduler _ _ _ _).1.trans rfl
+      · exact (tlbFillOnCore_objects_scheduler _ _ _ _).2.trans rfl
+
+/-- The local-flush wrapper adds a `tlb`-only rewrite over the base unmap. -/
+theorem vspaceUnmapPageWithFlush_preserves_ipcInvariantFull
+    (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : Architecture.vspaceUnmapPageWithFlush asid vaddr st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold Architecture.vspaceUnmapPageWithFlush at hStep
+  cases hBase : Architecture.vspaceUnmapPage asid vaddr st with
+  | error e => simp [hBase] at hStep
+  | ok pair =>
+      obtain ⟨u, stB⟩ := pair; cases u
+      simp only [hBase] at hStep
+      have hB := vspaceUnmapPage_preserves_ipcInvariantFull st stB asid vaddr hObjInv hInv hBase
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      subst hStep
+      refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hB
+      · rfl
+      · rfl
+
+/-- The shootdown wrapper adds a `tlbShootdown`-only round posting. -/
+theorem vspaceUnmapPageWithShootdown_preserves_ipcInvariantFull
+    (st st' : SystemState) (ec : CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : Architecture.vspaceUnmapPageWithShootdown ec asid vaddr st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold Architecture.vspaceUnmapPageWithShootdown at hStep
+  cases hBase : Architecture.vspaceUnmapPageWithFlush asid vaddr st with
+  | error e => simp [hBase] at hStep
+  | ok pair =>
+      obtain ⟨u, stB⟩ := pair; cases u
+      simp only [hBase] at hStep
+      have hB := vspaceUnmapPageWithFlush_preserves_ipcInvariantFull st stB asid vaddr
+        hObjInv hInv hBase
+      rw [Architecture.withShootdownRound_total] at hStep
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      subst hStep
+      exact ipcInvariantFull_of_objects_scheduler_eq
+        (Architecture.tlbShootdownBroadcastCoalescing_frame stB ec _ _).1
+        (Architecture.tlbShootdownBroadcastCoalescing_frame stB ec _ _).2.1 hB
+
+/-- The initiator-atomic wrapper adds the `perCoreTlb`-only drain. -/
+theorem vspaceUnmapPageWithShootdownPerCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (ec : CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : Architecture.vspaceUnmapPageWithShootdownPerCore ec asid vaddr st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold Architecture.vspaceUnmapPageWithShootdownPerCore at hStep
+  cases hBase : Architecture.vspaceUnmapPageWithShootdown ec asid vaddr st with
+  | error e => simp [hBase] at hStep
+  | ok pair =>
+      obtain ⟨u, stB⟩ := pair; cases u
+      simp only [hBase] at hStep
+      have hB := vspaceUnmapPageWithShootdown_preserves_ipcInvariantFull st stB ec asid vaddr
+        hObjInv hInv hBase
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      subst hStep
+      refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hB
+      · rfl
+      · rfl
+
+/-- `.vspaceUnmap` (dispatch arm): the full stack — page-table erase, local
+flush, shootdown round, initiator drain, instruction-cache broadcast —
+preserves the whole bundle. -/
+theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_ipcInvariantFull
+    (st st' : SystemState) (ec : CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast ec asid vaddr st
+      = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast at hStep
+  cases hK : Architecture.vspaceUnmapPageWithShootdownPerCore ec asid vaddr st with
+  | error e =>
+      rw [(Architecture.withIcacheBroadcast_error_iff _ _ st e).mpr hK] at hStep
+      contradiction
+  | ok pair =>
+      obtain ⟨u, stB⟩ := pair; cases u
+      have hB := vspaceUnmapPageWithShootdownPerCore_preserves_ipcInvariantFull st stB ec
+        asid vaddr hObjInv hInv hK
+      obtain ⟨hObjs, -, hSched, -⟩ := Architecture.withIcacheBroadcast_frame hK hStep
+      exact ipcInvariantFull_of_objects_scheduler_eq hObjs hSched hB
+
 end SeLe4n.Kernel
