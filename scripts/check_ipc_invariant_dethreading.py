@@ -193,6 +193,49 @@ def _qualified(name: str) -> str:
     )
 
 
+def _steps_function(binders: str, function: str) -> bool:
+    """True when some binder group's type is an equation headed by `function`.
+
+    The group's type begins after its first depth-0 colon; the head is its
+    first identifier token.  Requiring the head (rather than any mention)
+    and a following top-level `=` is what rejects a dummy hypothesis that
+    name-drops the dispatcher beside a step equation for something else.
+    """
+    index = 0
+    while index < len(binders):
+        if binders[index] in _OPEN:
+            end = balanced_span(binders, index)
+            if end is None:
+                return False
+            group = binders[index + 1 : end - 1]
+            colon = None
+            depth = 0
+            for offset, char in enumerate(group):
+                if char in _OPEN:
+                    depth += 1
+                elif char in _CLOSE:
+                    depth -= 1
+                elif char == ":" and depth == 0:
+                    colon = offset
+                    break
+            if colon is not None:
+                group_type = group[colon + 1 :]
+                head = re.match(r"\s*([A-Za-z_][A-Za-z0-9_'!?]*)", group_type)
+                if head and head.group(1) == function:
+                    depth = 0
+                    for char in group_type:
+                        if char in _OPEN:
+                            depth += 1
+                        elif char in _CLOSE:
+                            depth -= 1
+                        elif char == "=" and depth == 0:
+                            return True
+            index = end
+        else:
+            index += 1
+    return False
+
+
 def lean_sources(root: str) -> list[str]:
     """Every tracked `.lean` file, or every `.lean` file when git is absent.
 
@@ -345,8 +388,11 @@ def state_predicate_bodies(root: str, sources: list[str]) -> dict[str, str]:
     expanding the day one moved.
     """
     bodies: dict[str, str] = {}
+    # `abbrev` too (PR #886 review): a transparently refactored conjunct
+    # (`def` -> `abbrev`) kept its meaning but vanished from this map, so its
+    # clause predicates silently left the derived set.
     pattern = re.compile(
-        r"^def\s+([A-Za-z_][A-Za-z0-9_'!?]*)\s*\(\s*(st|s)\s*:\s*SystemState\s*\)"
+        r"^(?:def|abbrev)\s+([A-Za-z_][A-Za-z0-9_'!?]*)\s*\(\s*(st|s)\s*:\s*SystemState\s*\)"
         r"\s*:\s*Prop\s*:=",
         re.MULTILINE,
     )
@@ -702,14 +748,18 @@ def run_checks(root: str) -> list[str]:
                 f"does not conclude an `ipcInvariantFull`-family predicate "
                 f"applied to a state"
             )
-        if not re.search(
-            r"(?<![A-Za-z0-9_'])" + re.escape(function) + r"(?![A-Za-z0-9_'])",
-            bundle.binders,
-        ):
+        # The dispatcher must be the *head of a step equation*, not merely a
+        # token somewhere in the binders: a dummy hypothesis mentioning the
+        # name beside a step for another function satisfied the mention-only
+        # form (PR #886 review).  A binder group's type starts after its
+        # first depth-0 colon; the group steps `function` when that type's
+        # head identifier is `function` and a top-level `=` follows.
+        if not _steps_function(bundle.binders, function):
             problems.append(
                 f"payoff_statement: {bundle.path}:{bundle.line}: `{payoff}` "
-                f"never mentions `{function}` in its hypotheses; a payoff that "
-                f"does not step the dispatcher it is named for consumes nothing"
+                f"has no hypothesis whose step equation applies `{function}`; "
+                f"a payoff that does not step the dispatcher it is named for "
+                f"consumes nothing"
             )
 
     return problems
@@ -1085,6 +1135,57 @@ def self_test() -> int:
         _Case(
             "threaded bundle behind two attribute blocks stays in the census",
             attributed,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Dummy dispatcher mention: the name appears in a side hypothesis while
+    # the step equation applies another function -- the mention-only check
+    # accepted this.
+    namedrop = _fixture()
+    namedrop["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep""",
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hNote : mentions dispatchSyscall)
+    (hStep : someOtherOperation st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep""",
+    )
+    cases.append(
+        _Case(
+            "payoff name-drops its dispatcher beside another function's step",
+            namedrop,
+            True,
+            check="payoff_statement",
+            mutation="preserving",
+        )
+    )
+
+    # Transparent abbreviation: a conjunct refactored `def` -> `abbrev` must
+    # keep its clause predicates in the derived set.
+    abbreviated = _fixture()
+    abbreviated[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def replyCallerLinkage (st : SystemState) : Prop :=",
+        "abbrev replyCallerLinkage (st : SystemState) : Prop :=",
+    )
+    abbreviated["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (h : replyCallerLinkageReciprocal st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "clause of an `abbrev`-refactored conjunct threaded on the post-state",
+            abbreviated,
             True,
             check="no_post_state_binding",
             mutation="preserving",

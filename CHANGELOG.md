@@ -264,7 +264,13 @@ the bundle scan and not to its sibling site, the conjunct *derivation*
 (where a qualified spelling silently dropped the conjunct from coverage),
 and the declaration regex accepted one attribute block where Lean permits
 several (`@[simp] @[grind] theorem …` vanished from the census).  Both
-closed with token-preserving fixtures.  Self-test: 30 cases.
+closed with token-preserving fixtures.  A fourth pass tightened two more:
+the payoff's dispatcher requirement is now a *step-equation head* rather
+than a mention (a dummy hypothesis name-dropping the dispatcher beside
+another function's step no longer satisfies `payoff_statement`), and the
+conjunct body collector accepts `abbrev` alongside `def`, so a transparent
+refactor cannot silently drop a conjunct's clauses from the derived set.
+Self-test: 32 cases.
 
 ### Housekeeping
 
