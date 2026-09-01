@@ -501,6 +501,12 @@ derivation grammars alike, and backtick syntax quotations are blanked
 from the code view so an uninvoked macro template can neither satisfy
 nor trip a check.  Six token-preserving fixtures; self-test 82 cases;
 census unchanged a thirteenth time.
+An eighteenth pass completed the census's declaration forms: `opaque`
+(the reported gap — `opaque X_preserves_… : … := …` is accepted by Lean
+and was invisible) and, by the sweep, `axiom` — which cannot survive the
+no-axiom gate, but a marker-named axiom is a family *statement* and this
+census must not be the scanner that missed it.  One token-preserving
+fixture; self-test 83 cases; census unchanged a fourteenth time.
 
 ### Housekeeping
 

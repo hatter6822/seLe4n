@@ -181,10 +181,19 @@ _DECL_RE = re.compile(
     # `def X_preserves_… : ipcInvariantFull st' := …` is a valid Lean
     # spelling of the same declaration, and a census that stopped at
     # `theorem|lemma` let a def-spelled threaded bundle bypass every check.
+    # `opaque` and `axiom` complete the proof-capable forms (PR #886
+    # review, the next round, plus the sweep): `opaque X_preserves_… (…) :
+    # ipcInvariantFull st' := …` is accepted by Lean and was invisible;
+    # `axiom` cannot survive the no-axiom gate, but a marker-named axiom is
+    # a family *statement* and this census must not be the scanner that
+    # missed it.  Either may omit `:=`, in which case `signature_end` runs
+    # to the next declaration's `:=` -- over-capture, which can only add
+    # scanned text, never remove the following declaration's own entry.
     r"^\s*(?:@\[[^\]]*\]\s*)*"
     r"(?P<mods>(?:private\s+|protected\s+|partial\s+|noncomputable\s+|unsafe\s+"
     r"|local\s+|scoped\s+)*)"
-    r"(?:theorem|lemma|def|abbrev)\s+(?P<name>«[^»\n]*»|[^\W\d][\w'.!?]*)",
+    r"(?:theorem|lemma|def|abbrev|opaque|axiom)\s+"
+    r"(?P<name>«[^»\n]*»|[^\W\d][\w'.!?]*)",
     re.MULTILINE,
 )
 
@@ -3743,6 +3752,29 @@ end «shadow»""",
         _Case(
             "a def-spelled threaded bundle is measured like a theorem",
             def_bundle,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # An opaque-spelled proof: `opaque X_preserves_… : … := …` is the last
+    # proof-capable declaration form Lean accepts, and the census must not
+    # be the scanner that missed it.
+    opaque_bundle = _fixture()
+    opaque_bundle["SeLe4n/Kernel/IPC/Invariant/Structural/OpaqueBundles.lean"] = (
+        "opaque endpointOpaqueDual_preserves_ipcInvariantFull\n"
+        "    (st st' : SystemState)\n"
+        "    (hInv : ipcInvariantFull st)\n"
+        "    (hStep : endpointOpaqueDual st = .ok ((), st'))\n"
+        "    (hT : blockedThreadsPendingMessageConsistent st') :\n"
+        "    ipcInvariantFull st' :=\n"
+        "  sample st st' hInv hStep\n"
+    )
+    cases.append(
+        _Case(
+            "an opaque-spelled threaded bundle is measured like a theorem",
+            opaque_bundle,
             True,
             check="no_post_state_binding",
             mutation="preserving",
