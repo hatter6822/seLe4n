@@ -121,6 +121,9 @@ accidental interference when suites are run independently.
                                         (distinct caller/server CNodes), live-API
                                         CSpace 860-864, contention 870)
   SmpNotificationSuite     900-926     WS-SM SM6.F.2 aggregate cross-core notification fixtures
+  FaultHandlingSuite       1100-1140   WS-RR RR4.26 fault-IPC fixture (root CNode
+                                       1100, VSpace root 1101, handler endpoint
+                                       1110, threads 1121-1124, reply 1131)
   SmpInformationFlowSuite  1000-1019   WS-SM SM8.A per-core observable-state fixture
                                        (cspace/vspace roots 1000-1001, low/high
                                         endpoints 1002-1003, low/high services

@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.34.43"
+version = "0.34.44"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -621,3 +621,17 @@ root = "tests.SyscallReturnAbiSuite"
 [[lean_exe]]
 name = "smp_information_flow_suite"
 root = "tests.SmpInformationFlowSuite"
+
+# WS-RR RR4.26 — Fault handling suite.  Surface anchors + elaboration-time
+# theorem-application witnesses + runtime scenarios for the RR4 fault path: the
+# wire format's round trip over every fault kind, the ESR classification the
+# Rust router mirrors, handler resolution and its send-and-grant rights gate,
+# cross-core delivery with its `.reschedule` SGI, the fail-closed no-handler and
+# rights-refused suspends, reply-based resume and restart with register
+# writeback, and the RR4.19 negative — a faulted thread is never dispatchable on
+# the core it faulted on.  §9 pins the deterministic 4-core fault trace
+# byte-for-byte against tests/fixtures/fault_handling_4core.expected (RR4.27).
+# Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "fault_handling_suite"
+root = "tests.FaultHandlingSuite"

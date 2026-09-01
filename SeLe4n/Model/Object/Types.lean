@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Machine
+import SeLe4n.Model.Fault
 import SeLe4n.Kernel.RobinHood
 import SeLe4n.Kernel.SchedContext
 import SeLe4n.Model.Object.NoDupList
@@ -735,6 +736,36 @@ structure IpcMessage where
       Defaults to `false`: a message built without an explicit grant decision
       transfers nothing, which is the fail-closed direction. -/
   capsGranted : Bool := false
+  /-- **The `seL4_MessageInfo_t` label this message is delivered under.**
+
+      It exists because a fault message is a `seL4_Fault_tag` plus words: a VM
+      fault and a user exception differ only in their label, so a handler
+      reading a label-`0` frame could tell neither apart — nor either from a
+      successful receive, `0` being the WS-RA success label too.  The model
+      discards a message's label at decode time and `returnMessageInfo`
+      synthesized `0` at delivery, so before RR4 there was no channel from a
+      transition that *knows* the label to the receiver that needs it.  This
+      field is that channel: `Architecture.encodeFault` sets it to
+      `Architecture.faultLabel`, and `returnMessageInfo` carries it into the
+      handler's return frame.
+
+      **Set by kernel-originated messages only, and that is a security
+      property, not an omission.**  The user syscall arms leave it at the
+      default, so a thread holding a send capability to a fault-handler
+      endpoint cannot mint a message bearing a `seL4_Fault_tag` — a forgery
+      channel seL4 closes only by convention ("do not hand out send caps to a
+      fault endpoint").  Restoring seL4's sender-side label pass-through
+      therefore needs its own authority story (a badge or endpoint distinction
+      that separates kernel-originated fault deliveries from user sends) and is
+      registered as WS-RR debt rather than folded in here — wiring it silently
+      would open the channel this default keeps shut.
+
+      Bounded by `MessageInfo.maxLabel` on every path that sets it: the fault
+      encoder emits `seL4_Fault_tag` constants
+      (`Architecture.encodeFault_messageInfo_wellFormed`).
+      `returnMessageInfo` additionally clamps, so even an out-of-range label
+      cannot produce a malformed return word. -/
+  label : Nat := 0
   deriving Repr, DecidableEq
 
 namespace IpcMessage
@@ -1026,6 +1057,25 @@ structure TCB where
       answer a Call).  Default keeps every existing construction + boot trace
       byte-identical. -/
   pendingReceiveReply : Option SeLe4n.ReplyId := none
+  /-- WS-RR RR4: **the fault this thread is blocked on** — seL4's `tcbFault`.
+
+      Set by the fault-delivery transition (`Kernel.faultDeliverOnCore`) at the
+      moment the faulting thread blocks on its handler's endpoint, and cleared
+      by the fault reply that answers it, exactly as seL4 sets `tcbFault` in
+      `sendFaultIPC` and clears it in `doReplyTransfer`.
+
+      It has to be on the TCB, not a parameter, because the reply arrives as a
+      *separate syscall made by the handler*: nothing on that path knows which
+      fault it is answering unless the faulted thread carries it.  And the
+      answer decides the semantics — seL4's `handleFaultReply` switches on
+      `receiver->tcbFault` to choose between a bare resume (VM and cap faults),
+      a register-installing restart (unknown syscall, user exception) and
+      leaving the thread `.Inactive`.
+
+      `none` = the thread has no outstanding fault, seL4's
+      `seL4_Fault_NullFault`.  The default keeps every existing TCB
+      construction and the boot trace byte-identical. -/
+  pendingFault : Option ThreadFault := none
   deriving Repr
 
 /-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
@@ -1063,7 +1113,10 @@ instance : BEq TCB where
     -- equality.  `Option ReplyId` derives `DecidableEq`, so its `==` agrees
     -- with `=`.
     a.replyObject == b.replyObject &&
-    a.pendingReceiveReply == b.pendingReceiveReply
+    a.pendingReceiveReply == b.pendingReceiveReply &&
+    -- WS-RR RR4: the outstanding fault participates in structural equality.
+    -- `ThreadFault` derives `DecidableEq`, so its `==` agrees with `=`.
+    a.pendingFault == b.pendingFault
 
 /-- AJ4-D (L-09): Detect sentinel-initialized (unconfigured) TCBs.
     Returns `true` if the TCB's identity or address-space references use
@@ -1132,13 +1185,15 @@ theorem TCB.ext {a b : TCB}
     (hCpuAff : a.cpuAffinity = b.cpuAffinity)
     -- WS-SM Reply objects: extensionality covers the per-TCB reply-object links.
     (hReply : a.replyObject = b.replyObject)
-    (hPendReply : a.pendingReceiveReply = b.pendingReceiveReply) :
+    (hPendReply : a.pendingReceiveReply = b.pendingReceiveReply)
+    -- WS-RR RR4: extensionality covers the outstanding-fault field.
+    (hPendFault : a.pendingFault = b.pendingFault) :
     a = b := by
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpc, hTs, hSlice, hDeadline,
          hQPrev, hQPPrev, hQNext, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
-         hLock, hCpuAff, hReply, hPendReply⟩
+         hLock, hCpuAff, hReply, hPendReply, hPendFault⟩
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 

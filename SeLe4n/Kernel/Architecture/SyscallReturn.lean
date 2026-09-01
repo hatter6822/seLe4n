@@ -375,7 +375,7 @@ nothing. -/
 def returnMessageInfo (msg : IpcMessage) (installedCaps : Nat) : MessageInfo :=
   { length    := min msg.registers.size 4
     extraCaps := min installedCaps Model.maxExtraCaps
-    label     := 0 }
+    label     := min msg.label MessageInfo.maxLabel }
 
 /-- The §3.7 window bound, stated: the returned length never exceeds the
 four inline message registers. -/
@@ -384,12 +384,30 @@ theorem returnFrame_message_window (msg : IpcMessage) (installedCaps : Nat) :
   Nat.min_le_right _ _
 
 /-- The synthesized word is well-formed for the 20-bit-label encoding:
-length ≤ 120, extraCaps ≤ 3, label 0. -/
+length ≤ 120, extraCaps ≤ 3, label ≤ 2^20 − 1. -/
 theorem returnMessageInfo_wellFormed (msg : IpcMessage) (installedCaps : Nat) :
     (returnMessageInfo msg installedCaps).wellFormed := by
   refine ⟨Nat.le_trans (Nat.min_le_right _ _) (by decide), ?_, ?_⟩
   · exact Nat.min_le_right _ _
-  · exact Nat.zero_le _
+  · exact Nat.min_le_right _ _
+
+/-- WS-RR RR4.4: the delivered label is the message's own whenever it is
+in range — the clamp above is the fail-closed guard for an out-of-range
+label, never a rewrite of a real one.  Every kernel-emitted label satisfies
+the hypothesis (`Architecture.encodeFault_messageInfo_wellFormed` for a fault
+message; `MessageInfo.decode_wellFormed` for a user send), so on every live
+path this reads as the identity. -/
+@[simp] theorem returnMessageInfo_label_of_le (msg : IpcMessage) (installedCaps : Nat)
+    (h : msg.label ≤ MessageInfo.maxLabel) :
+    (returnMessageInfo msg installedCaps).label = msg.label :=
+  Nat.min_eq_left h
+
+/-- WS-RR RR4.4: a message carrying no label (the default, and every message
+built before RR4) delivers the `0` label the pre-RR4 synthesis hard-coded —
+the backward-compatibility bridge. -/
+@[simp] theorem returnMessageInfo_label_zero (msg : IpcMessage) (installedCaps : Nat)
+    (h : msg.label = 0) : (returnMessageInfo msg installedCaps).label = 0 := by
+  simp [returnMessageInfo, h]
 
 /-- The honesty bound (PR #866 round-2): the returned `extraCaps` never
 exceeds the installed count — in particular, a path that installed
@@ -1100,6 +1118,220 @@ theorem frameForShape_unit (staged : SyscallReturnFrame) :
 theorem frameForShape_value (shape : ReturnShape) (staged : SyscallReturnFrame)
     (h : shape ≠ .unit) : frameForShape shape staged = staged := by
   cases shape <;> simp_all [frameForShape]
+
+-- ============================================================================
+-- §6b  WS-RR RR4.16 — the fault-restart writeback
+-- ============================================================================
+--
+-- A fault reply restarts the faulted thread, and on two of the four fault
+-- kinds it installs registers the handler supplied (seL4's
+-- `copyMRsFaultReply` over `fault_messages[MessageID_Syscall]` /
+-- `[MessageID_Exception]`).  That is the *same* act as a syscall return
+-- writeback — a frame of words staged into a thread's saved register
+-- context — so it goes through the same mechanism rather than a second one:
+-- `stageRestartFrame` is defined *as* `stageReturnFrame` plus the three
+-- registers a restart reaches that a syscall return does not (`x6`/`x7`,
+-- `lr`), and `pc`/`sp`.
+
+/-- WS-RR RR4.16: the register state a fault reply restarts a thread with.
+
+The union of seL4's two fault-reply register lists on AArch64:
+`fault_messages[MessageID_Syscall] = {x0..x7, FaultIP, SP_EL0, x30, SPSR_EL1}`
+and `[MessageID_Exception] = {FaultIP, SP_EL0, SPSR_EL1}`, minus `SPSR_EL1` —
+the model's `RegisterFile` carries no PSTATE, and refusing the override is
+the fail-closed direction (see `Model.FaultContext.spsr`). -/
+structure FaultRestartFrame where
+  /-- The instruction to restart at — seL4's `FaultIP`, installed as the
+      thread's saved `pc`. -/
+  pc : UInt64 := 0
+  /-- The user stack pointer to restart with (`SP_EL0`). -/
+  sp : UInt64 := 0
+  /-- The link register to restart with (`x30`). -/
+  lr : UInt64 := 0
+  x0 : UInt64 := 0
+  x1 : UInt64 := 0
+  x2 : UInt64 := 0
+  x3 : UInt64 := 0
+  x4 : UInt64 := 0
+  x5 : UInt64 := 0
+  x6 : UInt64 := 0
+  x7 : UInt64 := 0
+  deriving Repr, DecidableEq, Inhabited
+
+namespace FaultRestartFrame
+
+/-- WS-RR RR4.16: the `x0`-`x5` sub-frame, so the restart writeback can hand
+it to the syscall-return stager rather than repeating its six writes. -/
+def returnWindow (f : FaultRestartFrame) : SyscallReturnFrame :=
+  { x0 := f.x0, x1 := f.x1, x2 := f.x2, x3 := f.x3, x4 := f.x4, x5 := f.x5 }
+
+end FaultRestartFrame
+
+/-- WS-RR RR4.16: stage a fault-restart frame into a register file.
+
+**Defined through `stageReturnFrame`**, not beside it: the `x0`-`x5` window
+is written by the syscall-return stager and this adds only what a restart
+reaches beyond it (`x6`, `x7`, `x30`, `pc`, `sp`).  One mechanism, so a
+change to how a frame lands in a register file cannot apply to syscall
+returns and miss fault restarts. -/
+def _root_.SeLe4n.RegisterFile.stageRestartFrame
+    (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) : SeLe4n.RegisterFile :=
+  let rf := rf.stageReturnFrame f.returnWindow
+  let rf := SeLe4n.writeReg rf ⟨6⟩ ⟨f.x6.toNat⟩
+  let rf := SeLe4n.writeReg rf ⟨7⟩ ⟨f.x7.toNat⟩
+  let rf := SeLe4n.writeReg rf ⟨30⟩ ⟨f.lr.toNat⟩
+  { rf with pc := ⟨f.pc.toNat⟩, sp := ⟨f.sp.toNat⟩ }
+
+/-- WS-RR RR4.16: the restart PC lands in the register file's `pc` — the
+word that decides where the thread resumes, and therefore the whole point of
+a restart (`faultRestart_moves_pc` lifts this to the state). -/
+@[simp] theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_pc
+    (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) :
+    (rf.stageRestartFrame f).pc = ⟨f.pc.toNat⟩ := rfl
+
+@[simp] theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_sp
+    (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) :
+    (rf.stageRestartFrame f).sp = ⟨f.sp.toNat⟩ := rfl
+
+/-- WS-RR RR4.16: the eight-register argument window and the link register
+read back as the frame — the property a handler emulating a trapped syscall
+relies on when it replies with the emulation's results. -/
+theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_reads_back
+    (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) :
+    (rf.stageRestartFrame f).gpr ⟨0⟩ = ⟨f.x0.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨1⟩ = ⟨f.x1.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨2⟩ = ⟨f.x2.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨3⟩ = ⟨f.x3.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨4⟩ = ⟨f.x4.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨5⟩ = ⟨f.x5.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨6⟩ = ⟨f.x6.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨7⟩ = ⟨f.x7.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨30⟩ = ⟨f.lr.toNat⟩ := by
+  unfold SeLe4n.RegisterFile.stageRestartFrame SeLe4n.RegisterFile.stageReturnFrame
+    SeLe4n.writeReg FaultRestartFrame.returnWindow
+  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- WS-RR RR4.16: registers outside the restart window survive — the
+callee-saved range `x8`-`x29` is the faulted thread's own, and a handler that
+did not ask to change it does not. -/
+theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_gpr_untouched
+    (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) (r : SeLe4n.RegName)
+    (hLow : 7 < r.val) (hHigh : r.val ≠ 30) :
+    (rf.stageRestartFrame f).gpr r = rf.gpr r := by
+  unfold SeLe4n.RegisterFile.stageRestartFrame SeLe4n.RegisterFile.stageReturnFrame
+    SeLe4n.writeReg FaultRestartFrame.returnWindow
+  simp only
+  have h0 : r.val ≠ 0 := by omega
+  have h1 : r.val ≠ 1 := by omega
+  have h2 : r.val ≠ 2 := by omega
+  have h3 : r.val ≠ 3 := by omega
+  have h4 : r.val ≠ 4 := by omega
+  have h5 : r.val ≠ 5 := by omega
+  have h6 : r.val ≠ 6 := by omega
+  have h7 : r.val ≠ 7 := by omega
+  simp [h0, h1, h2, h3, h4, h5, h6, h7, hHigh]
+
+/-- WS-RR RR4.16: stage a restart frame into a TCB's saved register context —
+the single record update the restart path goes through, mirroring
+`TCB.withReturnFrame`.  `registerContext` moves; every other TCB field is
+definitionally unchanged. -/
+def _root_.SeLe4n.Model.TCB.withRestartFrame (tcb : TCB) (f : FaultRestartFrame) : TCB :=
+  { tcb with registerContext := tcb.registerContext.stageRestartFrame f }
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withRestartFrame_ipcState
+    (tcb : TCB) (f : FaultRestartFrame) :
+    (tcb.withRestartFrame f).ipcState = tcb.ipcState := rfl
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withRestartFrame_threadState
+    (tcb : TCB) (f : FaultRestartFrame) :
+    (tcb.withRestartFrame f).threadState = tcb.threadState := rfl
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withRestartFrame_tid
+    (tcb : TCB) (f : FaultRestartFrame) :
+    (tcb.withRestartFrame f).tid = tcb.tid := rfl
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withRestartFrame_pendingMessage
+    (tcb : TCB) (f : FaultRestartFrame) :
+    (tcb.withRestartFrame f).pendingMessage = tcb.pendingMessage := rfl
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withRestartFrame_pendingFault
+    (tcb : TCB) (f : FaultRestartFrame) :
+    (tcb.withRestartFrame f).pendingFault = tcb.pendingFault := rfl
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withRestartFrame_registerContext
+    (tcb : TCB) (f : FaultRestartFrame) :
+    (tcb.withRestartFrame f).registerContext
+      = tcb.registerContext.stageRestartFrame f := rfl
+
+/-- WS-RR RR4.16: stage a restart frame into a thread's saved register
+context — the state-level writeback, mirroring `writeReturnFrameToTcb` down
+to its totality posture (a non-TCB target returns the state unchanged). -/
+def writeRestartFrameToTcb (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : FaultRestartFrame) : SystemState :=
+  match st.getTcb? tid with
+  | some tcb =>
+      { st with objects := st.objects.insert tid.toObjId (.tcb (tcb.withRestartFrame frame)) }
+  | none => st
+
+/-- WS-RR RR4.16 (frame): the restart writeback never touches the scheduler —
+restarting a thread installs registers; making it runnable again is the
+separate act the delivery's counterpart performs. -/
+@[simp] theorem writeRestartFrameToTcb_scheduler_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame) :
+    (writeRestartFrameToTcb st tid frame).scheduler = st.scheduler := by
+  unfold writeRestartFrameToTcb; cases st.getTcb? tid <;> rfl
+
+/-- WS-RR RR4.16 (frame): nor the machine mirror — same posture as
+`writeReturnFrameToTcb`, and for the same reason (the SM10.1 context restore
+owns that mirror). -/
+@[simp] theorem writeRestartFrameToTcb_machine_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame) :
+    (writeRestartFrameToTcb st tid frame).machine = st.machine := by
+  unfold writeRestartFrameToTcb; cases st.getTcb? tid <;> rfl
+
+/-- WS-RR RR4.16 (frame): nor the declassification audit trail. -/
+@[simp] theorem writeRestartFrameToTcb_declassificationAuditLog_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame) :
+    (writeRestartFrameToTcb st tid frame).declassificationAuditLog
+      = st.declassificationAuditLog := by
+  unfold writeRestartFrameToTcb; cases st.getTcb? tid <;> rfl
+
+/-- WS-RR RR4.16 (frame): every object but the restarted thread's is
+untouched — the restart is a single-TCB write. -/
+theorem writeRestartFrameToTcb_objects_ne
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame)
+    (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
+    (hObjInv : st.objects.invExt) :
+    (writeRestartFrameToTcb st tid frame).objects[oid]? = st.objects[oid]? := by
+  have hNe' : ¬(tid.toObjId == oid) = true := by
+    simp only [beq_iff_eq]
+    exact fun h => hNe h.symm
+  unfold writeRestartFrameToTcb
+  cases h : st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+    exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
+        st.objects tid.toObjId oid _ hNe' hObjInv
+
+/-- WS-RR RR4.16: the restarted thread's saved `pc` is the frame's — the
+statement RR4.19's progress argument consumes, since "the thread does not
+re-execute the faulting instruction" is exactly "its saved `pc` is what the
+handler chose". -/
+theorem writeRestartFrameToTcb_pc
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame)
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (hObjInv : st.objects.invExt) :
+    (writeRestartFrameToTcb st tid frame).getTcb? tid
+      = some (tcb.withRestartFrame frame) ∧
+    (tcb.withRestartFrame frame).registerContext.pc = ⟨frame.pc.toNat⟩ := by
+  refine ⟨?_, rfl⟩
+  unfold writeRestartFrameToTcb
+  rw [hTcb]
+  simp only
+  unfold SystemState.getTcb?
+  rw [RHTable_getElem?_eq_get?,
+      SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId
+        (KernelObject.tcb (tcb.withRestartFrame frame)) hObjInv]
 
 -- ============================================================================
 -- §7  The ABI version pin (RA.A.7, plan §3.6)

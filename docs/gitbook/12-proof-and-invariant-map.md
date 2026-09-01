@@ -555,6 +555,60 @@ Bundle level:
   [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md);
   `docs/planning/ipc_dethreading_pending.txt` carries zero registrations,
   gate-held in both directions.
+- **WS-RR RR4 (v0.34.44) — fault handling: the delivery, its bundle
+  carriage, and its progress theorem.**  The fault surface is split by what it
+  is allowed to assume.  *Production*:
+  `Kernel/IPC/Invariant/FaultProgress.lean` proves the phase's flagship,
+  `faultDeliverOnCore_not_dispatchable` — after a fault delivery the faulting
+  thread is on no core's run queue and is no core's current thread, on **both**
+  dispositions (delivered to a handler, or suspended because no handler could
+  be resolved) — so a fault cannot re-fire in a loop.  Its missing link was
+  `propagatePipChainCrossCore_not_mem_of_not_mem`: the cross-core
+  priority-inheritance chain walk never *adds* a run-queue member, proven by
+  induction on the walk's fuel, without which the `.call` chain's own
+  deschedule could have been undone downstream by the boost propagation.
+  Also production: `Kernel/IPC/CrossCore/Fault.lean` (the delivery and the
+  reply), `Kernel/Architecture/Fault.lean` (the `seL4_Fault_tag` wire format,
+  `decodeFault_encodeFault`), `Kernel/FaultEntry.lean` (the two exports).
+  Also production, and load-bearing for the live path: `replyTransferOnCore`
+  (`IPC/CrossCore/Fault.lean` §4) — seL4's `doReplyTransfer` branch on the
+  answered thread's `pendingFault`, which the `.reply` and checked-`.reply`
+  dispatch arms both route through.  Without it a fault handler's ordinary
+  `seL4_Reply` would wake its client `.ready` at the instruction that faulted:
+  the whole reply-based restart would be verified and unreachable.
+  `replyTransferOnCore_of_no_fault` makes the ordinary branch the pre-RR4 body
+  *verbatim*, so every existing `.reply` theorem transfers under one pre-state
+  hypothesis; the staged payoff carries it as `syscallDispatchQuiescence`'s
+  `replyNoPendingFault`, a stated confinement whose closure is registered debt.
+  `.replyRecv` does not route through the seam yet — `replyRecvBody` fuses a
+  reply leg, a receive leg and a donation return — and that too is registered
+  rather than inferred from a missing call.
+  And `faultDeliverOnCoreChecked` (same module, §5) — the
+  `endpointFlowGate`-checked delivery `Kernel/FaultEntry.lean` actually calls,
+  with `faultDeliverOnCoreChecked_not_dispatchable` carrying the progress
+  theorem through the denial.  It is production *because* it is the live arm:
+  the SVC seam gates every endpoint operation through `syscallEntryChecked`, so
+  a fault delivery reachable only from a staged gate would be the one endpoint
+  flow no deployment policy could refuse.  Its denied arm takes the fail-closed
+  suspend, never an error — an error would leave the faulting thread runnable
+  at the faulting instruction, the livelock reintroduced through the policy
+  layer.
+  *Staged*, because they compose the staged `EndpointCallInvariant` surface
+  the `.call` chain's bundle sits on:
+  `Kernel/IPC/Invariant/FaultPreservation.lean` —
+  `faultDeliverOnCore_preserves_ipcInvariantFull` and
+  `faultReplyOnCore_preserves_ipcInvariantFull`, each under a **pre-state**
+  hypothesis pack in the RR3 discipline (no conjunct is bound on a
+  post-state), plus the four state-shaping lemmas the delivery is built from
+  (`recordPendingFault`, `faultSuspendOnCore`, `faultAbandonOnCore`,
+  `applyFaultRestart`), all of which are one-TCB rewrites and so ride
+  `insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull`.  And
+  `Kernel/InformationFlow/FaultFlow.lean` — the non-interference half:
+  `faultMessage_transfers_no_authority` and
+  `faultMessage_grant_is_inert` are the two negatives that make the delivery's
+  `.grant` right safe — the fault message carries no capabilities, so the
+  grant bit the handler capability must hold (seL4's send + grant/grantReply
+  gate) authorises nothing on the message it gates.
 - `blockedThreadsPendingMessageConsistent` — **strengthened to both directions**
   (PR #873 round 11, v0.33.86), and renamed from `waitingThreadsPendingMessageNone`
   because the old name described only the half it stated.  It now ties

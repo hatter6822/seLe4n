@@ -936,7 +936,17 @@ def scan(percore: dict[str, str], bodies: dict[str, str], depth: int,
 
 
 def main() -> int:
-    depth = 2
+    # Fault handling (v0.34.44) raised this from 2 to 3.  The `.reply` arms now
+    # dispatch through the reply seam `replyTransferOnCore` — seL4's
+    # `doReplyTransfer` branch on the answered thread's `pendingFault` — which
+    # puts one extra hop between the arm and the cross-core reply chain.  At
+    # depth 2 the walk would have stopped one level shallower into that chain
+    # than it did before the seam existed, which is a silent loss of coverage
+    # rather than a finding.  Depth 3 restores it (and slightly exceeds it
+    # everywhere else); measured cost of the extra level is ~0.1 s on the whole
+    # 34-syscall scan, because `routeBootHits` emits each (head, argument) pair
+    # once rather than once per path.
+    depth = 3
     listing = "--list" in sys.argv
     if "--depth" in sys.argv:
         depth = int(sys.argv[sys.argv.index("--depth") + 1])
@@ -1268,7 +1278,7 @@ def main() -> int:
             print(f"  {sid:24s} -> {op}")
 
     print(f"[per-core-routing] {len(percore)} syscalls, reach depth {depth} "
-          f"(two hops: arm -> operation -> helper), "
+          f"(arm -> seam/operation -> helper -> helper), "
           f"{len(allow)} allowlisted exception(s)")
     if findings:
         print("[per-core-routing] FAIL: a live syscall arm can reach a boot-pinned "

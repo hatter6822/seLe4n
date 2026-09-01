@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безопасность" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.43-blue" alt="Версия" />
+  <img src="https://img.shields.io/badge/version-0.34.44-blue" alt="Версия" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Лицензия" /></a>
 </p>
@@ -88,7 +88,7 @@ security model) от seL4, вводя при этом архитектурные
 
 | Атрибут | Значение |
 |---------|----------|
-| **Версия** | `0.34.43` |
+| **Версия** | `0.34.44` |
 | **Тулчейн Lean** | `v4.28.0` |
 | **Продуктовый код (Lean LoC)** | 286 841 строка в 286 файлах |
 | **Тестовый код (Lean LoC)** | 64 078 строк в 69 тест-сьютах |
@@ -226,6 +226,8 @@ SMP-микроядром на Raspberry Pi 5. Фазы SM0–SM9 заверше�
 кэшей, информационный поток SMP и завершение деклассификации (SM9, закрыта
 на v0.33.100). Оставшаяся фаза — **SM10** (закрытие релиза → v1.0.0).
 Рабочий поток по ABI возврата системных вызовов (**WS-RA**) завершён.
+
+**SM10 заблокирована WS-RR** (готовность SMP-релиза) — фаза устранения замечаний перед 1.0, идущая сейчас ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) и **RR4 — обработка отказов: полный fault-IPC с перезапуском по ответу (v0.34.44)**, который не даёт потоку с отказом возобновиться на вызвавшей отказ инструкции: отказ записывается в TCB, доставляется на конечную точку `faultHandler` потока по живой межъядерной цепочке call и обрабатывается ответом, который перезапускает поток с выбранного PC либо отбрасывает его. Остаются RR5–RR8, затем **SM10** (закрытие релиза → v1.0.0).
 
 Мастер-план: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 пофазные планы — в `docs/planning/SMP_*.md`. Канонической пофазной записью —

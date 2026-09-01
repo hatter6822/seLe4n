@@ -16,8 +16,8 @@ previously spread across README.md, GitBook chapters, and audit plans.
 ## What's next
 
 **Current workstream: WS-RR (SMP Release Readiness) — IN FLIGHT.
-RR0 landed at v0.34.26, RR1 at v0.34.41, RR2 at v0.34.42, RR3 at v0.34.43;
-RR4..RR8 remain.
+RR0 landed at v0.34.26, RR1 at v0.34.41, RR2 at v0.34.42, RR3 at v0.34.43,
+RR4 at v0.34.44; RR5..RR8 remain.
 SM10 is BLOCKED on it and must not start until RR8 closes.**
 
 The pre-SM10 completeness audit (`docs/planning/UNFINISHED_SMP_WORK.md`,
@@ -7172,8 +7172,12 @@ is archived.
 | Cross-core SchedContext donation never migrates the CBS replenish queue, breaking the SM5.H affinity invariant on a live path — **closed v0.34.42** (all three live paths, RR2.20 included) | `SeLe4n/Kernel/IPC/Operations/Donation.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | RR2.1–RR2.12, RR2.20 |
 | The live `.send` arm carries no `ipcInvariantFull` preservation while SM6.D claims coverage — **closed v0.34.42** (and the `.receive` arm's WithCaps form, which the audit had mismeasured as covered, in the same cut) | `SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean` | RR2.14, RR2.15 |
 | Cancellation NI rests on a `hTeardownProj` hypothesis whose closure form returns its own premise — **partially closed v0.34.42** (`.ready` and `.blockedOnReply` arms discharged; the three queue arms wait on the label-uniformity invariant, RR3) | `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` | RR2.18, then RR3 |
-| VM faults are unhandled: a data or instruction abort returns to the faulting instruction, wedging the core.  Unreachable only because nothing boots | `SeLe4n/Kernel/Architecture/ExceptionModel.lean`, `rust/sele4n-hal/src/trap.rs` | RR4.1–RR4.27 |
-| `TCB.faultHandler : Option CPtr` has no consumer | `SeLe4n/Model/Object/Structures.lean` | RR4.7 |
+| VM faults are unhandled: a data or instruction abort returns to the faulting instruction, wedging the core.  Unreachable only because nothing boots — **closed v0.34.44** (every non-`SVC` arm delivers; `faultDeliverOnCore_not_dispatchable` says no disposition leaves the thread runnable on the core it faulted on) | `SeLe4n/Kernel/Architecture/ExceptionModel.lean`, `rust/sele4n-hal/src/trap.rs` | RR4.1–RR4.27 |
+| `TCB.faultHandler : Option CPtr` has no consumer — **closed v0.34.44** (`resolveFaultHandler` resolves it through the thread's own CSpace and gates it on send **and** grant) | `SeLe4n/Model/Object/Structures.lean` | RR4.7 |
+| `.replyRecv` — the idiomatic fault-handler loop — does not route through the RR4.14 reply seam, so a handler that answers a fault with `seL4_ReplyRecv` reaches the ordinary reply and wakes the faulted thread `.ready` at the instruction that faulted.  `.reply` is closed; the workaround is `.reply` + a separate `.receive`.  `replyRecvBody` composes the reply leg, a receive leg and a donation return in one transition, so the fault branch cannot be substituted for its reply leg without re-deriving what the other two legs are handed | `SeLe4n/Kernel/API.lean` (`replyRecvBody`), `SeLe4n/Kernel/IPC/CrossCore/Fault.lean` | RR7 |
+| The staged dispatch payoff's `.reply` arm is confined to unfaulted callers (`syscallDispatchQuiescence.replyNoPendingFault`).  Composing `faultReplyOnCore_preserves_ipcInvariantFull` into it needs a lemma the reply chain does not carry — that `endpointReplyCrossCoreDispatch` leaves its target `.ready`, hence `passiveServerIdleAllowed`, which the fault reply's abandon arm consumes at the **post**-state; threading a post-state hypothesis instead is what the RR3 gate forbids.  The transition-level bundle exists and is proven; only its composition into the payoff waits | `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` | RR7 |
+| A core that delivers a fault cannot switch away from the blocked thread: the SM10.1 context restore installs no successor, so `trap.rs::deliver_fault` halts the core instead of `eret`ing back onto the faulting instruction.  Unreachable at v0.34.44 (no core sets `lean_ready`) | `rust/sele4n-hal/src/trap.rs` | SM10.1 |
+| A user send's `MessageInfo` label is discarded at delivery: `IpcMessage.label` is set by kernel-originated (fault) messages only, so a thread holding a send capability to a fault endpoint cannot mint a `seL4_Fault_tag` — deliberate, and the pass-through needs its own authority story before it is restored | `SeLe4n/Model/Object/Types.lean`, `SeLe4n/Kernel/API.lean` | RR7 |
 | No production `LabelingContext`: the hardware boot path leaves `testLabelingContext`, which maps every non-zero id to `publicLabel`, installed | `SeLe4n/Kernel/InformationFlow/Policy.lean`, `SeLe4n/Platform/FFI.lean` | RR5.1–RR5.5 |
 | Two kernel seams (SVC dispatch, cross-core suspend) do not consult the per-core `lean_ready` gate, though `kernel_entry.rs` claims every seam does | `rust/sele4n-hal/src/svc_dispatch.rs`, `rust/sele4n-hal/src/ffi.rs` | RR5.6–RR5.9 |
 | Three `@[export]` runtime-seam modules are staged-only, outside the production import closure, so a linked image would not carry their symbols | `scripts/staged_module_allowlist.txt`, `SeLe4n.lean` | RR5.11 |
@@ -7285,7 +7289,7 @@ correct — a tautological witness replaced by a substantive proof, a fuel bound
 made structural, a tuple given a name, a validated-elsewhere precondition
 internalised.  That is why they may wait; it is not why they may be forgotten.
 
-## WS-RR — SMP Release Readiness (pre-SM10 remediation, **IN FLIGHT — OPEN**, opened v0.34.13; RR0 landed v0.34.26, RR1 v0.34.41, RR2 v0.34.42, RR3 v0.34.43)
+## WS-RR — SMP Release Readiness (pre-SM10 remediation, **IN FLIGHT — OPEN**, opened v0.34.13; RR0 landed v0.34.26, RR1 v0.34.41, RR2 v0.34.42, RR3 v0.34.43, RR4 v0.34.44)
 
 **Status**: IN FLIGHT — **RR0 LANDED at v0.34.26** (all eleven sub-tasks:
 registration, the debt register, the generated theorem manifest, and the SM10
@@ -7293,8 +7297,17 @@ plan corrections); **RR1 LANDED at v0.34.41** (all eleven sub-tasks: the
 aarch64 cross build in CI, the six defects and three lints its first compile
 found, two Tier 0 gates, and SM10's evidence-derived estimate), with **RR1.12
 added in the same cut** to harden those gates after review; **RR2 LANDED at
-v0.34.42** (all nineteen sub-tasks; RR2.18 partial — see below); RR3..RR8 not
-started. **Closes**: before SM10 opens.
+v0.34.42** (all nineteen sub-tasks; RR2.18 partial — see below); **RR3 LANDED
+at v0.34.43** (all twenty-six sub-tasks); **RR4 LANDED at v0.34.44** (all
+twenty-seven sub-tasks: the `Fault` type and wire format, handler resolution
+and its send-and-grant rights gate, the fail-closed dispositions, cross-core
+delivery composed from the live `.call` chain, reply-based resume and restart,
+the preservation / progress / non-interference payoffs, the production
+`endpointFlowGate`-checked delivery the live entry calls, the `doReplyTransfer`
+reply seam that makes the reply-based restart reachable from the ordinary
+`.reply` syscall, the `ExceptionModel` and `trap.rs` wiring, and the suite plus
+golden fixture); RR5..RR8 not started.
+**Closes**: before SM10 opens.
 **Plan**: [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
 **Source register**: [`docs/planning/UNFINISHED_SMP_WORK.md`](planning/UNFINISHED_SMP_WORK.md)
 (171 confirmed findings, audited at `v0.34.3`).
@@ -7314,7 +7327,7 @@ RR8 closes.
 | RR1 | aarch64 compile coverage — **LANDED v0.34.41** (incl. RR1.12 gate hardening) | 12 |
 | RR2 | Live-path correctness: dispatch-arm bundles, donation queue migration — **LANDED v0.34.42** | 20 |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) — **LANDED v0.34.43** (RR3.1–RR3.26: de-threading, per-arm dispatch bundles, the three payoff theorems, plan retirement) | 26 |
-| RR4 | Fault handling: full fault IPC with reply-based restart | 27 |
+| RR4 | Fault handling: full fault IPC with reply-based restart — **LANDED v0.34.44** (RR4.1–RR4.27: `Fault` + wire format, resolution + rights, fail-closed dispositions, delivery through the live `.call` chain, resume/restart, preservation + RR4.19 progress + RR4.20's production flow gate and non-interference, the `ExceptionModel`/`trap.rs` wiring, suite + fixture) | 27 |
 | RR5 | Boot-path fail-open closure | 14 |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 |
 | RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 32 |

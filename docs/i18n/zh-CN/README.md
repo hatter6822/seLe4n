@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.43-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.44-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -83,7 +83,7 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核。每一个内核�
 
 | 属性 | 值 |
 |------|------|
-| **版本** | `0.34.43` |
+| **版本** | `0.34.44` |
 | **Lean 工具链** | `v4.28.0` |
 | **生产代码行数** | 286,841 行，分布于 286 个文件 |
 | **测试代码行数** | 64,078 行，分布于 69 个测试套件 |
@@ -205,6 +205,8 @@ tests/                           Executable test suites + fixtures
 ## 下一步
 
 当前活跃的工作流是 **WS-SM**（SMP 多核完成），它将 WS-RC 剩余的修复阶段并入 SMP 专属的 SM0–SM10 阶段计划，并将在 **v1.0.0** 收官，交付可在 Raspberry Pi 5 上引导的经过验证的 SMP 微内核。SM0–SM9 各阶段均已落地——基础性 SMP 类型与锁层级、Rust HAL 的 SMP 启动、经过验证的锁原语、每对象锁、每核调度器状态与调度、跨核 IPC、TLB 击落与缓存维护、SMP 信息流，以及降密完成（SM9，于 v0.33.100 收尾）。剩余阶段为 **SM10**（发布收尾 → v1.0.0）。系统调用返回 ABI 工作流（**WS-RA**）已完成。
+
+**SM10 被 WS-RR 阻塞**（SMP 发布就绪），即当前正在进行的 1.0 前修复阶段（[`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)）：RR0（v0.34.26）、RR1（v0.34.41）、RR2（v0.34.42）、RR3（v0.34.43），以及 **RR4——故障处理：带基于回复重启的完整故障 IPC（v0.34.44）**。RR4 不再让发生故障的线程从触发故障的那条指令恢复：故障被记录到 TCB，经由实际生效的跨核 call 链投递到该线程的 `faultHandler` 端点，并由一条回复来处理——在选定的 PC 处重启该线程，或者放弃它。剩余 RR5–RR8，随后是 **SM10**（发布收尾 → v1.0.0）。
 
 主计划：[`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)，各阶段计划位于 `docs/planning/SMP_*.md`。权威的逐阶段记录——包含所有已完成的工作流组合（WS-B 至 WS-AB、WS-AE 至 WS-AN、WS-RC R0–R5、WS-RA）——见 [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)；此前的审计和里程碑结项报告已归档至 [`docs/dev_history/`](../../../docs/dev_history/README.md)。
 

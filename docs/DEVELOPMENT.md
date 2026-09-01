@@ -39,7 +39,62 @@ It is aligned to the **current project state**:
   register: [`docs/planning/UNFINISHED_SMP_WORK.md`](planning/UNFINISHED_SMP_WORK.md).
 - **parent workstream:** **WS-SM (SMP multi-core completion) IN FLIGHT**
   (v0.31.2 → v1.0.0; closes with a bootable verified SMP microkernel on
-  Raspberry Pi 5).  **Preceding cut (v0.34.1): the SM5 runtime-seam completion**
+  Raspberry Pi 5).  **Current cut (v0.34.44): WS-RR RR4 — fault handling,
+  with reply-based restart.**  Before RR4 an EL0 thread that took a data
+  abort was resumed at the faulting instruction with an error frame in its
+  registers, which is a livelock rather than a fault handler; RR4 replaces
+  that with seL4's fault IPC.  The fault is a `Model/Fault.lean` value
+  (`vmFault` / `capFault` / `unknownSyscall` / `userException`) recorded on
+  the TCB as `pendingFault` with a `FaultContext` snapshot; it is encoded in
+  seL4's `seL4_Fault_tag` wire format (`Architecture/Fault.lean`, with
+  `decodeFault_encodeFault` round-tripping) and delivered to the faulting
+  thread's `faultHandler` endpoint through the **live cross-core `.call`
+  chain** (`endpointCallCrossCoreDispatch`), so a *passive* fault handler
+  receives the faulting thread's SchedContext donation and can run.  The
+  handler capability must carry both `.write` and `.grant` — seL4's send +
+  grant/grantReply gate — and a thread whose handler cannot be resolved is
+  suspended with its fault recorded, seL4's `handleDoubleFault` outcome.  The
+  reply is decoded arm-for-arm with seL4's `handleFaultReply`, yielding
+  either a `FaultRestartFrame` staged through the *same*
+  `RegisterFile.stageReturnFrame` WS-RA uses, or `.abandon`; `SPSR_EL1` is
+  carried outbound but never written back, the fail-closed counterpart of
+  seL4's `sanitiseRegister`, so a handler cannot promote its client to EL1.
+  The progress payoff is `faultDeliverOnCore_not_dispatchable`
+  (`IPC/Invariant/FaultProgress.lean`, production): after delivery the
+  faulting thread is on no core's run queue and is no core's current thread,
+  on **both** dispositions — which needed a lemma the tree did not have, that
+  the cross-core priority-inheritance chain walk never adds a run-queue
+  member (fuel induction).  The handler's reply reaches the restart through
+  seL4's `doReplyTransfer` branch (`replyTransferOnCore`, production): a fault
+  handler holds nothing but the reply capability the fault Call gave it, so both
+  live `.reply` dispatch arms test the answered thread's `pendingFault` first —
+  without that branch the reply-based restart would be verified and unreachable.
+  `.replyRecv` does not route through the seam yet — registered debt, closure
+  target RR7; a handler answers with `.reply` and receives separately.
+  The live fault entry calls the **flow-checked** arm
+  `faultDeliverOnCoreChecked` (production, `IPC/CrossCore/Fault.lean` §5),
+  applying the same `endpointFlowGate` the `.call` syscall arm applies — the
+  live SVC seam gates every endpoint operation through `syscallEntryChecked`,
+  so an ungated fault delivery would be the one endpoint flow no deployment
+  policy could refuse; a denied flow takes the same fail-closed suspend, so the
+  gate costs neither the progress theorem nor the IPC bundle.  Hardware seam:
+  `@[export lean_handle_fault]` and
+  `@[export lean_classify_synchronous_exception]` (`Kernel/FaultEntry.lean`,
+  production), the latter making the Lean model the **only** place an
+  `ESR_EL1` becomes an exception class — `trap.rs` calls it instead of
+  running its own `esr_ec` match, `build.rs` pins that relation, and the Rust
+  host tests replay all 64 EC values against the Lean table.  Both are
+  dormant behind the per-core `lean_ready` gate until SM10.1; a core that
+  delivers a fault today would halt, because it has descheduled the faulting
+  thread and cannot yet install a successor.  Tests:
+  `tests/FaultHandlingSuite.lean` (`fault_handling_suite`, Tier 2) plus the
+  4-core golden fixture `tests/fixtures/fault_handling_4core.expected`.
+  Preceding WS-RR cuts: RR0 honesty patches (v0.34.26), RR1 the aarch64 cross
+  gate + TLBI broadcast discipline (v0.34.41), RR2 the cancellation/donation
+  invariant gaps behind the live dispatch arms (v0.34.42), RR3
+  `ipcInvariantFull` de-threading + dispatch payoff (v0.34.43).  Plan:
+  [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
+  **Preceding cut (v0.34.1): the SM5 runtime-seam completion**
   — the three seams SM5's docstrings promised between the verified per-core
   scheduler and the hardware IRQ path are closed: `trap.S`'s IRQ vectors
   branch to `handle_irq_per_core` (the legacy single-core `handle_irq`

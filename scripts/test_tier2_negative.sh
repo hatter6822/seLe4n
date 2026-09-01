@@ -381,6 +381,19 @@ run_check_with_timeout "TRACE" lake exe smp_cancellation_suite
 # verified byte-for-byte against tests/fixtures/smp_ipc_4core.expected (SM6.F.4).
 run_check_with_timeout "TRACE" lake exe smp_ipc_suite
 
+# WS-RR RR4.26 — Fault-handling runtime checks.  The RR4 fault path end to end
+# on a deterministic 4-core fixture: the wire format's round trip over every
+# fault kind (with the contextual words at their seL4 message-register
+# indices), the ESR classification `trap.rs` mirrors over all 64 EC values,
+# handler resolution and its send-and-grant rights gate (with both negatives —
+# no handler, and a resolvable one refused on rights), cross-core delivery with
+# its `.reschedule` SGI and the handler's decode of the received fault, the
+# fail-closed suspends, reply-based resume and reply-based restart with the
+# RR4.16 register writeback, and the RR4.19 negative: a faulted thread is not
+# dispatchable on any core.  §9 verifies the 4-core fault trace byte-for-byte
+# against tests/fixtures/fault_handling_4core.expected (RR4.27).
+run_check_with_timeout "TRACE" lake exe fault_handling_suite
+
 # WS-SM SM6.F.2 — Aggregate cross-core notification runtime checks.  Composes the
 # SM6.B transitions with the SM5 per-core scheduler (SGI handler dispatch) into
 # end-to-end signal/wait flows on a deterministic 4-core fixture: the wait →

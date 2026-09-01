@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.43-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.44-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -83,7 +83,7 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネルです。�
 
 | 属性 | 値 |
 |------|-----|
-| **バージョン** | `0.34.43` |
+| **バージョン** | `0.34.44` |
 | **Lean ツールチェーン** | `v4.28.0` |
 | **本番 Lean コード行数** | 286 ファイルにわたる 286,841 行 |
 | **テスト Lean コード行数** | 69 テストスイートにわたる 64,078 行 |
@@ -205,6 +205,8 @@ tests/                           Executable test suites + fixtures
 ## 次のステップ
 
 アクティブなワークストリームは **WS-SM**（SMP マルチコア完成）です。WS-RC の残りの修正フェーズを SMP 専用の SM0–SM10 フェーズ計画に統合したもので、Raspberry Pi 5 上でブート可能な検証済み SMP マイクロカーネルとして **v1.0.0** で完結します。フェーズ SM0–SM9 は完了済みです――基盤となる SMP 型とロック階層、Rust HAL の SMP ブートアップ、検証済みロックプリミティブ、オブジェクトごとのロック、コアごとのスケジューラ状態とスケジューリング、クロスコア IPC、TLB シュートダウンとキャッシュメンテナンス、SMP 情報フロー、そして機密解除の完成（SM9、v0.33.100 でクローズ）。残るフェーズは **SM10**（リリースクロージャ → v1.0.0）です。システムコール戻り値 ABI ワークストリーム（**WS-RA**）は完了しています。
+
+**SM10 は WS-RR（SMP リリースレディネス）でブロックされています** ―― 1.0 前の是正フェーズが現在進行中です（[`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)）：RR0（v0.34.26）、RR1（v0.34.41）、RR2（v0.34.42）、RR3（v0.34.43）、そして **RR4 ―― フォルト処理：リプライベースの再開を伴う完全なフォルト IPC（v0.34.44）**。RR4 はフォルトを起こしたスレッドがフォルト命令から再開されることを止めます：フォルトは TCB に記録され、ライブのクロスコア call チェーンを通じてスレッドの `faultHandler` エンドポイントへ配送され、指定した PC でスレッドを再開するか放棄するリプライで処理されます。残るのは RR5–RR8、その後 **SM10**（リリースクロージャ → v1.0.0）です。
 
 マスタープラン：[`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)、フェーズごとの計画は `docs/planning/SMP_*.md` にあります。フェーズごとの正準記録――完了したすべてのワークストリームポートフォリオ（WS-B から WS-AB、WS-AE から WS-AN、WS-RC R0–R5、WS-RA）を含む――は [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) です。過去の監査とマイルストーンクローズアウトは [`docs/dev_history/`](../../../docs/dev_history/README.md) にアーカイブされています。
 

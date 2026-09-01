@@ -123,3 +123,12 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
 -- it and for `replenishQueueAffinityConsistent_smp`, and their object-store
 -- invariant carriers.  Production-clean.
 import SeLe4n.Kernel.SchedContext.BindingAffinity
+-- WS-RR RR4: the fault-IPC path — the `Fault` type and wire format
+-- (`Kernel.Architecture.Fault`), handler resolution and the fail-closed
+-- dispositions (`Kernel.IPC.Operations.Fault`), the cross-core delivery and
+-- reply (`Kernel.IPC.CrossCore.Fault`), the RR4.19 progress theorem
+-- (`Kernel.IPC.Invariant.FaultProgress`) and the C-callable seam the Rust trap
+-- handler resolves against (`lean_handle_fault` /
+-- `lean_classify_synchronous_exception`).  One import: the entry's transitive
+-- closure is the whole production fault surface.
+import SeLe4n.Kernel.FaultEntry

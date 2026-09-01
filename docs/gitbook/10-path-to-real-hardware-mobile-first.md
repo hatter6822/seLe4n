@@ -54,6 +54,26 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   `x0` = badge/result, `x1` = `MessageInfo` error label, `x2`–`x5`
   = message registers — via a per-core return-frame mailbox,
   retiring the interim bit-63 error-flag encoding.
+- **Fault delivery** (WS-RR RR4, v0.34.44): `trap.rs`'s abort and
+  alignment arms no longer write an error frame back into the
+  faulting thread's registers and `eret` onto the instruction that
+  faulted.  `deliver_fault` calls `@[export lean_handle_fault]`
+  (`Kernel/FaultEntry.lean`) inside `with_kernel_entry`, which
+  records the fault on the TCB and delivers it to the thread's
+  `faultHandler` endpoint through the live cross-core `.call` chain.
+  Classification is exported too — `@[export
+  lean_classify_synchronous_exception]` — and `trap.rs` calls it on
+  the hardware target instead of running its own `esr_ec` match, so
+  the routing decision (SVC → syscall dispatcher, everything else →
+  fault entry) and the delivered fault's kind cannot diverge; the
+  `build.rs` scanner `scan_trap_rs_classifies_via_lean` pins that
+  relation, and the host tests replay all 64 EC values against the
+  Lean table.  **Dormant behind the per-core `lean_ready` gate**
+  until SM10.1: a core that delivers a fault has descheduled the
+  faulting thread and cannot install a successor, so `deliver_fault`
+  halts rather than resuming.  Unreachable at v0.34.44 — no core
+  sets `lean_ready` anywhere in the tree, so the trap handler still
+  takes the pre-RR4 error-frame branch on hardware.
 - **Bounded WFE** (AN9-G / DEF-R-HAL-L17): `wfe_bounded` with
   10 ms default at 54 MHz.
 - **SMP scaffolding** (AN9-J / DEF-R-HAL-L20): PSCI `cpu_on` +

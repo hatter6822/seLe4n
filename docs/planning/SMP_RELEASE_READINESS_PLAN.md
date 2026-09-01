@@ -147,9 +147,9 @@ Nothing else may overlap without re-reading the dependency list above.
 |-------|------------------|------|-----|
 | RR0 | Registration and plan correction — nothing further is lost.  **LANDED v0.34.26** | 11 | S–M |
 | RR1 | aarch64 compile coverage, plus the Rust HAL gate no other phase owns.  **LANDED v0.34.41** (RR1.12 hardened the gates through six review rounds in the same cut) | 12 | M |
-| RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live | 20 | M–L |
-| RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8).  **RR3.1–RR3.14 LANDED**; RR3.15–RR3.26 are the payoff's real inputs, re-scoped at the RR3.14 landing | 26 | XL |
-| RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
+| RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live.  **LANDED v0.34.42** | 20 | M–L |
+| RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8).  **LANDED v0.34.43** (RR3.1–RR3.26, the dispatch payoff included) | 26 | XL |
+| RR4 | Fault handling: full fault IPC with reply-based restart.  **LANDED v0.34.44** (RR4.1–RR4.27) | 27 | XL |
 | RR5 | Boot-path fail-open closure | 14 | M–L |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 | L |
 | RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 32 | M |
@@ -518,7 +518,92 @@ gates that scored a skip as a pass. RR3.1 exists so the criterion is
 measured rather than assumed.
 
 
-### RR4 — Fault handling: full fault IPC with reply-based restart
+### RR4 — Fault handling: full fault IPC with reply-based restart — **LANDED v0.34.44**
+
+All twenty-seven sub-tasks landed in one cut.  **Acceptance, met**: no
+execution path returns a thread to its faulting instruction without handler
+action (`faultDeliverOnCore_not_dispatchable`, RR4.19, over *both*
+dispositions and through the whole `.call` chain); `TCB.faultHandler` has a
+consumer (`resolveFaultHandler`); `trap.rs` has one classification path
+(`lean_classify_synchronous_exception`, with two mutation-tested `build.rs`
+relation checks keeping it so); Tier 0–3 green.
+
+Five placements differ from the file table below, each for a stated reason —
+in four of them the table's assignment of *work* is unchanged; the fifth
+(RR4.14/RR4.15) needed a live-dispatch change the table does not list, without
+which its own row would have described an unreachable function:
+
+* **The delivery composes the live `.call` chain**
+  (`endpointCallCrossCoreDispatch`), not the bare rendezvous.  seL4's
+  `sendFaultIPC` passes `canDonate = true`, so a fault delivered to a
+  **passive** handler donates the faulting thread's scheduling context; the
+  rendezvous alone would have delivered a message to a handler with no budget
+  to run on, which is the RR4 livelock with an extra step.  The reply composes
+  the `.reply` chain for the same reason (it returns the donation and reverts
+  the boost).  This is also how **RR4.13** is discharged: the reply object and
+  the handler's reply capability are created by the call rendezvous itself
+  (`applyCallDonationOnCore` and the reply linkage `endpointCallOnCore`
+  establishes), so there is no separate fault-reply constructor to write — a
+  parallel one would be a second way to create a reply object, with its own
+  linkage invariant to re-prove.
+* **There is no single-core `faultDeliver`.**  A bootCore-pinned form would not
+  be the per-core one's `bootCoreId` instance — the donation and
+  priority-inheritance legs are per-core — so it would be a *second* fault
+  delivery that can diverge from the first, which is the defect RR4.25 removes
+  from `trap.rs`.  RR4.11's transition therefore lives in
+  `IPC/CrossCore/Fault.lean` beside RR4.12's, with the core-independent pieces
+  (resolution, message, dispositions, restart application) in
+  `IPC/Operations/Fault.lean`.
+* **RR4.14/RR4.15 required a `Kernel/API.lean` change the table does not
+  list.**  Both rows assign the reply transition to `IPC/Operations/Fault.lean`,
+  and it is there — but a fault handler holds nothing except the reply
+  capability the fault Call gave it, so it answers with the *ordinary*
+  `seL4_Reply`.  With the live `.reply` arm going straight to
+  `endpointReplyCrossCoreDispatch`, `faultReplyOnCore` had no production caller:
+  the reply-based restart would have been verified and unreachable, and a
+  handler that repaired the fault would have woken its client at the instruction
+  that faulted.  seL4 puts the branch inside `doReplyTransfer`, and so does this
+  cut — `replyTransferOnCore` (production, `IPC/CrossCore/Fault.lean` §4) with
+  both live `.reply` arms routed through it.  Two residuals are registered as
+  debt rather than left silent: the confinement this leaves in the staged
+  dispatch payoff (`replyNoPendingFault`), and `.replyRecv`, which is the
+  *idiomatic* handler loop and does not route through the seam — `replyRecvBody`
+  fuses a reply leg, a receive leg and a donation return, and a fault reply
+  changes what the latter two are handed, so substituting the branch there is a
+  coherent slice of its own.  Interim shape: a handler answers with `.reply` and
+  takes its next request with a separate `.receive`.
+* **RR4.20's flow gate is production, in `IPC/CrossCore/Fault.lean` §5**, not
+  in `InformationFlow/`.  The sub-task's file column says
+  `SeLe4n/Kernel/InformationFlow/`, and the *non-interference* half is there —
+  but `faultDeliverOnCoreChecked` is the arm `Kernel/FaultEntry.lean` calls,
+  and `InformationFlow/FaultFlow.lean` is staged (it composes the staged
+  cross-core call NI surface).  A gate reachable only from a staged module is a
+  gate the kernel does not apply: the live SVC seam gates every endpoint
+  operation through `syscallEntryChecked`, so an ungated fault delivery would
+  have been the one endpoint flow no deployment policy could refuse.  The gate
+  reads only `InformationFlow/Policy.lean`, itself production and below the
+  cross-core module in the import order, so it sits beside the transition it
+  guards.  Because a denied flow takes the RR4.9 suspend rather than an error,
+  the gate carries both payoffs
+  (`faultDeliverOnCoreChecked_not_dispatchable`,
+  `faultDeliverOnCoreChecked_preserves_ipcInvariantFull`) at no cost to RR4.17
+  or RR4.19.
+* **`Fault` and `FaultContext` live in `SeLe4n/Model/Fault.lean`**, not in
+  `Architecture/`.  The TCB has to carry the fault (`TCB.pendingFault`, seL4's
+  `tcbFault`) or a reply cannot know which fault it answers, and
+  `Model/Object/Types.lean` cannot import an `Architecture` module.  seL4 makes
+  the same split: `seL4_Fault_t` is in the shared `shared_types.bf`, with only
+  the VM-fault arm arch-specific.  The syndrome classification and the wire
+  format stay in `Architecture/Fault.lean`.
+
+Two residuals are registered in `docs/WORKSTREAM_HISTORY.md` rather than left
+in source comments: a core that delivers a fault halts pending SM10.1's
+successor install (unreachable at v0.34.44 — no core sets `lean_ready`), and
+the sender-side `MessageInfo` label pass-through, which is deliberately **not**
+restored here because it would let a thread holding a send capability to a
+fault endpoint mint a message bearing a `seL4_Fault_tag`.
+
+The finding, as the audit stated it:
 
 The largest phase, and the one that closes the audit's most serious security
 finding: data and instruction aborts today set `x0` and return to the

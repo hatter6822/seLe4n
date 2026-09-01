@@ -116,6 +116,14 @@ fn main() {
     // interrupt.
     scan_lean_ready_gates_intact();
 
+    // WS-RR RR4.25 (single classification path): verify `trap.rs` routes
+    // synchronous exceptions on the class the **Lean model** returns, and
+    // does not re-derive one from a local `esr_ec` match.  Two
+    // classifications that can drift is the defect this scanner exists to
+    // keep closed: a drift on the abort arms would route a fault to the
+    // wrong handler, or to none.
+    scan_trap_rs_classifies_via_lean();
+
     // WS-SM SM2.D.5 (verified-lock FFI bridge contract): verify the
     // SM2.D lock-bridge module is present and every required FFI
     // export in `ffi.rs` resolves to a helper in `lock_bridge.rs`.
@@ -1026,6 +1034,132 @@ fn scan_reschedule_sgi_seam_intact() {
 /// regression this scanner exists to catch (a PE entering a Lean
 /// runtime it never initialized — the constraint `shootdown.rs`
 /// documents and `lean_ready.rs` enforces).
+/// WS-RR RR4.25: verify `trap.rs` classifies synchronous exceptions through
+/// the Lean model and nowhere else.
+///
+/// Three relations, not three token presences:
+///
+/// 1. `handle_synchronous_exception`'s body **matches on the value
+///    `classify_synchronous_exception` returned** — checked by requiring both
+///    the binding and the `match` on that binding, so a body that calls the
+///    classifier and then ignores it fails.
+/// 2. That body contains **no `ec::` constant at all**.  The routing arms are
+///    the place a second classification would reappear, and it would reappear
+///    looking exactly like the retired one: `ec::DABT_LOWER | ec::DABT_CURRENT
+///    => …`.  Keeping the call and adding an `ec::` arm is the
+///    mutation that a presence check would miss.
+/// 3. The **hardware-gated** definition of `classify_synchronous_exception`
+///    resolves `lean_classify_synchronous_exception`.  Checked by requiring
+///    the `hw_target` cfg immediately above the first definition and the Lean
+///    symbol inside that definition's brace-matched body — so a host mirror
+///    promoted to the hardware target, or a hardware definition that stopped
+///    calling Lean, both fail.
+fn scan_trap_rs_classifies_via_lean() {
+    let path = "src/trap.rs";
+    println!("cargo:rerun-if-changed={path}");
+    let raw = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => panic!("WS-RR RR4.25 scanner: failed to read {path}: {e}"),
+    };
+    // Comment-free view: a scanner must not be satisfied — or tripped — by the
+    // prose that explains it.
+    let stripped: String = raw
+        .lines()
+        .map(|line| match line.find("//") {
+            Some(idx) => &line[..idx],
+            None => line,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    fn body_after<'a>(stripped: &'a str, from: usize, what: &str) -> &'a str {
+        let open_rel = stripped[from..].find('{').unwrap_or_else(|| {
+            panic!("WS-RR RR4.25 scanner: `{what}` has no body block after its declaration.")
+        });
+        let body_start = from + open_rel;
+        let mut depth = 0usize;
+        for (i, ch) in stripped[body_start..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &stripped[body_start..body_start + i + 1];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("WS-RR RR4.25 scanner: unbalanced braces while extracting `{what}`.")
+    }
+
+    // (1) + (2): the router matches the Lean classification and nothing else.
+    let handler_idx = stripped
+        .find("fn handle_synchronous_exception(")
+        .unwrap_or_else(|| {
+            panic!(
+                "WS-RR RR4.25 regression: `{path}` no longer declares \
+                 `fn handle_synchronous_exception`."
+            )
+        });
+    let handler_body = body_after(&stripped, handler_idx, "handle_synchronous_exception");
+    if !handler_body.contains("classify_synchronous_exception(esr)") {
+        panic!(
+            "WS-RR RR4.25 regression: `{path}`'s `handle_synchronous_exception` no \
+             longer obtains its class from `classify_synchronous_exception(esr)` — \
+             the Lean model is the single classification path, and a second one \
+             here can drift from it silently."
+        );
+    }
+    if !handler_body.contains("match exception_class {") {
+        panic!(
+            "WS-RR RR4.25 regression: `{path}`'s `handle_synchronous_exception` calls \
+             the classifier but no longer routes on its result (`match \
+             exception_class`).  Calling it and ignoring it is the same defect as \
+             not calling it."
+        );
+    }
+    if let Some(idx) = handler_body.find("ec::") {
+        let excerpt: String = handler_body[idx..].chars().take(40).collect();
+        panic!(
+            "WS-RR RR4.25 regression: `{path}`'s `handle_synchronous_exception` \
+             references a raw exception-class constant (`{excerpt}…`).  The routing \
+             arms must use the `sync_class::` tags the Lean model returns; matching \
+             on `ec::` values re-introduces the second classification path RR4.25 \
+             removed."
+        );
+    }
+
+    // (3): the hardware-gated classifier calls into Lean.
+    let classifier_idx = stripped
+        .find("fn classify_synchronous_exception(")
+        .unwrap_or_else(|| {
+            panic!(
+                "WS-RR RR4.25 regression: `{path}` no longer declares \
+                 `fn classify_synchronous_exception`."
+            )
+        });
+    let preamble_start = classifier_idx.saturating_sub(120);
+    if !stripped[preamble_start..classifier_idx].contains("#[cfg(feature = \"hw_target\")]") {
+        panic!(
+            "WS-RR RR4.25 regression: in `{path}`, the first \
+             `fn classify_synchronous_exception` is not the `hw_target` one.  The \
+             hardware definition must come first so this scanner checks the live \
+             path, and the host mirror must stay behind \
+             `#[cfg(not(feature = \"hw_target\"))]`."
+        );
+    }
+    let classifier_body = body_after(&stripped, classifier_idx, "classify_synchronous_exception");
+    if !classifier_body.contains("lean_classify_synchronous_exception") {
+        panic!(
+            "WS-RR RR4.25 regression: `{path}`'s hardware-target \
+             `classify_synchronous_exception` no longer resolves \
+             `lean_classify_synchronous_exception`.  On hardware the class must come \
+             from the Lean model; a local table here is the divergence RR4.25 closed."
+        );
+    }
+}
+
 fn scan_lean_ready_gates_intact() {
     let strip = |contents: &str| -> String {
         contents
@@ -1093,6 +1227,11 @@ fn scan_lean_ready_gates_intact() {
             "rust_secondary_main",
             "lean_secondary_kernel_main",
         ),
+        // WS-RR RR4.23: the fault-delivery seam.  `deliver_fault` enters the
+        // Lean runtime to run `faultDeliverOnCore` against the live kernel
+        // state, so it consults the same readiness gate as the timer tick and
+        // the `.reschedule` receiver.
+        ("src/trap.rs", "deliver_fault", "lean_handle_fault"),
     ];
     for (path, fn_name, lean_symbol) in sites {
         println!("cargo:rerun-if-changed={path}");

@@ -386,6 +386,24 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
           st2 = .ok ((), st3) →
         st3.objects.invExt))
 
+  /-- WS-RR RR4.14 — **stated confinement**: the answered caller carries no
+      pending fault.  Since RR4 the `.reply` arm is seL4's `doReplyTransfer`,
+      which branches on the answered thread's `tcbFault`; the fault branch has
+      its own bundle theorem (`faultReplyOnCore_preserves_ipcInvariantFull`,
+      `IPC/Invariant/FaultPreservation.lean`) but composing it here needs a
+      lemma the reply chain does not yet carry — that the cross-core reply
+      leaves its target `.ready`, hence `passiveServerIdleAllowed`, which is
+      what the fault reply's abandon arm consumes at the *post*-state.  Rather
+      than thread a post-state hypothesis (which the RR3 de-threading gate
+      forbids) or leave the branch silently uncovered, the payoff is confined
+      here and the composition is registered as debt in
+      `docs/WORKSTREAM_HISTORY.md`.  It is a pre-state fact, so a caller
+      discharges it before the step. -/
+  replyNoPendingFault : ∀ rid (r : Reply) (callerTid : SeLe4n.ThreadId),
+    decoded.syscallId = .reply → cap.target = .replyCap rid →
+    st.getReply? rid = some r → r.caller = some callerTid →
+    threadHasPendingFault st callerTid = false
+
 /-- WS-RR RR3.24 (**the dispatch payoff**): every syscall `dispatchWithCap`
 routes preserves `ipcInvariantFull`.  The capability-only tier delegates to
 RR3.23's payoff; the IPC arms compose the per-transition bundles with the
@@ -629,6 +647,13 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                   simp only [hCaller] at hStep
                   obtain ⟨hDon, hReplyInvExt⟩ :=
                     hPack.replyStage rid reply callerTid hSy hTgt hR hCaller
+                  -- WS-RR RR4.14: the seam's ordinary branch, under the pack's
+                  -- stated confinement.  On an unfaulted caller it is the
+                  -- pre-RR4 body verbatim, so the rest of this proof is
+                  -- unchanged.
+                  rw [replyTransferOnCore_of_no_fault tid callerTid decoded.msgInfo
+                    decoded.msgRegs _ _ st
+                    (hPack.replyNoPendingFault rid reply callerTid hSy hTgt hR hCaller)] at hStep
                   have hReplyInv := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
                     tid callerTid
                     { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := #[], badge := cap.badge }
@@ -1033,8 +1058,11 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   simp only [hCaller] at hStep
                   split at hStep
                   next hFlow =>
-                    rw [endpointReplyCrossCoreDispatchChecked_flow_allowed ctx tid
-                          callerTid _ (determineExecutingCore st tid) st hFlow] at hStep
+                    -- WS-RR RR4.14: the reply seam collapses checked → unchecked
+                    -- on *both* branches under the arm's own flow guard.
+                    rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx tid
+                          callerTid decoded.msgInfo decoded.msgRegs _
+                          (determineExecutingCore st tid) st hFlow] at hStep
                     have hU : dispatchWithCap decoded tid gate cap st
                         = .ok ((), st') := by
                       unfold dispatchWithCap
@@ -1694,7 +1722,7 @@ theorem syscallDispatchQuiescence_inhabited :
       witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnly,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     simp [witnessDecoded] at hSy
   · intro epId hSy hTgt
@@ -1710,6 +1738,8 @@ theorem syscallDispatchQuiescence_inhabited :
   · intro notifId hSy
     simp [witnessDecoded] at hSy
   · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecoded] at hSy
+  · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecoded] at hSy
 
 /-- The checked-tier pack is inhabited too: the base witness plus the
@@ -1842,7 +1872,7 @@ theorem syscallDispatchQuiescence_inhabited_signal :
       witnessCapTcbObject witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlySignal,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     simp [witnessDecodedSignal] at hSy
   · intro epId hSy
@@ -1861,6 +1891,8 @@ theorem syscallDispatchQuiescence_inhabited_signal :
     unfold boundDeliveryTarget?
     rw [witnessSt3_getNotification_tcbSlot]
   · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecodedSignal] at hSy
+  · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedSignal] at hSy
 
 /-- A `.lifecycleRetype` decode whose registers decode: target `⟨9⟩`
@@ -1990,7 +2022,7 @@ theorem syscallDispatchQuiescence_inhabited_retype :
       witnessCap witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyRetype,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     simp [witnessDecodedRetype] at hSy
   · intro epId hSy
@@ -2006,6 +2038,8 @@ theorem syscallDispatchQuiescence_inhabited_retype :
   · intro notifId hSy
     simp [witnessDecodedRetype] at hSy
   · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecodedRetype] at hSy
+  · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedRetype] at hSy
 
 /-- An object capability naming slot `⟨7⟩` -- no endpoint lives there, so the
@@ -2073,7 +2107,7 @@ theorem syscallDispatchQuiescence_inhabited_send :
       witnessCapEndpoint witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecoded rfl,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     simp [witnessDecoded] at hSy
   · intro epId hSy hTgt
@@ -2093,6 +2127,8 @@ theorem syscallDispatchQuiescence_inhabited_send :
   · intro notifId hSy
     simp [witnessDecoded] at hSy
   · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecoded] at hSy
+  · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecoded] at hSy
 
 /-- A `.receive` decode with an explicit zero-length message info: the reply
@@ -2117,7 +2153,7 @@ theorem syscallDispatchQuiescence_inhabited_receive :
       witnessCapEndpoint witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecodedRecv rfl,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     simp [witnessDecodedRecv] at hSy
   · intro epId hSy
@@ -2146,6 +2182,8 @@ theorem syscallDispatchQuiescence_inhabited_receive :
     simp [witnessDecodedRecv] at hSy
   · intro rid prevCaller replyBadge epId hSy
     simp [witnessDecodedRecv] at hSy
+  · intro rid r callerTid hSy hTgt hR hCaller
+    simp [witnessDecodedRecv] at hSy
 
 /-- A `.call` decode: no registers, absent endpoint target. -/
 private def witnessDecodedCall : SyscallDecodeResult :=
@@ -2169,7 +2207,7 @@ theorem syscallDispatchQuiescence_inhabited_call :
       witnessCapEndpoint witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecodedCall rfl,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     simp [witnessDecodedCall] at hSy
   · intro epId hSy
@@ -2193,6 +2231,8 @@ theorem syscallDispatchQuiescence_inhabited_call :
   · intro notifId hSy
     simp [witnessDecodedCall] at hSy
   · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecodedCall] at hSy
+  · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedCall] at hSy
 
 /-- A `.cspaceMint` decode whose registers decode: srcSlot 0 (also the bind
@@ -2235,7 +2275,7 @@ theorem syscallDispatchQuiescence_inhabited_mint :
       witnessCap witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyMint,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     simp only [Architecture.SyscallArgDecode.decodeCSpaceMintArgs,
       witnessDecodedMint, requireMsgReg, bind, Except.bind, pure,
@@ -2258,6 +2298,8 @@ theorem syscallDispatchQuiescence_inhabited_mint :
   · intro notifId hSy
     simp [witnessDecodedMint] at hSy
   · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecodedMint] at hSy
+  · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedMint] at hSy
 
 /-- A `.declassifySignal` decode: the checked tier's confinement fires. -/
@@ -2306,7 +2348,7 @@ private theorem syscallDispatchQuiescence_inhabited_declassifySignal :
       witnessGateDeclassifySignal witnessCapTcbObject witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyDeclassifySignal,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     simp [witnessDecodedDeclassifySignal] at hSy
   · intro epId hSy
@@ -2322,6 +2364,8 @@ private theorem syscallDispatchQuiescence_inhabited_declassifySignal :
   · intro notifId hSy
     simp [witnessDecodedDeclassifySignal] at hSy
   · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecodedDeclassifySignal] at hSy
+  · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedDeclassifySignal] at hSy
 
 /-- **The checked confinement is exercised**: the `.declassifySignal` decode
@@ -2413,6 +2457,26 @@ private theorem witnessSt4_getReply :
     witnessSt4_lookup]
   simp
 
+/-- WS-RR RR4.14: no thread in the reply witness carries a pending fault — the
+witness TCBs are built from `witnessTcbFresh`, whose `pendingFault` is the field
+default `none`.  This is what discharges the pack's `replyNoPendingFault`
+confinement at the `.reply` instance, so the field is inhabited rather than
+vacuously satisfiable. -/
+private theorem witnessSt4_no_pendingFault (tid : SeLe4n.ThreadId) :
+    threadHasPendingFault witnessSt4 tid = false := by
+  rw [threadHasPendingFault_eq_false_iff]
+  intro tcb hTcb
+  rw [SystemState.getTcb?_eq_some_iff, witnessSt4_lookup] at hTcb
+  split at hTcb
+  · simp at hTcb
+  · rw [witnessSt3_lookup] at hTcb
+    split at hTcb
+    · simp at hTcb
+    · split at hTcb
+      · have hEq : tcb = witnessTcbBound := by simpa using hTcb.symm
+        subst hEq; rfl
+      · simp at hTcb
+
 /-- A `.reply` decode and the reply capability naming the stored object. -/
 private def witnessDecodedReply : SyscallDecodeResult :=
   { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default, syscallId := .reply }
@@ -2474,7 +2538,7 @@ theorem syscallDispatchQuiescence_inhabited_reply :
       witnessCapReply witnessSt4 := by
   refine ⟨witnessReachable4, witnessCapOnlyReply,
     ⟨witnessTcbBound, witnessSt4_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     simp [witnessDecodedReply] at hSy
   · intro epId hSy
@@ -2494,6 +2558,10 @@ theorem syscallDispatchQuiescence_inhabited_reply :
     simp [witnessDecodedReply] at hSy
   · intro rid prevCaller replyBadge epId hSy
     simp [witnessDecodedReply] at hSy
+  · intro rid r callerTid _hSy _hTgt hR hCaller
+    -- WS-RR RR4.14: the witness state carries no faulted thread at all,
+    -- so the confinement holds for whatever caller the reply resolves to.
+    exact witnessSt4_no_pendingFault callerTid
 
 /-- A `.schedContextBind` decode whose one register decodes (thread id 5,
 valid): the bind field's donation conclusion is read off the stored binding
@@ -2536,7 +2604,7 @@ theorem syscallDispatchQuiescence_inhabited_bind :
       witnessCap witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyBind,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     simp [witnessDecodedBind] at hSy
   · intro epId hSy
@@ -2552,6 +2620,8 @@ theorem syscallDispatchQuiescence_inhabited_bind :
   · intro notifId hSy
     simp [witnessDecodedBind] at hSy
   · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecodedBind] at hSy
+  · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedBind] at hSy
 
 /-- A `.schedContextUnbind` decode with the TCB-object capability: the unbind
@@ -2599,7 +2669,7 @@ theorem syscallDispatchQuiescence_inhabited_unbind :
       witnessCapTcbObject witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyUnbind,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     simp [witnessDecodedUnbind] at hSy
   · intro epId hSy
@@ -2615,6 +2685,8 @@ theorem syscallDispatchQuiescence_inhabited_unbind :
   · intro notifId hSy
     simp [witnessDecodedUnbind] at hSy
   · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecodedUnbind] at hSy
+  · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedUnbind] at hSy
 
 /-- A `.tcbSuspend` decode with the TCB-object capability: the
@@ -2660,7 +2732,7 @@ theorem syscallDispatchQuiescence_inhabited_suspend :
       witnessGateSuspend witnessCapTcbObject witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlySuspend,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro args hSy hDec
     simp [witnessDecodedSuspend] at hSy
   · intro epId hSy
@@ -2676,6 +2748,8 @@ theorem syscallDispatchQuiescence_inhabited_suspend :
   · intro notifId hSy
     simp [witnessDecodedSuspend] at hSy
   · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecodedSuspend] at hSy
+  · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedSuspend] at hSy
 
 end SeLe4n.Kernel

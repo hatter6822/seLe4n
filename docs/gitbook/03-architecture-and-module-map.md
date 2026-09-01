@@ -75,8 +75,14 @@ inventory was written:
   (SM9.C), `Taint.lean`/`TaintPropagation.lean` (SM9.D causal
   provenance).
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean`, `SecondaryEntry.lean`,
-  `PerCoreTimerEntry.lean` — the live `@[export]` dispatch/boot/timer
-  seams the Rust HAL resolves against.
+  `PerCoreTimerEntry.lean`, `FaultEntry.lean` (WS-RR RR4) — the live
+  `@[export]` dispatch/boot/timer/fault seams the Rust HAL resolves against.
+  `FaultEntry.lean` carries two: `lean_handle_fault` (classify, build the
+  fault, run `faultDeliverOnCore` against the live kernel state, fire the SGI
+  the delivery surfaced) and `lean_classify_synchronous_exception`, which makes
+  the Lean model the **only** place an `ESR_EL1` value becomes an exception
+  class — `trap.rs` calls it instead of running its own `esr_ec` match, so the
+  routing decision and the delivered fault's kind cannot disagree.
 - `SeLe4n/Kernel/FrozenOps/` — the 24 frozen operations mirroring the
   live API; `SeLe4n/Kernel/CrossSubsystem.lean` +
   `CrossSubsystemPerCore*.lean` — cross-subsystem invariants.
@@ -199,6 +205,19 @@ inventory was written:
   - `lookupObject` / `storeObject` / `setCurrentThread`,
   - typed CSpace lookup/ownership helpers and supporting lemmas.
 
+- `SeLe4n/Model/Fault.lean` (WS-RR RR4, v0.34.44)
+  - `Fault` — seL4's `seL4_Fault_t`: `vmFault` (address, FSR, prefetch flag),
+    `capFault` (capability address, receive-phase flag, lookup failure),
+    `unknownSyscall` (syscall number), `userException` (number, code).
+  - `FaultContext` — the register snapshot a handler needs to diagnose and
+    restart (`faultIP`, `sp`, `lr`, `spsr`, an 8-register GPR window).  `spsr`
+    is **outbound only**: it is reported to the handler and never written back,
+    the fail-closed side of seL4's `sanitiseRegister`.
+  - `ThreadFault` — the pair carried on `TCB.pendingFault` (seL4's `tcbFault`).
+  - It lives in `Model/` rather than `Architecture/` because the TCB carries it
+    and `Object/Types.lean` cannot import an architecture module — the split
+    seL4 makes between `shared_types.bf` and its arch fault encoders.
+
 - `SeLe4n/Model/IntermediateState.lean` (Q3-A)
   - `IntermediateState` — builder-phase state wrapping `SystemState` with four
     invariant witnesses (`allTablesInvExt`, `perObjectSlotsInvariant`,
@@ -292,6 +311,45 @@ inventory was written:
     `ipcInvariantFull` composition theorems (9 conjuncts at WS-L3; 20 today,
     the first 15 forming `ipcInvariantCore` — `IPC/Invariant/Defs.lean`).
 
+**WS-RR RR4 fault IPC** (v0.34.44) — a fault is delivered, never returned:
+
+- `SeLe4n/Kernel/IPC/Operations/Fault.lean` (production) — `resolveFaultHandler`
+  (the `TCB.faultHandler` CPtr resolved through the thread's own CSpace, gated
+  on **both** `.write` and `.grant`, seL4's send + grant/grantReply gate),
+  `faultMessage`, the `FaultDisposition` pair, and the state writes
+  `recordPendingFault` / `faultSuspend` / `faultAbandon` / `applyFaultRestart`.
+- `SeLe4n/Kernel/IPC/CrossCore/Fault.lean` (production) — `faultDeliverOnCore`
+  (and its `endpointFlowGate`-checked wrapper `faultDeliverOnCoreChecked`, §5,
+  the arm the live fault entry calls), plus the reply seam
+  `replyTransferOnCore` (§4) — seL4's `doReplyTransfer` branch on the answered
+  thread's `pendingFault`, which both live `.reply` dispatch arms route through,
+  because a fault handler answers with the ordinary reply syscall and nothing
+  else.  `.replyRecv` does not route through it yet (registered debt, RR7).  The delivery composes the **live** `.call` chain
+  (`endpointCallCrossCoreDispatch`) so a passive fault handler receives the
+  faulting thread's SchedContext donation, and `faultReplyOnCore`, which
+  composes the `.reply` chain and applies the decoded outcome.  There is
+  deliberately no bootCore-pinned `faultDeliver`: it would be a *second* fault
+  delivery that could diverge from the per-core one.
+- `SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean` (production) — the phase's
+  flagship `faultDeliverOnCore_not_dispatchable`: after delivery the faulting
+  thread is on no core's run queue and is no core's current thread, on **both**
+  dispositions.
+- `SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean` (staged with the `.call`
+  chain's bundle) — `faultDeliverOnCore_preserves_ipcInvariantFull` and
+  `faultReplyOnCore_preserves_ipcInvariantFull`, each under pre-state
+  hypothesis packs in the RR3 de-threading discipline.
+- `SeLe4n/Kernel/InformationFlow/FaultFlow.lean` (staged) — the
+  non-interference half: the message-independence theorems (a fault message is
+  a function of the faulting thread's *own* syndrome and register context and
+  transfers no capabilities, so the `.grant` right its handler capability must
+  carry is inert on it) and the projection lemmas that make a high thread's
+  fault invisible to a low observer.  The flow **gate** is not here:
+  `faultDeliverOnCoreChecked` is the arm `Kernel/FaultEntry.lean` calls, so it
+  is production in `IPC/CrossCore/Fault.lean` §5 — a gate reachable only from a
+  staged module is a gate the kernel does not apply.  Its denied arm takes the
+  fail-closed suspend rather than an error return, which is why gating the live
+  entry costs neither the RR4.19 progress theorem nor the IPC bundle.
+
 **WS-L optimizations** (v0.16.9–v0.16.13): IPC hot-path performance — eliminated
 4 redundant TCB lookups by passing pre-dequeue TCB from `endpointQueuePopHead`
 and adding `_fromTcb` variants for `storeTcbIpcState`/`storeTcbIpcStateAndMessage`.
@@ -367,6 +425,24 @@ determinism. See `Service/Operations.lean` for the full design rationale.
   - Cache coherency model: `CacheLineState` (invalid/clean/dirty), `CacheState`
     with D-cache/I-cache function fields. Operations: `dcClean`, `dcInvalidate`,
     `dcCleanInvalidate`, `icInvalidateAll`, `dcZeroByVA`. 17 preservation theorems.
+- `SeLe4n/Kernel/Architecture/Fault.lean` *(WS-RR RR4, v0.34.44)*
+  - The synchronous-exception syndrome layer, moved down out of the staged
+    `ExceptionModel.lean` so it sits **below** `Kernel/API.lean` in the import
+    order and can reach hardware: `SynchronousExceptionClass`,
+    `ExceptionContext`, `extractExceptionClass` (ESR_EL1 EC, bits [31:26]),
+    `extractInstructionSyndrome` (ISS, bits [24:0]) and the total
+    `classifySynchronousException`.
+  - `faultOfExceptionContext` — the class **plus** the syndrome and fault
+    address become a `Model.Fault`.  It reads `ExceptionContext`, not
+    `SynchronousExceptionClass`, because that inductive is nullary: a
+    class-to-fault map could only invent the address a VM-fault message must
+    carry.
+  - The wire format at seL4 parity: `faultLabel` (`seL4_Fault_tag`: nullFault
+    0, capFault 1, unknownSyscall 2, userException 3, vmFault 6),
+    `faultMessageLength` (4 / 4 / 13 / 5), `encodeFault` / `decodeFault` with
+    `decodeFault_encodeFault` round-tripping and a within-budget theorem.
+  - `decodeFaultReply` — seL4's `handleFaultReply` arm for arm, yielding
+    `.restart frame` or `.abandon`.
 - `SeLe4n/Kernel/Architecture/RegisterDecode.lean` *(WS-J1-B v0.15.5; extended WS-K-A v0.16.0, WS-K-E v0.16.4, WS-K-F v0.16.5, AK4-A v0.29.8)*
   - Total, deterministic decode functions from raw register words to typed kernel
     references (`decodeCapPtr`, `decodeMsgInfo`, `decodeSyscallId`,

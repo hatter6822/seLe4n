@@ -17,6 +17,7 @@ explicit hash refresh in the same commit.
 | `two_phase_arch_smoke.expected` | `two_phase_arch_smoke.expected.sha256` | `tests/TwoPhaseArchSuite.lean` |
 | `smp_4core_scheduler.expected` | `smp_4core_scheduler.expected.sha256` | `tests/SmpSchedulerSuite.lean` (WS-SM SM5.K.4 — the deterministic 4-thread/4-core per-core scheduler trace + the multi-step cross-core wake→SGI→handler round-trip, verified byte-for-byte against the live `chooseThreadOnCore` / `determineTargetCore` / `wakeThread` / `switchToThreadOnCore` / `handleRescheduleSgiOnCore` decisions) |
 | `smp_ipc_4core.expected` | `smp_ipc_4core.expected.sha256` | `tests/SmpIpcSuite.lean` (WS-SM SM6.F.4 — the deterministic 4-thread/4-core cross-core IPC trace: both client/server call→SGI→handler-dispatch→reply→SGI→handler-dispatch round trips plus the cross-core send/receive rendezvous, verified byte-for-byte against the live `endpointReceiveDualOnCore` / `endpointCallOnCore` / `endpointReplyOnCore` / `endpointSendDual` / `handleRescheduleSgiOnCore` decisions) |
+| `fault_handling_4core.expected` | `fault_handling_4core.expected.sha256` | `tests/FaultHandlingSuite.lean` (WS-RR RR4.27 — the deterministic 4-core fault trace: a data abort on core 0 delivered to a handler homed on core 1, reporting the handler's blocking receive, the delivery's disposition and its cross-core `.reschedule` SGI, the faulting thread's `blockedOnReply` state **and its undispatchability on the core it faulted on** (the RR4.19 property, as an observable), the `seL4_Fault_tag` the handler receives, the SGI handler's dispatch, the reply's own SGI and restart PC, the resumed thread's saved `pc`, and the retirement of the answered fault — verified byte-for-byte against the live `endpointReceiveDualOnCore` / `faultDeliverOnCore` / `handleRescheduleSgiOnCore` / `faultReplyOnCore` decisions) |
 | `smp_tlb_shootdown.expected` | `smp_tlb_shootdown.expected.sha256` | `tests/SmpTlbShootdownSuite.lean` (WS-SM SM7.E.6 — the deterministic 4-core TLB shootdown trace: a live map + translation-walk fill on core 1, a cross-core unmap from core 0 posting a covering round, and the deferred catch-up draining every target, plus the four-core concurrent-unmap storm and the cross-cluster domain identity, verified byte-for-byte against the live `vspaceMapPageCheckedWithShootdownFromStatePerCore` / `vspaceUnmapPageWithShootdownPerCore` / `shootdownCatchUpPerCore` / `handleTlbShootdownReqOnCorePerCore` decisions.  Each line reports per-core observables — cached entries, pending descriptors, ack flags, and the pending-aware invariant verdict — so any change in the shootdown semantics diverges the fixture) |
 | `smp_declassification_audit.expected` | `smp_declassification_audit.expected.sha256` | `tests/SmpInformationFlowSuite.lean` (WS-SM SM8.C.7 — the deterministic declassification-audit trace: a run of authorized downgrades through the live `.declassify` transition and the mounted trail, reporting each recorded entry's core, domains, target and basis, the per-core partition of the log, and the three fail-closed refusals — unconfigured policy, idle core, absent target) |
 | `smp_fine_lock_contention.expected` | `smp_fine_lock_contention.expected.sha256` | `tests/SmpInformationFlowSuite.lean` (WS-SM SM8.D.6 — the deterministic lock-contention trace: the per-object lock erased from every core's projection, a real contended execution with its delay, wait depth and channel code, the blocked reader's temporal figures, both integrity directions, and the two bracketed live syscall entries) |
@@ -66,6 +67,14 @@ fixture fails CI with a uniform remediation message.
      > tests/fixtures/smp_ipc_4core.expected
    ```
 
+   For the fault-handling 4-core trace fixture (WS-RR RR4.27), the same
+   escaping rule applies to its `[fault-4core]` tag:
+
+   ```bash
+   lake exe fault_handling_suite | grep '^\[fault-4core\]' \
+     > tests/fixtures/fault_handling_4core.expected
+   ```
+
    For the SMP TLB shootdown trace fixture (WS-SM SM7.E.6), the same
    escaping rule applies to its `[smp-tlb-shootdown]` tag:
 
@@ -101,6 +110,7 @@ fixture fails CI with a uniform remediation message.
    sha256sum two_phase_arch_smoke.expected  > two_phase_arch_smoke.expected.sha256
    sha256sum smp_4core_scheduler.expected   > smp_4core_scheduler.expected.sha256
    sha256sum smp_ipc_4core.expected         > smp_ipc_4core.expected.sha256
+   sha256sum fault_handling_4core.expected  > fault_handling_4core.expected.sha256
    sha256sum smp_tlb_shootdown.expected     > smp_tlb_shootdown.expected.sha256
    sha256sum smp_declassification_audit.expected \
      > smp_declassification_audit.expected.sha256

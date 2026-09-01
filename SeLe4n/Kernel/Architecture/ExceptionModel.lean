@@ -9,6 +9,9 @@
 
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Architecture.InterruptDispatch
+import SeLe4n.Kernel.Architecture.Fault
+import SeLe4n.Kernel.IPC.CrossCore.Fault
+import SeLe4n.Kernel.IPC.Invariant.FaultProgress
 
 /-!
 # AG3-C (FINDING-04): ARM64 Exception Model
@@ -57,6 +60,7 @@ namespace SeLe4n.Kernel.Architecture
 
 open SeLe4n
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency
 
 -- ============================================================================
 -- AG3-C-i: Core type definitions
@@ -78,29 +82,13 @@ inductive ExceptionSource where
   | lowerElAArch32   -- Lower EL using AArch32
   deriving Repr, DecidableEq
 
-/-- AG3-C: Synchronous exception class (derived from ESR_EL1 EC field). -/
-inductive SynchronousExceptionClass where
-  | svc             -- SVC instruction (syscall)
-  | dataAbort       -- Data abort
-  | instrAbort      -- Instruction abort
-  | pcAlignment     -- PC alignment fault
-  | spAlignment     -- SP alignment fault
-  | unknownReason   -- Unclassified synchronous exception
-  deriving Repr, DecidableEq
-
-/-- AG3-C: Exception context — captures the ARM64 exception registers
-    saved on exception entry. All values are `UInt64` matching the
-    hardware register width. -/
-structure ExceptionContext where
-  /-- ESR_EL1: Exception Syndrome Register -/
-  esr : UInt64
-  /-- ELR_EL1: Exception Link Register (return address) -/
-  elr : UInt64
-  /-- SPSR_EL1: Saved Program Status Register -/
-  spsr : UInt64
-  /-- FAR_EL1: Fault Address Register -/
-  far : UInt64
-  deriving Repr, DecidableEq
+-- WS-RR RR4.3: `SynchronousExceptionClass`, `ExceptionContext`,
+-- `extractExceptionClass` and `classifySynchronousException` now live in
+-- `SeLe4n/Kernel/Architecture/Fault.lean`, which this module imports.  They
+-- moved down because the IPC fault path has to classify an exception and this
+-- module sits above `Kernel.API`; both files are in
+-- `SeLe4n.Kernel.Architecture`, so every existing consumer sees the names
+-- unchanged.
 
 /-! ## AK5-F.4: TrapFrame layout contract (model side)
 
@@ -234,54 +222,87 @@ def canExecutePrivileged (level : ExceptionLevel) : Bool :=
   | .el0 => false
 
 -- ============================================================================
--- AG3-C-ii: ESR classification function
--- ============================================================================
-
-/-- AG3-C: Extract the Exception Class (EC) field from ESR_EL1.
-    EC is bits [31:26] — a 6-bit field identifying the exception reason. -/
-def extractExceptionClass (esr : UInt64) : UInt64 :=
-  (esr >>> 26) &&& 0x3F
-
-/-- AG3-C: Classify a synchronous exception from the ESR_EL1 EC field.
-    Maps ARM64 exception class codes to our model's classification:
-    - EC 0x15: SVC from AArch64 (syscall)
-    - EC 0x24/0x25: Data abort (from lower/current EL)
-    - EC 0x20/0x21: Instruction abort (from lower/current EL)
-    - EC 0x22: PC alignment fault
-    - EC 0x26: SP alignment fault
-    - All others: Unknown/unmodeled -/
-def classifySynchronousException (ectx : ExceptionContext) : SynchronousExceptionClass :=
-  let ec := extractExceptionClass ectx.esr
-  if ec = 0x15 then .svc
-  else if ec = 0x24 || ec = 0x25 then .dataAbort
-  else if ec = 0x20 || ec = 0x21 then .instrAbort
-  else if ec = 0x22 then .pcAlignment
-  else if ec = 0x26 then .spAlignment
-  else .unknownReason
-
-/-- AG3-C: Classification is total — every ESR value produces a valid class. -/
-theorem classifySynchronousException_total (ectx : ExceptionContext) :
-    ∃ cls, classifySynchronousException ectx = cls :=
-  ⟨_, rfl⟩
-
--- ============================================================================
 -- AG3-C-iii/iv: Exception dispatch functions
 -- ============================================================================
 
-/-- AG3-C: Dispatch a synchronous exception.
-    Routes based on ESR classification:
-    - SVC: Extract syscall via `syscallEntry` (the existing entry point)
-    - Data/Instruction abort: VM fault error
-    - Alignment faults, unknown: User exception error -/
-def dispatchSynchronousException (ectx : ExceptionContext)
-    (st : SystemState) : Except KernelError (Unit × SystemState) :=
+/-- WS-RR RR4.21: the `KernelError` an **unattributable** fault is reported as.
+
+A fault taken on a core with no current thread cannot be delivered — there is
+no faulting thread to block and no `faultHandler` to resolve — so it is
+reported to the trap layer.  Reporting the fault's own kind keeps the
+diagnostic informative and keeps `KernelError.vmFault` / `.userException`
+reachable: they stop being what an abort *returns to a user thread* (the
+pre-RR4 defect) and become what the kernel says about a fault it could not
+attribute. -/
+def unhandledFaultError : Fault → KernelError
+  | .vmFault _ _ _     => .vmFault
+  | .capFault _ _ _    => .invalidCapability
+  | .unknownSyscall _  => .invalidSyscallNumber
+  | .userException _ _ => .userException
+
+/-- AG3-C, rewired by **WS-RR RR4.21**: dispatch a synchronous exception.
+
+* **SVC** → `syscallEntry`, the syscall path.  Unchanged.
+* **Everything else** → the fault is classified out of the syndrome registers
+  (`faultOfExceptionContext`) and **delivered to the faulting thread's fault
+  handler** (`faultDeliverOnCore`), which blocks the thread awaiting the
+  handler's reply or, fail-closed, suspends it.
+
+This retires the pre-RR4 arms, which returned `.error .vmFault` /
+`.error .userException` as *pure errors with no state change*: the faulting
+thread stayed runnable, and the trap path's `eret` put it straight back on the
+instruction that faulted.  A user thread touching an unmapped page wedged its
+core forever.  It was not exploitable at `v0.34.3` only because nothing
+booted — which is the wrong moment to discover it.
+
+Deliberately landed **after** RR4.17–RR4.20: this is the sub-task that makes
+the delivery reachable, and a live kernel transition must not land ahead of
+its own invariant surface.  The preservation
+(`faultDeliverOnCore_preserves_ipcInvariantFull`), progress
+(`faultDeliverOnCore_not_dispatchable`) and non-interference
+(`faultDeliverOnCoreChecked_*`) theorems all predate this wiring.
+
+The result carries the optional cross-core SGI the delivery surfaced (the
+handler's home core, when the handler was woken elsewhere) — the runtime fires
+it after the state commit, exactly as the syscall seam does.
+
+**Both arms here are the *unchecked* transitions, and that is not the live
+contract.**  This wrapper takes no `LabelingContext`, so its SVC arm calls
+`syscallEntry` and its fault arms call `faultDeliverOnCore` — internally
+symmetric, and a model of the dispatch *shape* rather than of the kernel's
+enforcement.  The live seams gate: the SVC path runs `syscallEntryChecked`
+through `Platform.FFI.syscallDispatchFromAbi`, and the fault path runs
+`faultDeliverOnCoreChecked` through `Kernel/FaultEntry.lean`, each reading the
+deployment context from `Platform.FFI.getKernelLabelingContext`.  New code must
+not read this module's arms as evidence that a fault is delivered without a flow
+check.
+
+**Unattributable faults.**  A core with no current thread has no user thread to
+deliver to, so the fault is reported to the trap layer as an error rather than
+delivered — and the error is the *fault's own kind*
+(`unhandledFaultError`), not a generic `.illegalState`, so the trap layer's
+diagnostic says what actually happened.  That arm is a kernel-side fault (the
+core was idle, or the kernel itself faulted); there is no thread to contain, so
+reporting is the fail-closed answer.  `faultOfExceptionContext` is `none` only
+for the SVC class, which this match has already routed away. -/
+def dispatchSynchronousException (ectx : ExceptionContext) (st : SystemState)
+    (executingCore : CoreId := bootCoreId) :
+    Except KernelError (Option (CoreId × SgiKind) × SystemState) :=
   match classifySynchronousException ectx with
-  | .svc => syscallEntry arm64DefaultLayout st.machine.registerCount st
-  | .dataAbort => .error .vmFault
-  | .instrAbort => .error .vmFault
-  | .pcAlignment => .error .userException
-  | .spAlignment => .error .userException
-  | .unknownReason => .error .userException
+  | .svc =>
+      match syscallEntry arm64DefaultLayout st.machine.registerCount st with
+      | .error e => .error e
+      | .ok ((), st') => .ok (none, st')
+  | .dataAbort | .instrAbort | .pcAlignment | .spAlignment | .unknownReason =>
+      match faultOfExceptionContext ectx with
+      | none => .error .illegalState
+      | some f =>
+          match st.scheduler.currentOnCore executingCore with
+          | none => .error (unhandledFaultError f)
+          | some tid =>
+              let fctx := faultContextOfThread st tid ectx.elr ectx.spsr
+              let delivered := Kernel.faultDeliverOnCore st tid f fctx executingCore
+              .ok (delivered.2.sgi, delivered.1)
 
 /-- AG3-C/AG3-D: Top-level exception dispatch.
     Routes by exception type:
@@ -289,13 +310,21 @@ def dispatchSynchronousException (ectx : ExceptionContext)
     - IRQ: Dispatch via `interruptDispatchSequence` (AG3-D)
     - FIQ: Not supported by seL4
     - SError: Hardware fault
-    The `rawIntId` parameter is only used for IRQ exceptions (read from GICC_IAR). -/
+    The `rawIntId` parameter is only used for IRQ exceptions (read from GICC_IAR).
+
+    WS-RR RR4.21: the result carries the synchronous path's optional cross-core
+    SGI; the IRQ path surfaces none of its own here (the per-core IRQ handler
+    fires its own). -/
 def dispatchException (etype : ExceptionType) (ectx : ExceptionContext)
     (rawIntId : Nat := 0)
-    (st : SystemState) : Except KernelError (Unit × SystemState) :=
+    (st : SystemState) (executingCore : CoreId := bootCoreId) :
+    Except KernelError (Option (CoreId × SgiKind) × SystemState) :=
   match etype with
-  | .synchronous => dispatchSynchronousException ectx st
-  | .irq => interruptDispatchSequence st rawIntId
+  | .synchronous => dispatchSynchronousException ectx st executingCore
+  | .irq =>
+      match interruptDispatchSequence st rawIntId with
+      | .error e => .error e
+      | .ok ((), st') => .ok (none, st')
   | .fiq => .error .notSupported
   | .serror => .error .hardwareFault
 
@@ -304,38 +333,119 @@ def dispatchException (etype : ExceptionType) (ectx : ExceptionContext)
 -- ============================================================================
 
 /-- AG3-C: FIQ dispatch always returns `.notSupported`. -/
-theorem dispatchException_fiq (ectx : ExceptionContext) (n : Nat) (st : SystemState) :
-    dispatchException .fiq ectx n st = .error .notSupported := rfl
+theorem dispatchException_fiq (ectx : ExceptionContext) (n : Nat) (st : SystemState)
+    (c : CoreId) : dispatchException .fiq ectx n st c = .error .notSupported := rfl
 
 /-- AG3-C: SError dispatch always returns `.hardwareFault`. -/
-theorem dispatchException_serror (ectx : ExceptionContext) (n : Nat) (st : SystemState) :
-    dispatchException .serror ectx n st = .error .hardwareFault := rfl
+theorem dispatchException_serror (ectx : ExceptionContext) (n : Nat) (st : SystemState)
+    (c : CoreId) : dispatchException .serror ectx n st c = .error .hardwareFault := rfl
 
-/-- AG3-C: Synchronous SVC exception dispatches to `syscallEntry`. -/
+/-- AG3-C: Synchronous SVC exception dispatches to `syscallEntry` — and to
+nothing else: the SVC class is the one arm RR4.21 left alone, because an `SVC`
+is a syscall, not a fault. -/
 theorem dispatchException_svc (ectx : ExceptionContext) (n : Nat) (st : SystemState)
-    (hSvc : classifySynchronousException ectx = .svc) :
-    dispatchException .synchronous ectx n st =
-    syscallEntry arm64DefaultLayout st.machine.registerCount st := by
+    (c : CoreId) (hSvc : classifySynchronousException ectx = .svc) :
+    dispatchException .synchronous ectx n st c =
+      (match syscallEntry arm64DefaultLayout st.machine.registerCount st with
+       | .error e => .error e
+       | .ok ((), st') => .ok (none, st')) := by
   simp [dispatchException, dispatchSynchronousException, hSvc]
 
 /-- AG3-D: IRQ dispatch delegates to `interruptDispatchSequence`. -/
-theorem dispatchException_irq (ectx : ExceptionContext) (rawIntId : Nat) (st : SystemState) :
-    dispatchException .irq ectx rawIntId st =
-    interruptDispatchSequence st rawIntId := rfl
+theorem dispatchException_irq (ectx : ExceptionContext) (rawIntId : Nat)
+    (st : SystemState) (c : CoreId) :
+    dispatchException .irq ectx rawIntId st c =
+      (match interruptDispatchSequence st rawIntId with
+       | .error e => .error e
+       | .ok ((), st') => .ok (none, st')) := rfl
 
-/-- AG3-C: Data abort exceptions return `.vmFault`. -/
+/-- **WS-RR RR4.21**: a data abort **delivers a VM fault**, it does not return
+one.  The pre-RR4 statement of this theorem was
+`… = .error .vmFault` — a pure error, no state change, and a thread left
+runnable at the faulting instruction.  This is what replaces it. -/
 theorem dispatchSynchronousException_dataAbort (ectx : ExceptionContext)
-    (st : SystemState)
-    (hCls : classifySynchronousException ectx = .dataAbort) :
-    dispatchSynchronousException ectx st = .error .vmFault := by
-  simp [dispatchSynchronousException, hCls]
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hCls : classifySynchronousException ectx = .dataAbort)
+    (hCur : st.scheduler.currentOnCore c = some tid) :
+    dispatchSynchronousException ectx st c =
+      .ok ((Kernel.faultDeliverOnCore st tid (.vmFault ectx.far ectx.esr false)
+              (faultContextOfThread st tid ectx.elr ectx.spsr) c).2.sgi,
+           (Kernel.faultDeliverOnCore st tid (.vmFault ectx.far ectx.esr false)
+              (faultContextOfThread st tid ectx.elr ectx.spsr) c).1) := by
+  simp only [dispatchSynchronousException, hCls,
+    faultOfExceptionContext_dataAbort ectx hCls, hCur]
 
-/-- AG3-C: Instruction abort exceptions return `.vmFault`. -/
+/-- **WS-RR RR4.21**: an instruction abort delivers a **prefetch** VM fault —
+the flag that tells the handler to map an executable page rather than a data
+page. -/
 theorem dispatchSynchronousException_instrAbort (ectx : ExceptionContext)
-    (st : SystemState)
-    (hCls : classifySynchronousException ectx = .instrAbort) :
-    dispatchSynchronousException ectx st = .error .vmFault := by
-  simp [dispatchSynchronousException, hCls]
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hCls : classifySynchronousException ectx = .instrAbort)
+    (hCur : st.scheduler.currentOnCore c = some tid) :
+    dispatchSynchronousException ectx st c =
+      .ok ((Kernel.faultDeliverOnCore st tid (.vmFault ectx.far ectx.esr true)
+              (faultContextOfThread st tid ectx.elr ectx.spsr) c).2.sgi,
+           (Kernel.faultDeliverOnCore st tid (.vmFault ectx.far ectx.esr true)
+              (faultContextOfThread st tid ectx.elr ectx.spsr) c).1) := by
+  simp only [dispatchSynchronousException, hCls,
+    faultOfExceptionContext_instrAbort ectx hCls, hCur]
+
+/-- **WS-RR RR4.21**: a data abort on a core with **no current thread** is
+reported as `.vmFault` rather than delivered — the arm that keeps that
+`KernelError` variant reachable, now meaning "a VM fault the kernel could not
+attribute to a thread" rather than "a VM fault handed back to the thread that
+took it". -/
+theorem dispatchSynchronousException_dataAbort_unattributable (ectx : ExceptionContext)
+    (st : SystemState) (c : CoreId)
+    (hCls : classifySynchronousException ectx = .dataAbort)
+    (hIdle : st.scheduler.currentOnCore c = none) :
+    dispatchSynchronousException ectx st c = .error .vmFault := by
+  simp only [dispatchSynchronousException, hCls,
+    faultOfExceptionContext_dataAbort ectx hCls, hIdle, unhandledFaultError]
+
+/-- **WS-RR RR4.21**: and an alignment fault on an idle core is reported as
+`.userException`, symmetrically. -/
+theorem dispatchSynchronousException_alignment_unattributable (ectx : ExceptionContext)
+    (st : SystemState) (c : CoreId)
+    (hCls : classifySynchronousException ectx = .pcAlignment)
+    (hIdle : st.scheduler.currentOnCore c = none) :
+    dispatchSynchronousException ectx st c = .error .userException := by
+  simp only [dispatchSynchronousException, faultOfExceptionContext, hCls, hIdle,
+    unhandledFaultError]
+
+/-- **WS-RR RR4.21 (the negative that matters)**: no synchronous exception
+other than `SVC` leaves the state unchanged.  The pre-RR4 abort and alignment
+arms did exactly that — `.error` with the pre-state intact — and the trap
+layer's `eret` then returned the thread to the instruction that faulted.
+
+Stated over the *faulting thread's dispatchability* rather than over the
+result value, because that is the property the livelock needs: whatever the
+delivery decided, the thread is not runnable on the core it faulted on. -/
+theorem dispatchSynchronousException_nonSvc_thread_not_dispatchable
+    (ectx : ExceptionContext) (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (sgi? : Option (CoreId × SgiKind)) (st' : SystemState)
+    (hCls : classifySynchronousException ectx ≠ .svc)
+    (hCur : st.scheduler.currentOnCore c = some tid)
+    (hStep : dispatchSynchronousException ectx st c = .ok (sgi?, st')) :
+    ¬ SeLe4n.Kernel.dispatchableOnCore st' tid c := by
+  have hFault : (faultOfExceptionContext ectx).isSome :=
+    faultOfExceptionContext_isSome_of_ne_svc ectx hCls
+  unfold dispatchSynchronousException at hStep
+  cases hC : classifySynchronousException ectx with
+  | svc => exact absurd hC hCls
+  | dataAbort | instrAbort | pcAlignment | spAlignment | unknownReason =>
+      rw [hC] at hStep
+      simp only at hStep
+      cases hF : faultOfExceptionContext ectx with
+      | none => rw [hF] at hStep; exact absurd hStep (by simp)
+      | some f =>
+          rw [hF, hCur] at hStep
+          simp only at hStep
+          have hEq : (Kernel.faultDeliverOnCore st tid f
+              (faultContextOfThread st tid ectx.elr ectx.spsr) c).1 = st' :=
+            (congrArg Prod.snd (Except.ok.inj hStep))
+          rw [← hEq]
+          exact SeLe4n.Kernel.faultDeliverOnCore_not_dispatchable st tid f _ c
 
 -- ============================================================================
 -- AG5-G: Interrupt-disabled region enforcement

@@ -1,0 +1,11 @@
+[fault-4core] handler recv on core 1 leaves handler some (SeLe4n.Model.ThreadIpcState.blockedOnReceive { val := 1110 })
+[fault-4core] faulter data abort on core 0 disposition = SeLe4n.Kernel.FaultDisposition.delivered { val := 1110 }
+[fault-4core] fault delivery emits SGI some (1, SeLe4n.Kernel.Concurrency.SgiKind.reschedule)
+[fault-4core] faulter awaits reply as some (SeLe4n.Model.ThreadIpcState.blockedOnReply { val := 1110 } (some { val := 1122 }))
+[fault-4core] faulter is dispatchable on core 0: false
+[fault-4core] handler receives fault label some 6
+[fault-4core] core 1 handler dispatches current = some { val := 1122 }
+[fault-4core] handler reply on core 1 emits SGI some (0, SeLe4n.Kernel.Concurrency.SgiKind.reschedule)
+[fault-4core] faulter restart PC = some 262144
+[fault-4core] faulter resumes with saved pc some 262144
+[fault-4core] faulter outstanding fault after reply = false

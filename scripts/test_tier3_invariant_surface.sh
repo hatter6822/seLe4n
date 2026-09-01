@@ -811,6 +811,67 @@ run_check "INVARIANT" rg -n '^\[smp-ipc-4core\]' tests/fixtures/smp_ipc_4core.ex
 run_check "INVARIANT" rg -n 'smp_ipc_4core\.expected' tests/fixtures/smp_ipc_4core.expected.sha256
 run_check "INVARIANT" rg -n '^name = "smp_ipc_suite"' lakefile.toml
 run_check "INVARIANT" rg -n '^name = "smp_notification_suite"' lakefile.toml
+
+# WS-RR RR4 fault handling — the RR4.26 suite, its Tier-2 wiring, the RR4.27
+# golden fault trace (+ sha256 companion) it verifies byte-for-byte, the
+# delivery pipeline and trace emitter inside the suite, and the lakefile exe
+# registration.
+run_check "INVARIANT" rg -n '^def runFaultHandlingChecks' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe fault_handling_suite' scripts/test_tier2_negative.sh
+run_check "INVARIANT" rg -n '^private def deliveryE' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n '^private def faultTraceLines' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n '^\[fault-4core\]' tests/fixtures/fault_handling_4core.expected
+run_check "INVARIANT" rg -n 'fault_handling_4core\.expected' tests/fixtures/fault_handling_4core.expected.sha256
+run_check "INVARIANT" rg -n '^name = "fault_handling_suite"' lakefile.toml
+# WS-RR RR4 surface: the fault type and wire format, the transitions, the
+# preservation / progress / non-interference payoffs, and the live seams.
+run_check "INVARIANT" rg -n '^inductive Fault where' SeLe4n/Model/Fault.lean
+run_check "INVARIANT" rg -n '^def encodeFault' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^theorem decodeFault_encodeFault' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^def resolveFaultHandler' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^def faultDeliverOnCore' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^def faultReplyOnCore' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCore_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
+run_check "INVARIANT" rg -n '^theorem faultReplyOnCore_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCore_not_dispatchable' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
+# RR4.20: the flow gate is **production** (it is the arm the live entry calls;
+# a gate reachable only from a staged module is a gate the kernel does not
+# apply), and it carries RR4.19's progress guarantee through the denial.
+run_check "INVARIANT" rg -n '^def faultDeliverOnCoreChecked' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_flow_denied' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_not_dispatchable' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
+run_check "INVARIANT" rg -n '^theorem faultMessage_transfers_no_authority' SeLe4n/Kernel/InformationFlow/FaultFlow.lean
+run_check "INVARIANT" rg -n '@\[export lean_handle_fault\]' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '@\[export lean_classify_synchronous_exception\]' SeLe4n/Kernel/FaultEntry.lean
+# RR4.14/RR4.15: the reply seam — seL4's `doReplyTransfer` branch — and the two
+# live dispatch arms that must go through it.  Without the branch the fault
+# reply is verified and unreachable: a handler's ordinary `seL4_Reply` would
+# wake the faulted thread `.ready` at the instruction that faulted.
+run_check "INVARIANT" rg -n '^def replyTransferOnCore' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^def replyTransferOnCoreChecked' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_of_no_fault' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_of_fault' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+# Relation, not presence: the arms must *call* the seam.  A check for the
+# seam's mere existence in `API.lean` would pass on a file that defines it and
+# never dispatches through it, which is the defect this closed.
+run_check "INVARIANT" rg -n 'replyTransferOnCore tid callerTid' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'replyTransferOnCoreChecked ctx tid callerTid' SeLe4n/Kernel/API.lean
+# RR4.20 relation, not presence: the live entry must call the **checked**
+# delivery.  Both names contain `faultDeliverOnCore`, so a presence check for
+# it passes on the ungated arm as well — the exact defect this replaced.  The
+# positive pins the gated call; the negative forbids the bare one anywhere in
+# the entry module, which is where the regression would land.
+run_check "INVARIANT" rg -n 'faultDeliverOnCoreChecked lctx st tid f fctx c' SeLe4n/Kernel/FaultEntry.lean
+run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore [a-z]' SeLe4n/Kernel/FaultEntry.lean
+# …and the labeling-context read that makes the gate meaningful: without it the
+# entry could call the checked arm with a context it invented.
+run_check "INVARIANT" rg -n 'Platform\.FFI\.getKernelLabelingContext' SeLe4n/Kernel/FaultEntry.lean
+# RR4.21: the abort arms deliver; the retired `.error .vmFault` return must not
+# come back.  A negative check, because the defect's shape is a *return*, not
+# an absence: the arm can be present and still hand the fault back.
+run_negative_check "INVARIANT" rg -n '=> \.error \.vmFault' \
+  SeLe4n/Kernel/Architecture/ExceptionModel.lean
 run_check "INVARIANT" rg -n 'test_qemu_smp_ipc\.sh' scripts/test_tier4_smp_bootcheck.sh
 # The QEMU exerciser's driver-detection guard and its pass gate must agree on the
 # `cross-core-ipc` banner tag (the contract the future SM10.1 kernel-image driver

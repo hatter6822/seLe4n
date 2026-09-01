@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sécurité" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.43-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.44-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licence" /></a>
 </p>
@@ -88,7 +88,7 @@ de preuve de Lean 4 :
 
 | Attribut | Valeur |
 |----------|--------|
-| **Version** | `0.34.43` |
+| **Version** | `0.34.44` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
 | **LoC Lean de production** | 286 841 réparties sur 286 fichiers |
 | **LoC Lean de test** | 64 078 réparties sur 69 suites de tests |
@@ -228,6 +228,8 @@ d'ordonnanceur et ordonnancement par cœur, IPC inter-cœurs, invalidation TLB
 de la déclassification (SM9, clôturée à la v0.33.100). La phase restante est
 **SM10** (clôture de la version → v1.0.0). Le flux de travail sur l'ABI de
 retour des appels système (**WS-RA**) est terminé.
+
+**SM10 est bloquée par WS-RR** (préparation de la version SMP), la phase de remédiation pré-1.0 actuellement en cours ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)) : RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) et **RR4 — gestion des fautes : IPC de faute complet avec redémarrage par réponse (v0.34.44)**, qui empêche la reprise d'un thread fautif sur l'instruction fautive : la faute est enregistrée dans le TCB, délivrée au point d'entrée `faultHandler` du thread via la chaîne d'appel inter-cœurs active, puis traitée par une réponse qui redémarre le thread à un PC choisi ou l'abandonne. RR5–RR8 restent, puis **SM10** (clôture de la version → v1.0.0).
 
 Plan directeur : [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 avec les plans par phase dans `docs/planning/SMP_*.md`. Le registre canonique
