@@ -18,6 +18,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.SchedContext.OperationsPerCore
 import SeLe4n.Kernel.Service.Registry
+import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 
 /-!
 # `ipcInvariantFull` bundles for the non-IPC dispatch arms
@@ -3773,6 +3774,8 @@ structure threadIpcFieldsQuiescent (st : SystemState) (tid : SeLe4n.ThreadId) : 
   noPrev : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.queuePrev = none
   noPPrev : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.queuePPrev = none
   noStash : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.pendingReceiveReply = none
+  noPendingMsg : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.pendingMessage = none
+  noBudget : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.timeoutBudget = none
 
 /-- Under the quiescent shape, restoring a thread to ready rewrites every
 cleared field to the value it already holds — the write is pointwise inert. -/
@@ -4033,5 +4036,730 @@ theorem resumeThreadOnCoreLive_preserves_ipcInvariantFull
       hObjInv hQ hInv hStep
   · exact resumeThreadEnqueueOnly_preserves_ipcInvariantFull st st' vtid ec sgi
       hObjInv hQ hInv hStep
+
+/-- Cancelling IPC blocking on a `.ready` victim is the identity — there is
+nothing to cancel. -/
+private theorem cancelIpcBlocking_ready_id
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hReady : tcb.ipcState = .ready) :
+    Lifecycle.Suspend.cancelIpcBlocking st tid tcb = st := by
+  unfold Lifecycle.Suspend.cancelIpcBlocking
+  rw [hReady]
+
+/-- Descheduling a `.ready` thread on one core preserves the bundle: objects
+are untouched, and `passiveServerIdle` closes over the removed thread because
+`.ready` is an allowed passive state. -/
+private theorem removeRunnableOnCore_preserves_ipcInvariantFull
+    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
+    (hReady : ∀ tcbX : TCB, st.getTcb? tid = some tcbX → tcbX.ipcState = .ready)
+    (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (removeRunnableOnCore st tid c) := by
+  refine ipcInvariantFull_of_getElem_eq (s1 := st) (fun oid => rfl) ?_ hInv
+  intro t tcbT hT hUnb hNQ hNC
+  by_cases hTv : t = tid
+  · subst hTv
+    have := hReady tcbT ((SystemState.getTcb?_eq_some_iff st t tcbT).mpr hT)
+    exact Or.inl this
+  · have hNQ' : t ∉ st.scheduler.runQueueOnCore Concurrency.bootCoreId := by
+      intro hMem
+      apply hNQ
+      show t ∈ ((st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c (if (st.scheduler.currentOnCore c) = some tid then none else (st.scheduler.currentOnCore c))).runQueueOnCore Concurrency.bootCoreId
+      rw [SchedulerState.setCurrentOnCore_runQueueOnCore]
+      by_cases hc : c = Concurrency.bootCoreId
+      · subst hc
+        rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        exact (RunQueue.mem_remove _ _ _).mpr ⟨hMem, hTv⟩
+      · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+        exact hMem
+    have hNC' : st.scheduler.currentOnCore Concurrency.bootCoreId ≠ some t := by
+      intro hCur
+      by_cases hc : c = Concurrency.bootCoreId
+      · subst hc
+        by_cases hEq : st.scheduler.currentOnCore Concurrency.bootCoreId = some tid
+        · rw [hEq] at hCur
+          exact hTv (Option.some.inj hCur).symm
+        · apply hNC
+          show ((st.scheduler.setRunQueueOnCore Concurrency.bootCoreId ((st.scheduler.runQueueOnCore Concurrency.bootCoreId).remove tid)).setCurrentOnCore Concurrency.bootCoreId (if (st.scheduler.currentOnCore Concurrency.bootCoreId) = some tid then none else (st.scheduler.currentOnCore Concurrency.bootCoreId))).currentOnCore Concurrency.bootCoreId = some t
+          rw [SchedulerState.setCurrentOnCore_currentOnCore_self, if_neg hEq]
+          exact hCur
+      · apply hNC
+        show ((st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c (if (st.scheduler.currentOnCore c) = some tid then none else (st.scheduler.currentOnCore c))).currentOnCore Concurrency.bootCoreId = some t
+        rw [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hc,
+          SchedulerState.setRunQueueOnCore_currentOnCore]
+        exact hCur
+    exact hInv.passiveServerIdle t tcbT hT hUnb hNQ' hNC'
+
+/-- Under the quiescent field shape the pending-state clear rewrites every
+field to the value it already holds — pointwise inert. -/
+private theorem clearPendingState_getElem_eq_of_quiescent
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hFields : ∀ tcbX : TCB, st.getTcb? tid = some tcbX →
+      tcbX.pendingMessage = none ∧ tcbX.timeoutBudget = none ∧
+      tcbX.queuePrev = none ∧ tcbX.queueNext = none ∧ tcbX.queuePPrev = none) :
+    ∀ oid : SeLe4n.ObjId,
+      (Lifecycle.Suspend.clearPendingState st tid).objects[oid]? = st.objects[oid]? := by
+  intro oid
+  unfold Lifecycle.Suspend.clearPendingState
+  cases hLk : st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+      dsimp only []
+      obtain ⟨h1, h2, h3, h4, h5⟩ := hFields tcb hLk
+      have hSame : ({ tcb with pendingMessage := none, timeoutBudget := none, queuePrev := none, queueNext := none, queuePPrev := none } : TCB) = tcb := by
+        cases tcb
+        simp_all
+      rw [hSame]
+      have hPre : st.objects[tid.toObjId]? = some (.tcb tcb) :=
+        (SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk
+      by_cases hK : oid = tid.toObjId
+      · subst hK
+        simp only [RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hObjInv]
+        rw [← RHTable_getElem?_eq_get?]
+        exact hPre.symm
+      · simp only [RHTable_getElem?_eq_get?]
+        exact RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _
+          (by simp; exact fun h => hK h.symm) hObjInv
+
+/-- The suspend-tail scheduling point: at most one reschedule handler run. -/
+private theorem suspendRescheduleOnCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (home ec : CoreId) (wasCur localDeboosted : Bool)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : Lifecycle.Suspend.suspendRescheduleOnCore st home ec wasCur localDeboosted = .ok (st', sgi)) :
+    ipcInvariantFull st' := by
+  unfold Lifecycle.Suspend.suspendRescheduleOnCore at hStep
+  split at hStep
+  · split at hStep
+    · cases hRes : handleRescheduleSgiOnCore st ec with
+      | ok st4 =>
+          rw [hRes] at hStep
+          cases hStep
+          exact handleRescheduleSgiOnCore_preserves_ipcInvariantFull st ec st' hObjInv hInv hRes
+      | error e => rw [hRes] at hStep; cases hStep
+    · split at hStep
+      · cases hRes : handleRescheduleSgiOnCore st ec with
+        | ok st4 =>
+            rw [hRes] at hStep
+            cases hStep
+            exact handleRescheduleSgiOnCore_preserves_ipcInvariantFull st ec st' hObjInv hInv hRes
+        | error e => rw [hRes] at hStep; cases hStep
+      · cases hStep
+        exact hInv
+  · split at hStep
+    · cases hRes : handleRescheduleSgiOnCore st ec with
+      | ok st4 =>
+          rw [hRes] at hStep
+          cases hStep
+          exact handleRescheduleSgiOnCore_preserves_ipcInvariantFull st ec st' hObjInv hInv hRes
+      | error e => rw [hRes] at hStep; cases hStep
+    · cases hStep
+      exact hInv
+
+/-- The bound-donation cancel: SC clear, replenish drop, index drop, victim
+unbind — the §11 unbind-direction rewrite under a replenish-only scheduler
+change. -/
+private theorem cancelBoundDonationOnCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStored : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hAllowed : passiveServerIdleAllowed tcb.ipcState)
+    (hBidir : schedContextBindingBidirectional st)
+    (hStep : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    ipcInvariantFull st' := by
+  unfold cancelBoundDonationOnCore at hStep
+  cases hB : tcb.schedContextBinding with
+  | unbound => rw [hB] at hStep; cases hStep
+  | donated scId owner => rw [hB] at hStep; cases hStep
+  | bound scId =>
+      rw [hB] at hStep
+      dsimp only [] at hStep
+      obtain ⟨sc, hScPre, hScBack⟩ := hBidir tid tcb scId hStored
+        (by rw [hB]; rfl)
+      have hScLk : st.getSchedContext? scId = some sc :=
+        (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hScPre
+      rw [hScLk] at hStep
+      dsimp only [] at hStep
+      have hNeTS : tid.toObjId ≠ scId.toObjId := by
+        intro hEq
+        rw [hEq, hScPre] at hStored
+        cases hStored
+      have hObjInv1 : (st.objects.insert scId.toObjId
+          (KernelObject.schedContext { sc with boundThread := none, isActive := false })).invExt :=
+        RHTable_insert_preserves_invExt _ _ _ hObjInv
+      have hT2 : ({ { { st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false }) } with scheduler := ({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false }) } : SystemState).scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false }) } : SystemState).scheduler.replenishQueueOnCore rqCore) scId) } with scThreadIndex := scThreadIndexRemove ({ { st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false }) } with scheduler := ({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false }) } : SystemState).scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false }) } : SystemState).scheduler.replenishQueueOnCore rqCore) scId) } : SystemState).scThreadIndex scId tid } : SystemState).getTcb? tid = some tcb := by
+        refine (SystemState.getTcb?_eq_some_iff _ tid tcb).mpr ?_
+        show (st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false }))[tid.toObjId]? = some (.tcb tcb)
+        simp only [RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects scId.toObjId tid.toObjId _
+          (by simp; exact fun h => hNeTS h.symm) hObjInv]
+        rw [← RHTable_getElem?_eq_get?]
+        exact hStored
+      rw [hT2] at hStep
+      dsimp only [] at hStep
+      cases hStep
+      refine ipcInvariantFull_of_schedBindingRewrite st _ tid scId tcb
+        { tcb with schedContextBinding := .unbound } sc
+        { sc with boundThread := none, isActive := false } hInv hStored ?_ hScPre ?_ ?_
+        rfl rfl rfl rfl rfl rfl rfl rfl (Or.inr ⟨rfl, hScBack, rfl⟩) ?_
+      · show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false })).insert tid.toObjId (KernelObject.tcb { tcb with schedContextBinding := .unbound }))[tid.toObjId]? = some (KernelObject.tcb { tcb with schedContextBinding := .unbound })
+        simp only [RHTable_getElem?_eq_get?]
+        exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv1
+      · show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false })).insert tid.toObjId (KernelObject.tcb { tcb with schedContextBinding := .unbound }))[scId.toObjId]? = some (KernelObject.schedContext { sc with boundThread := none, isActive := false })
+        simp only [RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne _ tid.toObjId scId.toObjId _
+          (by simp; exact fun h => hNeTS h) hObjInv1]
+        exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv
+      · intro oid hNeT hNeS
+        show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false })).insert tid.toObjId (KernelObject.tcb { tcb with schedContextBinding := .unbound }))[oid]? = st.objects[oid]?
+        simp only [RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne _ tid.toObjId oid _
+          (by simp; exact fun h => hNeT h.symm) hObjInv1]
+        rw [RobinHood.RHTable.getElem?_insert_ne _ scId.toObjId oid _
+          (by simp; exact fun h => hNeS h.symm) hObjInv]
+      · constructor
+        intro t tcb' hT hUnb hNQ hNC hNotAllowed
+        dsimp only [] at hT hNQ hNC
+        simp only [SchedulerState.setReplenishQueueOnCore_runQueueOnCore] at hNQ
+        simp only [SchedulerState.setReplenishQueueOnCore_currentOnCore] at hNC
+        by_cases hTv : t = tid
+        · subst hTv
+          rw [show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false })).insert t.toObjId (KernelObject.tcb { tcb with schedContextBinding := .unbound }))[t.toObjId]? = some (KernelObject.tcb { tcb with schedContextBinding := .unbound }) from by simp only [RHTable_getElem?_eq_get?]; exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv1] at hT
+          obtain rfl : ({ tcb with schedContextBinding := .unbound } : TCB) = tcb' := by
+            simpa using hT
+          exact absurd hAllowed hNotAllowed
+        · by_cases hTs : t.toObjId = scId.toObjId
+          · rw [show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false })).insert tid.toObjId (KernelObject.tcb { tcb with schedContextBinding := .unbound }))[t.toObjId]? = some (KernelObject.schedContext { sc with boundThread := none, isActive := false }) from by rw [hTs]; simp only [RHTable_getElem?_eq_get?]; rw [RobinHood.RHTable.getElem?_insert_ne _ tid.toObjId scId.toObjId _ (by simp; exact fun h => hNeTS h) hObjInv1]; exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv] at hT
+            cases hT
+          · rw [show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false })).insert tid.toObjId (KernelObject.tcb { tcb with schedContextBinding := .unbound }))[t.toObjId]? = st.objects[t.toObjId]? from by simp only [RHTable_getElem?_eq_get?]; rw [RobinHood.RHTable.getElem?_insert_ne _ tid.toObjId t.toObjId _ (by simp; exact fun h => hTv (SeLe4n.ThreadId.toObjId_injective t tid h.symm)) hObjInv1]; rw [RobinHood.RHTable.getElem?_insert_ne _ scId.toObjId t.toObjId _ (by simp; exact fun h => hTs h.symm) hObjInv]] at hT
+            exact ⟨tcb', hT, hUnb, hNQ, hNC, rfl⟩
+
+/-- The donated-donation cancel: the verified donation return plus the
+replenishment migration. -/
+private theorem cancelDonatedDonationOnCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (tcb : TCB)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStored : st.getTcb? vtid.val = some tcb)
+    (hAllowed : passiveServerIdleAllowed tcb.ipcState)
+    (hStep : cancelDonatedDonationOnCore st vtid.val tcb = .ok st') :
+    ipcInvariantFull st' := by
+  obtain ⟨tval, hprop⟩ := vtid
+  dsimp only [] at hStored hStep ⊢
+  have hNotRes : tval.isReserved ≠ true := by
+    intro hr
+    apply hprop
+    have hv : tval.val = 0 := by simpa [SeLe4n.ThreadId.isReserved] using hr
+    cases tval
+    simp_all [SeLe4n.ThreadId.sentinel]
+  have hLk : lookupTcb st tval = some tcb := by
+    unfold lookupTcb
+    rw [if_neg hNotRes, (SystemState.getTcb?_eq_some_iff st tval tcb).mp hStored]
+  unfold cancelDonatedDonationOnCore at hStep
+  cases hB : tcb.schedContextBinding with
+  | unbound => rw [hB] at hStep; cases hStep
+  | bound scId => rw [hB] at hStep; cases hStep
+  | donated scId owner =>
+      rw [hB] at hStep
+      dsimp only [] at hStep
+      cases hCl : cleanupDonatedSchedContext st tval with
+      | error e => rw [hCl] at hStep; cases hStep
+      | ok st1 =>
+          rw [hCl] at hStep
+          dsimp only [] at hStep
+          cases hStep
+          refine migrateSchedContextReplenishment_preserves_ipcInvariantFull st1 _ _ _ ?_
+          unfold cleanupDonatedSchedContext at hCl
+          simp only [hLk, hB] at hCl
+          exact returnDonatedSchedContext_preserves_ipcInvariantFull st st1 ⟨tval, hprop⟩
+            scId owner hObjInv hInv
+            (by unfold replyDonationReturn?; rw [hLk]; simp [hB])
+            (fun tcbX hX => by
+              rw [hStored] at hX
+              obtain rfl : tcb = tcbX := Option.some.inj hX
+              exact hAllowed)
+            hCl
+
+/-- The bound-donation cancel touches only the victim's binding — every other
+bundle-read TCB field survives. -/
+private theorem cancelBoundDonationOnCore_victim_shape
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hStored : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hStep : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    ∀ tcbX : TCB, st'.getTcb? tid = some tcbX →
+      tcbX.ipcState = tcb.ipcState ∧ tcbX.pendingMessage = tcb.pendingMessage ∧
+      tcbX.timeoutBudget = tcb.timeoutBudget ∧ tcbX.queuePrev = tcb.queuePrev ∧
+      tcbX.queueNext = tcb.queueNext ∧ tcbX.queuePPrev = tcb.queuePPrev := by
+  unfold cancelBoundDonationOnCore at hStep
+  cases hB : tcb.schedContextBinding with
+  | unbound => rw [hB] at hStep; cases hStep
+  | donated scId owner => rw [hB] at hStep; cases hStep
+  | bound scId =>
+      rw [hB] at hStep
+      dsimp only [] at hStep
+      cases hScLk : st.getSchedContext? scId with
+      | some sc =>
+          rw [hScLk] at hStep
+          dsimp only [] at hStep
+          have hScPre := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hScLk
+          have hNeTS : tid.toObjId ≠ scId.toObjId := by
+            intro hEq
+            rw [hEq, hScPre] at hStored
+            cases hStored
+          have hObjInv1 : (st.objects.insert scId.toObjId
+              (KernelObject.schedContext { sc with boundThread := none, isActive := false })).invExt :=
+            RHTable_insert_preserves_invExt _ _ _ hObjInv
+          have hT2 : ({ { { st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false }) } with scheduler := ({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false }) } : SystemState).scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false }) } : SystemState).scheduler.replenishQueueOnCore rqCore) scId) } with scThreadIndex := scThreadIndexRemove ({ { st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false }) } with scheduler := ({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false }) } : SystemState).scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false }) } : SystemState).scheduler.replenishQueueOnCore rqCore) scId) } : SystemState).scThreadIndex scId tid } : SystemState).getTcb? tid = some tcb := by
+            refine (SystemState.getTcb?_eq_some_iff _ tid tcb).mpr ?_
+            show (st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false }))[tid.toObjId]? = some (.tcb tcb)
+            simp only [RHTable_getElem?_eq_get?]
+            rw [RobinHood.RHTable.getElem?_insert_ne st.objects scId.toObjId tid.toObjId _
+              (by simp; exact fun h => hNeTS h.symm) hObjInv]
+            rw [← RHTable_getElem?_eq_get?]
+            exact hStored
+          rw [hT2] at hStep
+          dsimp only [] at hStep
+          cases hStep
+          intro tcbX hX
+          have hXobj := (SystemState.getTcb?_eq_some_iff _ tid tcbX).mp hX
+          rw [show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false })).insert tid.toObjId (KernelObject.tcb { tcb with schedContextBinding := .unbound }))[tid.toObjId]? = some (KernelObject.tcb { tcb with schedContextBinding := .unbound }) from by simp only [RHTable_getElem?_eq_get?]; exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv1] at hXobj
+          obtain rfl : ({ tcb with schedContextBinding := .unbound } : TCB) = tcbX := by
+            simpa using hXobj
+          exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+      | none =>
+          rw [hScLk] at hStep
+          dsimp only [] at hStep
+          have hT2 : ({ { st with scheduler := st.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st.scheduler.replenishQueueOnCore rqCore) scId) } with scThreadIndex := scThreadIndexRemove ({ st with scheduler := st.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st.scheduler.replenishQueueOnCore rqCore) scId) } : SystemState).scThreadIndex scId tid } : SystemState).getTcb? tid = some tcb := by
+            refine (SystemState.getTcb?_eq_some_iff _ tid tcb).mpr ?_
+            exact hStored
+          rw [hT2] at hStep
+          dsimp only [] at hStep
+          cases hStep
+          intro tcbX hX
+          have hXobj := (SystemState.getTcb?_eq_some_iff _ tid tcbX).mp hX
+          rw [show (st.objects.insert tid.toObjId (KernelObject.tcb { tcb with schedContextBinding := .unbound }))[tid.toObjId]? = some (KernelObject.tcb { tcb with schedContextBinding := .unbound }) from by simp only [RHTable_getElem?_eq_get?]; exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv] at hXobj
+          obtain rfl : ({ tcb with schedContextBinding := .unbound } : TCB) = tcbX := by
+            simpa using hXobj
+          exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- The donation return churns only bindings — the server's other bundle-read
+fields survive its three stores. -/
+private theorem returnDonatedSchedContext_victim_shape
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId) (tcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStored : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hStep : returnDonatedSchedContext st tid scId owner = .ok st') :
+    ∀ tcbX : TCB, st'.getTcb? tid = some tcbX →
+      tcbX.ipcState = tcb.ipcState ∧ tcbX.pendingMessage = tcb.pendingMessage ∧
+      tcbX.timeoutBudget = tcb.timeoutBudget ∧ tcbX.queuePrev = tcb.queuePrev ∧
+      tcbX.queueNext = tcb.queueNext ∧ tcbX.queuePPrev = tcb.queuePPrev := by
+  unfold returnDonatedSchedContext at hStep
+  cases hScLk : st.objects[scId.toObjId]? with
+  | none => rw [hScLk] at hStep; cases hStep
+  | some obj =>
+      cases obj with
+      | schedContext sc =>
+          rw [hScLk] at hStep
+          dsimp only [] at hStep
+          split at hStep
+          · cases hStep
+          · cases hS1 : storeObject scId.toObjId (.schedContext { sc with boundThread := some owner }) st with
+            | error e => rw [hS1] at hStep; cases hStep
+            | ok p1 =>
+                obtain ⟨u1, st1⟩ := p1; cases u1
+                rw [hS1] at hStep
+                dsimp only [] at hStep
+                have hObjInv1 : st1.objects.invExt := by
+                  unfold storeObject at hS1
+                  cases hS1
+                  exact RHTable_insert_preserves_invExt _ _ _ hObjInv
+                have hNeTS : tid.toObjId ≠ scId.toObjId := by
+                  intro hEq
+                  rw [hEq, hScLk] at hStored
+                  cases hStored
+                have hT1 : st1.objects[tid.toObjId]? = some (.tcb tcb) := by
+                  rw [storeObject_objects_ne st st1 scId.toObjId tid.toObjId _ hNeTS hObjInv hS1]
+                  exact hStored
+                cases hL1 : lookupTcb st1 owner with
+                | none => rw [hL1] at hStep; cases hStep
+                | some clientTcb =>
+                    rw [hL1] at hStep
+                    dsimp only [] at hStep
+                    cases hS2 : storeObject owner.toObjId (.tcb { clientTcb with schedContextBinding := .bound scId }) st1 with
+                    | error e => rw [hS2] at hStep; cases hStep
+                    | ok p2 =>
+                        obtain ⟨u2, st2⟩ := p2; cases u2
+                        rw [hS2] at hStep
+                        dsimp only [] at hStep
+                        have hObjInv2 : st2.objects.invExt := by
+                          unfold storeObject at hS2
+                          cases hS2
+                          exact RHTable_insert_preserves_invExt _ _ _ hObjInv1
+                        have hT2 : ∃ tcbM : TCB, st2.objects[tid.toObjId]? = some (.tcb tcbM) ∧
+                            tcbM.ipcState = tcb.ipcState ∧ tcbM.pendingMessage = tcb.pendingMessage ∧
+                            tcbM.timeoutBudget = tcb.timeoutBudget ∧ tcbM.queuePrev = tcb.queuePrev ∧
+                            tcbM.queueNext = tcb.queueNext ∧ tcbM.queuePPrev = tcb.queuePPrev := by
+                          by_cases hOw : owner.toObjId = tid.toObjId
+                          · refine ⟨{ clientTcb with schedContextBinding := .bound scId }, ?_, ?_⟩
+                            · rw [← hOw]
+                              exact storeObject_objects_eq st1 st2 owner.toObjId _ hObjInv1 hS2
+                            · have hCl : clientTcb = tcb := by
+                                unfold lookupTcb at hL1
+                                split at hL1
+                                · cases hL1
+                                · rw [hOw, hT1] at hL1
+                                  simp only [Option.some.injEq] at hL1
+                                  exact hL1.symm
+                              rw [hCl]
+                              exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+                          · refine ⟨tcb, ?_, rfl, rfl, rfl, rfl, rfl, rfl⟩
+                            rw [storeObject_objects_ne st1 st2 owner.toObjId tid.toObjId _
+                              (fun h => hOw h.symm) hObjInv1 hS2]
+                            exact hT1
+                        obtain ⟨tcbM, hTM, hFlds⟩ := hT2
+                        cases hL2 : lookupTcb st2 tid with
+                        | none => rw [hL2] at hStep; cases hStep
+                        | some serverTcb =>
+                            rw [hL2] at hStep
+                            dsimp only [] at hStep
+                            have hSrv : serverTcb = tcbM := by
+                              unfold lookupTcb at hL2
+                              split at hL2
+                              · cases hL2
+                              · rw [hTM] at hL2
+                                simp only [Option.some.injEq] at hL2
+                                exact hL2.symm
+                            cases hS3 : storeObject tid.toObjId (.tcb { serverTcb with schedContextBinding := .unbound }) st2 with
+                            | error e => rw [hS3] at hStep; cases hStep
+                            | ok p3 =>
+                                obtain ⟨u3, st3⟩ := p3; cases u3
+                                rw [hS3] at hStep
+                                dsimp only [] at hStep
+                                cases hStep
+                                intro tcbX hX
+                                have hXobj := (SystemState.getTcb?_eq_some_iff _ tid tcbX).mp hX
+                                dsimp only [] at hXobj
+                                rw [storeObject_objects_eq st2 st3 tid.toObjId _ hObjInv2 hS3] at hXobj
+                                obtain rfl : ({ serverTcb with schedContextBinding := .unbound } : TCB) = tcbX := by
+                                  simpa using hXobj
+                                rw [hSrv]
+                                exact hFlds
+      | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
+      | reply _ => rw [hScLk] at hStep; cases hStep
+
+private theorem cancelDonatedDonationOnCore_victim_shape
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (tcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStored : st.getTcb? vtid.val = some tcb)
+    (hStep : cancelDonatedDonationOnCore st vtid.val tcb = .ok st') :
+    ∀ tcbX : TCB, st'.getTcb? vtid.val = some tcbX →
+      tcbX.ipcState = tcb.ipcState ∧ tcbX.pendingMessage = tcb.pendingMessage ∧
+      tcbX.timeoutBudget = tcb.timeoutBudget ∧ tcbX.queuePrev = tcb.queuePrev ∧
+      tcbX.queueNext = tcb.queueNext ∧ tcbX.queuePPrev = tcb.queuePPrev := by
+  obtain ⟨tval, hprop⟩ := vtid
+  dsimp only [] at hStored hStep ⊢
+  have hNotRes : tval.isReserved ≠ true := by
+    intro hr
+    apply hprop
+    have hv : tval.val = 0 := by simpa [SeLe4n.ThreadId.isReserved] using hr
+    cases tval
+    simp_all [SeLe4n.ThreadId.sentinel]
+  have hLk : lookupTcb st tval = some tcb := by
+    unfold lookupTcb
+    rw [if_neg hNotRes, (SystemState.getTcb?_eq_some_iff st tval tcb).mp hStored]
+  unfold cancelDonatedDonationOnCore at hStep
+  cases hB : tcb.schedContextBinding with
+  | unbound => rw [hB] at hStep; cases hStep
+  | bound scId => rw [hB] at hStep; cases hStep
+  | donated scId owner =>
+      rw [hB] at hStep
+      dsimp only [] at hStep
+      cases hCl : cleanupDonatedSchedContext st tval with
+      | error e => rw [hCl] at hStep; cases hStep
+      | ok st1 =>
+          rw [hCl] at hStep
+          dsimp only [] at hStep
+          cases hStep
+          intro tcbX hX
+          have hXobj := (SystemState.getTcb?_eq_some_iff _ tval tcbX).mp hX
+          rw [migrateSchedContextReplenishment_objects] at hXobj
+          have hX1 : st1.getTcb? tval = some tcbX :=
+            (SystemState.getTcb?_eq_some_iff st1 tval tcbX).mpr hXobj
+          unfold cleanupDonatedSchedContext at hCl
+          simp only [hLk, hB] at hCl
+          exact returnDonatedSchedContext_victim_shape st st1 tval scId owner tcb hObjInv
+            ((SystemState.getTcb?_eq_some_iff st tval tcb).mp hStored) hCl tcbX hX1
+
+/-- The suspend tail's clear-and-deactivate stage: pending-state clear
+(pointwise inert on a quiescent victim) then the `threadState := .Inactive`
+store (a bundle-unread field). -/
+private theorem suspendClearStore_preserves_ipcInvariantFull
+    (stR2 : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInvR : stR2.objects.invExt)
+    (hShapeR : ∀ tcbX : TCB, stR2.getTcb? tid = some tcbX →
+      tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧ tcbX.timeoutBudget = none ∧
+      tcbX.queuePrev = none ∧ tcbX.queueNext = none ∧ tcbX.queuePPrev = none)
+    (hInvR : ipcInvariantFull stR2) :
+    ipcInvariantFull (match (Lifecycle.Suspend.clearPendingState stR2 tid).getTcb? tid with | some tcb'' => { Lifecycle.Suspend.clearPendingState stR2 tid with objects := (Lifecycle.Suspend.clearPendingState stR2 tid).objects.insert tid.toObjId (.tcb { tcb'' with threadState := .Inactive }) } | none => Lifecycle.Suspend.clearPendingState stR2 tid) ∧
+    (match (Lifecycle.Suspend.clearPendingState stR2 tid).getTcb? tid with | some tcb'' => { Lifecycle.Suspend.clearPendingState stR2 tid with objects := (Lifecycle.Suspend.clearPendingState stR2 tid).objects.insert tid.toObjId (.tcb { tcb'' with threadState := .Inactive }) } | none => Lifecycle.Suspend.clearPendingState stR2 tid).objects.invExt := by
+  have hFields : ∀ tcbX : TCB, stR2.getTcb? tid = some tcbX →
+      tcbX.pendingMessage = none ∧ tcbX.timeoutBudget = none ∧
+      tcbX.queuePrev = none ∧ tcbX.queueNext = none ∧ tcbX.queuePPrev = none :=
+    fun tcbX hX => (hShapeR tcbX hX).2
+  have hEq := clearPendingState_getElem_eq_of_quiescent stR2 tid hObjInvR hFields
+  have hObjInvC : (Lifecycle.Suspend.clearPendingState stR2 tid).objects.invExt := by
+    unfold Lifecycle.Suspend.clearPendingState
+    split
+    · exact RHTable_insert_preserves_invExt _ _ _ hObjInvR
+    · exact hObjInvR
+  have hInvC : ipcInvariantFull (Lifecycle.Suspend.clearPendingState stR2 tid) := by
+    refine ipcInvariantFull_of_getElem_eq hEq ?_ hInvR
+    intro t tcbT hT hUnb hNQ hNC
+    rw [hEq] at hT
+    have hSchedC : (Lifecycle.Suspend.clearPendingState stR2 tid).scheduler = stR2.scheduler := by
+      unfold Lifecycle.Suspend.clearPendingState
+      split <;> rfl
+    rw [hSchedC] at hNQ hNC
+    exact hInvR.passiveServerIdle t tcbT hT hUnb hNQ hNC
+  cases hLkC : (Lifecycle.Suspend.clearPendingState stR2 tid).getTcb? tid with
+  | none => exact ⟨hInvC, hObjInvC⟩
+  | some tcb2 =>
+      constructor
+      · exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
+          (Lifecycle.Suspend.clearPendingState stR2 tid) tid tcb2
+          { tcb2 with threadState := .Inactive } hObjInvC hInvC
+          ((SystemState.getTcb?_eq_some_iff _ tid tcb2).mp hLkC)
+          rfl rfl rfl rfl rfl rfl rfl rfl rfl
+      · exact RHTable_insert_preserves_invExt _ _ _ hObjInvC
+
+/-- The suspend tail's deschedule stage: one or two run-queue removals of a
+`.ready` victim, then the clear-and-deactivate stage. -/
+private theorem suspendDescheduleTail_shape
+    (stD : SystemState) (tid : SeLe4n.ThreadId) (c1 c2 : CoreId)
+    (hObjInvD : stD.objects.invExt)
+    (hShape : ∀ tcbX : TCB, stD.getTcb? tid = some tcbX →
+      tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧ tcbX.timeoutBudget = none ∧
+      tcbX.queuePrev = none ∧ tcbX.queueNext = none ∧ tcbX.queuePPrev = none)
+    (hInvD : ipcInvariantFull stD) :
+    ipcInvariantFull (removeRunnableOnCore (removeRunnableOnCore stD tid c1) tid c2) ∧
+    (removeRunnableOnCore (removeRunnableOnCore stD tid c1) tid c2).objects.invExt ∧
+    (∀ tcbX : TCB,
+      (removeRunnableOnCore (removeRunnableOnCore stD tid c1) tid c2).getTcb? tid
+        = some tcbX →
+      tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧ tcbX.timeoutBudget = none ∧
+      tcbX.queuePrev = none ∧ tcbX.queueNext = none ∧ tcbX.queuePPrev = none) := by
+  have hReadyD : ∀ tcbX : TCB, stD.getTcb? tid = some tcbX → tcbX.ipcState = .ready :=
+    fun tcbX hX => (hShape tcbX hX).1
+  have hInv1 := removeRunnableOnCore_preserves_ipcInvariantFull stD tid c1 hReadyD hInvD
+  have hInv2 := removeRunnableOnCore_preserves_ipcInvariantFull
+    (removeRunnableOnCore stD tid c1) tid c2 (fun tcbX hX => hReadyD tcbX hX) hInv1
+  exact ⟨hInv2, hObjInvD, fun tcbX hX => hShape tcbX hX⟩
+
+/-- `.tcbSuspend` (dispatch arm): the whole per-core suspension pipeline —
+cancel (inert on a quiescent victim), PIP revert (empty for a `.ready`
+victim), donation cancel (all three binding arms), home/running deschedule,
+pending-state clear, deactivation store, and the local scheduling point —
+preserves `ipcInvariantFull`.
+
+The victim-quiescence pack confines the bundle to victims not blocked in an
+IPC queue (the post-suspend shape, and the shape the runtime cancel guards
+leave every other victim in); extending the bundle over the queue-unlink
+cancellation composite is registered follow-up work on the SM6.E surface. -/
+theorem suspendThreadOnCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt)
+    (hQ : threadIpcFieldsQuiescent st vtid.val)
+    (hBidir : schedContextBindingBidirectional st)
+    (hInv : ipcInvariantFull st)
+    (hStep : Lifecycle.Suspend.suspendThreadOnCore st vtid ec = .ok (st', sgi)) :
+    ipcInvariantFull st' := by
+  unfold Lifecycle.Suspend.suspendThreadOnCore at hStep
+  dsimp only [] at hStep
+  cases hLk : st.getTcb? vtid.val with
+  | none => rw [hLk] at hStep; cases hStep
+  | some tcb =>
+      rw [hLk] at hStep
+      dsimp only [] at hStep
+      split at hStep
+      · cases hStep
+      · have hReady := hQ.ready tcb hLk
+        have hPre := (SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hLk
+        rw [Lifecycle.Suspend.cancelIpcBlockingValid_eq,
+          cancelIpcBlocking_ready_id st vtid.val tcb hReady] at hStep
+        have hBS : PriorityInheritance.blockingServer st vtid.val = none := by
+          unfold PriorityInheritance.blockingServer
+          simp [hPre, hReady]
+        rw [hBS] at hStep
+        dsimp only [] at hStep
+        rw [hLk] at hStep
+        simp only [Option.getD_some] at hStep
+        unfold Lifecycle.Suspend.clearPendingStateValid at hStep
+        have hShapeOf : ∀ (stD : SystemState),
+            (∀ tcbX : TCB, stD.getTcb? vtid.val = some tcbX →
+              tcbX.ipcState = tcb.ipcState ∧ tcbX.pendingMessage = tcb.pendingMessage ∧
+              tcbX.timeoutBudget = tcb.timeoutBudget ∧ tcbX.queuePrev = tcb.queuePrev ∧
+              tcbX.queueNext = tcb.queueNext ∧ tcbX.queuePPrev = tcb.queuePPrev) →
+            (∀ tcbX : TCB, stD.getTcb? vtid.val = some tcbX →
+              tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧
+              tcbX.timeoutBudget = none ∧ tcbX.queuePrev = none ∧
+              tcbX.queueNext = none ∧ tcbX.queuePPrev = none) := by
+          intro stD hSh tcbX hX
+          obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hSh tcbX hX
+          exact ⟨h1.trans hReady, h2.trans (hQ.noPendingMsg tcb hLk),
+            h3.trans (hQ.noBudget tcb hLk), h4.trans (hQ.noPrev tcb hLk),
+            h5.trans (hQ.noNext tcb hLk), h6.trans (hQ.noPPrev tcb hLk)⟩
+        have hTail : ∀ (stD : SystemState),
+            stD.objects.invExt → ipcInvariantFull stD →
+            (∀ tcbX : TCB, stD.getTcb? vtid.val = some tcbX →
+              tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧
+              tcbX.timeoutBudget = none ∧ tcbX.queuePrev = none ∧
+              tcbX.queueNext = none ∧ tcbX.queuePPrev = none) →
+            ∀ (stR2 : SystemState), stR2.objects.invExt → ipcInvariantFull stR2 →
+            (∀ tcbX : TCB, stR2.getTcb? vtid.val = some tcbX →
+              tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧
+              tcbX.timeoutBudget = none ∧ tcbX.queuePrev = none ∧
+              tcbX.queueNext = none ∧ tcbX.queuePPrev = none) →
+            ∀ (c2 ecX : CoreId) (wc ld : Bool) (stO : SystemState)
+              (sgiO : Option (CoreId × Concurrency.SgiKind)),
+            Lifecycle.Suspend.suspendRescheduleOnCore
+              (match (Lifecycle.Suspend.clearPendingState stR2 vtid.val).getTcb? vtid.val with | some tcb'' => { Lifecycle.Suspend.clearPendingState stR2 vtid.val with objects := (Lifecycle.Suspend.clearPendingState stR2 vtid.val).objects.insert vtid.val.toObjId (.tcb { tcb'' with threadState := .Inactive }) } | none => Lifecycle.Suspend.clearPendingState stR2 vtid.val)
+              c2 ecX wc ld = .ok (stO, sgiO) →
+            ipcInvariantFull stO := by
+          intro stD _ _ _ stR2 hObjInvR hInvR hShapeR c2 ecX wc ld stO sgiO hStepO
+          obtain ⟨hInvI, hObjInvI⟩ :=
+            suspendClearStore_preserves_ipcInvariantFull stR2 vtid.val hObjInvR hShapeR hInvR
+          exact suspendRescheduleOnCore_preserves_ipcInvariantFull _ stO c2 ecX wc ld sgiO
+            hObjInvI hInvI hStepO
+        cases hB : tcb.schedContextBinding with
+        | unbound =>
+            simp only [hB] at hStep
+            have hShapeD : ∀ tcbX : TCB, st.getTcb? vtid.val = some tcbX →
+                tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧
+                tcbX.timeoutBudget = none ∧ tcbX.queuePrev = none ∧
+                tcbX.queueNext = none ∧ tcbX.queuePPrev = none :=
+              hShapeOf st (fun tcbX hX => by
+                rw [hLk] at hX
+                obtain rfl : tcb = tcbX := Option.some.inj hX
+                exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩)
+            cases hRC : runningCoreOf? st vtid.val with
+            | none =>
+                simp only [hRC] at hStep
+                exact hTail st hObjInv hInv hShapeD
+                  (removeRunnableOnCore st vtid.val (determineTargetCore st vtid.val))
+                  hObjInv
+                  (removeRunnableOnCore_preserves_ipcInvariantFull st vtid.val
+                    (determineTargetCore st vtid.val)
+                    (fun tcbX hX => (hShapeD tcbX hX).1) hInv)
+                  (fun tcbX hX => hShapeD tcbX hX)
+                  _ ec _ _ st' sgi hStep
+            | some rc =>
+                simp only [hRC] at hStep
+                by_cases hEqC : (rc == determineTargetCore st vtid.val) = true
+                · simp only [hEqC] at hStep
+                  exact hTail st hObjInv hInv hShapeD
+                    (removeRunnableOnCore st vtid.val (determineTargetCore st vtid.val))
+                    hObjInv
+                    (removeRunnableOnCore_preserves_ipcInvariantFull st vtid.val
+                      (determineTargetCore st vtid.val)
+                      (fun tcbX hX => (hShapeD tcbX hX).1) hInv)
+                    (fun tcbX hX => hShapeD tcbX hX)
+                    _ ec _ _ st' sgi hStep
+                · simp only [hEqC] at hStep
+                  obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape st vtid.val
+                    (determineTargetCore st vtid.val) rc hObjInv hShapeD hInv
+                  exact hTail st hObjInv hInv hShapeD _ hObjInv2 hInv2 hShape2
+                    _ ec _ _ st' sgi hStep
+        | bound scId =>
+            simp only [hB] at hStep
+            cases hDon : cancelBoundDonationOnCore st vtid.val tcb
+                (determineTargetCore st vtid.val) with
+            | error e => rw [hDon] at hStep; cases hStep
+            | ok stD =>
+                rw [hDon] at hStep
+                dsimp only [] at hStep
+                have hInvD := cancelBoundDonationOnCore_preserves_ipcInvariantFull st stD
+                  vtid.val tcb (determineTargetCore st vtid.val) hObjInv hInv hPre
+                  (Or.inl hReady) hBidir hDon
+                have hObjInvD := cancelBoundDonationOnCore_preserves_objects_invExt st stD
+                  vtid.val tcb (determineTargetCore st vtid.val) hObjInv
+                  hDon
+                have hShapeD := hShapeOf stD
+                  (cancelBoundDonationOnCore_victim_shape st stD vtid.val tcb
+                    (determineTargetCore st vtid.val) hObjInv hPre
+                    hDon)
+                cases hRC : runningCoreOf? st vtid.val with
+                | none =>
+                    simp only [hRC] at hStep
+                    exact hTail stD hObjInvD hInvD hShapeD
+                      (removeRunnableOnCore stD vtid.val (determineTargetCore st vtid.val))
+                      hObjInvD
+                      (removeRunnableOnCore_preserves_ipcInvariantFull stD vtid.val
+                        (determineTargetCore st vtid.val)
+                        (fun tcbX hX => (hShapeD tcbX hX).1) hInvD)
+                      (fun tcbX hX => hShapeD tcbX hX)
+                      _ ec _ _ st' sgi hStep
+                | some rc =>
+                    simp only [hRC] at hStep
+                    by_cases hEqC : (rc == determineTargetCore st vtid.val) = true
+                    · simp only [hEqC] at hStep
+                      exact hTail stD hObjInvD hInvD hShapeD
+                        (removeRunnableOnCore stD vtid.val (determineTargetCore st vtid.val))
+                        hObjInvD
+                        (removeRunnableOnCore_preserves_ipcInvariantFull stD vtid.val
+                          (determineTargetCore st vtid.val)
+                          (fun tcbX hX => (hShapeD tcbX hX).1) hInvD)
+                        (fun tcbX hX => hShapeD tcbX hX)
+                        _ ec _ _ st' sgi hStep
+                    · simp only [hEqC] at hStep
+                      obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape stD
+                        vtid.val (determineTargetCore st vtid.val) rc hObjInvD hShapeD hInvD
+                      exact hTail stD hObjInvD hInvD hShapeD _ hObjInv2 hInv2 hShape2
+                        _ ec _ _ st' sgi hStep
+        | donated scId owner =>
+            simp only [hB] at hStep
+            cases hDon : cancelDonatedDonationOnCore st vtid.val tcb with
+            | error e => rw [hDon] at hStep; cases hStep
+            | ok stD =>
+                rw [hDon] at hStep
+                dsimp only [] at hStep
+                have hInvD := cancelDonatedDonationOnCore_preserves_ipcInvariantFull st stD
+                  vtid tcb hObjInv hInv hLk (Or.inl hReady)
+                  hDon
+                have hObjInvD := cancelDonatedDonationOnCore_preserves_objects_invExt st stD
+                  vtid.val tcb hObjInv hDon
+                have hShapeD := hShapeOf stD
+                  (cancelDonatedDonationOnCore_victim_shape st stD vtid tcb hObjInv hLk
+                    hDon)
+                cases hRC : runningCoreOf? st vtid.val with
+                | none =>
+                    simp only [hRC] at hStep
+                    exact hTail stD hObjInvD hInvD hShapeD
+                      (removeRunnableOnCore stD vtid.val (determineTargetCore st vtid.val))
+                      hObjInvD
+                      (removeRunnableOnCore_preserves_ipcInvariantFull stD vtid.val
+                        (determineTargetCore st vtid.val)
+                        (fun tcbX hX => (hShapeD tcbX hX).1) hInvD)
+                      (fun tcbX hX => hShapeD tcbX hX)
+                      _ ec _ _ st' sgi hStep
+                | some rc =>
+                    simp only [hRC] at hStep
+                    by_cases hEqC : (rc == determineTargetCore st vtid.val) = true
+                    · simp only [hEqC] at hStep
+                      exact hTail stD hObjInvD hInvD hShapeD
+                        (removeRunnableOnCore stD vtid.val (determineTargetCore st vtid.val))
+                        hObjInvD
+                        (removeRunnableOnCore_preserves_ipcInvariantFull stD vtid.val
+                          (determineTargetCore st vtid.val)
+                          (fun tcbX hX => (hShapeD tcbX hX).1) hInvD)
+                        (fun tcbX hX => hShapeD tcbX hX)
+                        _ ec _ _ st' sgi hStep
+                    · simp only [hEqC] at hStep
+                      obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape stD
+                        vtid.val (determineTargetCore st vtid.val) rc hObjInvD hShapeD hInvD
+                      exact hTail stD hObjInvD hInvD hShapeD _ hObjInv2 hInv2 hShape2
+                        _ ec _ _ st' sgi hStep
 
 end SeLe4n.Kernel
