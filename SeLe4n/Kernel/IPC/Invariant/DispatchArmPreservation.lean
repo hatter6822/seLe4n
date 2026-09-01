@@ -2574,4 +2574,785 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_ipcInvariantFul
       obtain ⟨hObjs, -, hSched, -⟩ := Architecture.withIcacheBroadcast_frame hK hStep
       exact ipcInvariantFull_of_objects_scheduler_eq hObjs hSched hB
 
+-- ============================================================================
+-- §14  Lifecycle retype arm (`.lifecycleRetype`)
+-- ============================================================================
+
+/-- The retype replacement object is pristine: every field an `ipcInvariantFull`
+conjunct reads is at its inert value.  `objectOfKernelType` — the only
+replacement builder the live `.lifecycleRetype` dispatch uses — satisfies this
+by construction (`objectOfKernelType_replacementFresh`). -/
+def retypeReplacementFresh : KernelObject → Prop
+  | .tcb t => t.ipcState = .ready ∧ t.pendingMessage = none ∧ t.queueNext = none ∧
+      t.queuePrev = none ∧ t.schedContextBinding = .unbound ∧ t.replyObject = none ∧
+      t.pendingReceiveReply = none ∧ t.timeoutBudget = none
+  | .endpoint ep => ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
+      ep.receiveQ.head = none ∧ ep.receiveQ.tail = none
+  | .notification n => n.state = .idle ∧ n.waitingThreads.val = [] ∧ n.pendingBadge = none
+  | .reply r => r.caller = none
+  | .cnode cn => ∀ slot : SeLe4n.Slot, cn.lookup slot = none
+  | .schedContext _ => True
+  | .vspaceRoot _ => True
+  | .untyped _ => True
+
+/-- The live dispatch arm's replacement builder is pristine per
+`retypeReplacementFresh`, for every object kind and size hint. -/
+theorem objectOfKernelType_replacementFresh (k : KernelObjectType) (n : Nat) :
+    retypeReplacementFresh (objectOfKernelType k n) := by
+  cases k <;>
+    simp [objectOfKernelType, retypeReplacementFresh, CNode.lookup,
+      UniqueSlotMap.get?, RobinHood.RHTable.getElem?_empty, Reply.empty]
+
+/-- The retype target is detached from every structure the IPC bundle reads:
+nothing in the pre-state references `target` — no blocked thread names it as
+its endpoint, no queue link, queue boundary, reply link or stash points at it,
+it is not a live SchedContext, and if it holds a TCB that thread is fully
+dequeued, undonated, unlinked and in an allowed passive state.  These are
+pre-state facts (dischargeable before the step), and together they are the
+seL4 revoke-and-suspend-before-retype contract this model's cleanup guards
+partially enforce at runtime; the payoff composition carries the pack as its
+per-arm hypotheses. -/
+structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop where
+  notSc : ∀ sc : SchedContext, st.objects[target]? ≠ some (.schedContext sc)
+  notOwner : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
+    ∀ ep rt, t.ipcState ≠ .blockedOnReply ep rt
+  tcbNoNext : ∀ t : TCB, st.objects[target]? = some (.tcb t) → t.queueNext = none
+  tcbNoPrev : ∀ t : TCB, st.objects[target]? = some (.tcb t) → t.queuePrev = none
+  tcbSelfId : ∀ t : TCB, st.objects[target]? = some (.tcb t) → t.tid.toObjId = target
+  tcbAllowedState : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
+    passiveServerIdleAllowed t.ipcState
+  tcbNotDonated : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
+    ∀ scId owner, t.schedContextBinding ≠ .donated scId owner
+  tcbNotWaiter : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
+    ∀ (oid : SeLe4n.ObjId) (n : Notification), st.objects[oid]? = some (.notification n) →
+    t.tid ∉ n.waitingThreads.val
+  tcbDescheduled : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
+    ∀ c : CoreId, (st.scheduler.runQueueOnCore c).contains t.tid = false ∧
+      st.scheduler.currentOnCore c ≠ some t.tid
+  blockedRefsAvoid : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    tcb.ipcState ≠ .blockedOnSend target ∧ tcb.ipcState ≠ .blockedOnReceive target ∧
+    tcb.ipcState ≠ .blockedOnCall target
+  notQueueLinked : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB) (b : SeLe4n.ThreadId),
+    st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext = some b → b.toObjId ≠ target
+  notPrevLinked : ∀ (b : SeLe4n.ThreadId) (tcbB : TCB) (a : SeLe4n.ThreadId),
+    st.objects[b.toObjId]? = some (.tcb tcbB) → tcbB.queuePrev = some a → a.toObjId ≠ target
+  notHead : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint) (hd : SeLe4n.ThreadId),
+    st.objects[epId]? = some (.endpoint ep) →
+    (ep.sendQ.head = some hd ∨ ep.receiveQ.head = some hd) → hd.toObjId ≠ target
+  notTail : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint) (tl : SeLe4n.ThreadId),
+    st.objects[epId]? = some (.endpoint ep) →
+    (ep.sendQ.tail = some tl ∨ ep.receiveQ.tail = some tl) → tl.toObjId ≠ target
+  noSelfLoops : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.queueNext ≠ some tid
+  notReplyLinked : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.replyObject = some rid →
+    rid.toObjId ≠ target
+  notStashed : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.pendingReceiveReply = some rid →
+    rid.toObjId ≠ target
+
+/-- At-target lookup of a post-state kind pins the replacement object. -/
+private theorem retypeWrite_at_target {st' : SystemState} {target : SeLe4n.ObjId}
+    {newObj o : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hT : st'.objects[target]? = some o) : newObj = o :=
+  Option.some.inj ((hAt.symm.trans hT))
+
+private theorem retypeWrite_allPendingMessagesBounded
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' := by
+  intro tid tcb msg hT hPM
+  by_cases hK : tid.toObjId = target
+  · rw [hK] at hT
+    obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
+    obtain ⟨-, hPMn, -⟩ := hFresh
+    rw [hPMn] at hPM
+    cases hPM
+  · rw [hNe _ hK] at hT
+    exact hInv tid tcb msg hT hPM
+
+private theorem retypeWrite_notificationBadgesWellFormed
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hInv : notificationBadgesWellFormed st) :
+    notificationBadgesWellFormed st' := by
+  intro oid ntfn badge hObj hPB
+  by_cases hK : oid = target
+  · rw [hK] at hObj
+    obtain rfl : newObj = .notification ntfn := retypeWrite_at_target hAt hObj
+    obtain ⟨-, -, hPBn⟩ := hFresh
+    rw [hPBn] at hPB
+    cases hPB
+  · rw [hNe _ hK] at hObj
+    exact hInv oid ntfn badge hObj hPB
+
+private theorem retypeWrite_capabilityBadgesWellFormed
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hInv : capabilityBadgesWellFormed st) :
+    capabilityBadgesWellFormed st' := by
+  intro oid cn slot cap badge hObj hLk hB
+  by_cases hK : oid = target
+  · rw [hK] at hObj
+    obtain rfl : newObj = .cnode cn := retypeWrite_at_target hAt hObj
+    rw [hFresh slot] at hLk
+    cases hLk
+  · rw [hNe _ hK] at hObj
+    exact hInv oid cn slot cap badge hObj hLk hB
+
+private theorem retypeWrite_ipcInvariant
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hInv : ipcInvariant st) :
+    ipcInvariant st' := by
+  intro oid ntfn hObj
+  by_cases hK : oid = target
+  · rw [hK] at hObj
+    obtain rfl : newObj = .notification ntfn := retypeWrite_at_target hAt hObj
+    obtain ⟨hState, hWT, hPB⟩ := hFresh
+    show notificationQueueWellFormed ntfn
+    unfold notificationQueueWellFormed
+    rw [hState]
+    exact ⟨hWT, hPB⟩
+  · rw [hNe _ hK] at hObj
+    exact hInv oid ntfn hObj
+
+private theorem retypeWrite_blockedThreadsPendingMessageConsistent
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hInv : blockedThreadsPendingMessageConsistent st) :
+    blockedThreadsPendingMessageConsistent st' := by
+  intro tid tcb hT
+  by_cases hK : tid.toObjId = target
+  · rw [hK] at hT
+    obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
+    obtain ⟨hReady, -⟩ := hFresh
+    rw [hReady]
+    trivial
+  · rw [hNe _ hK] at hT
+    exact hInv tid tcb hT
+
+private theorem retypeWrite_blockedThreadTimeoutConsistent
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : blockedThreadTimeoutConsistent st) :
+    blockedThreadTimeoutConsistent st' := by
+  intro tid tcb scId hT hTB
+  by_cases hK : tid.toObjId = target
+  · rw [hK] at hT
+    obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
+    obtain ⟨-, -, -, -, -, -, -, hTBn⟩ := hFresh
+    rw [hTBn] at hTB
+    cases hTB
+  · rw [hNe _ hK] at hT
+    obtain ⟨⟨sc, hSc⟩, hBlk⟩ := hInv tid tcb scId hT hTB
+    refine ⟨⟨sc, ?_⟩, hBlk⟩
+    have hneT : scId.toObjId ≠ target := fun hEq => hDet.notSc sc (hEq ▸ hSc)
+    rw [hNe _ hneT]
+    exact hSc
+
+private theorem retypeWrite_donationChainAcyclic
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hInv : donationChainAcyclic st) :
+    donationChainAcyclic st' := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
+  by_cases hK1 : tid1.toObjId = target
+  · rw [hK1] at h1
+    obtain rfl : newObj = .tcb tcb1 := retypeWrite_at_target hAt h1
+    obtain ⟨-, -, -, -, hSB, -⟩ := hFresh
+    rw [hSB] at hB1
+    cases hB1
+  · by_cases hK2 : tid2.toObjId = target
+    · rw [hK2] at h2
+      obtain rfl : newObj = .tcb tcb2 := retypeWrite_at_target hAt h2
+      obtain ⟨-, -, -, -, hSB, -⟩ := hFresh
+      rw [hSB] at hB2
+      cases hB2
+    · rw [hNe _ hK1] at h1
+      rw [hNe _ hK2] at h2
+      exact hInv tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
+
+private theorem retypeWrite_donationOwnerUnique
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hInv : donationOwnerUnique st) :
+    donationOwnerUnique st' := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+  by_cases hK1 : tid1.toObjId = target
+  · rw [hK1] at h1
+    obtain rfl : newObj = .tcb tcb1 := retypeWrite_at_target hAt h1
+    obtain ⟨-, -, -, -, hSB, -⟩ := hFresh
+    rw [hSB] at hB1
+    cases hB1
+  · by_cases hK2 : tid2.toObjId = target
+    · rw [hK2] at h2
+      obtain rfl : newObj = .tcb tcb2 := retypeWrite_at_target hAt h2
+      obtain ⟨-, -, -, -, hSB, -⟩ := hFresh
+      rw [hSB] at hB2
+      cases hB2
+    · rw [hNe _ hK1] at h1
+      rw [hNe _ hK2] at h2
+      exact hInv tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+
+private theorem retypeWrite_donationBudgetTransfer
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hInv : donationBudgetTransfer st) :
+    donationBudgetTransfer st' := by
+  intro tid1 tid2 tcb1 tcb2 scId h1 h2 hTNe hS1 hS2
+  by_cases hK1 : tid1.toObjId = target
+  · rw [hK1] at h1
+    obtain rfl : newObj = .tcb tcb1 := retypeWrite_at_target hAt h1
+    obtain ⟨-, -, -, -, hSB, -⟩ := hFresh
+    rw [hSB] at hS1
+    simp [SchedContextBinding.scId?] at hS1
+  · by_cases hK2 : tid2.toObjId = target
+    · rw [hK2] at h2
+      obtain rfl : newObj = .tcb tcb2 := retypeWrite_at_target hAt h2
+      obtain ⟨-, -, -, -, hSB, -⟩ := hFresh
+      rw [hSB] at hS2
+      simp [SchedContextBinding.scId?] at hS2
+    · rw [hNe _ hK1] at h1
+      rw [hNe _ hK2] at h2
+      exact hInv tid1 tid2 tcb1 tcb2 scId h1 h2 hTNe hS1 hS2
+
+private theorem retypeWrite_blockedOnReplyHasTarget
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hInv : blockedOnReplyHasTarget st) :
+    blockedOnReplyHasTarget st' := by
+  intro tid tcb epId rt hT hIpc
+  by_cases hK : tid.toObjId = target
+  · rw [hK] at hT
+    obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
+    obtain ⟨hReady, -⟩ := hFresh
+    rw [hReady] at hIpc
+    cases hIpc
+  · rw [hNe _ hK] at hT
+    exact hInv tid tcb epId rt hT hIpc
+
+private theorem retypeWrite_blockedOnReplyHasReplyObject
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hInv : blockedOnReplyHasReplyObject st) :
+    blockedOnReplyHasReplyObject st' := by
+  intro tid tcb ep rt hT hIpc
+  by_cases hK : tid.toObjId = target
+  · rw [hK] at hT
+    obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
+    obtain ⟨hReady, -⟩ := hFresh
+    rw [hReady] at hIpc
+    cases hIpc
+  · rw [hNe _ hK] at hT
+    exact hInv tid tcb ep rt hT hIpc
+
+private theorem retypeWrite_queueNextBlockingConsistent
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : queueNextBlockingConsistent st) :
+    queueNextBlockingConsistent st' := by
+  intro a b tcbA tcbB hA hB hN
+  by_cases hKa : a.toObjId = target
+  · rw [hKa] at hA
+    obtain rfl : newObj = .tcb tcbA := retypeWrite_at_target hAt hA
+    obtain ⟨-, -, hQN, -⟩ := hFresh
+    rw [hQN] at hN
+    cases hN
+  · rw [hNe _ hKa] at hA
+    by_cases hKb : b.toObjId = target
+    · exact absurd hKb (hDet.notQueueLinked a tcbA b hA hN)
+    · rw [hNe _ hKb] at hB
+      exact hInv a b tcbA tcbB hA hB hN
+
+private theorem retypeWrite_queueNextTargetBlocked
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : queueNextTargetBlocked st) :
+    queueNextTargetBlocked st' := by
+  intro a b tcbA tcbB hA hB hN
+  by_cases hKa : a.toObjId = target
+  · rw [hKa] at hA
+    obtain rfl : newObj = .tcb tcbA := retypeWrite_at_target hAt hA
+    obtain ⟨-, -, hQN, -⟩ := hFresh
+    rw [hQN] at hN
+    cases hN
+  · rw [hNe _ hKa] at hA
+    by_cases hKb : b.toObjId = target
+    · exact absurd hKb (hDet.notQueueLinked a tcbA b hA hN)
+    · rw [hNe _ hKb] at hB
+      exact hInv a b tcbA tcbB hA hB hN
+
+private theorem retypeWrite_queueHeadBlockedConsistent
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : queueHeadBlockedConsistent st) :
+    queueHeadBlockedConsistent st' := by
+  intro epId ep hd tcb hEp hT
+  by_cases hKe : epId = target
+  · rw [hKe] at hEp
+    obtain rfl : newObj = .endpoint ep := retypeWrite_at_target hAt hEp
+    obtain ⟨hSH, -, hRH, -⟩ := hFresh
+    constructor
+    · intro h; rw [hRH] at h; cases h
+    · intro h; rw [hSH] at h; cases h
+  · rw [hNe _ hKe] at hEp
+    by_cases hKh : hd.toObjId = target
+    · constructor
+      · intro h
+        exact absurd hKh (hDet.notHead epId ep hd hEp (Or.inr h))
+      · intro h
+        exact absurd hKh (hDet.notHead epId ep hd hEp (Or.inl h))
+    · rw [hNe _ hKh] at hT
+      exact hInv epId ep hd tcb hEp hT
+
+private theorem retypeWrite_endpointQueueTailBlockedConsistent
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : endpointQueueTailBlockedConsistent st) :
+    endpointQueueTailBlockedConsistent st' := by
+  intro epId ep tl tcb hEp hT
+  by_cases hKe : epId = target
+  · rw [hKe] at hEp
+    obtain rfl : newObj = .endpoint ep := retypeWrite_at_target hAt hEp
+    obtain ⟨-, hST, -, hRT⟩ := hFresh
+    constructor
+    · intro h; rw [hRT] at h; cases h
+    · intro h; rw [hST] at h; cases h
+  · rw [hNe _ hKe] at hEp
+    by_cases hKt : tl.toObjId = target
+    · constructor
+      · intro h
+        exact absurd hKt (hDet.notTail epId ep tl hEp (Or.inr h))
+      · intro h
+        exact absurd hKt (hDet.notTail epId ep tl hEp (Or.inl h))
+    · rw [hNe _ hKt] at hT
+      exact hInv epId ep tl tcb hEp hT
+
+private theorem retypeWrite_endpointQueueNoDup
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : endpointQueueNoDup st) :
+    endpointQueueNoDup st' := by
+  have hSelf : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+      st'.objects[tid.toObjId]? = some (.tcb tcb) → TCB.queueNext tcb ≠ some tid := by
+    intro tid tcb hT
+    by_cases hK : tid.toObjId = target
+    · rw [hK] at hT
+      obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
+      obtain ⟨-, -, hQN, -⟩ := hFresh
+      show tcb.queueNext ≠ some tid
+      rw [hQN]
+      intro h
+      cases h
+    · rw [hNe _ hK] at hT
+      exact hDet.noSelfLoops tid tcb hT
+  intro oid ep hEp
+  refine ⟨hSelf, ?_⟩
+  by_cases hKe : oid = target
+  · rw [hKe] at hEp
+    obtain rfl : newObj = .endpoint ep := retypeWrite_at_target hAt hEp
+    obtain ⟨hSH, -⟩ := hFresh
+    exact Or.inl hSH
+  · rw [hNe _ hKe] at hEp
+    exact (hInv oid ep hEp).2
+
+private theorem retypeWrite_donationOwnerValid
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : donationOwnerValid st) :
+    donationOwnerValid st' := by
+  intro tid tcb scId owner hT hB
+  by_cases hK : tid.toObjId = target
+  · rw [hK] at hT
+    obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
+    obtain ⟨-, -, -, -, hSB, -⟩ := hFresh
+    rw [hSB] at hB
+    cases hB
+  · rw [hNe _ hK] at hT
+    obtain ⟨⟨sc, hSc, hBound⟩, ⟨ownerTcb, hOT, hOUnbound, hOBlocked⟩⟩ :=
+      hInv tid tcb scId owner hT hB
+    have hneSc : scId.toObjId ≠ target := fun hEq => hDet.notSc sc (hEq ▸ hSc)
+    have hneOwner : owner.toObjId ≠ target := by
+      intro hEq
+      obtain ⟨epId, rt, hIpc⟩ := hOBlocked
+      exact hDet.notOwner ownerTcb (hEq ▸ hOT) epId rt hIpc
+    refine ⟨⟨sc, ?_, hBound⟩, ⟨ownerTcb, ?_, hOUnbound, hOBlocked⟩⟩
+    · rw [hNe _ hneSc]; exact hSc
+    · rw [hNe _ hneOwner]; exact hOT
+
+private theorem retypeWrite_ipcStateQueueMembershipConsistent
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : ipcStateQueueMembershipConsistent st) :
+    ipcStateQueueMembershipConsistent st' := by
+  have hWitness : ∀ (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (ep : Endpoint),
+      epId ≠ target →
+      st.objects[epId]? = some (.endpoint ep) →
+      (ep.sendQ.head = some tid ∨
+        ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+          st.objects[prev.toObjId]? = some (.tcb prevTcb) ∧
+          TCB.queueNext prevTcb = some tid) →
+      ∃ ep', st'.objects[epId]? = some (.endpoint ep') ∧
+        (ep'.sendQ.head = some tid ∨
+          ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+            st'.objects[prev.toObjId]? = some (.tcb prevTcb) ∧
+            TCB.queueNext prevTcb = some tid) := by
+    intro epId tid ep hneEp hEp hWit
+    refine ⟨ep, by rw [hNe _ hneEp]; exact hEp, ?_⟩
+    cases hWit with
+    | inl hHead => exact Or.inl hHead
+    | inr hPrev =>
+        obtain ⟨prev, prevTcb, hPrevT, hPrevN⟩ := hPrev
+        have hnePrev : prev.toObjId ≠ target := by
+          intro hEq
+          have hNone := hDet.tcbNoNext prevTcb (hEq ▸ hPrevT)
+          rw [show TCB.queueNext prevTcb = prevTcb.queueNext from rfl, hNone] at hPrevN
+          cases hPrevN
+        exact Or.inr ⟨prev, prevTcb, by rw [hNe _ hnePrev]; exact hPrevT, hPrevN⟩
+  have hWitnessR : ∀ (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (ep : Endpoint),
+      epId ≠ target →
+      st.objects[epId]? = some (.endpoint ep) →
+      (ep.receiveQ.head = some tid ∨
+        ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+          st.objects[prev.toObjId]? = some (.tcb prevTcb) ∧
+          TCB.queueNext prevTcb = some tid) →
+      ∃ ep', st'.objects[epId]? = some (.endpoint ep') ∧
+        (ep'.receiveQ.head = some tid ∨
+          ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+            st'.objects[prev.toObjId]? = some (.tcb prevTcb) ∧
+            TCB.queueNext prevTcb = some tid) := by
+    intro epId tid ep hneEp hEp hWit
+    refine ⟨ep, by rw [hNe _ hneEp]; exact hEp, ?_⟩
+    cases hWit with
+    | inl hHead => exact Or.inl hHead
+    | inr hPrev =>
+        obtain ⟨prev, prevTcb, hPrevT, hPrevN⟩ := hPrev
+        have hnePrev : prev.toObjId ≠ target := by
+          intro hEq
+          have hNone := hDet.tcbNoNext prevTcb (hEq ▸ hPrevT)
+          rw [show TCB.queueNext prevTcb = prevTcb.queueNext from rfl, hNone] at hPrevN
+          cases hPrevN
+        exact Or.inr ⟨prev, prevTcb, by rw [hNe _ hnePrev]; exact hPrevT, hPrevN⟩
+  intro tid tcb hT
+  by_cases hK : tid.toObjId = target
+  · rw [hK] at hT
+    obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
+    obtain ⟨hReady, -⟩ := hFresh
+    rw [hReady]
+    trivial
+  · rw [hNe _ hK] at hT
+    have hPre := hInv tid tcb hT
+    cases hIpc : tcb.ipcState with
+    | blockedOnSend epId =>
+        simp only [hIpc] at hPre
+        obtain ⟨ep, hEp, hWit⟩ := hPre
+        have hneEp : epId ≠ target := by
+          intro hEq
+          exact (hDet.blockedRefsAvoid tid tcb hT).1 (hEq ▸ hIpc)
+        exact hWitness epId tid ep hneEp hEp hWit
+    | blockedOnReceive epId =>
+        simp only [hIpc] at hPre
+        obtain ⟨ep, hEp, hWit⟩ := hPre
+        have hneEp : epId ≠ target := by
+          intro hEq
+          exact (hDet.blockedRefsAvoid tid tcb hT).2.1 (hEq ▸ hIpc)
+        exact hWitnessR epId tid ep hneEp hEp hWit
+    | blockedOnCall epId =>
+        simp only [hIpc] at hPre
+        obtain ⟨ep, hEp, hWit⟩ := hPre
+        have hneEp : epId ≠ target := by
+          intro hEq
+          exact (hDet.blockedRefsAvoid tid tcb hT).2.2 (hEq ▸ hIpc)
+        exact hWitness epId tid ep hneEp hEp hWit
+    | ready => trivial
+    | blockedOnReply ep rt => trivial
+    | blockedOnNotification n => trivial
+
+private theorem retypeWrite_replyCallerLinkageReciprocal
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : replyCallerLinkageReciprocal st) :
+    replyCallerLinkageReciprocal st' := by
+  constructor
+  · intro tid tcb rid hT hRO
+    by_cases hK : tid.toObjId = target
+    · rw [hK] at hT
+      obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
+      obtain ⟨-, -, -, -, -, hRO0, -⟩ := hFresh
+      rw [hRO0] at hRO
+      cases hRO
+    · rw [hNe _ hK] at hT
+      obtain ⟨r, hR, hCaller⟩ := hInv.1 tid tcb rid hT hRO
+      have hneR : rid.toObjId ≠ target := hDet.notReplyLinked tid tcb rid hT hRO
+      exact ⟨r, by rw [hNe _ hneR]; exact hR, hCaller⟩
+  · intro rid r tid hR hCaller
+    by_cases hK : rid.toObjId = target
+    · rw [hK] at hR
+      obtain rfl : newObj = .reply r := retypeWrite_at_target hAt hR
+      rw [hFresh] at hCaller
+      cases hCaller
+    · rw [hNe _ hK] at hR
+      obtain ⟨tcb, hT, hRO, hBlocked⟩ := hInv.2 rid r tid hR hCaller
+      have hneT : tid.toObjId ≠ target := by
+        intro hEq
+        obtain ⟨ep, rt, hIpc⟩ := hBlocked
+        exact hDet.notOwner tcb (hEq ▸ hT) ep rt hIpc
+      exact ⟨tcb, by rw [hNe _ hneT]; exact hT, hRO, hBlocked⟩
+
+private theorem retypeWrite_pendingReceiveReplyWellFormed
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : pendingReceiveReplyWellFormed st) :
+    pendingReceiveReplyWellFormed st' := by
+  constructor
+  · intro tid tcb rid hT hPRR
+    have hTobj := (SystemState.getTcb?_eq_some_iff st' tid tcb).mp hT
+    by_cases hK : tid.toObjId = target
+    · rw [hK] at hTobj
+      obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hTobj
+      obtain ⟨-, -, -, -, -, -, hPRR0, -⟩ := hFresh
+      rw [hPRR0] at hPRR
+      cases hPRR
+    · rw [hNe _ hK] at hTobj
+      have hTpre := (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTobj
+      obtain ⟨hBlk, r, hR, hCnone⟩ := hInv.1 tid tcb rid hTpre hPRR
+      have hRobj := (SystemState.getReply?_eq_some_iff st rid r).mp hR
+      have hneR : rid.toObjId ≠ target := hDet.notStashed tid tcb rid hTobj hPRR
+      refine ⟨hBlk, r, ?_, hCnone⟩
+      exact (SystemState.getReply?_eq_some_iff st' rid r).mpr
+        (by rw [hNe _ hneR]; exact hRobj)
+  · intro tid1 tid2 tcb1 tcb2 rid hT1 hT2 hP1 hP2
+    have hT1obj := (SystemState.getTcb?_eq_some_iff st' tid1 tcb1).mp hT1
+    have hT2obj := (SystemState.getTcb?_eq_some_iff st' tid2 tcb2).mp hT2
+    by_cases hK1 : tid1.toObjId = target
+    · rw [hK1] at hT1obj
+      obtain rfl : newObj = .tcb tcb1 := retypeWrite_at_target hAt hT1obj
+      obtain ⟨-, -, -, -, -, -, hPRR0, -⟩ := hFresh
+      rw [hPRR0] at hP1
+      cases hP1
+    · by_cases hK2 : tid2.toObjId = target
+      · rw [hK2] at hT2obj
+        obtain rfl : newObj = .tcb tcb2 := retypeWrite_at_target hAt hT2obj
+        obtain ⟨-, -, -, -, -, -, hPRR0, -⟩ := hFresh
+        rw [hPRR0] at hP2
+        cases hP2
+      · rw [hNe _ hK1] at hT1obj
+        rw [hNe _ hK2] at hT2obj
+        exact hInv.2 tid1 tid2 tcb1 tcb2 rid
+          ((SystemState.getTcb?_eq_some_iff st tid1 tcb1).mpr hT1obj)
+          ((SystemState.getTcb?_eq_some_iff st tid2 tcb2).mpr hT2obj) hP1 hP2
+
+private theorem retypeWrite_passiveServerIdle
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hSched : st'.scheduler = st.scheduler)
+    (hFresh : retypeReplacementFresh newObj)
+    (hInv : passiveServerIdle st) :
+    passiveServerIdle st' := by
+  intro tid tcb hT hUnbound hNQ hNC
+  by_cases hK : tid.toObjId = target
+  · rw [hK] at hT
+    obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
+    obtain ⟨hReady, -⟩ := hFresh
+    exact Or.inl hReady
+  · rw [hNe _ hK] at hT
+    rw [hSched] at hNQ hNC
+    exact hInv tid tcb hT hUnbound hNQ hNC
+
+private theorem retypeWrite_dualQueueSystemInvariant
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : dualQueueSystemInvariant st) :
+    dualQueueSystemInvariant st' := by
+  obtain ⟨hEpWF, ⟨hFwd, hRev⟩, hAcyclic⟩ := hInv
+  have hIQtrans : ∀ (q : IntrusiveQueue),
+      intrusiveQueueWellFormed q st →
+      (∀ hd, q.head = some hd → hd.toObjId ≠ target) →
+      (∀ tl, q.tail = some tl → tl.toObjId ≠ target) →
+      intrusiveQueueWellFormed q st' := by
+    intro q ⟨hP1, hP2, hP3⟩ hHd hTl
+    refine ⟨hP1, ?_, ?_⟩
+    · intro hd hH
+      obtain ⟨tcbH, hTH, hPnone⟩ := hP2 hd hH
+      exact ⟨tcbH, by rw [hNe _ (hHd hd hH)]; exact hTH, hPnone⟩
+    · intro tl hT
+      obtain ⟨tcbT, hTT, hNnone⟩ := hP3 tl hT
+      exact ⟨tcbT, by rw [hNe _ (hTl tl hT)]; exact hTT, hNnone⟩
+  refine ⟨?_, ⟨?_, ?_⟩, ?_⟩
+  · -- per-endpoint dual-queue well-formedness
+    intro epId ep hEp
+    unfold dualQueueEndpointWellFormed
+    rw [hEp]
+    by_cases hKe : epId = target
+    · rw [hKe] at hEp
+      obtain rfl : newObj = .endpoint ep := retypeWrite_at_target hAt hEp
+      obtain ⟨hSH, hST, hRH, hRT⟩ := hFresh
+      have hFreshIQ : ∀ (q : IntrusiveQueue), q.head = none → q.tail = none →
+          intrusiveQueueWellFormed q st' := by
+        intro q hH hT
+        refine ⟨by rw [hH, hT], ?_, ?_⟩
+        · intro hd h; rw [hH] at h; cases h
+        · intro tl h; rw [hT] at h; cases h
+      exact ⟨hFreshIQ ep.sendQ hSH hST, hFreshIQ ep.receiveQ hRH hRT⟩
+    · rw [hNe _ hKe] at hEp
+      have hPre := hEpWF epId ep hEp
+      unfold dualQueueEndpointWellFormed at hPre
+      rw [hEp] at hPre
+      exact ⟨hIQtrans ep.sendQ hPre.1
+          (fun hd h => hDet.notHead epId ep hd hEp (Or.inl h))
+          (fun tl h => hDet.notTail epId ep tl hEp (Or.inl h)),
+        hIQtrans ep.receiveQ hPre.2
+          (fun hd h => hDet.notHead epId ep hd hEp (Or.inr h))
+          (fun tl h => hDet.notTail epId ep tl hEp (Or.inr h))⟩
+  · -- forward link integrity
+    intro a tcbA hA b hN
+    by_cases hKa : a.toObjId = target
+    · rw [hKa] at hA
+      obtain rfl : newObj = .tcb tcbA := retypeWrite_at_target hAt hA
+      obtain ⟨-, -, hQN, -⟩ := hFresh
+      rw [hQN] at hN
+      cases hN
+    · rw [hNe _ hKa] at hA
+      obtain ⟨tcbB, hB, hBP⟩ := hFwd a tcbA hA b hN
+      have hneB : b.toObjId ≠ target := hDet.notQueueLinked a tcbA b hA hN
+      exact ⟨tcbB, by rw [hNe _ hneB]; exact hB, hBP⟩
+  · -- reverse link integrity
+    intro b tcbB hB a hP
+    by_cases hKb : b.toObjId = target
+    · rw [hKb] at hB
+      obtain rfl : newObj = .tcb tcbB := retypeWrite_at_target hAt hB
+      obtain ⟨-, -, -, hQP, -⟩ := hFresh
+      rw [hQP] at hP
+      cases hP
+    · rw [hNe _ hKb] at hB
+      obtain ⟨tcbA, hA, hAN⟩ := hRev b tcbB hB a hP
+      have hneA : a.toObjId ≠ target := hDet.notPrevLinked b tcbB a hB hP
+      exact ⟨tcbA, by rw [hNe _ hneA]; exact hA, hAN⟩
+  · -- chain acyclicity
+    have hPath : ∀ x y, QueueNextPath st' x y → QueueNextPath st x y := by
+      intro x y h
+      induction h with
+      | single a b tcb hObj hNext =>
+          by_cases hKa : a.toObjId = target
+          · rw [hKa] at hObj
+            obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hObj
+            obtain ⟨-, -, hQN, -⟩ := hFresh
+            rw [show TCB.queueNext tcb = tcb.queueNext from rfl, hQN] at hNext
+            cases hNext
+          · rw [hNe _ hKa] at hObj
+            exact .single a b tcb hObj hNext
+      | cons a mid c tcb hObj hNext _ ih =>
+          by_cases hKa : a.toObjId = target
+          · rw [hKa] at hObj
+            obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hObj
+            obtain ⟨-, -, hQN, -⟩ := hFresh
+            rw [show TCB.queueNext tcb = tcb.queueNext from rfl, hQN] at hNext
+            cases hNext
+          · rw [hNe _ hKa] at hObj
+            exact .cons a mid c tcb hObj hNext ih
+    intro tid hPathTid
+    exact hAcyclic tid (hPath _ _ hPathTid)
+
+/-- The retype write — one arbitrary-kind object replaced by a pristine one at
+a fully detached slot — preserves the whole `ipcInvariantFull` bundle.  This is
+the storeObject-shape core shared by every retype entry point; the
+`lifecycleRetypeObject_preserves_*` family proves the same conjuncts one at a
+time for the CSpaceAddr-authorized variant. -/
+theorem retypeWrite_preserves_ipcInvariantFull
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hSched : st'.scheduler = st.scheduler)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : ipcInvariantFull st) :
+    ipcInvariantFull st' :=
+  ⟨retypeWrite_ipcInvariant hAt hNe hFresh hInv.ipcInvariant,
+   retypeWrite_dualQueueSystemInvariant hAt hNe hFresh hDet hInv.dualQueueSystemInvariant,
+   retypeWrite_allPendingMessagesBounded hAt hNe hFresh hInv.allPendingMessagesBounded,
+   ⟨retypeWrite_notificationBadgesWellFormed hAt hNe hFresh hInv.badgeWellFormed.1,
+    retypeWrite_capabilityBadgesWellFormed hAt hNe hFresh hInv.badgeWellFormed.2⟩,
+   retypeWrite_blockedThreadsPendingMessageConsistent hAt hNe hFresh
+     hInv.blockedThreadsPendingMessageConsistent,
+   retypeWrite_endpointQueueNoDup hAt hNe hFresh hDet hInv.endpointQueueNoDup,
+   retypeWrite_ipcStateQueueMembershipConsistent hAt hNe hFresh hDet
+     hInv.ipcStateQueueMembershipConsistent,
+   retypeWrite_queueNextBlockingConsistent hAt hNe hFresh hDet
+     hInv.queueNextBlockingConsistent,
+   retypeWrite_queueHeadBlockedConsistent hAt hNe hFresh hDet
+     hInv.queueHeadBlockedConsistent,
+   retypeWrite_blockedThreadTimeoutConsistent hAt hNe hFresh hDet
+     hInv.blockedThreadTimeoutConsistent,
+   retypeWrite_donationChainAcyclic hAt hNe hFresh hInv.donationChainAcyclic,
+   retypeWrite_donationOwnerValid hAt hNe hFresh hDet hInv.donationOwnerValid,
+   retypeWrite_passiveServerIdle hAt hNe hSched hFresh hInv.passiveServerIdle,
+   retypeWrite_donationBudgetTransfer hAt hNe hFresh hInv.donationBudgetTransfer,
+   retypeWrite_blockedOnReplyHasTarget hAt hNe hFresh hInv.blockedOnReplyHasTarget,
+   ⟨retypeWrite_replyCallerLinkageReciprocal hAt hNe hFresh hDet hInv.replyCallerLinkage.1,
+    retypeWrite_blockedOnReplyHasReplyObject hAt hNe hFresh hInv.replyCallerLinkage.2⟩,
+   retypeWrite_pendingReceiveReplyWellFormed hAt hNe hFresh hDet
+     hInv.pendingReceiveReplyWellFormed,
+   retypeWrite_donationOwnerUnique hAt hNe hFresh hInv.donationOwnerUnique,
+   retypeWrite_endpointQueueTailBlockedConsistent hAt hNe hFresh hDet
+     hInv.endpointQueueTailBlockedConsistent,
+   retypeWrite_queueNextTargetBlocked hAt hNe hFresh hDet hInv.queueNextTargetBlocked⟩
+
 end SeLe4n.Kernel
