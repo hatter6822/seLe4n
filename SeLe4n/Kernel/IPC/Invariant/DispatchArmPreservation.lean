@@ -3760,4 +3760,278 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_ipcInva
       obtain ⟨hObjs, -, hSched, -⟩ := Architecture.withIcacheBroadcast_frame hK hStep
       exact ipcInvariantFull_of_objects_scheduler_eq hObjs hSched hB
 
+-- ============================================================================
+-- §15  TCB lifecycle arms (`.tcbResume`, `.tcbSuspend`)
+-- ============================================================================
+
+/-- The IPC-side quiescent shape a suspended thread is left in (and the shape
+the resume path re-enters from): `.ready`, no intrusive queue links, no
+stashed receive reply.  Pre-state facts, dischargeable before the step. -/
+structure threadIpcFieldsQuiescent (st : SystemState) (tid : SeLe4n.ThreadId) : Prop where
+  ready : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.ipcState = .ready
+  noNext : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.queueNext = none
+  noPrev : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.queuePrev = none
+  noPPrev : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.queuePPrev = none
+  noStash : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.pendingReceiveReply = none
+
+/-- Under the quiescent shape, restoring a thread to ready rewrites every
+cleared field to the value it already holds — the write is pointwise inert. -/
+private theorem restoreToReady_getElem_eq_of_quiescent
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hQ : threadIpcFieldsQuiescent st tid) :
+    ∀ oid : SeLe4n.ObjId,
+      (Lifecycle.Suspend.restoreToReady st tid).objects[oid]? = st.objects[oid]? := by
+  intro oid
+  unfold Lifecycle.Suspend.restoreToReady
+  cases hLk : st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+      dsimp only []
+      have hSame : ({ tcb with ipcState := .ready, queuePrev := none, queueNext := none, queuePPrev := none, pendingReceiveReply := none } : TCB) = tcb := by
+        have h1 := hQ.ready tcb hLk
+        have h2 := hQ.noNext tcb hLk
+        have h3 := hQ.noPrev tcb hLk
+        have h4 := hQ.noPPrev tcb hLk
+        have h5 := hQ.noStash tcb hLk
+        cases tcb
+        simp_all
+      rw [hSame]
+      have hPre : st.objects[tid.toObjId]? = some (.tcb tcb) :=
+        (SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk
+      by_cases hK : oid = tid.toObjId
+      · subst hK
+        simp only [RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hObjInv]
+        rw [← RHTable_getElem?_eq_get?]
+        exact hPre.symm
+      · simp only [RHTable_getElem?_eq_get?]
+        exact RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _
+          (by simp; exact fun h => hK h.symm) hObjInv
+
+private theorem restoreToReady_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) :
+    (Lifecycle.Suspend.restoreToReady st tid).objects.invExt := by
+  unfold Lifecycle.Suspend.restoreToReady
+  split
+  · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hObjInv
+  · exact hObjInv
+
+/-- The resume mid-state — IPC-field restore plus the `threadState`/`pipBoost`
+store, neither field bundle-read — preserves the bundle from a quiescent
+victim. -/
+private theorem resumeReadyMidState_preserves_ipcInvariantFull
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hQ : threadIpcFieldsQuiescent st tid)
+    (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (Lifecycle.Suspend.resumeReadyMidState st tid) := by
+  have hEq := restoreToReady_getElem_eq_of_quiescent st tid hObjInv hQ
+  have hSched := Lifecycle.Suspend.restoreToReady_scheduler_eq st tid
+  have hObjInv1 := restoreToReady_objects_invExt st tid hObjInv
+  have hInv1 : ipcInvariantFull (Lifecycle.Suspend.restoreToReady st tid) := by
+    refine ipcInvariantFull_of_getElem_eq hEq ?_ hInv
+    intro t tcbT hT hUnb hNQ hNC
+    rw [hEq] at hT
+    rw [hSched] at hNQ hNC
+    exact hInv.passiveServerIdle t tcbT hT hUnb hNQ hNC
+  unfold Lifecycle.Suspend.resumeReadyMidState
+  dsimp only []
+  cases hLk : (Lifecycle.Suspend.restoreToReady st tid).getTcb? tid with
+  | none => exact hInv1
+  | some t =>
+      exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
+        (Lifecycle.Suspend.restoreToReady st tid) tid t
+        { t with threadState := .Ready, pipBoost := SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid }
+        hObjInv1 hInv1
+        ((SystemState.getTcb?_eq_some_iff _ tid t).mp hLk)
+        rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+/-- Enqueueing an already-`.ready` thread rewrites its TCB to itself and grows
+one run queue — the bundle transports, with `passiveServerIdle` covered by the
+queue-growth direction. -/
+private theorem enqueueRunnableOnCore_preserves_ipcInvariantFull
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hReady : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.ipcState = .ready)
+    (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (enqueueRunnableOnCore st c tid) := by
+  unfold enqueueRunnableOnCore
+  cases hLk : st.getTcb? tid with
+  | none => exact hInv
+  | some tcb =>
+      dsimp only []
+      split
+      · exact hInv
+      · have hSame : ({ tcb with ipcState := .ready } : TCB) = tcb := by
+          have h1 := hReady tcb hLk
+          cases tcb
+          simp_all
+        rw [hSame]
+        have hPre : st.objects[tid.toObjId]? = some (.tcb tcb) :=
+          (SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk
+        have hEq : ∀ oid : SeLe4n.ObjId,
+            ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb), scheduler := st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb)) } : SystemState).objects[oid]? = st.objects[oid]? := by
+          intro oid
+          show (st.objects.insert tid.toObjId (.tcb tcb))[oid]? = st.objects[oid]?
+          by_cases hK : oid = tid.toObjId
+          · subst hK
+            simp only [RHTable_getElem?_eq_get?]
+            rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hObjInv]
+            rw [← RHTable_getElem?_eq_get?]
+            exact hPre.symm
+          · simp only [RHTable_getElem?_eq_get?]
+            exact RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _
+              (by simp; exact fun h => hK h.symm) hObjInv
+        refine ipcInvariantFull_of_getElem_eq hEq ?_ hInv
+        intro t tcbT hT hUnb hNQ hNC
+        rw [hEq] at hT
+        rw [show ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb), scheduler := st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb)) } : SystemState).scheduler.currentOnCore Concurrency.bootCoreId = st.scheduler.currentOnCore Concurrency.bootCoreId from by simp] at hNC
+        have hNQ' : t ∉ st.scheduler.runQueueOnCore Concurrency.bootCoreId := by
+          intro hMem
+          apply hNQ
+          show t ∈ ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb), scheduler := st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb)) } : SystemState).scheduler.runQueueOnCore Concurrency.bootCoreId
+          by_cases hc : c = Concurrency.bootCoreId
+          · subst hc
+            show t ∈ (st.scheduler.setRunQueueOnCore Concurrency.bootCoreId ((st.scheduler.runQueueOnCore Concurrency.bootCoreId).insert tid (effectiveRunQueuePriority tcb))).runQueueOnCore Concurrency.bootCoreId
+            rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+            exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inl hMem)
+          · show t ∈ (st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb))).runQueueOnCore Concurrency.bootCoreId
+            rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+            exact hMem
+        exact hInv.passiveServerIdle t tcbT hT hUnb hNQ' hNC
+
+private theorem resumeReadyMidState_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    (Lifecycle.Suspend.resumeReadyMidState st tid).objects.invExt := by
+  unfold Lifecycle.Suspend.resumeReadyMidState
+  dsimp only []
+  split
+  · exact RHTable_insert_preserves_invExt _ _ _ (restoreToReady_objects_invExt st tid hObjInv)
+  · exact restoreToReady_objects_invExt st tid hObjInv
+
+private theorem resumeReadyMidState_getTcb_ready
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hQ : threadIpcFieldsQuiescent st tid) :
+    ∀ tcb : TCB, (Lifecycle.Suspend.resumeReadyMidState st tid).getTcb? tid = some tcb →
+      tcb.ipcState = .ready := by
+  intro tcb hT
+  have hEq := restoreToReady_getElem_eq_of_quiescent st tid hObjInv hQ
+  have hObjInv1 := restoreToReady_objects_invExt st tid hObjInv
+  unfold Lifecycle.Suspend.resumeReadyMidState at hT
+  dsimp only [] at hT
+  cases hLk : (Lifecycle.Suspend.restoreToReady st tid).getTcb? tid with
+  | none => simp only [hLk] at hT; cases hT
+  | some t =>
+      simp only [hLk] at hT
+      have hTobj := (SystemState.getTcb?_eq_some_iff _ tid tcb).mp hT
+      dsimp only [] at hTobj
+      have hAt : ((Lifecycle.Suspend.restoreToReady st tid).objects.insert tid.toObjId (KernelObject.tcb { t with threadState := .Ready, pipBoost := SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid }))[tid.toObjId]? = some (KernelObject.tcb { t with threadState := .Ready, pipBoost := SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid }) := by
+        simp only [RHTable_getElem?_eq_get?]
+        exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv1
+      rw [hAt] at hTobj
+      obtain rfl : ({ t with threadState := .Ready, pipBoost := SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid } : TCB) = tcb := by
+        simpa using hTobj
+      show t.ipcState = .ready
+      have hPre1 := (SystemState.getTcb?_eq_some_iff _ tid t).mp hLk
+      rw [hEq tid.toObjId] at hPre1
+      exact hQ.ready t ((SystemState.getTcb?_eq_some_iff st tid t).mpr hPre1)
+
+private theorem enqueueRunnableOnCore_objects_invExt
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) :
+    (enqueueRunnableOnCore st c tid).objects.invExt := by
+  unfold enqueueRunnableOnCore
+  dsimp only []
+  split
+  · split
+    · exact hObjInv
+    · exact RHTable_insert_preserves_invExt _ _ _ hObjInv
+  · exact hObjInv
+
+/-- The enqueue-only resume — the branch the live `.tcbResume` arm runs while
+the context-restore seam is dark. -/
+theorem resumeThreadEnqueueOnly_preserves_ipcInvariantFull
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt)
+    (hQ : threadIpcFieldsQuiescent st vtid.val)
+    (hInv : ipcInvariantFull st)
+    (hStep : Lifecycle.Suspend.resumeThreadEnqueueOnly st vtid ec = .ok (st', sgi)) :
+    ipcInvariantFull st' := by
+  unfold Lifecycle.Suspend.resumeThreadEnqueueOnly at hStep
+  dsimp only [] at hStep
+  cases hLk : st.getTcb? vtid.val with
+  | none => rw [hLk] at hStep; cases hStep
+  | some tcb =>
+      rw [hLk] at hStep
+      dsimp only [] at hStep
+      split at hStep
+      · cases hStep
+      · have hMid := resumeReadyMidState_preserves_ipcInvariantFull st vtid.val hObjInv hQ hInv
+        have hEnq := enqueueRunnableOnCore_preserves_ipcInvariantFull
+          (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
+          (determineTargetCore st vtid.val) vtid.val
+          (resumeReadyMidState_objects_invExt st vtid.val hObjInv)
+          (resumeReadyMidState_getTcb_ready st vtid.val hObjInv hQ) hMid
+        split at hStep <;> · cases hStep; exact hEnq
+
+/-- The full per-core resume (live once the context-restore seam flips). -/
+theorem resumeThreadOnCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt)
+    (hQ : threadIpcFieldsQuiescent st vtid.val)
+    (hInv : ipcInvariantFull st)
+    (hStep : Lifecycle.Suspend.resumeThreadOnCore st vtid ec = .ok (st', sgi)) :
+    ipcInvariantFull st' := by
+  unfold Lifecycle.Suspend.resumeThreadOnCore at hStep
+  dsimp only [] at hStep
+  cases hLk : st.getTcb? vtid.val with
+  | none => rw [hLk] at hStep; cases hStep
+  | some tcb =>
+      rw [hLk] at hStep
+      dsimp only [] at hStep
+      split at hStep
+      · cases hStep
+      · have hMid := resumeReadyMidState_preserves_ipcInvariantFull st vtid.val hObjInv hQ hInv
+        have hEnq := enqueueRunnableOnCore_preserves_ipcInvariantFull
+          (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
+          (determineTargetCore st vtid.val) vtid.val
+          (resumeReadyMidState_objects_invExt st vtid.val hObjInv)
+          (resumeReadyMidState_getTcb_ready st vtid.val hObjInv hQ) hMid
+        have hEnqInv := enqueueRunnableOnCore_objects_invExt
+          (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
+          (determineTargetCore st vtid.val) vtid.val
+          (resumeReadyMidState_objects_invExt st vtid.val hObjInv)
+        split at hStep
+        · cases hRes : handleRescheduleSgiOnCore (enqueueRunnableOnCore
+              (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
+              (determineTargetCore st vtid.val) vtid.val) ec with
+          | ok st4 =>
+              rw [hRes] at hStep
+              cases hStep
+              exact handleRescheduleSgiOnCore_preserves_ipcInvariantFull _ ec _
+                hEnqInv hEnq hRes
+          | error e => rw [hRes] at hStep; cases hStep
+        · cases hStep
+          exact hEnq
+
+/-- `.tcbResume` (dispatch arm): the seam-gated wrapper, both branches. -/
+theorem resumeThreadOnCoreLive_preserves_ipcInvariantFull
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt)
+    (hQ : threadIpcFieldsQuiescent st vtid.val)
+    (hInv : ipcInvariantFull st)
+    (hStep : Lifecycle.Suspend.resumeThreadOnCoreLive st vtid ec = .ok (st', sgi)) :
+    ipcInvariantFull st' := by
+  unfold Lifecycle.Suspend.resumeThreadOnCoreLive at hStep
+  split at hStep
+  · exact resumeThreadOnCore_preserves_ipcInvariantFull st st' vtid ec sgi
+      hObjInv hQ hInv hStep
+  · exact resumeThreadEnqueueOnly_preserves_ipcInvariantFull st st' vtid ec sgi
+      hObjInv hQ hInv hStep
+
 end SeLe4n.Kernel
