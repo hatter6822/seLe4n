@@ -112,9 +112,16 @@ PRE_STATE_PREDICATES = (
 # `dispatchSyscall` is the tree's name for the top-level dispatcher; the plan
 # originally wrote `syscallDispatch`, which names nothing.  The theorem is named
 # for the function it is about.
+# The checked pair is required too (PR #886 review): `dispatchSyscall` is the
+# unchecked compatibility/proof path, while the exported entry delegates to
+# `syscallEntryChecked` -> `dispatchSyscallChecked` -- a gate satisfied by the
+# unchecked pair alone would report the live-kernel payoff complete while the
+# dispatcher handling production syscalls regressed unnoticed.
 PAYOFF_THEOREMS = (
     "dispatchWithCap_preserves_ipcInvariantFull",
     "dispatchSyscall_preserves_ipcInvariantFull",
+    "dispatchWithCapChecked_preserves_ipcInvariantFull",
+    "dispatchSyscallChecked_preserves_ipcInvariantFull",
 )
 
 # Registered residuals: payoff theorems the project has sized and deferred with
@@ -136,6 +143,7 @@ CHECKS = (
     "no_post_state_binding",
     "no_conclusion_state_hypothesis",
     "payoff_theorems",
+    "payoff_statement",
 )
 
 _DECL_RE = re.compile(
@@ -153,8 +161,33 @@ _CLOSE = ")]}"
 
 
 def _normalise(text: str) -> str:
-    """Whitespace-normalise an expression so `st'` and `st '` cannot differ."""
-    return re.sub(r"\s+", " ", text).strip()
+    """Whitespace-normalise an expression, and strip redundant enclosing
+    parentheses, so `st'`, `st '` and `(st')` cannot differ (PR #886 review:
+    `hInv' : ipcInvariantFull (st')` must compare equal to a conclusion on
+    `st'`, or the whole-bundle post-state check misses it)."""
+    text = re.sub(r"\s+", " ", text).strip()
+    while text.startswith("(") and text.endswith(")"):
+        end = balanced_span(text, 0)
+        if end != len(text):
+            break
+        text = text[1:-1].strip()
+    return text
+
+
+def _qualified(name: str) -> str:
+    """Match `name` bare or behind uppercase-led namespace qualifiers.
+
+    The old lookbehind rejected every preceding `.`, so a namespace-qualified
+    application (`Foo.blockedThreadsPendingMessageConsistent st'`) escaped the
+    scan entirely (PR #886 review).  A qualifier segment must start with an
+    uppercase letter, which keeps hypothesis projections (`hInv.conjunct`)
+    out: their receivers are lowercase binders.
+    """
+    return (
+        r"(?<![A-Za-z0-9_'.])(?:[A-Z][A-Za-z0-9_']*\.)*"
+        + re.escape(name)
+        + r"(?![A-Za-z0-9_'])"
+    )
 
 
 def lean_sources(root: str) -> list[str]:
@@ -323,8 +356,16 @@ def state_predicate_bodies(root: str, sources: list[str]) -> dict[str, str]:
         for match in pattern.finditer(source):
             tail = source[match.end() :]
             cut = stop.search(tail)
-            bodies[match.group(1)] = (tail[: cut.start()] if cut else tail).replace(
-                match.group(2), "st"
+            # Identifier-boundary substitution (PR #886 review): a plain
+            # `.replace` on a one-letter binder like `s` rewrites every `s`
+            # inside predicate *names* (`blockedOnReplyHasReplyObject` ->
+            # `...HastReplyObject`), silently dropping real nested conjuncts
+            # from the derived set.
+            body = tail[: cut.start()] if cut else tail
+            bodies[match.group(1)] = re.sub(
+                r"(?<![A-Za-z0-9_'])" + re.escape(match.group(2)) + r"(?![A-Za-z0-9_'])",
+                "st",
+                body,
             )
     return bodies
 
@@ -382,17 +423,53 @@ class Bundle:
         self.binders = binders
         self.conclusion = _normalise(conclusion)
 
+    def _anchor_tokens(self) -> set[str]:
+        """Identifier tokens tied to the transition itself.
+
+        The anchors are every token of the conclusion plus every token of a
+        binder region that carries an `=` -- the step equation and its
+        relatives.  A state that appears in neither has no connection to the
+        operation being stepped (PR #886 review: `hMid : ipcInvariantCore
+        stMid` must not launder `stMid` into the pre-state set, or a conjunct
+        threaded on an intermediate state passes as clean).
+        """
+        tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_'!?]*", self.conclusion))
+        index = 0
+        while index < len(self.binders):
+            char = self.binders[index]
+            if char in _OPEN:
+                end = balanced_span(self.binders, index)
+                if end is None:
+                    break
+                region = self.binders[index:end]
+                if "=" in region:
+                    tokens.update(re.findall(r"[A-Za-z_][A-Za-z0-9_'!?]*", region))
+                index = end
+            else:
+                index += 1
+        return tokens
+
     def pre_states(self) -> set[str]:
-        """The states this bundle's own invariant hypotheses are applied to."""
+        """The states this bundle's own invariant hypotheses are applied to.
+
+        An atomic state qualifies only when it is anchored to the transition
+        (see `_anchor_tokens`).  A compound state expression is accepted as
+        bound -- it is built from anchored inputs in every bundle this tree
+        contains, and rejecting the whole class would misreport the
+        `…ExceptDonationOwner` composites; that acceptance is the one place
+        this check under-approximates, and it is confined to non-atomic
+        expressions."""
+        anchors = self._anchor_tokens()
         states = set()
         for predicate in PRE_STATE_PREDICATES:
-            for hit in re.finditer(
-                r"(?<![A-Za-z0-9_'.])" + re.escape(predicate) + r"(?![A-Za-z0-9_'])",
-                self.binders,
-            ):
+            for hit in re.finditer(_qualified(predicate), self.binders):
                 argument = first_argument(self.binders, hit.end())
                 if argument:
-                    states.add(_normalise(argument))
+                    state = _normalise(argument)
+                    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_'!?]*", state):
+                        if state not in anchors:
+                            continue
+                    states.add(state)
         return states
 
     def conclusion_state(self) -> str | None:
@@ -405,10 +482,7 @@ class Bundle:
         a declaration's binders in full.
         """
         for predicate in PRE_STATE_PREDICATES:
-            hit = re.search(
-                r"(?<![A-Za-z0-9_'.])" + re.escape(predicate) + r"(?![A-Za-z0-9_'])",
-                self.conclusion,
-            )
+            hit = re.search(_qualified(predicate), self.conclusion)
             if hit:
                 argument = first_argument(self.conclusion, hit.end())
                 if argument:
@@ -435,10 +509,7 @@ class Bundle:
         pre = self.pre_states()
         findings = []
         for conjunct in sorted(conjuncts):
-            for hit in re.finditer(
-                r"(?<![A-Za-z0-9_'.])" + re.escape(conjunct) + r"(?![A-Za-z0-9_'])",
-                self.binders,
-            ):
+            for hit in re.finditer(_qualified(conjunct), self.binders):
                 argument = first_argument(self.binders, hit.end())
                 if argument is None:
                     continue
@@ -550,11 +621,16 @@ def run_checks(root: str) -> list[str]:
         return problems
 
     bundles = collect_bundles(root, sources)
-    if not bundles:
+    operation_bundles = [b for b in bundles if b.name not in PAYOFF_THEOREMS]
+    if not operation_bundles:
+        # The payoff names themselves carry the family marker, so a census
+        # that counted them would stay "nonempty" after every per-operation
+        # bundle vanished (PR #886 review) -- the population that matters is
+        # the measured operation family.
         markers = " / ".join(f"`*{marker}*`" for marker in BUNDLE_MARKERS)
         problems.append(
-            f"family_nonempty: no declaration matching {markers} found; "
-            f"the de-threading check would be vacuous"
+            f"family_nonempty: no declaration matching {markers} found outside "
+            f"the payoff tier; the de-threading check would be vacuous"
         )
         return problems
 
@@ -584,6 +660,34 @@ def run_checks(root: str) -> list[str]:
         problems.append(f"payoff_theorems: {err}")
     else:
         problems.extend(payoff_status(names, pending))
+
+    # A payoff that is merely *named* proves nothing: `theorem
+    # dispatchSyscall_preserves_ipcInvariantFull : True` would satisfy the
+    # presence check while providing no top-level consumer (PR #886 review).
+    # Each declared payoff must conclude an `ipcInvariantFull`-family
+    # predicate and mention the dispatch function it is named for in its
+    # hypotheses -- the step equation.
+    by_name = {bundle.name: bundle for bundle in bundles}
+    for payoff in PAYOFF_THEOREMS:
+        bundle = by_name.get(payoff)
+        if bundle is None:
+            continue  # absence is payoff_theorems' finding, not this one's
+        function = payoff[: -len("_preserves_ipcInvariantFull")]
+        if bundle.conclusion_state() is None:
+            problems.append(
+                f"payoff_statement: {bundle.path}:{bundle.line}: `{payoff}` "
+                f"does not conclude an `ipcInvariantFull`-family predicate "
+                f"applied to a state"
+            )
+        if not re.search(
+            r"(?<![A-Za-z0-9_'])" + re.escape(function) + r"(?![A-Za-z0-9_'])",
+            bundle.binders,
+        ):
+            problems.append(
+                f"payoff_statement: {bundle.path}:{bundle.line}: `{payoff}` "
+                f"never mentions `{function}` in its hypotheses; a payoff that "
+                f"does not step the dispatcher it is named for consumes nothing"
+            )
 
     return problems
 
@@ -669,14 +773,28 @@ CLEAN_BUNDLE = '''theorem endpointSendDual_preserves_ipcInvariantFull
 '''
 
 CLEAN_PAYOFF = '''theorem dispatchWithCap_preserves_ipcInvariantFull
-    (st st' : SystemState) (hInv : ipcInvariantFull st) :
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchWithCap st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  exact sample st st' hInv
+  exact sample st st' hInv hStep
 
 theorem dispatchSyscall_preserves_ipcInvariantFull
-    (st st' : SystemState) (hInv : ipcInvariantFull st) :
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  exact sample st st' hInv
+  exact sample st st' hInv hStep
+
+theorem dispatchWithCapChecked_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchWithCapChecked st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep
+
+theorem dispatchSyscallChecked_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep
 '''
 
 
@@ -711,6 +829,157 @@ def self_test() -> int:
     cases: list[_Case] = []
 
     cases.append(_Case("clean tree", _fixture(), False, mutation="none"))
+
+    # --- PR #886 review hardening: token-preserving relation breaks ------
+    # Qualified application: the conjunct token survives behind an
+    # uppercase-led namespace qualifier; the old dot-rejecting lookbehind
+    # skipped it entirely.
+    qualified = _fixture()
+    qualified["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hQ : Foo.blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "conjunct bound on the post-state behind a namespace qualifier",
+            qualified,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Parenthesised conclusion state: `ipcInvariantFull (st')` must compare
+    # equal to the conclusion's `st'`, or the whole-bundle post-state
+    # hypothesis slips past unnormalised.
+    parenthesised = _fixture()
+    parenthesised["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hInv' : ipcInvariantFull (st'))\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "whole-bundle hypothesis on the parenthesised conclusion state",
+            parenthesised,
+            True,
+            check="no_conclusion_state_hypothesis",
+            mutation="preserving",
+        )
+    )
+
+    # Mid-state laundering: an invariant-family hypothesis on a state the
+    # transition never touches must not admit that state as a pre-state.
+    midstate = _fixture()
+    midstate["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hMid : ipcInvariantCore stMid)\n"
+            "    (hT : blockedThreadsPendingMessageConsistent stMid)\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "conjunct bound on an unanchored intermediate state",
+            midstate,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # One-letter definition binder: substituting `s` -> `st` by raw substring
+    # mangled predicate names (`...HasReplyObject` -> `...HastReplyObject`),
+    # dropping the nested conjunct from the derived set.
+    binder_s = _fixture()
+    binder_s[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def replyCallerLinkage (st : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st",
+        "def replyCallerLinkage (s : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal s ∧ blockedOnReplyHasReplyObject s",
+    )
+    binder_s["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (h : blockedOnReplyHasReplyObject st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "nested conjunct threaded when its parent uses a one-letter binder",
+            binder_s,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Stub payoff: the name is present but concludes no family predicate --
+    # presence alone must not satisfy the payoff check.
+    stub = _fixture()
+    stub["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep""",
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hStep : dispatchSyscall st = .ok ((), st')) :
+    True := by
+  trivial""",
+    )
+    cases.append(
+        _Case(
+            "payoff declared but concluding True instead of the family",
+            stub,
+            True,
+            check="payoff_statement",
+            mutation="preserving",
+        )
+    )
+
+    # Payoff that never steps its dispatcher: same name, family conclusion,
+    # but the function the theorem is named for is absent from the binders.
+    unstepped = _fixture()
+    unstepped["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        "    (hStep : dispatchSyscall st = .ok ((), st')) :\n"
+        "    ipcInvariantFull st' := by\n"
+        "  exact sample st st' hInv hStep",
+        "    (hStep : someOtherFunction st = .ok ((), st')) :\n"
+        "    ipcInvariantFull st' := by\n"
+        "  exact sample st st' hInv hStep",
+    )
+    cases.append(
+        _Case(
+            "payoff whose hypotheses never mention the dispatcher it names",
+            unstepped,
+            True,
+            check="payoff_statement",
+            mutation="preserving",
+        )
+    )
+
+    # Payoff-only family: every per-operation bundle deleted while the payoff
+    # names (which carry the family marker) remain -- the census must not
+    # count them as the measured population.
+    payoff_only = _fixture()
+    del payoff_only["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"]
+    cases.append(
+        _Case(
+            "bundle family reduced to the payoff tier alone",
+            payoff_only,
+            True,
+            check="family_nonempty",
+            mutation="preserving",
+        )
+    )
 
     # --- no_post_state_binding -------------------------------------------
     # Token-PRESERVING: the conjunct stays bound, on the post-state instead of
@@ -1039,9 +1308,16 @@ def self_test() -> int:
     # The registration does its job: the theorem is absent and registered, so
     # the gate reports rather than fails.  Accepted, not caught.
     honest_registration = _fixture()
-    honest_registration["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.split(
-        "theorem dispatchSyscall_preserves_ipcInvariantFull"
-    )[0]
+    honest_registration["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep
+
+""",
+        "",
+    )
     honest_registration[PENDING_FILE] = (
         "dispatchSyscall_preserves_ipcInvariantFull | WS-RR RR3.16 | sized and deferred\n"
     )

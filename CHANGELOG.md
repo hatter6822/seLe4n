@@ -214,6 +214,34 @@ inhabitants are also the retype and binding levers' first end-to-end
 consumers, and an unsatisfiable pack field cannot hide behind a vacuously
 true payoff.
 
+### The review round: the gate held to its own standard
+
+Codex's review of the PR (on the pre-audit head) found six ways the RR3.1
+gate's text-level checks could diverge from the structure they stand for —
+the presence-for-relation class the key conventions document — and one scope
+boundary.  All six are closed, each with a token-preserving self-test case
+(the suite now holds 26 cases, 6/6 checks covered): the payoff presence
+check now validates the *statement* (a `: True` stub or a payoff that never
+steps its dispatcher fails `payoff_statement`); the family census counts
+only non-payoff bundles, so the payoff names cannot stand in for a vanished
+operation family; namespace-qualified conjunct applications are scanned
+(uppercase-led qualifiers only, keeping hypothesis projections out); an
+invariant-family hypothesis on an unanchored intermediate state no longer
+launders that state into the pre-state set (anchors are the step equation's
+and conclusion's tokens; compound state expressions remain accepted, the
+one documented under-approximation); definition-binder substitution is
+identifier-bounded, so a one-letter binder cannot mangle nested conjunct
+names out of the derived set; and expression comparison strips redundant
+enclosing parentheses, so `ipcInvariantFull (st')` is the conclusion-state
+hypothesis it is.  `PAYOFF_THEOREMS` now requires the checked pair too —
+the exported entry delegates to `dispatchSyscallChecked`, so a gate
+satisfied by the unchecked pair alone would let the production dispatcher's
+payoff regress unnoticed.  The hardened gate still measures the live tree
+at 146 statements, zero post-state bindings.  The review's scope finding —
+the payoffs conclude `ipcInvariantFull` alone, so they do not chain down a
+trace without `ipcReachable` preservation — is registered as a WS-DT debt
+row (trace composition, SM10).
+
 ### Housekeeping
 
 `raw_lookup_tid` re-anchored twice, with the reason in the baseline header:
