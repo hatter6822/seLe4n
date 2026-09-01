@@ -164,6 +164,12 @@ ROOT_NAMESPACE = "SeLe4n.Kernel"
 # baselining a new exemption into the naming one.
 PENDING_FILE = "docs/planning/ipc_dethreading_pending.txt"
 
+# The elaborator-backed census module.  A pin, not a derivation, like
+# `PAYOFF_NAMESPACE`: the census-closure reachability check must walk from
+# the module Tier 1 actually elaborates, and if the module moves this
+# fails visibly and is updated with the move.
+CENSUS_MODULE = "SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean"
+
 CHECKS = (
     "grammar_coverage",
     "minting_machinery",
@@ -275,6 +281,10 @@ MACHINERY_PINS = {
     # pin's own payoff -- the machinery it rides is reviewed here like any
     # other.
     ("SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean", "run_cmd"): 1,
+    # The census's own loop witness: a `local macro` minting a hygienic
+    # clean family theorem, so the no-macro-scope-skip rule is exercised
+    # at every elaboration.
+    ("SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean", "macro"): 1,
 }
 
 # The declaration modifiers and top-level commands this gate's grammars
@@ -345,6 +355,12 @@ _COMMANDS = (
     "register_option",
     "prelude",
     "where",
+    # The census module's own witness-minting command (a pinned in-tree
+    # `local macro`): its invocation sits at column 0 like any command,
+    # and the tripwire below caught it the moment it landed -- which is
+    # the tripwire doing its job; the declarations it mints are the
+    # elaborator census's to check, and its machinery is pinned.
+    "censusMintGeneratedWitness",
 )
 _MODIFIER_ALT = "|".join(sorted(_MODIFIERS, key=len, reverse=True))
 _COMMAND_ALT = "|".join(sorted(_COMMANDS, key=len, reverse=True))
@@ -3170,6 +3186,17 @@ def _reachable_modules(
             "resolves to a tracked module; the reachability check has "
             "nothing to walk from"
         ]
+    return _import_closure(root, sources, resolved), []
+
+
+def _import_closure(
+    root: str, sources: list[str], seeds: set[str]
+) -> set[str]:
+    """Modules reachable from `seeds` over the tracked import graph."""
+    modules = {
+        relative[: -len(".lean")].replace("/", "."): relative
+        for relative in sources
+    }
     imports: dict[str, list[str]] = {}
     for module, relative in modules.items():
         imports[module] = re.findall(
@@ -3178,7 +3205,7 @@ def _reachable_modules(
             re.MULTILINE,
         )
     reachable: set[str] = set()
-    frontier = list(resolved)
+    frontier = [seed for seed in seeds if seed in modules]
     while frontier:
         module = frontier.pop()
         if module in reachable:
@@ -3187,7 +3214,7 @@ def _reachable_modules(
         frontier.extend(
             target for target in imports.get(module, []) if target in modules
         )
-    return reachable, []
+    return reachable
 
 
 def run_checks(root: str) -> list[str]:
@@ -3380,25 +3407,35 @@ def run_checks(root: str) -> list[str]:
     }
     reachable, reach_problems = _reachable_modules(root, sources)
     problems.extend(reach_problems)
-    # Every family statement must sit in the import closure some build
-    # root reaches (PR #886 review, the census round): the elaborator
-    # census scans exactly what CI elaborates, so a bundle module dropping
-    # out of every root's closure would silently shrink the semantic
-    # layer's population while the text census still counted it.  The
-    # payoff-only reachability rule below predates this and stays for its
-    # sharper message.
+    # Every family statement must sit in the import closure of the census
+    # module *itself* (PR #886 review, two rounds): the elaborator census
+    # elaborates exactly `CENSUS_MODULE`'s imports, and the first cut of
+    # this check accepted reachability from *any* build root -- a module
+    # reachable only from some executable would pass while remaining
+    # absent from the census environment.  The union stays what the
+    # payoff-only rule below walks; the census population is pinned to
+    # the census's own closure.
     if reachable is not None:
-        for bundle in sorted(bundles, key=lambda b: (b.path, b.line)):
-            module = bundle.path[: -len(".lean")].replace("/", ".")
-            if module not in reachable:
-                problems.append(
-                    f"census_reachability: {bundle.path}:{bundle.line}: "
-                    f"`{bundle.name}` is declared in a module no build root "
-                    f"reaches -- the elaborator census scans only the import "
-                    f"closure CI builds, so an unreachable family statement "
-                    f"is invisible to the semantic layer; import its module "
-                    f"from a build root"
-                )
+        if CENSUS_MODULE not in sources:
+            problems.append(
+                f"census_reachability: {CENSUS_MODULE} is not a tracked "
+                f"module -- the elaborator census is gone, and the "
+                f"semantic layer with it"
+            )
+        else:
+            census_seed = CENSUS_MODULE[: -len(".lean")].replace("/", ".")
+            census_closure = _import_closure(root, sources, {census_seed})
+            for bundle in sorted(bundles, key=lambda b: (b.path, b.line)):
+                module = bundle.path[: -len(".lean")].replace("/", ".")
+                if module not in census_closure:
+                    problems.append(
+                        f"census_reachability: {bundle.path}:{bundle.line}: "
+                        f"`{bundle.name}` is outside the elaborator census "
+                        f"module's import closure -- Tier 1 elaborates only "
+                        f"what {CENSUS_MODULE} imports, so this statement is "
+                        f"invisible to the semantic layer; import its module "
+                        f"there, directly or through `Platform.Staged`"
+                    )
     for payoff in PAYOFF_THEOREMS:
         bundle = by_name.get(payoff)
         if bundle is None:
@@ -6676,10 +6713,36 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
         "\n"
         "def main : IO Unit := pure ()\n"
     )
+    unreachable_bundle[CENSUS_MODULE] = (
+        "import SeLe4n.Kernel.IPC.Invariant.Defs\n"
+        "import SeLe4n.Kernel.API\n"
+    )
     cases.append(
         _Case(
-            "a bundle outside every build root's closure is reported",
+            "a bundle outside the census module's closure is reported",
             unreachable_bundle,
+            True,
+            check="census_reachability",
+            mutation="preserving",
+        )
+    )
+
+    # And the census module itself going missing must be the loudest form
+    # of the same failure: with no census module there is no semantic
+    # layer at all.
+    census_missing = _fixture()
+    census_missing["lakefile.toml"] = unreachable_bundle["lakefile.toml"]
+    census_missing["Main.lean"] = (
+        "import SeLe4n.Kernel.IPC.Invariant.Defs\n"
+        "import SeLe4n.Kernel.IPC.Invariant.Structural.Bundles\n"
+        "import SeLe4n.Kernel.API\n"
+        "\n"
+        "def main : IO Unit := pure ()\n"
+    )
+    cases.append(
+        _Case(
+            "a missing census module is reported, not silently skipped",
+            census_missing,
             True,
             check="census_reachability",
             mutation="preserving",

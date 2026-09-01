@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr3-ipcinvariantfull-dethreading-fp5gvu",
-      "commit_sha": "3b0e979a8bb0a697e4c8e17b4d870141206fb781",
-      "tree_sha": "fbe0f3e4cc343c259127aae1faf0c34aa6d21351",
-      "committed_at_utc": "2026-09-01T17:10:25+00:00"
+      "commit_sha": "a61b6a9fefb45ceba64dc99f1cc51e03726bc2a5",
+      "tree_sha": "8410d3e365a9d672a02f181c72e807d434f345a3",
+      "committed_at_utc": "2026-09-01T17:40:15+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ad3c34f42e0558e0f4bbfb0886868e153d3742e0b23202a62c43bac2e7575ff1"
+    "source_digest": "a4e187f3d126d162b9e6bf62c9f27e86b40e2587ac73c75e68692182ec581a42"
   },
   "summary": {
     "module_count": 368,
-    "declaration_count": 17847
+    "declaration_count": 17850
   },
   "readme_sync": {
     "version": "0.34.43",
     "lean_toolchain": "v4.28.0",
     "production_files": 299,
-    "production_loc": 311127,
+    "production_loc": 311181,
     "test_files": 69,
     "test_loc": 65318,
-    "proved_theorem_lemma_decls": 10300,
+    "proved_theorem_lemma_decls": 10302,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -213143,7 +213143,7 @@
     {
       "module": "SeLe4n.Testing.IpcDethreadingEnvironmentCensus",
       "path": "SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean",
-      "declaration_count": 21,
+      "declaration_count": 24,
       "declarations": [
         {
           "kind": "namespace",
@@ -213204,10 +213204,12 @@
         },
         {
           "kind": "def",
-          "name": "entailsOn",
-          "line": 127,
+          "name": "entailedTargets",
+          "line": 132,
           "called": [
             "contains",
+            "insert",
+            "isEmpty",
             "none",
             "pure",
             "systemStateName"
@@ -213216,7 +213218,7 @@
         {
           "kind": "def",
           "name": "conclusionStates",
-          "line": 181,
+          "line": 183,
           "called": [
             "isFamilyForm",
             "systemStateName"
@@ -213225,17 +213227,19 @@
         {
           "kind": "def",
           "name": "checkStatement",
-          "line": 200,
+          "line": 202,
           "called": [
             "conclusionStates",
-            "entailsOn",
-            "none"
+            "entailedTargets",
+            "isEmpty",
+            "none",
+            "toList"
           ]
         },
         {
           "kind": "def",
           "name": "censusMain",
-          "line": 216,
+          "line": 219,
           "called": [
             "carriesFamilyMarker",
             "checkStatement",
@@ -213252,13 +213256,13 @@
         {
           "kind": "section",
           "name": "CheckerWitnesses",
-          "line": 236,
+          "line": 251,
           "called": []
         },
         {
           "kind": "structure",
           "name": "censusWitnessPack",
-          "line": 241,
+          "line": 256,
           "called": [
             "SystemState",
             "blockedThreadsPendingMessageConsistent",
@@ -213268,7 +213272,7 @@
         {
           "kind": "def",
           "name": "censusWitnessCarrier",
-          "line": 245,
+          "line": 260,
           "called": [
             "SystemState",
             "censusWitnessPack",
@@ -213278,7 +213282,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessThreaded",
-          "line": 251,
+          "line": 266,
           "called": [
             "SystemState",
             "ipcInvariantFull"
@@ -213287,7 +213291,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessChained",
-          "line": 258,
+          "line": 273,
           "called": [
             "SystemState",
             "censusWitnessCarrier",
@@ -213298,7 +213302,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessOrCarried",
-          "line": 266,
+          "line": 281,
           "called": [
             "SystemState",
             "blockedThreadsPendingMessageConsistent",
@@ -213309,7 +213313,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessExistsCarried",
-          "line": 275,
+          "line": 290,
           "called": [
             "SystemState",
             "blockedThreadsPendingMessageConsistent",
@@ -213320,7 +213324,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessOrTrue",
-          "line": 284,
+          "line": 299,
           "called": [
             "SystemState",
             "blockedThreadsPendingMessageConsistent",
@@ -213330,8 +213334,20 @@
         },
         {
           "kind": "theorem",
+          "name": "censusWitnessOrMixed",
+          "line": 309,
+          "called": [
+            "SystemState",
+            "blockedThreadsPendingMessageConsistent",
+            "endpointQueueNoDup",
+            "ipcInvariantFull",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "censusWitnessClean",
-          "line": 292,
+          "line": 317,
           "called": [
             "SystemState",
             "ipcInvariantFull",
@@ -213341,22 +213357,41 @@
         {
           "kind": "def",
           "name": "checkWitness",
-          "line": 300,
+          "line": 325,
           "called": [
-            "carriesFamilyMarker",
-            "censusMain",
-            "censusWitnessChained",
-            "censusWitnessClean",
-            "censusWitnessExistsCarried",
-            "censusWitnessOrCarried",
-            "censusWitnessOrTrue",
-            "censusWitnessThreaded",
             "checkStatement",
             "insert",
             "ipcInvariantFull",
             "measuredConjuncts",
             "none",
             "pure"
+          ]
+        },
+        {
+          "kind": "macro",
+          "name": "\"censusMintGeneratedWitness\"",
+          "line": 338,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "generatedWitness_preserves_ipcInvariantFull",
+          "line": 339,
+          "called": [
+            "SystemState",
+            "carriesFamilyMarker",
+            "censusMain",
+            "censusWitnessChained",
+            "censusWitnessClean",
+            "censusWitnessExistsCarried",
+            "censusWitnessOrCarried",
+            "censusWitnessOrMixed",
+            "censusWitnessOrTrue",
+            "censusWitnessThreaded",
+            "checkWitness",
+            "ipcInvariantFull",
+            "st",
+            "toList"
           ]
         }
       ]

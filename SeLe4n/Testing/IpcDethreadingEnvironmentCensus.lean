@@ -116,64 +116,66 @@ private def measuredConjuncts : MetaM NameSet := do
           frontier := h :: frontier
   return conjuncts
 
-/-- Does `e` entail some target applied to the state `s'`?
+/-- The subset of `targets` that `e` entails applied to the state `s'`.
 
-    Descends `∧`, structure fields (projection types, instantiated at the
-    application's own arguments), and definitional unfoldings, to `fuel`.
-    Everything else — `∨`, `∃`, arrows, `¬` (an arrow after unfolding),
-    `↔` — proves none of its parts and is refused.  The state argument is
-    found by *type*, never by position: the elaborator already knows which
-    argument is the `SystemState`. -/
-private partial def entailsOn (targets : NameSet) (s' : Expr) :
-    Nat → Expr → MetaM Bool
-  | 0, _ => return false
+    Descends `∧` (union), `∨` (intersection of the arms' sets -- a
+    disjunction provides only what *every* arm provides, and by
+    *identity*: `A st' ∨ B st'` entails neither A nor B even though each
+    arm entails something, which a boolean intersection mistook for a
+    hit; PR #886 review, two rounds), `∃`-bodies (elimination hands the
+    body over whatever the witness), structure fields (projection types,
+    instantiated at the application's own arguments), and definitional
+    unfoldings, to `fuel`.  Arrows, `¬` (an arrow after unfolding) and
+    `↔` provide none of their parts and yield the empty set.  The state
+    argument is found by *type*, never by position: the elaborator
+    already knows which argument is the `SystemState`. -/
+private partial def entailedTargets (targets : NameSet) (s' : Expr) :
+    Nat → Expr → MetaM NameSet
+  | 0, _ => return {}
   | fuel + 1, e => do
     if e.isAppOfArity ``And 2 then
-      if ← entailsOn targets s' fuel (e.getArg! 0) then
-        return true
-      entailsOn targets s' fuel (e.getArg! 1)
+      let left ← entailedTargets targets s' fuel (e.getArg! 0)
+      let right ← entailedTargets targets s' fuel (e.getArg! 1)
+      return right.toList.foldl (init := left) fun acc n => acc.insert n
     else if e.isAppOfArity ``Or 2 then
-      -- A disjunction provides what *every* arm provides (PR #886
-      -- review): `P st' ∨ P st'` yields the conjunct by cases, while
-      -- `P st' ∨ True` still yields nothing.
-      if ← entailsOn targets s' fuel (e.getArg! 0) then
-        entailsOn targets s' fuel (e.getArg! 1)
-      else
-        return false
+      let left ← entailedTargets targets s' fuel (e.getArg! 0)
+      if left.isEmpty then
+        return {}
+      let right ← entailedTargets targets s' fuel (e.getArg! 1)
+      return left.toList.foldl (init := ({} : NameSet)) fun acc n =>
+        if right.contains n then acc.insert n else acc
     else if e.isAppOfArity ``Exists 2 then
-      -- Elimination hands over the body whatever the witness (PR #886
-      -- review), so the body entailing for an *arbitrary* binder is
-      -- sound — and required: `∃ _ : Unit, P st'` is `P st'`.
       lambdaTelescope (e.getArg! 1) fun _ body =>
-        entailsOn targets s' fuel body
+        entailedTargets targets s' fuel body
     else
       let fn := e.getAppFn
-      let .const name us := fn | return false
+      let .const name us := fn | return {}
       if targets.contains name then
         for arg in e.getAppArgs do
           if arg == s' then
             let ty ← inferType arg
             if ty.isConstOf systemStateName then
-              return true
-        return false
+              return ({} : NameSet).insert name
+        return {}
       let env ← getEnv
       if isStructure env name then
         let info := getStructureInfo env name
         let args := e.getAppArgs
+        let mut found : NameSet := {}
         for field in info.fieldNames do
           let some proj := env.find? (name ++ field) | continue
           let projType := proj.instantiateTypeLevelParams us
-          let hit ← try
+          let hits ← try
             withLocalDeclD `self e fun self => do
               let fieldTy ← instantiateForall projType (args.push self)
-              entailsOn targets s' fuel fieldTy
+              entailedTargets targets s' fuel fieldTy
           catch _ =>
-            pure false
-          if hit then return true
-        return false
+            pure {}
+          found := hits.toList.foldl (init := found) fun acc n => acc.insert n
+        return found
       match ← unfoldDefinition? e with
-      | some unfolded => entailsOn targets s' fuel unfolded
-      | none => return false
+      | some unfolded => entailedTargets targets s' fuel unfolded
+      | none => return {}
 
 /-- The states a conclusion concludes family forms about: for each
     depth-0 `∧`-leaf headed by a family form, its `SystemState`-typed
@@ -206,9 +208,10 @@ private def checkStatement (targets : NameSet) (name : Name) :
     for s' in states do
       for fvar in fvars do
         let hyp ← inferType fvar
-        if ← entailsOn targets s' 128 hyp then
-          return some m!"`{name}` hypothesises a measured conjunct of \
-            its own conclusion state {s'}: {hyp}"
+        let entailed ← entailedTargets targets s' 128 hyp
+        if !entailed.isEmpty then
+          return some m!"`{name}` hypothesises measured conjunct(s) \
+            {entailed.toList} of its own conclusion state {s'}: {hyp}"
     return none
 
 /-- Fails elaboration when any family statement in the environment is
@@ -219,19 +222,31 @@ private def censusMain : MetaM Unit := do
   let targets := env.constants.fold (init := targets) fun acc n _ =>
     if isFamilyForm n then acc.insert n else acc
   let mut statements := 0
+  let mut generated := 0
   let mut violations : List MessageData := []
   for (n, info) in env.constants.toList do
-    if n.hasMacroScopes || !carriesFamilyMarker n then
+    -- No macro-scope skip (PR #886 review, the round after the
+    -- classifier fix): the loop guard was the *other half* of the same
+    -- bypass -- a pinned macro's generated family theorem is exactly
+    -- what must be counted and checked.  Auxiliaries stay excluded
+    -- structurally, by the final-component marker test.
+    if !carriesFamilyMarker n then
       continue
     if !(← isProp info.type) then
       continue
     statements := statements + 1
+    if n.hasMacroScopes then
+      generated := generated + 1
     if let some violation ← checkStatement targets n then
       violations := violation :: violations
   if !violations.isEmpty then
     throwError "ipc de-threading census ({statements} statements): \
       {violations.length} threaded:{MessageData.joinSep violations "\n"}"
-  logInfo m!"ipc de-threading census: {statements} family statements, 0 threaded"
+  -- Generated (hygiene-scoped) statements are counted and checked like
+  -- any other but reported apart, so the source-visible total stays
+  -- comparable with the text census's.
+  logInfo m!"ipc de-threading census: {statements - generated} family \
+    statements ({generated} generated), 0 threaded"
 
 section CheckerWitnesses
 
@@ -288,6 +303,16 @@ private theorem censusWitnessOrTrue (st st' : SeLe4n.Model.SystemState)
     (hStep : st = st') :
     SeLe4n.Kernel.ipcInvariantFull st' := hStep ▸ hInv
 
+/-- A mixed disjunction stays clean: each arm entails *something*, but
+    no single conjunct is provided by both, so nothing is entailed --
+    the identity-intersection pin (PR #886 review). -/
+private theorem censusWitnessOrMixed (st st' : SeLe4n.Model.SystemState)
+    (hInv : SeLe4n.Kernel.ipcInvariantFull st)
+    (_hMixed : SeLe4n.Kernel.blockedThreadsPendingMessageConsistent st' ∨
+      SeLe4n.Kernel.endpointQueueNoDup st')
+    (hStep : st = st') :
+    SeLe4n.Kernel.ipcInvariantFull st' := hStep ▸ hInv
+
 /-- The clean twin: every hypothesis on the pre-state. -/
 private theorem censusWitnessClean (st st' : SeLe4n.Model.SystemState)
     (hInv : SeLe4n.Kernel.ipcInvariantFull st)
@@ -305,13 +330,42 @@ private def checkWitness (name : Name) (expectThreaded : Bool) : MetaM Unit := d
   | none, true => throwError "census witness: a threaded witness was not \
       flagged -- the entailment walk has gone blind"
 
+/-- The loop witness's minting macro: hygiene records scope markers
+    after the template's name, which is the point -- the census loop
+    must count and check the minted statement all the same (PR #886
+    review: the classifier was fixed while the loop's own skip survived,
+    and a classifier-only witness could not see the bypass). -/
+local macro "censusMintGeneratedWitness" : command => `(
+private theorem generatedWitness_preserves_ipcInvariantFull
+    (st st' : SeLe4n.Model.SystemState)
+    (hInv : SeLe4n.Kernel.ipcInvariantFull st)
+    (hStep : st = st') :
+    SeLe4n.Kernel.ipcInvariantFull st' := hStep ▸ hInv
+)
+
+censusMintGeneratedWitness
+
 run_cmd Command.liftTermElabM do
   checkWitness ``censusWitnessThreaded true
   checkWitness ``censusWitnessChained true
   checkWitness ``censusWitnessOrCarried true
   checkWitness ``censusWitnessExistsCarried true
   checkWitness ``censusWitnessOrTrue false
+  checkWitness ``censusWitnessOrMixed false
   checkWitness ``censusWitnessClean false
+  -- The minted hygienic family theorem must be visible to the census --
+  -- existence and classification together; the loop below counts it
+  -- through the same predicate, with no macro-scope skip left to hide
+  -- behind.
+  let env ← getEnv
+  let mut mintedSeen := false
+  for (n, _) in env.constants.toList do
+    if n.hasMacroScopes && carriesFamilyMarker n then
+      mintedSeen := true
+  unless mintedSeen do
+    throwError "census witness: the minted hygienic family theorem is \
+      not visible to the census classifier -- the generated-statement \
+      channel has reopened"
   -- The classifier must see through hygiene (PR #886 review): a macro-
   -- minted family theorem records scope markers after its user-facing
   -- name, and a raw read skipped it.

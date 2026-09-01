@@ -751,6 +751,34 @@ spelled family token that names nothing, which it proved by catching
 this cut's first draft).  Self-test 126 cases, 11/11 checks covered;
 census 27 / 146 / 0, measured twice.
 
+The twenty-seventh review pass sharpened all three of the previous
+round's fixes, one of them against an incompleteness of my own: the
+census loop still carried a `hasMacroScopes` skip ahead of the repaired
+classifier — the other half of the same bypass, which the
+classifier-only witness could not see.  The skip is gone; generated
+statements are counted and checked like any other and reported apart
+(`146 family statements (1 generated)`), and the loop now carries its
+own enforced witness — a pinned `local macro` in the census module
+mints a hygienic clean family theorem at every elaboration, whose
+visibility to the census is asserted before the census runs.  Landing
+that witness tripped `grammar_coverage` on its own invocation — the
+round-23 tripwire catching the first in-tree column-0 custom command,
+exactly as built — so the spelling joined the single-source `_COMMANDS`.
+Disjunction entailment now intersects by *identity*, not by boolean:
+`A st' ∨ B st'` entails neither conjunct even though each arm entails
+something, and the boolean read would have rejected a clean theorem —
+`entailedTargets` returns the set of entailed conjuncts per arm and
+intersects (the text gate's parts split already intersected by
+normalised text, so only the census moved), with `censusWitnessOrMixed`
+pinned clean beside the still-firing both-arms witness.  And the
+census-reachability pin walks the right closure: Tier 1 elaborates
+exactly the census module's imports, so `census_reachability` now
+requires every family statement inside `CENSUS_MODULE`'s own import
+closure rather than the all-roots union — a module reachable only from
+some executable no longer reads as covered — with a missing census
+module reported as the loudest form of the same failure.  Self-test
+127 cases, 11/11 checks covered; census 27 / 146 / 0, measured twice.
+
 ### Housekeeping
 
 `raw_lookup_tid` re-anchored twice, with the reason in the baseline header:
