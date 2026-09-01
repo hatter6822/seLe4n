@@ -192,10 +192,18 @@ _DECL_RE = re.compile(
     # `nonrec` joins the modifier run everywhere the run appears (PR #886
     # review: `nonrec theorem` is a routine spelling, and a grammar without
     # the modifier dropped the whole declaration from the census).
+    # `instance` too (PR #886 review, another round -- verified against the
+    # toolchain: `instance X_preserves_… (…) : ipcInvariantFull st' := …`
+    # elaborates even though the type is no class, contradicting the
+    # earlier assumption that it could not); its optional priority group is
+    # skipped, and an *anonymous* instance has no name for the marker to
+    # live in, so the name capture correctly refuses it.  `public` joins
+    # the modifier run for the module system's spellings.
     r"^\s*(?:@\[[^\]]*\]\s*)*"
-    r"(?P<mods>(?:private\s+|protected\s+|partial\s+|noncomputable\s+|unsafe\s+"
-    r"|local\s+|scoped\s+|nonrec\s+)*)"
-    r"(?:theorem|lemma|def|abbrev|opaque|axiom)\s+"
+    r"(?P<mods>(?:public\s+|private\s+|protected\s+|partial\s+"
+    r"|noncomputable\s+|unsafe\s+|local\s+|scoped\s+|nonrec\s+)*)"
+    r"(?:theorem|lemma|def|abbrev|opaque|axiom"
+    r"|instance(?:\s*\(\s*priority\s*:=[^)]*\))?)\s+"
     r"(?P<name>«[^»\n]*»|[^\W\d][\w'.!?]*)",
     re.MULTILINE,
 )
@@ -903,7 +911,7 @@ def split_conjunction(body: str) -> list[str]:
 # (`open … in` inside a definition body): none exists in the tree, and losing
 # one truncates the derived set, which the census pin surfaces.
 _COMMAND_STOP = re.compile(
-    r"^[ \t]*(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped"
+    r"^[ \t]*(?:(?:public|private|protected|partial|noncomputable|unsafe|local|scoped"
     r"|nonrec)\s+)*"
     r"(?:@\[|/-|#"
     r"|(?:def|theorem|lemma|abbrev|structure|inductive|instance|class"
@@ -963,7 +971,7 @@ def state_predicate_bodies(
     # predicate applications, and one that does parse IS a Prop.
     pattern = re.compile(
         r"^[ \t]*(?:@\[[^\]]*\]\s*)*"
-        r"(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped"
+        r"(?:(?:public|private|protected|partial|noncomputable|unsafe|local|scoped"
         r"|nonrec)\s+)*"
         r"(?:def|abbrev)\s+([^\W\d][\w'!?]*)"
         r"\s*\(\s*([^\W\d][\w']*)\s*:\s*SystemState\s*\)"
@@ -977,7 +985,7 @@ def state_predicate_bodies(
     # nonempty.
     arrow_pattern = re.compile(
         r"^[ \t]*(?:@\[[^\]]*\]\s*)*"
-        r"(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped"
+        r"(?:(?:public|private|protected|partial|noncomputable|unsafe|local|scoped"
         r"|nonrec)\s+)*"
         r"(?:def|abbrev)\s+([^\W\d][\w'!?]*)"
         r"\s*:\s*SystemState\s*(?:→|->)\s*Prop\s*:=\s*"
@@ -1193,7 +1201,7 @@ def _carries_state_application(
 
 _STRUCTURE_RE = re.compile(
     r"^[ \t]*(?:@\[[^\]]*\]\s*)*"
-    r"(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped"
+    r"(?:(?:public|private|protected|partial|noncomputable|unsafe|local|scoped"
     r"|nonrec)\s+)*"
     r"structure\s+([^\W\d][\w'!?]*)",
     re.MULTILINE,
@@ -1628,9 +1636,21 @@ class Bundle:
         for region in [self.binders, self.ambient] + list(segments[:-1]):
             for predicate, arg_index in self.carriers.items():
                 for hit in re.finditer(_qualified(predicate), region):
-                    if _projection_hit(hit.group(1), binder_names):
-                        continue
-                    argument = _argument_at(region, hit.end(), arg_index)
+                    chain = hit.group(1)
+                    if _projection_hit(chain, binder_names):
+                        # Dot notation is application (see `threaded`): a
+                        # single-segment binder chain with no trailing
+                        # argument is the state argument -- the finding
+                        # direction of the same asymmetry, so `pre_states`
+                        # still skips projections entirely.
+                        if (
+                            chain.count(".") != 1
+                            or first_argument(region, hit.end()) is not None
+                        ):
+                            continue
+                        argument = chain.split(".", 1)[0]
+                    else:
+                        argument = _argument_at(region, hit.end(), arg_index)
                     if argument is None:
                         continue
                     argument = _normalise(argument)
@@ -1661,7 +1681,26 @@ class Bundle:
         for conjunct in sorted(conjuncts):
             for region in (self.ambient, self.binders, self.conclusion):
                 for hit in re.finditer(_qualified(conjunct), region):
-                    if _projection_hit(hit.group(1), binder_names):
+                    chain = hit.group(1)
+                    if _projection_hit(chain, binder_names):
+                        # Dot notation is application (PR #886 review --
+                        # verified against the toolchain): `st'.conjunct`
+                        # applies a `SystemState`-namespaced predicate to
+                        # `st'`, so a single-segment chain heading at a
+                        # binder, with *no trailing argument*, is that
+                        # binder as the state argument.  A trailing
+                        # argument (`hInv.conjunct st'`) or a multi-segment
+                        # chain (`hPack.reachable.…`) stays a projection --
+                        # dot notation already supplies the predicate's one
+                        # state, so a genuine application has nothing left
+                        # to apply.
+                        if (
+                            chain.count(".") == 1
+                            and first_argument(region, hit.end()) is None
+                        ):
+                            state = chain.split(".", 1)[0]
+                            if state not in pre:
+                                findings.append((conjunct, state))
                         continue
                     argument = first_argument(region, hit.end())
                     if argument is None:
@@ -1679,7 +1718,11 @@ class Bundle:
 _SCOPE_RE = re.compile(
     r"^\s*(?:namespace\s+"
     r"(?P<ns>(?:«[^»\n]*»|[^\W\d][\w']*)(?:\.(?:«[^»\n]*»|[^\W\d][\w']*))*)"
-    r"|(?:noncomputable\s+)?(?P<sec>section)\b"
+    # `public section` is a scope like any other (PR #886 review -- verified
+    # against the toolchain): a scanner blind to the modifier missed the
+    # push, and the section's `end` then popped the enclosing namespace,
+    # desynchronising every prefix after it.
+    r"|(?:(?:noncomputable|public)\s+)*(?P<sec>section)\b"
     r"|(?P<mut>mutual)\b"
     r"|(?P<end>end)\b)",
     re.MULTILINE,
@@ -4440,6 +4483,84 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
             "a pack-carried pre-state satisfies the step-input rule",
             pack_carried,
             False,
+        )
+    )
+
+    # An instance-spelled proof: the toolchain elaborates a named instance
+    # of a non-class Prop, so the census must not be the scanner that
+    # assumed it could not.
+    instance_bundle = _fixture()
+    instance_bundle[
+        "SeLe4n/Kernel/IPC/Invariant/Structural/InstanceBundles.lean"
+    ] = (
+        "instance endpointInstanceDual_preserves_ipcInvariantFull\n"
+        "    (st st' : SystemState)\n"
+        "    (hInv : ipcInvariantFull st)\n"
+        "    (hStep : endpointInstanceDual st = .ok ((), st'))\n"
+        "    (hT : blockedThreadsPendingMessageConsistent st') :\n"
+        "    ipcInvariantFull st' :=\n"
+        "  sample st st' hInv hStep\n"
+    )
+    cases.append(
+        _Case(
+            "an instance-spelled threaded bundle is measured like a theorem",
+            instance_bundle,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A `public section`: unbalanced in the scanner, its `end` popped the
+    # enclosing namespace, so a nested same-name namespace recorded the
+    # canonical prefix while Lean placed its declarations deeper.
+    public_section = _fixture()
+    public_section["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        "namespace SeLe4n.Kernel\n",
+        "namespace SeLe4n.Kernel\n"
+        "\n"
+        "public section Hidden\n"
+        "end Hidden\n"
+        "\n"
+        "namespace SeLe4n.Kernel\n",
+        1,
+    ).replace(
+        "end SeLe4n.Kernel",
+        "end SeLe4n.Kernel\n\nend SeLe4n.Kernel",
+    )
+    cases.append(
+        _Case(
+            "a public section cannot desynchronise the namespace prefixes",
+            public_section,
+            True,
+            check="payoff_theorems",
+            mutation="preserving",
+        )
+    )
+
+    # Dot-notation application: `st'.blockedThreadsPendingMessageConsistent`
+    # applies the SystemState-namespaced predicate to `st'`, and a scan
+    # that read every binder-headed chain as a field projection missed the
+    # threaded hypothesis.
+    dot_notation = _fixture()
+    dot_notation["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        "def SystemState.blockedThreadsPendingMessageConsistent\n"
+        "    (s : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent s\n"
+        "\n"
+        + CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hT : st'.blockedThreadsPendingMessageConsistent)\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a dot-notation conjunct application is a threaded hypothesis",
+            dot_notation,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
         )
     )
 

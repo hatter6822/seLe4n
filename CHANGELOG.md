@@ -547,6 +547,20 @@ any wrapping can fake.  The bare-transport refusal stays as a second
 layer.  One caught and one accepted fixture (the accepted one pins the
 carrier derivation on a pack-shaped payoff); self-test 91 cases; census
 unchanged a sixteenth time.
+A twenty-first pass corrected an assumption by testing it: the
+toolchain elaborates a named `instance` of a non-class `Prop` — the
+eighteenth pass had assumed it could not — so `instance` joins the
+census (priority group skipped; an anonymous instance has no name for
+the marker to live in).  `public section` is balanced as the scope it
+is, closing a prefix-desynchronisation where the unmatched `end` popped
+the enclosing namespace and let a nested same-name namespace record the
+canonical prefix; `public` joins every modifier run in the same sweep.
+And dot notation is application: `st'.conjunct` — a single-segment
+binder chain with no trailing argument — is the binder as the state
+argument in the finding-direction scans, while a trailing argument or
+multi-segment chain (`hInv.conjunct st'`, `hPack.reachable.…`) stays a
+projection.  Three token-preserving fixtures; self-test 94 cases;
+census unchanged a seventeenth time.
 
 ### Housekeeping
 
