@@ -17,5 +17,3 @@
 # Format: <theorem name> | <closure target> | <reason>
 # Lines starting with `#` and blank lines are ignored.
 
-dispatchWithCap_preserves_ipcInvariantFull | WS-RR RR3.24 | The bundle family covers the IPC and donation transitions only. `dispatchWithCap` routes twenty-five syscalls across the capability, VSpace, service, sched-context, lifecycle and TCB subsystems, and no `_preserves_ipcInvariantFull` theorem exists for any of them -- six of roughly thirty arms have any coverage at all. The payoff is a per-arm bundle workstream, not a composition of theorems already in the tree; see docs/planning/SMP_RELEASE_READINESS_PLAN.md RR3.15-RR3.23 for the per-arm sequence it was re-scoped into, and RR3.24 for the composition.
-dispatchSyscall_preserves_ipcInvariantFull | WS-RR RR3.25 | Consumes RR3.24's dispatch-tier bundle, and through it RR3.15-RR3.23's per-arm ones; blocked on the same gap. Named for the function it is about (`dispatchSyscall`), not the plan's original `syscallDispatch`, which names nothing in the tree.

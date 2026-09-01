@@ -510,6 +510,7 @@ import SeLe4n.Kernel.IPC.CrossCore.CancellationNI
 -- which nothing had before, and the per-core donation return's.  Staged with the
 -- cross-core call/reply invariant surfaces it composes.
 import SeLe4n.Kernel.IPC.CrossCore.DispatchInvariant
+import SeLe4n.Kernel.IPC.Invariant.DispatchPayoff
 -- WS-RR RR3.13/RR3.14: the pre-state side of the de-threaded IPC bundle family
 -- -- `ipcReachable` (the state-shaped preconditions, with the boot state proved
 -- to satisfy them so the bundle is inhabited rather than vacuous) plus the

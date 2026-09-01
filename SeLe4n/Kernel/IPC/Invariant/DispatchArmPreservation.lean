@@ -986,7 +986,7 @@ theorem cspaceDeleteSlot_preserves_ipcInvariantFull
 
 /-- A capability read out of a CNode slot carries a valid badge, by the badge
 clause of the pre-state. -/
-private theorem lookupSlotCap_badge_valid (st : SystemState) (addr : CSpaceAddr)
+theorem lookupSlotCap_badge_valid (st : SystemState) (addr : CSpaceAddr)
     (cap : Capability) (hCapWf : capabilityBadgesWellFormed st)
     (hLk : SystemState.lookupSlotCap st addr = some cap) :
     ∀ b, cap.badge = some b → b.valid := by

@@ -1574,7 +1574,7 @@ Returns the resolved capabilities as an array. -/
    **AI6-A (M-02) — Spec cross-reference**: See `docs/spec/SELE4N_SPEC.md`
    §8.10.4 "IPC Extra Capability Resolution — Silent-Drop Semantics" for the
    normative specification, including the seL4 reference C kernel equivalence. -/
-private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
+def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
     (st : SystemState) : Array TransferCap × SystemState :=
   -- PR #873 round 14: **the authority is checked where the resource is
@@ -1753,7 +1753,7 @@ match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
 The guard fires BEFORE any handler entry so sentinel IDs never reach
 downstream object-store lookups. Defense-in-depth (graceful
 `.objectNotFound` at lookup time) remains intact. -/
-@[inline] private def validateThreadIdArg (tid : SeLe4n.ThreadId) :
+@[inline] def validateThreadIdArg (tid : SeLe4n.ThreadId) :
     Except KernelError SeLe4n.ValidThreadId :=
   match tid.toValid? with
   | none => .error .invalidArgument
@@ -1772,7 +1772,7 @@ downstream object-store lookups. Defense-in-depth (graceful
 Used by dispatch arms whose handlers operate on `ObjId` directly (e.g.,
 `schedContextConfigure` which does `st.objects[scId]?` rather than
 going through `SchedContextId.toObjId`). Rejects `ObjId.sentinel`. -/
-@[inline] private def validateObjIdArg (oid : SeLe4n.ObjId) :
+@[inline] def validateObjIdArg (oid : SeLe4n.ObjId) :
     Except KernelError SeLe4n.ValidObjId :=
   match oid.toValid? with
   | none => .error .invalidArgument
@@ -1865,7 +1865,7 @@ delegate to this helper for: `.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
 
 Returns `none` if the syscall ID is not a capability-only arm (i.e., it
 requires IPC/cross-domain handling). -/
-private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
+def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     (cap : Capability) (tid : SeLe4n.ThreadId) : Option (Kernel Unit) :=
   match decoded.syscallId with
   | .cspaceDelete =>
@@ -2317,7 +2317,7 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
 arms consume, keyed to the decode and capability shapes each arm actually
 resolves.  Every field is a pre-state fact — dischargeable before the step —
 so the payoff theorem below carries no post-state obligation. -/
-private structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
+structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
     (cap : Capability) (st : SystemState) : Prop where
   bindingBidirectional : schedContextBindingBidirectional st
   queuedThreadsIdle : unboundQueuedThreadsIdleAllowed st
@@ -2729,7 +2729,7 @@ requiring per-syscall argument decoding from `decoded.msgRegs`). This split:
    showing all 25 `SyscallId` variants are handled by one of the two tiers
 3. Keeps argument-free dispatch arms concise via `dispatchCapabilityOnly`
 The wildcard `| _ =>` arm is provably dead code (W2-C). -/
-private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
   match dispatchCapabilityOnly decoded cap tid with
   | some k => k

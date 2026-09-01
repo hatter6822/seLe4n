@@ -3583,6 +3583,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               rw [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨-, hs⟩ := hStep
               subst hs
+              unfold SchedContextOps.schedContextConfigureBoundPropagate
               -- The prefix common to every arm: replenish purge then the SC
               -- store, neither of which is confined-relevant.
               have hStoredConf : observableSlotsConfinedToCores st stStored [] :=
@@ -3599,7 +3600,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
                 -- rather than backtracking, so the alternatives below carry no
                 -- tactic blocks of their own.
                 (have hNil : c ∉ ([] : List CoreId) := by simp) <;>
-                (repeat' split) <;>
+                ((try dsimp only []); repeat' split) <;>
                 first
                   -- arms that stop at `stStored` / `stWithTcb` (object writes only)
                   | exact hStoredConf.runQueue c hNil
