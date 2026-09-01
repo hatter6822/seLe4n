@@ -374,6 +374,41 @@ def _equation_groups(group: str) -> list[list[str]]:
     return equations
 
 
+def _next_unit(text: str, index: int) -> tuple[str, int] | None:
+    """The next argument unit at or after `index`: an identifier, numeral,
+    or bracketed group, extended with its projection chain.  None at end of
+    text or on a character no argument can start with (an operator)."""
+    while index < len(text) and text[index] in " \t\n":
+        index += 1
+    if index >= len(text):
+        return None
+    if text[index] in _OPEN:
+        end = balanced_span(text, index)
+        if end is None:
+            return None
+        chain = re.match(r"(?:\.(?:\d+|[^\W\d][\w'!?]*))*", text[end:])
+        return text[index : end + chain.end()], end + chain.end()
+    unit = re.match(
+        r"(?:[^\W\d][\w'!?]*|\d+)(?:\.(?:\d+|[^\W\d][\w'!?]*))*",
+        text[index:],
+    )
+    if unit is None or unit.end() == 0:
+        return None
+    return text[index : index + unit.end()], index + unit.end()
+
+
+def _argument_at(text: str, start: int, index: int) -> str | None:
+    """The `index`-th (0-based) explicit argument of the application
+    beginning at `start`, or None when the application is shorter."""
+    position = start
+    for _skip in range(index + 1):
+        step = _next_unit(text, position)
+        if step is None:
+            return None
+        argument, position = step
+    return argument
+
+
 def _application_spans(part: str, start: int) -> bool:
     """True when everything from `start` to the part's end is argument
     material: identifier, numeral, or bracketed-group units (each with an
@@ -389,24 +424,13 @@ def _application_spans(part: str, start: int) -> bool:
     """
     index = start
     while index < len(part):
-        char = part[index]
-        if char in " \t\n":
+        if part[index] in " \t\n":
             index += 1
             continue
-        if char in _OPEN:
-            end = balanced_span(part, index)
-            if end is None:
-                return False
-            chain = re.match(r"(?:\.(?:\d+|[^\W\d][\w'!?]*))*", part[end:])
-            index = end + chain.end()
-            continue
-        unit = re.match(
-            r"(?:[^\W\d][\w'!?]*|\d+)(?:\.(?:\d+|[^\W\d][\w'!?]*))*",
-            part[index:],
-        )
-        if unit is None or unit.end() == 0:
+        step = _next_unit(part, index)
+        if step is None:
             return False
-        index += unit.end()
+        index = step[1]
     return True
 
 
@@ -447,8 +471,11 @@ def _returns_state(rhs: str, state: str) -> bool:
     return len(parts) > 1 and _normalise(parts[-1]) == state
 
 
-def _steps_function(binders: str, function: str, state: str) -> bool:
-    """True when some binder group's type steps `function` into `state`.
+def _steps_function(
+    binders: str, function: str, state: str, pre_states: set[str]
+) -> bool:
+    """True when some binder group's type steps `function` from a covered
+    state into `state`.
 
     The group's type begins after its first depth-0 colon.  The type is
     split on depth-0 `∧` -- conjuncts are entailed -- and a part counts
@@ -466,13 +493,16 @@ def _steps_function(binders: str, function: str, state: str) -> bool:
     speaks of, and neither does one that merely mentions that state inside
     its payload (PR #886 review, two successive rounds).
 
-    What this deliberately does not parse is the *input* side of the call:
-    the live payoffs carry their invariant through a quiescence pack, so
-    the state the invariant covers is not textually visible as a family
-    application, and naming the packs would be an enumeration.  The bypass
-    that makes an unrelated-input step exploitable -- a transport equality
-    handing the conclusion state over from another state -- is refused
-    separately (`_transport_hypothesis`; PR #886 review).
+    The call's *arguments* are parsed too (PR #886 review, two rounds: the
+    bare-transport refusal was beaten by a wrapped transport, `some st' =
+    some st`, and the wrapper shapes are unbounded): some argument of the
+    dispatch call must be one of the payoff's pre-states -- which the
+    derived carriers make satisfiable for the live payoffs, whose invariant
+    arrives through a quiescence pack rather than a bare family hypothesis
+    (`_carrier_defs` / `carrier_structures`).  A step from a state nothing
+    covers proves nothing about a dispatch, however the conclusion is
+    reached.  The bare-transport refusal (`_transport_hypothesis`) stays as
+    a second layer for the step-present-but-odd shapes.
     """
     index = 0
     while index < len(binders):
@@ -505,7 +535,19 @@ def _steps_function(binders: str, function: str, state: str) -> bool:
                         elif char in _CLOSE:
                             depth -= 1
                         elif depth == 0 and char == "=":
-                            if _returns_state(part[offset + 1 :], state):
+                            covered = False
+                            position = head.end()
+                            while position < offset:
+                                step = _next_unit(part[:offset], position)
+                                if step is None:
+                                    break
+                                if _normalise(step[0]) in pre_states:
+                                    covered = True
+                                    break
+                                position = step[1]
+                            if covered and _returns_state(
+                                part[offset + 1 :], state
+                            ):
                                 return True
                             break
             index = end
@@ -1105,6 +1147,193 @@ def threading_aliases(
     return aliases
 
 
+def _carrier_defs(bodies: dict[str, list[tuple[str, str]]]) -> set[str]:
+    """Collected predicates whose conjunctive expansion entails a family form.
+
+    `ipcReachable st` *is* `ipcInvariantFull st ∧ …`, so a hypothesis on it
+    is a pre-state hypothesis exactly as a bare family application is --
+    derived from the same bodies map the conjuncts come from, never listed
+    (PR #886 review: the payoffs carry their invariant through such
+    carriers, and a pre-state scan blind to them could not tie the dispatch
+    step to the state the invariant covers).
+    """
+    family = set(PRE_STATE_PREDICATES)
+    expansions = {name: _sub_predicates(bodies, name) for name in bodies}
+    carriers: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for name, expansion in expansions.items():
+            if name in carriers or name in family:
+                continue
+            if expansion & (family | carriers):
+                carriers.add(name)
+                changed = True
+    return carriers
+
+
+def _carries_state_application(
+    part: str, carrier_index: dict[str, int]
+) -> bool:
+    """True when `part` is exactly one carrier applied with `st` in its
+    state position -- the whole part, arguments walked, nothing trailing."""
+    part = _normalise(part)
+    head = re.match(
+        r"@?(?:(?:«[^»\n]*»|[^\W\d][\w']*)\.)*([^\W\d][\w'!?]*)", part
+    )
+    if head is None or head.group(1) not in carrier_index:
+        return False
+    argument = _argument_at(part, head.end(), carrier_index[head.group(1)])
+    return (
+        argument is not None
+        and _normalise(argument) == "st"
+        and _application_spans(part, head.end())
+    )
+
+
+_STRUCTURE_RE = re.compile(
+    r"^[ \t]*(?:@\[[^\]]*\]\s*)*"
+    r"(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped"
+    r"|nonrec)\s+)*"
+    r"structure\s+([^\W\d][\w'!?]*)",
+    re.MULTILINE,
+)
+
+
+def carrier_structures(
+    root: str, sources: list[str], def_carriers: set[str]
+) -> dict[str, int]:
+    """Prop structures carrying a family fact for their state binder ->
+    the explicit-argument index of that binder.
+
+    The quiescence packs are structures whose `reachable`-style field is an
+    exact carrier application on the pack's own `(st : SystemState)`
+    binder, so "this hypothesis covers `st` with the invariant" is
+    derivable from the structure text -- naming the packs would be an
+    enumeration (PR #886 review).  A structure qualifies when some field's
+    type, ∧-split with weaker connectives refused, is exactly one known
+    carrier (a family form, a carrier definition, or another carrier
+    structure -- the fixpoint finds `base :`-nested packs) applied with the
+    state binder in its state position.  Only explicit `(…)` binders count
+    toward the argument index, because implicit ones never appear at
+    application sites; a structure whose state binder is implicit, appears
+    twice, or whose head does not parse contributes nothing -- fewer
+    carriers only lose pre-states, which fails closed.
+    """
+    heads: dict[str, tuple[int, str]] = {}
+    for relative in sources:
+        source = code_view(root, relative)
+        for match in _STRUCTURE_RE.finditer(source):
+            tail = source[match.end() :]
+            depth = 0
+            where = None
+            for offset, char in enumerate(tail):
+                if char in _OPEN:
+                    depth += 1
+                elif char in _CLOSE:
+                    depth -= 1
+                elif (
+                    depth == 0
+                    and char == "w"
+                    and tail[offset : offset + 5] == "where"
+                    and (offset == 0 or not re.match(r"[\w']", tail[offset - 1]))
+                    and not re.match(r"[\w'!?]", tail[offset + 5 : offset + 6])
+                ):
+                    where = offset
+                    break
+            if where is None:
+                continue
+            binder_text = tail[:where]
+            state_name = None
+            state_index = None
+            position = 0
+            index = 0
+            ambiguous = False
+            while index < len(binder_text):
+                char = binder_text[index]
+                if char in _OPEN:
+                    end = balanced_span(binder_text, index)
+                    if end is None:
+                        break
+                    if char == "(":
+                        group = binder_text[index + 1 : end - 1]
+                        colon = None
+                        depth = 0
+                        for offset, inner in enumerate(group):
+                            if inner in _OPEN:
+                                depth += 1
+                            elif inner in _CLOSE:
+                                depth -= 1
+                            elif inner == ":" and depth == 0:
+                                colon = offset
+                                break
+                        if colon is not None:
+                            names = re.findall(
+                                r"[^\W\d][\w'!?]*", group[:colon]
+                            )
+                            if group[colon + 1 :].strip() == "SystemState":
+                                if state_name is not None or len(names) != 1:
+                                    ambiguous = True
+                                else:
+                                    state_name = names[0]
+                                    state_index = position
+                            position += len(names)
+                    index = end
+                else:
+                    index += 1
+            if ambiguous or state_name is None:
+                continue
+            fields_tail = tail[where + 5 :]
+            cut = _COMMAND_STOP.search(fields_tail)
+            fields = fields_tail[: cut.start()] if cut else fields_tail
+            fields = re.sub(
+                r"(?<![\w'])" + re.escape(state_name) + r"(?![\w'])",
+                "st",
+                fields,
+            )
+            heads[match.group(1)] = (state_index, fields)
+    base_index = {name: 0 for name in PRE_STATE_PREDICATES}
+    base_index.update({name: 0 for name in def_carriers})
+    carriers: dict[str, int] = {}
+    changed = True
+    while changed:
+        changed = False
+        for name, (state_index, fields) in heads.items():
+            if name in carriers:
+                continue
+            known = dict(base_index)
+            known.update(carriers)
+            starts = [
+                match
+                for match in re.finditer(
+                    r"^([ \t]+)[^\W\d][\w'!?]*\s*:", fields, re.MULTILINE
+                )
+            ]
+            if not starts:
+                continue
+            indent = min(len(match.group(1)) for match in starts)
+            field_starts = [
+                match.start()
+                for match in starts
+                if len(match.group(1)) == indent
+            ]
+            for begin, end in zip(
+                field_starts, field_starts[1:] + [len(fields)]
+            ):
+                field = fields[begin:end]
+                colon = field.find(":")
+                for piece in split_conjunction(field[colon + 1 :]):
+                    if _has_depth0_connective(piece):
+                        continue
+                    if _carries_state_application(piece, known):
+                        carriers[name] = state_index
+                        changed = True
+                        break
+                if name in carriers:
+                    break
+    return carriers
+
+
 class Bundle:
     """One `*_preserves_ipcInvariantFull` statement, parsed from the code view.
 
@@ -1134,6 +1363,7 @@ class Bundle:
         ambient: str = "",
         excluded: frozenset[str] = frozenset(),
         visibility: str = "",
+        carriers: dict[str, int] | None = None,
     ):
         self.path = path
         self.line = line
@@ -1144,6 +1374,14 @@ class Bundle:
         self.ambient = ambient
         self.excluded = excluded
         self.visibility = visibility
+        # name -> explicit state-argument index, for every form whose
+        # hypothesis covers its state with the invariant: the family, the
+        # derived carrier definitions, and the derived carrier structures.
+        self.carriers = (
+            carriers
+            if carriers is not None
+            else {name: 0 for name in PRE_STATE_PREDICATES}
+        )
 
     def _binder_names(self) -> set[str]:
         """The statement's own binder names: each group's identifiers before
@@ -1273,11 +1511,11 @@ class Bundle:
         anchors = self._anchor_tokens()
         binder_names = self._binder_names()
         states = set()
-        for predicate in PRE_STATE_PREDICATES:
+        for predicate, arg_index in self.carriers.items():
             for hit in re.finditer(_qualified(predicate), self.binders):
                 if _projection_hit(hit.group(1), binder_names):
                     continue
-                argument = first_argument(self.binders, hit.end())
+                argument = _argument_at(self.binders, hit.end(), arg_index)
                 if argument:
                     state = _normalise(argument)
                     if re.fullmatch(r"[^\W\d][\w'!?]*", state):
@@ -1388,11 +1626,11 @@ class Bundle:
         state_tokens = set(re.findall(r"[^\W\d][\w'!?]*", state))
         segments = split_implication(_normalise(self.conclusion))
         for region in [self.binders, self.ambient] + list(segments[:-1]):
-            for predicate in PRE_STATE_PREDICATES:
+            for predicate, arg_index in self.carriers.items():
                 for hit in re.finditer(_qualified(predicate), region):
                     if _projection_hit(hit.group(1), binder_names):
                         continue
-                    argument = first_argument(region, hit.end())
+                    argument = _argument_at(region, hit.end(), arg_index)
                     if argument is None:
                         continue
                     argument = _normalise(argument)
@@ -1537,13 +1775,17 @@ def ambient_at(intervals: list[tuple[int, int, str]], offset: int) -> str:
 
 
 def collect_bundles(
-    root: str, sources: list[str], excluded: frozenset[str] = frozenset()
+    root: str,
+    sources: list[str],
+    excluded: frozenset[str] = frozenset(),
+    carriers: dict[str, int] | None = None,
 ) -> list[Bundle]:
     """Every declaration in the `ipcInvariantFull` bundle family.
 
-    `excluded` is the predicate-name set (family plus derived conjuncts)
-    each bundle's `_connectivity_tokens` filter drops from its anchor
-    graph; the caller derives it before collecting.
+    `excluded` is the predicate-name set (family plus derived conjuncts,
+    aliases and carriers) each bundle's `_connectivity_tokens` filter drops
+    from its anchor graph; `carriers` maps every invariant-carrying form to
+    its state-argument index.  The caller derives both before collecting.
     """
     bundles = []
     for relative in sources:
@@ -1568,6 +1810,7 @@ def collect_bundles(
                     ambient_at(intervals, match.start()),
                     excluded,
                     "private" if "private" in match.group("mods") else "",
+                    carriers,
                 )
             )
     return bundles
@@ -1819,8 +2062,20 @@ def run_checks(root: str) -> list[str]:
     # predicate that definitionally entails a conjunct is that conjunct for
     # threading purposes, and it is a Prop-former for connectivity purposes.
     measured = conjuncts | threading_aliases(bodies, conjuncts)
+    # Carriers are pre-state vocabulary (PR #886 review): a definition or
+    # structure whose expansion entails a family form covers its state with
+    # the invariant, so the packs the payoffs consume mint pre-states.
+    def_carriers = _carrier_defs(bodies)
+    carrier_map = {name: 0 for name in PRE_STATE_PREDICATES}
+    carrier_map.update({name: 0 for name in def_carriers})
+    carrier_map.update(carrier_structures(root, sources, def_carriers))
     bundles = collect_bundles(
-        root, sources, frozenset(measured) | frozenset(PRE_STATE_PREDICATES)
+        root,
+        sources,
+        frozenset(measured)
+        | frozenset(PRE_STATE_PREDICATES)
+        | frozenset(carrier_map),
+        carrier_map,
     )
     # A family-marker name is a claim about the conclusion, and the claim is
     # checked rather than trusted (PR #886 review): a conclusion that merely
@@ -1928,22 +2183,26 @@ def run_checks(root: str) -> list[str]:
                 f"does not conclude an `ipcInvariantFull`-family predicate "
                 f"applied to a state"
             )
-        # The dispatcher must be the *head of a step equation whose result
-        # carries the conclusion's state*, not merely a token somewhere in
-        # the binders: a dummy hypothesis mentioning the name beside a step
-        # for another function satisfied the mention-only form, and a step
-        # equation into an unrelated mid-state satisfied the head-only form
-        # (PR #886 review, two successive rounds).  And the step must be the
-        # only route to that state: a bare transport equality on the
-        # conclusion state closes the theorem around the step entirely
-        # (PR #886 review, the round after -- see `_transport_hypothesis`).
-        elif not _steps_function(bundle.binders, function, state):
+        # The dispatcher must be the *head of a step equation from a covered
+        # state into the conclusion's state*, not merely a token somewhere
+        # in the binders: a dummy hypothesis mentioning the name beside a
+        # step for another function satisfied the mention-only form, a step
+        # equation into an unrelated mid-state satisfied the head-only form,
+        # and a step *from* an unrelated state -- closable through the
+        # invariant hypothesis plus a (bare or wrapped) transport equality
+        # -- satisfied the result-only form (PR #886 review, three rounds;
+        # the derived carriers are what make the input rule satisfiable for
+        # the pack-based live payoffs).
+        elif not _steps_function(
+            bundle.binders, function, state, bundle.pre_states()
+        ):
             problems.append(
                 f"payoff_statement: {bundle.path}:{bundle.line}: `{payoff}` "
                 f"has no hypothesis whose step equation applies `{function}` "
-                f"with `{state}`, its conclusion's state, in the result; a "
-                f"payoff that does not step the dispatcher it is named for "
-                f"into the state it concludes about consumes nothing"
+                f"to a covered pre-state with `{state}`, its conclusion's "
+                f"state, in the result; a payoff that does not step the "
+                f"dispatcher it is named for from a state its hypotheses "
+                f"cover into the state it concludes about consumes nothing"
             )
         elif _transport_hypothesis(bundle.binders, bundle.conclusion, state):
             problems.append(
@@ -1963,8 +2222,17 @@ def report(root: str) -> int:
     bodies = state_predicate_bodies(root, sources)
     conjuncts = derive_conjuncts(bodies)
     measured = conjuncts | threading_aliases(bodies, conjuncts)
+    def_carriers = _carrier_defs(bodies)
+    carrier_map = {name: 0 for name in PRE_STATE_PREDICATES}
+    carrier_map.update({name: 0 for name in def_carriers})
+    carrier_map.update(carrier_structures(root, sources, def_carriers))
     bundles = collect_bundles(
-        root, sources, frozenset(measured) | frozenset(PRE_STATE_PREDICATES)
+        root,
+        sources,
+        frozenset(measured)
+        | frozenset(PRE_STATE_PREDICATES)
+        | frozenset(carrier_map),
+        carrier_map,
     )
     print(f"conjuncts derived from `{ROOT_INVARIANT}`: {len(conjuncts)}")
     for conjunct in sorted(conjuncts):
@@ -4114,6 +4382,64 @@ end «shadow»""",
             True,
             check="no_post_state_binding",
             mutation="preserving",
+        )
+    )
+
+    # A wrapped transport: `some st' = some st` closes the theorem via
+    # `Option.some.inj` while the step from an unrelated state stays
+    # unused, and no bare-side test can enumerate the wrapper shapes --
+    # only tying the step's input to a covered pre-state ends the class.
+    wrapped_transport = _fixture()
+    wrapped_transport["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep""",
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st stOther st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall stOther = .ok ((), st'))
+    (hEq : some st' = some st) :
+    ipcInvariantFull st' := by
+  exact (Option.some.inj hEq) ▸ hInv""",
+    )
+    cases.append(
+        _Case(
+            "a wrapped transport does not validate an unrelated-input step",
+            wrapped_transport,
+            True,
+            check="payoff_statement",
+            mutation="preserving",
+        )
+    )
+
+    # The pack-carried pre-state, accepted: a structure whose field is an
+    # exact family application on its own state binder covers that state,
+    # so a payoff consuming the pack steps a covered state.  Pins the
+    # carrier derivation positively -- the live payoffs are this shape.
+    pack_carried = _fixture()
+    pack_carried["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep""",
+        """structure fixtureDispatchQuiescence (budget : Nat)
+    (st : SystemState) : Prop where
+  reachable : ipcInvariantFull st
+
+theorem dispatchSyscall_preserves_ipcInvariantFull
+    (budget : Nat) (st st' : SystemState)
+    (hPack : fixtureDispatchQuiescence budget st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hPack.reachable hStep""",
+    )
+    cases.append(
+        _Case(
+            "a pack-carried pre-state satisfies the step-input rule",
+            pack_carried,
+            False,
         )
     )
 

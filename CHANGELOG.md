@@ -529,6 +529,24 @@ annotation) still derives, `@`-explicit applications parse in the
 derivation, conclusion, and step grammars, and `nonrec` joins the
 modifier run at all four sites.  Six token-preserving fixtures;
 self-test 89 cases; census unchanged a fifteenth time.
+A twentieth pass ended the transport arms race by deriving what one
+round earlier looked underivable.  A wrapped transport (`some st' =
+some st`, closable by `Option.some.inj`) beat the bare-side refusal,
+and the wrapper shapes are unbounded — so the step-input rule went in
+after all, resting on derived *invariant carriers*: a collected
+definition whose conjunctive expansion entails a family form covers its
+state (`ipcReachable`), and a `Prop` structure whose field is an exact
+carrier application on its own explicit `(st : SystemState)` binder
+covers that binder's argument position (the quiescence packs,
+`base :`-nesting included, found by fixpoint — never named).  The
+pre-state machinery generalises over (carrier, state-index) pairs,
+carriers join the connectivity-exclusion set, and a payoff's step
+equation must now apply its dispatcher to a covered state — which the
+live pack-based payoffs satisfy through `hPack`, and no transport of
+any wrapping can fake.  The bare-transport refusal stays as a second
+layer.  One caught and one accepted fixture (the accepted one pins the
+carrier derivation on a pack-shaped payoff); self-test 91 cases; census
+unchanged a sixteenth time.
 
 ### Housekeeping
 
