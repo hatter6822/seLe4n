@@ -372,18 +372,22 @@ def _blank_strings(source: str) -> str:
     """
     out: list[str] = []
     in_string = False
+    in_char = False
     escaped = False
     for char in source:
-        if in_string:
+        if in_string or in_char:
             if escaped:
                 out.append(" ")
                 escaped = False
             elif char == "\\":
                 out.append(" ")
                 escaped = True
-            elif char == '"':
+            elif in_string and char == '"':
                 out.append(char)
                 in_string = False
+            elif in_char and char == "'":
+                out.append(char)
+                in_char = False
             elif char == "\n":
                 out.append(char)
             else:
@@ -392,6 +396,15 @@ def _blank_strings(source: str) -> str:
             out.append(char)
             if char == '"':
                 in_string = True
+            elif char == "'" and (not out[:-1] or not re.match(
+                r"[\w'!?]", out[-2] if len(out) >= 2 else " "
+            )):
+                # A quote after a non-identifier character opens a *char
+                # literal* (PR #886 review: `'"'` flipped the string state
+                # and blanked the rest of the file); a quote after an
+                # identifier character is a prime (`st'`) and stays plain
+                # text.
+                in_char = True
     return "".join(out)
 
 
@@ -676,8 +689,13 @@ def derive_conjuncts(bodies: dict[str, list[tuple[str, str]]]) -> set[str]:
     # The argument may also be spelled as a named argument (PR #886 review:
     # the bundle comparisons normalise `(st := st')` while this, the
     # definition side, accepted only the positional form).
+    # Case-free qualifier chain, like the bundle scans (PR #886 review: the
+    # binder-name fix reached the scans and not this, its sibling -- a
+    # lowercase-namespace conjunct spelling dropped from the derived set).
+    # A definition body has no hypothesis binders, so no projection filter
+    # is needed here; `_root_.` is covered by the general class.
     applied = re.compile(
-        r"^\s*(?:_root_\.)?(?:[A-Z][A-Za-z0-9_']*\.)*"
+        r"^\s*(?:[^\W\d][\w']*\.)*"
         r"([^\W\d][\w'!?]*)\s+(?:\(\s*(?:st\s*:=\s*)?st\s*\)|st)\s*$"
     )
 
@@ -927,7 +945,7 @@ class Bundle:
 
 
 _SCOPE_RE = re.compile(
-    r"^\s*(?:namespace\s+(?P<ns>[A-Za-z_][A-Za-z0-9_'.]*)"
+    r"^\s*(?:namespace\s+(?P<ns>[^\W\d][\w'.]*)"
     r"|(?:noncomputable\s+)?(?P<sec>section)\b"
     r"|(?P<mut>mutual)\b"
     r"|(?P<end>end)\b)",
@@ -2299,6 +2317,90 @@ end Shadow""",
             string_declaration,
             True,
             check="family_nonempty",
+            mutation="preserving",
+        )
+    )
+
+    # Lowercase qualifier in the *definition*: the binder-name fix reached
+    # the scans and not the derivation, its sibling -- a lowercase-namespace
+    # conjunct spelling dropped from the derived set with every token there.
+    lowercase_def = _fixture()
+    lowercase_def[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st",
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st ∧ foo.replyCallerLinkage st",
+    )
+    lowercase_def["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (h : replyCallerLinkageReciprocal st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "conjunct spelled behind a lowercase qualifier still derives",
+            lowercase_def,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Unicode namespace scope: `namespace σ` is a valid scope the ASCII
+    # scanner did not push, so a shadow inside it recorded the *enclosing*
+    # canonical prefix and stood in for the deleted payoff.
+    unicode_scope_payoff = _fixture()
+    unicode_scope_payoff["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep""",
+        """namespace σ
+
+theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep
+
+end σ""",
+    )
+    cases.append(
+        _Case(
+            "a Unicode-namespaced shadow cannot stand in for a deleted payoff",
+            unicode_scope_payoff,
+            True,
+            check="payoff_theorems",
+            mutation="preserving",
+        )
+    )
+
+    # Double-quote character literal: `'"'` is a valid Lean char literal, and
+    # a lexer that toggled string state on the inner quote blanked the rest
+    # of the file -- a threaded bundle after it vanished while another file's
+    # bundle kept the family census satisfied.
+    char_literal = _fixture()
+    char_literal["SeLe4n/Kernel/IPC/Invariant/Structural/QuotedBundles.lean"] = (
+        "def quoteCharacter : Char := '\"'\n"
+        "\n"
+        + CLEAN_BUNDLE.replace(
+            "theorem endpointSendDual_preserves_ipcInvariantFull",
+            "theorem endpointReceiveDual_preserves_ipcInvariantFull",
+        ).replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hT : blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a bundle after a double-quote char literal stays in the census",
+            char_literal,
+            True,
+            check="no_post_state_binding",
             mutation="preserving",
         )
     )

@@ -412,6 +412,19 @@ with a token-preserving fixture — self-test 58 cases, census unchanged
 an eighth time; and `Reachability.lean`'s status header names its real
 staged consumer (the payoff tier's `reachable` packs) and the pending
 register's actual path instead of a pre-landing forecast.
+A thirteenth pass closed the newest fixes' own residues: the conjunct
+derivation's qualifier chain is case-free like the scans (a definition
+body has no hypothesis binders, so no projection filter is needed
+there); the namespace scanner reads Unicode scope names (`namespace σ`
+nested in the canonical namespace no longer records its shadow at the
+canonical prefix); the string blanking lexes double-quote *character
+literals* (`'"'` no longer flips string state and blanks the rest of
+the file — a quote after a non-identifier character opens a char
+literal, after an identifier character it is a prime); and
+`Reachability.lean`'s "carries along a trace" sentence now states the
+registered trace-composition debt instead of implying a preservation
+theorem that does not yet exist.  Three token-preserving fixtures;
+self-test 61 cases; census unchanged a ninth time.
 
 ### Housekeeping
 

@@ -33,9 +33,14 @@ family, and they are answered differently:
 
 * **State-shaped** — `st.objects.invExt`, `allTimeoutBudgetsNone`,
   `pendingMessageCapBadgesWellFormed`, `ipcInvariantFull` itself.  Collected
-  into `ipcReachable`, one predicate a caller carries along a trace, with
+  into `ipcReachable`, one predicate per pack discharge, with
   `ipcReachable_default` (RR3.14) showing the boot state satisfies it, so the
-  bundle is inhabited rather than vacuous.
+  bundle is inhabited rather than vacuous.  Carrying it *along a trace* —
+  concluding the pack's components alongside the bundle so the next syscall's
+  pack is fed from the last one's conclusion — is the registered WS-DT
+  trace-composition debt (`docs/WORKSTREAM_HISTORY.md`, closure target SM10):
+  no per-syscall `ipcReachable` preservation theorem exists yet, and the
+  payoffs conclude `ipcInvariantFull` alone.
 
 * **Running-caller-shaped** — the freshness and blocking-state conditions about
   the syscall's *own* thread (`hFreshSender`, `hSenderNotRecv`,

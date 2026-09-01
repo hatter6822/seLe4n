@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr3-ipcinvariantfull-dethreading-fp5gvu",
-      "commit_sha": "6aaa77c537a09e3283eefc96dc97761bba746465",
-      "tree_sha": "3c7a2b55c9a7fac2046c1acc49769651d47b73f2",
-      "committed_at_utc": "2026-09-01T09:37:31+00:00"
+      "commit_sha": "de0a21329701be553d9f0c9de7778d2a7994941d",
+      "tree_sha": "f428bef8a88fd89ab626a049e717ff27a54f9c44",
+      "committed_at_utc": "2026-09-01T09:50:29+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "35a2974c478210fd8b429255fe71b9ad69dfd5520521735784424c836b70003a"
+    "source_digest": "c52a43f351179cd4cb32d746ca383bc82e8995fbfcd80a98cc2b69446a712ba0"
   },
   "summary": {
     "module_count": 367,
@@ -27,7 +27,7 @@
     "version": "0.34.43",
     "lean_toolchain": "v4.28.0",
     "production_files": 298,
-    "production_loc": 310790,
+    "production_loc": 310795,
     "test_files": 69,
     "test_loc": 65318,
     "proved_theorem_lemma_decls": 10294,
@@ -85329,13 +85329,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 61,
+          "line": 66,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcReachable",
-          "line": 80,
+          "line": 85,
           "called": [
             "SystemState",
             "allTimeoutBudgetsNone",
@@ -85349,13 +85349,13 @@
         {
           "kind": "namespace",
           "name": "ipcReachable",
-          "line": 87,
+          "line": 92,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ipcInvariantFull",
-          "line": 89,
+          "line": 94,
           "called": [
             "SystemState",
             "ipcReachable",
@@ -85365,7 +85365,7 @@
         {
           "kind": "theorem",
           "name": "objects_invExt",
-          "line": 91,
+          "line": 96,
           "called": [
             "SystemState",
             "invExt",
@@ -85376,7 +85376,7 @@
         {
           "kind": "theorem",
           "name": "allTimeoutBudgetsNone",
-          "line": 93,
+          "line": 98,
           "called": [
             "SystemState",
             "ipcReachable",
@@ -85386,7 +85386,7 @@
         {
           "kind": "theorem",
           "name": "pendingMessageCapBadgesWellFormed",
-          "line": 95,
+          "line": 100,
           "called": [
             "SystemState",
             "ipcReachable",
@@ -85396,7 +85396,7 @@
         {
           "kind": "theorem",
           "name": "notificationWaiterConsistent",
-          "line": 97,
+          "line": 102,
           "called": [
             "SystemState",
             "ipcReachable",
@@ -85406,7 +85406,7 @@
         {
           "kind": "theorem",
           "name": "readyThread_endpointQueueFresh",
-          "line": 117,
+          "line": 122,
           "called": [
             "Endpoint",
             "ObjId",
@@ -85425,7 +85425,7 @@
         {
           "kind": "theorem",
           "name": "readyThread_notBlockedOnReceive",
-          "line": 138,
+          "line": 143,
           "called": [
             "TCB"
           ]
@@ -85433,7 +85433,7 @@
         {
           "kind": "theorem",
           "name": "readyThread_notBlockedOnReply",
-          "line": 145,
+          "line": 150,
           "called": [
             "TCB"
           ]
@@ -85441,7 +85441,7 @@
         {
           "kind": "theorem",
           "name": "readyThread_ownsNoDonation",
-          "line": 156,
+          "line": 161,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -85456,7 +85456,7 @@
         {
           "kind": "theorem",
           "name": "sendTailCrossQueueFresh",
-          "line": 185,
+          "line": 190,
           "called": [
             "Endpoint",
             "ObjId",
@@ -85475,7 +85475,7 @@
         {
           "kind": "theorem",
           "name": "recvTailCrossQueueFresh",
-          "line": 224,
+          "line": 229,
           "called": [
             "Endpoint",
             "ObjId",
@@ -85494,7 +85494,7 @@
         {
           "kind": "theorem",
           "name": "ipcReachable_default",
-          "line": 270,
+          "line": 275,
           "called": [
             "Kernel",
             "SystemState",
