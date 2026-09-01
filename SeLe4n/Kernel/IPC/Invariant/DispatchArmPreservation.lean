@@ -3355,4 +3355,409 @@ theorem retypeWrite_preserves_ipcInvariantFull
      hInv.endpointQueueTailBlockedConsistent,
    retypeWrite_queueNextTargetBlocked hAt hNe hFresh hDet hInv.queueNextTargetBlocked⟩
 
+/-- A fully descheduled thread occupies no core, so the destroy sweep's
+per-core step is the literal identity. -/
+private theorem removeRunnableFromAllCores_id_of_descheduled
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hRQ : ∀ c : CoreId, (st.scheduler.runQueueOnCore c).contains tid = false)
+    (hCur : ∀ c : CoreId, st.scheduler.currentOnCore c ≠ some tid) :
+    removeRunnableFromAllCores st tid = st := by
+  have hstep : ∀ c : CoreId, removeRunnableStepOnCore tid st c = st := by
+    intro c
+    unfold removeRunnableStepOnCore
+    have hOcc : threadOccupiesCore st tid c = false := by
+      unfold threadOccupiesCore
+      rw [hRQ c, Bool.false_or, beq_eq_false_iff_ne]
+      exact hCur c
+    rw [hOcc]
+    simp
+  unfold removeRunnableFromAllCores
+  generalize SeLe4n.Kernel.Concurrency.allCores = cs
+  induction cs with
+  | nil => rfl
+  | cons c cs ih => rw [List.foldl_cons, hstep c]; exact ih
+
+/-- A thread with no queue links needs no splice — the patch is the identity. -/
+private theorem spliceOutMidQueueNode_id_of_unlinked
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hLinks : ∀ tcbX : TCB, lookupTcb st tid = some tcbX →
+      tcbX.queuePrev = none ∧ tcbX.queueNext = none) :
+    spliceOutMidQueueNode st tid = st := by
+  unfold spliceOutMidQueueNode
+  cases hLk : lookupTcb st tid with
+  | none => rfl
+  | some tcbX =>
+      obtain ⟨hPrev, hNext⟩ := hLinks tcbX hLk
+      simp only [hPrev, hNext]
+
+/-- No endpoint boundary slot holds the victim, so the boundary sweep is the
+literal identity. -/
+private theorem removeFromAllEndpointQueues_id_of_unqueued
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hLinks : ∀ tcbX : TCB, lookupTcb st tid = some tcbX →
+      tcbX.queuePrev = none ∧ tcbX.queueNext = none)
+    (hBoundary : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[oid]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some tid ∧ ep.sendQ.tail ≠ some tid ∧
+      ep.receiveQ.head ≠ some tid ∧ ep.receiveQ.tail ≠ some tid) :
+    removeFromAllEndpointQueues st tid = st := by
+  unfold removeFromAllEndpointQueues
+  rw [spliceOutMidQueueNode_id_of_unlinked st tid hLinks]
+  exact RobinHood.RHTable.fold_preserves_of_lookup st.objects st _ (· = st) hObjInv rfl
+    (fun acc oid obj hGet hAcc => by
+      rw [hAcc]
+      cases obj with
+      | endpoint ep =>
+          have hEp : st.objects[oid]? = some (.endpoint ep) := by
+            rw [RHTable_getElem?_eq_get?]; exact hGet
+          obtain ⟨h1, h2, h3, h4⟩ := hBoundary oid ep hEp
+          have hG : (ep.sendQ.head == some tid || ep.sendQ.tail == some tid
+              || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid) = false := by
+            simp only [Bool.or_eq_false_iff, beq_eq_false_iff_ne]
+            exact ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩
+          simp only [hG]
+          rfl
+      | tcb _ | notification _ | cnode _ | vspaceRoot _ | untyped _
+      | schedContext _ | reply _ => rfl)
+
+/-- The victim waits on no notification, so the wait-list sweep is the
+literal identity. -/
+private theorem removeFromAllNotificationWaitLists_id_of_no_waits
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hNoWait : ∀ (oid : SeLe4n.ObjId) (n : Notification),
+      st.objects[oid]? = some (.notification n) → tid ∉ n.waitingThreads.val) :
+    removeFromAllNotificationWaitLists st tid = st := by
+  unfold removeFromAllNotificationWaitLists
+  exact RobinHood.RHTable.fold_preserves_of_lookup st.objects st _ (· = st) hObjInv rfl
+    (fun acc oid obj hGet hAcc => by
+      rw [hAcc]
+      cases obj with
+      | notification n =>
+          have hN : st.objects[oid]? = some (.notification n) := by
+            rw [RHTable_getElem?_eq_get?]; exact hGet
+          have hC : n.waitingThreads.val.contains tid = false := by
+            simp [hNoWait oid n hN]
+          simp only [hC]
+          rfl
+      | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _
+      | schedContext _ | reply _ => rfl)
+
+/-- An unbound-or-bound (never donated) thread returns no SchedContext at
+cleanup — the donation return is the identity success. -/
+private theorem cleanupDonatedSchedContext_ok_of_not_donated
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hNotDonated : ∀ tcbX : TCB, lookupTcb st tid = some tcbX →
+      ∀ scId owner, tcbX.schedContextBinding ≠ .donated scId owner) :
+    cleanupDonatedSchedContext st tid = .ok st := by
+  unfold cleanupDonatedSchedContext
+  cases hLk : lookupTcb st tid with
+  | none => rfl
+  | some tcbX =>
+      cases hB : tcbX.schedContextBinding with
+      | donated scId owner => exact absurd hB (hNotDonated tcbX hLk scId owner)
+      | unbound => simp only [hB]
+      | bound scId => simp only [hB]
+
+/-- Under the detachment pack the whole TCB reference sweep is the literal
+identity, on any state sharing the pre-state's objects and scheduler. -/
+private theorem cleanupTcbReferences_id_of_detached
+    (st : SystemState) (target : SeLe4n.ObjId) (tcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hObj : st.objects[target]? = some (.tcb tcb))
+    (hDet : retypeTargetDetached st target)
+    (stX : SystemState) (hO : stX.objects = st.objects) (hS : stX.scheduler = st.scheduler) :
+    cleanupTcbReferences stX tcb.tid = stX := by
+  have hLkT : ∀ tcbX : TCB, lookupTcb stX tcb.tid = some tcbX → tcbX = tcb := by
+    intro tcbX hLk
+    unfold lookupTcb at hLk
+    split at hLk
+    · cases hLk
+    · rw [hO, hDet.tcbSelfId tcb hObj, hObj] at hLk
+      simp only [Option.some.injEq] at hLk
+      exact hLk.symm
+  unfold cleanupTcbReferences
+  dsimp only []
+  rw [removeRunnableFromAllCores_id_of_descheduled stX tcb.tid
+    (fun c => by rw [hS]; exact (hDet.tcbDescheduled tcb hObj c).1)
+    (fun c => by rw [hS]; exact (hDet.tcbDescheduled tcb hObj c).2)]
+  rw [removeFromAllEndpointQueues_id_of_unqueued stX tcb.tid (hO ▸ hObjInv)
+    (fun tcbX hLk => by
+      obtain rfl := hLkT tcbX hLk
+      exact ⟨hDet.tcbNoPrev tcbX hObj, hDet.tcbNoNext tcbX hObj⟩)
+    (fun oid ep hEp => by
+      rw [hO] at hEp
+      have hSelf := hDet.tcbSelfId tcb hObj
+      refine ⟨?_, ?_, ?_, ?_⟩ <;>
+        · intro hBad
+          first
+            | exact hDet.notHead oid ep tcb.tid hEp (Or.inl hBad) hSelf
+            | exact hDet.notHead oid ep tcb.tid hEp (Or.inr hBad) hSelf
+            | exact hDet.notTail oid ep tcb.tid hEp (Or.inl hBad) hSelf
+            | exact hDet.notTail oid ep tcb.tid hEp (Or.inr hBad) hSelf)]
+  exact removeFromAllNotificationWaitLists_id_of_no_waits stX tcb.tid (hO ▸ hObjInv)
+    (fun oid n hN => by
+      rw [hO] at hN
+      exact hDet.tcbNotWaiter tcb hObj oid n hN)
+
+/-- Under the detachment pack a successful pre-retype cleanup changes neither
+the object store nor the scheduler — the sweeps are identities, the donation
+return is trivial, and the CDT/serviceRegistry/scThreadIndex writes are outside
+the bundle's read set. -/
+private theorem lifecyclePreRetypeCleanup_detached_frame
+    (st stClean : SystemState) (target : SeLe4n.ObjId) (currentObj newObj : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hObj : st.objects[target]? = some currentObj)
+    (hDet : retypeTargetDetached st target)
+    (hStep : lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean) :
+    stClean.objects = st.objects ∧ stClean.scheduler = st.scheduler := by
+  unfold lifecyclePreRetypeCleanup at hStep
+  cases currentObj with
+  | tcb tcb =>
+      have hCur : threadCurrentOnSomeCore st tcb.tid = false := by
+        unfold threadCurrentOnSomeCore
+        simp only [List.any_eq_false, beq_iff_eq]
+        intro c _
+        exact (hDet.tcbDescheduled tcb hObj c).2
+      have hND : ∀ tcbX : TCB, lookupTcb st tcb.tid = some tcbX →
+          ∀ scId owner, tcbX.schedContextBinding ≠ .donated scId owner := by
+        intro tcbX hLk scId owner
+        unfold lookupTcb at hLk
+        split at hLk
+        · cases hLk
+        · rw [hDet.tcbSelfId tcb hObj, hObj] at hLk
+          simp only [Option.some.injEq] at hLk
+          rw [← hLk]
+          exact hDet.tcbNotDonated tcb hObj scId owner
+      simp only [hCur, Bool.false_eq_true, if_false,
+        cleanupDonatedSchedContext_ok_of_not_donated st tcb.tid hND] at hStep
+      cases hB : tcb.schedContextBinding with
+      | donated scId owner => exact absurd hB (hDet.tcbNotDonated tcb hObj scId owner)
+      | unbound =>
+          simp only [hB] at hStep
+          rw [cleanupTcbReferences_id_of_detached st target tcb hObjInv hObj hDet
+            st rfl rfl] at hStep
+          split at hStep
+          · contradiction
+          · cases hStep
+            exact ⟨rfl, rfl⟩
+      | bound scId =>
+          simp only [hB] at hStep
+          rw [cleanupTcbReferences_id_of_detached st target tcb hObjInv hObj hDet
+            { st with scThreadIndex := scThreadIndexRemove st.scThreadIndex scId tcb.tid }
+            rfl rfl] at hStep
+          split at hStep
+          · contradiction
+          · cases hStep
+            exact ⟨rfl, rfl⟩
+  | endpoint ep =>
+      simp only [] at hStep
+      cases hStep
+      exact ⟨cleanupEndpointServiceRegistrations_objects_eq st target,
+        cleanupEndpointServiceRegistrations_scheduler_eq st target⟩
+  | cnode cn =>
+      simp only [] at hStep
+      split at hStep
+      · contradiction
+      · cases hStep
+        exact ⟨detachCNodeSlots_objects_eq st target cn,
+          detachCNodeSlots_scheduler_eq st target cn⟩
+  | reply r =>
+      simp only [] at hStep
+      split at hStep
+      · contradiction
+      · cases hStep
+        exact ⟨rfl, rfl⟩
+  | notification n =>
+      cases hStep
+      exact ⟨rfl, rfl⟩
+  | vspaceRoot v =>
+      cases hStep
+      exact ⟨rfl, rfl⟩
+  | untyped u =>
+      cases hStep
+      exact ⟨rfl, rfl⟩
+  | schedContext sc =>
+      cases hStep
+      exact ⟨rfl, rfl⟩
+
+/-- The detachment pack transports across any objects- and scheduler-preserving
+step (the cleanup and scrub stages). -/
+private theorem retypeTargetDetached_of_objects_scheduler_eq
+    {st st2 : SystemState} {target : SeLe4n.ObjId}
+    (hObjs : st2.objects = st.objects) (hSched : st2.scheduler = st.scheduler)
+    (hDet : retypeTargetDetached st target) : retypeTargetDetached st2 target := by
+  constructor
+  · intro sc; rw [hObjs]; exact hDet.notSc sc
+  · intro t hT; rw [hObjs] at hT; exact hDet.notOwner t hT
+  · intro t hT; rw [hObjs] at hT; exact hDet.tcbNoNext t hT
+  · intro t hT; rw [hObjs] at hT; exact hDet.tcbNoPrev t hT
+  · intro t hT; rw [hObjs] at hT; exact hDet.tcbSelfId t hT
+  · intro t hT; rw [hObjs] at hT; exact hDet.tcbAllowedState t hT
+  · intro t hT; rw [hObjs] at hT; exact hDet.tcbNotDonated t hT
+  · intro t hT oid n hN; rw [hObjs] at hT hN; exact hDet.tcbNotWaiter t hT oid n hN
+  · intro t hT c; rw [hObjs] at hT; rw [hSched]; exact hDet.tcbDescheduled t hT c
+  · intro tid tcb hT; rw [hObjs] at hT; exact hDet.blockedRefsAvoid tid tcb hT
+  · intro a tcbA b hA hN; rw [hObjs] at hA; exact hDet.notQueueLinked a tcbA b hA hN
+  · intro b tcbB a hB hP; rw [hObjs] at hB; exact hDet.notPrevLinked b tcbB a hB hP
+  · intro epId ep hd hEp hH; rw [hObjs] at hEp; exact hDet.notHead epId ep hd hEp hH
+  · intro epId ep tl hEp hT; rw [hObjs] at hEp; exact hDet.notTail epId ep tl hEp hT
+  · intro tid tcb hT; rw [hObjs] at hT; exact hDet.noSelfLoops tid tcb hT
+  · intro tid tcb rid hT hRO; rw [hObjs] at hT; exact hDet.notReplyLinked tid tcb rid hT hRO
+  · intro tid tcb rid hT hP; rw [hObjs] at hT; exact hDet.notStashed tid tcb rid hT hP
+
+/-- The pre-resolved-authority retype base: guards then one pristine write. -/
+theorem lifecycleRetypeDirect_preserves_ipcInvariantFull
+    (st st' : SystemState) (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : ipcInvariantFull st)
+    (hStep : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold lifecycleRetypeDirect at hStep
+  cases hObj : st.objects[target]? with
+  | none => simp [hObj] at hStep
+  | some currentObj =>
+      simp only [hObj] at hStep
+      split at hStep
+      · split at hStep
+        · exact retypeWrite_preserves_ipcInvariantFull
+            (storeObject_objects_eq st st' target newObj hObjInv hStep)
+            (fun oid hNeO =>
+              storeObject_objects_ne st st' target oid newObj hNeO hObjInv hStep)
+            (storeObject_scheduler_eq st st' target newObj hStep)
+            hFresh hDet hInv
+        · contradiction
+      · contradiction
+
+/-- **`.lifecycleRetype`'s cleanup composite**: well-formedness guard,
+per-kind cleanup, memory scrub, then the pristine write. -/
+theorem lifecycleRetypeDirectWithCleanup_preserves_ipcInvariantFull
+    (st st' : SystemState) (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : ipcInvariantFull st)
+    (hStep : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold lifecycleRetypeDirectWithCleanup at hStep
+  split at hStep
+  · contradiction
+  · cases hObj : st.objects[target]? with
+    | none =>
+        simp only [hObj] at hStep
+        exact lifecycleRetypeDirect_preserves_ipcInvariantFull st st' authCap target newObj
+          hObjInv hFresh hDet hInv hStep
+    | some currentObj =>
+        simp only [hObj] at hStep
+        cases hClean : lifecyclePreRetypeCleanup st target currentObj newObj with
+        | error e => rw [hClean] at hStep; cases hStep
+        | ok stClean =>
+            rw [hClean] at hStep
+            dsimp only [] at hStep
+            obtain ⟨hCO, hCS⟩ := lifecyclePreRetypeCleanup_detached_frame st stClean target
+              currentObj newObj hObjInv hObj hDet hClean
+            have hSO : (scrubObjectMemory stClean target currentObj.objectType).objects
+                = st.objects :=
+              (scrubObjectMemory_objects_eq stClean target currentObj.objectType).trans hCO
+            have hSS : (scrubObjectMemory stClean target currentObj.objectType).scheduler
+                = st.scheduler :=
+              (scrubObjectMemory_scheduler_eq stClean target currentObj.objectType).trans hCS
+            exact lifecycleRetypeDirect_preserves_ipcInvariantFull _ st' authCap target newObj
+              (hSO ▸ hObjInv)
+              hFresh
+              (retypeTargetDetached_of_objects_scheduler_eq hSO hSS hDet)
+              (ipcInvariantFull_of_objects_scheduler_eq hSO hSS hInv)
+              hStep
+
+/-- The ASID shootdown stage is `tlb`/`tlbShootdown`-only. -/
+theorem lifecycleRetypeDirectWithCleanupShootdown_preserves_ipcInvariantFull
+    (st st' : SystemState) (ec : CoreId) (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : ipcInvariantFull st)
+    (hStep : lifecycleRetypeDirectWithCleanupShootdown ec authCap target newObj st
+      = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold lifecycleRetypeDirectWithCleanupShootdown at hStep
+  cases hBase : lifecycleRetypeDirectWithCleanup authCap target newObj st with
+  | error e => simp [hBase] at hStep
+  | ok pair =>
+      obtain ⟨u, stB⟩ := pair; cases u
+      simp only [hBase] at hStep
+      have hB := lifecycleRetypeDirectWithCleanup_preserves_ipcInvariantFull st stB authCap
+        target newObj hObjInv hFresh hDet hInv hBase
+      rw [retypeShootdownAsids_eq] at hStep
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      subst hStep
+      exact ipcInvariantFull_of_objects_scheduler_eq
+        (retypeAsidRoundFold_objects ec _ stB)
+        (retypeAsidRoundFold_scheduler ec _ stB) hB
+
+/-- The initiator drain is `perCoreTlb`-only. -/
+private theorem retypeInitiatorDrain_objects_scheduler
+    (ec : CoreId) (asids : List SeLe4n.ASID) (stX : SystemState) :
+    (retypeInitiatorDrain ec asids stX).objects = stX.objects ∧
+    (retypeInitiatorDrain ec asids stX).scheduler = stX.scheduler := by
+  unfold retypeInitiatorDrain
+  cases asids with
+  | nil => exact ⟨rfl, rfl⟩
+  | cons a rest => exact ⟨rfl, rfl⟩
+
+/-- The initiator-atomic per-core retype wrapper. -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (ec : CoreId) (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : ipcInvariantFull st)
+    (hStep : lifecycleRetypeDirectWithCleanupShootdownPerCore ec authCap target newObj st
+      = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold lifecycleRetypeDirectWithCleanupShootdownPerCore at hStep
+  cases hBase : lifecycleRetypeDirectWithCleanupShootdown ec authCap target newObj st with
+  | error e => simp [hBase] at hStep
+  | ok pair =>
+      obtain ⟨u, stB⟩ := pair; cases u
+      simp only [hBase] at hStep
+      have hB := lifecycleRetypeDirectWithCleanupShootdown_preserves_ipcInvariantFull st stB
+        ec authCap target newObj hObjInv hFresh hDet hInv hBase
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      subst hStep
+      exact ipcInvariantFull_of_objects_scheduler_eq
+        (retypeInitiatorDrain_objects_scheduler ec _ stB).1
+        (retypeInitiatorDrain_objects_scheduler ec _ stB).2 hB
+
+/-- `.lifecycleRetype` (dispatch arm): the full stack — well-formedness guard,
+per-kind cleanup, scrub, pristine write, ASID shootdown rounds, initiator
+drain, instruction-cache broadcast — preserves the whole bundle. -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_ipcInvariantFull
+    (st st' : SystemState) (ec : CoreId) (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : ipcInvariantFull st)
+    (hStep : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache ec authCap target newObj st
+      = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache at hStep
+  cases hK : lifecycleRetypeDirectWithCleanupShootdownPerCore ec authCap target newObj st with
+  | error e =>
+      rw [(Architecture.withIcacheBroadcast_error_iff _ _ st e).mpr hK] at hStep
+      contradiction
+  | ok pair =>
+      obtain ⟨u, stB⟩ := pair; cases u
+      have hB := lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_ipcInvariantFull
+        st stB ec authCap target newObj hObjInv hFresh hDet hInv hK
+      obtain ⟨hObjs, -, hSched, -⟩ := Architecture.withIcacheBroadcast_frame hK hStep
+      exact ipcInvariantFull_of_objects_scheduler_eq hObjs hSched hB
+
 end SeLe4n.Kernel
