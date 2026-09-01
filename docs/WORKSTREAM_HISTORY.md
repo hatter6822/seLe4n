@@ -7506,9 +7506,9 @@ theorem cannot be stated.
 
 **Per-slice state at closure (v0.34.43).**  The RR3.1 gate
 (`scripts/check_ipc_invariant_dethreading.py`, Tier 0) reports **zero**
-conjuncts bound on a post-state across all **144**
+conjuncts bound on a post-state across all **146**
 `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
-statements — sixty-five at the RR3.14 cut, grown to 144 by the payoff tier's
+statements — sixty-five at the RR3.14 cut, grown to 146 by the payoff tier's
 per-arm bundles — and prints `[PASS] ipcInvariantFull is de-threaded end to
 end`.  The measured baseline was **103
 bindings over six conjuncts**, not the two the audit's binder-name census could
@@ -7569,7 +7569,19 @@ revoke-and-suspend-before-retype discipline), VSpace, service, sched-context,
 TCB-field and suspend/resume (behind `threadIpcFieldsQuiescent`) tiers plus
 the return-frame staging writes.
 
-The two top theorems are **staged, deliberately**: the `.call` arm composes
+The flow-checked tier is covered in the same module:
+`dispatchWithCapChecked_preserves_ipcInvariantFull` and
+`dispatchSyscallChecked_preserves_ipcInvariantFull` reduce every mirrored
+arm to the unchecked payoff — machine-checking the dispatcher's "mirrors the
+unchecked arm" comments — and close the four live SM9 arms
+(`.declassify`, `.declassifySignal`, `.auditRead`, `.auditDrain`) from
+their transitions' frames, under `checkedSyscallDispatchQuiescence`.  Both
+packs carry inhabitation witnesses built through the retype and binding
+levers (`syscallDispatchQuiescence_inhabited`,
+`checkedSyscallDispatchQuiescence_inhabited`), so an unsatisfiable pack
+field cannot hide behind a vacuously true payoff.
+
+The top theorems are **staged, deliberately**: the `.call` arm composes
 the staged `EndpointCallInvariant` surface (the RR2 closure audit's
 partition), so `DispatchPayoff.lean` is registered in
 `scripts/staged_module_allowlist.txt` and CI builds it on every PR through
@@ -7604,7 +7616,7 @@ the staged tier relocates.
 | `schedContextUnbind` operation hardening — the unbind arm's bundle takes the pre-state fact that the bound thread is not IPC-blocked (`capabilityDispatchQuiescence.unbindBoundThreadPassive`); hardening the operation to refuse unbinding a blocked thread makes that field dischargeable from operation success alone | SchedContext subsystem (WS-SM) | SM10 |
 | Suspension-of-a-queued-victim composite — `suspendThreadOnCore`'s bundle demands `threadIpcFieldsQuiescent` of the victim; a victim parked in an endpoint or notification queue needs the SM6.E cancellation surface's establishers composed in front, so the composite bundle covers cancel-then-suspend end to end | IPC subsystem (WS-SM) | SM10 |
 | Staged→production payoff relocation — `dispatchWithCap_preserves_ipcInvariantFull` and `dispatchSyscall_preserves_ipcInvariantFull` ride with the staged `EndpointCallInvariant` surface (the `.call` arm composes it); they relocate to production when that surface promotes | IPC subsystem (WS-SM) | SM10 |
-| Flow-`Checked` dispatch tier — `dispatchWithCapChecked` / `dispatchSyscallChecked` wrap the covered internal tier with information-flow checks and carry no bundle of their own; composing the payoff through the checked wrappers' agreement lemmas closes the last dispatch layer | IPC subsystem (WS-SM) | SM10 |
+| Flow-`Checked` dispatch tier — `dispatchWithCapChecked` / `dispatchSyscallChecked` wrap the covered internal tier with information-flow checks | IPC subsystem (WS-SM) | **CLOSED** v0.34.43 (same cut: `dispatchWithCapChecked_preserves_ipcInvariantFull` / `dispatchSyscallChecked_preserves_ipcInvariantFull`, mirrored arms reduced to the unchecked payoff, SM9 arms closed from their frames) |
 
 ## WS-SL — Scheduler liveness completion (**REGISTERED — OPEN**, opened v0.34.26)
 

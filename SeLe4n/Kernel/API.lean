@@ -3182,7 +3182,7 @@ in the `SyscallId` enum and wired into both dispatch paths. The checked variants
 `endpointReplyRecvChecked` gate cross-domain flows.
 
 V8-H: Capability-only arms delegate to `dispatchCapabilityOnly`. -/
-private def dispatchWithCapChecked (ctx : LabelingContext)
+def dispatchWithCapChecked (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
   match dispatchCapabilityOnly decoded cap tid with

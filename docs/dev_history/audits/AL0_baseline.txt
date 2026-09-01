@@ -3,9 +3,13 @@
 # Refreshed by WS-AN Phase AN10. Format: human-readable sections plus a
 # KEY=VALUE block for monotonicity-script consumption.
 #
-# WS-RR RR3 re-anchored `raw_lookup_tid` twice: 1287 -> 1382 at the
-# de-threading cut (RR3.1-RR3.14) and 1382 -> 1467 at the payoff cut
-# (RR3.15-RR3.26).  The metric counts `.toObjId]?` at object-store
+# WS-RR RR3 re-anchored `raw_lookup_tid` three times: 1287 -> 1382 at the
+# de-threading cut (RR3.1-RR3.14), 1382 -> 1467 at the payoff cut
+# (RR3.15-RR3.26), and 1467 -> 1468 at the closing audit cut, whose one new
+# occurrence is the checked top-tier payoff proof
+# (`dispatchSyscallChecked_preserves_ipcInvariantFull`) performing the same
+# object-store case analysis its unchecked mirror already performs — a
+# `cases` scrutinee inside a proof, not an operational lookup.  The metric counts `.toObjId]?` at object-store
 # boundaries, and cannot tell an operational lookup from one inside a
 # `Prop`.  Both rises are entirely the latter.  The first added invariant
 # predicates, preservation frames and per-transition establishers
@@ -37,11 +41,11 @@ raw_match_untyped        = 2
 raw_match_cnode          = 7
 raw_match_vspaceroot     = 15
 raw_match_total          = 130
-raw_lookup_tid           = 1467
+raw_lookup_tid           = 1468
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 2704
+gettcb_adoption          = 2706
 getschedctx_adoption     = 415
 getendpoint_adoption     = 180
 getnotification_adoption = 96
@@ -77,8 +81,8 @@ RAW_MATCH_UNTYPED=2
 RAW_MATCH_CNODE=7
 RAW_MATCH_VSPACEROOT=15
 RAW_MATCH_TOTAL=130
-RAW_LOOKUP_TID=1467
-GETTCB_ADOPTION=2704
+RAW_LOOKUP_TID=1468
+GETTCB_ADOPTION=2706
 GETSCHEDCTX_ADOPTION=415
 GETENDPOINT_ADOPTION=180
 GETNOTIFICATION_ADOPTION=96

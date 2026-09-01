@@ -527,9 +527,12 @@ production, over the per-arm layer
 (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, staged with the `.call`
 surface they compose; they relocate when it promotes).  RR3.22 built the
 composition layer this addendum said it owns — `replyRecvBody`'s three-stage
-composite and the `Architecture.stage*` return-frame bundles — leaving the
-flow-`Checked` wrappers and `notificationSignalBoundOnCore` as registered
-residue (a WS-DT debt row and SM6.D's debt row respectively).  No
+composite and the `Architecture.stage*` return-frame bundles — and the
+flow-`Checked` wrappers then gained their own payoff tier in the same cut
+(`dispatchWithCapChecked_preserves_ipcInvariantFull` /
+`dispatchSyscallChecked_preserves_ipcInvariantFull`), leaving
+`notificationSignalBoundOnCore` (SM6.D's registered debt) as the one
+transition-level residue.  No
 verification claim was widened past the packs: the payoff holds under
 `capabilityDispatchQuiescence` / `syscallDispatchQuiescence`, every field a
 pre-state fact.
@@ -1361,9 +1364,9 @@ RR3.24/RR3.25 composed them: `dispatchCapabilityOnly_preserves_ipcInvariantFull`
 (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, staged with the `.call`
 surface they compose), all under pre-state quiescence packs.  The pending
 register [`ipc_dethreading_pending.txt`](ipc_dethreading_pending.txt) is empty
-and the gate, which checks it in both directions, now measures 144 statements
+and the gate, which checks it in both directions, now measures 146 statements
 at zero post-state bindings and prints its end-to-end PASS line.  The family
-grew from sixty-five to 144 with the per-arm tier.  (`syscallDispatch` named
+grew from sixty-five to 146 with the per-arm and checked tiers.  (`syscallDispatch` named
 nothing in the tree; the dispatcher is `dispatchSyscall`, and the theorem is
 named for it.)  The plan itself is retired to `docs/dev_history/planning/`
 (RR3.26); WS-DT is **CLOSED** with five registered follow-up debt rows in

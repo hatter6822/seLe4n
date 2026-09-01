@@ -196,21 +196,21 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~48511 lines)
+- `CHANGELOG.md` (~48555 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~12870 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~12882 lines)
 - `tests/SmpInformationFlowSuite.lean` (~11756 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~7902 lines)
 - `SeLe4n/Kernel/API.lean` (~6704 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5738 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5186 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5099 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~4857 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~4856 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
-- `docs/gitbook/12-proof-and-invariant-map.md` (~4692 lines)
+- `docs/gitbook/12-proof-and-invariant-map.md` (~4693 lines)
 - `SeLe4n/Model/State.lean` (~4503 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4293 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4298 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4112 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
@@ -271,9 +271,9 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~1921 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1909 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1902 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1890 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1859 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1831 lines)
@@ -289,7 +289,8 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1737 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
-- `docs/planning/UNFINISHED_SMP_WORK.md` (~1720 lines)
+- `docs/planning/UNFINISHED_SMP_WORK.md` (~1723 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~1722 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1709 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1668 lines)
@@ -298,8 +299,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1491 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1488 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
+- `docs/DEVELOPMENT.md` (~1460 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
-- `docs/DEVELOPMENT.md` (~1456 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1423 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1415 lines)
@@ -371,11 +372,10 @@ To find files that need pagination today, run:
 - `tests/SmpCbsSuite.lean` (~919 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~894 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~877 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~861 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~870 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `tests/SmpTimerSuite.lean` (~840 lines)
 - `tests/DecodingSuite.lean` (~827 lines)
@@ -383,11 +383,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~816 lines)
+- `tests/SmpCrossCoreCallSuite.lean` (~816 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~815 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
 - `tests/WithLockSetSuite.lean` (~809 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
-- `tests/SmpCrossCoreCallSuite.lean` (~807 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
@@ -979,7 +979,7 @@ code may assume:
 - **`ipcInvariantFull` has its dispatch payoff — three theorems, under
   stated packs and confinements.**  The whole bundle family is de-threaded:
   the RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0)
-  reports **zero** conjuncts bound on a post-state across all **144**
+  reports **zero** conjuncts bound on a post-state across all **146**
   `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
   statements, measured over the comment-free code view with the conjunct set,
   the bundle family and each bundle's own pre-state all *derived* rather than
@@ -997,7 +997,18 @@ code may assume:
   fall-through arms and the lookup/taint prologue under
   `syscallDispatchQuiescence` — **staged**, because the `.call` arm composes
   the staged `EndpointCallInvariant` surface (see the call-chain bullet
-  below); they relocate to production when that surface promotes.  What new
+  below); they relocate to production when that surface promotes.  The
+  flow-checked tier is covered too:
+  `dispatchWithCapChecked_preserves_ipcInvariantFull` and
+  `dispatchSyscallChecked_preserves_ipcInvariantFull` (same module, staged)
+  reduce every mirrored arm to the unchecked payoff — machine-checking the
+  dispatcher's "mirrors the unchecked arm" comments — and close the four
+  live SM9 arms from their transitions' frames, under
+  `checkedSyscallDispatchQuiescence` (the base pack plus the declassifying
+  signal's unbound-delivery confinement).  Both packs carry inhabitation
+  witnesses (`syscallDispatchQuiescence_inhabited`,
+  `checkedSyscallDispatchQuiescence_inhabited`) whose state is built through
+  the retype and binding levers, so an unsatisfiable pack field cannot hide.  What new
   code must respect: (1) the payoff holds *under the packs* — every field is
   a pre-state fact, dischargeable before the step, with the state-shaped ones
   collected in `SeLe4n/Kernel/IPC/Invariant/Reachability.lean`
@@ -1048,10 +1059,12 @@ code may assume:
   `IPC/Invariant/DispatchPayoff.lean`, staged with the payoff tier) and the
   `Architecture.stage*` return-frame writes
   (`IPC/Invariant/DispatchArmPreservation.lean`, production).  What no
-  transition-level bundle covers yet: the flow-`Checked` dispatch wrappers
-  (`dispatchWithCapChecked` / `dispatchSyscallChecked` — the payoffs cover the
-  unchecked internal tier they wrap) and `notificationSignalBoundOnCore`
-  (SM6.D's registered bound-delivery debt).
+  transition-level bundle covers yet: `notificationSignalBoundOnCore`
+  (SM6.D's registered bound-delivery debt) — the flow-`Checked` dispatch
+  wrappers gained their own payoff tier
+  (`dispatchWithCapChecked_preserves_ipcInvariantFull` /
+  `dispatchSyscallChecked_preserves_ipcInvariantFull`, staged) in the same
+  cut.
 - **Every SchedContext hand-off must migrate the replenish queue.**  The CBS
   replenishments of a SchedContext live on its *bound thread's* home core
   (`replenishQueueAffinityConsistentOnCore`, SM5.H), so any transition that

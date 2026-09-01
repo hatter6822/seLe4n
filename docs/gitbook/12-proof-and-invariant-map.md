@@ -504,10 +504,11 @@ Bundle level:
   (`DonationPreservation.lean` §8) and everything else are production.  Still
   uncovered then: `notificationSignalBoundOnCore` (SM6.D's registered
   bound-delivery debt) and the composition layer — `Checked` wrappers,
-  `replyRecvBody`, `Architecture.stage*` frames — which RR3.22 owned and has
-  since closed for `replyRecvBody` and the `Architecture.stage*` frames; the
-  `Checked` wrappers and the bound-delivery path remain registered (a WS-DT
-  debt row and SM6.D's debt row respectively).  RR2 also *reduced* the
+  `replyRecvBody`, `Architecture.stage*` frames — all of which RR3.22 has
+  since closed (the checked wrappers by their own payoff tier,
+  `dispatchWithCapChecked_preserves_ipcInvariantFull` /
+  `dispatchSyscallChecked_preserves_ipcInvariantFull`); only the
+  bound-delivery path remains registered (SM6.D's debt row).  RR2 also *reduced* the
   threading in one place (`ipcUnwrapCaps_preserves_ipcInvariantFull` now
   establishes `dualQueueSystemInvariant` and `badgeWellFormed` instead of
   assuming them) and *added* inherited threading sites with the new per-core
@@ -546,11 +547,11 @@ Bundle level:
   surface they compose) over the IPC fall-through arms and the lookup/taint
   prologue.  Every hypothesis is a pre-state fact collected in two packs
   (`capabilityDispatchQuiescence`, `syscallDispatchQuiescence`); the gate now
-  measures **144** statements at zero post-state bindings and prints
+  measures **146** statements at zero post-state bindings and prints
   `[PASS] ipcInvariantFull is de-threaded end to end`.  Confinements and
   follow-ups (`schedContextBind`/`schedContextUnbind` op hardening,
-  cancel-then-suspend, staged→production relocation, the flow-`Checked` tier)
-  are registered as WS-DT debt in
+  cancel-then-suspend, staged→production relocation) are registered as
+  WS-DT debt in
   [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md);
   `docs/planning/ipc_dethreading_pending.txt` carries zero registrations,
   gate-held in both directions.

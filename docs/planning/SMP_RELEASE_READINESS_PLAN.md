@@ -388,7 +388,15 @@ inputs:
 > `dispatchWithCap_preserves_ipcInvariantFull` /
 > `dispatchSyscall_preserves_ipcInvariantFull`
 > (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, staged with the `.call`
-> chain's bundle per RR3.24's own escape clause).  The pending register is
+> chain's bundle per RR3.24's own escape clause).  RR3.22 landed all three of
+> its items: the flow-`Checked` dispatch wrappers carry their own payoff tier
+> (`dispatchWithCapChecked_preserves_ipcInvariantFull` /
+> `dispatchSyscallChecked_preserves_ipcInvariantFull`, staged in the same
+> module) — every mirrored arm reduced to the unchecked payoff, the four live
+> SM9 arms closed from their transitions' frames — alongside the
+> `replyRecvBody` composite and the `Architecture.stage*` bundles.  Both
+> dispatch packs carry machine-checked inhabitation witnesses whose state is
+> built through the retype and binding levers.  The pending register is
 > empty and the gate's success line reads end-to-end closure.
 >
 > **Deviations from the rows as written**, recorded rather than absorbed:
@@ -413,12 +421,13 @@ inputs:
 > IPC-blocked bound thread; each bundle takes the corresponding pre-state
 > hypothesis until the operation refuses the case itself.
 
-Closes [`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md),
-whose D1, D6 and D8 slices are open. Two of the twenty conjuncts are still
-assumed as post-state hypotheses on nearly every bundle —
+Closes [`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md).
+At authoring time its D1, D6 and D8 slices were open, two of the twenty
+conjuncts were still assumed as post-state hypotheses on nearly every bundle —
 `blockedThreadsPendingMessageConsistent` on 33 of 35 and
-`replyCallerLinkageReciprocal` on 31 of 35 — so `ipcInvariantFull` is not
-today an end-to-end machine-checked property of the live kernel.
+`replyCallerLinkageReciprocal` on 31 of 35 — and `ipcInvariantFull` was not
+then an end-to-end machine-checked property of the live kernel; the status
+blockquote above records the closure.
 
 **What the landed half found, and why the second half was re-scoped.**
 

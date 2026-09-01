@@ -19,14 +19,18 @@ It is aligned to the **current project state**:
   actually calls carries an `ipcInvariant` preservation theorem — closing
   audit blockers 2 and 3), **RR3.1–RR3.26 at v0.34.43** (`ipcInvariantFull`
   de-threading **and** its dispatch payoff: the RR3.1 gate reports zero
-  conjuncts bound on a post-state across all 144
+  conjuncts bound on a post-state across all 146
   `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
   statements and prints its end-to-end PASS line; the three payoff theorems —
   `dispatchCapabilityOnly_preserves_ipcInvariantFull` in production,
   `dispatchWithCap_preserves_ipcInvariantFull` and
   `dispatchSyscall_preserves_ipcInvariantFull` staged with the `.call`
-  surface — carry the bundle across dispatch under pre-state quiescence
-  packs, over the per-arm layer `DispatchArmPreservation.lean`).  SM10 is
+  surface, plus the flow-checked tier's
+  `dispatchWithCapChecked_preserves_ipcInvariantFull` /
+  `dispatchSyscallChecked_preserves_ipcInvariantFull` — carry the bundle
+  across dispatch under pre-state quiescence packs with machine-checked
+  inhabitation witnesses, over the per-arm layer
+  `DispatchArmPreservation.lean`).  SM10 is
   BLOCKED on it and must not open until RR8 closes**; the pre-SM10 completeness
   audit found three findings that block starting SM10, a false scope statement in
   its own plan, and fail-open latents that become reachable when the boot path

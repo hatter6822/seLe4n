@@ -328,17 +328,6 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
       st1.objects.invExt)
   signalNoBoundTarget : ∀ notifId, decoded.syscallId = .notificationSignal →
     cap.target = .object notifId → boundDeliveryTarget? st notifId = none
-  signalStage : ∀ notifId badge, decoded.syscallId = .notificationSignal →
-    cap.target = .object notifId →
-    ∀ st1 res, notificationSignalOnCore notifId badge
-        (determineExecutingCore st tid) st = (st1, res) →
-    st1.objects.invExt
-  waitReady : decoded.syscallId = .notificationWait →
-    ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.ipcState = .ready
-  waitStage : ∀ notifId, decoded.syscallId = .notificationWait →
-    cap.target = .object notifId →
-    ∀ st1 res, notificationWaitCrossCoreDispatch notifId tid st = (st1, res) →
-    st1.objects.invExt
   replyRecvStage : ∀ rid prevCaller replyBadge epId,
     decoded.syscallId = .replyRecv → cap.target = .object epId →
     resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge) →
@@ -729,8 +718,10 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                   | error e => simp only [] at hStep; cases hStep
                   | ok u1 =>
                       simp only [] at hStep
-                      have hObjInv1 : st1.objects.invExt :=
-                        hPack.signalStage notifId args.badge hSy hTgt st1 _ hSig
+                      have hObjInv1 : st1.objects.invExt := by
+                        have h := notificationSignalOnCore_preserves_objects_invExt
+                          notifId args.badge (determineExecutingCore st tid) st hObjInv
+                        rw [hSig] at h; exact h
                       cases hClear : clearWokenReceiverStash
                           ((boundDeliveryTarget? st notifId).map (·.1)) st1 with
                       | error e => rw [hClear] at hStep; cases hStep
@@ -801,8 +792,10 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                       exact hWaitInv
                   | some badge =>
                       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                      have hObjInv1 : st1.objects.invExt :=
-                        hPack.waitStage notifId hSy hTgt st1 _ hWait
+                      have hObjInv1 : st1.objects.invExt := by
+                        have h := notificationWaitCrossCoreDispatch_preserves_objects_invExt
+                          notifId tid st hObjInv
+                        rw [hWait] at h; exact h
                       rw [← hStep]
                       exact writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _
                         hObjInv1 hWaitInv
@@ -890,5 +883,840 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
               | schedContext _ | reply _ => simp only [hRoot] at hStep; cases hStep
       | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
       | schedContext _ | reply _ => simp only [hT] at hStep; cases hStep
+
+
+/-! ## §6  The flow-checked dispatch tier (WS-RR RR3.22, third item)
+
+`dispatchWithCapChecked` mirrors `dispatchWithCap` arm for arm: the
+capability tier is *shared* (both dispatchers match `dispatchCapabilityOnly`
+first), every mirrored IPC arm wraps the same plumbing around a checked
+transition whose wrapper is an if-tower over the unchecked one, and four
+SM9 arms (`.declassify`, `.declassifySignal`, `.auditRead`, `.auditDrain`)
+are live here while the unchecked dispatcher refuses them by design.
+
+The payoff below does not re-prove the mirrored arms: in each one a
+successful checked dispatch is shown to *be* a successful unchecked
+dispatch — the flow gates only filter — so the theorem consumes
+`dispatchWithCap_preserves_ipcInvariantFull` through the rebuilt unchecked
+dispatch equation, turning every "mirrors the unchecked arm" comment in
+`Kernel/API.lean` into a machine-checked fact.  The SM9 arms close from
+their transitions' own frames (`auditReadFromCore_frame` pins `st' = st`;
+`auditDrain_frame` and `declassifyObjectFromCore_frame_of_ok` pin an
+audit-log-only rewrite, which no `ipcInvariantFull` conjunct reads) plus
+the declassified signal's fallthrough bundle, under the same
+unbound-delivery confinement as the ordinary signal arm (bound delivery is
+SM6.D's registered debt on both tiers). -/
+
+/-- Pre-state pack for the flow-checked dispatch tier: the unchecked pack,
+plus the declassifying signal's unbound-delivery confinement — that arm is
+live only on this tier, so only this tier's pack carries its confinement.
+Every field is a pre-state fact. -/
+structure checkedSyscallDispatchQuiescence (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (gate : SyscallGate) (cap : Capability)
+    (st : SystemState) : Prop where
+  base : syscallDispatchQuiescence decoded tid gate cap st
+  declassifySignalNoBoundTarget : ∀ notifId,
+    decoded.syscallId = .declassifySignal → cap.target = .object notifId →
+    boundDeliveryTarget? st notifId = none
+
+/-- The flow-checked dispatch tier preserves `ipcInvariantFull`.  Mirrored
+arms reduce to `dispatchWithCap_preserves_ipcInvariantFull` through the
+rebuilt unchecked dispatch equation; the four SM9 arms close from their
+transitions' frames and the declassified signal's fallthrough bundle. -/
+theorem dispatchWithCapChecked_preserves_ipcInvariantFull
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (gate : SyscallGate) (cap : Capability)
+    (st st' : SystemState)
+    (hQ : checkedSyscallDispatchQuiescence decoded tid gate cap st)
+    (hStep : dispatchWithCapChecked ctx decoded tid gate cap st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  have hInv := hQ.base.reachable.ipcInvariantFull
+  have hObjInv := hQ.base.reachable.objects_invExt
+  unfold dispatchWithCapChecked at hStep
+  cases hCapOnly : dispatchCapabilityOnly decoded cap tid with
+  | some k =>
+      rw [hCapOnly] at hStep
+      exact dispatchCapabilityOnly_preserves_ipcInvariantFull decoded cap tid k st st'
+        hCapOnly hObjInv hInv hQ.base.capOnly hStep
+  | none =>
+      rw [hCapOnly] at hStep
+      have hCapOnly0 := hCapOnly
+      cases hSy : decoded.syscallId <;> simp only [hSy] at hStep <;>
+        first
+          | (unfold dispatchCapabilityOnly at hCapOnly
+             simp only [hSy] at hCapOnly)
+          | skip
+      case send =>
+        cases hTgt : cap.target <;> simp only [hTgt] at hStep
+        case object epId =>
+          cases hRes : resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
+              gate.capDepth (cap.rights.mem .grant) st with
+          | mk resolvedCaps stR =>
+              simp only [hRes] at hStep
+              cases hDisp : endpointSendCrossCoreDispatchChecked ctx epId tid
+                  { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+                    caps := resolvedCaps, badge := cap.badge,
+                    capsGranted := cap.rights.mem .grant } cap.rights gate.cspaceRoot
+                  decoded.capRecvSlot (determineExecutingCore stR tid) stR with
+              | mk st1 res1 =>
+                  rw [hDisp] at hStep
+                  unfold endpointSendCrossCoreDispatchChecked at hDisp
+                  split at hDisp
+                  · injection hDisp with hA hB
+                    subst hB
+                    simp only [] at hStep; cases hStep
+                  split at hDisp
+                  · injection hDisp with hA hB
+                    subst hB
+                    simp only [] at hStep; cases hStep
+                  split at hDisp
+                  · have hU : dispatchWithCap decoded tid gate cap st
+                        = .ok ((), st') := by
+                      unfold dispatchWithCap
+                      simp only [hCapOnly0, hSy, hTgt, hRes, hDisp]
+                      exact hStep
+                    exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate
+                      cap st st' hQ.base hU
+                  · injection hDisp with hA hB
+                    subst hB
+                    simp only [] at hStep; cases hStep
+        all_goals cases hStep
+      case receive =>
+        cases hTgt : cap.target <;> simp only [hTgt] at hStep
+        case object epId =>
+          split at hStep
+          · cases hStep
+          · have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+              unfold dispatchWithCap
+              simp only [hCapOnly0, hSy, hTgt]
+              exact hStep
+            exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate cap st st'
+              hQ.base hU
+        all_goals cases hStep
+      case call =>
+        cases hTgt : cap.target <;> simp only [hTgt] at hStep
+        case object epId =>
+          cases hRes : resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
+              gate.capDepth (cap.rights.mem .grant) st with
+          | mk resolvedCaps stR =>
+              simp only [hRes] at hStep
+              cases hDisp : endpointCallCrossCoreDispatchChecked ctx epId tid
+                  { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+                    caps := resolvedCaps, badge := cap.badge,
+                    capsGranted := cap.rights.mem .grant } cap.rights gate.cspaceRoot
+                  decoded.capRecvSlot (determineExecutingCore stR tid) stR with
+              | mk st1 res1 =>
+                  rw [hDisp] at hStep
+                  unfold endpointCallCrossCoreDispatchChecked at hDisp
+                  split at hDisp
+                  · have hU : dispatchWithCap decoded tid gate cap st
+                        = .ok ((), st') := by
+                      unfold dispatchWithCap
+                      simp only [hCapOnly0, hSy, hTgt, hRes, hDisp]
+                      exact hStep
+                    exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate
+                      cap st st' hQ.base hU
+                  · injection hDisp with hA hB
+                    subst hB
+                    simp only [] at hStep; cases hStep
+        all_goals cases hStep
+      case reply =>
+        cases hTgt : cap.target <;> simp only [hTgt] at hStep
+        case replyCap rid =>
+          cases hRep : st.getReply? rid with
+          | none => simp only [hRep] at hStep; cases hStep
+          | some reply =>
+              simp only [hRep] at hStep
+              cases hCaller : reply.caller with
+              | none => simp only [hCaller] at hStep; cases hStep
+              | some callerTid =>
+                  simp only [hCaller] at hStep
+                  split at hStep
+                  next hFlow =>
+                    rw [endpointReplyCrossCoreDispatchChecked_flow_allowed ctx tid
+                          callerTid _ (determineExecutingCore st tid) st hFlow] at hStep
+                    have hU : dispatchWithCap decoded tid gate cap st
+                        = .ok ((), st') := by
+                      unfold dispatchWithCap
+                      simp only [hCapOnly0, hSy, hTgt, hRep, hCaller]
+                      exact hStep
+                    exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate
+                      cap st st' hQ.base hU
+                  next => cases hStep
+        all_goals cases hStep
+      case cspaceMint =>
+        cases hTgt : cap.target <;> simp only [hTgt] at hStep
+        case object cnodeId =>
+          cases hDec : decodeCSpaceMintArgs decoded with
+          | error e => simp only [hDec] at hStep; cases hStep
+          | ok args =>
+              simp only [hDec] at hStep
+              unfold cspaceMintChecked at hStep
+              simp only [] at hStep
+              split at hStep
+              · have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+                  unfold dispatchWithCap
+                  simp only [hCapOnly0, hSy, hTgt, hDec]
+                  exact hStep
+                exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate cap
+                  st st' hQ.base hU
+              · cases hStep
+        all_goals cases hStep
+      case cspaceCopy =>
+        cases hTgt : cap.target <;> simp only [hTgt] at hStep
+        case object cnodeId =>
+          cases hDec : decodeCSpaceCopyArgs decoded with
+          | error e => simp only [hDec] at hStep; cases hStep
+          | ok args =>
+              simp only [hDec] at hStep
+              unfold cspaceCopyChecked at hStep
+              simp only [] at hStep
+              split at hStep
+              · have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+                  unfold dispatchWithCap
+                  simp only [hCapOnly0, hSy, hTgt, hDec]
+                  exact hStep
+                exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate cap
+                  st st' hQ.base hU
+              · cases hStep
+        all_goals cases hStep
+      case cspaceMove =>
+        cases hTgt : cap.target <;> simp only [hTgt] at hStep
+        case object cnodeId =>
+          cases hDec : decodeCSpaceMoveArgs decoded with
+          | error e => simp only [hDec] at hStep; cases hStep
+          | ok args =>
+              simp only [hDec] at hStep
+              unfold cspaceMoveChecked at hStep
+              simp only [] at hStep
+              split at hStep
+              · have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+                  unfold dispatchWithCap
+                  simp only [hCapOnly0, hSy, hTgt, hDec]
+                  exact hStep
+                exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate cap
+                  st st' hQ.base hU
+              · cases hStep
+        all_goals cases hStep
+      case serviceRegister =>
+        cases hTgt : cap.target <;> simp only [hTgt] at hStep
+        case object epId =>
+          cases hDec : decodeServiceRegisterArgs decoded with
+          | error e => simp only [hDec] at hStep; cases hStep
+          | ok args =>
+              simp only [hDec] at hStep
+              unfold registerServiceChecked at hStep
+              simp only [] at hStep
+              split at hStep
+              · have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+                  unfold dispatchWithCap
+                  simp only [hCapOnly0, hSy, hTgt, hDec]
+                  exact hStep
+                exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate cap
+                  st st' hQ.base hU
+              · cases hStep
+        all_goals cases hStep
+      case notificationSignal =>
+        cases hTgt : cap.target <;> simp only [hTgt] at hStep
+        case object notifId =>
+          cases hDec : decodeNotificationSignalArgs decoded with
+          | error e => simp only [hDec] at hStep; cases hStep
+          | ok args =>
+              simp only [hDec] at hStep
+              have hNoBound := hQ.base.signalNoBoundTarget notifId hSy hTgt
+              cases hFlow : securityFlowsTo (ctx.threadLabelOf tid)
+                  (ctx.objectLabelOf notifId) with
+              | false =>
+                  rw [notificationSignalBoundCrossCoreDispatchChecked_flow_denied
+                        ctx notifId tid args.badge st hFlow] at hStep
+                  simp only [] at hStep; cases hStep
+              | true =>
+                  rw [notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_no_delivery
+                        ctx notifId tid args.badge st hFlow hNoBound] at hStep
+                  have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+                    unfold dispatchWithCap
+                    simp only [hCapOnly0, hSy, hTgt, hDec]
+                    exact hStep
+                  exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate
+                    cap st st' hQ.base hU
+        all_goals cases hStep
+      case notificationWait =>
+        cases hTgt : cap.target <;> simp only [hTgt] at hStep
+        case object notifId =>
+          cases hFlow : securityFlowsTo (ctx.objectLabelOf notifId)
+              (ctx.threadLabelOf tid) with
+          | false =>
+              rw [notificationWaitCrossCoreDispatchChecked_flow_denied
+                    ctx notifId tid st hFlow] at hStep
+              simp only [] at hStep; cases hStep
+          | true =>
+              rw [notificationWaitCrossCoreDispatchChecked_flow_allowed
+                    ctx notifId tid st hFlow] at hStep
+              have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+                unfold dispatchWithCap
+                simp only [hCapOnly0, hSy, hTgt]
+                exact hStep
+              exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate cap
+                st st' hQ.base hU
+        all_goals cases hStep
+      case replyRecv =>
+        cases hTgt : cap.target <;> simp only [hTgt] at hStep
+        case object epId =>
+          split at hStep
+          · cases hStep
+          · cases hResv : resolveReplyRecvReply gate decoded st with
+            | error e => simp only [hResv] at hStep; cases hStep
+            | ok trip =>
+                obtain ⟨rid, prevCaller, replyBadge⟩ := trip
+                simp only [hResv] at hStep
+                split at hStep
+                next hFlow =>
+                  have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+                    unfold dispatchWithCap
+                    simp only [hCapOnly0, hSy, hTgt, hResv]
+                    exact hStep
+                  exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate cap
+                    st st' hQ.base hU
+                next => cases hStep
+        all_goals cases hStep
+      case declassify =>
+        cases hTgt : cap.target <;> simp only [hTgt] at hStep
+        case object targetId =>
+          obtain ⟨tidC, hCur, hEq⟩ := declassifyObjectFromCore_frame_of_ok
+            (liftLegacyContext ctx) ctx.declassificationPolicy
+            (determineExecutingCore st tid) targetId st st' hStep
+          rw [hEq]
+          refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInv
+          · rfl
+          · rfl
+        all_goals cases hStep
+      case declassifySignal =>
+        cases hTgt : cap.target <;> simp only [hTgt] at hStep
+        case object notifId =>
+          cases hDec : decodeNotificationSignalArgs decoded with
+          | error e => simp only [hDec] at hStep; cases hStep
+          | ok args =>
+              simp only [hDec] at hStep
+              have hNoBound := hQ.declassifySignalNoBoundTarget notifId hSy hTgt
+              cases hDisp : notificationSignalDeclassifiedCrossCoreDispatch
+                  (liftLegacyContext ctx) ctx.declassificationPolicy notifId tid
+                  args.badge st with
+              | mk st1 res1 =>
+                  rw [hDisp] at hStep
+                  cases res1 with
+                  | error e => simp only [] at hStep; cases hStep
+                  | ok sgi1 =>
+                      simp only [] at hStep
+                      rw [notificationSignalDeclassifiedCrossCoreDispatch_eq] at hDisp
+                      have hSigInv : ipcInvariantFull st1 :=
+                        notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthrough
+                          (liftLegacyContext ctx) ctx.declassificationPolicy notifId
+                          args.badge (determineExecutingCore st tid) st st1 sgi1 hNoBound
+                          hInv hObjInv hQ.base.reachable.notificationWaiterConsistent
+                          hQ.base.reachable.allTimeoutBudgetsNone hDisp
+                      have hObjInv1 : st1.objects.invExt :=
+                        notificationSignalDeclassifiedOnCore_preserves_objects_invExt
+                          (liftLegacyContext ctx) ctx.declassificationPolicy notifId
+                          args.badge (determineExecutingCore st tid) st st1 sgi1
+                          hObjInv hDisp
+                      cases hClear : clearWokenReceiverStash
+                          ((boundDeliveryTarget? st notifId).map (·.1)) st1 with
+                      | error e => rw [hClear] at hStep; cases hStep
+                      | ok pair2 =>
+                          rw [hClear] at hStep
+                          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                          have hClearInv := clearWokenReceiverStash_preserves_ipcInvariantFull
+                            _ st1 pair2 hObjInv1 hSigInv hClear
+                          have hClearObjInv : pair2.2.objects.invExt := by
+                            unfold clearWokenReceiverStash at hClear
+                            cases hW : (boundDeliveryTarget? st notifId).map (·.1) with
+                            | none => rw [hW] at hClear; cases hClear; exact hObjInv1
+                            | some receiver =>
+                                rw [hW] at hClear
+                                simp only [] at hClear
+                                cases hTcb2 : st1.getTcb? receiver with
+                                | none => rw [hTcb2] at hClear; cases hClear; exact hObjInv1
+                                | some tcb2 =>
+                                    rw [hTcb2] at hClear
+                                    simp only [] at hClear
+                                    split at hClear <;> cases hClear
+                                    · exact RHTable_insert_preserves_invExt _ _ _ hObjInv1
+                                    · exact hObjInv1
+                          have hD1 := stageWokenDelivery_preserves_ipcInvariantFull pair2.2
+                            ((boundDeliveryTarget? st notifId).map (·.1)) 0
+                            hClearObjInv hClearInv
+                          have hD1obj : (Architecture.stageWokenDelivery pair2.2
+                              ((boundDeliveryTarget? st notifId).map (·.1)) 0).objects.invExt := by
+                            cases hW : (boundDeliveryTarget? st notifId).map (·.1) with
+                            | none => exact hClearObjInv
+                            | some w =>
+                                rw [Architecture.stageWokenDelivery_some]
+                                exact stageDeliveredMessage_objects_invExt pair2.2 w 0
+                                  hClearObjInv
+                          rw [← hStep]
+                          exact stageWokenDelivery_preserves_ipcInvariantFull _ _ 0
+                            hD1obj hD1
+        all_goals cases hStep
+      case auditRead =>
+        cases hAuth : extractAuditAuthority cap with
+        | error e => simp only [hAuth] at hStep; cases hStep
+        | ok u =>
+            simp only [hAuth] at hStep
+            split at hStep
+            case isTrue =>
+              cases hDecA : decodeAuditReadArgs decoded with
+              | error e => simp only [hDecA] at hStep; cases hStep
+              | ok args =>
+                  simp only [hDecA] at hStep
+                  cases hOp : decodeAuditReadOp args.opcode args.index args.chunk with
+                  | none => simp only [hOp] at hStep; cases hStep
+                  | some op =>
+                      simp only [hOp] at hStep
+                      cases hRead : auditReadFromCore (liftLegacyContext ctx)
+                          (validatedAuditMonitorClearance ctx)
+                          (determineExecutingCore st tid) op st with
+                      | error e => rw [hRead] at hStep; cases hStep
+                      | ok pairR =>
+                          obtain ⟨w, st1⟩ := pairR
+                          rw [hRead] at hStep
+                          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                          have hFr := auditReadFromCore_frame (liftLegacyContext ctx)
+                            (validatedAuditMonitorClearance ctx)
+                            (determineExecutingCore st tid) op st w st1 hRead
+                          rw [← hStep, hFr]
+                          exact writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _
+                            hObjInv hInv
+            case isFalse => cases hStep
+      case auditDrain =>
+        cases hAuth : extractAuditAuthority cap with
+        | error e => simp only [hAuth] at hStep; cases hStep
+        | ok u =>
+            simp only [hAuth] at hStep
+            split at hStep
+            case isTrue =>
+              cases hDecA : decodeAuditDrainArgs decoded with
+              | error e => simp only [hDecA] at hStep; cases hStep
+              | ok args =>
+                  simp only [hDecA] at hStep
+                  cases hDrain : auditDrainVisiblePrefix (liftLegacyContext ctx)
+                      (validatedAuditMonitorClearance ctx)
+                      (determineExecutingCore st tid) args.count st with
+                  | error e => rw [hDrain] at hStep; cases hStep
+                  | ok pairD =>
+                      obtain ⟨n, st1⟩ := pairD
+                      rw [hDrain] at hStep
+                      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                      obtain ⟨hEq, -, -⟩ := auditDrain_frame (liftLegacyContext ctx)
+                        (validatedAuditMonitorClearance ctx)
+                        (determineExecutingCore st tid) args.count st n st1 hDrain
+                      have hInv1 : ipcInvariantFull st1 := by
+                        rw [hEq]
+                        refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInv
+                        · rfl
+                        · rfl
+                      have hObjInv1 : st1.objects.invExt := by
+                        rw [hEq]; exact hObjInv
+                      rw [← hStep]
+                      exact writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _
+                        hObjInv1 hInv1
+            case isFalse => cases hStep
+      all_goals cases hStep
+
+
+/-- The checked top-level dispatcher preserves `ipcInvariantFull`.  Mirrors
+`dispatchSyscall_preserves_ipcInvariantFull` with two checked-tier
+differences: the audit pair routes through the resolve-only lookup
+(`syscallChecksTargetFirst` → `syscallInvokeResolved`), and the pack is
+conditioned on `syscallResolveCap` — which every successful rights-gated
+lookup implies (`syscallResolveCap_of_lookup`), so the one hypothesis
+covers both routes. -/
+theorem dispatchSyscallChecked_preserves_ipcInvariantFull
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hPack : ∀ (gate : SyscallGate) (cap : Capability),
+      syscallResolveCap gate st = .ok (cap, st) →
+      checkedSyscallDispatchQuiescence decoded tid gate cap st)
+    (hStep : dispatchSyscallChecked ctx decoded tid st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold dispatchSyscallChecked at hStep
+  cases hT : st.objects[tid.toObjId]? with
+  | none => simp only [hT] at hStep; cases hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb =>
+          simp only [hT] at hStep
+          cases hRoot : st.objects[tcb.cspaceRoot]? with
+          | none => simp only [hRoot] at hStep; cases hStep
+          | some rootObj =>
+              cases rootObj with
+              | cnode rootCn =>
+                  simp only [hRoot] at hStep
+                  cases hTF : syscallChecksTargetFirst decoded.syscallId with
+                  | true =>
+                      simp only [hTF, if_true] at hStep
+                      cases hInvk : syscallInvokeResolved { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCapChecked ctx decoded tid { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }) st with
+                      | error e => rw [hInvk] at hStep; cases hStep
+                      | ok pair =>
+                          obtain ⟨u, stPost⟩ := pair; cases u
+                          rw [hInvk] at hStep
+                          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                          unfold syscallInvokeResolved at hInvk
+                          cases hRz : syscallResolveCap { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } st with
+                          | error e => rw [hRz] at hInvk; cases hInvk
+                          | ok pairL =>
+                              obtain ⟨cap, stL⟩ := pairL
+                              rw [hRz] at hInvk
+                              obtain ⟨-, -, -, hStEq⟩ :=
+                                syscallResolveCap_implies_capability_at_slot _ st cap stL hRz
+                              subst hStEq
+                              have hInvPost := dispatchWithCapChecked_preserves_ipcInvariantFull
+                                ctx decoded tid _ cap stL stPost (hPack _ cap hRz) hInvk
+                              rw [← hStep]
+                              refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInvPost
+                              · exact applySyscallTaint_objects _ _ _
+                              · exact applySyscallTaint_scheduler _ _ _
+                  | false =>
+                      simp only [hTF, Bool.false_eq_true, if_false] at hStep
+                      cases hInvk : syscallInvoke { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCapChecked ctx decoded tid { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }) st with
+                      | error e => rw [hInvk] at hStep; cases hStep
+                      | ok pair =>
+                          obtain ⟨u, stPost⟩ := pair; cases u
+                          rw [hInvk] at hStep
+                          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                          unfold syscallInvoke at hInvk
+                          cases hLk : syscallLookupCap { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } st with
+                          | error e => rw [hLk] at hInvk; cases hInvk
+                          | ok pairL =>
+                              obtain ⟨cap, stL⟩ := pairL
+                              rw [hLk] at hInvk
+                              have hRz := syscallResolveCap_of_lookup _ st cap stL hLk
+                              obtain ⟨-, -, -, hStEq⟩ :=
+                                syscallResolveCap_implies_capability_at_slot _ st cap stL hRz
+                              subst hStEq
+                              have hInvPost := dispatchWithCapChecked_preserves_ipcInvariantFull
+                                ctx decoded tid _ cap stL stPost (hPack _ cap hRz) hInvk
+                              rw [← hStep]
+                              refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInvPost
+                              · exact applySyscallTaint_objects _ _ _
+                              · exact applySyscallTaint_scheduler _ _ _
+              | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+              | schedContext _ | reply _ => simp only [hRoot] at hStep; cases hStep
+      | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+      | schedContext _ | reply _ => simp only [hT] at hStep; cases hStep
+
+
+/-! ## §7  The packs are inhabited (non-vacuity witnesses)
+
+`ipcReachable` carries its own inhabitation witness (`ipcReachable_default`,
+RR3.14) precisely because an unsatisfiable bundle makes every theorem taking
+it vacuous.  The dispatch packs deserve the same pin, and their witness
+cannot be the boot state: `callerShape` demands a ready, SchedContext-bound
+caller, and a syscall genuinely has no caller before threads exist.
+
+The witness below builds the smallest such state **through the per-arm
+bundles themselves** — two retype writes carried by
+`retypeWrite_preserves_ipcInvariantFull` (a fresh ready TCB, then a fresh
+SchedContext) and the bind carried by
+`ipcInvariantFull_of_schedBindingRewrite` — so the packs' first inhabitants
+are also the retype and binding levers' first end-to-end consumers.  Every
+conditional field is then discharged against a `.send`-shaped decode whose
+capability targets a reply cap, which falsifies each arm-specific premise. -/
+
+private def witnessTid : SeLe4n.ThreadId := ⟨1⟩
+private def witnessScId : SeLe4n.SchedContextId := ⟨2⟩
+
+private def witnessTcbFresh : TCB :=
+  { tid := witnessTid, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+    vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+
+private def witnessTcbBound : TCB :=
+  { witnessTcbFresh with schedContextBinding := .bound witnessScId }
+
+private def witnessScFresh : SeLe4n.Kernel.SchedContext :=
+  { scId := witnessScId, budget := ⟨1⟩, period := ⟨1⟩, priority := ⟨0⟩,
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨1⟩ }
+
+private def witnessScBound : SeLe4n.Kernel.SchedContext :=
+  { witnessScFresh with boundThread := some witnessTid }
+
+private def witnessSt1 : SystemState :=
+  { (default : SystemState) with
+    objects := (default : SystemState).objects.insert witnessTid.toObjId
+      (.tcb witnessTcbFresh) }
+
+private def witnessSt2 : SystemState :=
+  { witnessSt1 with
+    objects := witnessSt1.objects.insert witnessScId.toObjId
+      (.schedContext witnessScFresh) }
+
+private def witnessSt3 : SystemState :=
+  { witnessSt2 with
+    objects := (witnessSt2.objects.insert witnessTid.toObjId
+        (.tcb witnessTcbBound)).insert witnessScId.toObjId
+      (.schedContext witnessScBound) }
+
+private theorem witnessKeysNe : witnessTid.toObjId ≠ witnessScId.toObjId := by
+  decide
+
+private theorem witnessObjInv0 : (default : SystemState).objects.invExt :=
+  capabilityInvariantBundle.objectsInvExt
+    (Architecture.default_system_state_proofLayerInvariantBundle).2.1
+
+private theorem witnessObjInv1 : witnessSt1.objects.invExt :=
+  RHTable_insert_preserves_invExt _ _ _ witnessObjInv0
+
+private theorem witnessObjInv2 : witnessSt2.objects.invExt :=
+  RHTable_insert_preserves_invExt _ _ _ witnessObjInv1
+
+private theorem witnessObjInv3 : witnessSt3.objects.invExt :=
+  RHTable_insert_preserves_invExt _ _ _
+    (RHTable_insert_preserves_invExt _ _ _ witnessObjInv2)
+
+private theorem witnessSt1_lookup (oid : SeLe4n.ObjId) :
+    witnessSt1.objects[oid]?
+      = if witnessTid.toObjId == oid then some (.tcb witnessTcbFresh) else none := by
+  show (((default : SystemState).objects.insert witnessTid.toObjId
+      (.tcb witnessTcbFresh)))[oid]? = _
+  rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ witnessObjInv0]
+  split
+  · rfl
+  · rw [← RHTable_getElem?_eq_get?, Architecture.default_objects_none]
+
+private theorem witnessSt2_lookup (oid : SeLe4n.ObjId) :
+    witnessSt2.objects[oid]?
+      = if witnessScId.toObjId == oid then some (.schedContext witnessScFresh)
+        else if witnessTid.toObjId == oid then some (.tcb witnessTcbFresh)
+        else none := by
+  show ((witnessSt1.objects.insert witnessScId.toObjId
+      (.schedContext witnessScFresh)))[oid]? = _
+  rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ witnessObjInv1]
+  split
+  · rfl
+  · rw [← RHTable_getElem?_eq_get?, witnessSt1_lookup]
+
+private theorem witnessSt3_lookup (oid : SeLe4n.ObjId) :
+    witnessSt3.objects[oid]?
+      = if witnessScId.toObjId == oid then some (.schedContext witnessScBound)
+        else if witnessTid.toObjId == oid then some (.tcb witnessTcbBound)
+        else none := by
+  show (((witnessSt2.objects.insert witnessTid.toObjId
+      (.tcb witnessTcbBound)).insert witnessScId.toObjId
+        (.schedContext witnessScBound)))[oid]? = _
+  rw [RHTable_getElem?_eq_get?,
+    RHTable_getElem?_insert _ _ _ (RHTable_insert_preserves_invExt _ _ _ witnessObjInv2)]
+  split
+  · rfl
+  · rw [RHTable_getElem?_insert _ _ _ witnessObjInv2]
+    split
+    · rfl
+    · rw [← RHTable_getElem?_eq_get?, witnessSt2_lookup]
+      split
+      · next h1 => next h2 => exact absurd h1 (by simp_all)
+      · rfl
+
+/-- Nothing references any target in the empty boot store. -/
+private theorem retypeTargetDetached_default (target : SeLe4n.ObjId) :
+    retypeTargetDetached (default : SystemState) target := by
+  constructor <;> (intros; simp_all [Architecture.default_objects_none])
+
+/-- The fresh-TCB state references nothing at the SchedContext's slot: the
+one stored thread is fully detached by construction. -/
+private theorem witnessSt1_detached :
+    retypeTargetDetached witnessSt1 witnessScId.toObjId := by
+  constructor
+  all_goals intros
+  all_goals simp_all [witnessSt1_lookup]
+  all_goals try simp_all [show witnessTid.toObjId ≠ witnessScId.toObjId from by decide]
+  all_goals try obtain ⟨-, rfl⟩ := ‹_ ∧ _›
+  all_goals simp_all [witnessTcbFresh]
+
+private theorem witnessInv1 : ipcInvariantFull witnessSt1 := by
+  refine retypeWrite_preserves_ipcInvariantFull (st := default)
+    (target := witnessTid.toObjId) (newObj := .tcb witnessTcbFresh)
+    ?_ ?_ rfl ?_ (retypeTargetDetached_default _) Architecture.default_ipcInvariantFull
+  · rw [witnessSt1_lookup]; simp
+  · intro oid hNe
+    rw [witnessSt1_lookup, Architecture.default_objects_none]
+    simp [show (witnessTid.toObjId == oid) = false from by
+      simp [beq_eq_false_iff_ne]; exact fun h => hNe h.symm]
+  · simp [witnessTcbFresh, retypeReplacementFresh]
+
+private theorem witnessInv2 : ipcInvariantFull witnessSt2 := by
+  refine retypeWrite_preserves_ipcInvariantFull (st := witnessSt1)
+    (target := witnessScId.toObjId) (newObj := .schedContext witnessScFresh)
+    ?_ ?_ rfl ?_ witnessSt1_detached witnessInv1
+  · rw [witnessSt2_lookup]; simp
+  · intro oid hNe
+    rw [witnessSt2_lookup, witnessSt1_lookup]
+    simp [show (witnessScId.toObjId == oid) = false from by
+      simp [beq_eq_false_iff_ne]; exact fun h => hNe h.symm]
+  · simp [retypeReplacementFresh]
+
+private theorem witnessInv3 : ipcInvariantFull witnessSt3 := by
+  refine ipcInvariantFull_of_schedBindingRewrite witnessSt2 witnessSt3 witnessTid
+    witnessScId witnessTcbFresh witnessTcbBound witnessScFresh witnessScBound
+    witnessInv2 ?_ ?_ ?_ ?_ ?_ rfl rfl rfl rfl rfl rfl rfl rfl ?_ ?_
+  · rw [witnessSt2_lookup]
+    simp [show (witnessScId.toObjId == witnessTid.toObjId) = false from by decide]
+  · rw [witnessSt3_lookup]
+    simp [show (witnessScId.toObjId == witnessTid.toObjId) = false from by decide]
+  · rw [witnessSt2_lookup]; simp
+  · rw [witnessSt3_lookup]; simp
+  · intro oid hNeT hNeS
+    rw [witnessSt3_lookup, witnessSt2_lookup]
+    simp [show (witnessScId.toObjId == oid) = false from by
+            simp [beq_eq_false_iff_ne]; exact fun h => hNeS h.symm,
+          show (witnessTid.toObjId == oid) = false from by
+            simp [beq_eq_false_iff_ne]; exact fun h => hNeT h.symm]
+  · refine Or.inl ⟨rfl, rfl, rfl, rfl, ?_, ?_⟩
+    · intro s sTcb sc0 hLk
+      rw [witnessSt2_lookup] at hLk
+      split at hLk
+      · cases hLk
+      · split at hLk
+        · cases hLk
+          simp [witnessTcbFresh]
+        · cases hLk
+    · intro t' tcb2 hNe hLk
+      rw [witnessSt2_lookup] at hLk
+      split at hLk
+      · cases hLk
+      · split at hLk
+        · next h2 =>
+            cases hLk
+            exact absurd (SeLe4n.ThreadId.toObjId_injective _ _ (eq_of_beq h2)).symm hNe
+        · cases hLk
+  · refine ⟨?_⟩
+    intro tid2 tcb' hLk hUnb _ _ _
+    rw [witnessSt3_lookup] at hLk
+    split at hLk
+    · cases hLk
+    · split at hLk
+      · cases hLk
+        simp [witnessTcbBound, witnessTcbFresh] at hUnb
+      · cases hLk
+
+
+private theorem witnessSt3_getTcb :
+    witnessSt3.getTcb? witnessTid = some witnessTcbBound := by
+  unfold SystemState.getTcb?
+  rw [witnessSt3_lookup]
+  simp [show (witnessScId.toObjId == witnessTid.toObjId) = false from by decide]
+
+private theorem witnessReachable3 : ipcReachable witnessSt3 := by
+  refine ⟨witnessInv3, witnessObjInv3, ?_, ?_, ?_⟩
+  · intro tid tcb hLk
+    rw [witnessSt3_lookup] at hLk
+    split at hLk
+    · cases hLk
+    · split at hLk
+      · cases hLk; rfl
+      · cases hLk
+  · intro tid tcb msg hLk hMsg
+    rw [witnessSt3_lookup] at hLk
+    split at hLk
+    · cases hLk
+    · split at hLk
+      · cases hLk; cases hMsg
+      · cases hLk
+  · intro oid ntfn tid hLk _
+    rw [witnessSt3_lookup] at hLk
+    split at hLk
+    · cases hLk
+    · split at hLk
+      · cases hLk
+      · cases hLk
+
+private def witnessDecoded : SyscallDecodeResult :=
+  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default, syscallId := .send }
+
+private def witnessCap : Capability :=
+  { target := .replyCap (SeLe4n.ReplyId.ofNat 0), rights := default }
+
+private def witnessGate : SyscallGate :=
+  { callerId := witnessTid, cspaceRoot := SeLe4n.ObjId.ofNat 0,
+    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 0,
+    requiredRight := syscallRequiredRight .send }
+
+private theorem witnessCapOnly :
+    capabilityDispatchQuiescence witnessDecoded witnessCap witnessSt3 := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro t tcb scId hLk hScId
+    rw [witnessSt3_lookup] at hLk
+    split at hLk
+    · cases hLk
+    · split at hLk
+      · next hKey =>
+          cases hLk
+          simp [witnessTcbBound, witnessTcbFresh, SchedContextBinding.scId?] at hScId
+          subst hScId
+          have hT := SeLe4n.ThreadId.toObjId_injective _ _ (eq_of_beq hKey)
+          subst hT
+          refine ⟨witnessScBound, ?_, rfl⟩
+          rw [witnessSt3_lookup]
+          simp
+      · cases hLk
+  · intro c t tcb hLk hUnbound _
+    rw [witnessSt3_lookup] at hLk
+    split at hLk
+    · cases hLk
+    · split at hLk
+      · cases hLk
+        simp [witnessTcbBound, witnessTcbFresh] at hUnbound
+      · cases hLk
+  · intro args hDec
+    simp only [decodeLifecycleRetypeArgs, witnessDecoded, requireMsgReg, bind,
+      Except.bind] at hDec
+    cases hDec
+  · intro args hDec vThreadId hVal s sTcb sc0 hLk
+    rw [witnessSt3_lookup] at hLk
+    split at hLk
+    · cases hLk
+    · split at hLk
+      · cases hLk
+        simp [witnessTcbBound, witnessTcbFresh]
+      · cases hLk
+  · intro scObj hTgt
+    simp [witnessCap] at hTgt
+  · intro objId hTgt
+    simp [witnessCap] at hTgt
+
+/-- **The dispatch pack is inhabited.**  The witness state is built through
+the per-arm bundles themselves — two `retypeWrite_preserves_ipcInvariantFull`
+steps (a fresh ready TCB, then a fresh SchedContext) and one
+`ipcInvariantFull_of_schedBindingRewrite` step (the bind) — so the packs'
+first inhabitant is also those levers' first end-to-end consumer, and an
+unsatisfiable conjunction anywhere in the pack would fail here. -/
+theorem syscallDispatchQuiescence_inhabited :
+    syscallDispatchQuiescence witnessDecoded witnessTid witnessGate witnessCap
+      witnessSt3 := by
+  refine ⟨witnessReachable3, witnessCapOnly,
+    ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro args hSy hDec
+    simp [witnessDecoded] at hSy
+  · intro epId hSy hTgt
+    simp [witnessCap] at hTgt
+  · intro epId hSy
+    simp [witnessDecoded] at hSy
+  · intro epId hSy
+    simp [witnessDecoded] at hSy
+  · intro epId replyIdOpt hSy
+    simp [witnessDecoded] at hSy
+  · intro rid r callerTid hSy
+    simp [witnessDecoded] at hSy
+  · intro notifId hSy
+    simp [witnessDecoded] at hSy
+  · intro rid prevCaller replyBadge epId hSy
+    simp [witnessDecoded] at hSy
+
+/-- The checked-tier pack is inhabited too: the base witness plus the
+declassifying signal's confinement, vacuous at a `.send`-shaped decode. -/
+theorem checkedSyscallDispatchQuiescence_inhabited :
+    checkedSyscallDispatchQuiescence witnessDecoded witnessTid witnessGate
+      witnessCap witnessSt3 :=
+  ⟨syscallDispatchQuiescence_inhabited, by
+    intro notifId hSy
+    simp [witnessDecoded] at hSy⟩
 
 end SeLe4n.Kernel

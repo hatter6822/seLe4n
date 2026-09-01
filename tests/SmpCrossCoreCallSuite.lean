@@ -542,6 +542,15 @@ private def runRendezvousChecks : IO Unit := do
 #check @syscallDispatchQuiescence
 #check @dispatchWithCap_preserves_ipcInvariantFull
 #check @dispatchSyscall_preserves_ipcInvariantFull
+-- WS-RR RR3.22 (third item) — the flow-checked dispatch tier: the checked
+-- dispatcher's payoffs (mirrored arms reduced to the unchecked payoff, the
+-- four SM9 arms closed from their frames), and the packs' inhabitation
+-- witnesses, whose state is built through the retype and binding levers:
+#check @checkedSyscallDispatchQuiescence
+#check @dispatchWithCapChecked_preserves_ipcInvariantFull
+#check @dispatchSyscallChecked_preserves_ipcInvariantFull
+#check @syscallDispatchQuiescence_inhabited
+#check @checkedSyscallDispatchQuiescence_inhabited
 
 /-- SM6.D.1 exact decomposition: the ∀-core bundle is equivalent to the global
 bundle plus the per-core passive-idle slices — nothing is weakened. -/

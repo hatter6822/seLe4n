@@ -150,8 +150,8 @@ extends it over the IPC fall-through arms and
 taint prologue, both under `syscallDispatchQuiescence`
 (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`).  Every pack field is a
 **pre-state** fact — the gate's zero-binding rule holds over the payoff tier
-too, and the family it measures is now **144** statements at zero post-state
-bindings; its success line reads `[PASS] ipcInvariantFull is de-threaded end
+too, and the family it measured at this cut was **144** statements at zero
+post-state bindings (the closing audit's checked tier below takes it to 146); its success line reads `[PASS] ipcInvariantFull is de-threaded end
 to end`, which until this cut it refused to print.
 
 The two top theorems are **staged, deliberately**: the `.call` arm composes
@@ -175,6 +175,45 @@ wrappers wrap).  WS-DT itself is
 and `docs/CLAIM_EVIDENCE_INDEX.md` carries the payoff row citing all three
 theorems.
 
+### The final audit cut: the checked tier, and the packs made honest twice over
+
+The closing audit of this PR held the payoff against RR3.22's row as written
+and found the row's third item — the flow-`Checked` dispatch wrappers — had
+been deferred to a debt row rather than delivered.  Per the
+implement-the-improvement rule the audit implemented it:
+`dispatchWithCapChecked_preserves_ipcInvariantFull` and
+`dispatchSyscallChecked_preserves_ipcInvariantFull` now carry the bundle
+across the information-flow-checked dispatcher.  The proof does not re-prove
+the arms: the checked dispatcher shares `dispatchCapabilityOnly` outright,
+and on every mirrored IPC arm a successful checked dispatch is shown to *be*
+a successful unchecked dispatch — each wrapper is an if-tower whose gates
+only filter — so the theorem consumes the unchecked payoff through the
+rebuilt dispatch equation, turning every "mirrors the unchecked arm" comment
+in `Kernel/API.lean` into a machine-checked fact.  The four SM9 arms that
+are live only on this tier close from their transitions' own frames:
+`auditReadFromCore_frame` pins `st' = st`, `auditDrain_frame` and
+`declassifyObjectFromCore_frame_of_ok` pin audit-log-only rewrites no
+`ipcInvariantFull` conjunct reads, and `.declassifySignal` composes the
+declassified signal's fallthrough bundle under the same unbound-delivery
+confinement as the ordinary signal arm.  The family the RR3.1 gate measures
+grew to **146** statements, still at zero post-state bindings.
+
+The same audit refined the packs in both directions.  Three fields left
+`syscallDispatchQuiescence`: `signalStage` and `waitStage` were *redundant*
+— their content derivable inside the proof from `reachable` via the
+transitions' own `objects.invExt` preservation lemmas — and `waitReady` was
+*dead*, declared and never consumed (the wait arm derives readiness from
+`callerShape`).  A smaller pack is a smaller trusted precondition.  And in
+the other direction, both packs gained what `ipcReachable` has had since
+RR3.14: **inhabitation witnesses** (`syscallDispatchQuiescence_inhabited`,
+`checkedSyscallDispatchQuiescence_inhabited`), whose witness state is built
+from the boot state *through the per-arm bundles themselves* — two
+`retypeWrite_preserves_ipcInvariantFull` steps and one
+`ipcInvariantFull_of_schedBindingRewrite` step — so the packs' first
+inhabitants are also the retype and binding levers' first end-to-end
+consumers, and an unsatisfiable pack field cannot hide behind a vacuously
+true payoff.
+
 ### Housekeeping
 
 `raw_lookup_tid` re-anchored twice, with the reason in the baseline header:
@@ -187,7 +226,11 @@ operation gained a raw lookup in either cut (the payoff cut's +85 is
 `API.lean` +3, the quiescence pack's Prop fields, plus the two new
 invariant-surface modules, every definition in which is Prop-valued); the
 typed-helper adoption floors are untouched, and the payoff re-anchor also
-raised the should-grow floors to the current adoption counts.
+raised the should-grow floors to the current adoption counts.  The closing
+audit cut re-anchored once more (1467 → 1468): the checked top-tier payoff
+proof performs the same object-store case analysis its unchecked mirror
+already performs — a proof-side `cases` scrutinee, not an operational
+lookup.
 
 Staged-only modules 63 → 65: `IPC/Invariant/Reachability.lean` and
 `IPC/Invariant/DispatchPayoff.lean` — the payoff composes the staged `.call`
@@ -207,7 +250,8 @@ figure this entry first carried:
   pre-state form.  The family this entry first quoted as fifty-nine was stale
   at commit (the gate then measured sixty-one); the widened family was
   **sixty-five**, still at zero post-state bindings — and the payoff tier
-  later in this same PR grows it to **144**, at zero throughout.
+  later in this same PR grows it to **144** and the closing audit's checked
+  tier to **146**, at zero throughout.
 * **A whole-bundle post-state hypothesis is its own finding.**  A statement
   hypothesising `ipcInvariantFull st'` of its conclusion's own state is the
   degenerate maximal threading — every conjunct at once — yet scored as a
