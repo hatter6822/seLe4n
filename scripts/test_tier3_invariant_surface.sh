@@ -220,7 +220,16 @@ run_check "INVARIANT" rg -n '^theorem syscallInvoke_requires_right' SeLe4n/Kerne
 # presence of production syscall dispatch path.
 run_check "INVARIANT" rg -n '^def dispatchSyscall' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def syscallEntry' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^private def dispatchWithCap' SeLe4n/Kernel/API.lean
+# WS-RR RR3.24 + the RR3 closing audit de-privatized dispatchWithCap and
+# dispatchWithCapChecked: the dispatch payoff theorems
+# (IPC/Invariant/DispatchPayoff.lean) must name both tiers from outside the
+# module, so the anchor pins their presence as public defs — matching the
+# dispatchSyscall/syscallEntry pins above — rather than a privacy that is no
+# longer true.  (The old `^private def dispatchWithCap` pin had been
+# satisfied by the Checked twin's line alone since the first
+# de-privatization: a presence check standing in for the wrong relation.)
+run_check "INVARIANT" rg -n '^def dispatchWithCap ' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def dispatchWithCapChecked' SeLe4n/Kernel/API.lean
 # S5-G: Page-alignment check in retypeFromUntyped
 run_check "INVARIANT" rg -n '^def requiresPageAlignment' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^def allocationBasePageAligned' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
