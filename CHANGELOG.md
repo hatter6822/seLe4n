@@ -455,6 +455,29 @@ ipcInvariantFull stMid = ipcInvariantFull stMid` no longer anchors
 `stMid` through its predicate symbol.  Four token-preserving fixtures;
 self-test 67 cases, 7/7 checks covered; census unchanged an eleventh
 time.
+A sixteenth pass replaced three more enumerations with the structures
+they stood for.  The conclusion parse now demands the family application
+*occupy* its conjunct — everything after the head must parse as argument
+material to the part's end — because rejecting an enumerated `∨`/`↔`
+still accepted `ipcInvariantFull st' = False`, a conclusion that
+contradicts the invariant.  The threading scan now measures *transparent
+aliases*: any collected state-predicate whose conjunctive expansion
+reaches a measured conjunct is measured too, derived from the same
+bodies map the conjuncts come from, so an `abbrev` wrapper is no longer
+a hole.  A `by exact` root body unwraps to its payload, and — closing
+the class rather than the instance — the canonical root body must now
+derive conjuncts *on its own*, so a canonical body the parser cannot
+read can no longer hide behind a partial shadow's union.  The rest of
+the round: command boundaries accept indentation (Lean never required
+column zero — the two body-collection patterns swept alike);
+tautological equations (`X = X`) are dropped from the anchor graph
+before their genuinely-shared tokens can launder anything; guillemet
+namespaces (`namespace «shadow»`) are pushed as scopes and guillemet
+identifiers (`«a"b»`) lex as code rather than opening a string; and a
+`private` canonical payoff is now a reported violation, since a
+module-local theorem is not a top-level consumer anyone downstream can
+name.  Nine token-preserving fixtures; self-test 76 cases; census
+unchanged a twelfth time.
 
 ### Housekeeping
 

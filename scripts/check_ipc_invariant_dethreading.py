@@ -172,10 +172,15 @@ _DECL_RE = re.compile(
     # `*`, not `?`: `@[simp] @[grind] theorem …` is valid Lean, and a
     # single-block pattern made the second routine attribute delete the
     # declaration from the census (PR #886 review).
+    # The modifiers are *captured*, not merely consumed (PR #886 review): a
+    # `private` payoff satisfies a presence check that discards visibility
+    # while giving downstream modules nothing they can name, so
+    # `declared_names` must see it.  The name accepts a guillemet-quoted
+    # identifier as one unit, matching the scope scanner.
     r"^\s*(?:@\[[^\]]*\]\s*)*"
-    r"(?:private\s+|protected\s+|partial\s+|noncomputable\s+|unsafe\s+"
-    r"|local\s+|scoped\s+)*"
-    r"(?:theorem|lemma)\s+([^\W\d][\w'.!?]*)",
+    r"(?P<mods>(?:private\s+|protected\s+|partial\s+|noncomputable\s+|unsafe\s+"
+    r"|local\s+|scoped\s+)*)"
+    r"(?:theorem|lemma)\s+(?P<name>«[^»\n]*»|[^\W\d][\w'.!?]*)",
     re.MULTILINE,
 )
 
@@ -267,6 +272,88 @@ def _connectivity_tokens(text: str, excluded: frozenset[str]) -> set[str]:
             continue
         tokens.add(token)
     return tokens
+
+
+def _informative_equation(group: str) -> bool:
+    """False when the binder group's type is a syntactic tautology `X = X`.
+
+    A reflexive equation is a valid hypothesis carrying no information about
+    the transition, and treating it as an anchor group lets it launder every
+    state it mentions: `hAnchor : pair st' stMid = pair st' stMid` shares the
+    genuinely-anchored `st'` and so bridged `stMid` into the pre-state set
+    (PR #886 review, after the predicate-symbol filter closed the
+    symbol-sharing variant).  The sides of the group's first plain depth-0
+    `=` (not `:=`, `==`, or `=>`) are normalised and compared; textual
+    equality means the equation relates nothing, so the group contributes no
+    anchors.  A group with no plain equation (a `fun … => …` type, say) is
+    left as it was -- this helper only rejects tautologies, it does not
+    decide what counts as a step equation.
+    """
+    colon = None
+    depth = 0
+    for offset, char in enumerate(group):
+        if char in _OPEN:
+            depth += 1
+        elif char in _CLOSE:
+            depth -= 1
+        elif (
+            char == ":"
+            and depth == 0
+            and group[offset + 1 : offset + 2] != "="
+        ):
+            colon = offset
+            break
+    body = group[colon + 1 :] if colon is not None else group
+    depth = 0
+    for offset, char in enumerate(body):
+        if char in _OPEN:
+            depth += 1
+        elif char in _CLOSE:
+            depth -= 1
+        elif (
+            char == "="
+            and depth == 0
+            and body[offset + 1 : offset + 2] not in ("=", ">")
+            and (offset == 0 or body[offset - 1] not in ":=!<>")
+        ):
+            return _normalise(body[:offset]) != _normalise(body[offset + 1 :])
+    return True
+
+
+def _application_spans(part: str, start: int) -> bool:
+    """True when everything from `start` to the part's end is argument
+    material: identifier, numeral, or bracketed-group units (each with an
+    optional projection chain) separated by whitespace.
+
+    This is what makes a family application *occupy* its conjunct rather
+    than head an unparsed larger proposition: a depth-0 operator of any
+    kind after the arguments -- `= False`, `∨ True`, an arrow -- fails the
+    walk (PR #886 review: enumerating rejected connectives left `=`
+    accepted, and `ipcInvariantFull st' = False` contradicts the invariant
+    while reading as a family conclusion; the application grammar is the
+    derivation, the connective list was the enumeration).
+    """
+    index = start
+    while index < len(part):
+        char = part[index]
+        if char in " \t\n":
+            index += 1
+            continue
+        if char in _OPEN:
+            end = balanced_span(part, index)
+            if end is None:
+                return False
+            chain = re.match(r"(?:\.(?:\d+|[^\W\d][\w'!?]*))*", part[end:])
+            index = end + chain.end()
+            continue
+        unit = re.match(
+            r"(?:[^\W\d][\w'!?]*|\d+)(?:\.(?:\d+|[^\W\d][\w'!?]*))*",
+            part[index:],
+        )
+        if unit is None or unit.end() == 0:
+            return False
+        index += unit.end()
+    return True
 
 
 def _returns_state(rhs: str, state: str) -> bool:
@@ -415,6 +502,7 @@ def _blank_strings(source: str) -> str:
     out: list[str] = []
     in_string = False
     in_char = False
+    in_quoted = False
     escaped = False
     for char in source:
         if in_string or in_char:
@@ -434,9 +522,19 @@ def _blank_strings(source: str) -> str:
                 out.append(char)
             else:
                 out.append(" ")
+        elif in_quoted:
+            # A guillemet-quoted identifier (`«a"b»`) is code, not data: its
+            # characters survive, and a double quote inside it must not open
+            # a string, or the rest of the file is blanked and every later
+            # declaration leaves the census (PR #886 review).
+            out.append(char)
+            if char == "»":
+                in_quoted = False
         else:
             out.append(char)
-            if char == '"':
+            if char == "«":
+                in_quoted = True
+            elif char == '"':
                 in_string = True
             elif char == "'" and (not out[:-1] or not re.match(
                 r"[\w'!?]", out[-2] if len(out) >= 2 else " "
@@ -621,9 +719,16 @@ def split_conjunction(body: str) -> list[str]:
 # the body, and the trailing tokens broke that conjunct's exact-application
 # parse -- the same corruption `class` caused a round earlier.  Shared by the
 # body collector and the `variable`-command capture, so the two slices cannot
-# drift.
+# drift.  Commands may be *indented* (PR #886 review): Lean does not require
+# column zero, so `  class Dummy where` bounds the preceding body exactly as
+# the flush spelling does -- the anchor admits horizontal whitespace, and the
+# same-question sweep gave the two collection patterns below the same prefix,
+# since an indented `def` is otherwise a definition the map never collects.
+# The residual is a body whose own *term* line opens with a command keyword
+# (`open … in` inside a definition body): none exists in the tree, and losing
+# one truncates the derived set, which the census pin surfaces.
 _COMMAND_STOP = re.compile(
-    r"^(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped)\s+)*"
+    r"^[ \t]*(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped)\s+)*"
     r"(?:@\[|/-|#"
     r"|(?:def|theorem|lemma|abbrev|structure|inductive|instance|class"
     r"|end|namespace|open|opaque|axiom|example|attribute|universe"
@@ -675,7 +780,7 @@ def state_predicate_bodies(
     # and the name capture is the Unicode identifier class, both matching
     # `_DECL_RE` (PR #886 review, next round).
     pattern = re.compile(
-        r"^(?:@\[[^\]]*\]\s*)*"
+        r"^[ \t]*(?:@\[[^\]]*\]\s*)*"
         r"(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped)\s+)*"
         r"(?:def|abbrev)\s+([^\W\d][\w'!?]*)"
         r"\s*\(\s*([^\W\d][\w']*)\s*:\s*SystemState\s*\)"
@@ -688,7 +793,7 @@ def state_predicate_bodies(
     # on a routine refactor while a namespaced shadow kept the union
     # nonempty.
     arrow_pattern = re.compile(
-        r"^(?:@\[[^\]]*\]\s*)*"
+        r"^[ \t]*(?:@\[[^\]]*\]\s*)*"
         r"(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped)\s+)*"
         r"(?:def|abbrev)\s+([^\W\d][\w'!?]*)"
         r"\s*:\s*SystemState\s*(?:→|->)\s*Prop\s*:=\s*"
@@ -720,6 +825,71 @@ def state_predicate_bodies(
     return bodies
 
 
+# One conjunction part that is exactly one predicate applied to the
+# definition's own (already `st`-renamed) state binder.
+# The argument may carry redundant grouping -- `newQueueConsistent (st)`
+# is the same application as `newQueueConsistent st`, and rejecting the
+# grouped spelling would silently drop a new conjunct from the derived
+# set (PR #886 review).
+# A qualifier on the *definition* side is stripped rather than stored:
+# the derived set holds unqualified names, and the bundle scan matches
+# them behind any uppercase-led qualifier -- deriving `Foo.pred` verbatim
+# would silently stop matching the bare spelling (PR #886 review: the
+# qualifier fix applied to the scan and not to this, its sibling site).
+# `_root_.` is accepted here for the same reason it is in `_qualified` --
+# the same round's sweep of the same question's sibling sites.
+# The argument may also be spelled as a named argument (PR #886 review:
+# the bundle comparisons normalise `(st := st')` while this, the
+# definition side, accepted only the positional form).  The label is
+# *any* identifier, not the literal `st` (PR #886 review, a later
+# round): the label names the **called** predicate's own binder --
+# `replyCallerLinkage (σ := st)` is the routine spelling against a
+# `(σ : SystemState)` definition -- while the collection substitution has
+# already renamed only *this* definition's binder to `st`, so pinning
+# the label to `st` dropped every such application from the derived
+# set.
+# Case-free qualifier chain, like the bundle scans (PR #886 review: the
+# binder-name fix reached the scans and not this, its sibling -- a
+# lowercase-namespace conjunct spelling dropped from the derived set).
+# A definition body has no hypothesis binders, so no projection filter
+# is needed here; `_root_.` is covered by the general class.
+_APPLIED_RE = re.compile(
+    r"^\s*(?:[^\W\d][\w']*\.)*"
+    r"([^\W\d][\w'!?]*)\s+(?:\(\s*(?:[^\W\d][\w']*\s*:=\s*)?st\s*\)|st)\s*$"
+)
+
+
+def _sub_predicates(bodies: dict[str, list[tuple[str, str]]], name: str) -> set[str]:
+    """The predicates a name's bodies apply conjunctively to their state.
+
+    Each part is normalised (redundant enclosing parentheses stripped)
+    and a part that then still splits is re-split, so a harmlessly
+    regrouped body -- `(A st ∧ B st)`, opaque to one depth-0 pass --
+    yields its conjuncts instead of silently dropping them
+    (PR #886 review).  A `by exact e` wrapper unwraps to its payload
+    (PR #886 review, a later round): the tactic spelling elaborates to
+    the same proposition, and a parser blind to it derived nothing from
+    a body every reader sees as a conjunction.
+    """
+    found = set()
+    for _prefix, body in bodies.get(name, []):
+        stack = [body]
+        while stack:
+            expr = _normalise(stack.pop())
+            wrapped = re.match(r"by\s+exact\s+(.+)$", expr, re.DOTALL)
+            if wrapped:
+                stack.append(wrapped.group(1))
+                continue
+            parts = split_conjunction(expr)
+            if len(parts) > 1:
+                stack.extend(parts)
+                continue
+            hit = _APPLIED_RE.match(parts[0])
+            if hit:
+                found.add(hit.group(1))
+    return found
+
+
 def derive_conjuncts(bodies: dict[str, list[tuple[str, str]]]) -> set[str]:
     """The conjuncts of `ipcInvariantFull`, closed under definitional unfolding.
 
@@ -742,67 +912,50 @@ def derive_conjuncts(bodies: dict[str, list[tuple[str, str]]]) -> set[str]:
     if ROOT_INVARIANT not in bodies:
         return set()
 
-    # The argument may carry redundant grouping -- `newQueueConsistent (st)`
-    # is the same application as `newQueueConsistent st`, and rejecting the
-    # grouped spelling would silently drop a new conjunct from the derived
-    # set (PR #886 review).
-    # A qualifier on the *definition* side is stripped rather than stored:
-    # the derived set holds unqualified names, and the bundle scan matches
-    # them behind any uppercase-led qualifier -- deriving `Foo.pred` verbatim
-    # would silently stop matching the bare spelling (PR #886 review: the
-    # qualifier fix applied to the scan and not to this, its sibling site).
-    # `_root_.` is accepted here for the same reason it is in `_qualified` --
-    # the same round's sweep of the same question's sibling sites.
-    # The argument may also be spelled as a named argument (PR #886 review:
-    # the bundle comparisons normalise `(st := st')` while this, the
-    # definition side, accepted only the positional form).  The label is
-    # *any* identifier, not the literal `st` (PR #886 review, a later
-    # round): the label names the **called** predicate's own binder --
-    # `replyCallerLinkage (σ := st)` is the routine spelling against a
-    # `(σ : SystemState)` definition -- while the substitution above has
-    # already renamed only *this* definition's binder to `st`, so pinning
-    # the label to `st` dropped every such application from the derived
-    # set.
-    # Case-free qualifier chain, like the bundle scans (PR #886 review: the
-    # binder-name fix reached the scans and not this, its sibling -- a
-    # lowercase-namespace conjunct spelling dropped from the derived set).
-    # A definition body has no hypothesis binders, so no projection filter
-    # is needed here; `_root_.` is covered by the general class.
-    applied = re.compile(
-        r"^\s*(?:[^\W\d][\w']*\.)*"
-        r"([^\W\d][\w'!?]*)\s+(?:\(\s*(?:[^\W\d][\w']*\s*:=\s*)?st\s*\)|st)\s*$"
-    )
-
-    def sub_predicates(name: str) -> set[str]:
-        # Each part is normalised (redundant enclosing parentheses stripped)
-        # and a part that then still splits is re-split, so a harmlessly
-        # regrouped body -- `(A st ∧ B st)`, opaque to one depth-0 pass --
-        # yields its conjuncts instead of silently dropping them
-        # (PR #886 review).
-        found = set()
-        for _prefix, body in bodies.get(name, []):
-            stack = [body]
-            while stack:
-                expr = _normalise(stack.pop())
-                parts = split_conjunction(expr)
-                if len(parts) > 1:
-                    stack.extend(parts)
-                    continue
-                hit = applied.match(parts[0])
-                if hit:
-                    found.add(hit.group(1))
-        return found
-
-    conjuncts = sub_predicates(ROOT_INVARIANT)
+    conjuncts = _sub_predicates(bodies, ROOT_INVARIANT)
     frontier = set(conjuncts)
     while frontier:
         name = frontier.pop()
-        for nested in sub_predicates(name):
+        for nested in _sub_predicates(bodies, name):
             if nested not in conjuncts:
                 conjuncts.add(nested)
                 frontier.add(nested)
     conjuncts.discard(ROOT_INVARIANT)
     return conjuncts
+
+
+def threading_aliases(
+    bodies: dict[str, list[tuple[str, str]]], conjuncts: set[str]
+) -> set[str]:
+    """Predicates whose definitional expansion entails a measured conjunct.
+
+    A bundle can thread a conjunct without naming it (PR #886 review):
+    `abbrev threadedAliasHypothesis (s : SystemState) : Prop :=
+    blockedThreadsPendingMessageConsistent s` bound as `(h :
+    threadedAliasHypothesis st')` is definitionally the same post-state
+    hypothesis, invisible to a scan over canonical names.  The alias set is
+    *derived from the same bodies map the conjuncts come from*: any collected
+    state-predicate whose conjunctive expansion (transitively) reaches a
+    measured conjunct is measured too, so binding it anywhere a conjunct
+    could not be bound is the same finding.  A predicate that reaches a
+    conjunct only under a weaker connective (`∨`, `∃`) contributes no
+    sub-predicates and is correctly excluded -- assuming it does not assume
+    the conjunct.  The family's own forms are excluded: they are the
+    pre-state vocabulary, policed by `no_conclusion_state_hypothesis`.
+    """
+    expansions = {name: _sub_predicates(bodies, name) for name in bodies}
+    excluded = {ROOT_INVARIANT, *PRE_STATE_PREDICATES, *conjuncts}
+    aliases: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for name, expansion in expansions.items():
+            if name in excluded or name in aliases:
+                continue
+            if expansion & (conjuncts | aliases):
+                aliases.add(name)
+                changed = True
+    return aliases
 
 
 class Bundle:
@@ -906,7 +1059,9 @@ class Bundle:
                 if end is None:
                     break
                 region = self.binders[index:end]
-                if "=" in region:
+                if "=" in region and _informative_equation(
+                    self.binders[index + 1 : end - 1]
+                ):
                     groups.append(_connectivity_tokens(region, self.excluded))
                 index = end
             else:
@@ -918,7 +1073,11 @@ class Bundle:
         # about the transition, and wholesale harvesting let it launder
         # `stMid` into the pre-state set).  What remains accepted is an
         # equation chain genuinely reaching the conclusion's tokens, which is
-        # the relation this set exists to capture.
+        # the relation this set exists to capture.  A *tautological* equation
+        # never joins the graph at all (`_informative_equation`; PR #886
+        # review, a later round): `pair st' stMid = pair st' stMid` shares
+        # the genuinely-anchored `st'`, and connectivity alone would let a
+        # no-information hypothesis launder `stMid` through it.
         changed = True
         while changed:
             changed = False
@@ -987,14 +1146,17 @@ class Bundle:
         application exactly when the application is the whole segment or a
         depth-0 conjunct of it -- a conjunction proves each conjunct, while
         no other connective proves its arms -- so the segment is split on
-        depth-0 `∧` recursively and each part counts only when it is a
-        *bare* family application: family head at the part's start (behind
-        an optional qualifier chain that is not a binder projection) and no
-        depth-0 disjunction or iff in the part.  The residual
-        under-approximation is a conclusion that entails the invariant only
-        semantically (an ASCII `/\`-spelled right conjunct, a
-        quantifier-wrapped application); those read as `None`, which fails
-        closed via `family_conclusion`.
+        depth-0 `∧` recursively and each part counts only when the family
+        application *occupies* it: family head at the part's start (behind
+        an optional qualifier chain that is not a binder projection), and
+        everything after the head parsing as argument material to the
+        part's end (`_application_spans`; PR #886 review, the round after:
+        rejecting an enumerated `∨`/`↔` left `ipcInvariantFull st' = False`
+        -- a conclusion that *contradicts* the invariant -- reading as a
+        family conclusion).  The residual under-approximation is a
+        conclusion that entails the invariant only semantically (an ASCII
+        `/\`-spelled right conjunct, a quantifier-wrapped application);
+        those read as `None`, which fails closed via `family_conclusion`.
 
         `None` for a declaration that carries the family marker in its name
         without concluding a family proposition -- since the vacuous-shape
@@ -1014,24 +1176,11 @@ class Bundle:
                 continue
             flat.append(part)
         for part in flat:
-            depth = 0
-            entailed = True
-            for offset, char in enumerate(part):
-                if char in _OPEN:
-                    depth += 1
-                elif char in _CLOSE:
-                    depth -= 1
-                elif depth == 0 and (
-                    char in "∨↔"
-                    or (char == "\\" and part[offset + 1 : offset + 2] == "/")
-                ):
-                    entailed = False
-                    break
-            if not entailed:
-                continue
             for predicate in PRE_STATE_PREDICATES:
                 hit = re.match(_qualified(predicate), part)
                 if hit is None or _projection_hit(hit.group(1), binder_names):
+                    continue
+                if not _application_spans(part, hit.end()):
                     continue
                 argument = first_argument(part, hit.end())
                 if argument:
@@ -1105,8 +1254,13 @@ class Bundle:
         return findings
 
 
+# The namespace name is a dotted chain whose segments may be guillemet-quoted
+# (PR #886 review): `namespace «shadow»` is a scope Lean accepts, and a
+# scanner that did not push it recorded declarations inside under the
+# *enclosing* prefix -- which is exactly where a shadow must not be recorded.
 _SCOPE_RE = re.compile(
-    r"^\s*(?:namespace\s+(?P<ns>[^\W\d][\w'.]*)"
+    r"^\s*(?:namespace\s+"
+    r"(?P<ns>(?:«[^»\n]*»|[^\W\d][\w']*)(?:\.(?:«[^»\n]*»|[^\W\d][\w']*))*)"
     r"|(?:noncomputable\s+)?(?P<sec>section)\b"
     r"|(?P<mut>mutual)\b"
     r"|(?P<end>end)\b)",
@@ -1217,7 +1371,7 @@ def collect_bundles(
         breakpoints = namespace_breakpoints(source)
         intervals = variable_intervals(source)
         for match in _DECL_RE.finditer(source):
-            name = match.group(1)
+            name = match.group("name")
             if not any(marker in name for marker in BUNDLE_MARKERS):
                 continue
             end = signature_end(source, match.end())
@@ -1238,20 +1392,28 @@ def collect_bundles(
     return bundles
 
 
-def declared_names(root: str, sources: list[str]) -> dict[str, set[str]]:
-    """Every theorem/lemma name in the code view -> its namespace prefixes.
+def declared_names(root: str, sources: list[str]) -> dict[str, set[tuple[str, str]]]:
+    """Every theorem/lemma name in the code view -> its (prefix, visibility)
+    declaration sites.
 
     Prefix-aware (PR #886 review): a bare name set let a `namespace Shadow`
     declaration stand in for a deleted global payoff, so the payoff lookups
     must see where each name is declared, not merely that it is.
+    Visibility-aware too (PR #886 review, a later round): a `private` payoff
+    under the canonical namespace satisfies a presence check that discards
+    the modifier while giving downstream modules nothing they can name, so
+    each site records `"private"` or `""` alongside its prefix.
     """
-    names: dict[str, set[str]] = {}
+    names: dict[str, set[tuple[str, str]]] = {}
     for relative in sources:
         source = code_view(root, relative)
         breakpoints = namespace_breakpoints(source)
         for match in _DECL_RE.finditer(source):
-            names.setdefault(match.group(1), set()).add(
-                prefix_at(breakpoints, match.start())
+            names.setdefault(match.group("name"), set()).add(
+                (
+                    prefix_at(breakpoints, match.start()),
+                    "private" if "private" in match.group("mods") else "",
+                )
             )
     return names
 
@@ -1282,7 +1444,7 @@ def read_pending(root: str) -> dict[str, tuple[str, str]]:
 
 
 def payoff_status(
-    names: dict[str, set[str]], pending: dict[str, tuple[str, str]]
+    names: dict[str, set[tuple[str, str]]], pending: dict[str, tuple[str, str]]
 ) -> list[str]:
     """Violations from the payoff check, registration included.
 
@@ -1292,16 +1454,27 @@ def payoff_status(
     registration for something outside the payoff set is *dangling* and fails,
     for the same reason in the other direction.
 
-    "Declared" means declared under `PAYOFF_NAMESPACE`: a same-named theorem
-    in any other namespace is a shadow, not the payoff, and is itself a
-    finding whether or not the canonical one exists (PR #886 review).
+    "Declared" means declared *public* under `PAYOFF_NAMESPACE`: a same-named
+    theorem in any other namespace is a shadow, not the payoff, and is itself
+    a finding whether or not the canonical one exists (PR #886 review) -- and
+    a `private` declaration under the canonical namespace is a finding too
+    (PR #886 review, a later round), because a module-local theorem is not a
+    top-level consumer downstream code can name.
     """
     problems: list[str] = []
     for payoff in PAYOFF_THEOREMS:
         registered = payoff in pending
-        prefixes = names.get(payoff, set())
-        present = PAYOFF_NAMESPACE in prefixes
+        entries = names.get(payoff, set())
+        prefixes = {prefix for prefix, _visibility in entries}
+        present = (PAYOFF_NAMESPACE, "") in entries
+        private_only = (PAYOFF_NAMESPACE, "private") in entries and not present
         shadows = sorted(prefixes - {PAYOFF_NAMESPACE})
+        if private_only:
+            problems.append(
+                f"payoff_theorems: `{payoff}` is declared `private` in the "
+                f"canonical `{PAYOFF_NAMESPACE}` namespace -- a module-local "
+                f"payoff is not a top-level consumer downstream code can name"
+            )
         if shadows:
             problems.append(
                 f"payoff_theorems: `{payoff}` is declared under namespace(s) "
@@ -1314,7 +1487,7 @@ def payoff_status(
                 f"payoff_theorems: `{payoff}` is declared but still registered as "
                 f"pending in {PENDING_FILE}; delete the registration"
             )
-        elif not present and not registered:
+        elif not present and not registered and not private_only:
             problems.append(
                 f"payoff_theorems: `{payoff}` is not declared in the canonical "
                 f"`{PAYOFF_NAMESPACE}` namespace and is not registered as "
@@ -1361,8 +1534,31 @@ def run_checks(root: str) -> list[str]:
         )
         return problems
 
+    # The canonical root's own body must contribute (PR #886 review): the
+    # presence check above accepts a body the exact-application parser cannot
+    # read (`:= by { exact … }` behind a tactic shape the unwrap does not
+    # know), and the union then holds only what *shadows* derived -- the
+    # exemption shape again, one level down.  Only the root entry is
+    # filtered: shadows of nested conjuncts still widen legitimately.
+    canonical_bodies = dict(bodies)
+    canonical_bodies[ROOT_INVARIANT] = [
+        entry for entry in bodies[ROOT_INVARIANT] if entry[0] == ROOT_NAMESPACE
+    ]
+    if not derive_conjuncts(canonical_bodies):
+        problems.append(
+            f"conjuncts_derived: the canonical `{ROOT_NAMESPACE}` body of "
+            f"`{ROOT_INVARIANT}` derives no conjuncts on its own -- the "
+            f"derived set would be a shadow's; the root body must parse as a "
+            f"conjunction of predicate applications"
+        )
+        return problems
+
+    # Aliases are measured exactly as conjuncts are (PR #886 review): a
+    # predicate that definitionally entails a conjunct is that conjunct for
+    # threading purposes, and it is a Prop-former for connectivity purposes.
+    measured = conjuncts | threading_aliases(bodies, conjuncts)
     bundles = collect_bundles(
-        root, sources, frozenset(conjuncts) | frozenset(PRE_STATE_PREDICATES)
+        root, sources, frozenset(measured) | frozenset(PRE_STATE_PREDICATES)
     )
     # A family-marker name is a claim about the conclusion, and the claim is
     # checked rather than trusted (PR #886 review): a conclusion that merely
@@ -1415,7 +1611,7 @@ def run_checks(root: str) -> list[str]:
                 f"whole-bundle form of threading"
             )
             continue
-        for conjunct, state in bundle.threaded(conjuncts):
+        for conjunct, state in bundle.threaded(measured):
             problems.append(
                 f"no_post_state_binding: {bundle.path}:{bundle.line}: "
                 f"`{bundle.name}` binds `{conjunct}` on `{state}`, which is not "
@@ -1480,9 +1676,11 @@ def run_checks(root: str) -> list[str]:
 def report(root: str) -> int:
     """Print the census: bundles, conjuncts, and every post-state binding."""
     sources = lean_sources(root)
-    conjuncts = derive_conjuncts(state_predicate_bodies(root, sources))
+    bodies = state_predicate_bodies(root, sources)
+    conjuncts = derive_conjuncts(bodies)
+    measured = conjuncts | threading_aliases(bodies, conjuncts)
     bundles = collect_bundles(
-        root, sources, frozenset(conjuncts) | frozenset(PRE_STATE_PREDICATES)
+        root, sources, frozenset(measured) | frozenset(PRE_STATE_PREDICATES)
     )
     print(f"conjuncts derived from `{ROOT_INVARIANT}`: {len(conjuncts)}")
     for conjunct in sorted(conjuncts):
@@ -1492,7 +1690,7 @@ def report(root: str) -> int:
     tally: dict[str, int] = {}
     threaded_bundles = 0
     for bundle in sorted(bundles, key=lambda b: (b.path, b.line)):
-        findings = bundle.threaded(conjuncts)
+        findings = bundle.threaded(measured)
         if not findings:
             continue
         threaded_bundles += 1
@@ -3185,6 +3383,243 @@ end σ""",
             bridged_anchor,
             True,
             check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A family application heading an equality: `ipcInvariantFull st' = False`
+    # contradicts the invariant, and rejecting an enumerated `∨`/`↔` still
+    # accepted it -- the application must occupy the conjunct.
+    equality_conclusion = _fixture()
+    equality_conclusion["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    ipcInvariantFull st' := by",
+            "    ipcInvariantFull st' = False := by",
+        )
+    )
+    cases.append(
+        _Case(
+            "a family application heading an equality is not a family conclusion",
+            equality_conclusion,
+            True,
+            check="family_conclusion",
+            mutation="preserving",
+        )
+    )
+
+    # An *indented* command boundary: Lean does not require column zero, so
+    # `  class …` bounds the preceding body exactly as the flush spelling
+    # does -- an anchor blind to indentation absorbed it.
+    indented_class = _fixture()
+    indented_class[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def replyCallerLinkage (st : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st",
+        "def replyCallerLinkage (st : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st\n"
+        "\n"
+        "  class ReplyLinkageMarker where\n"
+        "    markerField : Prop",
+    )
+    indented_class["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (h : blockedOnReplyHasReplyObject st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "an indented `class` declaration still bounds the preceding body",
+            indented_class,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A tautological equation sharing a *real* anchor token: `pair st' stMid
+    # = pair st' stMid` relates nothing, yet its genuine `st'` connected it
+    # to the conclusion and `stMid` rode along into the anchors.
+    tautological_anchor = _fixture()
+    tautological_anchor["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (st st' : SystemState)\n",
+            "    (st stMid st' : SystemState)\n",
+        ).replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hAnchor : pair st' stMid = pair st' stMid)\n"
+            "    (hMid : ipcInvariantCore stMid)\n"
+            "    (hT : blockedThreadsPendingMessageConsistent stMid)\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a tautological equation does not anchor the states it mentions",
+            tautological_anchor,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A guillemet-quoted namespace is a scope: unparsed, its declarations
+    # recorded the *enclosing* canonical prefix, so a quoted shadow stood in
+    # for a deleted payoff.
+    quoted_namespace = _fixture()
+    quoted_namespace["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        """theorem dispatchSyscallChecked_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep""",
+        """namespace «shadow»
+
+theorem dispatchSyscallChecked_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscallChecked st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep
+
+end «shadow»""",
+    )
+    cases.append(
+        _Case(
+            "a quoted-namespace shadow cannot stand in for a deleted payoff",
+            quoted_namespace,
+            True,
+            check="payoff_theorems",
+            mutation="preserving",
+        )
+    )
+
+    # A double quote inside a guillemet-quoted identifier is part of the
+    # identifier, not a string delimiter: a lexer that opened a string there
+    # blanked the rest of the file and its threaded bundle with it.
+    quoted_identifier = _fixture()
+    quoted_identifier[
+        "SeLe4n/Kernel/IPC/Invariant/Structural/QuotedIdentBundles.lean"
+    ] = (
+        'def «a"b» : Nat := 0\n'
+        "\n"
+        + CLEAN_BUNDLE.replace(
+            "theorem endpointSendDual_preserves_ipcInvariantFull",
+            "theorem endpointStashDual_preserves_ipcInvariantFull",
+        ).replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hT : blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a threaded bundle after a quote-bearing quoted identifier is seen",
+            quoted_identifier,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A `private` payoff under the canonical namespace: presence that
+    # discards visibility scored it as the top-level consumer, which
+    # downstream modules cannot even name.
+    private_payoff = _fixture()
+    private_payoff["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        "theorem dispatchSyscall_preserves_ipcInvariantFull",
+        "private theorem dispatchSyscall_preserves_ipcInvariantFull",
+    )
+    cases.append(
+        _Case(
+            "a private canonical payoff is not a top-level consumer",
+            private_payoff,
+            True,
+            check="payoff_theorems",
+            mutation="preserving",
+        )
+    )
+
+    # A transparent alias of a measured conjunct: binding it on the
+    # post-state is definitionally the same hypothesis, invisible to a scan
+    # over canonical names only.
+    alias_threading = _fixture()
+    alias_threading["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        "abbrev threadedAliasHypothesis (s : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent s\n"
+        "\n"
+        + CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hA : threadedAliasHypothesis st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a transparent alias of a conjunct is measured like the conjunct",
+            alias_threading,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # A `by exact` root body beside a partial shadow: the canonical body
+    # derived nothing, the shadow kept the union nonempty, and the conjunct
+    # only the canonical body carries went unmeasured.
+    tactic_root = _fixture()
+    tactic_root[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st",
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  by exact (blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st)\n"
+        "\n"
+        "namespace ShadowView\n"
+        "\n"
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st\n"
+        "\n"
+        "end ShadowView",
+    )
+    tactic_root["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hRecip : replyCallerLinkageReciprocal st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a `by exact` root body still derives its conjunction",
+            tactic_root,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # The same shape behind a tactic block the unwrap does not know: the
+    # canonical body must contribute on its own, or the derived set is a
+    # shadow's -- reported, never silently narrowed.
+    opaque_root = _fixture()
+    opaque_root[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st",
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  by { exact (blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st) }\n"
+        "\n"
+        "namespace ShadowView\n"
+        "\n"
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st\n"
+        "\n"
+        "end ShadowView",
+    )
+    cases.append(
+        _Case(
+            "a canonical root body that derives nothing is reported, not shadowed",
+            opaque_root,
+            True,
+            check="conjuncts_derived",
             mutation="preserving",
         )
     )
