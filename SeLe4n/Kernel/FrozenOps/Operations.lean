@@ -480,8 +480,15 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
                       match st.objects.set notificationId (.notification ntfn') with
                       | some objects' =>
                           let st' := { st with objects := objects' }
-                          match (frozenStoreTcbIpcState st' waiter
-                              (.blockedOnNotification notificationId)).map
+                          -- PR #886 review: clear `pendingMessage` atomically
+                          -- with the block, exactly as the live idle-wait path
+                          -- does since the RR3.5 fix -- storing state alone
+                          -- carried a consumed message into
+                          -- `.blockedOnNotification` on this side only, a
+                          -- live/frozen divergence on the mirror's own
+                          -- `TCB.pendingMessage` content channel.
+                          match (frozenStoreTcbIpcStateAndMessage st' waiter
+                              (.blockedOnNotification notificationId) none).map
                               (fun stB => frozenRemoveRunnable stB waiter) with
                           | .error e => .error e
                           | .ok st'' => .ok (none, st'')

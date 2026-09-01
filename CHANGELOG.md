@@ -242,6 +242,24 @@ the payoffs conclude `ipcInvariantFull` alone, so they do not chain down a
 trace without `ipcReachable` preservation — is registered as a WS-DT debt
 row (trace composition, SM10).
 
+Codex's second pass (on the audit head) added four more, all closed in the
+same way.  One was **behavioral**: the RR3.5 fix taught the live
+idle-notification wait to clear `pendingMessage` atomically with the park,
+and `frozenNotificationWait` — mirroring state alone through
+`frozenStoreTcbIpcState` — silently kept the stale message, a live/frozen
+divergence on the mirror's own content channel.  The frozen twin now stores
+state and message together (`frozenStoreTcbIpcStateAndMessage`), the
+`notificationWaitBlocks` branch flips from "scenario owed" to
+differentially checked (its interlocks made both edits mandatory), and the
+new FO-038 scenario parks a waiter that enters holding a collected message,
+pinning the atomic clear on both sides.  The other three were gate checks:
+the conjunct derivation accepts a parenthesised binder application
+(`pred (st)`), the threading scan covers unnamed implication premises after
+the declaration colon (`conjunct st' → ipcInvariantFull st'`), and
+`--report` — cited as an evidence command — now derives its exit status
+from the same checks as the default mode instead of printing violations and
+exiting 0.  Self-test: 28 cases.
+
 ### Housekeeping
 
 `raw_lookup_tid` re-anchored twice, with the reason in the baseline header:

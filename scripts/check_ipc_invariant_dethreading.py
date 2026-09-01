@@ -389,7 +389,11 @@ def derive_conjuncts(bodies: dict[str, str]) -> set[str]:
     if ROOT_INVARIANT not in bodies:
         return set()
 
-    applied = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_'!?]*)\s+st\s*$")
+    # The argument may carry redundant grouping -- `newQueueConsistent (st)`
+    # is the same application as `newQueueConsistent st`, and rejecting the
+    # grouped spelling would silently drop a new conjunct from the derived
+    # set (PR #886 review).
+    applied = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_'!?]*)\s+\(?\s*st\s*\)?\s*$")
 
     def sub_predicates(body: str) -> set[str]:
         found = set()
@@ -505,17 +509,26 @@ class Bundle:
         return None
 
     def threaded(self, conjuncts: set[str]) -> list[tuple[str, str]]:
-        """(conjunct, state) for every conjunct bound on a non-pre-state."""
+        """(conjunct, state) for every conjunct bound on a non-pre-state.
+
+        The conclusion is scanned as well as the named binders: an unnamed
+        implication premise after the declaration's colon (`conjunct st' →
+        ipcInvariantFull st'`) is the same threading in telescope clothing
+        (PR #886 review).  No bundle legitimately *concludes* a conjunct --
+        the family concludes family predicates -- so a conjunct application
+        anywhere in the signature is a hypothesis.
+        """
         pre = self.pre_states()
         findings = []
         for conjunct in sorted(conjuncts):
-            for hit in re.finditer(_qualified(conjunct), self.binders):
-                argument = first_argument(self.binders, hit.end())
-                if argument is None:
-                    continue
-                state = _normalise(argument)
-                if state not in pre:
-                    findings.append((conjunct, state))
+            for region in (self.binders, self.conclusion):
+                for hit in re.finditer(_qualified(conjunct), region):
+                    argument = first_argument(region, hit.end())
+                    if argument is None:
+                        continue
+                    state = _normalise(argument)
+                    if state not in pre:
+                        findings.append((conjunct, state))
         return findings
 
 
@@ -735,6 +748,14 @@ def report(root: str) -> int:
             print(f"             {reason}")
         else:
             print(f"  MISSING    {payoff}")
+    # The census is informational; the exit status is not (PR #886 review):
+    # `--report` is cited as an evidence command, so it must fail on the
+    # same violations the default mode fails on rather than printing them
+    # and exiting 0.
+    problems = run_checks(root)
+    if problems:
+        print(f"\n[FAIL] {len(problems)} violation(s); run without --report for the list")
+        return 1
     return 0
 
 
@@ -962,6 +983,52 @@ def self_test() -> int:
             unstepped,
             True,
             check="payoff_statement",
+            mutation="preserving",
+        )
+    )
+
+    # Grouped conjunct argument: a conjunct written `pred (st)` in the
+    # definition must still enter the derived set, or threading it goes
+    # unmeasured.
+    grouped = _fixture()
+    grouped[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent st ∧ replyCallerLinkage st",
+        "def ipcInvariantFull (st : SystemState) : Prop :=\n"
+        "  blockedThreadsPendingMessageConsistent (st) ∧ replyCallerLinkage st",
+    )
+    grouped["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (hT : blockedThreadsPendingMessageConsistent st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "conjunct applied to a parenthesised binder still derives and flags",
+            grouped,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Implication-premise threading: the conjunct hypothesis moves out of the
+    # named binders into an unnamed premise after the colon.
+    telescoped = _fixture()
+    telescoped["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    ipcInvariantFull st' := by",
+            "    blockedThreadsPendingMessageConsistent st' → ipcInvariantFull st' := by",
+        )
+    )
+    cases.append(
+        _Case(
+            "conjunct threaded as an unnamed implication premise in the conclusion",
+            telescoped,
+            True,
+            check="no_post_state_binding",
             mutation="preserving",
         )
     )
@@ -1352,6 +1419,20 @@ def self_test() -> int:
                 state = "caught" if case.expect else "accepted"
                 mark = " [preserving]" if case.mutation == "preserving" else ""
                 print(f"[SELF-TEST OK]   {state}: {case.label}{mark}")
+
+    # `--report` must fail on what the default mode fails on: it is cited as
+    # an evidence command, and a census that prints violations while exiting
+    # 0 scores them as success (PR #886 review).
+    with tempfile.TemporaryDirectory() as tmp:
+        _write_tree(tmp, threaded)
+        import contextlib, io
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = report(tmp)
+        if rc == 0:
+            failures += 1
+            print("[SELF-TEST FAIL] --report exits 0 on a threaded fixture")
+        else:
+            print("[SELF-TEST OK]   caught: --report fails on a threaded fixture [preserving]")
 
     covered = {
         case.check

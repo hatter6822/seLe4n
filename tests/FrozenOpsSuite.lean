@@ -872,6 +872,31 @@ private def differentialEndpointSendAgrees : IO Unit := do
       (liveWithTaint .send diffA (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.endpointSendDual diffEpId diffA msg) ist.state))
 
+/-- FO-038: the wait, against `notificationWait`, with nothing pending — the
+idle park.  The waiter goes in already holding a collected `pendingMessage`,
+so the scenario pins the atomic clear the live path performs at the block:
+before the mirror fix the frozen side parked the waiter still holding the
+message, a live/frozen divergence on the mirror's own content channel
+(PR #886 review). -/
+private def differentialNotificationWaitParksAgrees : IO Unit := do
+  let held : IpcMessage := { registers := #[⟨11⟩], caps := #[], badge := none }
+  let ntfn : Notification :=
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+      pendingBadge := none }
+  let ist := diffAddTcb
+    (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
+      diffNotifId ntfn) { diffTcb 62 with pendingMessage := some held }
+  -- Control: the wait really parks on both sides (no shared refusal).
+  expect "FO-038 control: the live wait parks (not a shared refusal)"
+    (SeLe4n.Kernel.notificationWait diffNotifId diffA ist.state).toOption.isSome
+  expect "FO-038 control: and so does the frozen one"
+    (frozenNotificationWait diffNotifId diffA (freeze ist)).toOption.isSome
+  expect "FO-038: the frozen idle park agrees with the live one"
+    (frozenRunAgrees (fun a b => a == b)
+      (frozenNotificationWait diffNotifId diffA (freeze ist))
+      (liveWithTaint .notificationWait diffA (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.notificationWait diffNotifId diffA) ist.state))
+
 /-- FO-029: the receive, against `endpointReceiveDual`, dequeuing a parked
 sender that carries its message — the rendezvous the round-11 guard admits. -/
 private def differentialEndpointReceiveAgrees : IO Unit := do
@@ -1152,6 +1177,7 @@ private def differentialScenarios :
   [ (.notificationSignalToBoundThread,  differentialNotificationSignalAgrees),
     (.notificationSignalToBoundThread,  differentialWakeAtUnqueuedPriorityAgrees),
     (.notificationWaitConsumesBadge,    differentialNotificationWaitAgrees),
+    (.notificationWaitBlocks,           differentialNotificationWaitParksAgrees),
     (.endpointSendParks,                differentialEndpointSendAgrees),
     (.endpointSendToWaitingReceiver,    differentialSendFromAbsentSenderAgrees),
     (.endpointSendToWaitingReceiver,    differentialSendRendezvousDeliversAgrees),
