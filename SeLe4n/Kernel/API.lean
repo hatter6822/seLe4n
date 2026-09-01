@@ -2321,22 +2321,26 @@ structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
     (cap : Capability) (st : SystemState) : Prop where
   bindingBidirectional : schedContextBindingBidirectional st
   queuedThreadsIdle : unboundQueuedThreadsIdleAllowed st
-  retypeDetached : ∀ args, decodeLifecycleRetypeArgs decoded = .ok args →
+  retypeDetached : ∀ args, decoded.syscallId = .lifecycleRetype →
+    decodeLifecycleRetypeArgs decoded = .ok args →
     retypeTargetDetached st args.targetObj
-  boundThreadNotDonationOwner : ∀ args,
+  boundThreadNotDonationOwner : ∀ args, decoded.syscallId = .schedContextBind →
     decodeSchedContextBindArgs decoded = .ok args →
     ∀ vThreadId, validateThreadIdArg (ThreadId.ofNat args.threadId) = .ok vThreadId →
     ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
       st.objects[s.toObjId]? = some (.tcb sTcb) →
       sTcb.schedContextBinding ≠ .donated sc0 vThreadId.val
-  unbindBoundThreadPassive : ∀ (scObj : SeLe4n.ObjId), cap.target = .object scObj →
+  unbindBoundThreadPassive : ∀ (scObj : SeLe4n.ObjId),
+    decoded.syscallId = .schedContextUnbind → cap.target = .object scObj →
     ∀ vScId, validateObjIdArg scObj = .ok vScId →
     ∀ (scX : SeLe4n.Kernel.SchedContext) (t : SeLe4n.ThreadId) (tcbX : TCB),
       st.objects[(SchedContextId.ofObjId vScId.val).toObjId]? = some (.schedContext scX) →
       scX.boundThread = some t →
       st.objects[t.toObjId]? = some (.tcb tcbX) →
       passiveServerIdleAllowed tcbX.ipcState
-  targetThreadQuiescent : ∀ (objId : SeLe4n.ObjId), cap.target = .object objId →
+  targetThreadQuiescent : ∀ (objId : SeLe4n.ObjId),
+    decoded.syscallId = .tcbSuspend ∨ decoded.syscallId = .tcbResume →
+    cap.target = .object objId →
     ∀ vtid, validateThreadIdArg (ThreadId.ofNat objId.toNat) = .ok vtid →
     threadIpcFieldsQuiescent st vtid.val
 
@@ -2387,7 +2391,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           exact lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_ipcInvariantFull
             st st' _ cap args.targetObj _ hObjInv
             (objectOfKernelType_replacementFresh args.newType args.size)
-            (hPack.retypeDetached args hDec) hInv hStep
+            (hPack.retypeDetached args hSy hDec) hInv hStep
     all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -2490,7 +2494,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   simp only [hValT] at hStep
                   exact schedContextBind_preserves_ipcInvariantFull st st' vScId vThreadId
                     hObjInv hInv hPack.bindingBidirectional
-                    (hPack.boundThreadNotDonationOwner args hDec vThreadId hValT) hStep
+                    (hPack.boundThreadNotDonationOwner args hSy hDec vThreadId hValT) hStep
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -2513,7 +2517,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   cases hStep
                   exact schedContextUnbindOnCore_preserves_ipcInvariantFull st st' vScId _
                     sgiU hObjInv hInv
-                    (hPack.unbindBoundThreadPassive scId hTgt vScId hVal)
+                    (hPack.unbindBoundThreadPassive scId hSy hTgt vScId hVal)
                     (fun stMid h => schedContextUnbind_preserves_objects_invExt vScId st
                       stMid hObjInv h)
                     hUn
@@ -2579,7 +2583,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   simp only [hSus] at hStep
                   cases hStep
                   exact suspendThreadOnCore_preserves_ipcInvariantFull st st' vtid _ sgiU
-                    hObjInv (hPack.targetThreadQuiescent objId hTgt vtid hVal)
+                    hObjInv (hPack.targetThreadQuiescent objId (Or.inl hSy) hTgt vtid hVal)
                     hPack.bindingBidirectional hInv hSus
     all_goals try cases hStep
   case tcbResume =>
@@ -2602,7 +2606,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
               simp only [hRes] at hStep
               cases hStep
               exact resumeThreadOnCoreLive_preserves_ipcInvariantFull st st' vtid _ sgiU
-                hObjInv (hPack.targetThreadQuiescent objId hTgt vtid hVal) hInv hRes
+                hObjInv (hPack.targetThreadQuiescent objId (Or.inr hSy) hTgt vtid hVal) hInv hRes
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

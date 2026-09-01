@@ -393,6 +393,25 @@ proposition, so a marker-substring imposter (`…ipcInvariantFullish :
 True`) cannot stand in for a vanished family.  Seven token-preserving
 fixtures plus a projection accept-case; self-test 57 cases; census
 unchanged a seventh time.
+A twelfth pass settled one pack-design flaw and two smaller residues.
+The flaw: `capabilityDispatchQuiescence`'s operation-specific fields
+were not guarded by the active syscall arm — the retype and bind
+decoders read only the registers, so any unrelated syscall whose
+payload happened to decode activated the retype-detachedness or
+donation obligations, and the object-target fields fired on every
+`.object` capability — making the payoff uninstantiable for arbitrary
+payloads on arms that never select those transitions.  All four fields
+now carry their arm premise (`.lifecycleRetype`, `.schedContextBind`,
+`.schedContextUnbind`, `.tcbSuspend ∨ .tcbResume`), the dispatch proof
+supplies each arm's own case equation, and three new witness instances
+(`…_inhabited_bind` / `…_unbind` / `…_suspend`) keep the guarded
+fields exercised non-vacuously under their own arms.  The residues:
+the gate's code view blanks string-literal contents (a theorem-shaped
+line inside a multiline Lean string satisfied the declaration census),
+with a token-preserving fixture — self-test 58 cases, census unchanged
+an eighth time; and `Reachability.lean`'s status header names its real
+staged consumer (the payoff tier's `reachable` packs) and the pending
+register's actual path instead of a pre-landing forecast.
 
 ### Housekeeping
 

@@ -1010,8 +1010,9 @@ code may assume:
   (`syscallDispatchQuiescence_inhabited`,
   `checkedSyscallDispatchQuiescence_inhabited`) for the state-shaped fields,
   plus a per-arm family (`…_inhabited_signal` / `…_retype` / `…_send` /
-  `…_receive` / `…_call` / `…_mint` / `…_reply` /
-  `checked…_inhabited_declassifySignal`, `DispatchPayoff` §7b) that fires
+  `…_receive` / `…_call` / `…_mint` / `…_reply` / `…_bind` / `…_unbind` /
+  `…_suspend` / `checked…_inhabited_declassifySignal`, `DispatchPayoff` §7b)
+  that fires
   each *indexed* field's premises — so an unsatisfiable pack field cannot
   hide; the two interiors beyond the levers' reach (a caller-carrying
   reply, a CSpace-resolved `replyRecv` capability — both created only by

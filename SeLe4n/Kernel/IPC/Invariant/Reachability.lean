@@ -10,10 +10,12 @@
 -- STATUS: staged for WS-RR RR3.13 — the pre-state side of the de-threaded IPC
 -- bundle family: the state predicate their state-shaped hypotheses come from,
 -- and the derivations that turn their thread- and queue-shaped ones from
--- assumptions into consequences.  Staged, not experimental: its first
--- production consumer is RR3.15's `dispatchWithCap_preserves_ipcInvariantFull`,
--- which is registered as pending in `scripts/ipc_dethreading_pending.txt`, so
--- nothing in the kernel's import closure reaches this module yet.
+-- assumptions into consequences.  Staged, not experimental: its consumer is
+-- the staged payoff tier in `IPC.Invariant.DispatchPayoff` (each quiescence
+-- pack's `reachable` field, RR3.23–25; the pending register at
+-- `docs/planning/ipc_dethreading_pending.txt` carries zero registrations),
+-- and nothing *production* imports it yet — the pair moves to production
+-- together when the call-chain surface promotes.
 
 import SeLe4n.Kernel.IPC.Invariant.Structural
 import SeLe4n.Kernel.Architecture.Invariant

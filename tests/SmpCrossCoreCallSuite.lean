@@ -564,6 +564,9 @@ private def runRendezvousChecks : IO Unit := do
 #check @syscallDispatchQuiescence_inhabited_call
 #check @syscallDispatchQuiescence_inhabited_mint
 #check @syscallDispatchQuiescence_inhabited_reply
+#check @syscallDispatchQuiescence_inhabited_bind
+#check @syscallDispatchQuiescence_inhabited_unbind
+#check @syscallDispatchQuiescence_inhabited_suspend
 #check @checkedSyscallDispatchQuiescence_inhabited_declassifySignal
 
 /-- SM6.D.1 exact decomposition: the ∀-core bundle is equivalent to the global

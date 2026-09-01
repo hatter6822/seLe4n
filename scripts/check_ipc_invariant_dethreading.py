@@ -359,10 +359,46 @@ def lean_sources(root: str) -> list[str]:
     return sorted(found)
 
 
+def _blank_strings(source: str) -> str:
+    """Blank the contents of double-quoted string literals, offsets kept.
+
+    `lean_code_view.strip` deliberately preserves strings, so a
+    theorem-shaped line inside a multiline Lean string satisfied the
+    declaration census (PR #886 review).  This gate asks questions about
+    declarations, never about string contents, so every character between
+    the quotes (escapes included) becomes a space; newlines survive so line
+    numbers stay aligned, and the quotes themselves survive so the lexical
+    structure stays visible.
+    """
+    out: list[str] = []
+    in_string = False
+    escaped = False
+    for char in source:
+        if in_string:
+            if escaped:
+                out.append(" ")
+                escaped = False
+            elif char == "\\":
+                out.append(" ")
+                escaped = True
+            elif char == '"':
+                out.append(char)
+                in_string = False
+            elif char == "\n":
+                out.append(char)
+            else:
+                out.append(" ")
+        else:
+            out.append(char)
+            if char == '"':
+                in_string = True
+    return "".join(out)
+
+
 def code_view(root: str, relative: str) -> str:
-    """The comment-free view of one Lean source."""
+    """The comment-free, string-blanked view of one Lean source."""
     with open(os.path.join(root, relative), encoding="utf-8") as handle:
-        return lean_code_view.strip(handle.read())
+        return _blank_strings(lean_code_view.strip(handle.read()))
 
 
 def balanced_span(text: str, start: int) -> int | None:
@@ -2239,6 +2275,28 @@ end Shadow""",
         _Case(
             "a marker-substring imposter concluding True is not the family",
             imposter_family,
+            True,
+            check="family_nonempty",
+            mutation="preserving",
+        )
+    )
+
+    # A declaration-shaped line inside a string literal is data, not a
+    # declaration: the comment-free view keeps string contents, and the
+    # census read a theorem statement out of one -- an inert string kept
+    # `family_nonempty` satisfied over an actually-empty family.
+    string_declaration = _fixture()
+    string_declaration["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        'def bundleCatalogueNote : String :=\n'
+        '  "theorem stringOnly_preserves_ipcInvariantFull\n'
+        '    (st st\' : SystemState) (hInv : ipcInvariantFull st)\n'
+        '    (hStep : endpointSendDual st = .ok ((), st\')) :\n'
+        '    ipcInvariantFull st\' := by exact sample st st\' hInv hStep"\n'
+    )
+    cases.append(
+        _Case(
+            "a theorem-shaped string literal is not a family declaration",
+            string_declaration,
             True,
             check="family_nonempty",
             mutation="preserving",
