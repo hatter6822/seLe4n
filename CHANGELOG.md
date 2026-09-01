@@ -425,6 +425,13 @@ literal, after an identifier character it is a prime); and
 registered trace-composition debt instead of implying a preservation
 theorem that does not yet exist.  Three token-preserving fixtures;
 self-test 61 cases; census unchanged a ninth time.
+A fourteenth pass closed the two arrows that round left: `class` (and,
+by the sweep, `macro_rules`, `elab_rules`, `set_option`, `import`,
+`export`, `initialize`, `notation`, the infix family and `#`-commands)
+joined the body-boundary set, and the implication splitter recognises
+Lean's ASCII `->` alongside `→` — in the telescope split and in the
+step-equation's connective cut both.  Two token-preserving fixtures;
+self-test 63 cases; census unchanged a tenth time.
 
 ### Housekeeping
 

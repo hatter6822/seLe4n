@@ -320,7 +320,13 @@ def _steps_function(binders: str, function: str, state: str) -> bool:
                                     cut_depth += 1
                                 elif rhs_char in _CLOSE:
                                     cut_depth -= 1
-                                elif cut_depth == 0 and rhs_char in "∧∨→↔":
+                                elif cut_depth == 0 and (
+                                    rhs_char in "∧∨→↔"
+                                    or (
+                                        rhs_char == "-"
+                                        and rhs[rhs_offset + 1 : rhs_offset + 2] == ">"
+                                    )
+                                ):
                                     rhs = rhs[:rhs_offset]
                                     break
                             if _returns_state(rhs, state):
@@ -518,16 +524,28 @@ def split_implication(text: str) -> list[str]:
     parts: list[str] = []
     current: list[str] = []
     depth = 0
-    for char in text:
+    index = 0
+    while index < len(text):
+        char = text[index]
         if char in _OPEN:
             depth += 1
         elif char in _CLOSE:
             depth -= 1
-        if char == "→" and depth == 0:
+        if depth == 0 and char == "→":
             parts.append("".join(current))
             current = []
-        else:
-            current.append(char)
+            index += 1
+            continue
+        # Lean's ASCII spelling of the same arrow (PR #886 review: an
+        # `->`-spelled premise was never separated, so the whole-post-state
+        # hypothesis it carried passed unseen).
+        if depth == 0 and char == "-" and index + 1 < len(text) and text[index + 1] == ">":
+            parts.append("".join(current))
+            current = []
+            index += 2
+            continue
+        current.append(char)
+        index += 1
     parts.append("".join(current))
     return parts
 
@@ -610,9 +628,12 @@ def state_predicate_bodies(
     # only stop earlier -- never truncate a real body.
     stop = re.compile(
         r"^(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped)\s+)*"
-        r"(?:@\[|/-|def|theorem|lemma|abbrev|structure|inductive|instance"
+        r"(?:@\[|/-|#"
+        r"|(?:def|theorem|lemma|abbrev|structure|inductive|instance|class"
         r"|end|namespace|open|opaque|axiom|example|attribute|universe"
-        r"|variable|macro|syntax|elab|deriving|mutual|section)\b",
+        r"|variable|macro_rules|macro|syntax|elab_rules|elab|deriving|mutual"
+        r"|section|set_option|export|import|initialize|notation"
+        r"|infixl|infixr|infix|postfix|prefix)\b)",
         re.MULTILINE,
     )
     # The arrow-form spelling `def NAME : SystemState → Prop := fun b => …`
@@ -2401,6 +2422,57 @@ end σ""",
             char_literal,
             True,
             check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # `class` after a definition is a declaration boundary like the rest:
+    # blind to it, the collector absorbed the class body and the preceding
+    # definition's trailing conjunct left the derived set.
+    class_stop = _fixture()
+    class_stop[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def replyCallerLinkage (st : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st",
+        "def replyCallerLinkage (st : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st\n"
+        "\n"
+        "class ReplyLinkageMarker where\n"
+        "  markerField : Prop",
+    )
+    class_stop["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (h : blockedOnReplyHasReplyObject st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "a `class` declaration after a definition still bounds its body",
+            class_stop,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # The ASCII arrow spelling of the same telescope: `->` is `→`, and a
+    # splitter that recognised only the Unicode arrow never separated the
+    # premise carrying the whole-post-state hypothesis.
+    ascii_arrow_premise = _fixture()
+    ascii_arrow_premise["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    ipcInvariantFull st' := by\n  exact sample st st' hInv hStep",
+            "    ipcInvariantFull st' -> ipcInvariantFull st' := by\n"
+            "  exact fun h => h",
+        )
+    )
+    cases.append(
+        _Case(
+            "the whole invariant as an ASCII-arrow premise is still caught",
+            ascii_arrow_premise,
+            True,
+            check="no_conclusion_state_hypothesis",
             mutation="preserving",
         )
     )
