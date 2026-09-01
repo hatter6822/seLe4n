@@ -124,6 +124,14 @@ PAYOFF_THEOREMS = (
     "dispatchSyscallChecked_preserves_ipcInvariantFull",
 )
 
+# The namespace the payoff theorems are declared in.  A pin, not a derivation:
+# a text scanner cannot resolve name elaboration, so the payoff lookups demand
+# this exact prefix -- a same-named theorem under any other namespace
+# (`namespace Shadow; theorem dispatchSyscall_preserves_… …`) is not the
+# payoff and can only shadow it (PR #886 review).  If the payoffs move
+# namespaces, this fails visibly and is updated with the move.
+PAYOFF_NAMESPACE = "SeLe4n.Kernel"
+
 # Registered residuals: payoff theorems the project has sized and deferred with
 # an explicit closure target.  Read from the file rather than hard-coded so the
 # registration and its reason live where a reader looks for them, and checked in
@@ -381,6 +389,30 @@ def split_conclusion(signature: str) -> tuple[str, str]:
     return signature[:cut], signature[cut + 1 :]
 
 
+def split_implication(text: str) -> list[str]:
+    """Split at `→` at bracket depth zero.
+
+    The segments before the last are a conclusion's *unnamed premises* -- the
+    telescope continued after the declaration colon -- and the last is what
+    the theorem actually concludes.
+    """
+    parts: list[str] = []
+    current: list[str] = []
+    depth = 0
+    for char in text:
+        if char in _OPEN:
+            depth += 1
+        elif char in _CLOSE:
+            depth -= 1
+        if char == "→" and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    parts.append("".join(current))
+    return parts
+
+
 def split_conjunction(body: str) -> list[str]:
     """Split a `Prop` body on `∧` at bracket depth zero."""
     parts, current, depth = [], [], 0
@@ -421,9 +453,14 @@ def state_predicate_bodies(root: str, sources: list[str]) -> dict[str, list[str]
     bodies: dict[str, list[str]] = {}
     # `abbrev` too (PR #886 review): a transparently refactored conjunct
     # (`def` -> `abbrev`) kept its meaning but vanished from this map, so its
-    # clause predicates silently left the derived set.
+    # clause predicates silently left the derived set.  The state binder is
+    # any identifier, not an enumerated `st|s` (PR #886 review, next round):
+    # renaming a binder to `state` is a semantics-preserving refactor, and an
+    # enumeration silently dropped the renamed definition's clauses from the
+    # derived set -- the enumeration-versus-derivation shape again.
     pattern = re.compile(
-        r"^(?:def|abbrev)\s+([A-Za-z_][A-Za-z0-9_'!?]*)\s*\(\s*(st|s)\s*:\s*SystemState\s*\)"
+        r"^(?:def|abbrev)\s+([A-Za-z_][A-Za-z0-9_'!?]*)"
+        r"\s*\(\s*([A-Za-z_][A-Za-z0-9_']*)\s*:\s*SystemState\s*\)"
         r"\s*:\s*Prop\s*:=",
         re.MULTILINE,
     )
@@ -513,12 +550,21 @@ def derive_conjuncts(bodies: dict[str, list[str]]) -> set[str]:
 class Bundle:
     """One `*_preserves_ipcInvariantFull` statement, parsed from the code view."""
 
-    def __init__(self, path: str, line: int, name: str, binders: str, conclusion: str):
+    def __init__(
+        self,
+        path: str,
+        line: int,
+        name: str,
+        binders: str,
+        conclusion: str,
+        prefix: str = "",
+    ):
         self.path = path
         self.line = line
         self.name = name
         self.binders = binders
         self.conclusion = _normalise(conclusion)
+        self.prefix = prefix
 
     def _anchor_tokens(self) -> set[str]:
         """Identifier tokens tied to the transition itself.
@@ -572,16 +618,22 @@ class Bundle:
     def conclusion_state(self) -> str | None:
         """The state this bundle's conclusion applies its invariant form to.
 
+        Read from the *final* segment of the conclusion's depth-0 implication
+        chain: `A → ipcInvariantFull st'` concludes about `st'`, and taking
+        the first family application in the whole conclusion would read the
+        state out of a premise instead (PR #886 review).
+
         `None` when no `ipcInvariantFull`-family predicate application is found
-        in the conclusion -- possible only for a declaration that carries the
-        family marker in its name without concluding a family proposition, which
-        the tree does not contain; the threaded-conjunct check still covers such
-        a declaration's binders in full.
+        there -- possible only for a declaration that carries the family marker
+        in its name without concluding a family proposition, which the tree
+        does not contain; the threaded-conjunct check still covers such a
+        declaration's binders in full.
         """
+        final = split_implication(_normalise(self.conclusion))[-1]
         for predicate in PRE_STATE_PREDICATES:
-            hit = re.search(_qualified(predicate), self.conclusion)
+            hit = re.search(_qualified(predicate), final)
             if hit:
-                argument = first_argument(self.conclusion, hit.end())
+                argument = first_argument(final, hit.end())
                 if argument:
                     return _normalise(argument)
         return None
@@ -595,10 +647,25 @@ class Bundle:
         to a "pre-state" -- while proving nothing at all.  The two checks close
         each other's gap: the pre-state list stays usable because this one
         rejects a member of it applied to the conclusion's state.
+
+        The hypothesis may hide in either place: a named binder, or an unnamed
+        implication premise after the declaration colon (`ipcInvariantFull st'
+        → ipcInvariantFull st'`), which the binder-reading pre-state scan never
+        sees (PR #886 review) -- so the conclusion's leading premises are
+        scanned for family applications of the final conclusion state too.
         """
         state = self.conclusion_state()
-        if state is not None and state in self.pre_states():
+        if state is None:
+            return None
+        if state in self.pre_states():
             return state
+        segments = split_implication(_normalise(self.conclusion))
+        for premise in segments[:-1]:
+            for predicate in PRE_STATE_PREDICATES:
+                for hit in re.finditer(_qualified(predicate), premise):
+                    argument = first_argument(premise, hit.end())
+                    if argument is not None and _normalise(argument) == state:
+                        return state
         return None
 
     def threaded(self, conjuncts: set[str]) -> list[tuple[str, str]]:
@@ -625,11 +692,56 @@ class Bundle:
         return findings
 
 
+_SCOPE_RE = re.compile(
+    r"^\s*(?:namespace\s+(?P<ns>[A-Za-z_][A-Za-z0-9_'.]*)"
+    r"|(?:noncomputable\s+)?(?P<sec>section)\b"
+    r"|(?P<mut>mutual)\b"
+    r"|(?P<end>end)\b)",
+    re.MULTILINE,
+)
+
+
+def namespace_breakpoints(source: str) -> list[tuple[int, str]]:
+    """(offset, namespace prefix in force from that offset), in order.
+
+    A line-anchored scan of `namespace` / `section` / `mutual` / `end` over
+    the comment-free code view, tracking one scope stack; `end` closes the
+    most recent scope of any kind, which is how these sources use it.  A
+    misparse cannot pass silently: the payoff lookup demands the canonical
+    prefix exactly, so a wrongly tracked prefix surfaces as a visible gate
+    failure, never as an accepted shadow.
+    """
+    breakpoints = [(0, "")]
+    stack: list[str | None] = []
+    for match in _SCOPE_RE.finditer(source):
+        if match.group("ns") is not None:
+            stack.append(match.group("ns"))
+        elif match.group("end") is not None:
+            if stack:
+                stack.pop()
+        else:
+            stack.append(None)
+        prefix = ".".join(name for name in stack if name is not None)
+        breakpoints.append((match.end(), prefix))
+    return breakpoints
+
+
+def prefix_at(breakpoints: list[tuple[int, str]], offset: int) -> str:
+    """The namespace prefix in force at `offset`."""
+    prefix = ""
+    for start, value in breakpoints:
+        if start > offset:
+            break
+        prefix = value
+    return prefix
+
+
 def collect_bundles(root: str, sources: list[str]) -> list[Bundle]:
     """Every declaration in the `ipcInvariantFull` bundle family."""
     bundles = []
     for relative in sources:
         source = code_view(root, relative)
+        breakpoints = namespace_breakpoints(source)
         for match in _DECL_RE.finditer(source):
             name = match.group(1)
             if not any(marker in name for marker in BUNDLE_MARKERS):
@@ -637,16 +749,34 @@ def collect_bundles(root: str, sources: list[str]) -> list[Bundle]:
             end = signature_end(source, match.end())
             binders, conclusion = split_conclusion(source[match.end() : end])
             line = source.count("\n", 0, match.start()) + 1
-            bundles.append(Bundle(relative, line, name, binders, conclusion))
+            bundles.append(
+                Bundle(
+                    relative,
+                    line,
+                    name,
+                    binders,
+                    conclusion,
+                    prefix_at(breakpoints, match.start()),
+                )
+            )
     return bundles
 
 
-def declared_names(root: str, sources: list[str]) -> set[str]:
-    """Every theorem/lemma name declared anywhere in the tree's code view."""
-    names = set()
+def declared_names(root: str, sources: list[str]) -> dict[str, set[str]]:
+    """Every theorem/lemma name in the code view -> its namespace prefixes.
+
+    Prefix-aware (PR #886 review): a bare name set let a `namespace Shadow`
+    declaration stand in for a deleted global payoff, so the payoff lookups
+    must see where each name is declared, not merely that it is.
+    """
+    names: dict[str, set[str]] = {}
     for relative in sources:
-        for match in _DECL_RE.finditer(code_view(root, relative)):
-            names.add(match.group(1))
+        source = code_view(root, relative)
+        breakpoints = namespace_breakpoints(source)
+        for match in _DECL_RE.finditer(source):
+            names.setdefault(match.group(1), set()).add(
+                prefix_at(breakpoints, match.start())
+            )
     return names
 
 
@@ -675,7 +805,9 @@ def read_pending(root: str) -> dict[str, tuple[str, str]]:
     return pending
 
 
-def payoff_status(names: set[str], pending: dict[str, tuple[str, str]]) -> list[str]:
+def payoff_status(
+    names: dict[str, set[str]], pending: dict[str, tuple[str, str]]
+) -> list[str]:
     """Violations from the payoff check, registration included.
 
     Four cases, and three of them are failures.  A registered name whose theorem
@@ -683,11 +815,24 @@ def payoff_status(names: set[str], pending: dict[str, tuple[str, str]]) -> list[
     its residual is how an exemption list stops describing the tree.  A
     registration for something outside the payoff set is *dangling* and fails,
     for the same reason in the other direction.
+
+    "Declared" means declared under `PAYOFF_NAMESPACE`: a same-named theorem
+    in any other namespace is a shadow, not the payoff, and is itself a
+    finding whether or not the canonical one exists (PR #886 review).
     """
     problems: list[str] = []
     for payoff in PAYOFF_THEOREMS:
         registered = payoff in pending
-        present = payoff in names
+        prefixes = names.get(payoff, set())
+        present = PAYOFF_NAMESPACE in prefixes
+        shadows = sorted(prefixes - {PAYOFF_NAMESPACE})
+        if shadows:
+            problems.append(
+                f"payoff_theorems: `{payoff}` is declared under namespace(s) "
+                f"{shadows} -- a same-named declaration outside the canonical "
+                f"`{PAYOFF_NAMESPACE}` namespace is not the payoff and can "
+                f"only shadow it"
+            )
         if present and registered:
             problems.append(
                 f"payoff_theorems: `{payoff}` is declared but still registered as "
@@ -695,9 +840,10 @@ def payoff_status(names: set[str], pending: dict[str, tuple[str, str]]) -> list[
             )
         elif not present and not registered:
             problems.append(
-                f"payoff_theorems: `{payoff}` is not declared anywhere in the "
-                f"tree and is not registered as pending in {PENDING_FILE}; the "
-                f"de-threaded bundles have no top-level consumer"
+                f"payoff_theorems: `{payoff}` is not declared in the canonical "
+                f"`{PAYOFF_NAMESPACE}` namespace and is not registered as "
+                f"pending in {PENDING_FILE}; the de-threaded bundles have no "
+                f"top-level consumer"
             )
     for name in sorted(pending):
         if name not in PAYOFF_THEOREMS:
@@ -773,7 +919,13 @@ def run_checks(root: str) -> list[str]:
     # Each declared payoff must conclude an `ipcInvariantFull`-family
     # predicate of some state and hypothesise a step equation that carries
     # the dispatch function it is named for into that same state.
-    by_name = {bundle.name: bundle for bundle in bundles}
+    # Canonical-prefix bundles only (PR #886 review): a `namespace Shadow`
+    # twin must not be the declaration whose statement gets validated.
+    by_name = {
+        bundle.name: bundle
+        for bundle in bundles
+        if bundle.prefix == PAYOFF_NAMESPACE
+    }
     for payoff in PAYOFF_THEOREMS:
         bundle = by_name.get(payoff)
         if bundle is None:
@@ -896,7 +1048,9 @@ CLEAN_BUNDLE = '''theorem endpointSendDual_preserves_ipcInvariantFull
   exact sample st st' hInv hStep
 '''
 
-CLEAN_PAYOFF = '''theorem dispatchWithCap_preserves_ipcInvariantFull
+CLEAN_PAYOFF = '''namespace SeLe4n.Kernel
+
+theorem dispatchWithCap_preserves_ipcInvariantFull
     (st st' : SystemState) (hInv : ipcInvariantFull st)
     (hStep : dispatchWithCap st = .ok ((), st')) :
     ipcInvariantFull st' := by
@@ -919,6 +1073,8 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (hStep : dispatchSyscallChecked st = .ok ((), st')) :
     ipcInvariantFull st' := by
   exact sample st st' hInv hStep
+
+end SeLe4n.Kernel
 '''
 
 
@@ -1240,6 +1396,37 @@ def self_test() -> int:
         )
     )
 
+    # Namespaced shadow of a payoff: the theorem text survives verbatim, but
+    # its declaration moves under `namespace Shadow` -- a legal declaration
+    # that is not the top-level payoff.  A bare-name census accepted it in
+    # place of the deleted global.
+    shadow_payoff = _fixture()
+    shadow_payoff["SeLe4n/Kernel/API.lean"] = CLEAN_PAYOFF.replace(
+        """theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep""",
+        """namespace Shadow
+
+theorem dispatchSyscall_preserves_ipcInvariantFull
+    (st st' : SystemState) (hInv : ipcInvariantFull st)
+    (hStep : dispatchSyscall st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  exact sample st st' hInv hStep
+
+end Shadow""",
+    )
+    cases.append(
+        _Case(
+            "a namespaced shadow cannot stand in for a deleted payoff",
+            shadow_payoff,
+            True,
+            check="payoff_theorems",
+            mutation="preserving",
+        )
+    )
+
     # Transparent abbreviation: a conjunct refactored `def` -> `abbrev` must
     # keep its clause predicates in the derived set.
     abbreviated = _fixture()
@@ -1293,6 +1480,34 @@ def self_test() -> int:
         _Case(
             "a namespaced shadow of the root cannot eclipse the real conjuncts",
             shadowed_root,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Renamed state binder: `st` -> `state` is a semantics-preserving refactor
+    # of one conjunct's definition, and an enumerated `st|s` binder pattern
+    # dropped the renamed body from the map -- its clauses left the derived
+    # set, so threading one scored clean.
+    renamed_binder = _fixture()
+    renamed_binder[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def replyCallerLinkage (st : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st",
+        "def replyCallerLinkage (state : SystemState) : Prop :=\n"
+        "  replyCallerLinkageReciprocal state ∧ blockedOnReplyHasReplyObject state",
+    )
+    renamed_binder["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (h : replyCallerLinkageReciprocal st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "clause of a conjunct whose binder was renamed still derives and flags",
+            renamed_binder,
             True,
             check="no_post_state_binding",
             mutation="preserving",
@@ -1533,6 +1748,28 @@ def self_test() -> int:
         _Case(
             "the whole invariant is hypothesised of the conclusion's own state",
             whole_bundle_threaded,
+            True,
+            check="no_conclusion_state_hypothesis",
+            mutation="preserving",
+        )
+    )
+
+    # The same degenerate threading with the hypothesis moved out of the named
+    # binders into an unnamed implication premise after the declaration colon:
+    # `ipcInvariantFull st' → ipcInvariantFull st'` proves nothing while the
+    # binder-reading pre-state scan sees no post-state hypothesis at all.
+    whole_premise_threaded = _fixture()
+    whole_premise_threaded["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    ipcInvariantFull st' := by\n  exact sample st st' hInv hStep",
+            "    ipcInvariantFull st' → ipcInvariantFull st' := by\n"
+            "  exact fun h => h",
+        )
+    )
+    cases.append(
+        _Case(
+            "the whole invariant is an unnamed premise of the conclusion's state",
+            whole_premise_threaded,
             True,
             check="no_conclusion_state_hypothesis",
             mutation="preserving",

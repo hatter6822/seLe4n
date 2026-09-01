@@ -988,7 +988,23 @@ downgrade behind it would record no predecessor.  That is a *missed* chain, the
 direction a detector must never err in, so the clear is restricted to the
 ordering where delivery provably empties the object.  On the bound path with no
 badge stored the clear would have been a no-op anyway
-(`TaintTable.clearAt_eq_of_empty`), so nothing is lost by omitting it. -/
+(`TaintTable.clearAt_eq_of_empty`), so nothing is lost by omitting it.
+
+**The parked waiter is deliberately not cleared either.**  `notificationWait`
+against an *idle* notification parks the caller and discards the
+`pendingMessage` it still held (the atomic clear in `notificationWait`'s idle
+branch), and the field going `none` invites the same content-derived reading —
+but a TCB is a subject, not a transport, and its taint is *exposure*: the
+message was staged into the caller's return frame at the delivering syscall's
+boundary (`stageDeliveredMessage`), so the thread has observed the content and
+everything it has computed since — this very wait included — derives from it.
+Discarding the held copy does not un-observe it.  Clearing the waiter there
+would erase provenance of content the thread actually read, and a later
+downgrade by that thread would record no predecessor — a missed chain, the
+direction this module must never err in.  `endpointReceiveDual`'s block path
+discards a stale `pendingMessage` the same way and is not a clear for the same
+reason; the only thing that clears a TCB's taint is its own destruction
+(`retypeClearedObjects`). -/
 def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) : List SeLe4n.ObjId :=
   match syscallOperandCap? st tid decoded.capAddr with

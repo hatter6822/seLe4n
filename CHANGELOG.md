@@ -283,6 +283,29 @@ and derives the union, the over-approximation that fails closed where a
 text scanner cannot resolve namespaces.  Both landed with token-preserving
 fixtures; the live derivation is unchanged (26 conjuncts, 146 statements,
 zero bindings, before and after).  Self-test: 34 cases.
+A sixth pass closed three more gate siblings and settled one model
+question.  The gate: the body collector's state binder is any identifier
+rather than an enumerated `st|s` (renaming a binder to `state` silently
+dropped that conjunct's clauses from the derived set); the whole-invariant
+check reads unnamed implication premises, so `ipcInvariantFull st' →
+ipcInvariantFull st'` — maximal threading in telescope clothing — is
+caught, with `conclusion_state` now read from the *final* segment of the
+depth-0 implication chain; and the payoff census is namespace-aware — a
+scope-tracking scan (`namespace`/`section`/`mutual`/`end` over the code
+view) requires each payoff declared under the canonical `SeLe4n.Kernel`
+prefix, so a `namespace Shadow` twin can neither stand in for a deleted
+payoff nor be the declaration whose statement gets validated.  Self-test:
+37 cases; census unchanged again.  The model question — should the parked
+waiter's taint clear when `notificationWait`'s idle branch discards its
+held `pendingMessage` — was settled *no*, and the reasoning now lives in
+`contentFlowClears`' docstring: a TCB is a subject whose taint is
+exposure, the discarded message was staged into the caller's return frame
+at the delivering syscall's boundary, and clearing there would erase
+provenance of content the thread actually read — a missed chain, the one
+direction the detector must never err in.  The stale `Platform/Staged.lean`
+marker saying `Reachability` awaits its RR3.15 consumer was refreshed: the
+staged payoff tier has consumed it since RR3.23–25; nothing production
+imports it still.
 
 ### Housekeeping
 
