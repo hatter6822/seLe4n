@@ -3,6 +3,31 @@
 # Refreshed by WS-AN Phase AN10. Format: human-readable sections plus a
 # KEY=VALUE block for monotonicity-script consumption.
 #
+# WS-RR RR3 re-anchored `raw_lookup_tid` three times: 1287 -> 1382 at the
+# de-threading cut (RR3.1-RR3.14), 1382 -> 1467 at the payoff cut
+# (RR3.15-RR3.26), and 1467 -> 1468 at the closing audit cut, whose one new
+# occurrence is the checked top-tier payoff proof
+# (`dispatchSyscallChecked_preserves_ipcInvariantFull`) performing the same
+# object-store case analysis its unchecked mirror already performs — a
+# `cases` scrutinee inside a proof, not an operational lookup.  The metric counts `.toObjId]?` at object-store
+# boundaries, and cannot tell an operational lookup from one inside a
+# `Prop`.  Both rises are entirely the latter.  The first added invariant
+# predicates, preservation frames and per-transition establishers
+# (`donationOwnerValidExcept`, `donationOwnerFrameExcept`,
+# `pendingMessagesSatisfy`, `pendingMessageCapBadgesWellFormed`,
+# `replyLinkageFrame` and their establishers); the second added the per-arm
+# dispatch bundle layer's disciplines and packs (`retypeTargetDetached`,
+# `threadIpcFieldsQuiescent`, `capabilityDispatchQuiescence`,
+# `syscallDispatchQuiescence`, and `DispatchArmPreservation.lean`'s frame
+# and victim-shape lemmas).  Each has to be stated in the same raw form as
+# the sibling predicate it mirrors -- `donationOwnerValid`,
+# `donationOwnerFrame`, `allPendingMessagesBounded` -- or it cannot compose
+# with the lemmas it is proved from.  No kernel *operation* gained a raw
+# lookup in either cut: the payoff cut's +85 decomposes as API.lean +3 (the
+# quiescence pack's Prop fields) and the two new invariant-surface modules
+# +82, every definition in which is Prop-valued.  The typed-helper adoption
+# floors are untouched and every other should-drop ceiling is unchanged.
+#
 # Should-drop metrics: every subsequent commit must keep these <= baseline.
 # Should-grow metrics: every subsequent commit must keep these >= baseline.
 
@@ -16,16 +41,16 @@ raw_match_untyped        = 2
 raw_match_cnode          = 7
 raw_match_vspaceroot     = 15
 raw_match_total          = 130
-raw_lookup_tid           = 1287
+raw_lookup_tid           = 1468
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 2048
-getschedctx_adoption     = 243
-getendpoint_adoption     = 127
-getnotification_adoption = 67
+gettcb_adoption          = 2706
+getschedctx_adoption     = 415
+getendpoint_adoption     = 180
+getnotification_adoption = 96
 getuntyped_adoption      = 12
-getcnode_adoption        = 56
+getcnode_adoption        = 71
 getvspaceroot_adoption   = 36
 
 ## Writer-side wrapper adoption (should-grow)
@@ -34,7 +59,7 @@ storeobjectchecked_adoption = 34
 
 ## Dispatch-boundary sentinel guards (should-grow)
 
-sentinel_check_dispatch  = 29
+sentinel_check_dispatch  = 44
 
 ## Regression test counts (should-grow)
 
@@ -56,16 +81,16 @@ RAW_MATCH_UNTYPED=2
 RAW_MATCH_CNODE=7
 RAW_MATCH_VSPACEROOT=15
 RAW_MATCH_TOTAL=130
-RAW_LOOKUP_TID=1287
-GETTCB_ADOPTION=2048
-GETSCHEDCTX_ADOPTION=243
-GETENDPOINT_ADOPTION=127
-GETNOTIFICATION_ADOPTION=67
+RAW_LOOKUP_TID=1468
+GETTCB_ADOPTION=2706
+GETSCHEDCTX_ADOPTION=415
+GETENDPOINT_ADOPTION=180
+GETNOTIFICATION_ADOPTION=96
 GETUNTYPED_ADOPTION=12
-GETCNODE_ADOPTION=56
+GETCNODE_ADOPTION=71
 GETVSPACEROOT_ADOPTION=36
 STOREOBJECTCHECKED_ADOPTION=34
-SENTINEL_CHECK_DISPATCH=29
+SENTINEL_CHECK_DISPATCH=44
 TEST_COUNT_AK7=45
 KERRORMATRIX_ROWS=47
 SORRY_COUNT=0

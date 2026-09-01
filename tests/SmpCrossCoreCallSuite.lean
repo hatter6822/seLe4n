@@ -15,6 +15,8 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNiPerCore
 import SeLe4n.Kernel.IPC.CrossCore.NotificationInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInvariant
+import SeLe4n.Kernel.IPC.Invariant.Reachability
+import SeLe4n.Kernel.IPC.Invariant.DispatchPayoff
 import SeLe4n.Kernel.SyscallDispatchEntry
 import SeLe4n.Testing.StateBuilder
 
@@ -461,11 +463,111 @@ private def runRendezvousChecks : IO Unit := do
 #check @endpointReplyOnCore_reuse_freshens
 #check @endpointReplyRecvOnCore_preserves_ipcInvariantFull
 #check @endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
+-- WS-RR RR3.12 — the reply chain's relaxed-invariant surface:
+#check @donationOwnerValidExcept
+#check @donationOwnerFrameExcept
+#check @ipcInvariantFullExceptDonationOwner
+#check @endpointReply_preserves_ipcInvariantFullExceptDonationOwner
+#check @endpointReplyOnCore_preserves_ipcInvariantFullExceptDonationOwner
+#check @returnDonatedSchedContext_establishes_donationOwnerValid_of_except
+#check @donationOwnerValid_of_except_of_no_donation_owned_by
+#check @donationOwnerValidExcept_implies_donationChainAcyclic
+#check @applyReplyDonation_establishes_ipcInvariantFull_of_except
+#check @applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
+#check @returnDonatedSchedContext_establishes_ipcInvariantFull_of_except
+#check @endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
+-- WS-RR RR3.13/RR3.14 — the pre-state side: the bundles' preconditions, derived:
+#check @ipcReachable
+#check @ipcReachable_default
+#check @readyThread_endpointQueueFresh
+#check @readyThread_ownsNoDonation
+#check @sendTailCrossQueueFresh
+#check @recvTailCrossQueueFresh
 -- SM6.D completion — the capability-carrying (WithCaps) trio:
 #check @ipcUnwrapCaps_passiveServerIdleFrameOnCore
 #check @endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
 #check @endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
 #check @endpointCallWithCaps_preserves_ipcInvariantFull_perCore
+-- WS-RR RR3.11 — the in-flight badge surface the WithCaps bundles now establish from:
+#check @messageCapBadgesValid
+#check @pendingMessageCapBadgesWellFormed
+#check @pendingMessagesSatisfy
+#check @endpointReceiveDual_preserves_pendingMessageCapBadgesWellFormed
+#check @endpointSendDualWithCaps_preserves_badgeWellFormed
+#check @endpointReceiveDualWithCaps_preserves_badgeWellFormed
+#check @endpointCallWithCaps_preserves_badgeWellFormed
+#check @endpointCallWithCaps_preserves_dualQueueSystemInvariant
+-- WS-RR RR3.11 — instance/congruence surface of the in-flight family (kept
+-- complete alongside the boundedness instances even where no composite consumes
+-- them yet; the dispatch payoffs below are the designated consumers):
+#check @allPendingMessagesBounded_iff_pendingMessagesSatisfy
+#check @pendingMessageCapBadgesWellFormed_of_getElem_eq
+#check @cleanupPreReceiveDonation_preserves_pendingMessageCapBadgesWellFormed
+-- WS-RR RR3.12 — the relaxed donation-owner family mirrors the unrelaxed one:
+#check @donationOwnerValidExcept_of_objects_eq
+-- WS-RR RR3.15–RR3.21 — the per-arm dispatch bundle layer (production,
+-- `IPC/Invariant/DispatchArmPreservation.lean`), anchored at its
+-- dispatch-facing terminals plus the two named disciplines the packs quantify:
+#check @retypeTargetDetached
+#check @retypeReplacementFresh
+#check @threadIpcFieldsQuiescent
+#check @cspaceDeleteSlot_preserves_ipcInvariantFull
+#check @cspaceMintWithCdt_preserves_ipcInvariantFull
+#check @mintReplyCapWithCdt_preserves_ipcInvariantFull
+#check @lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_ipcInvariantFull
+#check @vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_ipcInvariantFull
+#check @vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_ipcInvariantFull
+#check @vspaceUnifyInstructionPage_preserves_ipcInvariantFull
+#check @registerService_preserves_ipcInvariantFull
+#check @revokeService_preserves_ipcInvariantFull
+#check @schedContextConfigure_preserves_ipcInvariantFull
+#check @schedContextBind_preserves_ipcInvariantFull
+#check @schedContextUnbindOnCore_preserves_ipcInvariantFull
+#check @setPriorityOnCore_preserves_ipcInvariantFull
+#check @setIPCBufferOp_preserves_ipcInvariantFull
+#check @writeReturnFrameToTcb_preserves_ipcInvariantFull
+#check @suspendThreadOnCore_preserves_ipcInvariantFull
+#check @resumeThreadOnCoreLive_preserves_ipcInvariantFull
+-- WS-RR RR3.22 — the composition layer: the return-frame staging writes and
+-- the replyRecv three-stage composite:
+#check @stageDeliveredMessage_preserves_ipcInvariantFull
+#check @stageWokenDelivery_preserves_ipcInvariantFull
+#check @stageWokenSendCompletion_preserves_ipcInvariantFull
+#check @replyRecvBody_preserves_ipcInvariantFull
+-- WS-RR RR3.23–RR3.25 — the dispatch payoffs and their pre-state packs
+-- (the capability tier production in `API.lean`; the two dispatch tiers
+-- staged in `IPC/Invariant/DispatchPayoff.lean` with the call-chain surface):
+#check @capabilityDispatchQuiescence
+#check @dispatchCapabilityOnly_preserves_ipcInvariantFull
+#check @syscallDispatchQuiescence
+#check @dispatchWithCap_preserves_ipcInvariantFull
+#check @dispatchSyscall_preserves_ipcInvariantFull
+-- WS-RR RR3.22 (third item) — the flow-checked dispatch tier: the checked
+-- dispatcher's payoffs (mirrored arms reduced to the unchecked payoff, the
+-- four SM9 arms closed from their frames), and the packs' inhabitation
+-- witnesses, whose state is built through the retype and binding levers:
+#check @checkedSyscallDispatchQuiescence
+#check @dispatchWithCapChecked_preserves_ipcInvariantFull
+#check @dispatchSyscallChecked_preserves_ipcInvariantFull
+#check @syscallDispatchQuiescence_inhabited
+#check @checkedSyscallDispatchQuiescence_inhabited
+-- The per-arm witness family (PR #886 review): each indexed pack field is
+-- exercised with its premises firing — the signal confinement and thread
+-- quiescence on present objects, retype detachedness of the decoded target,
+-- the send/receive/call stages by evaluating the transitions, the mint badge
+-- by computing the decoder, the reply arm to the lever boundary against a
+-- stored reply, and the checked tier's declassifying confinement:
+#check @syscallDispatchQuiescence_inhabited_signal
+#check @syscallDispatchQuiescence_inhabited_retype
+#check @syscallDispatchQuiescence_inhabited_send
+#check @syscallDispatchQuiescence_inhabited_receive
+#check @syscallDispatchQuiescence_inhabited_call
+#check @syscallDispatchQuiescence_inhabited_mint
+#check @syscallDispatchQuiescence_inhabited_reply
+#check @syscallDispatchQuiescence_inhabited_bind
+#check @syscallDispatchQuiescence_inhabited_unbind
+#check @syscallDispatchQuiescence_inhabited_suspend
+#check @checkedSyscallDispatchQuiescence_inhabited_declassifySignal
 
 /-- SM6.D.1 exact decomposition: the ∀-core bundle is equivalent to the global
 bundle plus the per-core passive-idle slices — nothing is weakened. -/
@@ -491,15 +593,13 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
 bundle view. -/
 example (st st' : SystemState) (ntfnId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
-    (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hNWC : notificationWaiterConsistent st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hStep : notificationSignal ntfnId badge st = .ok ((), st'))
     (c : CoreId) :
     ipcInvariantFull_perCore st' c :=
   notificationSignal_preserves_ipcInvariantFull_perCore st st' ntfnId badge hInv hObjInv
-    hWtpmn' hRCLRecip' hNWC hAllBudgetsNone hStep c
+    hNWC hAllBudgetsNone hStep c
 
 /-- SM6.D: the freshly-booted system satisfies every core's bundle view. -/
 example (c : CoreId) : ipcInvariantFull_perCore (default : SystemState) c :=
@@ -509,13 +609,11 @@ example (c : CoreId) : ipcInvariantFull_perCore (default : SystemState) c :=
 every core's bundle view, unconditionally over success/failure. -/
 example (st : SystemState) (ntfnId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (ec c : CoreId)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent (notificationSignalOnCore ntfnId badge ec st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal (notificationSignalOnCore ntfnId badge ec st).1)
     (hNWC : notificationWaiterConsistent st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st) :
     ipcInvariantFull_perCore (notificationSignalOnCore ntfnId badge ec st).1 c :=
   notificationSignalOnCore_preserves_ipcInvariantFull_perCore ntfnId badge ec st hInv hObjInv
-    hWtpmn' hRCLRecip' hNWC hAllBudgetsNone c
+    hNWC hAllBudgetsNone c
 
 /-- SM6.D completion (representative): the **cross-core** reply preserves the
 whole twenty-conjunct bundle for any reply-cap holder (delegated authority
@@ -524,12 +622,102 @@ off-scheduler agreement dichotomy). -/
 example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
     (st : SystemState)
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent (endpointReplyOnCore replier target msg ec st).1)
-    (hDOV' : donationOwnerValid (endpointReplyOnCore replier target msg ec st).1)
+    -- WS-RR RR3.12: a **pre**-state condition, where the retired `hDOV'` was a
+    -- post-state one no donating reply satisfies.
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId target)
     (hAllBudgetsNone : allTimeoutBudgetsNone st) :
     ipcInvariantFull (endpointReplyOnCore replier target msg ec st).1 :=
   endpointReplyOnCore_preserves_ipcInvariantFull replier target msg ec st hInv hObjInv
-    hWtpmn' hDOV' hAllBudgetsNone
+    hNoDonationOwnedBy hAllBudgetsNone
+
+/-- WS-RR RR3.12: the cross-core reply's **unconditional** bundle statement — the
+one that holds on the donating path too, with `donationOwnerValid` relaxed at the
+answered caller.  No hypothesis about the result at all; the relaxation is exactly
+the transient the donation return closes. -/
+example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
+    (st : SystemState)
+    (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st) :
+    ipcInvariantFullExceptDonationOwner
+      (endpointReplyOnCore replier target msg ec st).1 target :=
+  endpointReplyOnCore_preserves_ipcInvariantFullExceptDonationOwner replier target msg ec st
+    hInv hObjInv hAllBudgetsNone
+
+/-- WS-RR RR3.14: the reachability bundle is **inhabited** — the boot state
+satisfies it.  Without this the pre-state conditions the de-threaded bundles now
+carry could be an unsatisfiable conjunction, and every theorem taking them would
+be vacuous: the failure shape de-threading exists to remove, one level up. -/
+example : ipcReachable (default : SystemState) := ipcReachable_default
+
+/-- WS-RR RR3.13: the enqueueing bundles' freshness precondition is a
+**consequence**, not an assumption — a `.ready` thread cannot head or tail any
+endpoint queue, because every head and tail is blocked. -/
+example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : ipcInvariantFull st)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hReady : tcb.ipcState = .ready) :
+    ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some tid ∧ ep.sendQ.tail ≠ some tid ∧
+      ep.receiveQ.head ≠ some tid ∧ ep.receiveQ.tail ≠ some tid :=
+  readyThread_endpointQueueFresh st tid tcb hInv.queueHeadBlockedConsistent
+    hInv.endpointQueueTailBlockedConsistent hTcb hReady
+
+/-- WS-RR RR3.13: so is the cross-queue tail freshness the enqueue establishers
+carry — an endpoint's send-queue tail tails nothing else, from
+`ipcInvariantFull` alone. -/
+example (st : SystemState) (endpointId : SeLe4n.ObjId) (hInv : ipcInvariantFull st) :
+    ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.receiveQ.tail ≠ some tailTid) :=
+  sendTailCrossQueueFresh st endpointId hInv.dualQueueSystemInvariant
+    hInv.endpointQueueTailBlockedConsistent
+
+/-- WS-RR RR3.12 (payoff): the **live** cross-core `.reply` dispatch preserves the
+whole twenty-conjunct bundle on the *donating* path — the seL4-MCS path the previous
+statement was vacuous on.  Nothing about the result is assumed: `hDonationReturned`
+says only that whatever the answered caller donated is what the recorded reply server
+returns, a fact about the pre-state and the operation's arguments. -/
+example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
+    (st : SystemState)
+    (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (hDonationReturned : ∀ (expected : SeLe4n.ThreadId),
+      recordedReplyServer? st target = some expected →
+      ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
+        st.objects[s.toObjId]? = some (.tcb sTcb) →
+        sTcb.schedContextBinding = .donated sc target →
+        replyDonationReturn? st expected = some (sc, target))
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hServerIdleAllowed : ∀ (expected : SeLe4n.ThreadId), recordedReplyServer? st target
+        = some expected →
+      ∀ tcb, st.getTcb? expected = some tcb → passiveServerIdleAllowed tcb.ipcState) :
+    ipcInvariantFull (endpointReplyCrossCoreDispatch replier target msg ec st).1 :=
+  endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier target msg ec st hInv
+    hObjInv hDonationReturned hAllBudgetsNone hServerIdleAllowed
+
+/-- WS-RR RR3.12: the donation return **upgrades** the relaxed invariant back to the
+full one — the other half of the reply chain's honest statement, and the reason the
+relaxation is a transient rather than a weakening. -/
+example (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (stcb : TCB)
+    (hServerObj : st.objects[serverTid.toObjId]? = some (.tcb stcb))
+    (hServerBind : stcb.schedContextBinding = .donated scId originalOwner)
+    (hUnique : donationOwnerUnique st)
+    (hInv : donationOwnerValidExcept st originalOwner)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    donationOwnerValid st' :=
+  returnDonatedSchedContext_establishes_donationOwnerValid_of_except st st' serverTid scId
+    originalOwner hObjInv stcb hServerObj hServerBind hUnique hInv h
 
 /-- SM6.D completion (seL4-MCS one-object reuse): the composed cross-core
 `replyRecv` accepts a reply object that is *in use by the answered caller* —
@@ -538,11 +726,10 @@ The disjunctive `hReplyIdValid` premise's reuse arm is exercised here. -/
 example (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
     (msg : IpcMessage) (rid : SeLe4n.ReplyId) (ec c : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReplyRecvOnCore endpointId receiver replyTarget msg (some rid) ec st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointReplyRecvOnCore endpointId receiver replyTarget msg (some rid) ec st).1)
-    (hDOVMid : donationOwnerValid (endpointReplyOnCore receiver replyTarget msg ec st).1)
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId replyTarget)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -568,7 +755,7 @@ example (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
     ipcInvariantFull_perCore
       (endpointReplyRecvOnCore endpointId receiver replyTarget msg (some rid) ec st).1 c :=
   endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore endpointId receiver replyTarget
-    msg (some rid) ec st hInv hObjInv hWtpmn' hRCLRecip' hDOVMid hAllBudgetsNone
+    msg (some rid) ec st hInv hObjInv hNoDonationOwnedBy hAllBudgetsNone
     hFreshReceiver hRecvTailFresh
     (fun rid' hRid' => Or.inr (by
       obtain rfl : rid = rid' := Option.some.inj hRid'
@@ -583,10 +770,11 @@ example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st') (hBadge' : badgeWellFormed st')
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
+    -- WS-RR RR3.11: one condition on the syscall's own message argument, where the
+    -- retired `hDualQueue'` / `hBadge'` were post-state conjuncts the bundle now
+    -- establishes.
+    (hMsgCaps : messageCapBadgesValid msg)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
@@ -610,7 +798,7 @@ example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     ipcInvariantFull_perCore st' c :=
   endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore endpointId sender msg
     endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv hObjInv
-    hDualQueue' hBadge' hWtpmn' hAllBudgetsNone hRCLRecip' hFreshSender hSendTailFresh
+    hMsgCaps hAllBudgetsNone hFreshSender hSendTailFresh
     hSenderNotRecv hSenderNotReply hSenderNotUnbound hStep c
 
 /-- SM6.D runtime: `threadHomeCore` and `determineTargetCore` agree on the

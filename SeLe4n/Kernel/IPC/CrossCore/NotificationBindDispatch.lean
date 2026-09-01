@@ -202,10 +202,6 @@ theorem notificationWaitCrossCoreDispatch_preserves_ipcInvariantFull
     (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (notificationWaitCrossCoreDispatch notificationId waiter st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (notificationWaitCrossCoreDispatch notificationId waiter st).1)
     (hWaiterNotRecv : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hWaiterNotReply : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
@@ -215,7 +211,7 @@ theorem notificationWaitCrossCoreDispatch_preserves_ipcInvariantFull
         tcb.ipcState = .ready) :
     ipcInvariantFull (notificationWaitCrossCoreDispatch notificationId waiter st).1 :=
   notificationWaitOnCore_preserves_ipcInvariantFull notificationId waiter
-    (determineExecutingCore st waiter) st hInv hObjInv hWtpmn' hRCLRecip' hWaiterNotRecv
+    (determineExecutingCore st waiter) st hInv hObjInv hWaiterNotRecv
     hWaiterNotReply hAllBudgetsNone hWaiterReady
 
 end SeLe4n.Kernel

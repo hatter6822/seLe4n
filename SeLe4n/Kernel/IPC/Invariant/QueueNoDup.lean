@@ -404,7 +404,7 @@ theorem notificationWait_preserves_endpointQueueNoDup
               have hInv1 := storeObject_non_ep_non_tcb_preserves_endpointQueueNoDup
                 st pair1.2 notificationId _ hInv hObjInv
                 (fun ep => by intro h; cases h) (fun tcb => by intro h; cases h) hStore1
-              generalize hIpc : storeTcbIpcState_fromTcb pair1.2 waiter _ _ = rIpc at hStep
+              generalize hIpc : storeTcbIpcStateAndMessage_fromTcb pair1.2 waiter _ _ _ = rIpc at hStep
               cases rIpc with
               | error e => simp at hStep
               | ok pair2 =>
@@ -421,9 +421,9 @@ theorem notificationWait_preserves_endpointQueueNoDup
                   rw [storeObject_objects_ne st pair1.2 notificationId waiter.toObjId _ hNe hObjInv hStore1]
                   unfold lookupTcb at hLookup
                   split at hLookup <;> simp_all
-                rw [storeTcbIpcState_fromTcb_eq hLookup1] at hIpc
+                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup1] at hIpc
                 exact removeRunnable_preserves_endpointQueueNoDup _ _ <|
-                  storeTcbIpcState_preserves_endpointQueueNoDup _ _ _ _ hInv1 hObjInv1 hIpc
+                  storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup _ _ _ _ _ hInv1 hObjInv1 hIpc
 
 open SeLe4n.Model.SystemState in
 /-- PR #827 #3 fold: `consumeCallerReply` preserves `endpointQueueNoDup` —

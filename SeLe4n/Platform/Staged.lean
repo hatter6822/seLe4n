@@ -510,6 +510,17 @@ import SeLe4n.Kernel.IPC.CrossCore.CancellationNI
 -- which nothing had before, and the per-core donation return's.  Staged with the
 -- cross-core call/reply invariant surfaces it composes.
 import SeLe4n.Kernel.IPC.CrossCore.DispatchInvariant
+import SeLe4n.Kernel.IPC.Invariant.DispatchPayoff
+-- WS-RR RR3.13/RR3.14: the pre-state side of the de-threaded IPC bundle family
+-- -- `ipcReachable` (the state-shaped preconditions, with the boot state proved
+-- to satisfy them so the bundle is inhabited rather than vacuous) plus the
+-- derivations that turn the running-caller and queue-tail preconditions from
+-- assumptions into consequences of `ipcInvariantFull` itself.  Consumed since
+-- RR3.23-25 by the staged payoff tier in `IPC.Invariant.DispatchPayoff`
+-- (imported above -- each quiescence pack's `reachable` field); still nothing
+-- *production* imports it: `API.lean`'s production payoff takes its invariant
+-- hypotheses directly rather than through the pack.
+import SeLe4n.Kernel.IPC.Invariant.Reachability
 -- WS-SM SM8.A: the per-core observable state — the SMP information-flow
 -- observer `(c, L)` (plan Definition 3.1.1) and the state it observes
 -- (`ObservableState.onCore`, Definition 3.2.1), layered on the SM4.D

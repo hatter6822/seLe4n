@@ -1129,14 +1129,14 @@ theorem notificationWait_projection_preserved
             | ok pair =>
               simp only []
               have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObj hObjInv hStore
-              simp only [storeTcbIpcState_fromTcb_eq hLk']
-              cases hTcb : storeTcbIpcState pair.2 waiter _ with
+              simp only [storeTcbIpcStateAndMessage_fromTcb_eq hLk']
+              cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter _ none with
               | error e => simp
               | ok st2 =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
                 have hObjInvMid := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
                 rw [removeRunnable_preserves_projection ctx observer st2 waiter hWaiterHigh,
-                    storeTcbIpcState_preserves_projection ctx observer pair.2 st2 waiter _ hWaiterObjHigh hObjInvMid hTcb,
+                    storeTcbIpcStateAndMessage_preserves_projection ctx observer pair.2 st2 waiter _ _ hWaiterObjHigh hObjInvMid hTcb,
                     storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hObjInv hStore]
 
 /-- WS-F3/F-21: notificationWait preserves low-equivalence. -/

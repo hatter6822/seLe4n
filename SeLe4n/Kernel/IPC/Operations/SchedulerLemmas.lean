@@ -276,26 +276,13 @@ theorem storeTcbIpcState_tcb_exists_at_target
 -- WS-F1: Supporting lemmas for storeTcbIpcStateAndMessage / storeTcbPendingMessage
 -- ============================================================================
 
-/-- WS-F1: `storeTcbIpcStateAndMessage` preserves objects at IDs other than `tid.toObjId`. -/
-theorem storeTcbIpcStateAndMessage_preserves_objects_ne
-    (st st' : SystemState) (tid : SeLe4n.ThreadId)
-    (ipc : ThreadIpcState) (msg : Option IpcMessage)
-    (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
-    (hObjInv : st.objects.invExt)
-    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
-    st'.objects[oid]? = st.objects[oid]? := by
-  unfold storeTcbIpcStateAndMessage at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      obtain ⟨⟨⟩, stMid⟩ := pair
-      simp only [hStore] at hStep
-      have hEq : stMid = st' := Except.ok.inj hStep; subst hEq
-      exact storeObject_objects_ne st stMid tid.toObjId oid _ hNe hObjInv hStore
+-- WS-RR RR3.5: `storeTcbIpcStateAndMessage_preserves_objects_ne` and
+-- `storeTcbIpcStateAndMessage_preserves_notification` moved UP to
+-- `IPC/Operations/Endpoint.lean`, beside their `storeTcbIpcState` twins.
+-- `notificationWait`'s block path now clears `pendingMessage` atomically with
+-- the block, so `Endpoint.lean` itself needs the frames and cannot reach a
+-- module that imports it.  Every consumer here resolves them through that
+-- import unchanged.
 
 /-- Finding F-1: `storeTcbReceiveComplete` preserves objects at IDs other than
 `tid.toObjId`.  Mirror of `storeTcbIpcStateAndMessage_preserves_objects_ne`; the
@@ -410,22 +397,6 @@ theorem storeTcbReceiveComplete_preserves_endpoint
     have hLookup : lookupTcb st tid = none := by unfold lookupTcb; simp [hEp]
     simp [hLookup] at hStep
   · rw [storeTcbReceiveComplete_preserves_objects_ne st st' tid msg epId hEq hObjInv hStep]; exact hEp
-
-/-- WS-F1: `storeTcbIpcStateAndMessage` preserves notification objects. -/
-theorem storeTcbIpcStateAndMessage_preserves_notification
-    (st st' : SystemState) (tid : SeLe4n.ThreadId)
-    (ipc : ThreadIpcState) (msg : Option IpcMessage)
-    (notifId : SeLe4n.ObjId) (ntfn : Notification)
-    (hObjInv : st.objects.invExt)
-    (hNtfn : st.objects[notifId]? = some (.notification ntfn))
-    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
-    st'.objects[notifId]? = some (.notification ntfn) := by
-  by_cases hEq : notifId = tid.toObjId
-  · subst hEq
-    unfold storeTcbIpcStateAndMessage at hStep
-    have hLookup : lookupTcb st tid = none := by unfold lookupTcb; simp [hNtfn]
-    simp [hLookup] at hStep
-  · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg notifId hEq hObjInv hStep]; exact hNtfn
 
 /-- WS-F1: Backward endpoint preservation for `storeTcbIpcStateAndMessage`. -/
 theorem storeTcbIpcStateAndMessage_endpoint_backward

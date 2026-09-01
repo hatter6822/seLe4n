@@ -3019,18 +3019,6 @@ theorem endpointQueueEnqueue_empty_queueNext_none
                 rw [storeObject_objects_eq _ _ tid.toObjId _ hInv1 hStore2]
                 exact ⟨_, rfl, rfl⟩
 
-/-- Helper: If `st.objects[tid.toObjId]?` contains a TCB and tid is not reserved,
-then `lookupTcb st tid` succeeds. -/
-private theorem lookupTcb_of_objects
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hObj : st.objects[tid.toObjId]? = some (.tcb tcb))
-    (hNotReserved : ¬tid.isReserved) :
-    lookupTcb st tid = some tcb := by
-  unfold lookupTcb
-  cases hRes : tid.isReserved
-  · simp [hObj]
-  · simp_all
-
 /-- Helper: If `endpointQueueEnqueue` succeeds with tid, then tid is not reserved. -/
 private theorem tid_not_reserved_of_enqueue
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
@@ -3077,7 +3065,7 @@ theorem endpointQueueEnqueue_then_popHead_succeeds
   obtain ⟨tcb', hTcb', hNextNone⟩ := endpointQueueEnqueue_empty_queueNext_none
     endpointId isReceiveQ tid st st' ep hObj hEmptyTail hObjInv hStep
   have hNotReserved := tid_not_reserved_of_enqueue endpointId isReceiveQ tid st st' hStep
-  have hLookup' := lookupTcb_of_objects st' tid tcb' hTcb' hNotReserved
+  have hLookup' := lookupTcb_of_objects_of_not_reserved st' tid tcb' hTcb' hNotReserved
   have hNe : tid.toObjId ≠ endpointId := fun h => by
     rw [h] at hTcb'; rw [hEp'] at hTcb'; cases hTcb'
   -- Unfold endpointQueuePopHead and step through computationally
@@ -3108,7 +3096,7 @@ theorem endpointQueueEnqueue_then_popHead_succeeds
     have hTcbSt1 : st1.objects[tid.toObjId]? = some (.tcb tcb') := by
       rw [storeObject_objects_ne' st' endpointId tid.toObjId _ (u, st1) hNe hObjInv' hStoreEp']
       exact hTcb'
-    have hLookupSt1 := lookupTcb_of_objects st1 tid tcb' hTcbSt1 hNotReserved
+    have hLookupSt1 := lookupTcb_of_objects_of_not_reserved st1 tid tcb' hTcbSt1 hNotReserved
     -- Step 7: storeTcbQueueLinks succeeds
     -- Reduce the match on Except.ok to expose storeTcbQueueLinks body
     simp only []

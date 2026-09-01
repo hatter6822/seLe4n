@@ -339,4 +339,18 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_aarch64_cross_target.py"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_tlbi_broadcast_discipline.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_tlbi_broadcast_discipline.py"
 
+# WS-RR RR3.1: `ipcInvariantFull` de-threading.  A bundle that binds a
+# conjunct applied to its own post-state proves "*if* the post-state already
+# satisfies the conjunct, the transition is fine" -- not that the transition
+# establishes it.  The ten conjuncts de-threaded by earlier WS-DT slices each
+# had a canonical primed binder, so a name grep could measure them; the two
+# that remained appear under `hInv`, `hRecip`, `hWtpmn` and bare `h`, so a
+# name-based check would have reported success while measuring nothing.  This
+# gate derives the conjunct set from the definition, the bundle family from
+# the declaration names, and each bundle's pre-state from its own hypothesis,
+# and reports every conjunct bound on anything else.  Self-test first: a
+# scanner that under-reaches reports PASS.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_ipc_invariant_dethreading.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_ipc_invariant_dethreading.py"
+
 finalize_report

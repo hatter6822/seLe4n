@@ -1108,18 +1108,6 @@ theorem migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed
             exact h
       · exact h
 
-/-- WS-SM SM5.H.4 (frame): the replenishment migration leaves **every** run-queue
-slot untouched (it writes only replenish-queue slots) — so it preserves
-run-queue well-formedness on every core trivially. -/
-@[simp] theorem migrateSchedContextReplenishment_runQueueOnCore (st : SystemState)
-    (scId : SchedContextId) (fromCore toCore c' : CoreId) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.runQueueOnCore c'
-      = st.scheduler.runQueueOnCore c' := by
-  unfold migrateSchedContextReplenishment
-  split
-  · rfl
-  · simp
-
 /-- WS-SM SM5.H.4: the **full** affinity-change-with-migration composite preserves
 run-queue well-formedness on every core.  Decomposes into the affinity write
 (leaves the scheduler untouched), the optional replenishment migration (leaves

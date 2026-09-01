@@ -1,0 +1,19 @@
+# WS-RR RR3 -- registered residuals of the `ipcInvariantFull` de-threading gate.
+#
+# The gate's `payoff_theorems` check requires each name in its PAYOFF_THEOREMS
+# tuple to be declared somewhere in the tree.  A name listed here is a residual
+# the project has looked at, sized, and deferred with a closure target; the
+# gate reports it instead of failing on it.
+#
+# The registration is checked in BOTH directions, so it cannot rot into a
+# silent exemption:
+#
+#   * a name listed here whose theorem HAS landed fails the gate (stale
+#     registration -- delete the line);
+#   * a name listed here that is not one of the gate's payoff theorems fails
+#     the gate (dangling registration);
+#   * a payoff theorem that is absent AND unlisted fails the gate, as before.
+#
+# Format: <theorem name> | <closure target> | <reason>
+# Lines starting with `#` and blank lines are ignored.
+

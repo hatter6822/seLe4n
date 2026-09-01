@@ -872,6 +872,75 @@ private def differentialEndpointSendAgrees : IO Unit := do
       (liveWithTaint .send diffA (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.endpointSendDual diffEpId diffA msg) ist.state))
 
+/-- FO-038: the wait, against `notificationWait`, with nothing pending — the
+idle park.  The waiter goes in already holding a collected `pendingMessage`,
+so the scenario pins the atomic clear the live path performs at the block:
+before the mirror fix the frozen side parked the waiter still holding the
+message, a live/frozen divergence on the mirror's own content channel
+(PR #886 review). -/
+private def differentialNotificationWaitParksAgrees : IO Unit := do
+  let held : IpcMessage := { registers := #[⟨11⟩], caps := #[], badge := none }
+  let ntfn : Notification :=
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+      pendingBadge := none }
+  let ist := diffAddTcb
+    (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
+      diffNotifId ntfn) { diffTcb 62 with pendingMessage := some held }
+  -- Control: the wait really parks on both sides (no shared refusal).
+  expect "FO-038 control: the live wait parks (not a shared refusal)"
+    (SeLe4n.Kernel.notificationWait diffNotifId diffA ist.state).toOption.isSome
+  expect "FO-038 control: and so does the frozen one"
+    (frozenNotificationWait diffNotifId diffA (freeze ist)).toOption.isSome
+  expect "FO-038: the frozen idle park agrees with the live one"
+    (frozenRunAgrees (fun a b => a == b)
+      (frozenNotificationWait diffNotifId diffA (freeze ist))
+      (liveWithTaint .notificationWait diffA (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.notificationWait diffNotifId diffA) ist.state))
+
+/-- FO-039: the idle park again, on a *bound* notification — the bound thread
+itself waiting, the seL4-canonical shape.  The live block rebuilds the
+notification carrying `boundTCB` forward; the frozen rebuild omitted the
+field, silently resetting the binding to `none` on the frozen side only,
+which FO-038's unbound fixture could not see (PR #886 review). -/
+private def differentialNotificationWaitParksBoundAgrees : IO Unit := do
+  let ntfn : Notification :=
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+      pendingBadge := none, boundTCB := some diffA }
+  let ist := diffAddTcb
+    (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
+      diffNotifId ntfn) (diffTcb 62)
+  expect "FO-039 control: the live wait parks on the bound notification"
+    (SeLe4n.Kernel.notificationWait diffNotifId diffA ist.state).toOption.isSome
+  expect "FO-039 control: and so does the frozen one"
+    (frozenNotificationWait diffNotifId diffA (freeze ist)).toOption.isSome
+  expect "FO-039: the frozen bound-notification park agrees with the live one"
+    (frozenRunAgrees (fun a b => a == b)
+      (frozenNotificationWait diffNotifId diffA (freeze ist))
+      (liveWithTaint .notificationWait diffA (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.notificationWait diffNotifId diffA) ist.state))
+
+/-- FO-040: the badge consume on a *bound* notification — the same field, one
+branch over: the live consume carries `boundTCB` through its rebuild and the
+frozen one dropped it (the FO-039 sweep's sibling; a badge pending on a bound
+notification is reachable, since bound delivery stores when the bound TCB is
+not endpoint-parked). -/
+private def differentialNotificationWaitConsumesBoundAgrees : IO Unit := do
+  let ntfn : Notification :=
+    { state := .active, waitingThreads := SeLe4n.NoDupList.empty,
+      pendingBadge := some (SeLe4n.Badge.ofNatMasked 9), boundTCB := some diffA }
+  let ist := diffAddTcb
+    (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
+      diffNotifId ntfn) (diffTcb 62)
+  expect "FO-040 control: the live consume succeeds on the bound notification"
+    (SeLe4n.Kernel.notificationWait diffNotifId diffA ist.state).toOption.isSome
+  expect "FO-040 control: and so does the frozen one"
+    (frozenNotificationWait diffNotifId diffA (freeze ist)).toOption.isSome
+  expect "FO-040: the frozen bound-notification consume agrees with the live one"
+    (frozenRunAgrees (fun a b => a == b)
+      (frozenNotificationWait diffNotifId diffA (freeze ist))
+      (liveWithTaint .notificationWait diffA (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.notificationWait diffNotifId diffA) ist.state))
+
 /-- FO-029: the receive, against `endpointReceiveDual`, dequeuing a parked
 sender that carries its message — the rendezvous the round-11 guard admits. -/
 private def differentialEndpointReceiveAgrees : IO Unit := do
@@ -1152,6 +1221,9 @@ private def differentialScenarios :
   [ (.notificationSignalToBoundThread,  differentialNotificationSignalAgrees),
     (.notificationSignalToBoundThread,  differentialWakeAtUnqueuedPriorityAgrees),
     (.notificationWaitConsumesBadge,    differentialNotificationWaitAgrees),
+    (.notificationWaitConsumesBadge,    differentialNotificationWaitConsumesBoundAgrees),
+    (.notificationWaitBlocks,           differentialNotificationWaitParksAgrees),
+    (.notificationWaitBlocks,           differentialNotificationWaitParksBoundAgrees),
     (.endpointSendParks,                differentialEndpointSendAgrees),
     (.endpointSendToWaitingReceiver,    differentialSendFromAbsentSenderAgrees),
     (.endpointSendToWaitingReceiver,    differentialSendRendezvousDeliversAgrees),
@@ -1249,4 +1321,4 @@ def main : IO Unit := do
   differentialTaintedSignalAgrees
   differentialRefusalsAgree
   differentialComparisonHasBite
-  IO.println "=== All Q7 frozen ops tests passed (31 scenarios) ==="
+  IO.println "=== All Q7 frozen ops tests passed (33 scenarios) ==="

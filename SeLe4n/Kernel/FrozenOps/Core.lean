@@ -353,6 +353,24 @@ def frozenStoreTcbIpcState (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
       | .error e => .error e
       | .ok ((), st') => .ok st'
 
+/-- Store a TCB's IPC state and pending message together in frozen state --
+the frozen twin of the live `storeTcbIpcStateAndMessage`.  Added when the
+live idle-notification block began clearing `pendingMessage` atomically with
+the park (the `blockedThreadsPendingMessageConsistent` fix) and the frozen
+mirror, still storing state alone, silently kept the stale message -- a
+live/frozen divergence on the mirror's own content channel (PR #886
+review). -/
+def frozenStoreTcbIpcStateAndMessage (st : FrozenSystemState)
+    (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
+    (msg? : Option IpcMessage) : Except KernelError FrozenSystemState :=
+  match frozenLookupTcb st tid with
+  | none => .error .objectNotFound
+  | some tcb =>
+      match frozenStoreTcb tid
+          { tcb with ipcState := ipcState, pendingMessage := msg? } st with
+      | .error e => .error e
+      | .ok ((), st') => .ok st'
+
 -- ============================================================================
 -- Q7-A: Frozen Scheduler Helpers
 -- ============================================================================

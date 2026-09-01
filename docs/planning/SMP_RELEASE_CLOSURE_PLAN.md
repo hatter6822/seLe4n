@@ -186,7 +186,7 @@ what RR1.11 owed the estimate; the numbering has an owner and a place.
   cancelled waiter resumes reading its stale staged arguments as a return
   value.
 - **WS-DT complete** — the IPC `ipcInvariantFull` de-threading workstream
-  ([`IPC_INVARIANT_DETHREADING_PLAN.md`](IPC_INVARIANT_DETHREADING_PLAN.md),
+  ([`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md),
   registered in [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) as
   **WS-DT**).  Slices D1, D6 and D8 are open at `v0.34.25`: two of the twenty
   `ipcInvariantFull` conjuncts —
@@ -198,8 +198,12 @@ what RR1.11 owed the estimate; the numbering has an owner and a place.
   `syscallDispatch_preserves_ipcInvariantFull` exists.  SM10.2.4 (README
   capability claim) and SM10.2.6 (`CLAIM_EVIDENCE_INDEX.md` entries) are the
   sub-tasks that would otherwise write v1.0.0 verification claims over this
-  surface.  **Closed by WS-RR phase RR3**, which absorbs all three slices and
-  retires the plan at RR3.17.
+  surface.  **Closed by WS-RR phase RR3 at `v0.34.43`**, which absorbed all three
+  slices, landed the payoff (`dispatchCapabilityOnly_preserves_ipcInvariantFull`
+  in production; `dispatchWithCap_preserves_ipcInvariantFull` /
+  `dispatchSyscall_preserves_ipcInvariantFull` staged with the `.call` surface
+  they compose, under pre-state quiescence packs), and retired the plan at
+  RR3.26 to `docs/dev_history/planning/`.
 - Tier 0..5 tests green at HEAD.
 
 ## 3. Sub-tasks
@@ -466,7 +470,7 @@ it for live work.  The list is enumerated here rather than left to the mover:
 **Not moved by this sub-task**, and each for a stated reason — an archive list
 is only correct if the exclusions are as deliberate as the inclusions:
 
-- `IPC_INVARIANT_DETHREADING_PLAN.md` — already archived by **RR3.17**, which
+- `IPC_INVARIANT_DETHREADING_PLAN.md` — already archived by **RR3.26**, which
   retires it on closing WS-DT.  Moving it twice is not possible; finding it
   still in `docs/planning/` when SM10 opens means RR3 did not close.
 - `HARDWARE_PARTITION_ISOLATION_PLAN.md` — post-v1.0.0 and explicitly out of

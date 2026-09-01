@@ -9,7 +9,7 @@
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 157 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 166 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -113,7 +113,7 @@ twice. The dependencies that produced this order:
   owns both halves of the SM10 estimate: RR1.10 records the measured aarch64
   surface and RR1.11 revises the estimate from it, in that order, so no phase
   has to reach back to a later one for its input.
-- **RR2 before RR3.** The de-threading payoff theorems (RR3.15, RR3.16)
+- **RR2 before RR3.** The de-threading payoff theorems (RR3.24, RR3.25)
   quantify over dispatch arms that must carry bundles first.
 - **RR4 before RR5, and never concurrent.** Both touch the trap and boot
   seams; running them in parallel means two phases editing the same files.
@@ -148,7 +148,7 @@ Nothing else may overlap without re-reading the dependency list above.
 | RR0 | Registration and plan correction — nothing further is lost.  **LANDED v0.34.26** | 11 | S–M |
 | RR1 | aarch64 compile coverage, plus the Rust HAL gate no other phase owns.  **LANDED v0.34.41** (RR1.12 hardened the gates through six review rounds in the same cut) | 12 | M |
 | RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live | 20 | M–L |
-| RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) | 17 | L–XL |
+| RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8).  **RR3.1–RR3.14 LANDED**; RR3.15–RR3.26 are the payoff's real inputs, re-scoped at the RR3.14 landing | 26 | XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart | 27 | XL |
 | RR5 | Boot-path fail-open closure | 14 | M–L |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 | L |
@@ -314,7 +314,7 @@ unproven teardown hypothesis.
   `SMP_CROSS_CORE_IPC_PLAN.md`); and the *composition* layer above the
   transitions — the flow-`Checked` wrappers, the `replyRecvBody` three-stage
   composite, and the `Architecture.stage*` return-frame writes — which is
-  RR3.15's charter, not a transition.
+  RR3.22's charter, not a transition.
 * **Replenish-queue migration** — all **three** live donation paths carry the
   SchedContext's pending CBS replenishments across cores
   (`applyCallDonationOnCore`, `applyReplyDonationOnCore`, and
@@ -362,34 +362,108 @@ inputs:
   Fully de-threaded new bundles, for contrast: `clearWokenReceiverStash`,
   `applyReplyDonationOnCore`, `replyRecvReturnDonation`, the donation
   primitives, and the PIP walk — each takes only pre-state facts.
-* **RR3.15 has its transition-level inputs; one is staged, and the
+* **RR3.24 has its IPC-side transition inputs; one is staged, and the
   composition layer is its own.**  After the closure-audit split, only the
   `.call` chain's bundle (`DispatchInvariant.lean`) is staged — it composes
   the staged `EndpointCallInvariant` surface — so
   `dispatchWithCap_preserves_ipcInvariantFull` still cannot state in
   `SeLe4n/Kernel/API.lean` over that arm until the call surface moves to
   production; RR3's author must either state the payoff in the staged layer or
-  schedule the relocation first.  Beyond that, RR3.15 owns the glue no
+  schedule the relocation first.  Beyond that, RR3.22 owns the glue no
   transition bundle covers: the flow-`Checked` wrappers (each has its
   `_flow_denied` / equivalence lemmas ready), the `replyRecvBody` composite
   over its three covered stages, and the `Architecture.stage*` return-frame
   writes (over `writeRegisterState_preserves_ipcInvariantFull`).
   `notificationSignalBoundOnCore` stays gated on SM6.D's bound-delivery debt
-  and is that debt's, not RR3.15's, to clear.
+  and is that debt's, not RR3.22's, to clear.
 
 
 ### RR3 — `ipcInvariantFull` de-threading closure (D1, D6, D8)
 
-Closes [`IPC_INVARIANT_DETHREADING_PLAN.md`](IPC_INVARIANT_DETHREADING_PLAN.md),
-whose D1, D6 and D8 slices are open. Two of the twenty conjuncts are still
-assumed as post-state hypotheses on nearly every bundle —
+> **Status**: RR3.1–RR3.26 **LANDED** — the phase is closed.  The RR3.1 gate
+> reports **zero** post-state bindings of **any** conjunct across the whole
+> `_preserves_ipcInvariantFull` / `_establishes_ipcInvariantFull` family, and
+> both payoff theorems now exist: `dispatchCapabilityOnly_preserves_ipcInvariantFull`
+> (production, `SeLe4n/Kernel/API.lean`), and
+> `dispatchWithCap_preserves_ipcInvariantFull` /
+> `dispatchSyscall_preserves_ipcInvariantFull`
+> (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, staged with the `.call`
+> chain's bundle per RR3.24's own escape clause).  RR3.22 landed all three of
+> its items: the flow-`Checked` dispatch wrappers carry their own payoff tier
+> (`dispatchWithCapChecked_preserves_ipcInvariantFull` /
+> `dispatchSyscallChecked_preserves_ipcInvariantFull`, staged in the same
+> module) — every mirrored arm reduced to the unchecked payoff, the four live
+> SM9 arms closed from their transitions' frames — alongside the
+> `replyRecvBody` composite and the `Architecture.stage*` bundles.  Both
+> dispatch packs carry machine-checked inhabitation witnesses whose state is
+> built through the retype and binding levers.  The pending register is
+> empty and the gate's success line reads end-to-end closure.
+>
+> **Deviations from the rows as written**, recorded rather than absorbed:
+> the per-arm bundles of RR3.15–RR3.21 landed in one host module
+> (`SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`, wired into
+> production through `API.lean`) rather than scattered across the file
+> columns below — the arms share one read-view lever surface, and one module
+> keeps the levers next to their consumers.  The payoffs carry **pre-state
+> quiescence packs** (`capabilityDispatchQuiescence`,
+> `syscallDispatchQuiescence`) — every field dischargeable before the step,
+> nothing bound on a post-state — and four residuals are confinements inside
+> those packs rather than gaps in the theorems: the retype target must be
+> detached (the seL4 revoke-and-suspend-before-retype contract), a
+> suspended/resumed victim must be IPC-quiescent (the queue-unlink
+> cancellation composite is SM6.E-surface follow-up work), `.notificationSignal`
+> covers the unbound-delivery path (bound delivery is SM6.D's registered
+> debt), and `.replyRecv`'s composite excludes a live donation edge naming
+> the woken caller (the donated-server reply path has its own composite in
+> `EndpointReplyDispatchInvariant.lean`).  Two operation-hardening follow-ups
+> are registered in `docs/WORKSTREAM_HISTORY.md`: `schedContextBind` can
+> target a recorded donation owner and `schedContextUnbind` can strand an
+> IPC-blocked bound thread; each bundle takes the corresponding pre-state
+> hypothesis until the operation refuses the case itself.
+
+Closes [`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md).
+At authoring time its D1, D6 and D8 slices were open, two of the twenty
+conjuncts were still assumed as post-state hypotheses on nearly every bundle —
 `blockedThreadsPendingMessageConsistent` on 33 of 35 and
-`replyCallerLinkageReciprocal` on 31 of 35 — so `ipcInvariantFull` is not
-today an end-to-end machine-checked property of the live kernel.
+`replyCallerLinkageReciprocal` on 31 of 35 — and `ipcInvariantFull` was not
+then an end-to-end machine-checked property of the live kernel; the status
+blockquote above records the closure.
+
+**What the landed half found, and why the second half was re-scoped.**
+
+* **The measured baseline was 103 post-state bindings, not the audit's 33+31**,
+  across six conjuncts rather than two.  RR3.1's gate derives the conjunct set,
+  the bundle family and each bundle's own pre-state, so it counted the
+  `donationOwnerValid`, `dualQueueSystemInvariant` and `badgeWellFormed`
+  bindings the binder-name census could not see.  All six are now zero.
+* **One conjunct was not merely unproven but false.**  `endpointReply` wakes the
+  answered caller `.ready` while the recorded server still holds
+  `.donated _ caller`; the donation returns afterwards, by the AUD-3 ordering.
+  So the nine reply bundles that threaded `donationOwnerValid` on their own
+  post-state were **vacuous** on the ordinary seL4-MCS path, not conditional.
+  RR3.12 answered with `donationOwnerValidExcept` — the invariant relaxed at the
+  woken caller, which the bare reply *establishes* — and the donation return's
+  upgrade back to the full form, so the live cross-core `.reply` dispatch now
+  covers the donating path it never covered before.
+* **Two vacuity defects closed on the way** (RR3.11): a receiver-root CNode
+  hypothesis that, quantified over the `*WithCaps` wrappers, read "every ObjId is
+  a CNode" and so held in no state containing the endpoint the step requires; and
+  `badgeWellFormed` constraining badges *at rest* while the IPC transfer installs
+  an in-flight capability verbatim, closed by the new
+  `pendingMessageCapBadgesWellFormed`.
+* **RR3.15/RR3.16 as originally written assumed per-arm bundles that do not
+  exist.**  The `_preserves_ipcInvariantFull` family covers the IPC and donation
+  transitions; `dispatchWithCap` routes twenty-five syscalls across the
+  capability, VSpace, service, sched-context, lifecycle and TCB subsystems, and
+  **six of about thirty arms** have any coverage at all.  The payoff is not a
+  composition of theorems already in the tree, so it was split into RR3.15–RR3.25
+  — one row per subsystem, then the two dispatch tiers — rather than shipped as a
+  theorem with its arms assumed.  `syscallDispatch` also names nothing in the
+  tree; the dispatcher is `dispatchSyscall`, and the theorem is named for it.
 
 The per-transition establishers for all seven base transitions already exist,
-so D1's residue is module ordering rather than missing mathematics. RR3.15 and
-RR3.16 depend on RR2: the payoff theorems quantify over dispatch arms that
+so D1's residue is module ordering rather than missing mathematics. RR3.24 and
+RR3.25 depend on RR2: the payoff theorems quantify over dispatch arms that
 must carry bundles first.
 
 | Sub | Description | Files | Est |
@@ -408,14 +482,30 @@ must carry bundles first.
 | RR3.12 | De-thread `donationOwnerValid` at the six remaining sites | (same) | M |
 | RR3.13 | Build the reachability bundle that discharges the remaining pre-state preconditions | `SeLe4n/Kernel/IPC/Invariant/Reachability.lean` (new) | L |
 | RR3.14 | Prove the boot state satisfies it, so the bundle is inhabited rather than vacuous | (same) | M |
-| RR3.15 | `dispatchWithCap_preserves_ipcInvariantFull` (**depends on RR2**) | `SeLe4n/Kernel/API.lean` | L |
-| RR3.16 | `syscallDispatch_preserves_ipcInvariantFull` — the D8 payoff — **and** cite both payoff theorems from `docs/CLAIM_EVIDENCE_INDEX.md`, which this phase's acceptance requires and no other row owned: the theorem that changes the claim surface is the one that must update the claim | `SeLe4n/Kernel/API.lean`, `docs/CLAIM_EVIDENCE_INDEX.md` | L |
-| RR3.17 | Retire `IPC_INVARIANT_DETHREADING_PLAN.md`: mark closed, record the closure version, move to `docs/dev_history/planning/` | (file move) | S |
+| RR3.15 | `ipcInvariantFull` bundles for the **capability** dispatch arms (`cspaceMint`, `cspaceCopy`, `cspaceMove`, `cspaceDelete`, `mintReplyCap`): CNode-only writes, so `capabilityBadgesWellFormed` is the only conjunct that moves and the rest transport through an object frame | `SeLe4n/Kernel/Capability/Invariant/` | L |
+| RR3.16 | … the **lifecycle retype** arm.  Its per-conjunct halves exist (`lifecycleRetypeObject_preserves_*`); the bundle over them does not | `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` | M |
+| RR3.17 | … the **VSpace** arms (`vspaceMap`, `vspaceUnmap`, `vspaceUnifyInstruction`): no conjunct reads a page table, so each is an object frame plus the store's own invariant | `SeLe4n/Kernel/Architecture/` | M |
+| RR3.18 | … the **service** arms (`serviceRegister`, `serviceRevoke`, `serviceQuery`) | `SeLe4n/Kernel/Service/Invariant/` | M |
+| RR3.19 | … the **sched-context** arms (`schedContextConfigure`, `schedContextBind`, `schedContextUnbind`).  These write `schedContextBinding`, so the donation quartet genuinely moves and the `donationOwnerFrame` / `sameSchedContextBindings` family is the lever | `SeLe4n/Kernel/SchedContext/` | L |
+| RR3.20 | … the **TCB field** arms (`tcbSetPriority`, `tcbSetMCPriority`, `tcbSetIPCBuffer`, `tcbSetAffinity`, `tcbBindNotification`, `tcbUnbindNotification`): one-TCB rewrites leaving every conjunct-read field intact, which is exactly RR2.6's one-TCB-rewrite lever | `SeLe4n/Kernel/Lifecycle/`, `SeLe4n/Kernel/Scheduler/` | L |
+| RR3.21 | … the **TCB lifecycle** arms (`tcbSuspend`, `tcbResume`), whose teardown rewrites `ipcState` and unlinks queues, so most of the bundle moves | `SeLe4n/Kernel/Lifecycle/Invariant/` | L |
+| RR3.22 | The composition layer no transition bundle covers, which the RR2 hand-off assigned to the payoff row: the flow-`Checked` dispatch wrappers, the `replyRecvBody` three-stage composite, and the `Architecture.stage*` return-frame writes | `SeLe4n/Kernel/API.lean` | L |
+| RR3.23 | `dispatchCapabilityOnly_preserves_ipcInvariantFull` — the argument-free dispatch tier, over RR3.15–RR3.21 | `SeLe4n/Kernel/API.lean` | M |
+| RR3.24 | `dispatchWithCap_preserves_ipcInvariantFull` (**consumes RR3.15–RR3.23**; the `.call` arm's bundle is staged, so either state the payoff in the staged layer or relocate the call surface first) — and delete its line from `docs/planning/ipc_dethreading_pending.txt`, which the RR3.1 gate checks in both directions | `SeLe4n/Kernel/API.lean`, `docs/planning/ipc_dethreading_pending.txt` | L |
+| RR3.25 | `dispatchSyscall_preserves_ipcInvariantFull` — the D8 payoff — **and** cite both payoff theorems from `docs/CLAIM_EVIDENCE_INDEX.md`, which this phase's acceptance requires and no other row owned: the theorem that changes the claim surface is the one that must update the claim.  Delete its line from the pending register too | `SeLe4n/Kernel/API.lean`, `docs/CLAIM_EVIDENCE_INDEX.md`, `docs/planning/ipc_dethreading_pending.txt` | L |
+| RR3.26 | Retire `IPC_INVARIANT_DETHREADING_PLAN.md`: mark closed, record the closure version, move to `docs/dev_history/planning/` | (file move) | S |
 
 **Acceptance**: the RR3.1 gate reports zero post-state bindings of
 `blockedThreadsPendingMessageConsistent` and `replyCallerLinkageReciprocal`
 across the `_preserves_ipcInvariantFull` family; both payoff theorems exist
 and are cited from `docs/CLAIM_EVIDENCE_INDEX.md`.
+
+Both halves are **met**: no conjunct at all is bound on a post-state, both
+payoff theorems exist and are cited from `docs/CLAIM_EVIDENCE_INDEX.md`, and
+the pending register is empty — the gate still checks it in both directions
+(a registration whose theorem has landed fails as stale, a registration
+outside the payoff set fails as dangling, an absent unregistered payoff fails
+as before), so the emptiness is a checked fact rather than a deleted file.
 
 **A note on measuring this.** The ten conjuncts de-threaded by earlier slices
 each had a canonical primed binder (`hQNBC'`, `hPRR'`, …), so "de-threaded"
@@ -653,7 +743,7 @@ them to a documentation sweep.
 |-----|-------------|-------|-----|
 | RR8.1 | Walk the RR0..RR7 acceptance gates and record the closing version for each | (1 file) | S |
 | RR8.2 | Update `UNFINISHED_SMP_WORK.md`: mark each closed finding with its version, leaving open items visible | `docs/planning/UNFINISHED_SMP_WORK.md` | M |
-| RR8.3 | Retire the RR0.3 standing constraint from `CLAUDE.md` and `AGENTS.md` once RR3 has closed — it says two conjuncts remain threaded and `ipcInvariantFull` is not end-to-end checked, which becomes false at RR3.16 and would otherwise misdirect every later contributor | `CLAUDE.md`, `AGENTS.md` | S |
+| RR8.3 | Retire the RR0.3 standing constraint from `CLAUDE.md` and `AGENTS.md` once RR3 has closed — it says two conjuncts remain threaded and `ipcInvariantFull` is not end-to-end checked, which becomes false at RR3.25 and would otherwise misdirect every later contributor | `CLAUDE.md`, `AGENTS.md` | S |
 | RR8.4 | Hand-off check **before** the closure entry: confirm SM10's §2 dependencies are genuinely met and its §1 scope statement matches the tree. Ordered first deliberately — each row may land as its own PR, so recording closure first would advertise the workstream complete for an intervening release, and an unmet dependency found afterwards would have to be retracted rather than simply fixed | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` | S |
 | RR8.5 | WS-RR closure entry in `docs/WORKSTREAM_HISTORY.md`; update the CLAUDE.md phase table — last, on evidence RR8.4 established | (3 files) | S |
 
@@ -734,7 +824,7 @@ PASS — the contract landed at `v0.34.2` and pinned by
 - **Source register**: [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md)
 - **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10)
 - **Overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
-- **Absorbed by RR3**: [`IPC_INVARIANT_DETHREADING_PLAN.md`](IPC_INVARIANT_DETHREADING_PLAN.md)
+- **Absorbed by RR3**: [`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md)
 - **Absorbed by RR6**: [`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md), [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 - **Canonical status**: [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md)
 - **Out of scope**: [`HARDWARE_PARTITION_ISOLATION_PLAN.md`](HARDWARE_PARTITION_ISOLATION_PLAN.md)

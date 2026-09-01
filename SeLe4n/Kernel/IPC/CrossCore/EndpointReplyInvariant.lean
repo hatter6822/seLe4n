@@ -283,19 +283,81 @@ theorem endpointReplyOnCore_post_agrees
 -- ============================================================================
 
 open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D (SM6.C closure): the cross-core reply preserves the **whole
-twenty-conjunct bundle**, unconditionally over success/failure.  Hypotheses
-mirror `endpointReply_preserves_ipcInvariantFull` (the threaded post-state
-facts `hWtpmn'`/`hDOV'` stated at the cross-core post-state). -/
+/-- WS-RR RR3.12: the cross-core reply frames the donation-owner side relaxed at the
+answered caller — the `post_agrees` lift of `endpointReply_donationOwnerFrameExcept`.
+The cross-core substitutions differ from the single-core spine only in scheduler
+placement, which this frame does not read. -/
+theorem endpointReplyOnCore_donationOwnerFrameExcept
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    donationOwnerFrameExcept st
+      (endpointReplyOnCore replier target msg executingCore st).1 target := by
+  rcases endpointReplyOnCore_post_agrees replier target msg executingCore st hObjInv with
+    hPre | ⟨expected, r1, hStep1, hAgree⟩
+  · rw [hPre]; exact donationOwnerFrameExcept.refl st target
+  · exact (endpointReply_donationOwnerFrameExcept st r1 expected target msg hObjInv
+      hStep1).trans (donationOwnerFrameExcept.of_getElem_eq hAgree.objects)
+
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.12: the cross-core reply writes no `schedContextBinding` — the
+`post_agrees` lift of `endpointReply_sameSchedContextBindings`. -/
+theorem endpointReplyOnCore_sameSchedContextBindings
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    sameSchedContextBindings st
+      (endpointReplyOnCore replier target msg executingCore st).1 := by
+  rcases endpointReplyOnCore_post_agrees replier target msg executingCore st hObjInv with
+    hPre | ⟨expected, r1, hStep1, hAgree⟩
+  · rw [hPre]; exact sameSchedContextBindings.refl st
+  · refine (endpointReply_sameSchedContextBindings st r1 expected target msg hObjInv
+      hStep1).trans ?_
+    intro tid tcb' hTcb'
+    exact ⟨tcb', by rw [← hAgree.objects]; exact hTcb', rfl⟩
+
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.12: the cross-core reply establishes the bundle **relaxed at the
+answered caller** — the honest unconditional statement about a bare reply, and the
+one the composite cross-core dispatch consumes before the donation return upgrades
+it.  Reduces to the single-core establisher through the `post_agrees` lever, exactly
+as the full-bundle theorem below does. -/
+theorem endpointReplyOnCore_preserves_ipcInvariantFullExceptDonationOwner
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st) :
+    ipcInvariantFullExceptDonationOwner
+      (endpointReplyOnCore replier target msg executingCore st).1 target := by
+  have hPsi' : passiveServerIdle (endpointReplyOnCore replier target msg executingCore st).1 :=
+    (passiveServerIdle_perCore_bootCore_iff _).mp
+      (passiveServerIdle_perCore_of_frameOnCore
+        (endpointReplyOnCore_passiveServerIdleFrameOnCore replier target msg executingCore
+          st bootCoreId hObjInv)
+        ((passiveServerIdle_perCore_bootCore_iff st).mpr hInv.passiveServerIdle))
+  rcases endpointReplyOnCore_post_agrees replier target msg executingCore st hObjInv with
+    hPre | ⟨expected, r1, hStep1, hAgree⟩
+  · rw [hPre]; exact ipcInvariantFullExceptDonationOwner_of_full target hInv
+  · exact ipcInvariantFullExceptDonationOwner_of_getElem_eq hAgree.objects hPsi'
+      (endpointReply_preserves_ipcInvariantFullExceptDonationOwner st r1 expected target msg
+        hInv hObjInv hAllBudgetsNone hStep1)
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (SM6.C closure) / WS-RR RR3.12: the cross-core reply preserves the
+**whole twenty-conjunct bundle**, unconditionally over success/failure, on a reply
+whose answered caller donated nothing.  Hypotheses mirror
+`endpointReply_preserves_ipcInvariantFull`, `hNoDonationOwnedBy` included: the
+threaded post-state `hDOV'` it replaces is false of this transition's own result
+whenever the answered call donated, so the theorem asserted nothing there.  The
+donating path goes through the relaxed statement above plus the donation return. -/
 theorem endpointReplyOnCore_preserves_ipcInvariantFull
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReplyOnCore replier target msg executingCore st).1)
-    (hDOV' : donationOwnerValid
-      (endpointReplyOnCore replier target msg executingCore st).1)
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId target)
     (hAllBudgetsNone : allTimeoutBudgetsNone st) :
     ipcInvariantFull (endpointReplyOnCore replier target msg executingCore st).1 := by
   have hPsi' : passiveServerIdle (endpointReplyOnCore replier target msg executingCore st).1 :=
@@ -309,11 +371,7 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull
   · rw [hPre]; exact hInv
   · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
       (endpointReply_preserves_ipcInvariantFull st r1 expected target msg hInv hObjInv
-        (blockedThreadsPendingMessageConsistent_of_getElem_eq
-          (fun oid => (hAgree.objects oid).symm) hWtpmn')
-        hAllBudgetsNone
-        (donationOwnerValid_of_getElem_eq (fun oid => (hAgree.objects oid).symm) hDOV')
-        hStep1)
+        hAllBudgetsNone hNoDonationOwnedBy hStep1)
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D flagship (cross-core reply): `endpointReplyOnCore` preserves
@@ -323,16 +381,18 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReplyOnCore replier target msg executingCore st).1)
-    (hDOV' : donationOwnerValid
-      (endpointReplyOnCore replier target msg executingCore st).1)
+    -- WS-RR RR3.12: replaces the threaded post-state `hDOV'` with the pre-state
+    -- condition that makes it derivable.
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId target)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (c : CoreId) :
     ipcInvariantFull_perCore (endpointReplyOnCore replier target msg executingCore st).1 c :=
   ipcInvariantFull_perCore_of_full
     (endpointReplyOnCore_preserves_ipcInvariantFull replier target msg executingCore st
-      (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hDOV' hAllBudgetsNone)
+      (ipcInvariantFull_of_smp hInv) hObjInv hNoDonationOwnedBy hAllBudgetsNone)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointReplyOnCore_passiveServerIdleFrameOnCore replier target msg executingCore
         st c hObjInv)
@@ -661,10 +721,6 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -699,11 +755,7 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull
   · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
       (endpointReceiveDual_preserves_ipcInvariantFull endpointId receiver sender replyId st r1
         hInv hObjInv
-        (blockedThreadsPendingMessageConsistent_of_getElem_eq
-          (fun oid => (hAgree.objects oid).symm) hWtpmn')
         hAllBudgetsNone
-        (replyCallerLinkageReciprocal_of_getElem_eq
-          (fun oid => (hAgree.objects oid).symm) hRCLRecip')
         hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
         (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
         hStep1)
@@ -718,10 +770,6 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -746,7 +794,7 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore
       (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1 c :=
   ipcInvariantFull_perCore_of_full
     (endpointReceiveDualOnCore_preserves_ipcInvariantFull endpointId receiver replyId
-      executingCore st (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hRCLRecip'
+      executingCore st (ipcInvariantFull_of_smp hInv) hObjInv 
       hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       hReceiverReady)
     (passiveServerIdle_perCore_of_frameOnCore
@@ -1152,12 +1200,14 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1)
-    (hDOVMid : donationOwnerValid
-      (endpointReplyOnCore receiver replyTarget msg executingCore st).1)
+    -- WS-RR RR3.12: replaces the threaded mid-state `hDOVMid` (the post-reply
+    -- state), which no state on the donating path satisfies -- the reply leg wakes
+    -- the answered caller `.ready` while the recorded server still holds its
+    -- donation.  A pre-state condition, hence dischargeable.
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId replyTarget)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1184,14 +1234,14 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
         tcb.ipcState = .ready) :
     ipcInvariantFull
       (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1 := by
-  unfold endpointReplyRecvOnCore at hWtpmn' hRCLRecip' ⊢
+  unfold endpointReplyRecvOnCore
   cases hR : endpointReplyOnCore receiver replyTarget msg executingCore st with
   | mk st1 res1 =>
-    rw [hR] at hWtpmn' hRCLRecip'
+
     cases res1 with
     | error e => exact hInv
     | ok sgi1 =>
-      simp only at hWtpmn' hRCLRecip' ⊢
+      simp only
       have hStEq : (endpointReplyOnCore receiver replyTarget msg executingCore st).1 = st1 := by
         rw [hR]
       have hObjInv1 := endpointReplyOnCore_preserves_objects_invExt receiver replyTarget msg
@@ -1203,7 +1253,6 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
       have hEpBwd := endpointReplyOnCore_endpoint_backward receiver replyTarget msg
         executingCore st hObjInv
       rw [hStEq] at hEpBwd
-      have hDOVMid1 : donationOwnerValid st1 := by rw [← hStEq]; exact hDOVMid
       have hWtpmnMid : blockedThreadsPendingMessageConsistent st1 := by
         intro tid tcb hRaw
         obtain ⟨ty, hty, _, _, hDisj⟩ :=
@@ -1217,8 +1266,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
       have hInv1 : ipcInvariantFull st1 := by
         rw [← hStEq]
         exact endpointReplyOnCore_preserves_ipcInvariantFull receiver replyTarget msg
-          executingCore st hInv hObjInv (by rw [hStEq]; exact hWtpmnMid)
-          (by rw [hStEq]; exact hDOVMid1) hAllBudgetsNone
+          executingCore st hInv hObjInv hNoDonationOwnedBy hAllBudgetsNone
       have hBudgets1 : allTimeoutBudgetsNone st1 := by
         intro tid tcb hRaw
         obtain ⟨ty, hty, _, hBudget, _⟩ :=
@@ -1266,18 +1314,18 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
             st st1 rid sgi1 hObjInv hUnstashed r hGetR tcbT hTcbT hRO hR
       cases hR2 : endpointReceiveDualOnCore endpointId receiver replyId executingCore st1 with
       | mk st2 res2 =>
-        rw [hR2] at hWtpmn' hRCLRecip'
+
         cases res2 with
         | error e => exact hInv
         | ok pr =>
-          simp only at hWtpmn' hRCLRecip' ⊢
+          simp only
           have hStEq2 :
               (endpointReceiveDualOnCore endpointId receiver replyId executingCore st1).1
                 = st2 := by
             rw [hR2]
           have hFull2 := endpointReceiveDualOnCore_preserves_ipcInvariantFull endpointId
             receiver replyId executingCore st1 hInv1 hObjInv1
-            (by rw [hStEq2]; exact hWtpmn') (by rw [hStEq2]; exact hRCLRecip')
+            
             hBudgets1 hFresh1 hTailFresh1 hReplyIdValid1 hNotRecv1 hReady1
           rwa [hStEq2] at hFull2
 
@@ -1291,12 +1339,14 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1)
-    (hDOVMid : donationOwnerValid
-      (endpointReplyOnCore receiver replyTarget msg executingCore st).1)
+    -- WS-RR RR3.12: replaces the threaded mid-state `hDOVMid` (the post-reply
+    -- state), which no state on the donating path satisfies -- the reply leg wakes
+    -- the answered caller `.ready` while the recorded server still holds its
+    -- donation.  A pre-state condition, hence dischargeable.
+    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId replyTarget)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1327,8 +1377,9 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
       c :=
   ipcInvariantFull_perCore_of_full
     (endpointReplyRecvOnCore_preserves_ipcInvariantFull endpointId receiver replyTarget msg
-      replyId executingCore st (ipcInvariantFull_of_smp hInv) hObjInv hWtpmn' hRCLRecip'
-      hDOVMid hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
+      replyId executingCore st (ipcInvariantFull_of_smp hInv) hObjInv
+      hNoDonationOwnedBy hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid
+      hReceiverNotRecv
       hReceiverReady)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointReplyRecvOnCore_passiveServerIdleFrameOnCore endpointId receiver replyTarget
@@ -1470,7 +1521,7 @@ calls preserves the whole IPC invariant bundle.**
 
 The composition is §9's bare cross-core bundle, then
 `ipcUnwrapCaps_preserves_ipcInvariantFull` on the arm that installs the parked
-sender's capabilities.  `hRecvRootCNode` / `hCapBadges` are the transfer's two
+sender's capabilities.  `hCapBadges` is the transfer's
 *input* conditions, exactly as on the `.send` side (RR2.14): a CNode at the
 destination CSpace root — here the arm's own `receiverCspaceRoot` parameter,
 so no lookup quantifier is needed — and valid badges on the capabilities the
@@ -1483,10 +1534,6 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
     (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1506,10 +1553,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         tcb.ipcState = .ready)
-    (hRecvRootCNode : ∃ cn,
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore
-        st).1.objects[receiverCspaceRoot]? = some (.cnode cn))
-    (hCapBadges : ∀ (tcb : TCB),
+(hCapBadges : ∀ (tcb : TCB),
       (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.getTcb? receiver
         = some tcb →
       ∀ m, tcb.pendingMessage = some m →
@@ -1519,14 +1563,14 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
       (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
         receiverSlotBase executingCore st).1 := by
   have hBare := endpointReceiveDualOnCore_preserves_ipcInvariantFull endpointId receiver replyId
-    executingCore st hInv hObjInv hWtpmn' hRCLRecip' hAllBudgetsNone hFreshReceiver
+    executingCore st hInv hObjInv hAllBudgetsNone hFreshReceiver
     hRecvTailFresh hReplyIdValid hReceiverNotRecv hReceiverReady
   have hBareInv := endpointReceiveDualOnCore_preserves_objects_invExt endpointId receiver replyId
     executingCore st hObjInv
   unfold endpointReceiveDualWithCapsOnCore
   cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
   | mk stRecv res =>
-    rw [hRecv] at hBare hBareInv hRecvRootCNode hCapBadges
+    rw [hRecv] at hBare hBareInv hCapBadges
     cases res with
     | error e => exact hBare
     | ok pr =>
@@ -1554,10 +1598,9 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
                 | ok pair =>
                   obtain ⟨summary, stFinal⟩ := pair
                   simp only
-                  obtain ⟨cn, hCn⟩ := hRecvRootCNode
                   exact ipcUnwrapCaps_preserves_ipcInvariantFull msg senderRoot
                     receiverCspaceRoot receiverSlotBase msg.capsGranted stRecv stFinal summary
-                    cn hBare hBareInv hCn (hCapBadges receiverTcb hT msg hM) hUnwrap
+                    hBare hBareInv (hCapBadges receiverTcb hT msg hM) hUnwrap
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR2 (closure audit): the capability-carrying cross-core receive frames
@@ -1624,10 +1667,6 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
     (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    (hWtpmn' : blockedThreadsPendingMessageConsistent
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
-    (hRCLRecip' : replyCallerLinkageReciprocal
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1647,10 +1686,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         tcb.ipcState = .ready)
-    (hRecvRootCNode : ∃ cn,
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore
-        st).1.objects[receiverCspaceRoot]? = some (.cnode cn))
-    (hCapBadges : ∀ (tcb : TCB),
+(hCapBadges : ∀ (tcb : TCB),
       (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.getTcb? receiver
         = some tcb →
       ∀ m, tcb.pendingMessage = some m →
@@ -1663,8 +1699,8 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
   ipcInvariantFull_perCore_of_full
     (endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull endpointId receiver replyId
       receiverCspaceRoot receiverSlotBase executingCore st (ipcInvariantFull_of_smp hInv)
-      hObjInv hWtpmn' hRCLRecip' hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid
-      hReceiverNotRecv hReceiverReady hRecvRootCNode hCapBadges)
+      hObjInv hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid
+      hReceiverNotRecv hReceiverReady hCapBadges)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointReceiveDualWithCapsOnCore_passiveServerIdleFrameOnCore endpointId receiver
         replyId receiverCspaceRoot receiverSlotBase executingCore st c hObjInv hReceiverReady)

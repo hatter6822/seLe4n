@@ -552,6 +552,44 @@ theorem lifecycleRetypeObject_preserves_blockedOnReplyHasTarget
     exact hInv tid tcb ep rt hTcb hBlk
 
 open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.6: `lifecycleRetypeObject` **establishes**
+`blockedThreadsPendingMessageConsistent` from the pre-state.  The retype writes a
+fresh object at `target` and frames every other slot, so the only new obligation
+is the retyped object's own — discharged by `hNewObjPending`, the same
+`newObj` well-formedness shape the CNode / notification / `blockedOnReply`
+side-conditions already use.  It was previously threaded as `hWtpmn'` on the
+lifecycle bundle. -/
+theorem lifecycleRetypeObject_preserves_blockedThreadsPendingMessageConsistent
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : blockedThreadsPendingMessageConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hNewObjPending : ∀ (t : TCB), newObj = .tcb t →
+        match t.ipcState with
+        | .blockedOnReceive _ => t.pendingMessage = none
+        | .blockedOnNotification _ => t.pendingMessage = none
+        | .blockedOnSend _ => t.pendingMessage.isSome
+        | .blockedOnCall _ => t.pendingMessage.isSome
+        | _ => True)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    blockedThreadsPendingMessageConsistent st' := by
+  intro tid tcb hTcb
+  by_cases hEq : tid.toObjId = target
+  · have hObjAtTarget : st'.objects[tid.toObjId]? = some newObj := by
+      rw [hEq]
+      rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
+        ⟨_, _, _, _, _, _, hStore⟩
+      exact lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore
+    have hNewEq : newObj = .tcb tcb := by simpa using (hObjAtTarget.symm.trans hTcb)
+    exact hNewObjPending tcb hNewEq
+  · have hPreserved := lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target
+      tid.toObjId newObj hEq hObjInv hStep
+    rw [hPreserved] at hTcb
+    exact hInv tid tcb hTcb
+
+open SeLe4n.Model.SystemState in
 /-- IPC de-threading D6: `lifecycleRetypeObject` preserves `donationBudgetTransfer` from a
 `newObj` side-condition (`hNewObjUnbound`: a retyped TCB is `.unbound`).  A fresh retyped TCB
 holds no SchedContext, so it cannot be one of two threads sharing an scId; every other slot
@@ -912,6 +950,80 @@ theorem lifecycleRetypeObject_preserves_queueHeadBlockedConsistent
       rwa [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target hd.toObjId newObj hHdNe hObjInv hStep] at hTcb
     exact (hInv epId ep hd tcbHd hEpPre hHdPre).2 hHd
 
+open SeLe4n.Model.SystemState in
+/-- WS-RR RR3.9: `lifecycleRetypeObject` **establishes**
+`replyCallerLinkageReciprocal` from the pre-state, replacing the threaded
+`hRCLRecip'` on the lifecycle bundle.
+
+The retype writes one slot and frames the rest, so the linkage can only change at
+`target` — in two directions, and both are pre-state obligations of the same
+`newObj`/`target` shape the bundle's other side conditions already use:
+
+* what the retype **creates** must not claim a link nothing reciprocates
+  (`hNewObjNoReplyObject`, `hNewObjReplyUnlinked`); a freshly retyped TCB holds no
+  reply object and a freshly retyped Reply names no caller;
+* what it **destroys** must not have been half of a live link
+  (`hTargetUnlinked`, `hTargetReplyUnlinked`) — retyping a linked caller would
+  orphan its Reply's back-link, and retyping an in-use Reply would orphan the
+  caller's forward link.  The retype path's own pre-cleanup already refuses an
+  in-use Reply; this states the obligation where the invariant needs it. -/
+theorem lifecycleRetypeObject_preserves_replyCallerLinkageReciprocal
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : replyCallerLinkageReciprocal st)
+    (hObjInv : st.objects.invExt)
+    (hNewObjNoReplyObject : ∀ (t : TCB), newObj = .tcb t → t.replyObject = none)
+    (hNewObjReplyUnlinked : ∀ (r : Reply), newObj = .reply r → r.caller = none)
+    (hTargetUnlinked : ∀ (t : TCB), st.objects[target]? = some (.tcb t) → t.replyObject = none)
+    (hTargetReplyUnlinked : ∀ (r : Reply), st.objects[target]? = some (.reply r) → r.caller = none)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    replyCallerLinkageReciprocal st' := by
+  have hStoreAtTarget : st'.objects[target]? = some newObj := by
+    rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
+      ⟨_, _, _, _, _, _, hStore⟩
+    exact lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore
+  refine ⟨fun tid tcb rid hTcb hRO => ?_, fun rid r tid hReply hCaller => ?_⟩
+  · -- forward: the TCB claiming `rid` is not the retyped slot (a fresh TCB holds no
+    -- reply object), so it frames back; its Reply is not the retyped slot either.
+    have hTidNe : tid.toObjId ≠ target := by
+      intro hEq
+      rw [hEq, hStoreAtTarget] at hTcb
+      rw [hNewObjNoReplyObject tcb (Option.some.inj hTcb)] at hRO
+      cases hRO
+    have hTcbPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
+      rwa [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target tid.toObjId
+        newObj hTidNe hObjInv hStep] at hTcb
+    obtain ⟨r, hR, hRC⟩ := hInv.1 tid tcb rid hTcbPre hRO
+    have hRidNe : rid.toObjId ≠ target := by
+      intro hEq
+      rw [hEq] at hR
+      rw [hTargetReplyUnlinked r hR] at hRC
+      cases hRC
+    refine ⟨r, ?_, hRC⟩
+    rwa [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target rid.toObjId newObj
+      hRidNe hObjInv hStep]
+  · -- backward: the Reply naming `tid` is not the retyped slot (a fresh Reply names
+    -- nobody), so it frames back; the caller it names is not the retyped slot either.
+    have hRidNe : rid.toObjId ≠ target := by
+      intro hEq
+      rw [hEq, hStoreAtTarget] at hReply
+      rw [hNewObjReplyUnlinked r (Option.some.inj hReply)] at hCaller
+      cases hCaller
+    have hReplyPre : st.objects[rid.toObjId]? = some (.reply r) := by
+      rwa [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target rid.toObjId
+        newObj hRidNe hObjInv hStep] at hReply
+    obtain ⟨tcb, hTcb, hRO, hBlk⟩ := hInv.2 rid r tid hReplyPre hCaller
+    have hTidNe : tid.toObjId ≠ target := by
+      intro hEq
+      rw [hEq] at hTcb
+      rw [hTargetUnlinked tcb hTcb] at hRO
+      cases hRO
+    refine ⟨tcb, ?_, hRO, hBlk⟩
+    rwa [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target tid.toObjId newObj
+      hTidNe hObjInv hStep]
+
 /-- IPC de-threading D4 (Finding F-2): `lifecycleRetypeObject` frames
 `endpointQueueTailBlockedConsistent` — the tail dual of
 `lifecycleRetypeObject_preserves_queueHeadBlockedConsistent`.  The retype writes `newObj` at
@@ -967,7 +1079,22 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
     (hDualQueue' : dualQueueSystemInvariant st')
     (hBounded' : allPendingMessagesBounded st')
     (hBadge' : badgeWellFormed st')
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
+    -- WS-RR RR3.6: replaces the threaded `hWtpmn'` — a *pre-state* obligation on the
+    -- retyped object only, the shape the other `newObj` side conditions already use.
+    (hNewObjPending : ∀ (t : TCB), newObj = .tcb t →
+        match t.ipcState with
+        | .blockedOnReceive _ => t.pendingMessage = none
+        | .blockedOnNotification _ => t.pendingMessage = none
+        | .blockedOnSend _ => t.pendingMessage.isSome
+        | .blockedOnCall _ => t.pendingMessage.isSome
+        | _ => True)
+    -- WS-RR RR3.9: replaces the threaded `hRCLRecip'` — four pre-state obligations
+    -- on what the retype creates and what it destroys (see
+    -- `lifecycleRetypeObject_preserves_replyCallerLinkageReciprocal`).
+    (hNewObjNoReplyObject : ∀ (t : TCB), newObj = .tcb t → t.replyObject = none)
+    (hNewObjReplyUnlinked : ∀ (r : Reply), newObj = .reply r → r.caller = none)
+    (hTargetUnlinked : ∀ (t : TCB), st.objects[target]? = some (.tcb t) → t.replyObject = none)
+    (hTargetReplyUnlinked : ∀ (r : Reply), st.objects[target]? = some (.reply r) → r.caller = none)
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
     -- IPC de-threading D4: queueNext/headBlocked established from the pre-state via
@@ -999,7 +1126,6 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
         ∀ ep rt, t.ipcState ≠ .blockedOnReply ep rt)
     (hNewObjTarget : ∀ (t : TCB) (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
         newObj = .tcb t → t.ipcState = .blockedOnReply ep rt → rt.isSome)
-    (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hNewObjThird : ∀ (t : TCB) (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
         newObj = .tcb t → t.ipcState = .blockedOnReply ep rt → ∃ rid, t.replyObject = some rid)
     (hNewObjNoStash : ∀ (t : TCB), newObj = .tcb t → t.pendingReceiveReply = none)
@@ -1023,7 +1149,13 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
   · exact lifecycleRetypeObject_preserves_capabilityInvariantBundle st st' authority target newObj hCap
       hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hReplyBacked' hStep
   · exact ⟨lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpcFull.1 hNewObjNotificationInv (objects_invExt_of_capabilityInvariantBundle st hCap) hStep,
-           hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC',
+           hDualQueue', hBounded', hBadge',
+           -- WS-RR RR3.6: `blockedThreadsPendingMessageConsistent` **established** from the
+           -- pre-state; the retyped object's own obligation is the `hNewObjPending`
+           -- well-formedness side condition, in the same shape as the other `newObj` ones.
+           lifecycleRetypeObject_preserves_blockedThreadsPendingMessageConsistent st st' authority
+             target newObj hIpcFull.blockedThreadsPendingMessageConsistent hObjInvSt hNewObjPending hStep,
+           hNoDup', hQMC',
            lifecycleRetypeObject_preserves_queueNextBlockingConsistent st st' authority target newObj
              hIpcFull.queueNextBlockingConsistent hObjInvSt hNewObjNoNext hTargetNotQueueLinked hStep,
            lifecycleRetypeObject_preserves_queueHeadBlockedConsistent st st' authority target newObj
@@ -1036,7 +1168,10 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
            donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
            lifecycleRetypeObject_preserves_donationBudgetTransfer st st' authority target newObj hIpcFull.donationBudgetTransfer hObjInvSt hNewObjUnbound hStep,
            lifecycleRetypeObject_preserves_blockedOnReplyHasTarget st st' authority target newObj hIpcFull.blockedOnReplyHasTarget (objects_invExt_of_capabilityInvariantBundle st hCap) hNewObjTarget hStep,
-           ⟨hRCLRecip', lifecycleRetypeObject_preserves_blockedOnReplyHasReplyObject st st' authority
+           ⟨lifecycleRetypeObject_preserves_replyCallerLinkageReciprocal st st' authority target
+             newObj hIpcFull.replyCallerLinkage.1 hObjInvSt hNewObjNoReplyObject
+             hNewObjReplyUnlinked hTargetUnlinked hTargetReplyUnlinked hStep,
+            lifecycleRetypeObject_preserves_blockedOnReplyHasReplyObject st st' authority
              target newObj hIpcFull.replyCallerLinkage.2 (objects_invExt_of_capabilityInvariantBundle st hCap)
              hNewObjThird hStep⟩,
            lifecycleRetypeObject_preserves_pendingReceiveReplyWellFormed st st' authority target newObj
@@ -1073,7 +1208,22 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (hDualQueue' : dualQueueSystemInvariant st')
     (hBounded' : allPendingMessagesBounded st')
     (hBadge' : badgeWellFormed st')
-    (hWtpmn' : blockedThreadsPendingMessageConsistent st')
+    -- WS-RR RR3.6: replaces the threaded `hWtpmn'` — a *pre-state* obligation on the
+    -- retyped object only, the shape the other `newObj` side conditions already use.
+    (hNewObjPending : ∀ (t : TCB), newObj = .tcb t →
+        match t.ipcState with
+        | .blockedOnReceive _ => t.pendingMessage = none
+        | .blockedOnNotification _ => t.pendingMessage = none
+        | .blockedOnSend _ => t.pendingMessage.isSome
+        | .blockedOnCall _ => t.pendingMessage.isSome
+        | _ => True)
+    -- WS-RR RR3.9: replaces the threaded `hRCLRecip'` — four pre-state obligations
+    -- on what the retype creates and what it destroys (see
+    -- `lifecycleRetypeObject_preserves_replyCallerLinkageReciprocal`).
+    (hNewObjNoReplyObject : ∀ (t : TCB), newObj = .tcb t → t.replyObject = none)
+    (hNewObjReplyUnlinked : ∀ (r : Reply), newObj = .reply r → r.caller = none)
+    (hTargetUnlinked : ∀ (t : TCB), st.objects[target]? = some (.tcb t) → t.replyObject = none)
+    (hTargetReplyUnlinked : ∀ (r : Reply), st.objects[target]? = some (.reply r) → r.caller = none)
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
     -- IPC de-threading D4: retype-link preconditions replace the threaded
@@ -1104,7 +1254,6 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
         ∀ ep rt, t.ipcState ≠ .blockedOnReply ep rt)
     (hNewObjTarget : ∀ (t : TCB) (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
         newObj = .tcb t → t.ipcState = .blockedOnReply ep rt → rt.isSome)
-    (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hNewObjThird : ∀ (t : TCB) (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
         newObj = .tcb t → t.ipcState = .blockedOnReply ep rt → ∃ rid, t.replyObject = some rid)
     (hNewObjNoStash : ∀ (t : TCB), newObj = .tcb t → t.pendingReceiveReply = none)
@@ -1118,7 +1267,7 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
   rcases hM35 with ⟨hM3, _hCoherence, _hCtx, _hDeq⟩
   have hM3' : coreIpcInvariantBundle st' :=
     lifecycleRetypeObject_preserves_coreIpcInvariantBundle st st' authority target newObj hM3
-      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hNewObjNoNext hTargetNotQueueLinked hNewObjNotEndpoint hTargetNotHead hTargetNotTail hAllBudgetsNone hNewObjUnbound hNewObjAllowed hNewObjNoBudget hTargetNotSc hTargetNotOwner hNewObjTarget hRCLRecip' hNewObjThird hNewObjNoStash hTargetNotStashedReply hReplyBacked' hStep
+      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hNewObjPending hNewObjNoReplyObject hNewObjReplyUnlinked hTargetUnlinked hTargetReplyUnlinked hNoDup' hQMC' hNewObjNoNext hTargetNotQueueLinked hNewObjNotEndpoint hTargetNotHead hTargetNotTail hAllBudgetsNone hNewObjUnbound hNewObjAllowed hNewObjNoBudget hTargetNotSc hTargetNotOwner hNewObjTarget hNewObjThird hNewObjNoStash hTargetNotStashedReply hReplyBacked' hStep
   have hLifecycle' : lifecycleInvariantBundle st' :=
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
       newObj hLifecycle (objects_invExt_of_capabilityInvariantBundle st hM3.2.1) hObjTypesInv hStep

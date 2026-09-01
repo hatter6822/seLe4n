@@ -1,3 +1,847 @@
+## v0.34.43 — WS-RR RR3: `ipcInvariantFull` de-threaded, dispatch payoff landed
+
+**One PR, one version.**  The work is RR3.1–RR3.26 — the whole phase.  The
+phase's acceptance has two halves; both are **met**: the family is de-threaded
+end to end, and the dispatch payoff theorems exist and are cited from
+`docs/CLAIM_EVIDENCE_INDEX.md` — see "The payoff, landed in the same PR"
+below.
+
+### The measurement came first, and it changed the problem
+
+RR3.1 built `scripts/check_ipc_invariant_dethreading.py` (Tier 0).  Everything it
+matches is derived, never enumerated: the conjunct set is read out of
+`def ipcInvariantFull` and closed under definitional unfolding; the bundle family
+is every declaration whose name contains `_preserves_ipcInvariantFull`, wherever
+it lives; and a bundle's **pre**-state is taken from its own
+`ipcInvariantFull`-family hypothesis, so *every other* state a conjunct is applied
+to is a finding.  Deriving the pre-state rather than the post-state is what makes
+it fail closed — an intermediate state, a `.1` projection, a second post-state
+binder under another name, none of them has to be anticipated.
+
+It measured **103 post-state bindings across six conjuncts**.  The pre-SM10
+audit's figure was two conjuncts (33 and 31 of 35 bundles), from a binder-name
+census; `donationOwnerValid`, `dualQueueSystemInvariant` and `badgeWellFormed`
+were threaded too and no name-based grep could see them.  All six are now zero,
+across all sixty-five statements in the family — the `*_preserves_*` bundles,
+their two relaxed `…ExceptDonationOwner` forms among them, plus the four
+`*_establishes_*` composites the widened marker measures (see the closure-audit
+hardening below).
+
+### Two of the six were vacuity, not incompleteness
+
+A threaded conjunct usually means "this is true but unproven here".  Two of these
+meant "this theorem asserts nothing".
+
+**The `*WithCaps` bundles held for no state that could run them.**  Their
+`dualQueueSystemInvariant` theorems took a receiver-root CNode hypothesis
+quantified over the wrapper — which reads *every* ObjId is a CNode, false in any
+state holding the endpoint the step requires.  The transfer's own frame now
+covers the non-CNode case (`ipcUnwrapCaps_state_eq_of_root_not_cnode`: it writes
+nothing there), so the hypothesis is gone, from `ipcUnwrapCaps_preserves_*` and
+from `ipcUnwrapCaps_preserves_ipcInvariantFull`'s `hCn`, whose three cross-core
+callers drop their now-unused `hRecvRootCNode` with it.
+
+**`donationOwnerValid` is false of a bare reply's post-state.**  `endpointReply`
+wakes the answered caller `.ready` while the recorded server still holds
+`.donated _ caller`; the donated SchedContext comes back at the *next* stage,
+because the server needs that budget while it replies (the AUD-3 ordering).  So
+the nine reply bundles that threaded it were vacuous on the ordinary seL4-MCS
+path — not conditional on something hard, conditional on something impossible.
+
+RR3.12 answers with two statements where there was one:
+
+* `donationOwnerValidExcept st woken` — every clause of `donationOwnerValid`
+  except that an owner equal to `woken` need not be `.blockedOnReply`.  Its
+  `.unbound` clause is kept, so `donationChainAcyclic` still follows.  With
+  `donationOwnerFrameExcept` and `ipcInvariantFullExceptDonationOwner` it gives
+  the bare reply an **unconditional** bundle theorem, true on the donating path.
+* `returnDonatedSchedContext_establishes_donationOwnerValid_of_except` — the
+  donation return upgrades the relaxed form back to the full one.  The existing
+  proof already derived `owner' ≠ originalOwner` from donation-owner uniqueness,
+  which is exactly what excludes the relaxed disjunct, so this is a hypothesis
+  weakening rather than a re-proof.
+
+Composing the halves, `endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull`
+— the **live** `.reply` arm — now covers the donating path for the first time,
+under one pre-state condition: *if* anything is donated by the answered caller,
+the recorded reply server's donation return is exactly that donation.  The
+composition needed the donation return generalised the same way, so
+`ipcInvariantCore_of_nonBindingAgreements` now names the eleven conjuncts it
+actually reads (`ipcInvariantCoreNonDonation`) instead of demanding a twelfth it
+never touches, and `ipcInvariantFull_of_donationReadAgreement`,
+`returnDonatedSchedContext_preserves_ipcInvariantFull` and
+`applyReplyDonation{,OnCore}_preserves_ipcInvariantFull` become instances of
+their relaxed forms.  Nothing is duplicated.
+
+### A third gap surfaced with them
+
+`badgeWellFormed` constrains badges **at rest** in a CNode, but the IPC transfer
+installs an in-flight capability verbatim (`ipcTransferSingleCap` stores
+`tc.cap`; it does not re-resolve it), so an out-of-range in-flight badge became
+an out-of-range badge at rest.  The new pre-state
+`pendingMessageCapBadgesWellFormed` closes it.  Send and call take the condition
+on the syscall's own message argument instead, since their caps never sit in a
+TCB.
+
+Supporting it, `pendingMessagesSatisfy P` generalises the in-flight message
+family over the property: no IPC step reads a parked message's content — it moves
+the message or leaves it alone — so one fold discharges every `P`.
+`allPendingMessagesBounded` becomes its boundedness instance and its eleven
+transports are re-derived rather than duplicated.
+
+### The replacements are dischargeable, and the boot state satisfies them
+
+De-threading is only an improvement if the pre-state hypotheses can actually be
+established.  `SeLe4n/Kernel/IPC/Invariant/Reachability.lean` (RR3.13) is where
+they are:
+
+* `ipcReachable` collects the state-shaped ones (`objects.invExt`,
+  `allTimeoutBudgetsNone`, `pendingMessageCapBadgesWellFormed`,
+  `notificationWaiterConsistent`, and `ipcInvariantFull` itself), and
+  `ipcReachable_default` (RR3.14) proves the boot state satisfies it — so the
+  bundle is inhabited rather than an unsatisfiable conjunction, which would have
+  reintroduced one level up the exact failure de-threading removes.
+* The running-caller and queue-tail ones are **derived, not assumed**.  A
+  `.ready` thread cannot head or tail any endpoint queue, because
+  `queueHeadBlockedConsistent` and `endpointQueueTailBlockedConsistent` say every
+  head and tail is blocked (`readyThread_endpointQueueFresh`); and an endpoint's
+  send-queue tail tails nothing else, because a tail is blocked on the queue it
+  tails and the two directions carry different constructors and different
+  endpoint ids (`sendTailCrossQueueFresh` / `recvTailCrossQueueFresh`).  These
+  were hypotheses on every enqueueing bundle; they are consequences of
+  `ipcInvariantFull`.
+
+### The payoff, landed in the same PR (RR3.15–RR3.26)
+
+Mid-cut, neither `dispatchWithCap_preserves_ipcInvariantFull` nor
+`dispatchSyscall_preserves_ipcInvariantFull` existed, and they were **not** a
+composition of theorems already in the tree: the family covered the IPC and
+donation transitions, while `dispatchWithCap` routes twenty-five syscalls
+across the capability, VSpace, service, sched-context, lifecycle and TCB
+subsystems — six of about thirty arms carried a bundle at all.  The plan's two
+payoff rows had assumed inputs that did not exist; they were re-scoped into
+RR3.15–RR3.23 (per-arm bundles, one row per subsystem) plus RR3.24/RR3.25
+(the two dispatch tiers), the residual was parked in
+`docs/planning/ipc_dethreading_pending.txt` — a register the gate checks in
+both directions, stale and dangling registrations both failing — and then the
+same PR worked the rows and emptied the register.  (`syscallDispatch` also
+named nothing in the tree; the dispatcher is `dispatchSyscall`, and the
+theorem is named for it.)
+
+The per-arm layer is **production**:
+`SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`, imported by
+`API.lean`, carries per-operation `ipcInvariantFull` bundles for the
+capability ops, retype, VSpace map/unmap with the shootdown and
+icache-broadcast variants, service registration/revocation/query,
+sched-context configure/bind/unbind, TCB field writes, suspend/resume, and
+the return-frame staging writes.  Two disciplines got names because the
+bundles need them as pre-state facts: `retypeTargetDetached` (eighteen
+fields — revoke-and-suspend-before-retype; retyping an object a thread still
+references would fabricate IPC state out of the replacement object) and
+`threadIpcFieldsQuiescent` (seven fields — suspending or resuming a victim
+whose IPC fields are live needs the cancellation surface composed in front).
+
+The payoff tier sits on top.
+`dispatchCapabilityOnly_preserves_ipcInvariantFull` (`API.lean`,
+**production**) covers every capability-gated arm under the pre-state pack
+`capabilityDispatchQuiescence`; `dispatchWithCap_preserves_ipcInvariantFull`
+extends it over the IPC fall-through arms and
+`dispatchSyscall_preserves_ipcInvariantFull` adds the capability-lookup and
+taint prologue, both under `syscallDispatchQuiescence`
+(`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`).  Every pack field is a
+**pre-state** fact — the gate's zero-binding rule holds over the payoff tier
+too, and the family it measured at this cut was **144** statements at zero
+post-state bindings (the closing audit's checked tier below takes it to 146); its success line reads `[PASS] ipcInvariantFull is de-threaded end
+to end`, which until this cut it refused to print.
+
+The two top theorems are **staged, deliberately**: the `.call` arm composes
+the staged `EndpointCallInvariant` surface (the RR2 closure audit's
+partition), so `DispatchPayoff.lean` is allow-listed and CI builds it through
+`Platform.Staged` while a linked kernel image does not; the payoffs relocate
+to production when that surface promotes.  The confinements are stated, not
+silent: `.notificationSignal` is covered on the unbound-delivery path only
+(SM6.D's registered bound-delivery debt); the `.replyRecv` composite excludes
+a live donation edge naming the woken caller (the AUD-3 window between a bare
+reply and its donation return); retype and suspend demand their quiescence
+packs.  Five follow-ups are registered as WS-DT debt in
+`docs/WORKSTREAM_HISTORY.md`: `schedContextBind` / `schedContextUnbind`
+operation hardening (refuse the bind/unbind whose absence the pack fields
+`boundThreadNotDonationOwner` and `unbindBoundThreadPassive` assert, making
+both dischargeable from operation success), the cancel-then-suspend
+composite, the staged→production payoff relocation, and the flow-`Checked`
+dispatch tier (the payoffs cover the unchecked internal tier the `Checked`
+wrappers wrap).  WS-DT itself is
+**CLOSED**; the de-threading plan is retired to `docs/dev_history/planning/`,
+and `docs/CLAIM_EVIDENCE_INDEX.md` carries the payoff row citing all three
+theorems.
+
+### The final audit cut: the checked tier, and the packs made honest twice over
+
+The closing audit of this PR held the payoff against RR3.22's row as written
+and found the row's third item — the flow-`Checked` dispatch wrappers — had
+been deferred to a debt row rather than delivered.  Per the
+implement-the-improvement rule the audit implemented it:
+`dispatchWithCapChecked_preserves_ipcInvariantFull` and
+`dispatchSyscallChecked_preserves_ipcInvariantFull` now carry the bundle
+across the information-flow-checked dispatcher.  The proof does not re-prove
+the arms: the checked dispatcher shares `dispatchCapabilityOnly` outright,
+and on every mirrored IPC arm a successful checked dispatch is shown to *be*
+a successful unchecked dispatch — each wrapper is an if-tower whose gates
+only filter — so the theorem consumes the unchecked payoff through the
+rebuilt dispatch equation, turning every "mirrors the unchecked arm" comment
+in `Kernel/API.lean` into a machine-checked fact.  The four SM9 arms that
+are live only on this tier close from their transitions' own frames:
+`auditReadFromCore_frame` pins `st' = st`, `auditDrain_frame` and
+`declassifyObjectFromCore_frame_of_ok` pin audit-log-only rewrites no
+`ipcInvariantFull` conjunct reads, and `.declassifySignal` composes the
+declassified signal's fallthrough bundle under the same unbound-delivery
+confinement as the ordinary signal arm.  The family the RR3.1 gate measures
+grew to **146** statements, still at zero post-state bindings.
+
+The same audit refined the packs in both directions.  Three fields left
+`syscallDispatchQuiescence`: `signalStage` and `waitStage` were *redundant*
+— their content derivable inside the proof from `reachable` via the
+transitions' own `objects.invExt` preservation lemmas — and `waitReady` was
+*dead*, declared and never consumed (the wait arm derives readiness from
+`callerShape`).  A smaller pack is a smaller trusted precondition.  And in
+the other direction, both packs gained what `ipcReachable` has had since
+RR3.14: **inhabitation witnesses** (`syscallDispatchQuiescence_inhabited`,
+`checkedSyscallDispatchQuiescence_inhabited`), whose witness state is built
+from the boot state *through the per-arm bundles themselves* — two
+`retypeWrite_preserves_ipcInvariantFull` steps and one
+`ipcInvariantFull_of_schedBindingRewrite` step — so the packs' first
+inhabitants are also the retype and binding levers' first end-to-end
+consumers, and an unsatisfiable pack field cannot hide behind a vacuously
+true payoff.
+
+### The review round: the gate held to its own standard
+
+Codex's review of the PR (on the pre-audit head) found six ways the RR3.1
+gate's text-level checks could diverge from the structure they stand for —
+the presence-for-relation class the key conventions document — and one scope
+boundary.  All six are closed, each with a token-preserving self-test case
+(the suite now holds 26 cases, 6/6 checks covered): the payoff presence
+check now validates the *statement* (a `: True` stub or a payoff that never
+steps its dispatcher fails `payoff_statement`); the family census counts
+only non-payoff bundles, so the payoff names cannot stand in for a vanished
+operation family; namespace-qualified conjunct applications are scanned
+(uppercase-led qualifiers only, keeping hypothesis projections out); an
+invariant-family hypothesis on an unanchored intermediate state no longer
+launders that state into the pre-state set (anchors are the step equation's
+and conclusion's tokens; compound state expressions remain accepted, the
+one documented under-approximation); definition-binder substitution is
+identifier-bounded, so a one-letter binder cannot mangle nested conjunct
+names out of the derived set; and expression comparison strips redundant
+enclosing parentheses, so `ipcInvariantFull (st')` is the conclusion-state
+hypothesis it is.  `PAYOFF_THEOREMS` now requires the checked pair too —
+the exported entry delegates to `dispatchSyscallChecked`, so a gate
+satisfied by the unchecked pair alone would let the production dispatcher's
+payoff regress unnoticed.  The hardened gate still measures the live tree
+at 146 statements, zero post-state bindings.  The review's scope finding —
+the payoffs conclude `ipcInvariantFull` alone, so they do not chain down a
+trace without `ipcReachable` preservation — is registered as a WS-DT debt
+row (trace composition, SM10).
+
+Codex's second pass (on the audit head) added four more, all closed in the
+same way.  One was **behavioral**: the RR3.5 fix taught the live
+idle-notification wait to clear `pendingMessage` atomically with the park,
+and `frozenNotificationWait` — mirroring state alone through
+`frozenStoreTcbIpcState` — silently kept the stale message, a live/frozen
+divergence on the mirror's own content channel.  The frozen twin now stores
+state and message together (`frozenStoreTcbIpcStateAndMessage`), the
+`notificationWaitBlocks` branch flips from "scenario owed" to
+differentially checked (its interlocks made both edits mandatory), and the
+new FO-038 scenario parks a waiter that enters holding a collected message,
+pinning the atomic clear on both sides.  The other three were gate checks:
+the conjunct derivation accepts a parenthesised binder application
+(`pred (st)`), the threading scan covers unnamed implication premises after
+the declaration colon (`conjunct st' → ipcInvariantFull st'`), and
+`--report` — cited as an evidence command — now derives its exit status
+from the same checks as the default mode instead of printing violations and
+exiting 0.  A third pass then found the sweep itself incomplete in exactly
+the way the key conventions predict: the qualifier fix had been applied to
+the bundle scan and not to its sibling site, the conjunct *derivation*
+(where a qualified spelling silently dropped the conjunct from coverage),
+and the declaration regex accepted one attribute block where Lean permits
+several (`@[simp] @[grind] theorem …` vanished from the census).  Both
+closed with token-preserving fixtures.  A fourth pass tightened two more:
+the payoff's dispatcher requirement is now a *step-equation head* rather
+than a mention (a dummy hypothesis name-dropping the dispatcher beside
+another function's step no longer satisfies `payoff_statement`), and the
+conjunct body collector accepts `abbrev` alongside `def`, so a transparent
+refactor cannot silently drop a conjunct's clauses from the derived set.
+A fifth pass found the fourth's fixes were themselves presence checks one
+level down: the step-equation requirement checked head-plus-`=` but never
+the *result*, so a dispatcher stepped into an unrelated mid-state beside a
+second function producing the conclusion's state still passed — the
+equation's right-hand side (cut at any depth-0 connective) must now carry
+the conclusion state; and the body collector keyed bodies last-writer-wins
+by unqualified name, so a later-sorted `namespace Shadow; def
+ipcInvariantFull …` legally eclipsed the real root and collapsed the
+derived set to the shadow's — the map now keeps *every* body a name has
+and derives the union, the over-approximation that fails closed where a
+text scanner cannot resolve namespaces.  Both landed with token-preserving
+fixtures; the live derivation is unchanged (26 conjuncts, 146 statements,
+zero bindings, before and after).  Self-test: 34 cases.
+A sixth pass closed three more gate siblings and settled one model
+question.  The gate: the body collector's state binder is any identifier
+rather than an enumerated `st|s` (renaming a binder to `state` silently
+dropped that conjunct's clauses from the derived set); the whole-invariant
+check reads unnamed implication premises, so `ipcInvariantFull st' →
+ipcInvariantFull st'` — maximal threading in telescope clothing — is
+caught, with `conclusion_state` now read from the *final* segment of the
+depth-0 implication chain; and the payoff census is namespace-aware — a
+scope-tracking scan (`namespace`/`section`/`mutual`/`end` over the code
+view) requires each payoff declared under the canonical `SeLe4n.Kernel`
+prefix, so a `namespace Shadow` twin can neither stand in for a deleted
+payoff nor be the declaration whose statement gets validated.  Self-test:
+37 cases; census unchanged again.  The model question — should the parked
+waiter's taint clear when `notificationWait`'s idle branch discards its
+held `pendingMessage` — was settled *no*, and the reasoning now lives in
+`contentFlowClears`' docstring: a TCB is a subject whose taint is
+exposure, the discarded message was staged into the caller's return frame
+at the delivering syscall's boundary, and clearing there would erase
+provenance of content the thread actually read — a missed chain, the one
+direction the detector must never err in.  The stale `Platform/Staged.lean`
+marker saying `Reachability` awaits its RR3.15 consumer was refreshed: the
+staged payoff tier has consumed it since RR3.23–25; nothing production
+imports it still.
+A seventh pass closed the two qualifier residues of its predecessors:
+`_root_.` — Lean's root-namespace escape, underscore-led and so rejected
+by the uppercase-qualifier rule — is accepted in `_qualified` and in the
+derivation's `applied` pattern (the same question's two sibling sites,
+swept together); and the conjunct derivation normalises and re-splits
+regrouped bodies, so `(A st ∧ B st)` — opaque to one depth-0 split —
+yields its clauses instead of silently dropping both.  Three
+token-preserving fixtures; self-test 40 cases; census unchanged a third
+time.
+An eighth pass closed three parser generalities: the body collector's
+stop pattern accepts leading declaration modifiers (`private theorem …`
+after a definition no longer gets absorbed into the preceding body,
+corrupting its trailing conjunct out of the derived set); the state
+binder class is Unicode-aware (`(σ : SystemState)` collects, with the
+substitution boundaries widened to match); and `_normalise` reduces a
+named-argument spelling to its value, so `ipcInvariantFull (st := st')`
+compares equal to the conclusion's `st'` everywhere states are compared
+instead of hiding as an opaque compound.  Three token-preserving
+fixtures; self-test 43 cases; census unchanged a fourth time.
+A ninth pass closed one mirror gap and three more gate residues.  The
+mirror: the frozen notification rebuilds dropped `boundTCB` — all four
+of them, where the report named one — so a bound notification's binding
+silently reset to `none` on the frozen side of the signal-wake,
+signal-store, wait-consume and wait-block branches while every live
+rebuild carries it; the four literals now preserve the field, and two
+bound-notification differential scenarios (FO-039 park, FO-040 consume)
+join the registry — FO-039 verified to fail on the pre-fix code — for
+33 scenarios total.  The gate: the payoff step's returned state is
+parsed structurally (`.ok` payload's last component; a step that merely
+*mentions* the conclusion state inside its payload while returning an
+unrelated one no longer passes); the body collector accepts leading
+declaration modifiers on the collected definition itself, the sibling
+site of the stop-pattern fix (`private def` conjuncts collect); and
+compound pre-states are anchored token-wise — `ipcInvariantCore
+(someOperation st).2` with no step equation naming `someOperation` no
+longer launders the intermediate state, with the residual acceptance
+(compounds built only from anchored tokens) documented in place of the
+old wholesale one.  Three more token-preserving fixtures; self-test 46
+cases; census unchanged a fifth time.
+A tenth pass generalised three more parser enumerations: declaration
+name captures are the Unicode identifier class (`τ_preserves_…` stays
+in the census, threading included), the body collector accepts
+attribute blocks before its modifiers (`@[simp] def` conjuncts
+collect), and `first_argument` carries *named* field projections as
+well as numeric ones (`ctx.input` and `ctx.output` no longer truncate
+to the same `ctx`, so a conjunct on one cannot hide behind a pre-state
+on the other).  Three token-preserving fixtures; self-test 49 cases;
+census unchanged a sixth time.
+The tenth pass's fourth finding was about the witnesses themselves: the
+base inhabitation pair fixes a `.send` decode against a `.replyCap`
+target, so every *indexed* pack field discharged vacuously — an
+unsatisfiable arm obligation would not have failed it, contrary to the
+witnesses' stated purpose.  §7b of `DispatchPayoff` now carries a
+per-arm witness family that fires each indexed field's premises: the
+signal confinement and thread quiescence computed on present objects;
+retype detachedness proven of the decoded target (with the bind
+decoder's donation field firing through the same registers);
+send/receive/call stages discharged by *evaluating* the transitions on
+the witness state; the mint badge computed through its decoder; the
+reply arm exercised against a stored reply — `witnessSt4`, the retype
+lever's fourth application — up to the lever boundary
+(`retypeReplacementFresh` pins a fresh reply's caller to `none`, and
+only the call rendezvous creates a caller-carrying one); and the
+checked tier's declassifying confinement computed like the signal
+arm's.  The two rendezvous-reachable interiors (`replyStage`'s caller
+premise, `replyRecvStage`'s resolver premise) are registered WS-DT
+debt with an SM10 closure target rather than absorbed.
+An eleventh pass replaced two heuristics with derivations and closed
+four residues.  The derivations: projection exclusion is now by the
+statement's *own binder names* rather than by qualifier case — the
+scans accept any identifier-led qualifier chain and skip a hit whose
+chain heads at a local binder, so lowercase namespaces
+(`foo.conjunct st'`) are visible while `hInv.conjunct` stays excluded;
+and equality anchoring is a *connected component* — an `=`-group
+anchors its tokens only when the equation graph reaches the
+conclusion's tokens, so a reflexive `stMid = stMid` no longer launders
+an intermediate state.  The residues: the collector recognises the
+arrow-form root spelling (`: SystemState → Prop := fun s => …`) and
+records each body's namespace, with the canonical-`SeLe4n.Kernel` root
+body required outright before the shadow-tolerant union derives
+anything; `opaque` and its sibling column-0 commands bound bodies; the
+definition side accepts named-argument conjunct spellings; and
+`family_nonempty` counts only bundles that conclude a family
+proposition, so a marker-substring imposter (`…ipcInvariantFullish :
+True`) cannot stand in for a vanished family.  Seven token-preserving
+fixtures plus a projection accept-case; self-test 57 cases; census
+unchanged a seventh time.
+A twelfth pass settled one pack-design flaw and two smaller residues.
+The flaw: `capabilityDispatchQuiescence`'s operation-specific fields
+were not guarded by the active syscall arm — the retype and bind
+decoders read only the registers, so any unrelated syscall whose
+payload happened to decode activated the retype-detachedness or
+donation obligations, and the object-target fields fired on every
+`.object` capability — making the payoff uninstantiable for arbitrary
+payloads on arms that never select those transitions.  All four fields
+now carry their arm premise (`.lifecycleRetype`, `.schedContextBind`,
+`.schedContextUnbind`, `.tcbSuspend ∨ .tcbResume`), the dispatch proof
+supplies each arm's own case equation, and three new witness instances
+(`…_inhabited_bind` / `…_unbind` / `…_suspend`) keep the guarded
+fields exercised non-vacuously under their own arms.  The residues:
+the gate's code view blanks string-literal contents (a theorem-shaped
+line inside a multiline Lean string satisfied the declaration census),
+with a token-preserving fixture — self-test 58 cases, census unchanged
+an eighth time; and `Reachability.lean`'s status header names its real
+staged consumer (the payoff tier's `reachable` packs) and the pending
+register's actual path instead of a pre-landing forecast.
+A thirteenth pass closed the newest fixes' own residues: the conjunct
+derivation's qualifier chain is case-free like the scans (a definition
+body has no hypothesis binders, so no projection filter is needed
+there); the namespace scanner reads Unicode scope names (`namespace σ`
+nested in the canonical namespace no longer records its shadow at the
+canonical prefix); the string blanking lexes double-quote *character
+literals* (`'"'` no longer flips string state and blanks the rest of
+the file — a quote after a non-identifier character opens a char
+literal, after an identifier character it is a prime); and
+`Reachability.lean`'s "carries along a trace" sentence now states the
+registered trace-composition debt instead of implying a preservation
+theorem that does not yet exist.  Three token-preserving fixtures;
+self-test 61 cases; census unchanged a ninth time.
+A fourteenth pass closed the two arrows that round left: `class` (and,
+by the sweep, `macro_rules`, `elab_rules`, `set_option`, `import`,
+`export`, `initialize`, `notation`, the infix family and `#`-commands)
+joined the body-boundary set, and the implication splitter recognises
+Lean's ASCII `->` alongside `→` — in the telescope split and in the
+step-equation's connective cut both.  Two token-preserving fixtures;
+self-test 63 cases; census unchanged a tenth time.
+A fifteenth pass closed four resolution gaps at once.  The conclusion
+parse now demands *entailment*: a family application counts only as the
+final segment itself or a depth-0 conjunct of it — `ipcInvariantFull st'
+∨ True` is provable by its right arm — and a marker-named declaration
+entailing nothing is a new `family_conclusion` violation instead of a
+silent census drop.  The derivation's named-argument label is any
+identifier rather than the literal `st`, since the label names the
+*called* predicate's binder (`replyCallerLinkage (σ := st)`).  In-scope
+`variable` binders are collected as each bundle's ambient telescope,
+scope-tracked through `section`/`namespace`/`end`, and fed only to the
+scans that *find* threading (`threaded`, the whole-bundle hypothesis
+check, projection receivers) and never to the machinery that suppresses
+findings (pre-states, anchors) — the over-approximation a scanner needs
+when `include` is an elaboration fact it cannot resolve, pointed in the
+direction that cannot mask; `include`/`omit`/`run_cmd`/
+`builtin_initialize` joined the shared command-stop set by the same
+sweep.  And equality-anchor connectivity now runs through state-bearing
+tokens only — predicate names, uppercase constructors and
+projection-position fields are dropped from the graph — so `hAnchor :
+ipcInvariantFull stMid = ipcInvariantFull stMid` no longer anchors
+`stMid` through its predicate symbol.  Four token-preserving fixtures;
+self-test 67 cases, 7/7 checks covered; census unchanged an eleventh
+time.
+A sixteenth pass replaced three more enumerations with the structures
+they stood for.  The conclusion parse now demands the family application
+*occupy* its conjunct — everything after the head must parse as argument
+material to the part's end — because rejecting an enumerated `∨`/`↔`
+still accepted `ipcInvariantFull st' = False`, a conclusion that
+contradicts the invariant.  The threading scan now measures *transparent
+aliases*: any collected state-predicate whose conjunctive expansion
+reaches a measured conjunct is measured too, derived from the same
+bodies map the conjuncts come from, so an `abbrev` wrapper is no longer
+a hole.  A `by exact` root body unwraps to its payload, and — closing
+the class rather than the instance — the canonical root body must now
+derive conjuncts *on its own*, so a canonical body the parser cannot
+read can no longer hide behind a partial shadow's union.  The rest of
+the round: command boundaries accept indentation (Lean never required
+column zero — the two body-collection patterns swept alike);
+tautological equations (`X = X`) are dropped from the anchor graph
+before their genuinely-shared tokens can launder anything; guillemet
+namespaces (`namespace «shadow»`) are pushed as scopes and guillemet
+identifiers (`«a"b»`) lex as code rather than opening a string; and a
+`private` canonical payoff is now a reported violation, since a
+module-local theorem is not a top-level consumer anyone downstream can
+name.  Nine token-preserving fixtures; self-test 76 cases; census
+unchanged a twelfth time.
+A seventeenth pass hardened what a hypothesis *establishes* and what a
+census *is*.  Entailment now governs both sides of a step: a binder
+whose type reads `dispatchSyscall st = .ok ((), st') ∨ True` establishes
+no equality, so the step validation ∧-splits the type and refuses any
+part under a weaker connective — the same rule the conclusion parse got
+a round earlier, applied to the hypothesis side.  Equation anchoring
+became *directional*: an equation admits its tokens only when one of its
+sides is nonempty and already fully anchored — the way a definition
+flows from determined to determining — which retires the tautology
+special-case and closes its definitionally-reflexive sibling
+(`pair st' stMid = id (pair st' stMid)`, provable by `rfl` with
+textually different sides) in the same stroke.  The whole-invariant
+check now catches a transformed post-state assumption
+(`ipcInvariantFull (id st')`) by token carriage: a family argument
+containing every token of the conclusion state is a hypothesis about
+it, since a genuine pre-state never contains its post-state.  And the
+census widened to what Lean actually accepts: `def`- and
+`abbrev`-spelled proofs join the declaration scan, guillemet-quoted
+qualifier segments (`«foo».conjunct st'`) match in the hypothesis and
+derivation grammars alike, and backtick syntax quotations are blanked
+from the code view so an uninvoked macro template can neither satisfy
+nor trip a check.  Six token-preserving fixtures; self-test 82 cases;
+census unchanged a thirteenth time.
+An eighteenth pass completed the census's declaration forms: `opaque`
+(the reported gap — `opaque X_preserves_… : … := …` is accepted by Lean
+and was invisible) and, by the sweep, `axiom` — which cannot survive the
+no-axiom gate, but a marker-named axiom is a family *statement* and this
+census must not be the scanner that missed it.  One token-preserving
+fixture; self-test 83 cases; census unchanged a fourteenth time.
+A nineteenth pass tied the payoff to the build and closed the
+step-bypass.  A payoff carrying a *bare transport equality* on its
+conclusion state (`hEq : st' = st`, either orientation, binder or
+unnamed premise) is now a violation: the theorem closes by handing the
+invariant over from another state, so the step it advertises — from an
+unrelated input, say — is dead weight.  The input side of the call
+stays deliberately unparsed: the live payoffs carry their invariant
+through a quiescence pack, invisible to a text scanner, and naming the
+packs would be an enumeration; the Lean-side pack-inhabitation
+witnesses carry that semantic burden.  Payoff declarations must be
+*build-reachable*: an import-graph walk from derived roots (the
+lakefile's executable roots, the library root, and every module a CI
+script builds by name) confirms some root still compiles the payoff
+module, closing the orphan case the staging-partition gate cannot see.
+Statement validation now selects the canonical *public* declaration, so
+a later-sorted private twin cannot stand validation for a vacuous public
+payoff.  And the collection grammars widened again to what Lean
+accepts: an inferred-`Prop` predicate definition (no `: Prop`
+annotation) still derives, `@`-explicit applications parse in the
+derivation, conclusion, and step grammars, and `nonrec` joins the
+modifier run at all four sites.  Six token-preserving fixtures;
+self-test 89 cases; census unchanged a fifteenth time.
+A twentieth pass ended the transport arms race by deriving what one
+round earlier looked underivable.  A wrapped transport (`some st' =
+some st`, closable by `Option.some.inj`) beat the bare-side refusal,
+and the wrapper shapes are unbounded — so the step-input rule went in
+after all, resting on derived *invariant carriers*: a collected
+definition whose conjunctive expansion entails a family form covers its
+state (`ipcReachable`), and a `Prop` structure whose field is an exact
+carrier application on its own explicit `(st : SystemState)` binder
+covers that binder's argument position (the quiescence packs,
+`base :`-nesting included, found by fixpoint — never named).  The
+pre-state machinery generalises over (carrier, state-index) pairs,
+carriers join the connectivity-exclusion set, and a payoff's step
+equation must now apply its dispatcher to a covered state — which the
+live pack-based payoffs satisfy through `hPack`, and no transport of
+any wrapping can fake.  The bare-transport refusal stays as a second
+layer.  One caught and one accepted fixture (the accepted one pins the
+carrier derivation on a pack-shaped payoff); self-test 91 cases; census
+unchanged a sixteenth time.
+A twenty-first pass corrected an assumption by testing it: the
+toolchain elaborates a named `instance` of a non-class `Prop` — the
+eighteenth pass had assumed it could not — so `instance` joins the
+census (priority group skipped; an anonymous instance has no name for
+the marker to live in).  `public section` is balanced as the scope it
+is, closing a prefix-desynchronisation where the unmatched `end` popped
+the enclosing namespace and let a nested same-name namespace record the
+canonical prefix; `public` joins every modifier run in the same sweep.
+And dot notation is application: `st'.conjunct` — a single-segment
+binder chain with no trailing argument — is the binder as the state
+argument in the finding-direction scans, while a trailing argument or
+multi-segment chain (`hInv.conjunct st'`, `hPack.reachable.…`) stays a
+projection.  Three token-preserving fixtures; self-test 94 cases;
+census unchanged a seventeenth time.
+A twenty-second pass fixed the gate in both directions at once.  Two
+false-negative closures: the quotation blanker skips guillemet spans
+(a backtick-paren inside `«…»` is identifier text, and blanking from
+it ran to end of file), and the body walker normalises `show T from e`
+and trailing type ascriptions at every recursion depth alongside
+`by exact`.  One false-positive closure: `threaded` scans the
+conclusion's *premises* only — conjuncts in the final segment are
+guarantees the theorem establishes, and scanning them flagged theorems
+for proving more.  And one fail-open closure in the round-20 carrier
+machinery, on the reviewer's correct observation that carriers
+*suppress* findings and so must under-approximate: the carrier verdict
+— for definitions and structures alike — is now per-declaration and
+unanimous, so a same-named shadow that carries can no longer make the
+canonical non-carrying pack mint pre-states.  Three caught and one
+accepted fixture; self-test 98 cases; census unchanged an eighteenth
+time.
+A churn-diagnosis pass then treated the dominant finding class as the
+defect, not its instances.  Eight consecutive review rounds each taught
+the gate's grammars one more valid Lean spelling — `class`, `def`,
+`opaque`, `instance`, `nonrec`, `public section`, dot notation,
+`show … from` — and each unknown spelling was a *silent* census miss
+until a reviewer found it, because every regex carried its own keyword
+alternation.  Three structural changes end the class rather than its
+next instance.  The modifiers and top-level commands the gate knows are
+now a **single source** (`_MODIFIERS`/`_COMMANDS`), from which
+`_COMMAND_STOP`, all five modifier runs, and the new check are built —
+a keyword learned once is learned everywhere.  A **`grammar_coverage`
+tripwire** (eighth check) scans every column-0 token of every code view
+and fails loudly on any identifier outside that source, inverting the
+failure mode: the next unknown spelling — written next year, or in the
+tree today — is the gate's own finding, never a review round's.  The
+column-0 census that designed it immediately proved the class live,
+turning up two commands already in the tree the grammars did not know
+(`register_option`, `prelude` — both now known, both previously able
+to corrupt a preceding body's trailing conjunct).  One-line composite
+commands (`open … in theorem`, `set_option … in theorem`,
+toolchain-verified) parse in the census and both collectors.  And the
+structural endpoint the text gate cannot reach — an elaborator-backed
+census reading declarations and telescopes from Lean's own environment
+— is registered as tracked debt in `docs/WORKSTREAM_HISTORY.md`
+(WS-DT residuals, post-v1.0.0), so the approximation is pinned, not
+pretended away.  The twenty-third review pass landed while this cut was
+in flight and proved both halves of its thesis in one round: its
+`set_option … in theorem` finding was already fixed here (the composite
+prefix, with the reviewer's exact scenario as this cut's own fixture),
+and its `meta def` finding — one more spelling — became a one-word
+addition to the single source that every grammar and the tripwire learn
+at once.  The pass's three structural findings joined the cut: build
+roots are read in *command position* through the repository's shared
+quote-aware shell resolver, with wrappers *derived* (a script-defined
+function whose body executes `"$@"`), so an echoed `lake build` line
+can no longer mint a root; a family conclusion must be a full-invariant
+form — `ipcInvariantCore` stays pre-state vocabulary, so a marker-named
+theorem cannot keep its census seat while downgrading its claim; and an
+implicit `{st : SystemState}` binder collects like the explicit
+spelling (toolchain-verified, as were `meta def` and the `include … in`
+composite).  Six token-preserving fixtures; self-test 104 cases, 8/8
+checks covered; census unchanged a nineteenth time.
+
+The twenty-fourth review pass named the tripwire's own two residuals,
+and both close structurally rather than per instance.  First: Lean
+parses commands at *any* indentation while `grammar_coverage` reads
+column 0, so an indented user-defined command minting a threaded family
+theorem was invisible to census and tripwire alike (toolchain-verified:
+an indented invocation expands, and `set_option hygiene false` lets it
+mint a stable name).  Position cannot close that class — an indented
+invocation is textually a term continuation — so the mechanism does:
+with no external `require` in the lakefile, an unknown command can
+exist only through declaration-minting machinery, and the new
+`minting_machinery` check holds every such token (`macro`, `syntax`,
+`elab`, `run_cmd`, `initialize`, and kin — position-free over the code
+view) to a reviewed `(file, keyword) → count` pin, bidirectionally: new
+machinery fails, and a stale pin fails while its file lives, so no
+entry rots into an exemption.  Its complement `family_references`
+resolves every spelled family-shaped token against the census, so a DSL
+invocation naming the theorem it mints — or a `(name := …)` escape —
+fails loudly wherever it sits.  The residual (pinned machinery minting
+names it never spells) is exactly the registered elaborator-census
+debt, now confined to eighteen reviewed files instead of open anywhere.
+Second: inside a syntax quotation, the paren balancer read a quoted
+identifier's `)` (`«x)»`, toolchain-verified valid template text) as
+the quotation terminator, exposing inert template text to the census.
+Fixed one layer down, where the class lives: `_blank_strings` now
+neutralises delimiter characters inside guillemet identifiers — word
+characters survive, so a guillemet-quoted family *name* keeps its
+marker and census seat — making every downstream bracket-walker
+guillemet-safe at once instead of teaching each its own skip; the
+shared `lean_code_view` stripper gained the sibling fix (`--` or `/-`
+inside `«…»` is identifier text, not a comment opener) with its own
+witness cases.  Third: a nested conjunct with an ordinary parameter
+before its state — `replyCallerLinkage (enabled : Bool)
+(st : SystemState)`, toolchain-verified — escaped the body collector
+(which demanded the state group immediately after the name) and the
+unary application parse, so its clause predicates left the derived set
+and threading them scored clean.  The collector now walks the whole
+binder telescope, finds the state group wherever it sits, and records
+its explicit-argument position; the measure accepts the state at any
+argument position (its widening direction), while the carrier
+derivation keeps the strict unary parse and gains a
+single-state-group guard (its suppressing direction), and a new
+unanimity-derived index map (`_state_indices`) gives `threaded` and
+the def-carrier slots the real state position — so
+`replyCallerLinkage true st'` is found at its slot and the clean
+`replyCallerLinkage true st` is not flagged on its leading `Bool`.
+The two added tree walks are absorbed by memoising `code_view` (pure
+per file; fixture writes clear the cache), returning the gate to its
+prior runtime.  Nine new fixtures — the indented command, the stale
+pin, the unresolved ghost reference, the reviewer's exact `«x)»`
+scenario, two accepted guillemet trees pinning the fix's fail-closed
+edges, and the non-leading-state trio (clause reached through the
+closure, post-state at the real slot, pre-state twin accepted); one
+reshaped (the arity mutation the telescope walk now rightly collects
+became a curried `→ Prop` return type the collector still refuses);
+self-test 113 cases, 10/10 checks covered; census unchanged a
+twentieth time: 26 conjuncts / 146 statements / 0 post-state
+bindings.
+
+The twenty-fifth review pass (five findings, all toolchain-verified)
+reclassified the churn and ended it at the second root.  The
+round-23 diagnosis closed the *spelling* class — no unknown-spelling
+finding since — but rounds 24–25 produced eight findings of a
+different class: each was one more fragment of Lean's **elaborator
+semantics** re-implemented in text — grouped binders count as one slot,
+named arguments read in source order, `notation` respelling a premise,
+conjunct-carrying structures outside the alias derivation, a mention
+under `∨ True` flagged as threading — and that class, unlike the
+keyword list, is not finite in text.  So the registered structural
+endpoint was pulled forward instead of deferred:
+`SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean` is the
+elaborator-backed census — a `run_cmd` walking every family-marked
+proposition in the elaborated environment, where binders arrive
+resolved, notation is long gone and structures have fields, checking
+that no hypothesis *entails* (descending `∧`, structure fields and
+definitional unfoldings; refusing `∨`/`∃`/`¬`/arrows) a measured
+conjunct of the conclusion's state, with the conjunct set derived by
+unfolding the canonical root and the state argument found by *type*.
+It carries its own enforced witnesses (a directly-threaded and a
+def→structure-chained statement must be flagged, the clean twin must
+not), agrees with the text census exactly — 146 statements, 0
+threaded — and runs in CI as its own build root in
+`test_tier1_build.sh`; the WS-DT debt row is closed.  The five
+findings also landed in the text gate, each in its direction: the
+telescope walker counts names per group and refuses defaults (a
+grouped `(old new : SystemState)` scans both slots); applications
+resolve named arguments by label against the retained telescope, with
+faithful-only reads on the suppression side and scan-everything on the
+finding side; the `notation`/`infix` family joined the machinery pin
+(it cannot mint, but it can respell a premise no signature scan sees);
+`structure_aliases` derives conjunct-carrying structures into the
+measure under union discipline off the same head parse the carriers
+use; and every conjunct/carrier scan is now anchored to
+entailment-split parts under strict positivity — `∀`-bodies and
+implication conclusions are provided positions (the syscall payoff's
+lookup-guarded pack keeps covering its pre-state), `∨`-arms are not
+(the reported false positive), and a `False →`-guarded launder still
+dies on the conclusion-state check that runs before pre-states can
+suppress.  Nine further fixtures with accepted twins; self-test 122
+cases, 10/10 checks covered; census unchanged a twenty-first time,
+now measured twice — text and elaborator — at 26 / 146 / 0.
+
+The twenty-sixth review pass reviewed the census layer itself — the
+right artifact, and all four findings landed in both layers where they
+applied.  Every accepted family form now seeds the conjunct closure,
+not the root alone: `ipcInvariantFullExceptDonationOwner` carries the
+variant-specific `donationOwnerValidExcept` the root does not, and a
+root-only seed left a theorem free to assume precisely its variant's
+post-state conjunct — the measured set widened honestly, 26 → **27**
+conjuncts, in the text derivation and the census's environment
+closure alike, with 146 / 0 holding under the wider measure.  The
+census gained a completeness pin from the side that can see it: a new
+`census_reachability` check in the text gate holds every family
+statement's module to the derived build-root import closure, so a
+bundle module dropping out of what CI elaborates is a loud text-gate
+failure rather than a silently smaller semantic population.
+Entailment learned the two sound shapes refusal was eating: an
+existential's body is provided whatever the witness (`∃ _ : Unit,
+P st'` is `P st'`), and a disjunction provides the *intersection* of
+its arms (`P st' ∨ P st'` fires; `P st' ∨ True` stays the fixed false
+positive) — in the census's expression walk and the text gate's
+positive-parts split both, each with threaded witnesses and the
+`∨ True` twin pinned clean.  And the census classifier now erases
+macro scopes before the marker test: a pinned macro minting a family
+theorem records a hygienic name, and the raw read skipped exactly the
+generated statements the census exists to catch — the classifier's
+own witness constructs a scoped family name (constructed, not
+spelled: the text gate's `family_references` rightly fires on a
+spelled family token that names nothing, which it proved by catching
+this cut's first draft).  Self-test 126 cases, 11/11 checks covered;
+census 27 / 146 / 0, measured twice.
+
+The twenty-seventh review pass sharpened all three of the previous
+round's fixes, one of them against an incompleteness of my own: the
+census loop still carried a `hasMacroScopes` skip ahead of the repaired
+classifier — the other half of the same bypass, which the
+classifier-only witness could not see.  The skip is gone; generated
+statements are counted and checked like any other and reported apart
+(`146 family statements (1 generated)`), and the loop now carries its
+own enforced witness — a pinned `local macro` in the census module
+mints a hygienic clean family theorem at every elaboration, whose
+visibility to the census is asserted before the census runs.  Landing
+that witness tripped `grammar_coverage` on its own invocation — the
+round-23 tripwire catching the first in-tree column-0 custom command,
+exactly as built — so the spelling joined the single-source `_COMMANDS`.
+Disjunction entailment now intersects by *identity*, not by boolean:
+`A st' ∨ B st'` entails neither conjunct even though each arm entails
+something, and the boolean read would have rejected a clean theorem —
+`entailedTargets` returns the set of entailed conjuncts per arm and
+intersects (the text gate's parts split already intersected by
+normalised text, so only the census moved), with `censusWitnessOrMixed`
+pinned clean beside the still-firing both-arms witness.  And the
+census-reachability pin walks the right closure: Tier 1 elaborates
+exactly the census module's imports, so `census_reachability` now
+requires every family statement inside `CENSUS_MODULE`'s own import
+closure rather than the all-roots union — a module reachable only from
+some executable no longer reads as covered — with a missing census
+module reported as the loudest form of the same failure.  Self-test
+127 cases, 11/11 checks covered; census 27 / 146 / 0, measured twice.
+
+### Housekeeping
+
+`raw_lookup_tid` re-anchored twice, with the reason in the baseline header:
+1287 → 1382 at the de-threading cut and 1382 → 1467 at the payoff cut.  The
+metric counts `.toObjId]?` at object-store boundaries and cannot tell an
+operational lookup from one inside a `Prop`, and both rises are entirely the
+second kind — invariant predicates, frames, disciplines and quiescence packs
+that must mirror the raw form of the siblings they compose with.  No kernel
+operation gained a raw lookup in either cut (the payoff cut's +85 is
+`API.lean` +3, the quiescence pack's Prop fields, plus the two new
+invariant-surface modules, every definition in which is Prop-valued); the
+typed-helper adoption floors are untouched, and the payoff re-anchor also
+raised the should-grow floors to the current adoption counts.  The closing
+audit cut re-anchored once more (1467 → 1468): the checked top-tier payoff
+proof performs the same object-store case analysis its unchecked mirror
+already performs — a proof-side `cases` scrutinee, not an operational
+lookup.
+
+Staged-only modules 63 → 65: `IPC/Invariant/Reachability.lean` and
+`IPC/Invariant/DispatchPayoff.lean` — the payoff composes the staged `.call`
+surface, and the reachability bundle's consumer is the payoff, so both ride
+with `EndpointCallInvariant`'s promotion.
+
+### Closure audit (same cut)
+
+The pre-push audit of this cut hardened the RR3.1 gate against two ways the
+de-threading claim could rot while the gate stayed green, and corrected the
+figure this entry first carried:
+
+* **The establishes-family is now measured.**  The bundle marker is a tuple —
+  `_preserves_ipcInvariantFull` *and* `_establishes_ipcInvariantFull` — so the
+  four `*_establishes_*` composites RR3.12 added are inside the census instead
+  of adjacent to it, and `ipcInvariantFullExceptDonationOwner` is a recognized
+  pre-state form.  The family this entry first quoted as fifty-nine was stale
+  at commit (the gate then measured sixty-one); the widened family was
+  **sixty-five**, still at zero post-state bindings — and the payoff tier
+  later in this same PR grows it to **144** and the closing audit's checked
+  tier to **146**, at zero throughout.
+* **A whole-bundle post-state hypothesis is its own finding.**  A statement
+  hypothesising `ipcInvariantFull st'` of its conclusion's own state is the
+  degenerate maximal threading — every conjunct at once — yet scored as a
+  *pre*-state before, because the binding does name the invariant.  The new
+  `no_conclusion_state_hypothesis` check fails it directly.
+* **A malformed pending-register line fails the gate cleanly** rather than
+  crashing it, and the self-test holds a token-preserving case for it (a
+  registration whose fields are present but undelimited).  Self-test: 19
+  cases, 5/5 checks with a token-preserving mutation.
+
+Two duplications the cut created are gone: `replyDonationReturn?_some_char`
+now consumes the split-out `replyDonationReturn?_some_lookup` instead of
+restating its unfolding, and `DualQueue/Transport.lean`'s private
+`lookupTcb_of_objects` is deleted in favour of the public
+`lookupTcb_of_objects_of_not_reserved` it duplicated.  The four family-symmetry
+lemmas with no consumer yet (`allPendingMessagesBounded_iff_pendingMessagesSatisfy`,
+`pendingMessageCapBadgesWellFormed_of_getElem_eq`,
+`cleanupPreReceiveDonation_preserves_pendingMessageCapBadgesWellFormed`,
+`donationOwnerValidExcept_of_objects_eq`) are pinned as suite anchors, with the
+registered dispatch payoffs as their designated consumers.
+
+**Trace fixture**: byte-identical.  **Zero** `sorry`/`axiom`.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR3 (RR3.1–RR3.26)
+
 ## v0.34.42 — WS-RR RR2: the live paths carry their own correctness
 
 **One PR, one version.**  The work is RR2.1–RR2.19, closing the pre-SM10

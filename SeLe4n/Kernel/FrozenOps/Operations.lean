@@ -368,7 +368,8 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
         | some (waiter, rest) =>
             let nextState : NotificationState := if rest.val.isEmpty then .idle else .waiting
             let ntfn' : Notification := {
-              state := nextState, waitingThreads := rest, pendingBadge := none }
+              state := nextState, waitingThreads := rest, pendingBadge := none,
+              boundTCB := ntfn.boundTCB }
             match st.objects.set notificationId (.notification ntfn') with
             | some objects' =>
                 let st' := { st with objects := objects' }
@@ -411,7 +412,7 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
               | none => SeLe4n.Badge.ofNatMasked badge.toNat
             let ntfn' : Notification := {
               state := .active, waitingThreads := SeLe4n.NoDupList.empty,
-              pendingBadge := some mergedBadge }
+              pendingBadge := some mergedBadge, boundTCB := ntfn.boundTCB }
             match st.objects.set notificationId (.notification ntfn') with
             | some objects' =>
                 -- Stored on the notification: it now holds the badge, so it
@@ -438,7 +439,7 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
         | some badge =>
             let ntfn' : Notification :=
               { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                pendingBadge := none }
+                pendingBadge := none, boundTCB := ntfn.boundTCB }
             match st.objects.set notificationId (.notification ntfn') with
             | some objects' =>
                 let st' := { st with objects := objects' }
@@ -476,12 +477,20 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
                       let ntfn' : Notification := {
                         state := .waiting
                         waitingThreads := wt'
-                        pendingBadge := none }
+                        pendingBadge := none
+                        boundTCB := ntfn.boundTCB }
                       match st.objects.set notificationId (.notification ntfn') with
                       | some objects' =>
                           let st' := { st with objects := objects' }
-                          match (frozenStoreTcbIpcState st' waiter
-                              (.blockedOnNotification notificationId)).map
+                          -- PR #886 review: clear `pendingMessage` atomically
+                          -- with the block, exactly as the live idle-wait path
+                          -- does since the RR3.5 fix -- storing state alone
+                          -- carried a consumed message into
+                          -- `.blockedOnNotification` on this side only, a
+                          -- live/frozen divergence on the mirror's own
+                          -- `TCB.pendingMessage` content channel.
+                          match (frozenStoreTcbIpcStateAndMessage st' waiter
+                              (.blockedOnNotification notificationId) none).map
                               (fun stB => frozenRemoveRunnable stB waiter) with
                           | .error e => .error e
                           | .ok st'' => .ok (none, st'')

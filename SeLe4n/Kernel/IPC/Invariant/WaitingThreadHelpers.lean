@@ -307,4 +307,38 @@ theorem storeTcbPendingMessage_preserves_blockedThreadsPendingMessageConsistent
         rw [hFrame] at hObj'
         exact hInv tid' tcb' hObj'
 
+-- ============================================================================
+-- WS-RR RR3.2: `consumeCallerReply` primitive preservation, relocated here.
+--
+-- This theorem used to live in `Structural/DualQueueMembership.lean`, and it
+-- was the ONLY name that module supplied to `Structural/PerOperation.lean`.
+-- That single edge pinned `PerOperation` downstream of the `ipcInvariantFull`
+-- bundles, which is why the bundles could not call `PerOperation`'s own
+-- per-transition `blockedThreadsPendingMessageConsistent` establishers and
+-- threaded the conjunct as a post-state hypothesis instead.  Sitting upstream
+-- of both, it reverses the edge: `DualQueueMembership` now imports
+-- `PerOperation` and calls the establishers.
+--
+-- The home is the right one on merit, not just for ordering: this file is the
+-- primitive-preservation module for `blockedThreadsPendingMessageConsistent`,
+-- and `consumeCallerReply` is a `Model/State.lean` primitive whose proof rests
+-- on nothing but that module's `consumeCallerReply_tcb_forward` transport.
+-- ============================================================================
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves
+`blockedThreadsPendingMessageConsistent` — `ipcState` and `pendingMessage` are both
+preserved TCB fields. -/
+theorem consumeCallerReply_preserves_blockedThreadsPendingMessageConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : blockedThreadsPendingMessageConsistent st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    blockedThreadsPendingMessageConsistent st' := by
+  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  intro tid tcb hObj
+  obtain ⟨ty, hSt, hIS, hPM, _⟩ := hFwd tid.toObjId tcb hObj
+  have hbase := hInv tid ty hSt
+  rw [hIS, hPM]
+  exact hbase
+
 end SeLe4n.Kernel

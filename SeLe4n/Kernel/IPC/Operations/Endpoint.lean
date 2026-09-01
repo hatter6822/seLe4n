@@ -520,6 +520,27 @@ def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
     | some (.tcb tcb) => some tcb
     | _ => none
 
+/-- WS-RR RR3.12: a successful `lookupTcb` witnesses that the tid is not reserved —
+the half of `lookupTcb`'s guard that lets a lookup be *re-established* in another
+state at the same tid. -/
+theorem lookupTcb_some_not_reserved
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (h : lookupTcb st tid = some tcb) : ¬ tid.isReserved := by
+  unfold lookupTcb at h
+  intro hRes
+  rw [if_pos hRes] at h
+  cases h
+
+/-- WS-RR RR3.12: the converse of `lookupTcb_some_objects` — a TCB in the object
+store at a non-reserved tid resolves through `lookupTcb`. -/
+theorem lookupTcb_of_objects_of_not_reserved
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hObj : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hNotReserved : ¬ tid.isReserved) :
+    lookupTcb st tid = some tcb := by
+  unfold lookupTcb
+  rw [if_neg hNotReserved, hObj]
+
 /-- If lookupTcb succeeds, the underlying objects map has a TCB at tid.toObjId. -/
 theorem lookupTcb_some_objects
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
@@ -1232,7 +1253,27 @@ def notificationWait
                       | .ok ((), st') =>
                           -- WS-L1/L1-C: Use _fromTcb — storeObject at notificationId
                           -- does not modify waiter's TCB, so tcb is still valid in st'
-                          match storeTcbIpcState_fromTcb st' waiter tcb (.blockedOnNotification notificationId) with
+                          --
+                          -- WS-RR RR3.5: clear `pendingMessage` **atomically** with the
+                          -- block, exactly as `endpointReceiveDual`'s block path does
+                          -- (PR #873 round 11).  A waiter that already collected a
+                          -- message stays `.ready` holding it -- `stageDeliveredMessage`
+                          -- reads it at the delivering syscall's boundary and does not
+                          -- clear it -- so parking it without the clear carried that
+                          -- consumed message into `.blockedOnNotification`, leaving its
+                          -- body readable on a parked thread and making
+                          -- `blockedThreadsPendingMessageConsistent` (a conjunct of
+                          -- `ipcInvariantFull`) FALSE in a reachable state: receive a
+                          -- message, then Wait on an idle notification.  The invariant
+                          -- was previously threaded as a post-state hypothesis on every
+                          -- `notificationWait` bundle, which is what hid it.
+                          --
+                          -- Nothing owes the parked waiter that payload: the wake
+                          -- (`notificationSignal`) overwrites `pendingMessage` with the
+                          -- badge message it delivers, so the cleared field is dead
+                          -- from the block to the wake.
+                          match storeTcbIpcStateAndMessage_fromTcb st' waiter tcb
+                              (.blockedOnNotification notificationId) none with
                           | .error e => .error e
                           | .ok st'' => .ok (none, removeRunnable st'' waiter)
     | some _ => .error .invalidCapability
@@ -1285,6 +1326,50 @@ theorem storeTcbIpcState_preserves_notification
       unfold lookupTcb; simp [hNtfn]
     simp [hLookup] at hStep
   · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc notifId hEq hObjInv hStep]
+    exact hNtfn
+
+-- WS-RR RR3.5: the `storeTcbIpcStateAndMessage` twins of the two frames above.
+-- They used to live in `IPC/Operations/SchedulerLemmas.lean`, which imports this
+-- module; `notificationWait`'s block path now clears `pendingMessage` atomically
+-- with the block (see the transition), so the frames are needed *here* and were
+-- moved rather than duplicated.
+
+/-- WS-F1: `storeTcbIpcStateAndMessage` preserves objects at IDs other than `tid.toObjId`. -/
+theorem storeTcbIpcStateAndMessage_preserves_objects_ne
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    st'.objects[oid]? = st.objects[oid]? := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      obtain ⟨⟨⟩, stMid⟩ := pair
+      simp only [hStore] at hStep
+      have hEq : stMid = st' := Except.ok.inj hStep; subst hEq
+      exact storeObject_objects_ne st stMid tid.toObjId oid _ hNe hObjInv hStore
+
+/-- WS-F1: `storeTcbIpcStateAndMessage` preserves notification objects. -/
+theorem storeTcbIpcStateAndMessage_preserves_notification
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (notifId : SeLe4n.ObjId) (ntfn : Notification)
+    (hObjInv : st.objects.invExt)
+    (hNtfn : st.objects[notifId]? = some (.notification ntfn))
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    st'.objects[notifId]? = some (.notification ntfn) := by
+  by_cases hEq : notifId = tid.toObjId
+  · subst hEq
+    unfold storeTcbIpcStateAndMessage at hStep
+    have hLookup : lookupTcb st tid = none := by unfold lookupTcb; simp [hNtfn]
+    simp [hLookup] at hStep
+  · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg notifId hEq hObjInv hStep]
     exact hNtfn
 
 /-- `removeRunnable` only modifies the scheduler; all objects are preserved. -/
@@ -1556,10 +1641,12 @@ theorem notificationWait_badge_path_notification
                 simp only []
                 intro hStep
                 -- WS-L1: rewrite _fromTcb back to original for proof compatibility
+                -- (WS-RR RR3.5: the block store now clears `pendingMessage`, so the
+                -- bridge is `storeTcbIpcStateAndMessage_fromTcb_eq`).
                 have hLookup' := lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hStore
-                rw [storeTcbIpcState_fromTcb_eq hLookup'] at hStep
+                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup'] at hStep
                 revert hStep
-                cases hTcb : storeTcbIpcState pair.2 waiter _ with
+                cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter _ none with
                 | error e => simp
                 | ok st2 =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -1669,9 +1756,9 @@ theorem notificationWait_wait_path_notification
                 intro hStep
                 -- WS-L1: rewrite _fromTcb back to original for proof compatibility
                 have hLookup' := lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hStore
-                rw [storeTcbIpcState_fromTcb_eq hLookup'] at hStep
+                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup'] at hStep
                 revert hStep
-                cases hTcb : storeTcbIpcState pair.2 waiter (.blockedOnNotification notifId) with
+                cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter (.blockedOnNotification notifId) none with
                 | error e => simp
                 | ok st2 =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -1683,8 +1770,8 @@ theorem notificationWait_wait_path_notification
                     unfold storeObject at hStore; cases hStore
                     exact RHTable_insert_preserves_invExt _ _ _ hObjInv
                   have hNtfnPreserved : st2.objects[notifId]? = some (.notification ntfn') :=
-                    storeTcbIpcState_preserves_notification pair.2 st2 waiter
-                      (.blockedOnNotification notifId) notifId ntfn' hNtfnStored hPairObjInv hTcb
+                    storeTcbIpcStateAndMessage_preserves_notification pair.2 st2 waiter
+                      (.blockedOnNotification notifId) none notifId ntfn' hPairObjInv hNtfnStored hTcb
                   refine ⟨ntfn, ntfn', rfl, hBadge, ?_, hConsEq⟩
                   rw [← hStEq, hRemObj]
                   exact hNtfnPreserved

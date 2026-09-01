@@ -1329,7 +1329,7 @@ both the lookup and insert/delete composed correctly — the operation completed
 fully rather than partially. The result state `st'` incorporates the deletion
 of the source slot and the insertion of the capability into the destination
 slot, plus CDT backpointer fixup. -/
-private theorem cspaceLookupSlot_state_eq
+theorem cspaceLookupSlot_state_eq
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
     (hStep : cspaceLookupSlot addr st = .ok (cap, st')) :
     st' = st := by
