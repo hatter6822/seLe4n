@@ -345,6 +345,15 @@ longer launders the intermediate state, with the residual acceptance
 (compounds built only from anchored tokens) documented in place of the
 old wholesale one.  Three more token-preserving fixtures; self-test 46
 cases; census unchanged a fifth time.
+A tenth pass generalised three more parser enumerations: declaration
+name captures are the Unicode identifier class (`τ_preserves_…` stays
+in the census, threading included), the body collector accepts
+attribute blocks before its modifiers (`@[simp] def` conjuncts
+collect), and `first_argument` carries *named* field projections as
+well as numeric ones (`ctx.input` and `ctx.output` no longer truncate
+to the same `ctx`, so a conjunct on one cannot hide behind a pre-state
+on the other).  Three token-preserving fixtures; self-test 49 cases;
+census unchanged a sixth time.
 
 ### Housekeeping
 

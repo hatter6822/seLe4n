@@ -161,7 +161,7 @@ _DECL_RE = re.compile(
     r"^\s*(?:@\[[^\]]*\]\s*)*"
     r"(?:private\s+|protected\s+|partial\s+|noncomputable\s+|unsafe\s+"
     r"|local\s+|scoped\s+)*"
-    r"(?:theorem|lemma)\s+([A-Za-z_][A-Za-z0-9_'.!?]*)",
+    r"(?:theorem|lemma)\s+([^\W\d][\w'.!?]*)",
     re.MULTILINE,
 )
 
@@ -289,7 +289,7 @@ def _steps_function(binders: str, function: str, state: str) -> bool:
                     break
             if colon is not None:
                 group_type = group[colon + 1 :]
-                head = re.match(r"\s*([A-Za-z_][A-Za-z0-9_'!?]*)", group_type)
+                head = re.match(r"\s*([^\W\d][\w'!?]*)", group_type)
                 if head and head.group(1) == function:
                     depth = 0
                     for offset, char in enumerate(group_type):
@@ -371,11 +371,13 @@ def balanced_span(text: str, start: int) -> int | None:
 def first_argument(text: str, start: int) -> str | None:
     """The first explicit argument of an application beginning at `start`.
 
-    A bracketed group (with any `.1` / `.2` projections that follow it) or a
-    bare identifier.  Returning the *projection-extended* form matters: a
-    bundle whose post-state is `(f a st).1` binds the conjunct on exactly that
-    expression, and truncating at the closing paren would compare `(f a st)`
-    against `(f a st).1` and report a clean signature.
+    A bracketed group or a bare identifier, extended with any projection
+    chain that follows -- numeric (`.1` / `.2`) and *named field*
+    projections alike (PR #886 review: `ctx.input` and `ctx.output` both
+    truncated to `ctx`, so two different state expressions compared equal).
+    Returning the projection-extended form matters: a bundle whose
+    post-state is `(f a st).1` binds the conjunct on exactly that
+    expression, and truncating early reports a clean signature.
     """
     index = start
     while index < len(text) and text[index] in " \n\t":
@@ -386,9 +388,11 @@ def first_argument(text: str, start: int) -> str | None:
         end = balanced_span(text, index)
         if end is None:
             return None
-        projection = re.match(r"(?:\.\d+)*", text[end:])
+        projection = re.match(r"(?:\.(?:\d+|[^\W\d][\w'!?]*))*", text[end:])
         return text[index:end] + projection.group(0)
-    identifier = re.match(r"[A-Za-z_][A-Za-z0-9_'!?]*(?:\.\d+)*", text[index:])
+    identifier = re.match(
+        r"[^\W\d][\w'!?]*(?:\.(?:\d+|[^\W\d][\w'!?]*))*", text[index:]
+    )
     return identifier.group(0) if identifier else None
 
 
@@ -518,9 +522,13 @@ def state_predicate_bodies(root: str, sources: list[str]) -> dict[str, list[str]
     # the modifier fix reached the stop pattern below and not this, its
     # sibling site four lines up -- a `private def` conjunct vanished from
     # the map while a `private theorem` correctly bounded its neighbour).
+    # Attribute blocks before the modifiers likewise (`@[simp] def ...`),
+    # and the name capture is the Unicode identifier class, both matching
+    # `_DECL_RE` (PR #886 review, next round).
     pattern = re.compile(
-        r"^(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped)\s+)*"
-        r"(?:def|abbrev)\s+([A-Za-z_][A-Za-z0-9_'!?]*)"
+        r"^(?:@\[[^\]]*\]\s*)*"
+        r"(?:(?:private|protected|partial|noncomputable|unsafe|local|scoped)\s+)*"
+        r"(?:def|abbrev)\s+([^\W\d][\w'!?]*)"
         r"\s*\(\s*([^\W\d][\w']*)\s*:\s*SystemState\s*\)"
         r"\s*:\s*Prop\s*:=",
         re.MULTILINE,
@@ -592,7 +600,7 @@ def derive_conjuncts(bodies: dict[str, list[str]]) -> set[str]:
     # the same round's sweep of the same question's sibling sites.
     applied = re.compile(
         r"^\s*(?:_root_\.)?(?:[A-Z][A-Za-z0-9_']*\.)*"
-        r"([A-Za-z_][A-Za-z0-9_'!?]*)\s+\(?\s*st\s*\)?\s*$"
+        r"([^\W\d][\w'!?]*)\s+\(?\s*st\s*\)?\s*$"
     )
 
     def sub_predicates(name: str) -> set[str]:
@@ -1830,6 +1838,78 @@ end Shadow""",
         _Case(
             "conjunct on an unanchored compound state is not laundered as pre",
             compound_mid,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Unicode-named bundle: `τ_preserves_ipcInvariantFull` is a valid Lean
+    # declaration carrying the family marker, and an ASCII-first name class
+    # dropped it -- threading included -- from the census entirely.
+    unicode_bundle = _fixture()
+    unicode_bundle["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE
+        + "\ntheorem τ_preserves_ipcInvariantFull\n"
+        "    (st st' : SystemState)\n"
+        "    (hInv : ipcInvariantFull st)\n"
+        "    (hT : blockedThreadsPendingMessageConsistent st')\n"
+        "    (hStep : endpointSendDual st = .ok ((), st')) :\n"
+        "    ipcInvariantFull st' := by\n"
+        "  exact sample st st' hInv hT hStep\n"
+    )
+    cases.append(
+        _Case(
+            "a Unicode-named bundle stays in the census and its threading flags",
+            unicode_bundle,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Attributed conjunct definition: `@[simp] def replyCallerLinkage …` is
+    # routine annotation, and a collector blind to attribute blocks dropped
+    # the body -- its clauses left the derived set with every token present.
+    attributed_def = _fixture()
+    attributed_def[DEFS_MODULE] = CLEAN_DEFS.replace(
+        "def replyCallerLinkage (st : SystemState) : Prop :=",
+        "@[simp] def replyCallerLinkage (st : SystemState) : Prop :=",
+    )
+    attributed_def["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE.replace(
+            "    (hInv : ipcInvariantFull st)\n",
+            "    (hInv : ipcInvariantFull st)\n"
+            "    (h : replyCallerLinkageReciprocal st')\n",
+        )
+    )
+    cases.append(
+        _Case(
+            "clause of an attributed conjunct definition still derives and flags",
+            attributed_def,
+            True,
+            check="no_post_state_binding",
+            mutation="preserving",
+        )
+    )
+
+    # Named field projections: `ctx.input` and `ctx.output` are different
+    # state expressions, and a numeric-only projection chain truncated both
+    # to `ctx` -- the threaded conjunct then compared equal to the pre-state.
+    named_projection = _fixture()
+    named_projection["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        "theorem endpointSendDual_preserves_ipcInvariantFull\n"
+        "    (ctx : SendContext) (st' : SystemState)\n"
+        "    (hInv : ipcInvariantFull ctx.input)\n"
+        "    (hT : blockedThreadsPendingMessageConsistent ctx.output)\n"
+        "    (hStep : endpointSendDual ctx.input = .ok ((), st')) :\n"
+        "    ipcInvariantFull st' := by\n"
+        "  exact sample ctx st' hInv hT hStep\n"
+    )
+    cases.append(
+        _Case(
+            "conjunct on a different named projection than the pre-state flags",
+            named_projection,
             True,
             check="no_post_state_binding",
             mutation="preserving",
