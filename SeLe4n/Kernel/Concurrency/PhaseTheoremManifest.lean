@@ -74,8 +74,8 @@ not an estimate of what a phase "substantively" proved, and it is deliberately
 the narrower claim: every theorem it counts is named, resolves, and is unique.
 
 Unique *across the whole census*, not merely within its own inventory.  Each
-inventory's `_identifiers_nodup` witness compares the identifier strings it
-stores, in its own list, so it can see neither the same declaration registered
+inventory's `_identifiers_nodup` witness compares the identifiers it stores
+(packed keys, `SeLe4n.PackedString`), in its own list, so it can see neither the same declaration registered
 under two spellings nor the same declaration claimed by two phases.  The
 census below de-duplicates on the *resolved* `Name` and errors on a repeat, so
 the total cannot drift from a count of theorems into a count of
@@ -83,7 +83,7 @@ registrations.
 
 Phases with no inventory contribute **zero** and are registered as
 `unregistered` rather than given a plausible-looking figure.  That gap is real
-and is registered as such in `docs/WORKSTREAM_HISTORY.md`; the honest zero is
+and is registered as such in `docs/REGISTERED_DEBT.md`; the honest zero is
 what makes it visible.  Assumption ledgers (`smpLatentInventory`,
 `smpRetiredInventory`) enumerate assumptions rather than proved theorems, so
 they are claimed — an unclaimed inventory is a gate failure — under
@@ -158,7 +158,7 @@ inductive PhaseInventoryKind where
       contribute nothing to the theorem total. -/
   | assumptionLedger
   /-- The phase has no machine-checked theorem inventory yet.  A registered
-      gap, not an estimate: see the debt row in `docs/WORKSTREAM_HISTORY.md`. -/
+      gap, not an estimate: see the debt row in `docs/REGISTERED_DEBT.md`. -/
   | unregistered
   deriving Repr, DecidableEq, Inhabited
 
@@ -388,7 +388,7 @@ theorem smpPhase_perCoreState_theoremCount_zero :
     `smpPhaseTheoremCount` excludes by design.  **Eight of eleven phases
     therefore register zero theorems**, and closing only these six would leave
     SM0's and SM4's own theorems unmeasured.  Registered as debt in
-    `docs/WORKSTREAM_HISTORY.md` with closure target SM10.3.13. -/
+    `docs/REGISTERED_DEBT.md` with closure target SM10.3.13. -/
 theorem smpPhase_unregistered_theoremCount_zero :
     smpPhaseTheoremCount .rustHal = 0
     ∧ smpPhaseTheoremCount .crossCoreIpc = 0

@@ -251,7 +251,7 @@ def retypeFromUntyped
                     -- default `parent := none` is correct for every
                     -- boot-constructed untyped. See AN6-C.2 in the WS-AN
                     -- ScrubToken closure (historical record in
-                    -- docs/WORKSTREAM_HISTORY.md).
+                    -- docs/REGISTERED_DEBT.md).
                     match storeObject untypedId (.untyped ut') st' with
                     | .error e => .error e
                     | .ok ((), stUt) =>
@@ -468,7 +468,7 @@ sequential semantic level. On real hardware (SMP / preemption-capable
 AArch64) the same atomicity must be re-established by a critical section
 around `retypeFromUntyped`; the obligation is tracked for AN9-D (HAL
 bracket) and AN12-B (SMP inventory confirmation — recorded as a post-1.0
-hardening candidate; registered in `docs/WORKSTREAM_HISTORY.md`
+hardening candidate; registered in `docs/REGISTERED_DEBT.md`
 (Registered debt index, C.1)). -/
 theorem retypeFromUntyped_atomicity_under_sequential_semantics
     (st st' : SystemState)

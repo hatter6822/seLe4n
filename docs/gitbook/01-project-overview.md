@@ -42,115 +42,32 @@ Bootstrap, M1 (scheduler), M2 (capability), M3/M3.5 (IPC + coherence),
 M4-A/M4-B (lifecycle), M5 (service graph), M6 (architecture boundary),
 M7 (audit remediation).
 
-### Completed audit portfolios
+### Where the project is
 
-| Portfolio | Scope | Status |
-|-----------|-------|--------|
-| **WS-H14** (v0.14.6) | Type safety & Prelude foundations: `EquivBEq`/`LawfulBEq` for 14 identifier types, `LawfulMonad` for `KernelM`, `isPowerOfTwo` correctness, identifier roundtrip/injectivity, `OfNat` removal, sentinel completion. Closes A-02, A-01, A-03, A-04/M-11, A-06, M-09, M-10 | Completed |
-| **Module restructuring** (v0.14.5) | 9 monolithic files decomposed into 24 focused submodules via re-export hub pattern; 15 private defs tightened; 209 Tier 3 anchor checks updated. Zero sorry/axiom | Completed |
-| **WS-H13** (v0.14.4) | CSpace/service model enrichment: multi-level CSpace resolution, backing-object verification, `serviceCountBounded`. Closes H-01, A-21, A-29, A-30, M-17/A-31 | Completed |
-| **WS-H12f** (v0.14.3) | Test harness update & documentation sync: 3 new trace scenarios, fixture update, 9 new Tier 3 anchors. Completes WS-H12 composite workstream | Completed |
-| **WS-H12e** (v0.14.2) | Cross-subsystem invariant reconciliation: `coreIpcInvariantBundle` upgraded to `ipcInvariantFull`, `schedulerInvariantBundleFull` extended with `contextMatchesCurrent`, `ipcSchedulerCouplingInvariantBundle` extended with register-context and dequeue coherence, `proofLayerInvariantBundle` uses full scheduler bundle, all preservation proofs updated. Closes systemic invariant composition gaps from WS-H12a–d | Completed |
-| **WS-H12d** (v0.14.1) | IPC message payload bounds: `IpcMessage` registers/caps migrated to `Array` with `maxMessageRegisters`(120)/`maxExtraCaps`(3), bounds enforcement at all 4 send boundaries, `allPendingMessagesBounded` system invariant. Closes A-09 | Completed |
-| **WS-H12c** (v0.14.0) | Per-TCB register context with inline context switch: `registerContext` field on TCB, inline `saveOutgoingContext`/`restoreIncomingContext` in `schedule`, `contextMatchesCurrent` invariant with preservation proofs for scheduler and IPC operations, IF projection stripping. Closes H-03 | Completed |
-| **WS-H12b** (v0.13.9) | Dequeue-on-dispatch scheduler semantics: `queueCurrentConsistent` inverted to `current ∉ runnable` matching seL4's `switchToThread`/`tcbSchedDequeue`; schedule/handleYield/timerTick/switchDomain updated; `currentTimeSlicePositive` and `schedulerPriorityMatch` predicates; IPC coherence predicates; ~1800 lines of proofs re-proved. Closes H-04 | Completed |
-| **WS-H12a** (v0.13.8) | Legacy endpoint removal: `EndpointState` deleted, legacy IPC ops removed, ~60 dead theorems cleaned, `endpointReplyRecv` migrated to dual-queue. Closes A-08, M-01, A-25 | Completed |
-| **WS-H11** (v0.13.7) | VSpace & architecture enrichment: PagePermissions with W^X enforcement, ARM64 52-bit address bounds, TLB model with per-VAddr flush and cross-ASID isolation, VSpaceBackend typeclass. Closes H-02/A-32, H-10, A-05/M-12, A-12, M-14 | Completed |
-| **WS-H10** (v0.13.6) | Security model foundations: MachineState in ObservableState, BIBA lattice alternatives, declassification model, endpoint flow policy well-formedness. Closes C-05/A-38, A-34, A-39, M-16 | Completed |
-| **WS-H7/H8/H9 gaps closed** (v0.13.5) | Comprehensive audit: BEq soundness lemmas, `endpointReceiveDualChecked_NI` bridge, 3 IPC NI theorems, NonInterferenceStep extended to 31 constructors | Completed |
-| **WS-H9** (v0.13.4) | Non-interference coverage extension: 27 new NI theorems, NonInterferenceStep 28 constructors, >80% kernel operation coverage | Completed |
-| **WS-H8** (v0.13.2) | Enforcement-NI bridge & missing wrappers: 5 enforcement soundness meta-theorems, 4 new `*Checked` wrappers, `ObservableState` domain timing metadata, NI bridge theorems. Closes A-35/H-07, A-36/A-37/H-11 | Completed |
-| **WS-H6** (v0.13.1) | Scheduler proof completion: `timeSlicePositive` preservation for all 6 scheduler ops, EDF invariant domain-fix, candidate optimality, `schedulerInvariantBundleFull` 5-tuple bundle | Completed |
-| **WS-H5** (v0.12.19) | IPC dual-queue structural invariant: `intrusiveQueueWellFormed`, `dualQueueSystemInvariant`, `tcbQueueLinkIntegrity`; 13 preservation theorems. Closes C-04/A-22, A-23, A-24 | Completed |
-| **WS-H4** (v0.12.18) | Capability invariant redesign: `capabilityInvariantBundle` extended from 4-tuple to 7-tuple with `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`; all 25+ preservation theorems re-proved | Completed |
-| **WS-H3** (v0.12.17) | Build/CI infrastructure fixes: `run_check` return value fix (H-12), docs sync CI integration (M-19), Tier 3 `rg` guard (M-20) | Completed |
-| **WS-H2** (v0.12.16) | Lifecycle safety guards: childId collision/self-overwrite guards, TCB scheduler cleanup, CNode CDT detach, atomic retype | Completed |
-| **WS-H1** (v0.12.16) | IPC call-path semantic fix: `blockedOnCall` state, reply-target scoping, 5-conjunct contract predicates | Completed |
-| **WS-G** (v0.12.15) | Kernel performance: O(1) hash-based data structures for all hot paths | All 9 workstreams completed |
-| **WS-F1..F4** (v0.12.2) | Critical audit remediation: IPC messages, untyped memory, info-flow, proof gaps | All 4 completed |
-| **WS-E** (v0.11.6) | Test/CI, proof quality, kernel hardening, info-flow | All 6 completed |
-| **WS-D** (v0.11.0), **WS-C** (v0.9.32), **WS-B** (v0.9.0) | Earlier audit portfolios | All completed |
+Phases SM0–SM9 of the SMP multi-core workstream have landed: foundational SMP
+types and the lock hierarchy, the Rust HAL bring-up, verified lock primitives,
+per-object locks, per-core scheduler state and scheduling, cross-core IPC, TLB
+shootdown and cache maintenance, SMP information flow, and declassification.
+The syscall return ABI is complete.
 
-### What's next
+**SM10 — release closure at v1.0.0 — is blocked on WS-RR**, the pre-1.0
+remediation phase now in flight: 184 sub-tasks across nine phases, of which
+RR0–RR4 have landed. The remaining phases close the boot-path fail-open
+latents, complete the verified lock primitives, and sweep the medium-severity
+findings.
 
-All workstreams from WS-B through WS-AB are **COMPLETE** (v0.9.0–v0.25.5).
-Key recent completions:
+**The kernel does not boot yet.** Producing a bootable image is SM10.1's work;
+until it lands, every runtime seam behind the per-core readiness gate is wired
+and dormant. What the project does and does not claim is enumerated in
+[`CLAIM_EVIDENCE_INDEX.md`](../CLAIM_EVIDENCE_INDEX.md), including a table of
+what is *not* claimed and who owns each gap.
 
-- **WS-AB** (v0.24.0–v0.25.5): Deferred Operations & Liveness Completion — 6 phases, 90 sub-tasks. All 5 deferred seL4 operations (suspend/resume, setPriority/setMCPriority, setIPCBuffer), Priority Inheritance Protocol with deadlock freedom proof, Bounded Latency Theorem (WCRT = D×L_max + N×(B+P)), API surface integration. **PORTFOLIO COMPLETE.**
-- **WS-AA** (v0.23.21): Comprehensive Audit Remediation — Phases AA1–AA2 complete (Rust ABI type sync, CI hardening). **PORTFOLIO COMPLETE.**
-- **WS-Z** (v0.23.0–v0.23.20): Composable Performance Objects — 10 phases, SchedContext subsystem with CBS budget engine, replenishment queue, scheduler integration, capability-controlled binding, timeout endpoints, SchedContext donation for passive servers, full API surface, and invariant composition. **PORTFOLIO COMPLETE.**
-
-**WS-AG PORTFOLIO COMPLETE** (v0.26.0–v0.27.1): H3 Hardware Binding —
-10 phases (AG1–AG10), 67 sub-tasks. HAL crate, GIC-400, ARM Generic Timer,
-ARMv8 page tables, FFI bridge, QEMU testing, documentation closure.
-
-**WS-AH PORTFOLIO COMPLETE** (v0.27.2–v0.27.6): Pre-Release Comprehensive Audit
-Remediation — 5 phases (AH1–AH5), 27 sub-tasks.
-
-**WS-AI PORTFOLIO COMPLETE** (v0.27.7–v0.28.0): Post-Audit Comprehensive
-Remediation — 7 phases (AI1–AI7), 37 sub-tasks. All 60 findings from the
-v0.27.6 audit addressed (5 HIGH, 27 MEDIUM, 28 LOW).
-
-**Active workstream**: WS-SM — multi-core SMP completion through v1.0.0.
-Phases **SM0–SM9 have all landed** (per-object locks, per-core scheduler
-state and scheduling, cross-core IPC, TLB shootdown + cache maintenance,
-SMP information flow, and the SM9 declassification completion, closed at
-v0.33.100); the syscall return ABI workstream (WS-RA) is complete, and
-**SM10** (release closure → v1.0.0) is the remaining phase — see
-CLAUDE.md's phase table and `docs/WORKSTREAM_HISTORY.md`. The narrative
-below records the SM0/SM1 foundations in detail.
-Phase SM0 (foundations & honesty patches) closed at v0.31.3 with the
-type-level scaffolding (CoreId, LockKind, LockId, SgiKind, SharingDomain,
-BklState).  Phase SM1 (Rust HAL) closes at v0.31.8 with the nine
-sub-phases all landed: SM1.A (PSCI completion) at v0.31.3, SM1.B
-(per-CPU data + TPIDR_EL1, closes SMP-M4) at v0.31.4, SM1.C
-(secondary-core full init, closes SMP-C2) at v0.31.5, SM1.D (DTB
-cmdline + Phase 5) at v0.31.6, SM1.E/F/G/H (cross-core HAL
-completion) at v0.31.7, and SM1.I (miscellaneous HAL improvements —
-SM5 landing seams + per-core stats + idle-wait + SEV/WFE docs +
-cross-core tests) at v0.31.8.  SM1.C rewrites `rust_secondary_main`
-into the full per-core boot sequence — MMU enable
-(`init_mmu_secondary` via shared `init_mmu_per_core`), exception
-vectors (`install_exception_vectors` shared with primary), GIC CPU
-interface (`init_cpu_interface_secondary`), per-core timer
-(`init_timer_secondary`), then the Lean kernel bring-up entry
-`secondaryKernelMain` — definitionally the core's first reschedule
-(the verified `handleRescheduleSgiOnCore` transition, run inside the
-kernel-entry lock with IRQs still masked) — then IRQ unmask and an
-interrupt-driven idle.
-SM1.D adds Phase 5 to `rust_boot_main`: a full self-contained DTB
-walker parses `/chosen/bootargs`, produces a typed `CmdlineConfig`,
-and dispatches to `bring_up_secondaries_with_limit` to spawn the
-configured set of secondaries.  **Default from v0.32.142 is
-`smp_enabled=true smp_max_cores=4`; operators opt OUT via the kernel
-command line.**  Maintainer decision #7 puts SMP on by default at
-v1.0.0 "once SM5 lands"; SM5.I (kernel-entry serialisation) landed at
-v0.32.142, so the default returned to `true` — it was `false` from
-v0.32.136 while that precondition was unmet.  See
-`docs/spec/SELE4N_SPEC.md` and `kernel_entry.rs`.
-SM1.E adds 8 broadcast TLBI wrappers (4 IS-variants `tlbi_*is` for
-inner-shareable broadcast + 4 OS-variants `tlbi_*os` for outer-
-shareable) plus the typed `tlbi_for_sharing(domain, op)` dispatcher
-exposed to Lean via `Architecture.tlbiForSharing` (in
-`SeLe4n/Kernel/Architecture/TlbiForSharing.lean`).  SM1.F adds the
-GICD_SGIR-based SGI primitive surface (`gic::send_sgi*` family +
-`register_sgi_handler` / `dispatch_sgi` infrastructure); each
-send-SGI variant emits `dsb ish` BEFORE the SGIR write per ARM ARM
-B2.7.5, pinned by a new build-script scanner.  SM1.G audits the
-`UartLock` for SMP correctness and adds the `kprintln_core!` macro
-for per-core attributed boot tracing.  SM1.H wires three QEMU SMP
-integration tests (full `-smp 4` bringup, minimal `-smp 2` smoke
-test, cross-core SGI round-trip) into the tier-4 nightly slot,
-replacing the SM0.T SKIP-only stub.
-SM2..SM10 wire those types and primitives into verified ticket / RW
-lock primitives, per-core scheduler state, cross-core IPC, TLB
-shootdown, info-flow non-interference under SMP, and the v1.0.0
-release closure.  Full plan in
-[`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](../planning/SMP_MULTICORE_COMPLETION_PLAN.md).
-Companion post-1.0 deferrals: FrozenOps production promotion.
-
-See [Specification & Roadmap](05-specification-and-roadmap.md) and
-[`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md).
+| For | Read |
+|-----|------|
+| What changed in a version | [`CHANGELOG.md`](../../CHANGELOG.md) |
+| What is deferred, and who owns it | [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| What a phase is scheduled to do | [`docs/planning/`](../planning/) |
+| How to build, test and contribute | [`DEVELOPMENT.md`](../DEVELOPMENT.md) |
 
 ## 5. Architecture mental model
 
@@ -191,5 +108,5 @@ For milestone-moving changes:
 - Project specification: [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md)
 - seL4 reference: [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md)
 - Performance optimization: [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
-- Workstream history: [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md)
+- Registered debt: [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
 - Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)

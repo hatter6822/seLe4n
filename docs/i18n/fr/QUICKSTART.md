@@ -165,7 +165,7 @@ Chaque sous-système suit la séparation **Operations/Invariant** :
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) | Flux de travail de développement complet |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) | Manuel d'architecture approfondi |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Guide de contribution (en français) |
-| [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) | Historique et feuille de route |
+| [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) | Historique et feuille de route |
 | [`docs/codebase_map.json`](../../../docs/codebase_map.json) | Inventaire lisible par machine |
 
 ## Résolution de problèmes courants

@@ -143,7 +143,7 @@ theorem adapterReadMemory_error_unsupportedBinding
     by VSpace operations (`VSpaceBackend` / `VSpaceARMv8.lean`) independently
     of the context switch path. Atomic TLB + ASID + register context switch
     coordination closes DEF-A-M06 / DEF-A-M08 / DEF-A-M09 under WS-AN AN9-C /
-    AN9-D (historical record in docs/WORKSTREAM_HISTORY.md). -/
+    AN9-D (historical record in CHANGELOG.md). -/
 def contextSwitchState (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile)
     (st : SystemState) : SystemState :=
   { st with

@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
 import SeLe4n.Kernel.PerCoreTimerEntry
+import SeLe4n.PackedString
 
 /-!
 # WS-SM SM5.D — Theorem inventory
@@ -62,25 +63,46 @@ inductive PerCoreTimerCategory where
   | decidability
   deriving Repr, DecidableEq, Inhabited
 
-/-- WS-SM SM5.D: a theorem entry in the SM5.D inventory.  Records a description,
-the fully-qualified name as a `String`, a compile-time elaboration witness, and a
+/-- WS-SM SM5.D: a theorem entry in the SM5.D inventory.  Records a description and
+the fully-qualified name as packed keys (`SeLe4n.PackedString`, read back
+through `description` / `identifier`), a compile-time elaboration witness, and a
 category tag. -/
 structure PerCoreTimerTheorem where
-  description : String
-  identifier  : String
+  /-- The description as one packed key (`SeLe4n.PackedString`): one
+      base-2²¹ digit per scalar value behind a leading `1`.  Read it back
+      through `description`. -/
+  descriptionKey : Nat
+  /-- The fully-qualified name, packed the same way.  Read it back through
+      `identifier`. -/
+  identifierKey  : Nat
+  /-- The kernel's own check, per entry, that the key packs exactly the valid
+      scalar values it unpacks to — what lets distinctness of the strings be
+      proven from distinctness of the keys. -/
+  descriptionKey_wf : isWellFormedPacked descriptionKey = true := by decide +kernel
+  identifierKey_wf  : isWellFormedPacked identifierKey = true := by decide +kernel
   _elabCheck  : Unit
   category    : PerCoreTimerCategory
-  deriving Repr, Inhabited
+  deriving Repr
+
+/-- The default entry spells the empty string twice: `1` packs no digits. -/
+instance : Inhabited PerCoreTimerTheorem :=
+  ⟨{ descriptionKey := 1, identifierKey := 1, _elabCheck := (), category := default }⟩
+
+/-- The entry's description, unpacked from its key. -/
+def PerCoreTimerTheorem.description (t : PerCoreTimerTheorem) : String := stringOfPacked t.descriptionKey
+
+/-- The entry's fully-qualified name, unpacked from its key. -/
+def PerCoreTimerTheorem.identifier (t : PerCoreTimerTheorem) : String := stringOfPacked t.identifierKey
 
 /-- WS-SM SM5.D: build a `PerCoreTimerTheorem` with a compile-time-validated identifier. -/
 syntax (name := perCoreTimerTheoremMacro) "pctt!" str ident term : term
 
 macro_rules
   | `(pctt! $desc:str $ident:ident $cat:term) => do
-      let nameStr : String := ident.getId.toString
-      let nameStxLit := Lean.Syntax.mkStrLit nameStr
-      `(({ description := $desc,
-           identifier := $nameStxLit,
+      let descKey := packedStringLit desc.getString
+      let identKey := packedStringLit ident.getId.toString
+      `(({ descriptionKey := nat_lit $descKey,
+           identifierKey := nat_lit $identKey,
            _elabCheck := (let _ := @$ident; ()),
            category := $cat
          } : PerCoreTimerTheorem))
@@ -338,16 +360,22 @@ theorem perCoreTimerTheorems_partition_sum :
     (perCoreTimerTheorems.filter (fun t => t.category == .decidability)).length =
     perCoreTimerTheorems.length := by decide
 
-set_option maxRecDepth 10000 in
-/-- WS-SM SM5.D: every inventory identifier is unique.  Kernel-sound `decide`
-(not `native_decide`): a duplicate identifier fails the build here (per the SM5.C
-audit-pass-2 precedent that `native_decide` can mask a copy-paste duplicate). -/
+/-- WS-SM SM5.D: every inventory identifier is unique.  Kernel-checked, never
+`native_decide`: the identifiers are stored as packed keys, each entry's
+`identifierKey_wf` field is the kernel's own check that its key is well
+formed, and `SeLe4n.nodup_map_stringOfPacked` turns distinctness of the keys
+— one `decide +kernel` over `Nat`s — into distinctness of the strings they
+spell.  A duplicate identifier fails this proof in the kernel. -/
 theorem perCoreTimerTheorems_identifiers_nodup :
-    (perCoreTimerTheorems.map (·.identifier)).Nodup := by decide
+    (perCoreTimerTheorems.map (·.identifier)).Nodup :=
+  nodup_map_stringOfPacked PerCoreTimerTheorem.identifierKey (fun t _ => t.identifierKey_wf)
+    (by decide +kernel)
 
-set_option maxRecDepth 10000 in
-/-- WS-SM SM5.D: every inventory description is unique. -/
+/-- WS-SM SM5.D: every inventory description is unique — the same key-level
+argument as `perCoreTimerTheorems_identifiers_nodup`, over `descriptionKey`. -/
 theorem perCoreTimerTheorems_descriptions_nodup :
-    (perCoreTimerTheorems.map (·.description)).Nodup := by decide
+    (perCoreTimerTheorems.map (·.description)).Nodup :=
+  nodup_map_stringOfPacked PerCoreTimerTheorem.descriptionKey (fun t _ => t.descriptionKey_wf)
+    (by decide +kernel)
 
 end SeLe4n.Kernel

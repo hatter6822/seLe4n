@@ -1805,7 +1805,7 @@ whose `regionBase`/`regionSize` match the parent-derived sub-region. This
 obligation is recorded here as a post-1.0 hardening candidate — transitive
 multi-level untyped nesting would require a richer invariant
 (root-restricted disjointness or transitive-ancestor exclusion).  The
-full-coverage proof is registered in the *Registered debt index* (table C.1) in `docs/WORKSTREAM_HISTORY.md`, row 24.
+full-coverage proof is registered in the *Registered debt index* (table C.1) in `docs/REGISTERED_DEBT.md`, row 24.
 The `retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild`
 theorem below covers the API dispatch path's primary use cases
 (`.tcb`, `.endpoint`, `.notification`, `.cnode`, `.vspaceRoot`,
@@ -1888,7 +1888,7 @@ it automatically discharges the `hNotUntypedChild` hypothesis from the
 `objType ≠ .untyped` side-condition. The six allowed object types
 together with `.untyped` exhaust `KernelObjectType`, so this theorem
 covers every retype target that API dispatch currently produces EXCEPT
-`.untyped` → `.untyped` (a post-1.0 hardening candidate, registered in the *Registered debt index* (table C.1) in `docs/WORKSTREAM_HISTORY.md`,
+`.untyped` → `.untyped` (a post-1.0 hardening candidate, registered in the *Registered debt index* (table C.1) in `docs/REGISTERED_DEBT.md`,
 row 25 — see discussion below). -/
 theorem retypeFromUntyped_objectOfKernelType_preserves_untypedRegionsDisjoint
     (st st' : SystemState)
@@ -1957,7 +1957,7 @@ preconditions, this zero-regionBase child would overlap the parent
 only if the parent also has `regionBase = 0` (the boot-allocated
 top-level untyped) — in which case the direct-child-exclusion side
 condition (`oid₂ ∉ ut₁.children.map .objId`) handles the containment.
-The full-coverage proof is registered in the *Registered debt index* (table C.1) in `docs/WORKSTREAM_HISTORY.md`, row 26
+The full-coverage proof is registered in the *Registered debt index* (table C.1) in `docs/REGISTERED_DEBT.md`, row 26
 (AN6-C.5..C.10 follow-up is the next slice).
 -/
 

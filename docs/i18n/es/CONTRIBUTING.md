@@ -21,7 +21,7 @@ También certifica que tiene el derecho de enviar la contribución bajo esta lic
 3. **Política de CI:** [`docs/CI_POLICY.md`](../../../docs/CI_POLICY.md)
 4. **Alcance del proyecto y flujos de trabajo (workstreams):** [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
 5. **Hallazgos de auditoría activos:** [`docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
-6. **Historial de flujos de trabajo (workstream history):** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
+6. **Historial de flujos de trabajo (workstream history):** [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md)
 
 Manual completo: [`docs/gitbook/README.md`](../../../docs/gitbook/README.md)
 

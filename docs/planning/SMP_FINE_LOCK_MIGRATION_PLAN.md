@@ -6,9 +6,12 @@
 > headline SM3.C.9 deliverable, so the per-object fine locks remain a
 > model-level discipline and the v1.0.0 "per-object reader-writer fine
 > locks" capability claim is not yet true.
-> **Closure targets**: Tracks B and C → WS-RR **RR7.7**; Track D
+> **Closure targets**: Tracks B and C → WS-RR **RR7.7–RR7.13** (one row per
+> PR: B = RR7.7–RR7.9, C = RR7.10–RR7.13; the three lock domains Track C
+> leaves uncovered — the scheduler domain, the dynamic PIP chain, the
+> CSpace-walk interior — close in RR7.39–RR7.41); Track D
 > (commit partitioning) is seam-gated to **SM10.1** and registered as a
-> named dependency by RR6.19.  A reader could not previously tell any of
+> named dependency by RR6.27.  A reader could not previously tell any of
 > this from the plan, which carried no status header at all (RR0, v0.34.26).
 
 > **Phase**: SM3.C.9 (deferred `withLockSet` migration at the live kernel
@@ -331,7 +334,7 @@ PR body per the vulnerability rule.
   recvRoot)` carve-out, restore the blanket "every write rides a declared lock"
   sentence (`SeLe4n/Kernel/InformationFlow/TaintPropagation.lean`).
 - *Step 5 (docs):* CLAUDE/AGENTS finding-5 prose + suite tally,
-  `WORKSTREAM_HISTORY`, the completion plan, GitBook 12, claim index; add an
+  `REGISTERED_DEBT`, the completion plan, GitBook 12, claim index; add an
   **"Audit-pass-7 closure additions"** block to `SMP_PER_OBJECT_LOCKS_PLAN.md`
   §5.2 (audit-pass-6 PR #793 is the format) + check its §8 box.
 
@@ -411,9 +414,9 @@ serializability theorem in
 - *Step 3:* host stress both flag settings.
 - *Step 4:* release-closure re-pins (`SMP_RELEASE_CLOSURE_PLAN.md` SMP-C3 made
   dischargeable; the SMP-plan risk row) + register the timer-tick fine-lock
-  migration as the named follow-on **SM3.C.9.b** (its `SchedLockId`
-  `withLockSet` bracket does not exist — the timer entry stays on the global
-  entry lock in this plan).
+  migration as the named follow-on **SM3.C.9.b** — WS-RR **RR7.39** — (its
+  `SchedLockId` `withLockSet` bracket does not exist — the timer entry stays on
+  the global entry lock in this plan).
 
 ## 5. Cross-cutting design notes
 

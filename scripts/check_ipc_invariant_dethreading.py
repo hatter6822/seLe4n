@@ -74,6 +74,7 @@ Exits 0 when clean, 1 on any violation or self-test failure.
 
 from __future__ import annotations
 
+import bisect
 import functools
 import os
 import re
@@ -2640,6 +2641,7 @@ _SCOPE_RE = re.compile(
 )
 
 
+@functools.lru_cache(maxsize=None)
 def namespace_breakpoints(source: str) -> list[tuple[int, str]]:
     """(offset, namespace prefix in force from that offset), in order.
 
@@ -2650,6 +2652,12 @@ def namespace_breakpoints(source: str) -> list[tuple[int, str]]:
     prefix exactly, so a wrongly tracked prefix surfaces as a visible gate
     failure, never as an accepted shadow.
     """
+    # Memoised (PR review, the performance round): the scan is a pure
+    # function of the source, and every pass that walks the tree recomputed
+    # it per file -- 1,890 calls over 378 sources, 48 seconds.  `code_view`
+    # returns the same string object for the same file, so the cache hits
+    # on identity and never rescans.  The result is read-only by contract;
+    # `prefix_at` bisects it and nothing mutates it.
     breakpoints = [(0, "")]
     stack: list[str | None] = []
     for match in _SCOPE_RE.finditer(source):
@@ -2666,18 +2674,23 @@ def namespace_breakpoints(source: str) -> list[tuple[int, str]]:
 
 
 def prefix_at(breakpoints: list[tuple[int, str]], offset: int) -> str:
-    """The namespace prefix in force at `offset`."""
-    prefix = ""
-    for start, value in breakpoints:
-        if start > offset:
-            break
-        prefix = value
-    return prefix
+    """The namespace prefix in force at `offset`.
+
+    Breakpoints are recorded in increasing offset order (each is a
+    `match.end()` of a left-to-right scan), so the entry in force is the last
+    one whose start is `<= offset` -- found by bisection rather than by
+    walking the list.  The linear walk was O(declarations x scopes) per file
+    and, run from four passes, 37 seconds of this gate; the bisection returns
+    the same entry.
+    """
+    index = bisect.bisect_right(breakpoints, offset, key=lambda entry: entry[0])
+    return breakpoints[index - 1][1] if index else ""
 
 
 _VARIABLE_RE = re.compile(r"^\s*variable(?![\w'!?])", re.MULTILINE)
 
 
+@functools.lru_cache(maxsize=None)
 def variable_intervals(source: str) -> list[tuple[int, int, str]]:
     """(activation offset, deactivation offset, binder text) for every
     line-anchored `variable` command, scope-tracked.
@@ -2771,6 +2784,13 @@ def collect_bundles(
 
 
 def declared_names(root: str, sources: list[str]) -> dict[str, set[tuple[str, str]]]:
+    # Four checks ask for the census with the same arguments; the census is
+    # a pure function of the views, so it is computed once per process.
+    return _declared_names(root, tuple(sources))
+
+
+@functools.lru_cache(maxsize=None)
+def _declared_names(root: str, sources: tuple[str, ...]) -> dict[str, set[tuple[str, str]]]:
     """Every theorem/lemma name in the code view -> its (prefix, visibility)
     declaration sites.
 
@@ -2922,7 +2942,7 @@ def grammar_coverage(root: str, sources: list[str]) -> list[str]:
     names it never spells.  The structural endpoint is an
     elaborator-backed census (declarations and telescopes read from Lean's
     own environment), registered as tracked debt in
-    `docs/WORKSTREAM_HISTORY.md` (WS-DT residuals).
+    `docs/REGISTERED_DEBT.md` (WS-DT residuals).
     """
     known = set(_MODIFIERS) | set(_COMMANDS)
     seen: dict[str, tuple[str, int, int]] = {}
@@ -2986,7 +3006,7 @@ def minting_machinery(root: str, sources: list[str]) -> list[str]:
     The residual is a *pinned* file minting family-shaped names it never
     spells (constructed via `Name` surgery) -- that is the
     elaborator-backed-census debt registered in
-    `docs/WORKSTREAM_HISTORY.md` (WS-DT residuals), now confined to the
+    `docs/REGISTERED_DEBT.md` (WS-DT residuals), now confined to the
     pinned files below rather than open anywhere in the tree; spelled
     names are `family_references`' half.
     """

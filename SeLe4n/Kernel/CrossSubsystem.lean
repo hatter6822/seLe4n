@@ -132,7 +132,7 @@ theorem collectQueueMembers_none (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe
 --   the path predicate to `queueNext` field traversal. This is the sole
 --   remaining TPI-DOC item for the IPC subsystem.
 -- TPI-DOC / AJ-L08: fuel-sufficiency formal connection to `tcbQueueChainAcyclic`
--- recorded as a post-1.0 hardening candidate; registered in `docs/WORKSTREAM_HISTORY.md`
+-- recorded as a post-1.0 hardening candidate; registered in `docs/REGISTERED_DEBT.md`
 -- (Registered debt index, C.1). Closure requires connecting `QueueNextPath` (inductive path
 -- predicate) to `queueNext` field traversal in `collectQueueMembers`. See INFO-06.
 theorem collectQueueMembers_fuel_sufficiency_documented
@@ -346,7 +346,7 @@ through the RHTable bridge lemmas. Callers that hold
 `crossSubsystemInvariant` can discharge these obligations by composing
 with the existing `storeObject` frame lemmas in `Model/State.lean`.
 The predicate is the 11th conjunct of `crossSubsystemInvariant` —
-RESOLVED via WS-AM AM1 + AM4 (see `docs/WORKSTREAM_HISTORY.md` §WS-AM
+RESOLVED via WS-AM AM1 + AM4 (see `docs/REGISTERED_DEBT.md` §WS-AM
 for the cascade-closure history).
 
 The invariant DEFINITION above is the semantic witness that AL6-A's
@@ -464,7 +464,7 @@ well-formed child untyped anyway. A richer invariant (transitive
 ancestor/descendant tracking via a CDT-style closure) would be a
 standalone model-refinement effort; it is NOT part of the Phase AK8
 scope; it is registered in the *Registered debt index* (table C.1) in
-`docs/WORKSTREAM_HISTORY.md`, row 27.
+`docs/REGISTERED_DEBT.md`, row 27.
 See `retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild`
 for the machine-checked non-`.untyped` retype preservation proof that
 covers every retype path currently exercised by the API.
@@ -670,7 +670,7 @@ theorem storeObject_sameRegion_untyped_preserves_untypedRegionsDisjoint
         individually. The missing piece is a formal proof that ALL **12**
         predicates compose correctly under arbitrary interleaving of all
         34 operations (exponential combinatorics; recorded as a post-1.0
-        hardening candidate — registered in `docs/WORKSTREAM_HISTORY.md`,
+        hardening candidate — registered in `docs/REGISTERED_DEBT.md`,
         Registered debt index, C.1). -/
 def crossSubsystemInvariant (st : SystemState) : Prop :=
   registryEndpointValid st ∧
@@ -1349,7 +1349,7 @@ def crossSubsystemFieldSets : List (String × List StateField) :=
     That is incompleteness, not unsoundness — nothing false is proved, and the
     uncovered predicate simply gets no frame lemma, so proofs needing it must
     establish it directly.  Found during the WS-RR RR0 review round and
-    registered in `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C);
+    registered in `docs/REGISTERED_DEBT.md` (Registered debt index, C);
     closing it means adding `untypedRegionsDisjoint_fields` and redoing the
     analysis over C(12,2) = 66 pairs. -/
 theorem crossSubsystemFieldSets_count :
@@ -3033,7 +3033,7 @@ AN6-C adds *transitive* ancestor tracking via a new
 disjointness predicate. The full 13th-conjunct integration (preservation
 proofs + 130-site rename cascade) is a multi-day workstream and is
 tracked as follow-up AN6-C.5..C.10 (originally planned in WS-AN
-AN6-C; the historical record is in `docs/WORKSTREAM_HISTORY.md`).
+AN6-C; the historical record is in `docs/REGISTERED_DEBT.md`).
 This section lands
 the foundation pieces (C.1 through C.4) so future commits can compose
 on the predicate without re-doing the design work.

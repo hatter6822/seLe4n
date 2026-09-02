@@ -395,7 +395,7 @@ check("a cpp directive is code, not a comment",
 # --- The code grammar -------------------------------------------------
 check("a lone ws is left alone", gate.is_coded("ws"), False)
 # Recognising only sm/an/ak let eleven further real families through.
-# The list is checked against docs/WORKSTREAM_HISTORY.md, so a family
+# The list is checked against docs/REGISTERED_DEBT.md, so a family
 # retired from the registry must be retired here too.
 for family in ("aa", "ac", "ad", "ae", "af", "ag", "ah",
                "ai", "aj", "ak", "al", "am", "an", "sm"):
@@ -426,6 +426,35 @@ check("an audit log is not a code", gate.is_coded("auditLog"), False)
 check("a versioned name without a number passes",
       gate.is_coded("sha256_v2_digest"), False)
 check("an architecture version passes", gate.is_coded("armv8_1_features"), False)
+
+# `is_coded` tests each component against ONE alternation of the anchored
+# patterns instead of the patterns one by one (test-performance audit,
+# v0.34.47).  The alternation is the union of the patterns' languages only if
+# every pattern was spliced in whole: hold the union to the tuple on every
+# pattern's own positive and near-miss, plus the shapes the cases above use.
+_union_samples = (
+    [f + "1a" for f in gate.WORKSTREAM_FAMILIES]
+    + [f + "x" for f in gate.WORKSTREAM_FAMILIES]
+    + ["phase12b", "phasex", "phase", "ws", "wsx", "h01", "h1", "h001", "tpi",
+       "tpix", "", "1", "sm", "sm5", "sm5i", "SM5", "r8", "hr1", "audit", "v0"]
+)
+for _c in _union_samples:
+    check(f"component union agrees with the pattern tuple on {_c!r}",
+          bool(gate.COMPONENT_CODE_UNION.match(_c)),
+          any(rx.match(_c) for rx in gate.COMPONENT_CODES))
+
+# `_is_fstring` reads only the four characters before the quote (the same
+# audit).  The reference is the slice-and-search it replaced; the samples put
+# a letter run at the window's edge, at the string's edge, and past both.
+def _is_fstring_reference(text: str, quote_start: int) -> bool:
+    m = gate.FSTRING_PREFIX.search(text[:quote_start])
+    return bool(m) and "f" in m.group(1).lower()
+
+for _text, _at in [('f"x"', 1), ('rb"x"', 2), ('fr"x"', 2), ('xf"x"', 2),
+                   ('abcdf"x"', 5), (' f"x"', 2), ('_f"x"', 2), ('"x"', 0),
+                   ('x = f"{y}"', 5), ('rf"x"', 2), ('brf"x"', 3), ('abrf"x"', 4)]:
+    check(f"_is_fstring window agrees with the slice on {_text!r}@{_at}",
+          gate._is_fstring(_text, _at), _is_fstring_reference(_text, _at))
 
 # The canonical audit filename is DOTTED, and `IDENTIFIER` needs a
 # leading letter, so without stem normalisation `30` and `11` never
@@ -510,6 +539,42 @@ check("the bare spelling still yields its family",
       gate.REGISTRY_FAMILY_RE.findall("see WS" + "-SM for this"), ["SM"])
 check("a fused two-letter family is parsed",
       gate.REGISTRY_FAMILY_RE.findall("WS" + "-RC12"), ["RC"])
+# The grammar is read off the registry TABLE's rows, never off prose (PR #888
+# review): the register explains its own mechanism with a `WS-XX` placeholder,
+# and a whole-text scan made `xx` a family.  A row registers; a paragraph, a
+# debt-table row outside the section, and a heading do not.
+_registry_fixture = (
+    "# Registered Debt\n\n| Debt | Owner |\n|---|---|\n"
+    "| **WS" + "-SL** — a debt row outside the registry | post-v1.0.0 |\n\n"
+    "## Workstream registry\n\nderives its family grammar from the `WS"
+    + "-XX` names here; see WS" + "-QQ1 in prose.\n\n"
+    "| Workstream | Versions |\n|------------|----------|\n"
+    "| **WS" + "-AB** | v0.24.0– |\n| **WS" + "-J1-F** | v0.15.10 |\n"
+    "| **WS" + "-K-H** | v0.16.8 |\n\n## Next section\n\n| **WS" + "-ZZ** | later |\n")
+check("a registry row registers its family",
+      "ab" in gate.families_in_registry_text(_registry_fixture), True)
+check("a fused row spelling yields its family",
+      {"j", "k"} <= gate.families_in_registry_text(_registry_fixture), True)
+check("a placeholder in the registry's prose is not a family",
+      "xx" in gate.families_in_registry_text(_registry_fixture), False)
+check("a fused spelling in prose is not a family",
+      "qq" in gate.families_in_registry_text(_registry_fixture), False)
+check("a bold name in a debt row outside the section is not a family",
+      "sl" in gate.families_in_registry_text(_registry_fixture), False)
+check("a row after the next heading is not a family",
+      "zz" in gate.families_in_registry_text(_registry_fixture), False)
+check("no registry section means no families",
+      gate.families_in_registry_text("# nothing here\n"), set())
+# Load-bearing against the REAL register: its prose names `WS-XX`, and the two
+# workstreams that used to be named only in prose now have rows.
+check("the real register's placeholder is not a family",
+      "xx" in gate.registry_families(), False)
+check("an identifier with an xx-component is ordinary",
+      gate.is_coded("xx1_helper"), False)
+check("the live remediation workstream is registered by its row",
+      "rr" in gate.registry_families(), True)
+check("the liveness follow-on workstream is registered by its row",
+      "sl" in gate.registry_families(), True)
 # Load-bearing against the REAL registry: `j` appears there only fused,
 # so it is present exactly when the parse is right.
 check("a fused-only family reaches the grammar",

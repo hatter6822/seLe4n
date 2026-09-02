@@ -41,7 +41,7 @@ Phase AK8-K:
   check via the size-preserving theorem). The "Except-returning" variant
   is not introduced in AK8 — it would cascade through ~50 insert call
   sites. Recorded as post-1.0 hygiene work; registered in
-  `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C.1).
+  `docs/REGISTERED_DEBT.md` (Registered debt index, C.1).
 - **DS-L3 (`RHTable.erase` saturation):** documented. `Nat.sub` saturates
   at zero, so `size - 1` on an empty table remains 0. The existing
   `erase_size_bounded` theorem discharges the safety property without
@@ -56,7 +56,7 @@ Phase AK8-K:
   `Kernel/RobinHood/Invariant/Preservation.lean` require `set_option
   maxHeartbeats 400000` (up to 800000 in some places). Restructuring to
   smaller lemma units is post-1.0 hygiene work, registered in the
-  *Registered debt index* (table C.1) in `docs/WORKSTREAM_HISTORY.md`,
+  *Registered debt index* (table C.1) in `docs/REGISTERED_DEBT.md`,
   row 29.
 - **DS-L6 (`resolveExtraCaps` silent drop):** documented via AI6-A in
   `docs/spec/SELE4N_SPEC.md` §8.10.4 — silent-drop matches seL4 semantics.
@@ -132,7 +132,7 @@ MUST supply `[LawfulBEq β]` separately at the call site. No such
 derivation exists here as an `instance` because it would require an
 entry-wise correctness proof that is recorded as post-1.0 hardening
 work (DS-M04), registered in the *Registered debt index* (table C.1)
-in `docs/WORKSTREAM_HISTORY.md`, row 30.
+in `docs/REGISTERED_DEBT.md`, row 30.
 
 Callers: if your proof cascade needs `LawfulBEq (RHTable α β)`, assume
 it as a hypothesis OR prove it inline using the table's structural

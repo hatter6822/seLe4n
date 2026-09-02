@@ -391,7 +391,7 @@ When WS-RC closes:
 1. This file moves from `docs/audits/` to `docs/dev_history/audits/`
    alongside the plan, baseline, errata, and (if any) deferred file.
 2. The website link manifest is updated to point at the archived path.
-3. `docs/WORKSTREAM_HISTORY.md` records the closure with a cross-
+3. `docs/REGISTERED_DEBT.md` records the closure with a cross-
    reference to the archived discharge index.
 
 The lifecycle convention is canonical in

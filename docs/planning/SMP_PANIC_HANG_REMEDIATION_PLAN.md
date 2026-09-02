@@ -163,312 +163,21 @@ stay lockstep.
 
 ### 5.1 The ten protocol changes — what each closes, why each is sound
 
-Group these into three semantic categories. Each entry below names
-the change, identifies the failure mode it closes, and points at
-the SM2.A invariant it preserves.
+The ten protocol changes PR #790 landed, each closing a documented failure
+class in `rust/sele4n-hal/src/queued_rw_lock.rs`:
 
-#### Group A1 — four-state mode-encoded `parked` machine
-
-*(Planning note: the initial draft of this section called for a
-3-state machine. During implementation, the writer-readers exclusion
-race surfaced a deeper requirement — the parked value must carry
-the mode atomically.  The as-built protocol uses 4 states.  The
-4-state form is described below; the historical 3-state sketch
-was abandoned mid-Stream-B.)*
-
-Replace `parked: AtomicBool` with `parked: AtomicU8` carrying one
-of four documented values:
-
-```rust
-pub const PARKED_NOT_IN_QUEUE: u8   = 0; // slot reset, owner mid-enqueue
-pub const PARKED_WAITING_READER: u8 = 1; // reader published, eligible
-pub const PARKED_WAITING_WRITER: u8 = 2; // writer published, eligible
-pub const PARKED_ADMITTED: u8       = 3; // terminal; owner is holder
-```
-
-* **Closes** (two races, not one):
-  - **Cascade-vs-signal ghost-`+1` race** where a 2-state
-    `bool` cannot distinguish a just-reset slot from a waiting
-    slot, so cascade/signal CAS WAITING→ADMITTED admits both
-    real waiters and reset slots, producing accumulating ghost
-    state.  Solved by NOT_IN_QUEUE.
-  - **Stale-mode-read race** where a stale-chain-link walker
-    reads `slot.mode` and observes the OLD iter K-1's value,
-    misdirecting the walker into the wrong admission code path
-    (reader CAS-loop vs writer state-CAS).  Solved by encoding
-    the mode atomically in the parked value:
-    WAITING_READER vs WAITING_WRITER.  The walker dispatches
-    purely on the parked value (read once, Acquire-ordered);
-    HB guarantees imply the parked value's mode is consistent
-    with the slot owner's iter-K reset.
-* **Soundness**: every parked transition observed by an admitter
-  is `WAITING_READER → ADMITTED` or `WAITING_WRITER → ADMITTED`.
-  Reset transitions are owner-only and Relaxed-ordered before
-  the WAITING_* publish.  The CAS direction (with mode-encoded
-  source state) makes the admission unique per (slot, iteration,
-  mode).
-* **Test pin**: `parked_state_constants_pairwise_distinct`,
-  `parked_state_constants_values`, and `parked_state_count_is_four`
-  (all new) pin the 4-state machine.  A regression that
-  collapses WAITING_READER and WAITING_WRITER into one state
-  re-opens the stale-mode-read race.
-
-#### Group A2 — stale-self tail detection
-
-In both `acquire_read` and `acquire_write`, after
-`let raw_prev_tail = self.tail.swap(core_id, AcqRel);`, add:
-
-```rust
-let prev_tail = if raw_prev_tail == core_id {
-    NONE_SENTINEL
-} else {
-    raw_prev_tail
-};
-```
-
-* **Closes**: the self-link deadlock. Cascade does not update
-  `tail`. When all cascade-admitted readers release, the last
-  release's `signal_next_waiter` walks toward tail and tries to
-  CAS-clear it; if the owner's re-enqueue races ahead, it observes
-  the stale tail = own core_id, then sets `slot[me].next.store(me)`,
-  creating a self-link that the park loop never exits.
-* **Soundness**: only the calling core could have set tail to its
-  own id (one slot per core). Treating it as
-  `NONE_SENTINEL` means "the queue is effectively empty from my
-  perspective" — the prior iteration's queue position is already
-  consumed by the cascade chain.
-
-#### Group A3 — order of operations on enqueue
-
-Change the chained-enqueue path to store WAITING BEFORE linking
-the predecessor:
-
-```rust
-slot.parked.store(PARKED_WAITING, Release);                 // step 2a
-self.slots[prev_tail as usize].next.store(core_id, Release); // step 2b
-```
-
-* **Closes**: the publication-window race where the predecessor's
-  signal observes `slot[prev].next.store(me, Release)` via an
-  `Acquire`-load and then CAS-claims `slot[me].parked`. With the
-  reversed order, signal could see the link before our WAITING
-  store landed; the CAS fails on NOT_IN_QUEUE; signal walks past;
-  we are orphaned.
-* **Soundness**: the publication chain
-  `slot[prev].next.store(me, Release) →
-   signal's next.load(Acquire) →
-   slot[me].parked.load(Acquire)`
-  forms a transitive happens-before per ARM ARM B2.3.7. The
-  WAITING store before the link store ensures the
-  happens-before edge sees a publish-eligible parked value.
-
-#### Group A4 — NONE-path self-admit spin with CAS-claim ordering
-
-In `acquire_read` and `acquire_write`'s NONE-path, when the initial
-`try_admit_as_*` fails (state already contended), spin in a
-self-admit loop that CAS-claims parked before mutating state:
-
-```rust
-// Already past `try_admit_as_*` (which returned false).
-slot.parked.store(PARKED_WAITING, Release);
-loop {
-    if slot.parked.load(Acquire) == PARKED_ADMITTED {
-        // Some other admitter beat us; their state-update is in.
-        // For readers: still cascade-admit our successors.
-        self.cascade_admit_readers(core_id);  // reader only
-        return;
-    }
-    if slot.parked.compare_exchange(
-        PARKED_WAITING, PARKED_ADMITTED, AcqRel, Acquire
-    ).is_ok() {
-        // We claimed the slot transition; now do the state update.
-        // For reader: CAS-loop reader admission with WRITER_BIT check.
-        // For writer: state.CAS(0, WRITER_BIT).
-        // If state update FAILS, revert parked to WAITING and continue.
-        // (See §6.5 hypothesis H1 — the revert is the candidate
-        //  remaining-panic root cause; Stream B fixes it.)
-    }
-    crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
-}
-```
-
-* **Closes**: NONE-path orphan. Without this loop, a NONE-path
-  acquirer whose `try_admit_as_*` fails has no predecessor to
-  signal it; it would block forever.
-* **CAS-claim before state update**: ensures exactly one path
-  admits. A concurrent signal targeting this slot via a stale
-  chain link would either lose the CAS (sees PARKED_ADMITTED
-  from our claim) or win it (sees PARKED_WAITING, advances), but
-  never both increment state.
-* **Soundness**: state update happens under a CAS-claimed parked,
-  giving exclusive admit rights for this iteration.
-
-#### Group A5 — walk-past stale slots with `MAX_WAITERS` step bound
-
-In `signal_next_waiter`, replace the original "find the one
-successor and signal it" with a bounded walk:
-
-```rust
-let mut current = releaser_core_id;
-for _walk_step in 0..MAX_WAITERS {
-    let next = self.slots[current as usize].next.load(Acquire);
-    // ... case analysis on (next == NONE_SENTINEL) and tail CAS ...
-    // ... case analysis on next_mode (READ vs WRITE) ...
-    // ... CAS-claim parked; on Ok continue (reader) or return
-    //     (writer); on Err(NOT_IN_QUEUE) undo state and return;
-    //     on Err(ADMITTED) walk past (set current = next).
-}
-debug_assert!(false, "signal_next_waiter: walk exceeded MAX_WAITERS");
-```
-
-Symmetric bound in `cascade_admit_readers`.
-
-* **Closes**: chain stalls. A writer chained behind a cascade-admitted
-  reader needed some other release's signal walk to traverse through
-  that reader and find the writer. The walk-past-stale lets every
-  release process the chain forward to the next live waiter (or to
-  tail cleanup).
-* **`MAX_WAITERS` step bound**: defends against any future
-  regression that re-introduces a self-link or longer cycle. A
-  well-formed chain has at most `MAX_WAITERS` distinct slots
-  (one per core) — surpassing this bound is a logic error.
-* **Soundness**: bound is structural in `MAX_WAITERS`, which is
-  pinned by compile-time `const _: () = assert!(MAX_WAITERS == 4)`.
-
-#### Group A6 — signal-on-every-release in `release_read`
-
-Change `release_read`:
-
-```rust
-let prev = self.state.fetch_sub(1, AcqRel);
-debug_assert!((prev & WRITER_BIT) == 0, "release_read with writer bit");
-// PRE: signal only when prev_readers == 1.  POST: always signal.
-self.signal_next_waiter(core_id);
-crate::cpu::sev();
-```
-
-* **Closes**: dangling tail (a non-last release leaves tail pointing
-  at us; a future enqueuer chains behind us; our next iteration's
-  reset clears our `next`, orphaning them) and chain stall (a
-  writer chained behind cascade-admitted readers stalls).
-* **Soundness**: `signal_next_waiter` is idempotent-safe — it walks
-  the chain and only admits slots in `PARKED_WAITING`; ADMITTED
-  slots are walked past; NOT_IN_QUEUE returns. Calling it on
-  every release adds at most O(MAX_WAITERS) work per release,
-  which is structural.
-
-#### Group A7 — cascade CAS-loop with WRITER_BIT precondition
-
-In `cascade_admit_readers`, replace `state.fetch_add(1, AcqRel)`
-with a CAS loop:
-
-```rust
-loop {
-    let cur = self.state.load(Acquire);
-    if (cur & WRITER_BIT) != 0 { return; }
-    let reader_count = cur & READER_MASK;
-    if reader_count >= READER_MASK { return; } // saturation guard
-    if self.state.compare_exchange(
-        cur, cur + 1, AcqRel, Acquire
-    ).is_ok() { break; }
-    core::hint::spin_loop();
-}
-// Then attempt parked CAS WAITING → ADMITTED.
-// On Err: undo via fetch_sub(1, AcqRel); on Ok: continue.
-```
-
-* **Closes**:
-  - (a) reader-during-writer admission (cascade's `fetch_add` did
-    NOT check WRITER_BIT, so a writer admitted between cascade's
-    pre-check and `fetch_add` produces state =
-    `WRITER_BIT | reader_bits` — direct mutex violation).
-  - (b) WRITER_BIT underflow on undo (cascade's `fetch_add`
-    succeeded, then all readers released, then a NONE-path writer
-    admitted (state = WRITER_BIT), then cascade's parked CAS
-    failed, then undo `fetch_sub(1)` decremented WRITER_BIT —
-    underflowing into `0x7FFF...` — corrupting both bit fields).
-* **Soundness**: the CAS-loop's WRITER_BIT-clear precondition makes
-  the admission atomic under writer-clear. The undo `fetch_sub(1)`
-  is safe because state currently contains our +1 contribution; any
-  concurrent writer's `state.CAS(0, WRITER_BIT)` failed (state != 0).
-
-#### Group A8 — NOT_IN_QUEUE vs ADMITTED disposition
-
-In `signal_next_waiter`'s admission walk, on parked CAS failure
-distinguish the two errors:
-
-```rust
-match next_slot.parked.compare_exchange(
-    PARKED_WAITING, PARKED_ADMITTED, AcqRel, Acquire,
-) {
-    Ok(_)  => { /* admitted; continue (reader) or return (writer) */ }
-    Err(observed) => {
-        // Undo state (reader fetch_sub, or writer state.CAS(WRITER_BIT, 0))
-        if observed == PARKED_NOT_IN_QUEUE {
-            // Stale chain link from a prior iteration.  Slot owner
-            // is mid-reset; the real iter-K+1 predecessor's release
-            // will admit them.  RETURN (do not walk past).
-            return;
-        }
-        // observed == PARKED_ADMITTED: another path already admitted.
-        // Walk past.
-        current = next;
-    }
-}
-```
-
-* **Closes**: the orphan-waiter hang. Pre-fix code walked past
-  regardless of the parked observed value, allowing `tail.CAS(_,
-  NONE_SENTINEL)` to clear a tail that still had a waiting waiter
-  downstream — orphaning them. PR #790 commit `c0dffac8` benchmarks
-  this fix at 10% → 0% hang rate.
-* **Soundness**: NOT_IN_QUEUE means the slot's owner is between
-  `reset()` (Relaxed-stores NOT_IN_QUEUE) and `parked.store(WAITING,
-  Release)`. The chain link `slot[Z].next = us` is from a previous
-  iteration; the real iter-K+1 enqueue published a new
-  `slot[realPrev].next.store(us)` after `parked.store(WAITING)`,
-  so the real predecessor's release will signal us correctly.
-
-#### Group A9 — writer admission via `state.CAS(0, WRITER_BIT)`, NEVER `fetch_or`
-
-In `signal_next_waiter`'s writer-mode branch, use
-`state.CAS(0, WRITER_BIT)` instead of
-`state.fetch_or(WRITER_BIT, ...)`.
-
-```rust
-let writer_state_set = self.state.compare_exchange(
-    0, WRITER_BIT, AcqRel, Acquire,
-).is_ok();
-if !writer_state_set {
-    // Reader bits set; writer cannot be admitted now.  Return
-    // without walking past — the writer stays parked in the chain,
-    // a future signal (when state reaches 0) admits them.
-    return;
-}
-```
-
-* **Closes**: writer-readers coexistence. `fetch_or(WRITER_BIT)`
-  unconditionally sets the bit even when reader bits are set,
-  producing `WRITER_BIT | reader_bits` — direct mutex violation.
-* **Soundness**: CAS(0, WRITER_BIT) succeeds only when state is
-  exactly 0 — a witness of "no holders, no readers". The lock
-  invariant is preserved.
-
-#### Group A10 — self-link `debug_assert!` defenses
-
-In both `cascade_admit_readers` and `signal_next_waiter`:
-
-```rust
-debug_assert!(next != current,
-    "signal_next_waiter: self-referential next pointer at slot {}",
-    current);
-if next == current { return; }
-```
-
-* **Closes**: future regression detection. Combined with A2
-  (stale-self tail detection), self-links are unreachable. The
-  assertion surfaces any future regression that breaks the invariant
-  at test time rather than silently looping.
+| Change | What it closes |
+|--------|----------------|
+| Group A1 | four-state mode-encoded `parked` machine |
+| Group A2 | stale-self tail detection |
+| Group A3 | order of operations on enqueue |
+| Group A4 | NONE-path self-admit spin with CAS-claim ordering |
+| Group A5 | walk-past stale slots with `MAX_WAITERS` step bound |
+| Group A6 | signal-on-every-release in `release_read` |
+| Group A7 | cascade CAS-loop with WRITER_BIT precondition |
+| Group A8 | NOT_IN_QUEUE vs ADMITTED disposition |
+| Group A9 | writer admission via `state.CAS(0, WRITER_BIT)`, NEVER `fetch_or` |
+| Group A10 | self-link `debug_assert!` defenses |
 
 ### 5.2 Cherry-pick mechanics
 
@@ -492,7 +201,7 @@ on `claude/fix-multicore-issues-oSSxN`. Commit ordering:
 * Commit A.4: spec + GitBook + project documentation —
   `docs/spec/SELE4N_SPEC.md` §10, `docs/gitbook/16-verified-lock-primitives.md`
   (new), `docs/gitbook/{SUMMARY.md, navigation_manifest.json,
-  README.md}`, `docs/WORKSTREAM_HISTORY.md`,
+  README.md}`, `docs/REGISTERED_DEBT.md`,
   `docs/codebase_map.json`, `CHANGELOG.md`, `README.md`.
 
 ### 5.3 Acceptance after Stream A
@@ -548,298 +257,13 @@ own `state.fetch_and(READER_MASK, AcqRel)`. So:
 
 Both shapes are testable.
 
-### 6.2 Hypotheses
+### 6.2–6.6 Hypothesis triage, diagnostics and fix (closed)
 
-Concretely enumerate the candidate root causes the audit can construct
-from the existing protocol after the Group A1..A10 fixes have landed.
-Stream B's diagnostic must rule out two, leaving the third — or
-identify a fourth not enumerated here.
-
-#### Hypothesis H1 — NONE-path self-admit spin's parked-revert race
-
-In `acquire_write`'s NONE-path self-admit spin (per Group A4), the
-order is:
-
-```text
-spin {
-  if parked == ADMITTED → return.
-  CAS-claim parked WAITING → ADMITTED.
-  if claimed:
-    state.CAS(0, WRITER_BIT).
-    if state-CAS failed: parked.store(WAITING).  ← race here
-}
-```
-
-The `parked.store(WAITING)` on the revert is a STORE, not a CAS. A
-concurrent signal-walk arriving via a stale chain link could:
-
-1. Observe `parked == ADMITTED` (during the brief window between our
-   CAS-claim and the state-CAS-revert).
-2. Skip the parked-CAS (already ADMITTED), increment state for us
-   (treating us as an admitted reader), and continue the walk.
-3. Then our `parked.store(WAITING)` clobbers our own ADMITTED back
-   to WAITING, but signal already credited us with a reader_count
-   increment — and the next admit path treats us as a fresh
-   waiter, double-admitting.
-
-Net: two state updates for a single slot — eventual writer-readers
-coexistence at some downstream admission.
-
-**Fix candidate F1**: replace the revert STORE with a CAS:
-
-```rust
-let revert = slot.parked.compare_exchange(
-    PARKED_ADMITTED, PARKED_WAITING, AcqRel, Acquire);
-match revert {
-    Ok(_)  => {} // CAS succeeded; signal hadn't yet observed our ADMITTED.
-    Err(PARKED_NOT_IN_QUEUE) => unreachable!(),
-    Err(PARKED_WAITING) => {
-        // Another path already reverted us; retry the spin.
-    }
-    // Err(PARKED_ADMITTED) can't happen — we're CASing AWAY from ADMITTED.
-}
-// In both Ok and Err(PARKED_WAITING), spin again.
-```
-
-But — see §6.5 — F1 may itself create a subtler asymmetry between
-reader and writer NONE-paths. Validate against the trace before
-committing.
-
-#### Hypothesis H2 — signal-walk writer undo silent failure
-
-In `signal_next_waiter`'s writer branch (per Group A8), on parked
-CAS failure, the undo is:
-
-```rust
-let _ = self.state.compare_exchange(
-    WRITER_BIT, 0, AcqRel, Acquire);
-```
-
-The `let _ =` silently discards the failure. If the CAS fails (state
-isn't exactly WRITER_BIT — e.g., reader bits set by some other
-concurrent admit), the writer bit stays set without a corresponding
-holder. The next writer admitted via a different path then holds
-atop a phantom writer; both writers' `release_write` calls then race
-on the bit, and one of them sees `_prev & WRITER_BIT == 0`.
-
-**Fix candidate F2**: assert the undo succeeded (panic on failure)
-via `debug_assert!`, AND re-derive the correct state-machine for
-the undo:
-
-```rust
-let undo = self.state.compare_exchange(
-    WRITER_BIT, 0, AcqRel, Acquire);
-match undo {
-    Ok(_) => {} // Expected.
-    Err(observed) => {
-        // CAN this happen?  Between our state.CAS(0, WRITER_BIT) success
-        // and our parked.CAS failure, what mutations could land?
-        //   - Another release_write: impossible (it would only fire on
-        //     a writer holding, but the only writer is the one we just
-        //     admitted via state.CAS; their parked is mid-admit).
-        //   - A reader admit: impossible (try_admit_as_reader checks
-        //     WRITER_BIT and returns false).
-        //   - Another signal walk: would observe state != 0 and not
-        //     touch WRITER_BIT.
-        // So undo must succeed.  If it doesn't, the protocol is broken
-        // — surface immediately.
-        debug_assert!(false,
-            "writer undo failed: state was 0x{:x}, expected WRITER_BIT", observed);
-    }
-}
-```
-
-#### Hypothesis H3 — unenumerated path
-
-The audit may have missed an interaction. The diagnostic ring buffer
-(§6.3) captures every state-RMW + parked transition; if the trace
-shows a WRITER_BIT-clearing event not consistent with H1 or H2, the
-implementer identifies the new shape and constructs the corresponding
-fix.
-
-### 6.3 Diagnostic ring buffer — design
-
-Add a compile-gated diagnostic to `queued_rw_lock.rs`:
-
-```rust
-#[cfg(feature = "lock_trace")]
-mod trace {
-    use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-
-    /// Ring buffer size. 4096 events × 8B = 32 KiB.  Production
-    /// builds (no `lock_trace` feature) link this out entirely.
-    const RING_SIZE: usize = 4096;
-
-    /// Packed event: 8 bytes.
-    /// bits 60..63 (4 bits): core_id (0..3)
-    /// bits 56..59 (4 bits): op_tag (see OP_* below)
-    /// bits 32..55 (24 bits): state_before low 24 bits
-    /// bits  8..31 (24 bits): state_after  low 24 bits
-    /// bits  4..7  (4 bits): parked_before
-    /// bits  0..3  (4 bits): parked_after
-    pub const OP_ACQUIRE_READ_ENTER:     u8 = 0;
-    pub const OP_ACQUIRE_WRITE_ENTER:    u8 = 1;
-    pub const OP_TAIL_SWAP:              u8 = 2;
-    pub const OP_TRY_ADMIT_READER:       u8 = 3;
-    pub const OP_TRY_ADMIT_WRITER:       u8 = 4;
-    pub const OP_NONE_SELF_ADMIT_CLAIM:  u8 = 5;
-    pub const OP_NONE_SELF_ADMIT_STATE:  u8 = 6;
-    pub const OP_NONE_SELF_ADMIT_REVERT: u8 = 7;
-    pub const OP_CASCADE_STATE_CAS:      u8 = 8;
-    pub const OP_CASCADE_PARKED_CAS:     u8 = 9;
-    pub const OP_CASCADE_UNDO:           u8 = 10;
-    pub const OP_SIGNAL_STATE_CAS:       u8 = 11;
-    pub const OP_SIGNAL_PARKED_CAS:      u8 = 12;
-    pub const OP_SIGNAL_UNDO:            u8 = 13;
-    pub const OP_RELEASE_READ:           u8 = 14;
-    pub const OP_RELEASE_WRITE:          u8 = 15;
-
-    static RING: [AtomicU64; RING_SIZE] =
-        [const { AtomicU64::new(0) }; RING_SIZE];
-    static HEAD: AtomicU32 = AtomicU32::new(0);
-
-    #[inline]
-    pub fn record(core_id: u8, op_tag: u8,
-                  state_before: u64, state_after: u64,
-                  parked_before: u8, parked_after: u8) {
-        let packed: u64 =
-            ((core_id as u64 & 0xF) << 60)
-          | ((op_tag  as u64 & 0xF) << 56)
-          | ((state_before & 0xFF_FFFF) << 32)
-          | ((state_after  & 0xFF_FFFF) << 8)
-          | ((parked_before as u64 & 0xF) << 4)
-          | ((parked_after  as u64 & 0xF));
-        let idx = (HEAD.fetch_add(1, Ordering::Relaxed) as usize) % RING_SIZE;
-        RING[idx].store(packed, Ordering::Relaxed);
-    }
-
-    /// Dump the last N events to stderr.  Called from the panic
-    /// hook on `release_write`'s debug_assert failure.
-    pub fn dump_last(n: usize) {
-        // ... pretty-print with op_tag → name mapping ...
-    }
-}
-
-#[cfg(not(feature = "lock_trace"))]
-mod trace {
-    pub fn record(_core_id: u8, _op_tag: u8,
-                  _state_before: u64, _state_after: u64,
-                  _parked_before: u8, _parked_after: u8) {}
-    pub fn dump_last(_n: usize) {}
-}
-```
-
-Instrument every state-RMW and parked-transition site with a
-`trace::record(...)` call. The trace cost in production builds is
-zero (the function body is empty and gets DCEd by LLVM).
-
-### 6.4 Diagnostic test variant
-
-Add a new test `cross_thread_state_invariant_no_writer_with_readers_traced`
-gated on `#[cfg(feature = "lock_trace")]`. Same shape as the
-existing test, but on `debug_assert` failure (caught via
-`std::panic::set_hook`), the hook calls `trace::dump_last(200)`
-to stderr BEFORE the standard panic propagates.
-
-Run:
-
-```bash
-cargo test --release --features lock_trace \
-    cross_thread_state_invariant_no_writer_with_readers_traced \
-    -- --nocapture --test-threads=1 \
-    --include-ignored 2>&1 | tee /tmp/lock-trace.log
-
-# Repeat until at least 3 failures captured.  The ~35% rate means
-# 3-5 runs.
-```
-
-### 6.5 Trace analysis — triangulation
-
-From each captured trace, extract:
-
-1. **The panicking writer's admit path**: backwards from the
-   `OP_RELEASE_WRITE` event with `state_before` lacking WRITER_BIT,
-   find the matching admit event for that core_id. One of:
-   `OP_TRY_ADMIT_WRITER` (Ok), `OP_NONE_SELF_ADMIT_STATE` (Ok), or
-   `OP_SIGNAL_STATE_CAS` (Ok).
-2. **The WRITER_BIT-clearing event**: between the admit and the
-   release, find the event with `state_before & WRITER_BIT != 0`
-   and `state_after & WRITER_BIT == 0`. This is the culprit.
-3. **The concurrent admit**: another `OP_*_ADMIT_*` (Ok) event in
-   the same window — if present, identifies the second writer.
-
-Map the culprit event to a hypothesis:
-
-* `OP_NONE_SELF_ADMIT_REVERT` clearing WRITER_BIT, with no
-  corresponding `OP_NONE_SELF_ADMIT_STATE` success → H1
-  (parked-revert race; the revert pre-emptively claimed admission
-  via signal's stale chain link).
-* `OP_SIGNAL_UNDO` event with `state_before & READER_MASK != 0` →
-  H2 (signal undo silently succeeded against a state that already
-  had reader bits — the writer bit was already cleared by someone
-  else, but we tried to clear it again).
-* `OP_RELEASE_WRITE` from a different core_id between our admit
-  and our release → two writers somehow co-admitted; trace the
-  second writer's admit path to find the unenumerated H3.
-
-### 6.6 Fix application
-
-Apply the fix candidate matching the identified hypothesis:
-
-#### If H1 confirmed — apply F1 (revert via CAS)
-
-In `acquire_write`'s NONE-path self-admit spin, replace
-`slot.parked.store(PARKED_WAITING, Release)` (the revert after a
-failed `state.CAS(0, WRITER_BIT)`) with:
-
-```rust
-// Revert via CAS.  Two acceptable observed values:
-//   - PARKED_ADMITTED: our CAS-claim from step 2 is intact; revert
-//     it back to WAITING for the next spin iteration.
-//   - PARKED_WAITING: signal has already reverted us; nothing to do.
-//   - PARKED_NOT_IN_QUEUE: unreachable (only reset() stores it).
-match slot.parked.compare_exchange(
-    PARKED_ADMITTED, PARKED_WAITING, AcqRel, Acquire,
-) {
-    Ok(_) => {}
-    Err(PARKED_WAITING) => {}
-    Err(PARKED_NOT_IN_QUEUE) => debug_assert!(false,
-        "NOT_IN_QUEUE during writer self-admit revert"),
-    Err(_) => debug_assert!(false, "unexpected parked observed"),
-}
-```
-
-Apply the symmetric fix in `acquire_read`'s NONE-path.
-
-#### If H2 confirmed — apply F2 (assert undo success)
-
-In both `cascade_admit_readers` and `signal_next_waiter` undo
-paths, replace silent `let _ = ...CAS...` with explicit assert:
-
-```rust
-let undo_result = self.state.compare_exchange(
-    WRITER_BIT, 0, AcqRel, Acquire,
-);
-debug_assert!(undo_result.is_ok(),
-    "writer admit undo failed: state was 0x{:x}",
-    undo_result.unwrap_err());
-```
-
-In release builds the assert is a no-op; in debug builds (cargo
-test) it surfaces the underlying invariant violation immediately,
-producing a much cleaner trace than the 100ms-downstream
-`release_write` panic.
-
-If the assert ever fires, the protocol has a deeper bug —
-fall back to H3.
-
-#### If H3 (unenumerated) — derive and fix
-
-The trace pattern uniquely identifies a code path the audit
-missed. Write the smallest reproducer (a 2-thread test with the
-same interleaving), add a fix candidate with the same care as
-A1..A10, run a 1000-iteration stress to confirm. Update the
-relevant SM2.C invariants if the protocol shape changed.
+Stream B isolated the residual `release_write` panic and closed it.  The
+hypothesis triage, the diagnostic ring buffer and the trace analysis were
+apparatus for that investigation, not reusable design: the outcome is in
+[`CHANGELOG.md`](../../CHANGELOG.md) at the SM2.E cuts, and the protocol the
+fix settled on is what `queued_rw_lock.rs` implements today.
 
 ### 6.7 Proof obligation
 
@@ -867,31 +291,9 @@ post-fix Rust impl.
      induction ops with
      | nil => left; rfl
      | cons op rest ih => ...
-   ```
 
-   This is the formal expression of "no `WRITER_BIT | reader_bits`
-   state is reachable".
-
-2. **Parked transition uniqueness**: for each (slot, iteration),
-   at most one observer transitions parked from WAITING to ADMITTED.
-
-   ```lean
-   theorem queued_rw_lock_parked_admit_unique
-     (trace : List MemoryEvent)
-     (h_wf : MemoryTrace.wellFormed trace)
-     (h_target : MemoryEvent.loc = parkedOf slot) :
-       (trace.filter (fun e =>
-          e.isWrite ∧ ...))
-         .length ≤ 1 := by ...
-   ```
-
-   This is the formal expression of the CAS-claim discipline.
-
-3. **Writer-readers exclusion preservation** (already in SM2.C as
-   `rwLock_writer_readers_exclusion`): re-verify that the new
-   refinement bridge carries through. The proof reduces to
-   `state ≠ WRITER_BIT | k` for any positive `k`, which follows
-   directly from obligation (1).
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ### 6.8 Stress regression
 
@@ -1063,7 +465,7 @@ Files to update with the post-fix protocol:
   F1 landed, or the assert-undo discipline if F2 landed.
 * `docs/gitbook/16-verified-lock-primitives.md` — same edit
   mirrored.
-* `docs/WORKSTREAM_HISTORY.md` — append the Stream B closure entry
+* `docs/REGISTERED_DEBT.md` — append the Stream B closure entry
   under WS-SM SM2.E with the version it landed at.
 * `docs/codebase_map.json` — regenerate.
 * `CHANGELOG.md` — append a `v0.31.10 — WS-SM SM2.E closure +
@@ -1234,7 +636,7 @@ delivers it:
 * `docs/gitbook/16-verified-lock-primitives.md` (new).
 * `docs/gitbook/SUMMARY.md`, `docs/gitbook/navigation_manifest.json`,
   `docs/gitbook/README.md`.
-* `docs/WORKSTREAM_HISTORY.md`.
+* `docs/REGISTERED_DEBT.md`.
 * `docs/codebase_map.json` (regenerate).
 * `CHANGELOG.md`.
 * `README.md`.

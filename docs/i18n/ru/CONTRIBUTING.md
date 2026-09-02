@@ -24,7 +24,7 @@ seLe4n распространяется по лицензии [GNU General Publi
 3. **Политика CI:** [`docs/CI_POLICY.md`](../../../docs/CI_POLICY.md)
 4. **Область проекта и рабочие потоки (workstreams):** [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
 5. **Активные результаты аудита:** [`docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
-6. **История рабочих потоков:** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
+6. **История рабочих потоков:** [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md)
 
 Полное руководство: [`docs/gitbook/README.md`](../../../docs/gitbook/README.md)
 
@@ -146,7 +146,7 @@ lake build SeLe4n.Kernel.RobinHood.Bridge
 3. `docs/DEVELOPMENT.md`
 4. Затронутые главы GitBook
 5. `docs/CLAIM_EVIDENCE_INDEX.md` — при изменении утверждений (claims)
-6. `docs/WORKSTREAM_HISTORY.md` — при изменении статуса рабочего потока
+6. `docs/REGISTERED_DEBT.md` — при изменении статуса рабочего потока
 7. Регенерация `docs/codebase_map.json` при изменении исходников Lean
 
 ## Сообщение об уязвимостях

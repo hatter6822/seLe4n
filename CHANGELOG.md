@@ -1,3 +1,459 @@
+## v0.34.47 — the tests get faster without checking less
+
+Test-performance audit.  Every gate keeps its semantics and every suite keeps
+every assertion; what changed is how the same answers are computed, and each
+change was held to the code it replaced by an old-versus-new harness on the
+real tree before it landed.  **Nothing is skipped, sampled, or trusted that
+was checked before.**  The one place the trust base moves, it shrinks: the
+three theorem inventories that discharged their distinctness witnesses with
+`native_decide` now use the kernel's `decide`, which closes WS-RR RR7.6.
+
+### Where the time went, and where it goes now
+
+Measured on the four-core runner the tiers run on (baseline: the v0.34.46
+smoke run; after: this cut).
+
+| Tier | Item | Before | After |
+|------|------|--------|-------|
+| 0 | `check_ipc_invariant_dethreading.py` | 141.1 s | 82.0 s in the tier (measured while the old-versus-new harness held a core; 26.3 s alone) |
+| 0 | `check_tlbi_broadcast_discipline.py` | 137.9 s | 14.9 s |
+| 0 | `check_identifier_naming.py` | 53.9 s | 15.8 s |
+| 0 | whole tier | 364.0 s | 145.1 s |
+| 1 | the thirteen theorem-inventory modules | 698 s CPU (12–149 s each) | 175 s CPU (5–20 s each) |
+| 2 | `test_tier2_negative.sh` | 496.8 s | 137.6 s |
+| 3 | `check_module_axioms.py --all-smp-information-flow` | 150.5 s | 16.8 s |
+| 3 | whole tier | 412 s (of which ~136 s was contention from a concurrent build; ~276 s alone) | 125.1 s |
+
+### Tier 0 — three scanners, three algorithmic defects
+
+Each was a presence-correct scanner doing its work in the wrong order of
+growth; none changes what is matched.
+
+* **TLBI discipline** (`scripts/check_tlbi_broadcast_discipline.py`).  The
+  call graph over the HAL was built by running one regex per (function body,
+  known callee) pair — 1.72 million `re.search` calls, each recompiling a
+  pattern past the `re` cache's 512 entries.  It now tokenises each body once
+  (`_CALL_TOKEN_RE`) and intersects the token set with the known names; a name
+  matches the old `\b<callee>\s*\(` exactly when it is the maximal identifier
+  token before `\s*(`, so the edge set is the same set.  `rust_code_view.py`'s
+  pure views (`_scan`, `code`, `code_no_strings`, `fn_bodies`) are memoised —
+  `fn_bodies` scanned every file three times per call.
+* **De-threading** (`scripts/check_ipc_invariant_dethreading.py`).
+  `declared_names`, `namespace_breakpoints` and `variable_intervals` were
+  recomputed on every pass over the same sources and `prefix_at` scanned its
+  breakpoint list linearly per query; they are memoised and `prefix_at`
+  bisects (`bisect_right` on the start offset — the same "last breakpoint at
+  or before the offset").
+* **Identifier naming** (`scripts/check_identifier_naming.py`).  `is_coded`
+  tried fourteen component regexes per component (62 million matches); it now
+  tries their alternation once.  `_is_fstring` searched `text[:quote_start]`
+  per literal — quadratic per file — where only the four characters before
+  the quote can matter, so it searches that window.  `strip_pairs` appended
+  one character per loop iteration; it now copies each run of characters no
+  branch can act on in one slice, jumping to the next delimiter with a
+  per-syntax trigger class.
+
+The equivalence harnesses: TLBI `local_ffi_exports` and `run_checks` equal
+old-for-new on the tree (106.6 → 2.0 s, 114.3 → 12.6 s); de-threading
+`namespace_breakpoints`, `variable_intervals`, `prefix_at` at 2,894,291
+offsets, `declared_names`, `run_checks`, `grammar_coverage` and
+`family_references` all equal (102.6 → 26.3 s); naming `scan()` equal and
+every strip function byte-identical over every tracked file, `is_coded` equal
+over every identifier token in the tree (588 tracked files, each stripped by the stripper the gate picks for it, byte-identical old-for-new, and `scan()` equal with the same 296 ratcheted entries (55.9 → 18.0 s)).  All four gates'
+own witness suites pass (40, 127 and the code-view cases unchanged; the naming
+suite grows from 191 to 267 checks with the union-versus-tuple and
+f-string-window witnesses).
+
+### Tier 1 — packed inventory strings (`SeLe4n/PackedString.lean`)
+
+The thirteen theorem inventories each prove `Nodup` of their identifiers and
+of their descriptions with the kernel's `decide`, never `native_decide`.
+Over `String` literals that cost the kernel one character walk per pair:
+~7,000 pairs per witness, 12–149 s per module, 698 s of build CPU in total —
+40% of Tier 1.
+
+Each string is now stored as **one packed `Nat`**: its scalar values as
+base-2²¹ digits behind a leading `1`.  Every entry carries the key and a
+proof field, `isWellFormedPacked key = true`, that the kernel discharges per
+entry (~14 ms): the key packs exactly the valid scalar values it unpacks to.
+`identifier` and `description` are derived (`stringOfPacked`), never stored,
+and `nodup_map_stringOfPacked` turns distinctness of the keys — one
+`decide +kernel` over `Nat`s, ~3 s per witness — into distinctness of the
+strings they spell, through `String.ofList` and `Char.ofNat` injectivity on
+valid scalar values.  **Every `<inventory>! "description" name category`
+line is unchanged**, every `_identifiers_nodup` / `_descriptions_nodup`
+statement is unchanged, the `_elabCheck` witness is unchanged, and the
+census, the manifest generator and the runtime `decide`s in the suites read
+the same strings.  `native_decide` is gone from
+`DeadlockInventory`, `SerializabilityInventory` and `WithLockSetInventory`
+— the six uses RR7.6 registered — because the kernel-checked proof is now the
+cheap one; production Lean carries zero.
+
+Two shapes were measured and rejected: a `List Nat` of scalar values per
+entry (the compiler is superlinear in a ~15,000-cell literal: ~12 s per
+module to *compile*), and one list-level well-formedness fold (the kernel
+re-evaluates the per-key work through `brecOn`: 13 s where the proof fields
+cost 3 s).  Both are recorded in the module docstring so nobody measures
+them again.
+
+### Tier 2 — one parallel prebuild
+
+`test_tier2_negative.sh` ran 65 `lake exe` suites one after another, each
+compiling its own executable first: ~167 s of the tier was serial
+compilation on a four-core runner.  It now issues one `lake build` of every
+suite executable — the list read off its own `lake exe` lines, so a new
+suite is prebuilt without a second list — before the first run.  Same
+suites, same order, same assertions; each `lake exe` still builds its target
+if it is out of date.
+
+### Tier 3 — the axiom sweep walks the graph once
+
+`check_module_axioms.py` called `Lean.collectAxioms` per constant — 4,773
+fresh walks of the same ~15,000-constant closure, 150 s.  The probe now walks
+the union of the closures once, mirroring `CollectAxioms.collect` case for
+case, records the reverse edges, and marks from each axiom the constants it
+reaches; a constant's axiom set is the axioms that reach it.  It reports the
+same TOTAL / FREE / BADCOUNT (4,773 / 2,370 / 0) and, rather than assert the
+equivalence, **cross-checks itself against `Lean.collectAxioms`** on every
+constant it would report plus one in thirty-seven (129 on this surface, 0
+mismatches); a mismatch or an absent cross-check fails the gate.
+
+### Found and registered, not changed
+
+* `asid_pool_suite` takes 37.6 s because `AsidPool.allocate`'s rollover scan
+  is quadratic (a `List.range` of 65,535 filtered by `List` membership) and
+  the fail-closed regression exercises the real scan — a production
+  representation issue under existing proofs, now in
+  `docs/REGISTERED_DEBT.md` §C.
+* `InformationFlowSuite` (28.6 s) and `NegativeStateSuite` (11.2 s) run
+  interpreted because compiling them exceeds clang's bracket depth; their
+  `lean_exe` targets (with `robin_hood_suite`) are declared and never built.
+  Splitting them is the §7 refactor `DEVELOPMENT.md` describes, not a
+  performance change, and is left for its own cut.
+* Tier 3's 44 Lean-snippet anchors cost ~2 s each in Lean start-up and
+  imports (~90 s); batching them would trade per-anchor reporting for time,
+  so they stay.  Tier 3 also re-runs eight Tier 2 suites (~10 s).
+
+### PR #888 review round — two findings, both real, both fixed at the mechanism
+
+* **The naming grammar was configured by prose.**  `registry_families()`
+  scanned the whole of `docs/REGISTERED_DEBT.md` for `WS-…` names, and the
+  register's own explanation of the mechanism — "derives its family grammar
+  from the `WS-XX` names here" — made `xx` a workstream family, so an
+  ordinary identifier with a component such as `xx1` was rejected as
+  workstream-coded.  The gate now reads the rows of the registry *table*
+  (`families_in_registry_text`: the section under `## Workstream registry`, a
+  row's bold first cell, the same `REGISTRY_FAMILY_RE` on the cell so the
+  fused row spellings `WS-J1-F` / `WS-K-H` / `WS-M2` still yield their
+  family), and fails closed when the table is absent.  Two workstreams that
+  the register named only in prose — `WS-RR` and `WS-SL` — get rows, so the
+  derived set is the old set minus `xx` and nothing else.  Eleven new
+  witnesses in the self-test: a fixture with a placeholder in prose, a fused
+  spelling in prose, a bold name in a debt row outside the section and a row
+  after the next heading (none registers), and the load-bearing checks on the
+  real register.
+* **Three uncovered lock domains named an owner that could not close them.**
+  `schedulerDomain`, `dynamicPipChain` and `cspaceWalkInteriorCnodes` pointed
+  at RR7.10–RR7.13 — Track C of the fine-lock plan — whose rows generalise the
+  resolver, declare the IPC footprints, bracket the dispatch body and add the
+  export-body gate, and never acquire a per-core scheduler lock, extend a lock
+  set along a PIP chain, or couple locks down a CSpace walk (the pre-split
+  RR7.7 had the same gap: it owned "Tracks B and C").  Three closure rows are
+  added at the end of RR7, where they belong in execution order (each consumes
+  RR7.12's bracket): **RR7.39** the scheduler domain — the fine-lock plan's
+  named SM3.C.9.b follow-on, bracketing the timer tick, the `.reschedule`
+  receiver and the secondary bring-up entry through their existing
+  `SchedLockId` model footprints; **RR7.40** the dynamic PIP chain through
+  `DynamicChainExtension` inside the bracket; **RR7.41** the lock-coupling
+  CSpace walk.  Each ends with RR7.8's deletion-last discipline.  184 → 187
+  sub-tasks; the Lean owners, the fine-lock plan's closure-target line and its
+  Track D step that named SM3.C.9.b, the closure plan's row 15, the debt
+  register's Track B/C row and the `CLAUDE.md` / `AGENTS.md` WS-RR count (which
+  still said 157) are updated together, and `check_workstream_plan.py` holds
+  the arithmetic.
+
+### Files
+
+`SeLe4n/PackedString.lean` (new); the thirteen inventory modules;
+`tests/PerObjectLockSuite.lean` (its compile-time `Nodup` example cites the
+inventory's witness — deciding it again over the derived strings would make
+the elaborator unpack every key; its runtime `decide` is unchanged);
+`scripts/check_tlbi_broadcast_discipline.py`, `scripts/rust_code_view.py`,
+`scripts/check_identifier_naming.py`, `scripts/check_ipc_invariant_dethreading.py`,
+`scripts/check_module_axioms.py`, `scripts/test_tier2_negative.sh`;
+`docs/REGISTERED_DEBT.md`, `docs/planning/SMP_RELEASE_READINESS_PLAN.md`
+(RR7.6 landed), `docs/planning/UNFINISHED_SMP_WORK.md`, the source-layout
+tables, `docs/codebase_map.json` and the README/spec metrics it feeds.
+
+## v0.34.46 — the documentation stops being a second changelog
+
+Documentation only — no kernel semantics change.  The tree carried two records
+of the same work: the CHANGELOG's 590 per-version entries, and a parallel
+per-cut narrative spread across `WORKSTREAM_HISTORY.md`, the phase plans, the
+spec, the claim index and the GitBook chapters.  Two records of one thing
+diverge, and these had: three documents still quoted a theorem total the Lean
+manifest had corrected, the GitBook index advertised 132k production LoC
+against an actual 316,818, and a chapter's "what's next" stopped at v0.28.0.
+
+**Documentation outside the CHANGELOG and `dev_history/` falls from 80,537 to
+48,800 lines — 39%** — with no loss of content that is not recoverable from
+`CHANGELOG.md` at the version named.
+
+### The rule now enforced by structure
+
+| Question | Document |
+|----------|----------|
+| What changed in version *X* | `CHANGELOG.md` — one entry per merged PR |
+| What is deferred, and who owns it | `docs/REGISTERED_DEBT.md` |
+| What a phase is scheduled to do | the plan in `docs/planning/` |
+| How to build, test, contribute | `docs/DEVELOPMENT.md` |
+| What the kernel is | `docs/spec/SELE4N_SPEC.md` |
+| What is claimed, and what is not | `docs/CLAIM_EVIDENCE_INDEX.md` |
+
+A plan is a *schedule*, not a history.  A spec says what the kernel is, not how
+it got there.  An index indexes.
+
+### `WORKSTREAM_HISTORY.md` is deleted; the register it held is its own document
+
+The file was 12,902 lines, of which ~7,100 were a "What's next" section that
+had become a second changelog and ~5,000 were per-phase completion records for
+workstreams closed as far back as v0.9.0.  Both are in `CHANGELOG.md` already.
+
+What was **not** redundant moved to **`docs/REGISTERED_DEBT.md`** (284 lines):
+the three debt tables (A: owned by a live WS-RR phase, B: SM10, C: no
+pre-v1.0.0 owner), the 32-row in-source hardening enumeration, WS-SL's SL1–SL3
+work list, and the workstream registry.
+
+Two gates bound to the old path and were repointed, not weakened:
+
+* `check_deferral_registration.py` reads the register to confirm a cited
+  `row N` exists — `REGISTER_PATH`, its narrative exemption and the phrase a
+  compliant citation must contain all move, and the register still holds all 32
+  rows.
+* `check_identifier_naming.py` **derives** its workstream-family grammar by
+  scanning `WS-XX` names in the register rather than from a hand-kept list.
+  That is why the registry table survives as a table: deleting it would have
+  silently narrowed a Tier 0 gate.  `check_workstream_plan.py`'s companion list
+  moved with them.
+
+104 files were repointed at the new path.  Twelve of those citations meant *the
+historical record* rather than *the debt register* — those now point at
+`CHANGELOG.md`, since a "historical record in the debt register" is a category
+error the rename would otherwise have introduced.  `docs/CLAUDE_HISTORY.md` is
+deleted outright: every line of it was a pointer into sections of the file just
+removed, so it had no content of its own.
+
+Earlier CHANGELOG entries are **not** rewritten — they record what the tree
+said at their own version.  Three dead link targets in them are repointed so
+the link gate passes; the prose is untouched.
+
+### `DEVELOPMENT.md`, rewritten
+
+The old guide opened with an 896-line §1 that was a workstream status report,
+and its §3 "Next workstreams" tracked portfolios closed at v0.12.15.  The new
+one (727 lines) is a manual: setup and the pre-commit hook, build with the
+module-build rule and why the default target is not enough, the tier ladder
+with what each tier answers and when to run it, the repository layout, the
+rules a gate will hold you to (naming, gates-read-code, presence-is-not-
+relation, implement-the-improvement, registered deferrals), Lean-specific
+working notes including the clang bracket-depth trap, versioning, documentation
+rules, the contribution loop and PR checklist, a failure-symptom table, and a
+single command reference.  Every command in it was run against this tree.
+
+### Plans keep their schedules and lose their histories
+
+Per-cut landing narrative, review-round accounts and code skeletons for phases
+that landed years of versions ago came out; sub-task tables, goals,
+dependencies, mathematical foundations, acceptance gates and cross-references
+stayed.  `SMP_RUST_HAL_PLAN.md` 3080 → 848, `SMP_INFORMATION_FLOW_PLAN.md`
+2578 → 487 (929 of those lines were a single "why nine review rounds"
+retrospective), `SMP_TLB_SHOOTDOWN_PLAN.md` 2179 → 924,
+`SMP_PER_OBJECT_LOCKS_PLAN.md` 2084 → 674, `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`
+1111 → 454, `SMP_FOUNDATIONS_PLAN.md` 1668 → 742,
+`SMP_PANIC_HANG_REMEDIATION_PLAN.md` 1349 → 751, and the live WS-RR plan
+1187 → 825.
+
+### The audit, and what it found
+
+* **A machine-checked figure contradicted in three places.**
+  `PhaseTheoremManifest.lean` proves 903 theorems across 1113 entries, 210 of
+  them `def`s.  `SMP_RELEASE_CLOSURE_PLAN.md`, `CLAIM_EVIDENCE_INDEX.md` and
+  the register still said 902/1111/209 — corrected at 14 sites.
+* **The GitBook index quoted 132k production LoC across 191 files**; the tree
+  has 316,818 across 307.  The bullet now names
+  `scripts/report_current_state.py` instead of freezing a number, as do the
+  documentation-sync matrix and the testing plan, which carried their own
+  snapshots pinned at v0.34.26 and v0.33.101.
+* **`docs/gitbook/12-proof-and-invariant-map.md` was 4,786 lines organised by
+  workstream**, with section numbers out of order (33 before 16, 34 before 31)
+  because each new workstream appended its own.  Rewritten as an actual map
+  (262 lines): how invariants layer, how to find a theorem from its name, the
+  bundles per subsystem with their real conjuncts, the per-core lifts, and what
+  checks each layer.
+* **`CLAIM_EVIDENCE_INDEX.md` was five 10,000-character table cells** of
+  workstream narrative.  Rewritten as an index of the claims the project makes
+  publicly, each with the command that checks it — and a new §8, *What is not
+  claimed*, naming the seven things the tree does not support and who owns each.
+* **`05-specification-and-roadmap.md` was 666 lines**, 620 of them forty
+  "Completed: WS-XXX" sections; it is now a roadmap (66 lines).
+  `01-project-overview.md`'s "what's next" stopped at v0.28.0.
+  `07-testing-and-ci.md` carried a "prior stage" record and a milestone
+  trajectory that duplicated the tier tables above them.
+* **The spec carried its own development history** — a 225-line completed-
+  portfolio section and a 64-line milestone history — and 43 section headings
+  named the workstream that added them rather than the subject.  The headings
+  are de-coded; the sections point at the CHANGELOG.  Its "current workstream"
+  row still named WS-RA, complete since v0.33.38.
+* **Two guides were stamped with the version they were written at**
+  (`DEPLOYMENT_GUIDE.md` "0.33.101 (originally written at 0.25.13)",
+  `HARDWARE_TESTING.md` "post-AN9, v0.30.10") and neither said the kernel does
+  not boot yet.  Both now do.
+
+### Verification
+
+`./scripts/test_smoke.sh` green (Tier 0–2 + Rust + docs sync).  The gates that
+constrain this change all pass on the restructured tree:
+`check_deferral_registration.py` (710 files, all 32 rows resolvable, 33-case
+self-test), `check_identifier_naming.py` (family grammar derived from the new
+register), `check_workstream_plan.py`, `check_website_links.sh`,
+`check_markdown_links.py`, `check_version_sync.sh` over 36 sites, and
+`test_docs_sync.sh` including the CLAUDE.md ↔ AGENTS.md byte-identity check and
+the GitBook mirror-header check, which caught the claim-index mirror before it
+could drift.
+
+## v0.34.45 — WS-RR: the four XL sub-tasks split, and the ordering defect one of them hid
+
+Planning only — no kernel semantics change.  `SMP_RELEASE_READINESS_PLAN.md`
+carried four sub-tasks estimated **XL** (">1 week, expect to split further"),
+and the estimate legend's own instruction had not been followed for any of
+them.  Each is now a sequence of rows sized S–L, in execution order, with the
+citing documents renumbered to match.  **166 → 184 sub-tasks**; RR5 14 → 18,
+RR6 19 → 27, RR7 32 → 38.  RR0–RR4 are landed and untouched.
+
+### The splits, and what reading the code changed about each
+
+**RR5.10 → RR5.10–RR5.14** (idle threads on the production boot path).  The
+row asserted that the switch and its theorem chain "cannot be separate PRs",
+which is true only of the approach it assumed.  Two things changed:
+
+* *A prerequisite was missing, and it sat in a later phase.*  `createIdleThread`
+  sets `threadState := .Running`, while `inferThreadState`
+  (`Scheduler/Operations/Core.lean`) reads `currentOnCore bootCoreId` /
+  `runQueueOnCore bootCoreId` and nothing else — so the moment a secondary
+  core's idle TCB exists on a path anything synchronises,
+  `threadStateConsistent` is false of the boot state and
+  `assertStateInvariantsFor` rewrites the field, because it syncs before it
+  checks.  That is the second of the three SM5 integration deferrals
+  `bootFromPlatformWithIdleThreads`'s own docstring names, and it is register
+  finding 42, whose sweep row is **six phases later**.  A backward dependency
+  is what the plan-authoring rule in `CLAUDE.md` exists to prevent, so the
+  lift is now RR5.10 and the sweep row verifies it — the relation RR7.25 has
+  to RR6 and RR7.28 to RR3.
+* *Composition separates what mutation fuses.*  Defining the idle entry as a
+  thin composition over `bootFromPlatformChecked` — the alternative
+  `Platform/Boot.lean`'s docstring already offers — leaves the seven
+  `bootFromPlatformChecked_*` results true verbatim and derives the new chain
+  from them.  That is what lets the entry (RR5.13) and its production repoint
+  (RR5.14) land apart, and it avoids a second `PlatformConfig` validation
+  path, which is the `trap.rs` two-classifiers defect in miniature.
+
+The remaining two rows are work the old row named in passing: there is no
+`IntermediateState`-level idle **run-queue** enqueue at all (RR5.11 —
+`installIdleThread` sets `currentOnCore` and never touches `runQueueOnCore`,
+and `enqueueIdleThreadOnCore` exists only over `SystemState`), and
+`∀ c, idleThreadEnqueuedOnCore st c` has to be proved of the boot state before
+the switch rather than after (RR5.12).
+
+**RR6.4 → RR6.4–RR6.8** (the queued lock's refinement).  `QueuedRwLock` is a
+**ticket** protocol over four atomic words — `state`, `next_ticket`,
+`now_serving`, `last_enqueued` — and `ConcreteRwLockOp` models a single
+`AtomicU64`, so the concrete alphabet does not exist yet.  The five rows are
+the alphabet, the ticket protocol's own well-formedness, the
+waiters-to-ticket-interval simulation, the per-entry-point block lemmas, and
+their composition.  RR6.5 is the load-bearing one: it is the mutual-exclusion
+argument and the termination argument for both spin loops.
+
+**RR6.11 → RR6.15–RR6.19** (D-4, the CAS-retry bisimulation).  Splitting it
+required establishing why it does not close, and the answer is one row's
+worth of work rather than five:
+
+* `RwLockState.applyOp` enqueues a contended acquirer into `waiters` and
+  `releaseWrite` batch-promotes the head, while the CAS-retry lock has no
+  queue.  From `unheld`, the trace
+  `tryAcquireWrite c₀ · tryAcquireRead c₁ · releaseWrite c₀` leaves the
+  abstract state at `readers = [c₁]` (encoding `1`) and the concrete
+  `fetch_and(READER_MASK)` at `0`, so `rwLockSim` is **false** — which is why
+  all four release discharges carry `_no_promote` / `_empty_queue` side
+  conditions.  RR6.16 owns that case and carries the counterexample, so the
+  phase does not meet it mid-proof.
+* Two of the ten `opCorresponds` constructors — `tryWrite_cas_retry` and
+  `tryWrite_park_retry` — are named by none of the nine `blockBisim_*`
+  lemmas, so the case analysis cannot close today whatever the trace shape
+  (RR6.17).
+* The trace-shape predicate (RR6.15) lands first, as the phase's risk row
+  already prescribed; the composition is RR6.18 and the hypothesis retirement
+  RR6.19.
+
+**RR7.7 → RR7.7–RR7.13** (fine locks).  The row owned Tracks B and C of
+`SMP_FINE_LOCK_MIGRATION_PLAN.md`, which that plan already decomposes into
+seven PRs.  One row per PR, derived from the owning plan rather than invented:
+B = RR7.7–RR7.9 (footprint algebra, `ipcUnwrapCaps` coverage and the
+`capTransferReceiverCnode` deletion, CDT coverage), C = RR7.10–RR7.13
+(resolver generalization, the seven IPC arm declarations, the dispatch-body
+bracket, the export-body gate).  The register finding sits on **RR7.12**, the
+row that makes the v1.0.0 fine-locks claim true; the other six carry `—`
+rather than `0`, because they are that row's prerequisites and not rows that
+own nothing.  The findings column still sums to the acceptance total.
+
+### Renumbering, and where the old numbers went
+
+RR5.11–RR5.14 → RR5.15–RR5.18.  RR6.5–RR6.10 → RR6.9–RR6.14; RR6.12–RR6.19 →
+RR6.20–RR6.27.  RR7.8–RR7.32 → RR7.14–RR7.38.  Every citation in
+`WORKSTREAM_HISTORY.md`, `UNFINISHED_SMP_WORK.md`, the three sibling planning
+documents, `DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md` and
+`FineLockFlow.lean`'s `declaredFootprintUncoveredDomains` owner strings moved
+with them; `scripts/check_workstream_plan.py` holds all of it.  Earlier
+CHANGELOG entries are **not** rewritten — they record what the plan said at
+their own version, and this paragraph is where a stale forward reference
+resolves.
+
+Four citations became ranges rather than moving, because the row they named
+is now several: the SM4.G idle residue (RR5.10–RR5.14), the fine-lock Tracks
+B and C debt (RR7.7–RR7.13), that same debt in the closure plan and the
+migration plan's own closure header, and the triage row in
+`UNFINISHED_SMP_WORK.md` §7.1.
+
+### Corrections found while editing the same tables
+
+* The status header said RR1 landed "all eleven sub-tasks" (twelve), RR2 "all
+  nineteen" (twenty), and "RR3..RR8 not started" while the phase map recorded
+  RR3 landed at v0.34.43 and RR4 at v0.34.44.
+* `RR4.9`'s table row was missing its terminating `|`, so the row rendered
+  with the file column swallowed into the estimate.
+* The debt register credited RR7.7 with "10 of the plan's 12 PRs"; Tracks B
+  and C are **7**, and the other three are Track D's, already registered
+  against SM10.1 in the same document's section B.
+* The idle-root deferral (`ObjId.sentinel` cspace/vspace roots) named RR5.10
+  as the row that must not close over it; the row that puts idle on the
+  production path is now RR5.14.
+
+### Verification
+
+`./scripts/test_smoke.sh` green (Tier 0–2, plus `test_rust.sh`), and
+`lake build SeLe4n.Kernel.InformationFlow.FineLockFlow` clean over its 201-job
+closure — the one `.lean` file this cut touches, for the two owner strings in
+`declaredFootprintUncoveredDomains`.  `check_version_sync.sh` PASS over 36
+sites; `check_identifier_naming.py`, `check_website_links.sh` and
+`test_docs_sync.sh` PASS.
+
+Two gates earned their keep here.  `check_workstream_plan.py` caught two
+defects in this cut before it was committed: a forward citation from RR6.8 to
+rows later in its own phase, and seven RR7 rows written with the RR5/RR6
+column shape, whose file paths landed in the findings column and dropped the
+column's sum to 64.  `find_large_lean_files.sh --check` caught the plan's own
+growth — 1062 → 1184 lines, past the 10% tolerance — so the `Known large
+files` bullet is refreshed in `CLAUDE.md` and `AGENTS.md`.
+
 ## v0.34.44 — WS-RR RR4: fault handling, with reply-based restart
 
 **One PR, one version.**  The work is RR4.1–RR4.27 — the whole phase.  It closes
@@ -32910,7 +33366,7 @@ operationally via the SM2.A abstract memory model.
 
 See [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.3
 for the full plan and
-[`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) for the
+[`docs/WORKSTREAM_HISTORY.md`](docs/REGISTERED_DEBT.md) for the
 combined SM2.A+B+C landing entry.
 
 ## Unreleased — WS-SM Phase SM2.B landing (verified TicketLock primitive)
@@ -37143,7 +37599,7 @@ seeds the IO.Refs in lockstep.
 ### Cross-references
 
 - Plan: [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) §6
-- WORKSTREAM_HISTORY: [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) WS-RC R2 entry
+- WORKSTREAM_HISTORY: [`docs/WORKSTREAM_HISTORY.md`](docs/REGISTERED_DEBT.md) WS-RC R2 entry
 
 ## v0.30.11 — WS-RC Phase R1: IPC call-path NI symmetry (DEEP-IPC-03)
 
@@ -37221,7 +37677,7 @@ the cross-domain distinguisher.
 ### Cross-references
 
 - Plan: [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) §5
-- WORKSTREAM_HISTORY: [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) WS-RC R1 entry
+- WORKSTREAM_HISTORY: [`docs/WORKSTREAM_HISTORY.md`](docs/REGISTERED_DEBT.md) WS-RC R1 entry
 
 ## v0.30.11 — WS-AN Phase AN12: Documentation, themes, closure (WS-AN COMPLETE)
 

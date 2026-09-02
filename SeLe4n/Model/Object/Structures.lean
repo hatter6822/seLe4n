@@ -1239,7 +1239,7 @@ proves only `edges.length ≥ 0` (a `Nat` tautology — not a substantive fuel
 sufficiency proof). `maxCdtDepth = 65536` provides the hardware-binding CDT
 depth constant. The substantive fuel-sufficiency proof (connecting
 `edgeWellFounded` to BFS termination) is recorded as a post-1.0 hardening
-candidate; registered in `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C.1).
+candidate; registered in `docs/REGISTERED_DEBT.md` (Registered debt index, C.1).
 Structural argument (informal): the CDT is acyclic (proven by `cdtAcyclicity`
 / `edgeWellFounded`), so BFS with `edges.length` fuel visits every
 reachable node — each edge is traversed at most once, and fuel ≥ edge
@@ -2465,7 +2465,7 @@ hardware-binding phase where concrete CDT size bounds are available.
 
 AI6-D (M-21): See TPI-DOC for full fuel sufficiency formal bridge
 (recorded as a post-1.0 hardening candidate; registered in
-`docs/WORKSTREAM_HISTORY.md`, Registered debt index, C.1).
+`docs/REGISTERED_DEBT.md`, Registered debt index, C.1).
 `edgeWellFounded` (Model/Object/Structures.lean:1058)
 provides the inductive well-foundedness foundation: CDT edges form a
 well-founded relation on `CdtNodeId`, ensuring termination of any

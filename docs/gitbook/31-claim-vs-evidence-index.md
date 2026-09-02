@@ -2,93 +2,85 @@
 
 Canonical source: [`docs/CLAIM_EVIDENCE_INDEX.md`](../CLAIM_EVIDENCE_INDEX.md).
 
-This chapter summarizes how seLe4n ties every public claim to executable or inspectable evidence. The canonical document contains the full claim table; this chapter explains the framework and highlights key claims.
+seLe4n ties every substantive public claim to a command that checks it and an
+artefact that carries it. If a claim is not in that index, it is not a claim
+the project stands behind — and the index says as much about what is *not*
+claimed as about what is.
 
-### Purpose
+## 1. Proof surface
 
-Every claim in seLe4n documentation (README, spec, GitBook) must be backed by evidence that anyone can reproduce. The claim-evidence index maps each claim to:
+Zero `sorry` and zero `axiom` in the production proof surface, proofs that are
+not vacuous one-liners, transitions that are executable pure functions with
+explicit success or failure, and a deterministic model pinned by a golden
+trace. Checked by Tier 0 hygiene, `check_module_axioms.py`,
+`check_proof_depth.py` and the Tier 2 determinism suite.
 
-1. **Canonical source** — where the claim is stated.
-2. **Evidence command** — a script that validates the claim.
-3. **Evidence artifact** — what the script checks or produces.
+## 2. Kernel invariants
 
-### How evidence works
+`ipcInvariantFull` — twenty conjuncts — is machine-checked end to end: no
+theorem in its preservation family assumes a conjunct on its own post-state,
+and the bundle carries across a whole syscall dispatch under inhabited
+pre-state quiescence packs. Capability derivation is acyclic and complete;
+twelve cross-subsystem predicates hold; slot and waiter uniqueness are
+structural rather than state predicates.
 
-| Evidence type | Example | Assurance level |
-|---------------|---------|----------------|
-| **Tier 0 hygiene scan** | `test_tier0_hygiene.sh` — no `sorry`/`axiom` in production files | High: forbidden-marker scan is exhaustive |
-| **Tier 1 build** | `lake build` — all modules compile | High: Lean type-checker verifies proofs |
-| **Tier 2 fixture** | `test_tier2_trace.sh` — runtime output matches locked fixture | Medium-High: covers exercised paths |
-| **Tier 3 surface anchor** | `test_tier3_invariant_surface.sh` — named theorems still exist | High: prevents silent proof-surface regression |
+## 3. Fault handling
 
-## Active baseline claims
+A fault is delivered, never returned. No execution path returns a thread to its
+faulting instruction without handler action, delivery is total with a
+fail-closed suspend on every refusal, the live entry is the flow-checked arm,
+and a kernel-origin exception is never delivered to a user handler.
 
-| Claim | Evidence |
-|-------|---------|
-| Zero `sorry`/`axiom` in production proof surface | `./scripts/test_tier0_hygiene.sh` |
-| All 14 performance findings closed (WS-G) | `./scripts/test_full.sh` |
-| IPC dual-queue structural invariant with 16 preservation theorems | `./scripts/test_full.sh` (Tier 3 anchors) |
-| README/spec/GitBook metrics synchronized from single script | `./scripts/report_current_state.py` |
-| Root docs and GitBook mirrors stay synchronized | `./scripts/test_docs_sync.sh` |
-| Executable behavior is fixture-backed and malformed-state safe | `./scripts/test_tier2_trace.sh` + `test_tier2_negative.sh` |
-| 38 inter-transition invariant assertions across all trace functions (WS-I1/R-01, V8-C) | `./scripts/test_smoke.sh` |
-| Mandatory determinism: trace output identical across runs (WS-I1/R-02) | `./scripts/test_tier2_determinism.sh` |
-| Trace lines tagged with unique scenario IDs (233 fixture lines at v0.33.101, 231 bracket-tagged); registry validated bidirectionally (WS-I1/R-03) | `./scripts/test_tier0_hygiene.sh` + `test_tier2_trace.sh` |
-| WS-I3 operations coverage expansion: six operation-chain tests + scheduler stress + declassification runtime checks (including distinct `declassificationDenied` policy-denial path) | `./scripts/test_tier2_negative.sh` |
-| WS-L IPC subsystem audit — PORTFOLIO COMPLETE (v0.16.9–v0.16.13) | `./scripts/test_full.sh` |
-| WS-M Capability subsystem audit — PORTFOLIO COMPLETE (v0.16.14–v0.17.0) | `./scripts/test_full.sh` |
-| WS-N Robin Hood hashing — PORTFOLIO COMPLETE (v0.17.0–v0.17.5) | `./scripts/test_full.sh` |
-| WS-Q Kernel State Architecture — PORTFOLIO COMPLETE (v0.17.7–v0.17.14, 9 phases) | `./scripts/test_full.sh` |
-| WS-R Comprehensive Audit Remediation — PORTFOLIO COMPLETE (R1–R8, v0.18.0–v0.18.7) | [Workstream plan](../dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md) |
-| WS-S Pre-Benchmark Strengthening — PORTFOLIO COMPLETE (S1–S7, v0.19.0–v0.19.6) | [Workstream plan](../dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md) |
-| WS-T Deep-Dive Audit Remediation — PORTFOLIO COMPLETE (T1–T8, v0.20.0–v0.20.7, 94 sub-tasks) | [Workstream plan](../dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md), [Closure report](../dev_history/audits/WS_T_CLOSURE_REPORT.md) |
-| WS-U Phase U1 Correctness Fixes — COMPLETE (U1-A–U1-M, v0.21.0, 13 sub-tasks) | [Workstream plan](../dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
-| WS-U Phase U2 Safety Boundary Hardening — COMPLETE (U2-A–U2-N, v0.21.1, 14 sub-tasks) | [Workstream plan](../dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
-| WS-U Phase U3 Rust ABI Hardening — COMPLETE (U3-A–U3-J, v0.21.2, 10 sub-tasks) | [Workstream plan](../dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
-| WS-U Phase U4 Proof Chain & Invariant Composition — COMPLETE (U4-A/B/C/D, U4-K, U4-N, v0.21.3) | [Workstream plan](../dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
-| WS-U Phase U5 API & Dispatch Integrity — COMPLETE (U5-A–U5-N, v0.21.4, 14 sub-tasks) | [Workstream plan](../dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
-| WS-U Phase U6 Architecture & Platform Fidelity — COMPLETE (v0.21.5) | [Workstream plan](../dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
-| WS-U Phase U7 Dead Code & Proof Hygiene — COMPLETE (v0.21.6) | [Workstream plan](../dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
-| WS-U Phase U8 — COMPLETE (v0.21.7) | [Workstream plan](../dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
-| WS-Z composable performance objects (SchedContext, CBS, donation, timeouts) — PORTFOLIO COMPLETE (v0.23.0–v0.23.21) | `./scripts/test_full.sh` (Tier 3 anchors) |
-| WS-AB deferred operations + bounded latency (WCRT) — PORTFOLIO COMPLETE (v0.24.0–v0.25.5) | `lake exe liveness_suite` |
-| WS-AG H3 hardware binding (HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU) — PORTFOLIO COMPLETE (v0.26.0–v0.27.1) | `./scripts/test_rust.sh` |
-| WS-AK / WS-AN audit-remediation portfolios — COMPLETE (through v0.30.11) | [Active audit baseline](../audits/AUDIT_v0.30.11_COMPREHENSIVE.md) |
-| WS-RC pre-1.0 remediation R0–R5 — CLOSED at v0.31.2 (R6–R14 absorbed into WS-SM per SM0.Q) | [Workstream plan](../audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) |
-| WS-RA syscall return ABI (exact seL4 ARM64 frame; `SYSCALL_ABI_VERSION = 3` pinned on both sides — v2's offset label retired at v0.34.44 for the top-range status label, so a delivered fault tag is never read as an error) — COMPLETE (v0.33.37–v0.33.38; ABI v3 at v0.34.44) | `./scripts/test_rust.sh` (ABI conformance suite) |
-| WS-SM SM0–SM9 landed — verified lock primitives, per-object locks, per-core scheduler state, cross-core IPC, TLB shootdown + cache maintenance, SMP information flow, declassification completion (SM9 CLOSED v0.33.100); SM10 (release closure → v1.0.0) pending | Canonical per-phase rows in [`docs/CLAIM_EVIDENCE_INDEX.md`](../CLAIM_EVIDENCE_INDEX.md); golden fixtures under `tests/fixtures/` |
-| WS-RR pre-SM10 release readiness — IN FLIGHT: RR0 (v0.34.26), RR1 aarch64 cross gate + TLBI broadcast discipline (v0.34.41), RR2 live-path invariant gaps (v0.34.42), RR3 `ipcInvariantFull` de-threading + dispatch payoff (v0.34.43), RR4 fault handling with reply-based restart (v0.34.44); RR5–RR8 remain, SM10 blocked on RR8 | Per-phase rows in [`docs/CLAIM_EVIDENCE_INDEX.md`](../CLAIM_EVIDENCE_INDEX.md); [plan](../planning/SMP_RELEASE_READINESS_PLAN.md) |
-| A fault is delivered, never returned: no execution path resumes a thread at the instruction that faulted without a handler decision (`faultDeliverOnCore_not_dispatchable`, both dispositions); a kernel-origin exception is never delivered (`faultEntryStep_kernel_origin_inert`, `halt_if_kernel_origin`); `.tcbSetFaultHandler` is `TCB.faultHandler`'s only writer, validated at set time (`setThreadFaultHandlerOp_validated`); `.tcbResume` retires a pending fault (`retirePendingFaultForResume_pendingFault_none`); the classifier upcall is readiness-gated and the gated-seam set is derived (`scan_lean_upcalls_readiness_gated`); the fault tags are the MCS layout (`faultLabel_ne_timeout`) | `lake exe fault_handling_suite`; `./scripts/test_full.sh` (Tier 3 anchors); `sha256sum -c tests/fixtures/fault_handling_4core.expected.sha256` |
-| Enforcement boundary: 44 entries (13 policy-gated), pinned by `enforcementBoundaryExtended_count`; per-core boundary 59 (`enforcementBoundaryPerCore_count`) | `./scripts/test_full.sh` (Tier 3 anchors) |
+## 4. SMP
 
-## Proof claim qualification (WS-D3/F-16, updated by v0.11.6 audit C-01/H-01; C-01/H-01 resolved by WS-E2)
+Per-core scheduler state and scheduling, cross-core IPC preserving the IPC
+bundle, CBS replenish-queue migration on every cross-core hand-off, a verified
+TLB shootdown protocol with bounded wait, per-core non-interference with
+enumerated covert channels, and audited declassification with causal
+provenance. The WS-SM theorem total is measured rather than hand-summed.
 
-The index distinguishes six categories of proof:
+## 5. Data structures and performance
 
-| Category | Assurance |
-|----------|-----------|
-| **Substantive preservation** | High — proves successful operation preserves invariant over changed state |
-| **Error-case preservation** | Low — trivially true (failed op returns unchanged state) |
-| **Compositional preservation** | High — derives post-state via transfer lemmas |
-| **Structural invariant** | High — proves genuine structural property with witness |
-| **End-to-end chain** | High — multi-step semantic property across subsystem boundaries |
-| **Non-interference** | Critical — proves high-domain operation preserves low-equivalence |
+The object store is a verified Robin Hood hash table with proven O(1) lookup —
+a theorem, not a benchmark — and the CNode radix tree gets the same treatment.
 
-## Closed proof obligations (WS-D tracked issues)
+## 6. Hardware and build
 
-All WS-D tracked proof obligations have been resolved. See the canonical
-[`CLAIM_EVIDENCE_INDEX.md`](../CLAIM_EVIDENCE_INDEX.md) for the full closure
-table.
+The HAL compiles and generates code for `aarch64-unknown-none` in both
+profiles, with the three assembly sources verified to have assembled and clippy
+denied on the cross target. Broadcast TLB maintenance is confined and gated. No
+third-party code is linked into the runtime kernel binary.
+
+## 7. Process
+
+Version sites agree, deferrals are registered with owners, plan numbering is
+consistent, no identifier encodes a workstream code, a gate that cannot run
+reports NOT RUN rather than PASS, and website-linked paths still exist — each
+enforced by a named script rather than by review.
+
+## 8. What is **not** claimed
+
+That the kernel boots on hardware; that per-object fine locks are deployed;
+unconditional SMP starvation-freedom; that the deployed RwLock is the one the
+Lean FIFO spec describes; that live WCRT matches the fine-lock bound; that
+Tier 4 acceptance gates have passed; that a fault message past `MR3` reaches a
+handler on hardware.
+
+Each is registered debt with a named owner, not an oversight. The canonical
+index carries the owner for each.
+
+## Proof claim qualification
+
+Not every theorem carries the same assurance, and a coverage claim must say
+which kind it means. The canonical index names six categories — substantive
+preservation, error-case preservation, compositional preservation, structural
+invariant, end-to-end chain, and non-interference — with the assurance level
+each carries. Quoting a theorem count without the distinction hides it.
 
 ## Update policy
 
-When a claim changes:
-
-1. Update the canonical root document ([`CLAIM_EVIDENCE_INDEX.md`](../CLAIM_EVIDENCE_INDEX.md)) first.
-2. Update GitBook mirrors in the same PR.
-3. Run `./scripts/test_smoke.sh` (minimum); `./scripts/test_full.sh` when Tier 3 anchors change.
-
-### Related
-
-- [Testing & CI](07-testing-and-ci.md) — tier definitions and quality gates
-- [Proof and Invariant Map](12-proof-and-invariant-map.md) — theorem inventory
+When a claim changes: update the canonical root source first, update this
+mirror in the same PR, refresh the index row, and run at least
+`./scripts/test_smoke.sh`. A claim that loses its evidence command loses its
+row; a claim the tree no longer supports moves to §8 with an owner rather than
+being quietly deleted.

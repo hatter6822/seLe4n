@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.44-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.47-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -61,7 +61,7 @@ seLe4n هو نواة مصغرة بُنيت من الصفر بلغة Lean 4. كل
 
 | السمة | القيمة |
 |-------|--------|
-| **الإصدار** | `0.34.44` |
+| **الإصدار** | `0.34.47` |
 | **سلسلة أدوات Lean** | `v4.28.0` |
 | **أسطر Lean الإنتاجية** | 286,841 عبر 286 ملفًا |
 | **أسطر Lean للاختبارات** | 64,078 عبر 69 مجموعة اختبار |
@@ -90,7 +90,7 @@ lake exe sele4n                # تشغيل أداة التتبع (trace harness
 |----------|-----|
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — سير العمل، التحقق، قائمة مراجعة PR | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — المواصفات والمعالم |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — الدليل الكامل | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — دلالات مرجعية لـ seL4 |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — جرد قابل للقراءة آليًا | [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) — تاريخ تيارات العمل وخارطة الطريق |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — جرد قابل للقراءة آليًا | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — تاريخ تيارات العمل وخارطة الطريق |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — آليات المساهمة | [`CHANGELOG.md`](../../../CHANGELOG.md) — سجل الإصدارات |
 
 [`docs/codebase_map.json`](../../../docs/codebase_map.json) هو المصدر الوحيد للحقيقة
@@ -205,7 +205,7 @@ ABI الخاص بإرجاع استدعاءات النظام (**WS-RA**) فمكت
 مع خطط لكل مرحلة في `docs/planning/SMP_*.md`. السجل القياسي لكل مرحلة —
 بما في ذلك جميع محافظ تيارات العمل المكتملة (WS-B حتى WS-AB، و WS-AE
 حتى WS-AN، و WS-RC R0–R5، و WS-RA) — هو
-[`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)؛
+[`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md)؛
 والتدقيقات السابقة وإغلاقات المعالم مؤرشفة في
 [`docs/dev_history/`](../../../docs/dev_history/README.md).
 

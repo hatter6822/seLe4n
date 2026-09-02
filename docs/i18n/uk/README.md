@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безпека" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.44-blue" alt="Версія" />
+  <img src="https://img.shields.io/badge/version-0.34.47-blue" alt="Версія" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Ліцензія" /></a>
 </p>
@@ -88,7 +88,7 @@ security model) від seL4, водночас впроваджуючи архі�
 
 | Атрибут | Значення |
 |---------|----------|
-| **Версія** | `0.34.44` |
+| **Версія** | `0.34.47` |
 | **Тулчейн Lean** | `v4.28.0` |
 | **Продуктовий код (Lean LoC)** | 286 841 рядок у 286 файлах |
 | **Тестовий код (Lean LoC)** | 64 078 рядків у 69 тест-сьютах |
@@ -120,7 +120,7 @@ lake exe sele4n                # запуск трасувального сте�
 |-------------|------|
 | [`docs/DEVELOPMENT.md`](../../DEVELOPMENT.md) — робочий процес, валідація, чек-лист для PR | [`docs/spec/SELE4N_SPEC.md`](../../spec/SELE4N_SPEC.md) — специфікація та етапи |
 | [`docs/gitbook/README.md`](../../gitbook/README.md) — повний посібник | [`docs/spec/SEL4_SPEC.md`](../../spec/SEL4_SPEC.md) — довідкова семантика seL4 |
-| [`docs/codebase_map.json`](../../codebase_map.json) — машинозчитуваний опис | [`docs/WORKSTREAM_HISTORY.md`](../../WORKSTREAM_HISTORY.md) — історія робочих потоків і дорожня карта |
+| [`docs/codebase_map.json`](../../codebase_map.json) — машинозчитуваний опис | [`docs/REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md) — історія робочих потоків і дорожня карта |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) — механіка внеску | [`CHANGELOG.md`](../../../CHANGELOG.md) — історія версій |
 
 [`docs/codebase_map.json`](../../codebase_map.json) є джерелом істини
@@ -242,7 +242,7 @@ shootdown та обслуговування кешів, інформаційни
 з планами окремих фаз у `docs/planning/SMP_*.md`. Канонічний пофазовий
 запис — включно з кожним завершеним портфелем робочих потоків (WS-B по
 WS-AB, WS-AE по WS-AN, WS-RC R0–R5, WS-RA) — це
-[`docs/WORKSTREAM_HISTORY.md`](../../WORKSTREAM_HISTORY.md); попередні
+[`docs/REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md); попередні
 аудити та закриття етапів заархівовано в
 [`docs/dev_history/`](../../dev_history/README.md).
 

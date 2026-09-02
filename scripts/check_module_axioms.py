@@ -27,10 +27,25 @@ instance projections and other elaborator output that no source regex sees.
 This version therefore enumerates **Lean's own environment**.  It elaborates a
 generated file that imports the target modules and walks `env.constants`,
 keeping every constant whose defining module (`Environment.getModuleIdxFor?`)
-is one of the targets, and calls `Lean.collectAxioms` on each.  There is no
-filtering by declaration kind, by name shape, or by privacy: a constant that
-exists in the compiled module is swept, however it got there.  Exhaustiveness
-is now a property of the mechanism rather than a claim about a source scanner.
+is one of the targets, and answers, for each, which axioms it depends on.
+There is no filtering by declaration kind, by name shape, or by privacy: a
+constant that exists in the compiled module is swept, however it got there.
+Exhaustiveness is now a property of the mechanism rather than a claim about a
+source scanner.
+
+How the answer is computed (test-performance audit, v0.34.47).  Calling
+`Lean.collectAxioms` once per constant walks that constant's whole dependency
+closure from scratch — the same fifteen-thousand-constant core of the kernel,
+re-walked 4,773 times, which is where the sweep's 150 seconds went.  The probe
+now walks the *union* of the closures once, mirroring `CollectAxioms.collect`
+case for case (`axiomSweepEdges`), records the reverse edges, and marks from
+each axiom the constants it reaches; a constant's axiom set is then the
+axioms that reach it.  That is the same relation `collectAxioms` computes,
+stated once instead of per constant, and the probe holds itself to Lean's
+walk rather than asserting the equivalence: every constant it would report,
+plus the first target and every thirty-seventh after it, is re-derived with
+`Lean.collectAxioms` and must agree as a set (`AXIOMSWEEP_CROSSCHECK`).  A
+disagreement, or a run in which no cross-check happened, fails the gate.
 
 The map is still read, but only to report the source-declaration count
 alongside the environment count, so the difference stays visible rather than
@@ -89,6 +104,7 @@ SMP_INFORMATION_FLOW = [
 
 PROBE_TEMPLATE = """@IMPORTS@
 import Lean.Elab.Command
+import Lean.Util.CollectAxioms
 
 open Lean Elab Command
 
@@ -98,27 +114,95 @@ private def axiomSweepTargets : List Name :=
 private def axiomSweepAllowed : List Name :=
   [@ALLOWED@]
 
+/-- The constants `Lean.CollectAxioms.collect` steps into from `c`, case for
+    case: an axiom's type, a definition's / theorem's / opaque's type and value,
+    a constructor's or recursor's type, an inductive's type and its
+    constructors, nothing for a quotient primitive or an unknown name.  Read
+    off the kernel environment (`env.checked`) exactly as `collect` does. -/
+private def axiomSweepEdges (env : Environment) (c : Name) : Array Name :=
+  match env.checked.get.find? c with
+  | some (ConstantInfo.axiomInfo v)  => v.type.getUsedConstants
+  | some (ConstantInfo.defnInfo v)   => v.type.getUsedConstants ++ v.value.getUsedConstants
+  | some (ConstantInfo.thmInfo v)    => v.type.getUsedConstants ++ v.value.getUsedConstants
+  | some (ConstantInfo.opaqueInfo v) => v.type.getUsedConstants ++ v.value.getUsedConstants
+  | some (ConstantInfo.quotInfo _)   => #[]
+  | some (ConstantInfo.ctorInfo v)   => v.type.getUsedConstants
+  | some (ConstantInfo.recInfo v)    => v.type.getUsedConstants
+  | some (ConstantInfo.inductInfo v) => v.type.getUsedConstants ++ v.ctors.toArray
+  | none                             => #[]
+
+private def axiomSweepIsAxiom (env : Environment) (c : Name) : Bool :=
+  match env.checked.get.find? c with
+  | some (ConstantInfo.axiomInfo _) => true
+  | _ => false
+
 run_cmd do
   let env ← getEnv
-  let mut total := 0
-  let mut free := 0
-  let mut bad : Array (Name × Array Name) := #[]
+  let mut targets : Array Name := #[]
   for (n, _ci) in env.constants.toList do
     match env.getModuleIdxFor? n with
     | none => pure ()
     | some idx =>
       let m := env.header.moduleNames[idx.toNat]!
-      if axiomSweepTargets.contains m then
-        total := total + 1
-        let axs ← liftCoreM (Lean.collectAxioms n)
-        if axs.isEmpty then free := free + 1
-        let extra := axs.filter (fun a => !axiomSweepAllowed.contains a)
-        if !extra.isEmpty then bad := bad.push (n, extra)
+      if axiomSweepTargets.contains m then targets := targets.push n
+  -- One walk over the union of every target's dependency closure, recording
+  -- the reverse edges, instead of one fresh closure walk per constant.
+  let mut visited : NameSet := {}
+  let mut rev : Std.HashMap Name (Array Name) := {}
+  let mut axioms : Array Name := #[]
+  let mut stack : Array Name := targets
+  while h : stack.size > 0 do
+    let c := stack.back
+    stack := stack.pop
+    unless visited.contains c do
+      visited := visited.insert c
+      if axiomSweepIsAxiom env c then axioms := axioms.push c
+      for d in axiomSweepEdges env c do
+        rev := rev.insert d ((rev.getD d #[]).push c)
+        unless visited.contains d do stack := stack.push d
+  -- A constant depends on an axiom iff the axiom reaches it along the
+  -- reversed edges; one reverse search per axiom answers it for every constant.
+  let mut reach : Std.HashMap Name NameSet := {}
+  for a in axioms do
+    let mut seen : NameSet := {}
+    let mut st : Array Name := #[a]
+    while h : st.size > 0 do
+      let c := st.back
+      st := st.pop
+      unless seen.contains c do
+        seen := seen.insert c
+        for p in rev.getD c #[] do
+          unless seen.contains p do st := st.push p
+    reach := reach.insert a seen
+  let mut total : Nat := 0
+  let mut free : Nat := 0
+  let mut bad : Array (Name × Array Name) := #[]
+  let mut checked : Nat := 0
+  let mut mismatches : Nat := 0
+  for n in targets do
+    total := total + 1
+    let axs := axioms.filter fun a => (reach.getD a {}).contains n
+    if axs.isEmpty then free := free + 1
+    let extra := axs.filter (fun a => !axiomSweepAllowed.contains a)
+    if !extra.isEmpty then bad := bad.push (n, extra)
+    -- The reachability answer is held to Lean's own walk: every constant the
+    -- sweep would report, plus the first target and one in every thirty-seven
+    -- after it, is re-derived with `Lean.collectAxioms` and must agree as a
+    -- set.
+    if !extra.isEmpty || total % 37 == 1 then
+      let ref ← liftCoreM (Lean.collectAxioms n)
+      checked := checked + 1
+      let refSorted := ref.qsort (fun a b => a.toString < b.toString)
+      let mine := axs.qsort (fun a b => a.toString < b.toString)
+      if refSorted != mine then
+        mismatches := mismatches + 1
+        logInfo m!"AXIOMSWEEP_MISMATCH {n} {refSorted} {mine}"
   logInfo m!"AXIOMSWEEP_TOTAL {total}"
   logInfo m!"AXIOMSWEEP_FREE {free}"
   for (n, e) in bad do
     logInfo m!"AXIOMSWEEP_BAD {n} {e}"
   logInfo m!"AXIOMSWEEP_BADCOUNT {bad.size}"
+  logInfo m!"AXIOMSWEEP_CROSSCHECK {checked} {mismatches}"
 """
 
 
@@ -201,6 +285,26 @@ def main() -> int:
     if total == 0:
         print("FAIL: the sweep found no constants — are the module names right?")
         return 1
+    # The sweep answers "which axioms does this constant reach" from one shared
+    # walk of the dependency graph rather than one `Lean.collectAxioms` walk
+    # per constant.  The two must agree wherever both were computed, and the
+    # cross-check must actually have run: a missing or empty line means the
+    # probe did not hold itself to Lean's walk, and is rejected like a bad
+    # constant.
+    cross = re.search(r"AXIOMSWEEP_CROSSCHECK (\d+) (\d+)", combined)
+    if cross is None or int(cross.group(1)) == 0:
+        print("FAIL: the sweep did not cross-check its reachability answer")
+        print("      against Lean.collectAxioms for any constant.")
+        print(combined[-2000:])
+        return 1
+    if int(cross.group(2)):
+        print(f"FAIL: {cross.group(2)} of {cross.group(1)} cross-checked constant(s)")
+        print("      disagree with Lean.collectAxioms — the shared walk does not")
+        print("      reproduce Lean's; the sweep's answers cannot be trusted.")
+        for line in combined.splitlines():
+            if "AXIOMSWEEP_MISMATCH " in line:
+                print("  " + line.split("AXIOMSWEEP_MISMATCH ", 1)[1])
+        return 1
 
     source_counts = map_declaration_counts(names)
     for name in names:
@@ -218,7 +322,8 @@ def main() -> int:
     mapped = sum(source_counts.values()) if source_counts else 0
     print(f"PASS: all {total} environment constants "
           f"({total - free} via {{{', '.join(ALLOWED)}}}, {free} axiom-free) "
-          f"are axiom-clean.")
+          f"are axiom-clean; {cross.group(1)} cross-checked against "
+          f"Lean.collectAxioms.")
     if mapped:
         print(f"      (The source map lists {mapped} declarations for these "
               f"modules; the difference is elaborator output — equation "

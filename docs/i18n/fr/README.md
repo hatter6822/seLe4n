@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sécurité" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.44-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.47-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licence" /></a>
 </p>
@@ -88,7 +88,7 @@ de preuve de Lean 4 :
 
 | Attribut | Valeur |
 |----------|--------|
-| **Version** | `0.34.44` |
+| **Version** | `0.34.47` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
 | **LoC Lean de production** | 286 841 réparties sur 286 fichiers |
 | **LoC Lean de test** | 64 078 réparties sur 69 suites de tests |
@@ -118,7 +118,7 @@ lake exe sele4n                # exécuter le harnais de trace
 |---------------|---------|
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — flux de travail, validation, liste de contrôle des PR | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — spécification et jalons |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — manuel complet | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — sémantique de référence seL4 |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventaire lisible par machine | [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) — historique des flux de travail et feuille de route |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventaire lisible par machine | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — historique des flux de travail et feuille de route |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — modalités de contribution | [`CHANGELOG.md`](../../../CHANGELOG.md) — historique des versions |
 
 [`docs/codebase_map.json`](../../../docs/codebase_map.json) est la source de vérité pour
@@ -235,7 +235,7 @@ Plan directeur : [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP
 avec les plans par phase dans `docs/planning/SMP_*.md`. Le registre canonique
 par phase — y compris chaque portefeuille de flux de travail terminé (WS-B à
 WS-AB, WS-AE à WS-AN, WS-RC R0–R5, WS-RA) — est
-[`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) ; les
+[`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) ; les
 audits antérieurs et les clôtures de jalons sont archivés dans
 [`docs/dev_history/`](../../../docs/dev_history/README.md).
 

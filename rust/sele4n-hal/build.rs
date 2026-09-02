@@ -279,7 +279,7 @@ fn scan_boot_s_for_legacy_mpidr_literal() {
              literal encoding of MPIDR_CORE_ID_MASK. \
              Use `adrp`+`ldr` via `MPIDR_CORE_ID_MASK_SYM` instead \
              (cpu.rs).  See WS-AN AN8-B (historical record in \
-             docs/WORKSTREAM_HISTORY.md)."
+             docs/REGISTERED_DEBT.md)."
         );
     }
 }
@@ -1994,7 +1994,7 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
         "lean_syscall_dispatch_cross_core",
         1,
         "the SVC dispatch seam: registered debt, closed by the release-readiness \
-         plan's boot-path fail-open phase (docs/WORKSTREAM_HISTORY.md)",
+         plan's boot-path fail-open phase (docs/REGISTERED_DEBT.md)",
     ),
     (
         "src/ffi.rs",

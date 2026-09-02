@@ -397,7 +397,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
       than thread a post-state hypothesis (which the RR3 de-threading gate
       forbids) or leave the branch silently uncovered, the payoff is confined
       here and the composition is registered as debt in
-      `docs/WORKSTREAM_HISTORY.md`.  It is a pre-state fact, so a caller
+      `docs/REGISTERED_DEBT.md`.  It is a pre-state fact, so a caller
       discharges it before the step. -/
   replyNoPendingFault : ∀ rid (r : Reply) (callerTid : SeLe4n.ThreadId),
     decoded.syscallId = .reply → cap.target = .replyCap rid →
@@ -1791,7 +1791,7 @@ Coverage, and the one boundary:
   the call rendezvous creates a caller-carrying reply.  That interior --
   and `replyRecvStage`'s resolver premise, which needs a CSpace-resolved
   reply capability the same rendezvous supplies -- is the registered
-  residual (WS-DT, `docs/WORKSTREAM_HISTORY.md`);
+  residual (WS-DT, `docs/REGISTERED_DEBT.md`);
 * `checked…_inhabited_declassifySignal` -- the checked tier's confinement
   computed on a present object, as the signal arm's is. -/
 

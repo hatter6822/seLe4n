@@ -3043,15 +3043,24 @@ can close the domain, which is the same defect as a closure target inside a
 plan marked LANDED, and it is the reason the debt sweep found this register
 incoherent.  Each now names a **live** target; the fine-lock tracks are
 enumerated in `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` and the register
-row for each sits in `docs/WORKSTREAM_HISTORY.md`. -/
+row for each sits in `docs/REGISTERED_DEBT.md`.
+
+**Three owners re-pointed again at v0.34.47 (PR #888 review).**  Track C's own
+rows (RR7.10–RR7.13) generalise the resolver, declare the IPC footprints and
+bracket the dispatch body; none of them acquires a per-core scheduler lock,
+extends a lock set along a PIP chain, or couples locks down a CSpace walk, so
+naming that range left three domains with an owner that could not close them.
+Each now names the closure row written for it: RR7.39 (the scheduler domain —
+the fine-lock plan's SM3.C.9.b follow-on), RR7.40 (the dynamic PIP chain),
+RR7.41 (the CSpace-walk interior). -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
-  [(.schedulerDomain, "WS-RR RR7.7 (fine-lock Track C)"),
-   (.dynamicPipChain, "WS-RR RR7.7 (fine-lock Track C)"),
-   (.queueOwnershipProtocol, "WS-RR RR7.32"),
-   (.capTransferReceiverCnode, "WS-RR RR7.7 (fine-lock Track B)"),
+  [(.schedulerDomain, "WS-RR RR7.39 (fine-lock Track C closure)"),
+   (.dynamicPipChain, "WS-RR RR7.40 (fine-lock Track C closure)"),
+   (.queueOwnershipProtocol, "WS-RR RR7.38"),
+   (.capTransferReceiverCnode, "WS-RR RR7.8 (fine-lock Track B)"),
    (.taintTablePerKeyStore, "SM10.1 (fine-lock Track D)"),
-   (.cdtNodeAllocation, "WS-RR RR7.7 (fine-lock Track B)"),
-   (.cspaceWalkInteriorCnodes, "WS-RR RR7.7 (fine-lock Track C)")]
+   (.cdtNodeAllocation, "WS-RR RR7.9 (fine-lock Track B)"),
+   (.cspaceWalkInteriorCnodes, "WS-RR RR7.41 (fine-lock Track C closure)")]
 
 /-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
 inventory uses — so completeness can be quantified over the *constructors*

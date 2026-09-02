@@ -13,7 +13,7 @@ import SeLe4n.Kernel.FrozenOps.Operations
 # Q7-D: Commutativity Proofs
 
 **STATUS: Experimental — post-1.0 hardening candidate (AG8-D). Not in
-production chain; registered in `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C.1).**
+production chain; registered in `docs/REGISTERED_DEBT.md` (Registered debt index, C.1).**
 
 Establishes the commutativity diagram between builder-phase and frozen-phase
 operations:

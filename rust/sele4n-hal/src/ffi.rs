@@ -55,7 +55,7 @@
 compile_error!(
     "seLe4n HAL requires panic = \"abort\" for release profiles. \
      See rust/Cargo.toml [profile.release] and AK5-A in the \
-     WS-AN AN9 portfolio (closed at v0.30.11; see docs/WORKSTREAM_HISTORY.md)."
+     WS-AN AN9 portfolio (closed at v0.30.11; see docs/REGISTERED_DEBT.md)."
 );
 
 // ============================================================================

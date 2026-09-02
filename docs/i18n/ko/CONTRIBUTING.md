@@ -19,7 +19,7 @@ seLe4n은 [GNU General Public License v3.0 이상](../../../LICENSE)에 따라 �
 3. **CI 정책:** [`docs/CI_POLICY.md`](../../../docs/CI_POLICY.md)
 4. **프로젝트 범위 + 작업 스트림:** [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
 5. **활성 감사 결과:** [`docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
-6. **작업 스트림 이력:** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
+6. **작업 스트림 이력:** [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md)
 
 전체 핸드북: [`docs/gitbook/README.md`](../../../docs/gitbook/README.md)
 
@@ -118,7 +118,7 @@ lake build SeLe4n.Kernel.RobinHood.Bridge
 3. `docs/DEVELOPMENT.md`
 4. 영향을 받는 GitBook 챕터 — 정규 루트 문서가 GitBook보다 우선
 5. `docs/CLAIM_EVIDENCE_INDEX.md` (주장이 변경된 경우)
-6. `docs/WORKSTREAM_HISTORY.md` (작업 스트림 상태가 변경된 경우)
+6. `docs/REGISTERED_DEBT.md` (작업 스트림 상태가 변경된 경우)
 7. `docs/codebase_map.json` 재생성 (Lean 소스가 변경된 경우)
 
 ## 테스트 단계

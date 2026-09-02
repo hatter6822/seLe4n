@@ -19,7 +19,7 @@ seLe4n [GNU General Public License v3.0 या बाद के संस्क�
 3. **CI नीति (CI policy):** [`docs/CI_POLICY.md`](../../../docs/CI_POLICY.md)
 4. **परियोजना दायरा + कार्यधाराएँ (Project scope + workstreams):** [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
 5. **सक्रिय ऑडिट निष्कर्ष (Active audit findings):** [`docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
-6. **कार्यधारा इतिहास (Workstream history):** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
+6. **कार्यधारा इतिहास (Workstream history):** [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md)
 
 पूर्ण पुस्तिका (handbook): [`docs/gitbook/README.md`](../../../docs/gitbook/README.md)
 
@@ -101,7 +101,7 @@ cp scripts/pre-commit-lean-build.sh .git/hooks/pre-commit
 3. `docs/DEVELOPMENT.md`
 4. प्रभावित GitBook अध्याय — मूल (canonical) रूट दस्तावेज़ GitBook पर प्राथमिकता रखते हैं
 5. `docs/CLAIM_EVIDENCE_INDEX.md` यदि दावे (claims) बदलते हैं
-6. `docs/WORKSTREAM_HISTORY.md` यदि कार्यधारा स्थिति बदलती है
+6. `docs/REGISTERED_DEBT.md` यदि कार्यधारा स्थिति बदलती है
 7. यदि Lean स्रोत बदले तो `docs/codebase_map.json` पुनः उत्पन्न करें
 
 ## भेद्यता रिपोर्टिंग (Vulnerability Reporting)

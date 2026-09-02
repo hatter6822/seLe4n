@@ -47,7 +47,7 @@ making that mistake.
    families through, and then `z`, and then a round arguing about `x`
    and `d` -- five rounds, each closed by appending exactly what the
    reviewer named.  `enforced_families()` now reads
-   `docs/WORKSTREAM_HISTORY.md`.  Two-letter families are enforced on
+   `docs/REGISTERED_DEBT.md`.  Two-letter families are enforced on
    sight (all 17 collide with nothing); single-letter families collide
    with the architecture's namespaces without exception, so each needs
    a recorded decision and the gate FAILS on one that has none.
@@ -113,6 +113,7 @@ violation and its pardon from being staged separately.
 """
 from __future__ import annotations
 
+import functools
 import json
 import re
 import subprocess
@@ -183,7 +184,7 @@ def read_tracked(rel: str) -> str | None:
 # `Sm5iAffinityAnchors`, `sm5i_affinity_anchors` and `SM5I_ANCHORS` are
 # one case rather than three regexes.
 #
-# The family set is DERIVED from `docs/WORKSTREAM_HISTORY.md`, not
+# The family set is DERIVED from `docs/REGISTERED_DEBT.md`, not
 # hand-listed.  A hand-list was the single largest source of holes in
 # this gate: five separate review rounds each found families it lacked
 # (`aa`/`ae` and eleven more, then `z`, then `x`, `d`) and each was
@@ -213,7 +214,7 @@ def read_tracked(rel: str) -> str | None:
 # reviewer eventually notices a missing family" into "CI fails the
 # moment the registry mentions it", which is the property the
 # hand-list never had.
-REGISTRY_REL = "docs/WORKSTREAM_HISTORY.md"
+REGISTRY_REL = "docs/REGISTERED_DEBT.md"
 
 # The registry spells a workstream two ways: `WS-Q` for the family and
 # `WS-Q1` for a phase of it.  Requiring a word boundary after the
@@ -269,14 +270,51 @@ SINGLE_LETTER_DECLINED = {
 }
 
 
+# The registry is one table under this heading; a row's first cell is the
+# workstream's name in bold.  Only those cells configure the grammar.
+REGISTRY_HEADING_RE = re.compile(r"^##\s+Workstream registry\s*$", re.M)
+REGISTRY_ROW_RE = re.compile(r"^\|\s*\*\*(WS-[^*|]+)\*\*\s*\|", re.M)
+
+
+def families_in_registry_text(text: str) -> set[str]:
+    """Family letter-codes named by the rows of the workstream registry table.
+
+    Reads the table, not the document (PR #888 review): the register explains
+    its own mechanism in prose — "derives its family grammar from the
+    `WS-XX` names here" — and a whole-text scan parsed that placeholder as a
+    real family, so `xx` entered the grammar and an ordinary identifier with a
+    component such as `xx1` was rejected as workstream-coded.  Prose cannot
+    configure a gate; a row can, and a workstream is registered by adding one.
+    The cell is still read with `REGISTRY_FAMILY_RE`, so the fused spellings
+    the rows use (`WS-J1-F`, `WS-K-H`, `WS-M2`, `WS-H16`) yield their family
+    exactly as before.  The table is the section under the heading up to the
+    next heading; a `**WS-…**` cell in another table (a debt row) is not a
+    registration.
+    """
+    m = REGISTRY_HEADING_RE.search(text)
+    if m is None:
+        return set()
+    section = text[m.end():]
+    nxt = re.search(r"^##\s", section, re.M)
+    if nxt is not None:
+        section = section[:nxt.start()]
+    return {f.lower() for cell in REGISTRY_ROW_RE.findall(section)
+            for f in REGISTRY_FAMILY_RE.findall(cell)}
+
+
 def registry_families() -> set[str]:
-    """Family letter-codes named as `WS-XX` in the workstream registry."""
+    """Family letter-codes the workstream registry's rows name."""
     text = read_tracked(REGISTRY_REL)
     if text is None:                    # registry not tracked: nothing to derive
         raise SystemExit(
             f"FAIL: {REGISTRY_REL} is not in the index; the family grammar "
             "cannot be derived. Stage it, or fix REGISTRY_REL.")
-    return {m.lower() for m in REGISTRY_FAMILY_RE.findall(text)}
+    families = families_in_registry_text(text)
+    if not families:
+        raise SystemExit(
+            f"FAIL: no `| **WS-…** |` rows found under '## Workstream registry' "
+            f"in {REGISTRY_REL}; the family grammar cannot be derived.")
+    return families
 
 
 def enforced_families() -> tuple[str, ...]:
@@ -295,7 +333,7 @@ def enforced_families() -> tuple[str, ...]:
             + "\n      Measure each over the tracked tree, then add it to "
               "SINGLE_LETTER_ENFORCED (if it collides with nothing) or to "
               "SINGLE_LETTER_DECLINED with the count that decided it.")
-    # Every two-letter family is enforced automatically: all 17 in the
+    # Every two-letter family is enforced automatically: all 20 in the
     # registry today collide with nothing, and the arity is what makes
     # them safe rather than any property of the individual code.
     return tuple(sorted({f for f in fams if len(f) > 1} | SINGLE_LETTER_ENFORCED))
@@ -314,6 +352,24 @@ COMPONENT_CODES = tuple(
     re.compile(r"^ws$"),            # ws_sm_, ws_rc_, ws_q_ (any arity)
     re.compile(r"^h\d{2}$"),        # I-H01 subtask codes
     re.compile(r"^tpi$"),           # TPI-D* tracked-proof ids
+)
+
+# The same set of patterns as ONE anchored alternation.  `is_coded` runs on
+# every identifier token in the tree -- 1.4 million of them -- and testing
+# each component against ~40 anchored patterns one by one was 62 million
+# regex matches, 44 seconds of a 54-second gate.  An alternation of anchored
+# patterns accepts exactly the union of the languages the individual
+# patterns accept, so `COMPONENT_CODE_UNION.match(c)` is true iff some
+# `rx.match(c)` is; `COMPONENT_CODES` stays as the readable inventory the
+# self-test and the docstrings refer to.  Stripping the anchors to splice a
+# pattern into the alternation is sound only when every pattern carries
+# them, which is asserted here rather than assumed; `is_coded`'s cases in
+# `test_identifier_naming_gate.py` exercise the union, and the witness there
+# holds the union to the tuple on every pattern's own positive and near-miss.
+assert all(rx.pattern.startswith("^") and rx.pattern.endswith("$")
+           for rx in COMPONENT_CODES), "every COMPONENT_CODE must be ^-anchored and $-anchored"
+COMPONENT_CODE_UNION = re.compile(
+    "^(?:" + "|".join(rx.pattern[1:-1] for rx in COMPONENT_CODES) + ")$"
 )
 
 # Audit IDs (`AUDIT_v0.30.11`) are named by the rule alongside
@@ -430,7 +486,7 @@ def is_coded(token: str) -> bool:
     for c in parts:
         if c in BARE_AMBIGUOUS and len(parts) == 1:
             continue
-        if any(rx.match(c) for rx in COMPONENT_CODES):
+        if COMPONENT_CODE_UNION.match(c):
             return True
     # Audit IDs live in an adjacency rather than in any one component,
     # so they are checked over consecutive pairs.
@@ -572,6 +628,23 @@ def _opens_asm_macro(text: str, at: int) -> bool:
 CHAR_LITERAL = re.compile(r"'(?:[^'\\\n]|\\.)'")
 
 
+# The characters at which `strip_pairs` has anything to decide: the first
+# character of the line-comment and block-comment openers, the two quote
+# kinds, the raw-string prefix, and -- only when asm templates are tracked --
+# the delimiters that move the nesting depth.  Everything else passes through
+# unchanged, so the loop copies each run of such characters in one slice
+# instead of one character per iteration (32 of this gate's 54 seconds).
+@functools.lru_cache(maxsize=None)
+def _strip_pairs_triggers(line_comment: str, open_b: str,
+                          asm_templates: bool) -> re.Pattern:
+    chars = {"'", '"', "r", open_b[0]}
+    if line_comment != NEVER:
+        chars.add(line_comment[0])
+    if asm_templates:
+        chars.update("([{)]}")
+    return re.compile("[" + "".join(re.escape(c) for c in sorted(chars)) + "]")
+
+
 def strip_pairs(text: str, line_comment: str, block: tuple[str, str],
                 asm_templates: bool = False) -> str:
     """Blank comments and string literals for C-family / Lean syntax."""
@@ -580,7 +653,16 @@ def strip_pairs(text: str, line_comment: str, block: tuple[str, str],
     # Delimiter nesting depth, and the depth at which an asm macro's
     # argument list opened (None outside one).
     nesting, asm_at = 0, None
+    triggers = _strip_pairs_triggers(line_comment, open_b, asm_templates)
     while i < n:
+        # Skip straight to the next character any branch below can act on;
+        # the run in between would have been appended one character at a
+        # time by the final branch, with nothing else changing.
+        m = triggers.search(text, i)
+        if m is None:
+            out.append(text[i:]); break
+        if m.start() > i:
+            out.append(text[i:m.start()]); i = m.start()
         if line_comment != NEVER and text.startswith(line_comment, i):
             j = text.find("\n", i)
             j = n if j < 0 else j
@@ -632,7 +714,15 @@ FSTRING_PREFIX = re.compile(r"(?:^|[^A-Za-z0-9_])([A-Za-z]{1,3})$")
 
 
 def _is_fstring(text: str, quote_start: int) -> bool:
-    m = FSTRING_PREFIX.search(text[:quote_start])
+    # Only the four characters before the quote can matter: a prefix is at
+    # most three letters, plus the one character that must precede it.
+    # Slicing `text[:quote_start]` and searching it was O(n) per literal and
+    # so O(n^2) per file -- 23 of this gate's 54 seconds.  `pos`/`endpos`
+    # bound the scan to the window: `$` matches at `endpos`, and `^` matches
+    # only at the real start of the string, never at `pos`, so a letter run
+    # at the window's edge counts exactly when it is at the string's edge --
+    # the same answer the slice gave.
+    m = FSTRING_PREFIX.search(text, max(0, quote_start - 4), quote_start)
     return bool(m) and "f" in m.group(1).lower()
 
 

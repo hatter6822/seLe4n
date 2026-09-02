@@ -26,7 +26,7 @@ também certifica que tem o direito de enviar a contribuição sob esta licença
 3. **Política de CI:** [`docs/CI_POLICY.md`](../../../docs/CI_POLICY.md)
 4. **Escopo do projeto + workstreams:** [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
 5. **Descobertas de auditoria ativas:** [`docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
-6. **Histórico de workstreams:** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
+6. **Histórico de workstreams:** [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md)
 
 Manual completo: [`docs/gitbook/README.md`](../../../docs/gitbook/README.md)
 
@@ -163,5 +163,5 @@ divulgá-la publicamente. Consulte a seção de relatório de vulnerabilidades n
 
 - **Manual completo**: [`docs/gitbook/README.md`](../../../docs/gitbook/README.md)
 - **Especificação do projeto**: [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
-- **Histórico de workstreams**: [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
+- **Histórico de workstreams**: [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md)
 - **Issues**: [GitHub Issues](https://github.com/hatter6822/seLe4n/issues)

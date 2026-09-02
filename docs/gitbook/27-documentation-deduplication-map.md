@@ -17,7 +17,7 @@ Every topic has exactly one canonical source. GitBook chapters summarize and lin
 | Milestones, scope, acceptance | `docs/spec/SELE4N_SPEC.md` | `05-specification-and-roadmap.md` | Spec is normative; chapter digests and links |
 | seL4 reference | `docs/spec/SEL4_SPEC.md` | `02-microkernel-and-sel4-primer.md` | Reference-only |
 | Active audit findings | `docs/audits/AUDIT_v0.30.11_*` (active baseline); active plans in `docs/planning/SMP_*.md` | `05-*` | Findings canonical in audits/plans |
-| Workstream execution | `docs/WORKSTREAM_HISTORY.md` | `05-*` | Status tables in canonical plan |
+| Workstream execution | `docs/REGISTERED_DEBT.md` | `05-*` | Status tables in canonical plan |
 | Contributor workflow | `docs/DEVELOPMENT.md` | — | Checklists canonical in root |
 | Test/CI contract | `docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md` | `07-testing-and-ci.md` | Root owns gate semantics |
 | Claim/evidence mapping | `docs/CLAIM_EVIDENCE_INDEX.md` | `31-claim-vs-evidence-index.md` | Root owns claim table |

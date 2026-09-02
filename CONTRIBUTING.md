@@ -21,7 +21,7 @@ binary contains zero third-party crates.
 3. **CI policy:** [`docs/CI_POLICY.md`](docs/CI_POLICY.md)
 4. **Project scope + workstreams:** [`docs/spec/SELE4N_SPEC.md`](docs/spec/SELE4N_SPEC.md)
 5. **Latest audit:** [`docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md`](docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md)
-6. **Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md)
+6. **Registered debt:** [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md)
 
 Full handbook: [`docs/gitbook/README.md`](docs/gitbook/README.md)
 
@@ -89,7 +89,7 @@ keep working unchanged after a split.
 
 If your change pushes a file past the ceiling, plan the split as part of the
 same PR — see the WS-AN AN3-C / AN4-F / AN4-G splits in
-[`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) for the
+[`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) for the
 mechanical pattern.
 
 `CHANGELOG.md` and other documentation/historical content are exempt from

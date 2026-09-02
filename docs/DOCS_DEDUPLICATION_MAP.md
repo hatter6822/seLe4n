@@ -14,8 +14,8 @@ This document defines the canonical-vs-mirror split used to reduce drift between
 |---|---|---|---|
 | Active scope, milestones, and acceptance | `docs/spec/SELE4N_SPEC.md` | `05-specification-and-roadmap.md` | Keep normative decisions in spec; chapter is digest + links only. |
 | seL4 microkernel reference | `docs/spec/SEL4_SPEC.md` | `02-microkernel-and-sel4-primer.md` | Reference-only; update when seL4 spec content changes. |
-| Active workstream (WS-SM) | `docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md` + per-phase `docs/planning/SMP_*.md`; active audit baseline in `docs/audits/AUDIT_v0.30.11_*` | `05-specification-and-roadmap.md` | Keep status/closure evidence canonical in the plans and `docs/WORKSTREAM_HISTORY.md`; chapter summarizes and links. |
-| Workstream history | `docs/WORKSTREAM_HISTORY.md` | `05-specification-and-roadmap.md` | Canonical record; chapter provides navigation. |
+| Active workstream (WS-SM) | `docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md` + per-phase `docs/planning/SMP_*.md`; active audit baseline in `docs/audits/AUDIT_v0.30.11_*` | `05-specification-and-roadmap.md` | Keep status/closure evidence canonical in the plans and `docs/REGISTERED_DEBT.md`; chapter summarizes and links. |
+| Registered debt | `docs/REGISTERED_DEBT.md` | `05-specification-and-roadmap.md` | Canonical record; chapter provides navigation. |
 | Contributor workflow expectations | `docs/DEVELOPMENT.md` | — (archived to dev_history) | Canonical workflow in root doc. |
 | Test/CI evidence contract | `docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md` | `07-testing-and-ci.md` | Root docs own gate semantics and policy details; chapter links and summarizes. |
 | Documentation synchronization governance | `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`, `docs/DOCS_DEDUPLICATION_MAP.md` | `25-documentation-sync-and-coverage-matrix.md`, `27-documentation-deduplication-map.md` | Keep canonical matrices in root; GitBook points readers at canonical tables. |

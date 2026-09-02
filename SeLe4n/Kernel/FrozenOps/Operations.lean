@@ -14,7 +14,7 @@ import SeLe4n.Kernel.SchedContext.Budget
 # Q7-C: Per-Subsystem Frozen Operations
 
 **STATUS: Experimental — post-1.0 hardening candidate (AG8-D). Not in
-production chain; registered in `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C.1).**
+production chain; registered in `docs/REGISTERED_DEBT.md` (Registered debt index, C.1).**
 
 AF5-I (AF-43): Implements 24 frozen kernel operations that operate on
 `FrozenSystemState` using O(1) array-indexed lookups. Each mirrors a

@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuite
+import SeLe4n.PackedString
 
 /-!
 # WS-SM SM5.I — Per-core invariant suite theorem inventory
@@ -63,16 +64,37 @@ inductive PerCoreInvariantSuiteCategory where
   | budgetClosure
   deriving Repr, DecidableEq, Inhabited
 
-/-- WS-SM SM5.I: a theorem entry in the suite inventory.  Records a description,
-the fully-qualified name as a `String`, a compile-time elaboration witness, and a
+/-- WS-SM SM5.I: a theorem entry in the suite inventory.  Records a description and
+the fully-qualified name as packed keys (`SeLe4n.PackedString`, read back
+through `description` / `identifier`), a compile-time elaboration witness, and a
 category tag.  The `_elabCheck` field (produced by `pcist!`) forces Lean to
 resolve the referenced declaration at construction time. -/
 structure PerCoreInvariantSuiteTheorem where
-  description : String
-  identifier  : String
+  /-- The description as one packed key (`SeLe4n.PackedString`): one
+      base-2²¹ digit per scalar value behind a leading `1`.  Read it back
+      through `description`. -/
+  descriptionKey : Nat
+  /-- The fully-qualified name, packed the same way.  Read it back through
+      `identifier`. -/
+  identifierKey  : Nat
+  /-- The kernel's own check, per entry, that the key packs exactly the valid
+      scalar values it unpacks to — what lets distinctness of the strings be
+      proven from distinctness of the keys. -/
+  descriptionKey_wf : isWellFormedPacked descriptionKey = true := by decide +kernel
+  identifierKey_wf  : isWellFormedPacked identifierKey = true := by decide +kernel
   _elabCheck  : Unit
   category    : PerCoreInvariantSuiteCategory
-  deriving Repr, Inhabited
+  deriving Repr
+
+/-- The default entry spells the empty string twice: `1` packs no digits. -/
+instance : Inhabited PerCoreInvariantSuiteTheorem :=
+  ⟨{ descriptionKey := 1, identifierKey := 1, _elabCheck := (), category := default }⟩
+
+/-- The entry's description, unpacked from its key. -/
+def PerCoreInvariantSuiteTheorem.description (t : PerCoreInvariantSuiteTheorem) : String := stringOfPacked t.descriptionKey
+
+/-- The entry's fully-qualified name, unpacked from its key. -/
+def PerCoreInvariantSuiteTheorem.identifier (t : PerCoreInvariantSuiteTheorem) : String := stringOfPacked t.identifierKey
 
 /-- WS-SM SM5.I: build a `PerCoreInvariantSuiteTheorem` with a compile-time-validated
 identifier. -/
@@ -80,10 +102,10 @@ syntax (name := perCoreInvariantSuiteTheoremMacro) "pcist!" str ident term : ter
 
 macro_rules
   | `(pcist! $desc:str $ident:ident $cat:term) => do
-      let nameStr : String := ident.getId.toString
-      let nameStxLit := Lean.Syntax.mkStrLit nameStr
-      `(({ description := $desc,
-           identifier := $nameStxLit,
+      let descKey := packedStringLit desc.getString
+      let identKey := packedStringLit ident.getId.toString
+      `(({ descriptionKey := nat_lit $descKey,
+           identifierKey := nat_lit $identKey,
            _elabCheck := (let _ := @$ident; ()),
            category := $cat
          } : PerCoreInvariantSuiteTheorem))
@@ -319,16 +341,22 @@ theorem perCoreInvariantSuiteTheorems_partition_sum :
     (perCoreInvariantSuiteTheorems.filter (fun t => t.category == .budgetClosure)).length =
     perCoreInvariantSuiteTheorems.length := by decide
 
-set_option maxRecDepth 10000 in
-/-- WS-SM SM5.I: every inventory identifier is unique.  Kernel-sound `decide`
-(not `native_decide`): a duplicate identifier — which `native_decide` could mask
-by trusting the compiled evaluation — fails this proof in the kernel. -/
+/-- WS-SM SM5.I: every inventory identifier is unique.  Kernel-checked, never
+`native_decide`: the identifiers are stored as packed keys, each entry's
+`identifierKey_wf` field is the kernel's own check that its key is well
+formed, and `SeLe4n.nodup_map_stringOfPacked` turns distinctness of the keys
+— one `decide +kernel` over `Nat`s — into distinctness of the strings they
+spell.  A duplicate identifier fails this proof in the kernel. -/
 theorem perCoreInvariantSuiteTheorems_identifiers_nodup :
-    (perCoreInvariantSuiteTheorems.map (·.identifier)).Nodup := by decide
+    (perCoreInvariantSuiteTheorems.map (·.identifier)).Nodup :=
+  nodup_map_stringOfPacked PerCoreInvariantSuiteTheorem.identifierKey (fun t _ => t.identifierKey_wf)
+    (by decide +kernel)
 
-set_option maxRecDepth 10000 in
-/-- WS-SM SM5.I: every inventory description is unique (kernel-sound `decide`). -/
+/-- WS-SM SM5.I: every inventory description is unique — the same key-level
+argument as `perCoreInvariantSuiteTheorems_identifiers_nodup`, over `descriptionKey`. -/
 theorem perCoreInvariantSuiteTheorems_descriptions_nodup :
-    (perCoreInvariantSuiteTheorems.map (·.description)).Nodup := by decide
+    (perCoreInvariantSuiteTheorems.map (·.description)).Nodup :=
+  nodup_map_stringOfPacked PerCoreInvariantSuiteTheorem.descriptionKey (fun t _ => t.descriptionKey_wf)
+    (by decide +kernel)
 
 end SeLe4n.Kernel

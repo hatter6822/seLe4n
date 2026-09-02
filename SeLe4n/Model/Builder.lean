@@ -126,7 +126,7 @@ private theorem allTablesInvExtK_scThreadIndex {st : SystemState}
 -- deferred to post-release because: (1) it would require updating 100+ proof
 -- sites that destructure tuples, (2) named structures in Lean 4 have different
 -- `cases`/`rcases` behavior, (3) current approach is functionally correct.
--- Recorded as a post-1.0 hardening candidate; registered in `docs/WORKSTREAM_HISTORY.md`
+-- Recorded as a post-1.0 hardening candidate; registered in `docs/REGISTERED_DEBT.md`
 -- (Registered debt index, C.1); see DEF-F-L9 in
 -- docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md.
 

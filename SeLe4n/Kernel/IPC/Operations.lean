@@ -37,5 +37,5 @@ The transport-dependent donation wrappers
 `endpointReplyRecvWithDonation`) remain in
 `SeLe4n.Kernel.IPC.Operations.Donation` and are importable directly from
 consumers that need them; they are NOT re-exported here by design (per
-WS-AN AN3-A; historical record in docs/WORKSTREAM_HISTORY.md).
+WS-AN AN3-A; historical record in CHANGELOG.md).
 -/

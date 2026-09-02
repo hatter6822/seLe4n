@@ -63,7 +63,7 @@ sequence (ATF → U-Boot → kernel entry) live in the AG6 / WS-RC R2
 + WS-RC R3 portfolio; remaining hardware integration items
 (SMP secondary core bring-up, CCI-400 interconnect coherency,
 out-of-Lean firmware handoff) are tracked in the **Registered debt
-index** of `docs/WORKSTREAM_HISTORY.md`.  That is the project's one
+index** of `docs/REGISTERED_DEBT.md`.  That is the project's one
 register: `docs/audits/AUDIT_v0.30.11_DEFERRED.md`, which this note
 previously named, was never created, so the items it pointed at were
 registered nowhere (WS-RR RR0.9, v0.34.26).

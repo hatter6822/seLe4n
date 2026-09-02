@@ -448,7 +448,7 @@ phase).  So on hardware a `vmFault` or `capFault` handler sees its whole
 message in registers, while an `unknownSyscall` (13 words) or `userException`
 (5 words) handler sees the first four and must not read `seL4_GetMR(4)`
 onward until the buffer write lands.  Tracked debt, not a silent truncation:
-`docs/WORKSTREAM_HISTORY.md` carries the row and its closure target. -/
+`docs/REGISTERED_DEBT.md` carries the row and its closure target. -/
 def encodeFault (f : Fault) (ctx : FaultContext) :
     MessageInfo × Array SeLe4n.RegValue :=
   ({ length := faultMessageLength f, extraCaps := 0, label := faultLabel f },

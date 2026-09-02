@@ -1,1575 +1,728 @@
 # seLe4n Development Guide
 
-## 1) Purpose
+The operating manual for working on seLe4n. Everything here is a rule you will
+be held to by a gate, a command you will actually run, or a fact about the tree
+you need before you write code.
 
-This guide is the day-to-day operating manual for contributors to seLe4n — a
-production-oriented microkernel written in Lean 4 with machine-checked proofs.
-
-It is aligned to the **current project state**:
-
-- **active workstream:** **WS-RR (SMP Release Readiness) IN FLIGHT — the
-  pre-SM10 remediation, 166 sub-tasks across RR0..RR8; **RR0 landed at
-  v0.34.26** (registration and plan correction), **RR1 at v0.34.41** (the first
-  aarch64 compile and the gates that keep it), **RR2 at v0.34.42** (live-path
-  correctness: all three cross-core donation paths migrate the CBS replenish
-  queue, every unchecked transition behind the SMP dispatch arms carries an
-  `ipcInvariantFull` bundle — the flow-checked wrappers and `replyRecvBody`
-  composition are RR3.22's layer, and `notificationSignalBoundOnCore` is
-  SM6.D's registered debt — and the `.tcbSuspend` operation the dispatch
-  actually calls carries an `ipcInvariant` preservation theorem — closing
-  audit blockers 2 and 3), **RR3.1–RR3.26 at v0.34.43** (`ipcInvariantFull`
-  de-threading **and** its dispatch payoff: the RR3.1 gate reports zero
-  conjuncts bound on a post-state across all 146
-  `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
-  statements and prints its end-to-end PASS line; the three payoff theorems —
-  `dispatchCapabilityOnly_preserves_ipcInvariantFull` in production,
-  `dispatchWithCap_preserves_ipcInvariantFull` and
-  `dispatchSyscall_preserves_ipcInvariantFull` staged with the `.call`
-  surface, plus the flow-checked tier's
-  `dispatchWithCapChecked_preserves_ipcInvariantFull` /
-  `dispatchSyscallChecked_preserves_ipcInvariantFull` — carry the bundle
-  across dispatch under pre-state quiescence packs with machine-checked
-  inhabitation witnesses, over the per-arm layer
-  `DispatchArmPreservation.lean`).  SM10 is
-  BLOCKED on it and must not open until RR8 closes**; the pre-SM10 completeness
-  audit found three findings that block starting SM10, a false scope statement in
-  its own plan, and fail-open latents that become reachable when the boot path
-  goes live.  Plan:
-  [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md);
-  register: [`docs/planning/UNFINISHED_SMP_WORK.md`](planning/UNFINISHED_SMP_WORK.md).
-- **parent workstream:** **WS-SM (SMP multi-core completion) IN FLIGHT**
-  (v0.31.2 → v1.0.0; closes with a bootable verified SMP microkernel on
-  Raspberry Pi 5).  **Current cut (v0.34.44): WS-RR RR4 — fault handling,
-  with reply-based restart.**  Before RR4 an EL0 thread that took a data
-  abort was resumed at the faulting instruction with an error frame in its
-  registers, which is a livelock rather than a fault handler; RR4 replaces
-  that with seL4's fault IPC.  The fault is a `Model/Fault.lean` value
-  (`vmFault` / `capFault` / `unknownSyscall` / `userException`) recorded on
-  the TCB as `pendingFault` with a `FaultContext` snapshot; it is encoded in
-  seL4's `seL4_Fault_tag` wire format (`Architecture/Fault.lean`, with
-  `decodeFault_encodeFault` round-tripping) and delivered to the faulting
-  thread's `faultHandler` endpoint through the **live cross-core `.call`
-  chain** (`endpointCallCrossCoreDispatch`), so a *passive* fault handler
-  receives the faulting thread's SchedContext donation and can run.  The
-  handler capability must satisfy seL4's `sendFaultIPC` predicate — send, and
-  grant **or** grant-reply (`faultHandlerCapAuthorized`; the audit round
-  replaced a send-and-grant reading that refused the idiomatic
-  `seL4_CapRights_new(0, 1, 0, 1)` handler capability) — and a thread whose
-  handler cannot be resolved is suspended with its fault recorded, seL4's
-  `handleDoubleFault` outcome.  The live entry **spills the trap frame's
-  fault window** (`x0`-`x7`, `SP_EL0`, `x30`) into the thread's register
-  mirror before it builds the context (`writeFaultRegistersToTcb`,
-  `faultContextOfThread_writeFaultRegistersToTcb`), so the message reports and
-  a resume reinstalls what the thread held at the trap rather than its last
-  syscall's arguments, and derives its cross-core pokes from the state diff
-  (`computeCrossCoreSgis`) as the syscall seam does.  Because a delivered
-  fault message carries a nonzero `seL4_Fault_tag` label, the syscall return
-  ABI moved to **version 3** in the same cut: kernel status rides in the top
-  of the 20-bit label range (`errorLabelBase = 0xFFF00`) and every delivered
-  label stays below it, so a handler's decoder never reads a fault as a kernel
-  error.  The
-  reply is decoded arm-for-arm with seL4's `handleFaultReply`, yielding
-  either a `FaultRestartFrame` staged through the *same*
-  `RegisterFile.stageReturnFrame` WS-RA uses, or `.abandon`; `SPSR_EL1` is
-  carried outbound but never written back, the fail-closed counterpart of
-  seL4's `sanitiseRegister`, so a handler cannot promote its client to EL1.
-  The progress payoff is `faultDeliverOnCore_not_dispatchable`
-  (`IPC/Invariant/FaultProgress.lean`, production): after delivery the
-  faulting thread is on no core's run queue and is no core's current thread,
-  on **both** dispositions — which needed a lemma the tree did not have, that
-  the cross-core priority-inheritance chain walk never adds a run-queue
-  member (fuel induction).  The handler's reply reaches the restart through
-  seL4's `doReplyTransfer` branch (`replyTransferOnCore`, production): a fault
-  handler holds nothing but the reply capability the fault Call gave it, so both
-  live `.reply` dispatch arms test the answered thread's `pendingFault` first —
-  without that branch the reply-based restart would be verified and unreachable.
-  `.replyRecv` does not route through the seam yet — registered debt, closure
-  target RR7; a handler answers with `.reply` and receives separately.
-  The live fault entry calls the **flow-checked** arm
-  `faultDeliverOnCoreChecked` (production, `IPC/CrossCore/Fault.lean` §5),
-  applying the same `endpointFlowGate` the `.call` syscall arm applies — the
-  live SVC seam gates every endpoint operation through `syscallEntryChecked`,
-  so an ungated fault delivery would be the one endpoint flow no deployment
-  policy could refuse; a denied flow takes the same fail-closed suspend, so the
-  gate costs neither the progress theorem nor the IPC bundle.  Hardware seam:
-  `@[export lean_handle_fault]` and
-  `@[export lean_classify_synchronous_exception]` (`Kernel/FaultEntry.lean`,
-  production), the latter making the Lean model the place an `ESR_EL1`
-  becomes an exception class on a ready core — `trap.rs` calls it instead of
-  running its own `esr_ec` match, `build.rs` pins that relation, and the Rust
-  host tests replay all 64 EC values against the Lean table.  A core whose
-  Lean runtime is not yet initialized classifies through the Rust mirror
-  pinned to that table (PR #887 review round 2: the readiness contract is
-  about the symbol, not the function, and `build.rs` now *derives* every Lean
-  upcall from the Lean tree's exports — `scan_lean_upcalls_readiness_gated` —
-  so an ungated upcall fails the build; review round 3 made the scanner ask
-  whether the guard *dominates* the upcall, `readiness_guard_dominates`).
-  Review round 3 also gave `Fault.capFault` its producer — a failed
-  capability lookup at the SVC seam is delivered (`syscallCapFaultOf` /
-  `deliverSyscallCapFault` in `Platform/FFI.lean`, on every syscall the
-  refusal ledger does not record), with `ELR_EL1`, `SPSR_EL1`, `SP_EL0` and
-  `x30` crossing the ABI to build the context — read the SVC number at
-  full width, and made the not-ready abort fallback halt
-  (`halt_abort_before_lean_ready`; the host lane keeps the frame as its
-  observable, `scan_trap_rs_abort_fallback_halts` pins that it is host-only).
-  A fault raised at the SVC seam is outcome tag 2 (`SyscallOutcome.faulted`),
-  on which the SVC arm halts too (`halt_after_delivered_syscall_fault`,
-  review round 5).  Both are
-  dormant behind the per-core `lean_ready` gate until SM10.1; a core that
-  delivers a fault today would halt, because it has descheduled the faulting
-  thread and cannot yet install a successor.  Review rounds 6 and 7 bound
-  the build-time scanners to the statements they stand for: the readiness
-  guard's argument must name the executing PE
-  (`ready_argument_is_executing_core`), an aliased upcall fails the build,
-  exemptions reconcile by occurrence (`reconcile_upcall_exemptions`), the
-  classifier's branches are bound to their values (`classifier_status`),
-  and the tag-2 decode and the `Faulted` arm are located in
-  `dispatch_svc`'s and the handler's own terminal matches
-  (`match_arm_spans`), never at their first textual occurrence.  Tests:
-  `tests/FaultHandlingSuite.lean` (`fault_handling_suite`, Tier 2) plus the
-  4-core golden fixture `tests/fixtures/fault_handling_4core.expected`.
-  **Review round (PR #887)**, five findings fixed in code: `TCB.faultHandler`
-  had no writer outside the test fixtures, so no live fault could reach a
-  handler — `.tcbSetFaultHandler` (id 34, `setThreadFaultHandlerOp`, seL4
-  `TCB_SetSpace`'s `fault_ep`) is the writer, capability-only under the TCB
-  write right and validated through the *target's* CSpace at set time, with
-  the dispatch arm, payoff case, bundle/NI preservation, lock set, tables and
-  Rust mirrors a syscall needs; current-EL aborts (EC `0x25`/`0x21`) and
-  EL1-origin frames were delivered as the current user thread's fault — they
-  classify as `.kernelAbort`, `faultEntryStep` is inert unless
-  `SPSR_EL1.M[3:2] = 0` (`takenFromEl0`), and `trap.rs` halts before
-  classification (`halt_if_kernel_origin`, the `KERNEL_ABORT` arm, order
-  pinned by `build.rs`); a handler already blocked in receive woke without
-  the fault message in its return frame — the delivery stages it
-  (`stageWokenDelivery`); `.tcbResume` left a double-faulted thread's stale
-  fault on the TCB — the arm runs `retirePendingFaultForResume` (seL4's
-  `restart`) first; an unknown syscall number returned an error frame — it is
-  delivered as an `unknownSyscall` fault (`lean_handle_unknown_syscall`,
-  `trap.rs::deliver_unknown_syscall`).
-  Preceding WS-RR cuts: RR0 honesty patches (v0.34.26), RR1 the aarch64 cross
-  gate + TLBI broadcast discipline (v0.34.41), RR2 the cancellation/donation
-  invariant gaps behind the live dispatch arms (v0.34.42), RR3
-  `ipcInvariantFull` de-threading + dispatch payoff (v0.34.43).  Plan:
-  [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
-  **Preceding cut (v0.34.1): the SM5 runtime-seam completion**
-  — the three seams SM5's docstrings promised between the verified per-core
-  scheduler and the hardware IRQ path are closed: `trap.S`'s IRQ vectors
-  branch to `handle_irq_per_core` (the legacy single-core `handle_irq`
-  removed; the timer PPI drives the verified `timerTickOnCore` under the
-  kernel-entry lock), the `.reschedule` SGI receiver is wired end to end
-  (`perCoreRescheduleStep` over the verified `handleRescheduleSgiOnCore`,
-  `@[export lean_per_core_reschedule]`, registered at boot for INTID 0), and
-  the secondary bring-up entry is definitionally the core's first reschedule
-  (`secondaryKernelMain_eq_perCoreRescheduleEntry`), bracketed in
-  `kernel_entry::with_kernel_entry` and ordered before `enable_irq`; the
-  bracketed committing-entry roster is now five, and the primary
-  `lean_kernel_main` install-ordering obligation is registered against
-  SM10.1.  All three seams are **dormant on hardware behind the per-core
-  `lean_ready` gate** (`rust/sele4n-hal/src/lean_ready.rs`: no core is marked
-  ready anywhere in the tree today, so each seam degrades to its Rust-only
-  half) until SM10.1's per-core Lean runtime initialization flips them live.
-  SM10 (release closure → v1.0.0) is the remaining phase.
-  Interleaved: **WS-RA (Syscall Return ABI) core LANDED
-  (v0.33.37)** — the kernel returns the full seL4 ARM64 frame end to end (`x0`
-  = badge/primary result at full 64-bit width; `x1` = `MessageInfo` whose
-  label carries the kernel status in the top of the label range —
-  `errorLabelBase + discriminant`, base `0xFFF00`, so label 0 = success, no
-  error aliases it, and a delivered message's label stays below the base;
-  `x2`–`x5` = message registers), the bit-63
-  `encodeOk`/`encodeError` protocol and the vestigial `syscall_dispatch_inner`
-  export are deleted with Tier-3 negative anchors, `syscallReturnShape` is a
-  **total** function (a new syscall cannot omit its return shape), the five
-  value-returning syscalls stage real frames at their dispatch arms
-  (`.notificationWait` the signalled badge, `.receive`/`.replyRecv` the
-  delivered message, `.serviceQuery` the resolved service id it previously
-  discarded), the frame crosses the FFI as a per-core mailbox + outcome tag
-  with `trap.rs` restoring all six registers, and `SYSCALL_ABI_VERSION = 3` is
-  pinned on all three sides (v2's `d + 1` offset label was retired at v0.34.44,
-  when RR4's fault deliveries made a nonzero delivered label reachable); completed at v0.33.38 with RA.B.5b (the blocked
-  orderings staged end to end by the unblocking arms — eleven staging sites,
-  `blockedReturn_staged_in_waiter_frame`, five two-core suite scenarios) and
-  RA.B.8 (the per-arm shape-coherence family); SM10.1 owes only frame delivery
-  + cancellation error frames — SM9 is unblocked (plan:
-  [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](planning/SYSCALL_RETURN_ABI_PLAN.md)).
-  **WS-SM phase SM9 (declassification completion) CLOSED (v0.33.100)** — five
-  sub-phases: SM9.A the audit trail's clearance-filtered, capability-gated
-  reader and the dominance-gated monitor drain (the 256-entry fail-closed
-  cliff, removed — and a deployment whose monitor does not dominate every
-  recorded source domain cannot drain, so the cliff returns for it: configure
-  `auditMonitorClearance` to dominate every domain the policy lets
-  declassify); SM9.B refusal auditing; SM9.C the data-carrying
-  declassification with declassification-relative non-interference; SM9.D
-  causal provenance; SM9.E tests + closure — the acceptance scenarios run end
-  to end through the live transitions and are pinned byte-for-byte as golden
-  fixtures (`tests/fixtures/declassification_reader.expected`,
-  `tests/fixtures/declassification_taint.expected`), including a denied
-  `.declassifySignal` through `syscallDispatchFromAbi` whose committed refusal
-  record names the resolved receiver, the timestamp epoch exercised against
-  surviving entries, the causal chain's ordinary delivery and its
-  retype-lifecycle case driven through the live checked entry, and every
-  dispatch-level check pinning the refusal class it exercises (plan:
-  [`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md);
-  next: SM10 release closure).  **WS-SM SM9.B refusal auditing LANDED** —
-  SM8.C's trail recorded authorized downgrades and nothing else, so a monitor
-  could not tell "no attempts" from "many attempts, all denied"; the writer is
-  the FFI seam (`Platform.FFI.recordSyscallRefusal`, called from
-  `syscallDispatchFromAbi`'s entry-error arm — the one layer that already
-  commits a post-state for every kernel error), filtered by a **total**
-  `SyscallId → RefusalSeamClass` classification so **WS-SM SM9.D (causal
-  declassification provenance) LANDED**: SM8's laundering detector was
-  *syntactic* — it matched domains and increasing timestamps with no data
-  dependency behind it — so it fired on causally unrelated hops and, scoped to
-  declassification *edges*, missed the real chain, in which an **ordinary**
-  delivery moves the content between two downgrades.  A bounded,
-  upward-saturating `DeclassificationTaint` (`InformationFlow/Taint.lean`;
-  bounded by a **refinement field**, so no 17th `proofLayerInvariantBundle`
-  conjunct and no capacity obligation on any writer) is mounted as an
-  `ObjId`-keyed side table outside `ObservableState` and propagated through
-  ordinary IPC delivery by a **single write at the per-core entry**
-  (`InformationFlow/TaintPropagation.lean`, applied in
-  `API.syscallEntryChecked`), so no IPC transition's ~1900-reference invariant
-  surface is reopened.  Classification completeness is a **Tier-1 call-graph
-  reach gate** (`scripts/check_content_flow_coverage.py`, with `--self-test`)
-  rather than totality over `SyscallId`, which is necessary and not
-  sufficient; a retype **clears** rather than frames;
-  `declassificationChainLinked` becomes the conjunction of the old syntactic
-  check and the new `declassificationChainCausal`, read from recorded
-  snapshots rather than the live table; and a monitor can consume the verdict
-  through one opaque bit per adjacent pair
-  (`AuditReadOp.chainNamesPredecessor`, opcode 27, count 27 → 28; and the
-  non-adjacent form `AuditReadOp.chainNamesEntry`, opcode 28, count 28 → 29,
-  which a monitor needs when an unrelated event is interleaved between two
-  causal hops), and `chainNamesArchived` (opcode 29, count 29 → 30, the
-  monitor-only verdict for a chain that spans an audit drain: `index` is a
-  view index, `chunk` is the archived timestamp, and a timestamp at or past
-  the epoch is refused because a still-present predecessor is opcode 28's
-  question).  The taint write's serialization subject is the **key's own
-  lock**, exactly as `SystemState.objects`' per-key writes are declared —
-  never the coarse `.objStore` singleton, which would serialise every IPC in
-  the system against every other and blow the SM5.J tick budget.  SM9.C's
-  second declassifying syscall cannot bypass it, and the ledger
-  (`InformationFlow/RefusalRecord.lean`,
-  `SystemState.declassificationRefusals`) is bounded by its **type** — a
-  `Vector` ring and two `Fin` counters, so no 17th bundle conjunct and no
-  capacity obligation on any writer (the bundle-carriage layer every mounted
-  field owes is still supplied, and comes out *unconditional*:
-  `proofLayerInvariantBundle_setDeclassificationRefusals`) — evicting and
-  **counting the eviction** at the bound rather than refusing, which is what
-  keeps the ledger's own occupancy off every unprivileged carrier
-  (`refusalLedger_occupancy_is_not_a_covert_channel`: no ninth channel entry
-  is owed).  Refusals cannot consume the trail's fail-closed capacity
-  (`refusalWrite_cannot_exhaust_trail`), the refused caller's outcome is the
-  error frame computed from `ke` alone, and the record **does** carry
-  `.auditLogCapacityExceeded` for the monitor — the occupancy channel is
-  closed by the read gate rather than by discarding the evidence.  Reads are
-  five new `.auditRead` sub-operations (opcode count 12 → 21) behind the same
-  configured monitor gate the drain uses, with **no** filtered view below it
-  (a ring evicts, so a hidden write would remove a lower reader's entry) and
-  their own **version** bracket (the trail's `status` token does not move on a
-  ledger write).  `DeclassificationRuleId.refusalIsUnrecorded` is retired for
-  `.refusalsAreCountedAndAttributed`; `KernelError` moved to the import-free
-  leaf `Model/KernelError.lean` so the record can name it typed.  **WS-SM
-  SM9.A the audit trail reader LANDED** — SM8.C.8 mounted a durable, bounded,
-  fail-closed declassification trail that nothing could read, so a deployment
-  performing 256 authorized downgrades stopped being able to declassify at all
-  until reboot; SM9.A is the read side (production leaf
-  `InformationFlow/AuditRead.lean`, `SyscallId.auditRead` 31 / `.auditDrain`
-  32, count 31 → 33, both `.word`-shaped so WS-RA carries the computed word
-  back rather than the caller's preloaded `x0`).  Authority is the dedicated
-  `CapTarget.auditTrail` rather than the `.read`/`.write` right alone, since
-  `syscallLookupCap` never constrains `cap.target` and a rights-only gate
-  would repeat the v0.32.97 confused-deputy class; drain requires dominance
-  over every recorded source (a prefix drain reveals the *positions* of hidden
-  entries), the gate is configuration-derived rather than computed from
-  surviving rows, and `SystemState.declassificationAuditEpoch` lands first
-  because `timestamp := log.length` reuses a timestamp after any prefix
-  removal.  An unconfigured deployment has no audit reader at all, and the
-  live facility is **monitor-only** since PR #870 round 6 — a monitor's drain
-  moves a partial reader's visible length (one bit per drain, downward), so
-  the receiver is excluded at the live entry, the channel kept exhibited at
-  the model reader, and the word-returning lock footprints carry the caller
-  TCB in write mode for the arms' `writeReturnFrameToTcb` staging.  PR #870
-  round 7 closes the trail's remaining singleton-discipline gaps: the
-  occupancy observable is registered as covert channel CC-8
-  (`acceptedCovertChannel_auditOccupancy` — bounded + fail-closed + drainable
-  makes the fill level irreducible; a monitor's drain flips lower-domain
-  declassification outcomes, `auditDrain_flips_declassify_outcome`), and the
-  three audit-state footprints declare `stateLevelLock` (the `.objStore`
-  state-level singleton — write for the two mutators, read for the reader) so
-  concurrent commits share a serialization subject under SM3.C.9's fine locks;
-  the service-registry trio's identical gap is registered debt (plan:
-  [`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md)
-  §4 SM9.A).  Preceded by **SM8.C per-core declassification audit COMPLETE
-  (landed v0.33.7; completion cut v0.33.8 — SM8.C.8 mounts the audit trail in
-  `SystemState`, bounded at 256 entries and **fail-closed** at the bound, as
-  the 16th `proofLayerInvariantBundle` conjunct; SM8.C.9 makes `.declassify` a
-  live syscall (`SyscallId` 30, count 31) whose only state effect is one
-  attributed audit entry, with the unchecked dispatch failing closed and the
-  declassification policy defaulting to deny-all).  Current sub-phase: **SM8.E
-  tests + closure LANDED (v0.33.23) — WS-SM phase SM8 is CLOSED**: the SM8
-  headline surface anchored in `tests/SmpSurfaceAnchors.lean` across all five
-  sub-phases (SM8.C had none there at all, and two theorems the plan's own
-  "what SM8 proves" list names were unanchored); the phase-level golden trace
-  `tests/fixtures/smp_information_flow.expected`, computed from the live
-  projection, transitions and inventories — *what an observer at `(core,
-  label)` sees*, which the SM8.C and SM8.D fixtures do not cover; and the SM3
-  two-phase-locking bracket `withLockSet` promoted into the canonical
-  `enforcementBoundary` (39 -> 40; 12 policy-gated, 24 capability-only, 4
-  read-only), appended last so the per-core boundary stays the identical 55 it
-  already was, with `enforcementBoundaryPerCore_entry_is_new` retired in
-  favour of the exactly-once count a duplicate would break.  Along the way:
-  `KernelOperation.all` + `mem_all` replace three 35-element literals whose
-  counts could not have noticed a thirty-sixth constructor, and
-  `declassification_refusal_is_unrecorded`'s `rfl` conjunct is replaced by the
-  structural fact behind it — `Kernel`'s error arm carries no post-state, so
-  the registered audit gap cannot be closed by "a producer on the error arms"
-  and is re-scoped to SM9.  Preceded by **SM8.D information flow under fine
-  locks LANDED (v0.33.9, review cuts v0.33.10, v0.33.12–v0.33.22, completion
-  cut v0.33.11 — the observer's view proven to *factor through* lock erasure
-  (`projectKernelObject_setLock`), reader multiplicity and writer exclusion
-  proven unobservable (the latter for the blocked acquirer itself, refuting
-  the plan's D.3 row rather than reinstating the field), the CC-5
-  lock-contention timing channel **bounded** (`lockContention_delay_bounded` →
-  alphabet → trace capacity, in the shape SM8.B.9 gave CC-1), Biba integrity
-  under per-core locks in *both* integrity directions, and the 2PL-bracketed
-  live syscall entry's witness with the fail-closed statement sharpened from
-  state equality to `lockWritesOnly`; the v0.33.10 review cut re-keying the
-  CC-5 observation to the acquisition that made it, supplying the missing
-  pacing factor, making the `FairTrace` premise and the placeholder release
-  budget explicit, consuming the declared-footprint hypothesis, and
-  discharging the success path end to end; the v0.33.11 completion cut
-  generalising the SM2.C liveness chain to an arbitrary access mode —
-  `RwLock.lean` §D-3.10, where the writer proof's mode argument becomes the
-  wait queue's own `Nodup` — so the CC-5 bound covers a blocked **reader** on
-  the same terms and proves it admitted *as a reader*, closing SM8.D's last
-  registered debt; the v0.33.12 review cut binding the declared lock-set
-  footprint to the entry's own register decode, parameterizing the bracket's
-  non-interference by the core it runs on, requiring distinct enqueue steps in
-  a contention run, and making the 2PL acquire phase's grant condition a
-  checked fact in both directions)**.  Preceded by **SM8.A per-core observable
-  state COMPLETE (v0.33.3, review cut v0.33.4; landed v0.33.2) — SM8 opens**:
-  the SMP information-flow *observer* is now the pair `(core, clearance)`, and
-  the state it sees is `ObservableState.onCore` (new staged module
-  `InformationFlow/ObservableStatePerCore.lean`, staged-only 54 → 55; SM8.B's
-  `crossCoreNonInterference` is the first consumer).  At the boot core the
-  per-core view is *definitionally* the live single-core `projectState`, so
-  the existing non-interference surface does not move.  The thirteen
-  `ObservableState` components partition into seven shared and six per-core,
-  and `ObservableState.ext_fragments` makes the partition **total** — a
-  fourteenth field registered in neither fragment is a compile error, so the
-  plan's "per-core projection missing a field" risk is structural rather than
-  procedural.  `onCore_perCore_independence` bounds the read set *without
-  mentioning the boot core* (which the SM4.D congruence cannot do, since its
-  hypothesis is equality of the whole global projection and that reads the
-  boot core's slots); `onCore_label_monotone` proves visibility monotone in
-  clearance; `onCore_decidable` decides a strictly weaker slice, with the
-  strictness proved rather than asserted.  112 runtime assertions across 13
-  groups in `tests/SmpInformationFlowSuite.lean` (fixture carrying a CNode and
-  a configured memory-ownership model so slot redaction and address
-  observability are non-vacuous), anchors verified complete by set difference
-  against the module's 104 declarations, Tier-2 + Tier-3 wired.  **SM8.B
-  per-core NI proofs LANDED (v0.33.5)**: two new staged modules
-  (`InformationFlow/NonInterferencePerCore.lean`,
-  `InformationFlow/CovertChannelPerCore.lean`; staged-only 55 → 57) prove that
-  transitions leave the SM8.A observer alone.  `crossCoreNonInterference`
-  (plan Thm 3.3.1) is proven from *frame* premises —
-  `observableSlotsConfinedToCore` (every per-core slot outside the writing
-  core unchanged, register banks included) plus `sharedViewUnchanged` — rather
-  than from the plan's serializability sketch, which is unavailable while
-  SM3.C.9 defers the fine locks at the `@[export]` bodies;
-  `crossCoreNonInterference_of_disjoint_lockSet` supplies the plan's argument
-  as a bridge for when they land.  `nonInterference_perCore` lifts the
-  release-grade single-core theorem to `lowEquivalent_smp`, and all **35**
-  per-operation variants ship — for **31** of them the confinement premise is
-  *derived* rather than assumed, which discharges the SM4.C/SM4.D `hOtherIdle`
-  obligation for those operations; the 4 catch-all constructors provably
-  cannot derive it (the live cross-core dispatch writes remote cores), so they
-  take it explicitly, with `perCoreConfinementDerived_count` pinning the split
-  and a load-bearing negative in the suite.
-  `withLockSet_preserves_projection` is **unconditional**, which required
-  erasing each object's `lock : RwLockState` from the projection: the field is
-  three lists of `CoreId`s, so it re-opened through another field — and on
-  every object kind — the per-thread *placement* channel SM5.B closed by
-  stripping `TCB.cpuAffinity`.  With the field erased, CC-5 is a hardware
-  timing channel only.  The accepted covert channels are data
-  (`acceptedCovertChannelsPerCore`) with per-channel witness theorems —
-  CC-1…CC-7 at this cut, CC-8 (the audit-trail occupancy) joining at SM9.A PR
-  #870 round 7; `enforcementBoundaryPerCore` stands at 39;
-  `endpointPolicyRestricted_perCore` and the release bridge run both ways;
-  `crossCoreLeakage_bounded` is an `↔`.  167 runtime assertions across 24
-  groups.  **SM8.B follow-up cut LANDED (v0.33.5)**: a self-audit found
-  `crossCoreNonInterference` had no instantiation at a transition that writes
-  a *remote* core — all thirty-five lifts are boot-core-confined — so the new
-  staged module `InformationFlow/NonInterferenceCrossCore.lean` (staged 57 →
-  58) supplies six, over set-of-cores write sets computed from the pre-state
-  (an endpoint call writes the receiver's home core **and** the caller's own)
-  on a reusable home-core frame layer.  Strictly stronger than SM6's per-core
-  NI on the per-core half: those need the woken thread non-observable, these
-  hold for a fully visible one.  Also closed: the
-  `endpointFlowCheck_state_independent` tautology (`X = X` by `rfl`, cited in
-  five prose sites) replaced by the genuinely state-and-core-dependent
-  `endpointFlowCheckAtCore` and three real theorems about it; two
-  over-claiming docstrings; `perCoreConfinementDerived`'s wildcard; both
-  theorem-name tables now compile-time-validated by `niName!`; and the axiom
-  sweep replaced by the map-driven, Tier-3-run
-  `scripts/check_module_axioms.py` (the old regex missed three `@[simp]
-  theorem` declarations).  Suite 186 assertions / 28 groups.  **v0.33.5 audit
-  cut**: the live `.call` arm is `endpointCallCrossCoreDispatch` = transition
-  + donation + PIP chain walk, and the chain walk re-buckets on each boosted
-  server's *home* core — so the transition's write set did not bound the live
-  arm, though a docstring said it did; closed with `pipChainWriteSet` (fuel
-  induction), `applyCallDonation_confinedToCores`, and the union
-  `endpointCallLiveWriteSet`.  Also: both marquee write sets had been tested
-  only in their degenerate branches (no waiter / no receiver), so the flagship
-  two-core case had zero runtime coverage — closed with a real rendezvous
-  fixture.  Suite 193 assertions / 29 groups.  **v0.33.5**: the composed
-  cross-core cancellation closed — its blocker was that only a `scheduler`
-  frame existed for the SM6.E teardown, while per-core confinement reads the
-  register banks too; `cancelIpcBlocking_machine_eq` (with a new leaf layer
-  for `restoreToReady`, the reply-link legs and both queue sweeps) unblocks
-  `cancelIpcBlockingOnCore_confinedToCores` and its NI instantiation, taking
-  coverage to 7 cross-core transitions.  Suite 198 assertions / 30 groups.
-  **SM8.C per-core declassification audit LANDED (v0.33.7)**: one new staged
-  module (`InformationFlow/DeclassificationPerCore.lean`; staged-only 58 →
-  59).  The plan reads as though the audit trail existed and needed a core
-  added; it did not — nothing in the tree constructed a
-  `DeclassificationEvent`, so `declassifyStore` gated and stored while the
-  record's docstring described a writer that was never written.  Per the
-  implement-the-improvement rule the producer was built:
-  `declassifyStoreOnCore` runs the same gate, threads an append-only log and
-  appends exactly one event per authorized downgrade, with the state effect
-  *provably identical* to the unaudited gate (`declassifyStoreOnCore_ok_inv`),
-  so `declassifyStore_NI` and the enforcement soundness theorems carry over
-  untouched.  `originatingCore : CoreId` is **undefaulted** — a default would
-  attribute every event to the boot core while compiling everywhere — and
-  `authorizationBasis` is typed, so the kernel can check its own records while
-  `render` keeps the strings an external consumer reads byte-identical.
-  `declassifyStoreFromCore` *reads* the source domain off the subject the
-  executing core is running and fails closed on an idle core, making
-  `declassifyStoreFromCore_event_attributable` unconditional;
-  `declassifyStoreOnCore_admits_unattributable` is the negative that makes the
-  wrapper load-bearing.  `declassificationAuditLog_partitions_by_core` makes
-  the per-core views an exact partition of one global log, and
-  `crossCoreChain_not_within_one_view` is the theorem that decides that
-  design: a declassification chain crossing cores lives in **no** single
-  core's view, so one log per core — the natural SMP implementation — would
-  lose the composed downgrade.  Eight cross-core rules ship as data with
-  dependently-typed evidence (laundering over a *well-formed* policy plus the
-  decidable `chainLaunders`; the endpoint rule consuming SM8.B's
-  `endpointFlowCheck_restricted_subset_perCore`; `authorizationBasis_perCore`;
-  core-is-audit-not-authority).  The same cut closes SM8.B's registered debt
-  (a): WS-E5/H-04 specified `EndpointFlowPolicy` and nothing carried one, so
-  `LabelingContext.endpointPolicy` is now read by the four endpoint-keyed
-  gates through `endpointFlowGate`, which **conjoins** the global lattice
-  check with the endpoint's override —
-  `endpointFlowGate_implies_securityFlowsTo` takes no hypothesis, so V6-G's
-  `endpointPolicyRestricted` is structural and a misconfigured override cannot
-  widen anything.  Suite 316 → 360 assertions (§6.1–§6.8), every group with a
-  load-bearing negative; trace byte-identical; axiom-clean.  Registered
-  follow-on: refused declassifications are not audited (the V6-H record has no
-  outcome field), which is a monitoring gap rather than an enforcement one.
-  Prior: **SM7 CLOSED at v0.33.0** (SM7.F.5 access-time TLB fill); **SM7.F.3
-  round-generation-tagged descriptors LANDED (v0.32.105) — SM7.F CLOSED**: a
-  shootdown round's deferred catch-up now drains only the rounds its *own*
-  commit opened, so a concurrently-committed round's freshly-posted
-  descriptors survive for its own catch-up instead of being swallowed (the
-  SM7.B v0.32.79 model-fidelity debt).  Descriptors carry `generation : Nat`,
-  `TlbShootdownState` a monotone `roundGeneration`, and the live seam recovers
-  its window from the same `(pre, post)` diff it already uses; every landed
-  SM7.A/B round theorem carries over through the exactness bridges, since
-  under round serialisation the window drain **is** the whole-queue drain.
-  The Rust mirror closed a **High**-severity (once bootable) hazard: with a
-  Boolean acknowledgment vector, a `.tlbShootdownReq` SGI left pending by an
-  earlier round could be delivered inside a later round's `reset → publish`
-  window, retire the *previous* round's operands and satisfy the new round's
-  wait with that target's TLB still stale — an under-invalidation.
-  Acknowledgments now carry the generation they discharged (`acked_gen`,
-  `fetch_max`), the handler latches it before any TLB work, and the reset is
-  gone entirely along with the window it lived in.  **Audit cut (v0.32.110)**:
-  the 12th `proofLayerInvariantBundle` conjunct (`pendingBounded`) is now
-  carried across the live catch-up — SM7.B proved it for the single-view
-  handler, but v0.32.81 swapped the live fold to the per-core handler and
-  v0.32.105 restricted it to the round window, leaving the transition
-  `completeShootdownRounds` runs without a bound proof; the capacity-bound
-  justification ("at most one round's descriptors in flight per target") was
-  false and corrected, since a single multi-ASID retype commit opens several
-  rounds; and `test_rust.sh` now aggregates per-binary results instead of
-  printing the log tail, which surfaced two never-compiled ```ignore doctests
-  and, through them, that all four print macros were `#[macro_export]`ed while
-  expanding to a `pub(crate)` seam.  Prior: **SM7.E tests + fixtures LANDED
-  (v0.32.103)** — the SM7 closure phase: `tests/SmpTlbShootdownSuite.lean`
-  grows to 35 runtime scenario groups (272 assertions) with the four-core
-  concurrent-unmap storm (§6), the cross-cluster mock (§7) and the
-  `[smp-tlb-shootdown]` golden trace fixture (§8);
-  `tests/SmpCacheMaintenanceSuite.lean` §3.15 adds the instruction-cache half
-  of the cross-cluster mock; `scripts/test_qemu_smp_shootdown_stress.sh`
-  reserves the Tier-4 contention slot; and `PerCoreTlbModel.lean` gains the
-  per-core handler commutativity theorem the storm’s order-independence claim
-  rests on (`handleTlbShootdownReqOnCorePerCore_comm` — SM7.B had proven it
-  only for the single-view handler, while the live catch-up fold runs the
-  per-core one).  Prior: **SM7.D cache maintenance broadcast CLOSED — LANDED
-  (v0.32.94), closure cut (v0.32.95), residual closure (v0.32.96), SECURITY
-  fixes (v0.32.97, v0.32.100)** — v0.32.100 makes the re-type clean its
-  scrubbed extent to the Point of Unification before invalidating the
-  instruction caches (the `IC IALLUIS` alone guaranteed the next fetch would
-  re-read the previous owner's code from the stale PoU copy), and v0.32.97
-  binds VSpace syscall capabilities to their operand address space, closing a
-  High-severity confused deputy in which a thread holding a writable
-  capability to any object could act on any address space — the residual
-  closure adds the `.vspaceUnifyInstruction` code-publication syscall
-  (`SyscallId` 29, count 30), a **pure cache** transition that lets a subject
-  which *writes* instructions publish them (the dual of the destroy-side
-  maintenance, and previously unfulfillable by user code), and corrects the
-  v0.32.95 emission ledger from a single-operand join to a coverage preorder
-  over a list (`iallu` is not a lattice top — it issues no `DC CVAU`, so
-  collapsing a `unifyPage` into it would drop a required clean-to-PoU); the
-  closure cut fixes the `IC IVAU` page-vs-line granularity (64 instructions
-  per page operand) and adds the emission ledger
-  `SystemState.pendingIcacheMaintenance` so the runtime emits the model's
-  exact operand (targeted page loop on an executable unmap, **nothing** on a
-  data-page unmap, `IC IALLUIS` on a retype), plus the data-side clean-to-PoU
-  obligation as a checked tripwire — the cache-side companion of SM7.C,
-  closing the *instruction*-cache half of SMP-C4.  New production module
-  `Architecture/PerCoreCacheModel.lean` mounts `SystemState.perCoreICache :
-  Vector ICacheState numCores` with `icFetchOnCore` / `icInvalidateOnCore`
-  (`IC IALLU` — PE-local, and `…_icacheOnCore_ne` states the SMP hazard) /
-  `icInvalidateBroadcast` (`IC IALLUIS` / `IC IVAU`), headlined by
-  `icInvalidateBroadcast_reaches_all_cores`; `icacheCoherent_perCore` (every
-  cached line still has a live *executable* mapping) is the **14th
-  `proofLayerInvariantBundle` conjunct**.  On the data side
-  `dcMaintenanceAllCores` takes **no target set**
-  (`dcMaintenanceByVA_reaches_all_cores` — "at PoC, already system-wide"), and
-  the DMA scope boundary is a machine-checked tripwire
-  (`modeledCoherentAgents_no_dma_master`).  Live behind `.vspaceUnmap`
-  (targeted `IC IVAU`, executable mappings only) and `.lifecycleRetype`
-  (unconditional `IC IALLUIS`); `CacheModel` promoted staged → production
-  (staged 56 → 55); Rust HAL 789 tests; new `smp_cache_maintenance_suite` (56
-  runtime assertions / 9 groups).  Prior sub-phase: **SM7.C per-core TLB model
-  LANDED (v0.32.80); operative cut (v0.32.81)** — the new production module
-  `Architecture/PerCoreTlbModel.lean` mounts `SystemState.perCoreTlb : Vector
-  TlbState numCores` (the SMP generalisation of the scalar boot-core `tlb`,
-  added alongside it) and defines the per-core model over it:
-  `tlbInsertOnCore` (the HW walker, local), `tlbInvalidateOnCore` (local
-  invalidation — leaves other cores stale, the precise SMP hazard), and
-  `tlbInvalidateOnAllCores` (runs the SM7.B `tlbShootdownBroadcast` and
-  evolves every core's view via `shootdownRoundViews`, so `perCoreTlb` is a
-  genuine consumer of the shootdown state machine);
-  `tlbInvalidationConsistent_perCore` (every core's view matches the page
-  tables) is the **13th `proofLayerInvariantBundle` conjunct**,
-  `tlbShootdown_invalidates_perCore` mounts Theorem 3.3.1 on the field (SMP-C4
-  use-after-unmap closure), and `tlbConsistency_cross_subsystem` is the
-  memory-subsystem capstone; carried through freeze / congruence / boot, kept
-  out of the IF projection (a TLB view is a covert timing channel).
-  **v0.32.81 completion cut**: the model is now **operative on the live
-  shootdown path** — the new operational handler
-  `handleTlbShootdownReqOnCorePerCore` drains each target's posted queue onto
-  *its own* view (the real per-descriptor drain), and the live
-  `SyscallDispatchEntry.completeShootdownRounds` catch-up fold is swapped to
-  it, **trace byte-identical** (the per-core handler's `tlb`/`tlbShootdown`
-  effects are definitionally the single-view's —
-  `foldl_handleTlbShootdownReqOnCorePerCore_agrees`); Theorem 3.3.1 is
-  operative via `shootdownRoundPerCore` (`_perCoreTlb` =
-  `shootdownRoundViews`, `_tlb_eq` the every-round two-model bridge,
-  `_invalidates_perCore`); plus insert-side preservation, the overflow-safe
-  coalescing broadcast, computable consistency checkers, a required
-  (no-default) `FrozenSystemState.perCoreTlb`, and the explicit NI witness
-  `perCoreTlb_write_preserves_projection`.  Prior: **SM7.B shootdown protocol
-  LANDED (v0.32.76) + completion cut (v0.32.77) + debt-closure cut (v0.32.78)
-  — the plan-§3.2 protocol complete and LIVE, every landing deferral closed
-  and every tracked-debt item closed or narrowed**: the production
-  `Architecture/TlbShootdownProtocol.lean` / `TlbShootdownWait.lean` /
-  `TlbShootdownLockSet.lean` trio lands all twelve SM7.B sub-tasks —
-  invalidation-effect semantics on FFI encodings, `tlbShootdownLocal` /
-  `tlbShootdownBroadcast` (+ the total coalescing form) / the
-  `.tlbShootdownReq` handler transitions, **Theorem 3.3.1**
-  (`tlbShootdownBroadcast_invalidatesAllCores`, per-core views + the
-  real-pipeline corollaries), the SM2.A-anchored
-  `shootdownAck_release_acquire`, the constructive
-  `shootdown_wait_loop_terminates` + verdict-exact
-  `shootdown_timeout_handling`, and the cross-domain
-  `lockSet_tlbShootdown_correct` (the SM7.A audit's round-serialisation
-  obligation discharged).  Live wiring: the
-  `.vspaceUnmap`/`.vspaceMap`/`.lifecycleRetype` arms route through the
-  shootdown-aware operations (incl. `asidAllocateWithShootdown`, the
-  previously-missing `requiresFlush` consumer, and the retype wrapper closing
-  the no-TLB-maintenance-on-retype gap), and
-  `SyscallDispatchEntry.completeShootdownRounds` runs the diff-recovered
-  hardware round under the cooperatively-acquired global round try-lock
-  (masked reset, online-target SGIs, `tlbiForSharing` broadcast TLBIs, bounded
-  wait with fail-closed timeout panic, handler catch-up commit).
-  `TlbiForSharing` promoted to production (staged 57 → 56); Rust HAL 755 → 769
-  (round try-lock, deadline-exact bounded wait, boot-registered
-  `.tlbShootdownReq` handler, online mask, `dispatch_irq_with_iar` full-IAR
-  SGI dispatch fixing the GICv2 SGI-EOI defect); suite 81 → 150 assertions /
-  20 groups; golden trace byte-identical.  **v0.32.77 completion cut — every
-  landing deferral closed**: `pendingBounded st.tlbShootdown` joins
-  `proofLayerInvariantBundle` as the **12th conjunct** (boot witness + the
-  three adapter preservation proofs + the Boot general bridge via
-  `bootFromPlatform_tlbShootdown_eq`; carriage proven through every live
-  shootdown-aware transition on a new `…_tlbShootdown_eq` frame family);
-  handler commutativity (`handleTlbShootdownReqOnCore_comm` — catch-up order
-  is a convention) + the coalescing-round capstones
-  (`coalescingRound_restores_quiescent`/`_allAcked`) + the positive diff
-  characterization (`shootdownChangedTargets_coalescing_of_quiescent`) +
-  Theorem 3.3.1's total-posting remote case; remap-only map rounds with the
-  ok-implies-fresh model fact
-  (`vspaceMapPageCheckedWithFlushFromState_ok_fresh` — a successful map is
-  always fresh, so the map path never posts today and the round rides the
-  unmap of unmap-then-map); the least-index wait (`waitAllAckedBounded_least`)
-  + the round-lock CAS model + the cross-round publication chain
-  (`shootdownRoundLock_release_acquire`, with the 4-core multi-pair B.4
-  witness); entry hardening (named `shootdownRoundLockAcquireFuel`, one
-  `CORE_READY` snapshot per round, the vmalle1-dominance
-  `collapseShootdownOps`, `shootdownSharingDomain` derived from
-  `PlatformBinding.sharingDomain`, the local self-service
-  `tlbiLocalFullFlush`); the CSpaceAddr retype sibling
-  `lifecycleRetypeWithCleanupShootdown` (the storeObject-sweep closure); Rust
-  `_in` handler/lock forms with genuine false→true ack tests + an 8-thread CAS
-  mutex stress (HAL 769 → 772); suite 22 groups / 160 runtime assertions incl.
-  the live `.vspaceUnmap` `dispatchSyscall` scenario;
-  `scripts/test_qemu_smp_shootdown.sh` seeded (Tier-4-registered; SKIPs until
-  the SM10.1 image).  **v0.32.78 debt-closure cut — every SM7.B tracked-debt
-  item closed or narrowed**: the `.tlbShootdownReq` handler retires the
-  round's EXACT operands per-descriptor (`tlb::tlbi_local`) instead of a
-  blanket `vmalle1`, matching the Lean `handleTlbShootdownReqOnCore` — the
-  initiator publishes the collapsed operands into a seqlock-guarded
-  `ShootdownOpMailbox` under the round lock before the SGIs, and the handler
-  retires a stable snapshot per-descriptor with a fail-safe local `vmalle1`
-  fallback on any torn read / overflow / undecodable operand (HAL 772 → 780,
-  trace byte-identical); the formal refinement narrows to operand-for-operand
-  (residual: the SM10.1 linked-runtime proof); B.10 is a confirmed
-  no-safety-gap completeness deferral (no runtime ASID-reuse path exists) with
-  closure target SM8; step-4d direct-ack is closed by design (the spin wait +
-  masked SVC path make it informationless); the `withLockSet` shootdown slice
-  is closed (`withLockSet_preserves_pendingBounded`); and the host-test
-  starvation flake is closed (host-test yields already present via
-  `cpu::wfe()`; the authoritative `test_rust.sh` builds before testing; the
-  mutex-stress test caps contenders at `available_parallelism()`).  **v0.32.79
-  PR #839 review-P1 cut**: the shootdown target mask now reads the
-  IRQ-serviceable `smp::CORE_IRQ_READY` flag (published by the secondary after
-  `enable_irq`) for both the round reset and the SGI targets, rather than the
-  primary's `CORE_READY` release handshake — so a released-but-not-IRQ-ready
-  or timer-dead secondary can no longer hang a round into the SM7.B.6
-  fail-closed panic (HAL 780 → 782; Lean FFI-backed, docstring-only); the
-  concurrent posting/catch-up round-lock finding is recorded as model-fidelity
-  tracked debt (no hardware hazard — each round's TLB maintenance rides its
-  own `(pre,post)` diff + blocking ack wait), closure target the SM7.C
-  round-generation model change.  Prior: **SM7.A shootdown descriptor + state
-  LANDED (v0.32.72); completion cut (v0.32.73)**: the SM7 state layer (all six
-  sub-tasks of
-  [`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`](planning/SMP_TLB_SHOOTDOWN_PLAN.md)
-  §5).  The v0.32.73 completion cut mounts the state as
-  `SystemState.tlbShootdown` (production; partition 58 → 57; pure
-  `TlbInvalidation` operand module extracted from the staged
-  `TlbiForSharing`), formalises the §4.1 capacity argument
-  (`beginRound_foldlM_enqueueShootdown_isSome` + the round capstone
-  `shootdownRound_restores_quiescent`), adds the total overflow escape hatch
-  `enqueueShootdownOrCoalesce`, the per-core `ShootdownQueueLockId` (SM7.B.7
-  seam), and the live ack-flag FFI seam (`ffi_shootdown_*` + typed wrappers;
-  HAL 743 → 750).  Suite 51 → 73 assertions / 11 groups.  The v0.32.74 audit
-  cut corrects the round-serialisation contract (system-wide round
-  serialisation via the new provably-unique `ShootdownRoundLockId` —
-  registered SM7.B.7 obligation; the VSpaceRoot lock alone is insufficient)
-  and completes the coalescing coverage
-  (`enqueueShootdownOrCoalesce_pending_covered`); suite 73 → 75 assertions.
-  The v0.32.75 review-P1 fix keeps offline cores born-acknowledged across a
-  round (Rust `CORE_READY`-masked reset + Lean `beginShootdownRoundFor` with
-  the hypothesis-free masked capstone); suite 75 → 81 assertions / 12 groups,
-  HAL 755.  `SeLe4n/Kernel/Architecture/TlbShootdown.lean`:
-  `TlbShootdownDescriptor` (typed `TlbInvalidation` operand + initiating
-  `CoreId`), `TlbShootdownState` (per-core `pendingShootdowns` queues +
-  `shootdownAck` flags, SM4.B path-a accessors, quiescent boot state),
-  `enqueueShootdown` (FIFO, fail-closed at `maxPendingPerCore = 16`),
-  `drainShootdowns` (whole-queue FIFO drain, exhaustive, ack-free by design),
-  `acknowledgeShootdown` + `beginShootdownRound` + decidable
-  `allAcked`/`shootdownQuiescent`/`pendingBounded`, preservation theorems
-  across every operation, and the SM7.B.5 termination anchor
-  `allCores_foldl_acknowledgeShootdown_allAcked`.  Rust:
-  `rust/sele4n-hal/src/shootdown.rs` `SHOOTDOWN_ACK` per-core
-  cache-line-aligned `AtomicBool` (Release set / Acquire poll / Relaxed
-  round-reset riding SM1.F.8's dsb-before-SGIR), HAL 724 → 743 tests.  Tests:
-  `tests/SmpTlbShootdownSuite.lean` (`smp_tlb_shootdown_suite`, 51 assertions
-  / 7 groups), Tier-2 + Tier-3 wired.  Prior: **SM6.F tests + fixtures LANDED
-  (v0.32.67); depth cut (v0.32.68) — SM6 (A–F) complete** (depth cut v0.32.68:
-  the aggregates add SchedContext donation round trips, capability transfer,
-  info-flow-checked dispatch, the live `dispatchSyscall` `.call` path,
-  cancellation×IPC composition, scheduler contention, a three-waiter drain,
-  and the review-#3 bound-signal badge-leak gate — IPC suite 80→130
-  assertions/14 groups, notification 58→76/10): the SM6 closure phase (plan
-  §SM6.F, all six sub-tasks), closing the two remaining substantive §8
-  acceptance-gate items on the live operations.  `tests/SmpIpcSuite.lean`
-  (`smp_ipc_suite`, 130 assertions / 14 scenario groups + the golden-trace
-  check): end-to-end pipelines composing the SM6.A/SM6.C transitions with the
-  SM5 per-core scheduler (`handleRescheduleSgiOnCore` dispatch on the SGI's
-  target core) — the **2-thread cross-core call/reply round trip** and the
-  **4-thread SMP rendezvous** (two interleaved client/server pairs across all
-  four cores, cross-pair framing + payload isolation), plus the cross-core
-  send/receive rendezvous, client-first ordering, the server
-  `endpointReplyRecvOnCore` steady-state loop, fail-closed error paths,
-  state-resolved 2PL footprints, and live-dispatch coherence.
-  `tests/SmpNotificationSuite.lean` (`smp_notification_suite`, 76 assertions /
-  10 groups): the wait → cross-core signal → SGI → handler-dispatch round
-  trip, multi-waiter head-first drain (per-waiter home cores + badge
-  isolation), `Badge.bor` accumulation + the non-blocking consume, the remote
-  bound-TCB delivery round trip, the bind/unbind lifecycle, error paths, and
-  independence framing.  `tests/fixtures/smp_ipc_4core.expected` (+
-  `.sha256`): the deterministic 16-line `[smp-ipc-4core]` golden trace,
-  byte-for-byte verified in-suite and auto-gated by the Tier-2 companion walk.
-  `scripts/test_qemu_smp_ipc.sh`: the Tier-4 QEMU `-smp 4` handshake exerciser
-  (SKIPs until the SM10.1 bootable image, the SM5-sibling discipline).
-  Surface anchors: in-suite `#check` blocks + Tier-3 grep anchors.  The plan
-  §8 acceptance gate is fully checked.  Prior: **SM6.E cancellation across
-  cores LANDED (v0.32.60; completed v0.32.61; PR-review cuts v0.32.62–65;
-  audit closure v0.32.66)** — the suspend pipeline's cancellation
-  sub-operations lifted to SMP in the production
-  `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`: `descheduleThread` (the
-  SM5.C `wakeThread` dual — home-core deschedule, `.reschedule` SGI iff the
-  victim was actively current on a remote home core), the cross-core composite
-  `cancelIpcBlockingOnCore` (single-core teardown + home-core deschedule +
-  remote poke), and per-core donation cancellation
-  (`cancelBoundDonationOnCore` purges the SC's replenishments from the
-  victim's home core's queue, fixing the `bootCoreId` hardcode); footprints
-  `lockSet_cancelIpcBlocking` / `lockSet_cancelDonation` state-resolved and
-  member-by-member covered by the reply-extended `lockSet_tcbSuspend`
-  (`permittedKinds .tcbSuspend` += `.reply` — closing the SM6.D reply-fold
-  footprint gap); 2PL atomicity `cancelIpcBlocking_atomic_under_lockSet` /
-  `cancelDonation_atomic_under_lockSet` + OnCore companions; flagship
-  `cancellation_cross_core_correct`; `objects.invExt` preservation across the
-  whole cancellation surface; axiom-clean; `tests/SmpCancellationSuite.lean`
-  (107 assertions, 17 groups).  **Completion cut (v0.32.61)**: live
-  `.tcbSuspend` cross-core dispatch (`suspendThreadOnCore` behind the dispatch
-  arm, the `crossCoreSgiBody_remote_deschedule` diff-seam rule, the
-  `suspend_thread_cross_core` FFI/Rust flip — trace byte-identical); staged
-  `CancellationNI` non-interference module (staged-only 57); `ipcInvariant`
-  preservation across the entire cancellation surface; the closed-form
-  `cancelIpcBlockingOnCore_eq_descheduleThread_closed`; observational
-  atomicity (`cancelIpcBlockingOnCore_observer_atomic`); the donated-arm
-  replenishment migration; and two pre-existing single-core defect fixes
-  (notification sole-waiter invariant break; suspendThread dead G7 guard).
-  **PR-review cut (v0.32.62)**: the suspend PIP-revert ordering fix (a third
-  pre-existing defect — the revert ran before the teardown, so a server
-  retained the suspended victim's donated boost; now `timeoutThread`'s D4-N
-  capture → clear → revert-from-server order), the per-core revert walk
-  (`propagatePipChainCrossCore`, per-home-core bucket migration), diff-fired
-  suspend-entry SGIs (`computeCrossCoreSgis`), and the
-  `pipChainStart_tcbSuspend` chain-walk marker (inventory 99).  **PR-review
-  cut 2 (v0.32.63)**: disinheritance scheduling points — the gated local
-  preemption point on a deboosted executing-core current
-  (`currentEffectivePrio?`/`currentDeboostedFrom`, G7 factored into
-  `suspendRescheduleOnCore`) and the diff seam's deboosted-current rule
-  (`crossCoreSgiBody_remote_deboost_current`) poking a remote core that keeps
-  running a deboosted server.  **PR-review cut 3 (v0.32.64)**: scheduler-lock
-  footprint closure — the executing-core run-queue lock in
-  `suspendThreadOnCoreSchedLockSet`, the chain-walk contract's per-step TCB +
-  home-core run-queue lock pair, and the preemption gate's documented
-  `boundThreadPriorityConsistent` dependency.  **PR-review cut 4 (v0.32.65)**:
-  the running-core suspend (an unbound victim current on a secondary core is
-  descheduled + poked on THAT core; diff rules re-keyed) and write-set-honest
-  sweeps (+ neighbour-TCB footprint members).  **Audit-closure cut
-  (v0.32.66)**: running-core footprint lock, EDF deadline diff rules,
-  `currentThreadUniqueAcrossCores` slice, NI projection-sketch correction,
-  donation observer capstone; no CVE-class findings.  Prior: **SM6.D IPC
-  across-core invariant bundle LANDED (v0.32.58; completed v0.32.59 —
-  unconditional whole-bundle + per-core closures for every cross-core
-  transition and the WithCaps trio via the `LookupCongruence` transfer layer
-  and per-op agreement dichotomies; `endpointReplyRecvOnCore` closed
-  compositionally with seL4-MCS one-object reuse)** — the twenty-conjunct
-  `ipcInvariantFull` restricted to per-core views: `ipcInvariantFull_perCore`
-  (`SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean`, production;
-  thread-subject conjuncts restricted to the threads homed on core `c` via
-  `threadHomeCore`, provably the operational wake target) with the exact
-  decomposition `ipcInvariantFull_smp_iff_full_and_passive_smp`, per-conjunct
-  exactness for the four plan-named conjuncts (SM6.D.3–D.6), and all six IPC
-  operations (+ `endpointReplyRecv` and the cross-core `endpointCallOnCore`
-  flagship) proven to preserve every core's bundle view
-  (`…_preserves_ipcInvariantFull_perCore`, `PerCoreBundlePreservation.lean` —
-  the per-core `passiveServerIdle` slice via the new
-  `passiveServerIdleFrameOnCore` micro-frame family, **no idle-core
-  assumption**); axiom-clean; `tests/SmpCrossCoreCallSuite.lean` §SM6.D.
-  Prior: **SM6.C reply path across cores LANDED (v0.31.77)** — live
-  `.reply`/`.replyRecv` cross-core dispatch (`endpointReplyOnCore` /
-  `endpointReplyRecvOnCore`, wake-the-caller on its home core, replay barrier,
-  donation return + cross-core PIP reversion),
-  `tests/SmpCrossCoreReplySuite.lean`.  Prior: **SM6.B notification across
-  cores LANDED (v0.31.68)** — the cross-core IPC phase (SM6) continues:
-  `notificationSignalOnCore` lifts the notification signal to SMP (head-waiter
-  wake via the SM5.C cross-core `wakeThread` with a `.reschedule` SGI to a
-  remote waiter's home core — `notificationSignalOnCore_remote_wake`; the
-  signaller does **not** block) and `notificationWaitOnCore` blocks the caller
-  on its own core via the per-core `removeRunnableOnCore`, with the
-  multi-waiter-discipline / 2PL-atomicity / per-core-wake-locality /
-  notification-↔-TCB-binding-lock-set / cross-core-non-interference (boot-core
-  + per-core/∀-core `lowEquivalent_smp`) theorems, staged (partition 54 → 56),
-  `tests/SmpCrossCoreNotificationSuite.lean` (24 runtime assertions).  Prior:
-  **SM6.A endpoint call across cores LANDED (v0.31.65)** —
-  `endpointCallOnCore` lifts the endpoint `Call` rendezvous to SMP (receiver
-  wake via the SM5.C cross-core `wakeThread` with a `.reschedule` SGI to a
-  remote receiver's home core, plan Theorem 3.2.1; caller block via the
-  per-core `removeRunnableOnCore`), with the lock-set-correctness /
-  donation-extension / 2PL-atomicity / per-core-blocking /
-  reply-state-allocation / WithCaps / cross-core-non-interference theorems,
-  `tests/SmpCrossCoreCallSuite.lean`.  Prior: **SM5.J WCRT-under-fine-locks +
-  SM5.K acceptance tests COMPLETE (v0.31.63; completion audit-pass v0.31.64 —
-  the genuine per-core eventually-scheduled liveness via the production `(c :
-  CoreId)` R5 trace-model generalisation)**.  Canonical per-phase record:
-  [`docs/WORKSTREAM_HISTORY.md`](WORKSTREAM_HISTORY.md); phase plans under
-  `docs/planning/SMP_*.md`.  Prior portfolio: **WS-AJ COMPLETE**
-  (v0.28.1–v0.29.0): Post-Audit Comprehensive Remediation (v0.28.0 audit) — 6
-  phases (AJ1–AJ6), 30 sub-tasks. Phase AJ6 (v0.29.0): Documentation, Testing
-  & Closure — H-01/H-02/H-03 activation roadmaps in §8.15, by-design finding
-  documentation (10 findings), audit errata (L-01/L-17 false, counts
-  55→52/24M→21M), deferred finding annotations (4 findings), documentation
-  sync, version bump. Phase AJ5 (v0.28.4): Rust HAL Hardening — M-20 MMIO
-  `assert!`, M-21 `UnsafeCell<Uart>`, L-14 `TimerError`, L-15 `pub(crate)`.
-  Phase AJ4 (v0.28.4): Architecture Model Correctness. Phase AJ3 (v0.28.3):
-  Platform & Boot Pipeline. Phase AJ2 (v0.28.2): Security & Information Flow
-  Hardening. Phase AJ1 (v0.28.1): IPC & Lifecycle Correctness. Gate:
-  `test_full.sh` + `cargo test --workspace` + `check_version_sync.sh`. Zero
-  sorry/axiom. **Next: WS-V (AG10: Hardware Integration).** Plan:
-  [`docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md).
-  **WS-AI PORTFOLIO COMPLETE** (v0.28.0): Post-Audit Comprehensive Remediation
-  — 7 phases (AI1–AI7), 37 sub-tasks, v0.27.7–v0.28.0. All 60 findings from
-  the v0.27.6 comprehensive audit addressed (5 HIGH, 27 MEDIUM, 28 LOW). Phase
-  AI7: Testing, Closure & Final Gate — L-17 CBS truncation tolerance, L-26
-  lifecycleRetypeObject visibility, fixture verification, version bump,
-  documentation closure. **WS-AI Phase AI6 COMPLETE** (v0.27.12):
-  Documentation & Proof Gaps. 7 sub-tasks (AI6-A through AI6-G). AI6-A:
-  Scheduler documentation batch (M-02 silent-drop spec cross-reference, M-03
-  RunQueue.size proof-linking deferral, M-23 blocking chain cycle behavior,
-  M-24 eventuallyExits deployment scope, M-25 WCRT externalized hypotheses).
-  AI6-B: Platform & boot documentation batch (M-07 boot invariant bridge
-  scope, M-08 fromDtb stub status, M-10 MMIO read RAM semantics, M-11
-  VSpaceRoot exclusion). AI6-C: Architecture documentation batch (M-13
-  physicalAddressBound proof-layer default, M-16 D-cache→I-cache pipeline
-  ordering, M-17 context switch TLB/ASID gap, M-18 cross-module composition
-  gap). AI6-D: Model & SchedContext documentation batch (M-21 descendantsOf
-  fuel sufficiency TPI-DOC cross-reference, L-02 allTablesInvExtK tuple
-  projection fragility, L-13 schedContextBind thread-state gap design
-  rationale). AI6-E: Stale reference fixes (L-15
-  maxBlockingDepth→objectIndex.length, L-24 RPi5 RuntimeContract H3-prep
-  stub→substantive). AI6-F: SELE4N_SPEC.md sync (4 new sections: §8.10.4
-  silent-drop, §8.14.1 WCRT hypotheses, §8.14.2 boot scope, §8.14.3 MMIO
-  limitations). Gate: `test_full.sh` + doc sync. Zero sorry/axiom. **WS-AI
-  Phase AI5 COMPLETE** (v0.27.11). **WS-AI Phase AI4 COMPLETE** (v0.27.10).
-  **WS-AI Phase AI3 COMPLETE** (v0.27.9). **WS-AI Phase AI2 COMPLETE**
-  (v0.27.8). **WS-AI Phase AI1 COMPLETE** (v0.27.7). Plan:
-  [`docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md).
-  **WS-AH PORTFOLIO COMPLETE** (v0.27.2–v0.27.6): Pre-Release Comprehensive
-  Audit Remediation — 5 phases (AH1–AH5), 27 sub-tasks. Phase AH5 (v0.27.6):
-  Documentation, Testing & Closure. Phase AH4 (v0.27.5): Version Consistency &
-  CI Automation. Phase AH3 (v0.27.4): Capability, Architecture & Decode
-  Hardening. Phase AH2 (v0.27.3): IPC Donation Safety & Boot Pipeline. Phase
-  AH1 (v0.27.2): Critical IPC Dispatch Correctness. Plan:
-  [`docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md).
-  **WS-AG PORTFOLIO COMPLETE** (v0.26.0–v0.27.1): H3 Hardware Binding Audit
-  Remediation — 10 phases (AG1–AG10), 67 sub-tasks. **Phase AG10 COMPLETE**
-  (v0.27.1): Documentation + Closure. **Phase AG9 COMPLETE** (v0.27.0):
-  Testing + Validation. **Phase AG8 COMPLETE** (v0.26.9): Integration + Model
-  Closure. **Phase AG7 COMPLETE** (v0.26.8): FFI Bridge + Proof Hooks. **Phase
-  AG6 COMPLETE** (v0.26.7): Memory Management (ARMv8 Page Tables). **Phase AG5
-  COMPLETE** (v0.26.6): Interrupts + Timer. **Phase AG4 COMPLETE** (v0.26.5):
-  HAL Crate + Boot Foundation. **Phase AG3 COMPLETE** (v0.26.4): Platform
-  Model Completion. **Phase AG2 Audit COMPLETE** (v0.26.2). **Phase AG2
-  COMPLETE** (v0.26.1): Pre-Hardware Rust ABI Fixes. **Phase AG1 COMPLETE**
-  (v0.26.0): Pre-Hardware Lean Code Fixes. Plan:
-  [`docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md).
-  **WS-AF PORTFOLIO COMPLETE** (v0.25.22–v0.25.27). **WS-AE PORTFOLIO
-  COMPLETE** (v0.25.15–v0.25.21). **WS-AD PORTFOLIO COMPLETE**
-  (v0.25.11–v0.25.14). **WS-AC PORTFOLIO COMPLETE** (v0.25.3–v0.25.10).
-  **WS-AB PORTFOLIO COMPLETE** (v0.24.0–v0.25.5). **WS-AA COMPLETE**
-  (v0.23.22–v0.23.23). **WS-Z PORTFOLIO COMPLETE** (v0.23.0–v0.23.21). All
-  prior portfolios complete: WS-Y, WS-X, WS-W, WS-V, WS-U, WS-T, WS-S–WS-B
-  (see `docs/WORKSTREAM_HISTORY.md`),
-- **recently completed:** WS-J1-C audit refinements (v0.15.7 — CSpace/lifecycle/VSpace dispatch returns `illegalState` for MR-dependent ops, `syscallEntry` accepts `regCount` parameter, `syscallEntry_implies_capability_held` strengthened to full capability-resolution chain; zero sorry/axiom), WS-J1-C (v0.15.6, syscall entry point and dispatch — `syscallEntry` top-level entry point, `lookupThreadRegisterContext` TCB register extraction, `dispatchSyscall` routing through `SyscallGate`/`syscallInvoke` to 13 internal kernel operations, `dispatchWithCap` per-syscall routing, `syscallRequiredRight` total right mapping, `MachineConfig.registerCount` promoted to field; 5 soundness theorems; zero sorry/axiom), WS-J1-B (v0.15.5, register decode layer — `SyscallId` inductive with 13 syscalls, `MessageInfo` bit-field structure, `SyscallDecodeResult`, total deterministic decode functions in `RegisterDecode.lean`, round-trip/determinism/error-exclusivity theorems, `SyscallRegisterLayout` with ARM64 default, 3 new `KernelError` variants; zero sorry/axiom), WS-J1-A (v0.15.4, typed register wrappers — replaced `abbrev RegName/RegValue := Nat` with typed wrapper structures, full instance suites, all 10 machine lemmas re-proved, downstream compilation fixed across Architecture/Platform/Testing; zero sorry/axiom), WS-H15 (v0.14.7, platform & API hardening — `InterruptBoundaryContract` decidability, RPi5 contract hardening with substantive predicates, 13 capability-gated syscall wrappers, `AdapterProofHooks` concrete instantiation for Sim/RPi5, MMIO disjointness proof; closes A-33, A-41, A-42, M-13), WS-H14 (v0.14.6, type safety & Prelude foundations — `EquivBEq`/`LawfulBEq` for 14 identifier types, `LawfulMonad` for `KernelM`, `isPowerOfTwo` correctness proof, identifier roundtrip/injectivity theorems, `OfNat` instance removal for type-safety enforcement, sentinel predicate completion), Module restructuring (v0.14.5, decomposed 9 monolithic files into 24 focused submodules via re-export hub pattern; zero code loss, 50 new helper theorems extracted, 209 Tier 3 anchor checks updated), WS-H13 (v0.14.4, CSpace/service model enrichment — `cspaceDepthConsistent` invariant, `resolveCapAddress` theorems, `serviceGraphInvariant` preservation, `cspaceMove` atomicity; addresses H-01, A-21, A-29, A-30, M-17/A-31; WS-Q1: `serviceStop` backing-object verification removed), WS-H12f (v0.14.3, test harness update & documentation sync — dequeue-on-dispatch, context switch, and bounded message trace scenarios; legacy `endpointInvariant` comment cleanup; expected fixture updated; Tier 3 anchors added; documentation synchronized), WS-H12e (v0.14.2, cross-subsystem invariant reconciliation), WS-H12d (v0.14.1, IPC message payload bounds — A-09 closed), WS-H12c (v0.14.0, per-TCB register context with inline context switch — H-03 closed), WS-H12b (v0.13.9, dequeue-on-dispatch scheduler semantics — H-04 closed), WS-H12a (v0.13.8, legacy endpoint removal), WS-H11 (v0.13.7, VSpace & architecture enrichment), End-to-end audit (v0.13.6), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4, NI coverage >80%), WS-H8 (v0.13.2, enforcement-NI bridge), WS-H6 (v0.13.1, scheduler proof completion), WS-H5 (v0.12.19, IPC dual-queue invariant), WS-H4 (v0.12.18, capability invariant redesign), WS-H3 (v0.12.17, build/CI), WS-H2 (v0.12.16, lifecycle safety), WS-H1 (v0.12.16, IPC call-path fix), WS-G (v0.12.15, kernel performance), WS-F1..F4 (critical audit remediation),
-- **findings baseline:** [`AUDIT_CODEBASE_v0.12.2_v1.md`](dev_history/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](dev_history/audits/AUDIT_CODEBASE_v0.12.2_v2.md),
-- **latest audit:** [`AUDIT_v0.25.3_COMPREHENSIVE`](dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW); remediation plan in [`AUDIT_v0.25.3_WORKSTREAM_PLAN`](dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md),
-- **hardware target:** Raspberry Pi 5 (ARM64).
-
-Canonical planning sources:
-[`docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) for WS-X (all 5 phases complete),
-[`docs/dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) for WS-U (Phase U8 complete — all 8 phases delivered),
-[`docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md) for WS-T (complete),
-[`docs/dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md) for WS-S (completed),
-[`docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md) for WS-R (completed),
-[`docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) for WS-Q (completed), and
-[`docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md) for completed WS-H remediation lineage.
+**What this file is not.** It is not a status report. What is in flight is in
+[`REGISTERED_DEBT.md`](REGISTERED_DEBT.md); what changed in a given
+version is in [`CHANGELOG.md`](../CHANGELOG.md); what new code must assume
+about the kernel today is in `CLAUDE.md`'s *Standing constraints and registered
+debt*.
 
 ---
 
-## 2) Non-negotiable baseline contracts
+## 1. The project in one page
 
-Unless a PR explicitly proposes spec-level change control, preserve:
+seLe4n is a microkernel written in **Lean 4**, improving on the seL4
+architecture, with machine-checked proofs and **zero `sorry` and zero `axiom`**
+in the production proof surface. Every kernel transition is an executable pure
+function. The first hardware target is the **Raspberry Pi 5** (BCM2712,
+Cortex-A76, ARMv8.2-A, 4 cores).
 
-1. deterministic transition semantics (explicit success/failure branches),
-2. M3.5 IPC-scheduler handshake coherence semantics and trace anchors,
-3. local + composed invariant layering (including `currentThreadInActiveDomain` in the canonical scheduler bundle),
-4. domain-aware scheduling semantics (`schedule` only chooses from `activeDomain`; `scheduleDomain` switch/tick behavior is regression-tested),
-5. theorem discoverability through stable naming,
-6. fixture-backed executable evidence (`Main.lean` + trace fixture),
-7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),
-8. top-level import hygiene: keep `SeLe4n.lean` free of duplicate/redundant subsystem imports by relying on `SeLe4n/Kernel/API.lean` as the canonical aggregate surface,
-9. **one debt register**: every deferred item goes to the *Registered debt index*
-   in [`WORKSTREAM_HISTORY.md`](WORKSTREAM_HISTORY.md) with an owner and a
-   closure target.  Not a source comment saying it is untracked, and not a new
-   per-workstream `AUDIT_v<X>_DEFERRED.md` — the one that convention produced
-   was cited by production Lean source and two authorities and never existed
-   (WS-RR RR0.9, v0.34.26).  A closure target inside a plan marked LANDED or a
-   phase already CLOSED is not a closure target,
-10. **counts that span artefacts are derived, never restated**: a number written
-   in two places is a number that can disagree with itself.  The WS-SM theorem
-   total is a `List.sum` over
-   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean`'s per-phase entries,
-   cross-checked against the tree by a Tier-0 gate — see the regeneration
-   process below.
-11. **a count of theorems counts propositions**: `List.length` over an
-   inventory counts *registrations*, and the inventories register a phase's
-   whole surface — 210 of their 1113 entries are `def`s.  Quote
-   `smpInventoriedTheoremCount` (903), not `smpInventoriedEntryCount` (1113),
-   and never infer one from the other.
+The tree has two halves that must both build:
+
+| Half | Language | Where | Builds with |
+|------|----------|-------|-------------|
+| The kernel model, its transitions and all proofs | Lean 4.28.0 | `SeLe4n/`, `Main.lean`, `tests/` | Lake |
+| The hardware abstraction layer, boot assembly, trap seam | Rust + aarch64 asm | `rust/` | Cargo |
+
+They meet at `SeLe4n/Platform/FFI.lean` (`@[extern]` / `@[export]`) and at
+`rust/sele4n-hal/src/`. A change on one side of that seam almost always needs a
+change on the other.
+
+**The kernel does not boot yet.** SM10.1 owns the bootable image; until it
+lands, every runtime seam behind the per-core readiness gate
+(`rust/sele4n-hal/src/lean_ready.rs`) is wired and dormant. Do not assume a
+Lean seam executes on hardware merely because it is wired.
 
 ---
 
-## 3) Next workstreams
-
-### 3.0 WS-Z closeout (historical)
-
-The live current status is the active-workstream summary near the top of
-this file (WS-SM in flight, SM10 pending). The section below records the
-WS-Z closeout as written.
-
-**WS-Z** (Composable Performance Objects) is **COMPLETE** (v0.23.0–v0.23.21) —
-10 phases (Z1–Z10, 213 sub-tasks) delivering the full SchedContext subsystem:
-
-- **Z1** (v0.23.0): SchedContext type foundation — 18 sub-tasks. SchedContextId typed wrapper, Budget/Period/Bandwidth types, SchedContext structure, SchedContextBinding enum, TCB schedContextBinding field, 7th KernelObject variant, full codebase ripple fix (24 files).
-- **Z2** (v0.23.1–v0.23.4): CBS budget engine — 24 sub-tasks. consumeBudget, replenish, admission control. 4-conjunct `schedContextWellFormed` bundle, 16 per-operation preservation theorems, `cbs_bandwidth_bounded` theorem.
-- **Z3** (v0.23.5–v0.23.6): Replenishment queue — 12 sub-tasks. Sorted insert, popDue, remove, peek/hasDue. `pairwiseSortedBy` predicate, 13 preservation/membership theorems.
-- **Z4** (v0.23.7–v0.23.8): Scheduler integration — 33 sub-tasks. `effectivePriority`, `hasSufficientBudget`, `timerTickBudget`, `scheduleEffective`. 6 new invariants, `schedulerInvariantBundleExtended` (15-tuple).
-- **Z5** (v0.23.9–v0.23.11): Capability-controlled thread binding — 25 sub-tasks. 3 new SyscallId variants, schedContextConfigure/Bind/Unbind/YieldTo operations, 7 preservation theorems, API dispatch wiring.
-- **Z6** (v0.23.12–v0.23.14): Timeout endpoints — 26 sub-tasks. Budget-driven IPC timeout, `endpointQueueRemove`, `timeoutThread`, `blockedThreadTimeoutConsistent` invariant (10th conjunct of `ipcInvariantFull`).
-- **Z7** (v0.23.15–v0.23.16): SchedContext donation / passive servers — 26 sub-tasks. `donateSchedContext`, `returnDonatedSchedContext`, donation-aware IPC wrappers, 4 new invariants (`donationChainAcyclic`, `donationOwnerValid`, `passiveServerIdle`, `donationBudgetTransfer`). `ipcInvariantFull` extended to 14 conjuncts.
-- **Z8** (v0.23.17–v0.23.18): API surface & syscall wiring — 17 sub-tasks. 3 error-exclusivity theorems, 4 frozen SchedContext operations, enforcement boundary 22→25, `frozenOpCoverage_count` 12→15, 6 budget lifecycle trace scenarios, 8 negative tests.
-- **Z9** (v0.23.19–v0.23.20): Invariant Composition & Cross-Subsystem — 20 sub-tasks. 3 new cross-subsystem predicates (`schedContextStoreConsistent`, `schedContextNotDualBound`, `schedContextRunQueueConsistent`). `crossSubsystemInvariant` 5→8 predicates. `proofLayerInvariantBundle` 9→10 conjuncts. 16 pairwise disjointness witnesses, 3 frame lemmas, boot/freeze/operation preservation.
-- **Z10** (v0.23.21): Documentation & Closure — 12 sub-tasks. Spec, development docs, workstream history, claims, codebase map, GitBook, README, CLAUDE.md, website manifest synchronized. WS-Z PORTFOLIO COMPLETE.
-
-**WS-AB** (Deferred Operations) Phases D1–D5 are **COMPLETE** (v0.24.0–v0.25.0):
-
-- **D1** (v0.24.0–v0.24.1): Thread Suspension & Resumption — `suspendThread` 7-step pipeline, `resumeThread` 5-step sequence, 2 new `SyscallId` variants, 12 transport lemmas, 21 test cases. Zero sorry/axiom.
-- **D2** (v0.24.1): Priority Management — `setPriorityOp`/`setMCPriorityOp`, MCP authority non-escalation, run queue bucket migration, 15 tests. Zero sorry/axiom.
-- **D3** (v0.24.2–v0.24.3): IPC Buffer Configuration — `setIPCBufferOp` with 5-step validation, 7 transport lemmas, 17 tests. Zero sorry/axiom.
-- **D4** (v0.25.0): Priority Inheritance Protocol — `pipBoost` TCB field, blocking graph with acyclicity/depth bound, `propagatePriorityInheritance`/`revertPriorityInheritance` chain walk, 16 frame preservation theorems, parametric bounded inversion, 22 tests. Zero sorry/axiom.
-- **D5** (v0.25.0): Bounded Latency Theorem — proof-only phase, zero kernel code changes. Trace model (`SchedulerStep`, `SchedulerTrace`, `validTrace`), per-mechanism bounds (timer-tick budget, CBS replenishment, FIFO progress, domain rotation), main theorem `wcrtBound_unfold` / `bounded_scheduling_latency_exists`: WCRT = D*L_max + N*(B+P). PIP enhancement: `pip_enhanced_wcrt_le_base`. 58 surface anchor tests. New `Scheduler/Liveness/` directory. Zero sorry/axiom.
-
-**Next major milestone**: WS-SM — multi-core SMP completion (foundations
-landed at v0.31.3 in Phase SM0; per-core scheduler / verified locks /
-TLB shootdown / cross-core IPC follow in SM1..SM10 through v1.0.0).
-Tracked in
-[`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](planning/SMP_MULTICORE_COMPLETION_PLAN.md).
-Companion post-1.0 deferrals: FrozenOps production promotion, CDT fuel
-sufficiency proofs, donation chain formal bridge.
-
-### 3.0a Prior completed portfolios (summary)
-
-All portfolios from WS-B through WS-Y are complete. Key milestones:
-
-- **WS-Y** (v0.22.23–v0.22.26): Documentation & cross-subsystem hardening. **PORTFOLIO COMPLETE.**
-- **WS-X** (v0.22.18–v0.22.22): Documentation, hardening & low-severity. **PORTFOLIO COMPLETE.**
-- **WS-W** (v0.22.11–v0.22.17): Pre-release audit remediation — 6 phases, 52 sub-tasks. **PORTFOLIO COMPLETE.**
-- **WS-V** (v0.22.0–v0.22.10): Deep audit remediation — 8 phases. **PORTFOLIO COMPLETE.**
-- **WS-U** (v0.21.0–v0.21.7): Comprehensive audit remediation — 8 phases, 97 sub-tasks. **PORTFOLIO COMPLETE.**
-- **WS-T** (v0.20.0–v0.20.7): Deep-dive audit remediation — 8 phases, 94 sub-tasks. **PORTFOLIO COMPLETE.**
-- **WS-S** (v0.19.0–v0.19.6): Pre-benchmark strengthening — 7 phases, 83 sub-tasks. **PORTFOLIO COMPLETE.**
-- **WS-R** (v0.18.0–v0.18.7): Comprehensive audit remediation — 8 phases, 111 sub-tasks. **PORTFOLIO COMPLETE.**
-- **WS-Q** (v0.17.7–v0.17.14): Kernel state architecture — 9 phases, 45 atomic units. **PORTFOLIO COMPLETE.**
-- **WS-N** (v0.17.0–v0.17.5): Robin Hood hashing — 5 phases, 122 subtasks. **PORTFOLIO COMPLETE.**
-- **WS-M** (v0.16.14–v0.17.0): Capability subsystem — 5 phases. **PORTFOLIO COMPLETE.**
-- **WS-L** (v0.16.9–v0.16.13): IPC subsystem — 5 phases. **PORTFOLIO COMPLETE.**
-- **WS-K** (v0.16.0–v0.16.8): Full syscall dispatch — 8 phases. **PORTFOLIO COMPLETE.**
-- **WS-J1** (v0.15.4–v0.15.10): Register-indexed namespaces — 6 phases. **PORTFOLIO COMPLETE.**
-- **WS-F–WS-I** (v0.12.2–v0.15.3): Audit remediation, testing, infrastructure. **ALL COMPLETE.**
-- **WS-B–WS-E** (historical): Foundation workstreams. **ALL COMPLETE.**
-
-For detailed per-phase descriptions of completed workstreams, see
-[`docs/WORKSTREAM_HISTORY.md`](WORKSTREAM_HISTORY.md).
-
-The **WS-Q** portfolio (Kernel State Architecture) is **fully complete**
-(v0.17.7–v0.17.14) — a multi-phase plan unifying two-phase state architecture,
-service interface simplification, and Rust syscall wrappers into a single execution path.
-**WS-Q1** (v0.17.7) — service interface simplification — **COMPLETED**:
-stateless registry model replacing lifecycle-based `ServiceStatus`/`ServiceConfig`.
-**WS-Q2** (v0.17.8) — universal RHTable migration — **COMPLETED**: replaced
-every `Std.HashMap` and `Std.HashSet` in kernel state (16 map fields + 2 set
-fields across 6 structures, 30+ files) with formally verified `RHTable`/`RHSet`.
-10 atomic subphases (Q2-A through Q2-J) including `RHSet` type definition,
-`allTablesInvExt` global invariant predicate, and `invExt` proof threading
-across all subsystem invariant files.
-**WS-Q3** (v0.17.9) — IntermediateState formalization — **COMPLETED**:
-`IntermediateState` type wrapping `SystemState` with four machine-checked
-invariant witnesses (`allTablesInvExt`, `perObjectSlotsInvariant`,
-`perObjectMappingsInvariant`, `lifecycleMetadataConsistent`). 7 builder
-operations (`registerIrq`, `registerService`, `addServiceGraph`,
-`createObject`, `deleteObject`, `insertCap`, `mapPage`). Boot sequence
-(`bootFromPlatform`) with master validity theorem. Zero sorry/axiom, 1,479
-proved declarations, all tests pass.
-**WS-Q4** (v0.17.10) — CNode radix tree (verified) — **COMPLETED**:
-`CNodeRadix` flat radix array for CNode capability slots with O(1) zero-hash
-lookup via `extractBits` + direct array indexing. 24 correctness proofs
-(lookup roundtrip, WF preservation, parameter invariance, size bounds,
-toList completeness/noDup, fold coverage). `buildCNodeRadix` equivalence
-bridge (RHTable → CNodeRadix), `freezeCNodeSlots` Q5 integration, 12-scenario
-test suite (43 checks). Zero admitted proofs, 1,527 proved declarations,
-all tests pass.
-**WS-Q5** (v0.17.11) — FrozenSystemState + freeze — **COMPLETED**:
-`FrozenMap`/`FrozenSet` types, per-object frozen representations (`FrozenCNode`
-with `CNodeRadix`, `FrozenVSpaceRoot` with `FrozenMap`), `freeze` function
-(IntermediateState → FrozenSystemState), capacity planning. 20+ theorems,
-15-scenario test suite (49 checks). Zero sorry/axiom, 1,558 proved declarations.
-**WS-Q6** (v0.17.12) — Freeze correctness proofs — **COMPLETED**:
-machine-checked proofs that `freeze` preserves lookup semantics and kernel
-invariants. Core `freezeMap_get?_eq` theorem + 13 per-field lookup equivalence
-theorems (Q6-A). CNode radix lookup equivalence via generic fold helpers (Q6-B).
-5 structural property theorems (Q6-C). Invariant transfer with keystone
-`freeze_preserves_invariants` theorem (Q6-D). 31 theorems in
-`SeLe4n/Model/FreezeProofs.lean`, 22-scenario test suite (60 checks). Zero
-sorry/axiom.
-**WS-Q7** (v0.17.13) — Frozen kernel operations — **COMPLETED**:
-`FrozenKernel` monad with 24 per-subsystem frozen operations across 7 subsystems
-(Scheduler, IPC, Capability, VSpace, Service, SchedContext, Lifecycle/Architecture).
-FrozenMap set/get? commutativity
-proofs, 18 frozenStoreObject preservation theorems. 15-scenario test suite
-covering TPH-005 through TPH-014. Zero sorry/axiom.
-**WS-Q8** (v0.17.13) — Rust syscall wrappers — **COMPLETED**:
-`libsele4n` — 3 `no_std` Rust crates (`sele4n-types`, `sele4n-abi`, `sele4n-sys`)
-encoding the finalized ABI surface (20 syscalls, V2-A/D + Z5). 14 newtype identifiers,
-43-variant `KernelError`, `MessageInfo` bitfield, ARM64 `svc #0` trap (single
-`unsafe` block), safe high-level wrappers for all syscalls, phantom-typed
-`Cap<Obj, Rts>` handles with sealed traits. 64 unit tests + 25 conformance tests.
-Lean trace harness cross-validation (XVAL-001..004). Zero Lean regression.
-**WS-Q9** (v0.17.14) — Integration testing + documentation — **COMPLETED**:
-`TwoPhaseArchSuite.lean` with 14 integration tests (41 checks) covering the full
-builder→freeze→execution pipeline (TPH-001 through TPH-014). Commutativity
-property verified. Rust conformance XVAL-001..019 verified. SRG-001..010
-verified. Full documentation sync across 15+ files. Scenario registry updated.
-**WS-Q portfolio is now COMPLETE** (all 9 phases, 45 atomic units of work).
-See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
-
-The **WS-N** portfolio (Robin Hood hashing verified implementation) is **fully
-complete** (v0.17.0–v0.17.5) — 5 phases (N1–N5, 122 subtasks): core types +
-operations (N1, v0.17.1), invariant proofs (N2, v0.17.2), kernel API bridge
-(N3, v0.17.3), CNode.slots integration (N4, v0.17.4), test coverage +
-documentation (N5, v0.17.5). ~4,655 LoC, zero sorry/axiom.
-See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
-
-The **WS-S** portfolio (Pre-Benchmark Strengthening) is **fully complete**
-(v0.19.0–v0.19.6) — 7 phases (S1–S7), 83 sub-tasks addressing all findings from
-dual comprehensive v0.18.7 audits (115+ findings, 0 Critical). All 5 High, 29
-Medium, and 19 Low findings resolved. Closure report:
-[`WS_S_CLOSURE_REPORT.md`](dev_history/audits/WS_S_CLOSURE_REPORT.md).
-
-**WS-S testing practices introduced (S2):**
-- **Structural assertions**: test determinism checks use `BEq Except` structural
-  equality instead of `toString`-based string comparison. All 101 `reprStr`
-  occurrences replaced with `toString`.
-- **Builder-based test states**: `buildChecked` enforces 8 runtime invariant
-  checks during test state construction; primary test states (`baseState`,
-  `f2UntypedState`, `f2DeviceState`) use `buildChecked`.
-- **Error-path coverage**: 11 error-path tests covering capability failures
-  (rights attenuation, full CNode, deep CDT revoke) and lifecycle failures
-  (region exhaustion, child ID collision, device untyped rejection).
-- **Golden-output fixture management**: `test_tier2_trace.sh` provides enhanced
-  diff reporting when `tests/fixtures/main_trace_smoke.expected` drifts.
-- **Shared test helpers**: `Testing/Helpers.lean` module with `expectCond`,
-  `expectError`, `expectOk` shared across test suites.
-- **SimRestrictive platform variant** (S5-D): substantive contracts with timer
-  monotonicity, 256 MiB RAM bound, and register write denial for testing.
-
-The **WS-R** portfolio (Comprehensive Audit Remediation) is **fully complete**
-(v0.18.0–v0.18.7) — 8 phases (R1–R8), 111 sub-tasks addressing all 82 findings from
-[`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md).
-
-The Raspberry Pi 5 hardware binding that this section once named as the
-next major milestone has since **landed** (WS-AG H3, v0.26.0–v0.27.1):
-RPi5 platform contracts, ARMv8 multi-level page table walk, GIC-400
-interrupt routing, ARM Generic Timer binding, and verified boot sequence
-construction all shipped. The current milestone is WS-SM's SM10 release
-closure (→ v1.0.0) — see the active-workstream summary above.
-
-**S5-F: Pre-hardware-binding gate — BCM2712 address validation.** Before H3
-begins, every address constant in `SeLe4n/Platform/RPi5/Board.lean` must be
-cross-referenced against the BCM2712 ARM Peripherals datasheet. A validation
-checklist is maintained in `Board.lean` (see the "BCM2712 Address Validation
-Checklist" section). The gate requires all 14 constants to be marked "Validated"
-with exact datasheet references (document title, revision, page number).
-
-**WS-J1 (completed):** register-indexed authoritative
-namespace migration with typed register wrappers, syscall argument decode layer,
-and `CdtNodeId` cleanup (6 phases: J1-A through J1-F). **WS-J1-A completed (v0.15.4):**
-replaced `RegName`/`RegValue` `abbrev Nat` definitions with typed wrapper structures,
-added full instance suites, re-proved all machine lemmas, fixed downstream compilation.
-**WS-J1-B completed (v0.15.5):** added `SyscallId`, `MessageInfo`, `SyscallDecodeResult`
-types, total decode functions in `RegisterDecode.lean`, round-trip and determinism proofs,
-`SyscallRegisterLayout` with ARM64 default, `MachineConfig.registerCount`, 3 new `KernelError`
-variants.
-**WS-J1-C completed (v0.15.6):** added `syscallEntry` top-level user-space entry point,
-`lookupThreadRegisterContext` for TCB register context extraction, `dispatchSyscall` routing
-through `SyscallGate`/`syscallInvoke`, `dispatchWithCap` per-syscall routing for all 13
-syscalls, `syscallRequiredRight` total right mapping, `MachineConfig.registerCount` promoted
-to configurable field; 5 soundness theorems proved.
-**WS-J1-C audit refinements (v0.15.7):** CSpace/lifecycle/VSpace dispatch returns `illegalState`
-for MR-dependent ops (full MR extraction deferred to WS-J1-E), `syscallEntry` accepts
-`regCount` parameter for architectural bounds, `syscallEntry_implies_capability_held`
-strengthened to full capability-resolution chain.
-**WS-J1-D completed (v0.15.8):** invariant and information-flow integration for
-decode path; `decodeSyscallArgs_preserves_lowEquivalent` NI theorem; capability
-invariant preservation through `syscallEntry`; scheduler invariant preservation
-through register decode; bridge theorems in Enforcement/Soundness and
-InformationFlow/Invariant/Composition.
-**WS-J1-E completed (v0.15.9):** testing and trace evidence — 18 negative
-decode tests in `NegativeStateSuite.lean`; 5 register-decode trace scenarios
-(RDT-002 through RDT-010) in `MainTraceHarness.lean`; 2 operation-chain tests
-(`chain10RegisterDecodeMultiSyscall`, `chain11RegisterDecodeIpcTransfer`) in
-`OperationChainSuite.lean`; fixture updates; 13 Tier 3 invariant surface
-anchors for RegisterDecode definitions and theorems.
-**WS-J1-F completed (v0.15.10):** CdtNodeId cleanup and documentation sync —
-replaced `abbrev CdtNodeId := Nat` with `structure CdtNodeId where val : Nat`,
-added full instance suite (`DecidableEq`, `Hashable`, `LawfulHashable`, `EquivBEq`,
-`LawfulBEq`, `Repr`, `ToString`, `Inhabited`, `ofNat`/`toNat`), fixed downstream
-compilation in `SystemState` defaults and test literals, documentation synchronized.
-**WS-J1 portfolio fully completed.** All 16 kernel identifiers are now typed wrappers.
-WS-I1..WS-I4 are completed; WS-I5 Part A (R-12) is superseded by WS-J1.
-
-### 3.1 WS-H11..H16 — v0.12.15 audit remediation status (completed)
-
-See [`docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md)
-for the full execution plan.
-
-| ID | Focus | Priority | Status |
-|----|-------|----------|--------|
-| **WS-H11** | VSpace & architecture enrichment (PagePermissions, W^X, TLB model) | Medium | **Completed** |
-| **WS-H12a** | Legacy endpoint field & operation removal | Medium | **Completed** |
-| **WS-H12b** | Dequeue-on-dispatch scheduler semantics | Medium | **Completed** |
-| **WS-H12c** | Per-TCB register context with inline context switch | Medium | **Completed** |
-| **WS-H12d** | IPC message payload bounds | Medium | **Completed** |
-| **WS-H12e** | Cross-subsystem invariant reconciliation | Medium | **Completed** |
-| **WS-H12f** | Test harness update & documentation sync | Medium | **Completed** |
-| **WS-H13** | CSpace/service model enrichment (multi-level resolution, backing-object verification, serviceCountBounded) | Medium | **Completed** |
-| **WS-H14** | Type safety hardening: EquivBEq/LawfulBEq instances, LawfulMonad proofs, isPowerOfTwo verification, OfNat removal, sentinel completion | Low | **Completed** |
-| **WS-H15** | Platform & API hardening (RPi5 contracts, syscall capability wrappers, AdapterProofHooks) | Low | **Completed** |
-| **WS-H16** | Testing and documentation expansion | Low | Planned |
-
-### 3.2 WS-F5..F8 — Remaining v0.12.2 audit remediation
-
-See [`docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md)
-for the full execution plan.
-
-| ID | Focus | Priority | Status |
-|----|-------|----------|--------|
-| **WS-F5** | Model fidelity (badge bitmask, per-thread regs, multi-level CSpace) | Medium | **Completed** |
-| **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium | **Completed** |
-| **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low | **Completed** |
-| **WS-F8** | Cleanup (dead type constructors, extension labeling, finding closure) | Low | **Completed** |
-
-### 3.3 Completed portfolios
-
-- **WS-I3:** completed (v0.15.2). Test coverage expansion — new `tests/OperationChainSuite.lean` adds 6 multi-operation chain tests (retype→mint→revoke, send/send/receive FIFO, map/lookup/unmap/lookup, service start/stop dependency sequencing, copy/move/delete, notification badge accumulation), scheduler stress coverage (16-thread repeated scheduling, same-priority determinism, multi-domain isolation), and Tier 2 integration via `scripts/test_tier2_negative.sh`; `tests/InformationFlowSuite.lean` now includes declassification runtime checks for authorized downgrade, normal-flow rejection, policy-denied rejection, and 3-domain lattice behavior. Closes R-06/R-07/R-08. Declassification policy denial now reports a distinct `declassificationDenied` error in `declassifyStore` and suite expectations.
-- **WS-I4:** completed (v0.15.3). Subsystem coverage expansion — `tests/OperationChainSuite.lean` now includes VSpace multi-ASID shared-page coherency and per-ASID-permission checks (R-09), IPC interleaved send ordering checks with three-sender FIFO + alternating send/receive validation (R-10), and lifecycle cascading revoke/authority-degradation chains over CDT-linked root→child→grandchild caps (R-11).
-- **WS-I1:** completed (v0.15.0). Critical testing infrastructure — 17 inter-transition invariant assertions across all 13 trace functions (R-01), mandatory Tier 2 determinism validation (R-02), scenario ID traceability with 121 tagged trace lines, pipe-delimited fixture format, scenario registry YAML with Tier 0 validation (R-03). Phase 1 of the WS-I improvement portfolio. Closes R-01/R-02/R-03.
-- **WS-F8:** completed. Cleanup — removed dead `ServiceStatus.failed`/`isolated` constructors, labeled Service subsystem as seLe4n extension with module docstrings (MED-17), closed F-14 (endpointInvariant already removed in WS-H12a), closed F-01 (legacy endpoint fields already removed in WS-H12a), closed MED-04 (domain lattice alive and exercised — finding misidentified). Completes 100% of v0.12.2 audit findings (33/33). Closes MED-04, MED-17, F-01, F-14, F-19.
-- **WS-F7:** completed. Testing expansion — 4 new runtime invariant checks (`blockedOnSendNotRunnable`, `blockedOnReceiveNotRunnable`, `currentThreadInActiveDomain`, `uniqueWaiters`) added to `InvariantChecks.lean`; `TraceSequenceProbe` extended from 3 to 7 operation families (+ notification signal/wait, schedule, capability lookup) with blocked-thread guard; `runtimeContractTimerOnly` and `runtimeContractReadOnlyMemory` fixtures exercised in `MainTraceHarness` with 6 deterministic trace assertions; CDT `childMapConsistentCheck` confirmed already delivered. Zero sorry, zero axiom. Closes MED-08, F-24, F-25, F-26.
-- **WS-F6:** completed (v0.14.9). Invariant quality — tautology reclassification, cross-subsystem coupling, adapter proof hooks. `capabilityInvariantBundle` reduced from 8-tuple to 6-tuple (removed tautological `cspaceInvariant`/`badgeInvariant`); `blockedOnNotificationNotRunnable` predicate added to `ipcSchedulerContractPredicates` (6-conjunct); `runnableThreadsAreTCBs` predicate added to `schedulerInvariantBundleFull` (6-conjunct) with 4 preservation theorems (`switchDomain`, `schedule`, `handleYield`, `timerTick`); `vspaceCrossAsidIsolation` added to `vspaceInvariantBundle` (6-conjunct) with `mapPage`/`unmapPage` proofs; `default_serviceCountBounded` and `default_serviceGraphInvariant` proved for service graph; bundle coherence verified across all subsystems. Zero sorry, zero axiom.
-- **WS-H12f:** completed (v0.14.3). Test harness update & documentation sync — `runDequeueOnDispatchTrace` (dequeue-on-dispatch lifecycle with preemption re-enqueue), `runInlineContextSwitchTrace` (inline context save/restore verification through `handleYield` → `schedule`), `runBoundedMessageExtendedTrace` (zero-length, sub-boundary, max-caps acceptance); legacy `endpointInvariant` comment cleanup; expected fixture updated (108 lines); 9 new Tier 3 anchors; documentation synchronized. Completes WS-H12 composite workstream.
-- **WS-H12e:** completed (v0.14.2). Cross-subsystem invariant reconciliation — `coreIpcInvariantBundle` upgraded from `ipcInvariant` to `ipcInvariantFull` (includes `dualQueueSystemInvariant` and `allPendingMessagesBounded`); `schedulerInvariantBundleFull` extended with `contextMatchesCurrent` (5-conjunct); `ipcSchedulerCouplingInvariantBundle` extended with `contextMatchesCurrent` and `currentThreadDequeueCoherent`; `proofLayerInvariantBundle` uses `schedulerInvariantBundleFull` (full bundle) instead of bare `schedulerInvariantBundle`; extraction theorems added; `switchDomain_preserves_contextMatchesCurrent` new preservation theorem; 8 `allPendingMessagesBounded` frame lemmas for primitive ops; 3 compound `*_preserves_allPendingMessagesBounded` theorems (notificationSignal, notificationWait, endpointReply); 7 composed `*_preserves_ipcInvariantFull` theorems for all IPC operations; all `*_preserves_schedulerInvariantBundleFull` theorems updated; default state proofs extended; Tier 3 invariant surface anchors updated. Completes deferred WS-H12d preservation theorems. Closes systemic invariant composition gaps from WS-H12a–d.
-- **WS-H12d:** completed (v0.14.1). IPC message payload bounds — `IpcMessage` registers/caps migrated from `List` to `Array` with `maxMessageRegisters`(120)/`maxExtraCaps`(3), bounds enforcement at all 4 send boundaries, 4 `*_message_bounded` theorems, `allPendingMessagesBounded` system invariant, A-09 closed.
-- **WS-H12c:** completed (v0.14.0). Per-TCB register context with inline context switch — `registerContext` field on TCB, `saveOutgoingContext`/`restoreIncomingContext` in `schedule`, information-flow projection strips register context, `endpointInvariant` removed, H-03 closed.
-- **WS-H12b:** completed (v0.13.9). Dequeue-on-dispatch scheduler semantics — `queueCurrentConsistent` inverted from `current ∈ runnable` to `current ∉ runnable`, matching seL4's `switchToThread`/`tcbSchedDequeue`. `schedule` dequeues chosen thread before dispatch; `handleYield` inserts+rotates current thread before scheduling; `timerTick` re-enqueues on preemption; `switchDomain` re-enqueues before domain switch. Added `currentTimeSlicePositive` predicate to `schedulerInvariantBundleFull`; added `schedulerPriorityMatch` with `RunQueue.insert_preserves_wellFormed` and `insert_threadPriority` theorems. IPC predicates added: `currentThreadIpcReady`, `currentNotEndpointQueueHead`, `currentNotOnNotificationWaitList`, `currentThreadDequeueCoherent`. Helper lemmas `ensureRunnable_not_mem_of_not_mem`, `removeRunnable_not_mem_of_not_mem`, `ThreadId.ext`. ~1800 lines of preservation proofs re-proved. Closes H-04 (HIGH).
-- **WS-H11:** completed (v0.13.7). VSpace & architecture enrichment — `PagePermissions` structure with `read`/`write`/`execute`/`user`/`cacheable` fields and `wxCompliant` W^X enforcement; `VSpaceRoot.mappings` enriched from `HashMap VAddr PAddr` to `HashMap VAddr (PAddr × PagePermissions)`; `vspaceMapPage` enforces W^X at insertion (`policyDenied` on violation); `vspaceLookupFull` returns `(PAddr × PagePermissions)`; `vspaceInvariantBundle` extended from 3 to 5 conjuncts (`wxExclusiveInvariant`, `boundedAddressTranslation` integrated); `VSpaceBackend` typeclass enriched with permissions; `MemoryRegion.wellFormed` and `MachineConfig.wellFormed` enforce `endAddr ≤ 2^physicalAddressWidth`; `TlbState`/`TlbEntry` abstract TLB model with `adapterFlushTlb`/`adapterFlushTlbByAsid` operations; `tlbConsistent` invariant with flush-restoration and composition theorems. Closes H-02/A-32 (HIGH), H-10 (HIGH), A-05/M-12 (HIGH), A-12 (HIGH), M-14 (MEDIUM).
-- **WS-H10:** completed (v0.13.6). Security model foundations — `ObservableState` extended with `machineRegs` (domain-gated register file projection); machine timer excluded as covert timing channel; `bibaIntegrityFlowsTo`/`bibaSecurityFlowsTo`/`bibaPolicy` standard BIBA alternatives with refl/trans proofs; `DeclassificationPolicy` with `declassifyStore` enforcement operation (5 theorems) and `declassifyStore_NI` non-interference proof; `endpointFlowPolicyWellFormed` predicate with reflexivity/transitivity inheritance proofs; `InformationFlowConfigInvariant` bundle. Closes C-05/A-38 (CRITICAL), A-34 (CRITICAL), A-39 (MEDIUM), M-16 (MEDIUM). 866 proved declarations.
-- **WS-H7/H8/H9 gap closure:** completed (v0.13.5). Comprehensive audit remediation — `VSpaceRoot.beq_sound`/`CNode.beq_sound` BEq soundness lemmas (WS-H7), `endpointReceiveDualChecked_NI` enforcement bridge (WS-H8), `endpointReceiveDual_preserves_lowEquivalent`/`endpointCall_preserves_lowEquivalent`/`endpointReplyRecv_preserves_lowEquivalent` hypothesis-based IPC NI theorems (WS-H9), `NonInterferenceStep` extended to 31 constructors with `endpointReceiveDualHigh`/`endpointCallHigh`/`endpointReplyRecvHigh`. 840 proved declarations.
-- **WS-H9:** completed (v0.13.4). Non-interference coverage extension >80% of kernel operations — 27 new NI preservation theorems, `NonInterferenceStep` extended from 11 to 28 constructors, scheduler/IPC/CSpace/VSpace/observable-state NI proofs, `switchDomain_preserves_lowEquivalent` two-sided proof, `composedNonInterference_trace` covers all constructors. Closes C-02/A-40 (CRITICAL), M-15 (MEDIUM).
-- **WS-H8:** completed (v0.13.2). Enforcement-NI bridge & missing wrappers — enforcement soundness meta-theorems connecting `securityFlowsTo` checks to non-interference; 4 new policy-checked wrappers (`notificationSignalChecked`, `cspaceCopyChecked`, `cspaceMoveChecked`, `endpointReceiveDualChecked`); `ObservableState` extended with domain timing metadata (`domainTimeRemaining`, `domainSchedule`, `domainScheduleIndex`); NI bridge theorems for all new wrappers. Closes A-35/H-07 (CRITICAL), H-07 (HIGH), A-36/A-37/H-11 (HIGH). 26 new theorems; 779 total.
-- **WS-H6:** completed (v0.13.1). Scheduler proof completion — `timeSlicePositive` preservation proven for all 6 scheduler operations (`setCurrentThread`, `chooseThread`, `schedule`, `handleYield`, `switchDomain`, `timerTick`); `edfCurrentHasEarliestDeadline` fixed to be domain-aware (closing false-assurance gap); `chooseBestRunnableBy_optimal` (fold-based candidate optimality), `noBetter_implies_edf` (bridge to EDF invariant), `isBetterCandidate_not_better_trans` (negation transitivity); `schedulerInvariantBundleFull` (5-tuple bundle with projection and composition); plus earlier Part D/E work (`flat_wf_rev`, `mem_toList_iff_mem`, `isBetterCandidate_transitive`, `bucketFirst_fullScan_equivalence`).
-- **WS-H7:** completed (v0.12.21). HashMap equality + state-store migration — `BEq VSpaceRoot`/`BEq CNode` switched from `toList` order-sensitive checks to size+fold order-independent checks; `services`, `irqHandlers`, `lifecycle.capabilityRefs`, `cdtSlotNode`, and `cdtNodeSlot` migrated from closure functions to `Std.HashMap`, removing O(k) closure-chain accumulation.
-- **WS-H5:** completed (v0.12.19). IPC dual-queue structural invariant — `intrusiveQueueWellFormed`, `dualQueueSystemInvariant`, `tcbQueueLinkIntegrity`; 13 preservation theorems for all dual-queue operations. Closes C-04/A-22 (CRITICAL), A-23 (HIGH), A-24 (HIGH). See [`docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
-- **WS-H4:** completed (v0.12.18). Capability invariant redesign — `capabilityInvariantBundle` extended from trivially-true 4-tuple to meaningful 7-tuple with `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`. All preservation theorems re-proved. C-03, M-08/A-20, M-03. See [`docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
-- **WS-H3:** completed (v0.12.17). Build/CI infrastructure fixes — `run_check` return value fix (H-12), `test_docs_sync.sh` CI integration (M-19), Tier 3 `rg` availability guard with `grep -P` fallback (M-20). See [`docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
-- **WS-H2:** completed (v0.12.16). Lifecycle safety guards — childId collision/self-overwrite guards, TCB scheduler cleanup on retype, CNode CDT detach, atomic retype. See [`docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
-- **WS-H1:** completed (v0.12.16). IPC call-path semantic fix — `blockedOnCall` variant, reply-target scoping, 5-conjunct `ipcSchedulerContractPredicates`. See [`docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md).
-- **WS-G1..G9:** all completed (v0.12.6–v0.12.15). See [`docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md).
-- **WS-F1..F4:** completed. See [`docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md).
-- **WS-E1..E6:** all completed (historical archive).
-- **WS-D1..D4:** completed (historical archive).
-- **WS-C1..C8:** completed (historical archive).
-
-### 3.4 PR-to-workstream discipline
-
-Every milestone-moving PR should include:
-
-1. workstream ID(s) advanced,
-2. objective and exit-criterion delta,
-3. command evidence,
-4. synchronized docs updates (README/spec/development/GitBook as needed),
-5. explicit deferrals (if any) and destination workstream.
-
----
-
-## 4) Security hardening defaults
-
-- IPC thread-state updates now fail with `objectNotFound` when the target TCB is missing (including reserved thread ID `0`), preventing ghost queue entries in endpoint/notification paths.
-- Sentinel ID `0` is rejected at IPC TCB lookup/update boundaries (`lookupTcb`/`storeTcbIpcState`) rather than silently treated as a valid runtime thread identity.
-- Trace and probe harnesses now exercise policy-checked wrappers (`endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked`) by default; unchecked operations remain available for research experiments. `enforcementBoundary` classifies 44 operations (13 policy-gated, 27 capability-only, 4 read-only; pinned by `enforcementBoundaryExtended_count`). (WS-Q1: `serviceRestartChecked` removed, `registerServiceChecked` added; WS-Z8: SchedContext ops; D1: thread lifecycle; D2: priority management; D3: IPC buffer; AC4-D: VSpace/service ops; WS-SM SM8.C: the live declassification entry point, policy-gated; WS-SM SM8.E.3: the SM3 two-phase-locking bracket `withLockSet`, capability-only; WS-SM SM9.A.11: the two audit-trail readers `auditReadFromCore` / `auditDrainVisiblePrefix`, capability-only; WS-SM SM9.C.8: the data-carrying declassification signal, policy-gated; PR #887 review round: `setThreadFaultHandlerOp`, the fault-handler configuration syscall, capability-only.)
-- WS-E4 dual-queue endpoint operations (`endpointSendDual`/`endpointReceiveDual`) use intrusive-list queue boundaries (`sendQ`/`receiveQ`) with per-thread links stored in `TCB.queuePrev`/`TCB.queuePPrev`/`TCB.queueNext`; invariant checks now include `intrusiveQueueWellFormed` validation for both endpoint queues (including head/tail shape, cycle-free traversal, and per-node `queuePrev`/`queuePPrev`/`queueNext` linkage), and `negative_state_suite` adds runtime queue-link assertions for both send-queue and receive-queue FIFO/dequeue paths alongside enqueue/block, rendezvous/dequeue, queue drain, O(1) middle removal via `endpointQueueRemoveDual`, malformed-`queuePPrev` rejection (`illegalState`), and dual-queue double-wait rejection (`alreadyWaiting`).
-- WS-E4 CDT representation is node-stable: derivation edges are over stable node IDs and slots map to nodes via bidirectional maps (`cdtSlotNode`, `cdtNodeSlot`). `cspaceMove` updates slot→node ownership/backpointers instead of rewriting every CDT edge, `cspaceDeleteSlot` detaches stale slot↔node mappings on deletion, the observed slot-level CDT is defined as projection of node edges through the slot mapping (`SystemState.observedCdtEdges`), and strict revoke (`cspaceRevokeCdtStrict`) now reports the first descendant deletion failure with offending slot context.
-
-## 5) Daily contributor loop
-
-1. Sync branch and choose one coherent slice from the active plans (currently WS-SM — see `docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md` and the per-phase `docs/planning/SMP_*.md`).
-2. Implement the minimal semantic/proof/doc delta.
-3. Run smallest relevant check first, then higher tiers.
-4. Update docs in the same commit range.
-5. Re-run validation before commit.
-
-Recommended command loop:
+## 2. Set up
 
 ```bash
-./scripts/test_fast.sh
-./scripts/test_smoke.sh
-./scripts/test_full.sh
+# Toolchain, elan, Lean 4.28.0, and the git hooks. Runs automatically as a
+# SessionStart hook; run it by hand on a fresh clone.
+./scripts/setup_lean_env.sh                  # includes shellcheck + ripgrep
+./scripts/setup_lean_env.sh --skip-test-deps # toolchain only, no test deps
+./scripts/setup_lean_env.sh --build          # also run a full build
+
+# Every shell that runs lake needs this first:
+source ~/.elan/env
 ```
 
-After any change under `rust/`, also run the two Rust lanes:
+### The pre-commit hook is not optional
+
+```bash
+./scripts/install_git_hooks.sh          # install (idempotent)
+./scripts/install_git_hooks.sh --check  # verify (non-zero if absent)
+./scripts/install_git_hooks.sh --force  # overwrite, backing up a diverging hook
+```
+
+The hook builds every staged `.lean` module, rejects `sorry` in staged content,
+runs the identifier-naming gate against the **git index**, and verifies version
+sync when a version-bearing file is staged. **Do not bypass it with
+`--no-verify.**
+
+Because the naming gate reads the index rather than the working tree, a Tier 0
+run over unstaged edits checks the *previous* content: **stage first, then run
+the gate.** The hook is the backstop, not the first line.
+
+### Rust
+
+```bash
+rustup target add aarch64-unknown-none   # RR1.1 added this to rust-toolchain.toml
+```
+
+`rust/rust-toolchain.toml` pins the toolchain, and rustup's directory override
+only applies **inside `rust/`**. Run cargo from there, never with
+`--manifest-path` from the repo root — that silently selects the default
+toolchain, which does not have the cross target.
+
+---
+
+## 3. Build
+
+```bash
+source ~/.elan/env
+lake build                    # the default target
+lake exe sele4n               # the executable trace harness
+lake build <Module.Path>      # ONE module — see the rule below
+```
+
+### Module build verification is mandatory
+
+**Before committing any `.lean` file, build that module by name:**
+
+```bash
+lake build SeLe4n.Kernel.RobinHood.Bridge     # after editing Bridge.lean
+```
+
+`lake build` on the default target is **not sufficient**. It builds only what
+is reachable from `Main.lean` and the test executables, so a module not yet
+imported by the kernel passes the default target with broken proofs. The
+pre-commit hook enforces this; the rule is here because you should not need the
+hook to tell you.
+
+`SeLe4n/Platform/Staged.lean` is the build anchor that pulls staged modules
+into CI, so a staged module still compiles on every PR even though no linked
+image carries it.
+
+---
+
+## 4. Test
+
+Tiers are cumulative. Run the smallest one that covers what you changed, and at
+minimum `test_smoke.sh` before any PR.
+
+| Command | Tiers | Covers | Run it when |
+|---------|-------|--------|-------------|
+| `./scripts/test_fast.sh` | 0–1 | hygiene gates + full build | iterating locally |
+| `./scripts/test_smoke.sh` | 0–2 | + trace, determinism, negative state, Rust, docs sync | **minimum before any PR** |
+| `./scripts/test_full.sh` | 0–3 | + invariant surface anchors | changing theorems, invariants or doc anchors |
+| `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` | 0–4 | + nightly candidates, Tier-5 cross-language | before a release cut |
+
+What each tier is for:
+
+| Tier | Script | Question it answers |
+|------|--------|---------------------|
+| 0 | `test_tier0_hygiene.sh` | Is the tree well-formed? (~39 gates: naming, versions, links, plan structure, staging partition, axioms, TLBI discipline, cross-target config, de-threading) |
+| 1 | `test_tier1_build.sh` | Does everything compile, including staged modules? |
+| 2 | `test_tier2_trace.sh`, `_determinism.sh`, `_negative.sh` | Does the kernel produce the fixture trace, deterministically, and reject bad states? |
+| 3 | `test_tier3_invariant_surface.sh` | Do the named theorems and invariants still exist and still say what the docs claim? |
+| 4 | `test_tier4_smp_bootcheck.sh`, `_nightly_candidates.sh` | SMP acceptance — **needs the bootable image**, so it cannot run until SM10.1 |
+| 5 | `test_tier5_cross_language.sh` | Do the Rust lock primitives agree with their Lean specs? |
+
+### Rust, and the cross target
 
 ```bash
 ./scripts/test_rust.sh                 # host: build, tests, fmt, clippy
 ./scripts/test_aarch64_cross_build.sh  # the kernel's real target
 ```
 
-**Both, not either.** The tier scripts and `test_rust.sh` compile the *host*
-target, where every `#[cfg(target_arch = "aarch64")]` block is removed before
-rustc or clippy sees it — so the hardware half of the HAL, which is most of
-it, is invisible to them, and the project's zero-clippy-warning claim
-excluded it entirely until WS-RR RR1 (`v0.34.41`).  The cross gate builds
-`sele4n-hal` for `aarch64-unknown-none` in both profiles, verifies that
-`boot.S`, `vectors.S` and `trap.S` really assembled rather than assuming the
-build script's `CARGO_CFG_TARGET_ARCH` gate ran, and lints the cross target
-with `-D warnings`.  CI runs it as the `aarch64 Cross Build` job on every PR.
+**Run the cross build after any change under `rust/`.** The tier scripts and
+`test_rust.sh` compile the *host* target, where every
+`#[cfg(target_arch = "aarch64")]` block is removed before rustc or clippy sees
+it — so the hardware half of the HAL, which is most of it, is invisible to
+them. The cross gate builds `sele4n-hal` for `aarch64-unknown-none` in both
+profiles, verifies `boot.S` / `vectors.S` / `trap.S` actually assembled, and
+lints the cross target with `-D warnings`. It runs in CI as the
+`aarch64 Cross Build` job.
 
-A `cargo check` is **not** a substitute for the build: `check` stops before
-code generation, so it never hands an `asm!` template to an assembler.  The
-four `TLBI *OS` encoding defects RR1 found — FEAT_TLBIOS instructions on a
-target whose CPU does not implement them — were all `check`-clean.
+**`cargo check` is not a substitute.** It stops before code generation, so it
+never hands an `asm!` template to an assembler. The first real cross build
+found six defects and three lints; four of the defects were `check`-clean.
 
-The gate needs an assembler that can target AArch64.  `build.rs` probes for
-one (bare-metal and Linux cross prefixes, then `clang`, which is multi-target
-and needs no extra packages) and fails with a message naming what to install;
-an explicit `CC_aarch64_unknown_none=<compiler>` overrides the probe.
+### Running one suite
 
-Optional nightly/staged checks:
+There are 71 `lean_exe` targets. Run one directly:
 
 ```bash
-NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh
+lake exe negative_state_suite
+lake exe information_flow_suite
+lake exe fault_handling_suite
 ```
 
-Tier 4 is the QEMU SMP acceptance tier. Its sub-tests need
-`qemu-system-aarch64` (installed by `setup_lean_env.sh`) and a bootable
-kernel image in `SELE4N_KERNEL_IMAGE`. A sub-test that cannot run exits
-`SELE4N_SKIP_EXIT` (77) and is recorded **NOT RUN** — never PASS — so the
-tier reports how many acceptance gates did not execute rather than
-claiming a clean run over them. To require that every gate actually ran:
+Or interpret it without building an executable — useful when a suite hits the
+clang bracket-depth limit described in §7:
 
 ```bash
-SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh
+lake env lean --run tests/NegativeStateSuite.lean
 ```
 
-which turns a skipped gate into a hard failure. The v1.0.0 release
-validation (SM10.5) must run in that mode. When adding a check that
-certifies phase acceptance criteria, call `run_gate_check`, not
-`run_check`.
+### QEMU and hardware
 
-Module-specific build targets (SchedContext):
+`scripts/test_qemu*.sh` cover SMP bring-up, IPC, scheduler, timer, SGI
+round-trip, TLB shootdown, deadlock and kprintln stress.
+`scripts/test_hw_full.sh` and `docs/HARDWARE_TESTING.md` cover the RPi5 path.
+Both need artefacts SM10.1 has not produced yet.
+
+---
+
+## 5. Repository layout
+
+```
+SeLe4n/PackedString.lean         Packed strings: one Nat per inventory string, kernel-cheap distinctness
+SeLe4n/Prelude.lean              Typed identifiers, monad foundations
+SeLe4n/Machine.lean              Machine state primitives
+SeLe4n/Model/                    Object types, kernel/system state, builder, freeze
+SeLe4n/Kernel/Scheduler/         Scheduler transitions, run queues, EDF, PIP, liveness
+SeLe4n/Kernel/Capability/        CSpace/capability ops + invariants
+SeLe4n/Kernel/IPC/               Endpoint/notification IPC, dual-queue, capability transfer
+SeLe4n/Kernel/Lifecycle/         Thread suspend/resume, retype, cleanup
+SeLe4n/Kernel/Service/           Service orchestration + policy
+SeLe4n/Kernel/Architecture/      ARM64 page tables, exceptions, interrupts, TLB/cache,
+                                 register/syscall decode, IPC buffer validation, faults
+SeLe4n/Kernel/InformationFlow/   Security labels, projection, non-interference
+SeLe4n/Kernel/RobinHood/         Verified Robin Hood hash table
+SeLe4n/Kernel/RadixTree/         Verified flat-array CNode radix tree
+SeLe4n/Kernel/SchedContext/      CBS budgets, replenishment queue, MCP authority
+SeLe4n/Kernel/FrozenOps/         Frozen-state kernel operations (experimental)
+SeLe4n/Kernel/Concurrency/       Locks, memory model, SMP assumption inventory
+SeLe4n/Kernel/CrossSubsystem.lean  Cross-subsystem invariants, discharge index marker
+SeLe4n/Kernel/API.lean           Public kernel interface + syscall wrappers
+SeLe4n/Platform/Contract.lean    PlatformBinding typeclass
+SeLe4n/Platform/DeviceTree.lean  FDT parsing
+SeLe4n/Platform/FFI.lean         Lean <-> Rust HAL bridge (@[extern] / @[export])
+SeLe4n/Platform/Boot.lean        Boot sequence (PlatformConfig -> IntermediateState)
+SeLe4n/Platform/RPi5/            Raspberry Pi 5 (BCM2712) bindings, boot VSpace
+SeLe4n/Platform/Staged.lean      Build anchor pulling staged modules into CI
+SeLe4n/Testing/                  Test harness, state builder, fixtures
+Main.lean                        Executable entry point
+tests/                           Executable test suites + fixtures
+rust/                            ARM64 boot assembly + HAL crates
+scripts/                         Every gate, tier script and generator
+docs/                            Canonical documentation (see §10)
+```
+
+The filesystem is the authoritative file list; this map changes more slowly
+than the tree does.
+
+### Two structural rules
+
+**Operations / Invariant split.** Each kernel subsystem has `Operations.lean`
+(transitions) and `Invariant.lean` (proofs). Keep them apart. Both may be
+re-export hubs over per-concern submodules in a sibling directory of the same
+name — import-only files that keep existing `import` statements working.
+
+**Staged vs production.** 67 modules are staged-only, listed in
+`scripts/staged_module_allowlist.txt` and gated by
+`check_production_staging_partition.sh`. **Production must not import staged.**
+CI builds staged modules on every PR through `Platform/Staged.lean`; a linked
+kernel image does not carry them.
+
+---
+
+## 6. Rules you will be held to
+
+These are enforced by gates, so violating one fails the build rather than a
+review. Each is here because it was violated at least once.
+
+### No `sorry`, no `axiom`
+
+Forbidden in the production proof surface. Tracked exceptions carry a `TPI-D*`
+annotation. `check_module_axioms.py` runs map-driven rather than by regex,
+because the old regex missed three `@[simp] theorem` declarations.
+
+### Deterministic semantics
+
+Every transition returns explicit success or failure. Never introduce a
+non-deterministic branch.
+
+### Typed identifiers
+
+`ThreadId`, `ObjId`, `CPtr`, `Slot`, `DomainId` and their kin are wrapper
+structures, **not** `Nat` aliases. Convert explicitly with `.toNat` / `.ofNat`.
+
+### Internal-first naming
+
+Every identifier — theorem, function, definition, structure, field, test
+runner, file name, directory name — describes **what it is**, not which
+workstream produced it. Workstream IDs, audit IDs and phase codes (`WS-*`,
+`AN3-*`, `RR4.9`, …) must not appear in any identifier or path.
+
+```
+BAD   an3b_02_projection_typing
+GOOD  ipc_invariant_full_projection_signatures
+```
+
+Workstream IDs belong in docstrings, commit messages, CHANGELOG entries and
+`CLAUDE.md` prose. Enforced by `check_identifier_naming.py`, which scans every
+identifier token and path component over every tracked non-documentation file:
+Rust is held at zero, everything else is pinned by an occurrence-count baseline
+in `scripts/identifier_naming_baseline.json` — a grandfathered name's count may
+fall but never rise.
+
+Documentation paths are exempt by **location**, never by suffix: a `.json`,
+`.txt` or `.expected` file outside `docs/` is code to this gate. Within a file
+the exemption stops at any literal that supplies a linker-visible name
+(`#[export_name]`, an assembly `.global`, a linker-script `PROVIDE`, an `asm!`
+template).
+
+### Fixture-backed evidence
+
+`Main.lean`'s output must match `tests/fixtures/main_trace_smoke.expected`.
+Update a fixture only with a stated rationale in the PR — see §9.
+
+### Gates read code, prose reads prose
+
+No comment or docstring may decide whether a check passes. Source-scanning
+gates match against the **code view** (`scripts/lean_code_view.py --overlay`) —
+a comment-free, byte-aligned overlay of the tree — so a docstring can neither
+satisfy an anchor nor trip one. This is wired at the helper: `run_check` and
+`run_negative_check` route through the view automatically.
+
+When a check's subject genuinely *is* the text — a module docstring must exist,
+a contract sentence must be present, a retracted figure must not return — use
+`run_prose_check` / `run_prose_negative_check`, which read the real tree.
+
+**Never contort prose to satisfy a scanner.** If a comment cannot say something
+plainly, the scanner is reading the wrong text.
+
+### A presence check is not a relation check
+
+Nearly every gate here is a text scanner, and the recurring way one fails is
+asserting that a *token is present* when the property it means is a *relation*:
+that the flag reaches **this command**, that the guard precedes **this
+instruction**, that the artefact came from **this run**, that the reference is
+**this occurrence**. Presence is necessary and almost never sufficient, and the
+gap is invisible because the token really is there.
+
+**Resolve the text into the structure it stands for before asserting** — expand
+the script's variables and check the command, take byte offsets and check the
+order, parse the array and check the element, lex the source and check the
+scope. The shared views exist for this: `scripts/rust_code_view.py`,
+`scripts/lean_code_view.py`, and `rust_code_views` / `top_level_statements` in
+`rust/sele4n-hal/build.rs`.
+
+Where a scanner genuinely cannot decide (reachability, aliasing through a
+value), say so in its docstring and make it over-approximate, so it fails
+**closed**.
+
+**Test a gate by breaking the relation, not by deleting the token.** A mutation
+that removes the token is survived by any presence check. Keep the token and
+break the relation: leave `hw_target` in the file but build another target;
+keep `--release` but put it on a host build; keep the guard but move it after
+the `asm!`. The self-test harnesses in `check_aarch64_cross_target.py` and
+`check_tlbi_broadcast_discipline.py` **enforce** this — each case declares
+whether its mutation is `preserving` or `deleting`, and the harness fails when
+a check has no preserving case.
+
+**And sweep the siblings.** A fix applied at one call site and not its
+neighbours leaves the class open and reads as closed. Likewise, **an
+enumeration standing in for a derivation** cannot see the thing that does not
+exist yet: derive the set from what the code does and keep any list as a pin
+that fails when the two diverge.
+
+### Implement the improvement
+
+When documentation, a docstring, a comment, a type signature or a design intent
+describes something **better** than the code does, the remediation is to make
+the description true. It is forbidden to weaken the documentation to match
+inferior code.
+
+| You find | You do | Never |
+|----------|--------|-------|
+| A comment referencing a function `X` that does not exist | implement `X` | remove the reference |
+| A docstring describing a complete spec, a truncated implementation | complete the implementation | document the truncation |
+| A stub returning `NotImplemented` where the design says it routes | wire the routing | note the stub |
+| Two call paths handling one condition asymmetrically | make them symmetric | document the asymmetry |
+| An invariant maintained only by convention | enforce it structurally | add a comment about the convention |
+| A proven structure nothing consumes | wire it into the consumer | delete the structure |
+| A capability claim whose path is non-functional | make the path work | qualify the claim |
+
+The one legitimate exception is documentation describing a **worse** state than
+the code — a stale `STATUS: staged` marker on a module since wired into
+production. There, the documentation is the inferior artefact.
+
+When the right implementation is genuinely out of scope, **defer the release**
+and record the debt with a closure target. Do not ship a documentation-only
+patch instead.
+
+### Deferrals are registered, never silent
+
+In-source TODOs that age out with their workstream are forbidden. Every
+deferred item is lifted into the *Registered debt index* in
+[`REGISTERED_DEBT.md`](REGISTERED_DEBT.md) with an owner and a closure
+target, and the source comment cites it by row.
+`check_deferral_registration.py` (Tier 0) fails a comment that declares itself
+untracked and cites nothing, and fails a citation naming a row that does not
+exist.
+
+### Report a vulnerability the moment you find it
+
+If you find a possible CVE-worthy issue — in project code, a dependency, the
+toolchain, CI, or as a gap between the model and real seL4 behaviour — stop and
+surface it with: summary, file and line, severity plus exploitability, evidence
+or reproduction, and suggested remediation. **Do not silently fix it**; it has
+to be tracked and disclosed.
+
+---
+
+## 7. Working in Lean here
+
+### Read and edit large files in chunks
+
+Several files exceed 800 lines. Read with explicit offsets rather than whole:
+
+```
+Read(path, offset=1,   limit=500)
+Read(path, offset=501, limit=500)
+```
 
 ```bash
-# SchedContext module
-source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Types
-source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Budget
-source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Invariant.Defs
-source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Invariant
-source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Invariant.Preservation
-source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Operations
-source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.ReplenishQueue
-source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext
-# Cross-subsystem (includes SchedContext predicates)
-source ~/.elan/env && lake build SeLe4n.Kernel.CrossSubsystem
+./scripts/find_large_lean_files.sh                  # list files over threshold
+./scripts/find_large_lean_files.sh --format bullets # regenerate CLAUDE.md's list
+./scripts/find_large_lean_files.sh --check          # is CLAUDE.md's list current?
 ```
 
-Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:
+For edits, prefer targeted `old_string`/`new_string` replacements over
+whole-file writes: a whole-file write of a large file times out and truncates
+silently. Read the exact region first so the match includes the real
+indentation. Build new large files incrementally, or with a `cat <<'EOF'`
+heredoc, which has no size limit.
 
-- if a third-party apt mirror is temporarily unavailable, the setup script now retries `apt-get update` with primary distro sources only so required tool installs (`shellcheck`, `ripgrep`) remain reproducible.
-- **AF6-F**: `shellcheck` is now installed explicitly in CI (`lean_action_ci.yml`) so Tier 0 hygiene shell lint is always enforced rather than silently skipped when the tool is unavailable.
+### The `do`-chain build trap
 
----
+A suite with hundreds of sequential `expectErr` / `expectOkSt` calls in one
+`do`-block compiles to a C `if`-tree deep enough to exceed clang's default
+`-fbracket-depth=256`:
 
-## 5a) Known performance characteristics (WS-AC/AC2)
+```
+fatal error: bracket nesting level exceeded maximum of 256
+```
 
-The following operations have known complexity characteristics documented for
-hardware deployment planning. All are correct but may require optimization
-when hardware profiling data is available.
+The symptom is specific: `lake build <suite>:exe` fails while
+`lake env lean --run <suite>.lean` works, because interpretation does not go
+through the C backend.
 
-| Operation | Complexity | Trigger Frequency | Location |
-|-----------|-----------|-------------------|----------|
-| `timeoutBlockedThreads` | O(1) lookup + O(k) per bound threads | Once per CBS period on budget exhaustion | `Core.lean` |
-| `RunQueue.insert` | O(n) in queue size | Every enqueue (preemption, unblock) | `RunQueue.lean` |
-| `RunQueue.remove` | O(k + n), k = bucket size | Every dequeue (dispatch, block) | `RunQueue.lean` |
-| `RunQueue.rotateToBack` | O(k + n) | Round-robin rotation within priority band | `RunQueue.lean` |
-| `recomputeMaxPriority` | O(p), p = priority levels | On removal when max-priority bucket empties | `RunQueue.lean` |
+**Mitigation**: keep test helpers under ~150 Lean lines and use the
+thin-dispatcher pattern. `tests/NegativeStateSuite.lean`'s `runNegativeChecks`
+is the model — a 13-line dispatcher over 8 per-area sub-helpers. C scope depth
+resets at each function boundary. Factor up front rather than after the break.
 
-All O(n) operations are acceptable for the RPi5 target (n ≤ 256 threads at
-steady state, ≤ 65536 objects). A dedicated performance workstream (WS-AD)
-will address these with hardware profiling data if needed.
+### Keep search and command output bounded
 
-## 5b) Audit-driven coding conventions (WS-AC)
+If a command or search might return more than ~100 lines, bound it up front:
+`head_limit` on searches, `| tail -80` on builds, or redirect to a file and read
+it in slices. `lake build 2>&1 | tail -80` is the usual form.
 
-1. **`KernelError` match hygiene (F-04)**: Prefer explicit match arms over
-   `| _ =>` catch-all patterns on `KernelError`. Lean's exhaustiveness checker
-   flags missing arms, but catch-alls silently swallow new variants. Use
-   `| _ =>` only for genuinely uniform error handling (e.g., error-to-string
-   conversion).
+### Proof hygiene
 
-2. **Multi-step mutation atomicity (I-02)**: Functions that perform multiple
-   sequential `storeObject` calls (e.g., `donateSchedContext`) operate within
-   the `KernelM` `Except` monad. On `.error`, the monad's bind discards all
-   intermediate state — callers receive only the error value, not a partial
-   state. Document multi-step mutation sequences with the step order and
-   failure semantics.
-
-3. **Identifier `Nat` unboundedness (F-01)**: All typed identifiers (`ThreadId`,
-   `ObjId`, etc.) wrap unbounded `Nat`. This is by design for proof ergonomics.
-   The ABI boundary (`RegisterDecode.lean` + `SyscallArgDecode.lean`) validates
-   all incoming values. Internal kernel code is trusted to produce valid IDs.
-
-4. **`storeObject` vs `storeObjectChecked` (F-03/AC3-E/AF2-A)**: Use
-   `storeObjectChecked` in new code paths that are not covered by the
-   `retypeFromUntyped` capacity gate. `storeObjectChecked` rejects new object
-   insertions when the store reaches `maxObjects` (65536) capacity. Use
-   `storeObject` only in proof-layer code where `objectIndexBounded` is an
-   established precondition, or for in-place updates of existing objects.
-   **Machine-checked capacity safety (AF2-A)**: Two theorems provide full
-   assurance: `storeObject_existing_preserves_objectIndex_length` (in-place
-   mutations don't grow `objectIndex`) and `retypeFromUntyped_capacity_gated`
-   (allocation boundary gates on `maxObjects`). See `storeObject_capacity_safe_of_existing`
-   for the composition.
-
-5. **`AccessRightSet` constructor safety (F-02/AC4-B)**: Never use
-   `AccessRightSet.mk` or `⟨n⟩` directly in production code. Use `ofNat`
-   (masked to 5 bits), `mk_checked` (proof-carrying), `ofList`, `singleton`,
-   or `empty`. The `union` and `inter` operations return raw `⟨bits⟩` without
-   masking — apply `ofNat` to the result if downstream validity is required.
-
-6. **Physical address bounds (A-04/AC4-A)**: Production VSpace map operations
-   must use `vspaceMapPageCheckedWithFlushFromState` (state-aware, reads
-   `st.machine.physicalAddressWidth`). The model-level `physicalAddressBound`
-   (2^52, ARM64 LPA max) is for proof-layer reasoning only. The syscall
-   dispatch path (API.lean) already wires through the state-aware variant.
-
-7. **Enforcement boundary completeness (IF-01/AC4-D)**: When adding a new
-   `SyscallId` variant, you must also: (a) add it to `SyscallId.all`, (b)
-   add a case to `syscallIdToEnforcementName` in Wrappers.lean, and (c)
-   ensure the mapped name appears in `enforcementBoundary`. The compile-time
-   `enforcementBoundary_is_complete` theorem (`by decide` since AF4-A replaced `native_decide`) will fail the
-   build if any of these steps are missed.
-
-8. **Cross-subsystem field disjointness (X-05/AC5-A)**: When adding a new
-   cross-subsystem predicate to `CrossSubsystem.lean`, you must: (a) declare
-   its `_fields` read-set, (b) add pairwise `fieldsDisjoint`/`fieldsShared`
-   theorems for every existing predicate (C(n,2) pairs total), and (c) verify
-   the `crossSubsystem_pairwise_coverage_complete` summary theorem still
-   compiles. The `by decide` proofs catch field-set errors
-   at compile time.
-
-9. **`AccessRightSet` operational safety (F-02/AC5-E)**: `subset` is sound
-   even for invalid sets (`subset_sound`); `inter` preserves validity when
-   the left operand is valid (`inter_valid`); membership checks are
-   bounded to bits 0..4 (`mem_bit_bounded`). These machine-checked theorems
-   confirm that bitwise operations on `AccessRightSet` cannot produce
-   incorrect results, even when raw `.mk` constructors are used.
-
-10. **Decode layer test coverage (T-03/AC6-A)**: Both decode layers
-    (`RegisterDecode.lean` and `SyscallArgDecode.lean`) must have dedicated
-    test coverage in `tests/DecodingSuite.lean`. When adding a new syscall
-    decode function, add corresponding tests covering: (a) valid decode with
-    correct register values, (b) insufficient register count, and (c) any
-    domain-specific validation failures (e.g., invalid type tags, out-of-range
-    priorities, misaligned addresses). The suite runs as part of Tier 2.
+```bash
+python3 scripts/check_proof_depth.py    # flags single-tactic bodies with no structure
+python3 scripts/check_module_axioms.py  # axiom sweep, map-driven
+```
 
 ---
 
-## 6) Proof engineering standards
+## 8. Versioning: every PR bumps the patch version
 
-1. Keep proofs local-first; compose afterward.
-2. Prefer explicit theorem statements and stable names.
-3. Keep invariant bundles factored and named.
-   - Current canonical IPC composition names:
-     - `coreIpcInvariantBundle`
-     - `ipcSchedulerCouplingInvariantBundle`
-     - `lifecycleCompositionInvariantBundle`
-   - Current canonical trace helper names for these slices:
-     - `runCapabilityIpcTrace`
-     - `runSchedulerTimingDomainTrace`
-4. Avoid hidden global simplification behavior.
-5. Never add `axiom`/`sorry` to core proof surfaces.
-6. BFS completeness proof (TPI-D07-BRIDGE): formally resolved. The core
-   completeness theorem (CP1), its equational lemmas (EQ1-EQ5), and closure
-   lemmas (CB1-CB4) are all proved. The prerequisite lemma hierarchy in
-   [`M2_BFS_SOUNDNESS.md §6`](dev_history/audits/execution_plans/milestones/M2_BFS_SOUNDNESS.md)
-   and its sub-documents ([M2A](dev_history/audits/execution_plans/milestones/M2A_EQUATIONAL_THEORY.md)–[M2D](dev_history/audits/execution_plans/milestones/M2D_COMPLETENESS_PROOF.md))
-   is fully discharged. No further work is required for this tracking item.
+There is no "release cut" accumulation and no `Unreleased` heading. Each merged
+PR ships its own `vX.Y.Z`, and the docs always reflect the live version.
 
----
+```bash
+./scripts/bump_version.sh 0.34.46     # rewrites every site, then self-verifies
+./scripts/check_version_sync.sh       # verify only (Tier 0 + pre-commit)
+```
 
-## 7) Documentation synchronization rules
+- **Canonical source**: the `version` field in `lakefile.toml`. Every other
+  site must equal it.
+- **The sites** are listed authoritatively in `scripts/version_locations.sh` —
+  36 of them across `lakefile.toml`, the four `sele4n-*` crates, `KERNEL_VERSION`
+  in `rust/sele4n-hal/src/boot.rs`, the spec, `CLAUDE.md` + `AGENTS.md`, the
+  root README badge and version row, eleven i18n READMEs, three GitBook files
+  and `docs/codebase_map.json`.
+- **Adding a site**: register it once in `scripts/version_locations.sh`; the
+  verifier and the bumper both pick it up.
+- **Then add a CHANGELOG entry** — `## v<new-version> — <summary>` at the top
+  of [`CHANGELOG.md`](../CHANGELOG.md). The bumper reminds you; it does not do
+  it for you.
+- **Not version sites**: historical prose (CHANGELOG headers, "LANDED at
+  vX.Y.Z" notes), the Lean toolchain version, and audit-document filenames.
 
-For changes that alter behavior, theorem surfaces, or slice status, update in the same PR:
-
-1. `README.md`
-2. `docs/spec/SELE4N_SPEC.md` (and `docs/spec/SEL4_SPEC.md` if seL4 reference material changes)
-3. `docs/DEVELOPMENT.md`
-4. impacted GitBook chapter(s) and `docs/gitbook/SUMMARY.md` if IA changes
-5. any directly affected audit/workstream status document
-
-Use [`docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](./DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md)
-for cross-document synchronization expectations.
-
-Before touching any `Current state` numbers, run `./scripts/report_current_state.py`
-and propagate the output verbatim to README/spec/GitBook mirrors in the same PR.
-At minimum keep these attributes synchronized across all three surfaces: version,
-Lean toolchain, production/test LoC, theorem+lemma count, build jobs, active
-findings/audit references, and completed/next workstream status.
-
-For codebase-map synchronization, run `./scripts/generate_codebase_map.py --pretty`
-whenever Lean module/declaration surfaces change, then validate with
-`./scripts/generate_codebase_map.py --pretty --check`. The generated
-`docs/codebase_map.json` contains:
-
-- **`readme_sync`** — project-level metrics (version, LoC, theorem count,
-  hardware target) used by README.md, SELE4N_SPEC.md, and GitBook chapters.
-- **`source_sync`** — stable `source_digest` (SHA256 over Lean source paths +
-  contents) plus volatile `repository.head` git metadata.
-- **`modules`** — per-module declaration inventory. Each declaration record
-  includes an additive `called` array listing in-module declaration references
-  (or `[]` when none are detected).
-
-Website clients should invalidate local cache entries on
-`source_sync.source_digest` changes. `--check` compares only the stable subset,
-keeping CI robust across branch/merge-only commits while still detecting real
-declaration-surface drift. Post-merge enforcement runs in
-`.github/workflows/codebase_map_sync.yml`, which regenerates the map on
-drift and opens a refresh PR (R8-B: changes are proposed via PR, never
-pushed to `main` directly).
-
-### Test fixture update process (WS-L5-B)
-
-When adding new trace scenarios to `MainTraceHarness.lean`:
-
-1. Add `IO.println` calls with `[PREFIX-NNN]` scenario IDs.
-2. Rebuild: `lake build`.
-3. Run `lake exe sele4n` and verify new output lines appear.
-4. Add fixture expectations to `tests/fixtures/main_trace_smoke.expected` as
-   plain `[PREFIX-NNN] expected_trace_fragment` lines (the tier-2 parser
-   also accepts an optional `scenario_id | risk_class | fragment`
-   pipe-delimited form, unused by the current fixture).
-5. Add scenario registry entries to `tests/fixtures/scenario_registry.yaml` with
-   `source`, `function`, `subsystem`, and `description` fields.
-6. If the inter-transition invariant check count changes (ITR-001), update the
-   count in both the fixture file and the scenario registry.
-7. Validate: `./scripts/test_smoke.sh` (includes Tier 0 registry validation +
-   Tier 2 fixture comparison).
-
-### Golden-output fixture management (S2-D)
-
-The `tests/fixtures/main_trace_smoke.expected` file is the golden fixture for
-the kernel's executable trace output. Changes to this file require explicit
-rationale because they indicate behavioral changes in kernel transitions.
-
-**When to update the fixture:**
-- Adding new trace scenarios (new kernel operations or test paths)
-- Changing kernel transition semantics that affect trace output
-- Modifying the trace format (e.g., scenario ID prefixes)
-
-**When NOT to update the fixture:**
-- A test fails unexpectedly — investigate the root cause first
-- Cosmetic changes to non-trace output (e.g., `Repr` instances)
-
-**Update procedure:**
-1. Run `lake exe sele4n > /tmp/actual_trace.log` to capture actual output
-2. Compare: `diff tests/fixtures/main_trace_smoke.expected /tmp/actual_trace.log`
-3. Review each changed line — every difference should correspond to an
-   intentional behavioral change
-4. Update the fixture with the new expected output
-5. Document the rationale in the commit message (e.g., "Update fixture: added
-   S3-F RunQueue.remove well-formedness trace scenario")
-6. Run `./scripts/test_smoke.sh` to verify the updated fixture passes
-
-**Test assertions:** All test suites use structural equality (`BEq`/`DecidableEq`)
-for comparison logic, not `reprStr` or `toString`. The `reprStr` function is
-used only in diagnostic error messages when a test fails, not in the comparison
-itself (S2-A). This ensures test stability across `Repr` instance changes.
-
-### Metrics regeneration process (WS-L5-C)
-
-When modifying production Lean source files:
-
-1. Run `./scripts/sync_documentation_metrics.sh` — the write-through
-   helper that regenerates `docs/codebase_map.json`, pushes the
-   `readme_sync` metrics into `README.md` + `docs/spec/SELE4N_SPEC.md`
-   (via `scripts/sync_readme_from_codebase_map.sh`), checks the
-   known-large-files list, and re-runs the docs-sync gate. Use
-   `--check` for verify-only.
-2. `./scripts/report_current_state.py` remains available as a manual
-   cross-check of the derived metrics.
-3. Verify: `./scripts/test_docs_sync.sh` (checks codebase map freshness).
-
-### SMP theorem-manifest regeneration (WS-RR RR0.6)
-
-When adding, resizing, renaming or deleting a **theorem inventory** — a list of
-theorem identifiers carrying `<name>_identifiers_nodup` and
-`<name>_count : <name>.length = N`:
-
-1. Update the phase's entry in
-   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean`: add the inventory to
-   `inventories`, adjust **both** `entryCount` (registrations) and
-   `theoremCount` (propositions), and the two totals.  Two independent checks
-   hold you to it — the per-phase `…_entryCount_eq_inventories` theorem will
-   not compile until `entryCount` matches the real `List.length`, and the
-   propositionality census at the end of the module will not elaborate until
-   `theoremCount` matches the number of entries whose type is a `Prop`.  If you
-   do not know the proposition count, put anything in and read the correct
-   value out of the census's error.
-2. Regenerate the artifact:
-   `python3 scripts/generate_smp_theorem_manifest.py --write`.
-3. Verify: `python3 scripts/generate_smp_theorem_manifest.py --check` (also run
-   by Tier 0, after its `--self-test`).
-
-An inventory that no phase claims is a **hard failure**, not an omission — that
-is the case Lean cannot see, and it is the shape that let a theorem tally run
-SM8 → SM10 with no SM9 term for two minor versions.
+There is deliberately **no** force-bump gate, so automated contributors are
+never blocked.
 
 ---
 
-## 8) Definition of done (milestone-moving changes)
+## 9. Documentation rules
 
-A change is done when all are true:
+### Canonical ownership
 
-- implementation compiles,
-- trace/fixture behavior is intentionally stable or intentionally updated with rationale,
-- theorem/invariant surface remains coherent and discoverable,
-- tiered checks pass for the claimed scope,
-- docs reflect exact current state (not intended future state).
+| Layer | Owns |
+|-------|------|
+| Root `docs/*.md` | policy, spec, ADRs — the canonical text |
+| `docs/gitbook/` | mirrors that summarize and link to the canonical text |
+| [`CHANGELOG.md`](../CHANGELOG.md) | the per-version narrative, one entry per PR |
+| [`REGISTERED_DEBT.md`](REGISTERED_DEBT.md) | workstream status, ownership, the debt register |
+| `docs/planning/*.md` | the *schedule* for a phase — its sub-tasks, not its history |
+
+A landed phase's plan carries its sub-task table, not an account of what each
+cut changed. That account is the CHANGELOG's, and duplicating it produces two
+records that drift.
+
+### When you change behaviour, theorems or workstream status
+
+Update, in the same PR:
+
+1. `README.md` — metrics sync from `docs/codebase_map.json` (`readme_sync`)
+2. `docs/spec/SELE4N_SPEC.md`
+3. This file, if a command or rule changed
+4. The affected GitBook chapter(s) — canonical root docs take priority
+5. `docs/CLAIM_EVIDENCE_INDEX.md`, if a claim changed
+6. `REGISTERED_DEBT.md`, if workstream status changed
+7. `docs/codebase_map.json`, if Lean sources changed
+
+### Sync commands
+
+```bash
+./scripts/sync_documentation_metrics.sh          # the whole chain, in order
+python3 scripts/generate_codebase_map.py --pretty # regenerate the map
+python3 scripts/generate_codebase_map.py --pretty --check  # is it current?
+./scripts/sync_readme_from_codebase_map.sh       # README + spec metrics
+./scripts/test_docs_sync.sh                      # the gate CI runs
+python3 scripts/generate_doc_navigation.py       # GitBook README + SUMMARY
+python3 scripts/report_current_state.py          # current metrics, one per line
+```
+
+`CLAUDE.md` and `AGENTS.md` must stay **byte-identical below their headers** —
+`test_docs_sync.sh` checks it. Edit both in the same PR.
+
+### Fixture updates
+
+A fixture change is a claim that the kernel's observable behaviour changed on
+purpose.
+
+```bash
+lake exe sele4n > tests/fixtures/main_trace_smoke.expected   # only with a reason
+./scripts/test_smoke.sh                                       # then prove it holds
+```
+
+State the rationale in the PR body and in the CHANGELOG entry: what transition
+changed, why the new trace is correct, and what would have been wrong about
+keeping the old one. A fixture updated to make a test pass is a defect.
+
+### Generated artefacts
+
+```bash
+python3 scripts/generate_smp_theorem_manifest.py           # regenerate
+python3 scripts/generate_smp_theorem_manifest.py --check   # Tier 0 check
+```
+
+The SMP theorem total is **measured, not summed**: the manifest registers one
+entry per phase and the propositionality census resolves each identifier
+against the environment. Never reintroduce a hand-written per-phase figure.
+
+### Website link protection
+
+The project website links to source files, docs, scripts and directories in
+this repository. Protected paths are listed in
+`scripts/website_link_manifest.txt` and checked by
+`scripts/check_website_links.sh` (Tier 0). To rename or remove one:
+
+1. update the website (`hatter6822.github.io`) to the new path **first**;
+2. then update `scripts/website_link_manifest.txt`;
+3. CI passes only when the manifest and the tree agree.
+
+### Session URL hygiene
+
+A `https://claude.ai/code/session_*` URL must never appear in a commit message,
+PR title or body, in-tree documentation, CHANGELOG entry, source comment, test
+fixture, or any GitHub comment. Cite the canonical document instead:
+
+```
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md sections RR5, RR6
+Refs: #761
+Refs: 7da2572
+```
+
+### Ignore `docs/dev_history/`
+
+It holds milestone closeouts, prior audit reports, completed workstream plans
+and legacy GitBook chapters, kept only for traceability. Do not read or
+reference it unless explicitly instructed.
 
 ---
 
-## 9) Quick checklist (copy into PRs)
+## 10. Where the documentation is
 
-- [ ] Workstream ID(s) identified.
-- [ ] Scope is one coherent slice.
-- [ ] Transition semantics are explicit and deterministic.
-- [ ] Invariant/theorem updates are paired with implementation changes.
-- [ ] Required validation commands were run.
-- [ ] Documentation was synchronized.
+| Read this | For |
+|-----------|-----|
+| [`../README.md`](../README.md) | the project at a glance, current metrics |
+| [`spec/SELE4N_SPEC.md`](spec/SELE4N_SPEC.md) | the kernel specification |
+| [`spec/SEL4_SPEC.md`](spec/SEL4_SPEC.md) | what seL4 does, for comparison |
+| [`CLAIM_EVIDENCE_INDEX.md`](CLAIM_EVIDENCE_INDEX.md) | every public claim and the theorem or test backing it |
+| [`THREAT_MODEL.md`](THREAT_MODEL.md) | the security model and its boundaries |
+| [`HARDWARE_TESTING.md`](HARDWARE_TESTING.md) | the RPi5 bring-up path |
+| [`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md) | building and deploying an image |
+| [`CI_POLICY.md`](CI_POLICY.md) | what CI runs and why it is pinned |
+| [`INFORMATION_FLOW_ROADMAP.md`](INFORMATION_FLOW_ROADMAP.md) | the non-interference surface |
+| `*_ADR.md` | architecture decisions and their alternatives |
+| [`planning/`](planning/) | per-phase schedules |
+| [`gitbook/`](gitbook/) | the published book; mirrors of the above |
+
+---
+
+## 11. The contribution loop
+
+1. **Find the workstream.** Check
+   [`REGISTERED_DEBT.md`](REGISTERED_DEBT.md) for what is in flight and
+   the phase plan for the sub-task you are taking. Sub-task numbers are
+   execution order: a plan that says `RR5.10` before `RR5.11` means exactly
+   that, and a sub-task may only consume a lower-numbered one.
+2. **Read the standing constraints.** `CLAUDE.md`'s *Standing constraints and
+   registered debt* is current facts about the tree — what a live seam does,
+   what is dormant, what new code must not assume. It changes what you may
+   write.
+3. **Scope one coherent slice.** One PR is one sub-task or less.
+4. **Write transitions and their proofs together.** A live kernel transition
+   must not land ahead of its own invariant surface. If the two cannot be
+   split — the theorems unfold the function the switch replaces — they are one
+   PR, not two.
+5. **Build the module by name** (§3) and run the right tier (§4).
+6. **Bump the version and write the CHANGELOG entry** (§8).
+7. **Sync the documentation** (§9).
+8. **Stage, then run Tier 0** — the naming and plan gates read the index.
+9. **Commit.** The hook runs; do not bypass it.
+
+### PR checklist
+
+Copy into the PR body:
+
+```
+- [ ] Workstream ID identified
+- [ ] Scope is one coherent slice
+- [ ] Transitions are explicit and deterministic
+- [ ] Invariant/theorem updates paired with the implementation
+- [ ] Module build verified (hook installed, not bypassed)
+- [ ] test_smoke.sh passes (test_full.sh if theorems changed)
+- [ ] test_aarch64_cross_build.sh passes (if rust/ changed)
+- [ ] Documentation synchronized
+- [ ] Patch version bumped, all sites synced, CHANGELOG entry added
+- [ ] No website-linked path renamed or removed
+- [ ] No claude.ai session URL anywhere in the commit or PR
+```
+
+### Definition of done for a milestone-moving change
+
+- The theorem or transition exists, is named for what it does, and is reachable
+  from production (or explicitly staged, with the allowlist entry to prove it).
+- Tier 0–3 green; Tier 4 honest about what it could not run.
+- Every claim the change makes is cited in `CLAIM_EVIDENCE_INDEX.md`.
+- Every deferral it creates is a row in the debt register with an owner.
+- The CHANGELOG entry says what changed, what it found, and how it was
+  verified.
+
+---
+
+## 12. When something fails
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `lake: command not found` | elan not on PATH | `source ~/.elan/env` |
+| Module passes `lake build` but CI fails | default target does not reach it | `lake build <Module.Path>` by name |
+| `bracket nesting level exceeded maximum of 256` | deep `do`-chain in a suite | split into per-area helpers (§7) |
+| Tier 0 naming gate passes locally, fails in CI | gate reads the git index | `git add` first, then re-run |
+| `check_version_sync.sh` fails | a version site missed | `./scripts/bump_version.sh <version>` |
+| `docs/codebase_map.json is stale` | Lean sources changed after the last sync | `python3 scripts/generate_codebase_map.py --pretty` |
+| `CLAUDE.md 'Known large files' differs` | a file crossed the 10% tolerance | `./scripts/find_large_lean_files.sh --format bullets`, replace the block in **both** CLAUDE.md and AGENTS.md |
+| Cross build fails but `cargo check` was clean | `check` never reaches codegen | that is the point — fix the `asm!` or the encoding |
+| A `TLBI *OS` wrapper halts the core | FEAT_TLBIOS is ARMv8.4-A; Cortex-A76 is ARMv8.2-A | use the `*IS` variant; the `*OS` path is fail-closed by design |
+| Production module cannot import what it needs | it is on the staged allowlist | promote it deliberately, or restructure — production must not import staged |
+| A push to `main` is rejected | branch protection | branch first; never push to the default branch |
+
+Proxy or TLS failures on outbound HTTPS: see `/root/.ccr/README.md` and
+`curl -sS "$HTTPS_PROXY/__agentproxy/status"`. Never disable TLS verification
+and never unset `HTTPS_PROXY`.
+
+---
+
+## 13. Command reference
+
+```bash
+# --- setup -------------------------------------------------------------
+./scripts/setup_lean_env.sh [--skip-test-deps] [--build] [--quiet]
+./scripts/install_git_hooks.sh [--check|--force]
+source ~/.elan/env
+
+# --- build -------------------------------------------------------------
+lake build                                   # default target
+lake build <Module.Path>                     # one module (required before commit)
+lake exe sele4n                              # trace harness
+lake env lean --run tests/<Suite>.lean       # interpret a suite
+
+# --- test --------------------------------------------------------------
+./scripts/test_fast.sh                       # tiers 0-1
+./scripts/test_smoke.sh                      # tiers 0-2   (PR minimum)
+./scripts/test_full.sh                       # tiers 0-3
+NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh   # tiers 0-4
+./scripts/test_rust.sh                       # host Rust
+./scripts/test_aarch64_cross_build.sh        # cross target (after any rust/ change)
+./scripts/test_tier5_cross_language.sh       # Lean <-> Rust lock oracle
+SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh   # gate honesty
+
+# --- gates you can run alone -------------------------------------------
+./scripts/test_tier0_hygiene.sh
+./scripts/check_version_sync.sh
+./scripts/check_website_links.sh
+python3 scripts/check_workstream_plan.py [--self-test]
+python3 scripts/check_deferral_registration.py
+python3 scripts/check_identifier_naming.py
+python3 scripts/check_module_axioms.py
+python3 scripts/check_proof_depth.py
+python3 scripts/check_ipc_invariant_dethreading.py
+python3 scripts/check_aarch64_cross_target.py
+python3 scripts/check_tlbi_broadcast_discipline.py
+./scripts/check_production_staging_partition.sh
+
+# --- version and docs --------------------------------------------------
+./scripts/bump_version.sh <x.y.z>
+./scripts/sync_documentation_metrics.sh
+./scripts/test_docs_sync.sh
+python3 scripts/generate_codebase_map.py --pretty [--check]
+python3 scripts/generate_doc_navigation.py
+python3 scripts/generate_smp_theorem_manifest.py [--check]
+python3 scripts/report_current_state.py
+./scripts/find_large_lean_files.sh [--check|--format bullets]
+```
+
+---
+
+## 14. Third-party code
+
+seLe4n is GPLv3+ (see [`../LICENSE`](../LICENSE)). The Rust workspace pulls a
+small set of **build-time only** crates (`cc`, `find-msvc-tools`, `shlex`) to
+assemble ARM64 boot assembly; **no third-party code is linked into the runtime
+kernel binary.** Their upstream MIT notices are reproduced verbatim in
+[`../THIRD_PARTY_LICENSES.md`](../THIRD_PARTY_LICENSES.md).
+
+1. Adding a **runtime** dependency (`[dependencies]` of any crate under
+   `rust/`) means updating `THIRD_PARTY_LICENSES.md` in the same PR with the
+   verbatim upstream copyright lines, and adding the path to
+   `scripts/website_link_manifest.txt`.
+2. Bumping an external crate means re-checking its `LICENSE-MIT` and
+   `Cargo.toml` for authorship changes, and re-checking for a new upstream
+   `NOTICE` (Apache-2.0 § 4(d)).
+3. Prefer `core::*` and hand-written minimal code over a crate. **A
+   microkernel's trusted computing base must stay small.**

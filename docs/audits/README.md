@@ -18,7 +18,7 @@ A typical audit goes through four stages:
 |-------|-------------------------|-------|
 | **Audit cut** | `AUDIT_v<X>_COMPREHENSIVE.md` | Initial finding inventory + severity table. |
 | **Workstream planning** | `+ AUDIT_v<X>_WORKSTREAM_PLAN.md`, `+ AUDIT_v<X>_WS_*_BASELINE.txt` | Per-phase decomposition + numeric snapshot at workstream start. |
-| **In-flight remediation** | `+ AUDIT_v<X>_DISCHARGE_INDEX.md` | Discharge index aggregates the closure-form proof obligations.  **Deferrals do not get their own file**: they go to the *Registered debt index* in [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md), which CLAUDE.md declares canonical.  The `AUDIT_v<X>_DEFERRED.md` convention this row used to declare produced exactly one such file (`AUDIT_v0.29.0_DEFERRED.md`, since absorbed) and one dangling reference: `AUDIT_v0.30.11_DEFERRED.md` was cited by production Lean source, by the WS-RC plan in nine places and by this table, and was never created (WS-RR RR0.9, v0.34.26). |
+| **In-flight remediation** | `+ AUDIT_v<X>_DISCHARGE_INDEX.md` | Discharge index aggregates the closure-form proof obligations.  **Deferrals do not get their own file**: they go to the *Registered debt index* in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md), which CLAUDE.md declares canonical.  The `AUDIT_v<X>_DEFERRED.md` convention this row used to declare produced exactly one such file (`AUDIT_v0.29.0_DEFERRED.md`, since absorbed) and one dangling reference: `AUDIT_v0.30.11_DEFERRED.md` was cited by production Lean source, by the WS-RC plan in nine places and by this table, and was never created (WS-RR RR0.9, v0.34.26). |
 | **Workstream closure** | `+ AUDIT_v<X>_ERRATA.md` (if any) | Audit-text corrections discovered during remediation. |
 
 Once the workstream closes:
@@ -26,7 +26,7 @@ Once the workstream closes:
 1. The plan + comprehensive + (optionally) errata + deferred files are
    moved to `docs/dev_history/audits/` (see WS-AK closure commits for
    the precedent).
-2. `docs/WORKSTREAM_HISTORY.md` records the closure with cross-references
+2. `docs/REGISTERED_DEBT.md` records the closure with cross-references
    to the archived files.
 3. `scripts/website_link_manifest.txt` is updated so the website's
    "Latest audit" link points at the next active audit (or its archived
@@ -121,7 +121,7 @@ cosmetic refactor with no correctness impact):
 Archive a file to `docs/dev_history/audits/` only when:
 
 1. The associated workstream has closed (gate-state table in
-   `docs/WORKSTREAM_HISTORY.md`).
+   `docs/REGISTERED_DEBT.md`).
 2. The artefact is no longer the **canonical** reference for an active
    workstream.
 3. `scripts/website_link_manifest.txt` no longer references it OR every
@@ -133,7 +133,7 @@ must happen in the same PR.
 
 ## See also
 
-- [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — canonical
+- [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) — canonical
   workstream closure record.
 - [`docs/dev_history/audits/`](../dev_history/audits/) — archived audits.
 - [`scripts/website_link_manifest.txt`](../../scripts/website_link_manifest.txt) — protected paths.

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.44-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.47-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -86,7 +86,7 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 
 | 속성 | 값 |
 |------|-----|
-| **버전** | `0.34.44` |
+| **버전** | `0.34.47` |
 | **Lean 툴체인** | `v4.28.0` |
 | **프로덕션 Lean LoC** | 286개 파일, 286,841줄 |
 | **테스트 Lean LoC** | 69개 테스트 스위트, 64,078줄 |
@@ -115,7 +115,7 @@ lake exe sele4n                # 트레이스 하니스 실행
 |-------------|--------|
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — 작업 흐름, 검증, PR 체크리스트 | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — 사양 및 마일스톤 |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — 전체 핸드북 | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — seL4 참조 의미론 |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — 기계 판독 가능 인벤토리 | [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) — 작업 스트림 이력 및 로드맵 |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — 기계 판독 가능 인벤토리 | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — 작업 스트림 이력 및 로드맵 |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — 기여 방법 | [`CHANGELOG.md`](../../../CHANGELOG.md) — 버전 이력 |
 
 [`docs/codebase_map.json`](../../../docs/codebase_map.json)이 프로젝트 지표의 진실의 원천입니다.
@@ -227,7 +227,7 @@ v0.33.100 에서 마감). 남은 단계는 **SM10**(릴리스 마감 → v1.0.0)
 마스터 계획: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 단계별 계획은 `docs/planning/SMP_*.md` 에 있습니다. 완료된 모든 작업 스트림
 포트폴리오(WS-B~WS-AB, WS-AE~WS-AN, WS-RC R0–R5, WS-RA)를 포함하는 단계별
-정본 기록은 [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
+정본 기록은 [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md)
 입니다. 이전 감사 및 마일스톤 마감 보고서는
 [`docs/dev_history/`](../../../docs/dev_history/README.md)에 보관되어 있습니다.
 

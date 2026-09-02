@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.44-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.47-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -83,7 +83,7 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核。每一个内核�
 
 | 属性 | 值 |
 |------|------|
-| **版本** | `0.34.44` |
+| **版本** | `0.34.47` |
 | **Lean 工具链** | `v4.28.0` |
 | **生产代码行数** | 286,841 行，分布于 286 个文件 |
 | **测试代码行数** | 64,078 行，分布于 69 个测试套件 |
@@ -112,7 +112,7 @@ lake exe sele4n                # 运行跟踪测试工具
 |-----------|---------|
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) —— 开发流程、验证、PR 检查清单 | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) —— 项目规格与里程碑 |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) —— 完整手册 | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) —— seL4 参考语义 |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) —— 机器可读清单 | [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) —— 工作流历史与路线图 |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) —— 机器可读清单 | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) —— 工作流历史与路线图 |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) —— 贡献指南 | [`CHANGELOG.md`](../../../CHANGELOG.md) —— 版本变更历史 |
 
 [`docs/codebase_map.json`](../../../docs/codebase_map.json) 是项目指标的权威数据源，
@@ -208,7 +208,7 @@ tests/                           Executable test suites + fixtures
 
 **SM10 被 WS-RR 阻塞**（SMP 发布就绪），即当前正在进行的 1.0 前修复阶段（[`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)）：RR0（v0.34.26）、RR1（v0.34.41）、RR2（v0.34.42）、RR3（v0.34.43），以及 **RR4——故障处理：带基于回复重启的完整故障 IPC（v0.34.44）**。RR4 不再让发生故障的线程从触发故障的那条指令恢复：故障被记录到 TCB，经由实际生效的跨核 call 链投递到该线程的 `faultHandler` 端点，并由一条回复来处理——在选定的 PC 处重启该线程，或者放弃它。剩余 RR5–RR8，随后是 **SM10**（发布收尾 → v1.0.0）。
 
-主计划：[`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)，各阶段计划位于 `docs/planning/SMP_*.md`。权威的逐阶段记录——包含所有已完成的工作流组合（WS-B 至 WS-AB、WS-AE 至 WS-AN、WS-RC R0–R5、WS-RA）——见 [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)；此前的审计和里程碑结项报告已归档至 [`docs/dev_history/`](../../../docs/dev_history/README.md)。
+主计划：[`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)，各阶段计划位于 `docs/planning/SMP_*.md`。权威的逐阶段记录——包含所有已完成的工作流组合（WS-B 至 WS-AB、WS-AE 至 WS-AN、WS-RC R0–R5、WS-RA）——见 [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md)；此前的审计和里程碑结项报告已归档至 [`docs/dev_history/`](../../../docs/dev_history/README.md)。
 
 ---
 

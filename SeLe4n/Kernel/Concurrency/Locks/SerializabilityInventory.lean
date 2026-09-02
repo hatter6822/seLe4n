@@ -10,6 +10,7 @@
 -- STATUS: staged for WS-SM (SM3.E serializability inventory)
 
 import SeLe4n.Kernel.Concurrency.Locks.Serializability
+import SeLe4n.PackedString
 
 /-!
 # WS-SM SM3.E — Theorem inventory
@@ -79,11 +80,31 @@ inductive SerializabilityCategory where
 
 /-- WS-SM SM3.E: a theorem entry in the SM3.E inventory. -/
 structure SerializabilityTheorem where
-  description : String
-  identifier  : String
+  /-- The description as one packed key (`SeLe4n.PackedString`): one
+      base-2²¹ digit per scalar value behind a leading `1`.  Read it back
+      through `description`. -/
+  descriptionKey : Nat
+  /-- The fully-qualified name, packed the same way.  Read it back through
+      `identifier`. -/
+  identifierKey  : Nat
+  /-- The kernel's own check, per entry, that the key packs exactly the valid
+      scalar values it unpacks to — what lets distinctness of the strings be
+      proven from distinctness of the keys. -/
+  descriptionKey_wf : isWellFormedPacked descriptionKey = true := by decide +kernel
+  identifierKey_wf  : isWellFormedPacked identifierKey = true := by decide +kernel
   _elabCheck  : Unit
   category    : SerializabilityCategory
-  deriving Repr, Inhabited
+  deriving Repr
+
+/-- The default entry spells the empty string twice: `1` packs no digits. -/
+instance : Inhabited SerializabilityTheorem :=
+  ⟨{ descriptionKey := 1, identifierKey := 1, _elabCheck := (), category := default }⟩
+
+/-- The entry's description, unpacked from its key. -/
+def SerializabilityTheorem.description (t : SerializabilityTheorem) : String := stringOfPacked t.descriptionKey
+
+/-- The entry's fully-qualified name, unpacked from its key. -/
+def SerializabilityTheorem.identifier (t : SerializabilityTheorem) : String := stringOfPacked t.identifierKey
 
 /-- WS-SM SM3.E: build a `SerializabilityTheorem` with a compile-time-validated
 identifier.  See SM3.A's `polt!` / SM3.B's `lkst!` / SM3.C's `wlst!` / SM3.D's
@@ -92,10 +113,10 @@ syntax (name := serltMacro) "serlt!" str ident term : term
 
 macro_rules
   | `(serlt! $desc:str $ident:ident $cat:term) => do
-      let nameStr : String := ident.getId.toString
-      let nameStxLit := Lean.Syntax.mkStrLit nameStr
-      `(({ description := $desc,
-           identifier := $nameStxLit,
+      let descKey := packedStringLit desc.getString
+      let identKey := packedStringLit ident.getId.toString
+      `(({ descriptionKey := nat_lit $descKey,
+           identifierKey := nat_lit $identKey,
            _elabCheck := (let _ := @$ident; ()),
            category := $cat
          } : SerializabilityTheorem))
@@ -389,12 +410,22 @@ theorem serializabilityTheorems_partition_sum :
     (serializabilityTheorems.filter (fun t => t.category == .observational)).length =
     serializabilityTheorems.length := by decide
 
-/-- WS-SM SM3.E: every inventory identifier is unique. -/
+/-- WS-SM SM3.E: every inventory identifier is unique.  Kernel-checked, never
+`native_decide`: the identifiers are stored as packed keys, each entry's
+`identifierKey_wf` field is the kernel's own check that its key is well
+formed, and `SeLe4n.nodup_map_stringOfPacked` turns distinctness of the keys
+— one `decide +kernel` over `Nat`s — into distinctness of the strings they
+spell.  A duplicate identifier fails this proof in the kernel. -/
 theorem serializabilityTheorems_identifiers_nodup :
-    (serializabilityTheorems.map (·.identifier)).Nodup := by native_decide
+    (serializabilityTheorems.map (·.identifier)).Nodup :=
+  nodup_map_stringOfPacked SerializabilityTheorem.identifierKey (fun t _ => t.identifierKey_wf)
+    (by decide +kernel)
 
-/-- WS-SM SM3.E: every inventory description is unique. -/
+/-- WS-SM SM3.E: every inventory description is unique — the same key-level
+argument as `serializabilityTheorems_identifiers_nodup`, over `descriptionKey`. -/
 theorem serializabilityTheorems_descriptions_nodup :
-    (serializabilityTheorems.map (·.description)).Nodup := by native_decide
+    (serializabilityTheorems.map (·.description)).Nodup :=
+  nodup_map_stringOfPacked SerializabilityTheorem.descriptionKey (fun t _ => t.descriptionKey_wf)
+    (by decide +kernel)
 
 end SeLe4n.Kernel.Concurrency

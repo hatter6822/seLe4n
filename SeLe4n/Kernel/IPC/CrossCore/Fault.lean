@@ -544,7 +544,7 @@ delivering to it, which changes what the receive leg and the donation return
 are handed.  Until that lands, a handler must answer a fault with `.reply`
 and take its next request with a separate `.receive`; a `.replyRecv` answer
 reaches the ordinary path and wakes the faulted thread `.ready` at the
-instruction that faulted.  Registered as debt in `docs/WORKSTREAM_HISTORY.md`
+instruction that faulted.  Registered as debt in `docs/REGISTERED_DEBT.md`
 (WS-RR), closure target RR7 — stated here rather than left for a reader to
 infer from the absence of a call. -/
 def replyTransferOnCore (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo)

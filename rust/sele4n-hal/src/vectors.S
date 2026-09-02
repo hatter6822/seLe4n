@@ -36,7 +36,7 @@ __exception_vectors:
 // exception taken to "Current EL with SP0" indicates a corrupted PSTATE.
 // The `__exception_stub` infinite-WFE loop treats this as a terminal
 // fault (see the SP0-unreachable rationale in WS-AN AN9-A SMP design
-// notes; historical record in docs/WORKSTREAM_HISTORY.md and CHANGELOG.md).
+// notes; historical record in CHANGELOG.md and CHANGELOG.md).
 // =========================================================================
 
 // 0x000: Synchronous — Current EL, SP0

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/rr4-fault-handling-ipc-p4pnva",
-      "commit_sha": "fb302cc4240ee8272a38ec548c110b0fe94f534e",
-      "tree_sha": "58223f3f3fcd8006676df1aa0f3cf1133ddd2fd0",
-      "committed_at_utc": "2026-09-02T03:44:17+00:00"
+      "branch": "claude/smp-release-readiness-breakdown-lcq801",
+      "commit_sha": "1a2cd5627e44aba578cb812fab3771582d0a4c25",
+      "tree_sha": "d9643bdb7629f5e1a664b858198269dbc057cde8",
+      "committed_at_utc": "2026-09-02T18:07:20+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "01ff24c93216e0e44fcd012b416364ff12b2a57d4f786cd509b7ed0c36fdcee2"
+    "source_digest": "2f0485df35fe76bc2e4a0c4691793ba238910a410a6c1c620f194a5c06d5bcac"
   },
   "summary": {
-    "module_count": 377,
-    "declaration_count": 18262
+    "module_count": 378,
+    "declaration_count": 18325
   },
   "readme_sync": {
-    "version": "0.34.44",
+    "version": "0.34.47",
     "lean_toolchain": "v4.28.0",
-    "production_files": 307,
-    "production_loc": 316818,
+    "production_files": 308,
+    "production_loc": 317352,
     "test_files": 70,
-    "test_loc": 67030,
-    "proved_theorem_lemma_decls": 10514,
+    "test_loc": 67037,
+    "proved_theorem_lemma_decls": 10524,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -32183,7 +32183,9 @@
           "kind": "structure",
           "name": "SmpLatentAssumption",
           "line": 69,
-          "called": []
+          "called": [
+            "identifier"
+          ]
         },
         {
           "kind": "def",
@@ -32193,6 +32195,7 @@
             "CNode",
             "SmpLatentAssumption",
             "cspaceLookupMultiLevel",
+            "identifier",
             "invariant",
             "level",
             "resolveCapAddress_result_valid_cnode",
@@ -32207,7 +32210,8 @@
             "ObjId",
             "SmpLatentAssumption",
             "cspaceCopy",
-            "cspaceCopy_preserves_capabilityInvariantBundle"
+            "cspaceCopy_preserves_capabilityInvariantBundle",
+            "identifier"
           ]
         },
         {
@@ -32216,6 +32220,7 @@
           "line": 112,
           "called": [
             "SmpLatentAssumption",
+            "identifier",
             "lifecyclePreRetypeCleanup"
           ]
         },
@@ -32225,6 +32230,7 @@
           "line": 124,
           "called": [
             "SmpLatentAssumption",
+            "identifier",
             "registerService",
             "serviceHasPathTo"
           ]
@@ -32235,6 +32241,7 @@
           "line": 136,
           "called": [
             "SmpLatentAssumption",
+            "identifier",
             "replenishmentPipelineOrder",
             "timerTickWithBudget"
           ]
@@ -32249,6 +32256,7 @@
             "ServiceId",
             "SmpLatentAssumption",
             "ThreadId",
+            "identifier",
             "storeObject",
             "typedIdDisjointness"
           ]
@@ -32268,6 +32276,7 @@
             "bootFromPlatform_smp_witness",
             "canonical",
             "currentCoreId",
+            "identifier",
             "numCores"
           ]
         },
@@ -32285,6 +32294,7 @@
             "bootFromPlatform_smp_currentAllNone",
             "bootFromPlatform_smp_witness",
             "cores",
+            "identifier",
             "idleThreadId",
             "none"
           ]
@@ -32322,6 +32332,7 @@
             "bootFromPlatform_currentCore_is_zero_smpLatent",
             "cspaceCopyMoveMutate_smpLatent",
             "cspaceLookupMultiLevel_smpLatent",
+            "identifier",
             "lifecyclePreRetypeCleanup_smpLatent",
             "serviceHasPathTo_smpLatent",
             "smpLatentInventory",
@@ -32338,6 +32349,7 @@
             "bootFromPlatform_currentCore_is_zero_smpLatent",
             "cspaceCopyMoveMutate_smpLatent",
             "cspaceLookupMultiLevel_smpLatent",
+            "identifier",
             "lifecyclePreRetypeCleanup_smpLatent",
             "serviceHasPathTo_smpLatent",
             "smpLatentInventory",
@@ -32372,7 +32384,8 @@
           "name": "SmpRetiredAssumption",
           "line": 324,
           "called": [
-            "SmpRetirementStatus"
+            "SmpRetirementStatus",
+            "identifier"
           ]
         },
         {
@@ -32382,6 +32395,7 @@
           "called": [
             "SmpRetiredAssumption",
             "cspaceLookupMultiLevel",
+            "identifier",
             "interrupt",
             "resolveCapAddress_result_valid_cnode"
           ]
@@ -32394,6 +32408,7 @@
             "SmpRetiredAssumption",
             "cspaceCopy",
             "cspaceCopy_preserves_capabilityInvariantBundle",
+            "identifier",
             "storeObject"
           ]
         },
@@ -32403,6 +32418,7 @@
           "line": 355,
           "called": [
             "SmpRetiredAssumption",
+            "identifier",
             "lifecyclePreRetypeCleanup"
           ]
         },
@@ -32412,6 +32428,7 @@
           "line": 366,
           "called": [
             "SmpRetiredAssumption",
+            "identifier",
             "serviceHasPathTo"
           ]
         },
@@ -32421,6 +32438,7 @@
           "line": 377,
           "called": [
             "SmpRetiredAssumption",
+            "identifier",
             "replenishmentPipelineOrder",
             "timerTickWithBudget"
           ]
@@ -32431,6 +32449,7 @@
           "line": 388,
           "called": [
             "SmpRetiredAssumption",
+            "identifier",
             "runtime",
             "storeObject",
             "typedIdDisjointness"
@@ -32446,6 +32465,7 @@
             "SmpRetiredAssumption",
             "boot",
             "bootFromPlatform_smp_witness",
+            "identifier",
             "numCores"
           ]
         },
@@ -32459,6 +32479,7 @@
             "boot",
             "bootFromPlatform",
             "bootFromPlatform_smp_currentAllNone",
+            "identifier",
             "none"
           ]
         },
@@ -32499,6 +32520,7 @@
             "cspaceCopyMoveMutate_smpRetired",
             "cspaceLookupMultiLevel_smpLatent",
             "cspaceLookupMultiLevel_smpRetired",
+            "identifier",
             "lifecyclePreRetypeCleanup_smpLatent",
             "lifecyclePreRetypeCleanup_smpRetired",
             "serviceHasPathTo_smpLatent",
@@ -32520,6 +32542,7 @@
             "bootFromPlatform_currentCore_is_zero_smpRetired",
             "cspaceCopyMoveMutate_smpRetired",
             "cspaceLookupMultiLevel_smpRetired",
+            "identifier",
             "lifecyclePreRetypeCleanup_smpRetired",
             "serviceHasPathTo_smpRetired",
             "smpRetiredInventory",
@@ -33132,7 +33155,9 @@
           "name": "LockPrimitiveTheorem",
           "line": 84,
           "called": [
-            "LockPrimitiveCategory"
+            "LockPrimitiveCategory",
+            "description",
+            "identifier"
           ]
         },
         {
@@ -33141,10 +33166,12 @@
           "line": 98,
           "called": [
             "LockPrimitiveTheorem",
+            "description",
             "happensBefore_antisymmetric",
             "happensBefore_irreflexive",
             "happensBefore_transitive",
             "happens_before_partial_order",
+            "identifier",
             "rust_rwLock_refines_lean",
             "rust_ticketLock_refines_lean",
             "rwLock_bounded_wait_read",
@@ -33228,6 +33255,7 @@
           "name": "lockPrimitives_identifiers_nodup",
           "line": 230,
           "called": [
+            "identifier",
             "lockPrimitives"
           ]
         },
@@ -33236,6 +33264,7 @@
           "name": "lockPrimitives_descriptions_nodup",
           "line": 238,
           "called": [
+            "description",
             "lockPrimitives"
           ]
         }
@@ -34737,18 +34766,18 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.DeadlockInventory",
       "path": "SeLe4n/Kernel/Concurrency/Locks/DeadlockInventory.lean",
-      "declaration_count": 19,
+      "declaration_count": 22,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Concurrency",
-          "line": 53,
+          "line": 54,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "DeadlockCategory",
-          "line": 58,
+          "line": 59,
           "called": [
             "waitGraph"
           ]
@@ -34756,29 +34785,58 @@
         {
           "kind": "structure",
           "name": "DeadlockTheorem",
-          "line": 80,
+          "line": 81,
           "called": [
-            "DeadlockCategory"
+            "DeadlockCategory",
+            "isWellFormedPacked"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:99>",
+          "line": 99,
+          "called": [
+            "DeadlockTheorem",
+            "default"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "DeadlockTheorem.description",
+          "line": 103,
+          "called": [
+            "DeadlockTheorem",
+            "stringOfPacked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "DeadlockTheorem.identifier",
+          "line": 106,
+          "called": [
+            "DeadlockTheorem",
+            "stringOfPacked"
           ]
         },
         {
           "kind": "syntax",
           "name": "\"dlt!\"",
-          "line": 89,
+          "line": 110,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:91>",
-          "line": 91,
+          "name": "<anonymous:macro_rules:112>",
+          "line": 112,
           "called": [
-            "DeadlockTheorem"
+            "DeadlockTheorem",
+            "packedStringLit"
           ]
         },
         {
           "kind": "def",
           "name": "deadlockTheorems",
-          "line": 103,
+          "line": 124,
           "called": [
             "Acyclic",
             "Acyclic_mono",
@@ -34852,7 +34910,7 @@
         {
           "kind": "theorem",
           "name": "deadlockTheorems_count",
-          "line": 247,
+          "line": 268,
           "called": [
             "length"
           ]
@@ -34860,7 +34918,7 @@
         {
           "kind": "theorem",
           "name": "deadlockTheorems_model_count",
-          "line": 251,
+          "line": 272,
           "called": [
             "filter",
             "length"
@@ -34869,7 +34927,7 @@
         {
           "kind": "theorem",
           "name": "deadlockTheorems_hypotheses_count",
-          "line": 255,
+          "line": 276,
           "called": [
             "filter",
             "length"
@@ -34878,7 +34936,7 @@
         {
           "kind": "theorem",
           "name": "deadlockTheorems_order_count",
-          "line": 259,
+          "line": 280,
           "called": [
             "filter",
             "length"
@@ -34887,7 +34945,7 @@
         {
           "kind": "theorem",
           "name": "deadlockTheorems_deadlock_count",
-          "line": 263,
+          "line": 284,
           "called": [
             "filter",
             "length"
@@ -34896,7 +34954,7 @@
         {
           "kind": "theorem",
           "name": "deadlockTheorems_waitGraph_count",
-          "line": 267,
+          "line": 288,
           "called": [
             "filter",
             "length",
@@ -34906,7 +34964,7 @@
         {
           "kind": "theorem",
           "name": "deadlockTheorems_modeAware_count",
-          "line": 271,
+          "line": 292,
           "called": [
             "filter",
             "length"
@@ -34915,7 +34973,7 @@
         {
           "kind": "theorem",
           "name": "deadlockTheorems_sizeBound_count",
-          "line": 275,
+          "line": 296,
           "called": [
             "filter",
             "length"
@@ -34924,7 +34982,7 @@
         {
           "kind": "theorem",
           "name": "deadlockTheorems_boundedWait_count",
-          "line": 279,
+          "line": 300,
           "called": [
             "filter",
             "length"
@@ -34933,7 +34991,7 @@
         {
           "kind": "theorem",
           "name": "deadlockTheorems_grounding_count",
-          "line": 283,
+          "line": 304,
           "called": [
             "filter",
             "length"
@@ -34942,7 +35000,7 @@
         {
           "kind": "theorem",
           "name": "deadlockTheorems_partition_sum",
-          "line": 287,
+          "line": 308,
           "called": [
             "filter",
             "length",
@@ -34952,14 +35010,20 @@
         {
           "kind": "theorem",
           "name": "deadlockTheorems_identifiers_nodup",
-          "line": 300,
-          "called": []
+          "line": 326,
+          "called": [
+            "identifier",
+            "nodup_map_stringOfPacked"
+          ]
         },
         {
           "kind": "theorem",
           "name": "deadlockTheorems_descriptions_nodup",
-          "line": 304,
-          "called": []
+          "line": 333,
+          "called": [
+            "description",
+            "nodup_map_stringOfPacked"
+          ]
         }
       ]
     },
@@ -37799,46 +37863,75 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.LockSetInventory",
       "path": "SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean",
-      "declaration_count": 17,
+      "declaration_count": 20,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Concurrency",
-          "line": 53,
+          "line": 54,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "LockSetCategory",
-          "line": 59,
+          "line": 60,
           "called": []
         },
         {
           "kind": "structure",
           "name": "LockSetTheorem",
-          "line": 84,
+          "line": 85,
           "called": [
-            "LockSetCategory"
+            "LockSetCategory",
+            "isWellFormedPacked"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:103>",
+          "line": 103,
+          "called": [
+            "LockSetTheorem",
+            "default"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "LockSetTheorem.description",
+          "line": 107,
+          "called": [
+            "LockSetTheorem",
+            "stringOfPacked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "LockSetTheorem.identifier",
+          "line": 110,
+          "called": [
+            "LockSetTheorem",
+            "stringOfPacked"
           ]
         },
         {
           "kind": "syntax",
           "name": "\"lkst!\"",
-          "line": 93,
+          "line": 114,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:95>",
-          "line": 95,
+          "name": "<anonymous:macro_rules:116>",
+          "line": 116,
           "called": [
-            "LockSetTheorem"
+            "LockSetTheorem",
+            "packedStringLit"
           ]
         },
         {
           "kind": "def",
           "name": "lockSetTheorems",
-          "line": 107,
+          "line": 128,
           "called": [
             "AccessMode.conflicts_symm",
             "AccessMode.lub_assoc",
@@ -37957,7 +38050,7 @@
         {
           "kind": "theorem",
           "name": "lockSetTheorems_count",
-          "line": 363,
+          "line": 384,
           "called": [
             "length"
           ]
@@ -37965,42 +38058,6 @@
         {
           "kind": "theorem",
           "name": "lockSetTheorems_projection_count",
-          "line": 371,
-          "called": [
-            "filter",
-            "length"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "lockSetTheorems_lockSet_count",
-          "line": 376,
-          "called": [
-            "filter",
-            "length"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "lockSetTheorems_consistency_count",
-          "line": 381,
-          "called": [
-            "filter",
-            "length"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "lockSetTheorems_acquireSort_count",
-          "line": 387,
-          "called": [
-            "filter",
-            "length"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "lockSetTheorems_algebra_count",
           "line": 392,
           "called": [
             "filter",
@@ -38009,8 +38066,44 @@
         },
         {
           "kind": "theorem",
+          "name": "lockSetTheorems_lockSet_count",
+          "line": 397,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockSetTheorems_consistency_count",
+          "line": 402,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockSetTheorems_acquireSort_count",
+          "line": 408,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockSetTheorems_algebra_count",
+          "line": 413,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "lockSetTheorems_chainStart_count",
-          "line": 399,
+          "line": 420,
           "called": [
             "filter",
             "length"
@@ -38019,7 +38112,7 @@
         {
           "kind": "theorem",
           "name": "lockSetTheorems_partition_sum",
-          "line": 404,
+          "line": 425,
           "called": [
             "filter",
             "length"
@@ -38028,19 +38121,25 @@
         {
           "kind": "theorem",
           "name": "lockSetTheorems_identifiers_nodup",
-          "line": 423,
-          "called": []
+          "line": 440,
+          "called": [
+            "identifier",
+            "nodup_map_stringOfPacked"
+          ]
         },
         {
           "kind": "theorem",
           "name": "lockSetTheorems_descriptions_nodup",
-          "line": 431,
-          "called": []
+          "line": 447,
+          "called": [
+            "description",
+            "nodup_map_stringOfPacked"
+          ]
         },
         {
           "kind": "theorem",
           "name": "lockSet_consistent_aggregate_covers_every_syscall",
-          "line": 439,
+          "line": 457,
           "called": [
             "count",
             "filter",
@@ -45480,46 +45579,75 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.SerializabilityInventory",
       "path": "SeLe4n/Kernel/Concurrency/Locks/SerializabilityInventory.lean",
-      "declaration_count": 19,
+      "declaration_count": 22,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Concurrency",
-          "line": 52,
+          "line": 53,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "SerializabilityCategory",
-          "line": 57,
+          "line": 58,
           "called": []
         },
         {
           "kind": "structure",
           "name": "SerializabilityTheorem",
-          "line": 81,
+          "line": 82,
           "called": [
-            "SerializabilityCategory"
+            "SerializabilityCategory",
+            "isWellFormedPacked"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:100>",
+          "line": 100,
+          "called": [
+            "SerializabilityTheorem",
+            "default"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "SerializabilityTheorem.description",
+          "line": 104,
+          "called": [
+            "SerializabilityTheorem",
+            "stringOfPacked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "SerializabilityTheorem.identifier",
+          "line": 107,
+          "called": [
+            "SerializabilityTheorem",
+            "stringOfPacked"
           ]
         },
         {
           "kind": "syntax",
           "name": "\"serlt!\"",
-          "line": 91,
+          "line": 112,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:93>",
-          "line": 93,
+          "name": "<anonymous:macro_rules:114>",
+          "line": 114,
           "called": [
-            "SerializabilityTheorem"
+            "SerializabilityTheorem",
+            "packedStringLit"
           ]
         },
         {
           "kind": "def",
           "name": "serializabilityTheorems",
-          "line": 105,
+          "line": 126,
           "called": [
             "ActionObsCongr",
             "ActionPiCongr",
@@ -45638,7 +45766,7 @@
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_count",
-          "line": 340,
+          "line": 361,
           "called": [
             "length"
           ]
@@ -45646,7 +45774,7 @@
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_model_count",
-          "line": 344,
+          "line": 365,
           "called": [
             "filter",
             "length"
@@ -45655,7 +45783,7 @@
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_conflict_count",
-          "line": 348,
+          "line": 369,
           "called": [
             "filter",
             "length"
@@ -45664,7 +45792,7 @@
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_strict2pl_count",
-          "line": 352,
+          "line": 373,
           "called": [
             "filter",
             "length"
@@ -45673,7 +45801,7 @@
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_commutativity_count",
-          "line": 356,
+          "line": 377,
           "called": [
             "filter",
             "length"
@@ -45682,7 +45810,7 @@
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_acyclicity_count",
-          "line": 360,
+          "line": 381,
           "called": [
             "filter",
             "length"
@@ -45691,7 +45819,7 @@
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_serializability_count",
-          "line": 364,
+          "line": 385,
           "called": [
             "filter",
             "length"
@@ -45700,7 +45828,7 @@
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_preservation_count",
-          "line": 368,
+          "line": 389,
           "called": [
             "filter",
             "length"
@@ -45709,7 +45837,7 @@
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_atomicityBridge_count",
-          "line": 372,
+          "line": 393,
           "called": [
             "filter",
             "length"
@@ -45718,7 +45846,7 @@
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_observational_count",
-          "line": 376,
+          "line": 397,
           "called": [
             "filter",
             "length"
@@ -45727,7 +45855,7 @@
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_partition_sum",
-          "line": 380,
+          "line": 401,
           "called": [
             "filter",
             "length"
@@ -45736,14 +45864,20 @@
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_identifiers_nodup",
-          "line": 393,
-          "called": []
+          "line": 419,
+          "called": [
+            "identifier",
+            "nodup_map_stringOfPacked"
+          ]
         },
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_descriptions_nodup",
-          "line": 397,
-          "called": []
+          "line": 426,
+          "called": [
+            "description",
+            "nodup_map_stringOfPacked"
+          ]
         }
       ]
     },
@@ -47278,46 +47412,75 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory",
       "path": "SeLe4n/Kernel/Concurrency/Locks/WithLockSetInventory.lean",
-      "declaration_count": 15,
+      "declaration_count": 18,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Concurrency",
-          "line": 70,
+          "line": 71,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "WithLockSetCategory",
-          "line": 76,
+          "line": 77,
           "called": []
         },
         {
           "kind": "structure",
           "name": "WithLockSetTheorem",
-          "line": 99,
+          "line": 100,
           "called": [
-            "WithLockSetCategory"
+            "WithLockSetCategory",
+            "isWellFormedPacked"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:118>",
+          "line": 118,
+          "called": [
+            "WithLockSetTheorem",
+            "default"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "WithLockSetTheorem.description",
+          "line": 122,
+          "called": [
+            "WithLockSetTheorem",
+            "stringOfPacked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "WithLockSetTheorem.identifier",
+          "line": 125,
+          "called": [
+            "WithLockSetTheorem",
+            "stringOfPacked"
           ]
         },
         {
           "kind": "syntax",
           "name": "\"wlst!\"",
-          "line": 109,
+          "line": 130,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:111>",
-          "line": 111,
+          "name": "<anonymous:macro_rules:132>",
+          "line": 132,
           "called": [
-            "WithLockSetTheorem"
+            "WithLockSetTheorem",
+            "packedStringLit"
           ]
         },
         {
           "kind": "def",
           "name": "withLockSetTheorems",
-          "line": 123,
+          "line": 144,
           "called": [
             "AccessMode.toAcquireOp",
             "AccessMode.toReleaseOp",
@@ -47411,7 +47574,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_count",
-          "line": 321,
+          "line": 342,
           "called": [
             "length"
           ]
@@ -47419,7 +47582,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_combinator_count",
-          "line": 326,
+          "line": 347,
           "called": [
             "filter",
             "length"
@@ -47428,7 +47591,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_held_count",
-          "line": 333,
+          "line": 354,
           "called": [
             "filter",
             "length"
@@ -47437,7 +47600,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_ordering_count",
-          "line": 338,
+          "line": 359,
           "called": [
             "filter",
             "length"
@@ -47446,7 +47609,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_atomicity_count",
-          "line": 346,
+          "line": 367,
           "called": [
             "filter",
             "length"
@@ -47455,7 +47618,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_dynamicChain_count",
-          "line": 355,
+          "line": 376,
           "called": [
             "filter",
             "length"
@@ -47464,7 +47627,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_partition_sum",
-          "line": 360,
+          "line": 381,
           "called": [
             "filter",
             "length"
@@ -47473,14 +47636,20 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_identifiers_nodup",
-          "line": 369,
-          "called": []
+          "line": 395,
+          "called": [
+            "identifier",
+            "nodup_map_stringOfPacked"
+          ]
         },
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_descriptions_nodup",
-          "line": 373,
-          "called": []
+          "line": 402,
+          "called": [
+            "description",
+            "nodup_map_stringOfPacked"
+          ]
         }
       ]
     },
@@ -48429,7 +48598,8 @@
           "name": "\"census_entry \"",
           "line": 555,
           "called": [
-            "censusEntryOf"
+            "censusEntryOf",
+            "identifier"
           ]
         },
         {
@@ -112291,7 +112461,8 @@
           "name": "CovertChannel",
           "line": 387,
           "called": [
-            "CovertChannelSeverity"
+            "CovertChannelSeverity",
+            "description"
           ]
         },
         {
@@ -112301,6 +112472,7 @@
           "called": [
             "CovertChannel",
             "boundedCodeTraces",
+            "description",
             "schedulingChannel_alphabet_bounded",
             "schedulingChannel_full_observation_determined",
             "schedulingChannel_not_bounded_by_scheduleLength",
@@ -112316,6 +112488,7 @@
           "line": 446,
           "called": [
             "CovertChannel",
+            "description",
             "level",
             "onCore_machineTimer"
           ]
@@ -112325,7 +112498,8 @@
           "name": "acceptedCovertChannel_tcbMetadata",
           "line": 461,
           "called": [
-            "CovertChannel"
+            "CovertChannel",
+            "description"
           ]
         },
         {
@@ -112333,7 +112507,8 @@
           "name": "acceptedCovertChannel_objectStoreMetadata",
           "line": 476,
           "called": [
-            "CovertChannel"
+            "CovertChannel",
+            "description"
           ]
         },
         {
@@ -112342,6 +112517,7 @@
           "line": 503,
           "called": [
             "CovertChannel",
+            "description",
             "free",
             "withLockSet_preserves_projection"
           ]
@@ -112352,6 +112528,7 @@
           "line": 522,
           "called": [
             "CovertChannel",
+            "description",
             "onCore_perCoreTlb",
             "view"
           ]
@@ -112362,6 +112539,7 @@
           "line": 538,
           "called": [
             "CovertChannel",
+            "description",
             "onCore_perCoreICache",
             "view"
           ]
@@ -112378,6 +112556,7 @@
             "count",
             "declassifyObjectFromCore_never_unaudited",
             "default",
+            "description",
             "empty",
             "level",
             "maxDeclassificationAuditEntries",
@@ -122248,7 +122427,7 @@
         {
           "kind": "def",
           "name": "declaredFootprintUncoveredDomains",
-          "line": 3047,
+          "line": 3056,
           "called": [
             "UncoveredLockDomain"
           ]
@@ -122256,7 +122435,7 @@
         {
           "kind": "def",
           "name": "UncoveredLockDomain.all",
-          "line": 3059,
+          "line": 3068,
           "called": [
             "UncoveredLockDomain"
           ]
@@ -122264,7 +122443,7 @@
         {
           "kind": "theorem",
           "name": "UncoveredLockDomain.mem_all",
-          "line": 3067,
+          "line": 3076,
           "called": [
             "UncoveredLockDomain",
             "UncoveredLockDomain.all"
@@ -122273,13 +122452,13 @@
         {
           "kind": "theorem",
           "name": "UncoveredLockDomain.all_nodup",
-          "line": 3070,
+          "line": 3079,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "declaredFootprintUncoveredDomains_complete",
-          "line": 3083,
+          "line": 3092,
           "called": [
             "UncoveredLockDomain",
             "all",
@@ -122289,7 +122468,7 @@
         {
           "kind": "def",
           "name": "fineLockDisciplineComplete",
-          "line": 3117,
+          "line": 3126,
           "called": [
             "isEmpty"
           ]
@@ -122297,7 +122476,7 @@
         {
           "kind": "theorem",
           "name": "fineLockDisciplineComplete_is_false",
-          "line": 3125,
+          "line": 3134,
           "called": [
             "fineLockDisciplineComplete"
           ]
@@ -122305,7 +122484,7 @@
         {
           "kind": "theorem",
           "name": "fineLockDiscipline_requires_every_domain_covered",
-          "line": 3133,
+          "line": 3142,
           "called": [
             "declaredFootprintUncoveredDomains",
             "fineLockDisciplineComplete"
@@ -122314,7 +122493,7 @@
         {
           "kind": "theorem",
           "name": "taintPerKeyStore_blocks_fineLockDiscipline",
-          "line": 3144,
+          "line": 3153,
           "called": [
             "cons",
             "declaredFootprintUncoveredDomains",
@@ -122324,7 +122503,7 @@
         {
           "kind": "def",
           "name": "syscallEntryUnderDeclaredLockSet",
-          "line": 3155,
+          "line": 3164,
           "called": [
             "CoreId",
             "KernelError",
@@ -122338,7 +122517,7 @@
         {
           "kind": "def",
           "name": "continueFromAcquired",
-          "line": 3174,
+          "line": 3183,
           "called": [
             "CoreId",
             "LockSet",
@@ -122349,7 +122528,7 @@
         {
           "kind": "theorem",
           "name": "withLockSet_eq_continueFromAcquired",
-          "line": 3183,
+          "line": 3192,
           "called": [
             "CoreId",
             "LockSet",
@@ -122362,7 +122541,7 @@
         {
           "kind": "def",
           "name": "syscallEntryFromAcquired",
-          "line": 3190,
+          "line": 3199,
           "called": [
             "CoreId",
             "KernelError",
@@ -122378,7 +122557,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderLockSet_eq_fromAcquired",
-          "line": 3197,
+          "line": 3206,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122393,7 +122572,7 @@
         {
           "kind": "theorem",
           "name": "rwLock_release_by_nonholder_preserves_waiters",
-          "line": 3214,
+          "line": 3223,
           "called": [
             "CoreId",
             "RwLockState",
@@ -122403,7 +122582,7 @@
         {
           "kind": "inductive",
           "name": "RevalidatedEntryOutcome",
-          "line": 3276,
+          "line": 3285,
           "called": [
             "KernelError",
             "SystemState"
@@ -122412,7 +122591,7 @@
         {
           "kind": "def",
           "name": "syscallEntryUnderRevalidatedLockSet",
-          "line": 3289,
+          "line": 3298,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122429,7 +122608,7 @@
         {
           "kind": "def",
           "name": "syscallEntryUnderRevalidatedLockSetModel",
-          "line": 3320,
+          "line": 3329,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122445,7 +122624,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderRevalidatedLockSet_footprint_stable",
-          "line": 3335,
+          "line": 3344,
           "called": [
             "CoreId",
             "KernelError",
@@ -122463,7 +122642,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderRevalidatedLockSet_refuses_on_change",
-          "line": 3361,
+          "line": 3370,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122478,7 +122657,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderRevalidatedLockSet_refused_releases",
-          "line": 3382,
+          "line": 3391,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122494,7 +122673,7 @@
         {
           "kind": "theorem",
           "name": "revalidationRefusalReachable",
-          "line": 3408,
+          "line": 3417,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122509,7 +122688,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held",
-          "line": 3439,
+          "line": 3448,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122526,7 +122705,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderRevalidatedLockSet_not_refines_in_general",
-          "line": 3472,
+          "line": 3481,
           "called": [
             "declaredLockSetForEntry",
             "syscallEntryFromAcquired",
@@ -122537,7 +122716,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderRevalidatedLockSetModel_refines",
-          "line": 3486,
+          "line": 3495,
           "called": [
             "CoreId",
             "KernelError",
@@ -122556,7 +122735,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderDeclaredLockSet_undeclared",
-          "line": 3513,
+          "line": 3522,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122573,7 +122752,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderDeclaredLockSet_no_decode",
-          "line": 3525,
+          "line": 3534,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122588,7 +122767,7 @@
         {
           "kind": "theorem",
           "name": "suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore",
-          "line": 3542,
+          "line": 3551,
           "called": [
             "CoreId",
             "IfObserver",
@@ -122611,7 +122790,7 @@
         {
           "kind": "theorem",
           "name": "suspendUnderDeclaredLockSet_preserves_projectionOnCore",
-          "line": 3569,
+          "line": 3578,
           "called": [
             "CoreId",
             "IfObserver",
@@ -122635,7 +122814,7 @@
         {
           "kind": "theorem",
           "name": "suspendUnderDeclaredLockSet_failClosed_invisible",
-          "line": 3590,
+          "line": 3599,
           "called": [
             "CoreId",
             "KernelError",
@@ -122659,7 +122838,7 @@
         {
           "kind": "theorem",
           "name": "declaredLockSetForEntry_is_suspend_footprint",
-          "line": 3616,
+          "line": 3625,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122678,13 +122857,13 @@
         {
           "kind": "inductive",
           "name": "FineLockClaimId",
-          "line": 3652,
+          "line": 3661,
           "called": []
         },
         {
           "kind": "def",
           "name": "FineLockClaimId.all",
-          "line": 3688,
+          "line": 3697,
           "called": [
             "FineLockClaimId"
           ]
@@ -122692,7 +122871,7 @@
         {
           "kind": "theorem",
           "name": "FineLockClaimId.mem_all",
-          "line": 3695,
+          "line": 3704,
           "called": [
             "FineLockClaimId",
             "FineLockClaimId.all"
@@ -122701,13 +122880,13 @@
         {
           "kind": "theorem",
           "name": "FineLockClaimId.all_nodup",
-          "line": 3698,
+          "line": 3707,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "fineLockClaims_count",
-          "line": 3700,
+          "line": 3709,
           "called": [
             "length"
           ]
@@ -122715,7 +122894,7 @@
         {
           "kind": "def",
           "name": "FineLockClaimId.subTask",
-          "line": 3703,
+          "line": 3712,
           "called": [
             "FineLockClaimId"
           ]
@@ -122723,7 +122902,7 @@
         {
           "kind": "theorem",
           "name": "fineLockClaims_cover_subTasks",
-          "line": 3719,
+          "line": 3728,
           "called": [
             "FineLockClaimId.subTask"
           ]
@@ -122731,7 +122910,7 @@
         {
           "kind": "def",
           "name": "fineLockClaimTheorem",
-          "line": 3727,
+          "line": 3736,
           "called": [
             "FineLockClaimId",
             "acceptedCovertChannel_lockContention_bounded",
@@ -122750,7 +122929,7 @@
         {
           "kind": "theorem",
           "name": "fineLockClaimTheorem_nodup",
-          "line": 3740,
+          "line": 3749,
           "called": [
             "fineLockClaimTheorem"
           ]
@@ -122758,7 +122937,7 @@
         {
           "kind": "def",
           "name": "FineLockClaimId.evidenceProp",
-          "line": 3750,
+          "line": 3759,
           "called": [
             "AccessMode",
             "CoreId",
@@ -122806,7 +122985,7 @@
         {
           "kind": "def",
           "name": "fineLockClaimEvidence",
-          "line": 3864,
+          "line": 3873,
           "called": [
             "FineLockClaimId",
             "acceptedCovertChannel_lockContention_bounded",
@@ -122827,7 +123006,7 @@
         {
           "kind": "theorem",
           "name": "fineLockClaimEvidence_nonempty",
-          "line": 3912,
+          "line": 3921,
           "called": [
             "FineLockClaimId",
             "Kernel",
@@ -162445,46 +162624,75 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuiteInventory",
       "path": "SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuiteInventory.lean",
-      "declaration_count": 15,
+      "declaration_count": 18,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 44,
+          "line": 45,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "PerCoreInvariantSuiteCategory",
-          "line": 47,
+          "line": 48,
           "called": []
         },
         {
           "kind": "structure",
           "name": "PerCoreInvariantSuiteTheorem",
-          "line": 70,
+          "line": 72,
           "called": [
-            "PerCoreInvariantSuiteCategory"
+            "PerCoreInvariantSuiteCategory",
+            "isWellFormedPacked"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:90>",
+          "line": 90,
+          "called": [
+            "PerCoreInvariantSuiteTheorem",
+            "default"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCoreInvariantSuiteTheorem.description",
+          "line": 94,
+          "called": [
+            "PerCoreInvariantSuiteTheorem",
+            "stringOfPacked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCoreInvariantSuiteTheorem.identifier",
+          "line": 97,
+          "called": [
+            "PerCoreInvariantSuiteTheorem",
+            "stringOfPacked"
           ]
         },
         {
           "kind": "syntax",
           "name": "\"pcist!\"",
-          "line": 79,
+          "line": 101,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:81>",
-          "line": 81,
+          "name": "<anonymous:macro_rules:103>",
+          "line": 103,
           "called": [
-            "PerCoreInvariantSuiteTheorem"
+            "PerCoreInvariantSuiteTheorem",
+            "packedStringLit"
           ]
         },
         {
           "kind": "def",
           "name": "perCoreInvariantSuiteTheorems",
-          "line": 93,
+          "line": 115,
           "called": [
             "PerCoreInvariantSuiteTheorem",
             "RegisterFile.beq_symm",
@@ -162587,7 +162795,7 @@
         {
           "kind": "theorem",
           "name": "perCoreInvariantSuiteTheorems_count",
-          "line": 291,
+          "line": 313,
           "called": [
             "length"
           ]
@@ -162595,7 +162803,7 @@
         {
           "kind": "theorem",
           "name": "perCoreInvariantSuiteTheorems_structural_count",
-          "line": 294,
+          "line": 316,
           "called": [
             "filter",
             "length"
@@ -162604,7 +162812,7 @@
         {
           "kind": "theorem",
           "name": "perCoreInvariantSuiteTheorems_preservation_count",
-          "line": 298,
+          "line": 320,
           "called": [
             "filter",
             "length"
@@ -162613,7 +162821,7 @@
         {
           "kind": "theorem",
           "name": "perCoreInvariantSuiteTheorems_suite_count",
-          "line": 302,
+          "line": 324,
           "called": [
             "filter",
             "length"
@@ -162622,7 +162830,7 @@
         {
           "kind": "theorem",
           "name": "perCoreInvariantSuiteTheorems_registerBank_count",
-          "line": 306,
+          "line": 328,
           "called": [
             "filter",
             "length"
@@ -162631,7 +162839,7 @@
         {
           "kind": "theorem",
           "name": "perCoreInvariantSuiteTheorems_budgetClosure_count",
-          "line": 310,
+          "line": 332,
           "called": [
             "filter",
             "length"
@@ -162640,7 +162848,7 @@
         {
           "kind": "theorem",
           "name": "perCoreInvariantSuiteTheorems_partition_sum",
-          "line": 314,
+          "line": 336,
           "called": [
             "filter",
             "length"
@@ -162649,15 +162857,20 @@
         {
           "kind": "theorem",
           "name": "perCoreInvariantSuiteTheorems_identifiers_nodup",
-          "line": 326,
-          "called": []
+          "line": 350,
+          "called": [
+            "identifier",
+            "nodup_map_stringOfPacked"
+          ]
         },
         {
           "kind": "theorem",
           "name": "perCoreInvariantSuiteTheorems_descriptions_nodup",
-          "line": 331,
+          "line": 357,
           "called": [
-            "Kernel"
+            "Kernel",
+            "description",
+            "nodup_map_stringOfPacked"
           ]
         }
       ]
@@ -167728,18 +167941,18 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.CrossCoreWakeInventory",
       "path": "SeLe4n/Kernel/Scheduler/Operations/CrossCoreWakeInventory.lean",
-      "declaration_count": 17,
+      "declaration_count": 20,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 48,
+          "line": 49,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "CrossCoreWakeCategory",
-          "line": 54,
+          "line": 55,
           "called": [
             "handler"
           ]
@@ -167747,29 +167960,58 @@
         {
           "kind": "structure",
           "name": "CrossCoreWakeTheorem",
-          "line": 75,
+          "line": 77,
           "called": [
-            "CrossCoreWakeCategory"
+            "CrossCoreWakeCategory",
+            "isWellFormedPacked"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:95>",
+          "line": 95,
+          "called": [
+            "CrossCoreWakeTheorem",
+            "default"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "CrossCoreWakeTheorem.description",
+          "line": 99,
+          "called": [
+            "CrossCoreWakeTheorem",
+            "stringOfPacked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "CrossCoreWakeTheorem.identifier",
+          "line": 102,
+          "called": [
+            "CrossCoreWakeTheorem",
+            "stringOfPacked"
           ]
         },
         {
           "kind": "syntax",
           "name": "\"ccwt!\"",
-          "line": 83,
+          "line": 105,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:85>",
-          "line": 85,
+          "name": "<anonymous:macro_rules:107>",
+          "line": 107,
           "called": [
-            "CrossCoreWakeTheorem"
+            "CrossCoreWakeTheorem",
+            "packedStringLit"
           ]
         },
         {
           "kind": "def",
           "name": "crossCoreWakeTheorems",
-          "line": 97,
+          "line": 119,
           "called": [
             "CrossCoreWakeTheorem",
             "SchedReachable",
@@ -167860,7 +168102,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreWakeTheorems_count",
-          "line": 275,
+          "line": 297,
           "called": [
             "length"
           ]
@@ -167868,7 +168110,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreWakeTheorems_lockSet_count",
-          "line": 278,
+          "line": 300,
           "called": [
             "filter",
             "length"
@@ -167877,7 +168119,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreWakeTheorems_target_count",
-          "line": 282,
+          "line": 304,
           "called": [
             "filter",
             "length"
@@ -167886,7 +168128,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreWakeTheorems_enqueue_count",
-          "line": 286,
+          "line": 308,
           "called": [
             "filter",
             "length"
@@ -167895,7 +168137,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreWakeTheorems_wake_count",
-          "line": 290,
+          "line": 312,
           "called": [
             "filter",
             "length"
@@ -167904,7 +168146,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreWakeTheorems_handler_count",
-          "line": 294,
+          "line": 316,
           "called": [
             "filter",
             "handler",
@@ -167914,7 +168156,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreWakeTheorems_preservation_count",
-          "line": 298,
+          "line": 320,
           "called": [
             "filter",
             "length"
@@ -167923,7 +168165,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreWakeTheorems_latencyAffinityEmit_count",
-          "line": 303,
+          "line": 325,
           "called": [
             "filter",
             "length"
@@ -167932,7 +168174,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreWakeTheorems_partition_sum",
-          "line": 307,
+          "line": 329,
           "called": [
             "filter",
             "handler",
@@ -167942,15 +168184,20 @@
         {
           "kind": "theorem",
           "name": "crossCoreWakeTheorems_identifiers_nodup",
-          "line": 336,
-          "called": []
+          "line": 345,
+          "called": [
+            "identifier",
+            "nodup_map_stringOfPacked"
+          ]
         },
         {
           "kind": "theorem",
           "name": "crossCoreWakeTheorems_descriptions_nodup",
-          "line": 343,
+          "line": 352,
           "called": [
-            "Kernel"
+            "Kernel",
+            "description",
+            "nodup_map_stringOfPacked"
           ]
         }
       ]
@@ -169524,46 +169771,75 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreCbsInventory.lean",
-      "declaration_count": 20,
+      "declaration_count": 23,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 51,
+          "line": 52,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "PerCoreCbsCategory",
-          "line": 54,
+          "line": 55,
           "called": []
         },
         {
           "kind": "structure",
           "name": "PerCoreCbsTheorem",
-          "line": 85,
+          "line": 87,
           "called": [
-            "PerCoreCbsCategory"
+            "PerCoreCbsCategory",
+            "isWellFormedPacked"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:105>",
+          "line": 105,
+          "called": [
+            "PerCoreCbsTheorem",
+            "default"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCoreCbsTheorem.description",
+          "line": 109,
+          "called": [
+            "PerCoreCbsTheorem",
+            "stringOfPacked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCoreCbsTheorem.identifier",
+          "line": 112,
+          "called": [
+            "PerCoreCbsTheorem",
+            "stringOfPacked"
           ]
         },
         {
           "kind": "syntax",
           "name": "\"pccbst!\"",
-          "line": 93,
+          "line": 115,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:95>",
-          "line": 95,
+          "name": "<anonymous:macro_rules:117>",
+          "line": 117,
           "called": [
-            "PerCoreCbsTheorem"
+            "PerCoreCbsTheorem",
+            "packedStringLit"
           ]
         },
         {
           "kind": "def",
           "name": "perCoreCbsTheorems",
-          "line": 107,
+          "line": 129,
           "called": [
             "PerCoreCbsTheorem",
             "affinityMigrationOrdering_happensBefore",
@@ -169690,7 +169966,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_count",
-          "line": 369,
+          "line": 391,
           "called": [
             "length"
           ]
@@ -169698,7 +169974,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_predicate_count",
-          "line": 372,
+          "line": 394,
           "called": [
             "filter",
             "length"
@@ -169707,7 +169983,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_replenish_count",
-          "line": 376,
+          "line": 398,
           "called": [
             "filter",
             "length"
@@ -169716,7 +169992,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_preservation_count",
-          "line": 380,
+          "line": 402,
           "called": [
             "filter",
             "length"
@@ -169725,7 +170001,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_migration_count",
-          "line": 384,
+          "line": 406,
           "called": [
             "filter",
             "length"
@@ -169734,7 +170010,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_affinityWrite_count",
-          "line": 388,
+          "line": 410,
           "called": [
             "filter",
             "length"
@@ -169743,7 +170019,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_consistency_count",
-          "line": 392,
+          "line": 414,
           "called": [
             "filter",
             "length"
@@ -169752,7 +170028,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_budget_count",
-          "line": 396,
+          "line": 418,
           "called": [
             "filter",
             "length"
@@ -169761,7 +170037,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_lockSet_count",
-          "line": 400,
+          "line": 422,
           "called": [
             "filter",
             "length"
@@ -169770,7 +170046,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_liveTick_count",
-          "line": 404,
+          "line": 426,
           "called": [
             "filter",
             "length"
@@ -169779,7 +170055,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_memoryModel_count",
-          "line": 408,
+          "line": 430,
           "called": [
             "filter",
             "length"
@@ -169788,7 +170064,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_partition_sum",
-          "line": 412,
+          "line": 434,
           "called": [
             "filter",
             "length"
@@ -169797,15 +170073,20 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_identifiers_nodup",
-          "line": 429,
-          "called": []
+          "line": 453,
+          "called": [
+            "identifier",
+            "nodup_map_stringOfPacked"
+          ]
         },
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_descriptions_nodup",
-          "line": 439,
+          "line": 460,
           "called": [
-            "Kernel"
+            "Kernel",
+            "description",
+            "nodup_map_stringOfPacked"
           ]
         }
       ]
@@ -172962,18 +173243,18 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreDomainInventory",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreDomainInventory.lean",
-      "declaration_count": 19,
+      "declaration_count": 22,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 55,
+          "line": 56,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "PerCoreDomainCategory",
-          "line": 58,
+          "line": 59,
           "called": [
             "invariant"
           ]
@@ -172981,29 +173262,58 @@
         {
           "kind": "structure",
           "name": "PerCoreDomainTheorem",
-          "line": 85,
+          "line": 87,
           "called": [
-            "PerCoreDomainCategory"
+            "PerCoreDomainCategory",
+            "isWellFormedPacked"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:105>",
+          "line": 105,
+          "called": [
+            "PerCoreDomainTheorem",
+            "default"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCoreDomainTheorem.description",
+          "line": 109,
+          "called": [
+            "PerCoreDomainTheorem",
+            "stringOfPacked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCoreDomainTheorem.identifier",
+          "line": 112,
+          "called": [
+            "PerCoreDomainTheorem",
+            "stringOfPacked"
           ]
         },
         {
           "kind": "syntax",
           "name": "\"pcdt!\"",
-          "line": 93,
+          "line": 115,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:95>",
-          "line": 95,
+          "name": "<anonymous:macro_rules:117>",
+          "line": 117,
           "called": [
-            "PerCoreDomainTheorem"
+            "PerCoreDomainTheorem",
+            "packedStringLit"
           ]
         },
         {
           "kind": "def",
           "name": "perCoreDomainTheorems",
-          "line": 107,
+          "line": 129,
           "called": [
             "PerCoreDomainTheorem",
             "SeLe4n.Model.SystemState.activeDomainOnCore",
@@ -173087,7 +173397,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_count",
-          "line": 276,
+          "line": 298,
           "called": [
             "length"
           ]
@@ -173095,7 +173405,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_rotation_count",
-          "line": 279,
+          "line": 301,
           "called": [
             "filter",
             "length"
@@ -173104,7 +173414,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_cyclic_count",
-          "line": 283,
+          "line": 305,
           "called": [
             "filter",
             "length"
@@ -173113,7 +173423,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_bridge_count",
-          "line": 287,
+          "line": 309,
           "called": [
             "filter",
             "length"
@@ -173122,7 +173432,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_domainSchedule_count",
-          "line": 291,
+          "line": 313,
           "called": [
             "filter",
             "length"
@@ -173131,7 +173441,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_respects_count",
-          "line": 295,
+          "line": 317,
           "called": [
             "filter",
             "length"
@@ -173140,7 +173450,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_independence_count",
-          "line": 299,
+          "line": 321,
           "called": [
             "filter",
             "length"
@@ -173149,7 +173459,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_query_count",
-          "line": 303,
+          "line": 325,
           "called": [
             "filter",
             "length"
@@ -173158,7 +173468,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_invariant_count",
-          "line": 308,
+          "line": 330,
           "called": [
             "filter",
             "invariant",
@@ -173168,7 +173478,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_livePreservation_count",
-          "line": 313,
+          "line": 335,
           "called": [
             "filter",
             "length"
@@ -173177,7 +173487,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_partition_sum",
-          "line": 317,
+          "line": 339,
           "called": [
             "filter",
             "invariant",
@@ -173187,15 +173497,20 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_identifiers_nodup",
-          "line": 333,
-          "called": []
+          "line": 357,
+          "called": [
+            "identifier",
+            "nodup_map_stringOfPacked"
+          ]
         },
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_descriptions_nodup",
-          "line": 339,
+          "line": 364,
           "called": [
-            "Kernel"
+            "Kernel",
+            "description",
+            "nodup_map_stringOfPacked"
           ]
         }
       ]
@@ -173871,46 +174186,75 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreIdleInventory.lean",
-      "declaration_count": 17,
+      "declaration_count": 20,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 57,
+          "line": 58,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "PerCoreIdleCategory",
-          "line": 60,
+          "line": 61,
           "called": []
         },
         {
           "kind": "structure",
           "name": "PerCoreIdleTheorem",
-          "line": 81,
+          "line": 83,
           "called": [
-            "PerCoreIdleCategory"
+            "PerCoreIdleCategory",
+            "isWellFormedPacked"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:101>",
+          "line": 101,
+          "called": [
+            "PerCoreIdleTheorem",
+            "default"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCoreIdleTheorem.description",
+          "line": 105,
+          "called": [
+            "PerCoreIdleTheorem",
+            "stringOfPacked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCoreIdleTheorem.identifier",
+          "line": 108,
+          "called": [
+            "PerCoreIdleTheorem",
+            "stringOfPacked"
           ]
         },
         {
           "kind": "syntax",
           "name": "\"pcit!\"",
-          "line": 89,
+          "line": 111,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:91>",
-          "line": 91,
+          "name": "<anonymous:macro_rules:113>",
+          "line": 113,
           "called": [
-            "PerCoreIdleTheorem"
+            "PerCoreIdleTheorem",
+            "packedStringLit"
           ]
         },
         {
           "kind": "def",
           "name": "perCoreIdleTheorems",
-          "line": 103,
+          "line": 125,
           "called": [
             "PerCoreIdleTheorem",
             "chooseThreadOnCore_always_succeeds",
@@ -173981,7 +174325,7 @@
         {
           "kind": "theorem",
           "name": "perCoreIdleTheorems_count",
-          "line": 243,
+          "line": 265,
           "called": [
             "length"
           ]
@@ -173989,7 +174333,7 @@
         {
           "kind": "theorem",
           "name": "perCoreIdleTheorems_field_count",
-          "line": 246,
+          "line": 268,
           "called": [
             "filter",
             "length"
@@ -173998,7 +174342,7 @@
         {
           "kind": "theorem",
           "name": "perCoreIdleTheorems_enqueue_count",
-          "line": 250,
+          "line": 272,
           "called": [
             "filter",
             "length"
@@ -174007,7 +174351,7 @@
         {
           "kind": "theorem",
           "name": "perCoreIdleTheorems_preservation_count",
-          "line": 254,
+          "line": 276,
           "called": [
             "filter",
             "length"
@@ -174016,7 +174360,7 @@
         {
           "kind": "theorem",
           "name": "perCoreIdleTheorems_lockSet_count",
-          "line": 258,
+          "line": 280,
           "called": [
             "filter",
             "length"
@@ -174025,7 +174369,7 @@
         {
           "kind": "theorem",
           "name": "perCoreIdleTheorems_alwaysSucceeds_count",
-          "line": 262,
+          "line": 284,
           "called": [
             "filter",
             "length"
@@ -174034,7 +174378,7 @@
         {
           "kind": "theorem",
           "name": "perCoreIdleTheorems_locality_count",
-          "line": 266,
+          "line": 288,
           "called": [
             "filter",
             "length"
@@ -174043,7 +174387,7 @@
         {
           "kind": "theorem",
           "name": "perCoreIdleTheorems_dispatch_count",
-          "line": 271,
+          "line": 293,
           "called": [
             "filter",
             "length"
@@ -174052,7 +174396,7 @@
         {
           "kind": "theorem",
           "name": "perCoreIdleTheorems_partition_sum",
-          "line": 275,
+          "line": 297,
           "called": [
             "filter",
             "length"
@@ -174061,15 +174405,20 @@
         {
           "kind": "theorem",
           "name": "perCoreIdleTheorems_identifiers_nodup",
-          "line": 292,
-          "called": []
+          "line": 313,
+          "called": [
+            "identifier",
+            "nodup_map_stringOfPacked"
+          ]
         },
         {
           "kind": "theorem",
           "name": "perCoreIdleTheorems_descriptions_nodup",
-          "line": 298,
+          "line": 320,
           "called": [
-            "Kernel"
+            "Kernel",
+            "description",
+            "nodup_map_stringOfPacked"
           ]
         }
       ]
@@ -176686,18 +177035,18 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerInventory",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerInventory.lean",
-      "declaration_count": 17,
+      "declaration_count": 20,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 42,
+          "line": 43,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "PerCoreTimerCategory",
-          "line": 48,
+          "line": 49,
           "called": [
             "tick"
           ]
@@ -176705,29 +177054,58 @@
         {
           "kind": "structure",
           "name": "PerCoreTimerTheorem",
-          "line": 68,
+          "line": 70,
           "called": [
-            "PerCoreTimerCategory"
+            "PerCoreTimerCategory",
+            "isWellFormedPacked"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:88>",
+          "line": 88,
+          "called": [
+            "PerCoreTimerTheorem",
+            "default"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCoreTimerTheorem.description",
+          "line": 92,
+          "called": [
+            "PerCoreTimerTheorem",
+            "stringOfPacked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCoreTimerTheorem.identifier",
+          "line": 95,
+          "called": [
+            "PerCoreTimerTheorem",
+            "stringOfPacked"
           ]
         },
         {
           "kind": "syntax",
           "name": "\"pctt!\"",
-          "line": 76,
+          "line": 98,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:78>",
-          "line": 78,
+          "name": "<anonymous:macro_rules:100>",
+          "line": 100,
           "called": [
-            "PerCoreTimerTheorem"
+            "PerCoreTimerTheorem",
+            "packedStringLit"
           ]
         },
         {
           "kind": "def",
           "name": "perCoreTimerTheorems",
-          "line": 90,
+          "line": 112,
           "called": [
             "PerCoreTimerTheorem",
             "cbsReplenish_can_wake_remote_core",
@@ -176834,7 +177212,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTheorems_count",
-          "line": 307,
+          "line": 329,
           "called": [
             "length"
           ]
@@ -176842,7 +177220,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTheorems_lockSet_count",
-          "line": 309,
+          "line": 331,
           "called": [
             "filter",
             "length"
@@ -176851,7 +177229,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTheorems_domain_count",
-          "line": 312,
+          "line": 334,
           "called": [
             "filter",
             "length"
@@ -176860,7 +177238,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTheorems_replenish_count",
-          "line": 315,
+          "line": 337,
           "called": [
             "filter",
             "length"
@@ -176869,7 +177247,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTheorems_budget_count",
-          "line": 318,
+          "line": 340,
           "called": [
             "filter",
             "length"
@@ -176878,7 +177256,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTheorems_tick_count",
-          "line": 321,
+          "line": 343,
           "called": [
             "filter",
             "length",
@@ -176888,7 +177266,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTheorems_preservation_count",
-          "line": 324,
+          "line": 346,
           "called": [
             "filter",
             "length"
@@ -176897,7 +177275,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTheorems_decidability_count",
-          "line": 327,
+          "line": 349,
           "called": [
             "filter",
             "length"
@@ -176906,7 +177284,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTheorems_partition_sum",
-          "line": 331,
+          "line": 353,
           "called": [
             "filter",
             "length",
@@ -176916,15 +177294,20 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTheorems_identifiers_nodup",
-          "line": 345,
-          "called": []
+          "line": 369,
+          "called": [
+            "identifier",
+            "nodup_map_stringOfPacked"
+          ]
         },
         {
           "kind": "theorem",
           "name": "perCoreTimerTheorems_descriptions_nodup",
-          "line": 350,
+          "line": 376,
           "called": [
-            "Kernel"
+            "Kernel",
+            "description",
+            "nodup_map_stringOfPacked"
           ]
         }
       ]
@@ -181668,46 +182051,75 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreWcrtInventory",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrtInventory.lean",
-      "declaration_count": 15,
+      "declaration_count": 18,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 43,
+          "line": 44,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "PerCoreWcrtCategory",
-          "line": 46,
+          "line": 47,
           "called": []
         },
         {
           "kind": "structure",
           "name": "PerCoreWcrtTheorem",
-          "line": 64,
+          "line": 66,
           "called": [
-            "PerCoreWcrtCategory"
+            "PerCoreWcrtCategory",
+            "isWellFormedPacked"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:84>",
+          "line": 84,
+          "called": [
+            "PerCoreWcrtTheorem",
+            "default"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCoreWcrtTheorem.description",
+          "line": 88,
+          "called": [
+            "PerCoreWcrtTheorem",
+            "stringOfPacked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCoreWcrtTheorem.identifier",
+          "line": 91,
+          "called": [
+            "PerCoreWcrtTheorem",
+            "stringOfPacked"
           ]
         },
         {
           "kind": "syntax",
           "name": "\"pcwt!\"",
-          "line": 72,
+          "line": 94,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:74>",
-          "line": 74,
+          "name": "<anonymous:macro_rules:96>",
+          "line": 96,
           "called": [
-            "PerCoreWcrtTheorem"
+            "PerCoreWcrtTheorem",
+            "packedStringLit"
           ]
         },
         {
           "kind": "def",
           "name": "perCoreWcrtTheorems",
-          "line": 86,
+          "line": 108,
           "called": [
             "PerCoreWcrtTheorem",
             "WCRT_lockSet",
@@ -181759,7 +182171,7 @@
         {
           "kind": "theorem",
           "name": "perCoreWcrtTheorems_count",
-          "line": 187,
+          "line": 209,
           "called": [
             "length"
           ]
@@ -181767,7 +182179,7 @@
         {
           "kind": "theorem",
           "name": "perCoreWcrtTheorems_lockSetWcrt_count",
-          "line": 190,
+          "line": 212,
           "called": [
             "filter",
             "length"
@@ -181776,7 +182188,7 @@
         {
           "kind": "theorem",
           "name": "perCoreWcrtTheorems_rpi5Bound_count",
-          "line": 194,
+          "line": 216,
           "called": [
             "filter",
             "length"
@@ -181785,7 +182197,7 @@
         {
           "kind": "theorem",
           "name": "perCoreWcrtTheorems_perOp_count",
-          "line": 198,
+          "line": 220,
           "called": [
             "filter",
             "length"
@@ -181794,7 +182206,7 @@
         {
           "kind": "theorem",
           "name": "perCoreWcrtTheorems_executionBridge_count",
-          "line": 202,
+          "line": 224,
           "called": [
             "filter",
             "length"
@@ -181803,7 +182215,7 @@
         {
           "kind": "theorem",
           "name": "perCoreWcrtTheorems_liveness_count",
-          "line": 207,
+          "line": 229,
           "called": [
             "filter",
             "length"
@@ -181812,7 +182224,7 @@
         {
           "kind": "theorem",
           "name": "perCoreWcrtTheorems_partition_sum",
-          "line": 211,
+          "line": 233,
           "called": [
             "filter",
             "length"
@@ -181821,15 +182233,20 @@
         {
           "kind": "theorem",
           "name": "perCoreWcrtTheorems_identifiers_nodup",
-          "line": 223,
-          "called": []
+          "line": 247,
+          "called": [
+            "identifier",
+            "nodup_map_stringOfPacked"
+          ]
         },
         {
           "kind": "theorem",
           "name": "perCoreWcrtTheorems_descriptions_nodup",
-          "line": 229,
+          "line": 254,
           "called": [
-            "Kernel"
+            "Kernel",
+            "description",
+            "nodup_map_stringOfPacked"
           ]
         }
       ]
@@ -187786,46 +188203,75 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCoreInventory",
       "path": "SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCoreInventory.lean",
-      "declaration_count": 20,
+      "declaration_count": 23,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.PriorityInheritance",
-          "line": 41,
+          "line": 42,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "PerCorePipCategory",
-          "line": 44,
+          "line": 45,
           "called": []
         },
         {
           "kind": "structure",
           "name": "PerCorePipTheorem",
-          "line": 71,
+          "line": 73,
           "called": [
-            "PerCorePipCategory"
+            "PerCorePipCategory",
+            "isWellFormedPacked"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:91>",
+          "line": 91,
+          "called": [
+            "PerCorePipTheorem",
+            "default"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCorePipTheorem.description",
+          "line": 95,
+          "called": [
+            "PerCorePipTheorem",
+            "stringOfPacked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCorePipTheorem.identifier",
+          "line": 98,
+          "called": [
+            "PerCorePipTheorem",
+            "stringOfPacked"
           ]
         },
         {
           "kind": "syntax",
           "name": "\"ppit!\"",
-          "line": 79,
+          "line": 101,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:81>",
-          "line": 81,
+          "name": "<anonymous:macro_rules:103>",
+          "line": 103,
           "called": [
-            "PerCorePipTheorem"
+            "PerCorePipTheorem",
+            "packedStringLit"
           ]
         },
         {
           "kind": "def",
           "name": "perCorePipTheorems",
-          "line": 93,
+          "line": 115,
           "called": [
             "PerCorePipTheorem",
             "blockingAcyclicOnCore",
@@ -187931,7 +188377,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_count",
-          "line": 311,
+          "line": 333,
           "called": [
             "length"
           ]
@@ -187939,7 +188385,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_compute_count",
-          "line": 314,
+          "line": 336,
           "called": [
             "filter",
             "length"
@@ -187948,7 +188394,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_updateBoost_count",
-          "line": 318,
+          "line": 340,
           "called": [
             "filter",
             "length"
@@ -187957,7 +188403,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_consistent_count",
-          "line": 322,
+          "line": 344,
           "called": [
             "filter",
             "length"
@@ -187966,7 +188412,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_wake_count",
-          "line": 326,
+          "line": 348,
           "called": [
             "filter",
             "length"
@@ -187975,7 +188421,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_chain_count",
-          "line": 330,
+          "line": 352,
           "called": [
             "filter",
             "length"
@@ -187984,7 +188430,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_resume_count",
-          "line": 335,
+          "line": 357,
           "called": [
             "filter",
             "length"
@@ -187993,7 +188439,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_blockingGraph_count",
-          "line": 339,
+          "line": 361,
           "called": [
             "filter",
             "length"
@@ -188002,7 +188448,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_witness_count",
-          "line": 343,
+          "line": 365,
           "called": [
             "filter",
             "length"
@@ -188011,7 +188457,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_memoryModel_count",
-          "line": 347,
+          "line": 369,
           "called": [
             "filter",
             "length"
@@ -188020,7 +188466,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_dispatch_count",
-          "line": 351,
+          "line": 373,
           "called": [
             "filter",
             "length"
@@ -188029,7 +188475,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_partition_sum",
-          "line": 355,
+          "line": 377,
           "called": [
             "filter",
             "length"
@@ -188038,14 +188484,20 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_identifiers_nodup",
-          "line": 374,
-          "called": []
+          "line": 396,
+          "called": [
+            "identifier",
+            "nodup_map_stringOfPacked"
+          ]
         },
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_descriptions_nodup",
-          "line": 380,
-          "called": []
+          "line": 403,
+          "called": [
+            "description",
+            "nodup_map_stringOfPacked"
+          ]
         }
       ]
     },
@@ -197145,46 +197597,75 @@
     {
       "module": "SeLe4n.Model.Object.PerObjectLockInventory",
       "path": "SeLe4n/Model/Object/PerObjectLockInventory.lean",
-      "declaration_count": 15,
+      "declaration_count": 18,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Model",
-          "line": 69,
+          "line": 70,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "PerObjectLockCategory",
-          "line": 72,
+          "line": 73,
           "called": []
         },
         {
           "kind": "structure",
           "name": "PerObjectLockTheorem",
-          "line": 103,
+          "line": 105,
           "called": [
-            "PerObjectLockCategory"
+            "PerObjectLockCategory",
+            "isWellFormedPacked"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:129>",
+          "line": 129,
+          "called": [
+            "PerObjectLockTheorem",
+            "default"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerObjectLockTheorem.description",
+          "line": 133,
+          "called": [
+            "PerObjectLockTheorem",
+            "stringOfPacked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerObjectLockTheorem.identifier",
+          "line": 136,
+          "called": [
+            "PerObjectLockTheorem",
+            "stringOfPacked"
           ]
         },
         {
           "kind": "syntax",
           "name": "\"polt!\"",
-          "line": 139,
+          "line": 163,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:141>",
-          "line": 141,
+          "name": "<anonymous:macro_rules:165>",
+          "line": 165,
           "called": [
-            "PerObjectLockTheorem"
+            "PerObjectLockTheorem",
+            "packedStringLit"
           ]
         },
         {
           "kind": "def",
           "name": "perObjectLockTheorems",
-          "line": 161,
+          "line": 185,
           "called": [
             "FrozenKernelObject.objectLockOf",
             "FrozenKernelObject.objectLockOf_reply",
@@ -197221,7 +197702,7 @@
         {
           "kind": "theorem",
           "name": "perObjectLockTheorems_count",
-          "line": 247,
+          "line": 271,
           "called": [
             "length"
           ]
@@ -197229,7 +197710,7 @@
         {
           "kind": "theorem",
           "name": "perObjectLockTheorems_fieldDefault_count",
-          "line": 251,
+          "line": 275,
           "called": [
             "filter",
             "length"
@@ -197238,7 +197719,7 @@
         {
           "kind": "theorem",
           "name": "perObjectLockTheorems_projection_count",
-          "line": 256,
+          "line": 280,
           "called": [
             "filter",
             "length"
@@ -197247,7 +197728,7 @@
         {
           "kind": "theorem",
           "name": "perObjectLockTheorems_defaultState_count",
-          "line": 261,
+          "line": 285,
           "called": [
             "filter",
             "length"
@@ -197256,7 +197737,7 @@
         {
           "kind": "theorem",
           "name": "perObjectLockTheorems_preservation_count",
-          "line": 266,
+          "line": 290,
           "called": [
             "filter",
             "length"
@@ -197265,7 +197746,7 @@
         {
           "kind": "theorem",
           "name": "perObjectLockTheorems_consistency_count",
-          "line": 271,
+          "line": 295,
           "called": [
             "filter",
             "length"
@@ -197274,7 +197755,7 @@
         {
           "kind": "theorem",
           "name": "perObjectLockTheorems_partition_sum",
-          "line": 278,
+          "line": 302,
           "called": [
             "filter",
             "length"
@@ -197283,14 +197764,20 @@
         {
           "kind": "theorem",
           "name": "perObjectLockTheorems_identifiers_nodup",
-          "line": 289,
-          "called": []
+          "line": 317,
+          "called": [
+            "identifier",
+            "nodup_map_stringOfPacked"
+          ]
         },
         {
           "kind": "theorem",
           "name": "perObjectLockTheorems_descriptions_nodup",
-          "line": 294,
-          "called": []
+          "line": 324,
+          "called": [
+            "description",
+            "nodup_map_stringOfPacked"
+          ]
         }
       ]
     },
@@ -205985,6 +206472,218 @@
             "objectIndexLive",
             "st",
             "storeObject"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.PackedString",
+      "path": "SeLe4n/PackedString.lean",
+      "declaration_count": 24,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n",
+          "line": 51,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "packedStringRadix",
+          "line": 55,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "packCodesAux",
+          "line": 58,
+          "called": [
+            "packedStringRadix"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "packCodes",
+          "line": 63,
+          "called": [
+            "packCodesAux"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "packString",
+          "line": 66,
+          "called": [
+            "packCodes",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "unpackCodesAux",
+          "line": 71,
+          "called": [
+            "packedStringRadix"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "unpackCodes",
+          "line": 78,
+          "called": [
+            "unpackCodesAux"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stringOfCodes",
+          "line": 81,
+          "called": [
+            "ofList",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stringOfPacked",
+          "line": 85,
+          "called": [
+            "stringOfCodes",
+            "unpackCodes"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "isValidCode",
+          "line": 88,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "allValidCodes",
+          "line": 90,
+          "called": [
+            "isValidCode"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "isWellFormedPacked",
+          "line": 96,
+          "called": [
+            "allValidCodes",
+            "packCodes",
+            "unpackCodes"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "nodupNat",
+          "line": 101,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "packedStringLit",
+          "line": 108,
+          "called": [
+            "packString"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "isValidCode_iff",
+          "line": 113,
+          "called": [
+            "isValidCode"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "allValidCodes_iff",
+          "line": 116,
+          "called": [
+            "allValidCodes",
+            "isValidCode_iff"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "isWellFormedPacked_iff",
+          "line": 123,
+          "called": [
+            "allValidCodes_iff",
+            "isWellFormedPacked",
+            "packCodes",
+            "unpackCodes"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "nodupNat_sound",
+          "line": 128,
+          "called": [
+            "nodupNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "Char.toNat_ofNat_of_isValidChar",
+          "line": 134,
+          "called": [
+            "ofNat",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "Char.ofNat_injective_of_isValidChar",
+          "line": 140,
+          "called": [
+            "Char.toNat_ofNat_of_isValidChar",
+            "ofNat",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "map_ofNat_injective_of_isValidChar",
+          "line": 146,
+          "called": [
+            "Char.ofNat_injective_of_isValidChar",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "stringOfCodes_injective_of_isValidChar",
+          "line": 161,
+          "called": [
+            "map_ofNat_injective_of_isValidChar",
+            "stringOfCodes"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "stringOfPacked_injective",
+          "line": 167,
+          "called": [
+            "isWellFormedPacked",
+            "stringOfCodes_injective_of_isValidChar",
+            "stringOfPacked",
+            "unpackCodes"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "nodup_map_stringOfPacked",
+          "line": 179,
+          "called": [
+            "isWellFormedPacked",
+            "nodupNat",
+            "nodupNat_sound",
+            "stringOfPacked",
+            "stringOfPacked_injective"
           ]
         }
       ]
@@ -239055,14 +239754,17 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:601>",
-          "line": 601,
-          "called": []
+          "name": "<anonymous:example:607>",
+          "line": 607,
+          "called": [
+            "identifier",
+            "perObjectLockTheorems_identifiers_nodup"
+          ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:612>",
-          "line": 612,
+          "name": "<anonymous:example:619>",
+          "line": 619,
           "called": [
             "SystemState",
             "allObjectLocksUnheldB",
@@ -239071,8 +239773,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:619>",
-          "line": 619,
+          "name": "<anonymous:example:626>",
+          "line": 626,
           "called": [
             "SystemState",
             "allObjectLocksUnheld",
@@ -239083,13 +239785,13 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 625,
+          "line": 632,
           "called": []
         },
         {
           "kind": "def",
           "name": "runDefaultStateChecks",
-          "line": 632,
+          "line": 639,
           "called": [
             "Endpoint",
             "ObjId",
@@ -239109,7 +239811,7 @@
         {
           "kind": "def",
           "name": "runPerObjectDefaultChecks",
-          "line": 694,
+          "line": 701,
           "called": [
             "Endpoint",
             "Notification",
@@ -239126,7 +239828,7 @@
         {
           "kind": "def",
           "name": "runObjectLockOfReductionChecks",
-          "line": 726,
+          "line": 733,
           "called": [
             "Endpoint",
             "RwLockState.unheld",
@@ -239143,7 +239845,7 @@
         {
           "kind": "def",
           "name": "runBEqDistinguishesLockStateChecks",
-          "line": 770,
+          "line": 777,
           "called": [
             "CNode",
             "Endpoint",
@@ -239167,7 +239869,7 @@
         {
           "kind": "def",
           "name": "runFrozenStateForwardingChecks",
-          "line": 848,
+          "line": 855,
           "called": [
             "Endpoint",
             "FrozenKernelObject.objectLockOf",
@@ -239192,7 +239894,7 @@
         {
           "kind": "def",
           "name": "runRwLockStateAuxChecks",
-          "line": 961,
+          "line": 968,
           "called": [
             "AccessMode",
             "CoreId",
@@ -239207,7 +239909,7 @@
         {
           "kind": "def",
           "name": "runAuditPass5InvariantChecks",
-          "line": 979,
+          "line": 986,
           "called": [
             "Endpoint",
             "KernelObject",
@@ -239228,17 +239930,19 @@
         {
           "kind": "def",
           "name": "runInventoryChecks",
-          "line": 1048,
+          "line": 1055,
           "called": [
             "assertBool",
+            "description",
             "filter",
+            "identifier",
             "length"
           ]
         },
         {
           "kind": "def",
           "name": "runPerObjectLockChecks",
-          "line": 1080,
+          "line": 1087,
           "called": [
             "runAuditPass5InvariantChecks",
             "runBEqDistinguishesLockStateChecks",
@@ -239253,7 +239957,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1096,
+          "line": 1103,
           "called": [
             "runPerObjectLockChecks"
           ]
@@ -249088,6 +249792,7 @@
           "called": [
             "assertBool",
             "filter",
+            "identifier",
             "invariant",
             "length"
           ]
@@ -249458,6 +250163,7 @@
           "name": "<anonymous:example:304>",
           "line": 304,
           "called": [
+            "identifier",
             "smpRetiredInventory_covers_latent"
           ]
         },
@@ -249811,6 +250517,7 @@
           "called": [
             "assertBool",
             "filter",
+            "identifier",
             "length"
           ]
         },
@@ -250538,6 +251245,7 @@
           "called": [
             "assertBool",
             "filter",
+            "identifier",
             "length"
           ]
         },
@@ -263940,6 +264648,7 @@
           "called": [
             "assertBool",
             "filter",
+            "identifier",
             "length"
           ]
         },
@@ -265292,6 +266001,7 @@
             "conflictGraph_acyclic",
             "conflictOrder",
             "default",
+            "description",
             "ffiRwLockAcquireRead",
             "ffiRwLockAcquireReadCount",
             "ffiRwLockAcquireWrite",
@@ -265308,6 +266018,7 @@
             "ffiTicketLockRelease",
             "ffiTicketLockReleaseCount",
             "ffiTicketLockStaticHandle",
+            "identifier",
             "isValid",
             "lockPrimitives",
             "lockPrimitives_count",
@@ -270519,12 +271230,14 @@
             "core1",
             "coreIdTargetMask",
             "currentOnCore",
+            "description",
             "determineTargetCore",
             "enqueueRunnableOnCore",
             "filter",
             "getTcb",
             "handleRescheduleSgiOnCore",
             "handler",
+            "identifier",
             "isEmpty",
             "length",
             "none",
@@ -270908,6 +271621,7 @@
           "called": [
             "assertBool",
             "filter",
+            "identifier",
             "length"
           ]
         },

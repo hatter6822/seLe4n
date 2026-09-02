@@ -122,7 +122,7 @@ finite graphs), so the symbol is retained to avoid a ~77-call-site cascade
 across `Service/` and its consumer modules. Any future rename (to
 `serviceSearchFuel` or `serviceDfsFuel`) should be landed as a single
 atomic refactor commit with the full call-site migration — deferred as a
-post-1.0 hygiene item; registered in `docs/WORKSTREAM_HISTORY.md`
+post-1.0 hygiene item; registered in `docs/REGISTERED_DEBT.md`
 (Registered debt index, C.1); see
 this annotation.
 
