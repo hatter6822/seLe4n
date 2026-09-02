@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.34.44` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 316,336 across 307 Lean files |
-| **Test LoC** | 66,866 across 70 Lean test suites |
-| **Proved declarations** | 10,503 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 316,373 across 307 Lean files |
+| **Test LoC** | 66,880 across 70 Lean test suites |
+| **Proved declarations** | 10,505 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — the active pre-1.0 baseline family (WS-RC R0–R5 landed at v0.31.2; R6–R14 absorbed into WS-SM per SM0.Q). Prior audits (v0.27.6 and earlier, remediated via WS-AI and successors) are archived in `docs/dev_history/audits/`. |
 | **Current workstream** | **WS-RA (Syscall Return ABI) — COMPLETE; both return orderings staged end to end.**  The kernel returns seL4's ARM64 frame exactly: `x0` = badge or primary result at full 64-bit width, `x1` = `MessageInfo` whose label carries the kernel status in the **top** of the 20-bit label range (`0` = success, `errorLabelBase + d` = `KernelError` discriminant `d`, base `0xFFF00`; every label below the base is a delivered message's own — ABI v3 at v0.34.44, which retired v2's `d + 1` offset because a delivered fault message's `seL4_Fault_tag` decoded as a kernel error), `x2`-`x5` = message registers.  The bit-63 status protocol (`encodeOk`/`encodeError`) and the vestigial `syscall_dispatch_inner` export are retired; `SYSCALL_ABI_VERSION = 3` is pinned in Lean, `sele4n-types` and the HAL.  `syscallDispatchFromAbi : Kernel SyscallOutcome` decides `returns frame` / `blocks` from the caller's post-state; value arms stage via `Architecture.writeReturnFrameToTcb` (`.notificationWait`'s badge — the SM9.C.0 closure, delivered end to end in the signal-before-wait ordering — `.receive`/`.replyRecv` consume deliveries, `.serviceQuery`'s resolved `ServiceId`); `Unit` frames are constructed, never read from staged registers; the frame crosses the FFI through the per-core return-frame mailbox and the trap layer restores all six registers (a blocked caller has no return frame; until the SM10.1 context restore installs a successor, the trap layer poisons its frame with the fail-closed blocked-resume sentinel — label `0xFFFFF`, decoded as `UnknownKernelError`, never success — per the PR #866 review).  Review round 2 (v0.33.40): the synthesized `extraCaps` reports the capabilities **actually installed** by the transfer (never the requested count — a grant-denied transfer reports zero), the mailbox/entry-lock core index is the boot-validated TPIDR logical id, and `service_query` returns the typed `ServiceId`.  **Completed at v0.33.38**: RA.B.5b's blocked-waiter staging landed at the unblocking arms (eleven sites through `stageWokenDelivery`/`stageWokenSendCompletion`, zero IPC transitions touched; `blockedReturn_staged_in_waiter_frame` + `blockedUnitReturn_staged_in_sender_frame`; five end-to-end two-core suite scenarios) and RA.B.8's per-arm `dispatchArm_matches_returnShape` value family with the unit half structural (`frameForShape_unit` constructs, never reads).  SM10.1 owes only frame *delivery* at the context restore plus the cancellation/timeout error-frame staging.  Plan: [`SYSCALL_RETURN_ABI_PLAN.md`](../planning/SYSCALL_RETURN_ABI_PLAN.md). |
@@ -1967,9 +1967,16 @@ kernel-entry lock.  Classification is exported too — `@[export
 lean_classify_synchronous_exception]` — and `trap.rs` calls it on the
 hardware target instead of running its own `esr_ec` match, so the routing
 decision (SVC → syscall dispatcher, everything else → fault entry) and the
-delivered fault's kind cannot disagree: there is one classifier, in Lean.
-`build.rs` pins that relation (`scan_trap_rs_classifies_via_lean`), and the
-Rust host tests replay all 64 EC values against the Lean table.
+delivered fault's kind cannot disagree: there is one classifier, in Lean, for
+every core that may enter it.  A core whose Lean runtime is not yet
+initialized classifies through the Rust mirror pinned to that table (PR #887
+review round 2), because the readiness contract admits no Lean-emitted symbol
+before the runtime is up, pure or not; `build.rs` derives every Lean upcall
+in the HAL from the Lean tree's exports (`scan_lean_upcalls_readiness_gated`)
+and fails the build on an ungated one.
+`build.rs` pins the classifier relation (`scan_trap_rs_classifies_via_lean` —
+the call after the gate, not the declaration), and the Rust host tests replay
+all 64 EC values against the Lean table.
 
 **The SM10.1 residual, stated plainly**: a core that delivers a fault has
 descheduled the faulting thread and cannot install a successor, because

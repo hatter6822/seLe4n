@@ -115,6 +115,7 @@ fn main() {
     // initialized it — undefined behaviour at that PE's first
     // interrupt.
     scan_lean_ready_gates_intact();
+    scan_lean_upcalls_readiness_gated();
 
     // WS-RR RR4.25 (single classification path): verify `trap.rs` routes
     // synchronous exceptions on the class the **Lean model** returns, and
@@ -169,6 +170,7 @@ fn main() {
     // The views come first: every scanner below reads them, so a
     // stripper defect would otherwise be reported as a clean tree.
     verify_rust_code_views();
+    verify_lean_upcall_scanner();
     scan_tlb_rs_outer_shareable_guards_intact();
 
     // Only build assembly for aarch64 targets
@@ -1061,16 +1063,11 @@ fn scan_trap_rs_classifies_via_lean() {
         Ok(s) => s,
         Err(e) => panic!("WS-RR RR4.25 scanner: failed to read {path}: {e}"),
     };
-    // Comment-free view: a scanner must not be satisfied — or tripped — by the
-    // prose that explains it.
-    let stripped: String = raw
-        .lines()
-        .map(|line| match line.find("//") {
-            Some(idx) => &line[..idx],
-            None => line,
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Comment-free, strings-blanked view: a scanner must not be satisfied — or
+    // tripped — by the prose that explains it, nor by a mention of a symbol
+    // inside a string literal.  The strings-kept view answers the one question
+    // that *is* about a literal: the `#[cfg(feature = "hw_target")]` attribute.
+    let (kept, stripped) = rust_code_views(&raw);
 
     fn body_after<'a>(stripped: &'a str, from: usize, what: &str) -> &'a str {
         let open_rel = stripped[from..].find('{').unwrap_or_else(|| {
@@ -1160,7 +1157,12 @@ fn scan_trap_rs_classifies_via_lean() {
         );
     }
 
-    // (3): the hardware-gated classifier calls into Lean.
+    // (3): the hardware-gated classifier calls into Lean — the *call*, behind
+    // the readiness gate, with the pre-readiness mirror as the other branch.
+    // PR #887 review round 2: the first cut accepted the symbol's presence,
+    // which the `extern "C"` declaration inside the body satisfies on its own,
+    // so deleting the call and returning a constant passed.  The declaration
+    // is blanked before the call is looked for.
     let classifier_idx = stripped
         .find("fn classify_synchronous_exception(")
         .unwrap_or_else(|| {
@@ -1170,24 +1172,104 @@ fn scan_trap_rs_classifies_via_lean() {
             )
         });
     let preamble_start = classifier_idx.saturating_sub(120);
-    if !stripped[preamble_start..classifier_idx].contains("#[cfg(feature = \"hw_target\")]") {
+    if !kept[preamble_start..classifier_idx].contains("#[cfg(feature = \"hw_target\")]") {
         panic!(
             "WS-RR RR4.25 regression: in `{path}`, the first \
              `fn classify_synchronous_exception` is not the `hw_target` one.  The \
              hardware definition must come first so this scanner checks the live \
-             path, and the host mirror must stay behind \
+             path, and the host lane's must stay behind \
              `#[cfg(not(feature = \"hw_target\"))]`."
         );
     }
     let classifier_body = body_after(&stripped, classifier_idx, "classify_synchronous_exception");
-    if !classifier_body.contains("lean_classify_synchronous_exception") {
+    let body_no_decl = blank_extern_blocks(classifier_body);
+    let call_idx = body_no_decl
+        .find("lean_classify_synchronous_exception(esr)")
+        .unwrap_or_else(|| {
+            panic!(
+                "WS-RR RR4.25 regression: `{path}`'s hardware-target \
+                 `classify_synchronous_exception` never *calls* \
+                 `lean_classify_synchronous_exception(esr)` — declaring the symbol is \
+                 not classifying through it.  On hardware the class must come from \
+                 the Lean model; a local table here is the divergence RR4.25 closed."
+            )
+        });
+    let gate_idx = body_no_decl.find("lean_ready(").unwrap_or_else(|| {
         panic!(
-            "WS-RR RR4.25 regression: `{path}`'s hardware-target \
-             `classify_synchronous_exception` no longer resolves \
-             `lean_classify_synchronous_exception`.  On hardware the class must come \
-             from the Lean model; a local table here is the divergence RR4.25 closed."
+            "PR #887 review regression: `{path}`'s hardware-target \
+             `classify_synchronous_exception` calls into Lean without consulting the \
+             per-core readiness gate.  No Lean-emitted symbol may be entered from a \
+             PE whose runtime is not initialized, pure or not."
+        )
+    });
+    if gate_idx > call_idx {
+        panic!(
+            "PR #887 review regression: in `{path}`'s hardware-target \
+             `classify_synchronous_exception`, the Lean call precedes the readiness \
+             gate.  The gate must guard the call."
         );
     }
+    if !body_no_decl.contains("classify_synchronous_exception_mirror(esr)") {
+        panic!(
+            "PR #887 review regression: `{path}`'s hardware-target \
+             `classify_synchronous_exception` has no pre-readiness branch through \
+             `classify_synchronous_exception_mirror(esr)`.  A core that is not ready \
+             must still classify — through the mirror pinned to the Lean table — so \
+             the fail-closed seams below can route."
+        );
+    }
+    // …and the host lane classifies through the same mirror, so the table the
+    // host tests pin is the table a not-ready core runs.
+    let host_idx = stripped[classifier_idx + 1..]
+        .find("fn classify_synchronous_exception(")
+        .map(|i| classifier_idx + 1 + i)
+        .unwrap_or_else(|| {
+            panic!(
+                "WS-RR RR4.25 regression: `{path}` has no host-lane \
+                 `fn classify_synchronous_exception` after the hardware one."
+            )
+        });
+    let host_body = body_after(&stripped, host_idx, "classify_synchronous_exception (host)");
+    if !host_body.contains("classify_synchronous_exception_mirror(esr)") {
+        panic!(
+            "PR #887 review regression: `{path}`'s host-lane \
+             `classify_synchronous_exception` does not classify through \
+             `classify_synchronous_exception_mirror(esr)`, so the host tests would \
+             pin a table the pre-readiness path does not run."
+        );
+    }
+}
+
+/// Blank every `extern "C" { … }` block in `body` (byte-aligned), so a
+/// declaration inside it cannot stand in for a call.
+fn blank_extern_blocks(body: &str) -> String {
+    let mut out = body.as_bytes().to_vec();
+    let mut search = 0usize;
+    while let Some(hit) = body[search..].find("extern \"C\" {") {
+        let open = search + hit + "extern \"C\" ".len();
+        let mut depth = 0usize;
+        let mut end = open;
+        for (index, ch) in body[open..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = open + index + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        for byte in out.iter_mut().take(end).skip(search + hit) {
+            if *byte != b'\n' {
+                *byte = b' ';
+            }
+        }
+        search = end.max(open + 1);
+    }
+    String::from_utf8(out).expect("blanking ASCII bytes keeps the text UTF-8")
 }
 
 fn scan_lean_ready_gates_intact() {
@@ -1241,35 +1323,7 @@ fn scan_lean_ready_gates_intact() {
              `{path}`'s `fn {fn_name}` body."
         );
     }
-    let sites: &[(&str, &str, &str)] = &[
-        (
-            "src/timer.rs",
-            "per_core_timer_tick_isr",
-            "lean_per_core_timer_tick",
-        ),
-        (
-            "src/trap.rs",
-            "reschedule_sgi_handler",
-            "lean_per_core_reschedule",
-        ),
-        (
-            "src/smp.rs",
-            "rust_secondary_main",
-            "lean_secondary_kernel_main",
-        ),
-        // WS-RR RR4.23: the fault-delivery seam.  `deliver_fault` enters the
-        // Lean runtime to run `faultDeliverOnCore` against the live kernel
-        // state, so it consults the same readiness gate as the timer tick and
-        // the `.reschedule` receiver.
-        ("src/trap.rs", "deliver_fault", "lean_handle_fault"),
-        // PR #887 review: the unknown-syscall seam enters the Lean runtime
-        // the same way, so it consults the same gate.
-        (
-            "src/trap.rs",
-            "deliver_unknown_syscall",
-            "lean_handle_unknown_syscall",
-        ),
-    ];
+    let sites = LEAN_READY_GATED_SEAMS;
     for (path, fn_name, lean_symbol) in sites {
         println!("cargo:rerun-if-changed={path}");
         let stripped = match std::fs::read_to_string(path) {
@@ -1305,6 +1359,438 @@ fn scan_lean_ready_gates_intact() {
             );
         }
     }
+}
+
+/// **The Lean seams that consult the per-core readiness gate**, as
+/// `(source, enclosing fn, Lean symbol)`.
+///
+/// This table is a **pin, not the source of truth**:
+/// `scan_lean_upcalls_readiness_gated` derives the set of Lean upcalls from
+/// the Lean tree's `@[export]` attributes and the HAL's own `extern "C"`
+/// declarations, attributes every call to its enclosing function, and fails
+/// the build when a gated call is missing here or an entry here has no call
+/// behind it.  A hand-written list cannot see the seam that does not exist
+/// yet — the PR #887 review found the classifier upcall outside the gate
+/// precisely because nothing derived the set — so the derivation decides and
+/// this table records.
+const LEAN_READY_GATED_SEAMS: &[(&str, &str, &str)] = &[
+    (
+        "src/timer.rs",
+        "per_core_timer_tick_isr",
+        "lean_per_core_timer_tick",
+    ),
+    (
+        "src/trap.rs",
+        "reschedule_sgi_handler",
+        "lean_per_core_reschedule",
+    ),
+    (
+        "src/smp.rs",
+        "rust_secondary_main",
+        "lean_secondary_kernel_main",
+    ),
+    // The fault-delivery seam: `deliver_fault` enters the Lean runtime to run
+    // `faultDeliverOnCore` against the live kernel state.
+    ("src/trap.rs", "deliver_fault", "lean_handle_fault"),
+    // PR #887 review: the unknown-syscall seam enters the runtime the same way.
+    (
+        "src/trap.rs",
+        "deliver_unknown_syscall",
+        "lean_handle_unknown_syscall",
+    ),
+    // PR #887 review round 2: the classifier is a Lean-emitted symbol like
+    // any other, so it consults the gate too; a not-ready core classifies
+    // through the pinned Rust mirror instead.
+    (
+        "src/trap.rs",
+        "classify_synchronous_exception",
+        "lean_classify_synchronous_exception",
+    ),
+];
+
+/// **Lean upcalls that run outside the readiness gate, by design or as
+/// registered debt** — `(source, enclosing fn, Lean symbol, why)`.
+///
+/// Every entry is a call `scan_lean_upcalls_readiness_gated` would otherwise
+/// reject, so adding one is a decision with a reason a reader can check, and
+/// an entry whose call no longer exists fails the build rather than
+/// lingering.
+const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, &str)] = &[
+    (
+        "src/boot.rs",
+        "rust_boot_main",
+        "lean_kernel_main",
+        "the primary core's boot install: this call is the one that initializes \
+         the Lean runtime the gate stands for, so it cannot sit behind the gate; \
+         the boot core is marked ready after it, the image target's obligation",
+    ),
+    (
+        "src/svc_dispatch.rs",
+        "dispatch_svc",
+        "lean_syscall_dispatch_cross_core",
+        "the SVC dispatch seam: registered debt, closed by the release-readiness \
+         plan's boot-path fail-open phase (docs/WORKSTREAM_HISTORY.md)",
+    ),
+    (
+        "src/ffi.rs",
+        "sele4n_suspend_thread",
+        "suspend_thread_cross_core",
+        "the cross-core suspend seam: the same registered debt as the SVC seam",
+    ),
+];
+
+/// One call from HAL Rust into a Lean-emitted symbol, as the scanner found it.
+#[derive(Debug, PartialEq, Eq)]
+struct LeanUpcallSite {
+    /// The `fn` whose brace-matched body holds the call.
+    enclosing_fn: String,
+    /// The Lean symbol called.
+    symbol: String,
+    /// Whether `lean_ready(` occurs in the enclosing body *before* the call.
+    gated: bool,
+}
+
+/// Every call expression `symbol(` in `code` — a strings-blanked code view —
+/// for `symbol` in `exports`, attributed to its enclosing function.
+///
+/// A declaration (`fn symbol(` inside an `extern "C"` block) or a definition
+/// (a host-lane stub, `extern "C" fn symbol(`) is not a call: the token is
+/// present but nothing is invoked, which is the presence-versus-relation
+/// mistake the PR #887 review found in the classifier scanner.  A call at
+/// module scope cannot be attributed and is an error, so it fails closed.
+fn lean_upcall_sites(code: &str, exports: &[&str]) -> Result<Vec<LeanUpcallSite>, String> {
+    let bytes = code.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut sites = Vec::new();
+    for symbol in exports {
+        let needle = format!("{symbol}(");
+        let mut search = 0usize;
+        while let Some(hit) = code[search..].find(&needle) {
+            let at = search + hit;
+            search = at + needle.len();
+            // Whole identifier: `not_lean_x(` must not match `lean_x(`.
+            if at > 0 && is_ident(bytes[at - 1]) {
+                continue;
+            }
+            // A declaration or definition is `fn` followed by the name.
+            let mut before = at;
+            while before > 0 && matches!(bytes[before - 1], b' ' | b'\t' | b'\n' | b'\r') {
+                before -= 1;
+            }
+            let declared = before >= 2
+                && &code[before - 2..before] == "fn"
+                && (before == 2 || !is_ident(bytes[before - 3]));
+            if declared {
+                continue;
+            }
+            let Some((enclosing_fn, open, _)) = enclosing_fn_span(code, at) else {
+                return Err(format!(
+                    "call to the Lean symbol `{symbol}` at byte {at} is not inside any \
+                     function, so its readiness gate cannot be attributed"
+                ));
+            };
+            let gated = code[open..at].contains("lean_ready(");
+            sites.push(LeanUpcallSite {
+                enclosing_fn,
+                symbol: (*symbol).to_string(),
+                gated,
+            });
+        }
+    }
+    Ok(sites)
+}
+
+/// The names declared as functions inside `extern "C" { … }` blocks of `code`.
+fn extern_block_declarations(code: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut search = 0usize;
+    while let Some(hit) = code[search..].find("extern \"C\" {") {
+        let open = search + hit + "extern \"C\" ".len();
+        let mut depth = 0usize;
+        let mut end = open;
+        for (index, ch) in code[open..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = open + index;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let block = &code[open..end];
+        let mut inner = 0usize;
+        while let Some(f) = block[inner..].find("fn ") {
+            let at = inner + f;
+            inner = at + 3;
+            if at > 0
+                && (block.as_bytes()[at - 1].is_ascii_alphanumeric()
+                    || block.as_bytes()[at - 1] == b'_')
+            {
+                continue;
+            }
+            let name: String = block[at + 3..]
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() && !names.contains(&name) {
+                names.push(name);
+            }
+        }
+        search = end.max(open + 1);
+    }
+    names
+}
+
+/// Every `@[export name]` under `dir`, recursively — the Lean-emitted symbol
+/// set the HAL can call.
+fn collect_lean_exports(dir: &std::path::Path, out: &mut Vec<String>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => panic!(
+            "Lean upcall scanner: cannot read the Lean tree at {}: {e}",
+            dir.display()
+        ),
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_lean_exports(&path, out);
+            continue;
+        }
+        if path.extension().and_then(|e| e.to_str()) != Some("lean") {
+            continue;
+        }
+        let Ok(contents) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let mut search = 0usize;
+        while let Some(hit) = contents[search..].find("@[export ") {
+            let at = search + hit + "@[export ".len();
+            search = at;
+            let name: String = contents[at..]
+                .trim_start()
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() && !out.contains(&name) {
+                out.push(name);
+            }
+        }
+    }
+}
+
+/// Every `.rs` file under `dir`, recursively.
+fn collect_rust_sources(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => panic!("Lean upcall scanner: cannot read {}: {e}", dir.display()),
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rust_sources(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            out.push(path);
+        }
+    }
+}
+
+/// **PR #887 review round 2 — derived, not enumerated**: every call from the
+/// HAL into a Lean-emitted symbol consults the per-core readiness gate, or is
+/// registered in `LEAN_UPCALLS_OUTSIDE_THE_GATE` with its reason.
+///
+/// `scan_lean_ready_gates_intact` checks the seams it is told about; this
+/// scanner finds them.  The Lean symbol set is derived from the Lean tree —
+/// every `@[export name]` attribute under `../../SeLe4n` — plus the
+/// `lean_`-prefixed functions the HAL itself declares in `extern "C"` blocks
+/// (the image's `lean_kernel_main` entry is emitted by the Lean toolchain
+/// rather than an attribute).  Every `.rs` file under `src/` is read through
+/// the strings-blanked code view, each call is attributed to its enclosing
+/// function, and the gate must precede the call in that body.  The set of
+/// gated seams found must then equal `LEAN_READY_GATED_SEAMS`, so a new seam
+/// forces a table entry with its docstring and a stale entry fails the build.
+/// `verify_lean_upcall_scanner` runs the token-preserving mutations first.
+fn scan_lean_upcalls_readiness_gated() {
+    let lean_root = std::path::Path::new("../../SeLe4n");
+    println!("cargo:rerun-if-changed=../../SeLe4n");
+    let mut exports: Vec<String> = Vec::new();
+    collect_lean_exports(lean_root, &mut exports);
+    if exports.is_empty() {
+        panic!(
+            "Lean upcall scanner: found no `@[export …]` attribute under {} — the Lean \
+             tree is the source of the symbol set, and an empty set would pass every \
+             upcall unchecked.",
+            lean_root.display()
+        );
+    }
+    let mut sources: Vec<std::path::PathBuf> = Vec::new();
+    collect_rust_sources(std::path::Path::new("src"), &mut sources);
+    sources.sort();
+    let mut views: Vec<(String, String)> = Vec::new();
+    for path in &sources {
+        let contents = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => panic!(
+                "Lean upcall scanner: failed to read {}: {e}",
+                path.display()
+            ),
+        };
+        let (_, code) = rust_code_views(&contents);
+        // HAL-declared `lean_*` externs join the set: the toolchain-emitted
+        // entry is declared here and nowhere in the Lean sources.
+        for name in extern_block_declarations(&code) {
+            if name.starts_with("lean_") && !exports.contains(&name) {
+                exports.push(name);
+            }
+        }
+        views.push((path.to_string_lossy().replace('\\', "/"), code));
+    }
+    exports.sort();
+    let export_refs: Vec<&str> = exports.iter().map(String::as_str).collect();
+
+    let mut gated_found: Vec<(String, String, String)> = Vec::new();
+    let mut exempt_seen = vec![false; LEAN_UPCALLS_OUTSIDE_THE_GATE.len()];
+    for (path, code) in &views {
+        let sites = match lean_upcall_sites(code, &export_refs) {
+            Ok(s) => s,
+            Err(e) => panic!("Lean upcall scanner: `{path}`: {e}"),
+        };
+        for site in sites {
+            if site.gated {
+                gated_found.push((path.clone(), site.enclosing_fn, site.symbol));
+                continue;
+            }
+            let exempt = LEAN_UPCALLS_OUTSIDE_THE_GATE
+                .iter()
+                .position(|(p, f, sym, _)| {
+                    *p == path.as_str() && *f == site.enclosing_fn && *sym == site.symbol
+                });
+            match exempt {
+                Some(i) => exempt_seen[i] = true,
+                None => panic!(
+                    "Lean upcall scanner: `{path}`'s `fn {}` calls the Lean-emitted \
+                     symbol `{}` without consulting the per-core readiness gate \
+                     (`crate::lean_ready::lean_ready(core)`) earlier in its body.  A PE \
+                     must never enter a Lean runtime it has not initialized.  Either \
+                     gate the call — and add the seam to `LEAN_READY_GATED_SEAMS` — or, \
+                     if it is the call that establishes readiness or a registered gap, \
+                     add it to `LEAN_UPCALLS_OUTSIDE_THE_GATE` with its reason.",
+                    site.enclosing_fn, site.symbol
+                ),
+            }
+        }
+    }
+    for (i, (p, f, sym, _)) in LEAN_UPCALLS_OUTSIDE_THE_GATE.iter().enumerate() {
+        if !exempt_seen[i] {
+            panic!(
+                "Lean upcall scanner: `LEAN_UPCALLS_OUTSIDE_THE_GATE` lists `{p}`'s \
+                 `fn {f}` calling `{sym}`, but no ungated call to that symbol exists \
+                 there any more.  Remove the stale entry, or re-attribute a call that \
+                 moved."
+            );
+        }
+    }
+    for (p, f, sym) in &gated_found {
+        let pinned = LEAN_READY_GATED_SEAMS
+            .iter()
+            .any(|(tp, tf, ts)| tp == p && tf == f && ts == sym);
+        if !pinned {
+            panic!(
+                "Lean upcall scanner: `{p}`'s `fn {f}` calls `{sym}` behind the \
+                 readiness gate, but the seam is not recorded in \
+                 `LEAN_READY_GATED_SEAMS`.  Add it there with a comment saying what the \
+                 seam commits, so the readiness contract's table keeps tracking the \
+                 real call sites."
+            );
+        }
+    }
+    for (tp, tf, ts) in LEAN_READY_GATED_SEAMS {
+        if !gated_found
+            .iter()
+            .any(|(p, f, sym)| p == tp && f == tf && sym == ts)
+        {
+            panic!(
+                "Lean upcall scanner: `LEAN_READY_GATED_SEAMS` records `{tp}`'s `fn {tf}` \
+                 calling `{ts}` behind the gate, but no such gated call was found.  The \
+                 seam moved, lost its gate, or was renamed; update the table in the \
+                 same change."
+            );
+        }
+    }
+}
+
+/// Token-preserving mutations for `lean_upcall_sites`: every case keeps the
+/// symbol present in the text and breaks the relation the scanner is meant to
+/// see, so a scanner that had degraded to a presence check fails here before
+/// it is trusted with the tree.
+fn verify_lean_upcall_scanner() {
+    let exports = ["lean_x"];
+    let sites = |source: &str| {
+        let (_, code) = rust_code_views(source);
+        lean_upcall_sites(&code, &exports)
+    };
+    let gated = sites(
+        "fn seam(c: usize) -> u32 {\n    if crate::lean_ready::lean_ready(c) {\n        \
+         extern \"C\" {\n            fn lean_x(a: u64) -> u32;\n        }\n        \
+         unsafe { lean_x(1) }\n    } else {\n        0\n    }\n}\n",
+    )
+    .expect("gated fixture attributes");
+    assert_eq!(
+        gated,
+        vec![LeanUpcallSite {
+            enclosing_fn: "seam".to_string(),
+            symbol: "lean_x".to_string(),
+            gated: true,
+        }],
+        "Lean upcall scanner self-check: a gated call must be found once, gated"
+    );
+    let declaration_only = sites(
+        "fn seam() -> u32 {\n    extern \"C\" {\n        fn lean_x(a: u64) -> u32;\n    }\n    7\n}\n",
+    )
+    .expect("declaration fixture attributes");
+    assert!(
+        declaration_only.is_empty(),
+        "Lean upcall scanner self-check: an `extern` declaration stood in for a call"
+    );
+    let stub = sites("#[no_mangle]\nextern \"C\" fn lean_x(_a: u64) -> u32 {\n    17\n}\n")
+        .expect("stub fixture attributes");
+    assert!(
+        stub.is_empty(),
+        "Lean upcall scanner self-check: a host-lane stub definition counted as a call"
+    );
+    let gate_after = sites(
+        "fn seam(c: usize) -> u32 {\n    extern \"C\" {\n        fn lean_x(a: u64) -> u32;\n    }\n    \
+         let r = unsafe { lean_x(1) };\n    if crate::lean_ready::lean_ready(c) {\n        r\n    } \
+         else {\n        0\n    }\n}\n",
+    )
+    .expect("late-gate fixture attributes");
+    assert!(
+        gate_after.len() == 1 && !gate_after[0].gated,
+        "Lean upcall scanner self-check: a gate *after* the call passed as gating it"
+    );
+    let mention = sites("fn seam() -> u32 {\n    let _note = \"lean_x(1)\";\n    0\n}\n")
+        .expect("mention fixture attributes");
+    assert!(
+        mention.is_empty(),
+        "Lean upcall scanner self-check: a string-literal mention counted as a call"
+    );
+    let suffix = sites(
+        "fn seam() -> u32 {\n    not_lean_x(1)\n}\nfn not_lean_x(_a: u64) -> u32 {\n    0\n}\n",
+    )
+    .expect("suffix fixture attributes");
+    assert!(
+        suffix.is_empty(),
+        "Lean upcall scanner self-check: a longer identifier matched the symbol"
+    );
+    let orphan = sites("static Y: u32 = lean_x(1);\n");
+    assert!(
+        orphan.is_err(),
+        "Lean upcall scanner self-check: a call outside any function must fail closed"
+    );
 }
 
 /// WS-SM SM2.D.5: Verify `lock_bridge.rs` defines every required
@@ -2210,8 +2696,15 @@ fn outer_shareable_emitters(templates: &str, code: &str) -> Vec<String> {
 /// **WS-RR RR1.12**: the innermost `fn` whose brace-matched body contains
 /// `offset`, or `None` at module scope.
 fn enclosing_fn_name(code: &str, offset: usize) -> Option<String> {
+    enclosing_fn_span(code, offset).map(|(name, _, _)| name)
+}
+
+/// The innermost `fn` whose brace-matched body contains `offset`, with the
+/// byte offsets of that body's opening and closing braces — the span a
+/// scanner needs to ask whether a guard precedes a call *in the same body*.
+fn enclosing_fn_span(code: &str, offset: usize) -> Option<(String, usize, usize)> {
     let bytes = code.as_bytes();
-    let mut best: Option<(String, usize)> = None;
+    let mut best: Option<(String, usize, usize)> = None;
     let mut search = 0usize;
     while let Some(hit) = code[search..].find("fn ") {
         let at = search + hit;
@@ -2248,11 +2741,11 @@ fn enclosing_fn_name(code: &str, offset: usize) -> Option<String> {
                 _ => {}
             }
         }
-        if open < offset && offset < end && best.as_ref().is_none_or(|(_, s)| open > *s) {
-            best = Some((name, open));
+        if open < offset && offset < end && best.as_ref().is_none_or(|(_, s, _)| open > *s) {
+            best = Some((name, open, end));
         }
     }
-    best.map(|(name, _)| name)
+    best
 }
 
 /// **WS-RR RR1.12**: the assembly code view for the `.S` sources.

@@ -210,13 +210,16 @@ impl TrapFrame {
 /// ESR_EL1 Exception Class (EC) field values.
 /// ARM ARM D17.2.40: ESR_EL1 bits [31:26].
 ///
-/// **WS-RR RR4.25**: compiled only where an `ESR_EL1` → class mapping still
-/// lives on this side — the host lane's mirror and the tests that pin it
-/// against Lean.  On the hardware target the mapping is the Lean model's
-/// (`classifySynchronousException`) and this table would be a second one, so
-/// it is not compiled there at all: a contributor who reaches for `ec::` in
-/// the live path finds no such names.
-#[cfg(any(not(feature = "hw_target"), test))]
+/// **WS-RR RR4.25**: the only reader of these names is the pre-readiness
+/// mirror (`classify_synchronous_exception_mirror`) and the tests that pin it
+/// against Lean.  Once a core is ready the mapping is the Lean model's
+/// (`classifySynchronousException`), and `build.rs` holds
+/// `handle_synchronous_exception`'s routing to the `sync_class::` tags it
+/// returns: an `ec::` constant in the routing arms is the second
+/// classification path RR4.25 retired, and the scanner rejects it.  PR #887
+/// review round 2 compiles the table on every target because a core whose
+/// Lean runtime is not yet initialized must still classify — through the
+/// mirror — rather than enter a Lean-emitted symbol.
 mod ec {
     /// SVC instruction execution in AArch64 state.
     pub const SVC_AARCH64: u64 = 0x15;
@@ -258,10 +261,10 @@ mod error_code {
 /// Extract the Exception Class from ESR_EL1.
 ///
 /// **WS-RR RR4.25**: this is a *diagnostic* reader, not a classifier.  It
-/// feeds the unhandled-exception log line and the host lane's mirror; the
-/// routing decision comes from the Lean model
-/// ([`classify_synchronous_exception`]), so `trap.rs` has one classification
-/// path and not two.
+/// feeds the unhandled-exception log line and the pre-readiness mirror
+/// (`classify_synchronous_exception_mirror`); once a core is ready the routing
+/// decision comes from the Lean model ([`classify_synchronous_exception`]),
+/// so a running kernel has one classification path and not two.
 #[inline(always)]
 fn esr_ec(esr: u64) -> u64 {
     (esr >> 26) & 0x3F
@@ -272,10 +275,12 @@ fn esr_ec(esr: u64) -> u64 {
 ///
 /// The values mirror `SeLe4n.Kernel.syncExceptionClassTag`
 /// (`SeLe4n/Kernel/FaultEntry.lean`) and nothing else: the *mapping* from
-/// `ESR_EL1` to a class lives only in Lean's
-/// `classifySynchronousException`, so this side cannot classify differently —
-/// it can only fail to recognise a tag, which it routes to the same
-/// fail-closed unknown-exception arm the Lean map defaults to.
+/// `ESR_EL1` to a class lives in Lean's `classifySynchronousException`; the
+/// pre-readiness mirror (`classify_synchronous_exception_mirror`) restates it
+/// and is pinned to it over all 64 EC values, so a running kernel's routing
+/// cannot classify differently — this side can only fail to recognise a tag,
+/// which it routes to the same fail-closed unknown-exception arm the Lean map
+/// defaults to.
 pub mod sync_class {
     /// `SVC` from AArch64 — the syscall path, not a fault.
     pub const SVC: u32 = 0;
@@ -352,14 +357,34 @@ fn halt_on_kernel_abort(frame: &TrapFrame, esr: u64) -> ! {
 }
 
 /// **WS-RR RR4.25**: classify a synchronous exception **through the Lean
-/// model**.
+/// model** once this core may enter it.
 ///
-/// On the hardware target this is a call to `lean_classify_synchronous_exception`
-/// (`@[export]` on `SeLe4n.Kernel.classifySynchronousExceptionExport`), so the
-/// `ESR_EL1` → class mapping exists exactly once in the tree.  The duplicate
-/// `esr_ec` match this replaced could drift from the Lean model silently, and
-/// a drift on the abort arms would have routed a fault to the wrong handler —
-/// or to none.
+/// On the hardware target a *ready* core calls
+/// `lean_classify_synchronous_exception` (`@[export]` on
+/// `SeLe4n.Kernel.classifySynchronousExceptionExport`), so the routing decision
+/// and the delivered fault's kind come from one classifier and cannot drift
+/// apart — the `esr_ec` match this replaced could, and a drift on the abort
+/// arms would have routed a fault to the wrong handler, or to none.
+///
+/// **PR #887 review round 2 — the upcall is behind the readiness gate.**  The
+/// contract in `lean_ready.rs` admits no exception for a pure function: no
+/// Lean-emitted symbol may be entered from a PE whose runtime state is not
+/// initialized, and the first cut called this one unconditionally on the
+/// strength of a SAFETY comment claiming it needed no runtime.  The claim was
+/// about the function; the contract is about the symbol, and a scanner cannot
+/// tell the difference.  So a core that is not ready classifies through
+/// `classify_synchronous_exception_mirror` — the same `esr_ec` table the host
+/// lane runs, pinned to the Lean mapping across all 64 EC values by
+/// `sync_class_mirrors_lean_ec_table` — and the routing then reaches the
+/// seams' fail-closed halves (`deliver_fault`'s status frame), which is the
+/// documented pre-readiness behaviour of the whole fault path.  Reachable
+/// only on the primary before the image target marks it ready: no other core
+/// runs EL0 code without a Lean runtime, and an EL1-origin exception halts
+/// before classification (`halt_if_kernel_origin`).  `build.rs` pins the
+/// relation — the Lean call sits after the gate in this body, the mirror is
+/// the other branch — and `scan_lean_upcalls_readiness_gated` derives the set
+/// of every Lean upcall in the HAL from the Lean tree's `@[export]`s, so the
+/// next upcall cannot be written outside the gate silently.
 ///
 /// It is a pure query: no kernel state is read or committed, so it needs no
 /// entry lock and is called *before* one is taken, which is what lets the
@@ -368,31 +393,48 @@ fn halt_on_kernel_abort(frame: &TrapFrame, esr: u64) -> ! {
 #[cfg(feature = "hw_target")]
 #[inline]
 fn classify_synchronous_exception(esr: u64) -> u32 {
-    extern "C" {
-        fn lean_classify_synchronous_exception(esr: u64) -> u32;
+    let core_id = crate::per_cpu::current_core_id_from_tpidr();
+    if crate::lean_ready::lean_ready(core_id as usize) {
+        extern "C" {
+            fn lean_classify_synchronous_exception(esr: u64) -> u32;
+        }
+        // SAFETY: `lean_classify_synchronous_exception` is the C-callable
+        // wrapper the Lean compiler emits for
+        // `Kernel.classifySynchronousExceptionExport`.  It takes a `u64` and
+        // returns a `u32`, reads no kernel state and allocates nothing, and
+        // this core's Lean runtime is initialized — the `lean_ready` gate just
+        // checked — so entering the symbol is within the runtime's contract.
+        unsafe { lean_classify_synchronous_exception(esr) }
+    } else {
+        classify_synchronous_exception_mirror(esr)
     }
-    // SAFETY: `lean_classify_synchronous_exception` is the C-callable wrapper
-    // the Lean compiler emits for `Kernel.classifySynchronousExceptionExport`
-    // (`@[export lean_classify_synchronous_exception]`).  It takes a `u64` and
-    // returns a `u32`, reads no kernel state and allocates nothing, so it is
-    // sound to call from EL1 exception context on any core at any time —
-    // including before this core's Lean runtime is initialized, which is why
-    // it is deliberately outside the `lean_ready` gate that guards the
-    // state-committing seams.
-    unsafe { lean_classify_synchronous_exception(esr) }
 }
 
-/// **WS-RR RR4.25 (host lane only)**: the classification the host test lane
-/// uses, since the Lean symbol is not linked there.
-///
-/// This is **not** a second live path: on the hardware target the
-/// `#[cfg(feature = "hw_target")]` sibling above is the only classifier
-/// compiled, and this function does not exist.  It is pinned against the Lean
-/// mapping by `sync_class_mirrors_lean_ec_table` in the test module below,
-/// which walks every one of the 64 EC values.
+/// The host lane has no Lean symbol to call, so it classifies through the
+/// mirror unconditionally — the same answers a not-yet-ready core gets on
+/// hardware.
 #[cfg(not(feature = "hw_target"))]
 #[inline]
 fn classify_synchronous_exception(esr: u64) -> u32 {
+    classify_synchronous_exception_mirror(esr)
+}
+
+/// **The pre-readiness classifier**: the `ESR_EL1` exception-class table as
+/// the Lean model defines it, in Rust.
+///
+/// Two callers: the host test lane, where the Lean symbol is not linked, and
+/// a hardware core whose Lean runtime is not yet initialized (see
+/// [`classify_synchronous_exception`]).  It is **not** a second live
+/// classification path for a running kernel: once a core is ready every
+/// exception it takes is classified in Lean, and this table's only job is to
+/// agree with that one.  Agreement is pinned from both sides —
+/// `sync_class_mirrors_lean_ec_table` walks all 64 EC values against the
+/// expected table here, and the Lean suite walks the same 64 values against
+/// `classifySynchronousException` — so a mapping edit on either side that the
+/// other does not mirror fails a test rather than routing a fault to the wrong
+/// handler.
+#[inline]
+fn classify_synchronous_exception_mirror(esr: u64) -> u32 {
     match esr_ec(esr) {
         ec::SVC_AARCH64 => sync_class::SVC,
         ec::DABT_LOWER => sync_class::DATA_ABORT,
@@ -1159,9 +1201,10 @@ mod tests {
     /// every token but *changes the mapping* — swapping the abort arms, folding
     /// `SP_ALIGN` into the unknown arm, moving `SVC` — is exactly the drift
     /// that would route a fault to the wrong handler, and only a table can
-    /// catch it.  The hardware target does not compile this mirror at all
-    /// (`classify_synchronous_exception` is the Lean call there), so this pins
-    /// the host lane to the same answers the live path gets.
+    /// catch it.  On hardware the mirror classifies only before a core is
+    /// ready (`classify_synchronous_exception` is the Lean call once it is), so
+    /// this pins both the host lane and the pre-readiness path to the answers
+    /// the Lean classifier gives.
     #[test]
     fn sync_class_mirrors_lean_ec_table() {
         for raw_ec in 0u64..64 {
@@ -1177,7 +1220,7 @@ mod tests {
                 _ => sync_class::UNKNOWN_REASON,
             };
             assert_eq!(
-                classify_synchronous_exception(esr),
+                classify_synchronous_exception_mirror(esr),
                 expected,
                 "EC 0x{raw_ec:02x} classified differently from the Lean model"
             );

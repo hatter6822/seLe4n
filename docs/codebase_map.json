@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr4-fault-handling-ipc-p4pnva",
-      "commit_sha": "d5f1d8721d7bbd9f93c58e6b734184b851ad29ef",
-      "tree_sha": "92cb142ffc422ae9dae77aebe2d232de8319ac3e",
-      "committed_at_utc": "2026-09-01T22:54:45+00:00"
+      "commit_sha": "c7919ef9951c121e819ac8d9fd9994f217661896",
+      "tree_sha": "08b12d9d76b5954dac78bc0256931656c947f334",
+      "committed_at_utc": "2026-09-02T01:11:56+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e182621fee5826f827cc98664b67a804588d2c1acbe6e76a4a7e65b510fee657"
+    "source_digest": "e11cd6ade09c693ad12e316273bb3651b50dec3dedfff0a970ce8869492155af"
   },
   "summary": {
     "module_count": 377,
-    "declaration_count": 18232
+    "declaration_count": 18236
   },
   "readme_sync": {
     "version": "0.34.44",
     "lean_toolchain": "v4.28.0",
     "production_files": 307,
-    "production_loc": 316336,
+    "production_loc": 316373,
     "test_files": 70,
-    "test_loc": 66866,
-    "proved_theorem_lemma_decls": 10503,
+    "test_loc": 66880,
+    "proved_theorem_lemma_decls": 10505,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -5522,7 +5522,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.Fault",
       "path": "SeLe4n/Kernel/Architecture/Fault.lean",
-      "declaration_count": 62,
+      "declaration_count": 66,
       "declarations": [
         {
           "kind": "namespace",
@@ -5741,14 +5741,26 @@
         },
         {
           "kind": "def",
+          "name": "debugException",
+          "line": 311,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "timeout",
+          "line": 314,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "vmFault",
-          "line": 309,
+          "line": 326,
           "called": []
         },
         {
           "kind": "def",
           "name": "faultMessageLength",
-          "line": 323,
+          "line": 340,
           "called": [
             "Fault",
             "capFault",
@@ -5760,7 +5772,7 @@
         {
           "kind": "def",
           "name": "faultLabel",
-          "line": 330,
+          "line": 347,
           "called": [
             "Fault",
             "capFault",
@@ -5772,7 +5784,7 @@
         {
           "kind": "theorem",
           "name": "faultLabel_lt_errorLabelBase",
-          "line": 342,
+          "line": 359,
           "called": [
             "Fault",
             "capFault",
@@ -5786,8 +5798,36 @@
         },
         {
           "kind": "theorem",
+          "name": "faultLabel_ne_timeout",
+          "line": 368,
+          "called": [
+            "Fault",
+            "capFault",
+            "faultLabel",
+            "timeout",
+            "unknownSyscall",
+            "userException",
+            "vmFault"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "faultLabel_ne_debugException",
+          "line": 373,
+          "called": [
+            "Fault",
+            "capFault",
+            "debugException",
+            "faultLabel",
+            "unknownSyscall",
+            "userException",
+            "vmFault"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "faultLabel_ne_null",
-          "line": 351,
+          "line": 382,
           "called": [
             "Fault",
             "capFault",
@@ -5801,7 +5841,7 @@
         {
           "kind": "theorem",
           "name": "faultLabel_injective_on_kinds",
-          "line": 357,
+          "line": 388,
           "called": [
             "Fault",
             "capFault",
@@ -5814,19 +5854,19 @@
         {
           "kind": "def",
           "name": "encodeFlag",
-          "line": 367,
+          "line": 398,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeFlag",
-          "line": 371,
+          "line": 402,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "decodeFlag_encodeFlag",
-          "line": 373,
+          "line": 404,
           "called": [
             "decodeFlag",
             "encodeFlag"
@@ -5835,7 +5875,7 @@
         {
           "kind": "def",
           "name": "regOf",
-          "line": 377,
+          "line": 408,
           "called": [
             "RegValue",
             "toNat"
@@ -5844,7 +5884,7 @@
         {
           "kind": "def",
           "name": "wordOf",
-          "line": 382,
+          "line": 413,
           "called": [
             "RegValue"
           ]
@@ -5852,7 +5892,7 @@
         {
           "kind": "theorem",
           "name": "wordOf_regOf",
-          "line": 384,
+          "line": 415,
           "called": [
             "regOf",
             "wordOf"
@@ -5861,7 +5901,7 @@
         {
           "kind": "def",
           "name": "wordAt",
-          "line": 390,
+          "line": 421,
           "called": [
             "RegValue",
             "regs",
@@ -5871,7 +5911,7 @@
         {
           "kind": "def",
           "name": "encodeFault",
-          "line": 421,
+          "line": 452,
           "called": [
             "Fault",
             "FaultContext",
@@ -5893,7 +5933,7 @@
         {
           "kind": "def",
           "name": "decodeFault",
-          "line": 449,
+          "line": 480,
           "called": [
             "Fault",
             "MessageInfo",
@@ -5915,7 +5955,7 @@
         {
           "kind": "theorem",
           "name": "decodeFault_encodeFault",
-          "line": 470,
+          "line": 501,
           "called": [
             "Fault",
             "FaultContext",
@@ -5936,7 +5976,7 @@
         {
           "kind": "theorem",
           "name": "encodeFault_injective",
-          "line": 495,
+          "line": 526,
           "called": [
             "Fault",
             "FaultContext",
@@ -5948,7 +5988,7 @@
         {
           "kind": "theorem",
           "name": "encodeFault_carries_faultIP",
-          "line": 505,
+          "line": 536,
           "called": [
             "Fault",
             "FaultContext",
@@ -5964,7 +6004,7 @@
         {
           "kind": "theorem",
           "name": "encodeFault_size_eq_length",
-          "line": 522,
+          "line": 553,
           "called": [
             "Fault",
             "FaultContext",
@@ -5977,7 +6017,7 @@
         {
           "kind": "theorem",
           "name": "encodeFault_within_budget",
-          "line": 529,
+          "line": 560,
           "called": [
             "Fault",
             "FaultContext",
@@ -5989,7 +6029,7 @@
         {
           "kind": "theorem",
           "name": "encodeFault_extraCaps",
-          "line": 535,
+          "line": 566,
           "called": [
             "Fault",
             "FaultContext",
@@ -5999,7 +6039,7 @@
         {
           "kind": "theorem",
           "name": "encodeFault_messageInfo_wellFormed",
-          "line": 541,
+          "line": 572,
           "called": [
             "Fault",
             "FaultContext",
@@ -6019,7 +6059,7 @@
         {
           "kind": "inductive",
           "name": "FaultReplyOutcome",
-          "line": 556,
+          "line": 587,
           "called": [
             "FaultRestartFrame"
           ]
@@ -6027,13 +6067,13 @@
         {
           "kind": "namespace",
           "name": "FaultReplyOutcome",
-          "line": 566,
+          "line": 597,
           "called": []
         },
         {
           "kind": "def",
           "name": "restartPC",
-          "line": 573,
+          "line": 604,
           "called": [
             "FaultReplyOutcome",
             "none"
@@ -6042,7 +6082,7 @@
         {
           "kind": "def",
           "name": "faultRestartFrameOfContext",
-          "line": 584,
+          "line": 615,
           "called": [
             "FaultContext",
             "FaultRestartFrame",
@@ -6052,7 +6092,7 @@
         {
           "kind": "theorem",
           "name": "faultRestartFrameOfContext_pc",
-          "line": 591,
+          "line": 622,
           "called": [
             "FaultContext",
             "faultRestartFrameOfContext"
@@ -6061,7 +6101,7 @@
         {
           "kind": "def",
           "name": "replyWordOr",
-          "line": 601,
+          "line": 632,
           "called": [
             "MessageInfo",
             "RegValue",
@@ -6074,7 +6114,7 @@
         {
           "kind": "theorem",
           "name": "replyWordOr_of_empty",
-          "line": 607,
+          "line": 638,
           "called": [
             "MessageInfo",
             "RegValue",
@@ -6086,7 +6126,7 @@
         {
           "kind": "theorem",
           "name": "replyWordOr_of_covered",
-          "line": 613,
+          "line": 644,
           "called": [
             "MessageInfo",
             "RegValue",
@@ -6100,7 +6140,7 @@
         {
           "kind": "def",
           "name": "decodeFaultReply",
-          "line": 650,
+          "line": 681,
           "called": [
             "Fault",
             "FaultContext",
@@ -6119,7 +6159,7 @@
         {
           "kind": "theorem",
           "name": "decodeFaultReply_vmFault",
-          "line": 681,
+          "line": 712,
           "called": [
             "FaultContext",
             "MessageInfo",
@@ -6133,7 +6173,7 @@
         {
           "kind": "theorem",
           "name": "decodeFaultReply_capFault",
-          "line": 687,
+          "line": 718,
           "called": [
             "FaultContext",
             "KernelError",
@@ -6148,7 +6188,7 @@
         {
           "kind": "theorem",
           "name": "decodeFaultReply_abandon_of_label",
-          "line": 697,
+          "line": 728,
           "called": [
             "Fault",
             "FaultContext",
@@ -6163,7 +6203,7 @@
         {
           "kind": "theorem",
           "name": "decodeFaultReply_unknownSyscall_restartPC",
-          "line": 708,
+          "line": 739,
           "called": [
             "FaultContext",
             "MessageInfo",
@@ -6181,7 +6221,7 @@
         {
           "kind": "theorem",
           "name": "decodeFaultReply_userException_restartPC",
-          "line": 718,
+          "line": 749,
           "called": [
             "FaultContext",
             "MessageInfo",
@@ -6199,7 +6239,7 @@
         {
           "kind": "theorem",
           "name": "decodeFaultReply_resume_of_empty",
-          "line": 730,
+          "line": 761,
           "called": [
             "Fault",
             "FaultContext",
@@ -6215,7 +6255,7 @@
         {
           "kind": "theorem",
           "name": "decodeFaultReply_total",
-          "line": 742,
+          "line": 773,
           "called": [
             "Fault",
             "FaultContext",
@@ -52544,13 +52584,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 61,
+          "line": 64,
           "called": []
         },
         {
           "kind": "def",
           "name": "syncExceptionClassTag",
-          "line": 78,
+          "line": 81,
           "called": [
             "SynchronousExceptionClass"
           ]
@@ -52558,7 +52598,7 @@
         {
           "kind": "theorem",
           "name": "syncExceptionClassTag_injective",
-          "line": 89,
+          "line": 92,
           "called": [
             "SynchronousExceptionClass",
             "syncExceptionClassTag"
@@ -52567,7 +52607,7 @@
         {
           "kind": "def",
           "name": "classifySynchronousExceptionExport",
-          "line": 100,
+          "line": 106,
           "called": [
             "classifySynchronousException",
             "syncExceptionClassTag"
@@ -52576,7 +52616,7 @@
         {
           "kind": "theorem",
           "name": "classifySynchronousExceptionExport_def",
-          "line": 105,
+          "line": 111,
           "called": [
             "classifySynchronousException",
             "classifySynchronousExceptionExport",
@@ -52586,7 +52626,7 @@
         {
           "kind": "theorem",
           "name": "classifySynchronousException_depends_only_on_esr",
-          "line": 113,
+          "line": 119,
           "called": [
             "ExceptionContext",
             "classifySynchronousException"
@@ -52595,7 +52635,7 @@
         {
           "kind": "def",
           "name": "writeFaultRegistersToTcb",
-          "line": 131,
+          "line": 137,
           "called": [
             "FaultRegisterWindow",
             "SystemState",
@@ -52612,7 +52652,7 @@
         {
           "kind": "theorem",
           "name": "writeFaultRegistersToTcb_scheduler",
-          "line": 141,
+          "line": 147,
           "called": [
             "FaultRegisterWindow",
             "SystemState",
@@ -52625,7 +52665,7 @@
         {
           "kind": "theorem",
           "name": "writeFaultRegistersToTcb_id_when_not_tcb",
-          "line": 147,
+          "line": 153,
           "called": [
             "FaultRegisterWindow",
             "SystemState",
@@ -52639,7 +52679,7 @@
         {
           "kind": "theorem",
           "name": "writeFaultRegistersToTcb_getTcb",
-          "line": 153,
+          "line": 159,
           "called": [
             "FaultRegisterWindow",
             "RHTable.getElem",
@@ -52658,7 +52698,7 @@
         {
           "kind": "theorem",
           "name": "faultContextOfThread_writeFaultRegistersToTcb",
-          "line": 171,
+          "line": 177,
           "called": [
             "FaultRegisterWindow",
             "SystemState",
@@ -52678,7 +52718,7 @@
         {
           "kind": "def",
           "name": "faultEntryDeliver",
-          "line": 227,
+          "line": 233,
           "called": [
             "CoreId",
             "ExceptionContext",
@@ -52700,7 +52740,7 @@
         {
           "kind": "def",
           "name": "faultEntryStep",
-          "line": 260,
+          "line": 266,
           "called": [
             "CoreId",
             "ExceptionContext",
@@ -52720,7 +52760,7 @@
         {
           "kind": "def",
           "name": "unknownSyscallEntryStep",
-          "line": 287,
+          "line": 293,
           "called": [
             "CoreId",
             "ExceptionContext",
@@ -52740,7 +52780,7 @@
         {
           "kind": "theorem",
           "name": "faultEntryStep_invalid_core",
-          "line": 298,
+          "line": 304,
           "called": [
             "ExceptionContext",
             "FaultRegisterWindow",
@@ -52755,7 +52795,7 @@
         {
           "kind": "theorem",
           "name": "faultEntryStep_kernel_origin_inert",
-          "line": 308,
+          "line": 314,
           "called": [
             "ExceptionContext",
             "FaultRegisterWindow",
@@ -52769,7 +52809,7 @@
         {
           "kind": "theorem",
           "name": "faultEntryStep_kernelAbort_inert",
-          "line": 319,
+          "line": 325,
           "called": [
             "ExceptionContext",
             "FaultRegisterWindow",
@@ -52784,7 +52824,7 @@
         {
           "kind": "theorem",
           "name": "unknownSyscallEntryStep_kernel_origin_inert",
-          "line": 331,
+          "line": 337,
           "called": [
             "ExceptionContext",
             "FaultRegisterWindow",
@@ -52798,7 +52838,7 @@
         {
           "kind": "def",
           "name": "faultEntry",
-          "line": 353,
+          "line": 359,
           "called": [
             "faultEntryStep",
             "fireCrossCoreSgis",
@@ -52810,7 +52850,7 @@
         {
           "kind": "def",
           "name": "unknownSyscallEntry",
-          "line": 369,
+          "line": 375,
           "called": [
             "fireCrossCoreSgis",
             "getKernelLabelingContext",
@@ -52822,7 +52862,7 @@
         {
           "kind": "theorem",
           "name": "faultEntry_def",
-          "line": 387,
+          "line": 393,
           "called": [
             "faultEntry",
             "faultEntryStep",
@@ -52835,7 +52875,7 @@
         {
           "kind": "theorem",
           "name": "unknownSyscallEntry_def",
-          "line": 398,
+          "line": 404,
           "called": [
             "fireCrossCoreSgis",
             "getKernelLabelingContext",
@@ -52848,7 +52888,7 @@
         {
           "kind": "theorem",
           "name": "faultEntryDeliver_not_dispatchable",
-          "line": 414,
+          "line": 420,
           "called": [
             "CoreId",
             "ExceptionContext",
@@ -52868,7 +52908,7 @@
         {
           "kind": "theorem",
           "name": "faultEntryStep_not_dispatchable",
-          "line": 429,
+          "line": 435,
           "called": [
             "ExceptionContext",
             "FaultRegisterWindow",
@@ -52890,7 +52930,7 @@
         {
           "kind": "theorem",
           "name": "unknownSyscallEntryStep_not_dispatchable",
-          "line": 445,
+          "line": 451,
           "called": [
             "ExceptionContext",
             "FaultRegisterWindow",
@@ -218803,6 +218843,7 @@
             "scId",
             "scThreadIndexAdd",
             "tail",
+            "timeout",
             "timeoutAwareReceive",
             "timeoutBlockedThreads",
             "timeoutThread",
@@ -224157,6 +224198,8 @@
             "faultHandlerRights",
             "faultLabel",
             "faultLabel_lt_errorLabelBase",
+            "faultLabel_ne_debugException",
+            "faultLabel_ne_timeout",
             "faultMessage",
             "faultMessageLength",
             "faultMessage_bounded",
@@ -224199,8 +224242,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:168>",
-          "line": 168,
+          "name": "<anonymous:example:170>",
+          "line": 170,
           "called": [
             "FaultContext",
             "decodeFault",
@@ -224211,8 +224254,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:175>",
-          "line": 175,
+          "name": "<anonymous:example:177>",
+          "line": 177,
           "called": [
             "Fault",
             "FaultContext",
@@ -224227,8 +224270,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:181>",
-          "line": 181,
+          "name": "<anonymous:example:183>",
+          "line": 183,
           "called": [
             "Fault",
             "FaultContext",
@@ -224248,8 +224291,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:194>",
-          "line": 194,
+          "name": "<anonymous:example:196>",
+          "line": 196,
           "called": [
             "FaultHandlerTarget",
             "SystemState",
@@ -224262,8 +224305,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:202>",
-          "line": 202,
+          "name": "<anonymous:example:204>",
+          "line": 204,
           "called": [
             "Fault",
             "errorLabelBase",
@@ -224273,8 +224316,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:207>",
-          "line": 207,
+          "name": "<anonymous:example:209>",
+          "line": 209,
           "called": [
             "FaultRegisterWindow",
             "SystemState",
@@ -224290,8 +224333,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:214>",
-          "line": 214,
+          "name": "<anonymous:example:216>",
+          "line": 216,
           "called": [
             "CoreId",
             "ExceptionContext",
@@ -224309,7 +224352,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 228,
+          "line": 230,
           "called": [
             "throw"
           ]
@@ -224317,7 +224360,7 @@
         {
           "kind": "def",
           "name": "c0",
-          "line": 235,
+          "line": 237,
           "called": [
             "CoreId",
             "bootCoreId"
@@ -224326,22 +224369,6 @@
         {
           "kind": "def",
           "name": "c1",
-          "line": 236,
-          "called": [
-            "CoreId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "c2",
-          "line": 237,
-          "called": [
-            "CoreId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "c3",
           "line": 238,
           "called": [
             "CoreId"
@@ -224349,23 +224376,23 @@
         },
         {
           "kind": "def",
+          "name": "c2",
+          "line": 239,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "c3",
+          "line": 240,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "cnRoot",
-          "line": 241,
-          "called": [
-            "ObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "vsRoot",
-          "line": 242,
-          "called": [
-            "ObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "epHandler",
           "line": 243,
           "called": [
             "ObjId"
@@ -224373,23 +224400,23 @@
         },
         {
           "kind": "def",
-          "name": "faulter",
+          "name": "vsRoot",
           "line": 244,
           "called": [
-            "ThreadId"
+            "ObjId"
           ]
         },
         {
           "kind": "def",
-          "name": "handler",
+          "name": "epHandler",
           "line": 245,
           "called": [
-            "ThreadId"
+            "ObjId"
           ]
         },
         {
           "kind": "def",
-          "name": "orphan",
+          "name": "faulter",
           "line": 246,
           "called": [
             "ThreadId"
@@ -224397,7 +224424,7 @@
         },
         {
           "kind": "def",
-          "name": "weak",
+          "name": "handler",
           "line": 247,
           "called": [
             "ThreadId"
@@ -224405,8 +224432,24 @@
         },
         {
           "kind": "def",
+          "name": "orphan",
+          "line": 248,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "weak",
+          "line": 249,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "grantReplyFaulter",
-          "line": 250,
+          "line": 252,
           "called": [
             "ThreadId"
           ]
@@ -224414,7 +224457,7 @@
         {
           "kind": "def",
           "name": "replyH",
-          "line": 251,
+          "line": 253,
           "called": [
             "ReplyId"
           ]
@@ -224422,7 +224465,7 @@
         {
           "kind": "def",
           "name": "handlerCPtr",
-          "line": 255,
+          "line": 257,
           "called": [
             "CPtr",
             "ofNat"
@@ -224431,7 +224474,7 @@
         {
           "kind": "def",
           "name": "weakCPtr",
-          "line": 259,
+          "line": 261,
           "called": [
             "CPtr",
             "ofNat"
@@ -224440,7 +224483,7 @@
         {
           "kind": "def",
           "name": "grantReplyCPtr",
-          "line": 264,
+          "line": 266,
           "called": [
             "CPtr",
             "ofNat"
@@ -224449,7 +224492,7 @@
         {
           "kind": "def",
           "name": "rootCnode",
-          "line": 266,
+          "line": 268,
           "called": [
             "CNode",
             "badge",
@@ -224463,7 +224506,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 286,
+          "line": 288,
           "called": [
             "CPtr",
             "CoreId",
@@ -224476,7 +224519,7 @@
         {
           "kind": "def",
           "name": "stFault",
-          "line": 296,
+          "line": 298,
           "called": [
             "SystemState",
             "build",
@@ -224509,7 +224552,7 @@
         {
           "kind": "def",
           "name": "stRunning",
-          "line": 318,
+          "line": 320,
           "called": [
             "SystemState",
             "c0",
@@ -224527,7 +224570,7 @@
         {
           "kind": "def",
           "name": "dataAbortCtx",
-          "line": 327,
+          "line": 329,
           "called": [
             "ExceptionContext",
             "ofNat"
@@ -224536,7 +224579,7 @@
         {
           "kind": "def",
           "name": "theFault",
-          "line": 332,
+          "line": 334,
           "called": [
             "Fault",
             "ofNat",
@@ -224546,7 +224589,7 @@
         {
           "kind": "def",
           "name": "stepPair",
-          "line": 337,
+          "line": 339,
           "called": [
             "KernelError",
             "SystemState",
@@ -224556,7 +224599,7 @@
         {
           "kind": "def",
           "name": "errorOf",
-          "line": 346,
+          "line": 348,
           "called": [
             "KernelError",
             "none"
@@ -224565,7 +224608,7 @@
         {
           "kind": "def",
           "name": "resolveErr",
-          "line": 351,
+          "line": 353,
           "called": [
             "KernelError",
             "SystemState",
@@ -224578,7 +224621,7 @@
         {
           "kind": "def",
           "name": "ipcStateOf",
-          "line": 354,
+          "line": 356,
           "called": [
             "SystemState",
             "ThreadId",
@@ -224590,7 +224633,7 @@
         {
           "kind": "def",
           "name": "threadStateOf",
-          "line": 357,
+          "line": 359,
           "called": [
             "SystemState",
             "ThreadId",
@@ -224602,7 +224645,7 @@
         {
           "kind": "def",
           "name": "pendingFaultOf",
-          "line": 360,
+          "line": 362,
           "called": [
             "SystemState",
             "ThreadFault",
@@ -224615,7 +224658,7 @@
         {
           "kind": "def",
           "name": "savedPcOf",
-          "line": 363,
+          "line": 365,
           "called": [
             "SystemState",
             "ThreadId",
@@ -224626,7 +224669,7 @@
         {
           "kind": "def",
           "name": "deliveredMessageOf",
-          "line": 366,
+          "line": 368,
           "called": [
             "IpcMessage",
             "SystemState",
@@ -224639,7 +224682,7 @@
         {
           "kind": "def",
           "name": "dispatchableOn",
-          "line": 372,
+          "line": 374,
           "called": [
             "CoreId",
             "SystemState",
@@ -224653,7 +224696,7 @@
         {
           "kind": "def",
           "name": "sampleCtx",
-          "line": 380,
+          "line": 382,
           "called": [
             "FaultContext"
           ]
@@ -224661,7 +224704,7 @@
         {
           "kind": "def",
           "name": "allFaultKinds",
-          "line": 386,
+          "line": 388,
           "called": [
             "Fault",
             "capFault",
@@ -224673,11 +224716,12 @@
         {
           "kind": "def",
           "name": "runEncodingChecks",
-          "line": 394,
+          "line": 396,
           "called": [
             "all",
             "allFaultKinds",
             "assertBool",
+            "debugException",
             "decodeFault",
             "encodeFault",
             "faultLabel",
@@ -224690,6 +224734,7 @@
             "sampleCtx",
             "size",
             "tag",
+            "timeout",
             "unknownSyscall",
             "userException",
             "vmFault",
@@ -224699,7 +224744,7 @@
         {
           "kind": "def",
           "name": "runClassificationChecks",
-          "line": 423,
+          "line": 434,
           "called": [
             "ExceptionContext",
             "ExceptionContext.takenFromEl0",
@@ -224716,7 +224761,7 @@
         {
           "kind": "def",
           "name": "runResolutionChecks",
-          "line": 477,
+          "line": 488,
           "called": [
             "AccessRight",
             "Capability",
@@ -224751,7 +224796,7 @@
         {
           "kind": "structure",
           "name": "Delivery",
-          "line": 540,
+          "line": 551,
           "called": [
             "FaultDeliveryResult",
             "SystemState"
@@ -224760,7 +224805,7 @@
         {
           "kind": "def",
           "name": "deliveryE",
-          "line": 546,
+          "line": 557,
           "called": [
             "Delivery",
             "c0",
@@ -224783,7 +224828,7 @@
         {
           "kind": "def",
           "name": "delivery",
-          "line": 558,
+          "line": 569,
           "called": [
             "Delivery"
           ]
@@ -224791,7 +224836,7 @@
         {
           "kind": "def",
           "name": "runDeliveryChecks",
-          "line": 560,
+          "line": 571,
           "called": [
             "assertBool",
             "badge",
@@ -224823,7 +224868,7 @@
         {
           "kind": "def",
           "name": "runNoHandlerChecks",
-          "line": 626,
+          "line": 637,
           "called": [
             "assertBool",
             "c2",
@@ -224843,7 +224888,7 @@
         {
           "kind": "def",
           "name": "permissiveCtx",
-          "line": 657,
+          "line": 668,
           "called": [
             "LabelingContext",
             "publicLabel"
@@ -224852,7 +224897,7 @@
         {
           "kind": "def",
           "name": "latticeDenyingCtx",
-          "line": 666,
+          "line": 677,
           "called": [
             "LabelingContext",
             "faulter",
@@ -224864,7 +224909,7 @@
         {
           "kind": "def",
           "name": "endpointLabelDenyingCtx",
-          "line": 676,
+          "line": 687,
           "called": [
             "LabelingContext",
             "faulter",
@@ -224876,7 +224921,7 @@
         {
           "kind": "def",
           "name": "objectLabelDenyingCtx",
-          "line": 686,
+          "line": 697,
           "called": [
             "LabelingContext",
             "faulter",
@@ -224888,7 +224933,7 @@
         {
           "kind": "def",
           "name": "overrideDenyingCtx",
-          "line": 696,
+          "line": 707,
           "called": [
             "LabelingContext",
             "epHandler",
@@ -224899,7 +224944,7 @@
         {
           "kind": "def",
           "name": "trapWindow",
-          "line": 706,
+          "line": 717,
           "called": [
             "FaultRegisterWindow"
           ]
@@ -224907,7 +224952,7 @@
         {
           "kind": "def",
           "name": "runFlowGateChecks",
-          "line": 709,
+          "line": 720,
           "called": [
             "assertBool",
             "c0",
@@ -224940,7 +224985,7 @@
         {
           "kind": "def",
           "name": "resumeInfo",
-          "line": 790,
+          "line": 801,
           "called": [
             "MessageInfo",
             "length"
@@ -224949,7 +224994,7 @@
         {
           "kind": "def",
           "name": "restartInfo",
-          "line": 793,
+          "line": 804,
           "called": [
             "MessageInfo",
             "length"
@@ -224958,7 +225003,7 @@
         {
           "kind": "def",
           "name": "restartRegs",
-          "line": 794,
+          "line": 805,
           "called": [
             "RegValue",
             "ofNat"
@@ -224967,7 +225012,7 @@
         {
           "kind": "def",
           "name": "abandonInfo",
-          "line": 801,
+          "line": 812,
           "called": [
             "MessageInfo",
             "length"
@@ -224976,7 +225021,7 @@
         {
           "kind": "structure",
           "name": "QueuedDelivery",
-          "line": 813,
+          "line": 824,
           "called": [
             "FaultDeliveryResult",
             "FaultReplyOutcome",
@@ -224986,7 +225031,7 @@
         {
           "kind": "def",
           "name": "queuedDeliveryE",
-          "line": 820,
+          "line": 831,
           "called": [
             "QueuedDelivery",
             "c0",
@@ -225010,7 +225055,7 @@
         {
           "kind": "def",
           "name": "queuedDelivery",
-          "line": 832,
+          "line": 843,
           "called": [
             "QueuedDelivery"
           ]
@@ -225018,7 +225063,7 @@
         {
           "kind": "def",
           "name": "runQueuedDeliveryChecks",
-          "line": 834,
+          "line": 845,
           "called": [
             "assertBool",
             "bind",
@@ -225048,7 +225093,7 @@
         {
           "kind": "def",
           "name": "pcAlignCtx",
-          "line": 883,
+          "line": 894,
           "called": [
             "ExceptionContext",
             "ofNat"
@@ -225057,7 +225102,7 @@
         {
           "kind": "def",
           "name": "runEntryWindowChecks",
-          "line": 886,
+          "line": 897,
           "called": [
             "ExceptionContext",
             "FaultContext",
@@ -225095,7 +225140,7 @@
         {
           "kind": "def",
           "name": "svcCtx",
-          "line": 977,
+          "line": 988,
           "called": [
             "ExceptionContext",
             "ofNat"
@@ -225104,7 +225149,7 @@
         {
           "kind": "def",
           "name": "runUnknownSyscallChecks",
-          "line": 980,
+          "line": 991,
           "called": [
             "all",
             "assertBool",
@@ -225144,7 +225189,7 @@
         {
           "kind": "def",
           "name": "orphanTcbCap",
-          "line": 1042,
+          "line": 1053,
           "called": [
             "Capability",
             "ofList",
@@ -225154,7 +225199,7 @@
         {
           "kind": "def",
           "name": "configGate",
-          "line": 1045,
+          "line": 1056,
           "called": [
             "SyscallGate",
             "cnRoot",
@@ -225165,7 +225210,7 @@
         {
           "kind": "def",
           "name": "setHandlerDecoded",
-          "line": 1050,
+          "line": 1061,
           "called": [
             "SyscallDecodeResult",
             "length",
@@ -225175,7 +225220,7 @@
         {
           "kind": "def",
           "name": "resumeTcbDecoded",
-          "line": 1056,
+          "line": 1067,
           "called": [
             "SyscallDecodeResult",
             "length",
@@ -225185,7 +225230,7 @@
         {
           "kind": "def",
           "name": "runConfigureAndResumeChecks",
-          "line": 1061,
+          "line": 1072,
           "called": [
             "AccessRight",
             "Capability",
@@ -225241,7 +225286,7 @@
         {
           "kind": "def",
           "name": "runResumeChecks",
-          "line": 1180,
+          "line": 1191,
           "called": [
             "assertBool",
             "c0",
@@ -225264,7 +225309,7 @@
         {
           "kind": "def",
           "name": "runRestartChecks",
-          "line": 1205,
+          "line": 1216,
           "called": [
             "abandonInfo",
             "all",
@@ -225298,7 +225343,7 @@
         {
           "kind": "def",
           "name": "replyDecoded",
-          "line": 1254,
+          "line": 1265,
           "called": [
             "SyscallDecodeResult",
             "ofNat",
@@ -225309,7 +225354,7 @@
         {
           "kind": "def",
           "name": "resumeDecoded",
-          "line": 1258,
+          "line": 1269,
           "called": [
             "SyscallDecodeResult",
             "ofNat",
@@ -225319,7 +225364,7 @@
         {
           "kind": "def",
           "name": "replyGate",
-          "line": 1262,
+          "line": 1273,
           "called": [
             "SyscallGate",
             "cnRoot",
@@ -225330,7 +225375,7 @@
         {
           "kind": "def",
           "name": "replyCapH",
-          "line": 1266,
+          "line": 1277,
           "called": [
             "Capability",
             "ofList",
@@ -225340,7 +225385,7 @@
         {
           "kind": "def",
           "name": "runReplySeamChecks",
-          "line": 1274,
+          "line": 1285,
           "called": [
             "all",
             "assertBool",
@@ -225380,7 +225425,7 @@
         {
           "kind": "def",
           "name": "runProgressChecks",
-          "line": 1331,
+          "line": 1342,
           "called": [
             "assertBool",
             "c0",
@@ -225414,13 +225459,13 @@
         {
           "kind": "def",
           "name": "traceLine",
-          "line": 1375,
+          "line": 1386,
           "called": []
         },
         {
           "kind": "def",
           "name": "faultTraceLines",
-          "line": 1378,
+          "line": 1389,
           "called": [
             "c0",
             "c1",
@@ -225467,13 +225512,13 @@
         {
           "kind": "def",
           "name": "fixturePath",
-          "line": 1444,
+          "line": 1455,
           "called": []
         },
         {
           "kind": "def",
           "name": "runTraceFixtureCheck",
-          "line": 1452,
+          "line": 1463,
           "called": [
             "faultTraceLines",
             "fixturePath",
@@ -225483,7 +225528,7 @@
         {
           "kind": "def",
           "name": "runFaultHandlingChecks",
-          "line": 1472,
+          "line": 1483,
           "called": [
             "runClassificationChecks",
             "runConfigureAndResumeChecks",
@@ -225505,7 +225550,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1494,
+          "line": 1505,
           "called": [
             "runFaultHandlingChecks"
           ]
@@ -234696,7 +234741,7 @@
         {
           "kind": "def",
           "name": "runWSKGCSpaceChecks",
-          "line": 2232,
+          "line": 2235,
           "called": [
             "CSpaceAddr",
             "SyscallDecodeResult",
@@ -234720,7 +234765,7 @@
         {
           "kind": "def",
           "name": "runWSKGLifecycleVSpaceChecks",
-          "line": 2300,
+          "line": 2303,
           "called": [
             "ASID",
             "Capability",
@@ -234749,7 +234794,7 @@
         {
           "kind": "def",
           "name": "runWSKGServiceIpcChecks",
-          "line": 2377,
+          "line": 2380,
           "called": [
             "ObjId",
             "ServiceId",
@@ -234774,7 +234819,7 @@
         {
           "kind": "def",
           "name": "runWSKGDeterminismChecks",
-          "line": 2429,
+          "line": 2432,
           "called": [
             "MessageInfo",
             "RegValue",
@@ -234801,7 +234846,7 @@
         {
           "kind": "def",
           "name": "runWSKGChecks",
-          "line": 2501,
+          "line": 2504,
           "called": [
             "runWSKGCSpaceChecks",
             "runWSKGDeterminismChecks",
@@ -234812,7 +234857,7 @@
         {
           "kind": "def",
           "name": "runWSL4BlockedThreadChecks",
-          "line": 2516,
+          "line": 2519,
           "called": [
             "ObjId",
             "SystemState",
@@ -234837,7 +234882,7 @@
         {
           "kind": "def",
           "name": "runWSM3CapTransferNegativeChecks",
-          "line": 2590,
+          "line": 2593,
           "called": [
             "CNode",
             "Capability",
@@ -234858,7 +234903,7 @@
         {
           "kind": "def",
           "name": "runL13CapTransferShortCircuitChecks",
-          "line": 2661,
+          "line": 2664,
           "called": [
             "CNode",
             "Capability",
@@ -234883,7 +234928,7 @@
         {
           "kind": "def",
           "name": "runWSM4GuardOnlyChecks",
-          "line": 2762,
+          "line": 2765,
           "called": [
             "ObjId",
             "badge",
@@ -234901,7 +234946,7 @@
         {
           "kind": "def",
           "name": "runWSM4SmallBitsChecks",
-          "line": 2805,
+          "line": 2808,
           "called": [
             "ObjId",
             "badge",
@@ -234920,7 +234965,7 @@
         {
           "kind": "def",
           "name": "runWSM4GuardMismatchChecks",
-          "line": 2869,
+          "line": 2872,
           "called": [
             "ObjId",
             "badge",
@@ -234938,7 +234983,7 @@
         {
           "kind": "def",
           "name": "runWSM4MaxDepthLoopChecks",
-          "line": 2950,
+          "line": 2953,
           "called": [
             "CPtr",
             "ObjId",
@@ -234959,7 +235004,7 @@
         {
           "kind": "def",
           "name": "runWSM4SlotEdgeChecks",
-          "line": 3015,
+          "line": 3018,
           "called": [
             "ObjId",
             "badge",
@@ -234977,7 +235022,7 @@
         {
           "kind": "def",
           "name": "runWSM4WrapperIntegrationChecks",
-          "line": 3092,
+          "line": 3095,
           "called": [
             "ObjId",
             "badge",
@@ -234995,7 +235040,7 @@
         {
           "kind": "def",
           "name": "runWSM4ResolveEdgeCaseChecks",
-          "line": 3141,
+          "line": 3144,
           "called": [
             "runWSM4GuardMismatchChecks",
             "runWSM4GuardOnlyChecks",
@@ -235008,7 +235053,7 @@
         {
           "kind": "def",
           "name": "runWSR2RevocationChecks",
-          "line": 3161,
+          "line": 3164,
           "called": [
             "CSpaceAddr",
             "CdtNodeId",
@@ -235033,7 +235078,7 @@
         {
           "kind": "def",
           "name": "runWSR4CoherenceChecks",
-          "line": 3262,
+          "line": 3265,
           "called": [
             "Capability",
             "InterfaceId",
@@ -235063,7 +235108,7 @@
         {
           "kind": "def",
           "name": "runS2GCapabilityErrorTests",
-          "line": 3398,
+          "line": 3401,
           "called": [
             "CSpaceAddr",
             "CdtNodeId",
@@ -235093,7 +235138,7 @@
         {
           "kind": "def",
           "name": "runS2HLifecycleErrorTests",
-          "line": 3525,
+          "line": 3528,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -235125,7 +235170,7 @@
         {
           "kind": "def",
           "name": "runX2RuntimeInvariantTests",
-          "line": 3602,
+          "line": 3605,
           "called": [
             "ASID",
             "DomainScheduleEntry",
@@ -235162,7 +235207,7 @@
         {
           "kind": "def",
           "name": "runZ8SchedContextNegativeChecks",
-          "line": 3721,
+          "line": 3724,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -235185,7 +235230,7 @@
         {
           "kind": "def",
           "name": "runAC1BudgetFailClosedChecks",
-          "line": 3789,
+          "line": 3792,
           "called": [
             "ObjId",
             "SystemState",
@@ -235203,7 +235248,7 @@
         {
           "kind": "def",
           "name": "runAC1CdtTrackingChecks",
-          "line": 3845,
+          "line": 3848,
           "called": [
             "CNode",
             "CSpaceAddr",
@@ -235227,30 +235272,6 @@
         {
           "kind": "def",
           "name": "r1EpId",
-          "line": 3903,
-          "called": [
-            "ObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "r1CallerTid",
-          "line": 3904,
-          "called": [
-            "ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "r1ReceiverTid",
-          "line": 3905,
-          "called": [
-            "ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "r1CallerCNode",
           "line": 3906,
           "called": [
             "ObjId"
@@ -235258,8 +235279,32 @@
         },
         {
           "kind": "def",
-          "name": "r1ReceiverCNode",
+          "name": "r1CallerTid",
           "line": 3907,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1ReceiverTid",
+          "line": 3908,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1CallerCNode",
+          "line": 3909,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1ReceiverCNode",
+          "line": 3910,
           "called": [
             "ObjId"
           ]
@@ -235267,7 +235312,7 @@
         {
           "kind": "def",
           "name": "r1TargetObj",
-          "line": 3908,
+          "line": 3911,
           "called": [
             "ObjId"
           ]
@@ -235275,7 +235320,7 @@
         {
           "kind": "def",
           "name": "r1ReplyId",
-          "line": 3911,
+          "line": 3914,
           "called": [
             "ReplyId"
           ]
@@ -235283,7 +235328,7 @@
         {
           "kind": "def",
           "name": "r1Cap",
-          "line": 3913,
+          "line": 3916,
           "called": [
             "Capability",
             "badge",
@@ -235295,7 +235340,7 @@
         {
           "kind": "def",
           "name": "r1MsgWithCaps",
-          "line": 3918,
+          "line": 3921,
           "called": [
             "IpcMessage",
             "TransferCap.fromNode",
@@ -235307,7 +235352,7 @@
         {
           "kind": "def",
           "name": "r1EndpointRights",
-          "line": 3921,
+          "line": 3924,
           "called": [
             "AccessRightSet",
             "ofList"
@@ -235316,7 +235361,7 @@
         {
           "kind": "def",
           "name": "r1BaseState",
-          "line": 3924,
+          "line": 3927,
           "called": [
             "SystemState",
             "buildChecked",
@@ -235341,7 +235386,7 @@
         {
           "kind": "def",
           "name": "r1QueuedState",
-          "line": 3946,
+          "line": 3949,
           "called": [
             "KernelError",
             "SystemState",
@@ -235356,7 +235401,7 @@
         {
           "kind": "def",
           "name": "r1FaultyState",
-          "line": 3951,
+          "line": 3954,
           "called": [
             "SystemState",
             "erase",
@@ -235367,7 +235412,7 @@
         {
           "kind": "def",
           "name": "r1CheckHealthyState",
-          "line": 3954,
+          "line": 3957,
           "called": [
             "SystemState",
             "endpointCallWithCaps",
@@ -235383,7 +235428,7 @@
         {
           "kind": "def",
           "name": "r1CheckFaultyState",
-          "line": 3964,
+          "line": 3967,
           "called": [
             "SystemState",
             "endpointCallWithCaps",
@@ -235399,7 +235444,7 @@
         {
           "kind": "def",
           "name": "r1CheckLookupCspaceRoot",
-          "line": 3975,
+          "line": 3978,
           "called": [
             "SystemState",
             "lookupCspaceRoot",
@@ -235411,7 +235456,7 @@
         {
           "kind": "def",
           "name": "runR1IpcCallPathSymmetryChecks",
-          "line": 4005,
+          "line": 4008,
           "called": [
             "r1CheckFaultyState",
             "r1CheckHealthyState",
@@ -235424,7 +235469,7 @@
         {
           "kind": "def",
           "name": "r5eOrphanedScId",
-          "line": 4030,
+          "line": 4033,
           "called": [
             "SchedContextId"
           ]
@@ -235432,7 +235477,7 @@
         {
           "kind": "def",
           "name": "r5eOrphanedTid",
-          "line": 4032,
+          "line": 4035,
           "called": [
             "ThreadId"
           ]
@@ -235440,7 +235485,7 @@
         {
           "kind": "def",
           "name": "r5eOrphanedBoundState",
-          "line": 4034,
+          "line": 4037,
           "called": [
             "SystemState",
             "buildChecked",
@@ -235456,7 +235501,7 @@
         {
           "kind": "def",
           "name": "r5eOrphanedTcb",
-          "line": 4053,
+          "line": 4056,
           "called": [
             "TCB",
             "ofNat",
@@ -235467,7 +235512,7 @@
         {
           "kind": "def",
           "name": "runR5EOrphanedSchedContextChecks",
-          "line": 4063,
+          "line": 4066,
           "called": [
             "r5eOrphanedBoundState",
             "r5eOrphanedTcb",
@@ -235479,7 +235524,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 4086,
+          "line": 4089,
           "called": [
             "runAC1BudgetFailClosedChecks",
             "runAC1CdtTrackingChecks",

@@ -656,6 +656,24 @@ defects and two registration gaps, all closed in place:
   `unknownSyscall` fault — `lean_handle_unknown_syscall` /
   `trap.rs::deliver_unknown_syscall` deliver it.
 
+**Review round 2 (PR #887).**  Three more findings; one defect, one class,
+one confusion resolved at the source:
+
+* the classifier upcall `lean_classify_synchronous_exception` ran before the
+  readiness gate — a not-ready core now classifies through the Rust mirror
+  pinned to the Lean table, and `build.rs` *derives* the gated-seam set from
+  the Lean tree's exports (`scan_lean_upcalls_readiness_gated`, with
+  `LEAN_READY_GATED_SEAMS` as the pin and the three ungated upcalls — the
+  boot install and the two registered-debt seams — as a reasoned allowlist)
+  so the next upcall cannot be written outside the gate silently;
+* the VM-fault tag was reported as the MCS timeout; seL4's
+  `arch/shared_types.bf` has `Timeout 5`, `VMFault 6` under
+  `CONFIG_KERNEL_MCS`, so `6` stands, cited at the definition and pinned by
+  `faultLabel_ne_timeout` / `faultLabel_ne_debugException`;
+* `scan_trap_rs_classifies_via_lean` accepted the extern declaration as the
+  call — it now blanks extern blocks and checks the call after the gate, the
+  mirror branch, and the host lane's use of the same mirror.
+
 The finding, as the audit stated it:
 
 The largest phase, and the one that closes the audit's most serious security

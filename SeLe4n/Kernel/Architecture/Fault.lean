@@ -305,7 +305,24 @@ def capFault : Nat := 1
 def unknownSyscall : Nat := 2
 /-- seL4 `seL4_Fault_UserException`. -/
 def userException : Nat := 3
-/-- seL4 `seL4_Fault_VMFault` (the AArch64 arch tag). -/
+/-- seL4 `seL4_Fault_DebugException` — reserved, never carried: this model
+delivers no debug exceptions.  Named so the gap at 4 is a documented tag and
+not an unexplained hole. -/
+def debugException : Nat := 4
+/-- seL4 `seL4_Fault_Timeout` (MCS) — reserved, never carried: a CBS budget's
+exhaustion is a scheduling event here, not a delivered fault. -/
+def timeout : Nat := 5
+/-- seL4 `seL4_Fault_VMFault` — **6**, the MCS layout's arch tag.
+
+`libsel4/arch_include/arm/sel4/arch/shared_types.bf` numbers the union in two
+layouts: under `CONFIG_KERNEL_MCS` it is `Timeout 5` then `VMFault 6` (with
+`VGICMaintenance 7`, `VCPUFault 8`, `VPPIEvent 9` under the hypervisor
+option); without MCS the arch tags start at `VMFault 5`.  This kernel is the
+MCS shape — scheduling contexts, CBS budgets, timeout budgets — so its
+handlers decode the MCS layout, and `6` is the tag a `seL4_Fault_VMFault`
+arrives under.  The review of PR #887 read the non-MCS layout and reported
+`6` as a timeout; `faultLabel_ne_timeout` below is the pin that keeps the two
+layouts from being confused again. -/
 def vmFault : Nat := 6
 
 end FaultLabel
@@ -343,6 +360,20 @@ theorem faultLabel_lt_errorLabelBase (f : Fault) : faultLabel f < errorLabelBase
   rw [errorLabelBase_eq]
   cases f <;> simp [faultLabel, FaultLabel.vmFault, FaultLabel.capFault,
     FaultLabel.unknownSyscall, FaultLabel.userException]
+
+/-- PR #887 review round 2: no delivered fault carries the MCS `Timeout` tag.
+The layout is the MCS one, in which `5` is the timeout and `6` the VM fault,
+and this model delivers no timeout faults — so a handler that decodes `5` as
+`seL4_Fault_Timeout` never sees a VM fault under that tag. -/
+theorem faultLabel_ne_timeout (f : Fault) : faultLabel f ≠ FaultLabel.timeout := by
+  cases f <;> simp [faultLabel, FaultLabel.timeout, FaultLabel.vmFault, FaultLabel.capFault,
+    FaultLabel.unknownSyscall, FaultLabel.userException]
+
+/-- …nor the debug-exception tag, the other reserved value below the VM fault. -/
+theorem faultLabel_ne_debugException (f : Fault) :
+    faultLabel f ≠ FaultLabel.debugException := by
+  cases f <;> simp [faultLabel, FaultLabel.debugException, FaultLabel.vmFault,
+    FaultLabel.capFault, FaultLabel.unknownSyscall, FaultLabel.userException]
 
 /-- WS-RR RR4.4: a fault's label is never the success/null label, so a fault
 message can never be mistaken for a `seL4_Fault_NullFault` marker — nor, on

@@ -1119,8 +1119,19 @@ code may assume:
   SGI receiver and the secondary bring-up entry are all wired end to end and
   all dormant until SM10.1's per-core Lean runtime initialization flips them.
   New code must not assume a Lean seam executes on hardware merely because it
-  is wired.  Two seams — SVC dispatch and cross-core suspend — do not consult
-  the gate at all; closing that is RR5.6–RR5.9.
+  is wired.  **The gated set is derived, not listed** (PR #887 review round
+  2): `build.rs`'s `scan_lean_upcalls_readiness_gated` collects every Lean
+  upcall from the Lean tree's `@[export]`s and the HAL's `lean_`-prefixed
+  externs, attributes each call to its enclosing function, and fails the
+  build unless `lean_ready(` precedes it in that body — `LEAN_READY_GATED_SEAMS`
+  is the pin the derivation must reproduce, and the three upcalls that run
+  ungated (the primary's `lean_kernel_main` boot install, and the SVC-dispatch
+  and cross-core-suspend seams) are `LEAN_UPCALLS_OUTSIDE_THE_GATE`, each with
+  its reason.  The classifier upcall
+  (`lean_classify_synchronous_exception`) is gated too; a not-ready core
+  classifies through the Rust mirror pinned to the Lean table.  The two seams
+  that do not consult the gate at all are the registered debt above; closing
+  that is RR5.6–RR5.9, and it means shrinking that allowlist.
 - **The outer-shareable TLBI wrappers cannot execute on the first hardware
   target.**  `tlbi_vmalle1os` / `vae1os` / `aside1os` / `vale1os` are
   **FEAT_TLBIOS** (ARMv8.4-A); Cortex-A76 — the core in the RPi5's BCM2712 —
@@ -1209,7 +1220,9 @@ code may assume:
   unless `SPSR_EL1.M[3:2] = 0` (`ExceptionContext.takenFromEl0`); on the Rust
   side `halt_if_kernel_origin` runs before classification in
   `handle_synchronous_exception` and the `KERNEL_ABORT` arm halts on the
-  syndrome alone (`build.rs` pins the order).  Delivering one would hand the
+  syndrome alone (`build.rs` pins the order); the classification itself is
+  Lean's only once the core is ready, and the pinned Rust mirror's before
+  that.  Delivering one would hand the
   kernel's own register window to a user-level handler and let its reply
   `eret` into the kernel frame.  (10) **A handler already blocked in receive
   gets the fault message in its return frame**: `faultDeliverOnCore` stages
@@ -1230,6 +1243,11 @@ code may assume:
   CSpace against `faultHandlerCapAuthorized` at set time, so "configured" and
   "usable" are the same thing; before it existed nothing outside the test
   fixtures set the field, and every live fault took the fail-closed suspend.
+  (14) **The fault tags are the MCS layout**: `Timeout` is 5 and `VMFault`
+  is 6 (`libsel4/arch_include/arm/sel4/arch/shared_types.bf` under
+  `CONFIG_KERNEL_MCS`; the non-MCS layout's `VMFault 5` is not this ABI), and
+  `faultLabel_ne_timeout` / `faultLabel_ne_debugException` pin the two
+  reserved tags as never carried.
 - **A core that delivers a fault halts, until SM10.1.**  The model deschedules
   the faulting thread, and the hardware cannot honour that until the context
   restore installs a successor — `trap.S` would otherwise `eret` through the

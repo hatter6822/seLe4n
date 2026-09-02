@@ -21,12 +21,15 @@ The C-callable seam the Rust trap handler's abort and exception arms invoke,
 and the classification export that makes the Lean model the **only** place an
 ESR_EL1 value becomes an exception class.
 
-## Two exports, one classifier
+## Three exports, one classifier
 
 * `lean_classify_synchronous_exception` (RR4.25) answers "what kind of
   synchronous exception is this?" from `ESR_EL1` alone.  `trap.rs` calls it on
   the hardware target instead of running its own `esr_ec` match, so the two
-  classifications cannot diverge: there is only one.
+  classifications cannot diverge: there is only one for a core that may enter
+  Lean.  A core whose runtime is not yet initialized classifies through the
+  Rust mirror pinned to this table over all 64 EC values (PR #887 review
+  round 2) — the readiness contract is about the symbol, not the function.
 * `lean_handle_fault` (RR4.23) is the delivery: it classifies, spills the trap
   frame's fault window, builds the fault, and runs the flow-checked
   `faultDeliverOnCoreChecked` against the live kernel state, firing the
@@ -93,9 +96,12 @@ theorem syncExceptionClassTag_injective (a b : SynchronousExceptionClass)
 /-- WS-RR RR4.25 (**the export**): classify an `ESR_EL1` value.
 
 The Rust trap handler calls this on the hardware target rather than running
-its own `esr_ec` match, so `trap.rs` has one classification path, not two.
+its own `esr_ec` match, so a ready core has one classification path, not two.
 Pure: it reads no kernel state and commits none, so it needs no entry lock —
-`trap.rs` calls it *before* taking one, to decide where to route. -/
+`trap.rs` calls it *before* taking one, to decide where to route.  It is
+still a Lean-emitted symbol, so `trap.rs` consults the per-core readiness
+gate first and classifies through its pinned mirror on a core whose runtime
+is not yet initialized (PR #887 review round 2). -/
 @[export lean_classify_synchronous_exception]
 def classifySynchronousExceptionExport (esr : UInt64) : UInt32 :=
   syncExceptionClassTag (classifySynchronousException { esr := esr, elr := 0, spsr := 0, far := 0 })

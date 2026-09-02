@@ -156,7 +156,8 @@ mod tests {
 
     /// WS-RR RR4 (ABI v3): **a delivered message's label is not a kernel
     /// error.**  The four `seL4_Fault_tag` values a fault handler receives
-    /// (CapFault 1, UnknownSyscall 2, UserException 3, VMFault 6) decode
+    /// (CapFault 1, UnknownSyscall 2, UserException 3, VMFault 6 — the MCS
+    /// layout of seL4's `arch/shared_types.bf`, where 5 is `Timeout`) decode
     /// as successful receives carrying that label — under v2's offset
     /// scheme every one of them decoded as an `Err`, so no fault handler
     /// could be written against this decoder.

@@ -73,7 +73,12 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   fault entry) and the delivered fault's kind cannot diverge; the
   `build.rs` scanner `scan_trap_rs_classifies_via_lean` pins that
   relation, and the host tests replay all 64 EC values against the
-  Lean table.  **Dormant behind the per-core `lean_ready` gate**
+  Lean table.  Since PR #887's second review round the upcall itself
+  sits behind the readiness gate — a not-ready core classifies through
+  the Rust mirror pinned to that table — and
+  `scan_lean_upcalls_readiness_gated` derives every Lean upcall in the
+  HAL from the Lean tree's exports, so none can be written outside the
+  gate silently.  **Dormant behind the per-core `lean_ready` gate**
   until SM10.1: a core that delivers a fault has descheduled the
   faulting thread and cannot install a successor, so `deliver_fault`
   halts rather than resuming.  Unreachable at v0.34.44 — no core

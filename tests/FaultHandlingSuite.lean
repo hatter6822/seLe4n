@@ -133,6 +133,8 @@ open SeLe4n.Testing
 #check @faultContextOfThread_writeFaultRegistersToTcb
 #check @errorLabelBase
 #check @faultLabel_lt_errorLabelBase
+#check @faultLabel_ne_timeout
+#check @faultLabel_ne_debugException
 -- PR #887 review round: kernel-origin exceptions, the unknown-syscall producer,
 -- the woken handler's staged frame, resume retiring a fault, and the
 -- fault-handler configuration syscall.
@@ -402,6 +404,15 @@ private def runEncodingChecks : IO Unit := do
     assertBool s!"carries no capabilities: {repr f}" (mi.extraCaps == 0)
     assertBool s!"label is never the null/success tag: {repr f}"
       (mi.label != FaultLabel.nullFault)
+    assertBool s!"label is neither reserved MCS tag (timeout 5, debug 4): {repr f}"
+      (mi.label != FaultLabel.timeout && mi.label != FaultLabel.debugException)
+  -- PR #887 review round 2: the tags are seL4's MCS layout — `Timeout` is 5,
+  -- `VMFault` 6 — not the non-MCS layout in which the VM fault is 5.
+  assertBool "MCS layout: DebugException = 4, Timeout = 5, VMFault = 6"
+    (FaultLabel.debugException == 4 && FaultLabel.timeout == 5 && FaultLabel.vmFault == 6)
+  assertBool "a VM fault is delivered under tag 6, never under the timeout tag"
+    (faultLabel (.vmFault 0 0 false) == 6 &&
+      faultLabel (.vmFault 0 0 false) != FaultLabel.timeout)
   -- The contextual words reach the handler, at the seL4 indices.
   let (_, vmRegs) := encodeFault (.vmFault 0xDEAD_0000 0x9600_0007 true) sampleCtx
   assertBool "vmFault MR0 is the restart PC" (wordAt vmRegs 0 == sampleCtx.faultIP)

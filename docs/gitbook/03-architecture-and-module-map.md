@@ -85,9 +85,13 @@ inventory was written:
   (same round: the same step for a syscall number outside `SyscallId`,
   delivered as an `unknownSyscall` fault) and
   `lean_classify_synchronous_exception`, which makes
-  the Lean model the **only** place an `ESR_EL1` value becomes an exception
-  class — `trap.rs` calls it instead of running its own `esr_ec` match, so the
-  routing decision and the delivered fault's kind cannot disagree.
+  the Lean model the place an `ESR_EL1` value becomes an exception class on a
+  ready core — `trap.rs` calls it instead of running its own `esr_ec` match,
+  so the routing decision and the delivered fault's kind cannot disagree; a
+  core whose Lean runtime is not yet initialized classifies through the Rust
+  mirror pinned to the same table (PR #887 review round 2), because the
+  readiness contract admits no Lean-emitted symbol before the runtime is up,
+  pure or not.
 - `SeLe4n/Kernel/FrozenOps/` — the 24 frozen operations mirroring the
   live API; `SeLe4n/Kernel/CrossSubsystem.lean` +
   `CrossSubsystemPerCore*.lean` — cross-subsystem invariants.

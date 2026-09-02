@@ -844,6 +844,36 @@ run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_preserves_ipcInv
 run_check "INVARIANT" rg -n '^theorem faultMessage_transfers_no_authority' SeLe4n/Kernel/InformationFlow/FaultFlow.lean
 run_check "INVARIANT" rg -n '@\[export lean_handle_fault\]' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '@\[export lean_classify_synchronous_exception\]' SeLe4n/Kernel/FaultEntry.lean
+# PR #887 review round 2: the fault tags are the MCS layout of seL4's
+# `arch/shared_types.bf` — `Timeout` is 5 and `VMFault` is 6 — and the two
+# reserved tags below the VM fault are named and proven never carried, so the
+# non-MCS layout (`VMFault 5`) cannot be mistaken for this ABI again.
+run_check "INVARIANT" rg -n '^def debugException : Nat := 4' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^def timeout : Nat := 5' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^def vmFault : Nat := 6' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultLabel_ne_timeout' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultLabel_ne_debugException' SeLe4n/Kernel/Architecture/Fault.lean
+# PR #887 review round 2: the classifier upcall is a Lean-emitted symbol like
+# every other, so it sits behind the readiness gate — the declaration and the
+# call follow `lean_ready(` in the hardware classifier's body, the pinned Rust
+# mirror is the other branch and the host lane's classifier — and the set of
+# gated seams is DERIVED from the Lean tree's exports in `build.rs`, with the
+# hand-written table kept as the pin and the ungated upcalls as a reasoned
+# allowlist.  The negatives keep the old shapes out: the classifier called at
+# the function's top level, and the EC table compiled away on hardware (the
+# mirror needs it on every target).
+run_check "INVARIANT" rg -n -U 'lean_ready\(core_id as usize\) \{\n\s+extern "C" \{\n\s+fn lean_classify_synchronous_exception\(esr: u64\) -> u32;' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^fn classify_synchronous_exception_mirror\(esr: u64\) -> u32 \{' rust/sele4n-hal/src/trap.rs
+run_negative_check "INVARIANT" rg -n '^    unsafe \{ lean_classify_synchronous_exception\(esr\) \}' rust/sele4n-hal/src/trap.rs
+run_negative_check "INVARIANT" rg -n -U '#\[cfg\(any\(not\(feature = "hw_target"\), test\)\)\]\n\s*mod ec' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^fn scan_lean_upcalls_readiness_gated\(\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn verify_lean_upcall_scanner\(\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    scan_lean_upcalls_readiness_gated\(\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    verify_lean_upcall_scanner\(\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^const LEAN_READY_GATED_SEAMS' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^const LEAN_UPCALLS_OUTSIDE_THE_GATE' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^        "lean_classify_synchronous_exception",$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'let body_no_decl = blank_extern_blocks\(classifier_body\);' rust/sele4n-hal/build.rs
 # RR4.14/RR4.15: the reply seam — seL4's `doReplyTransfer` branch — and the two
 # live dispatch arms that must go through it.  Without the branch the fault
 # reply is verified and unreachable: a handler's ordinary `seL4_Reply` would

@@ -94,10 +94,15 @@ It is aligned to the **current project state**:
   gate costs neither the progress theorem nor the IPC bundle.  Hardware seam:
   `@[export lean_handle_fault]` and
   `@[export lean_classify_synchronous_exception]` (`Kernel/FaultEntry.lean`,
-  production), the latter making the Lean model the **only** place an
-  `ESR_EL1` becomes an exception class — `trap.rs` calls it instead of
+  production), the latter making the Lean model the place an `ESR_EL1`
+  becomes an exception class on a ready core — `trap.rs` calls it instead of
   running its own `esr_ec` match, `build.rs` pins that relation, and the Rust
-  host tests replay all 64 EC values against the Lean table.  Both are
+  host tests replay all 64 EC values against the Lean table.  A core whose
+  Lean runtime is not yet initialized classifies through the Rust mirror
+  pinned to that table (PR #887 review round 2: the readiness contract is
+  about the symbol, not the function, and `build.rs` now *derives* every Lean
+  upcall from the Lean tree's exports — `scan_lean_upcalls_readiness_gated` —
+  so an ungated upcall fails the build).  Both are
   dormant behind the per-core `lean_ready` gate until SM10.1; a core that
   delivers a fault today would halt, because it has descheduled the faulting
   thread and cannot yet install a successor.  Tests:

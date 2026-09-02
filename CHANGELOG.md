@@ -450,6 +450,61 @@ fixture by four (the two boundary counts, the syscall count, and one more
 taint-inert opcode); Tier 0–3, the Rust lane and the aarch64 cross gate are
 green.
 
+### Review round 2 (PR #887)
+
+A second review pass on the round above found three more, and the first of
+them is the same shape as the five before it — a live seam written as an
+enumeration or a presence check rather than derived from the code — so this
+round fixes the class as well as the instance.
+
+* **The classifier upcall ran outside the readiness gate** (high).
+  `classify_synchronous_exception` called the Lean-emitted
+  `lean_classify_synchronous_exception` on every EL0 synchronous exception,
+  before `lean_ready` was consulted, on the strength of a SAFETY comment that
+  the function reads no state.  The contract in `lean_ready.rs` is about the
+  *symbol*, not the function — no Lean-emitted symbol may be entered from a PE
+  whose runtime state is not initialized — and the readiness scanner in
+  `build.rs` (`scan_lean_ready_gates_intact`) is a hand-written table of five
+  seams, so a sixth written outside the gate was never checked.  Two fixes.
+  The instance: a not-ready core now classifies through
+  `classify_synchronous_exception_mirror`, the `esr_ec` table the host lane
+  runs, compiled on every target and pinned to the Lean mapping across all 64
+  EC values from both sides (`sync_class_mirrors_lean_ec_table`, the Lean
+  suite's §4b table); a ready core calls Lean as before.  The class:
+  `scan_lean_upcalls_readiness_gated` **derives** the set of Lean upcalls —
+  every `@[export]` under `SeLe4n/` plus the `lean_`-prefixed externs the HAL
+  declares — reads every `.rs` under `src/` through the strings-blanked code
+  view, attributes each call to its enclosing function, and requires
+  `lean_ready(` earlier in that body.  The old table survives as
+  `LEAN_READY_GATED_SEAMS`, a pin the derivation must reproduce exactly, and
+  the three upcalls that legitimately run ungated — the primary's
+  `lean_kernel_main` boot install, and the SVC-dispatch and cross-core-suspend
+  seams whose gap is registered debt — are `LEAN_UPCALLS_OUTSIDE_THE_GATE`,
+  each with its reason, each required to still exist.  The scanner's own
+  mutations run at build time (`verify_lean_upcall_scanner`): a declaration
+  without a call, a stub definition, a gate *after* the call, a string
+  mention, a longer identifier, a call outside any function.
+* **The VM-fault tag was reported as the MCS timeout** (high as filed; not a
+  defect).  The claim was that `seL4_Fault_VMFault` is 5 and 6 is
+  `seL4_Fault_Timeout`.  seL4's `libsel4/arch_include/arm/sel4/arch/shared_types.bf`
+  says the opposite under `CONFIG_KERNEL_MCS`: `Timeout 5`, `VMFault 6`; the
+  non-MCS layout is the one with `VMFault 5`.  This kernel is the MCS shape,
+  so `6` stays.  What changed is that the layout is now cited at the
+  definition, the two reserved tags below the VM fault are named
+  (`FaultLabel.debugException = 4`, `FaultLabel.timeout = 5`), and
+  `faultLabel_ne_timeout` / `faultLabel_ne_debugException` prove no delivered
+  fault carries either — the pin that keeps the two layouts from being
+  confused again.
+* **The classifier scanner accepted the declaration as the call** (medium).
+  `scan_trap_rs_classifies_via_lean` looked for the symbol name in the
+  classifier's body, which the `extern "C"` declaration inside that body
+  satisfies on its own; deleting the call and returning a constant passed.
+  The scanner now blanks the extern blocks and requires the *call expression*
+  after the `lean_ready(` check, the mirror as the other branch, and the host
+  lane classifying through the same mirror — and it reads the strings-blanked
+  code view, checking the `#[cfg(feature = "hw_target")]` attribute against
+  the strings-kept one, instead of the line-based `//` stripper.
+
 Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR4
 
 ## v0.34.43 — WS-RR RR3: `ipcInvariantFull` de-threaded, dispatch payoff landed
