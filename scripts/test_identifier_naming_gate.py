@@ -126,6 +126,29 @@ check("a word-internal hash is not a comment",
       CODED in gate.strip_shell("echo abc#" + CODED), True)
 check("a length expansion is not a comment",
       CODED in gate.strip_shell("echo " + dollar + "{#" + CODED + "}"), True)
+# A `$(...)` substitution is SCANNED, not matched by a flat pattern.
+# The flat `\$\([^)]*\)` closed on the first `)` -- including one that
+# is text inside a quoted regex -- and the scan then resumed mid-command
+# with an odd number of single quotes on the line, so the single-quote
+# branch kept the rest of the FILE verbatim and comment blanking stopped
+# dead.  In `scripts/test_tier3_invariant_surface.sh` that silently
+# disabled the code view from line 4982 to the end of the file: every
+# `#` comment below it was read as code.  These cases mutate by KEEPING
+# the substitution and putting a paren where it is text.
+check("an escaped paren inside a quoted regex does not close $(",
+      CODED in gate.strip_shell(
+          "X=" + dollar + "(sed -n " + q + "/^a/,/^\\(b\\|c\\)/p" + q +
+          " f | grep -c " + q + "^x" + q + ")\n# " + CODED + "\n"), False)
+check("a paren inside a double-quoted argument does not close $(",
+      CODED in gate.strip_shell(
+          "X=" + dollar + "(echo " + dq + "a)b" + dq + ")\n# " + CODED + "\n"), False)
+check("a nested substitution closes where it actually closes",
+      CODED in gate.strip_shell(
+          "X=" + dollar + "(a " + dollar + "(b) c)\n# " + CODED + "\n"), False)
+check("the substitution's own contents stay in scope",
+      CODED in gate.strip_shell("X=" + dollar + "(grep " + q + CODED + q + " f)"), True)
+check("an unterminated $( does not swallow the lines below it",
+      CODED in gate.strip_shell("X=" + dollar + "(echo\n# " + CODED + "\n"), False)
 # ...and a DOUBLE-quoted payload handed to an interpreter is code for
 # the same reason the single-quoted one is.  The tree writes it both
 # ways -- single-quoted in `test_tier0_hygiene.sh`, double-quoted in

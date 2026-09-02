@@ -4,7 +4,8 @@
 > **RR1 LANDED at v0.34.41** (all twelve sub-tasks); **RR2 LANDED at v0.34.42**
 > (all twenty sub-tasks; RR2.18 partial — see its acceptance note);
 > **RR3 LANDED at v0.34.43** (all twenty-six); **RR4 LANDED at v0.34.44** (all
-> twenty-seven); RR5..RR8 not started.
+> twenty-seven); **RR5 LANDED at v0.34.48** (all eighteen); RR6..RR8 not
+> started.
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Source register**: [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) (171 confirmed findings)
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
@@ -151,7 +152,7 @@ Nothing else may overlap without re-reading the dependency list above.
 | RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live.  **LANDED v0.34.42** | 20 | M–L |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8).  **LANDED v0.34.43** (RR3.1–RR3.26, the dispatch payoff included) | 26 | XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart.  **LANDED v0.34.44** (RR4.1–RR4.27) | 27 | XL |
-| RR5 | Boot-path fail-open closure | 18 | M–L |
+| RR5 | Boot-path fail-open closure.  **LANDED v0.34.48** (RR5.1–RR5.18) | 18 | M–L |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 27 | L |
 | RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 41 | M |
 | RR8 | Phase closure and hand-off to SM10 | 5 | S |
@@ -483,6 +484,30 @@ context fails closed; every seam consults the readiness gate; idle threads
 are installed **and enqueued** on the production path, so `∀ c,
 idleThreadEnqueuedOnCore st c` holds of the live boot state rather than being
 assumed; the staged-module count falls by three.
+
+**Acceptance met at v0.34.48**, with three deviations worth recording:
+
+* *The staged-module count fell by **five**, not three.*  Promoting the three
+  kernel entries pulls their import closure into production with them —
+  `Scheduler.Operations.PerCoreRunLoop` and `.PerCoreTimerTick` — and the
+  partition gate is what said so.  The acceptance number counted the entries,
+  not the closure.
+* *RR5.17 retired the export rather than bracketing it.*  The row said
+  "bracket `suspend_thread_inner`"; the register's own remediation offered
+  either that or retiring the `@[export]` and keeping the Lean definition for
+  the suites (§5 finding 9), and retiring is the stronger outcome — it removes
+  the hazard instead of mitigating it, and matches what WS-RA did to the twin
+  `syscall_dispatch_inner`.  Bracketing would additionally have needed the Lean
+  body to take the kernel-entry lock through new FFI, which the simulation build
+  cannot link.  A Tier-3 negative anchor now keeps the export gone; the positive
+  anchor moved to the definition.
+* *The SVC seam's not-ready arm **halts**.*  PR #887 left that decision to RR5
+  (`trap.rs`, round 3: "what a not-ready core should do with an `SVC` at all is
+  RR5's question").  A fail-closed frame would be architecturally coherent — the
+  `SVC` advanced the PC — but the timer seam consults the same readiness mask, so
+  a thread on a not-ready core would never be preempted again; returning an error
+  hands it the CPU forever.  The suspend seam, which has an error channel and no
+  trapped thread, returns `KernelError::IllegalState` instead.
 
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect

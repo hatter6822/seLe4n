@@ -14,9 +14,6 @@
  "AN12": {
   "scripts/test_tier3_invariant_surface.sh": 1
  },
- "AN4": {
-  "scripts/check_lifecycle_internal_allowlist.sh": 2
- },
  "Ak8Coverage": {
   "tests/Ak8CoverageSuite.lean": 3
  },
@@ -40,12 +37,6 @@
   "lakefile.toml": 1,
   "tests/An9HardwareBindingSuite.lean": 1
  },
- "H16": {
-  "scripts/test_tier3_invariant_surface.sh": 5
- },
- "ID_AA64MMFR0_EL1": {
-  "scripts/test_hw_crosscheck.sh": 1
- },
  "SM0": {
   "scripts/test_tier3_invariant_surface.sh": 7
  },
@@ -66,7 +57,7 @@
   "tests/fixtures/scenario_registry.yaml": 6
  },
  "SM6": {
-  "scripts/test_tier3_invariant_surface.sh": 2
+  "scripts/test_tier3_invariant_surface.sh": 1
  },
  "SM7": {
   "scripts/test_tier3_invariant_surface.sh": 1

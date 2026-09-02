@@ -1,3 +1,267 @@
+## v0.34.48 — the boot path fails closed
+
+**WS-RR RR5 (all eighteen sub-tasks).**  Six latents that were unreachable only
+because nothing boots, each of which becomes live the moment SM10.1 succeeds:
+an all-public information-flow policy that a hardware boot would have left
+installed, two kernel seams that entered the Lean runtime without consulting the
+readiness gate the module docs said every seam consulted, a boot state with
+nothing for any core to run, three kernel entry points a linked image would not
+have carried, a committing C symbol outside the kernel-entry lock, and two
+safety tripwires that a `--release` build deletes.
+
+### The labeling context (RR5.1–RR5.5)
+
+`bootAndInitialiseFromPlatform`'s labeling argument was
+`Option LabelingContext := none`, and on the `none` path the wrapper installed
+the boot state and left whatever `kernelLabelingContextRef` already held — which
+was `testLabelingContext`: `kernelTrusted` at the reserved sentinel id `0`,
+`publicLabel` on every entity that can actually run.  Every flow between real
+threads, objects, endpoints and services was therefore permitted, and SM8/SM9's
+non-interference and declassification results held vacuously in the shipped
+configuration.  The fail-closed guard did not fire, because it could not:
+`isInsecureDefaultContext` sampled three sentinel ids (0, 1, 42) across four
+entity classes and flagged a context only when all twelve lookups came back
+public, so labeling id `0` alone was enough to pass.
+
+Three changes, in the order they matter:
+
+* **The guard decides, rather than samples.**  `LabelingContext` gains
+  `separatedThreads` — the deployment's declared domain-separation witness, two
+  **non-sentinel** thread ids it claims the labeling separates — and the kernel
+  evaluates that inequality.  A context declaring nothing is refused; one
+  declaring a pair it does not separate is refused too; and separating only id
+  `0`, which `toObjIdChecked` will not turn into an object reference, separates
+  nothing that can run.  The consequence is not a better heuristic but a
+  different kind of statement: `isInsecureDefaultContext ctx = false` now
+  *entails* `LabelingContextValid.labelNonTriviality`
+  (`isInsecureDefaultContext_false_implies_labelNonTriviality`), so the runtime
+  guard discharges one of the three deployment obligations instead of
+  approximating it.  O(1), against twelve label lookups per syscall entry before.
+* **A production context exists, valid by construction.**  There was none.
+  `DeploymentLabeling` carries the assignment plus the obligations, and
+  `deploymentLabelingContext` builds a `LabelingContext` that is
+  `LabelingContextValid` **unconditionally** (`deploymentLabelingContext_valid`):
+  thread/object coherence by reflexivity, because the constructor derives a
+  thread's label and its own TCB object's label from the same assignment; the
+  observability corollary from the same equality; non-triviality from the
+  structure's own field.  `confinedLabelingContext` is the canonical two-domain
+  instance, built from the two *incomparable* corners of the 2×2 lattice
+  (`lowTrusted` / `highUntrusted`, `lowTrusted_highUntrusted_mutually_isolated`)
+  — the only pair that confines in **both** directions;
+  `publicLabel`/`kernelTrusted` permits the upward flow by design.
+* **The boot path requires one and refuses a bad one.**  The argument is
+  mandatory, so "no context" is not expressible; the wrapper runs the same guard
+  `syscallEntryChecked` runs **before** `initialiseKernelState`, so a refused
+  boot leaves both references untouched rather than pairing a live post-boot
+  state with a policy that enforces nothing; and the pre-boot value of
+  `kernelLabelingContextRef` is now `defaultLabelingContext`, which the guard
+  rejects — no checked entry can be served before a deployment context is
+  installed.
+
+`testLabelingContext` is kept as a **negative fixture** and is now rejected
+(`isInsecureDefaultContext_testLabelingContext = true`, where it read `= false`).
+Fixtures that need to reach a checked entry use `harnessLabelingContext`, a real
+two-domain labeling whose lower domain covers every id the fixtures allocate —
+so every fixture entity keeps the label it had and no flow decision changes,
+which is why the golden trace is byte-identical — or
+`uniformFixtureLabelingContext` where a fixture wants one label over its whole
+range.  Five fixture contexts across four suites moved off the evasion pattern;
+each had a comment saying, in so many words, that it labelled a sentinel to
+defeat the probe.
+
+### The readiness gate (RR5.6–RR5.9)
+
+`kernel_entry.rs` stated over its five-entry table that "every hardware seam
+above therefore also consults the per-core readiness gate before its Lean call".
+Three did.  `dispatch_svc` — the highest-traffic route into the Lean runtime —
+and `sele4n_suspend_thread` did not, and the second is the one a `lean_` sweep
+cannot find, because it reaches Lean through `suspend_thread_cross_core`.
+
+Both now do, and the claim is derived rather than asserted:
+`build.rs::scan_lean_upcalls_readiness_gated` already collected every Lean upcall
+from the Lean tree's `@[export]`s, so adding the two seams to
+`LEAN_READY_GATED_SEAMS` and deleting their exemptions is the whole wiring;
+`LEAN_UPCALLS_OUTSIDE_THE_GATE` is down from three entries to one — the primary's
+`lean_kernel_main` boot install, which cannot sit behind the gate because it is
+the call that initializes the runtime the gate stands for.
+
+What a not-ready core does differs by seam, because what it can safely do
+differs.  PR #887 left the SVC seam's behaviour to this phase (`trap.rs`, round
+3: "what a not-ready core should do with an `SVC` at all is RR5's question").
+It **halts** (`halt_syscall_before_lean_ready`).  A fail-closed frame would be
+architecturally coherent — unlike an abort, the `SVC` advanced the PC — but the
+per-core timer tick consults the same readiness mask and degrades to
+record-and-re-arm, so a thread on a not-ready core is never preempted, never
+charged budget and never rescheduled: returning an error hands it the CPU
+forever and converts an initialization defect into a starvation of every other
+thread on the core.  `sele4n_suspend_thread` returns
+`KernelError::IllegalState` instead: a C-callable API with an error channel and
+no trapped thread waiting to be resumed.
+
+RR5.8 closes the compile-time half the readiness gate cannot reach.  Both seams
+declared their Lean `extern` under `cfg(not(test))`, so `cargo build -p
+sele4n-hal` — the default host profile — compiled a call path to a bare-metal
+symbol nothing on the host provides, and `cargo test` linked one into every test
+binary through a `#[no_mangle]` stub.  A gate on *execution* says nothing about
+*compilation*.  `lean_extern_gating_status` (RR5.9) now refuses any Lean symbol
+declared, defined or exported outside `#[cfg(feature = "hw_target")]`, and any
+host-lane stand-in of the same name outside its negation, over the same derived
+symbol set.  Its self-check mutates by **keeping** the token and breaking the
+relation — the gate reads `feature = "hw_target"` from the strings-*kept* view,
+because the attribute's payload is a string literal the blanked view erases.
+
+### The boot state (RR5.10–RR5.14)
+
+`bootFromPlatformChecked` installs no idle threads: `getTcb? (idleThreadId c) =
+none` and an empty run queue on every core, so `idleDispatchableOnCore` was
+`false` everywhere and each core's first scheduling point would have taken
+`idleFallbackOnCore`'s `setCurrentOnCore c none` arm.  Meanwhile SM5.J's
+`schedulerNoStall_smp` and the `no_starvation_under_smp` capstone both take
+`hIdle : ∀ c, idleThreadEnqueuedOnCore st c` **by hypothesis**, and no reachable
+state discharged it.
+
+The idle-installing wrapper that existed would not have discharged it either,
+and that is the substantive part of this cut.  `bootFromPlatformWithIdleThreads`
+points each core's *current* slot at its idle thread without enqueuing it, so
+`idleThreadEnqueuedOnCore` is false on it too — and doing **both** would violate
+`queueCurrentConsistent`, which says a core's current thread is not also queued.
+The correct boot posture is to enqueue without dispatching: every core comes up
+with a dispatchable idle thread waiting, and its first scheduling point selects
+it, dequeues it and sets `current`.
+
+* **RR5.11** adds `enqueueIdleThread` at `IntermediateState` level beside
+  `installIdleThread`, with the frame and fold lemmas its analogue carries.  Its
+  witness cannot transport by defeq — three of `allTablesInvExtK`'s seventeen
+  conjuncts *are* the boot core's run-queue tables — but it need not be
+  re-derived: `RunQueue` carries those three proofs as fields, so `remove` and
+  `insert` hand the new queue back with its invariants discharged.
+* **RR5.12** proves `∀ c, idleThreadEnqueuedOnCore st c` of the boot state, with
+  the three conjuncts coming from the three places the plan named.
+* **RR5.13** defines `bootFromPlatformCheckedWithIdleThreads` as a **thin
+  composition** over `bootFromPlatformChecked` rather than mutating its base,
+  which is what keeps the seven results characterizing the checked boot true
+  verbatim and lets it add no validation of its own — two paths that both
+  validate a `PlatformConfig` would be the `trap.rs` two-classifiers defect in
+  miniature.  `bootFromPlatformCheckedWithIdleThreads_rejects_invalid` and the
+  suite's parity check pin the one-path property.
+* **RR5.14** repoints `bootAndInitialiseFromPlatform` at it.
+
+**RR5.10 had to land first**, and the composed test says why.  `inferThreadState`
+read `currentOnCore bootCoreId` / `runQueueOnCore bootCoreId` only, so a thread
+queued on a secondary core classified `.Inactive`; on the new boot state
+`threadStateConsistent` would have been false and `assertStateInvariantsFor`,
+which syncs before it checks, would have **rewritten the field** rather than
+reported the mismatch.  The classification now asks every core
+(`threadRunningOnSomeCore` / `threadQueuedOnSomeCore`), conservatively:
+`inferThreadState_eq_bootCore_of_secondaries_quiescent` says it agrees with the
+boot-core-pinned definition on every state that one classified.
+
+### The linked image (RR5.15, RR5.16)
+
+`kernel_entry.rs` declares five Lean entries as hard `extern "C"` symbols.  An
+`@[export]` emits a symbol only when its module is in `SeLe4n.lean`'s import
+closure, and three of the five — `SecondaryEntry`, `PerCoreTimerEntry`,
+`PerCoreRescheduleEntry` — were staged-only, so `lake build SeLe4n:static`
+produced an archive with exactly one `T lean_*` entry symbol.  A linked image
+would have failed to resolve the three seams every secondary core needs.
+
+They are promoted, along with the two modules their closure pulls in
+(`Scheduler.Operations.PerCoreRunLoop`, `.PerCoreTimerTick`), so the staged count
+falls from 67 to 62 — five, where the row predicted three, and the partition gate
+is what said so.
+
+Nothing detected the original gap: the partition gate reports which modules are
+staged, not which symbols link, and a Tier-3 text anchor on an `@[export]` line
+is satisfied by a module nothing imports.  `scripts/check_kernel_entry_exports.py`
+(Tier 1) asks the question of the object code — `nm --defined-only` over the
+built archive — against a requirement **derived** as the intersection of the
+Lean tree's `@[export]`s and the HAL's `extern "C"` declarations, so a sixth seam
+added on either side joins the requirement without anyone editing the gate.
+
+### The two remaining latents (RR5.17, RR5.18)
+
+`suspend_thread_inner` committed kernel state through a bare
+`kernelStateRef.set` with no kernel-entry bracket.  `kernel_entry.rs`
+acknowledged that and argued it was harmless because nothing on the trap path
+reached it — true of the HAL as it stood, and not a property of the artefact:
+`@[export]` put a committing C symbol in the linked image whose only protection
+was that no Rust source declared it.  The register's remediation offered a
+bracket **or** retiring the export; the export is retired, which removes the
+hazard rather than mitigating it and matches what WS-RA did to the twin
+`syscall_dispatch_inner`.  `Platform.FFI.suspendThreadInner` survives as the
+single-core reference path the dispatch suite exercises; the Tier-3 anchor moved
+from the export to the definition, with a negative anchor keeping the export gone.
+
+The lock-order tripwire (`assert_not_holding_round_lock`) and the VBAR alignment
+check (`install_exception_vectors`) were `debug_assert!`s.  Both documented a
+clean halt on failure, and a `kernel8.img` is built `--release`, which compiles
+them out — each existed only in the configuration that did not need it.  Both are
+now unconditional branches to `cpu::fatal_halt()`, and `build.rs`'s
+`release_surviving_tripwire_status` holds each to that *relation* on the
+statement-level view: a halt nested under an unrelated condition, or moved above
+the branch, is refused.
+
+### A Tier-0 gate that had stopped reading code
+
+Adding an `RR5` citation to a comment in `scripts/test_tier3_invariant_surface.sh`
+made the naming gate fail, and the reason was not the citation.
+`check_identifier_naming.py`'s shell view matched `$(...)` with the flat pattern
+`\$\([^)]*\)`, whose comment argued that a longer substitution "degrades to
+keeping less, never to blanking a name outright".  It does not.  Line 4982 of
+that script is
+
+```
+NI_CTORS=$(sed -n '/^inductive .../,/^\(theorem\|def\|\/\-!\)/p' f | grep -c '^\s*| ')
+```
+
+and the `$(` is closed by the **escaped paren inside the sed regex**, so the scan
+resumes mid-command with an odd number of single quotes left on the line.
+`strip_shell`'s single-quote branch then finds no partner and keeps the rest of
+the **file** verbatim: comment blanking stopped at line 4982, and every `#`
+comment in the remaining ~350 lines was read as code.  A workstream citation in
+any of them would have failed the gate; the AK7 counters that share the view were
+counting tokens that are not in the code at all.  Consuming a *prefix* of a quoted
+construct does not keep less — it unbalances what follows.
+
+`command_substitution_end` scans the construct instead: quote-aware, so a paren
+inside a quoted regex is text; nesting-aware, so `$(a $(b) c)` closes where it
+actually closes; and returning "not an expansion" for an unterminated `$(` rather
+than a span reaching the end of the file.  Five witness cases in
+`scripts/test_identifier_naming_gate.py` (281 checks), each **keeping** the
+substitution and putting a paren where it is text.  The baseline is regenerated:
+nine occurrences it had recorded were comment text the view should never have
+shown it.
+
+### Tests
+
+* `tests/SmpIdleSuite.lean` — 21 surface anchors for the new boot surface, and
+  runtime checks that on the production boot state every core's idle thread is
+  on its **own** queue and on no other's, resolves to that core's idle TCB, is
+  in the core's active domain, and classifies `.Ready` (the RR5.10 × RR5.14
+  composition); with the negative that the pre-RR5.14 entry enqueues and installs
+  nothing, and the parity check that both entries refuse a malformed config with
+  the same error.
+* `tests/SyscallDispatchSuite.lean` — SD-043/SD-044 (a boot refused for its
+  labeling context leaves *both* references untouched; the
+  all-public-except-sentinel context is refused by the same arm), SD-045 (the
+  production wrapper's per-core idle state, read back through the live
+  reference), and SD-041 now observes the installed context rather than
+  inferring it from the success arm.
+* `rust/sele4n-hal/tests/readiness_gate_before_mark.rs` and
+  `…_after_mark.rs` — the readiness mask is process-global and one-way, so both
+  sides of the gate are only observable in separate binaries.  Before any mark:
+  the suspend seam refuses with `IllegalState` *instead of* dispatching, the SVC
+  seam halts, and the prefilter still rejects an invalid id before the gate.
+  After: the seams reach their host-lane stand-ins.
+* `tests/InformationFlowSuite.lean` — the guard's rejection of the
+  all-public-except-sentinel context, its admission of a constructed deployment
+  context, and its refusal of a *falsely declared* witness.
+
+Tiers 0–3, `test_rust.sh` and `test_aarch64_cross_build.sh` green; the golden
+trace fixture is unchanged.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR5
+
 ## v0.34.47 — the tests get faster without checking less
 
 Test-performance audit.  Every gate keeps its semantics and every suite keeps

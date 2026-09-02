@@ -117,6 +117,12 @@ fn main() {
     scan_lean_ready_gates_intact();
     scan_lean_upcalls_readiness_gated();
 
+    // WS-RR RR5.18: the two safety tripwires whose documented behaviour is a
+    // clean halt were `debug_assert!`s, which a `--release` build — the way a
+    // `kernel8.img` is built — compiles out.  Each is now a real branch to
+    // `cpu::fatal_halt()`, and this scanner holds them to that.
+    scan_release_surviving_tripwires();
+
     // WS-RR RR4.25 (single classification path): verify `trap.rs` routes
     // synchronous exceptions on the class the **Lean model** returns, and
     // does not re-derive one from a local `esr_ec` match.  Two
@@ -1960,6 +1966,22 @@ const LEAN_READY_GATED_SEAMS: &[(&str, &str, &str)] = &[
         "classify_synchronous_exception",
         "lean_classify_synchronous_exception",
     ),
+    // WS-RR RR5.6: the SVC dispatch seam — the highest-traffic route into the
+    // Lean runtime, and one of the two `kernel_entry.rs`'s five-entry table
+    // claimed consulted the gate while neither did.
+    (
+        "src/svc_dispatch.rs",
+        "dispatch_svc",
+        "lean_syscall_dispatch_cross_core",
+    ),
+    // WS-RR RR5.7: the cross-core suspend seam.  It reaches Lean through
+    // `sele4n_suspend_thread` rather than a `lean_*` symbol, which is why the
+    // derived scan — over the Lean tree's `@[export]`s — is what finds it.
+    (
+        "src/ffi.rs",
+        "sele4n_suspend_thread",
+        "suspend_thread_cross_core",
+    ),
 ];
 
 /// **Lean upcalls that run outside the readiness gate, by design or as
@@ -1988,22 +2010,513 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
          the Lean runtime the gate stands for, so it cannot sit behind the gate; \
          the boot core is marked ready after it, the image target's obligation",
     ),
-    (
-        "src/svc_dispatch.rs",
-        "dispatch_svc",
-        "lean_syscall_dispatch_cross_core",
-        1,
-        "the SVC dispatch seam: registered debt, closed by the release-readiness \
-         plan's boot-path fail-open phase (docs/REGISTERED_DEBT.md)",
-    ),
-    (
-        "src/ffi.rs",
-        "sele4n_suspend_thread",
-        "suspend_thread_cross_core",
-        1,
-        "the cross-core suspend seam: the same registered debt as the SVC seam",
-    ),
+    // WS-RR RR5.6/RR5.7 shrank this table from three entries to one: the SVC
+    // dispatch seam and the cross-core suspend seam now consult the gate and
+    // have moved to `LEAN_READY_GATED_SEAMS`.  What remains is the boot
+    // install, which cannot sit behind the gate because it is the call that
+    // initializes the runtime the gate stands for.
 ];
+
+/// **WS-RR RR5.18**: the two safety tripwires that must survive a release
+/// build, as `(source, enclosing fn, a token the condition must name)`.
+///
+/// This list is a *pin*, and deliberately short: both entries are checks whose
+/// documented purpose is to convert a latent hardware-level failure into a
+/// clean halt, and both were written as `debug_assert!`, which a `--release`
+/// build compiles out.  A `kernel8.img` is built `--release`
+/// (`scripts/test_qemu.sh`), so each existed only in the configuration that did
+/// not need it.
+///
+/// Every other `debug_assert!` in the crate is a genuine debug aid — an
+/// internal consistency claim about a data structure — and is deliberately not
+/// held to this.  What distinguishes these two is that the *documented*
+/// behaviour on failure is a halt, so the check has to be able to produce one.
+const RELEASE_SURVIVING_TRIPWIRES: &[(&str, &str, &str)] = &[
+    (
+        "src/kernel_entry.rs",
+        "assert_not_holding_round_lock",
+        "round_lock_is_held(",
+    ),
+    ("src/boot.rs", "install_exception_vectors", "2048"),
+];
+
+/// **WS-RR RR5.18**: each pinned tripwire is a real branch to a fail-closed
+/// halt, in every profile.
+///
+/// Two relations per entry, both asked of the function's own brace-matched
+/// body over the comment-blanked view:
+///
+///   * the body contains no `debug_assert` — a check that compiles out cannot
+///     halt anything; and
+///   * some `if` in the body whose condition names the tripwire's subject has a
+///     block whose **last top-level statement diverges**, which is the
+///     statement-level form of "this branch stops the core" rather than "this
+///     branch mentions `fatal_halt` somewhere".
+///
+/// The second relation is why a mutation that keeps `fatal_halt()` but nests it
+/// under a further condition, or moves it above the branch, is refused.
+fn release_surviving_tripwire_status(
+    code: &str,
+    fn_name: &str,
+    subject: &str,
+) -> Result<(), String> {
+    let signature = format!("fn {fn_name}(");
+    let at = code
+        .find(&signature)
+        .ok_or_else(|| format!("`{fn_name}` is not defined here"))?;
+    // An offset *inside* the body: `enclosing_fn_span` resolves the innermost
+    // `fn` whose brace-matched body contains it, and the signature itself sits
+    // outside that span.
+    let brace = at
+        + code[at..]
+            .find('{')
+            .ok_or_else(|| format!("`{fn_name}` has no body"))?;
+    let (_, body_open, body_close) = enclosing_fn_span(code, brace + 1)
+        .ok_or_else(|| format!("`{fn_name}`'s body could not be resolved"))?;
+    let body = &code[body_open..=body_close];
+    if body.contains("debug_assert") {
+        return Err(format!(
+            "`{fn_name}` uses `debug_assert`, which a `--release` build compiles out — the \
+             halt it documents would not exist in the image that ships"
+        ));
+    }
+    let mut search = 0usize;
+    while let Some(hit) = body[search..].find(subject) {
+        let at = search + hit;
+        search = at + subject.len();
+        let Some(if_at) = enclosing_if_keyword(body, 0, at) else {
+            continue;
+        };
+        let Some(block_open) = block_open_after(body, at) else {
+            continue;
+        };
+        let Some(block_close) = matching_close_brace(body, block_open) else {
+            continue;
+        };
+        let _ = if_at;
+        let statements = top_level_statements(body, block_open, block_close);
+        if statements
+            .last()
+            .map(|&(lo, hi)| statement_diverges(&body[lo..hi]))
+            .unwrap_or(false)
+        {
+            return Ok(());
+        }
+    }
+    Err(format!(
+        "`{fn_name}` has no `if` on `{subject}` whose block ends in a diverging statement — \
+         the tripwire does not stop the core on the condition it exists to catch"
+    ))
+}
+
+/// **WS-RR RR5.18**: run `release_surviving_tripwire_status` over the pin.
+fn scan_release_surviving_tripwires() {
+    verify_release_surviving_tripwire_scanner();
+    for (path, fn_name, subject) in RELEASE_SURVIVING_TRIPWIRES {
+        println!("cargo:rerun-if-changed={path}");
+        let contents = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("WS-RR RR5.18 scanner: cannot read `{path}`: {e}"));
+        let (_, code) = rust_code_views(&contents);
+        if let Err(why) = release_surviving_tripwire_status(&code, fn_name, subject) {
+            panic!("WS-RR RR5.18 regression: `{path}`: {why}");
+        }
+    }
+}
+
+/// Token-preserving self-check for `release_surviving_tripwire_status`.
+fn verify_release_surviving_tripwire_scanner() {
+    const GOOD: &str = r#"
+#[inline]
+pub fn assert_not_holding_round_lock() {
+    if crate::shootdown::round_lock_is_held() {
+        crate::kprintln!("[kernel-entry] FATAL: lock order violated");
+        crate::cpu::fatal_halt();
+    }
+}
+"#;
+    let check = |source: &str| -> Result<(), String> {
+        let (_, code) = rust_code_views(source);
+        release_surviving_tripwire_status(
+            &code,
+            "assert_not_holding_round_lock",
+            "round_lock_is_held(",
+        )
+    };
+    if let Err(why) = check(GOOD) {
+        panic!("build.rs self-check: the good tripwire fixture was refused: {why}");
+    }
+    let mutations: [(&str, &str, &str); 4] = [
+        (
+            "the halt survives but the branch becomes a debug_assert",
+            "    if crate::shootdown::round_lock_is_held() {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();\n    }",
+            "    debug_assert!(!crate::shootdown::round_lock_is_held());\n    if false {\n        crate::cpu::fatal_halt();\n    }",
+        ),
+        (
+            "the halt is kept but nested under an unrelated condition",
+            "        crate::cpu::fatal_halt();\n    }",
+            "        if crate::shootdown::retry_pending() {\n            crate::cpu::fatal_halt();\n        }\n    }",
+        ),
+        (
+            "the halt is kept but is no longer the branch's last statement",
+            "        crate::cpu::fatal_halt();\n    }",
+            "        crate::cpu::fatal_halt();\n        crate::kprintln!(\"unreached\");\n    }",
+        ),
+        (
+            "the halt is kept but moves above the branch, so the branch decides nothing",
+            "    if crate::shootdown::round_lock_is_held() {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();\n    }",
+            "    let held = crate::shootdown::round_lock_is_held();\n    crate::cpu::fatal_halt();\n    if held {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n    }",
+        ),
+    ];
+    for (what, from, to) in mutations {
+        assert!(
+            GOOD.contains(from),
+            "build.rs self-check: tripwire mutation `{what}` does not apply"
+        );
+        let mutated = GOOD.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD,
+            "build.rs self-check: tripwire mutation `{what}` is inert"
+        );
+        assert!(
+            mutated.contains("fatal_halt("),
+            "build.rs self-check: tripwire mutation `{what}` DELETED the halt; the mutation \
+             must keep the token and break the relation"
+        );
+        if check(&mutated).is_ok() {
+            panic!(
+                "build.rs self-check: `release_surviving_tripwire_status` accepted a broken \
+                 fixture: {what}"
+            );
+        }
+    }
+}
+
+/// **WS-RR RR5.9**: where a Lean symbol's declaration or definition sits, as
+/// the scanner classifies it.
+#[derive(Debug, PartialEq, Eq)]
+struct LeanSymbolDeclaration {
+    /// The Lean symbol declared or defined.
+    symbol: String,
+    /// Is this an `extern "C"` declaration or definition, or does it carry
+    /// `#[no_mangle]`?  Either way it puts the Lean name in the linker's hands.
+    linker_visible: bool,
+    /// The verdict of the innermost `hw_target` cfg region enclosing it:
+    /// `Some(true)` inside `#[cfg(feature = "hw_target")]`, `Some(false)` inside
+    /// `#[cfg(not(feature = "hw_target"))]`, `None` under neither.
+    hw_target: Option<bool>,
+}
+
+/// **WS-RR RR5.9**: the `hw_target` cfg region enclosing byte `at`, or `None`.
+///
+/// Walks outward from `at`: first the *item header* ending at `at` (the text
+/// back to the previous statement boundary, which carries the attributes of a
+/// module-level item), then each enclosing block's own header, innermost first.
+/// The first header mentioning the feature decides, and `not(feature =
+/// "hw_target")` is tested before the bare mention so a negated gate is not read
+/// as a positive one.
+///
+/// `code` must be a comment-blanked view: a comment naming the feature would
+/// otherwise gate an item that no attribute gates — the presence-versus-relation
+/// mistake, in the direction that fails *open*.
+fn hw_target_region(code: &str, at: usize) -> Option<bool> {
+    fn header_verdict(header: &str) -> Option<bool> {
+        if header.contains("not(feature = \"hw_target\")") {
+            Some(false)
+        } else if header.contains("feature = \"hw_target\"") {
+            Some(true)
+        } else {
+            None
+        }
+    }
+    // The header of the construct whose body/text contains `pos`: back to the
+    // previous statement boundary.
+    fn header_before(code: &str, pos: usize) -> &str {
+        let bytes = code.as_bytes();
+        let mut i = pos;
+        while i > 0 {
+            match bytes[i - 1] {
+                b';' | b'{' | b'}' => break,
+                _ => i -= 1,
+            }
+        }
+        &code[i..pos]
+    }
+    if let Some(v) = header_verdict(header_before(code, at)) {
+        return Some(v);
+    }
+    let bytes = code.as_bytes();
+    let mut pos = at;
+    loop {
+        // The innermost unmatched `{` before `pos`.
+        let mut depth = 0usize;
+        let mut open = None;
+        let mut i = pos;
+        while i > 0 {
+            i -= 1;
+            match bytes[i] {
+                b'}' => depth += 1,
+                b'{' => {
+                    if depth == 0 {
+                        open = Some(i);
+                        break;
+                    }
+                    depth -= 1;
+                }
+                _ => {}
+            }
+        }
+        let open = open?;
+        if let Some(v) = header_verdict(header_before(code, open)) {
+            return Some(v);
+        }
+        pos = open;
+    }
+}
+
+/// **WS-RR RR5.9**: every declaration or definition of a Lean symbol in one
+/// comment- and string-blanked source view, with where it sits.
+///
+/// A declaration is the symbol preceded by the `fn` keyword — the same
+/// classification `lean_upcall_sites` uses to tell a declaration from a call,
+/// so the two scanners cannot disagree about what a site is.  `linker_visible`
+/// is true when the item is `extern` (an `extern "C" { … }` block's contents, or
+/// an `extern "C" fn` definition) or carries `#[no_mangle]`: those are the forms
+/// that put the Lean name in the symbol table, which is what RR5.8 confines to
+/// `hw_target`.
+fn lean_symbol_declarations(
+    code: &str,
+    strings_kept: &str,
+    exports: &[&str],
+) -> Vec<LeanSymbolDeclaration> {
+    let bytes = code.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut out = Vec::new();
+    for symbol in exports {
+        let mut search = 0usize;
+        while let Some(hit) = code[search..].find(*symbol) {
+            let at = search + hit;
+            let end = at + symbol.len();
+            search = end;
+            if (at > 0 && is_ident(bytes[at - 1])) || (end < bytes.len() && is_ident(bytes[end])) {
+                continue;
+            }
+            let mut before = at;
+            while before > 0 && matches!(bytes[before - 1], b' ' | b'\t' | b'\n' | b'\r') {
+                before -= 1;
+            }
+            let declared = before >= 2
+                && &code[before - 2..before] == "fn"
+                && (before == 2 || !is_ident(bytes[before - 3]));
+            if !declared {
+                continue;
+            }
+            // The item's own header, plus — for a declaration inside an
+            // `extern "C" { … }` block — that block's header.
+            let header = {
+                let mut i = before - 2;
+                while i > 0 && !matches!(bytes[i - 1], b';' | b'{' | b'}') {
+                    i -= 1;
+                }
+                let own = &code[i..before];
+                let mut enclosing = String::new();
+                if i > 0 && bytes[i - 1] == b'{' {
+                    let block_open = i - 1;
+                    let mut j = block_open;
+                    while j > 0 && !matches!(bytes[j - 1], b';' | b'{' | b'}') {
+                        j -= 1;
+                    }
+                    enclosing.push_str(&code[j..block_open]);
+                }
+                format!("{enclosing}\n{own}")
+            };
+            out.push(LeanSymbolDeclaration {
+                symbol: (*symbol).to_string(),
+                linker_visible: header.contains("extern") || header.contains("#[no_mangle]"),
+                // The cfg attributes are read from the **strings-kept** view,
+                // byte-aligned with this one: `feature = "hw_target"` is a
+                // string literal, and the blanked view the declarations are
+                // located in has erased it.  A gate read from a view that
+                // blanked the gate is the round-3 defect where an `asm!`
+                // template's own directives were counted off a view that had
+                // blanked the template.
+                hw_target: hw_target_region(strings_kept, at),
+            });
+        }
+    }
+    out
+}
+
+/// **WS-RR RR5.9**: no Lean symbol is declared, defined or exported outside a
+/// `hw_target` region.
+///
+/// The second half of the finding RR5.6/RR5.7 close.  The readiness gate decides
+/// whether a Lean call *executes*; it says nothing about whether the call path is
+/// *compiled*, and both seams declared their Lean `extern` under
+/// `#[cfg(not(test))]` — so `cargo build -p sele4n-hal`, the default host
+/// profile, compiled a call to a bare-metal symbol nothing on the host provides,
+/// and `cargo test` linked one into every test binary through a `#[no_mangle]`
+/// stub.  Two rules, both structural:
+///
+///   * a **linker-visible** form (an `extern "C"` declaration or definition, or
+///     any `#[no_mangle]` item) may exist only under
+///     `#[cfg(feature = "hw_target")]`; and
+///   * a plain Rust definition of the same name — a host-lane stand-in — may
+///     exist only under `#[cfg(not(feature = "hw_target"))]`, so it cannot
+///     shadow the real entry point on hardware.
+///
+/// Calls are not this scanner's business: `scan_lean_upcalls_readiness_gated`
+/// owns them, and a call to a symbol declared only under `hw_target` is a
+/// compile error on any other configuration.
+fn lean_extern_gating_status(
+    views: &[(String, String, String)],
+    exports: &[&str],
+) -> Result<usize, String> {
+    let mut checked = 0usize;
+    for (path, code, strings_kept) in views {
+        for decl in lean_symbol_declarations(code, strings_kept, exports) {
+            checked += 1;
+            let LeanSymbolDeclaration {
+                symbol,
+                linker_visible,
+                hw_target,
+            } = decl;
+            match (linker_visible, hw_target) {
+                (true, Some(true)) => {}
+                (false, Some(false)) => {}
+                (true, _) => {
+                    return Err(format!(
+                        "`{path}` declares or exports the Lean symbol `{symbol}` outside \
+                         `#[cfg(feature = \"hw_target\")]`.  An `extern \"C\"` declaration or a \
+                         `#[no_mangle]` definition puts a bare-metal kernel entry point in the \
+                         linker's hands on every configuration that compiles it — including the \
+                         default host profile, which has nothing to resolve it against.  Gate the \
+                         item on `feature = \"hw_target\"`; a host lane needs a plain Rust \
+                         stand-in under `cfg(not(feature = \"hw_target\"))`, not an `extern`"
+                    ));
+                }
+                (false, _) => {
+                    return Err(format!(
+                        "`{path}` defines a plain Rust function named after the Lean symbol \
+                         `{symbol}` outside `#[cfg(not(feature = \"hw_target\"))]`.  A host-lane \
+                         stand-in must be confined to the host lane, or it shadows the real \
+                         entry point in a build that links the kernel"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(checked)
+}
+
+/// **WS-RR RR5.9**: token-preserving self-check for `lean_extern_gating_status`.
+///
+/// Every mutation **keeps** the tokens a presence check would look for — the
+/// `extern "C"`, the symbol name, and the literal `hw_target` — and breaks only
+/// the *relation* the scanner is about: which cfg region the item sits in, and
+/// whether the item is linker-visible there.  A fixture that mutated by deleting
+/// the gate would be survived by any scanner that merely greps for it, which is
+/// the failure mode CLAUDE.md's "test a gate by breaking the relation" rule
+/// names.
+///
+/// The fixture is no thinner than the real sources: it carries a gated `extern`
+/// block, a gated `extern` nested two blocks deep (the `timer.rs` shape), a
+/// negation-gated host stand-in, and a comment naming the feature — so a
+/// scanner reading the raw text rather than the comment-blanked view fails the
+/// last case.
+fn verify_lean_extern_gating_scanner() {
+    const GOOD: &str = r#"
+#[cfg(feature = "hw_target")]
+extern "C" {
+    fn lean_alpha(x: u64) -> u64;
+}
+
+#[cfg(not(feature = "hw_target"))]
+unsafe fn lean_alpha(_x: u64) -> u64 {
+    0
+}
+
+fn beta_seam(core: usize) {
+    #[cfg(feature = "hw_target")]
+    {
+        if crate::lean_ready::lean_ready(core) {
+            extern "C" {
+                fn lean_beta(core_id: u64);
+            }
+            unsafe { lean_beta(core as u64) };
+        }
+    }
+}
+"#;
+    let exports = ["lean_alpha", "lean_beta"];
+    let check = |source: &str| -> Result<usize, String> {
+        let (kept, blanked) = rust_code_views(source);
+        lean_extern_gating_status(&[("fixture.rs".to_string(), blanked, kept)], &exports)
+    };
+    match check(GOOD) {
+        Ok(3) => {}
+        Ok(n) => panic!(
+            "build.rs self-check: the good extern-gating fixture classified {n} declarations, \
+             expected 3 (the gated extern, the host stand-in, the nested extern)"
+        ),
+        Err(why) => {
+            panic!("build.rs self-check: the good extern-gating fixture was refused: {why}")
+        }
+    }
+    let mutations: [(&str, &str, &str); 6] = [
+        (
+            "the extern keeps its cfg but the gate becomes a different feature",
+            "#[cfg(feature = \"hw_target\")]\nextern \"C\" {\n    fn lean_alpha",
+            "#[cfg(feature = \"host_tools\")]\nextern \"C\" {\n    fn lean_alpha",
+        ),
+        (
+            "the extern keeps the literal `hw_target` but under its negation",
+            "#[cfg(feature = \"hw_target\")]\nextern \"C\" {\n    fn lean_alpha",
+            "#[cfg(not(feature = \"hw_target\"))]\nextern \"C\" {\n    fn lean_alpha",
+        ),
+        (
+            "the host stand-in keeps its body but loses the negated gate",
+            "#[cfg(not(feature = \"hw_target\"))]\nunsafe fn lean_alpha",
+            "unsafe fn lean_alpha",
+        ),
+        (
+            "the host stand-in stays negation-gated but becomes linker-visible",
+            "#[cfg(not(feature = \"hw_target\"))]\nunsafe fn lean_alpha",
+            "#[cfg(not(feature = \"hw_target\"))]\n#[no_mangle]\nunsafe fn lean_alpha",
+        ),
+        (
+            "the nested extern keeps every enclosing block but the outer gate moves off it",
+            "    #[cfg(feature = \"hw_target\")]\n    {\n        if crate::lean_ready",
+            "    {\n        if crate::lean_ready",
+        ),
+        (
+            "the gate is present only as a comment",
+            "#[cfg(feature = \"hw_target\")]\nextern \"C\" {\n    fn lean_alpha",
+            "// #[cfg(feature = \"hw_target\")]\nextern \"C\" {\n    fn lean_alpha",
+        ),
+    ];
+    for (what, from, to) in mutations {
+        assert!(
+            GOOD.contains(from),
+            "build.rs self-check: extern-gating mutation `{what}` does not apply"
+        );
+        let mutated = GOOD.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD,
+            "build.rs self-check: extern-gating mutation `{what}` is inert"
+        );
+        assert!(
+            mutated.contains("hw_target"),
+            "build.rs self-check: extern-gating mutation `{what}` DELETED the token; the \
+             mutation must keep it and break the relation"
+        );
+        if check(&mutated).is_ok() {
+            panic!(
+                "build.rs self-check: `lean_extern_gating_status` accepted a broken fixture: \
+                 {what}"
+            );
+        }
+    }
+}
 
 /// One call from HAL Rust into a Lean-emitted symbol, as the scanner found it.
 #[derive(Debug, PartialEq, Eq)]
@@ -2804,6 +3317,7 @@ fn collect_rust_sources(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>
 /// forces a table entry with its docstring and a stale entry fails the build.
 /// `verify_lean_upcall_scanner` runs the token-preserving mutations first.
 fn scan_lean_upcalls_readiness_gated() {
+    verify_lean_extern_gating_scanner();
     let lean_root = std::path::Path::new("../../SeLe4n");
     println!("cargo:rerun-if-changed=../../SeLe4n");
     let mut exports: Vec<String> = Vec::new();
@@ -2819,7 +3333,7 @@ fn scan_lean_upcalls_readiness_gated() {
     let mut sources: Vec<std::path::PathBuf> = Vec::new();
     collect_rust_sources(std::path::Path::new("src"), &mut sources);
     sources.sort();
-    let mut views: Vec<(String, String)> = Vec::new();
+    let mut views: Vec<(String, String, String)> = Vec::new();
     for path in &sources {
         let contents = match std::fs::read_to_string(path) {
             Ok(s) => s,
@@ -2828,7 +3342,7 @@ fn scan_lean_upcalls_readiness_gated() {
                 path.display()
             ),
         };
-        let (_, code) = rust_code_views(&contents);
+        let (strings_kept, code) = rust_code_views(&contents);
         // HAL-declared `lean_*` externs join the set: the toolchain-emitted
         // entry is declared here and nowhere in the Lean sources.
         for name in extern_block_declarations(&code) {
@@ -2836,14 +3350,18 @@ fn scan_lean_upcalls_readiness_gated() {
                 exports.push(name);
             }
         }
-        views.push((path.to_string_lossy().replace('\\', "/"), code));
+        views.push((
+            path.to_string_lossy().replace('\\', "/"),
+            code,
+            strings_kept,
+        ));
     }
     exports.sort();
     let export_refs: Vec<&str> = exports.iter().map(String::as_str).collect();
 
     let mut gated_found: Vec<(String, String, String)> = Vec::new();
     let mut ungated_found: Vec<(String, String, String)> = Vec::new();
-    for (path, code) in &views {
+    for (path, code, _) in &views {
         let sites = match lean_upcall_sites(code, &export_refs) {
             Ok(s) => s,
             Err(e) => panic!("Lean upcall scanner: `{path}`: {e}"),
@@ -2858,6 +3376,22 @@ fn scan_lean_upcalls_readiness_gated() {
             }
         }
     }
+    // WS-RR RR5.9: the other half of the finding — a Lean symbol may be
+    // declared or exported only under `hw_target`, and a host-lane stand-in of
+    // the same name only under its negation.  Shares this scan's derived export
+    // set and code views, so the two checks can never disagree about which
+    // names are Lean symbols.
+    match lean_extern_gating_status(&views, &export_refs) {
+        Ok(0) => panic!(
+            "WS-RR RR5.9: the extern-gating scanner found no Lean symbol declaration in \
+             `src/` at all.  Every seam declares its Lean entry point somewhere; a zero \
+             here means the classification stopped matching and the check passes \
+             vacuously."
+        ),
+        Ok(_) => {}
+        Err(why) => panic!("WS-RR RR5.9 regression: {why}"),
+    }
+
     // PR #887 review round 6: the ungated calls are reconciled against the
     // exemption table by OCCURRENCE — every ungated call is covered by an
     // entry, and every entry covers exactly the calls that exist.

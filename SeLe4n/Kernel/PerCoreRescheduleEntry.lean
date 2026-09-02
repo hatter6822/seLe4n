@@ -7,9 +7,12 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM (SM5.C.5 reschedule-SGI kernel entry; the
--- receiver seam of the cross-core wake protocol, and the shared body of
--- the secondary-core bring-up entry)
+-- WS-RR RR5.15: PRODUCTION.  This module was staged-only, which meant
+-- `@[export lean_per_core_reschedule]` emitted no symbol into the library a
+-- kernel image links — while `trap.rs` declared it as a hard `extern "C"` for
+-- the `.reschedule` SGI handler.  It is now in `SeLe4n.lean`'s import closure;
+-- `scripts/check_kernel_entry_exports.py` verifies the symbol against the built
+-- archive on every Tier-1 run.
 import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
 import SeLe4n.Platform.FFI

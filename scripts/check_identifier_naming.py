@@ -764,16 +764,74 @@ def strip_hash(text: str) -> str:
     return "".join(out)
 
 
-# A `$` expansion inside double quotes is live code.  `$(...)` nests in
-# general; the non-greedy form covers the flat case and anything longer
-# degrades to keeping less, never to blanking a name outright.
-# Backticks are the legacy spelling of `$(...)` and are executable in
-# exactly the same places, including inside double quotes.  Leaving
-# them out meant `x="`phase5_helper`"` was blanked as message text
-# while the bare `x=`phase5_helper`` one line below survived -- the
-# same command, visible or not depending on surrounding quotes.
+# A `$` expansion inside double quotes is live code.  Backticks are the
+# legacy spelling of `$(...)` and are executable in exactly the same
+# places, including inside double quotes.  Leaving them out meant
+# `x="`phase5_helper`"` was blanked as message text while the bare
+# `x=`phase5_helper`` one line below survived -- the same command,
+# visible or not depending on surrounding quotes.
+#
+# `$(...)` is deliberately NOT in this pattern.  It used to be, as the
+# flat `\$\([^)]*\)`, on the reasoning that a longer substitution
+# "degrades to keeping less, never to blanking a name outright".  That
+# reasoning is false, and the tree proved it: `$(sed -n '/^x/,/^\(a\|b\)/p'
+# f | grep -c '^\s*| ')` has its `$(` closed by the ESCAPED paren inside
+# the sed regex, so the scan resumes mid-command with an ODD number of
+# single quotes left on the line -- and `strip_shell`'s single-quote
+# branch, finding no partner, keeps the rest of the FILE verbatim.
+# Comment blanking stopped there: in `scripts/test_tier3_invariant_surface.sh`
+# every `#` comment below line 4982 survived into the "code view", which
+# is a gate reading prose as code (a false positive here, and an AK7
+# count of tokens that are not in the code at all).  Consuming a prefix
+# of a quoted construct does not keep less; it unbalances what follows.
+#
+# `command_substitution_end` scans it properly instead: quote-aware, so
+# a paren inside a quoted regex is text, and nesting-aware, so
+# `$(a $(b) c)` closes where it actually closes.
 SHELL_EXPANSION = re.compile(
-    r"\$\{[^}]*\}|\$\([^)]*\)|\$[A-Za-z_][A-Za-z0-9_]*|`[^`]*`")
+    r"\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|`[^`]*`")
+
+
+def command_substitution_end(text: str, at: int) -> int:
+    """Index just past the `)` closing the `$(` at `at`, or `-1`.
+
+    Quotes inside a substitution suppress paren structure -- `'\)'` and
+    `"a)b"` are text -- and substitutions nest, so both are tracked.
+    Returns `-1` when the construct does not close, which callers treat
+    as "not an expansion" rather than as a span reaching the end of the
+    file: an unterminated `$(` is a syntax error in the script, and
+    guessing a span for it is what unbalanced the scan before.
+    """
+    if not text.startswith("$(", at):
+        return -1
+    j, depth, n = at + 2, 1, len(text)
+    while j < n:
+        c = text[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "'":
+            k = text.find("'", j + 1)
+            if k < 0:
+                return -1
+            j = k + 1
+            continue
+        if c == '"':
+            k = j + 1
+            while k < n and text[k] != '"':
+                k += 2 if text[k] == "\\" else 1
+            if k >= n:
+                return -1
+            j = k + 1
+            continue
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    return -1
 
 
 # A double-quoted span handed to an interpreter is a COMMAND, not a
@@ -812,6 +870,16 @@ def keep_expansions(span: str) -> str:
     out = [c if c == "\n" else " " for c in span]
     for m in SHELL_EXPANSION.finditer(span):
         out[m.start():m.end()] = list(span[m.start():m.end()])
+    # `$(...)` is scanned rather than matched, for the reason
+    # `SHELL_EXPANSION` records: a flat pattern closes on the first `)`,
+    # including one that is text inside a quoted regex.
+    at = 0
+    while (at := span.find("$(", at)) >= 0:
+        end = command_substitution_end(span, at)
+        if end < 0:
+            break
+        out[at:end] = list(span[at:end])
+        at = end
     return "".join(out)
 
 
@@ -849,7 +917,9 @@ def strip_shell(text: str) -> str:
     """
     out, i, n = [], 0, len(text)
     while i < n:
-        if (m := SHELL_EXPANSION.match(text, i)):
+        if text.startswith("$(", i) and (end := command_substitution_end(text, i)) > 0:
+            out.append(text[i:end]); i = end
+        elif (m := SHELL_EXPANSION.match(text, i)):
             out.append(m.group(0)); i = m.end()
         elif text[i] == "#" and (i == 0 or text[i - 1] in " \t\n;&|("):
             j = text.find("\n", i)

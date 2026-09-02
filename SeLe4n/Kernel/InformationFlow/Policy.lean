@@ -40,6 +40,23 @@ def publicLabel : SecurityLabel :=
 def kernelTrusted : SecurityLabel :=
   { confidentiality := .high, integrity := .trusted }
 
+/-- WS-RR RR5.1: the low-confidentiality, trusted-integrity corner of the 2×2
+    lattice.
+
+    Together with `highUntrusted` this is the **only** pair of lattice points
+    that are mutually non-flowing (`lowTrusted_highUntrusted_mutually_isolated`),
+    so a deployment that wants two genuinely isolated domains out of the legacy
+    lattice has to use exactly these two.  `publicLabel` / `kernelTrusted` are
+    *comparable* (`publicLabel → kernelTrusted` is permitted by design), so a
+    partition into those two confines information in one direction only. -/
+def lowTrusted : SecurityLabel :=
+  { confidentiality := .low, integrity := .trusted }
+
+/-- WS-RR RR5.1: the high-confidentiality, untrusted-integrity corner of the
+    2×2 lattice — the isolation partner of `lowTrusted` (see there). -/
+def highUntrusted : SecurityLabel :=
+  { confidentiality := .high, integrity := .untrusted }
+
 end SecurityLabel
 
 /-- Confidentiality order (`≤`) used by IF-M1 policy checks. -/
@@ -208,6 +225,26 @@ theorem securityFlowsTo_prevents_label_escalation :
     securityFlowsTo SecurityLabel.kernelTrusted SecurityLabel.publicLabel = false ∧
     -- Authority receipt (untrusted invoking trusted) is permitted:
     securityFlowsTo SecurityLabel.publicLabel SecurityLabel.kernelTrusted = true := by
+  decide
+
+/-- WS-RR RR5.1: `lowTrusted` and `highUntrusted` are **mutually** non-flowing —
+    neither direction is permitted.
+
+    This is what makes them the pair a two-domain production deployment is built
+    from.  `publicLabel` / `kernelTrusted` confine in one direction only
+    (`securityFlowsTo_prevents_label_escalation`: the upward flow is permitted by
+    design), so a partition into those two leaves every low entity able to write
+    into every high one.  Here the confidentiality dimension denies
+    `highUntrusted → lowTrusted` and the integrity dimension denies
+    `lowTrusted → highUntrusted`, so the two domains cannot observe or influence
+    each other at all.
+
+    The four points of the lattice admit exactly one such pair: the two
+    *incomparable* corners.  `confinedLabelingContext` is the deployment
+    labeling built from it. -/
+theorem lowTrusted_highUntrusted_mutually_isolated :
+    securityFlowsTo SecurityLabel.lowTrusted SecurityLabel.highUntrusted = false ∧
+    securityFlowsTo SecurityLabel.highUntrusted SecurityLabel.lowTrusted = false := by
   decide
 
 -- ============================================================================
@@ -446,6 +483,39 @@ structure LabelingContext where
       Stated over `SecurityDomain`, like the two policy fields above, and
       reached from the live path through `liftLegacyContext`. -/
   auditMonitorClearance : Option SecurityDomain := none
+  /-- WS-RR RR5.4: the deployment's **declared domain-separation witness** — two
+      non-sentinel thread ids this labeling puts in different security domains.
+
+      `LabelingContextValid.labelNonTriviality` asks for exactly this
+      existential (`∃ tid₁ tid₂, threadLabelOf tid₁ ≠ threadLabelOf tid₂`), and
+      before this field the kernel had no way to *check* it: a label assignment
+      is a total function over an infinite id space, so no runtime test can
+      decide non-triviality by inspecting it.  The pre-RR5 guard therefore
+      sampled three sentinel ids and reported "not the default" whenever any one
+      of them came back non-public — which `testLabelingContext` satisfies by
+      labeling id `0` alone, while every real entity stays `publicLabel`.
+
+      Making the witness **data** turns the undecidable question into a decided
+      one: the deployment names the pair, and `isInsecureDefaultContext`
+      evaluates the very inequality `labelNonTriviality` asserts at it.  A false
+      declaration is caught (the labels are compared, not trusted), and the two
+      ids must be non-sentinel (`ThreadId.isReserved`), because separating id `0`
+      — which `toObjIdChecked` refuses to turn into an object reference — from
+      the real threads separates no two things that can run.
+
+      Defaulted to `none`, which is **fail-closed**: a context that declares no
+      separation is rejected at every checked syscall entry and at boot.  That is
+      the posture the pre-boot `kernelLabelingContextRef` value now has, so no
+      syscall can be served before a deployment context is installed.
+
+      What this decides and what it does not: `isInsecureDefaultContext ctx =
+      false` proves the labeling is not the one-label labeling
+      (`isInsecureDefaultContext_false_implies_labelNonTriviality`).  Whether the
+      partition it declares is the *right* one for the deployment's threads
+      remains the integrator's obligation, stated by the other two
+      `LabelingContextValid` conjuncts and discharged structurally by
+      `deploymentLabelingContext`. -/
+  separatedThreads : Option (SeLe4n.ThreadId × SeLe4n.ThreadId) := none
 
 /-- Minimal default labeling: everything is publicly observable and untrusted.
 
@@ -496,57 +566,99 @@ theorem defaultLabelingContext_all_threads_observable :
 -- AI5-C (M-19): Insecure default labeling context runtime guard
 -- ============================================================================
 
-/-- AJ2-C (M-12): Helper — single sentinel probe. Checks whether all four
-    entity classes assign `publicLabel` to the given ID. -/
-@[inline] private def insecureProbe (ctx : LabelingContext) (n : Nat) : Bool :=
-  ctx.threadLabelOf (SeLe4n.ThreadId.ofNat n) == SecurityLabel.publicLabel &&
-  ctx.objectLabelOf (SeLe4n.ObjId.ofNat n) == SecurityLabel.publicLabel &&
-  ctx.endpointLabelOf (SeLe4n.ObjId.ofNat n) == SecurityLabel.publicLabel &&
-  ctx.serviceLabelOf (ServiceId.ofNat n) == SecurityLabel.publicLabel
+/-- WS-RR RR5.4: does `ctx` *verify* its declared domain-separation witness?
 
-/-- AI5-C (M-19) + AJ2-C (M-12): Detect the insecure default labeling context
-    at runtime.
+    `true` exactly when the context names a pair of non-sentinel thread ids
+    (`LabelingContext.separatedThreads`) that it really does put in different
+    security domains.  Three conditions, all decided rather than sampled:
 
-    Probes sentinel IDs 0, 1, and 42 across all four entity classes (thread,
-    object, endpoint, service). A context is flagged as insecure when ALL probed
-    entities in ALL classes return `publicLabel` — the signature pattern of
-    `defaultLabelingContext`.
+    1. a witness is declared at all (`none` is fail-closed);
+    2. neither id is the reserved sentinel `0` (`ThreadId.isReserved`) — a
+       labeling that separates only the sentinel from everything else separates
+       no two threads that can run, which is precisely the `testLabelingContext`
+       shape the pre-RR5 sentinel probe accepted; and
+    3. the two ids genuinely carry different labels — the declaration is
+       *checked*, so a context cannot pass by naming a pair it does not separate.
 
-    AJ2-C strengthens the original single-ID (ID 0) probe to a multi-probe,
-    widening the sampling window: the check now requires all-public labels at
-    three distinct IDs before flagging a context as insecure. A context that
-    assigns non-public labels at any one of the probed IDs (e.g., only at ID 0
-    — the `testLabelingContext` pattern) will not be flagged, as that is
-    sufficient evidence of non-default labeling. The conjunction (`&&`) means
-    evasion requires changing only one probed ID, but detection coverage is
-    broader: three independent samples of the ID space must all exhibit the
-    insecure pattern before the heuristic fires.
+    O(1): one `Option` match, two id comparisons and one `SecurityLabel`
+    comparison, against the twelve label lookups the retired three-sentinel probe
+    performed at every syscall entry. -/
+def verifiesDeclaredSeparation (ctx : LabelingContext) : Bool :=
+  match ctx.separatedThreads with
+  | none => false
+  | some (tid₁, tid₂) =>
+      !tid₁.isReserved && !tid₂.isReserved &&
+        ctx.threadLabelOf tid₁ != ctx.threadLabelOf tid₂
 
-    This remains O(k) with k=3 (12 label lookups total), negligible overhead per
-    syscall entry. The real security gate is `LabelingContextValid` (enforced at
-    boot via `labelingContextValid_is_deployment_requirement` in
-    Composition.lean:727). This check is a defense-in-depth heuristic. -/
+/-- AI5-C (M-19) + AJ2-C (M-12) + **WS-RR RR5.4**: reject a labeling context that
+    provides no domain separation.
+
+    **What changed at RR5.4.**  This was a three-sentinel *sample*: it probed ids
+    `0`, `1` and `42` across the four entity classes and reported "insecure" only
+    when all twelve lookups came back `publicLabel`.  A sample cannot decide a
+    property of a total function, and the gap was not hypothetical —
+    `testLabelingContext` labels id `0` `kernelTrusted` and every other entity
+    `publicLabel`, so probe `0` failed, the conjunction short-circuited, and the
+    guard passed the very context the pre-boot labeling reference held.  Every
+    flow between entities that can actually run was permitted, which makes the
+    SM8/SM9 non-interference and declassification results vacuous in that
+    configuration.
+
+    It is now the **exact** check `verifiesDeclaredSeparation` describes: the
+    deployment declares which two non-sentinel threads its labeling separates and
+    the kernel evaluates that inequality.  A context that declares nothing is
+    rejected (fail-closed), and one that declares a pair it does not separate is
+    rejected too.
+
+    `isInsecureDefaultContext ctx = false` is therefore no longer a heuristic
+    "probably not the default": it *entails*
+    `LabelingContextValid.labelNonTriviality`
+    (`isInsecureDefaultContext_false_implies_labelNonTriviality`), so the runtime
+    guard now discharges one of the three deployment obligations rather than
+    approximating it.  The other two — thread/object coherence and its
+    observability corollary — remain deployment obligations, discharged
+    structurally by `deploymentLabelingContext` rather than assumed. -/
 def isInsecureDefaultContext (ctx : LabelingContext) : Bool :=
-  insecureProbe ctx 0 && insecureProbe ctx 1 && insecureProbe ctx 42
+  !verifiesDeclaredSeparation ctx
 
-/-- AI5-C (M-19) + AJ2-C: The detector correctly identifies the default labeling
-    context as insecure. All three sentinel IDs (0, 1, 42) map to `publicLabel`
-    across all four entity classes. -/
+/-- AI5-C (M-19) + WS-RR RR5.4: the default labeling context is rejected — it
+    declares no separation witness, and could not declare a true one: every
+    thread carries `publicLabel`. -/
 theorem isInsecureDefaultContext_defaultLabelingContext :
     isInsecureDefaultContext defaultLabelingContext = true := by
-  unfold isInsecureDefaultContext insecureProbe defaultLabelingContext
-  simp [SecurityLabel.publicLabel]
+  decide
 
-/-- AI5-C (M-19): Test-only labeling context that assigns a non-public label to
-    entity ID 0, defeating the insecurity detector while remaining structurally
-    valid for test execution.
+/-- WS-RR RR5.4: a *stronger* statement than the rejection above — the default
+    labeling context could not be repaired by declaring a witness, because no
+    two threads carry different labels.  The rejection is a fact about the
+    labeling, not about the missing declaration. -/
+theorem defaultLabelingContext_separates_no_threads
+    (tid₁ tid₂ : SeLe4n.ThreadId) :
+    defaultLabelingContext.threadLabelOf tid₁ =
+      defaultLabelingContext.threadLabelOf tid₂ := rfl
 
-    This context assigns `kernelTrusted` (high confidentiality, trusted integrity)
-    to thread 0, object 0, endpoint 0, and service 0. All other entities receive
-    `publicLabel`, matching the default context for IDs ≥ 1.
+/-- AI5-C (M-19), retained as a **negative fixture** by WS-RR RR5.4: the
+    all-public-except-the-sentinel labeling.
 
-    Test harnesses should use this context instead of `defaultLabelingContext`
-    when exercising checked dispatch paths (`syscallEntryChecked`). -/
+    It assigns `kernelTrusted` to thread `0`, object `0`, endpoint `0` and
+    service `0`, and `publicLabel` to every other entity.  Id `0` is the reserved
+    sentinel (`ThreadId.isReserved`; `toObjIdChecked` refuses to turn it into an
+    object reference), so *no two entities that can run* are separated: every
+    flow between real threads, objects, endpoints and services is permitted, and
+    the non-interference results hold vacuously under it.
+
+    Its original purpose was to defeat the sentinel-probe guard while staying
+    structurally usable in tests.  RR5.4 removed that possibility: the guard now
+    checks a declared witness, this context declares none, and
+    `isInsecureDefaultContext_testLabelingContext` pins the rejection.  It is
+    kept — rather than deleted — because a fail-closed guard needs a fixture that
+    exercises the closed side, and because the pre-RR5 shape is the one a future
+    contributor is most likely to reintroduce.
+
+    **Test harnesses must not use it to reach a checked entry.**  A checked path
+    exercised under a genuinely separated deployment labeling is
+    `harnessLabelingContext`; a two-domain production labeling is
+    `confinedLabelingContext`. -/
 def testLabelingContext : LabelingContext :=
   {
     objectLabelOf := fun oid =>
@@ -563,58 +675,371 @@ def testLabelingContext : LabelingContext :=
       else SecurityLabel.publicLabel
   }
 
-/-- AI5-C (M-19) + AJ2-C: The test labeling context is NOT detected as insecure.
-    The sentinel probe at ID 0 returns `kernelTrusted` (non-public), causing
-    `insecureProbe ctx 0` to return `false` and short-circuiting the conjunction. -/
+/-- WS-RR RR5.5 (the closing half): the all-public-except-the-sentinel context is
+    **rejected**.  Under the retired sentinel probe this theorem read `= false` —
+    the guard passed it — which is the fail-open the phase exists to close. -/
 theorem isInsecureDefaultContext_testLabelingContext :
-    isInsecureDefaultContext testLabelingContext = false := by
-  unfold isInsecureDefaultContext insecureProbe testLabelingContext
-  simp [SecurityLabel.kernelTrusted, SecurityLabel.publicLabel,
-        ThreadId.toNat_ofNat, ObjId.toNat_ofNat, ServiceId.toNat_ofNat]
+    isInsecureDefaultContext testLabelingContext = true := by
+  decide
 
-/-- AJ2-C (M-12): Helper — a failed probe implies at least one entity class
-    has a non-public label at the given ID. -/
-private theorem insecureProbe_false_to_nonpublic
-    (ctx : LabelingContext) (n : Nat)
-    (h : insecureProbe ctx n = false) :
-    ctx.threadLabelOf (SeLe4n.ThreadId.ofNat n) ≠ SecurityLabel.publicLabel ∨
-    ctx.objectLabelOf (SeLe4n.ObjId.ofNat n) ≠ SecurityLabel.publicLabel ∨
-    ctx.endpointLabelOf (SeLe4n.ObjId.ofNat n) ≠ SecurityLabel.publicLabel ∨
-    ctx.serviceLabelOf (ServiceId.ofNat n) ≠ SecurityLabel.publicLabel := by
-  simp only [insecureProbe] at h
-  cases ht : (ctx.threadLabelOf (SeLe4n.ThreadId.ofNat n) == SecurityLabel.publicLabel)
-  · exact .inl (by intro heq; simp [heq] at ht)
-  · simp only [ht, Bool.true_and] at h
-    cases ho : (ctx.objectLabelOf (SeLe4n.ObjId.ofNat n) == SecurityLabel.publicLabel)
-    · exact .inr (.inl (by intro heq; simp [heq] at ho))
-    · simp only [ho, Bool.true_and] at h
-      cases he : (ctx.endpointLabelOf (SeLe4n.ObjId.ofNat n) == SecurityLabel.publicLabel)
-      · exact .inr (.inr (.inl (by intro heq; simp [heq] at he)))
-      · simp only [he, Bool.true_and] at h
-        exact .inr (.inr (.inr (by intro heq; simp [heq] at h)))
+/-- WS-RR RR5.4: why the rejection above is a fact about the labeling and not
+    about a missing declaration — the only pair of ids `testLabelingContext`
+    separates involves the reserved sentinel.  Stated contrapositively: any two
+    **non-sentinel** threads carry the same label under it, so no witness it
+    could declare would be admissible. -/
+theorem testLabelingContext_separates_no_real_threads
+    (tid₁ tid₂ : SeLe4n.ThreadId)
+    (h₁ : tid₁.isReserved = false) (h₂ : tid₂.isReserved = false) :
+    testLabelingContext.threadLabelOf tid₁ = testLabelingContext.threadLabelOf tid₂ := by
+  simp only [SeLe4n.ThreadId.isReserved, decide_eq_false_iff_not] at h₁ h₂
+  simp only [testLabelingContext, SeLe4n.ThreadId.toNat]
+  rw [if_neg (by simpa using h₁), if_neg (by simpa using h₂)]
 
-/-- AJ2-C (M-12): False-negative characterization — when the check passes
-    (`= false`), at least one probed entity in at least one class has a
-    non-public label. This makes machine-checked what the heuristic guarantees.
-    Zero runtime cost — purely a proof artifact. -/
-theorem isInsecureDefaultContext_false_implies_nontrivial
+/-- WS-RR RR5.4: the guard **decides** `LabelingContextValid.labelNonTriviality`.
+
+    This replaces the pre-RR5 false-negative characterization, which could only
+    say that one of three sampled ids carried a non-public label in one of four
+    classes.  The conclusion here is the `LabelingContextValid` conjunct itself,
+    so a context the runtime guard admits carries that deployment obligation
+    already discharged. -/
+theorem isInsecureDefaultContext_false_implies_labelNonTriviality
     (ctx : LabelingContext)
     (h : isInsecureDefaultContext ctx = false) :
-    ∃ n ∈ [0, 1, 42],
-      ctx.threadLabelOf (SeLe4n.ThreadId.ofNat n) ≠ SecurityLabel.publicLabel ∨
-      ctx.objectLabelOf (SeLe4n.ObjId.ofNat n) ≠ SecurityLabel.publicLabel ∨
-      ctx.endpointLabelOf (SeLe4n.ObjId.ofNat n) ≠ SecurityLabel.publicLabel ∨
-      ctx.serviceLabelOf (ServiceId.ofNat n) ≠ SecurityLabel.publicLabel := by
-  simp only [isInsecureDefaultContext] at h
-  -- h : insecureProbe ctx 0 && insecureProbe ctx 1 && insecureProbe ctx 42 = false
-  -- Case-split on which probe failed
-  cases hp0 : insecureProbe ctx 0
-  · exact ⟨0, by simp, insecureProbe_false_to_nonpublic ctx 0 hp0⟩
-  · simp only [hp0, Bool.true_and] at h
-    cases hp1 : insecureProbe ctx 1
-    · exact ⟨1, by simp, insecureProbe_false_to_nonpublic ctx 1 hp1⟩
-    · simp only [hp1, Bool.true_and] at h
-      exact ⟨42, by simp, insecureProbe_false_to_nonpublic ctx 42 h⟩
+    ∃ (tid₁ tid₂ : SeLe4n.ThreadId), ctx.threadLabelOf tid₁ ≠ ctx.threadLabelOf tid₂ := by
+  simp only [isInsecureDefaultContext, Bool.not_eq_false', verifiesDeclaredSeparation] at h
+  cases hw : ctx.separatedThreads with
+  | none => rw [hw] at h; exact absurd h (by simp)
+  | some p =>
+      rw [hw] at h
+      obtain ⟨tid₁, tid₂⟩ := p
+      simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at h
+      exact ⟨tid₁, tid₂, h.2⟩
+
+/-- WS-RR RR5.4: the admitted witness is a pair of **real** (non-sentinel)
+    threads.  The companion to the theorem above: a labeling admitted by the
+    guard separates two threads that can actually be scheduled, not the reserved
+    id `0` from everything else. -/
+theorem isInsecureDefaultContext_false_implies_real_witness
+    (ctx : LabelingContext)
+    (h : isInsecureDefaultContext ctx = false) :
+    ∃ (tid₁ tid₂ : SeLe4n.ThreadId),
+      tid₁.isReserved = false ∧ tid₂.isReserved = false ∧
+      ctx.threadLabelOf tid₁ ≠ ctx.threadLabelOf tid₂ := by
+  simp only [isInsecureDefaultContext, Bool.not_eq_false', verifiesDeclaredSeparation] at h
+  cases hw : ctx.separatedThreads with
+  | none => rw [hw] at h; exact absurd h (by simp)
+  | some p =>
+      rw [hw] at h
+      obtain ⟨tid₁, tid₂⟩ := p
+      simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, bne_iff_ne,
+        ne_eq] at h
+      exact ⟨tid₁, tid₂, h.1.1, h.1.2, h.2⟩
+
+-- ============================================================================
+-- WS-RR RR5.1: production labeling contexts, valid by construction
+-- ============================================================================
+
+/-- WS-RR RR5.1: the label assignment a deployment supplies, together with the
+    obligations that make the resulting `LabelingContext`
+    `LabelingContextValid` — discharged at *construction* rather than assumed by
+    every theorem downstream.
+
+    Before RR5.1 there was no production labeling context anywhere in the tree:
+    `defaultLabelingContext` labels everything `publicLabel`,
+    `testLabelingContext` labels everything but the sentinel `publicLabel`, and
+    the three `LabelingContextValid` conjuncts were carried as hypotheses that
+    no artefact discharged.  A deployment therefore had to hand-write a record
+    *and* hand-prove its validity, and nothing checked that it had.
+
+    The fields:
+
+    * `entityLabelOf` assigns a label per **entity index**, and the constructor
+      uses it for both `threadLabelOf` and `objectLabelOf`.  That is what makes
+      `LabelingContextValid.threadObjectCoherence` hold by reflexivity:
+      `ThreadId.toObjId` is the identity on the index, so a thread and its own
+      TCB object necessarily carry the same label and `securityFlowsTo l l` is
+      `true`.  A deployment that wants a TCB object at a *different* label than
+      its thread wants an incoherent labeling, which is the thing the conjunct
+      forbids.
+    * `endpointLabelOf` / `serviceLabelOf` are independent, because the model
+      reads them through their own accessors and a deployment may confine an
+      endpoint more tightly than the objects that hold capabilities to it.
+    * `separatedLower` / `separatedUpper` and their three proofs are the
+      **non-triviality witness**: two non-sentinel threads the labeling really
+      does separate.  `deploymentLabelingContext` publishes them into
+      `LabelingContext.separatedThreads`, which is what lets the runtime guard
+      decide `labelNonTriviality` instead of sampling for it.
+
+    What is *not* an obligation here: which partition is right for the
+    deployment's threads.  That is a policy question the kernel cannot answer;
+    this structure makes the labeling's *internal* consistency machine-checked
+    and its non-triviality checkable at boot. -/
+structure DeploymentLabeling where
+  /-- The security label of the entity at each index — used for both the thread
+      and its own kernel object, which is what makes thread/object coherence
+      structural. -/
+  entityLabelOf : Nat → SecurityLabel
+  /-- The security label of each endpoint. -/
+  endpointLabelOf : SeLe4n.ObjId → SecurityLabel
+  /-- The security label of each registered service. -/
+  serviceLabelOf : ServiceId → SecurityLabel
+  /-- One side of the declared domain-separation witness. -/
+  separatedLower : SeLe4n.ThreadId
+  /-- The other side of the declared domain-separation witness. -/
+  separatedUpper : SeLe4n.ThreadId
+  /-- `separatedLower` is a thread that can run, not the reserved sentinel. -/
+  hLowerReal : separatedLower.isReserved = false
+  /-- `separatedUpper` is a thread that can run, not the reserved sentinel. -/
+  hUpperReal : separatedUpper.isReserved = false
+  /-- The witness really is separated: the two threads carry different labels. -/
+  hSeparated : entityLabelOf separatedLower.toNat ≠ entityLabelOf separatedUpper.toNat
+
+/-- WS-RR RR5.1: build the deployment's `LabelingContext` from its
+    `DeploymentLabeling`.
+
+    This is the **only** constructor production code should use.  Its output is
+    `LabelingContextValid` unconditionally
+    (`deploymentLabelingContext_valid`, `InformationFlow/Invariant/Composition.lean`)
+    and is admitted by the boot-time and syscall-entry guard unconditionally
+    (`isInsecureDefaultContext_deploymentLabelingContext`), so a deployment that
+    goes through it cannot ship a labeling that defeats information-flow
+    enforcement by accident.
+
+    The three policy fields the structure does not mention — `endpointPolicy`,
+    `declassificationPolicy`, `auditMonitorClearance` — keep their fail-closed
+    `LabelingContext` defaults (no override anywhere, deny every downgrade, deny
+    every audit reader).  A deployment configures them by updating the result. -/
+def deploymentLabelingContext (d : DeploymentLabeling) : LabelingContext :=
+  { objectLabelOf    := fun oid => d.entityLabelOf oid.toNat
+    threadLabelOf    := fun tid => d.entityLabelOf tid.toNat
+    endpointLabelOf  := d.endpointLabelOf
+    serviceLabelOf   := d.serviceLabelOf
+    separatedThreads := some (d.separatedLower, d.separatedUpper) }
+
+/-- WS-RR RR5.1: a thread and its own TCB object always carry the same label
+    under a constructed deployment context — the definitional fact
+    `LabelingContextValid.threadObjectCoherence` is proved from. -/
+theorem deploymentLabelingContext_thread_object_label_eq
+    (d : DeploymentLabeling) (tid : SeLe4n.ThreadId) :
+    (deploymentLabelingContext d).objectLabelOf tid.toObjId =
+      (deploymentLabelingContext d).threadLabelOf tid := rfl
+
+/-- WS-RR RR5.5 (the opening half): **every** constructed deployment context is
+    admitted by the guard, with no side conditions — the structure's own three
+    obligations are exactly what the guard checks. -/
+theorem isInsecureDefaultContext_deploymentLabelingContext (d : DeploymentLabeling) :
+    isInsecureDefaultContext (deploymentLabelingContext d) = false := by
+  have hSep : verifiesDeclaredSeparation (deploymentLabelingContext d) = true := by
+    show (!d.separatedLower.isReserved && !d.separatedUpper.isReserved &&
+      (d.entityLabelOf d.separatedLower.toNat != d.entityLabelOf d.separatedUpper.toNat)) = true
+    rw [d.hLowerReal, d.hUpperReal]
+    simp only [Bool.not_false, Bool.and_self, Bool.true_and, bne_iff_ne, ne_eq]
+    exact d.hSeparated
+  simp only [isInsecureDefaultContext, hSep, Bool.not_true]
+
+/-- WS-RR RR5.1: the boundary an index partition splits at, clamped to at least
+    `2`.
+
+    The clamp keeps `indexPartitionedDeploymentLabeling` total: index `0` is the
+    reserved sentinel and index `1` is the first thread that can run, so a
+    boundary of `2` or more guarantees the partition has a *real* thread on each
+    side and the separation witness is always available.  A caller asking for
+    `0` or `1` gets `2`. -/
+def separationBoundary (upperDomainBase : Nat) : Nat := max 2 upperDomainBase
+
+theorem two_le_separationBoundary (upperDomainBase : Nat) :
+    2 ≤ separationBoundary upperDomainBase := Nat.le_max_left 2 upperDomainBase
+
+/-- WS-RR RR5.1: the two-domain index partition — entities whose index is below
+    the boundary take `lowerLabel`, the rest take `upperLabel`. -/
+def indexPartitionedLabel (upperDomainBase : Nat) (lowerLabel upperLabel : SecurityLabel)
+    (index : Nat) : SecurityLabel :=
+  if index < separationBoundary upperDomainBase then lowerLabel else upperLabel
+
+/-- WS-RR RR5.1: the canonical `DeploymentLabeling` family — a two-domain
+    partition of the entity index space at `upperDomainBase`, with the two
+    domains carrying `lowerLabel` and `upperLabel`.
+
+    The only obligation the caller discharges is that the two labels differ;
+    everything else the structure requires follows from the clamped boundary
+    (`separationBoundary`).  The declared witness is thread `1` (the first
+    non-sentinel index, always below the boundary) against the thread *at* the
+    boundary (always in the upper domain).
+
+    A deployment with more than two domains supplies its own
+    `DeploymentLabeling`; this family is the one the boot path and the platform
+    bindings use, and it is what makes `confinedLabelingContext` concrete. -/
+def indexPartitionedDeploymentLabeling
+    (upperDomainBase : Nat) (lowerLabel upperLabel : SecurityLabel)
+    (hLabels : lowerLabel ≠ upperLabel) : DeploymentLabeling :=
+  { entityLabelOf   := indexPartitionedLabel upperDomainBase lowerLabel upperLabel
+    endpointLabelOf := fun oid =>
+      indexPartitionedLabel upperDomainBase lowerLabel upperLabel oid.toNat
+    serviceLabelOf  := fun sid =>
+      indexPartitionedLabel upperDomainBase lowerLabel upperLabel sid.toNat
+    separatedLower  := ⟨1⟩
+    separatedUpper  := ⟨separationBoundary upperDomainBase⟩
+    hLowerReal      := by decide
+    hUpperReal      := by
+      have h := two_le_separationBoundary upperDomainBase
+      simp only [SeLe4n.ThreadId.isReserved, decide_eq_false_iff_not]
+      omega
+    hSeparated      := by
+      have h := two_le_separationBoundary upperDomainBase
+      simp only [SeLe4n.ThreadId.toNat, indexPartitionedLabel,
+        if_pos (show 1 < separationBoundary upperDomainBase by omega),
+        if_neg (Nat.lt_irrefl (separationBoundary upperDomainBase))]
+      exact hLabels }
+
+/-- WS-RR RR5.1: **the production labeling context** — two mutually isolated
+    domains split at `upperDomainBase`.
+
+    The two labels are the incomparable corners of the legacy lattice
+    (`lowTrusted_highUntrusted_mutually_isolated`), so neither domain can observe
+    or influence the other: this is a genuine confinement, not the one-directional
+    `publicLabel` / `kernelTrusted` split, under which every low entity may still
+    write into every high one.
+
+    `upperDomainBase` is the one number a deployment must choose — the entity
+    index at which its untrusted domain begins.  Everything below it (the boot
+    system's threads, objects, endpoints and services) is `lowTrusted`;
+    everything from it upward is `highUntrusted`.
+
+    This is what a hardware boot installs.  It is a *deployment* choice in the
+    sense that the boundary is configurable, and a *kernel* guarantee in the
+    sense that whatever boundary is chosen, the resulting context is
+    `LabelingContextValid` and admitted by the fail-closed guard. -/
+def indexPartitionedLabelingContext (upperDomainBase : Nat)
+    (lowerLabel upperLabel : SecurityLabel) (hLabels : lowerLabel ≠ upperLabel) :
+    LabelingContext :=
+  deploymentLabelingContext
+    (indexPartitionedDeploymentLabeling upperDomainBase lowerLabel upperLabel hLabels)
+
+/-- WS-RR RR5.5: every index-partitioned context is admitted by the guard. -/
+theorem isInsecureDefaultContext_indexPartitionedLabelingContext
+    (upperDomainBase : Nat) (lowerLabel upperLabel : SecurityLabel)
+    (hLabels : lowerLabel ≠ upperLabel) :
+    isInsecureDefaultContext
+        (indexPartitionedLabelingContext upperDomainBase lowerLabel upperLabel hLabels) = false :=
+  isInsecureDefaultContext_deploymentLabelingContext _
+
+/-- WS-RR RR5.1: every index-partitioned context labels an index below the
+    boundary with the lower label — the fact a fixture cites when it needs its
+    entities to keep the label they had before the labeling gained a declared
+    separation. -/
+theorem indexPartitionedLabelingContext_threadLabel_below
+    (upperDomainBase : Nat) (lowerLabel upperLabel : SecurityLabel)
+    (hLabels : lowerLabel ≠ upperLabel) (tid : SeLe4n.ThreadId)
+    (h : tid.toNat < separationBoundary upperDomainBase) :
+    (indexPartitionedLabelingContext upperDomainBase lowerLabel upperLabel hLabels).threadLabelOf
+      tid = lowerLabel := by
+  simp only [indexPartitionedLabelingContext, deploymentLabelingContext,
+    indexPartitionedDeploymentLabeling, indexPartitionedLabel, if_pos h]
+
+/-- WS-RR RR5.1: the companion of the lemma above for the upper domain. -/
+theorem indexPartitionedLabelingContext_threadLabel_above
+    (upperDomainBase : Nat) (lowerLabel upperLabel : SecurityLabel)
+    (hLabels : lowerLabel ≠ upperLabel) (tid : SeLe4n.ThreadId)
+    (h : separationBoundary upperDomainBase ≤ tid.toNat) :
+    (indexPartitionedLabelingContext upperDomainBase lowerLabel upperLabel hLabels).threadLabelOf
+      tid = upperLabel := by
+  simp only [indexPartitionedLabelingContext, deploymentLabelingContext,
+    indexPartitionedDeploymentLabeling, indexPartitionedLabel,
+    if_neg (Nat.not_lt.mpr h)]
+
+def confinedLabelingContext (upperDomainBase : Nat) : LabelingContext :=
+  indexPartitionedLabelingContext upperDomainBase
+    SecurityLabel.lowTrusted SecurityLabel.highUntrusted (by decide)
+
+/-- WS-RR RR5.5: the production context is admitted by the guard. -/
+theorem isInsecureDefaultContext_confinedLabelingContext (upperDomainBase : Nat) :
+    isInsecureDefaultContext (confinedLabelingContext upperDomainBase) = false :=
+  isInsecureDefaultContext_indexPartitionedLabelingContext _ _ _ _
+
+/-- WS-RR RR5.1: the production context genuinely confines — an entity below the
+    boundary and one at or above it cannot reach each other in *either*
+    direction.  This is the substantive difference from every labeling the tree
+    had before: `testLabelingContext`'s two "domains" are comparable, so its
+    separation restricts nothing. -/
+theorem confinedLabelingContext_confines
+    (upperDomainBase : Nat) (tidLo tidHi : SeLe4n.ThreadId)
+    (hLo : tidLo.toNat < separationBoundary upperDomainBase)
+    (hHi : separationBoundary upperDomainBase ≤ tidHi.toNat) :
+    securityFlowsTo ((confinedLabelingContext upperDomainBase).threadLabelOf tidLo)
+        ((confinedLabelingContext upperDomainBase).threadLabelOf tidHi) = false ∧
+    securityFlowsTo ((confinedLabelingContext upperDomainBase).threadLabelOf tidHi)
+        ((confinedLabelingContext upperDomainBase).threadLabelOf tidLo) = false := by
+  rw [confinedLabelingContext,
+    indexPartitionedLabelingContext_threadLabel_below _ _ _ _ tidLo hLo,
+    indexPartitionedLabelingContext_threadLabel_above _ _ _ _ tidHi hHi]
+  exact lowTrusted_highUntrusted_mutually_isolated
+
+/-- WS-RR RR5.1: the index every entity of the simulation harness and the test
+    fixtures lives below.
+
+    `idleThreadIdBase` is `0x1_0000`, so per-core idle threads are the highest
+    ids any fixture allocates; this boundary clears them by four bits and leaves
+    room for fixtures that allocate above idle. -/
+def harnessSeparationBoundary : Nat := 0x10_0000
+
+/-- WS-RR RR5.4: the labeling the simulation harness and the test suites run
+    the **checked** entries under.
+
+    A two-domain index partition whose boundary (`harnessSeparationBoundary`)
+    sits above every id the fixtures allocate, with the lower domain at
+    `publicLabel`.  Every fixture entity is therefore `publicLabel` — exactly the
+    label `testLabelingContext` gave them, so no fixture's flow decision changes
+    — while the labeling declares, and the guard verifies, a real separation
+    between thread `1` and the thread at the boundary.
+
+    It exists so the checked entries are exercised under a labeling the
+    fail-closed guard *admits*, which is the thing `testLabelingContext` used to
+    do by evading the guard rather than by satisfying it.  It is deliberately not
+    a demonstration of cross-domain denial: the information-flow suites build
+    their own separated labelings for that, and `confinedLabelingContext` is the
+    production shape. -/
+def harnessLabelingContext : LabelingContext :=
+  indexPartitionedLabelingContext harnessSeparationBoundary
+    SecurityLabel.publicLabel SecurityLabel.kernelTrusted (by decide)
+
+/-- WS-RR RR5.4: the harness labeling is admitted by the guard. -/
+theorem isInsecureDefaultContext_harnessLabelingContext :
+    isInsecureDefaultContext harnessLabelingContext = false :=
+  isInsecureDefaultContext_indexPartitionedLabelingContext _ _ _ _
+
+/-- WS-RR RR5.4: the *uniform* fixture labeling — every index a fixture uses
+    carries `insideLabel`, and the declared separation lives above
+    `harnessSeparationBoundary`.
+
+    A fixture that needs one label everywhere (so every flow gate on the path
+    under test is reflexively satisfied and the test isolates something else)
+    used to write a constant function, which is a one-label labeling: the guard
+    now refuses it, and rightly — it separates nothing.  This gives the fixture
+    the uniformity it wants over the id range it uses, with a real second domain
+    above it, so the labeling meets the same obligation a deployment does.
+
+    `harnessLabelingContext` is the `publicLabel` member of this family. -/
+def uniformFixtureLabelingContext (insideLabel outsideLabel : SecurityLabel)
+    (hLabels : insideLabel ≠ outsideLabel) : LabelingContext :=
+  indexPartitionedLabelingContext harnessSeparationBoundary insideLabel outsideLabel hLabels
+
+/-- WS-RR RR5.4: the uniform fixture labeling is admitted by the guard. -/
+theorem isInsecureDefaultContext_uniformFixtureLabelingContext
+    (insideLabel outsideLabel : SecurityLabel) (hLabels : insideLabel ≠ outsideLabel) :
+    isInsecureDefaultContext (uniformFixtureLabelingContext insideLabel outsideLabel hLabels)
+      = false :=
+  isInsecureDefaultContext_indexPartitionedLabelingContext _ _ _ _
+
+/-- WS-RR RR5.4: every entity index the fixtures use carries `publicLabel` under
+    the harness labeling — the fact that keeps every pre-RR5 fixture flow
+    decision unchanged when the harness moves off `testLabelingContext`. -/
+theorem harnessLabelingContext_threadLabel_public
+    (tid : SeLe4n.ThreadId) (h : tid.toNat < harnessSeparationBoundary) :
+    harnessLabelingContext.threadLabelOf tid = SecurityLabel.publicLabel := by
+  have hb : tid.toNat < separationBoundary harnessSeparationBoundary := by
+    simp only [separationBoundary, harnessSeparationBoundary] at *
+    omega
+  exact indexPartitionedLabelingContext_threadLabel_below _ _ _ _ tid hb
 
 theorem confidentialityFlowsTo_refl (c : Confidentiality) :
     confidentialityFlowsTo c c = true := by

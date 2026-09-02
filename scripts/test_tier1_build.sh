@@ -17,6 +17,21 @@ ensure_lake_available
 
 run_check "BUILD" lake build
 
+# WS-RR RR5.16: the archive a kernel image links must define every Lean kernel
+# entry the HAL declares as `extern "C"`.  Whether an `@[export]` emits a symbol
+# is decided by `SeLe4n.lean`'s import closure, and nothing checked that: before
+# RR5.15 three of the five state-committing entries lived in staged-only modules
+# and the archive carried a single `T lean_*` symbol.  The staged/production
+# partition gate reports which modules are staged, not which symbols link; a
+# Tier-3 text anchor on an `@[export]` line is satisfied by a module nothing
+# imports.  This asks the question of the object code.
+#
+# The self-test runs first (token-preserving cases on both derivations), since a
+# scan that stopped matching would otherwise report PASS on an empty requirement.
+run_check "BUILD" lake build SeLe4n:static
+run_check "BUILD" "${SCRIPT_DIR}/check_kernel_entry_exports.py" --self-test
+run_check "BUILD" "${SCRIPT_DIR}/check_kernel_entry_exports.py"
+
 # AN7-D.7 (PLT-M07): force the seven staged platform-binding modules into
 # the build graph.  Without this, regressions in modules not reached from
 # `Main.lean` (e.g., the RPi5 boot VSpaceRoot AN7-D.2) would go undetected

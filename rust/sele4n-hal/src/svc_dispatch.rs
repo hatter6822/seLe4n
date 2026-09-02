@@ -657,32 +657,47 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
     // spin's shootdown self-service (its out-of-range guard fails closed),
     // recreating the ack deadlock the self-service exists to prevent.
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
-    let (tag, regs) = crate::kernel_entry::with_kernel_entry(core, || {
-        // SAFETY (production): `lean_syscall_dispatch_cross_core` is a
-        // Lean-emitted extern "C" symbol resolved at link time.  The
-        // arguments cross the FFI boundary as `u32 + 8 × u64` which the
-        // Lean side reads via the @[extern] declaration in
-        // `SeLe4n/Kernel/SyscallDispatchEntry.lean`.
-        #[allow(unused_unsafe)]
-        let tag = unsafe {
-            lean_syscall_dispatch_cross_core(
-                sid.to_u32(),
-                args.msg_info,
-                args.msg_regs[0],
-                args.msg_regs[1],
-                args.msg_regs[2],
-                args.msg_regs[3],
-                args.msg_regs[4],
-                args.msg_regs[5],
-                args.ipc_buffer_addr.unwrap_or(0),
-                args.elr,
-                args.spsr,
-                args.sp_el0,
-                args.x30,
-            )
-        };
-        (tag, return_frame_read_in(&RETURN_FRAMES, core))
-    });
+
+    // WS-RR RR5.6: the per-core readiness gate, which this seam did not
+    // consult.  `kernel_entry.rs` stated over its five-entry table that "every
+    // hardware seam above therefore also consults the per-core readiness gate
+    // before its Lean call"; three of the five did, and this — the
+    // highest-traffic route into the Lean runtime — was one of the two that
+    // did not.  It is now derived rather than asserted: `build.rs`'s
+    // `scan_lean_upcalls_readiness_gated` collects every Lean upcall in the
+    // HAL from the Lean tree's `@[export]`s and fails the build unless a
+    // readiness guard on the *executing* PE dominates each one.
+    let (tag, regs) = if crate::lean_ready::lean_ready(core) {
+        crate::kernel_entry::with_kernel_entry(core, || {
+            // SAFETY: `lean_syscall_dispatch_cross_core` is a Lean-emitted
+            // extern "C" symbol resolved at link time.  The arguments cross
+            // the FFI boundary as `u32 + 12 × u64` which the Lean side reads
+            // via the @[extern] declaration in
+            // `SeLe4n/Kernel/SyscallDispatchEntry.lean`.  Calling it is sound
+            // from EL1 kernel context once this core's Lean runtime is
+            // initialized — which the gate above just established.
+            let tag = unsafe {
+                lean_syscall_dispatch_cross_core(
+                    sid.to_u32(),
+                    args.msg_info,
+                    args.msg_regs[0],
+                    args.msg_regs[1],
+                    args.msg_regs[2],
+                    args.msg_regs[3],
+                    args.msg_regs[4],
+                    args.msg_regs[5],
+                    args.ipc_buffer_addr.unwrap_or(0),
+                    args.elr,
+                    args.spsr,
+                    args.sp_el0,
+                    args.x30,
+                )
+            };
+            (tag, return_frame_read_in(&RETURN_FRAMES, core))
+        })
+    } else {
+        halt_syscall_before_lean_ready(core, sid.to_u32())
+    };
 
     match tag {
         0 => Ok(SvcOutcome::Frame(regs)),
@@ -727,7 +742,16 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
 // cross-core `.reschedule` SGIs (`computeCrossCoreSgis` + `fireCrossCoreSgis`),
 // the syscall analogue of `lean_per_core_timer_tick`.  Single-core-inert (the SGI
 // list is empty at the boot core).
-#[cfg(not(test))]
+//
+// **WS-RR RR5.8**: the declaration is gated on `feature = "hw_target"`, not on
+// `cfg(not(test))`.  Under the old gating a host build that was not a test
+// build — `cargo build -p sele4n-hal`, the default host profile — still
+// compiled a call path to a bare-metal Lean symbol that nothing on the host
+// provides.  The readiness gate above cannot close that: it decides whether the
+// call *executes*, not whether it is *compiled*.  `build.rs`'s
+// `scan_lean_externs_hw_target_gated` now refuses any Lean symbol declared,
+// defined or called outside a `hw_target` region.
+#[cfg(feature = "hw_target")]
 extern "C" {
     fn lean_syscall_dispatch_cross_core(
         syscall_id: u32,
@@ -746,14 +770,33 @@ extern "C" {
     ) -> u64;
 }
 
-/// AN9-F.4 test stub (WS-RA shape): publishes the label-encoded
+/// AN9-F.4 host-lane stand-in (WS-RA shape): publishes the label-encoded
 /// `KernelError::NotImplemented` (discriminant 17 → label 18) error frame
 /// into core 0's mailbox slot and returns outcome tag 0, mirroring what
 /// the live export does for a kernel rejection — so host tests exercise
 /// the tag/mailbox protocol end to end.
-#[cfg(test)]
-#[no_mangle]
-extern "C" fn lean_syscall_dispatch_cross_core(
+///
+/// **WS-RR RR5.8**: this used to be `#[cfg(test)] #[no_mangle] extern "C"`,
+/// which had two consequences.  It put `lean_syscall_dispatch_cross_core` — a
+/// bare-metal kernel entry point — into the symbol table of every host *test*
+/// binary, and it left every other host build with the extern declared under
+/// `cfg(not(test))` and nothing defining it, so the default host profile
+/// compiled a call path to a symbol nothing on the host provides.  A plain,
+/// private Rust `unsafe fn` under `cfg(not(hw_target))` has neither property:
+/// it defines no linker-visible symbol, and the `extern "C"` declaration of the
+/// real export is confined to `hw_target`, where `build.rs`'s
+/// `scan_lean_externs_hw_target_gated` holds it.
+///
+/// `unsafe` so the call site reads identically on both lanes — the seam's one
+/// `unsafe { … }` block is the production form, not an `#[allow(unused_unsafe)]`
+/// concession to the host.
+///
+/// # Safety
+///
+/// None beyond the call: this stand-in touches only the return-frame mailbox.
+#[cfg(not(feature = "hw_target"))]
+#[allow(clippy::too_many_arguments)]
+unsafe fn lean_syscall_dispatch_cross_core(
     _syscall_id: u32,
     _msg_info: u64,
     _x0: u64,
@@ -772,6 +815,42 @@ extern "C" fn lean_syscall_dispatch_cross_core(
     0
 }
 
+/// **WS-RR RR5.6**: an `SVC` taken on a core whose Lean runtime is not
+/// initialized.
+///
+/// The seam has no way to serve the call — there is no model to dispatch into —
+/// and RR5 owns the question of what it should do instead, which PR #887 left
+/// open in `trap.rs` ("what a not-ready core should do with an `SVC` at all is
+/// RR5's question, asked once for the whole SVC seam together with the ungated
+/// `dispatch_svc`").  The answer is to **stop the core**, for a reason that is
+/// about the scheduler rather than about this one syscall.
+///
+/// An `SVC` advances `ELR_EL1` past itself, so publishing a fail-closed error
+/// frame here *would* be architecturally coherent — unlike the abort seam,
+/// where a returned frame is `eret`ed straight back into the fault
+/// (`trap::halt_abort_before_lean_ready`).  What makes it wrong is what else is
+/// gated: the per-core timer tick consults the same readiness mask and degrades
+/// to record-and-re-arm, so a thread running on a not-ready core is never
+/// preempted, never charged budget, and never rescheduled.  Returning an error
+/// hands that thread the CPU back forever — a starvation of every other thread
+/// on the core, produced by an initialization defect the kernel would otherwise
+/// report only as a stream of failing syscalls.  A PE the kernel cannot serve
+/// must not keep running user code on the kernel's behalf.
+///
+/// Unreachable at this cut: nothing marks a core ready, and no user thread
+/// exists before the runtime that would create one.  When SM10.1 marks cores
+/// ready this halt is what makes an ordering mistake in that sequence loud at
+/// the first syscall instead of silent.  Pinned on the host lane by
+/// `syscall_before_lean_ready_halts`, where `fatal_halt` panics.
+fn halt_syscall_before_lean_ready(core: usize, syscall_id: u32) -> ! {
+    crate::kprintln!(
+        "[svc] core {} took SVC #{} before its Lean runtime was initialized; halting",
+        core,
+        syscall_id
+    );
+    crate::cpu::fatal_halt()
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -779,6 +858,22 @@ extern "C" fn lean_syscall_dispatch_cross_core(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **WS-RR RR5.6**: the seam refuses to serve an `SVC` on a core whose Lean
+    /// runtime is not initialized, and the refusal is a halt rather than a
+    /// return.  On the host lane `cpu::fatal_halt` panics, so reaching the
+    /// barrier fails the test loudly — which is what `#[should_panic]` asserts.
+    ///
+    /// The policy this pins is stated in full on
+    /// `halt_syscall_before_lean_ready`: an `SVC` *could* be answered with an
+    /// error frame (unlike an abort, the exception advanced the PC), but the
+    /// per-core timer tick consults the same mask, so a thread on a not-ready
+    /// core would never be preempted again.
+    #[test]
+    #[should_panic(expected = "fail-closed halt reached")]
+    fn syscall_before_lean_ready_halts() {
+        halt_syscall_before_lean_ready(3, SyscallId::Send.to_u32());
+    }
 
     fn zero_frame() -> TrapFrame {
         TrapFrame {
@@ -901,21 +996,10 @@ mod tests {
         assert_eq!(result, Err(DispatchError::InvalidArgument));
     }
 
-    #[test]
-    fn dispatch_svc_routes_to_inner_dispatcher() {
-        // Send takes 0 inline args so any frame is accepted; the inner
-        // stub publishes the label-encoded `NotImplemented` (discriminant
-        // 17 -> label 18) error frame into core 0's mailbox slot and
-        // returns outcome tag 0.  WS-RA: a kernel rejection arrives as an
-        // ordinary FRAME whose x1 label carries the error, undecoded here.
-        let frame = zero_frame();
-        let args = SyscallArgs::from_trap_frame(&frame);
-        let result = dispatch_svc(SyscallId::Send.to_u32(), &args);
-        assert_eq!(result, Ok(SvcOutcome::Frame(error_frame_regs(17))));
-        // The frame's x1 word is the status label in MessageInfo position
-        // (ABI v3: the top of the label range, base 0xFFF00).
-        assert_eq!(error_frame_regs(17)[1], (0xFFF00u64 + 17) << 9);
-    }
+    // WS-RR RR5.6: `dispatch_svc_routes_to_inner_dispatcher` moved to
+    // `tests/readiness_gate_after_mark.rs` — reaching the dispatch stand-in
+    // means marking core 0 ready, and the timer suite in this binary owns that
+    // bit.  See that file's header.
 
     #[test]
     fn dispatch_error_surfaces_as_kernel_error_discriminants() {
@@ -1124,39 +1208,12 @@ mod tests {
         assert_eq!(SyscallId::from_u32(35), None);
     }
 
-    /// Regression guard for the off-by-one ABI bug: a valid length-1
-    /// `tcbSetPriority` / `tcbSetMCPriority` / `tcbSetIPCBuffer` call must
-    /// pass the `dispatch_svc` argument-count gate, not be rejected at the
-    /// trap boundary.  Pre-fix these three required 2 inline registers while
-    /// the wrappers sent 1, so every call returned `InvalidArgument`.
-    #[test]
-    fn dispatch_svc_accepts_single_register_tcb_management_syscalls() {
-        for sid in [
-            SyscallId::TcbSetPriority,
-            SyscallId::TcbSetMCPriority,
-            SyscallId::TcbSetIPCBuffer,
-            SyscallId::TcbSetAffinity,
-            SyscallId::TcbSetFaultHandler,
-        ] {
-            // A length-1 message (exactly what the `sele4n-sys` wrappers send).
-            let args = SyscallArgs {
-                msg_info: 1,
-                msg_regs: [0; 6],
-                ipc_buffer_addr: None,
-                elr: 0,
-                spsr: 0,
-                sp_el0: 0,
-                x30: 0,
-            };
-            // Must clear the argument-count gate (any result other than the
-            // count-mismatch rejection is acceptable here; in test builds the
-            // inner symbol is a stub).
-            let result = dispatch_svc(sid as u32, &args);
-            assert_ne!(
-                result,
-                Err(DispatchError::InvalidArgument),
-                "length-1 call to {sid:?} must not be rejected by the arg-count gate",
-            );
-        }
-    }
+    // WS-RR RR5.6: the regression guard for the off-by-one ABI bug — a valid
+    // length-1 `tcbSetPriority` / `tcbSetMCPriority` / `tcbSetIPCBuffer` call
+    // must pass the `dispatch_svc` argument-count gate rather than be rejected
+    // at the trap boundary — is now
+    // `dispatch_svc_accepts_single_register_tcb_management_syscalls` in
+    // `tests/readiness_gate_after_mark.rs`: it reaches the dispatch stand-in,
+    // so it needs core 0 marked ready, and the timer suite in this binary owns
+    // that bit.
 }

@@ -38,10 +38,22 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   enum mirror; `dsb osh`/`dsb oshst` for outer-shareable /
   cross-cluster ordering (DEF-A-M08, M09, R-HAL-L18, L19).
 - **SuspendThread atomicity** (AN9-D / DEF-C-M04): FFI bracket via
-  `interrupts::with_interrupts_disabled`.  WS-RC R2.B closes the
-  Lean side: `@[export suspend_thread_inner]` now substantively
-  routes into `Kernel.Lifecycle.Suspend.suspendThread` via the
-  `kernelStateRef` IO.Ref instead of returning a stub.
+  `interrupts::with_interrupts_disabled`.  WS-RC R2.B closed the
+  Lean side, and **WS-SM SM6.E** flipped the live seam to the
+  cross-core entry `suspend_thread_cross_core`.  **WS-RR RR5.17**
+  retired the boot-pinned `@[export suspend_thread_inner]`: it
+  committed kernel state with no kernel-entry bracket, and the
+  `@[export]` made it a C symbol in the linked image whose only
+  protection was that nothing called it.  The Lean definition stays
+  as a single-core reference path for the dispatch suite.
+- **Every seam consults the readiness gate** (WS-RR RR5.6–RR5.9).
+  `kernel_entry.rs` had always claimed all five state-committing
+  entries did; the SVC dispatch and cross-core suspend seams did not.
+  Both now do — the SVC seam **halts** a not-ready core (the timer
+  seam consults the same mask, so a thread there would never be
+  preempted again), the suspend seam returns `IllegalState` — and a
+  Lean `extern` may be declared only under `feature = "hw_target"`,
+  so a host build compiles no call path to a bare-metal symbol.
 - **SVC FFI dispatch** (AN9-F / DEF-R-HAL-L14): typed
   `SyscallArgs` + `SyscallId` + `dispatch_svc`.  WS-RC R2.B closed
   the Lean side with a thin BaseIO wrapper around the new pure

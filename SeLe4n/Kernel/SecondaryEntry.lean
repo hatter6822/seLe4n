@@ -7,8 +7,11 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM (SM1.C.6 secondary-core kernel entry; live
--- per-core scheduler bring-up body since the SM5.C.5 receiver seam landed)
+-- WS-RR RR5.15: PRODUCTION.  This module was staged-only, which meant
+-- `@[export lean_secondary_kernel_main]` emitted no symbol into the library a
+-- kernel image links — while `smp.rs` declared it as a hard `extern "C"`.  It is
+-- now in `SeLe4n.lean`'s import closure; `scripts/check_kernel_entry_exports.py`
+-- verifies the symbol against the built archive on every Tier-1 run.
 import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.PerCoreRescheduleEntry
 import SeLe4n.Platform.FFI

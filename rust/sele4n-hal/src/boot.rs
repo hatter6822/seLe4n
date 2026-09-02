@@ -16,7 +16,7 @@
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.34.47";
+const KERNEL_VERSION: &str = "0.34.48";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -370,11 +370,13 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
 /// D1.10.2; the alignment is enforced statically by the `.balign 2048`
 /// directive in `vectors.S` plus the linker's section ordering
 /// (`.text.vectors : ALIGN(2048) { ... }` in `link.ld`).  A runtime
-/// `debug_assert!` re-checks the alignment before writing `VBAR_EL1`
+/// runtime check re-checks the alignment before writing `VBAR_EL1`
 /// so a regressed assembler/linker chain surfaces as a clean halt
 /// rather than the architectural UNDEFINED instruction the next
 /// exception would produce (ARM ARM D17.2.135: writes with bits
-/// [10:0] non-zero are UNDEFINED).
+/// [10:0] non-zero are UNDEFINED).  **WS-RR RR5.18**: unconditional,
+/// not a `debug_assert!` — the image that ships is a `--release` build,
+/// which compiled the old form out.
 ///
 /// **Caller obligations**: must be invoked at EL1 with IRQs disabled.
 /// The boot core and every secondary satisfy this on entry from PSCI
@@ -394,7 +396,8 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
 /// `assert_eq!(align_of_val(...) % 2048, 0)` would require accessing
 /// the linker-provided symbol's value at compile time, which Rust does
 /// not currently support; the check is therefore deferred to runtime
-/// via `write_vbar_el1`.
+/// — and, since WS-RR RR5.18, is a real runtime check in every profile
+/// rather than a debug-only one.
 pub fn install_exception_vectors() {
     #[cfg(target_arch = "aarch64")]
     {
@@ -409,19 +412,31 @@ pub fn install_exception_vectors() {
         // structurally: `__exception_vectors` is a linker-provided symbol
         // defined in `vectors.S` under `.balign 2048`, and only its
         // address is taken here — the value is never read.  The
-        // `debug_assert_eq!` below re-checks the alignment that
-        // `write_vbar_el1` depends on.
+        // check below re-checks the alignment that `write_vbar_el1`
+        // depends on.
         let vbar = &raw const __exception_vectors as u64;
         // AN8-E (R-HAL-L9): runtime alignment check before VBAR_EL1 write.
         // ARM ARM D17.2.135: VBAR_EL1 bits [10:0] are RES0 — a misaligned
         // address produces an UNDEFINED instruction on the next exception
         // entry. We catch this here so the kernel halts in a debuggable
         // state rather than at exception time.
-        debug_assert_eq!(
-            vbar % 2048,
-            0,
-            "exception vector table must be 2048-byte aligned (ARM ARM D1.10.2)"
-        );
+        //
+        // **WS-RR RR5.18**: this was a `debug_assert_eq!`, which is compiled
+        // out of a `--release` build — and a `kernel8.img` is built
+        // `--release` (`scripts/test_qemu.sh`).  The check therefore existed
+        // in exactly the configuration that cannot use it and vanished from
+        // the one that ships, so the documented "clean halt rather than the
+        // architectural UNDEFINED instruction" was true only of a debug
+        // image.  It is now an unconditional branch to the fail-closed halt:
+        // one modulo and one comparison, once per core at boot.
+        if !vbar.is_multiple_of(2048) {
+            crate::kprintln!(
+                "[boot] FATAL: exception vector table is not 2048-byte aligned \
+                 (VBAR=0x{:016x}); ARM ARM D1.10.2 / D17.2.135",
+                vbar
+            );
+            crate::cpu::fatal_halt();
+        }
         crate::registers::write_vbar_el1(vbar);
     }
     crate::barriers::dsb_sy();
@@ -531,7 +546,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.34.47");
+        assert_eq!(KERNEL_VERSION, "0.34.48");
     }
 
     #[test]

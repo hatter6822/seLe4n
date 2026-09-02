@@ -13,7 +13,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.34.47` |
+| Version | `0.34.48` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | refresh via `scripts/generate_codebase_map.py` (regenerated each phase) |
 | Test LoC | refresh via `scripts/generate_codebase_map.py` (regenerated each phase) |
@@ -29,7 +29,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Stage | What it delivers | Status |
 |-------|------------------|--------|
 | SM0–SM9 | SMP foundations, HAL bring-up, verified locks, per-object locking, per-core scheduling, cross-core IPC, TLB shootdown, SMP information flow, declassification | landed |
-| WS-RR | Pre-SM10 remediation: aarch64 compile coverage, live-path invariants, `ipcInvariantFull` de-threading, fault IPC, boot-path fail-open closure, lock-primitive completion, medium sweep | RR0–RR4 landed; RR5–RR8 open |
+| WS-RR | Pre-SM10 remediation: aarch64 compile coverage, live-path invariants, `ipcInvariantFull` de-threading, fault IPC, boot-path fail-open closure, lock-primitive completion, medium sweep | RR0–RR5 landed; RR6–RR8 open |
 | SM10.1 | The bootable image: a `[[bin]]`, aarch64 Lean object code, bare-metal runtime hosting, `lean_kernel_main` | blocked on WS-RR |
 | SM10.2–SM10.6 | Documentation sweep, hardware validation, spec closure, archive, tag | after SM10.1 |
 | v1.0.0 | A bootable verified SMP microkernel on Raspberry Pi 5 | the release |

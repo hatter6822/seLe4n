@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.47` (`lakefile.toml`) |
+| **Package version** | `0.34.48` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 317,352 across 308 Lean files |
-| **Test LoC** | 67,037 across 70 Lean test suites |
-| **Proved declarations** | 10,524 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 318,610 across 308 Lean files |
+| **Test LoC** | 67,283 across 70 Lean test suites |
+| **Proved declarations** | 10,572 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR4 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1571,8 +1571,9 @@ from `kernelStateRef`, spilled the FFI register values into the
 current TCB via `writeFfiRegistersToTcb`, invoked the verified
 `Kernel.syscallEntryChecked`, encoded the result into a bit-63
 error-flag UInt64, and wrote the post-state back to the IO.Ref.
-`@[export suspend_thread_inner]` is the analogous substantive bridge
-into `Kernel.Lifecycle.Suspend.suspendThread`.  The
+`suspendThreadInner` is the analogous substantive bridge
+into `Kernel.Lifecycle.Suspend.suspendThread` (its `@[export]` was
+retired at **WS-RR RR5.17** — see §6.5.5).  The
 `NotImplemented = 17` discriminant is no longer emitted by either
 bridge on any non-error code path — every error corresponds to a
 substantive kernel rejection.  **WS-RA (v0.33.37)** retired both the
@@ -1936,23 +1937,38 @@ handling an exception bracket.  The live bridges:
 - `@[export lean_per_core_timer_tick]`
   (`SeLe4n/Kernel/PerCoreTimerEntry.lean`, SM5) — the per-core CNTP
   ISR seam.
-- `@[export suspend_thread_inner]` (`SeLe4n/Platform/FFI.lean`) —
-  the boot-pinned single-core suspend entry retained beside the
-  cross-core form; routes into
-  `Kernel.Lifecycle.Suspend.suspendThread` after sentinel rejection
-  via `ThreadId.toValid?`.  Returns `0` on success or the
-  `KernelError as u32` discriminant on failure.
+**WS-RR RR5.17** retired `@[export suspend_thread_inner]`.  The
+boot-pinned single-core suspend entry committed kernel state through a
+bare `kernelStateRef.set` with no kernel-entry bracket, and `@[export]`
+made it a live C symbol in the linked image — so its only protection was
+that no Rust source declared it.  `Platform.FFI.suspendThreadInner`
+survives as a Lean-side reference path the dispatch suite exercises; the
+symbol does not, and a Tier-3 negative anchor keeps it retired.  Every
+C-callable kernel entry a linked image carries is now bracketed by
+`kernel_entry::with_kernel_entry` and gated on `lean_ready`.
 
 Hardware-mode kernel state lives in two `IO.Ref` cells:
 
 - `kernelStateRef : IO.Ref SystemState` — the live kernel state.
   Initialised by `bootAndInitialiseFromPlatform` (which composes
-  `bootFromPlatformChecked` with the IO.Ref seed) on hardware boot.
+  `bootFromPlatformCheckedWithIdleThreads` with the IO.Ref seed) on
+  hardware boot.  **WS-RR RR5.14** switched the composed entry from
+  `bootFromPlatformChecked`, which installs no idle threads: every core
+  now comes up with its own idle thread **enqueued** on its own run
+  queue (and no core's current slot set, so `queueCurrentConsistent`
+  holds and each core's first scheduling point dispatches idle out of
+  the queue).
 - `kernelLabelingContextRef : IO.Ref LabelingContext` — the
-  deployment's information-flow labeling policy.  Defaults to
-  `Kernel.testLabelingContext` (which passes the
-  `isInsecureDefaultContext` runtime gate); production deployments
-  override it with their domain-specific policy at boot.
+  deployment's information-flow labeling policy.  **WS-RR RR5.3**: it
+  now defaults to `Kernel.defaultLabelingContext`, which the
+  `isInsecureDefaultContext` gate **rejects**, so every checked entry
+  fails closed until a boot installs a real deployment context.  It
+  defaulted to `Kernel.testLabelingContext`, chosen because it *passed*
+  that gate; combined with the boot wrapper's optional labeling argument,
+  a hardware boot that supplied no context came up with information-flow
+  enforcement vacuous.  The argument is now mandatory, and an
+  inadmissible context fails the boot closed before any state is
+  committed.
 
 The IO.Ref design was chosen over thread-local register-decoded
 snapshots and pure functional reconstruction because (a) the Rust
@@ -2025,15 +2041,46 @@ The `defaultLabelingContext` assigns `publicLabel` to all entities, defeating
 all information-flow enforcement. This is formally proven insecure by
 `defaultLabelingContext_insecure` and `defaultLabelingContext_all_threads_observable`.
 
-**Runtime guard** (AI5-C, v0.27.11): `syscallEntryChecked` rejects contexts
-detected as insecure by `isInsecureDefaultContext`, returning `.error .policyDenied`.
-The detector checks sentinel labels at ID 0 across all four entity classes
-(threads, objects, endpoints, services) in O(1) time.
+**Runtime guard** (AI5-C, v0.27.11; **exact since WS-RR RR5.4, v0.34.48**):
+`syscallEntryChecked` rejects contexts `isInsecureDefaultContext` flags,
+returning `.error .policyDenied`, and `bootAndInitialiseFromPlatform` runs the
+same guard before it commits anything.
 
-**Test helper**: `testLabelingContext` assigns `kernelTrusted` to ID 0 entities,
-passing the guard while remaining structurally valid for test execution. Test
-harnesses should use this context instead of `defaultLabelingContext` when
-exercising `syscallEntryChecked`.
+The detector was a *sample*: three sentinel ids (0, 1, 42) across the four
+entity classes, flagging a context only when all twelve lookups returned
+`publicLabel`.  A sample cannot decide a property of a total function, and the
+gap was not hypothetical — `testLabelingContext` labelled id `0` alone and
+passed, while every entity that can actually run stayed `publicLabel`.
+
+It is now an **exact** check of a *declared* witness.
+`LabelingContext.separatedThreads` names two **non-sentinel** threads the
+deployment claims its labeling separates, and the kernel evaluates that
+inequality: a context declaring nothing is refused (fail-closed), and one
+declaring a pair it does not separate is refused too.  So
+`isInsecureDefaultContext ctx = false` *entails*
+`LabelingContextValid.labelNonTriviality`
+(`isInsecureDefaultContext_false_implies_labelNonTriviality`) — the runtime
+guard discharges a deployment obligation rather than approximating it.  It is
+O(1): one `Option` match, two id comparisons and one label comparison.
+
+**Production contexts** (WS-RR RR5.1): `deploymentLabelingContext` is the
+constructor production code uses.  Its output is `LabelingContextValid`
+unconditionally (`deploymentLabelingContext_valid`): thread/object coherence
+holds by reflexivity because the constructor derives a thread's label and its
+own TCB object's label from the same assignment, and non-triviality is the
+structure's own field.  `confinedLabelingContext` is the canonical two-domain
+instance, built from the two *incomparable* corners of the lattice
+(`lowTrusted` / `highUntrusted`), so neither domain can observe or influence the
+other — unlike a `publicLabel` / `kernelTrusted` split, which confines in one
+direction only.
+
+**Test helper**: `testLabelingContext` is retained as a **negative fixture** —
+the all-public-except-the-sentinel labeling the guard now rejects
+(`isInsecureDefaultContext_testLabelingContext = true`).  Harnesses exercising
+`syscallEntryChecked` use `harnessLabelingContext` (a real two-domain deployment
+labeling whose lower domain covers every id the fixtures allocate, so no fixture
+flow decision changes) or `uniformFixtureLabelingContext` when a fixture wants
+one label over its whole id range.
 
 ### 6.8 SMP-Latent Single-Core Assumptions
 WS-AN Phase AN9-J landed the secondary-core bring-up infrastructure

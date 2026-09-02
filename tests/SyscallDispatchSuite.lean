@@ -268,29 +268,37 @@ private def sd011_updateKernelState : IO Unit := do
     context; `getKernelLabelingContext` reads it.
 
 Indirectly verifies the round-trip via `isInsecureDefaultContext`:
-- Installing `defaultLabelingContext` (insecure) makes
-  `isInsecureDefaultContext` return `true`.
-- Installing `testLabelingContext` (secure-shaped) makes it return
-  `false`.
+- Installing `harnessLabelingContext` (a real two-domain deployment
+  labeling) makes `isInsecureDefaultContext` return `false`.
+- Installing `defaultLabelingContext` (no separation at all) makes it
+  return `true`.
 
 Two different installed contexts producing two different gate
 results witnesses that the read API observes the most recently
 installed value. -/
 private def sd012_labelingContextRoundtrip : IO Unit := do
-  -- Install the test context: insecure-default detector should be false.
-  initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  -- Install the harness deployment labeling: the guard should admit it.
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   let ctx1 ← getKernelLabelingContext
-  expect "sd012a_test_context_not_insecure"
+  expect "sd012a_harness_context_not_insecure"
     (¬ SeLe4n.Kernel.isInsecureDefaultContext ctx1)
-    "testLabelingContext must NOT be detected as insecure-default"
+    "harnessLabelingContext must NOT be detected as insecure-default"
   -- Install the default (insecure) context: detector should now be true.
   initialiseKernelLabelingContext SeLe4n.Kernel.defaultLabelingContext
   let ctx2 ← getKernelLabelingContext
   expect "sd012b_default_context_insecure"
     (SeLe4n.Kernel.isInsecureDefaultContext ctx2)
     "defaultLabelingContext must BE detected as insecure-default"
-  -- Restore the test context for downstream tests.
+  -- WS-RR RR5.4: the all-public-except-the-sentinel context is now REJECTED.
+  -- Before RR5.4 the guard sampled sentinel ids 0/1/42 and this context passed
+  -- by labeling id 0 alone, which is the fail-open the phase closes.
   initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  let ctx3 ← getKernelLabelingContext
+  expect "sd012c_sentinel_only_context_insecure"
+    (SeLe4n.Kernel.isInsecureDefaultContext ctx3)
+    "testLabelingContext (all-public except the sentinel) must BE rejected"
+  -- Restore the harness deployment labeling for downstream tests.
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
 
 -- ============================================================================
 -- R2.B — suspendThreadInner integration via IO.Ref
@@ -412,7 +420,7 @@ private def sd030_dispatch_noCurrent : IO Unit := do
   -- Empty scheduler.current = none.
   let st := mkState [] none
   initialiseKernelState st
-  initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   let outcome ← dispatchViaRef 0 0 0 0 0 0 0 0 0
   expect "sd030_illegalState_error_frame"
     (isErrorFrameFor outcome .illegalState)
@@ -426,7 +434,7 @@ private def sd031_dispatch_spillsRegs : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨7⟩
   let st := mkState [(⟨7⟩, .tcb (mkTcb 7 .Ready))] (some tid)
   initialiseKernelState st
-  initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- Invoke with a syscallId that's out of the modeled range; the call
   -- must return an error frame and preserve the spilled registers.
   let _ ← dispatchViaRef 0xFFFFFFFF 0 0xDEADBEEF 0 0 0 0 0 0
@@ -447,7 +455,7 @@ private def sd032_dispatch_invalidSyscall : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨8⟩
   let st := mkState [(⟨8⟩, .tcb (mkTcb 8 .Ready))] (some tid)
   initialiseKernelState st
-  initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- syscallId 99 is outside the modeled set.
   let outcome ← dispatchViaRef 99 0 0 0 0 0 0 0 0
   expect "sd032_invalid_syscall_error_frame"
@@ -481,7 +489,7 @@ private def sd034_dispatch_abiMismatch : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨10⟩
   let st := mkState [(⟨10⟩, .tcb (mkTcb 10 .Ready))] (some tid)
   initialiseKernelState st
-  initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- Pass msgInfo=0xAAAA and x1=0xBBBB (≠ msgInfo).  Per the FFI ABI
   -- contract these must agree; the dispatcher rejects.
   let outcome ← dispatchViaRef 0 0xAAAA 0 0xBBBB 0 0 0 0 0
@@ -508,7 +516,7 @@ private def sd035_sequentialDispatches : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨11⟩
   let st := mkState [(⟨11⟩, .tcb (mkTcb 11 .Ready))] (some tid)
   initialiseKernelState st
-  initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- First dispatch: spills x0=0x111 into the TCB.
   let _ ← dispatchViaRef 99 0 0x111 0 0 0 0 0 0
   let st1 ← getKernelState
@@ -544,7 +552,7 @@ private def sd040_bootInitialise_emptyConfig_succeeds : IO Unit := do
   -- in Boot.lean).
   let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
     { irqTable := [], initialObjects := [] }
-  match ← bootAndInitialiseFromPlatform cfg with
+  match ← bootAndInitialiseFromPlatform cfg SeLe4n.Kernel.harnessLabelingContext with
   | Except.ok _ =>
       -- The IO.Ref has been overwritten with the post-boot state.
       -- The post-boot state has no objects, so `scheduler.current`
@@ -557,16 +565,27 @@ private def sd040_bootInitialise_emptyConfig_succeeds : IO Unit := do
       failLine "sd040_bootInitialise_unexpected_error"
         s!"empty config should be well-formed, got error: {e}"
 
-/-- SD-041: `bootAndInitialiseFromPlatform` accepts an optional
-    labeling context and installs it into `kernelLabelingContextRef`. -/
+/-- SD-041: `bootAndInitialiseFromPlatform` installs the deployment labeling
+    context it is given into `kernelLabelingContextRef`.
+
+WS-RR RR5.2: the argument is mandatory — it used to be
+`Option LabelingContext := none`, and on the `none` path the wrapper installed
+the boot state while leaving whatever policy the reference already held.  This
+test now also reads the reference back, so the install is observed rather than
+inferred from the success arm. -/
 private def sd041_bootInitialise_withLabelingContext : IO Unit := do
   let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
     { irqTable := [], initialObjects := [] }
-  -- Use the test labeling context as a proxy for a production policy.
-  match ← bootAndInitialiseFromPlatform cfg
-        (some SeLe4n.Kernel.testLabelingContext) with
+  -- Install a context distinguishable from whatever is currently live.
+  let deployed := SeLe4n.Kernel.confinedLabelingContext 64
+  match ← bootAndInitialiseFromPlatform cfg deployed with
   | Except.ok _ =>
-      passLine "sd041_bootInitialise_with_labeling_context"
+      let installed ← getKernelLabelingContext
+      expect "sd041_bootInitialise_installs_labeling_context"
+        (installed.separatedThreads == deployed.separatedThreads &&
+         installed.threadLabelOf ⟨1⟩ == deployed.threadLabelOf ⟨1⟩ &&
+         installed.threadLabelOf ⟨64⟩ == deployed.threadLabelOf ⟨64⟩)
+        "the boot wrapper must install the labeling context it was given"
   | Except.error e =>
       failLine "sd041_bootInitialise_unexpected_error"
         s!"empty config + labeling context should succeed, got: {e}"
@@ -591,7 +610,7 @@ private def sd042_bootInitialise_malformed_config_rejects : IO Unit := do
         , { irq := ⟨1⟩, handler := ⟨43⟩ }  -- duplicate IRQ id
         ]
       initialObjects := [] }
-  match ← bootAndInitialiseFromPlatform cfg with
+  match ← bootAndInitialiseFromPlatform cfg SeLe4n.Kernel.harnessLabelingContext with
   | Except.ok _ =>
       failLine "sd042_unexpected_success"
         "malformed config (duplicate IRQ) must fail bootFromPlatformChecked"
@@ -605,6 +624,95 @@ private def sd042_bootInitialise_malformed_config_rejects : IO Unit := do
       -- Restore a clean state for downstream tests.
       let cleanSt := mkState [] none
       initialiseKernelState cleanSt
+
+/-- SD-043 (**WS-RR RR5.3**): a boot whose deployment labeling context declares
+    no verified domain separation is refused, and neither reference moves.
+
+The config is the minimally well-formed one SD-040 boots successfully, so the
+only difference is the labeling context — the refusal is attributable to the
+policy and not to the platform description.  Three things are checked, and the
+third is the one that makes this a *fail-closed* boot rather than a reported
+one: the error is `insecureLabelingContextBootError`, the kernel-state reference
+still holds the pre-boot sentinel (so no post-boot state went live), and the
+labeling reference still holds the pre-boot policy (so the refused context did
+not become the live one anyway).
+
+Ordering is the property under test.  Were the guard consulted after
+`initialiseKernelState`, a refused boot would leave a live post-boot state
+paired with whatever policy the reference happened to hold — which is exactly
+the fail-open shape RR5.2 and RR5.3 close, one level up. -/
+private def sd043_bootInitialise_insecureContext_rejects : IO Unit := do
+  let sentinelTid : SeLe4n.ThreadId := ⟨456⟩
+  let sentinelSt := mkState [(⟨456⟩, .tcb (mkTcb 456 .Ready))] (some sentinelTid)
+  initialiseKernelState sentinelSt
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
+  let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [] }
+  match ← bootAndInitialiseFromPlatform cfg SeLe4n.Kernel.defaultLabelingContext with
+  | Except.ok _ =>
+      failLine "sd043_unexpected_success"
+        "a labeling context with no declared separation must fail the boot closed"
+  | Except.error e =>
+      expect "sd043_insecure_context_error_identity"
+        (e == SeLe4n.Platform.FFI.insecureLabelingContextBootError)
+        "the refusal must be the labeling-context refusal, not a platform error"
+      let st' ← getKernelState
+      expect "sd043_kernel_state_unchanged_on_insecure_context"
+        ((st'.scheduler.currentOnCore bootCoreId) == some sentinelTid)
+        "a refused boot must NOT install the post-boot state"
+      let ctx' ← getKernelLabelingContext
+      expect "sd043_labeling_ref_unchanged_on_insecure_context"
+        (¬ SeLe4n.Kernel.isInsecureDefaultContext ctx')
+        "a refused boot must NOT install the refused labeling context"
+  -- SD-044 (**WS-RR RR5.4**): the all-public-except-the-sentinel context is
+  -- refused by the same arm — the context the pre-RR5 boot path left live.
+  match ← bootAndInitialiseFromPlatform cfg SeLe4n.Kernel.testLabelingContext with
+  | Except.ok _ =>
+      failLine "sd044_unexpected_success"
+        "the all-public-except-the-sentinel context must fail the boot closed"
+  | Except.error e =>
+      expect "sd044_sentinel_only_context_rejected"
+        (e == SeLe4n.Platform.FFI.insecureLabelingContextBootError)
+        "testLabelingContext must be refused by the labeling-context guard"
+      -- Restore a clean state for downstream tests.
+      let cleanSt := mkState [] none
+      initialiseKernelState cleanSt
+
+/-- SD-045 (**WS-RR RR5.14**): the *production* boot wrapper comes up with a
+    dispatchable idle thread on every core.
+
+Before RR5.14 `bootAndInitialiseFromPlatform` ran `bootFromPlatformChecked`,
+which installs no idle threads at all: `getTcb? (idleThreadId c) = none` and an
+empty run queue on every core, so `idleDispatchableOnCore` was `false`
+everywhere and each core's first scheduling point would have taken
+`idleFallbackOnCore`'s `setCurrentOnCore c none` arm — a core with nothing to
+run and nothing to fall back on.
+
+This asserts the property end to end, through the wrapper the Rust HAL's
+kernel-init path calls and against the state it actually installs in
+`kernelStateRef` — not against a boot entry a test constructed. -/
+private def sd045_bootInitialise_installs_percore_idle : IO Unit := do
+  let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [] }
+  match ← bootAndInitialiseFromPlatform cfg SeLe4n.Kernel.harnessLabelingContext with
+  | Except.error e =>
+      failLine "sd045_bootInitialise_unexpected_error"
+        s!"the minimally well-formed config should boot, got: {e}"
+  | Except.ok _ =>
+      -- Read the state back through the live reference, so what is checked is
+      -- what a subsequent syscall entry would see.
+      let st ← getKernelState
+      for c in SeLe4n.Kernel.Concurrency.allCores do
+        expect s!"sd045_idle_enqueued_core_{c.val}"
+          (decide (SeLe4n.Kernel.idleThreadId c ∈
+            (st.scheduler.runQueueOnCore c).toList))
+          "each core's idle thread must be on that core's own run queue"
+        expect s!"sd045_idle_resolves_core_{c.val}"
+          (st.getTcb? (SeLe4n.Kernel.idleThreadId c)).isSome
+          "each core's idle TCB must be in the object store"
+        expect s!"sd045_nothing_dispatched_core_{c.val}"
+          (decide (st.scheduler.currentOnCore c = none))
+          "boot enqueues idle without dispatching it (queueCurrentConsistent)"
 
 -- ============================================================================
 -- Driver
@@ -1056,6 +1164,8 @@ def main : IO Unit := do
   sd040_bootInitialise_emptyConfig_succeeds
   sd041_bootInitialise_withLabelingContext
   sd042_bootInitialise_malformed_config_rejects
+  sd043_bootInitialise_insecureContext_rejects
+  sd045_bootInitialise_installs_percore_idle
   IO.println "--- WS-SM SM6.B: tcbBindNotification capability authority ---"
   sd050_bindNotification_requires_ntfn_cap
   sd051_receiveLinkCaller

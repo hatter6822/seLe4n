@@ -18,7 +18,12 @@ stands behind.
 | Every kernel transition is an executable pure function returning explicit success or failure | README, `SELE4N_SPEC.md` | `./scripts/test_tier2_negative.sh` | `SeLe4n/Kernel/*/Operations*.lean` |
 | The kernel model is deterministic — the same input trace yields the same output | `SELE4N_SPEC.md` | `./scripts/test_tier2_determinism.sh` | `tests/fixtures/main_trace_smoke.expected` |
 | Named theorems and invariants still exist and still say what the docs claim | this file | `./scripts/test_full.sh` (Tier 3) | `scripts/test_tier3_invariant_surface.sh` |
-| Production never imports staged modules | `SELE4N_SPEC.md` | `./scripts/check_production_staging_partition.sh` | `scripts/staged_module_allowlist.txt` (67 modules) |
+| Production never imports staged modules | `SELE4N_SPEC.md` | `./scripts/check_production_staging_partition.sh` | `scripts/staged_module_allowlist.txt` (62 modules) |
+| Every Lean kernel entry the HAL links against is in the built archive | `SELE4N_SPEC.md`, `CLAUDE.md` | `./scripts/check_kernel_entry_exports.py` (Tier 1, after `lake build SeLe4n:static`) | `nm --defined-only` over `.lake/build/lib/libseLe4n_SeLe4n.a`; the requirement is derived as the Lean `@[export]`s ∩ the HAL's `extern "C"` declarations |
+| A hardware boot without a verified deployment labeling context fails closed | `SELE4N_SPEC.md` §6.7, `CLAUDE.md` | `lake exe syscall_dispatch_suite` (SD-043/SD-044) | `Platform.FFI.bootAndInitialiseFromPlatform` (mandatory context; guard before commit), `insecureLabelingContextBootError` |
+| The insecure-context guard decides non-triviality rather than sampling for it | `SELE4N_SPEC.md` §6.7 | `lake exe information_flow_suite` | `isInsecureDefaultContext_false_implies_labelNonTriviality`, `deploymentLabelingContext_valid` |
+| Every core boots with its idle thread enqueued on its own run queue | `SELE4N_SPEC.md` §6.5.5, `CLAUDE.md` | `lake exe smp_idle_suite`, `lake exe syscall_dispatch_suite` (SD-045) | `bootFromPlatformCheckedWithIdleThreads_idle_available` (production), `…_idleThreadEnqueuedOnCore` (staged, discharges `schedulerNoStall_smp`'s `hIdle`) |
+| Every hardware seam consults the per-core Lean-runtime readiness gate | `CLAUDE.md`, `rust/sele4n-hal/src/kernel_entry.rs` | `cargo build -p sele4n-hal` (build.rs derivation) | `scan_lean_upcalls_readiness_gated`; `LEAN_UPCALLS_OUTSIDE_THE_GATE` holds one entry, the boot install |
 
 ## 2. Kernel invariants
 

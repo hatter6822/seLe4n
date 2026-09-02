@@ -5153,7 +5153,15 @@ run_check "INVARIANT" rg -n '^def bootAndInitialiseFromPlatform' SeLe4n/Platform
 run_check "INVARIANT" rg -n '^def writeFfiRegistersToTcb' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def readReturnValue' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def syscallDispatchFromAbi' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^@\[export suspend_thread_inner\]' SeLe4n/Platform/FFI.lean
+# WS-RR RR5.17: the boot-pinned `suspend_thread_inner` export is REMOVED.  It
+# committed kernel state through a bare `kernelStateRef.set` with no
+# kernel-entry bracket, and `@[export]` made it a live C symbol in the linked
+# image — so its only protection was that nothing called it yet.  The definition
+# stays as the single-core reference path the dispatch suite exercises; the C
+# symbol does not.  Positive anchor on the definition, negative on the export,
+# so neither the path nor its absence can drift.
+run_check "INVARIANT" rg -n '^def suspendThreadInner' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n '@\[export suspend_thread_inner\]' SeLe4n/Platform/FFI.lean
 # WS-RA: the vestigial `syscall_dispatch_inner` export is REMOVED (it was the
 # last other speaker of the retired bit-63 protocol; no Rust source declared
 # the symbol since v0.31.67).  Negative anchor so a dead export cannot return.
@@ -5272,9 +5280,9 @@ run_check "INVARIANT" rg -n 'fn lean_syscall_dispatch_cross_core' rust/sele4n-ha
 # WS-SM SM6.E: the suspend atomicity bracket is flipped to the cross-core
 # entry `suspend_thread_cross_core` (`@[export]` in `SyscallDispatchEntry`,
 # backed by the verified per-core `suspendThreadOnCore`: home-core deschedule
-# + remote `.reschedule` SGI after the commit).  The boot-pinned
-# `suspend_thread_inner` (`@[export]` in `Platform.FFI`) stays as the
-# single-core entry.
+# + remote `.reschedule` SGI after the commit).  WS-RR RR5.17 retired the
+# boot-pinned `suspend_thread_inner` export, so this is the ONLY C-callable
+# suspend entry a linked image carries.
 run_check "INVARIANT" rg -n 'fn suspend_thread_cross_core' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n '^@\[export suspend_thread_cross_core\]' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^def suspendThreadOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean

@@ -1423,8 +1423,24 @@ def runInformationFlowChecks : IO Unit := do
   -- AI5-C (M-19): Verify isInsecureDefaultContext runtime detector
   expect "isInsecureDefaultContext detects default context"
     (SeLe4n.Kernel.isInsecureDefaultContext defaultCtx = true)
-  expect "isInsecureDefaultContext rejects test context"
-    (SeLe4n.Kernel.isInsecureDefaultContext SeLe4n.Kernel.testLabelingContext = false)
+  -- WS-RR RR5.4/RR5.5: the all-public-except-the-sentinel context is REJECTED.
+  -- It used to be admitted (this line read `= false`), because the guard sampled
+  -- ids 0/1/42 and that context labels id 0 alone — while every entity that can
+  -- actually run stays `publicLabel`, so every flow between them is permitted.
+  expect "isInsecureDefaultContext rejects the all-public-except-sentinel context"
+    (SeLe4n.Kernel.isInsecureDefaultContext SeLe4n.Kernel.testLabelingContext = true)
+  -- ...and a real two-domain deployment labeling is admitted, so the guard is
+  -- fail-closed rather than closed.
+  expect "isInsecureDefaultContext admits a constructed deployment context"
+    (SeLe4n.Kernel.isInsecureDefaultContext (SeLe4n.Kernel.confinedLabelingContext 64) = false)
+  expect "isInsecureDefaultContext admits the harness deployment labeling"
+    (SeLe4n.Kernel.isInsecureDefaultContext SeLe4n.Kernel.harnessLabelingContext = false)
+  -- The declaration is checked, not trusted: a context naming a pair it does
+  -- not separate is refused.
+  expect "isInsecureDefaultContext refuses a falsely declared witness"
+    (SeLe4n.Kernel.isInsecureDefaultContext
+      { SeLe4n.Kernel.defaultLabelingContext with
+        separatedThreads := some (⟨1⟩, ⟨2⟩) } = true)
 
   IO.println "default labeling context insecurity verified"
 

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.47.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.48.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,9 +203,9 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~50090 lines)
+- `CHANGELOG.md` (~50413 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
-- `tests/SmpInformationFlowSuite.lean` (~11760 lines)
+- `tests/SmpInformationFlowSuite.lean` (~11772 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~7902 lines)
 - `SeLe4n/Kernel/API.lean` (~6784 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5738 lines)
@@ -215,19 +215,19 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4503 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4213 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4261 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
+- `SeLe4n/Platform/Boot.lean` (~4104 lines)
+- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~3924 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
-- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~3915 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3788 lines)
-- `SeLe4n/Platform/Boot.lean` (~3630 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3456 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3407 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `tests/OperationChainSuite.lean` (~3290 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~3214 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~3216 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3210 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3159 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
@@ -240,11 +240,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2784 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2755 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2674 lines)
+- `SeLe4n/Platform/FFI.lean` (~2646 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
-- `SeLe4n/Platform/FFI.lean` (~2551 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2542 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `tests/ModelIntegritySuite.lean` (~2477 lines)
@@ -263,12 +263,12 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2074 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2059 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2042 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2034 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2033 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~1921 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
@@ -282,18 +282,19 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1822 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
+- `tests/InformationFlowSuite.lean` (~1796 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~1794 lines)
-- `tests/InformationFlowSuite.lean` (~1780 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~1778 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
+- `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1746 lines)
+- `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1746 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
-- `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1737 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~1723 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1709 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
+- `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `tests/SmpIpcSuite.lean` (~1660 lines)
-- `tests/FaultHandlingSuite.lean` (~1652 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1508 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1491 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1488 lines)
@@ -315,13 +316,12 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1331 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1326 lines)
 - `tests/FrozenOpsSuite.lean` (~1324 lines)
-- `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1321 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1296 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1291 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `tests/SmpCancellationSuite.lean` (~1246 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1241 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1238 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~1235 lines)
@@ -331,6 +331,7 @@ To find files that need pagination today, run:
 - `tests/SmpSurfaceAnchors.lean` (~1195 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1186 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
+- `tests/SyscallDispatchSuite.lean` (~1177 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1169 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
@@ -340,12 +341,11 @@ To find files that need pagination today, run:
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
 - `SeLe4n/Machine.lean` (~1105 lines)
-- `tests/PerObjectLockSuite.lean` (~1097 lines)
+- `tests/PerObjectLockSuite.lean` (~1104 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1076 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
-- `tests/SyscallDispatchSuite.lean` (~1067 lines)
-- `tests/SyscallReturnAbiSuite.lean` (~1063 lines)
+- `tests/SyscallReturnAbiSuite.lean` (~1068 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1046 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1030 lines)
@@ -373,12 +373,12 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~877 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~853 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~848 lines)
 - `tests/SmpTimerSuite.lean` (~840 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~833 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~830 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~825 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~823 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
@@ -979,7 +979,7 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 | SM9.E | LANDED | v0.33.100 | Tests + closure: acceptance scenarios run live and pinned as golden fixtures; seam boundary coverage of both declassifying syscalls; the epoch exercised with survivors |
 | SM9 | CLOSED | v0.33.100 | Declassification completion — reader, refusal auditing, data-carrying signal, causal provenance, acceptance fixtures |
 | SM5 runtime seams | LANDED | v0.34.1 | The three seams SM5's docstrings promised between the verified per-core scheduler and the hardware IRQ path — IRQ vector redirect, `.reschedule` SGI receiver, secondary bring-up entry — all dormant behind the per-core `lean_ready` gate until SM10.1 |
-| WS-RR | IN FLIGHT | RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44 | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (187 subs across RR0..RR8) |
+| WS-RR | IN FLIGHT | RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44; RR5 v0.34.48 | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (187 subs across RR0..RR8) |
 | SM10 | BLOCKED on WS-RR | — | Release closure (→ v1.0.0) |
 
 **Plans**: master overview at
@@ -1173,10 +1173,11 @@ code may assume:
   last binding winning (`ready_argument_is_executing_core`) — so a literal,
   a parameter, a shadowed binding or a `debug_assert_eq!` reads as ungated) —
   `LEAN_READY_GATED_SEAMS`
-  is the pin the derivation must reproduce, and the three upcalls that run
-  ungated (the primary's `lean_kernel_main` boot install, and the SVC-dispatch
-  and cross-core-suspend seams) are `LEAN_UPCALLS_OUTSIDE_THE_GATE`, each with
-  its occurrence count and reason, reconciled in both directions
+  is the pin the derivation must reproduce, and the **one** upcall that runs
+  ungated — the primary's `lean_kernel_main` boot install, which cannot sit
+  behind the gate because it is the call that initializes the runtime the gate
+  stands for — is `LEAN_UPCALLS_OUTSIDE_THE_GATE`, with its occurrence count
+  and reason, reconciled in both directions
   (`reconcile_upcall_exemptions`, round 6: a second call in an exempt
   function is a count mismatch, not a free pass).  A reference to a Lean
   symbol that is not a call — an alias, a function pointer, a cast — fails
@@ -1187,9 +1188,94 @@ code may assume:
   `classifier_status` (round 6) holds the hardware classifier's terminal
   `if … else …` to that shape branch by branch, the ready branch's value
   being the Lean call and the not-ready branch's only statement the mirror
-  call.  The two seams
-  that do not consult the gate at all are the registered debt above; closing
-  that is RR5.6–RR5.9, and it means shrinking that allowlist.
+  call.
+
+  **WS-RR RR5.6–RR5.9 closed the two seams that consulted no gate**, so the
+  sentence `kernel_entry.rs` had always written over its five-entry table —
+  "every hardware seam above therefore also consults the per-core readiness
+  gate" — is true rather than aspirational.  What a not-ready core does now
+  differs by seam, because what it can safely do differs.  The three ISR seams
+  degrade to their Rust-only halves.  `sele4n_suspend_thread` returns
+  `KernelError::IllegalState`: a C-callable API with an error channel and no
+  trapped thread waiting on it.  `dispatch_svc` **halts the core**
+  (`halt_syscall_before_lean_ready`) — an `SVC` advanced the PC, so a fail-closed
+  frame *would* be architecturally coherent, but the timer seam consults the same
+  mask, so a thread on a not-ready core would never be preempted, charged budget
+  or rescheduled again; returning an error hands it the CPU forever.  New code
+  must not read the SVC seam's not-ready arm as recoverable.
+
+  RR5.8/RR5.9 close the compile-time half: a Lean `extern` may be **declared,
+  defined or exported only under `feature = "hw_target"`**, and a host-lane
+  stand-in of the same name only under its negation
+  (`lean_extern_gating_status`).  Both seams used `cfg(not(test))`, so the
+  default host profile compiled a call path to a bare-metal symbol nothing on
+  the host provides, and `cargo test` linked one into every test binary through
+  a `#[no_mangle]` stub.  The readiness gate could not close that: it decides
+  whether a call *executes*, not whether it is *compiled*.
+- **A hardware boot without a verified deployment labeling context fails
+  closed** (WS-RR RR5.1–RR5.5).  `bootAndInitialiseFromPlatform`'s
+  `LabelingContext` argument is **mandatory** — it defaulted to `none`, and on
+  that path the wrapper installed the boot state and left whatever the labeling
+  reference held, which was `testLabelingContext`: every entity but the reserved
+  sentinel `publicLabel`, so every flow between things that can run was
+  permitted and SM8/SM9's results held vacuously.  The wrapper now runs the same
+  guard `syscallEntryChecked` runs **before** committing anything, so a refused
+  boot leaves both references untouched, and the pre-boot labeling reference is
+  `defaultLabelingContext`, which that guard rejects — no syscall can be served
+  before a deployment context is installed.
+
+  The guard itself stopped being a heuristic.  `isInsecureDefaultContext` was a
+  three-sentinel *sample* (ids 0, 1, 42 across four classes) that reported
+  "insecure" only when all twelve lookups came back public, which
+  `testLabelingContext` evaded by labeling id `0` alone.  It is now an **exact**
+  check of a **declared** witness: `LabelingContext.separatedThreads` names two
+  *non-sentinel* threads the labeling separates, and the kernel evaluates that
+  inequality — so `isInsecureDefaultContext ctx = false` *entails*
+  `LabelingContextValid.labelNonTriviality`
+  (`isInsecureDefaultContext_false_implies_labelNonTriviality`), and the runtime
+  guard discharges a deployment obligation instead of approximating it.  New
+  contexts are built with `deploymentLabelingContext`, whose output is
+  `LabelingContextValid` unconditionally (`deploymentLabelingContext_valid`);
+  `confinedLabelingContext` is the production two-domain instance (the two
+  *incomparable* lattice corners, so neither domain reaches the other in either
+  direction — unlike `publicLabel`/`kernelTrusted`, which confine one way),
+  and `harnessLabelingContext` is the fixtures'.  A constant labeling function
+  is refused, so a fixture that wants one label everywhere uses
+  `uniformFixtureLabelingContext`.  What the guard does **not** decide is
+  whether the declared partition is the right one for the deployment's threads;
+  that stays the integrator's, stated by `LabelingContextValid`'s other two
+  conjuncts and discharged structurally by the constructor.
+
+- **The boot state enqueues each core's idle thread; it does not dispatch it**
+  (WS-RR RR5.11–RR5.14).  `bootAndInitialiseFromPlatform` runs
+  `bootFromPlatformCheckedWithIdleThreads`, a thin composition over
+  `bootFromPlatformChecked` (same validation, same rejections, the seven results
+  characterizing it unchanged) that folds a per-core idle enqueue over
+  `allCores`.  So `∀ c, idleThreadEnqueuedOnCore st c` holds of the live boot
+  state (`bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore`),
+  discharging the premise `chooseThreadOnCore_always_succeeds` consumes and
+  `schedulerNoStall_smp`'s `hIdle` took by hypothesis — which no reachable state
+  discharged before: the checked boot installed no idle threads at all, and
+  `bootFromPlatformWithIdleThreads` set current slots *without* enqueuing, so
+  the predicate was false on it too.  New code must respect the shape: every
+  core's current slot is still `none` after boot
+  (`bootFromPlatformCheckedWithIdleThreads_currentAllNone`), because a current
+  slot pointing at a queued thread violates `queueCurrentConsistent` from the
+  first instruction; each core's first scheduling point dispatches idle out of
+  its own queue.  `bootFromPlatformWithIdleThreads` remains as the SM4.G
+  install-and-dispatch wrapper and is **not** the production path.
+
+- **Thread-state classification is per-core** (WS-RR RR5.10).
+  `inferThreadState` read `currentOnCore bootCoreId` / `runQueueOnCore
+  bootCoreId` only, so a thread running or queued on a secondary core
+  classified `.Inactive`, `threadStateConsistent` was false of any such state,
+  and `assertStateInvariantsFor` — which syncs before it checks — would rewrite
+  the field rather than report the mismatch.  It now asks every core
+  (`threadRunningOnSomeCore` / `threadQueuedOnSomeCore` over `allCores`), and
+  the lift is conservative on every state the old definition classified
+  (`inferThreadState_eq_bootCore_of_secondaries_quiescent`).  This had to land
+  before the boot switch above: the boot state queues idle on all four cores.
+
 - **The outer-shareable TLBI wrappers cannot execute on the first hardware
   target.**  `tlbi_vmalle1os` / `vae1os` / `aside1os` / `vale1os` are
   **FEAT_TLBIOS** (ARMv8.4-A); Cortex-A76 — the core in the RPi5's BCM2712 —
@@ -1375,10 +1461,18 @@ code may assume:
 - **Registered uncovered lock domains** are enumerated in Lean, not in prose:
   `UncoveredLockDomain` (`InformationFlow/FineLockFlow.lean`) names each gap and
   its owner, and its completeness theorem forces a new domain to be registered.
-- **Staged modules**: 67 staged-only, listed in
+- **Staged modules**: 62 staged-only, listed in
   `scripts/staged_module_allowlist.txt` and gated by
   `scripts/check_production_staging_partition.sh`.  Production must not import
-  staged.
+  staged.  WS-RR RR5.15 promoted five (the three state-committing kernel
+  entries `SecondaryEntry` / `PerCoreTimerEntry` / `PerCoreRescheduleEntry`,
+  plus the two modules their closure pulls in): an `@[export]` emits a symbol
+  only when its module is in `SeLe4n.lean`'s import closure, so a linked image
+  carried **one** `T lean_*` entry symbol while `kernel_entry.rs` declared five
+  as hard `extern "C"`.  `scripts/check_kernel_entry_exports.py` (Tier 1) now
+  verifies each symbol against the built static archive — object code, not a
+  text anchor — over a requirement *derived* as the intersection of the Lean
+  tree's `@[export]`s and the HAL's `extern "C"` declarations.
 - **The WS-SM theorem total is measured, not summed — and it counts
   propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per

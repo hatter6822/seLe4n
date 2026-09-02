@@ -413,6 +413,65 @@ theorem enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds (st : SystemState) (
     (enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore st c hInv hDom)
 
 -- ============================================================================
+-- WS-RR RR5.12: the discharge predicate, on the production boot state
+-- ============================================================================
+
+/-- **WS-RR RR5.12**: `idleThreadEnqueuedOnCore` holds of the **production boot
+    state**, on every core — the premise `chooseThreadOnCore_always_succeeds`
+    consumes and `schedulerNoStall_smp` took by hypothesis.
+
+    Until RR5.11/RR5.13 the predicate was satisfiable only by applying
+    `enqueueIdleThreadOnCore` to some state a caller had already built: the
+    non-vacuity witness `enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore`
+    shows the predicate *can* hold, not that it holds of anything the kernel
+    boots into.  The boot path installed no idle threads at all
+    (`bootFromPlatform_smp_currentAllNone`), and the one wrapper that installed
+    them — `bootFromPlatformWithIdleThreads` — set current slots without
+    enqueuing, so the predicate was false on it too, on every core.  The whole
+    no-stall chain therefore rested on a hypothesis no reachable state
+    discharged.
+
+    This closes that: `bootFromPlatformCheckedWithIdleThreads` is what
+    `Platform.FFI.bootAndInitialiseFromPlatform` runs (RR5.14), so the
+    hypothesis is discharged from the state the kernel actually comes up in.
+
+    Stated here rather than in `Platform.Boot` because the predicate and its two
+    consumers are the staged per-core scheduler surface; the boot operation the
+    three conjuncts come from is production
+    (`bootFromPlatformCheckedWithIdleThreads_idle_available`). -/
+theorem bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore
+    (config : SeLe4n.Platform.Boot.PlatformConfig)
+    (ist : SeLe4n.Model.IntermediateState)
+    (h : SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads config = .ok ist)
+    (c : CoreId) :
+    idleThreadEnqueuedOnCore ist.state c := by
+  obtain ⟨hMem, hObj, hDom⟩ :=
+    SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_idle_available config ist h c
+  refine ⟨hMem, ?_, ?_⟩
+  · simp only [SystemState.getTcb?]
+    rw [hObj]
+  · rw [createIdleThread_domain_zero, hDom]
+
+/-- **WS-RR RR5.12** (the payoff): on the production boot state, per-core thread
+    selection **succeeds on every core** — the scheduler cannot stall a core for
+    want of something to run, from the first scheduling point onward.
+
+    The two remaining hypotheses are structural facts about the boot run queue
+    rather than deployment assumptions: it is well-formed, and every thread it
+    holds resolves to a TCB.  `schedulerNoStall_smp` composes this with the
+    lock-contention bound; `no_starvation_under_smp` is its capstone. -/
+theorem bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds
+    (config : SeLe4n.Platform.Boot.PlatformConfig)
+    (ist : SeLe4n.Model.IntermediateState)
+    (h : SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads config = .ok ist)
+    (c : CoreId)
+    (hwf : (ist.state.scheduler.runQueueOnCore c).wellFormed)
+    (hRunnable : runnableThreadsAreTCBsOnCore ist.state c) :
+    ∃ tid, chooseThreadOnCore ist.state c = .ok (some tid) :=
+  chooseThreadOnCore_always_succeeds ist.state c hwf hRunnable
+    (bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore config ist h c)
+
+-- ============================================================================
 -- §5  `idleThread_core_locality` (SM5.E.4)
 -- ============================================================================
 

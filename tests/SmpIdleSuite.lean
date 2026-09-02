@@ -75,6 +75,29 @@ open SeLe4n.Platform.Boot (createIdleThread)
 -- SM5.E.6 always-succeeds:
 #check @idleThreadEnqueuedOnCore
 #check @enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore
+
+-- WS-RR RR5.11/RR5.12: the boot-level idle enqueue, its fold, and the
+-- production boot state's discharge of the no-stall premise.
+#check @SeLe4n.Platform.Boot.enqueueIdleThread
+#check @SeLe4n.Platform.Boot.enqueueIdleThread_runQueueOnCore_self
+#check @SeLe4n.Platform.Boot.enqueueIdleThread_runQueueOnCore_ne
+#check @SeLe4n.Platform.Boot.enqueueIdleThread_currentOnCore
+#check @SeLe4n.Platform.Boot.enqueueIdleThread_activeDomainOnCore
+#check @SeLe4n.Platform.Boot.enqueueIdleThread_objects_self
+#check @SeLe4n.Platform.Boot.enqueueIdleThread_objects_ne
+#check @SeLe4n.Platform.Boot.foldl_enqueueIdleThread_installs
+#check @SeLe4n.Platform.Boot.foldl_enqueueIdleThread_currentOnCore
+#check @SeLe4n.Platform.Boot.foldl_enqueueIdleThread_objects_frame_of_not_idle
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_map_ok
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_rejects_invalid
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_isOk_iff
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_currentAllNone
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_idle_available
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_preserves_platform_objects
+#check @SeLe4n.Platform.Boot.idleSlotsFreshAt_of_initialObjects_below_base
+#check @bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore
+#check @bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds
 #check @chooseThreadOnCore_always_succeeds
 #check @enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds
 
@@ -419,6 +442,78 @@ private def runInventoryChecks : IO Unit := do
   assertBool "inventory identifiers are duplicate-free"
     (decide (perCoreIdleTheorems.map (·.identifier)).Nodup)
 
+/-- **WS-RR RR5.12** (runtime): the *production* boot state discharges the
+no-stall premise on every core, and the entry it replaced does not.
+
+The negative half is the point of the test.  `bootFromPlatformChecked` — the
+entry `Platform.FFI.bootAndInitialiseFromPlatform` ran until RR5.14 — leaves
+every core's run queue empty, so `idleThreadEnqueuedOnCore` was false on every
+core and `schedulerNoStall_smp`'s `hIdle` had no reachable discharge. -/
+private def runBootIdleChecks : IO Unit := do
+  IO.println "--- WS-RR RR5.12: the production boot state discharges the no-stall premise ---"
+  let cfg : SeLe4n.Platform.Boot.PlatformConfig := { irqTable := [], initialObjects := [] }
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads cfg with
+  | .error e =>
+      assertBool s!"the minimally well-formed config must boot (got: {e})" false
+  | .ok ist =>
+      for c in allCores do
+        assertBool s!"core {c.val}: its idle thread is on its OWN run queue"
+          (decide (idleThreadId c ∈ (ist.state.scheduler.runQueueOnCore c).toList))
+        assertBool s!"core {c.val}: its idle thread resolves to THIS core's idle TCB"
+          (match ist.state.getTcb? (idleThreadId c) with
+           | some tcb =>
+               decide (tcb.tid = idleThreadId c) && decide (tcb.domain = ⟨0⟩) &&
+                 decide (tcb.cpuAffinity = some c) && decide (tcb.priority = ⟨0⟩)
+           | none => false)
+        assertBool s!"core {c.val}: idle is in the core's active domain"
+          (decide ((createIdleThread c).domain = ist.state.scheduler.activeDomainOnCore c))
+        -- Enqueued, NOT dispatched: a current slot pointing at a queued thread
+        -- would violate `queueCurrentConsistent` from the first instruction.
+        assertBool s!"core {c.val}: nothing is dispatched yet"
+          (decide (ist.state.scheduler.currentOnCore c = none))
+        -- Core locality: core `c`'s idle thread is on no OTHER core's queue.
+        for c' in allCores do
+          if c' ≠ c then
+            assertBool s!"core {c.val}: its idle thread is NOT on core {c'.val}'s queue"
+              (decide (idleThreadId c ∉ (ist.state.scheduler.runQueueOnCore c').toList))
+        -- WS-RR RR5.10 against RR5.14, the two rows composed: with the
+        -- classification lifted off the boot core, a SECONDARY core's queued
+        -- idle thread classifies `.Ready`.  Under the boot-core-pinned
+        -- definition it classified `.Inactive` — its own core's queue held it,
+        -- but no boot-core slot did — so `threadStateConsistent` would have been
+        -- false of this very state and `assertStateInvariantsFor` would have
+        -- rewritten the field instead of reporting the mismatch.  That is why
+        -- the lift lands before the switch.
+        assertBool s!"core {c.val}: its queued idle thread classifies .Ready, not .Inactive"
+          (decide (inferThreadState ist.state (idleThreadId c) (createIdleThread c)
+            = ThreadState.Ready))
+  match SeLe4n.Platform.Boot.bootFromPlatformChecked cfg with
+  | .error e =>
+      assertBool s!"the plain checked boot must also accept the config (got: {e})" false
+  | .ok plain =>
+      for c in allCores do
+        assertBool
+          s!"NEGATIVE core {c.val}: the pre-RR5.14 entry enqueues no idle thread"
+          (decide (idleThreadId c ∉ (plain.state.scheduler.runQueueOnCore c).toList))
+        assertBool
+          s!"NEGATIVE core {c.val}: nor installs its idle TCB"
+          (plain.state.getTcb? (idleThreadId c)).isNone
+
+/-- **WS-RR RR5.13** (runtime): the idle entry adds no validation of its own —
+it accepts and rejects exactly what `bootFromPlatformChecked` does. -/
+private def runBootValidationParityChecks : IO Unit := do
+  IO.println "--- WS-RR RR5.13: one validation path, not two ---"
+  let malformed : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [ { irq := ⟨1⟩, handler := ⟨42⟩ }, { irq := ⟨1⟩, handler := ⟨43⟩ } ],
+      initialObjects := [] }
+  match SeLe4n.Platform.Boot.bootFromPlatformChecked malformed,
+        SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads malformed with
+  | .error ePlain, .error eIdle =>
+      assertBool "a duplicate-IRQ config is refused with the SAME error by both entries"
+        (ePlain == eIdle)
+  | _, _ =>
+      assertBool "a duplicate-IRQ config must be refused by both entries" false
+
 def runSmpIdleChecks : IO Unit := do
   IO.println "WS-SM SM5.E — Per-core idle thread suite"
   IO.println "===================================="
@@ -429,6 +524,8 @@ def runSmpIdleChecks : IO Unit := do
   runDispatcherChecks
   runLockSetChecks
   runInventoryChecks
+  runBootIdleChecks
+  runBootValidationParityChecks
   IO.println "===================================="
   IO.println "All SM5.E per-core idle thread checks PASS."
 

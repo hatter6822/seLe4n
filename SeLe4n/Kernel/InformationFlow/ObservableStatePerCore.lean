@@ -1721,17 +1721,26 @@ theorem onCore_schedulingTransparency_label_invariant (ctx : LabelingContext) (c
   exact ⟨a₁.trans a₂.symm, b₁.trans b₂.symm, c₁.trans c₂.symm, d₁.trans d₂.symm⟩
 
 /-- SM8.A.5 (non-vacuity): monotonicity is **strict** under a non-trivial
-labeling.  Under `testLabelingContext`, object 0 carries `kernelTrusted`; a
-`publicLabel` observer cannot see it and a `kernelTrusted` observer can, while
-`publicLabel` does flow to `kernelTrusted`.  So `visibilityLe` is a genuine
-order, not an equality in disguise — and, dually, `defaultLabelingContext`
-would make every such witness vacuous (`defaultLabelingContext_insecure`). -/
+labeling.  Under `harnessLabelingContext`, the object at the partition boundary
+carries `kernelTrusted`; a `publicLabel` observer cannot see it and a
+`kernelTrusted` observer can, while `publicLabel` does flow to `kernelTrusted`.
+So `visibilityLe` is a genuine order, not an equality in disguise — and, dually,
+`defaultLabelingContext` would make every such witness vacuous
+(`defaultLabelingContext_insecure`).
+
+**WS-RR RR5.4**: the witness used to be `testLabelingContext` at object `0`.
+That still labels what this theorem needs, but the id it separates is the
+reserved sentinel, so the citation read as "a non-trivial labeling" while naming
+the labeling RR5.4 established separates nothing that can run.  A constructed
+deployment labeling makes the same point without the false implication. -/
 theorem onCore_label_monotone_strict :
     securityFlowsTo SecurityLabel.publicLabel SecurityLabel.kernelTrusted = true ∧
-      objectObservable testLabelingContext
-        (IfObserver.ofLabel SecurityLabel.publicLabel) (SeLe4n.ObjId.ofNat 0) = false ∧
-      objectObservable testLabelingContext
-        (IfObserver.ofLabel SecurityLabel.kernelTrusted) (SeLe4n.ObjId.ofNat 0) = true := by
+      objectObservable harnessLabelingContext
+        (IfObserver.ofLabel SecurityLabel.publicLabel)
+        (SeLe4n.ObjId.ofNat harnessSeparationBoundary) = false ∧
+      objectObservable harnessLabelingContext
+        (IfObserver.ofLabel SecurityLabel.kernelTrusted)
+        (SeLe4n.ObjId.ofNat harnessSeparationBoundary) = true := by
   decide
 
 end SeLe4n.Kernel

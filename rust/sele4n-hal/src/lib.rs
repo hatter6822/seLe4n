@@ -279,9 +279,21 @@ pub mod lock_bridge;
 // WS-SM: per-core Lean-runtime readiness gate.  The structural form of
 // the constraint shootdown.rs states in prose ("a reentrant per-core
 // Lean runtime … does not exist"): every Rust seam that would call into
-// Lean (`per_core_timer_tick_isr`, `reschedule_sgi_handler`, the
-// secondary bring-up entry) consults `lean_ready(core_id)` and degrades
-// to its Rust-only half until SM10.1's image initialization marks the
-// core ready.  No core is ready at boot; nothing in the tree marks one
-// yet — the seams are wired, dormant, and cannot fire early.
+// Lean consults `lean_ready(core_id)` and degrades to a fail-closed
+// alternative until SM10.1's image initialization marks the core ready.
+// No core is ready at boot; nothing in the tree marks one yet — the
+// seams are wired, dormant, and cannot fire early.
+//
+// WS-RR RR5.6/RR5.7: the seam list is **derived, not enumerated**.  This
+// comment used to name three seams — the timer ISR, the reschedule SGI
+// handler and the secondary bring-up entry — and that list was accurate
+// while `kernel_entry.rs` claimed all five of its state-committing
+// entries consulted the gate; the SVC dispatch seam and the cross-core
+// suspend seam did not.  Both now do, and `build.rs`'s
+// `scan_lean_upcalls_readiness_gated` collects every Lean upcall in the
+// HAL from the Lean tree's `@[export]`s rather than from a list here, so
+// a sixth seam cannot be added without a gate.  Its companion
+// `lean_extern_gating_status` (RR5.9) confines every Lean `extern` to
+// `feature = "hw_target"`, so a host build compiles no call path to a
+// bare-metal symbol at all.
 pub mod lean_ready;
