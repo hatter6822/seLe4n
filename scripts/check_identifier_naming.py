@@ -270,14 +270,51 @@ SINGLE_LETTER_DECLINED = {
 }
 
 
+# The registry is one table under this heading; a row's first cell is the
+# workstream's name in bold.  Only those cells configure the grammar.
+REGISTRY_HEADING_RE = re.compile(r"^##\s+Workstream registry\s*$", re.M)
+REGISTRY_ROW_RE = re.compile(r"^\|\s*\*\*(WS-[^*|]+)\*\*\s*\|", re.M)
+
+
+def families_in_registry_text(text: str) -> set[str]:
+    """Family letter-codes named by the rows of the workstream registry table.
+
+    Reads the table, not the document (PR #888 review): the register explains
+    its own mechanism in prose — "derives its family grammar from the
+    `WS-XX` names here" — and a whole-text scan parsed that placeholder as a
+    real family, so `xx` entered the grammar and an ordinary identifier with a
+    component such as `xx1` was rejected as workstream-coded.  Prose cannot
+    configure a gate; a row can, and a workstream is registered by adding one.
+    The cell is still read with `REGISTRY_FAMILY_RE`, so the fused spellings
+    the rows use (`WS-J1-F`, `WS-K-H`, `WS-M2`, `WS-H16`) yield their family
+    exactly as before.  The table is the section under the heading up to the
+    next heading; a `**WS-…**` cell in another table (a debt row) is not a
+    registration.
+    """
+    m = REGISTRY_HEADING_RE.search(text)
+    if m is None:
+        return set()
+    section = text[m.end():]
+    nxt = re.search(r"^##\s", section, re.M)
+    if nxt is not None:
+        section = section[:nxt.start()]
+    return {f.lower() for cell in REGISTRY_ROW_RE.findall(section)
+            for f in REGISTRY_FAMILY_RE.findall(cell)}
+
+
 def registry_families() -> set[str]:
-    """Family letter-codes named as `WS-XX` in the workstream registry."""
+    """Family letter-codes the workstream registry's rows name."""
     text = read_tracked(REGISTRY_REL)
     if text is None:                    # registry not tracked: nothing to derive
         raise SystemExit(
             f"FAIL: {REGISTRY_REL} is not in the index; the family grammar "
             "cannot be derived. Stage it, or fix REGISTRY_REL.")
-    return {m.lower() for m in REGISTRY_FAMILY_RE.findall(text)}
+    families = families_in_registry_text(text)
+    if not families:
+        raise SystemExit(
+            f"FAIL: no `| **WS-…** |` rows found under '## Workstream registry' "
+            f"in {REGISTRY_REL}; the family grammar cannot be derived.")
+    return families
 
 
 def enforced_families() -> tuple[str, ...]:
@@ -296,7 +333,7 @@ def enforced_families() -> tuple[str, ...]:
             + "\n      Measure each over the tracked tree, then add it to "
               "SINGLE_LETTER_ENFORCED (if it collides with nothing) or to "
               "SINGLE_LETTER_DECLINED with the count that decided it.")
-    # Every two-letter family is enforced automatically: all 17 in the
+    # Every two-letter family is enforced automatically: all 20 in the
     # registry today collide with nothing, and the arity is what makes
     # them safe rather than any property of the individual code.
     return tuple(sorted({f for f in fams if len(f) > 1} | SINGLE_LETTER_ENFORCED))

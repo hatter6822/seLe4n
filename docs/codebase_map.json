@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/smp-release-readiness-breakdown-lcq801",
-      "commit_sha": "80b2c2bb55f8996d620f2007da626332357ceb16",
-      "tree_sha": "8b2d2a3f8e693b52b04c534232ee0c274cb657bf",
-      "committed_at_utc": "2026-09-02T16:24:46+00:00"
+      "commit_sha": "1a2cd5627e44aba578cb812fab3771582d0a4c25",
+      "tree_sha": "d9643bdb7629f5e1a664b858198269dbc057cde8",
+      "committed_at_utc": "2026-09-02T18:07:20+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "109fe26a2af0a4052fa915dc477ee7cfab6d7204564b58ea94340edc6ff6c95c"
+    "source_digest": "2f0485df35fe76bc2e4a0c4691793ba238910a410a6c1c620f194a5c06d5bcac"
   },
   "summary": {
     "module_count": 378,
@@ -27,7 +27,7 @@
     "version": "0.34.47",
     "lean_toolchain": "v4.28.0",
     "production_files": 308,
-    "production_loc": 317343,
+    "production_loc": 317352,
     "test_files": 70,
     "test_loc": 67037,
     "proved_theorem_lemma_decls": 10524,
@@ -122427,7 +122427,7 @@
         {
           "kind": "def",
           "name": "declaredFootprintUncoveredDomains",
-          "line": 3047,
+          "line": 3056,
           "called": [
             "UncoveredLockDomain"
           ]
@@ -122435,7 +122435,7 @@
         {
           "kind": "def",
           "name": "UncoveredLockDomain.all",
-          "line": 3059,
+          "line": 3068,
           "called": [
             "UncoveredLockDomain"
           ]
@@ -122443,7 +122443,7 @@
         {
           "kind": "theorem",
           "name": "UncoveredLockDomain.mem_all",
-          "line": 3067,
+          "line": 3076,
           "called": [
             "UncoveredLockDomain",
             "UncoveredLockDomain.all"
@@ -122452,13 +122452,13 @@
         {
           "kind": "theorem",
           "name": "UncoveredLockDomain.all_nodup",
-          "line": 3070,
+          "line": 3079,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "declaredFootprintUncoveredDomains_complete",
-          "line": 3083,
+          "line": 3092,
           "called": [
             "UncoveredLockDomain",
             "all",
@@ -122468,7 +122468,7 @@
         {
           "kind": "def",
           "name": "fineLockDisciplineComplete",
-          "line": 3117,
+          "line": 3126,
           "called": [
             "isEmpty"
           ]
@@ -122476,7 +122476,7 @@
         {
           "kind": "theorem",
           "name": "fineLockDisciplineComplete_is_false",
-          "line": 3125,
+          "line": 3134,
           "called": [
             "fineLockDisciplineComplete"
           ]
@@ -122484,7 +122484,7 @@
         {
           "kind": "theorem",
           "name": "fineLockDiscipline_requires_every_domain_covered",
-          "line": 3133,
+          "line": 3142,
           "called": [
             "declaredFootprintUncoveredDomains",
             "fineLockDisciplineComplete"
@@ -122493,7 +122493,7 @@
         {
           "kind": "theorem",
           "name": "taintPerKeyStore_blocks_fineLockDiscipline",
-          "line": 3144,
+          "line": 3153,
           "called": [
             "cons",
             "declaredFootprintUncoveredDomains",
@@ -122503,7 +122503,7 @@
         {
           "kind": "def",
           "name": "syscallEntryUnderDeclaredLockSet",
-          "line": 3155,
+          "line": 3164,
           "called": [
             "CoreId",
             "KernelError",
@@ -122517,7 +122517,7 @@
         {
           "kind": "def",
           "name": "continueFromAcquired",
-          "line": 3174,
+          "line": 3183,
           "called": [
             "CoreId",
             "LockSet",
@@ -122528,7 +122528,7 @@
         {
           "kind": "theorem",
           "name": "withLockSet_eq_continueFromAcquired",
-          "line": 3183,
+          "line": 3192,
           "called": [
             "CoreId",
             "LockSet",
@@ -122541,7 +122541,7 @@
         {
           "kind": "def",
           "name": "syscallEntryFromAcquired",
-          "line": 3190,
+          "line": 3199,
           "called": [
             "CoreId",
             "KernelError",
@@ -122557,7 +122557,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderLockSet_eq_fromAcquired",
-          "line": 3197,
+          "line": 3206,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122572,7 +122572,7 @@
         {
           "kind": "theorem",
           "name": "rwLock_release_by_nonholder_preserves_waiters",
-          "line": 3214,
+          "line": 3223,
           "called": [
             "CoreId",
             "RwLockState",
@@ -122582,7 +122582,7 @@
         {
           "kind": "inductive",
           "name": "RevalidatedEntryOutcome",
-          "line": 3276,
+          "line": 3285,
           "called": [
             "KernelError",
             "SystemState"
@@ -122591,7 +122591,7 @@
         {
           "kind": "def",
           "name": "syscallEntryUnderRevalidatedLockSet",
-          "line": 3289,
+          "line": 3298,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122608,7 +122608,7 @@
         {
           "kind": "def",
           "name": "syscallEntryUnderRevalidatedLockSetModel",
-          "line": 3320,
+          "line": 3329,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122624,7 +122624,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderRevalidatedLockSet_footprint_stable",
-          "line": 3335,
+          "line": 3344,
           "called": [
             "CoreId",
             "KernelError",
@@ -122642,7 +122642,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderRevalidatedLockSet_refuses_on_change",
-          "line": 3361,
+          "line": 3370,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122657,7 +122657,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderRevalidatedLockSet_refused_releases",
-          "line": 3382,
+          "line": 3391,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122673,7 +122673,7 @@
         {
           "kind": "theorem",
           "name": "revalidationRefusalReachable",
-          "line": 3408,
+          "line": 3417,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122688,7 +122688,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held",
-          "line": 3439,
+          "line": 3448,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122705,7 +122705,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderRevalidatedLockSet_not_refines_in_general",
-          "line": 3472,
+          "line": 3481,
           "called": [
             "declaredLockSetForEntry",
             "syscallEntryFromAcquired",
@@ -122716,7 +122716,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderRevalidatedLockSetModel_refines",
-          "line": 3486,
+          "line": 3495,
           "called": [
             "CoreId",
             "KernelError",
@@ -122735,7 +122735,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderDeclaredLockSet_undeclared",
-          "line": 3513,
+          "line": 3522,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122752,7 +122752,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntryUnderDeclaredLockSet_no_decode",
-          "line": 3525,
+          "line": 3534,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122767,7 +122767,7 @@
         {
           "kind": "theorem",
           "name": "suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore",
-          "line": 3542,
+          "line": 3551,
           "called": [
             "CoreId",
             "IfObserver",
@@ -122790,7 +122790,7 @@
         {
           "kind": "theorem",
           "name": "suspendUnderDeclaredLockSet_preserves_projectionOnCore",
-          "line": 3569,
+          "line": 3578,
           "called": [
             "CoreId",
             "IfObserver",
@@ -122814,7 +122814,7 @@
         {
           "kind": "theorem",
           "name": "suspendUnderDeclaredLockSet_failClosed_invisible",
-          "line": 3590,
+          "line": 3599,
           "called": [
             "CoreId",
             "KernelError",
@@ -122838,7 +122838,7 @@
         {
           "kind": "theorem",
           "name": "declaredLockSetForEntry_is_suspend_footprint",
-          "line": 3616,
+          "line": 3625,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -122857,13 +122857,13 @@
         {
           "kind": "inductive",
           "name": "FineLockClaimId",
-          "line": 3652,
+          "line": 3661,
           "called": []
         },
         {
           "kind": "def",
           "name": "FineLockClaimId.all",
-          "line": 3688,
+          "line": 3697,
           "called": [
             "FineLockClaimId"
           ]
@@ -122871,7 +122871,7 @@
         {
           "kind": "theorem",
           "name": "FineLockClaimId.mem_all",
-          "line": 3695,
+          "line": 3704,
           "called": [
             "FineLockClaimId",
             "FineLockClaimId.all"
@@ -122880,13 +122880,13 @@
         {
           "kind": "theorem",
           "name": "FineLockClaimId.all_nodup",
-          "line": 3698,
+          "line": 3707,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "fineLockClaims_count",
-          "line": 3700,
+          "line": 3709,
           "called": [
             "length"
           ]
@@ -122894,7 +122894,7 @@
         {
           "kind": "def",
           "name": "FineLockClaimId.subTask",
-          "line": 3703,
+          "line": 3712,
           "called": [
             "FineLockClaimId"
           ]
@@ -122902,7 +122902,7 @@
         {
           "kind": "theorem",
           "name": "fineLockClaims_cover_subTasks",
-          "line": 3719,
+          "line": 3728,
           "called": [
             "FineLockClaimId.subTask"
           ]
@@ -122910,7 +122910,7 @@
         {
           "kind": "def",
           "name": "fineLockClaimTheorem",
-          "line": 3727,
+          "line": 3736,
           "called": [
             "FineLockClaimId",
             "acceptedCovertChannel_lockContention_bounded",
@@ -122929,7 +122929,7 @@
         {
           "kind": "theorem",
           "name": "fineLockClaimTheorem_nodup",
-          "line": 3740,
+          "line": 3749,
           "called": [
             "fineLockClaimTheorem"
           ]
@@ -122937,7 +122937,7 @@
         {
           "kind": "def",
           "name": "FineLockClaimId.evidenceProp",
-          "line": 3750,
+          "line": 3759,
           "called": [
             "AccessMode",
             "CoreId",
@@ -122985,7 +122985,7 @@
         {
           "kind": "def",
           "name": "fineLockClaimEvidence",
-          "line": 3864,
+          "line": 3873,
           "called": [
             "FineLockClaimId",
             "acceptedCovertChannel_lockContention_bounded",
@@ -123006,7 +123006,7 @@
         {
           "kind": "theorem",
           "name": "fineLockClaimEvidence_nonempty",
-          "line": 3912,
+          "line": 3921,
           "called": [
             "FineLockClaimId",
             "Kernel",

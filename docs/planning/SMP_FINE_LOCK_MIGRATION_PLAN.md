@@ -7,7 +7,9 @@
 > model-level discipline and the v1.0.0 "per-object reader-writer fine
 > locks" capability claim is not yet true.
 > **Closure targets**: Tracks B and C → WS-RR **RR7.7–RR7.13** (one row per
-> PR: B = RR7.7–RR7.9, C = RR7.10–RR7.13); Track D
+> PR: B = RR7.7–RR7.9, C = RR7.10–RR7.13; the three lock domains Track C
+> leaves uncovered — the scheduler domain, the dynamic PIP chain, the
+> CSpace-walk interior — close in RR7.39–RR7.41); Track D
 > (commit partitioning) is seam-gated to **SM10.1** and registered as a
 > named dependency by RR6.27.  A reader could not previously tell any of
 > this from the plan, which carried no status header at all (RR0, v0.34.26).
@@ -412,9 +414,9 @@ serializability theorem in
 - *Step 3:* host stress both flag settings.
 - *Step 4:* release-closure re-pins (`SMP_RELEASE_CLOSURE_PLAN.md` SMP-C3 made
   dischargeable; the SMP-plan risk row) + register the timer-tick fine-lock
-  migration as the named follow-on **SM3.C.9.b** (its `SchedLockId`
-  `withLockSet` bracket does not exist — the timer entry stays on the global
-  entry lock in this plan).
+  migration as the named follow-on **SM3.C.9.b** — WS-RR **RR7.39** — (its
+  `SchedLockId` `withLockSet` bracket does not exist — the timer entry stays on
+  the global entry lock in this plan).
 
 ## 5. Cross-cutting design notes
 

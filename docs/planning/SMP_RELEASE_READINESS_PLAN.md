@@ -10,7 +10,7 @@
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 184 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 187 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -153,7 +153,7 @@ Nothing else may overlap without re-reading the dependency list above.
 | RR4 | Fault handling: full fault IPC with reply-based restart.  **LANDED v0.34.44** (RR4.1–RR4.27) | 27 | XL |
 | RR5 | Boot-path fail-open closure | 18 | M–L |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 27 | L |
-| RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 38 | M |
+| RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 41 | M |
 | RR8 | Phase closure and hand-off to SM10 | 5 | S |
 
 ## 5. Sub-tasks
@@ -677,6 +677,9 @@ count rather than a label.
 | RR7.36 | Boot-core-pinned thread-state classification (§7): `inferThreadState` / `syncThreadStates` / `threadStateConsistent` read `bootCoreId`, so a thread running on a secondary core classifies as `.Inactive`.  **The lift itself is RR5.10**, which needs it before the boot path installs a secondary core's idle TCB; this row verifies the finding closed and sweeps the consumers RR5.10 did not have to touch — the same relation RR7.25 has to RR6 and RR7.28 to RR3, per §2.3.  If RR5 landed it whole, that is what this row records | 1 | S |
 | RR7.37 | Test-surface corrections (§7): the D-1 admission-order `decide` fixtures the RwLock gate asks for and the suite lacks; the `r4a_`/`r4c_` test identifiers that encode sub-task codes against the plan's own self-certified naming rule; and the vacuous `trap.rs` SVC test with its stale "pre-FFI stub" prose | 3 | M |
 | RR7.38 | Splice-neighbour queue ownership (`UncoveredLockDomain.queueOwnershipProtocol`): `queueOwnership_violated_by_tcbSetPriority` states the violation as a `¬`, and the domain had no owner that would close it — RR0.9 pointed it at fine-lock Track B, whose rows close `capTransferReceiverCnode` (RR7.8) and `cdtNodeAllocation` (RR7.9) but never touch splice neighbours.  Either extend the `tcbSetPriority` footprint to declare the queue-owning locks, or hold the endpoint lock across the splice; the `UncoveredLockDomain` entry is deleted only when the domain is actually covered | 1 | M |
+| RR7.39 | Fine locks, Track C closure — the scheduler domain (`UncoveredLockDomain.schedulerDomain`; the fine-lock plan's named follow-on SM3.C.9.b). The per-core scheduler entries the RR7.12 bracket does not cover — the timer tick, the `.reschedule` SGI receiver and the secondary bring-up entry — commit run-queue and replenish-queue state under the global entry lock only. Declare their `SchedLockId` footprints from the model footprints that already exist (`timerTickOnCoreLockSet`, `timerTickOnCoreCompleteLockSet`, `chooseThreadOnCoreLockSet`, `switchToThreadOnCoreLockSet`, `wakeThreadLockSet`, `enqueueIdleThreadOnCoreLockSet`, `advanceDomainOnCoreLockSet`), bracket the export bodies through `withLockSet` with RR7.12's revalidate-and-refuse discipline, prove each transition's write set within its footprint, and only then delete the constructor, its violation theorem and the inventory arithmetic, replacing the Tier-3 `run_check`s with `run_negative_check` pins (RR7.8's deletion-last order). Consumes RR7.12 | — | L |
+| RR7.40 | Fine locks, Track C closure — the dynamic PIP chain (`dynamicPipChain`). The boost/revert walk's per-member TCB and home-core run-queue write locks are discovered as the walk proceeds, so no pre-state footprint can name them. Route the walk through SM3.C.11's `DynamicChainExtension` inside the RR7.12 bracket — extend the held set hand-over-hand as each member is discovered, in `LockKind` order so the deadlock-freedom argument survives — prove the walk's writes stay within the extended set and that the extension composes with the bracket's revalidation, and only then delete the constructor under the same deletion-last discipline. Consumes RR7.12 | — | L |
+| RR7.41 | Fine locks, Track C closure — the interior CNodes of a multi-level CSpace walk (`cspaceWalkInteriorCnodes`). `resolveCapAddress` descends through child CNodes the arguments cannot name, so every CPtr-resolving footprint holds only the root. Make the walk lock-coupling — hand-over-hand read locks down the CSpace, each child acquired before its parent is released, the dynamic-acquisition shape RR7.40 establishes — prove that a concurrent `cspaceDelete` of an interior slot conflicts with a resolution passing through it, and only then delete the constructor under the same deletion-last discipline. Consumes RR7.12 and RR7.40 | — | L |
 
 **Acceptance**: all **65** findings this phase owns — the 46 in the register's
 §6 table, the four §4 items in RR7.1–RR7.4, and the 15 §7 rows RR0.11's triage

@@ -134,6 +134,44 @@ mismatches); a mismatch or an absent cross-check fails the gate.
   imports (~90 s); batching them would trade per-anchor reporting for time,
   so they stay.  Tier 3 also re-runs eight Tier 2 suites (~10 s).
 
+### PR #888 review round — two findings, both real, both fixed at the mechanism
+
+* **The naming grammar was configured by prose.**  `registry_families()`
+  scanned the whole of `docs/REGISTERED_DEBT.md` for `WS-…` names, and the
+  register's own explanation of the mechanism — "derives its family grammar
+  from the `WS-XX` names here" — made `xx` a workstream family, so an
+  ordinary identifier with a component such as `xx1` was rejected as
+  workstream-coded.  The gate now reads the rows of the registry *table*
+  (`families_in_registry_text`: the section under `## Workstream registry`, a
+  row's bold first cell, the same `REGISTRY_FAMILY_RE` on the cell so the
+  fused row spellings `WS-J1-F` / `WS-K-H` / `WS-M2` still yield their
+  family), and fails closed when the table is absent.  Two workstreams that
+  the register named only in prose — `WS-RR` and `WS-SL` — get rows, so the
+  derived set is the old set minus `xx` and nothing else.  Eleven new
+  witnesses in the self-test: a fixture with a placeholder in prose, a fused
+  spelling in prose, a bold name in a debt row outside the section and a row
+  after the next heading (none registers), and the load-bearing checks on the
+  real register.
+* **Three uncovered lock domains named an owner that could not close them.**
+  `schedulerDomain`, `dynamicPipChain` and `cspaceWalkInteriorCnodes` pointed
+  at RR7.10–RR7.13 — Track C of the fine-lock plan — whose rows generalise the
+  resolver, declare the IPC footprints, bracket the dispatch body and add the
+  export-body gate, and never acquire a per-core scheduler lock, extend a lock
+  set along a PIP chain, or couple locks down a CSpace walk (the pre-split
+  RR7.7 had the same gap: it owned "Tracks B and C").  Three closure rows are
+  added at the end of RR7, where they belong in execution order (each consumes
+  RR7.12's bracket): **RR7.39** the scheduler domain — the fine-lock plan's
+  named SM3.C.9.b follow-on, bracketing the timer tick, the `.reschedule`
+  receiver and the secondary bring-up entry through their existing
+  `SchedLockId` model footprints; **RR7.40** the dynamic PIP chain through
+  `DynamicChainExtension` inside the bracket; **RR7.41** the lock-coupling
+  CSpace walk.  Each ends with RR7.8's deletion-last discipline.  184 → 187
+  sub-tasks; the Lean owners, the fine-lock plan's closure-target line and its
+  Track D step that named SM3.C.9.b, the closure plan's row 15, the debt
+  register's Track B/C row and the `CLAUDE.md` / `AGENTS.md` WS-RR count (which
+  still said 157) are updated together, and `check_workstream_plan.py` holds
+  the arithmetic.
+
 ### Files
 
 `SeLe4n/PackedString.lean` (new); the thirteen inventory modules;

@@ -461,7 +461,7 @@ it for live work.  The list is enumerated here rather than left to the mover:
 | 12 | `SMP_RELEASE_CLOSURE_PLAN.md` | SM10 (this file) |
 | 13 | `SMP_RELEASE_READINESS_PLAN.md` | WS-RR, the phase that gates this one |
 | 14 | `UNFINISHED_SMP_WORK.md` | the register WS-RR closes; its own footer says it moves with them |
-| 15 | `SMP_FINE_LOCK_MIGRATION_PLAN.md` | SM3.C.9's migration, closed by RR7.7–RR7.13 and SM10.1 |
+| 15 | `SMP_FINE_LOCK_MIGRATION_PLAN.md` | SM3.C.9's migration, closed by RR7.7–RR7.13, the three uncovered-domain closures RR7.39–RR7.41, and SM10.1 |
 | 16 | `SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | SM2.C-defer, absorbed by RR6 |
 | 17 | `SMP_PANIC_HANG_REMEDIATION_PLAN.md` | the SM2.E remediation |
 | 18 | `SYSCALL_RETURN_ABI_PLAN.md` | WS-RA, whose remaining obligations SM10.1 discharges |

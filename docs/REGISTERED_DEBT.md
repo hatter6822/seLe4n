@@ -70,7 +70,7 @@ is archived.
 | The deployed RwLock is the CAS-retry `rw_lock.rs` while the Lean spec was tightened to strict FIFO; `QueuedRwLock`, the FIFO implementation, has zero consumers | `rust/sele4n-hal/src/lock_bridge.rs`, `rust/sele4n-hal/src/queued_rw_lock.rs` | RR6.4–RR6.10 |
 | The Tier-5 oracle models the lock instead of driving it, by its own docstring | `rust/sele4n-hal/src/bin/rw_lock_oracle.rs` | RR6.1–RR6.3 |
 | `loom` and `miri` gates the RwLock plan declares mandatory are unmet — neither tool reaches the deployed lock | `rust/sele4n-hal/Cargo.toml`, `.github/workflows/` | RR6.20, RR6.21 |
-| Fine-lock migration Tracks B and C: the `capTransferReceiverCnode` footprint closure and SM3.C.9's `withLockSet` wrapping of the `@[export]` bodies — 7 of the plan's 12 PRs (the remaining 3 are Track D's, in section B below) | [`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`](planning/SMP_FINE_LOCK_MIGRATION_PLAN.md) | RR7.7–RR7.13 |
+| Fine-lock migration Tracks B and C: the `capTransferReceiverCnode` footprint closure and SM3.C.9's `withLockSet` wrapping of the `@[export]` bodies — 7 of the plan's 12 PRs (the remaining 3 are Track D's, in section B below) | [`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`](planning/SMP_FINE_LOCK_MIGRATION_PLAN.md) | RR7.7–RR7.13; the three lock domains Track C does not itself cover (`schedulerDomain`, `dynamicPipChain`, `cspaceWalkInteriorCnodes`) close in RR7.39–RR7.41 |
 | ~~Six production `native_decide` uses, against a release note claiming zero~~ — **CLOSED v0.34.47**: the theorem inventories store packed keys (`SeLe4n/PackedString.lean`) and every distinctness witness is the kernel's `decide` | `SeLe4n/Kernel/Concurrency/Locks/*Inventory.lean` and siblings | RR7.6 |
 | Cancellation/timeout error-frame staging, owed before the context-restore seam flips | `SeLe4n/Kernel/IPC/Operations/Timeout.lean` | RR7.14 |
 | WS-RA's application-IPC-label follow-on, registered only inside a review narrative | [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](planning/SYSCALL_RETURN_ABI_PLAN.md) | RR7.17 |
@@ -199,16 +199,20 @@ that v1.0.0's liveness claim is **conditional** and must be stated that way.
 
 The workstream families this project has run, with the versions each spans.
 **This table is machine-read**: `scripts/check_identifier_naming.py` derives
-its family grammar from the `WS-XX` names here rather than from a hand-kept
-list, because a hand-kept list was the single largest source of holes in that
-gate. A workstream added here is covered by the naming gate without anyone
-remembering to update it.
+its family grammar from the bold workstream name in each row of this table —
+the rows, not this paragraph or any other prose in the file — rather than
+from a hand-kept list, because a hand-kept list was the single largest source
+of holes in that gate. A workstream added as a row here is covered by the
+naming gate without anyone remembering to update it; a workstream that is only
+mentioned in prose is not.
 
 Scope, findings and evidence for any of these are in
 [`CHANGELOG.md`](../CHANGELOG.md) at the versions named.
 
 | Workstream | Versions |
 |------------|----------|
+| **WS-RR** | v0.34.26– |
+| **WS-SL** | v0.34.26– (closure post-v1.0.0) |
 | **WS-DT** | v0.31.157–v0.34.43 |
 | **WS-SM** | v0.31.2– |
 | **WS-RA** | v0.33.37–v0.33.38 |
