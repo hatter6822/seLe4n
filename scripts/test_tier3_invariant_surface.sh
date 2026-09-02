@@ -5153,6 +5153,16 @@ run_check "INVARIANT" rg -n '^def bootAndInitialiseFromPlatform' SeLe4n/Platform
 run_check "INVARIANT" rg -n '^def writeFfiRegistersToTcb' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def readReturnValue' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def syscallDispatchFromAbi' SeLe4n/Platform/FFI.lean
+# WS-RR RR5.1/RR5.2 (audit round): the platform binding carries the deployment
+# labeling and its admission proof, the RPi5 binding's is the confined
+# production context (pinned by `rfl`), and the FFI boot entry that boots under
+# the binding's labeling is provably the checked idle boot plus the installs.
+run_check "INVARIANT" rg -n '^  deploymentLabeling : SeLe4n.Kernel.LabelingContext' SeLe4n/Platform/Contract.lean
+run_check "INVARIANT" rg -n '^  deploymentLabelingAdmitted :' SeLe4n/Platform/Contract.lean
+run_check "INVARIANT" rg -n '^theorem rpi5_deploymentLabeling ' SeLe4n/Platform/RPi5/Contract.lean
+run_check "INVARIANT" rg -n '^theorem rpi5UpperDomainBase_clears_idle_range' SeLe4n/Platform/RPi5/Contract.lean
+run_check "INVARIANT" rg -n '^def bootAndInitialisePlatform ' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_eq_checked_boot' SeLe4n/Platform/FFI.lean
 # WS-RR RR5.17: the boot-pinned `suspend_thread_inner` export is REMOVED.  It
 # committed kernel state through a bare `kernelStateRef.set` with no
 # kernel-entry bracket, and `@[export]` made it a live C symbol in the linked
@@ -5610,6 +5620,48 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Platform.Boot.idleSlotsFreshAt
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_preserves_platform_objects
 #check @SeLe4n.Platform.Boot.idleSlotsFreshAt_of_initialObjects_below_base
+-- Boot-path fail-open closure, idle enqueue rows: the production boot enqueues
+-- every core idle thread without dispatching it, and the boot queue is
+-- characterised exactly, so well-formedness and TCB resolution are proved of
+-- the boot state rather than assumed of it.
+#check @SeLe4n.Platform.Boot.enqueueIdleThread
+#check @SeLe4n.Platform.Boot.foldl_enqueueIdleThread_installs
+#check @SeLe4n.Platform.Boot.foldl_enqueueIdleThread_runQueueOnCore_eq
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_map_ok
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_rejects_invalid
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_currentAllNone
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_idle_available
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_preserves_platform_objects
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runnable_resolve
+-- Boot-path fail-open closure, labeling rows: the labeling context fails
+-- closed. The exact guard, its admissibility predicate (sentinel and idle
+-- threads excluded), the production context, and the platform binding that
+-- carries it with its admission proof.
+#check @SeLe4n.Kernel.separationWitnessAdmissible
+#check @SeLe4n.Kernel.separationWitnessAdmissible_iff
+#check @SeLe4n.Kernel.separationWitnessAdmissible_idleThreadId
+#check @SeLe4n.Kernel.verifiesDeclaredSeparation
+#check @SeLe4n.Kernel.isInsecureDefaultContext_false_implies_labelNonTriviality
+#check @SeLe4n.Kernel.isInsecureDefaultContext_false_implies_real_witness
+#check @SeLe4n.Kernel.isInsecureDefaultContext_false_implies_witness_not_idle
+#check @SeLe4n.Kernel.isInsecureDefaultContext_defaultLabelingContext
+#check @SeLe4n.Kernel.isInsecureDefaultContext_testLabelingContext
+#check @SeLe4n.Kernel.DeploymentLabeling
+#check @SeLe4n.Kernel.deploymentLabelingContext
+#check @SeLe4n.Kernel.isInsecureDefaultContext_deploymentLabelingContext
+#check @SeLe4n.Kernel.upperWitnessIndex
+#check @SeLe4n.Kernel.separationWitnessAdmissible_upperWitnessIndex
+#check @SeLe4n.Kernel.confinedLabelingContext
+#check @SeLe4n.Kernel.isInsecureDefaultContext_confinedLabelingContext
+#check @SeLe4n.Kernel.confinedLabelingContext_confines
+#check @SeLe4n.Kernel.harnessLabelingContext
+#check @SeLe4n.Kernel.isInsecureDefaultContext_harnessLabelingContext
+#check @SeLe4n.Platform.PlatformBinding.labeling
+#check @SeLe4n.Platform.PlatformBinding.labeling_admitted
 -- SM0.G — PlatformBinding extension
 #check @SeLe4n.Platform.PlatformBinding.coreCount
 #check @SeLe4n.Platform.PlatformBinding.bootCoreId
@@ -7937,6 +7989,18 @@ open SeLe4n.Platform.Boot (createIdleThread)
 #check @enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore
 #check @chooseThreadOnCore_always_succeeds
 #check @enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds
+-- The production boot state discharges the keystone on every core with no
+-- hypothesis beyond the boot, and its first selection is pinned to that core
+-- idle thread.
+#check @bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore
+#check @bootFromPlatformCheckedWithIdleThreads_runnableThreadsAreTCBsOnCore
+#check @bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds
+#check @bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_idle
+example (config : SeLe4n.Platform.Boot.PlatformConfig) (ist : SeLe4n.Model.IntermediateState)
+    (h : SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads config = .ok ist)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    ∃ tid, chooseThreadOnCore ist.state c = .ok (some tid) :=
+  bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds config ist h c
 -- SM5.E.4 core locality + no-starvation.
 #check @runQueueAffinityConsistentOnCore
 #check @idleThread_core_locality

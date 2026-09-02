@@ -2695,6 +2695,41 @@ theorem foldl_enqueueIdleThread_installs
     · -- `c ∈ xs`: the tail fold enqueues it (induction hypothesis).
       exact ih (enqueueIdleThread ist x) hnd.2 hxs
 
+/-- **WS-RR RR5.12** (the fold's equation): folding `enqueueIdleThread` over a
+    `Nodup` list containing `c` yields, on core `c`, **exactly** the pre-fold
+    queue with idle `c` re-enqueued at its priority — `c`'s own step, framed by
+    every other step (which targets a distinct core, by `Nodup`).
+
+    `foldl_enqueueIdleThread_installs` is this equation's membership corollary.
+    The equation itself is what the boot-state characterisation
+    (`bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq`) needs: from it,
+    what the boot queue *is* — and so every structural fact the scheduler's
+    selection theorems require of it — is a computation on a known queue rather
+    than a hypothesis about an unknown one. -/
+theorem foldl_enqueueIdleThread_runQueueOnCore_eq
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (L : List SeLe4n.Kernel.Concurrency.CoreId)
+    (ist : IntermediateState) :
+    L.Nodup → c ∈ L →
+    (L.foldl enqueueIdleThread ist).state.scheduler.runQueueOnCore c =
+      ((ist.state.scheduler.runQueueOnCore c).remove (idleThreadId c)).insert
+        (idleThreadId c) (createIdleThread c).priority := by
+  induction L generalizing ist with
+  | nil => intro _ hc; exact (List.not_mem_nil hc).elim
+  | cons x xs ih =>
+    intro hnd hc
+    simp only [List.foldl_cons]
+    rw [List.nodup_cons] at hnd
+    rcases List.mem_cons.mp hc with hxc | hxs
+    · -- `c = x`: the head step writes the queue; the (distinct) tail frames it.
+      subst hxc
+      have hframe : ∀ c' ∈ xs, c' ≠ c := fun c' hc' heq => hnd.1 (heq ▸ hc')
+      rw [foldl_enqueueIdleThread_runQueueOnCore_frame xs (enqueueIdleThread ist c) c hframe,
+        enqueueIdleThread_runQueueOnCore_self]
+    · -- `c ∈ xs`: the head step targets `x ≠ c` and frames `c`'s queue; the tail
+      -- fold writes it (induction hypothesis).
+      have hxc : x ≠ c := fun heq => hnd.1 (heq ▸ hxs)
+      rw [ih (enqueueIdleThread ist x) hnd.2 hxs, enqueueIdleThread_runQueueOnCore_ne ist x c hxc]
+
 -- ============================================================================
 -- WS-RR RR5.13: the checked boot entry that enqueues per-core idle threads
 -- ============================================================================
@@ -2916,6 +2951,93 @@ theorem bootFromPlatformCheckedWithIdleThreads_idle_available (config : Platform
       rw [foldl_enqueueIdleThread_activeDomainOnCore,
         bootFromPlatformChecked_ok_scheduler_eq config ist hChecked]
       exact (default_state_perCoreInitialized c).2.2.2.1
+
+/-- **WS-RR RR5.12** (the boot queue, characterised): on **every** core, the
+    production boot state's run queue is exactly the empty queue with that core's
+    idle thread enqueued at its priority.
+
+    The checked boot leaves the default scheduler
+    (`bootFromPlatformChecked_ok_scheduler_eq`), whose queues are all empty
+    (`default_state_perCoreInitialized`), and the fold writes each core's queue
+    once (`foldl_enqueueIdleThread_runQueueOnCore_eq`).  Everything the
+    scheduler's selection theorems need of the boot queue — that it is
+    well-formed, that its members resolve, that idle is on it and nothing else
+    is — is a corollary of this one equation, which is why none of it has to be
+    assumed of the state the kernel boots into. -/
+theorem bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq (config : PlatformConfig)
+    (ist' : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreads config = .ok ist')
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    ist'.state.scheduler.runQueueOnCore c =
+      ((SeLe4n.Kernel.RunQueue.empty.remove (idleThreadId c)).insert
+        (idleThreadId c) (createIdleThread c).priority) := by
+  unfold bootFromPlatformCheckedWithIdleThreads at h
+  cases hChecked : bootFromPlatformChecked config with
+  | error e => rw [hChecked] at h; simp [Except.map] at h
+  | ok ist =>
+      rw [hChecked] at h
+      injection h with h
+      subst h
+      have hEmpty : ist.state.scheduler.runQueueOnCore c = SeLe4n.Kernel.RunQueue.empty := by
+        rw [bootFromPlatformChecked_ok_scheduler_eq config ist hChecked]
+        exact (default_state_perCoreInitialized c).2.1
+      rw [foldl_enqueueIdleThread_runQueueOnCore_eq c SeLe4n.Kernel.Concurrency.allCores ist
+        SeLe4n.Kernel.Concurrency.allCores_nodup (SeLe4n.Kernel.Concurrency.mem_allCores c),
+        hEmpty]
+
+/-- **WS-RR RR5.12**: the boot run queue on core `c` holds that core's idle
+    thread and **nothing else** — the negative half of
+    `bootFromPlatformCheckedWithIdleThreads_idle_available`.  No thread the
+    platform config names is runnable at boot: every one of them waits for a
+    resume, a wake or a dispatch that the model's transitions account for. -/
+theorem bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff (config : PlatformConfig)
+    (ist' : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreads config = .ok ist')
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) :
+    tid ∈ (ist'.state.scheduler.runQueueOnCore c).toList ↔ tid = idleThreadId c := by
+  rw [bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq config ist' h c,
+    SeLe4n.Kernel.RunQueue.mem_toList_iff_mem, SeLe4n.Kernel.RunQueue.mem_insert,
+    SeLe4n.Kernel.RunQueue.mem_remove]
+  constructor
+  · rintro (⟨hEmpty, _⟩ | hEq)
+    · exact (SeLe4n.Kernel.RunQueue.not_mem_empty tid hEmpty).elim
+    · exact hEq
+  · intro hEq
+    exact Or.inr hEq
+
+/-- **WS-RR RR5.12**: the boot run queue is well-formed on every core — the
+    empty queue is (`RunQueue.empty_wellFormed`) and one `remove`/`insert` pair
+    preserves it.
+
+    This is one of the two structural premises `chooseThreadOnCore_always_succeeds`
+    consumes.  Until it was proved here, the staged corollary
+    `bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds` took it
+    by hypothesis, so the no-stall chain still rested on an assumption about the
+    very state RR5.12 exists to discharge it from. -/
+theorem bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed (config : PlatformConfig)
+    (ist' : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreads config = .ok ist')
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (ist'.state.scheduler.runQueueOnCore c).wellFormed := by
+  rw [bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq config ist' h c]
+  exact SeLe4n.Kernel.RunQueue.insert_preserves_wellFormed _
+    (SeLe4n.Kernel.RunQueue.remove_preserves_wellFormed _
+      SeLe4n.Kernel.RunQueue.empty_wellFormed _) _ _
+
+/-- **WS-RR RR5.12**: every thread on a boot run queue resolves to a TCB — the
+    other structural premise of `chooseThreadOnCore_always_succeeds`, which is
+    `runnableThreadsAreTCBsOnCore` (`Scheduler/Invariant/PerCore.lean`) stated
+    unfolded, because that module is not in this one's import closure; the staged
+    scheduler layer restates it under its name.  Immediate from the two facts
+    above: the only member is idle `c`, and its TCB is in the store. -/
+theorem bootFromPlatformCheckedWithIdleThreads_runnable_resolve (config : PlatformConfig)
+    (ist' : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreads config = .ok ist')
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    ∀ tid, tid ∈ (ist'.state.scheduler.runQueueOnCore c).toList →
+      ∃ tcb : TCB, ist'.state.getTcb? tid = some tcb := by
+  intro tid hMem
+  rw [bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff config ist' h c] at hMem
+  subst hMem
+  refine ⟨createIdleThread c, ?_⟩
+  simp only [SystemState.getTcb?]
+  rw [(bootFromPlatformCheckedWithIdleThreads_idle_available config ist' h c).2.1]
 
 /-- V4-A2/A4: The post-boot state preserves CDT from default. -/
 theorem bootFromPlatform_cdt_eq (config : PlatformConfig) :

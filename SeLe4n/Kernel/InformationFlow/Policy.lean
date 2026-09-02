@@ -9,6 +9,7 @@
 
 import SeLe4n.Model.State
 import SeLe4n.Kernel.InformationFlow.AuditRecord
+import SeLe4n.Kernel.Scheduler.IdleThread
 
 namespace SeLe4n.Kernel
 
@@ -484,7 +485,9 @@ structure LabelingContext where
       reached from the live path through `liftLegacyContext`. -/
   auditMonitorClearance : Option SecurityDomain := none
   /-- WS-RR RR5.4: the deployment's **declared domain-separation witness** — two
-      non-sentinel thread ids this labeling puts in different security domains.
+      admissible thread ids (`separationWitnessAdmissible`: neither the reserved
+      sentinel nor a per-core idle thread) this labeling puts in different
+      security domains.
 
       `LabelingContextValid.labelNonTriviality` asks for exactly this
       existential (`∃ tid₁ tid₂, threadLabelOf tid₁ ≠ threadLabelOf tid₂`), and
@@ -499,9 +502,10 @@ structure LabelingContext where
       one: the deployment names the pair, and `isInsecureDefaultContext`
       evaluates the very inequality `labelNonTriviality` asserts at it.  A false
       declaration is caught (the labels are compared, not trusted), and the two
-      ids must be non-sentinel (`ThreadId.isReserved`), because separating id `0`
-      — which `toObjIdChecked` refuses to turn into an object reference — from
-      the real threads separates no two things that can run.
+      ids must be admissible (`separationWitnessAdmissible`): not the sentinel
+      `0` — which `toObjIdChecked` refuses to turn into an object reference — and
+      not a per-core idle thread, because separating either from the real
+      threads separates no two things a flow decision can observe.
 
       Defaulted to `none`, which is **fail-closed**: a context that declares no
       separation is rejected at every checked syscall entry and at boot.  That is
@@ -566,28 +570,75 @@ theorem defaultLabelingContext_all_threads_observable :
 -- AI5-C (M-19): Insecure default labeling context runtime guard
 -- ============================================================================
 
+/-- WS-RR RR5.4: may `tid` stand as one side of a deployment's declared
+    separation witness?
+
+    Two exclusions, for the same reason: the reserved sentinel `0`
+    (`ThreadId.isReserved`) never runs, and a per-core idle thread
+    (`isIdleThreadId`, `Scheduler/IdleThread.lean`) is kernel-owned — it issues
+    no syscall and sends no message — so a labeling that differs only on them
+    separates no two threads a flow decision can tell apart.  Without the second
+    exclusion a labeling that gave the four idle threads a label of their own and
+    every user-visible entity `publicLabel` would name two idle threads and pass
+    the guard, which is the all-public shape RR5.4 exists to refuse, one range
+    higher up. -/
+def separationWitnessAdmissible (tid : SeLe4n.ThreadId) : Bool :=
+  !tid.isReserved && !isIdleThreadId tid
+
+/-- WS-RR RR5.4: admissibility, as the arithmetic it decides — the form the
+    constructors below discharge by `omega`. -/
+theorem separationWitnessAdmissible_iff (tid : SeLe4n.ThreadId) :
+    separationWitnessAdmissible tid = true ↔
+      tid.toNat ≠ 0 ∧
+        (tid.toNat < idleThreadIdBase ∨
+          idleThreadIdBase + SeLe4n.Kernel.Concurrency.numCores ≤ tid.toNat) := by
+  simp only [separationWitnessAdmissible, isIdleThreadId, SeLe4n.ThreadId.isReserved,
+    SeLe4n.ThreadId.toNat, Bool.and_eq_true, Bool.not_eq_true', Bool.and_eq_false_iff,
+    decide_eq_false_iff_not, Nat.not_le, Nat.not_lt, ne_eq]
+
+/-- WS-RR RR5.4: an admissible witness is not the reserved sentinel. -/
+theorem separationWitnessAdmissible_not_reserved (tid : SeLe4n.ThreadId)
+    (h : separationWitnessAdmissible tid = true) : tid.isReserved = false := by
+  simp only [separationWitnessAdmissible, Bool.and_eq_true, Bool.not_eq_true'] at h
+  exact h.1
+
+/-- WS-RR RR5.4: an admissible witness is not an idle thread. -/
+theorem separationWitnessAdmissible_not_idle (tid : SeLe4n.ThreadId)
+    (h : separationWitnessAdmissible tid = true) : isIdleThreadId tid = false := by
+  simp only [separationWitnessAdmissible, Bool.and_eq_true, Bool.not_eq_true'] at h
+  exact h.2
+
+/-- WS-RR RR5.4 (negative fixture): no idle thread is admissible — the exclusion
+    is exact on the ids `idleThreadId` produces. -/
+theorem separationWitnessAdmissible_idleThreadId (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    separationWitnessAdmissible (idleThreadId c) = false := by
+  simp only [separationWitnessAdmissible, isIdleThreadId_idleThreadId, Bool.not_true,
+    Bool.and_false]
+
 /-- WS-RR RR5.4: does `ctx` *verify* its declared domain-separation witness?
 
-    `true` exactly when the context names a pair of non-sentinel thread ids
+    `true` exactly when the context names a pair of admissible thread ids
     (`LabelingContext.separatedThreads`) that it really does put in different
     security domains.  Three conditions, all decided rather than sampled:
 
     1. a witness is declared at all (`none` is fail-closed);
-    2. neither id is the reserved sentinel `0` (`ThreadId.isReserved`) — a
-       labeling that separates only the sentinel from everything else separates
-       no two threads that can run, which is precisely the `testLabelingContext`
-       shape the pre-RR5 sentinel probe accepted; and
+    2. both ids are admissible (`separationWitnessAdmissible`): neither is the
+       reserved sentinel `0` — a labeling that separates only the sentinel from
+       everything else separates no two threads that can run, which is precisely
+       the `testLabelingContext` shape the pre-RR5 sentinel probe accepted — and
+       neither is a per-core idle thread, which runs but never originates or
+       receives a flow; and
     3. the two ids genuinely carry different labels — the declaration is
        *checked*, so a context cannot pass by naming a pair it does not separate.
 
-    O(1): one `Option` match, two id comparisons and one `SecurityLabel`
+    O(1): one `Option` match, two range checks and one `SecurityLabel`
     comparison, against the twelve label lookups the retired three-sentinel probe
     performed at every syscall entry. -/
 def verifiesDeclaredSeparation (ctx : LabelingContext) : Bool :=
   match ctx.separatedThreads with
   | none => false
   | some (tid₁, tid₂) =>
-      !tid₁.isReserved && !tid₂.isReserved &&
+      separationWitnessAdmissible tid₁ && separationWitnessAdmissible tid₂ &&
         ctx.threadLabelOf tid₁ != ctx.threadLabelOf tid₂
 
 /-- AI5-C (M-19) + AJ2-C (M-12) + **WS-RR RR5.4**: reject a labeling context that
@@ -605,7 +656,7 @@ def verifiesDeclaredSeparation (ctx : LabelingContext) : Bool :=
     configuration.
 
     It is now the **exact** check `verifiesDeclaredSeparation` describes: the
-    deployment declares which two non-sentinel threads its labeling separates and
+    deployment declares which two admissible threads its labeling separates and
     the kernel evaluates that inequality.  A context that declares nothing is
     rejected (fail-closed), and one that declares a pair it does not separate is
     rejected too.
@@ -715,15 +766,16 @@ theorem isInsecureDefaultContext_false_implies_labelNonTriviality
       simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at h
       exact ⟨tid₁, tid₂, h.2⟩
 
-/-- WS-RR RR5.4: the admitted witness is a pair of **real** (non-sentinel)
-    threads.  The companion to the theorem above: a labeling admitted by the
-    guard separates two threads that can actually be scheduled, not the reserved
-    id `0` from everything else. -/
+/-- WS-RR RR5.4: the admitted witness is a pair of **admissible** threads —
+    neither the reserved sentinel nor an idle thread.  The companion to the
+    theorem above: a labeling admitted by the guard separates two threads a flow
+    decision can observe, not the reserved id `0` or the kernel's own idle
+    threads from everything else. -/
 theorem isInsecureDefaultContext_false_implies_real_witness
     (ctx : LabelingContext)
     (h : isInsecureDefaultContext ctx = false) :
     ∃ (tid₁ tid₂ : SeLe4n.ThreadId),
-      tid₁.isReserved = false ∧ tid₂.isReserved = false ∧
+      separationWitnessAdmissible tid₁ = true ∧ separationWitnessAdmissible tid₂ = true ∧
       ctx.threadLabelOf tid₁ ≠ ctx.threadLabelOf tid₂ := by
   simp only [isInsecureDefaultContext, Bool.not_eq_false', verifiesDeclaredSeparation] at h
   cases hw : ctx.separatedThreads with
@@ -731,9 +783,21 @@ theorem isInsecureDefaultContext_false_implies_real_witness
   | some p =>
       rw [hw] at h
       obtain ⟨tid₁, tid₂⟩ := p
-      simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, bne_iff_ne,
-        ne_eq] at h
+      simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at h
       exact ⟨tid₁, tid₂, h.1.1, h.1.2, h.2⟩
+
+/-- WS-RR RR5.4 (audit): the admitted witness names **no idle thread** — the
+    guarantee `separationWitnessAdmissible`'s second exclusion buys, stated on the
+    guard's output so a consumer need not unfold the predicate. -/
+theorem isInsecureDefaultContext_false_implies_witness_not_idle
+    (ctx : LabelingContext)
+    (h : isInsecureDefaultContext ctx = false) :
+    ∃ (tid₁ tid₂ : SeLe4n.ThreadId),
+      isIdleThreadId tid₁ = false ∧ isIdleThreadId tid₂ = false ∧
+      ctx.threadLabelOf tid₁ ≠ ctx.threadLabelOf tid₂ := by
+  obtain ⟨tid₁, tid₂, h₁, h₂, hne⟩ := isInsecureDefaultContext_false_implies_real_witness ctx h
+  exact ⟨tid₁, tid₂, separationWitnessAdmissible_not_idle tid₁ h₁,
+    separationWitnessAdmissible_not_idle tid₂ h₂, hne⟩
 
 -- ============================================================================
 -- WS-RR RR5.1: production labeling contexts, valid by construction
@@ -765,8 +829,8 @@ theorem isInsecureDefaultContext_false_implies_real_witness
       reads them through their own accessors and a deployment may confine an
       endpoint more tightly than the objects that hold capabilities to it.
     * `separatedLower` / `separatedUpper` and their three proofs are the
-      **non-triviality witness**: two non-sentinel threads the labeling really
-      does separate.  `deploymentLabelingContext` publishes them into
+      **non-triviality witness**: two admissible threads (neither the sentinel
+      nor an idle thread) the labeling really does separate.  `deploymentLabelingContext` publishes them into
       `LabelingContext.separatedThreads`, which is what lets the runtime guard
       decide `labelNonTriviality` instead of sampling for it.
 
@@ -787,10 +851,11 @@ structure DeploymentLabeling where
   separatedLower : SeLe4n.ThreadId
   /-- The other side of the declared domain-separation witness. -/
   separatedUpper : SeLe4n.ThreadId
-  /-- `separatedLower` is a thread that can run, not the reserved sentinel. -/
-  hLowerReal : separatedLower.isReserved = false
-  /-- `separatedUpper` is a thread that can run, not the reserved sentinel. -/
-  hUpperReal : separatedUpper.isReserved = false
+  /-- `separatedLower` is admissible as a witness: neither the reserved sentinel
+      nor a per-core idle thread (`separationWitnessAdmissible`). -/
+  hLowerReal : separationWitnessAdmissible separatedLower = true
+  /-- `separatedUpper` is admissible as a witness, likewise. -/
+  hUpperReal : separationWitnessAdmissible separatedUpper = true
   /-- The witness really is separated: the two threads carry different labels. -/
   hSeparated : entityLabelOf separatedLower.toNat ≠ entityLabelOf separatedUpper.toNat
 
@@ -830,10 +895,11 @@ theorem deploymentLabelingContext_thread_object_label_eq
 theorem isInsecureDefaultContext_deploymentLabelingContext (d : DeploymentLabeling) :
     isInsecureDefaultContext (deploymentLabelingContext d) = false := by
   have hSep : verifiesDeclaredSeparation (deploymentLabelingContext d) = true := by
-    show (!d.separatedLower.isReserved && !d.separatedUpper.isReserved &&
+    show (separationWitnessAdmissible d.separatedLower &&
+      separationWitnessAdmissible d.separatedUpper &&
       (d.entityLabelOf d.separatedLower.toNat != d.entityLabelOf d.separatedUpper.toNat)) = true
     rw [d.hLowerReal, d.hUpperReal]
-    simp only [Bool.not_false, Bool.and_self, Bool.true_and, bne_iff_ne, ne_eq]
+    simp only [Bool.and_self, Bool.true_and, bne_iff_ne, ne_eq]
     exact d.hSeparated
   simp only [isInsecureDefaultContext, hSep, Bool.not_true]
 
@@ -850,6 +916,32 @@ def separationBoundary (upperDomainBase : Nat) : Nat := max 2 upperDomainBase
 theorem two_le_separationBoundary (upperDomainBase : Nat) :
     2 ≤ separationBoundary upperDomainBase := Nat.le_max_left 2 upperDomainBase
 
+/-- WS-RR RR5.1: the index of the upper-domain witness — the boundary itself,
+    lifted past the idle range when the boundary falls inside it.
+
+    Any index at or above the boundary is in the upper domain
+    (`separationBoundary_le_upperWitnessIndex`), so the witness stays separated
+    from thread `1` whatever the lift; lifting is what keeps it admissible
+    (`separationWitnessAdmissible_upperWitnessIndex`) for **every** boundary,
+    which is what keeps `indexPartitionedDeploymentLabeling` total.  Without it a
+    deployment whose boundary happened to be an idle id would build a labeling
+    the guard refuses. -/
+def upperWitnessIndex (upperDomainBase : Nat) : Nat :=
+  max (separationBoundary upperDomainBase)
+    (idleThreadIdBase + SeLe4n.Kernel.Concurrency.numCores)
+
+theorem separationBoundary_le_upperWitnessIndex (upperDomainBase : Nat) :
+    separationBoundary upperDomainBase ≤ upperWitnessIndex upperDomainBase :=
+  Nat.le_max_left _ _
+
+/-- WS-RR RR5.1: the upper witness is admissible for every boundary. -/
+theorem separationWitnessAdmissible_upperWitnessIndex (upperDomainBase : Nat) :
+    separationWitnessAdmissible ⟨upperWitnessIndex upperDomainBase⟩ = true := by
+  rw [separationWitnessAdmissible_iff]
+  simp only [SeLe4n.ThreadId.toNat, upperWitnessIndex, separationBoundary, idleThreadIdBase,
+    SeLe4n.Kernel.Concurrency.numCores]
+  omega
+
 /-- WS-RR RR5.1: the two-domain index partition — entities whose index is below
     the boundary take `lowerLabel`, the rest take `upperLabel`. -/
 def indexPartitionedLabel (upperDomainBase : Nat) (lowerLabel upperLabel : SecurityLabel)
@@ -863,8 +955,10 @@ def indexPartitionedLabel (upperDomainBase : Nat) (lowerLabel upperLabel : Secur
     The only obligation the caller discharges is that the two labels differ;
     everything else the structure requires follows from the clamped boundary
     (`separationBoundary`).  The declared witness is thread `1` (the first
-    non-sentinel index, always below the boundary) against the thread *at* the
-    boundary (always in the upper domain).
+    non-sentinel index, always below the boundary and below the idle range)
+    against the thread at `upperWitnessIndex` — the boundary itself, or the
+    first index past the idle range when the boundary falls inside it; either
+    way in the upper domain and admissible.
 
     A deployment with more than two domains supplies its own
     `DeploymentLabeling`; this family is the one the boot path and the platform
@@ -878,37 +972,21 @@ def indexPartitionedDeploymentLabeling
     serviceLabelOf  := fun sid =>
       indexPartitionedLabel upperDomainBase lowerLabel upperLabel sid.toNat
     separatedLower  := ⟨1⟩
-    separatedUpper  := ⟨separationBoundary upperDomainBase⟩
+    separatedUpper  := ⟨upperWitnessIndex upperDomainBase⟩
     hLowerReal      := by decide
-    hUpperReal      := by
-      have h := two_le_separationBoundary upperDomainBase
-      simp only [SeLe4n.ThreadId.isReserved, decide_eq_false_iff_not]
-      omega
+    hUpperReal      := separationWitnessAdmissible_upperWitnessIndex upperDomainBase
     hSeparated      := by
       have h := two_le_separationBoundary upperDomainBase
       simp only [SeLe4n.ThreadId.toNat, indexPartitionedLabel,
         if_pos (show 1 < separationBoundary upperDomainBase by omega),
-        if_neg (Nat.lt_irrefl (separationBoundary upperDomainBase))]
+        if_neg (Nat.not_lt.mpr (separationBoundary_le_upperWitnessIndex upperDomainBase))]
       exact hLabels }
 
-/-- WS-RR RR5.1: **the production labeling context** — two mutually isolated
-    domains split at `upperDomainBase`.
-
-    The two labels are the incomparable corners of the legacy lattice
-    (`lowTrusted_highUntrusted_mutually_isolated`), so neither domain can observe
-    or influence the other: this is a genuine confinement, not the one-directional
-    `publicLabel` / `kernelTrusted` split, under which every low entity may still
-    write into every high one.
-
-    `upperDomainBase` is the one number a deployment must choose — the entity
-    index at which its untrusted domain begins.  Everything below it (the boot
-    system's threads, objects, endpoints and services) is `lowTrusted`;
-    everything from it upward is `highUntrusted`.
-
-    This is what a hardware boot installs.  It is a *deployment* choice in the
-    sense that the boundary is configurable, and a *kernel* guarantee in the
-    sense that whatever boundary is chosen, the resulting context is
-    `LabelingContextValid` and admitted by the fail-closed guard. -/
+/-- WS-RR RR5.1: the `LabelingContext` of an index-partitioned deployment —
+    `deploymentLabelingContext` over `indexPartitionedDeploymentLabeling`, so it
+    inherits that constructor's validity and admission unconditionally.  The
+    two members the tree uses are `confinedLabelingContext` (production) and
+    `harnessLabelingContext` (the simulation harness and the fixtures). -/
 def indexPartitionedLabelingContext (upperDomainBase : Nat)
     (lowerLabel upperLabel : SecurityLabel) (hLabels : lowerLabel ≠ upperLabel) :
     LabelingContext :=
@@ -947,6 +1025,30 @@ theorem indexPartitionedLabelingContext_threadLabel_above
     indexPartitionedDeploymentLabeling, indexPartitionedLabel,
     if_neg (Nat.not_lt.mpr h)]
 
+/-- WS-RR RR5.1: **the production labeling context** — two mutually isolated
+    domains split at `upperDomainBase`.
+
+    The two labels are the incomparable corners of the legacy lattice
+    (`lowTrusted_highUntrusted_mutually_isolated`), so neither domain can observe
+    or influence the other: this is a genuine confinement, not the one-directional
+    `publicLabel` / `kernelTrusted` split, under which every low entity may still
+    write into every high one.
+
+    `upperDomainBase` is the one number a deployment must choose — the entity
+    index at which its untrusted domain begins.  Everything below it (the boot
+    system's threads, objects, endpoints and services) is `lowTrusted`;
+    everything from it upward is `highUntrusted`.
+
+    This is what the hardware boot installs, and the claim is a definition
+    rather than a sentence: the Raspberry Pi 5 binding's `deploymentLabeling`
+    is `confinedLabelingContext rpi5UpperDomainBase`
+    (`Platform.RPi5.rpi5_deploymentLabeling`), and
+    `Platform.FFI.bootAndInitialisePlatform` boots under whatever labeling the
+    binding carries.  It is a *deployment* choice in the sense that the boundary
+    is configurable, and a *kernel* guarantee in the sense that whatever
+    boundary is chosen, the resulting context is `LabelingContextValid` and
+    admitted by the fail-closed guard — which is why `PlatformBinding` can
+    demand the admission proof as a field. -/
 def confinedLabelingContext (upperDomainBase : Nat) : LabelingContext :=
   indexPartitionedLabelingContext upperDomainBase
     SecurityLabel.lowTrusted SecurityLabel.highUntrusted (by decide)

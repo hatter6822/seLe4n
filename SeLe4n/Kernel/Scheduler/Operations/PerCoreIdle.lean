@@ -452,24 +452,72 @@ theorem bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore
     rw [hObj]
   · rw [createIdleThread_domain_zero, hDom]
 
+/-- **WS-RR RR5.12**: the production boot state satisfies
+    `runnableThreadsAreTCBsOnCore` on every core — the named form of
+    `Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runnable_resolve`,
+    which states the predicate unfolded because `Scheduler/Invariant/PerCore.lean`
+    is outside `Platform.Boot`'s import closure.  Definitionally the same
+    statement; restated so the consumer below reads as the scheduler layer
+    writes it. -/
+theorem bootFromPlatformCheckedWithIdleThreads_runnableThreadsAreTCBsOnCore
+    (config : SeLe4n.Platform.Boot.PlatformConfig)
+    (ist : SeLe4n.Model.IntermediateState)
+    (h : SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads config = .ok ist)
+    (c : CoreId) :
+    runnableThreadsAreTCBsOnCore ist.state c :=
+  SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runnable_resolve config ist h c
+
 /-- **WS-RR RR5.12** (the payoff): on the production boot state, per-core thread
     selection **succeeds on every core** — the scheduler cannot stall a core for
     want of something to run, from the first scheduling point onward.
 
-    The two remaining hypotheses are structural facts about the boot run queue
-    rather than deployment assumptions: it is well-formed, and every thread it
-    holds resolves to a TCB.  `schedulerNoStall_smp` composes this with the
-    lock-contention bound; `no_starvation_under_smp` is its capstone. -/
+    **No hypotheses beyond the boot itself.**  The two structural premises
+    `chooseThreadOnCore_always_succeeds` consumes — the queue is well-formed and
+    every thread on it resolves to a TCB — are facts about the boot state
+    (`bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed`,
+    `bootFromPlatformCheckedWithIdleThreads_runnableThreadsAreTCBsOnCore`), both
+    corollaries of the boot queue's characterisation
+    (`bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq`).  The first cut
+    of this theorem took both by hypothesis, which left the no-stall chain resting
+    on an assumption about the very state it was meant to be discharged from.
+    `schedulerNoStall_smp` composes this with the lock-contention bound;
+    `no_starvation_under_smp` is its capstone. -/
 theorem bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds
     (config : SeLe4n.Platform.Boot.PlatformConfig)
     (ist : SeLe4n.Model.IntermediateState)
     (h : SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads config = .ok ist)
-    (c : CoreId)
-    (hwf : (ist.state.scheduler.runQueueOnCore c).wellFormed)
-    (hRunnable : runnableThreadsAreTCBsOnCore ist.state c) :
+    (c : CoreId) :
     ∃ tid, chooseThreadOnCore ist.state c = .ok (some tid) :=
-  chooseThreadOnCore_always_succeeds ist.state c hwf hRunnable
+  chooseThreadOnCore_always_succeeds ist.state c
+    (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed
+      config ist h c)
+    (bootFromPlatformCheckedWithIdleThreads_runnableThreadsAreTCBsOnCore config ist h c)
     (bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore config ist h c)
+
+/-- **WS-RR RR5.12** (the selection, pinned): every core's **first** selection
+    on the production boot state is its own idle thread.  Selection succeeds
+    (above), the selected thread is a queue member
+    (`chooseThreadOnCore_some_mem_runQueueOnCore`), and idle is the queue's only
+    member (`bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff`).
+    So each core comes up dispatching idle out of its own queue — the
+    enqueue-without-dispatch boot posture `enqueueIdleThread`'s docstring
+    describes, closed by the scheduler's own first step rather than by a boot
+    write to `currentOnCore`. -/
+theorem bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_idle
+    (config : SeLe4n.Platform.Boot.PlatformConfig)
+    (ist : SeLe4n.Model.IntermediateState)
+    (h : SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads config = .ok ist)
+    (c : CoreId) :
+    chooseThreadOnCore ist.state c = .ok (some (idleThreadId c)) := by
+  obtain ⟨tid, hSel⟩ :=
+    bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds config ist h c
+  have hMem := chooseThreadOnCore_some_mem_runQueueOnCore ist.state c tid
+    (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed
+      config ist h c) hSel
+  rw [SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff
+    config ist h c] at hMem
+  rw [← hMem]
+  exact hSel
 
 -- ============================================================================
 -- §5  `idleThread_core_locality` (SM5.E.4)

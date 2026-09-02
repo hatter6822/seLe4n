@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr5-boot-path-fail-open-sandny",
-      "commit_sha": "d7e8b3dda403c962923b2870598e7ae93841153c",
-      "tree_sha": "e98619a93b1438154ac9745224650bc9d8e77f8c",
-      "committed_at_utc": "2026-09-02T16:04:06-04:00"
+      "commit_sha": "0fadd6c3b9264bb228174c32b823250fd63ab466",
+      "tree_sha": "56bdcebd24794f15bf33cead3b81142960a21ea1",
+      "committed_at_utc": "2026-09-02T22:55:23+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "6aaaf44bf5d7816e6e8c9abdc9ab0c26c963d384dc26ac073e16191976086a2b"
+    "source_digest": "82484fb8e953ef38a62ef72fd4a7ef696bc8a90643e6c7a7c9ece7f40f99a988"
   },
   "summary": {
     "module_count": 378,
-    "declaration_count": 18394
+    "declaration_count": 18427
   },
   "readme_sync": {
     "version": "0.34.48",
     "lean_toolchain": "v4.28.0",
     "production_files": 308,
-    "production_loc": 318610,
+    "production_loc": 319110,
     "test_files": 70,
-    "test_loc": 67283,
-    "proved_theorem_lemma_decls": 10572,
+    "test_loc": 67396,
+    "proved_theorem_lemma_decls": 10597,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -136844,30 +136844,30 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Policy",
       "path": "SeLe4n/Kernel/InformationFlow/Policy.lean",
-      "declaration_count": 130,
+      "declaration_count": 139,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 13,
+          "line": 14,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "Confidentiality",
-          "line": 18,
+          "line": 19,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "Integrity",
-          "line": 24,
+          "line": 25,
           "called": []
         },
         {
           "kind": "structure",
           "name": "SecurityLabel",
-          "line": 30,
+          "line": 31,
           "called": [
             "Confidentiality",
             "Integrity"
@@ -136876,13 +136876,13 @@
         {
           "kind": "namespace",
           "name": "SecurityLabel",
-          "line": 35,
+          "line": 36,
           "called": []
         },
         {
           "kind": "def",
           "name": "publicLabel",
-          "line": 37,
+          "line": 38,
           "called": [
             "SecurityLabel"
           ]
@@ -136890,7 +136890,7 @@
         {
           "kind": "def",
           "name": "kernelTrusted",
-          "line": 40,
+          "line": 41,
           "called": [
             "SecurityLabel"
           ]
@@ -136898,7 +136898,7 @@
         {
           "kind": "def",
           "name": "lowTrusted",
-          "line": 52,
+          "line": 53,
           "called": [
             "SecurityLabel"
           ]
@@ -136906,7 +136906,7 @@
         {
           "kind": "def",
           "name": "highUntrusted",
-          "line": 57,
+          "line": 58,
           "called": [
             "SecurityLabel"
           ]
@@ -136914,7 +136914,7 @@
         {
           "kind": "def",
           "name": "confidentialityFlowsTo",
-          "line": 63,
+          "line": 64,
           "called": [
             "Confidentiality"
           ]
@@ -136922,7 +136922,7 @@
         {
           "kind": "def",
           "name": "integrityFlowsTo",
-          "line": 98,
+          "line": 99,
           "called": [
             "Integrity"
           ]
@@ -136930,7 +136930,7 @@
         {
           "kind": "def",
           "name": "bibaIntegrityFlowsTo",
-          "line": 127,
+          "line": 128,
           "called": [
             "Integrity"
           ]
@@ -136938,7 +136938,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_is_not_biba",
-          "line": 145,
+          "line": 146,
           "called": [
             "bibaIntegrityFlowsTo",
             "integrityFlowsTo"
@@ -136947,7 +136947,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_denies_write_up_biba_allows",
-          "line": 157,
+          "line": 158,
           "called": [
             "bibaIntegrityFlowsTo",
             "integrityFlowsTo"
@@ -136956,7 +136956,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_prevents_escalation",
-          "line": 187,
+          "line": 188,
           "called": [
             "integrityFlowsTo"
           ]
@@ -136964,7 +136964,7 @@
         {
           "kind": "def",
           "name": "securityFlowsTo",
-          "line": 210,
+          "line": 211,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo",
@@ -136974,7 +136974,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_prevents_label_escalation",
-          "line": 223,
+          "line": 224,
           "called": [
             "kernelTrusted",
             "publicLabel",
@@ -136984,7 +136984,7 @@
         {
           "kind": "theorem",
           "name": "lowTrusted_highUntrusted_mutually_isolated",
-          "line": 245,
+          "line": 246,
           "called": [
             "highUntrusted",
             "lowTrusted",
@@ -136994,7 +136994,7 @@
         {
           "kind": "structure",
           "name": "DomainFlowPolicy",
-          "line": 280,
+          "line": 281,
           "called": [
             "SecurityDomain"
           ]
@@ -137002,13 +137002,13 @@
         {
           "kind": "namespace",
           "name": "DomainFlowPolicy",
-          "line": 283,
+          "line": 284,
           "called": []
         },
         {
           "kind": "def",
           "name": "isReflexive",
-          "line": 286,
+          "line": 287,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -137017,7 +137017,7 @@
         {
           "kind": "def",
           "name": "isTransitive",
-          "line": 290,
+          "line": 291,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -137026,7 +137026,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 295,
+          "line": 296,
           "called": [
             "DomainFlowPolicy",
             "isReflexive",
@@ -137036,7 +137036,7 @@
         {
           "kind": "def",
           "name": "allowAll",
-          "line": 299,
+          "line": 300,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -137044,7 +137044,7 @@
         {
           "kind": "def",
           "name": "linearOrder",
-          "line": 304,
+          "line": 305,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -137052,7 +137052,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_reflexive",
-          "line": 313,
+          "line": 314,
           "called": [
             "isReflexive"
           ]
@@ -137060,7 +137060,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_transitive",
-          "line": 317,
+          "line": 318,
           "called": [
             "isTransitive"
           ]
@@ -137068,7 +137068,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_wellFormed",
-          "line": 321,
+          "line": 322,
           "called": [
             "allowAll_reflexive",
             "allowAll_transitive",
@@ -137078,7 +137078,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_reflexive",
-          "line": 325,
+          "line": 326,
           "called": [
             "isReflexive",
             "linearOrder"
@@ -137087,7 +137087,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_transitive",
-          "line": 329,
+          "line": 330,
           "called": [
             "isTransitive",
             "le_trans",
@@ -137097,7 +137097,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_wellFormed",
-          "line": 335,
+          "line": 336,
           "called": [
             "linearOrder_reflexive",
             "linearOrder_transitive",
@@ -137107,7 +137107,7 @@
         {
           "kind": "def",
           "name": "domainFlowsTo",
-          "line": 343,
+          "line": 344,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -137116,7 +137116,7 @@
         {
           "kind": "theorem",
           "name": "domainFlowsTo_refl",
-          "line": 346,
+          "line": 347,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain",
@@ -137127,7 +137127,7 @@
         {
           "kind": "theorem",
           "name": "domainFlowsTo_trans",
-          "line": 352,
+          "line": 353,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain",
@@ -137138,7 +137138,7 @@
         {
           "kind": "structure",
           "name": "DeclassificationPolicy",
-          "line": 374,
+          "line": 375,
           "called": [
             "SecurityDomain"
           ]
@@ -137146,13 +137146,13 @@
         {
           "kind": "namespace",
           "name": "DeclassificationPolicy",
-          "line": 377,
+          "line": 378,
           "called": []
         },
         {
           "kind": "def",
           "name": "none",
-          "line": 380,
+          "line": 381,
           "called": [
             "DeclassificationPolicy"
           ]
@@ -137160,7 +137160,7 @@
         {
           "kind": "def",
           "name": "isDeclassificationAuthorized",
-          "line": 386,
+          "line": 387,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -137170,7 +137170,7 @@
         {
           "kind": "theorem",
           "name": "isDeclassificationAuthorized_not_reflexive",
-          "line": 394,
+          "line": 395,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -137182,7 +137182,7 @@
         {
           "kind": "structure",
           "name": "EndpointFlowPolicy",
-          "line": 409,
+          "line": 410,
           "called": [
             "DomainFlowPolicy",
             "ObjId"
@@ -137191,7 +137191,7 @@
         {
           "kind": "structure",
           "name": "MemoryDomainOwnership",
-          "line": 417,
+          "line": 418,
           "called": [
             "DomainId",
             "PAddr",
@@ -137201,7 +137201,7 @@
         {
           "kind": "structure",
           "name": "LabelingContext",
-          "line": 422,
+          "line": 423,
           "called": [
             "DeclassificationPolicy",
             "EndpointFlowPolicy",
@@ -137217,7 +137217,7 @@
         {
           "kind": "def",
           "name": "defaultLabelingContext",
-          "line": 527,
+          "line": 531,
           "called": [
             "LabelingContext",
             "publicLabel"
@@ -137226,7 +137226,7 @@
         {
           "kind": "theorem",
           "name": "defaultLabelingContext_insecure",
-          "line": 547,
+          "line": 551,
           "called": [
             "ObjId",
             "confidentialityFlowsTo",
@@ -137239,7 +137239,7 @@
         {
           "kind": "theorem",
           "name": "defaultLabelingContext_all_threads_observable",
-          "line": 557,
+          "line": 561,
           "called": [
             "ThreadId",
             "confidentialityFlowsTo",
@@ -137251,18 +137251,73 @@
         },
         {
           "kind": "def",
+          "name": "separationWitnessAdmissible",
+          "line": 585,
+          "called": [
+            "ThreadId",
+            "isIdleThreadId",
+            "isReserved"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "separationWitnessAdmissible_iff",
+          "line": 590,
+          "called": [
+            "ThreadId",
+            "idleThreadIdBase",
+            "isIdleThreadId",
+            "isReserved",
+            "numCores",
+            "separationWitnessAdmissible",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "separationWitnessAdmissible_not_reserved",
+          "line": 600,
+          "called": [
+            "ThreadId",
+            "isReserved",
+            "separationWitnessAdmissible"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "separationWitnessAdmissible_not_idle",
+          "line": 606,
+          "called": [
+            "ThreadId",
+            "isIdleThreadId",
+            "separationWitnessAdmissible"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "separationWitnessAdmissible_idleThreadId",
+          "line": 613,
+          "called": [
+            "CoreId",
+            "idleThreadId",
+            "isIdleThreadId_idleThreadId",
+            "separationWitnessAdmissible"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "verifiesDeclaredSeparation",
-          "line": 586,
+          "line": 637,
           "called": [
             "LabelingContext",
-            "isReserved",
-            "none"
+            "none",
+            "separationWitnessAdmissible"
           ]
         },
         {
           "kind": "def",
           "name": "isInsecureDefaultContext",
-          "line": 621,
+          "line": 672,
           "called": [
             "LabelingContext",
             "verifiesDeclaredSeparation"
@@ -137271,7 +137326,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_defaultLabelingContext",
-          "line": 627,
+          "line": 678,
           "called": [
             "defaultLabelingContext",
             "isInsecureDefaultContext"
@@ -137280,7 +137335,7 @@
         {
           "kind": "theorem",
           "name": "defaultLabelingContext_separates_no_threads",
-          "line": 635,
+          "line": 686,
           "called": [
             "ThreadId"
           ]
@@ -137288,7 +137343,7 @@
         {
           "kind": "def",
           "name": "testLabelingContext",
-          "line": 662,
+          "line": 713,
           "called": [
             "LabelingContext",
             "kernelTrusted",
@@ -137299,7 +137354,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_testLabelingContext",
-          "line": 681,
+          "line": 732,
           "called": [
             "isInsecureDefaultContext",
             "testLabelingContext"
@@ -137308,7 +137363,7 @@
         {
           "kind": "theorem",
           "name": "testLabelingContext_separates_no_real_threads",
-          "line": 690,
+          "line": 741,
           "called": [
             "ThreadId",
             "isReserved",
@@ -137319,7 +137374,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_false_implies_labelNonTriviality",
-          "line": 705,
+          "line": 756,
           "called": [
             "LabelingContext",
             "ThreadId",
@@ -137331,33 +137386,46 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_false_implies_real_witness",
-          "line": 722,
+          "line": 774,
           "called": [
             "LabelingContext",
             "ThreadId",
             "isInsecureDefaultContext",
-            "isReserved",
             "none",
+            "separationWitnessAdmissible",
             "verifiesDeclaredSeparation"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "isInsecureDefaultContext_false_implies_witness_not_idle",
+          "line": 792,
+          "called": [
+            "LabelingContext",
+            "ThreadId",
+            "isIdleThreadId",
+            "isInsecureDefaultContext",
+            "isInsecureDefaultContext_false_implies_real_witness",
+            "separationWitnessAdmissible_not_idle"
           ]
         },
         {
           "kind": "structure",
           "name": "DeploymentLabeling",
-          "line": 777,
+          "line": 841,
           "called": [
             "ObjId",
             "SecurityLabel",
             "ServiceId",
             "ThreadId",
-            "isReserved",
+            "separationWitnessAdmissible",
             "toNat"
           ]
         },
         {
           "kind": "def",
           "name": "deploymentLabelingContext",
-          "line": 812,
+          "line": 877,
           "called": [
             "DeploymentLabeling",
             "LabelingContext",
@@ -137367,7 +137435,7 @@
         {
           "kind": "theorem",
           "name": "deploymentLabelingContext_thread_object_label_eq",
-          "line": 822,
+          "line": 887,
           "called": [
             "DeploymentLabeling",
             "ThreadId",
@@ -137378,12 +137446,12 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_deploymentLabelingContext",
-          "line": 830,
+          "line": 895,
           "called": [
             "DeploymentLabeling",
             "deploymentLabelingContext",
             "isInsecureDefaultContext",
-            "isReserved",
+            "separationWitnessAdmissible",
             "toNat",
             "verifiesDeclaredSeparation"
           ]
@@ -137391,21 +137459,54 @@
         {
           "kind": "def",
           "name": "separationBoundary",
-          "line": 848,
+          "line": 914,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "two_le_separationBoundary",
-          "line": 850,
+          "line": 916,
           "called": [
             "separationBoundary"
           ]
         },
         {
           "kind": "def",
+          "name": "upperWitnessIndex",
+          "line": 929,
+          "called": [
+            "idleThreadIdBase",
+            "numCores",
+            "separationBoundary"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "separationBoundary_le_upperWitnessIndex",
+          "line": 933,
+          "called": [
+            "separationBoundary",
+            "upperWitnessIndex"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "separationWitnessAdmissible_upperWitnessIndex",
+          "line": 938,
+          "called": [
+            "idleThreadIdBase",
+            "numCores",
+            "separationBoundary",
+            "separationWitnessAdmissible",
+            "separationWitnessAdmissible_iff",
+            "toNat",
+            "upperWitnessIndex"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "indexPartitionedLabel",
-          "line": 855,
+          "line": 947,
           "called": [
             "SecurityLabel",
             "separationBoundary"
@@ -137414,22 +137515,23 @@
         {
           "kind": "def",
           "name": "indexPartitionedDeploymentLabeling",
-          "line": 872,
+          "line": 966,
           "called": [
             "DeploymentLabeling",
             "SecurityLabel",
             "indexPartitionedLabel",
-            "isReserved",
-            "lt_irrefl",
             "separationBoundary",
+            "separationBoundary_le_upperWitnessIndex",
+            "separationWitnessAdmissible_upperWitnessIndex",
             "toNat",
-            "two_le_separationBoundary"
+            "two_le_separationBoundary",
+            "upperWitnessIndex"
           ]
         },
         {
           "kind": "def",
           "name": "indexPartitionedLabelingContext",
-          "line": 912,
+          "line": 990,
           "called": [
             "LabelingContext",
             "SecurityLabel",
@@ -137440,7 +137542,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_indexPartitionedLabelingContext",
-          "line": 919,
+          "line": 997,
           "called": [
             "SecurityLabel",
             "indexPartitionedLabelingContext",
@@ -137451,7 +137553,7 @@
         {
           "kind": "theorem",
           "name": "indexPartitionedLabelingContext_threadLabel_below",
-          "line": 930,
+          "line": 1008,
           "called": [
             "SecurityLabel",
             "ThreadId",
@@ -137466,7 +137568,7 @@
         {
           "kind": "theorem",
           "name": "indexPartitionedLabelingContext_threadLabel_above",
-          "line": 940,
+          "line": 1018,
           "called": [
             "SecurityLabel",
             "ThreadId",
@@ -137481,7 +137583,7 @@
         {
           "kind": "def",
           "name": "confinedLabelingContext",
-          "line": 950,
+          "line": 1052,
           "called": [
             "LabelingContext",
             "highUntrusted",
@@ -137492,7 +137594,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_confinedLabelingContext",
-          "line": 955,
+          "line": 1057,
           "called": [
             "confinedLabelingContext",
             "isInsecureDefaultContext",
@@ -137502,7 +137604,7 @@
         {
           "kind": "theorem",
           "name": "confinedLabelingContext_confines",
-          "line": 964,
+          "line": 1066,
           "called": [
             "ThreadId",
             "confinedLabelingContext",
@@ -137517,13 +137619,13 @@
         {
           "kind": "def",
           "name": "harnessSeparationBoundary",
-          "line": 983,
+          "line": 1085,
           "called": []
         },
         {
           "kind": "def",
           "name": "harnessLabelingContext",
-          "line": 1001,
+          "line": 1103,
           "called": [
             "LabelingContext",
             "harnessSeparationBoundary",
@@ -137535,7 +137637,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_harnessLabelingContext",
-          "line": 1006,
+          "line": 1108,
           "called": [
             "harnessLabelingContext",
             "isInsecureDefaultContext",
@@ -137545,7 +137647,7 @@
         {
           "kind": "def",
           "name": "uniformFixtureLabelingContext",
-          "line": 1022,
+          "line": 1124,
           "called": [
             "LabelingContext",
             "SecurityLabel",
@@ -137556,7 +137658,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_uniformFixtureLabelingContext",
-          "line": 1027,
+          "line": 1129,
           "called": [
             "SecurityLabel",
             "isInsecureDefaultContext",
@@ -137567,7 +137669,7 @@
         {
           "kind": "theorem",
           "name": "harnessLabelingContext_threadLabel_public",
-          "line": 1036,
+          "line": 1138,
           "called": [
             "ThreadId",
             "harnessSeparationBoundary",
@@ -137580,7 +137682,7 @@
         {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_refl",
-          "line": 1044,
+          "line": 1146,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -137589,7 +137691,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_refl",
-          "line": 1048,
+          "line": 1150,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -137598,7 +137700,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_refl",
-          "line": 1052,
+          "line": 1154,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_refl",
@@ -137609,7 +137711,7 @@
         {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_trans",
-          "line": 1058,
+          "line": 1160,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -137618,7 +137720,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_trans",
-          "line": 1065,
+          "line": 1167,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -137627,7 +137729,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_trans",
-          "line": 1072,
+          "line": 1174,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_trans",
@@ -137638,7 +137740,7 @@
         {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_antisymm",
-          "line": 1094,
+          "line": 1196,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -137647,7 +137749,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_antisymm",
-          "line": 1101,
+          "line": 1203,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -137656,7 +137758,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_antisymm",
-          "line": 1109,
+          "line": 1211,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_antisymm",
@@ -137666,8 +137768,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1127>",
-          "line": 1127,
+          "name": "<anonymous:instance:1229>",
+          "line": 1229,
           "called": [
             "securityFlowsTo"
           ]
@@ -137675,7 +137777,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_lattice_verified",
-          "line": 1132,
+          "line": 1234,
           "called": [
             "kernelTrusted",
             "publicLabel",
@@ -137685,7 +137787,7 @@
         {
           "kind": "structure",
           "name": "GenericLabelingContext",
-          "line": 1150,
+          "line": 1252,
           "called": [
             "DomainFlowPolicy",
             "ObjId",
@@ -137697,7 +137799,7 @@
         {
           "kind": "def",
           "name": "genericFlowCheck",
-          "line": 1159,
+          "line": 1261,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -137707,7 +137809,7 @@
         {
           "kind": "def",
           "name": "endpointFlowCheck",
-          "line": 1166,
+          "line": 1268,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -137722,7 +137824,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_fallback",
-          "line": 1176,
+          "line": 1278,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -137737,7 +137839,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_override",
-          "line": 1187,
+          "line": 1289,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -137752,7 +137854,7 @@
         {
           "kind": "def",
           "name": "embedLegacyLabel",
-          "line": 1216,
+          "line": 1318,
           "called": [
             "SecurityDomain",
             "SecurityLabel"
@@ -137761,7 +137863,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_public",
-          "line": 1224,
+          "line": 1326,
           "called": [
             "embedLegacyLabel",
             "publicLabel"
@@ -137770,7 +137872,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_kernelTrusted",
-          "line": 1228,
+          "line": 1330,
           "called": [
             "embedLegacyLabel",
             "kernelTrusted"
@@ -137779,7 +137881,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_preserves_flow",
-          "line": 1238,
+          "line": 1340,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo",
@@ -137792,7 +137894,7 @@
         {
           "kind": "def",
           "name": "unembedLegacyDomain",
-          "line": 1277,
+          "line": 1379,
           "called": [
             "SecurityDomain",
             "SecurityLabel",
@@ -137802,7 +137904,7 @@
         {
           "kind": "theorem",
           "name": "unembedLegacyDomain_embed",
-          "line": 1286,
+          "line": 1388,
           "called": [
             "SecurityLabel",
             "embedLegacyLabel",
@@ -137812,7 +137914,7 @@
         {
           "kind": "def",
           "name": "legacyDomainFlows",
-          "line": 1299,
+          "line": 1401,
           "called": [
             "SecurityLabel",
             "securityFlowsTo"
@@ -137821,7 +137923,7 @@
         {
           "kind": "theorem",
           "name": "legacyDomainFlows_some",
-          "line": 1303,
+          "line": 1405,
           "called": [
             "SecurityLabel",
             "legacyDomainFlows",
@@ -137831,7 +137933,7 @@
         {
           "kind": "theorem",
           "name": "legacyDomainFlows_none_left",
-          "line": 1306,
+          "line": 1408,
           "called": [
             "SecurityLabel",
             "legacyDomainFlows",
@@ -137841,7 +137943,7 @@
         {
           "kind": "theorem",
           "name": "legacyDomainFlows_none_right",
-          "line": 1309,
+          "line": 1411,
           "called": [
             "SecurityLabel",
             "legacyDomainFlows",
@@ -137851,7 +137953,7 @@
         {
           "kind": "def",
           "name": "DomainFlowPolicy.legacyLattice",
-          "line": 1312,
+          "line": 1414,
           "called": [
             "DomainFlowPolicy",
             "legacyDomainFlows",
@@ -137861,7 +137963,7 @@
         {
           "kind": "theorem",
           "name": "legacyLattice_canFlow_embed",
-          "line": 1320,
+          "line": 1422,
           "called": [
             "SecurityLabel",
             "embedLegacyLabel",
@@ -137871,7 +137973,7 @@
         {
           "kind": "theorem",
           "name": "linearOrder_is_not_faithful_to_legacy",
-          "line": 1334,
+          "line": 1436,
           "called": [
             "embedLegacyLabel",
             "securityFlowsTo"
@@ -137880,7 +137982,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.legacyLattice_reflexive",
-          "line": 1343,
+          "line": 1445,
           "called": [
             "DomainFlowPolicy.legacyLattice",
             "isReflexive"
@@ -137889,7 +137991,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.legacyLattice_transitive",
-          "line": 1350,
+          "line": 1452,
           "called": [
             "DomainFlowPolicy.legacyLattice",
             "isTransitive",
@@ -137901,7 +138003,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.legacyLattice_wellFormed",
-          "line": 1374,
+          "line": 1476,
           "called": [
             "legacyLattice_reflexive",
             "legacyLattice_transitive",
@@ -137911,7 +138013,7 @@
         {
           "kind": "def",
           "name": "endpointOverrideAllows",
-          "line": 1387,
+          "line": 1489,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -137924,7 +138026,7 @@
         {
           "kind": "def",
           "name": "endpointFlowGate",
-          "line": 1410,
+          "line": 1512,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -137937,7 +138039,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowGate_implies_securityFlowsTo",
-          "line": 1419,
+          "line": 1521,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -137950,7 +138052,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowGate_implies_override",
-          "line": 1426,
+          "line": 1528,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -137963,7 +138065,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowGate_of",
-          "line": 1435,
+          "line": 1537,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -137977,7 +138079,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowGate_false_of_override_false",
-          "line": 1445,
+          "line": 1547,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -137990,7 +138092,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowGate_false_of_securityFlowsTo_false",
-          "line": 1454,
+          "line": 1556,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -138003,7 +138105,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowGate_eq_securityFlowsTo_of_no_override",
-          "line": 1463,
+          "line": 1565,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -138018,7 +138120,7 @@
         {
           "kind": "theorem",
           "name": "endpointOverrideAllows_default",
-          "line": 1471,
+          "line": 1573,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -138031,7 +138133,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowGate_is_not_securityFlowsTo",
-          "line": 1480,
+          "line": 1582,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -138045,7 +138147,7 @@
         {
           "kind": "def",
           "name": "endpointGateRestricted",
-          "line": 1499,
+          "line": 1601,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -138058,7 +138160,7 @@
         {
           "kind": "theorem",
           "name": "endpointGateRestricted_always",
-          "line": 1513,
+          "line": 1615,
           "called": [
             "LabelingContext",
             "endpointFlowGate_implies_securityFlowsTo",
@@ -138069,7 +138171,7 @@
         {
           "kind": "theorem",
           "name": "endpointGateRestricted_survives_widening_override",
-          "line": 1526,
+          "line": 1628,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -138085,7 +138187,7 @@
         {
           "kind": "def",
           "name": "liftLegacyContext",
-          "line": 1553,
+          "line": 1655,
           "called": [
             "GenericLabelingContext",
             "LabelingContext",
@@ -138096,7 +138198,7 @@
         {
           "kind": "theorem",
           "name": "securityLattice_reflexive",
-          "line": 1598,
+          "line": 1700,
           "called": [
             "SecurityLabel",
             "securityFlowsTo",
@@ -138106,7 +138208,7 @@
         {
           "kind": "theorem",
           "name": "securityLattice_transitive",
-          "line": 1601,
+          "line": 1703,
           "called": [
             "SecurityLabel",
             "securityFlowsTo",
@@ -138116,7 +138218,7 @@
         {
           "kind": "def",
           "name": "endpointFlowPolicyWellFormed",
-          "line": 1647,
+          "line": 1749,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -138126,7 +138228,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowPolicyWellFormed_no_overrides",
-          "line": 1655,
+          "line": 1757,
           "called": [
             "DomainFlowPolicy",
             "endpointFlowPolicyWellFormed",
@@ -138137,7 +138239,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_reflexive",
-          "line": 1666,
+          "line": 1768,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -138154,7 +138256,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_transitive",
-          "line": 1682,
+          "line": 1784,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -138171,7 +138273,7 @@
         {
           "kind": "def",
           "name": "endpointPolicyRestricted",
-          "line": 1713,
+          "line": 1815,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -138182,7 +138284,7 @@
         {
           "kind": "theorem",
           "name": "endpointPolicyRestricted_no_overrides",
-          "line": 1724,
+          "line": 1826,
           "called": [
             "DomainFlowPolicy",
             "endpointPolicyRestricted",
@@ -138192,7 +138294,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_restricted_subset",
-          "line": 1731,
+          "line": 1833,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -156647,7 +156749,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.IdleThread",
       "path": "SeLe4n/Kernel/Scheduler/IdleThread.lean",
-      "declaration_count": 6,
+      "declaration_count": 9,
       "declarations": [
         {
           "kind": "namespace",
@@ -156700,7 +156802,6 @@
           "line": 75,
           "called": [
             "CoreId",
-            "Kernel",
             "ThreadId.ofNat_toNat",
             "idleThreadId",
             "idleThreadId_ne",
@@ -156708,6 +156809,45 @@
             "symm",
             "toNat",
             "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "isIdleThreadId",
+          "line": 99,
+          "called": [
+            "ThreadId",
+            "idleThreadIdBase",
+            "numCores",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "isIdleThreadId_idleThreadId",
+          "line": 103,
+          "called": [
+            "CoreId",
+            "idleThreadId",
+            "isIdleThreadId",
+            "ofNat",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "isIdleThreadId_iff",
+          "line": 112,
+          "called": [
+            "CoreId",
+            "Kernel",
+            "ThreadId",
+            "ext",
+            "idleThreadId",
+            "idleThreadIdBase",
+            "isIdleThreadId",
+            "isIdleThreadId_idleThreadId",
+            "toNat"
           ]
         }
       ]
@@ -173933,7 +174073,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean",
-      "declaration_count": 46,
+      "declaration_count": 48,
       "declarations": [
         {
           "kind": "namespace",
@@ -174355,26 +174495,57 @@
         },
         {
           "kind": "theorem",
+          "name": "bootFromPlatformCheckedWithIdleThreads_runnableThreadsAreTCBsOnCore",
+          "line": 462,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "PlatformConfig",
+            "bootFromPlatformCheckedWithIdleThreads",
+            "bootFromPlatformCheckedWithIdleThreads_runnable_resolve",
+            "config",
+            "runnableThreadsAreTCBsOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds",
-          "line": 463,
+          "line": 485,
           "called": [
             "CoreId",
             "IntermediateState",
             "PlatformConfig",
             "bootFromPlatformCheckedWithIdleThreads",
             "bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore",
+            "bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed",
+            "bootFromPlatformCheckedWithIdleThreads_runnableThreadsAreTCBsOnCore",
             "chooseThreadOnCore",
             "chooseThreadOnCore_always_succeeds",
+            "config"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_idle",
+          "line": 506,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "PlatformConfig",
+            "bootFromPlatformCheckedWithIdleThreads",
+            "bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds",
+            "bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff",
+            "bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed",
+            "chooseThreadOnCore",
+            "chooseThreadOnCore_some_mem_runQueueOnCore",
             "config",
-            "runQueueOnCore",
-            "runnableThreadsAreTCBsOnCore",
-            "wellFormed"
+            "idleThreadId"
           ]
         },
         {
           "kind": "def",
           "name": "runQueueAffinityConsistentOnCore",
-          "line": 484,
+          "line": 532,
           "called": [
             "CoreId",
             "SystemState",
@@ -174389,7 +174560,7 @@
         {
           "kind": "theorem",
           "name": "idleThread_core_locality",
-          "line": 500,
+          "line": 548,
           "called": [
             "CoreId",
             "SystemState",
@@ -174408,7 +174579,7 @@
         {
           "kind": "theorem",
           "name": "idleThread_core_locality_of_enqueue",
-          "line": 514,
+          "line": 562,
           "called": [
             "CoreId",
             "SystemState",
@@ -174423,7 +174594,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_runQueueAffinityConsistentOnCore_self",
-          "line": 531,
+          "line": 579,
           "called": [
             "CoreId",
             "SystemState",
@@ -174445,7 +174616,7 @@
         {
           "kind": "theorem",
           "name": "idleThread_core_locality_forall",
-          "line": 552,
+          "line": 600,
           "called": [
             "SystemState",
             "createIdleThread",
@@ -174461,7 +174632,7 @@
         {
           "kind": "def",
           "name": "enqueueIdleThreadOnCoreLockSet",
-          "line": 567,
+          "line": 615,
           "called": [
             "AccessMode",
             "CoreId",
@@ -174472,7 +174643,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_length",
-          "line": 572,
+          "line": 620,
           "called": [
             "CoreId",
             "enqueueIdleThreadOnCoreLockSet",
@@ -174482,7 +174653,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_write_only",
-          "line": 576,
+          "line": 624,
           "called": [
             "CoreId",
             "enqueueIdleThreadOnCoreLockSet"
@@ -174491,7 +174662,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_contains_objStore_write",
-          "line": 584,
+          "line": 632,
           "called": [
             "CoreId",
             "enqueueIdleThreadOnCoreLockSet",
@@ -174501,7 +174672,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_contains_runQueue_write",
-          "line": 591,
+          "line": 639,
           "called": [
             "CoreId",
             "enqueueIdleThreadOnCoreLockSet"
@@ -174510,7 +174681,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_object_before_runQueue",
-          "line": 598,
+          "line": 646,
           "called": [
             "CoreId",
             "RunQueueLockId",
@@ -174521,7 +174692,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_keys_nodup",
-          "line": 605,
+          "line": 653,
           "called": [
             "CoreId",
             "enqueueIdleThreadOnCoreLockSet"
@@ -174530,7 +174701,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_pairwise_le",
-          "line": 613,
+          "line": 661,
           "called": [
             "CoreId",
             "RunQueueLockId",
@@ -174543,7 +174714,7 @@
         {
           "kind": "theorem",
           "name": "idleThread_no_starvation",
-          "line": 635,
+          "line": 683,
           "called": [
             "CoreId",
             "SystemState",
@@ -174565,7 +174736,7 @@
         {
           "kind": "def",
           "name": "idleAvailableOnCoreB",
-          "line": 659,
+          "line": 707,
           "called": [
             "CoreId",
             "SystemState",
@@ -174581,7 +174752,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_always_succeeds_of_idleAvailableB",
-          "line": 670,
+          "line": 718,
           "called": [
             "CoreId",
             "SystemState",
@@ -174603,7 +174774,7 @@
         {
           "kind": "theorem",
           "name": "idleThreadEnqueuedOnCore_idleAvailableOnCoreB",
-          "line": 691,
+          "line": 739,
           "called": [
             "CoreId",
             "SystemState",
@@ -174617,7 +174788,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_selection_inputs_framed",
-          "line": 710,
+          "line": 758,
           "called": [
             "CoreId",
             "Kernel",
@@ -207140,7 +207311,7 @@
     {
       "module": "SeLe4n.Platform.Boot",
       "path": "SeLe4n/Platform/Boot.lean",
-      "declaration_count": 259,
+      "declaration_count": 265,
       "declarations": [
         {
           "kind": "namespace",
@@ -209669,9 +209840,28 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "foldl_enqueueIdleThread_runQueueOnCore_eq",
+          "line": 2709,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "cons",
+            "createIdleThread",
+            "enqueueIdleThread",
+            "enqueueIdleThread_runQueueOnCore_ne",
+            "enqueueIdleThread_runQueueOnCore_self",
+            "foldl_enqueueIdleThread_runQueueOnCore_frame",
+            "idleThreadId",
+            "insert",
+            "remove",
+            "runQueueOnCore"
+          ]
+        },
+        {
           "kind": "def",
           "name": "bootFromPlatformCheckedWithIdleThreads",
-          "line": 2723,
+          "line": 2758,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -209683,7 +209873,7 @@
         {
           "kind": "theorem",
           "name": "installBootVSpaceRoot_scheduler",
-          "line": 2732,
+          "line": 2767,
           "called": [
             "IntermediateState",
             "ObjId",
@@ -209695,7 +209885,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_scheduler_eq",
-          "line": 2747,
+          "line": 2782,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -209711,7 +209901,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_map_ok",
-          "line": 2784,
+          "line": 2819,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -209724,7 +209914,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_rejects_invalid",
-          "line": 2794,
+          "line": 2829,
           "called": [
             "PlatformConfig",
             "bootFromPlatformChecked",
@@ -209735,7 +209925,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_isOk_iff",
-          "line": 2803,
+          "line": 2838,
           "called": [
             "PlatformConfig",
             "bootFromPlatformChecked",
@@ -209746,7 +209936,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_machine",
-          "line": 2814,
+          "line": 2849,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -209760,7 +209950,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_currentAllNone",
-          "line": 2833,
+          "line": 2868,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209777,8 +209967,28 @@
         },
         {
           "kind": "theorem",
+          "name": "bootFromPlatformCheckedWithIdleThreads_preserves_platform_objects",
+          "line": 2895,
+          "called": [
+            "IntermediateState",
+            "KernelObject",
+            "ObjId",
+            "PlatformConfig",
+            "allCores",
+            "bootFromPlatformChecked",
+            "bootFromPlatformCheckedWithIdleThreads",
+            "bootFromPlatformCheckedWithIdleThreads_map_ok",
+            "config",
+            "foldl_enqueueIdleThread_objects_frame_of_not_idle",
+            "idleSlotsFreshAt",
+            "idleThreadId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_idle_available",
-          "line": 2864,
+          "line": 2932,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209803,8 +210013,91 @@
         },
         {
           "kind": "theorem",
+          "name": "bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq",
+          "line": 2967,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "PlatformConfig",
+            "allCores",
+            "allCores_nodup",
+            "bootFromPlatformChecked",
+            "bootFromPlatformCheckedWithIdleThreads",
+            "bootFromPlatformChecked_ok_scheduler_eq",
+            "config",
+            "createIdleThread",
+            "default_state_perCoreInitialized",
+            "empty",
+            "foldl_enqueueIdleThread_runQueueOnCore_eq",
+            "idleThreadId",
+            "insert",
+            "mem_allCores",
+            "remove",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff",
+          "line": 2992,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "PlatformConfig",
+            "ThreadId",
+            "bootFromPlatformCheckedWithIdleThreads",
+            "bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq",
+            "config",
+            "idleThreadId",
+            "mem_insert",
+            "mem_remove",
+            "mem_toList_iff_mem",
+            "not_mem_empty",
+            "runQueueOnCore",
+            "toList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed",
+          "line": 3015,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "PlatformConfig",
+            "bootFromPlatformCheckedWithIdleThreads",
+            "bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq",
+            "config",
+            "empty_wellFormed",
+            "insert_preserves_wellFormed",
+            "remove_preserves_wellFormed",
+            "runQueueOnCore",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatformCheckedWithIdleThreads_runnable_resolve",
+          "line": 3030,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "PlatformConfig",
+            "TCB",
+            "bootFromPlatformCheckedWithIdleThreads",
+            "bootFromPlatformCheckedWithIdleThreads_idle_available",
+            "bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff",
+            "config",
+            "createIdleThread",
+            "getTcb",
+            "runQueueOnCore",
+            "toList"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "bootFromPlatform_cdt_eq",
-          "line": 2888,
+          "line": 3043,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -209820,7 +210113,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_services_eq",
-          "line": 2895,
+          "line": 3050,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -209836,7 +210129,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_serviceRegistry_eq",
-          "line": 2902,
+          "line": 3057,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -209852,7 +210145,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_interfaceRegistry_eq",
-          "line": 2909,
+          "line": 3064,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -209868,7 +210161,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_asidTable_eq",
-          "line": 2916,
+          "line": 3071,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -209884,7 +210177,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_tlb_eq",
-          "line": 2923,
+          "line": 3078,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -209900,7 +210193,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_tlbShootdown_eq",
-          "line": 2932,
+          "line": 3087,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -209916,7 +210209,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_perCoreTlb_eq",
-          "line": 2943,
+          "line": 3098,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -209932,7 +210225,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_perCoreICache_eq",
-          "line": 2954,
+          "line": 3109,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -209948,7 +210241,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_pendingIcacheMaintenance_eq",
-          "line": 2966,
+          "line": 3121,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -209964,7 +210257,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_declassificationAuditLog_eq",
-          "line": 2978,
+          "line": 3133,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -209980,7 +210273,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_declassificationAuditEpoch_eq",
-          "line": 2991,
+          "line": 3146,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -209996,7 +210289,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_declassificationRefusals_eq",
-          "line": 3004,
+          "line": 3159,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210012,7 +210305,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_declassificationTaint_eq",
-          "line": 3018,
+          "line": 3173,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210028,7 +210321,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_machine_physicalAddressWidth",
-          "line": 3030,
+          "line": 3185,
           "called": [
             "PlatformConfig",
             "applyMachineConfig_physicalAddressWidth",
@@ -210039,7 +210332,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_machine_non_config_fields",
-          "line": 3059,
+          "line": 3214,
           "called": [
             "MachineState.regs",
             "MachineState.regsOnCore",
@@ -210058,7 +210351,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_currentThreadInActiveDomain",
-          "line": 3074,
+          "line": 3229,
           "called": [
             "PlatformConfig",
             "activeDomainOnCore",
@@ -210075,7 +210368,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull",
-          "line": 3101,
+          "line": 3256,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210108,7 +210401,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_capabilityRefs",
-          "line": 3157,
+          "line": 3312,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -210119,7 +210412,7 @@
         {
           "kind": "theorem",
           "name": "applyMachineConfig_capabilityRefs_eq",
-          "line": 3164,
+          "line": 3319,
           "called": [
             "IntermediateState",
             "MachineConfig",
@@ -210130,7 +210423,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_capabilityRefs_eq",
-          "line": 3168,
+          "line": 3323,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210145,7 +210438,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_cdtNodeSlot_eq",
-          "line": 3177,
+          "line": 3332,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210161,7 +210454,7 @@
         {
           "kind": "def",
           "name": "bootSafeObject",
-          "line": 3218,
+          "line": 3373,
           "called": [
             "KernelObject",
             "badge",
@@ -210181,7 +210474,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.bootSafe",
-          "line": 3262,
+          "line": 3417,
           "called": [
             "PlatformConfig",
             "bootSafeObject",
@@ -210191,7 +210484,7 @@
         {
           "kind": "theorem",
           "name": "bootSafeObject_admits_rpi5BootVSpaceRoot",
-          "line": 3270,
+          "line": 3425,
           "called": [
             "bootSafeObject",
             "rpi5BootVSpaceRoot",
@@ -210201,7 +210494,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.untypedRegionsDisjoint",
-          "line": 3302,
+          "line": 3457,
           "called": [
             "ObjectEntry",
             "PlatformConfig",
@@ -210212,7 +210505,7 @@
         {
           "kind": "theorem",
           "name": "PlatformConfig.untypedRegionsDisjoint_empty",
-          "line": 3315,
+          "line": 3470,
           "called": [
             "PlatformConfig.untypedRegionsDisjoint"
           ]
@@ -210220,7 +210513,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_objects_bootSafe",
-          "line": 3326,
+          "line": 3481,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -210239,7 +210532,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_objects_bootSafe",
-          "line": 3354,
+          "line": 3509,
           "called": [
             "KernelObject",
             "ObjId",
@@ -210258,7 +210551,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_objects_reachable",
-          "line": 3375,
+          "line": 3530,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -210276,7 +210569,7 @@
         {
           "kind": "theorem",
           "name": "idleSlotsFreshAt_of_initialObjects_below_base",
-          "line": 3410,
+          "line": 3565,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -210302,7 +210595,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_untypedRegionsDisjoint",
-          "line": 3447,
+          "line": 3602,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -210320,7 +210613,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_proofLayerInvariantBundle_general",
-          "line": 3519,
+          "line": 3674,
           "called": [
             "ICacheState.empty",
             "ObjId",
@@ -210436,7 +210729,7 @@
         {
           "kind": "theorem",
           "name": "bootToRuntime_invariantBridge_general",
-          "line": 4090,
+          "line": 4245,
           "called": [
             "PlatformConfig",
             "apiInvariantBundle_frozen",
@@ -210455,18 +210748,18 @@
     {
       "module": "SeLe4n.Platform.Contract",
       "path": "SeLe4n/Platform/Contract.lean",
-      "declaration_count": 11,
+      "declaration_count": 13,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform",
-          "line": 54,
+          "line": 55,
           "called": []
         },
         {
           "kind": "structure",
           "name": "BootVSpaceRootEntry",
-          "line": 73,
+          "line": 74,
           "called": [
             "ObjId",
             "VSpaceRoot",
@@ -210476,22 +210769,24 @@
         {
           "kind": "class",
           "name": "PlatformBinding",
-          "line": 84,
+          "line": 85,
           "called": [
             "BootBoundaryContract",
             "BootVSpaceRootEntry",
             "InterruptBoundaryContract",
+            "LabelingContext",
             "MachineConfig",
             "RuntimeBoundaryContract",
             "SharingDomain",
             "bootCoreId",
+            "isInsecureDefaultContext",
             "none"
           ]
         },
         {
           "kind": "def",
           "name": "PlatformBinding.runtime",
-          "line": 141,
+          "line": 160,
           "called": [
             "PlatformBinding",
             "RuntimeBoundaryContract"
@@ -210500,7 +210795,7 @@
         {
           "kind": "def",
           "name": "PlatformBinding.boot",
-          "line": 145,
+          "line": 164,
           "called": [
             "BootBoundaryContract",
             "PlatformBinding"
@@ -210509,7 +210804,7 @@
         {
           "kind": "def",
           "name": "PlatformBinding.interrupt",
-          "line": 149,
+          "line": 168,
           "called": [
             "InterruptBoundaryContract",
             "PlatformBinding"
@@ -210518,7 +210813,7 @@
         {
           "kind": "def",
           "name": "PlatformBinding.config",
-          "line": 153,
+          "line": 172,
           "called": [
             "MachineConfig",
             "PlatformBinding"
@@ -210527,7 +210822,7 @@
         {
           "kind": "def",
           "name": "PlatformBinding.bootVSpace",
-          "line": 158,
+          "line": 177,
           "called": [
             "BootVSpaceRootEntry",
             "PlatformBinding"
@@ -210536,7 +210831,7 @@
         {
           "kind": "def",
           "name": "PlatformBinding.cores",
-          "line": 165,
+          "line": 184,
           "called": [
             "PlatformBinding"
           ]
@@ -210544,7 +210839,7 @@
         {
           "kind": "def",
           "name": "PlatformBinding.bootCore",
-          "line": 170,
+          "line": 189,
           "called": [
             "PlatformBinding",
             "bootCoreId"
@@ -210552,8 +210847,27 @@
         },
         {
           "kind": "def",
+          "name": "PlatformBinding.labeling",
+          "line": 195,
+          "called": [
+            "LabelingContext",
+            "PlatformBinding"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "PlatformBinding.labeling_admitted",
+          "line": 201,
+          "called": [
+            "PlatformBinding",
+            "PlatformBinding.labeling",
+            "isInsecureDefaultContext"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "PlatformBinding.sharing",
-          "line": 175,
+          "line": 207,
           "called": [
             "PlatformBinding",
             "SharingDomain"
@@ -211248,7 +211562,7 @@
     {
       "module": "SeLe4n.Platform.FFI",
       "path": "SeLe4n/Platform/FFI.lean",
-      "declaration_count": 131,
+      "declaration_count": 133,
       "declarations": [
         {
           "kind": "namespace",
@@ -211669,7 +211983,7 @@
         {
           "kind": "initialize",
           "name": "kernelLabelingContextRef",
-          "line": 944,
+          "line": 948,
           "called": [
             "LabelingContext",
             "defaultLabelingContext"
@@ -211678,7 +211992,7 @@
         {
           "kind": "def",
           "name": "initialiseKernelState",
-          "line": 953,
+          "line": 957,
           "called": [
             "SystemState",
             "set",
@@ -211688,7 +212002,7 @@
         {
           "kind": "def",
           "name": "getKernelState",
-          "line": 960,
+          "line": 964,
           "called": [
             "SystemState",
             "get"
@@ -211697,7 +212011,7 @@
         {
           "kind": "def",
           "name": "updateKernelState",
-          "line": 965,
+          "line": 969,
           "called": [
             "SystemState",
             "modify"
@@ -211706,7 +212020,7 @@
         {
           "kind": "def",
           "name": "modifyGetKernelState",
-          "line": 1022,
+          "line": 1026,
           "called": [
             "SystemState"
           ]
@@ -211714,7 +212028,7 @@
         {
           "kind": "def",
           "name": "initialiseKernelLabelingContext",
-          "line": 1029,
+          "line": 1033,
           "called": [
             "LabelingContext",
             "set"
@@ -211723,7 +212037,7 @@
         {
           "kind": "def",
           "name": "getKernelLabelingContext",
-          "line": 1033,
+          "line": 1037,
           "called": [
             "LabelingContext",
             "get"
@@ -211732,7 +212046,7 @@
         {
           "kind": "def",
           "name": "insecureLabelingContextBootError",
-          "line": 1042,
+          "line": 1046,
           "called": [
             "build",
             "deploymentLabelingContext"
@@ -211741,7 +212055,7 @@
         {
           "kind": "def",
           "name": "bootAndInitialiseFromPlatform",
-          "line": 1103,
+          "line": 1107,
           "called": [
             "LabelingContext",
             "PlatformConfig",
@@ -211758,8 +212072,39 @@
         },
         {
           "kind": "def",
+          "name": "bootAndInitialisePlatform",
+          "line": 1140,
+          "called": [
+            "PlatformBinding",
+            "PlatformBinding.labeling",
+            "PlatformConfig",
+            "SystemState",
+            "bootAndInitialiseFromPlatform",
+            "config"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootAndInitialisePlatform_eq_checked_boot",
+          "line": 1148,
+          "called": [
+            "PlatformBinding",
+            "PlatformBinding.labeling",
+            "PlatformBinding.labeling_admitted",
+            "PlatformConfig",
+            "bootAndInitialiseFromPlatform",
+            "bootAndInitialisePlatform",
+            "bootFromPlatformCheckedWithIdleThreads",
+            "config",
+            "initialiseKernelLabelingContext",
+            "initialiseKernelState",
+            "pure"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "writeFfiRegistersToTcb",
-          "line": 1141,
+          "line": 1184,
           "called": [
             "SystemState",
             "ThreadId",
@@ -211774,7 +212119,7 @@
         {
           "kind": "def",
           "name": "readReturnValue",
-          "line": 1185,
+          "line": 1228,
           "called": [
             "SystemState",
             "ThreadId",
@@ -211785,7 +212130,7 @@
         {
           "kind": "theorem",
           "name": "readReturnValue_eq_readReturnFrame_x0",
-          "line": 1210,
+          "line": 1253,
           "called": [
             "SystemState",
             "ThreadId",
@@ -211800,7 +212145,7 @@
         {
           "kind": "def",
           "name": "syscallReturnOutcome",
-          "line": 1226,
+          "line": 1269,
           "called": [
             "SyscallOutcome",
             "SystemState",
@@ -211819,7 +212164,7 @@
         {
           "kind": "def",
           "name": "refusedSignalReceiver",
-          "line": 1287,
+          "line": 1330,
           "called": [
             "CPtr",
             "SystemState",
@@ -211833,7 +212178,7 @@
         {
           "kind": "theorem",
           "name": "refusedSignalReceiver",
-          "line": 1305,
+          "line": 1348,
           "called": [
             "CNode",
             "CPtr",
@@ -211855,7 +212200,7 @@
         {
           "kind": "def",
           "name": "refusalReceiverFor",
-          "line": 1325,
+          "line": 1368,
           "called": [
             "KernelError",
             "SyscallId",
@@ -211871,7 +212216,7 @@
         {
           "kind": "theorem",
           "name": "refusalReceiverFor_receiver_hop",
-          "line": 1332,
+          "line": 1375,
           "called": [
             "SystemState",
             "ThreadId",
@@ -211885,7 +212230,7 @@
         {
           "kind": "theorem",
           "name": "refusalReceiverFor_other",
-          "line": 1339,
+          "line": 1382,
           "called": [
             "KernelError",
             "SyscallId",
@@ -211899,7 +212244,7 @@
         {
           "kind": "def",
           "name": "recordSyscallRefusal",
-          "line": 1360,
+          "line": 1403,
           "called": [
             "CoreId",
             "KernelError",
@@ -211920,7 +212265,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_exempt",
-          "line": 1384,
+          "line": 1427,
           "called": [
             "CoreId",
             "KernelError",
@@ -211938,7 +212283,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_undecodable",
-          "line": 1396,
+          "line": 1439,
           "called": [
             "CoreId",
             "KernelError",
@@ -211955,7 +212300,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_records",
-          "line": 1407,
+          "line": 1450,
           "called": [
             "CoreId",
             "KernelError",
@@ -211977,7 +212322,7 @@
         {
           "kind": "theorem",
           "name": "refusalRecord_names_failed_hop",
-          "line": 1444,
+          "line": 1487,
           "called": [
             "CNode",
             "Capability",
@@ -212013,7 +212358,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_frame",
-          "line": 1490,
+          "line": 1533,
           "called": [
             "CoreId",
             "KernelError",
@@ -212028,7 +212373,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_preserves_proofLayerInvariantBundle",
-          "line": 1518,
+          "line": 1561,
           "called": [
             "CoreId",
             "KernelError",
@@ -212045,7 +212390,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_objects_eq",
-          "line": 1532,
+          "line": 1575,
           "called": [
             "CoreId",
             "KernelError",
@@ -212059,7 +212404,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_scheduler_eq",
-          "line": 1543,
+          "line": 1586,
           "called": [
             "CoreId",
             "KernelError",
@@ -212073,7 +212418,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_machine_eq",
-          "line": 1554,
+          "line": 1597,
           "called": [
             "CoreId",
             "KernelError",
@@ -212087,7 +212432,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_readReturnFrame_eq",
-          "line": 1570,
+          "line": 1613,
           "called": [
             "CoreId",
             "KernelError",
@@ -212104,7 +212449,7 @@
         {
           "kind": "theorem",
           "name": "refusalRecord_domain_is_seam_resolved_at_seam",
-          "line": 1589,
+          "line": 1632,
           "called": [
             "CoreId",
             "DeclassificationRefusal",
@@ -212128,7 +212473,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_ledger_congr",
-          "line": 1628,
+          "line": 1671,
           "called": [
             "CoreId",
             "KernelError",
@@ -212148,7 +212493,7 @@
         {
           "kind": "theorem",
           "name": "refusalWrite_declassificationAuditLog_eq",
-          "line": 1665,
+          "line": 1708,
           "called": [
             "CoreId",
             "KernelError",
@@ -212162,7 +212507,7 @@
         {
           "kind": "theorem",
           "name": "refusalWrite_cannot_exhaust_trail",
-          "line": 1686,
+          "line": 1729,
           "called": [
             "CoreId",
             "DeclassificationEvent",
@@ -212179,7 +212524,7 @@
         {
           "kind": "def",
           "name": "syscallWindow",
-          "line": 1703,
+          "line": 1746,
           "called": [
             "FaultRegisterWindow"
           ]
@@ -212187,13 +212532,13 @@
         {
           "kind": "def",
           "name": "svcFaultIP",
-          "line": 1711,
+          "line": 1754,
           "called": []
         },
         {
           "kind": "def",
           "name": "capFaultReceivePhase",
-          "line": 1737,
+          "line": 1780,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -212211,7 +212556,7 @@
         {
           "kind": "theorem",
           "name": "capFaultReceivePhase",
-          "line": 1778,
+          "line": 1821,
           "called": [
             "SyscallId",
             "refusalSeamClass"
@@ -212220,7 +212565,7 @@
         {
           "kind": "def",
           "name": "syscallCapFaultOf",
-          "line": 1814,
+          "line": 1857,
           "called": [
             "Fault",
             "KernelError",
@@ -212243,7 +212588,7 @@
         {
           "kind": "def",
           "name": "deliverSyscallCapFault",
-          "line": 1847,
+          "line": 1890,
           "called": [
             "CoreId",
             "Fault",
@@ -212261,7 +212606,7 @@
         {
           "kind": "theorem",
           "name": "syscallCapFaultOf_none_of_no_fault_phase",
-          "line": 1858,
+          "line": 1901,
           "called": [
             "KernelError",
             "SyscallDecodeResult",
@@ -212280,7 +212625,7 @@
         {
           "kind": "theorem",
           "name": "syscallCapFaultOf_none_of_resolve_ok",
-          "line": 1871,
+          "line": 1914,
           "called": [
             "CNode",
             "Capability",
@@ -212303,7 +212648,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchFromAbi",
-          "line": 1934,
+          "line": 1977,
           "called": [
             "CoreId",
             "Kernel",
@@ -212326,13 +212671,13 @@
         {
           "kind": "opaque",
           "name": "ffiSuspendThread",
-          "line": 2007,
+          "line": 2050,
           "called": []
         },
         {
           "kind": "def",
           "name": "suspendThreadInner",
-          "line": 2071,
+          "line": 2114,
           "called": [
             "KernelError.toUInt32",
             "getKernelState",
@@ -212349,19 +212694,19 @@
         {
           "kind": "opaque",
           "name": "ffiIcIalluIs",
-          "line": 2106,
+          "line": 2149,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcMaintenance",
-          "line": 2142,
+          "line": 2185,
           "called": []
         },
         {
           "kind": "def",
           "name": "icMaintenanceBroadcast",
-          "line": 2177,
+          "line": 2220,
           "called": [
             "ICacheInvalidation",
             "ffiIcMaintenance",
@@ -212373,7 +212718,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_iallu_encoding",
-          "line": 2182,
+          "line": 2225,
           "called": [
             "toOpTag",
             "toPaddr"
@@ -212382,7 +212727,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_ivauPage_encoding",
-          "line": 2189,
+          "line": 2232,
           "called": [
             "PAddr",
             "ofNat",
@@ -212394,7 +212739,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_cleanRangeIallu_encoding",
-          "line": 2198,
+          "line": 2241,
           "called": [
             "PAddr",
             "ofNat",
@@ -212407,19 +212752,19 @@
         {
           "kind": "opaque",
           "name": "ffiCacheCleanPagetableRange",
-          "line": 2233,
+          "line": 2276,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcIallu",
-          "line": 2246,
+          "line": 2289,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_total",
-          "line": 2262,
+          "line": 2305,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -212443,7 +212788,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok",
-          "line": 2315,
+          "line": 2358,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -212461,7 +212806,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_of_syscallEntryChecked_error",
-          "line": 2346,
+          "line": 2389,
           "called": [
             "CoreId",
             "KernelError",
@@ -212483,7 +212828,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_capFault_faulted",
-          "line": 2375,
+          "line": 2418,
           "called": [
             "CoreId",
             "Fault",
@@ -212505,7 +212850,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_stages_no_frame",
-          "line": 2411,
+          "line": 2454,
           "called": [
             "CoreId",
             "KernelError",
@@ -212529,7 +212874,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_write_is_caller_invisible",
-          "line": 2452,
+          "line": 2495,
           "called": [
             "CoreId",
             "KernelError",
@@ -212551,7 +212896,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_records_refusal",
-          "line": 2480,
+          "line": 2523,
           "called": [
             "CoreId",
             "KernelError",
@@ -212583,7 +212928,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_exempt_refusal_frames_ledger",
-          "line": 2527,
+          "line": 2570,
           "called": [
             "CoreId",
             "KernelError",
@@ -212609,7 +212954,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_illegalState_when_no_current",
-          "line": 2557,
+          "line": 2600,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -212624,7 +212969,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_abiMismatch_rejected",
-          "line": 2580,
+          "line": 2623,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -212637,7 +212982,7 @@
         {
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_id_when_not_tcb",
-          "line": 2602,
+          "line": 2645,
           "called": [
             "SystemState",
             "TCB",
@@ -212651,7 +212996,7 @@
         {
           "kind": "theorem",
           "name": "readReturnValue_zero_when_not_tcb",
-          "line": 2627,
+          "line": 2670,
           "called": [
             "SystemState",
             "TCB",
@@ -212967,7 +213312,7 @@
     {
       "module": "SeLe4n.Platform.RPi5.Contract",
       "path": "SeLe4n/Platform/RPi5/Contract.lean",
-      "declaration_count": 8,
+      "declaration_count": 14,
       "declarations": [
         {
           "kind": "namespace",
@@ -213002,24 +213347,102 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "rpi5UpperDomainBase",
+          "line": 121,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5UpperDomainBase_clears_idle_range",
+          "line": 125,
+          "called": [
+            "idleThreadIdBase",
+            "numCores",
+            "rpi5UpperDomainBase"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5UpperDomainBase_clears_bootVSpaceRoot",
+          "line": 131,
+          "called": [
+            "rpi5UpperDomainBase",
+            "toNat"
+          ]
+        },
+        {
           "kind": "instance",
           "name": "rpi5PlatformBinding",
-          "line": 114,
+          "line": 145,
           "called": [
             "PlatformBinding",
             "RPi5Platform",
             "bootCoreId",
+            "confinedLabelingContext",
+            "isInsecureDefaultContext_confinedLabelingContext",
             "rpi5BootContract",
             "rpi5BootVSpaceRootEntry",
             "rpi5InterruptContract",
             "rpi5MachineConfig",
-            "rpi5RuntimeContract"
+            "rpi5RuntimeContract",
+            "rpi5UpperDomainBase"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5_deploymentLabeling",
+          "line": 172,
+          "called": [
+            "PlatformBinding.labeling",
+            "RPi5Platform",
+            "confinedLabelingContext",
+            "rpi5UpperDomainBase"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5_deploymentLabeling_boot_entities_lowTrusted",
+          "line": 180,
+          "called": [
+            "PlatformBinding.labeling",
+            "RPi5Platform",
+            "ThreadId",
+            "confinedLabelingContext",
+            "idleThreadIdBase",
+            "indexPartitionedLabelingContext_threadLabel_below",
+            "lowTrusted",
+            "rpi5UpperDomainBase",
+            "rpi5_deploymentLabeling",
+            "separationBoundary",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5_deploymentLabeling_idle_lowTrusted",
+          "line": 191,
+          "called": [
+            "CoreId",
+            "PlatformBinding.labeling",
+            "RPi5Platform",
+            "confinedLabelingContext",
+            "idleThreadId",
+            "idleThreadIdBase",
+            "indexPartitionedLabelingContext_threadLabel_below",
+            "lowTrusted",
+            "numCores",
+            "ofNat",
+            "rpi5UpperDomainBase",
+            "rpi5_deploymentLabeling",
+            "separationBoundary",
+            "toNat"
           ]
         },
         {
           "kind": "theorem",
           "name": "numCores_eq_rpi5_coreCount",
-          "line": 142,
+          "line": 215,
           "called": [
             "RPi5Platform",
             "numCores"
@@ -213028,7 +213451,7 @@
         {
           "kind": "theorem",
           "name": "bootCoreId_val_eq_rpi5",
-          "line": 151,
+          "line": 224,
           "called": [
             "RPi5Platform",
             "bootCoreId"
@@ -213037,7 +213460,7 @@
         {
           "kind": "theorem",
           "name": "rpi5_sharingDomain",
-          "line": 161,
+          "line": 234,
           "called": [
             "RPi5Platform"
           ]
@@ -214988,6 +215411,8 @@
             "PlatformBinding",
             "SimPlatform",
             "bootCoreId",
+            "harnessLabelingContext",
+            "isInsecureDefaultContext_harnessLabelingContext",
             "simBootContract",
             "simBootVSpaceRootEntry",
             "simInterruptContract",
@@ -214998,17 +215423,19 @@
         {
           "kind": "structure",
           "name": "SimRestrictivePlatform",
-          "line": 193,
+          "line": 199,
           "called": []
         },
         {
           "kind": "instance",
           "name": "simRestrictivePlatformBinding",
-          "line": 206,
+          "line": 212,
           "called": [
             "PlatformBinding",
             "SimRestrictivePlatform",
             "bootCoreId",
+            "harnessLabelingContext",
+            "isInsecureDefaultContext_harnessLabelingContext",
             "simBootContract",
             "simBootVSpaceRootEntry",
             "simInterruptContract",
@@ -215019,17 +215446,19 @@
         {
           "kind": "structure",
           "name": "SimSingleCorePlatform",
-          "line": 225,
+          "line": 234,
           "called": []
         },
         {
           "kind": "instance",
           "name": "simSingleCorePlatformBinding",
-          "line": 245,
+          "line": 254,
           "called": [
             "PlatformBinding",
             "SimSingleCorePlatform",
             "bootCoreId",
+            "harnessLabelingContext",
+            "isInsecureDefaultContext_harnessLabelingContext",
             "simBootContract",
             "simBootVSpaceRootEntry",
             "simInterruptContract",
@@ -215040,7 +215469,7 @@
         {
           "kind": "theorem",
           "name": "simSubstantiveMemoryMap_eq_machineConfig",
-          "line": 265,
+          "line": 277,
           "called": [
             "simSubstantiveMemoryMap"
           ]
@@ -229382,7 +229811,7 @@
     {
       "module": "tests.InformationFlowSuite",
       "path": "tests/InformationFlowSuite.lean",
-      "declaration_count": 24,
+      "declaration_count": 25,
       "declarations": [
         {
           "kind": "namespace",
@@ -229654,8 +230083,27 @@
         },
         {
           "kind": "def",
+          "name": "runSeparationWitnessAdmissibilityChecks",
+          "line": 459,
+          "called": [
+            "LabelingContext",
+            "ThreadId",
+            "confinedLabelingContext",
+            "expect",
+            "harnessSeparationBoundary",
+            "idleThreadId",
+            "idleThreadIdBase",
+            "isIdleThreadId",
+            "isInsecureDefaultContext",
+            "numCores",
+            "separationWitnessAdmissible",
+            "upperWitnessIndex"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runInformationFlowChecks",
-          "line": 453,
+          "line": 490,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -229750,6 +230198,7 @@
             "registryDependencyConsistent_fields",
             "render",
             "reviewer",
+            "runSeparationWitnessAdmissibilityChecks",
             "runnable",
             "sampleLabeling",
             "sampleState",
@@ -229777,7 +230226,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1788,
+          "line": 1826,
           "called": [
             "runAk6Suite",
             "runInformationFlowChecks",
@@ -251546,7 +251995,7 @@
     {
       "module": "tests.SmpIdleSuite",
       "path": "tests/SmpIdleSuite.lean",
-      "declaration_count": 41,
+      "declaration_count": 42,
       "declarations": [
         {
           "kind": "namespace",
@@ -251554,23 +252003,27 @@
           "line": 36,
           "called": [
             "bootFromPlatformCheckedWithIdleThreads",
+            "bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_idle",
             "bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds",
             "bootFromPlatformCheckedWithIdleThreads_currentAllNone",
             "bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore",
             "bootFromPlatformCheckedWithIdleThreads_idle_available",
             "bootFromPlatformCheckedWithIdleThreads_isOk_iff",
             "bootFromPlatformCheckedWithIdleThreads_map_ok",
+            "bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff",
+            "bootFromPlatformCheckedWithIdleThreads_preserves_platform_objects",
             "bootFromPlatformCheckedWithIdleThreads_rejects_invalid",
-            "chooseThreadOnCore_always_succeeds",
+            "bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq",
+            "bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed",
+            "bootFromPlatformCheckedWithIdleThreads_runnableThreadsAreTCBsOnCore",
+            "bootFromPlatformCheckedWithIdleThreads_runnable_resolve",
             "createIdleThread",
             "createIdleThread_cpuAffinity",
             "createIdleThread_domain_zero",
             "createIdleThread_tid",
-            "dispatchIdleOnCore",
             "enqueueIdleThread",
             "enqueueIdleThreadOnCore",
             "enqueueIdleThreadOnCore_activeDomainOnCore",
-            "enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds",
             "enqueueIdleThreadOnCore_currentOnCore",
             "enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore",
             "enqueueIdleThreadOnCore_getTcb",
@@ -251591,13 +252044,32 @@
             "foldl_enqueueIdleThread_currentOnCore",
             "foldl_enqueueIdleThread_installs",
             "foldl_enqueueIdleThread_objects_frame_of_not_idle",
-            "idleDispatchableOnCore",
-            "idleFallbackOnCore",
+            "foldl_enqueueIdleThread_runQueueOnCore_eq",
+            "idleSlotsFreshAt_of_initialObjects_below_base",
             "idleThreadEnqueuedOnCore",
             "idleThreadId",
+            "idleThread_priority_zero"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:111>",
+          "line": 111,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "PlatformConfig",
+            "bootFromPlatformCheckedWithIdleThreads",
+            "bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds",
+            "chooseThreadOnCore",
+            "chooseThreadOnCore_always_succeeds",
+            "config",
+            "dispatchIdleOnCore",
+            "enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds",
+            "idleDispatchableOnCore",
+            "idleFallbackOnCore",
             "idleThread_core_locality",
             "idleThread_core_locality_of_enqueue",
-            "idleThread_priority_zero",
             "perCoreIdleTheorems",
             "perCoreIdleTheorems_count",
             "perCoreIdleTheorems_identifiers_nodup",
@@ -251616,8 +252088,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:134>",
-          "line": 134,
+          "name": "<anonymous:example:150>",
+          "line": 150,
           "called": [
             "CoreId",
             "createIdleThread",
@@ -251626,8 +252098,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:137>",
-          "line": 137,
+          "name": "<anonymous:example:153>",
+          "line": 153,
           "called": [
             "CoreId",
             "createIdleThread",
@@ -251636,8 +252108,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:140>",
-          "line": 140,
+          "name": "<anonymous:example:156>",
+          "line": 156,
           "called": [
             "CoreId",
             "SystemState",
@@ -251652,8 +252124,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:148>",
-          "line": 148,
+          "name": "<anonymous:example:164>",
+          "line": 164,
           "called": [
             "CoreId",
             "SystemState",
@@ -251667,8 +252139,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:154>",
-          "line": 154,
+          "name": "<anonymous:example:170>",
+          "line": 170,
           "called": [
             "CoreId",
             "SystemState",
@@ -251685,8 +252157,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:162>",
-          "line": 162,
+          "name": "<anonymous:example:178>",
+          "line": 178,
           "called": [
             "CoreId",
             "SystemState",
@@ -251702,8 +252174,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:169>",
-          "line": 169,
+          "name": "<anonymous:example:185>",
+          "line": 185,
           "called": [
             "CoreId",
             "SystemState",
@@ -251717,8 +252189,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:175>",
-          "line": 175,
+          "name": "<anonymous:example:191>",
+          "line": 191,
           "called": [
             "CoreId",
             "SystemState",
@@ -251731,8 +252203,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:181>",
-          "line": 181,
+          "name": "<anonymous:example:197>",
+          "line": 197,
           "called": [
             "CoreId",
             "SystemState",
@@ -251746,8 +252218,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:188>",
-          "line": 188,
+          "name": "<anonymous:example:204>",
+          "line": 204,
           "called": [
             "CoreId",
             "SystemState",
@@ -251764,8 +252236,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:199>",
-          "line": 199,
+          "name": "<anonymous:example:215>",
+          "line": 215,
           "called": [
             "CoreId",
             "SystemState",
@@ -251778,8 +252250,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:204>",
-          "line": 204,
+          "name": "<anonymous:example:220>",
+          "line": 220,
           "called": [
             "CoreId",
             "SystemState",
@@ -251791,8 +252263,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:209>",
-          "line": 209,
+          "name": "<anonymous:example:225>",
+          "line": 225,
           "called": [
             "CoreId",
             "SystemState",
@@ -251805,8 +252277,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:214>",
-          "line": 214,
+          "name": "<anonymous:example:230>",
+          "line": 230,
           "called": [
             "CoreId",
             "SystemState",
@@ -251819,8 +252291,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:224>",
-          "line": 224,
+          "name": "<anonymous:example:240>",
+          "line": 240,
           "called": [
             "CoreId",
             "SystemState",
@@ -251839,8 +252311,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:239>",
-          "line": 239,
+          "name": "<anonymous:example:255>",
+          "line": 255,
           "called": [
             "CoreId",
             "SystemState",
@@ -251859,8 +252331,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:251>",
-          "line": 251,
+          "name": "<anonymous:example:267>",
+          "line": 267,
           "called": [
             "CoreId",
             "SystemState",
@@ -251872,7 +252344,7 @@
         {
           "kind": "def",
           "name": "mkUserTcb",
-          "line": 261,
+          "line": 277,
           "called": [
             "TCB",
             "ofNat"
@@ -251881,7 +252353,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 267,
+          "line": 283,
           "called": [
             "CoreId"
           ]
@@ -251889,7 +252361,7 @@
         {
           "kind": "def",
           "name": "tidUser",
-          "line": 268,
+          "line": 284,
           "called": [
             "ThreadId",
             "ofNat"
@@ -251898,7 +252370,7 @@
         {
           "kind": "def",
           "name": "stEmpty",
-          "line": 271,
+          "line": 287,
           "called": [
             "SystemState",
             "build"
@@ -251907,7 +252379,7 @@
         {
           "kind": "def",
           "name": "stEmptyIdle",
-          "line": 274,
+          "line": 290,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -251918,7 +252390,7 @@
         {
           "kind": "def",
           "name": "stUser",
-          "line": 278,
+          "line": 294,
           "called": [
             "SystemState",
             "build",
@@ -251932,7 +252404,7 @@
         {
           "kind": "def",
           "name": "stUserIdle",
-          "line": 283,
+          "line": 299,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -251943,7 +252415,7 @@
         {
           "kind": "def",
           "name": "stCore1Idle",
-          "line": 286,
+          "line": 302,
           "called": [
             "SystemState",
             "core1",
@@ -251954,7 +252426,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 288,
+          "line": 304,
           "called": [
             "throw"
           ]
@@ -251962,7 +252434,7 @@
         {
           "kind": "def",
           "name": "runFieldChecks",
-          "line": 296,
+          "line": 312,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -251974,7 +252446,7 @@
         {
           "kind": "def",
           "name": "runAlwaysSucceedsChecks",
-          "line": 309,
+          "line": 325,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -251991,7 +252463,7 @@
         {
           "kind": "def",
           "name": "runNoStarvationChecks",
-          "line": 323,
+          "line": 339,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -252006,7 +252478,7 @@
         {
           "kind": "def",
           "name": "runLocalityChecks",
-          "line": 337,
+          "line": 353,
           "called": [
             "affinityAdmitsCore",
             "assertBool",
@@ -252024,7 +252496,7 @@
         {
           "kind": "def",
           "name": "stIdleInstalled",
-          "line": 358,
+          "line": 374,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -252038,7 +252510,7 @@
         {
           "kind": "def",
           "name": "stForeignIdle",
-          "line": 366,
+          "line": 382,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -252053,7 +252525,7 @@
         {
           "kind": "def",
           "name": "dispatchedCurrent",
-          "line": 371,
+          "line": 387,
           "called": [
             "CoreId",
             "SystemState",
@@ -252067,7 +252539,7 @@
         {
           "kind": "def",
           "name": "runDispatcherChecks",
-          "line": 378,
+          "line": 394,
           "called": [
             "any",
             "assertBool",
@@ -252088,7 +252560,7 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 409,
+          "line": 425,
           "called": [
             "RunQueueLockId",
             "all",
@@ -252102,7 +252574,7 @@
         {
           "kind": "def",
           "name": "runInventoryChecks",
-          "line": 422,
+          "line": 438,
           "called": [
             "assertBool",
             "filter",
@@ -252113,7 +252585,7 @@
         {
           "kind": "def",
           "name": "runBootIdleChecks",
-          "line": 450,
+          "line": 466,
           "called": [
             "PlatformConfig",
             "TCB",
@@ -252123,6 +252595,7 @@
             "boot",
             "bootFromPlatformChecked",
             "bootFromPlatformCheckedWithIdleThreads",
+            "chooseThreadOnCore",
             "config",
             "createIdleThread",
             "currentOnCore",
@@ -252137,7 +252610,7 @@
         {
           "kind": "def",
           "name": "runBootValidationParityChecks",
-          "line": 502,
+          "line": 528,
           "called": [
             "PlatformConfig",
             "assertBool",
@@ -252149,7 +252622,7 @@
         {
           "kind": "def",
           "name": "runSmpIdleChecks",
-          "line": 515,
+          "line": 541,
           "called": [
             "runAlwaysSucceedsChecks",
             "runBootIdleChecks",
@@ -252165,7 +252638,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 532,
+          "line": 558,
           "called": [
             "runSmpIdleChecks"
           ]
@@ -273205,30 +273678,30 @@
     {
       "module": "tests.SyscallDispatchSuite",
       "path": "tests/SyscallDispatchSuite.lean",
-      "declaration_count": 38,
+      "declaration_count": 39,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SyscallDispatchSuite",
-          "line": 52,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "passLine",
           "line": 54,
           "called": []
         },
         {
           "kind": "def",
+          "name": "passLine",
+          "line": 56,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "failLine",
-          "line": 57,
+          "line": 59,
           "called": []
         },
         {
           "kind": "def",
           "name": "expect",
-          "line": 61,
+          "line": 63,
           "called": [
             "failLine",
             "passLine"
@@ -273237,7 +273710,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 64,
+          "line": 66,
           "called": [
             "TCB",
             "ThreadState",
@@ -273247,7 +273720,7 @@
         {
           "kind": "def",
           "name": "mkState",
-          "line": 70,
+          "line": 72,
           "called": [
             "BootstrapBuilder",
             "KernelObject",
@@ -273261,7 +273734,7 @@
         {
           "kind": "def",
           "name": "sd001_kernelErrorDiscriminants",
-          "line": 90,
+          "line": 92,
           "called": [
             "KernelError",
             "KernelError.toUInt32",
@@ -273273,7 +273746,7 @@
         {
           "kind": "def",
           "name": "sd002_errorLabelCarriage",
-          "line": 160,
+          "line": 162,
           "called": [
             "KernelError",
             "decode",
@@ -273291,7 +273764,7 @@
         {
           "kind": "def",
           "name": "sd003_errorLabelRoundtrip",
-          "line": 206,
+          "line": 208,
           "called": [
             "errorLabel",
             "expect",
@@ -273304,7 +273777,7 @@
         {
           "kind": "def",
           "name": "sd010_initialiseAndGet",
-          "line": 230,
+          "line": 232,
           "called": [
             "ThreadId",
             "expect",
@@ -273320,7 +273793,7 @@
         {
           "kind": "def",
           "name": "sd011_updateKernelState",
-          "line": 248,
+          "line": 250,
           "called": [
             "ThreadId",
             "bootCoreId",
@@ -273339,7 +273812,7 @@
         {
           "kind": "def",
           "name": "sd012_labelingContextRoundtrip",
-          "line": 279,
+          "line": 281,
           "called": [
             "defaultLabelingContext",
             "expect",
@@ -273353,7 +273826,7 @@
         {
           "kind": "def",
           "name": "sd020_suspendThreadInner_ready",
-          "line": 310,
+          "line": 312,
           "called": [
             "ThreadId",
             "expect",
@@ -273370,7 +273843,7 @@
         {
           "kind": "def",
           "name": "sd021_suspendThreadInner_inactive",
-          "line": 327,
+          "line": 329,
           "called": [
             "KernelError.toUInt32",
             "ThreadId",
@@ -273385,7 +273858,7 @@
         {
           "kind": "def",
           "name": "sd022_suspendThreadInner_missing",
-          "line": 338,
+          "line": 340,
           "called": [
             "KernelError.toUInt32",
             "expect",
@@ -273399,7 +273872,7 @@
         {
           "kind": "def",
           "name": "sd023_suspendThreadInner_sentinel",
-          "line": 354,
+          "line": 356,
           "called": [
             "KernelError.toUInt32",
             "ObjId",
@@ -273418,7 +273891,7 @@
         {
           "kind": "def",
           "name": "dispatchViaRef",
-          "line": 389,
+          "line": 391,
           "called": [
             "SyscallOutcome",
             "bootCoreId",
@@ -273434,7 +273907,7 @@
         {
           "kind": "def",
           "name": "isErrorFrameFor",
-          "line": 404,
+          "line": 406,
           "called": [
             "KernelError",
             "SyscallOutcome",
@@ -273444,7 +273917,7 @@
         {
           "kind": "def",
           "name": "isSomeErrorFrame",
-          "line": 409,
+          "line": 411,
           "called": [
             "SyscallOutcome",
             "decode",
@@ -273456,7 +273929,7 @@
         {
           "kind": "def",
           "name": "sd030_dispatch_noCurrent",
-          "line": 419,
+          "line": 421,
           "called": [
             "dispatchViaRef",
             "expect",
@@ -273472,7 +273945,7 @@
         {
           "kind": "def",
           "name": "sd031_dispatch_spillsRegs",
-          "line": 433,
+          "line": 435,
           "called": [
             "TCB",
             "ThreadId",
@@ -273492,7 +273965,7 @@
         {
           "kind": "def",
           "name": "sd032_dispatch_invalidSyscall",
-          "line": 454,
+          "line": 456,
           "called": [
             "ThreadId",
             "dispatchViaRef",
@@ -273509,7 +273982,7 @@
         {
           "kind": "def",
           "name": "sd033_dispatchFromAbi_total",
-          "line": 468,
+          "line": 470,
           "called": [
             "ThreadId",
             "bootCoreId",
@@ -273525,7 +273998,7 @@
         {
           "kind": "def",
           "name": "sd034_dispatch_abiMismatch",
-          "line": 488,
+          "line": 490,
           "called": [
             "ThreadId",
             "dispatchViaRef",
@@ -273545,7 +274018,7 @@
         {
           "kind": "def",
           "name": "sd035_sequentialDispatches",
-          "line": 515,
+          "line": 517,
           "called": [
             "ThreadId",
             "dispatchViaRef",
@@ -273564,7 +274037,7 @@
         {
           "kind": "def",
           "name": "sd040_bootInitialise_emptyConfig_succeeds",
-          "line": 545,
+          "line": 547,
           "called": [
             "PlatformConfig",
             "ThreadId",
@@ -273587,7 +274060,7 @@
         {
           "kind": "def",
           "name": "sd041_bootInitialise_withLabelingContext",
-          "line": 576,
+          "line": 578,
           "called": [
             "PlatformConfig",
             "bootAndInitialiseFromPlatform",
@@ -273596,13 +274069,14 @@
             "empty",
             "expect",
             "failLine",
-            "getKernelLabelingContext"
+            "getKernelLabelingContext",
+            "labeling"
           ]
         },
         {
           "kind": "def",
           "name": "sd042_bootInitialise_malformed_config_rejects",
-          "line": 599,
+          "line": 601,
           "called": [
             "PlatformConfig",
             "ThreadId",
@@ -273624,7 +274098,7 @@
         {
           "kind": "def",
           "name": "sd043_bootInitialise_insecureContext_rejects",
-          "line": 644,
+          "line": 646,
           "called": [
             "PlatformConfig",
             "ThreadId",
@@ -273650,7 +274124,7 @@
         {
           "kind": "def",
           "name": "sd045_bootInitialise_installs_percore_idle",
-          "line": 694,
+          "line": 696,
           "called": [
             "PlatformConfig",
             "allCores",
@@ -273672,8 +274146,33 @@
         },
         {
           "kind": "def",
+          "name": "sd046_bootInitialisePlatform_installs_binding_labeling",
+          "line": 735,
+          "called": [
+            "PlatformBinding.labeling",
+            "PlatformConfig",
+            "RPi5Platform",
+            "SimPlatform",
+            "ThreadId",
+            "boot",
+            "bootAndInitialisePlatform",
+            "expect",
+            "failLine",
+            "getKernelLabelingContext",
+            "harnessLabelingContext",
+            "harnessSeparationBoundary",
+            "highUntrusted",
+            "isInsecureDefaultContext",
+            "labeling",
+            "lowTrusted",
+            "rpi5UpperDomainBase",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "sd050_bindNotification_requires_ntfn_cap",
-          "line": 726,
+          "line": 774,
           "called": [
             "Capability",
             "ObjId",
@@ -273701,7 +274200,7 @@
         {
           "kind": "def",
           "name": "sd051_receiveLinkCaller",
-          "line": 776,
+          "line": 824,
           "called": [
             "ObjId",
             "ReplyId",
@@ -273730,7 +274229,7 @@
         {
           "kind": "def",
           "name": "sd052_replyRecvBody",
-          "line": 829,
+          "line": 877,
           "called": [
             "IpcMessage",
             "ObjId",
@@ -273764,7 +274263,7 @@
         {
           "kind": "def",
           "name": "sd052b_replyRecv_donation_switch",
-          "line": 869,
+          "line": 917,
           "called": [
             "IpcMessage",
             "ObjId",
@@ -273798,7 +274297,7 @@
         {
           "kind": "def",
           "name": "sd052c_replyRecv_delegated_returns_recorded_server_donation",
-          "line": 924,
+          "line": 972,
           "called": [
             "IpcMessage",
             "ObjId",
@@ -273830,7 +274329,7 @@
         {
           "kind": "def",
           "name": "sd053_serverFirstLink",
-          "line": 969,
+          "line": 1017,
           "called": [
             "ObjId",
             "ReplyId",
@@ -273859,7 +274358,7 @@
         {
           "kind": "def",
           "name": "sd053g_bound_notification_wake_clears_stash",
-          "line": 1098,
+          "line": 1146,
           "called": [
             "ObjId",
             "ReplyId",
@@ -273887,7 +274386,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1141,
+          "line": 1189,
           "called": [
             "sd001_kernelErrorDiscriminants",
             "sd002_errorLabelCarriage",
@@ -273910,6 +274409,7 @@
             "sd042_bootInitialise_malformed_config_rejects",
             "sd043_bootInitialise_insecureContext_rejects",
             "sd045_bootInitialise_installs_percore_idle",
+            "sd046_bootInitialisePlatform_installs_binding_labeling",
             "sd050_bindNotification_requires_ntfn_cap",
             "sd051_receiveLinkCaller",
             "sd052_replyRecvBody",

@@ -509,6 +509,38 @@ assumed; the staged-module count falls by three.
   hands it the CPU forever.  The suspend seam, which has an error channel and no
   trapped thread, returns `KernelError::IllegalState` instead.
 
+**Audit round (same version).**  A deep re-read of the cut against the code,
+not the docstrings, found four things the rows above had shipped short of, all
+closed at v0.34.48 before merge:
+
+* *RR5.12's keystone took two hypotheses about the state it was discharged
+  from.*  `bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds`
+  assumed the boot queue well-formed and its members resolvable.  The boot
+  queue is now characterised exactly (on every core, the empty queue with idle
+  enqueued — `…_runQueueOnCore_eq`), both premises are theorems of the boot
+  state, the keystone takes nothing beyond the boot, and each core's first
+  selection is pinned to its idle thread (`…_chooseThreadOnCore_idle`).
+* *RR5.4's witness admissibility stopped at the sentinel.*  A labeling that
+  gave only the four idle threads a label of their own — every user-visible
+  entity `publicLabel` — could name two idle threads and pass.  Idle ids are
+  excluded (`separationWitnessAdmissible`, `isIdleThreadId`), the
+  index-partitioned family lifts its upper witness past the idle range so it
+  stays total (`upperWitnessIndex`), and the refusal is tested for the
+  exclusion rather than for equal labels.
+* *RR5.1's "what a hardware boot installs" was a sentence.*  Nothing installed
+  `confinedLabelingContext`.  `PlatformBinding` now carries
+  `deploymentLabeling` with its admission proof, the RPi5 binding's is the
+  confined context at `rpi5UpperDomainBase` (`rpi5_deploymentLabeling`), the
+  simulation bindings' is the harness labeling, and
+  `bootAndInitialisePlatform` boots under the binding's — provably the checked
+  idle boot with the refusal arm unreachable.
+* *RR5.9's `hw_target` verdict was two substring tests.*  A `cfg_attr` or an
+  `any(feature = "hw_target", …)` carried the token and read as a gate.  The
+  verdict is computed over the parsed `cfg` predicate
+  (`cfg_predicate_entailment`, under-approximating so it fails closed), and
+  linker visibility now covers `#[unsafe(no_mangle)]` and `#[export_name]`;
+  six more token-preserving mutations pin it.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

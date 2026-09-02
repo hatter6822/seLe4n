@@ -86,4 +86,39 @@ theorem idleThreadId_toObjId_ne {c₁ c₂ : CoreId}
     _ = SeLe4n.ThreadId.ofNat (idleThreadId c₂).toNat := by rw [this]
     _ = idleThreadId c₂ := SeLe4n.ThreadId.ofNat_toNat _
 
+/-- **WS-RR RR5.4** (audit): is `tid` some core's idle thread?  Decides
+    membership in the idle id range `[idleThreadIdBase, idleThreadIdBase + numCores)`,
+    which `idleThreadId` enumerates exactly (`isIdleThreadId_iff`).
+
+    The information-flow labeling guard excludes these ids from a deployment's
+    declared separation witness (`separationWitnessAdmissible`,
+    `InformationFlow/Policy.lean`): an idle thread is kernel-owned, issues no
+    syscall and sends no message, so a labeling that differs only on idle threads
+    separates nothing a flow decision can observe — the same reason the reserved
+    sentinel is excluded. -/
+def isIdleThreadId (tid : SeLe4n.ThreadId) : Bool :=
+  idleThreadIdBase ≤ tid.toNat && tid.toNat < idleThreadIdBase + SeLe4n.Kernel.Concurrency.numCores
+
+/-- **WS-RR RR5.4** (audit): every per-core idle id is recognised. -/
+theorem isIdleThreadId_idleThreadId (c : CoreId) : isIdleThreadId (idleThreadId c) = true := by
+  have hc := c.isLt
+  simp only [isIdleThreadId, idleThreadId, SeLe4n.ThreadId.toNat, SeLe4n.ThreadId.ofNat,
+    Bool.and_eq_true, decide_eq_true_eq]
+  omega
+
+/-- **WS-RR RR5.4** (audit): the recogniser is exact — it accepts precisely the
+    ids `idleThreadId` produces, so excluding what it accepts excludes the idle
+    threads and nothing else. -/
+theorem isIdleThreadId_iff (tid : SeLe4n.ThreadId) :
+    isIdleThreadId tid = true ↔ ∃ c : CoreId, tid = idleThreadId c := by
+  constructor
+  · intro h
+    simp only [isIdleThreadId, SeLe4n.ThreadId.toNat, Bool.and_eq_true, decide_eq_true_eq] at h
+    refine ⟨⟨tid.val - idleThreadIdBase, by omega⟩, ?_⟩
+    apply SeLe4n.ThreadId.ext
+    show tid.val = idleThreadIdBase + (tid.val - idleThreadIdBase)
+    omega
+  · rintro ⟨c, rfl⟩
+    exact isIdleThreadId_idleThreadId c
+
 end SeLe4n.Kernel

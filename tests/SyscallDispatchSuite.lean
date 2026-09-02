@@ -12,6 +12,8 @@ import SeLe4n.Platform.FFI
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.InformationFlow.Policy
+import SeLe4n.Platform.Sim.Contract
+import SeLe4n.Platform.RPi5.Contract
 
 /-!
 # WS-RC R2.C — Hardware syscall dispatch regression suite
@@ -718,6 +720,52 @@ private def sd045_bootInitialise_installs_percore_idle : IO Unit := do
 -- Driver
 -- ============================================================================
 
+/-- SD-046: `bootAndInitialisePlatform` boots under the **platform binding's
+own** labeling (WS-RR RR5.2, audit).
+
+Under the simulation binding that is `harnessLabelingContext`, and the install
+is observed by reading the reference back — the witness pair and the labels on
+either side of the harness boundary — rather than inferred from the success
+arm.  Success itself is not optional: the binding carries the guard's admission
+proof, so the labeling refusal arm is unreachable from this entry
+(`bootAndInitialisePlatform_eq_checked_boot`), and an error here would mean the
+binding's field and the guard had come apart.  The RPi5 binding's labeling is
+the confined production context, pinned by `rpi5_deploymentLabeling` and
+probed below at one id on each side of its boundary. -/
+private def sd046_bootInitialisePlatform_installs_binding_labeling : IO Unit := do
+  let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [] }
+  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimPlatform cfg with
+  | Except.ok _ =>
+      let installed ← getKernelLabelingContext
+      let expected := SeLe4n.Kernel.harnessLabelingContext
+      let boundary : SeLe4n.ThreadId := ⟨SeLe4n.Kernel.harnessSeparationBoundary⟩
+      expect "sd046_bootInitialisePlatform_installs_harness_labeling"
+        (installed.separatedThreads == expected.separatedThreads &&
+         installed.threadLabelOf ⟨1⟩ == expected.threadLabelOf ⟨1⟩ &&
+         installed.threadLabelOf boundary == expected.threadLabelOf boundary &&
+         installed.threadLabelOf ⟨1⟩ != installed.threadLabelOf boundary)
+        "the binding boot entry must install the simulation binding's labeling"
+  | Except.error e =>
+      failLine "sd046_bootInitialisePlatform_unexpected_error"
+        s!"the binding's labeling is admitted by construction, so the boot must succeed; got: {e}"
+  -- The hardware binding's labeling: the confined two-domain context, with
+  -- the boot domain below `rpi5UpperDomainBase` and the untrusted domain at
+  -- and above it — mutually isolated (`confinedLabelingContext_confines`).
+  let rpi5 := SeLe4n.Platform.PlatformBinding.labeling
+    (platform := SeLe4n.Platform.RPi5.RPi5Platform)
+  let below : SeLe4n.ThreadId := ⟨1⟩
+  let above : SeLe4n.ThreadId := ⟨SeLe4n.Platform.RPi5.rpi5UpperDomainBase⟩
+  expect "sd046_rpi5_binding_labeling_is_confined"
+    (rpi5.threadLabelOf below == SeLe4n.Kernel.SecurityLabel.lowTrusted &&
+     rpi5.threadLabelOf above == SeLe4n.Kernel.SecurityLabel.highUntrusted &&
+     SeLe4n.Kernel.securityFlowsTo (rpi5.threadLabelOf below) (rpi5.threadLabelOf above) == false &&
+     SeLe4n.Kernel.securityFlowsTo (rpi5.threadLabelOf above) (rpi5.threadLabelOf below) == false)
+    "the RPi5 binding must carry the confined production labeling"
+  expect "sd046_rpi5_binding_labeling_admitted"
+    (SeLe4n.Kernel.isInsecureDefaultContext rpi5 == false)
+    "the RPi5 binding's labeling must be admitted by the boot guard"
+
 /-- WS-SM SM6.B (review #1 dispatch coverage): `.tcbBindNotification` resolves the
 notification through a CAPABILITY in the caller's CSpace.  A caller holding a TCB
 cap binds only if it ALSO holds a notification cap (with `.write`) at `msgRegs[0]`'s
@@ -1166,6 +1214,7 @@ def main : IO Unit := do
   sd042_bootInitialise_malformed_config_rejects
   sd043_bootInitialise_insecureContext_rejects
   sd045_bootInitialise_installs_percore_idle
+  sd046_bootInitialisePlatform_installs_binding_labeling
   IO.println "--- WS-SM SM6.B: tcbBindNotification capability authority ---"
   sd050_bindNotification_requires_ntfn_cap
   sd051_receiveLinkCaller

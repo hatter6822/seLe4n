@@ -1211,7 +1211,13 @@ code may assume:
   default host profile compiled a call path to a bare-metal symbol nothing on
   the host provides, and `cargo test` linked one into every test binary through
   a `#[no_mangle]` stub.  The readiness gate could not close that: it decides
-  whether a call *executes*, not whether it is *compiled*.
+  whether a call *executes*, not whether it is *compiled*.  The gate's
+  `hw_target` verdict is **computed, not matched**: `cfg_predicate_entailment`
+  evaluates what a `cfg` predicate entails about the feature through `not` /
+  `all` / `any`, under-approximating so it fails closed — a `cfg_attr` or an
+  `any(…)` carrying the token satisfies nothing — and linker visibility is read
+  as whole words: `extern`, `no_mangle` in both spellings, and
+  `#[export_name = "…"]`, which exports a Lean name from an item of any name.
 - **A hardware boot without a verified deployment labeling context fails
   closed** (WS-RR RR5.1–RR5.5).  `bootAndInitialiseFromPlatform`'s
   `LabelingContext` argument is **mandatory** — it defaulted to `none`, and on
@@ -1229,8 +1235,11 @@ code may assume:
   "insecure" only when all twelve lookups came back public, which
   `testLabelingContext` evaded by labeling id `0` alone.  It is now an **exact**
   check of a **declared** witness: `LabelingContext.separatedThreads` names two
-  *non-sentinel* threads the labeling separates, and the kernel evaluates that
-  inequality — so `isInsecureDefaultContext ctx = false` *entails*
+  *admissible* threads the labeling separates — neither the reserved sentinel
+  nor a per-core idle thread (`separationWitnessAdmissible`), since an idle
+  thread runs but never originates or receives a flow, so a labeling that
+  differs only on the idle range separates nothing observable — and the kernel
+  evaluates that inequality — so `isInsecureDefaultContext ctx = false` *entails*
   `LabelingContextValid.labelNonTriviality`
   (`isInsecureDefaultContext_false_implies_labelNonTriviality`), and the runtime
   guard discharges a deployment obligation instead of approximating it.  New
@@ -1244,7 +1253,16 @@ code may assume:
   `uniformFixtureLabelingContext`.  What the guard does **not** decide is
   whether the declared partition is the right one for the deployment's threads;
   that stays the integrator's, stated by `LabelingContextValid`'s other two
-  conjuncts and discharged structurally by the constructor.
+  conjuncts and discharged structurally by the constructor.  **Which labeling a
+  hardware boot installs is bound, not described**: `PlatformBinding` carries
+  `deploymentLabeling` together with its admission proof
+  (`deploymentLabelingAdmitted`), the RPi5 binding's is
+  `confinedLabelingContext rpi5UpperDomainBase` (`rpi5_deploymentLabeling`,
+  by `rfl`; the boundary clears the boot VSpace root and the idle range), the
+  simulation bindings' is `harnessLabelingContext`, and
+  `Platform.FFI.bootAndInitialisePlatform` boots under the binding's labeling —
+  provably the checked idle boot plus the two installs, with the refusal arm
+  unreachable (`bootAndInitialisePlatform_eq_checked_boot`).
 
 - **The boot state enqueues each core's idle thread; it does not dispatch it**
   (WS-RR RR5.11–RR5.14).  `bootAndInitialiseFromPlatform` runs
@@ -1262,8 +1280,17 @@ code may assume:
   (`bootFromPlatformCheckedWithIdleThreads_currentAllNone`), because a current
   slot pointing at a queued thread violates `queueCurrentConsistent` from the
   first instruction; each core's first scheduling point dispatches idle out of
-  its own queue.  `bootFromPlatformWithIdleThreads` remains as the SM4.G
-  install-and-dispatch wrapper and is **not** the production path.
+  its own queue.  The boot queue is **characterised, not bounded**: on every
+  core it is exactly the empty queue with that core's idle thread enqueued
+  (`bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq`, membership
+  `…_mem_runQueueOnCore_iff`), so its well-formedness and its members'
+  resolution are proved of the boot state
+  (`…_runQueueOnCore_wellFormed`, `…_runnable_resolve`), the staged keystone
+  `bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds` takes
+  **no hypothesis beyond the boot**, and each core's first selection is pinned
+  to its own idle thread (`…_chooseThreadOnCore_idle`).
+  `bootFromPlatformWithIdleThreads` remains as the SM4.G install-and-dispatch
+  wrapper and is **not** the production path.
 
 - **Thread-state classification is per-core** (WS-RR RR5.10).
   `inferThreadState` read `currentOnCore bootCoreId` / `runQueueOnCore

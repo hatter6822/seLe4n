@@ -13,6 +13,7 @@ import SeLe4n.Model.Object.Structures
 -- module so the typeclass field can name it without copying the
 -- definition into the Platform namespace.
 import SeLe4n.Kernel.Concurrency.Types
+import SeLe4n.Kernel.InformationFlow.Policy
 
 /-!
 # Platform Binding Contract (H3 preparation)
@@ -136,6 +137,24 @@ class PlatformBinding (platform : Type) where
       is single-cluster Cortex-A76 (`.inner`); future big.LITTLE /
       multi-cluster targets use `.outer`. -/
   sharingDomain : SeLe4n.Kernel.Concurrency.SharingDomain
+  /-- **WS-RR RR5.1**: the labeling context this platform's boot installs —
+      the deployment's security-domain assignment, bound here so that "what a
+      hardware boot installs" is a definite object in the tree rather than a
+      sentence about one.  `Platform.FFI.bootAndInitialisePlatform` boots under
+      it.  The RPi5 binding supplies the confined two-domain production labeling
+      (`Kernel.confinedLabelingContext`); the simulation bindings supply the
+      harness labeling (`Kernel.harnessLabelingContext`), under which every
+      fixture id sits in one domain. -/
+  deploymentLabeling : SeLe4n.Kernel.LabelingContext
+  /-- **WS-RR RR5.1**: the binding's labeling is admitted by the boot-time
+      fail-closed guard (`Kernel.isInsecureDefaultContext`).  Carried as a field
+      so a binding cannot name a labeling the boot would refuse: the obligation
+      is discharged where the labeling is chosen, at elaboration time, rather
+      than discovered at the first boot — and it is exactly the obligation the
+      guard checks, so `bootAndInitialisePlatform` cannot fail on it
+      (`Platform.FFI.bootAndInitialisePlatform_eq_checked_boot`). -/
+  deploymentLabelingAdmitted :
+    SeLe4n.Kernel.isInsecureDefaultContext deploymentLabeling = false
 
 /-- Extract the runtime contract from a platform binding instance. -/
 @[inline] def PlatformBinding.runtime [PlatformBinding platform] : RuntimeBoundaryContract :=
@@ -170,6 +189,19 @@ class PlatformBinding (platform : Type) where
 @[inline] def PlatformBinding.bootCore [PlatformBinding platform] :
     Fin (PlatformBinding.coreCount (platform := platform)) :=
   PlatformBinding.bootCoreId (platform := platform)
+
+/-- **WS-RR RR5.1**: extract the labeling context the platform's boot
+    installs. -/
+@[inline] def PlatformBinding.labeling [PlatformBinding platform] :
+    SeLe4n.Kernel.LabelingContext :=
+  PlatformBinding.deploymentLabeling (platform := platform)
+
+/-- **WS-RR RR5.1**: the extracted labeling is admitted by the guard — the
+    binding's own obligation, restated on the accessor. -/
+theorem PlatformBinding.labeling_admitted [PlatformBinding platform] :
+    SeLe4n.Kernel.isInsecureDefaultContext (PlatformBinding.labeling (platform := platform))
+      = false :=
+  PlatformBinding.deploymentLabelingAdmitted (platform := platform)
 
 /-- **WS-SM SM0.G**: extract the platform's ARMv8 sharing domain. -/
 @[inline] def PlatformBinding.sharing [PlatformBinding platform] :

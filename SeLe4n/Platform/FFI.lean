@@ -940,7 +940,11 @@ is refused.
 
 Simulation and test paths install `Kernel.harnessLabelingContext` explicitly
 (via `initialiseKernelLabelingContext` or the boot wrapper), which is a real
-two-domain deployment labeling rather than a guard-evading one. -/
+two-domain deployment labeling rather than a guard-evading one.  The hardware
+boot installs the platform binding's own labeling through
+`bootAndInitialisePlatform` — for `RPi5Platform`,
+`Kernel.confinedLabelingContext rpi5UpperDomainBase`
+(`Platform.RPi5.rpi5_deploymentLabeling`). -/
 initialize kernelLabelingContextRef : IO.Ref LabelingContext ←
   IO.mkRef Kernel.defaultLabelingContext
 
@@ -1114,6 +1118,45 @@ def bootAndInitialiseFromPlatform
       initialiseKernelState st
       initialiseKernelLabelingContext ctx
       pure (Except.ok st)
+
+/-- WS-RR RR5.2: boot under the **platform binding's own** labeling.
+
+`bootAndInitialiseFromPlatform` takes the labeling as an argument, which is the
+right shape for a caller that has one — the SD suite installs a dozen — and the
+wrong shape for the hardware boot, where *which* labeling is a deployment
+decision that should be made once, where the platform is described, and not
+re-made by whoever writes the boot call.  `PlatformBinding.deploymentLabeling`
+(`Platform/Contract.lean`) is that decision, and this entry boots under it: the
+RPi5 binding's is `Kernel.confinedLabelingContext rpi5UpperDomainBase`
+(`Platform.RPi5.rpi5_deploymentLabeling`); the simulation bindings' is
+`Kernel.harnessLabelingContext`.
+
+The binding also carries the guard's admission proof
+(`PlatformBinding.deploymentLabelingAdmitted`), so the refusal arm of
+`bootAndInitialiseFromPlatform` is unreachable from here — machine-checked as
+`bootAndInitialisePlatform_eq_checked_boot`: this entry accepts and rejects
+exactly what `bootFromPlatformCheckedWithIdleThreads` does.  SM10.1's
+`lean_kernel_main` is the intended caller, with `RPi5Platform`. -/
+def bootAndInitialisePlatform (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) : BaseIO (Except String SystemState) :=
+  bootAndInitialiseFromPlatform config (PlatformBinding.labeling (platform := platform))
+
+/-- WS-RR RR5.2: under a binding's labeling the boot entry **cannot** be refused
+    on the labeling — it is the checked idle boot followed by the two installs,
+    and nothing else.  The proof is the binding's admission field rewriting the
+    guard to `false`; there is no case analysis, because there is no case. -/
+theorem bootAndInitialisePlatform_eq_checked_boot (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) :
+    bootAndInitialisePlatform platform config =
+      (match bootFromPlatformCheckedWithIdleThreads config with
+        | Except.error e => pure (Except.error e)
+        | Except.ok ist => do
+            initialiseKernelState ist.state
+            initialiseKernelLabelingContext (PlatformBinding.labeling (platform := platform))
+            pure (Except.ok ist.state)) := by
+  unfold bootAndInitialisePlatform bootAndInitialiseFromPlatform
+  rw [PlatformBinding.labeling_admitted]
+  rfl
 
 /-- WS-RC R2.B.1 helper: Write the FFI-passed register values into the
     given thread's TCB register file.

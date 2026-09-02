@@ -450,6 +450,43 @@ def runAk6Suite : IO Bool := do
     IO.println "--- AK6 named sub-tests: FAILURES ---"
   return allOk
 
+/-- WS-RR RR5.4 (audit): the separation witness may name neither the reserved
+sentinel nor a per-core idle thread, and the index-partitioned family stays
+total across the idle range.  Factored out of the main block: that block is
+already at the elaborator's nesting limit, and every `let` added to it deepens
+the `do`-chain — the same shape `tests/NegativeStateSuite.lean`'s thin
+dispatcher exists to avoid. -/
+private def runSeparationWitnessAdmissibilityChecks : IO Unit := do
+  -- A witness naming a per-core idle thread is refused — and refused for the
+  -- exclusion, not for equal labels: under
+  -- `confinedLabelingContext 64` thread 1 is `lowTrusted` and idle 0 (id
+  -- 0x1_0000) is `highUntrusted`, so the pair IS separated and only
+  -- `separationWitnessAdmissible` can be what refuses it.
+  let idle0 : SeLe4n.ThreadId := SeLe4n.Kernel.idleThreadId ⟨0, by decide⟩
+  let idleWitnessed : SeLe4n.Kernel.LabelingContext :=
+    { SeLe4n.Kernel.confinedLabelingContext 64 with separatedThreads := some (⟨1⟩, idle0) }
+  expect "the idle-witnessed context really does separate its declared pair"
+    (idleWitnessed.threadLabelOf ⟨1⟩ != idleWitnessed.threadLabelOf idle0)
+  expect "isInsecureDefaultContext refuses a witness naming an idle thread"
+    (SeLe4n.Kernel.isInsecureDefaultContext idleWitnessed = true)
+  expect "the idle id is recognised by the exclusion"
+    (SeLe4n.Kernel.isIdleThreadId idle0 = true &&
+     SeLe4n.Kernel.separationWitnessAdmissible idle0 = false)
+  expect "the first non-sentinel id is admissible"
+    (SeLe4n.Kernel.separationWitnessAdmissible ⟨1⟩ = true)
+  -- The index-partitioned family stays total across the idle range: a
+  -- boundary INSIDE the range lifts its upper witness past it
+  -- (`upperWitnessIndex`), and the result is still admitted.
+  expect "a boundary inside the idle range lifts the upper witness past it"
+    (SeLe4n.Kernel.upperWitnessIndex (SeLe4n.Kernel.idleThreadIdBase + 1) =
+      SeLe4n.Kernel.idleThreadIdBase + SeLe4n.Kernel.Concurrency.numCores)
+  expect "a boundary outside the idle range keeps its own witness"
+    (SeLe4n.Kernel.upperWitnessIndex SeLe4n.Kernel.harnessSeparationBoundary =
+      SeLe4n.Kernel.harnessSeparationBoundary)
+  expect "isInsecureDefaultContext admits the confined context at an in-range boundary"
+    (SeLe4n.Kernel.isInsecureDefaultContext
+      (SeLe4n.Kernel.confinedLabelingContext (SeLe4n.Kernel.idleThreadIdBase + 1)) = false)
+
 def runInformationFlowChecks : IO Unit := do
   -- === Policy relation checks ===
   expect "security flow is reflexive"
@@ -1441,6 +1478,7 @@ def runInformationFlowChecks : IO Unit := do
     (SeLe4n.Kernel.isInsecureDefaultContext
       { SeLe4n.Kernel.defaultLabelingContext with
         separatedThreads := some (⟨1⟩, ⟨2⟩) } = true)
+  runSeparationWitnessAdmissibilityChecks
 
   IO.println "default labeling context insecurity verified"
 

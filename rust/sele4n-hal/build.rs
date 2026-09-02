@@ -2200,10 +2200,243 @@ struct LeanSymbolDeclaration {
     /// Is this an `extern "C"` declaration or definition, or does it carry
     /// `#[no_mangle]`?  Either way it puts the Lean name in the linker's hands.
     linker_visible: bool,
-    /// The verdict of the innermost `hw_target` cfg region enclosing it:
-    /// `Some(true)` inside `#[cfg(feature = "hw_target")]`, `Some(false)` inside
-    /// `#[cfg(not(feature = "hw_target"))]`, `None` under neither.
+    /// The verdict of the innermost decisive `cfg` region enclosing it:
+    /// `Some(true)` when the enclosing `#[cfg(..)]` attributes **entail**
+    /// `feature = "hw_target"` (the item is compiled only with the feature on),
+    /// `Some(false)` when they entail its negation, `None` when the scanner can
+    /// establish neither (`hw_target_region`).
     hw_target: Option<bool>,
+}
+
+/// **WS-RR RR5.9**: what one `cfg` predicate entails about `feature =
+/// "hw_target"`.
+///
+/// Four entailments, every one **under-approximated**: `true` is an entailment
+/// the evaluator established, `false` says only that it established none.  A
+/// verdict built from them can therefore refuse a gate that is in fact sound —
+/// `any(feature = "hw_target", feature = "hw_target")`, say — and can never
+/// accept one that is not, which is the direction that fails closed.  The
+/// combinators follow the `cfg` grammar (`not`, `all`, `any`); an atom other
+/// than the feature itself entails nothing in either direction.
+///
+/// This replaced two substring tests (`contains("not(feature = \"hw_target\")")`
+/// first, then `contains("feature = \"hw_target\"")`), which read the *token*
+/// off the header and not the *predicate*: a `cfg_attr(feature = "hw_target",
+/// ..)` — which gates nothing — and an `any(feature = "hw_target", ..)` — which
+/// compiles the item without the feature — both carried the token and both
+/// passed as a positive gate.  Presence is not a relation; the relation here is
+/// entailment, and it is computed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct HwTargetEntailment {
+    /// `P → hw_target`: the item exists only with the feature on.
+    needs_hw: bool,
+    /// `P → ¬hw_target`: the item exists only with the feature off.
+    needs_not_hw: bool,
+    /// `hw_target → P`: the feature on suffices for the item to exist.
+    given_hw: bool,
+    /// `¬hw_target → P`: the feature off suffices for the item to exist.
+    given_not_hw: bool,
+}
+
+impl HwTargetEntailment {
+    /// `true` (the empty conjunction): entailed by everything, entails nothing.
+    const TRIVIAL: Self = Self {
+        needs_hw: false,
+        needs_not_hw: false,
+        given_hw: true,
+        given_not_hw: true,
+    };
+
+    /// The conjunction `all(self, other)`.
+    fn and(self, other: Self) -> Self {
+        Self {
+            needs_hw: self.needs_hw || other.needs_hw,
+            needs_not_hw: self.needs_not_hw || other.needs_not_hw,
+            given_hw: self.given_hw && other.given_hw,
+            given_not_hw: self.given_not_hw && other.given_not_hw,
+        }
+    }
+}
+
+/// **WS-RR RR5.9**: split `args` at the commas outside parentheses and string
+/// literals — the arguments of one `cfg` combinator.
+fn split_top_level_commas(args: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut start = 0usize;
+    for (i, b) in args.bytes().enumerate() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            b'(' => depth += 1,
+            b')' => depth = depth.saturating_sub(1),
+            b',' if depth == 0 => {
+                out.push(&args[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push(&args[start..]);
+    out.into_iter()
+        .map(str::trim)
+        .filter(|a| !a.is_empty())
+        .collect()
+}
+
+/// **WS-RR RR5.9**: the entailment of one `cfg` predicate (`hw_target_region`).
+fn cfg_predicate_entailment(pred: &str) -> HwTargetEntailment {
+    let pred = pred.trim();
+    // `feature = "hw_target"`, whitespace-insensitively: the atom.
+    let squeezed: String = pred.split_whitespace().collect();
+    if squeezed == "feature=\"hw_target\"" {
+        return HwTargetEntailment {
+            needs_hw: true,
+            needs_not_hw: false,
+            given_hw: true,
+            given_not_hw: false,
+        };
+    }
+    let Some(open) = pred.find('(') else {
+        return HwTargetEntailment::default();
+    };
+    if !pred.ends_with(')') {
+        return HwTargetEntailment::default();
+    }
+    let head = pred[..open].trim();
+    let args: Vec<HwTargetEntailment> = split_top_level_commas(&pred[open + 1..pred.len() - 1])
+        .into_iter()
+        .map(cfg_predicate_entailment)
+        .collect();
+    match head {
+        // `¬P → hw` iff `¬hw → P`, and so on: the four entailments of a
+        // negation are the four of its operand, read across the diagonal.
+        "not" if args.len() == 1 => {
+            let p = args[0];
+            HwTargetEntailment {
+                needs_hw: p.given_not_hw,
+                needs_not_hw: p.given_hw,
+                given_hw: p.needs_not_hw,
+                given_not_hw: p.needs_hw,
+            }
+        }
+        "all" => args
+            .iter()
+            .fold(HwTargetEntailment::TRIVIAL, |acc, p| acc.and(*p)),
+        // A disjunction needs the feature only when every disjunct does, and
+        // is given by the feature when any disjunct is.
+        "any" => HwTargetEntailment {
+            needs_hw: !args.is_empty() && args.iter().all(|p| p.needs_hw),
+            needs_not_hw: !args.is_empty() && args.iter().all(|p| p.needs_not_hw),
+            given_hw: args.iter().any(|p| p.given_hw),
+            given_not_hw: args.iter().any(|p| p.given_not_hw),
+        },
+        _ => HwTargetEntailment::default(),
+    }
+}
+
+/// **WS-RR RR5.9**: the predicates of the `#[cfg(..)]` attributes in one item
+/// header, in order.  Only `cfg` — `cfg_attr` and every other attribute are
+/// skipped, whatever they mention.
+fn cfg_attribute_predicates(header: &str) -> Vec<&str> {
+    let bytes = header.as_bytes();
+    let mut out = Vec::new();
+    let mut search = 0usize;
+    while let Some(hit) = header[search..].find("#[") {
+        let mut i = search + hit + 2;
+        search = i;
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        let name_start = i;
+        while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+            i += 1;
+        }
+        if &header[name_start..i] != "cfg" {
+            continue;
+        }
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() || bytes[i] != b'(' {
+            continue;
+        }
+        let pred_start = i + 1;
+        let mut depth = 0usize;
+        let mut in_string = false;
+        let mut escaped = false;
+        let mut pred_end = None;
+        let mut j = i;
+        while j < bytes.len() {
+            let b = bytes[j];
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if b == b'\\' {
+                    escaped = true;
+                } else if b == b'"' {
+                    in_string = false;
+                }
+            } else {
+                match b {
+                    b'"' => in_string = true,
+                    b'(' => depth += 1,
+                    b')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            pred_end = Some(j);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            j += 1;
+        }
+        let Some(pred_end) = pred_end else { break };
+        let mut k = pred_end + 1;
+        while k < bytes.len() && bytes[k].is_ascii_whitespace() {
+            k += 1;
+        }
+        if k < bytes.len() && bytes[k] == b']' {
+            out.push(&header[pred_start..pred_end]);
+        }
+        search = pred_end + 1;
+    }
+    out
+}
+
+/// **WS-RR RR5.9**: the verdict of one item header — `Some(true)` when its
+/// `cfg` attributes, conjoined, entail `feature = "hw_target"`, `Some(false)`
+/// when they entail its negation, `None` when the evaluator can establish
+/// neither (no `cfg`, a `cfg` that does not mention the feature, or one that
+/// mentions it without deciding it).  A header entailing both is contradictory
+/// — the item is never compiled — and is `None` too, so it satisfies nothing.
+fn header_verdict(header: &str) -> Option<bool> {
+    let preds = cfg_attribute_predicates(header);
+    if preds.is_empty() {
+        return None;
+    }
+    let e = preds
+        .iter()
+        .map(|p| cfg_predicate_entailment(p))
+        .fold(HwTargetEntailment::TRIVIAL, HwTargetEntailment::and);
+    match (e.needs_hw, e.needs_not_hw) {
+        (true, false) => Some(true),
+        (false, true) => Some(false),
+        _ => None,
+    }
 }
 
 /// **WS-RR RR5.9**: the `hw_target` cfg region enclosing byte `at`, or `None`.
@@ -2211,23 +2444,15 @@ struct LeanSymbolDeclaration {
 /// Walks outward from `at`: first the *item header* ending at `at` (the text
 /// back to the previous statement boundary, which carries the attributes of a
 /// module-level item), then each enclosing block's own header, innermost first.
-/// The first header mentioning the feature decides, and `not(feature =
-/// "hw_target")` is tested before the bare mention so a negated gate is not read
-/// as a positive one.
+/// The first header with a decisive verdict (`header_verdict`) decides: a
+/// `cfg` on an enclosing module or block gates everything inside it, and an
+/// inner header whose `cfg` does not mention the feature leaves the decision
+/// to the next one out.
 ///
 /// `code` must be a comment-blanked view: a comment naming the feature would
 /// otherwise gate an item that no attribute gates — the presence-versus-relation
 /// mistake, in the direction that fails *open*.
 fn hw_target_region(code: &str, at: usize) -> Option<bool> {
-    fn header_verdict(header: &str) -> Option<bool> {
-        if header.contains("not(feature = \"hw_target\")") {
-            Some(false)
-        } else if header.contains("feature = \"hw_target\"") {
-            Some(true)
-        } else {
-            None
-        }
-    }
     // The header of the construct whose body/text contains `pos`: back to the
     // previous statement boundary.
     fn header_before(code: &str, pos: usize) -> &str {
@@ -2273,6 +2498,34 @@ fn hw_target_region(code: &str, at: usize) -> Option<bool> {
     }
 }
 
+/// **WS-RR RR5.9**: does an item header put the item's name in the symbol
+/// table?  The `extern` keyword (an `extern "C" fn`, or the header of the
+/// `extern "C" { .. }` block a declaration sits in), or a `no_mangle` attribute
+/// in either spelling — `#[no_mangle]` and the edition-2024 `#[unsafe(no_mangle)]`,
+/// which the 2021 edition this crate builds under accepts as well.  Read as
+/// whole words on the blanked view, not as substrings: an attribute *string*
+/// is blanked before this sees it, and an identifier that merely contains the
+/// letters is not the keyword.
+fn header_is_linker_visible(header: &str) -> bool {
+    contains_word(header, "extern") || contains_word(header, "no_mangle")
+}
+
+/// **WS-RR RR5.9**: `word` occurs in `text` as a whole identifier.
+fn contains_word(text: &str, word: &str) -> bool {
+    let bytes = text.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut search = 0usize;
+    while let Some(hit) = text[search..].find(word) {
+        let at = search + hit;
+        let end = at + word.len();
+        search = end;
+        if (at == 0 || !is_ident(bytes[at - 1])) && (end == bytes.len() || !is_ident(bytes[end])) {
+            return true;
+        }
+    }
+    false
+}
+
 /// **WS-RR RR5.9**: every declaration or definition of a Lean symbol in one
 /// comment- and string-blanked source view, with where it sits.
 ///
@@ -2292,6 +2545,32 @@ fn lean_symbol_declarations(
     let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
     let mut out = Vec::new();
     for symbol in exports {
+        // `#[export_name = "<symbol>"]` (or `#[unsafe(export_name = ..)]`) puts
+        // the *string* in the symbol table, whatever the item is called, so it
+        // is a linker-visible declaration of the Lean symbol wherever it sits.
+        // Read off the strings-kept view, where the name still exists.
+        let needle = format!("\"{symbol}\"");
+        let mut search = 0usize;
+        while let Some(hit) = strings_kept[search..].find(&needle) {
+            let at = search + hit;
+            search = at + needle.len();
+            let lead: String = strings_kept[..at]
+                .chars()
+                .rev()
+                .take_while(|c| *c != '#')
+                .collect::<String>()
+                .chars()
+                .rev()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            if lead == "[export_name=" || lead == "[unsafe(export_name=" {
+                out.push(LeanSymbolDeclaration {
+                    symbol: (*symbol).to_string(),
+                    linker_visible: true,
+                    hw_target: hw_target_region(strings_kept, at),
+                });
+            }
+        }
         let mut search = 0usize;
         while let Some(hit) = code[search..].find(*symbol) {
             let at = search + hit;
@@ -2331,7 +2610,7 @@ fn lean_symbol_declarations(
             };
             out.push(LeanSymbolDeclaration {
                 symbol: (*symbol).to_string(),
-                linker_visible: header.contains("extern") || header.contains("#[no_mangle]"),
+                linker_visible: header_is_linker_visible(&header),
                 // The cfg attributes are read from the **strings-kept** view,
                 // byte-aligned with this one: `feature = "hw_target"` is a
                 // string literal, and the blanked view the declarations are
@@ -2446,23 +2725,34 @@ fn beta_seam(core: usize) {
         }
     }
 }
+
+#[cfg(all(feature = "hw_target", target_arch = "aarch64"))]
+extern "C" {
+    fn lean_gamma() -> u64;
+}
+
+#[cfg(not(feature = "hw_target"))]
+fn lean_gamma() -> u64 {
+    0
+}
 "#;
-    let exports = ["lean_alpha", "lean_beta"];
+    let exports = ["lean_alpha", "lean_beta", "lean_gamma"];
     let check = |source: &str| -> Result<usize, String> {
         let (kept, blanked) = rust_code_views(source);
         lean_extern_gating_status(&[("fixture.rs".to_string(), blanked, kept)], &exports)
     };
     match check(GOOD) {
-        Ok(3) => {}
+        Ok(5) => {}
         Ok(n) => panic!(
             "build.rs self-check: the good extern-gating fixture classified {n} declarations, \
-             expected 3 (the gated extern, the host stand-in, the nested extern)"
+             expected 5 (the gated extern, the host stand-in, the nested extern, the \
+             `all`-gated extern and its stand-in)"
         ),
         Err(why) => {
             panic!("build.rs self-check: the good extern-gating fixture was refused: {why}")
         }
     }
-    let mutations: [(&str, &str, &str); 6] = [
+    let mutations: [(&str, &str, &str); 12] = [
         (
             "the extern keeps its cfg but the gate becomes a different feature",
             "#[cfg(feature = \"hw_target\")]\nextern \"C\" {\n    fn lean_alpha",
@@ -2492,6 +2782,41 @@ fn beta_seam(core: usize) {
             "the gate is present only as a comment",
             "#[cfg(feature = \"hw_target\")]\nextern \"C\" {\n    fn lean_alpha",
             "// #[cfg(feature = \"hw_target\")]\nextern \"C\" {\n    fn lean_alpha",
+        ),
+        (
+            "the extern keeps the literal in a `cfg_attr`, which gates nothing",
+            "#[cfg(feature = \"hw_target\")]\nextern \"C\" {\n    fn lean_alpha",
+            "#[cfg_attr(feature = \"hw_target\", allow(dead_code))]\nextern \"C\" {\n    fn lean_alpha",
+        ),
+        (
+            "the extern's gate becomes an `any` the feature does not decide",
+            "#[cfg(feature = \"hw_target\")]\nextern \"C\" {\n    fn lean_alpha",
+            "#[cfg(any(feature = \"hw_target\", feature = \"host_tools\"))]\nextern \"C\" {\n    \
+             fn lean_alpha",
+        ),
+        (
+            "the host stand-in's negation wraps an `all` the feature does not decide",
+            "#[cfg(not(feature = \"hw_target\"))]\nunsafe fn lean_alpha",
+            "#[cfg(not(all(feature = \"hw_target\", feature = \"host_tools\")))]\nunsafe fn lean_alpha",
+        ),
+        (
+            "the `all`-gated extern keeps every conjunct but under `any`",
+            "#[cfg(all(feature = \"hw_target\", target_arch = \"aarch64\"))]\nextern \"C\" {\n    \
+             fn lean_gamma",
+            "#[cfg(any(feature = \"hw_target\", target_arch = \"aarch64\"))]\nextern \"C\" {\n    \
+             fn lean_gamma",
+        ),
+        (
+            "the host stand-in stays negation-gated but becomes linker-visible through the \
+             edition-2024 attribute spelling",
+            "#[cfg(not(feature = \"hw_target\"))]\nunsafe fn lean_alpha",
+            "#[cfg(not(feature = \"hw_target\"))]\n#[unsafe(no_mangle)]\nunsafe fn lean_alpha",
+        ),
+        (
+            "a host item of another name is exported under the Lean symbol's name",
+            "#[cfg(not(feature = \"hw_target\"))]\nfn lean_gamma() -> u64 {",
+            "#[cfg(not(feature = \"hw_target\"))]\n#[export_name = \"lean_gamma\"]\nfn \
+             host_gamma() -> u64 {",
         ),
     ];
     for (what, from, to) in mutations {

@@ -27,11 +27,12 @@ Three changes, in the order they matter:
 
 * **The guard decides, rather than samples.**  `LabelingContext` gains
   `separatedThreads` — the deployment's declared domain-separation witness, two
-  **non-sentinel** thread ids it claims the labeling separates — and the kernel
+  **admissible** thread ids it claims the labeling separates — and the kernel
   evaluates that inequality.  A context declaring nothing is refused; one
-  declaring a pair it does not separate is refused too; and separating only id
+  declaring a pair it does not separate is refused too; separating only id
   `0`, which `toObjIdChecked` will not turn into an object reference, separates
-  nothing that can run.  The consequence is not a better heuristic but a
+  nothing that can run; and (audit round, below) neither may a witness name a
+  per-core idle thread.  The consequence is not a better heuristic but a
   different kind of statement: `isInsecureDefaultContext ctx = false` now
   *entails* `LabelingContextValid.labelNonTriviality`
   (`isInsecureDefaultContext_false_implies_labelNonTriviality`), so the runtime
@@ -232,9 +233,76 @@ substitution and putting a paren where it is text.  The baseline is regenerated:
 nine occurrences it had recorded were comment text the view should never have
 shown it.
 
+### The audit round
+
+A re-read of the cut against the code rather than its docstrings, before merge.
+Four things the rows had shipped short of, each closed in the same version:
+
+* **The keystone assumed what it was meant to discharge.**  RR5.12's
+  `bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds` took the
+  boot queue's well-formedness and its members' resolvability by hypothesis —
+  the no-stall chain still rested on an assumption about the state it existed
+  to be discharged from.  The boot queue is now **characterised**: on every
+  core it is exactly the empty queue with that core's idle thread enqueued
+  (`foldl_enqueueIdleThread_runQueueOnCore_eq`, the fold's equation;
+  `bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq`), from which
+  membership (`…_mem_runQueueOnCore_iff`: idle and nothing else),
+  well-formedness (`…_runQueueOnCore_wellFormed`) and resolution
+  (`…_runnable_resolve`, `runnableThreadsAreTCBsOnCore` stated unfolded because
+  `Platform.Boot` does not import the per-core invariant module) are
+  corollaries.  The keystone takes nothing beyond the boot, a signature pin in
+  the suite keeps it that way, and `…_chooseThreadOnCore_idle` pins each core's
+  **first selection** to its own idle thread.
+* **The witness could name the kernel's own idle threads.**  RR5.4 excluded the
+  sentinel from the declared witness and stopped there, so a labeling that gave
+  the four idle threads a label of their own and every user-visible entity
+  `publicLabel` could name two idle threads and pass — the all-public shape the
+  phase exists to refuse, one id range higher.  `separationWitnessAdmissible`
+  excludes the idle range too (`isIdleThreadId`, exact on the ids
+  `idleThreadId` produces: `isIdleThreadId_iff`); the index-partitioned family
+  lifts its upper witness past the range when the boundary falls inside it
+  (`upperWitnessIndex`) so every boundary still yields an admitted context; and
+  the negative test asserts the refused pair **is** separated, so the refusal is
+  the exclusion and not a coincidence of equal labels.
+* **"This is what a hardware boot installs" was a sentence.**  Nothing installed
+  `confinedLabelingContext`; the docstring described an intention.
+  `PlatformBinding` now carries `deploymentLabeling` and its admission proof
+  `deploymentLabelingAdmitted`, so a binding cannot name a labeling the boot
+  would refuse and the obligation is discharged where the labeling is chosen.
+  The RPi5 binding's is `confinedLabelingContext rpi5UpperDomainBase`
+  (`rpi5_deploymentLabeling`, by `rfl`; the boundary clears the boot VSpace
+  root and the idle range, so every entity the boot image creates is
+  `lowTrusted`); the three simulation bindings' is `harnessLabelingContext`.
+  `Platform.FFI.bootAndInitialisePlatform platform config` boots under the
+  binding's labeling and is provably the checked idle boot plus the two
+  installs, with the refusal arm unreachable
+  (`bootAndInitialisePlatform_eq_checked_boot`).  The sentence now cites the
+  theorem.
+* **The `hw_target` verdict was two substring tests.**  RR5.9's
+  `hw_target_region` tested a header for `not(feature = "hw_target")` and then
+  for `feature = "hw_target"` — the token, not the predicate.  A
+  `#[cfg_attr(feature = "hw_target", …)]`, which gates nothing, and an
+  `#[cfg(any(feature = "hw_target", …))]`, which compiles the item without the
+  feature, both carried the token and both read as a positive gate: the
+  presence-versus-relation shape this file's conventions section describes, in
+  the gate written under those conventions.  The verdict is now computed:
+  `cfg_attribute_predicates` parses the `#[cfg(..)]` attributes of a header,
+  and `cfg_predicate_entailment` evaluates what each entails about the feature
+  through `not` / `all` / `any` as four under-approximated entailments, so it
+  can refuse a sound gate and never accept an unsound one.  Linker visibility
+  is read as whole words too, and covers the edition-2024 `#[unsafe(no_mangle)]`
+  and `#[export_name = "…"]` — which puts a Lean name in the symbol table from
+  an item of any name, so it is scanned off the strings-kept view.  The fixture
+  gains an `all(…)`-gated extern and six more token-preserving mutations
+  (twelve in all).
+
 ### Tests
 
-* `tests/SmpIdleSuite.lean` — 21 surface anchors for the new boot surface, and
+* `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface
+  (seven added in the audit round, plus a signature pin that the keystone takes
+  no hypothesis beyond the boot), and runtime checks that on the production
+  boot state every core's run queue is **exactly** `[idle c]` and its first
+  selection is `idle c`; that every core's idle thread is
   runtime checks that on the production boot state every core's idle thread is
   on its **own** queue and on no other's, resolves to that core's idle TCB, is
   in the core's active domain, and classifies `.Ready` (the RR5.10 × RR5.14
@@ -245,8 +313,10 @@ shown it.
   labeling context leaves *both* references untouched; the
   all-public-except-sentinel context is refused by the same arm), SD-045 (the
   production wrapper's per-core idle state, read back through the live
-  reference), and SD-041 now observes the installed context rather than
-  inferring it from the success arm.
+  reference), SD-046 (`bootAndInitialisePlatform` installs the simulation
+  binding's labeling, observed through the reference; the RPi5 binding's
+  labeling is confined in both directions and admitted), and SD-041 now
+  observes the installed context rather than inferring it from the success arm.
 * `rust/sele4n-hal/tests/readiness_gate_before_mark.rs` and
   `…_after_mark.rs` — the readiness mask is process-global and one-way, so both
   sides of the gate are only observable in separate binaries.  Before any mark:
@@ -255,7 +325,10 @@ shown it.
   After: the seams reach their host-lane stand-ins.
 * `tests/InformationFlowSuite.lean` — the guard's rejection of the
   all-public-except-sentinel context, its admission of a constructed deployment
-  context, and its refusal of a *falsely declared* witness.
+  context, its refusal of a *falsely declared* witness, and (audit round) its
+  refusal of a witness naming an idle thread — asserted to be a *separated*
+  pair first, so the refusal is the exclusion — with the upper-witness lift
+  checked at a boundary inside the idle range and at the harness boundary.
 
 Tiers 0–3, `test_rust.sh` and `test_aarch64_cross_build.sh` green; the golden
 trace fixture is unchanged.

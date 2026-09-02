@@ -101,6 +101,37 @@ def rpi5BootVSpaceRootEntry : SeLe4n.Platform.BootVSpaceRootEntry where
   root := SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot
   hMappings := SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_mappings_invExt
 
+/-- **WS-RR RR5.1**: the entity index at which the RPi5 deployment's untrusted
+    domain begins — the one number `confinedLabelingContext` asks a deployment
+    for.
+
+    Everything the boot image creates lives below it and is therefore
+    `lowTrusted`: the config's `initialObjects` (the canonical configs keep
+    theirs below `idleThreadIdBase`, which is how they discharge
+    `idleSlotsFreshAt`), the boot VSpace root at `rpi5BootVSpaceRootObjId`
+    (`rpi5UpperDomainBase_clears_bootVSpaceRoot`) and the four per-core idle
+    threads (`rpi5UpperDomainBase_clears_idle_range`).  Every entity a running
+    system creates at or above it is `highUntrusted`, and the two domains cannot
+    reach each other in either direction (`confinedLabelingContext_confines`).
+
+    Numerically equal to `Kernel.harnessSeparationBoundary`, and deliberately
+    **not** defined as it: the harness boundary is a fixture parameter that may
+    move with the fixtures, while this one is the hardware deployment's choice
+    and moves only with the deployment. -/
+def rpi5UpperDomainBase : Nat := 0x10_0000
+
+/-- **WS-RR RR5.1**: the per-core idle threads sit below the RPi5 domain
+    boundary, so they carry the boot domain's label. -/
+theorem rpi5UpperDomainBase_clears_idle_range :
+    SeLe4n.Kernel.idleThreadIdBase + SeLe4n.Kernel.Concurrency.numCores ≤
+      rpi5UpperDomainBase := by
+  decide
+
+/-- **WS-RR RR5.1**: the boot VSpace root sits below the RPi5 domain boundary. -/
+theorem rpi5UpperDomainBase_clears_bootVSpaceRoot :
+    rpi5BootVSpaceRootObjId.toNat < rpi5UpperDomainBase := by
+  decide
+
 /-- The Raspberry Pi 5 platform binding instance.
 
     **WS-RC R3 (DEEP-BOOT-01)**: `bootVSpaceRoot` is now populated with
@@ -126,6 +157,48 @@ instance rpi5PlatformBinding : SeLe4n.Platform.PlatformBinding RPi5Platform wher
   coreCountPos := by decide
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
+  -- WS-RR RR5.1: the production labeling — two mutually isolated domains
+  -- split at `rpi5UpperDomainBase`.  The admission proof is the constructor's
+  -- own theorem, so the field discharges by name.
+  deploymentLabeling := SeLe4n.Kernel.confinedLabelingContext rpi5UpperDomainBase
+  deploymentLabelingAdmitted :=
+    SeLe4n.Kernel.isInsecureDefaultContext_confinedLabelingContext rpi5UpperDomainBase
+
+/-- **WS-RR RR5.1**: what the hardware boot installs, pinned — the RPi5
+    binding's labeling *is* the confined production context at the RPi5
+    boundary.  `Kernel.confinedLabelingContext`'s docstring cites this theorem
+    for its "what a hardware boot installs" claim; if the binding ever carried
+    something else, this is the line that would fail. -/
+theorem rpi5_deploymentLabeling :
+    SeLe4n.Platform.PlatformBinding.labeling (platform := RPi5Platform) =
+      SeLe4n.Kernel.confinedLabelingContext rpi5UpperDomainBase := by
+  rfl
+
+/-- **WS-RR RR5.1**: every entity the boot image creates is in the boot
+    domain — an index below `idleThreadIdBase` (where the canonical configs keep
+    their objects) carries `lowTrusted` under the RPi5 labeling. -/
+theorem rpi5_deploymentLabeling_boot_entities_lowTrusted (tid : SeLe4n.ThreadId)
+    (h : tid.toNat < SeLe4n.Kernel.idleThreadIdBase) :
+    (SeLe4n.Platform.PlatformBinding.labeling (platform := RPi5Platform)).threadLabelOf tid =
+      SeLe4n.Kernel.SecurityLabel.lowTrusted := by
+  rw [rpi5_deploymentLabeling, SeLe4n.Kernel.confinedLabelingContext]
+  apply SeLe4n.Kernel.indexPartitionedLabelingContext_threadLabel_below
+  simp only [SeLe4n.Kernel.separationBoundary, rpi5UpperDomainBase,
+    SeLe4n.Kernel.idleThreadIdBase] at h ⊢
+  omega
+
+/-- **WS-RR RR5.1**: the per-core idle threads are in the boot domain too. -/
+theorem rpi5_deploymentLabeling_idle_lowTrusted (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (SeLe4n.Platform.PlatformBinding.labeling (platform := RPi5Platform)).threadLabelOf
+        (SeLe4n.Kernel.idleThreadId c) =
+      SeLe4n.Kernel.SecurityLabel.lowTrusted := by
+  rw [rpi5_deploymentLabeling, SeLe4n.Kernel.confinedLabelingContext]
+  apply SeLe4n.Kernel.indexPartitionedLabelingContext_threadLabel_below
+  have hc := c.isLt
+  simp only [SeLe4n.Kernel.separationBoundary, rpi5UpperDomainBase, SeLe4n.Kernel.idleThreadId,
+    SeLe4n.Kernel.idleThreadIdBase, SeLe4n.ThreadId.toNat, SeLe4n.ThreadId.ofNat,
+    SeLe4n.Kernel.Concurrency.numCores] at hc ⊢
+  omega
 
 /-- **WS-SM SM0.E / SM0.G**: structural pinning of the
     `Concurrency.numCores` literal to the RPi5 binding's

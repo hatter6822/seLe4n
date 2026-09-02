@@ -95,9 +95,23 @@ open SeLe4n.Platform.Boot (createIdleThread)
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_currentAllNone
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_idle_available
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_preserves_platform_objects
+#check @SeLe4n.Platform.Boot.foldl_enqueueIdleThread_runQueueOnCore_eq
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runnable_resolve
 #check @SeLe4n.Platform.Boot.idleSlotsFreshAt_of_initialObjects_below_base
 #check @bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore
 #check @bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds
+#check @bootFromPlatformCheckedWithIdleThreads_runnableThreadsAreTCBsOnCore
+#check @bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_idle
+-- WS-RR RR5.12 (audit): the payoff takes NO hypotheses beyond the boot — a
+-- signature pin, so a hypothesis cannot be reintroduced without this line
+-- failing to elaborate.
+example (config : SeLe4n.Platform.Boot.PlatformConfig) (ist : SeLe4n.Model.IntermediateState)
+    (h : SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads config = .ok ist)
+    (c : CoreId) : ∃ tid, chooseThreadOnCore ist.state c = .ok (some tid) :=
+  bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds config ist h c
 #check @chooseThreadOnCore_always_succeeds
 #check @enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds
 
@@ -487,6 +501,16 @@ private def runBootIdleChecks : IO Unit := do
         assertBool s!"core {c.val}: its queued idle thread classifies .Ready, not .Inactive"
           (decide (inferThreadState ist.state (idleThreadId c) (createIdleThread c)
             = ThreadState.Ready))
+        -- WS-RR RR5.12 (audit): the boot queue holds idle and NOTHING else —
+        -- the runtime face of `bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff`.
+        assertBool s!"core {c.val}: its run queue holds exactly its idle thread"
+          (decide ((ist.state.scheduler.runQueueOnCore c).toList = [idleThreadId c]))
+        -- ...so the core's FIRST selection is its idle thread
+        -- (`bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_idle`).
+        assertBool s!"core {c.val}: its first selection is its own idle thread"
+          (match chooseThreadOnCore ist.state c with
+           | .ok (some tid) => decide (tid = idleThreadId c)
+           | _ => false)
   match SeLe4n.Platform.Boot.bootFromPlatformChecked cfg with
   | .error e =>
       assertBool s!"the plain checked boot must also accept the config (got: {e})" false

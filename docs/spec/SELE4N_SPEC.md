@@ -51,12 +51,12 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.34.48` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 318,610 across 308 Lean files |
-| **Test LoC** | 67,283 across 70 Lean test suites |
-| **Proved declarations** | 10,572 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 319,110 across 308 Lean files |
+| **Test LoC** | 67,396 across 70 Lean test suites |
+| **Proved declarations** | 10,597 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR4 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR5 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -1957,7 +1957,16 @@ Hardware-mode kernel state lives in two `IO.Ref` cells:
   now comes up with its own idle thread **enqueued** on its own run
   queue (and no core's current slot set, so `queueCurrentConsistent`
   holds and each core's first scheduling point dispatches idle out of
-  the queue).
+  the queue).  The boot queue is characterised exactly — on every core
+  it is the empty queue with that core's idle thread enqueued
+  (`bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq`) — so its
+  well-formedness and the resolution of its members are theorems of the
+  boot state, the staged keystone
+  `bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds`
+  takes no hypothesis beyond the boot, and each core's first selection
+  is its own idle thread (`…_chooseThreadOnCore_idle`).
+  `bootAndInitialisePlatform platform config` is the same entry under
+  the platform binding's own labeling (§6.7).
 - `kernelLabelingContextRef : IO.Ref LabelingContext` — the
   deployment's information-flow labeling policy.  **WS-RR RR5.3**: it
   now defaults to `Kernel.defaultLabelingContext`, which the
@@ -2053,15 +2062,20 @@ gap was not hypothetical — `testLabelingContext` labelled id `0` alone and
 passed, while every entity that can actually run stayed `publicLabel`.
 
 It is now an **exact** check of a *declared* witness.
-`LabelingContext.separatedThreads` names two **non-sentinel** threads the
-deployment claims its labeling separates, and the kernel evaluates that
-inequality: a context declaring nothing is refused (fail-closed), and one
-declaring a pair it does not separate is refused too.  So
-`isInsecureDefaultContext ctx = false` *entails*
+`LabelingContext.separatedThreads` names two **admissible** threads the
+deployment claims its labeling separates — neither the reserved sentinel nor a
+per-core idle thread (`separationWitnessAdmissible`; an idle thread runs but
+never originates or receives a flow, so a labeling that differs only on the
+idle range separates nothing observable) — and the kernel evaluates that
+inequality: a context declaring nothing is refused (fail-closed), one declaring
+a pair it does not separate is refused too, and so is one whose witness names
+an inadmissible id.  So `isInsecureDefaultContext ctx = false` *entails*
 `LabelingContextValid.labelNonTriviality`
-(`isInsecureDefaultContext_false_implies_labelNonTriviality`) — the runtime
-guard discharges a deployment obligation rather than approximating it.  It is
-O(1): one `Option` match, two id comparisons and one label comparison.
+(`isInsecureDefaultContext_false_implies_labelNonTriviality`) with an
+admissible witness (`…_false_implies_real_witness`,
+`…_false_implies_witness_not_idle`) — the runtime guard discharges a
+deployment obligation rather than approximating it.  It is O(1): one `Option`
+match, two range checks and one label comparison.
 
 **Production contexts** (WS-RR RR5.1): `deploymentLabelingContext` is the
 constructor production code uses.  Its output is `LabelingContextValid`
@@ -2072,7 +2086,25 @@ structure's own field.  `confinedLabelingContext` is the canonical two-domain
 instance, built from the two *incomparable* corners of the lattice
 (`lowTrusted` / `highUntrusted`), so neither domain can observe or influence the
 other — unlike a `publicLabel` / `kernelTrusted` split, which confines in one
-direction only.
+direction only.  The index-partitioned family stays total across the idle
+range: its upper witness is `upperWitnessIndex` — the boundary, lifted past the
+idle ids when the boundary falls among them — so every boundary yields an
+admitted context.
+
+**What a hardware boot installs is bound in the platform contract.**
+`PlatformBinding` carries `deploymentLabeling` and its admission proof
+`deploymentLabelingAdmitted`, so a binding cannot name a labeling the boot
+would refuse.  The RPi5 binding's labeling is
+`confinedLabelingContext rpi5UpperDomainBase` (`rpi5_deploymentLabeling`, by
+`rfl`; `rpi5UpperDomainBase = 0x10_0000` clears the boot VSpace root and the
+idle range, `rpi5UpperDomainBase_clears_bootVSpaceRoot` /
+`…_clears_idle_range`, so every entity the boot image creates is `lowTrusted`);
+the three simulation bindings carry `harnessLabelingContext`.
+`Platform.FFI.bootAndInitialisePlatform platform config` boots under the
+binding's labeling, and is provably the checked idle boot followed by the two
+installs with the labeling-refusal arm unreachable
+(`bootAndInitialisePlatform_eq_checked_boot`); SM10.1's `lean_kernel_main` is
+its intended caller.
 
 **Test helper**: `testLabelingContext` is retained as a **negative fixture** —
 the all-public-except-the-sentinel labeling the guard now rejects
