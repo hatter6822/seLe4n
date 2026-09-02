@@ -857,7 +857,7 @@ look uncross-compilable at all.  It now carries a `required-features =
 | 34 | `SYSCALL_RETURN_ABI_PLAN` | The Rust `ReturnShape` mirror is a hand-written wildcard match with no cross-check against Lean's total function | rust/sele4n-abi/tests/conformance.rs (syscall_return_shape) (`_ => ReturnShape::Unit`) | Make the mirror exhaustive and cross-checked, per §3.4's own discipline. Replace `_ => ReturnShape::Unit` with an explicit arm per remaining variant so rustc's exhaustiveness check plays the role Lea… |
 | 35 | `SYSCALL_RETURN_ABI_PLAN` | The application-IPC-label follow-on debt is registered only inside a review narrative, with no closure target and no entry in the project debt register | none - artifact absent (no occurrence outside docs/planning/SYSCALL_RETURN_ABI_PLAN.md) | Lift it out of the narrative in the same cut that closes WS-RA: add a §9 bullet naming the gap, the aliasing constraint that rules out naive x1 carriage, the two candidate designs, and an owning plan… |
 | 36 | `debt` | SM7's registered ASID completeness gap named SM8 as its closure target; SM8 closed without it and nothing re-owned it | SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean (asidAllocateWithShootdown) (`asidAllocateWithShootdown`, complete and proven… | This is squarely the implement-the-improvement rule's "computed-and-proven data structure that the surrounding code does not consume" case: build the ASIDControl/ASIDPool object family and the `asidP… |
-| 37 | `debt` | Three `@[export]` runtime-seam modules are staged-only, outside the production library closure, with no plan row owning their promotion | `scripts/staged_module_allowlist.txt`; SeLe4n/Kernel/SecondaryEntry.lean (secondaryKernelMain), SeLe4n/Kernel/PerCoreTimerEntry.lean (perCoreTimerTick), SeLe4n/Kernel/PerCoreRescheduleEntry.lean (perCoreReschedule) | Promote the three runtime-entry modules into the `SeLe4n.lean` production closure and remove their allowlist entries in the same commit, so a linked image carries their symbols. **Not four**: `EndpointCallEntry` had its C export removed and is retained as a reference driver, so promoting it would add a staged/FFI dependency that resolves no Rust link symbol. Owned by RR5.11. |
+| 37 | `debt` | Three `@[export]` runtime-seam modules are staged-only, outside the production library closure, with no plan row owning their promotion | `scripts/staged_module_allowlist.txt`; SeLe4n/Kernel/SecondaryEntry.lean (secondaryKernelMain), SeLe4n/Kernel/PerCoreTimerEntry.lean (perCoreTimerTick), SeLe4n/Kernel/PerCoreRescheduleEntry.lean (perCoreReschedule) | Promote the three runtime-entry modules into the `SeLe4n.lean` production closure and remove their allowlist entries in the same commit, so a linked image carries their symbols. **Not four**: `EndpointCallEntry` had its C export removed and is retained as a reference driver, so promoting it would add a staged/FFI dependency that resolves no Rust link symbol. Owned by RR5.15. |
 | 38 | `debt` | SM6's registered tracked debt carries no explicit closure target, and one entry silently went stale | SeLe4n/Kernel/SchedContext/Operations.lean (schedContextConfigure) (debt closed, register not annotated); SeLe4n/Kernel/IPC/C… | Annotate the schedContextConfigure entry as closed at the SM8.B cut in both the SM6 plan and WORKSTREAM_HISTORY, so the register reflects the tree. For `currentThreadUniqueAcrossCores`, complete the… |
 | 39 | `docsync` | An open IPC verification workstream (IPC_INVARIANT_DETHREADING_PLAN) is registered in no canonical source, and its payoff theorem does not exist | grep for `dispatchWithCap_preserves_ipcInvariantFull` over SeLe4n/ and tests/ — none; SeLe4n/Kernel/IPC/Cross… | Do not let SM10 cut v1.0.0 with this invisible. Two actions, in order: (1) register the workstream in docs/WORKSTREAM_HISTORY.md and in CLAUDE.md/AGENTS.md "Standing constraints and registered debt"… |
 | 40 | `bootpath` | Bare-metal Lean runtime hosting is the largest SM10.1 deliverable and appears in no plan, no script, and no line of code | rust/sele4n-hal/src/boot.rs (rust_boot_main); rust/sele4n-hal/src/lean_ready.rs,75-84; lakefile.toml | Before SM10 starts, add an SM10.1 sub-phase that specifies and sequences bare-metal Lean runtime hosting: a lake target emitting the Lean C output, a leanc/clang cross-compile to aarch64-unknown-none… |
@@ -874,7 +874,7 @@ look uncross-compilable at all.  It now carries a `required-features =
 triages every row by what closes it: 20 were closed outright by the WS-RR RR0
 cut, 9 more by registering them in the project debt register, 18 belong to a
 phase already reworking the same artefact, **15 need code, a proof, a test or a
-wiring change and became RR7 rows (RR7.27–RR7.31)**, and 37 are genuinely
+wiring change and became RR7 rows (RR7.33–RR7.37)**, and 37 are genuinely
 SM10.2's documentation work-list.
 
 | # | Plan | Finding | Tree cite |
@@ -994,8 +994,8 @@ five destinations below partition the 99: **20 + 9 + 18 + 15 + 37 = 99**.
 |-------------|------|-------|
 | **1. Closed by the RR0 cut** — the defect no longer exists at `v0.34.26` | 13, 18, 48, 49, 57, 75, 76, 79, 80, 81, 82, 83, 86, 88, 90, 91, 92, 94, 95, 97 | 20 |
 | **2. Closed by registration** — the defect *was* the absence of a durable entry; each now has one in the *Registered debt index* of [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md), with an owner and a closure target | 5, 10, 11, 24, 27, 36, 37, 43, 73 | 9 |
-| **3. Already owned by a numbered row** — the owning phase closes it in passing, because it is retiring or reworking the same artefact.  RR3: 1, 2, 3.  RR4: 9, 96.  RR6: 34, 54, 55, 56, 58, 64, 65, 66.  RR7.7: 14, 16, 17.  RR7.24: 46.  SM10.4: 19 | 1, 2, 3, 9, 14, 16, 17, 19, 34, 46, 54, 55, 56, 58, 64, 65, 66, 96 | 18 |
-| **4. New RR7 rows** — needs code, a proof, a test or a wiring change, and had no owner.  RR7.27: 15, 98.  RR7.28: 6, 26, 71, 77, 93.  RR7.29: 22, 28, 78, 87.  RR7.30: 42.  RR7.31: 59, 74, 84 | 6, 15, 22, 26, 28, 42, 59, 71, 74, 77, 78, 84, 87, 93, 98 | 15 |
+| **3. Already owned by a numbered row** — the owning phase closes it in passing, because it is retiring or reworking the same artefact.  RR3: 1, 2, 3.  RR4: 9, 96.  RR6: 34, 54, 55, 56, 58, 64, 65, 66.  RR7.7–RR7.13: 14, 16, 17.  RR7.30: 46.  SM10.4: 19 | 1, 2, 3, 9, 14, 16, 17, 19, 34, 46, 54, 55, 56, 58, 64, 65, 66, 96 | 18 |
+| **4. New RR7 rows** — needs code, a proof, a test or a wiring change, and had no owner.  RR7.33: 15, 98.  RR7.34: 6, 26, 71, 77, 93.  RR7.35: 22, 28, 78, 87.  RR7.36: 42.  RR7.37: 59, 74, 84 | 6, 15, 22, 26, 28, 42, 59, 71, 74, 77, 78, 84, 87, 93, 98 | 15 |
 | **5. SM10.2's documentation work-list** — genuinely prose: a stale count, a renamed symbol in a landing note, a plan section describing a design the tree replaced | 4, 7, 8, 12, 20, 21, 23, 25, 29, 30, 31, 32, 33, 35, 38, 39, 40, 41, 44, 45, 47, 50, 51, 52, 53, 60, 61, 62, 63, 67, 68, 69, 70, 72, 85, 89, 99 | 37 |
 
 **Destination 5 is cross-referenced from
@@ -1011,7 +1011,7 @@ read the code beside each before editing it.
 plan an earlier phase *retires* is that phase's, not the sweep's: RR3.26 moves
 the de-threading plan to `dev_history`, so rows 1–3 must be right before it
 moves rather than corrected after.  The same holds for RR6's plan corrections
-(RR6.17) and RR4's `trap.rs` rewrite.
+(RR6.25) and RR4's `trap.rs` rewrite.
 
 **Rows the triage deliberately did not route to a sweep.**  Row 98 (four
 per-core statistics accessors with zero consumers) and row 15 (`ipcUnwrapCaps`'s

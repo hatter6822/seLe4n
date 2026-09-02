@@ -78,5 +78,5 @@ For documentation/planning PRs:
   **This figure is hand-copied**: `scripts/sync_documentation_metrics.sh`
   drives `README.md` and `docs/spec/SELE4N_SPEC.md` only, so this file — and
   the eleven i18n READMEs and four GitBook chapters — drift silently between
-  hand updates.  Registered as WS-RR **RR7.29**; until it lands, treat any
+  hand updates.  Registered as WS-RR **RR7.35**; until it lands, treat any
   metric here as of the version stamped beside it.

@@ -3045,13 +3045,13 @@ incoherent.  Each now names a **live** target; the fine-lock tracks are
 enumerated in `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` and the register
 row for each sits in `docs/WORKSTREAM_HISTORY.md`. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
-  [(.schedulerDomain, "WS-RR RR7.7 (fine-lock Track C)"),
-   (.dynamicPipChain, "WS-RR RR7.7 (fine-lock Track C)"),
-   (.queueOwnershipProtocol, "WS-RR RR7.32"),
-   (.capTransferReceiverCnode, "WS-RR RR7.7 (fine-lock Track B)"),
+  [(.schedulerDomain, "WS-RR RR7.10-RR7.13 (fine-lock Track C)"),
+   (.dynamicPipChain, "WS-RR RR7.10-RR7.13 (fine-lock Track C)"),
+   (.queueOwnershipProtocol, "WS-RR RR7.38"),
+   (.capTransferReceiverCnode, "WS-RR RR7.8 (fine-lock Track B)"),
    (.taintTablePerKeyStore, "SM10.1 (fine-lock Track D)"),
-   (.cdtNodeAllocation, "WS-RR RR7.7 (fine-lock Track B)"),
-   (.cspaceWalkInteriorCnodes, "WS-RR RR7.7 (fine-lock Track C)")]
+   (.cdtNodeAllocation, "WS-RR RR7.9 (fine-lock Track B)"),
+   (.cspaceWalkInteriorCnodes, "WS-RR RR7.10-RR7.13 (fine-lock Track C)")]
 
 /-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
 inventory uses — so completeness can be quantified over the *constructors*

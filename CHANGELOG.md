@@ -1,3 +1,136 @@
+## v0.34.45 — WS-RR: the four XL sub-tasks split, and the ordering defect one of them hid
+
+Planning only — no kernel semantics change.  `SMP_RELEASE_READINESS_PLAN.md`
+carried four sub-tasks estimated **XL** (">1 week, expect to split further"),
+and the estimate legend's own instruction had not been followed for any of
+them.  Each is now a sequence of rows sized S–L, in execution order, with the
+citing documents renumbered to match.  **166 → 184 sub-tasks**; RR5 14 → 18,
+RR6 19 → 27, RR7 32 → 38.  RR0–RR4 are landed and untouched.
+
+### The splits, and what reading the code changed about each
+
+**RR5.10 → RR5.10–RR5.14** (idle threads on the production boot path).  The
+row asserted that the switch and its theorem chain "cannot be separate PRs",
+which is true only of the approach it assumed.  Two things changed:
+
+* *A prerequisite was missing, and it sat in a later phase.*  `createIdleThread`
+  sets `threadState := .Running`, while `inferThreadState`
+  (`Scheduler/Operations/Core.lean`) reads `currentOnCore bootCoreId` /
+  `runQueueOnCore bootCoreId` and nothing else — so the moment a secondary
+  core's idle TCB exists on a path anything synchronises,
+  `threadStateConsistent` is false of the boot state and
+  `assertStateInvariantsFor` rewrites the field, because it syncs before it
+  checks.  That is the second of the three SM5 integration deferrals
+  `bootFromPlatformWithIdleThreads`'s own docstring names, and it is register
+  finding 42, whose sweep row is **six phases later**.  A backward dependency
+  is what the plan-authoring rule in `CLAUDE.md` exists to prevent, so the
+  lift is now RR5.10 and the sweep row verifies it — the relation RR7.25 has
+  to RR6 and RR7.28 to RR3.
+* *Composition separates what mutation fuses.*  Defining the idle entry as a
+  thin composition over `bootFromPlatformChecked` — the alternative
+  `Platform/Boot.lean`'s docstring already offers — leaves the seven
+  `bootFromPlatformChecked_*` results true verbatim and derives the new chain
+  from them.  That is what lets the entry (RR5.13) and its production repoint
+  (RR5.14) land apart, and it avoids a second `PlatformConfig` validation
+  path, which is the `trap.rs` two-classifiers defect in miniature.
+
+The remaining two rows are work the old row named in passing: there is no
+`IntermediateState`-level idle **run-queue** enqueue at all (RR5.11 —
+`installIdleThread` sets `currentOnCore` and never touches `runQueueOnCore`,
+and `enqueueIdleThreadOnCore` exists only over `SystemState`), and
+`∀ c, idleThreadEnqueuedOnCore st c` has to be proved of the boot state before
+the switch rather than after (RR5.12).
+
+**RR6.4 → RR6.4–RR6.8** (the queued lock's refinement).  `QueuedRwLock` is a
+**ticket** protocol over four atomic words — `state`, `next_ticket`,
+`now_serving`, `last_enqueued` — and `ConcreteRwLockOp` models a single
+`AtomicU64`, so the concrete alphabet does not exist yet.  The five rows are
+the alphabet, the ticket protocol's own well-formedness, the
+waiters-to-ticket-interval simulation, the per-entry-point block lemmas, and
+their composition.  RR6.5 is the load-bearing one: it is the mutual-exclusion
+argument and the termination argument for both spin loops.
+
+**RR6.11 → RR6.15–RR6.19** (D-4, the CAS-retry bisimulation).  Splitting it
+required establishing why it does not close, and the answer is one row's
+worth of work rather than five:
+
+* `RwLockState.applyOp` enqueues a contended acquirer into `waiters` and
+  `releaseWrite` batch-promotes the head, while the CAS-retry lock has no
+  queue.  From `unheld`, the trace
+  `tryAcquireWrite c₀ · tryAcquireRead c₁ · releaseWrite c₀` leaves the
+  abstract state at `readers = [c₁]` (encoding `1`) and the concrete
+  `fetch_and(READER_MASK)` at `0`, so `rwLockSim` is **false** — which is why
+  all four release discharges carry `_no_promote` / `_empty_queue` side
+  conditions.  RR6.16 owns that case and carries the counterexample, so the
+  phase does not meet it mid-proof.
+* Two of the ten `opCorresponds` constructors — `tryWrite_cas_retry` and
+  `tryWrite_park_retry` — are named by none of the nine `blockBisim_*`
+  lemmas, so the case analysis cannot close today whatever the trace shape
+  (RR6.17).
+* The trace-shape predicate (RR6.15) lands first, as the phase's risk row
+  already prescribed; the composition is RR6.18 and the hypothesis retirement
+  RR6.19.
+
+**RR7.7 → RR7.7–RR7.13** (fine locks).  The row owned Tracks B and C of
+`SMP_FINE_LOCK_MIGRATION_PLAN.md`, which that plan already decomposes into
+seven PRs.  One row per PR, derived from the owning plan rather than invented:
+B = RR7.7–RR7.9 (footprint algebra, `ipcUnwrapCaps` coverage and the
+`capTransferReceiverCnode` deletion, CDT coverage), C = RR7.10–RR7.13
+(resolver generalization, the seven IPC arm declarations, the dispatch-body
+bracket, the export-body gate).  The register finding sits on **RR7.12**, the
+row that makes the v1.0.0 fine-locks claim true; the other six carry `—`
+rather than `0`, because they are that row's prerequisites and not rows that
+own nothing.  The findings column still sums to the acceptance total.
+
+### Renumbering, and where the old numbers went
+
+RR5.11–RR5.14 → RR5.15–RR5.18.  RR6.5–RR6.10 → RR6.9–RR6.14; RR6.12–RR6.19 →
+RR6.20–RR6.27.  RR7.8–RR7.32 → RR7.14–RR7.38.  Every citation in
+`WORKSTREAM_HISTORY.md`, `UNFINISHED_SMP_WORK.md`, the three sibling planning
+documents, `DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md` and
+`FineLockFlow.lean`'s `declaredFootprintUncoveredDomains` owner strings moved
+with them; `scripts/check_workstream_plan.py` holds all of it.  Earlier
+CHANGELOG entries are **not** rewritten — they record what the plan said at
+their own version, and this paragraph is where a stale forward reference
+resolves.
+
+Four citations became ranges rather than moving, because the row they named
+is now several: the SM4.G idle residue (RR5.10–RR5.14), the fine-lock Tracks
+B and C debt (RR7.7–RR7.13), that same debt in the closure plan and the
+migration plan's own closure header, and the triage row in
+`UNFINISHED_SMP_WORK.md` §7.1.
+
+### Corrections found while editing the same tables
+
+* The status header said RR1 landed "all eleven sub-tasks" (twelve), RR2 "all
+  nineteen" (twenty), and "RR3..RR8 not started" while the phase map recorded
+  RR3 landed at v0.34.43 and RR4 at v0.34.44.
+* `RR4.9`'s table row was missing its terminating `|`, so the row rendered
+  with the file column swallowed into the estimate.
+* The debt register credited RR7.7 with "10 of the plan's 12 PRs"; Tracks B
+  and C are **7**, and the other three are Track D's, already registered
+  against SM10.1 in the same document's section B.
+* The idle-root deferral (`ObjId.sentinel` cspace/vspace roots) named RR5.10
+  as the row that must not close over it; the row that puts idle on the
+  production path is now RR5.14.
+
+### Verification
+
+`./scripts/test_smoke.sh` green (Tier 0–2, plus `test_rust.sh`), and
+`lake build SeLe4n.Kernel.InformationFlow.FineLockFlow` clean over its 201-job
+closure — the one `.lean` file this cut touches, for the two owner strings in
+`declaredFootprintUncoveredDomains`.  `check_version_sync.sh` PASS over 36
+sites; `check_identifier_naming.py`, `check_website_links.sh` and
+`test_docs_sync.sh` PASS.
+
+Two gates earned their keep here.  `check_workstream_plan.py` caught two
+defects in this cut before it was committed: a forward citation from RR6.8 to
+rows later in its own phase, and seven RR7 rows written with the RR5/RR6
+column shape, whose file paths landed in the findings column and dropped the
+column's sum to 64.  `find_large_lean_files.sh --check` caught the plan's own
+growth — 1062 → 1184 lines, past the 10% tolerance — so the `Known large
+files` bullet is refreshed in `CLAUDE.md` and `AGENTS.md`.
+
 ## v0.34.44 — WS-RR RR4: fault handling, with reply-based restart
 
 **One PR, one version.**  The work is RR4.1–RR4.27 — the whole phase.  It closes

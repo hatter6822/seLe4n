@@ -6,9 +6,10 @@
 > headline SM3.C.9 deliverable, so the per-object fine locks remain a
 > model-level discipline and the v1.0.0 "per-object reader-writer fine
 > locks" capability claim is not yet true.
-> **Closure targets**: Tracks B and C → WS-RR **RR7.7**; Track D
+> **Closure targets**: Tracks B and C → WS-RR **RR7.7–RR7.13** (one row per
+> PR: B = RR7.7–RR7.9, C = RR7.10–RR7.13); Track D
 > (commit partitioning) is seam-gated to **SM10.1** and registered as a
-> named dependency by RR6.19.  A reader could not previously tell any of
+> named dependency by RR6.27.  A reader could not previously tell any of
 > this from the plan, which carried no status header at all (RR0, v0.34.26).
 
 > **Phase**: SM3.C.9 (deferred `withLockSet` migration at the live kernel

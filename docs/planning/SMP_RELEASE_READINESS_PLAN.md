@@ -1,15 +1,16 @@
 # WS-RR — SMP Release Readiness (pre-SM10 remediation)
 
 > **Status**: IN FLIGHT — **RR0 LANDED at v0.34.26** (all eleven sub-tasks);
-> **RR1 LANDED at v0.34.41** (all eleven sub-tasks); **RR2 LANDED at v0.34.42**
-> (all nineteen sub-tasks; RR2.18 partial — see its acceptance note); RR3..RR8
-> not started.
+> **RR1 LANDED at v0.34.41** (all twelve sub-tasks); **RR2 LANDED at v0.34.42**
+> (all twenty sub-tasks; RR2.18 partial — see its acceptance note);
+> **RR3 LANDED at v0.34.43** (all twenty-six); **RR4 LANDED at v0.34.44** (all
+> twenty-seven); RR5..RR8 not started.
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Source register**: [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) (171 confirmed findings)
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 166 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 184 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -64,7 +65,7 @@ placed to close them**, not by severity alone:
 | Security / soundness | 11 | RR4, RR5, RR6, RR7 | Become reachable when the boot path goes live |
 | High (other) | 12 | RR1..RR6 | Real incomplete work in phases marked complete |
 | Medium | 46 | RR7 (and RR0..RR6 where thematic) | Genuine gaps SM10 would otherwise absorb |
-| Low | 99 | RR0.11 triage → **SM10.2**, RR7.27–RR7.31, or the debt register | Triaged at v0.34.26 (register §7.1): 20 closed by the RR0 cut, 9 closed by registration, 18 already owned by a phase reworking the same artefact, **15 needed code and became RR7.27–RR7.31**, 37 are SM10.2's work-list |
+| Low | 99 | RR0.11 triage → **SM10.2**, RR7.33–RR7.37, or the debt register | Triaged at v0.34.26 (register §7.1): 20 closed by the RR0 cut, 9 closed by registration, 18 already owned by a phase reworking the same artefact, **15 needed code and became RR7.33–RR7.37**, 37 are SM10.2's work-list |
 
 Most of the 99 lows are documentation drift, and those are deliberately **not**
 duplicated into this phase: re-homing a documentation sweep into a remediation
@@ -84,7 +85,7 @@ numbered RR7 row or an explicitly registered deferral with an owner. A low
 severity means the consequence is small, not that the remedy is a sentence.
 **Triage result at `v0.34.26`** (register §7.1, per-row): 20 closed by the RR0
 cut, 9 closed by registration in the debt register, 18 already owned by a phase
-reworking the same artefact, **15 routed to new rows RR7.27–RR7.31**, and 37
+reworking the same artefact, **15 routed to new rows RR7.33–RR7.37**, and 37
 to SM10.2's work-list — 20 + 9 + 18 + 15 + 37 = 99.
 
 ### 2.2 Why a separate phase rather than SM10 sub-tasks
@@ -120,8 +121,8 @@ twice. The dependencies that produced this order:
 - **RR6 is independent** of everything above; it sits late because nothing
   depends on it, not because it is optional.
 - **RR7 is not independent, despite being a sweep.** Several of its rows own
-  findings whose primary owner is an earlier phase — RR7.19 the RwLock-deferred
-  mediums that RR6 implements, RR7.22 the IPC de-threading medium RR3 closes,
+  findings whose primary owner is an earlier phase — RR7.25 the RwLock-deferred
+  mediums that RR6 implements, RR7.28 the IPC de-threading medium RR3 closes,
   and its cross-core IPC batches touch RR2 and RR3 surfaces. It therefore runs
   **after** those phases, and its overlapping rows are verification that the
   owning phase actually closed the finding, not a second attempt at it.
@@ -150,9 +151,9 @@ Nothing else may overlap without re-reading the dependency list above.
 | RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live.  **LANDED v0.34.42** | 20 | M–L |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8).  **LANDED v0.34.43** (RR3.1–RR3.26, the dispatch payoff included) | 26 | XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart.  **LANDED v0.34.44** (RR4.1–RR4.27) | 27 | XL |
-| RR5 | Boot-path fail-open closure | 14 | M–L |
-| RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 | L |
-| RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 32 | M |
+| RR5 | Boot-path fail-open closure | 18 | M–L |
+| RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 27 | L |
+| RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 38 | M |
 | RR8 | Phase closure and hand-off to SM10 | 5 | S |
 
 ## 5. Sub-tasks
@@ -708,7 +709,7 @@ class as round 2's, fixed this time at the mechanism:
   validates — it is the fifth (read) lock, and the interior of a multi-level
   CSpace walk, which every CPtr-resolving footprint leaves unlocked, is
   registered as `UncoveredLockDomain.cspaceWalkInteriorCnodes` (owner:
-  RR7.7, fine-lock Track C).
+  RR7.10–RR7.13, fine-lock Track C).
 
 **Review round 4 (PR #887).**  Four findings on the round-3 head, all one
 level down in the same class — the scanners resolved a region and then
@@ -784,7 +785,7 @@ Rust wiring that makes the Lean path the live one.
 | RR4.6 | Length theorem: every fault encodes within the message-register budget | (same) | S |
 | RR4.7 | Resolve `faultHandler : Option CPtr` to an endpoint capability through the thread's CSpace | `SeLe4n/Kernel/IPC/Operations/Fault.lean` (new) | M |
 | RR4.8 | Rights check: the handler cap must carry send rights; fail closed otherwise | (same) | S |
-| RR4.9 | No-handler policy: the thread is suspended fail-closed, never returned to the faulting instruction | `SeLe4n/Kernel/IPC/Operations/Fault.lean` | M 
+| RR4.9 | No-handler policy: the thread is suspended fail-closed, never returned to the faulting instruction | `SeLe4n/Kernel/IPC/Operations/Fault.lean` | M |
 | RR4.10 | Negative: a thread with no `faultHandler`, or an unresolvable one, takes the RR4.9 fail-closed path | (same) | S |
 | RR4.11 | Fault delivery transition — the faulting thread blocks and a fault IPC is sent to the handler endpoint, reusing the endpoint Call machinery rather than a parallel path | `SeLe4n/Kernel/IPC/Operations/Fault.lean` | L |
 | RR4.12 | Per-core form `faultDeliverOnCore`, with the cross-core SGI emission the other IPC paths use | `SeLe4n/Kernel/IPC/CrossCore/Fault.lean` (new) | L |
@@ -829,15 +830,46 @@ becomes live the moment SM10.1 succeeds, so each must close before it.
 | RR5.7 | Add it to the suspend seam | `rust/sele4n-hal/src/ffi.rs` | S |
 | RR5.8 | Gate the SVC and suspend Lean `extern` declarations on `hw_target` rather than `cfg(not(test))`, the other half of the same finding: under `cfg(not(test))` a host non-test build still compiles call paths to bare-metal Lean symbols, so the readiness checks above do not close it | `rust/sele4n-hal/src/svc_dispatch.rs`, `rust/sele4n-hal/src/ffi.rs` | S |
 | RR5.9 | Build-time or test-time check that every seam in the five-entry table consults the gate **and that no Lean extern is declared outside `hw_target`**, so neither a sixth seam nor an ungated extern can be added without one | `rust/sele4n-hal/build.rs` | M |
-| RR5.10 | Wire `bootFromPlatformWithIdleThreads` into the production boot path — it is proven correct (`…_all_cores_have_idle`) but has no caller, so the proof does not carry through to runtime — **and** update `bootFromPlatformChecked`'s downstream theorem chain in the same slice. These cannot be separate PRs: the existing theorems unfold the checked function and characterize its result in terms of `bootFromPlatform config`, so switching the base without them either fails to compile or ships a live boot path its own theorems no longer cover. **The switch alone is not the remediation**: `installIdleThread` creates the idle TCB and sets `currentOnCore`, and never touches `runQueueOnCore`, while `idleThreadEnqueuedOnCore`'s first conjunct is run-queue membership — so this slice must also call the per-core enqueue and prove `∀ c, idleThreadEnqueuedOnCore st c` of the live boot state, which is the premise `chooseThreadOnCore_always_succeeds` consumes. Without it a core reaching selection with no runnable user thread still lacks its idle fallback | `SeLe4n/Platform/Boot.lean` | XL |
-| RR5.11 | Make the three staged state-committing kernel entries production-reachable, so a linked image carries their `@[export]` symbols | `SeLe4n.lean`, `scripts/staged_module_allowlist.txt` | M |
-| RR5.12 | Verify each expected `@[export]` symbol is present in the built archive | `scripts/` | M |
-| RR5.13 | Bracket `suspend_thread_inner`, which commits kernel state outside the kernel-entry lock | `SeLe4n/Platform/FFI.lean` | S |
-| RR5.14 | Replace the two `debug_assert!` lock/vector tripwires, which vanish from the release image, with checks that survive it | `rust/sele4n-hal/src/` | S |
+| RR5.10 | Lift the boot-core-pinned thread-state classification to the per-core shape: `inferThreadState` reads `currentOnCore bootCoreId` / `runQueueOnCore bootCoreId` only (`SeLe4n/Kernel/Scheduler/Operations/Core.lean`), and `syncThreadStates` / `threadStateConsistent` inherit it.  **First, because the switch below makes it load-bearing**: `createIdleThread` sets `threadState := .Running`, so the instant a secondary core's idle TCB is installed on a path the harness reaches, `inferThreadState` classifies it `.Inactive` — its own core's current slot points at it, but no boot-core slot does — `threadStateConsistent` is false of the boot state, and `assertStateInvariantsFor` (which syncs before it checks) rewrites the field.  This is the second of the three SM5 integration deferrals `bootFromPlatformWithIdleThreads`'s docstring names, and the register's §7 finding 42 | `SeLe4n/Kernel/Scheduler/Operations/Core.lean` | M |
+| RR5.11 | The idle **run-queue** enqueue at `IntermediateState` level, with its frame and fold lemmas.  `enqueueIdleThreadOnCore` exists only over `SystemState` (`Scheduler/Operations/PerCoreIdle.lean`) and `installIdleThread` never touches `runQueueOnCore`, so there is today no operation that puts a boot idle thread on its own core's queue.  Add it beside `installIdleThread`, with the `installIdleThread_{objects,scheduler,currentOnCore_ne}` frame lemmas' analogues and the `Nodup`-fold reasoning `foldl_installIdleThread_installs` already models | `SeLe4n/Platform/Boot.lean` | M |
+| RR5.12 | Prove `∀ c, idleThreadEnqueuedOnCore st c` of the idle-installing boot state — the premise `chooseThreadOnCore_always_succeeds` consumes, and the discharge `schedulerNoStall_smp`'s `hIdle` takes by hypothesis today.  Its three conjuncts land from three places already in the tree: run-queue membership from RR5.11's fold, TCB resolution from `foldl_installIdleThread_installs`, and the domain match from `createIdleThread_domain_zero` composed with `foldl_installIdleThread_activeDomainOnCore`; the purely-additive precondition is `idleSlotsFreshAt`, discharged for the canonical platforms by `idleSlotsFreshAt_of_initialObjects_below_base`.  **Before the switch, not after**: this is the proof surface that makes the live path worth switching to | `SeLe4n/Platform/Boot.lean` | M |
+| RR5.13 | A checked boot entry that installs and enqueues idle, defined as a **thin composition over `bootFromPlatformChecked`** — never a second validation path.  Two paths that both validate a `PlatformConfig` is the `trap.rs` two-classifiers defect in miniature, and the composition shape is what keeps the seven existing `bootFromPlatformChecked_*` results (`_eq_bootFromPlatform`, `_admits_bootVSpace`, `_ok_implies_irqHandlersValid`, `_ok_implies_machineConfigWellFormed`, `_ok_implies_physicalAddressWidth_bound`, `_ok_interruptsEnabled`, `_rejects_invalid`) true verbatim: the new entry's own chain is derived from them by composition rather than restated.  Not yet the production base — nothing calls it at the end of this row | `SeLe4n/Platform/Boot.lean` | L |
+| RR5.14 | Repoint the production boot wrapper `bootAndInitialiseFromPlatform` (and the RPi5 contract path) at it — **the row that closes the finding**, since RR5.13 leaves a correct entry with no caller, which is the same unwired-proof shape this row exists to remove — and resync what the extra per-core idle TCBs move: the `MainTraceHarness` boot trace and `tests/fixtures/main_trace_smoke.expected` (fixture change with its rationale, per the fixture rule), plus the boot-state assertions in the six suites that name the checked entry | `SeLe4n/Platform/FFI.lean`, `SeLe4n/Platform/RPi5/`, `SeLe4n/Testing/MainTraceHarness.lean`, `tests/fixtures/` | M |
+| RR5.15 | Make the three staged state-committing kernel entries production-reachable, so a linked image carries their `@[export]` symbols | `SeLe4n.lean`, `scripts/staged_module_allowlist.txt` | M |
+| RR5.16 | Verify each expected `@[export]` symbol is present in the built archive | `scripts/` | M |
+| RR5.17 | Bracket `suspend_thread_inner`, which commits kernel state outside the kernel-entry lock | `SeLe4n/Platform/FFI.lean` | S |
+| RR5.18 | Replace the two `debug_assert!` lock/vector tripwires, which vanish from the release image, with checks that survive it | `rust/sele4n-hal/src/` | S |
 
 **Acceptance**: a hardware boot without an explicit production labeling
 context fails closed; every seam consults the readiness gate; idle threads
-are installed on the production path; the staged-module count falls by three.
+are installed **and enqueued** on the production path, so `∀ c,
+idleThreadEnqueuedOnCore st c` holds of the live boot state rather than being
+assumed; the staged-module count falls by three.
+
+**Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
+the split, and the row they replaced named neither: one is an ordering defect
+it inherited, the other is the reason its "cannot be separate PRs" claim is
+approach-dependent rather than structural.
+
+*The classification lift comes first because the switch needs it.*
+`createIdleThread` sets `threadState := .Running` and `inferThreadState` reads
+the boot core's slots only, so a secondary core's idle TCB classifies
+`.Inactive` the moment it exists on a path anything synchronises.  That is
+register finding 42, whose sweep row is RR7.36; the work lands here, and
+RR7.36 verifies it closed — the same relation RR7.25 has to RR6 and RR7.28 to
+RR3, per §2.3.  Scheduling it after the switch would be a backward dependency,
+which is the defect the numbering rule exists to prevent.
+
+*The switch and the theorem chain separate only under composition.*  The
+replaced row said they could not be separate PRs, and that is true of the
+approach it assumed — mutating `bootFromPlatformChecked`'s base in place makes
+the seven downstream theorems, which characterize the result in terms of
+`bootFromPlatform config`, either fail to compile or stop covering the live
+path.  Defining the idle entry **as a composition over the checked one**
+(the alternative `Platform/Boot.lean`'s own docstring offers) leaves those
+seven true verbatim and derives the new chain from them, which is what lets
+RR5.13 and RR5.14 land apart.  An implementer who mutates the base instead
+should merge the two rows back into one rather than land a red tree.
 
 
 ### RR6 — Verified lock primitives completion (SM2.C-defer, pre-v1.0.0)
@@ -871,38 +903,71 @@ would have caught that drives neither.
 | RR6.1 | Add non-blocking `try_acquire_read` / `try_acquire_write` to the real `RwLock`, removing the oracle's stated reason for modelling instead of driving | `rust/sele4n-hal/src/rw_lock.rs` | M |
 | RR6.2 | Rewrite the Tier-5 oracle to drive the real lock through those entry points | `rust/sele4n-hal/src/bin/rw_lock_oracle.rs` | L |
 | RR6.3 | Extend the oracle to the queued lock, so both implementations are covered | (same) | M |
-| RR6.4 | Operational step model for `QueuedRwLock` plus its refinement to the Lean FIFO spec. `RwLockRefinement.lean` models the **CAS-retry** `rw_lock.rs`, and the `queued_*` theorems in `RwLock.lean` are about the abstract spec's waiter queue — neither is a bridge to the queued Rust algorithm this phase deploys, so without this the next sub-task's corollary has nothing to compose | `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (new) | XL |
-| RR6.5 | Corollary: `QueuedRwLock` refines the Lean FIFO spec end to end, closing the spec-to-implementation gap for the lock the next sub-task deploys — proved before the switch, so no version ships an unrefined core lock | (same) | L |
-| RR6.6 | Point `STATIC_RW_LOCK_POOL` and the `ffi_rw_lock_*` entries at `QueuedRwLock`, so the deployed lock is the FIFO one the spec describes — **and** correct the FFI and information-flow docs naming the CAS-retry lock as deployed in the same slice, since landing them apart ships a version whose canonical Lean-side concurrency documentation names the wrong runtime primitive | `rust/sele4n-hal/src/lock_bridge.rs`, `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` | M |
-| RR6.7 | Decide and record the fate of `rw_lock.rs`: retained for compatibility, or retired | (2 files) | S |
-| RR6.8 | `TicketLockConcrete` operational step function, mirroring the RwLock refinement's shape | `SeLe4n/Kernel/Concurrency/Locks/TicketLockRefinement.lean` | L |
-| RR6.9 | Trace correspondence (`blockBisim` / `ListBlockBisim` analogue) replacing the counter arithmetic in `rust_ticketLock_refines_lean` | (same) | L |
-| RR6.10 | Replace the tautological conjunct with a statement that can fail | (same) | M |
-| RR6.11 | D-4: prove `opCorresponds`-chain plus an explicit load-then-CAS trace-shape predicate implies `ListBlockBisim`, so the twelve discharge lemmas compose into the main theorem instead of it assuming its own conclusion | `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` | XL |
-| RR6.12 | Run the deployed queued lock under Loom: the dev-dependency alone explores nothing, because `queued_rw_lock.rs` imports `core::sync::atomic` directly and Loom only sees its own instrumented atomics. Add the `cfg(loom)` synchronisation aliases so the lock compiles against them, write `loom::model` tests over the bounded interleavings, and invoke them from CI or the nightly — otherwise §8's "loom gate runs" is satisfied by a manifest entry | `rust/sele4n-hal/Cargo.toml`, `rust/sele4n-hal/src/queued_rw_lock.rs`, `.github/workflows/` | L |
-| RR6.13 | Add a nightly `miri` job for the queued lock | `.github/workflows/` | M |
-| RR6.14 | Raise the FIFO and stress iteration counts to the plan's stated thresholds | `rust/sele4n-hal/src/queued_rw_lock.rs` | S |
-| RR6.15 | Prove the D-2.5 writer-bounded-wait statement as specified — the ingredients exist; only a single-state `_weak` corollary landed | `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` | M |
-| RR6.16 | Repoint the R-10 aggregator entry at the theorem that proves writer liveness; keep the safety theorem registered under its accurate name | `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` | S |
-| RR6.17 | Plan corrections: the retired-MCS design section, the D-1.9 landed row, the false §3.2.6.1 theorem statement, and the Appendix A commands that name a nonexistent script | `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | M |
-| RR6.18 | Retitle the plan: it is no longer post-v1.0.0; add an SM2.C-defer row to `docs/WORKSTREAM_HISTORY.md` with closure target RR6 — this phase, not the boot-path phase that precedes it | (2 files) | S |
-| RR6.19 | Register Track D of `SMP_FINE_LOCK_MIGRATION_PLAN.md` — the commit-model partitioning, which that plan seam-gates to SM10.1 — as a named SM10.1 dependency in `SMP_RELEASE_CLOSURE_PLAN.md` §2 and the debt register, so the one part of the fine-lock work WS-RR cannot land is tracked rather than absorbed silently | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`, `docs/WORKSTREAM_HISTORY.md` | S |
+| RR6.4 | The queued lock's concrete state and operation alphabet.  `ConcreteRwLockOp` / `concreteApplyOp` (`RwLock.lean` §D-4.1) model a **single** `AtomicU64`, and `QueuedRwLock` holds four atomic words — `state`, `next_ticket`, `now_serving`, `last_enqueued` — so the CAS-retry alphabet cannot express a ticket at all.  Define the concrete record and the ticket-carrying op set (`next_ticket.fetch_add`, `now_serving` load and `fetch_add`, `state.fetch_add` / `fetch_sub` / CAS `0 → WRITER_BIT` / `fetch_and READER_MASK`, `sev`, bounded `wfe`) with its `applyOp`, reusing the existing `writerBit` / `readerMask` bit-packing lemmas for the `state` word | `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (new) | S–M |
+| RR6.5 | The ticket protocol's own well-formedness, stated over the concrete model alone and independent of the abstract spec: `now_serving ≤ next_ticket`, each issued ticket is held by at most one core, and `now_serving` advances exactly once per issued ticket (`pass_turn`'s `fetch_add`, which the implementation comment says is chosen over a store precisely so it cannot regress).  This is what the rest of the phase rests on — it is the mutual-exclusion argument, and it is what makes `await_turn`'s spin and `acquire_write`'s `compare_exchange(0, WRITER_BIT)` loop terminate: holding the ticket is what admits a reader, so no *new* reader can enter while a writer is being served and the reader count is monotonically decreasing | (same) | M |
+| RR6.6 | The simulation relation.  `rwLockSim` relates only the writer bit and reader count, and says in as many words that the abstract `waiters` field is not represented — which is honest for the CAS-retry lock and useless here, because `waiters` is the whole of what the FIFO spec constrains.  Define `queuedSim`: the abstract `waiters : List (CoreId × AccessMode)` corresponds to the half-open ticket interval `[now_serving, next_ticket)` under the per-core ticket assignment, in order; plus the unheld / writer-held / readers-held characterizations that the block lemmas below consume | (same) | L |
+| RR6.7 | Per-entry-point block step lemmas — one abstract `RwLockOp` to one concrete block, mirroring the `blockBisim_*` shape: `acquire_read` (take ticket, await turn, `state.fetch_add`, pass turn), `release_read` (`state.fetch_sub`, `sev`), `acquire_write` (take ticket, await turn, CAS loop), `release_write` (`fetch_and`, pass turn).  Each block admits an arbitrary `await_turn` stutter prefix, which is where the modelling actually bites: the spin is unbounded in the implementation and must appear as stuttering that leaves `queuedSim` intact, not as a step | (same) | L |
+| RR6.8 | Trace-level composition: an abstract op list and its concrete block list preserve `queuedSim` from any sim-related initial pair, by induction over the chain with a case split over the four block lemmas.  Stated so that it does **not** take the per-block obligation as a hypothesis: the defect the CAS-retry rows later in this phase exist to remove is exactly a main theorem assuming its own per-block conclusion, and reproducing that shape in a new module would be shipping the known defect twice | (same) | M |
+| RR6.9 | Corollary: `QueuedRwLock` refines the Lean FIFO spec end to end, closing the spec-to-implementation gap for the lock the next sub-task deploys — proved before the switch, so no version ships an unrefined core lock | (same) | L |
+| RR6.10 | Point `STATIC_RW_LOCK_POOL` and the `ffi_rw_lock_*` entries at `QueuedRwLock`, so the deployed lock is the FIFO one the spec describes — **and** correct the FFI and information-flow docs naming the CAS-retry lock as deployed in the same slice, since landing them apart ships a version whose canonical Lean-side concurrency documentation names the wrong runtime primitive | `rust/sele4n-hal/src/lock_bridge.rs`, `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` | M |
+| RR6.11 | Decide and record the fate of `rw_lock.rs`: retained for compatibility, or retired | (2 files) | S |
+| RR6.12 | `TicketLockConcrete` operational step function, mirroring the RwLock refinement's shape | `SeLe4n/Kernel/Concurrency/Locks/TicketLockRefinement.lean` | L |
+| RR6.13 | Trace correspondence (`blockBisim` / `ListBlockBisim` analogue) replacing the counter arithmetic in `rust_ticketLock_refines_lean` | (same) | L |
+| RR6.14 | Replace the tautological conjunct with a statement that can fail | (same) | M |
+| RR6.15 | D-4, the trace-shape predicate: an *honest trace* is one in which every CAS's `expected` is the value the preceding `load` in the same block observed, and its `new` is what the implementation computes from that value.  The bare `opCorresponds` inductive parameterizes `tryRead_success` by arbitrary `(e n : UInt64)`, so without this the chain admits `tryRead_success c 999 999` — an abstract direct-acquire whose concrete CAS fails.  Landed first and alone, so the composition below has something to consume; this is also the phase's stated mitigation if the bisimulation proves hard | `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` | M |
+| RR6.16 | D-4, the promoting release — **the crux, and the reason the composition cannot close as the row it replaces was written**.  `RwLockState.applyOp` enqueues a contended acquirer into `waiters` and `releaseWrite` then batch-promotes the head via `promoteWaitersOnWriterRelease`, while the CAS-retry lock has no queue: from `unheld`, the trace `tryAcquireWrite c₀ · tryAcquireRead c₁ · releaseWrite c₀` leaves the abstract state with `readers = [c₁]` (encoding `1`) and the concrete `fetch_and(READER_MASK)` at `0`, so `rwLockSim` is false — which is exactly why the four release discharges carry `_no_promote` / `_empty_queue` side conditions and dodge the only interesting case.  Extend the block-decomposition contract so a release block may carry the promoted waiters' re-acquisition, then prove the promoting discharges over it.  A block contract change, not a lemma, which is why it is its own row | (same) | L |
+| RR6.17 | D-4, the two constructors with no discharge at all: `tryWrite_cas_retry` and `tryWrite_park_retry` are among `opCorresponds`'s ten constructors and are named by none of the nine `blockBisim_*` lemmas, so a case analysis over the inductive cannot close today whatever the trace shape.  Derived from the constructor inventory rather than a hand-kept list, so a constructor added later is a missing case rather than a silent gap | (same) | M |
+| RR6.18 | D-4, the composition: `ListCorresponds` together with RR6.15's trace shape implies `ListBlockBisim`, by induction over the chain with a case split over all ten `opCorresponds` constructors, each discharged by the now-total `blockBisim_*` family.  This is the step that turns the discharge lemmas from a collection into a proof | (same) | L |
+| RR6.19 | D-4, retire the hypothesis: restate `rust_rwLock_refines_lean` and `rust_rwLock_refines_lean_via_rustImplementsRwLock` without their `ListBlockBisim` premise — it becomes a consequence of RR6.18 rather than an assumption — and repoint the inventory and aggregator entries that register the assumed form, so no catalogue still advertises the theorem that took its own conclusion | `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean`, `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` | M |
+| RR6.20 | Run the deployed queued lock under Loom: the dev-dependency alone explores nothing, because `queued_rw_lock.rs` imports `core::sync::atomic` directly and Loom only sees its own instrumented atomics. Add the `cfg(loom)` synchronisation aliases so the lock compiles against them, write `loom::model` tests over the bounded interleavings, and invoke them from CI or the nightly — otherwise §8's "loom gate runs" is satisfied by a manifest entry | `rust/sele4n-hal/Cargo.toml`, `rust/sele4n-hal/src/queued_rw_lock.rs`, `.github/workflows/` | L |
+| RR6.21 | Add a nightly `miri` job for the queued lock | `.github/workflows/` | M |
+| RR6.22 | Raise the FIFO and stress iteration counts to the plan's stated thresholds | `rust/sele4n-hal/src/queued_rw_lock.rs` | S |
+| RR6.23 | Prove the D-2.5 writer-bounded-wait statement as specified — the ingredients exist; only a single-state `_weak` corollary landed | `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` | M |
+| RR6.24 | Repoint the R-10 aggregator entry at the theorem that proves writer liveness; keep the safety theorem registered under its accurate name | `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` | S |
+| RR6.25 | Plan corrections: the retired-MCS design section, the D-1.9 landed row, the false §3.2.6.1 theorem statement, and the Appendix A commands that name a nonexistent script | `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | M |
+| RR6.26 | Retitle the plan: it is no longer post-v1.0.0; add an SM2.C-defer row to `docs/WORKSTREAM_HISTORY.md` with closure target RR6 — this phase, not the boot-path phase that precedes it | (2 files) | S |
+| RR6.27 | Register Track D of `SMP_FINE_LOCK_MIGRATION_PLAN.md` — the commit-model partitioning, which that plan seam-gates to SM10.1 — as a named SM10.1 dependency in `SMP_RELEASE_CLOSURE_PLAN.md` §2 and the debt register, so the one part of the fine-lock work WS-RR cannot land is tracked rather than absorbed silently | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`, `docs/WORKSTREAM_HISTORY.md` | S |
 
 **Acceptance**: the deployed RwLock is the one the Lean spec describes; the
 Tier-5 oracle drives real locks; neither refinement theorem assumes its own
 conclusion or contains a tautological conjunct; `loom` and `miri` gates run.
 
-**Note on the two XLs**: RR6.4 (the queued lock's own operational model and
-refinement) and RR6.11 (the D-4 bisimulation for the CAS-retry lock) are the
-phase's largest items and the likeliest to need splitting. Take the trace-shape
-predicate and the composition proof as separate PRs, landing the predicate
-first so the composition has something to consume.
+**Note on RR6.4–RR6.8 and RR6.15–RR6.19** (the rows that replaced the phase's
+two XLs).  The two refinements split along different seams, because the two
+locks fail to be verified for different reasons.
 
-RR6.4 and RR6.5 sit **before** RR6.6 deliberately. RR6.6 changes which lock the
-kernel deploys, and `RwLockRefinement.lean` models the CAS-retry implementation
-— so deploying first would leave several versions shipping a core concurrency
-primitive with no refinement to the spec it is claimed to satisfy. The model,
-then the corollary, then the switch.
+*The queued lock has no concrete model at all* (RR6.4–RR6.8).  It is a **ticket**
+protocol over four atomic words, and `ConcreteRwLockOp` models a single one, so
+the alphabet, the ticket protocol's own well-formedness, the
+waiters-to-ticket-interval simulation, the per-entry-point block lemmas and
+their composition are five separable objects — and the ticket invariant
+(RR6.5) is the load-bearing one: it is the mutual-exclusion argument and the
+termination argument for both spin loops.
+
+*The CAS-retry lock has a model whose main theorem assumes its own conclusion*
+(RR6.15–RR6.19), and closing it is not uniformly hard.  Two constructors have
+no discharge lemma at all (RR6.17), which is bookkeeping; the trace-shape
+predicate (RR6.15) is the phase's stated mitigation and lands first so the
+composition has something to consume; and one row, RR6.16, is the actual
+obstacle — the abstract spec promotes a waiter on release and the concrete lock
+has no queue to promote from, so the four existing release discharges sidestep
+the case with `_no_promote` / `_empty_queue` side conditions and the
+composition provably cannot close over them.  Its row carries the
+counterexample, so the phase does not discover it mid-proof.
+
+**RR6.11 decides the fate of `rw_lock.rs`, and RR6.15–RR6.19 complete its
+refinement.**  Read together: if RR6.11 retires the CAS-retry lock once
+RR6.10 has deployed the queued one, the D-4 rows retire with it and the
+acceptance clause below is met by their deletion rather than their proof.  If
+it is retained for compatibility, they are owed in full.  The decision is
+RR6.11's; it is recorded here rather than in either row because a sub-task may
+not point forward at one that has not run.
+
+RR6.4–RR6.8 and RR6.9 sit **before** RR6.10 deliberately. RR6.10 changes which
+lock the kernel deploys, and `RwLockRefinement.lean` models the CAS-retry
+implementation — so deploying first would leave several versions shipping a core
+concurrency primitive with no refinement to the spec it is claimed to satisfy.
+The model, then the corollary, then the switch.
 
 ### RR7 — Medium-severity sweep
 
@@ -911,8 +976,8 @@ plus the §7 low-severity rows whose remedy is code rather than prose.
 **65 findings**: the 45 still open of the register's §6 table — RR7.5's
 re-sequencing item closed at v0.34.36 — the four §4 rows RR7.1–RR7.4 that are
 remediation work rather than security fixes, the 15 §7 rows RR0.11's triage
-routed here (RR7.27–RR7.31), and the one uncovered lock domain the RR0 review
-round found with no owner that would close it (RR7.32). Every other
+routed here (RR7.33–RR7.37), and the one uncovered lock domain the RR0 review
+round found with no owner that would close it (RR7.38). Every other
 §4 item is owned by the phase carrying its siblings — the unhandled VM-fault
 loop and the fault-return ABI convention by RR4, the cancellation-NI hypothesis
 by RR2, the RwLock/Rust refinement gap by RR6, the `suspend_thread_inner`
@@ -925,6 +990,15 @@ The register's §6 table remains the authoritative per-item list; the batches
 below say who owns what, and their counts sum to the register's totals so the
 acceptance gate below can actually be checked against the work list.
 
+**Reading the findings column across RR7.7–RR7.13.**  Those seven rows are the
+fine-lock migration's Tracks B and C, and they close **one** register finding
+between them — the false v1.0.0 "per-object reader-writer fine locks" claim,
+which becomes true when the dispatch body brackets.  The count therefore sits
+on RR7.12, the row that makes it true, and the other six carry `—` rather than
+`0`: they are prerequisites of that row, not rows that own nothing.  The column
+still sums to the acceptance total below, which is the point of keeping it a
+count rather than a label.
+
 | Sub | Description | Findings | Est |
 |-----|-------------|----------|-----|
 | RR7.1 | Boot MMU corrections: 960 MiB of RAM mapped as Device, and nothing mapped above 4 GiB (§4) | 1 | L |
@@ -933,40 +1007,46 @@ acceptance gate below can actually be checked against the work list.
 | RR7.4 | Give the `_atomic_under_lockSet` family operation-specific content: its atomicity half is today a `rfl` instance of a body-agnostic lemma, and five `lockSet_observer_atomic_on` instantiations are missing (§4) | 1 | M |
 | RR7.5 | Add SM10's three `contextRestoreSeamLive` prerequisites, absent from its dependencies, sub-tasks and acceptance gate.  This row's two other items are **closed**: §1's false "all substantive SMP work is complete" phase goal (RR0.4, v0.34.26) and the sub-phase re-sequencing (v0.34.36 — SM10 is now numbered SM10.1..SM10.6 in execution order) | 1 | M |
 | RR7.6 | Production `native_decide`: six uses are live in Lean at HEAD while §5's release-note template claims zero. Per implement-the-improvement, replace them with proofs rather than weaken the claim | 1 | L |
-| RR7.7 | Make the v1.0.0 "per-object reader-writer fine locks" claim **true**, do not reconcile the text to what ships. RR6 refines and deploys the queued lock primitive but performs none of SM3.C.9's exported-body migration, so the claim stays false after it. This row owns Tracks B and C of `SMP_FINE_LOCK_MIGRATION_PLAN.md` — the `capTransferReceiverCnode` footprint closure and the object-domain/dispatch-entry `withLockSet` wrapping of the `@[export]` bodies — and RR6.19 below records what Track D still owes SM10.1. Weakening the capability text instead is the outcome the implement-the-improvement rule forbids | 1 | XL |
-| RR7.8 | Cancellation/timeout error-frame staging, unimplemented at HEAD and owed before the context-restore seam flips | 1 | M |
-| RR7.9 | Boot-path sweep mediums | 5 | M |
-| RR7.10 | Rust HAL mediums | 4 | M |
-| RR7.11 | Syscall return ABI mediums | 4 | M |
-| RR7.12 | Per-object lock mediums | 4 | M |
-| RR7.13 | Fine-lock migration mediums | 3 | M |
-| RR7.14 | TLB shootdown mediums | 3 | M |
-| RR7.15 | Debt-register mediums | 3 | M |
-| RR7.16 | Cross-core IPC mediums | 2 | S |
-| RR7.17 | Declassification mediums | 2 | S |
-| RR7.18 | Panic-hang remediation mediums | 2 | S |
-| RR7.19 | RwLock-deferred mediums | 2 | S |
-| RR7.20 | Implement-the-improvement sweep: route the per-core scheduler entries through the HAL context-switch seam | 1 | S |
-| RR7.21 | Implement-the-improvement sweep: the DeviceTree-to-`PlatformConfig` boot bridge — a platform/boot surface unrelated to the row above, so its own task | 1 | S |
-| RR7.22 | IPC de-threading medium | 1 | S |
-| RR7.23 | Reply objects medium | 1 | S |
-| RR7.24 | SMP foundations medium | 1 | S |
-| RR7.25 | Master plan medium | 1 | S |
-| RR7.26 | Doc-sync medium | 1 | S |
-| RR7.27 | Unwired proven structures (§7): the four per-core statistics accessors that are declared, wrapped and proven with zero consumers, and `ipcUnwrapCaps`'s dead `senderCspaceRoot`, whose own registered closure target passed without it | 2 | M |
-| RR7.28 | Plan-named artefacts that do not exist (§7): `donation_perCore_consistent`, the two unresolvable SM8 theorem names — one of them cited from a **live docstring** — `notification_waiters_nodup`, the SM0-cited Tier-0 gate script, and the four `CLAIM_EVIDENCE_INDEX.md` identifiers.  Per implement-the-improvement each is authored, not struck from the catalogue | 5 | L |
-| RR7.29 | Gate coverage the claims assume (§7): the nine `dev_history` cross-references still in production sources plus the gate that would enforce their absence; the three declared `lean_exe` targets no gate compiles; the SMP-M1 surface difference no gate or phase owns; and the documentation-metrics sync, which covers two files while the sync matrix claims the transitive set — eleven i18n READMEs and four GitBook chapters carry `v0.33.101`-era metrics | 4 | M |
-| RR7.30 | Boot-core-pinned thread-state classification (§7): `inferThreadState` / `syncThreadStates` / `threadStateConsistent` read `bootCoreId`, so a thread running on a secondary core classifies as `.Inactive` | 1 | M |
-| RR7.31 | Test-surface corrections (§7): the D-1 admission-order `decide` fixtures the RwLock gate asks for and the suite lacks; the `r4a_`/`r4c_` test identifiers that encode sub-task codes against the plan's own self-certified naming rule; and the vacuous `trap.rs` SVC test with its stale "pre-FFI stub" prose | 3 | M |
-| RR7.32 | Splice-neighbour queue ownership (`UncoveredLockDomain.queueOwnershipProtocol`): `queueOwnership_violated_by_tcbSetPriority` states the violation as a `¬`, and the domain had no owner that would close it — RR0.9 pointed it at RR7.7's fine-lock Track B, which closes `capTransferReceiverCnode` and `cdtNodeAllocation` but never touches splice neighbours.  Either extend the `tcbSetPriority` footprint to declare the queue-owning locks, or hold the endpoint lock across the splice; the `UncoveredLockDomain` entry is deleted only when the domain is actually covered | 1 | M |
+| RR7.7 | Fine locks, Track B: the endpoint-caps footprint declaration and its algebra. Add the receiver-CNode optional to `lockSet_endpointSend` / `lockSet_endpointCall` as the outermost `lockSetExtendOpt`s (`some r` adds `(cnodeLock r, .write)` **and** `(stateLevelLock, .write)`; `none` is the identity, so every capless pin survives by `rfl`), fold `lockSet_endpointCallWithCaps` into it, raise the consistency tiers and `permittedKinds`, and **widen the `lockSetTransitions_within_bound` send/call conjunct arity** in `Deadlock.lean` — the silent-unbounding hazard, the same shape as the SM9.C `notificationSignal` fix. No coverage claim yet | — | L |
+| RR7.8 | Fine locks, Track B: `ipcUnwrapCaps` coverage and the debt deletion — the closure. Route the state-resolved `lockSet_endpointCallOnCore` (and a new send-side twin) through RR7.7's optional, prove the transfer's write set is contained in the declared footprint on both arms, and only then delete `UncoveredLockDomain.capTransferReceiverCnode` — the constructor, the violation theorem, the inventory arithmetic, the Tier-3 anchors — replacing its `run_check`s with `run_negative_check` pins so the domain cannot come back. **The deletion is the last step, not the first**: an `UncoveredLockDomain` entry is deleted when the domain is covered, never to make a count fall | — | L |
+| RR7.9 | Fine locks, Track B: CDT coverage on `cspaceMint` / `cspaceCopy` / `cspaceMove` / `cspaceDelete` — declare `(stateLevelLock, .write)` on each of the four footprints, prove the coverage (one write shape across all four), and correct `capabilityOp_modifiedFields` in `CrossSubsystem.lean`, which lists `[.objects, .lifecycle]` and omits the four CDT `StateField` constructors the operations actually write. An independent object from the two rows above, so it may land in either order relative to them | — | M |
+| RR7.10 | Fine locks, Track C: generalize the production `lockSetForSyscall` resolver from `(sid, callerTid, targetTid, st)` to decoded-driven resolution — IPC operands are endpoint and notification `ObjId`s, not `ThreadId`s, so the current signature cannot name the objects the IPC arms lock. Signature only: `.tcbSuspend` keeps its answer, the other 32 arms still answer `none`, and `lockSetForSyscall_undeclared_none` is restated over the new shape. Placed in production referencing production footprints only, so the staged resolvers stay staged | — | M |
+| RR7.11 | Fine locks, Track C: the IPC hot-path footprint declarations — one step per arm for send, call, reply, replyRecv, receive, signal and wait, each declaring that arm's `lockSetForSyscall` footprint from the decoded operands together with its coverage proof (the transition's write set within the declared footprint). Send and call consume RR7.7's caps optional. The other 32 arms stay `none`, and stay proven so | — | L |
+| RR7.12 | Fine locks, Track C: bracket the dispatch body — wire `syscallDispatchCrossCoreEntry` through the revalidated `withLockSet` bracket (resolve, acquire, re-resolve, refuse on change) with the fail-closed `none` fallback that leaves undeclared syscalls running exactly as today, keeping `scheduleLocalSuccessorLive` inside the closure and the diff taken against the bracketed post-state. **This is the row that makes the v1.0.0 claim true**, so it carries the finding: until it lands, "per-object reader-writer fine locks" describes one arm of thirty-three. It also flips the `PerCoreWcrt.lean` sentence asserting the run loop acquires its footprints, which is false while the body does not bracket | 1 | L |
+| RR7.13 | Fine locks, Track C: the export-body gate that keeps it true — a Tier-1 elaborated-environment probe over the `@[export]` state-committing bodies, failing any that commits without a `withLockSet` bracket or a recorded fail-closed `none`, with a `--self-test` that plants a bare-commit body and asserts detection. Derived from the export set rather than a list of the three bodies that exist today, so the next seam is covered by construction — the enumeration-for-derivation shape the key conventions warn about | — | M |
+| RR7.14 | Cancellation/timeout error-frame staging, unimplemented at HEAD and owed before the context-restore seam flips | 1 | M |
+| RR7.15 | Boot-path sweep mediums | 5 | M |
+| RR7.16 | Rust HAL mediums | 4 | M |
+| RR7.17 | Syscall return ABI mediums | 4 | M |
+| RR7.18 | Per-object lock mediums | 4 | M |
+| RR7.19 | Fine-lock migration mediums | 3 | M |
+| RR7.20 | TLB shootdown mediums | 3 | M |
+| RR7.21 | Debt-register mediums | 3 | M |
+| RR7.22 | Cross-core IPC mediums | 2 | S |
+| RR7.23 | Declassification mediums | 2 | S |
+| RR7.24 | Panic-hang remediation mediums | 2 | S |
+| RR7.25 | RwLock-deferred mediums | 2 | S |
+| RR7.26 | Implement-the-improvement sweep: route the per-core scheduler entries through the HAL context-switch seam | 1 | S |
+| RR7.27 | Implement-the-improvement sweep: the DeviceTree-to-`PlatformConfig` boot bridge — a platform/boot surface unrelated to the row above, so its own task | 1 | S |
+| RR7.28 | IPC de-threading medium | 1 | S |
+| RR7.29 | Reply objects medium | 1 | S |
+| RR7.30 | SMP foundations medium | 1 | S |
+| RR7.31 | Master plan medium | 1 | S |
+| RR7.32 | Doc-sync medium | 1 | S |
+| RR7.33 | Unwired proven structures (§7): the four per-core statistics accessors that are declared, wrapped and proven with zero consumers, and `ipcUnwrapCaps`'s dead `senderCspaceRoot`, whose own registered closure target passed without it | 2 | M |
+| RR7.34 | Plan-named artefacts that do not exist (§7): `donation_perCore_consistent`, the two unresolvable SM8 theorem names — one of them cited from a **live docstring** — `notification_waiters_nodup`, the SM0-cited Tier-0 gate script, and the four `CLAIM_EVIDENCE_INDEX.md` identifiers.  Per implement-the-improvement each is authored, not struck from the catalogue | 5 | L |
+| RR7.35 | Gate coverage the claims assume (§7): the nine `dev_history` cross-references still in production sources plus the gate that would enforce their absence; the three declared `lean_exe` targets no gate compiles; the SMP-M1 surface difference no gate or phase owns; and the documentation-metrics sync, which covers two files while the sync matrix claims the transitive set — eleven i18n READMEs and four GitBook chapters carry `v0.33.101`-era metrics | 4 | M |
+| RR7.36 | Boot-core-pinned thread-state classification (§7): `inferThreadState` / `syncThreadStates` / `threadStateConsistent` read `bootCoreId`, so a thread running on a secondary core classifies as `.Inactive`.  **The lift itself is RR5.10**, which needs it before the boot path installs a secondary core's idle TCB; this row verifies the finding closed and sweeps the consumers RR5.10 did not have to touch — the same relation RR7.25 has to RR6 and RR7.28 to RR3, per §2.3.  If RR5 landed it whole, that is what this row records | 1 | S |
+| RR7.37 | Test-surface corrections (§7): the D-1 admission-order `decide` fixtures the RwLock gate asks for and the suite lacks; the `r4a_`/`r4c_` test identifiers that encode sub-task codes against the plan's own self-certified naming rule; and the vacuous `trap.rs` SVC test with its stale "pre-FFI stub" prose | 3 | M |
+| RR7.38 | Splice-neighbour queue ownership (`UncoveredLockDomain.queueOwnershipProtocol`): `queueOwnership_violated_by_tcbSetPriority` states the violation as a `¬`, and the domain had no owner that would close it — RR0.9 pointed it at fine-lock Track B, whose rows close `capTransferReceiverCnode` (RR7.8) and `cdtNodeAllocation` (RR7.9) but never touch splice neighbours.  Either extend the `tcbSetPriority` footprint to declare the queue-owning locks, or hold the endpoint lock across the splice; the `UncoveredLockDomain` entry is deleted only when the domain is actually covered | 1 | M |
 
 **Acceptance**: all **65** findings this phase owns — the 46 in the register's
 §6 table, the four §4 items in RR7.1–RR7.4, and the 15 §7 rows RR0.11's triage
-routed here (RR7.27–RR7.31) — are closed or carry an explicit, registered
+routed here (RR7.33–RR7.37) — are closed or carry an explicit, registered
 deferral with a closure target. A medium may be deferred; it may not be
 dropped, and neither the four §4 rows nor the 15 §7 rows may be left open on
 the strength of the §6 table alone. **A low severity means the consequence is
-small, not that the remedy is a sentence**: every row in RR7.27–RR7.31 needs
+small, not that the remedy is a sentence**: every row in RR7.33–RR7.37 needs
 code, a proof, a test or a wiring change, which is why the triage did not hand
 them to a documentation sweep.
 
@@ -1021,9 +1101,10 @@ PASS — the contract landed at `v0.34.2` and pinned by
 |------|------------|--------|------------|
 | RR4 fault IPC is larger than XL and slips the phase | HIGH | HIGH | Split at the sub-task boundaries §RR4 names. Partial delivery is **not** safe: RR4.9's no-handler policy is unreachable until RR4.21 wires the abort arms and RR4.23 routes the Rust trap path to them, so until both land aborts still take the old `.error .vmFault` path and return to the faulting instruction. If RR4 slips, the release waits |
 | RR3 de-threading blocks on an ordering cycle between invariant modules | MED | HIGH | RR3.2 addresses ordering before any bundle edit; the per-transition establishers already exist |
-| RR6.11 bisimulation does not close | MED | MED | Land the trace-shape predicate independently so the composition has something to consume; RR6 stays open and the release waits — deferring the deployed-lock corollary past v1.0.0 would ship the exact gap this phase exists to close |
+| RR6.18 composition does not close | MED | MED | RR6.15 lands the trace-shape predicate independently so the composition has something to consume, and RR6.16 carries the known obstacle — the promoting release — with its counterexample, so it is scoped rather than discovered. RR6 stays open and the release waits: deferring the deployed-lock corollary past v1.0.0 would ship the exact gap this phase exists to close |
 | RR1 surfaces a large volume of aarch64 compile errors | MED | MED | Expected and desirable — it is cheaper here than at SM10.1; RR1.2 and RR1.3 are sized L for this reason |
-| Repointing the FFI pool at `QueuedRwLock` (RR6.6) regresses performance | LOW | MED | The Tier-5 oracle covers both implementations after RR6.3; keep `rw_lock.rs` until measurements land |
+| Repointing the FFI pool at `QueuedRwLock` (RR6.10) regresses performance | LOW | MED | The Tier-5 oracle covers both implementations after RR6.3; keep `rw_lock.rs` until measurements land |
+| RR6.6's waiters-to-ticket-interval simulation does not admit the FIFO bridge | MED | MED | RR6.5 proves the ticket protocol's own well-formedness first, so the interval is known total and gap-free before anything is related to `waiters`. If the relation still resists, RR6.9's corollary waits and RR6.10's deployment waits with it: the ordering note in §RR6 exists because deploying a lock with no refinement to the spec it is claimed to satisfy is the gap this phase exists to close, not a way around it |
 | Two phases edit the trap seam concurrently | MED | MED | §2.3 sequences RR4 and RR5 apart in the same files |
 | Medium findings are quietly dropped rather than deferred | MED | LOW | RR7's acceptance gate requires a registered deferral, not silence |
 
@@ -1042,7 +1123,9 @@ PASS — the contract landed at `v0.34.2` and pinned by
       passes without measuring anything.
 - [ ] Both top-level dispatch payoff theorems exist.
 - [ ] Hardware boot without a production labeling context fails closed.
-- [ ] Idle threads are installed on the production boot path.
+- [ ] Idle threads are installed **and enqueued** on the production boot path,
+      so `idleThreadEnqueuedOnCore` holds of the live boot state rather than
+      being assumed by the theorems that consume it.
 - [ ] Every kernel seam consults the readiness gate.
 - [ ] The deployed RwLock is the one the Lean spec describes.
 - [ ] Neither lock refinement theorem assumes its own conclusion.

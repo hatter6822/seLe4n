@@ -6,7 +6,7 @@
 > assumptions rather than to the lock the kernel deploys.
 > **Closure target**: WS-RR phase **RR6**
 > ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md));
-> RR6.18 registers SM2.C-defer in
+> RR6.26 registers SM2.C-defer in
 > [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md), which it had
 > never reached.
 

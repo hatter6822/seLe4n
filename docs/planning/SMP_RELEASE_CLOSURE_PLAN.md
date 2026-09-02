@@ -326,7 +326,7 @@ routed **37** of them here, enumerated as destination 5 in
 The other 62 went elsewhere on purpose: 20 were closed by the RR0 cut, 9 by
 registering them in the debt register, 18 belong to a phase already reworking
 the same artefact, and **15 needed code, a proof, a test or a wiring change
-and became RR7 rows (RR7.27–RR7.31)** — handing those to a documentation
+and became RR7 rows (RR7.33–RR7.37)** — handing those to a documentation
 sweep would have closed the release over unwired proven structures and a live
 docstring citing a theorem that does not exist.  Four of the 37 (register rows
 41, 52, 62, 70) are **source comments**, not documents; read the code beside
@@ -461,7 +461,7 @@ it for live work.  The list is enumerated here rather than left to the mover:
 | 12 | `SMP_RELEASE_CLOSURE_PLAN.md` | SM10 (this file) |
 | 13 | `SMP_RELEASE_READINESS_PLAN.md` | WS-RR, the phase that gates this one |
 | 14 | `UNFINISHED_SMP_WORK.md` | the register WS-RR closes; its own footer says it moves with them |
-| 15 | `SMP_FINE_LOCK_MIGRATION_PLAN.md` | SM3.C.9's migration, closed by RR7.7 and SM10.1 |
+| 15 | `SMP_FINE_LOCK_MIGRATION_PLAN.md` | SM3.C.9's migration, closed by RR7.7–RR7.13 and SM10.1 |
 | 16 | `SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | SM2.C-defer, absorbed by RR6 |
 | 17 | `SMP_PANIC_HANG_REMEDIATION_PLAN.md` | the SM2.E remediation |
 | 18 | `SYSCALL_RETURN_ABI_PLAN.md` | WS-RA, whose remaining obligations SM10.1 discharges |
